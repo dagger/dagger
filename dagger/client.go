@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -15,14 +14,10 @@ import (
 
 	// Cue
 	"cuelang.org/go/cue"
-	cueerrors "cuelang.org/go/cue/errors"
-	cueformat "cuelang.org/go/cue/format"
 
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 
 	// docker output
 	"github.com/containerd/console"
@@ -32,21 +27,34 @@ import (
 const (
 	defaultBuildkitHost = "docker-container://buildkitd"
 
-	bkConfigKey = "context"
-	bkInputKey  = ":dagger:input:"
-	bkActionKey = ":dagger:action:"
+	bkBootKey  = "boot"
+	bkInputKey = "input"
+
+	defaultBootDir = "."
+
+	// FIXME: rename to defaultConfig ?
+	defaultBootScript = `
+bootdir: string | *"."
+bootscript: [
+	{
+		do: "local"
+		dir: bootdir
+		include: ["*.cue", "cue.mod"]
+	},
+]
+`
 )
 
 type Client struct {
 	c *bk.Client
 
-	inputs    map[string]llb.State
 	localdirs map[string]string
-
-	BKFrontend bkgw.BuildFunc
+	boot      string
+	bootdir   string
+	input     string
 }
 
-func NewClient(ctx context.Context, host string) (*Client, error) {
+func NewClient(ctx context.Context, host, boot, bootdir string) (*Client, error) {
 	// buildkit client
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
@@ -54,107 +62,59 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 	if host == "" {
 		host = defaultBuildkitHost
 	}
+	if boot == "" {
+		boot = defaultBootScript
+	}
+	if bootdir == "" {
+		bootdir = defaultBootDir
+	}
 	c, err := bk.New(ctx, host)
 	if err != nil {
 		return nil, errors.Wrap(err, "buildkit client")
 	}
 	return &Client{
 		c:         c,
-		inputs:    map[string]llb.State{},
+		boot:      boot,
+		bootdir:   bootdir,
+		input:     `{}`,
 		localdirs: map[string]string{},
 	}, nil
 }
 
-func (c *Client) ConnectInput(target string, input interface{}) error {
-	var st llb.State
-	switch in := input.(type) {
-	case llb.State:
-		st = in
-	case string:
-		// Generate a random local input label for security
-		st = c.AddLocalDir(in, target)
-	default:
-		return fmt.Errorf("unsupported input type")
+func (c *Client) LocalDirs() ([]string, error) {
+	boot, err := c.BootScript()
+	if err != nil {
+		return nil, err
 	}
-	c.inputs[bkInputKey+target] = st
-	return nil
+	return boot.LocalDirs()
 }
 
-func (c *Client) AddLocalDir(dir, label string, opts ...llb.LocalOption) llb.State {
-	c.localdirs[label] = dir
-	return llb.Local(label, opts...)
-}
-
-// Set cue config for future calls.
-// input can be:
-//   - llb.State: valid cue config directory
-//   - io.Reader: valid cue source
-//   - string: local path to valid cue file or directory
-//   - func(llb.State)llb.Stte: modify existing state
-
-func (c *Client) SetConfig(inputs ...interface{}) error {
-	for _, input := range inputs {
-		if err := c.setConfig(input); err != nil {
-			return err
-		}
+func (c *Client) BootScript() (*Script, error) {
+	debugf("compiling boot script: %q\n", c.boot)
+	cc := &Compiler{}
+	src, err := cc.Compile("boot.cue", c.boot)
+	if err != nil {
+		return nil, errors.Wrap(err, "compile")
 	}
-	return nil
-}
-
-func (c *Client) setConfig(input interface{}) error {
-	var st llb.State
-	switch in := input.(type) {
-	case llb.State:
-		st = in
-	case func(llb.State) llb.State:
-		// Modify previous state
-		last, ok := c.inputs[bkConfigKey]
-		if !ok {
-			last = llb.Scratch()
-		}
-		st = in(last)
-	case io.Reader:
-		contents, err := ioutil.ReadAll(in)
-		if err != nil {
-			return err
-		}
-		st = llb.Scratch().File(llb.Mkfile(
-			"config.cue",
-			0660,
-			contents,
-		))
-	// Interpret string as a path (dir or file)
-	case string:
-		info, err := os.Stat(in)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			// FIXME: include pattern *.cue ooh yeah
-			st = c.AddLocalDir(in, "config",
-				//llb.IncludePatterns([]string{"*.cue", "cue.mod"})),
-				llb.FollowPaths([]string{"*.cue", "cue.mod"}),
-			)
-		} else {
-			f, err := os.Open(in)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			return c.SetConfig(f)
-		}
+	src, err = src.MergeTarget(c.bootdir, "bootdir")
+	if err != nil {
+		return nil, err
 	}
-	c.inputs[bkConfigKey] = st
-	return nil
+	return src.Get("bootscript").Script()
 }
 
-func (c *Client) Run(ctx context.Context, action string) (*Output, error) {
+func (c *Client) Compute(ctx context.Context) (*Value, error) {
+	cc := &Compiler{}
+	out, err := cc.EmptyStruct()
+	if err != nil {
+		return nil, err
+	}
 	// Spawn Build() goroutine
 	eg, ctx := errgroup.WithContext(ctx)
 	events := make(chan *bk.SolveStatus)
 	outr, outw := io.Pipe()
 	// Spawn build function
-	eg.Go(c.buildfn(ctx, action, events, outw))
+	eg.Go(c.buildfn(ctx, events, outw))
 	// Spawn print function(s)
 	dispCtx := context.TODO()
 	var eventsdup chan *bk.SolveStatus
@@ -164,21 +124,36 @@ func (c *Client) Run(ctx context.Context, action string) (*Output, error) {
 	}
 	eg.Go(c.printfn(dispCtx, events, eventsdup))
 	// Retrieve output
-	out := NewOutput()
 	eg.Go(c.outputfn(ctx, outr, out))
 	return out, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, action string, ch chan *bk.SolveStatus, w io.WriteCloser) func() error {
-	return func() error {
-		defer debugf("buildfn complete")
+func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.WriteCloser) func() error {
+	return func() (err error) {
+		defer func() {
+			debugf("buildfn complete, err=%q", err)
+			if err != nil {
+				// Close exporter pipe so that export processor can return
+				w.Close()
+			}
+		}()
+		boot, err := c.BootScript()
+		if err != nil {
+			close(ch)
+			return errors.Wrap(err, "assemble boot script")
+		}
+		bootSource, err := boot.Value().Source()
+		if err != nil {
+			close(ch)
+			return errors.Wrap(err, "serialize boot script")
+		}
 		// Setup solve options
 		opts := bk.SolveOpt{
 			FrontendAttrs: map[string]string{
-				bkActionKey: action,
+				bkInputKey: c.input,
+				bkBootKey:  string(bootSource),
 			},
-			LocalDirs:      c.localdirs,
-			FrontendInputs: c.inputs,
+			LocalDirs: map[string]string{},
 			// FIXME: catch output & return as cue value
 			Exports: []bk.ExportEntry{
 				{
@@ -189,16 +164,18 @@ func (c *Client) buildfn(ctx context.Context, action string, ch chan *bk.SolveSt
 				},
 			},
 		}
-		// Setup frontend
-		bkFrontend := c.BKFrontend
-		if bkFrontend == nil {
-			r := &Runtime{}
-			bkFrontend = r.BKFrontend
-		}
-		resp, err := c.c.Build(ctx, opts, "", bkFrontend, ch)
+		// Connect local dirs
+		localdirs, err := c.LocalDirs()
 		if err != nil {
-			// Close exporter pipe so that export processor can return
-			w.Close()
+			close(ch)
+			return errors.Wrap(err, "connect local dirs")
+		}
+		for _, dir := range localdirs {
+			opts.LocalDirs[dir] = dir
+		}
+		// Call buildkit solver
+		resp, err := c.c.Build(ctx, opts, "", Compute, ch)
+		if err != nil {
 			err = errors.New(bkCleanError(err.Error()))
 			return errors.Wrap(err, "buildkit solve")
 		}
@@ -211,7 +188,7 @@ func (c *Client) buildfn(ctx context.Context, action string, ch chan *bk.SolveSt
 }
 
 // Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Output) func() error {
+func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value) func() error {
 	return func() error {
 		defer debugf("outputfn complete")
 		tr := tar.NewReader(r)
@@ -229,14 +206,13 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Output) func() 
 				continue
 			}
 			debugf("outputfn: compiling & merging %q", h.Name)
-			// FIXME: only doing this for debug. you can pass tr directly as io.Reader.
-			contents, err := ioutil.ReadAll(tr)
+
+			cc := out.Compiler()
+			v, err := cc.Compile(h.Name, tr)
 			if err != nil {
 				return err
 			}
-			//if err := out.FillSource(h.Name, tr); err != nil {
-			if err := out.FillSource(h.Name, contents); err != nil {
-				debugf("error with %s: contents=\n------\n%s\n-----\n", h.Name, contents)
+			if err := out.Fill(v); err != nil {
 				return errors.Wrap(err, h.Name)
 			}
 			debugf("outputfn: DONE: compiling & merging %q", h.Name)
@@ -327,7 +303,7 @@ func (c *Client) printfn(ctx context.Context, ch, ch2 chan *bk.SolveStatus) func
 				for _, v := range status.Vertexes {
 					p := cue.ParsePath(v.Name)
 					if err := p.Err(); err != nil {
-						debugf("ignoring buildkit vertex %q: not a valid cue path", p.String())
+						debugf("ignoring buildkit vertex %q: not a valid cue path", v.Name)
 						continue
 					}
 					n := &Node{
@@ -376,59 +352,4 @@ func (c *Client) dockerprintfn(ctx context.Context, ch chan *bk.SolveStatus, out
 		// FIXME: use smarter writer from blr
 		return progressui.DisplaySolveStatus(ctx, "", cons, out, ch)
 	}
-}
-
-type Output struct {
-	r    *cue.Runtime
-	inst *cue.Instance
-}
-
-func NewOutput() *Output {
-	r := &cue.Runtime{}
-	inst, _ := r.Compile("", "")
-	return &Output{
-		r:    r,
-		inst: inst,
-	}
-}
-
-func (o *Output) Print(w io.Writer) error {
-	v := o.Cue().Value().Eval()
-	b, err := cueformat.Node(v.Syntax())
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(b)
-	return err
-}
-
-func (o *Output) JSON() JSON {
-	return cueToJSON(o.Cue().Value())
-}
-
-func (o *Output) Cue() *cue.Instance {
-	return o.inst
-}
-
-func (o *Output) FillSource(filename string, x interface{}) error {
-	inst, err := o.r.Compile(filename, x)
-	if err != nil {
-		return fmt.Errorf("compile %s: %s", filename, cueerrors.Details(err, nil))
-	}
-	if err := o.FillValue(inst.Value()); err != nil {
-		return fmt.Errorf("merge %s: %s", filename, cueerrors.Details(err, nil))
-	}
-	return nil
-}
-
-func (o *Output) FillValue(x interface{}) error {
-	inst, err := o.inst.Fill(x)
-	if err != nil {
-		return err
-	}
-	if err := inst.Value().Validate(); err != nil {
-		return err
-	}
-	o.inst = inst
-	return nil
 }

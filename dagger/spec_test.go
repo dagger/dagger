@@ -2,8 +2,6 @@ package dagger
 
 import (
 	"testing"
-
-	"cuelang.org/go/cue"
 )
 
 func TestMatch(t *testing.T) {
@@ -19,39 +17,40 @@ func TestMatch(t *testing.T) {
 			Src: `do: "fetch-git", remote: "github.com/shykes/tests"`,
 			Def: "#FetchGit",
 		},
-		{
-			Src: `do: "load", from: [{do: "exec", args: ["echo", "hello"]}]`,
-			Def: "#Load",
-		},
-		{
-			Src: `do: "load", from: #dagger: compute: [{do: "exec", args: ["echo", "hello"]}]`,
-			Def: "#Load",
-		},
-		// Make sure an empty op does NOT match
-		{
-			Src: ``,
-			Def: "",
-		},
-		{
-			Src: `do: "load"
-let package={bash:">3.0"}
-from: foo
-let foo={#dagger: compute: [
-	{do: "fetch-container", ref: "alpine"},
-	for pkg, info in package {
-		if (info & true) != _|_ {
-			do: "exec"
-			args: ["echo", "hello", pkg]
-		}
-		if (info & string) != _|_ {
-			do: "exec"
-			args: ["echo", "hello", pkg, info]
-		}
-	}
-]}
-`,
-			Def: "#Load",
-		},
+		//FIXME: load is temporarily disabled
+		//		{
+		//			Src: `do: "load", from: [{do: "exec", args: ["echo", "hello"]}]`,
+		//			Def: "#Load",
+		//		},
+		//		{
+		//			Src: `do: "load", from: #dagger: compute: [{do: "exec", args: ["echo", "hello"]}]`,
+		//			Def: "#Load",
+		//		},
+		//		// Make sure an empty op does NOT match
+		//		{
+		//			Src: ``,
+		//			Def: "",
+		//		},
+		//		{
+		//			Src: `do: "load"
+		//let package={bash:">3.0"}
+		//from: foo
+		//let foo={#dagger: compute: [
+		//	{do: "fetch-container", ref: "alpine"},
+		//	for pkg, info in package {
+		//		if (info & true) != _|_ {
+		//			do: "exec"
+		//			args: ["echo", "hello", pkg]
+		//		}
+		//		if (info & string) != _|_ {
+		//			do: "exec"
+		//			args: ["echo", "hello", pkg, info]
+		//		}
+		//	}
+		//]}
+		//`,
+		//			Def: "#Load",
+		//		},
 	}
 	for _, d := range data {
 		testMatch(t, d.Src, d.Def)
@@ -60,11 +59,11 @@ let foo={#dagger: compute: [
 
 // Test an example op for false positives and negatives
 func testMatch(t *testing.T, src interface{}, def string) {
-	r := &Runtime{}
-	op := compile(t, r, src)
+	cc := &Compiler{}
+	op := compile(t, cc, src)
 	if def != "" {
-		if !r.matchSpec(op, def) {
-			t.Errorf("false negative: %s: %q", def, src)
+		if err := op.Validate(def); err != nil {
+			t.Errorf("false negative: %s: %q: %s", def, src, err)
 		}
 	}
 	for _, cmpDef := range []string{
@@ -72,23 +71,23 @@ func testMatch(t *testing.T, src interface{}, def string) {
 		"#FetchGit",
 		"#FetchContainer",
 		"#Export",
-		"#Load",
 		"#Copy",
+		"#Local",
 	} {
 		if cmpDef == def {
 			continue
 		}
-		if r.matchSpec(op, cmpDef) {
+		if err := op.Validate(cmpDef); err == nil {
 			t.Errorf("false positive: %s: %q", cmpDef, src)
 		}
 	}
 	return
 }
 
-func compile(t *testing.T, r *Runtime, src interface{}) cue.Value {
-	inst, err := r.Compile("", src)
+func compile(t *testing.T, cc *Compiler, src interface{}) *Value {
+	v, err := cc.Compile("", src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return inst.Value()
+	return v
 }

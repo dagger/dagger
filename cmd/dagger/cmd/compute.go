@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"dagger.cloud/go/dagger"
 	"dagger.cloud/go/dagger/ui"
@@ -16,32 +15,20 @@ var computeCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.TODO()
-		c, err := dagger.NewClient(ctx, "")
+		// FIXME: boot and bootdir should be config fields, not args
+		c, err := dagger.NewClient(ctx, "", "", args[0])
 		if err != nil {
 			ui.Fatal(err)
 		}
-		target := args[0]
-		if target == "-" {
-			ui.Info("Assembling config from stdin\n")
-			// FIXME: include cue.mod/pkg from *somewhere* so stdin config can import
-			if err := c.SetConfig(os.Stdin); err != nil {
-				ui.Fatal(err)
-			}
-		} else {
-			ui.Info("Assembling config from %q\n", target)
-			if err := c.SetConfig(target); err != nil {
-				ui.Fatal(err)
-			}
-		}
+		// FIXME: configure which config to compute (duh)
+		// FIXME: configure inputs
 		ui.Info("Running")
-		output, err := c.Run(ctx, "compute")
+		output, err := c.Compute(ctx)
 		if err != nil {
 			ui.Fatal(err)
 		}
 		ui.Info("Processing output")
-		//		output.Print(os.Stdout)
 		fmt.Println(output.JSON())
-		// FIXME: write computed values back to env dir
 	},
 }
 

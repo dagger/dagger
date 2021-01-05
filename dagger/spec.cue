@@ -41,6 +41,7 @@ package dagger
 
 // The contents of a #dagger annotation
 #ComponentConfig: {
+	// FIXME: deprecated
 	input?: bool
 
 	// script to compute the value
@@ -86,7 +87,7 @@ package dagger
 #Script: [...#Op]
 
 // One operation in a script
-#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Load | #Copy
+#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy
 
 // Export a value from fs state to cue
 #Export: {
@@ -96,22 +97,24 @@ package dagger
 	format: "json"|"yaml"|*"string"|"number"|"boolean"
 }
 
-#Load: #LoadComponent| #LoadScript
-#LoadComponent: {
-	do: "load"
-	from: #Component
-}
-#LoadScript: {
-	do: "load"
-	from: #Script
+#Local: {
+	do: "local"
+	dir: string
+	include: [...string] | *[]
 }
 
+// FIXME: bring back load (more efficient than copy)
+
+#Load: {
+	do: "load"
+	from: #Component | #Script
+}
 
 #Exec: {
 	do: "exec"
 	args: [...string]
-	env: [string]: string
-	always: true | *false
+	env?: [string]: string
+	always?: true | *false
 	dir: string | *"/"
 	mount?: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
 }
@@ -141,10 +144,9 @@ package dagger
 #Copy: {
 	do: "copy"
 	from: #Script | #Component
-	src: string | *"/"
-	dest: string | *"/"
+	src?: string | *"/"
+	dest?: string | *"/"
 }
-
 
 #TestScript: #Script & [
 	{ do: "fetch-container", ref: "alpine:latest" },
