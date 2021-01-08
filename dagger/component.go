@@ -14,10 +14,7 @@ func (c *Component) Value() *Value {
 
 func (c *Component) Exists() bool {
 	// Does #dagger exist?
-	if c.Config().Err() != nil {
-		return false
-	}
-	return true
+	return c.Config().Err() == nil
 }
 
 // Return the contents of the "#dagger" annotation.

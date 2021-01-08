@@ -32,7 +32,7 @@ func TestValidateSimpleComponent(t *testing.T) {
 	}
 	n := 0
 	if err := s.Walk(func(op *Op) error {
-		n += 1
+		n++
 		return nil
 	}); err != nil {
 		t.Fatal(err)

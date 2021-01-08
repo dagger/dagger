@@ -10,14 +10,14 @@ package dagger
 // The DAG architecture has many benefits:
 //  - Because DAGs are made of nodes executing in parallel, they are easy to scale.
 //  - Because all inputs and outputs are snapshotted and content-addressed, DAGs
-//		can easily be made repeatable, can be cached aggressively, and can be replayed
-//		at will.
+//  can easily be made repeatable, can be cached aggressively, and can be replayed
+//  at will.
 //  - Because nodes are executed by the same container engine as docker-build, DAGs
-//		can be developed using any language or technology capable of running in a docker.
-//		Dockerfiles and docker images are natively supported for maximum compatibility.
+//  can be developed using any language or technology capable of running in a docker.
+//  Dockerfiles and docker images are natively supported for maximum compatibility.
 //
 //  - Because DAGs are programmed declaratively with a powerful configuration language,
-//		they are much easier to test, debug and refactor than traditional programming languages.
+//  they are much easier to test, debug and refactor than traditional programming languages.
 //
 // To execute a DAG, the dagger runtime JIT-compiles it to a low-level format called
 // llb, and executes it with buildkit.
@@ -42,10 +42,8 @@ package dagger
 // The contents of a #dagger annotation
 #ComponentConfig: {
 	// script to compute the value
-	compute?:  #Script
+	compute?: #Script
 }
-
-
 
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
@@ -61,19 +59,19 @@ package dagger
 	do: "export"
 	// Source path in the container
 	source: string
-	format: "json"|"yaml"|*"string"|"number"|"boolean"
+	format: "json" | "yaml" | *"string" | "number" | "boolean"
 }
 
 #Local: {
-	do: "local"
-	dir: string
+	do:       "local"
+	dir:      string
 	include?: [...string] | *[]
 }
 
 // FIXME: bring back load (more efficient than copy)
 
 #Load: {
-	do: "load"
+	do:   "load"
 	from: #Component | #Script
 }
 
@@ -82,40 +80,40 @@ package dagger
 	args: [...string]
 	env?: [string]: string
 	always?: true | *false
-	dir: string | *"/"
+	dir:     string | *"/"
 	mount?: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
 }
 
-#MountTmp: "tmpfs"
+#MountTmp:   "tmpfs"
 #MountCache: "cache"
 #MountComponent: {
 	input: #Component
-	path: string | *"/"
+	path:  string | *"/"
 }
 #MountScript: {
 	input: #Script
-	path: string | *"/"
+	path:  string | *"/"
 }
 
 #FetchContainer: {
-	do: "fetch-container"
+	do:  "fetch-container"
 	ref: string
 }
 
 #FetchGit: {
-	do: "fetch-git"
+	do:     "fetch-git"
 	remote: string
-	ref: string
+	ref:    string
 }
 
 #Copy: {
-	do: "copy"
-	from: #Script | #Component
-	src?: string | *"/"
+	do:    "copy"
+	from:  #Script | #Component
+	src?:  string | *"/"
 	dest?: string | *"/"
 }
 
 #TestScript: #Script & [
-	{ do: "fetch-container", ref: "alpine:latest" },
-	{ do: "exec", args: ["echo", "hello", "world" ] }
+		{do: "fetch-container", ref: "alpine:latest"},
+		{do: "exec", args: ["echo", "hello", "world"]},
 ]

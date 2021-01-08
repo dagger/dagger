@@ -17,7 +17,7 @@ func TestLocalMatch(t *testing.T) {
 	}
 	n := 0
 	err = op.Walk(func(op *Op) error {
-		n += 1
+		n++
 		return nil
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func TestCopyMatch(t *testing.T) {
 	}
 	n := 0
 	err = op.Walk(func(op *Op) error {
-		n += 1
+		n++
 		return nil
 	})
 	if err != nil {

@@ -17,7 +17,7 @@ import (
 
 	// buildkit
 	bk "github.com/moby/buildkit/client"
-	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
+	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 
 	// docker output
 	"github.com/containerd/console"
@@ -188,7 +188,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 }
 
 // Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value) func() error {
+func (c *Client) outputfn(_ context.Context, r io.Reader, out *Value) func() error {
 	return func() error {
 		defer debugf("outputfn complete")
 		tr := tar.NewReader(r)
@@ -230,7 +230,7 @@ type Node struct {
 }
 
 func (n Node) ComponentPath() cue.Path {
-	var parts []cue.Selector
+	parts := []cue.Selector{}
 	for _, sel := range n.Path.Selectors() {
 		if strings.HasPrefix(sel.String(), "#") {
 			break
@@ -326,7 +326,6 @@ func (c *Client) printfn(ctx context.Context, ch, ch2 chan *bk.SolveStatus) func
 				// see proto 67
 			}
 		}
-		return nil
 	}
 }
 
