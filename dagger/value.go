@@ -312,9 +312,9 @@ func (v *Value) CueInst() *cue.Instance {
 }
 
 func (v *Value) Compiler() *Compiler {
-	if v.cc == nil {
-		return &Compiler{}
-	}
+	//	if v.cc == nil {
+	//		return &Compiler{}
+	//	}
 	return v.cc
 }
 

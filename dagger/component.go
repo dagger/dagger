@@ -30,7 +30,12 @@ func (c *Component) Config() *Value {
 // NOTE: calling matchSpec("#Component") is not enough because
 //   it does not match embedded scalars.
 func (c Component) Validate() error {
-	return c.Config().Validate("#ComponentConfig")
+	// FIXME: this crashes on `#dagger:compute:_`
+	//  see TestValidateEmptyComponent
+	// Using a workaround for now.
+	// return c.Config().Validate("#ComponentConfig")
+
+	return c.Config().Validate()
 }
 
 // Return this component's compute script.

@@ -5,9 +5,37 @@ import (
 	"testing"
 )
 
+func TestLocalScript(t *testing.T) {
+	cc := &Compiler{}
+	src := `[{do: "local", dir: "foo"}]`
+	v, err := cc.Compile("", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := v.Script()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	err = s.Walk(func(op *Op) error {
+		n += 1
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal(n)
+	}
+}
+
 func TestWalkBootScript(t *testing.T) {
 	cc := &Compiler{}
-	script, err := cc.CompileScript("boot.cue", defaultBootScript)
+	cfg, err := cc.Compile("clientconfig.cue", defaultBootScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, err := cfg.Get("bootscript").Script()
 	if err != nil {
 		t.Fatal(err)
 	}

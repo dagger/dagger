@@ -71,6 +71,7 @@ func (op *Op) Action() (Action, error) {
 		"#FetchContainer": op.FetchContainer,
 		"#FetchGit":       op.FetchGit,
 		"#Local":          op.Local,
+		"#Load":           op.Load,
 	}
 	for def, action := range actions {
 		if err := op.Validate(def); err == nil {

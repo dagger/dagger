@@ -41,41 +41,8 @@ package dagger
 
 // The contents of a #dagger annotation
 #ComponentConfig: {
-	// FIXME: deprecated
-	input?: bool
-
 	// script to compute the value
 	compute?:  #Script
-
-	terminal?: {
-		// Display a message when opening a terminal session
-		greeting?: string
-		command: [string]: #Script
-	}
-	// Configure how the component is incorporated to user settings.
-	// Configure how the end-user can configure this component
-	settings?: {
-		// If not specified, scrape from comments
-		title?:       string
-		description?: string
-		// Disable user input, even if incomplete?
-		hidden: true | *false
-		ui:     _ // insert here something which can be compiled to react-jsonschema-form
-		// Show the cue default value to the user, as a default input value?
-		showDefault: true | *false
-
-		// Insert information needed by:
-		//   1) clients to encrypt
-		//  ie. web wizard, cli
-		//   2) middleware to implement deicphering in the cuellb pipeline
-		//  eg. integration with clcoud KMS, Vault...
-		//
-		//   3) connectors to make sure secrets are preserved 
-		encrypt?: {
-			pubkey: string
-			cipher: string
-		}
-	}
 }
 
 
@@ -87,7 +54,7 @@ package dagger
 #Script: [...#Op]
 
 // One operation in a script
-#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy
+#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load
 
 // Export a value from fs state to cue
 #Export: {
@@ -100,7 +67,7 @@ package dagger
 #Local: {
 	do: "local"
 	dir: string
-	include: [...string] | *[]
+	include?: [...string] | *[]
 }
 
 // FIXME: bring back load (more efficient than copy)

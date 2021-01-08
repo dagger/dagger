@@ -16,7 +16,7 @@ let base=alpine & {
 www: {
 
 	source: {
-		#dagger: input: true
+		#dagger: compute: _
 	}
 
 	host: string

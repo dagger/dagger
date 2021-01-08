@@ -14,7 +14,11 @@ func TestSimple(t *testing.T) {
 
 func TestCompileBootScript(t *testing.T) {
 	cc := &Compiler{}
-	s, err := cc.CompileScript("boot.cue", defaultBootScript)
+	cfg, err := cc.Compile("boot.cue", defaultBootScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := cfg.Get("bootscript").Script()
 	if err != nil {
 		t.Fatal(err)
 	}

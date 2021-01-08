@@ -11,6 +11,7 @@ type Script struct {
 }
 
 func (s Script) Validate() error {
+	// FIXME this crashes when a script is incomplete or empty
 	return s.Value().Validate("#Script")
 }
 

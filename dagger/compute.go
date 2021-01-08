@@ -20,7 +20,8 @@ func Compute(ctx context.Context, c bkgw.Client) (r *bkgw.Result, err error) {
 		}
 	}()
 	debugf("initializing env")
-	env, err := NewEnv(ctx, c)
+	// Retrieve boot script form client
+	env, err := NewEnv(ctx, NewSolver(c), getBootScript(c), getInput(c))
 	if err != nil {
 		return nil, err
 	}
@@ -38,4 +39,18 @@ func Compute(ctx context.Context, c bkgw.Client) (r *bkgw.Result, err error) {
 	}
 	// Wrap cue directory in buildkit result
 	return outdir.Result(ctx)
+}
+
+func getBootScript(c bkgw.Client) string {
+	if boot, exists := c.BuildOpts().Opts["boot"]; exists {
+		return boot
+	}
+	return ""
+}
+
+func getInput(c bkgw.Client) string {
+	if input, exists := c.BuildOpts().Opts["input"]; exists {
+		return input
+	}
+	return ""
 }

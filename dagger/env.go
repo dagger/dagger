@@ -6,7 +6,6 @@ import (
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/pkg/errors"
 )
 
@@ -28,27 +27,38 @@ type Env struct {
 }
 
 // Initialize a new environment
-func NewEnv(ctx context.Context, c bkgw.Client) (*Env, error) {
+func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, error) {
 	cc := &Compiler{}
-	// 1. Load base config (specified by client)
-	debugf("Loading base configuration")
-	base, err := envBase(ctx, c, cc)
+	// 1. Compile & execute boot script
+	boot, err := cc.CompileScript("boot.cue", bootsrc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "compile boot script")
 	}
-	// 2. Load input overlay (specified by client)
+	bootfs, err := boot.Execute(ctx, s.Scratch(), Discard())
+	if err != nil {
+		return nil, errors.Wrap(err, "execute boot script")
+	}
+	// 2. load cue files produced by boot script
+	// FIXME: BuildAll() to force all files (no required package..)
+	debugf("building cue configuration from boot state")
+	base, err := cc.Build(ctx, bootfs)
+	if err != nil {
+		return nil, errors.Wrap(err, "load base config")
+	}
+	// 3. Compile & merge input overlay (user settings, input directories, secrets.)
 	debugf("Loading input overlay")
-	input, err := envInput(ctx, c, cc)
+	input, err := cc.Compile("input.cue", inputsrc)
 	if err != nil {
 		return nil, err
 	}
+	// Check that input can be merged on base
 	if _, err := base.Merge(input); err != nil {
 		return nil, errors.Wrap(err, "merge base & input")
 	}
 	return &Env{
 		base:  base,
 		input: input,
-		s:     NewSolver(c),
+		s:     s,
 		cc:    cc,
 	}, nil
 }
@@ -57,6 +67,7 @@ func NewEnv(ctx context.Context, c bkgw.Client) (*Env, error) {
 func (env *Env) Compute(ctx context.Context) error {
 	debugf("Computing environment")
 	output, err := env.Walk(ctx, func(c *Component, out Fillable) error {
+		debugf("  [Env.Compute] processing %s", c.Value().Path().String())
 		_, err := c.Compute(ctx, env.s, out)
 		return err
 	})
@@ -95,6 +106,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	if err != nil {
 		return nil, err
 	}
+	debugf("walking: \n----\n%s\n----\n", env.cc.Wrap(flowInst.Value(), flowInst).JSON())
 	// Initialize empty output
 	out, err := env.cc.EmptyStruct()
 	if err != nil {
@@ -125,6 +137,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	}
 	// Cueflow match func
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
+		debugf("Env.Walk: processing %s", v.Path().String())
 		val := env.cc.Wrap(v, flowInst)
 		c, err := val.Component()
 		if os.IsNotExist(err) {
@@ -144,43 +157,4 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		return out, err
 	}
 	return out, nil
-}
-
-func envBase(ctx context.Context, c bkgw.Client, cc *Compiler) (*Value, error) {
-	// 1. Receive boot script from client.
-	debugf("retrieving boot script")
-	bootSrc, exists := c.BuildOpts().Opts["boot"]
-	if !exists {
-		// No boot script: return empty base config
-		return cc.EmptyStruct()
-	}
-
-	// 2. Compile & execute boot script
-	debugf("compiling boot script")
-	boot, err := cc.CompileScript("boot.cue", bootSrc)
-	if err != nil {
-		return nil, errors.Wrap(err, "compile boot script")
-	}
-	debugf("executing boot script")
-	bootState, err := boot.Execute(ctx, NewSolver(c).Scratch(), Discard())
-	if err != nil {
-		return nil, errors.Wrap(err, "execute boot script")
-	}
-	// 3. load cue files produced by bootstrap script
-	// FIXME: BuildAll() to force all files (no required package..)
-	debugf("building cue configuration from boot state")
-	base, err := cc.Build(ctx, bootState)
-	debugf("done building cue configuration: err=%q", err)
-	return base, err
-}
-
-func envInput(ctx context.Context, c bkgw.Client, cc *Compiler) (*Value, error) {
-	// 1. Receive input overlay from client.
-	//     This is used to provide run-time settings, directories..
-	inputSrc, exists := c.BuildOpts().Opts["input"]
-	if !exists {
-		// No input overlay: return empty tree
-		return cc.EmptyStruct()
-	}
-	return cc.Compile("input.cue", inputSrc)
 }

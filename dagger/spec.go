@@ -18,15 +18,23 @@ func (s Spec) Validate(v *Value, defpath string) (err error) {
 	// FIXME: there is probably a cleaner way to do this.
 	defer func() {
 		if err != nil {
+			debugf("ERROR while validating %v against %v err=%q", v, defpath, err)
 			err = fmt.Errorf("%s", cueerrors.Details(err, nil))
 		}
 	}()
 
-	def := s.root.LookupTarget(defpath)
-	if err := def.Err(); err != nil {
+	// Lookup def by name, eg. "#Script" or "#Copy"
+	// See dagger/spec.cue
+	def := s.root.Get(defpath)
+	if err := def.Validate(); err != nil {
 		return err
 	}
-	if err := def.Unwrap().Fill(v).Validate(cue.Final()); err != nil {
+	merged := def.Unwrap().Fill(v)
+	if err := merged.Err(); err != nil {
+		return err
+	}
+	debugf("Validating %v against %v", v, def)
+	if err := merged.Validate(cue.Final()); err != nil {
 		return err
 	}
 	return nil
