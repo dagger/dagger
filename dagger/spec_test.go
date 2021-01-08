@@ -81,7 +81,6 @@ func testMatch(t *testing.T, src interface{}, def string) {
 			t.Errorf("false positive: %s: %q", cmpDef, src)
 		}
 	}
-	return
 }
 
 func compile(t *testing.T, cc *Compiler, src interface{}) *Value {

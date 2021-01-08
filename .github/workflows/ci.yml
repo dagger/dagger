@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go 1.14.2
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.14.2
+        id: go
+
+      - name: Insatall Dependencies
+        run: |
+          curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
+          curl -L https://github.com/cuelang/cue/releases/download/v0.3.0-alpha6/cue_0.3.0-alpha6_Linux_x86_64.tar.gz | sudo tar zxf - -C /usr/local/bin
+
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Build
+        run: |
+          make
+
+      - name: Lint
+        run: |
+          make lint

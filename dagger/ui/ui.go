@@ -8,7 +8,7 @@ import (
 
 func Fatalf(msg string, args ...interface{}) {
 	if !strings.HasSuffix(msg, "\n") {
-		msg = msg + "\n"
+		msg += "\n"
 	}
 	fmt.Fprintf(os.Stderr, msg, args...)
 	os.Exit(1)
@@ -20,7 +20,7 @@ func Fatal(msg interface{}) {
 
 func Info(msg string, args ...interface{}) {
 	if !strings.HasSuffix(msg, "\n") {
-		msg = msg + "\n"
+		msg += "\n"
 	}
 	fmt.Fprintf(os.Stderr, "[info] "+msg, args...)
 }

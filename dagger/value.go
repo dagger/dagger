@@ -35,7 +35,8 @@ func (v *Value) Unlock() {
 func (v *Value) Lookup(path ...string) *Value {
 	v.Lock()
 	defer v.Unlock()
-	return v.Wrap(v.Unwrap().Lookup(path...))
+
+	return v.Wrap(v.Unwrap().LookupPath(cueStringsToCuePath(path...)))
 }
 
 func (v *Value) LookupPath(p cue.Path) *Value {
@@ -176,7 +177,7 @@ func (v *Value) RangeList(fn func(int, *Value) error) error {
 		if err := fn(i, v.Wrap(it.Value())); err != nil {
 			return err
 		}
-		i += 1
+		i++
 	}
 	return nil
 }

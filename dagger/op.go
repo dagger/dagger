@@ -138,7 +138,7 @@ func (op *Op) Local(ctx context.Context, fs FS, out Fillable) (FS, error) {
 }
 
 func (op *Op) Exec(ctx context.Context, fs FS, out Fillable) (FS, error) {
-	var opts []llb.RunOption
+	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
 		Env    map[string]string
@@ -151,11 +151,6 @@ func (op *Op) Exec(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	opts = append(opts, llb.WithCustomName(op.v.Path().String()))
 	// args
 	opts = append(opts, llb.Args(cmd.Args))
-	// dir
-	dir := cmd.Dir
-	if dir == "" {
-		dir = "/"
-	}
 	// env
 	for k, v := range cmd.Env {
 		opts = append(opts, llb.AddEnv(k, v))

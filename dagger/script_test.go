@@ -18,7 +18,7 @@ func TestLocalScript(t *testing.T) {
 	}
 	n := 0
 	err = s.Walk(func(op *Op) error {
-		n += 1
+		n++
 		return nil
 	})
 	if err != nil {
