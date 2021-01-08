@@ -3,7 +3,7 @@ all: dagger
 
 .PHONY: generate
 generate:
-	go generate ./dagger
+	@go generate ./dagger
 
 .PHONY: dagger
 dagger: generate
@@ -11,9 +11,10 @@ dagger: generate
 
 .PHONY: cuefmt
 cuefmt:
-	(cd ./dagger && cue fmt -s ./... && cue trim -s ./...)
+	@(cd ./dagger && cue fmt -s ./... && cue trim -s ./...)
 
 .PHONY: lint
-lint:
+lint: generate cuefmt
 	golangci-lint run
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
+	@test -z "$$(git status -s . | grep -e "^ M"  | grep gen.go | cut -d ' ' -f3 | tee /dev/stderr)"
