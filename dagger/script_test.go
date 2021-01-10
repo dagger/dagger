@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func TestValidateEmptyValue(t *testing.T) {
+	cc := &Compiler{}
+	v, err := cc.Compile("", "#dagger: compute: _")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Get("#dagger.compute").Validate("#Script"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLocalScript(t *testing.T) {
 	cc := &Compiler{}
 	src := `[{do: "local", dir: "foo"}]`
