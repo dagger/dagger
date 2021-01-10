@@ -90,7 +90,6 @@ func (c *Client) LocalDirs() ([]string, error) {
 }
 
 func (c *Client) BootScript() (*Script, error) {
-	debugf("compiling boot script: %q\n", c.boot)
 	cc := &Compiler{}
 	src, err := cc.Compile("boot.cue", c.boot)
 	if err != nil {
@@ -147,6 +146,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 			close(ch)
 			return errors.Wrap(err, "serialize boot script")
 		}
+		debugf("client: assembled boot script: %s\n", bootSource)
 		// Setup solve options
 		opts := bk.SolveOpt{
 			FrontendAttrs: map[string]string{
@@ -193,7 +193,6 @@ func (c *Client) outputfn(_ context.Context, r io.Reader, out *Value) func() err
 		defer debugf("outputfn complete")
 		tr := tar.NewReader(r)
 		for {
-			debugf("outputfn: reading next tar entry")
 			h, err := tr.Next()
 			if err == io.EOF {
 				break
@@ -301,9 +300,12 @@ func (c *Client) printfn(ctx context.Context, ch, ch2 chan *bk.SolveStatus) func
 					len(status.Logs),
 				)
 				for _, v := range status.Vertexes {
+					// FIXME: insert raw buildkit telemetry here (ie for debugging, etc.)
+
+					// IF a buildkit vertex has a valid cue path as name, extract additional info:
 					p := cue.ParsePath(v.Name)
 					if err := p.Err(); err != nil {
-						debugf("ignoring buildkit vertex %q: not a valid cue path", v.Name)
+						// Not a valid cue path: skip.
 						continue
 					}
 					n := &Node{

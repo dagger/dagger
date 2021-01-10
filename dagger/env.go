@@ -28,6 +28,7 @@ type Env struct {
 
 // Initialize a new environment
 func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, error) {
+	debugf("NewEnv(boot=%q input=%q)", bootsrc, inputsrc)
 	cc := &Compiler{}
 	// 1. Compile & execute boot script
 	boot, err := cc.CompileScript("boot.cue", bootsrc)
@@ -55,6 +56,9 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 	if _, err := base.Merge(input); err != nil {
 		return nil, errors.Wrap(err, "merge base & input")
 	}
+
+	debugf("ENV: base=%q input=%q", base.JSON(), input.JSON())
+
 	return &Env{
 		base:  base,
 		input: input,
