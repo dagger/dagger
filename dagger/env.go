@@ -102,7 +102,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	defer debugf("COMPLETE: Env.Walk")
 	// Cueflow cue instance
 	// FIXME: make this cleaner in *Value by keeping intermediary instances
-	flowInst, err := env.base.CueInst().Fill(env.input.CueInst())
+	flowInst, err := env.base.CueInst().Fill(env.input.CueInst().Value())
 	if err != nil {
 		return nil, err
 	}
