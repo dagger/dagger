@@ -14,11 +14,9 @@ func init() {
 	// --debug
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 	// --workspace
-	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Select workspace")
 	rootCmd.AddCommand(
-		// Create an env
-		createCmd,
 		computeCmd,
+		// Create an env
 		// Change settings on an env
 		// View or edit env serti
 		//		settingsCmd,

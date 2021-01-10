@@ -19,7 +19,6 @@ func Compute(ctx context.Context, c bkgw.Client) (r *bkgw.Result, err error) {
 			debugf("execute returned an error. Wrapping...")
 		}
 	}()
-	debugf("initializing env")
 	// Retrieve boot script form client
 	env, err := NewEnv(ctx, NewSolver(c), getBootScript(c), getInput(c))
 	if err != nil {

@@ -18,7 +18,7 @@ func (s Spec) Validate(v *Value, defpath string) (err error) {
 	// FIXME: there is probably a cleaner way to do this.
 	defer func() {
 		if err != nil {
-			debugf("ERROR while validating %v against %v err=%q", v, defpath, err)
+			//debugf("ERROR while validating %v against %v err=%q", v, defpath, err)
 			err = fmt.Errorf("%s", cueerrors.Details(err, nil))
 		}
 	}()
@@ -33,7 +33,6 @@ func (s Spec) Validate(v *Value, defpath string) (err error) {
 	if err := merged.Err(); err != nil {
 		return err
 	}
-	debugf("Validating %v against %v", v, def)
 	if err := merged.Validate(cue.Final()); err != nil {
 		return err
 	}
