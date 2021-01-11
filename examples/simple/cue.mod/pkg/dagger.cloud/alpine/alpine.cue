@@ -36,10 +36,14 @@ package: [string]: true | false | string
 		if (info & true) != _|_ {
 			do: "exec"
 			args: ["apk", "add", "-U", "--no-cache", pkg]
+			// https://github.com/blocklayerhq/dagger/issues/6
+			mount: foo: {}
 		}
 		if (info & string) != _|_  {
 			do: "exec"
 			args: ["apk", "add", "-U", "--no-cache", "\(pkg)\(info)"]
+			// https://github.com/blocklayerhq/dagger/issues/6
+			mount: foo: {}
 		}
 	},
 ]

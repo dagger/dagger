@@ -4,6 +4,7 @@ package acme
 
 import (
 	"dagger.cloud/alpine"
+	"dagger.cloud/dagger"
 )
 
 let base=alpine & {
@@ -16,7 +17,7 @@ let base=alpine & {
 www: {
 
 	source: {
-		#dagger: compute: _
+		#dagger: compute: []
 	}
 
 	host: string
@@ -25,9 +26,16 @@ www: {
 		string
 
 		#dagger: compute: [
-			{ do: "load", from: base },
-			{ do: "exec", args: ["sh", "-c", "echo -n 'https://\(host)/foo' > /tmp/out"] },
-			{ do: "export", format: "string", source: "/tmp/out" },
+			dagger.#Load & { from: base },
+			dagger.#Exec & {
+				args: ["sh", "-c", "echo -n 'https://\(host)/foo' > /tmp/out"]
+				// https://github.com/blocklayerhq/dagger/issues/6
+				mount: foo: {}
+			},
+			dagger.#Export & {
+				// https://github.com/blocklayerhq/dagger/issues/8
+				// source: "/tmp/out"
+			},
 		]
 	}
 }
