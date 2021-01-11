@@ -4,7 +4,7 @@ FROM golang:1.14-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache file
 RUN --mount=target=. --mount=target=/root/.cache,type=cache \
-    CGO_ENABLED=0 go build -o /out/dagger ./cmd/dagger-frontend && file /out/dagger | grep "statically linked"
+    CGO_ENABLED=0 go build -o /out/dagger ./cmd/dagger && file /out/dagger | grep "statically linked"
 
 FROM scratch
 COPY --from=build /out/dagger /bin/dagger
