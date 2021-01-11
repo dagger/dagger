@@ -29,7 +29,7 @@ func (s Spec) Validate(v *Value, defpath string) (err error) {
 	if err := def.Validate(); err != nil {
 		return err
 	}
-	merged := def.Unwrap().Fill(v)
+	merged := def.Unwrap().Fill(v.Value)
 	if err := merged.Err(); err != nil {
 		return err
 	}
