@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"cuelang.org/go/cue"
+	cueerrors "cuelang.org/go/cue/errors"
 	cueload "cuelang.org/go/cue/load"
 	"github.com/pkg/errors"
 )
@@ -103,7 +104,7 @@ func (cc *Compiler) Build(ctx context.Context, fs FS, args ...string) (*Value, e
 	}
 	inst, err := cc.Cue().Build(instances[0])
 	if err != nil {
-		return nil, err
+		return nil, errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 	}
 	return cc.Wrap(inst.Value(), inst), nil
 }
