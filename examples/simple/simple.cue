@@ -17,7 +17,8 @@ let base=alpine & {
 www: {
 
 	source: {
-		#dagger: compute: []
+		// Make this undefined on purpose to require an input directory.
+		#dagger: compute: _
 	}
 
 	host: string
