@@ -107,8 +107,8 @@ package dagger
 }
 
 #Copy: {
-	do:    "copy"
-	from:  #Script | #Component
+	do:   "copy"
+	from: #Script | #Component
 	src:  string | *"/"
 	dest: string | *"/"
 }
