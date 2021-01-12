@@ -14,7 +14,7 @@ func (c *Component) Value() *Value {
 
 func (c *Component) Exists() bool {
 	// Does #dagger exist?
-	return c.Config().Err() == nil
+	return c.Config().Exists()
 }
 
 // Return the contents of the "#dagger" annotation.
@@ -26,7 +26,7 @@ func (c *Component) Config() *Value {
 //
 // NOTE: calling matchSpec("#Component") is not enough because
 //   it does not match embedded scalars.
-func (c Component) Validate() error {
+func (c *Component) Validate() error {
 	// FIXME: this crashes on `#dagger:compute:_`
 	//  see TestValidateEmptyComponent
 	// Using a workaround for now.
@@ -36,7 +36,7 @@ func (c Component) Validate() error {
 }
 
 // Return this component's compute script.
-func (c Component) ComputeScript() (*Script, error) {
+func (c *Component) ComputeScript() (*Script, error) {
 	return c.Value().Get("#dagger.compute").Script()
 }
 
