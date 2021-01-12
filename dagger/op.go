@@ -164,19 +164,21 @@ func (op *Op) Exec(ctx context.Context, fs FS, out Fillable) (FS, error) {
 		opts = append(opts, llb.AddEnv("DAGGER_CACHEBUSTER", cacheBuster))
 	}
 	// mounts
-	if err := op.v.RangeStruct(func(k string, v *Value) error {
-		mnt, err := v.Mount(k)
-		if err != nil {
-			return err
+	if mounts := op.v.Lookup("mount"); mounts.Exists() {
+		if err := mounts.RangeStruct(func(k string, v *Value) error {
+			mnt, err := v.Mount(k)
+			if err != nil {
+				return err
+			}
+			opt, err := mnt.LLB(ctx, fs.Solver())
+			if err != nil {
+				return err
+			}
+			opts = append(opts, opt)
+			return nil
+		}); err != nil {
+			return fs, err
 		}
-		opt, err := mnt.LLB(ctx, fs.Solver())
-		if err != nil {
-			return err
-		}
-		opts = append(opts, opt)
-		return nil
-	}); err != nil {
-		return fs, err
 	}
 	// --> Execute
 	return fs.Change(func(st llb.State) llb.State {
