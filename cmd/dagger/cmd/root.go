@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"dagger.cloud/go/dagger/ui"
+	"dagger.cloud/go/cmd/dagger/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +30,6 @@ func init() {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		ui.Fatal(err)
+		ui.FatalErr(err)
 	}
 }

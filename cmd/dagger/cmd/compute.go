@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"dagger.cloud/go/cmd/dagger/ui"
 	"dagger.cloud/go/dagger"
-	"dagger.cloud/go/dagger/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -18,14 +18,14 @@ var computeCmd = &cobra.Command{
 		// FIXME: boot and bootdir should be config fields, not args
 		c, err := dagger.NewClient(ctx, "", "", args[0])
 		if err != nil {
-			ui.Fatal(err)
+			ui.FatalErr(err)
 		}
 		// FIXME: configure which config to compute (duh)
 		// FIXME: configure inputs
 		ui.Info("Running")
 		output, err := c.Compute(ctx)
 		if err != nil {
-			ui.Fatal(err)
+			ui.FatalErr(err)
 		}
 		ui.Info("Processing output")
 		fmt.Println(output.JSON())

@@ -7,6 +7,7 @@ require (
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.1
 	github.com/emicklei/proto v1.9.0 // indirect
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/moby/buildkit v0.8.1
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.0.0
