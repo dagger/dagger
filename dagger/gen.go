@@ -114,8 +114,8 @@ package dagger
 #Copy: {
 	do:    "copy"
 	from:  #Script | #Component
-	src?:  string | *"/"
-	dest?: string | *"/"
+	src:  string | *"/"
+	dest: string | *"/"
 }
 
 #TestScript: #Script & [
