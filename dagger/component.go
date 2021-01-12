@@ -41,11 +41,19 @@ func (c *Component) ComputeScript() (*Script, error) {
 }
 
 // Compute the configuration for this component.
-// Note that we simply execute the underlying compute script from an
-// empty filesystem state.
-// (It is never correct to pass an input filesystem state to compute a component)
+//
+// Difference with Execute:
+//
+// 1. Always start with an empty fs state (Execute may receive any state as input)
+// 2. Always solve at the end (Execute is lazy)
+//
 func (c *Component) Compute(ctx context.Context, s Solver, out Fillable) (FS, error) {
-	return c.Execute(ctx, s.Scratch(), out)
+	fs, err := c.Execute(ctx, s.Scratch(), out)
+	if err != nil {
+		return fs, err
+	}
+	_, err = fs.ReadDir(ctx, "/")
+	return fs, err
 }
 
 // A component implements the Executable interface by returning its
