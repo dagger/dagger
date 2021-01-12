@@ -2,62 +2,62 @@ package example
 
 import (
 	"dagger.cloud/alpine"
+	"dagger.cloud/dagger"
 )
 
 test: {
 	string
 	#dagger: compute: [
-		{ do: "load", from: alpine },
-		{
-			do: "copy"
+		dagger.#Load & { from: alpine },
+		dagger.#Copy & {
 			from: [
-				{ do: "fetch-container", ref: alpine.ref },
+				dagger.#FetchContainer & { ref: alpine.ref },
 			]
 			dest: "/src"
+			// https://github.com/blocklayerhq/dagger/issues/9
+			src: "/"
 		},
-		{
-			do: "exec"
+		dagger.#Exec & {
 			dir: "/src"
 			args: ["sh", "-c", """
 				ls -l > /tmp/out
 				"""
 			]
+			// https://github.com/blocklayerhq/dagger/issues/6
+			mount: foo: {}
+			// mount: dagger.#Mount
 		},
-		{
-			do: "export"
-			source: "/tmp/out"
-			format: "string"
-		}
+		dagger.#Export & {
+			// https://github.com/blocklayerhq/dagger/issues/8
+			// source: "/tmp/out"
+		},
 	]
 }
 
 www: {
-
 	// Domain where the site will be deployed (user input)
 	domain: string
 
-	// URL after deployment (computed)
 	url: {
 		string & =~ "https://.*"
 
-		#dagger: {
-			compute: [
-				{ do: "load", from: alpine },
-				{
-					do: "exec"
-					args: ["sh", "-c",
-						"""
-						echo 'deploying to netlify (not really)'
-						echo 'https://\(domain)/foo' > /tmp/out
-						"""
-					]
-				},
-				{
-					do: "export"
-					source: "/tmp/out"
-					format: "string"
-				}
-			]
-		}
-	}
+		// https://github.com/blocklayerhq/dagger/issues/10
+		#dagger2: compute: [
+			dagger.#Load & { from: alpine },
+			dagger.#Exec & {
+				args: ["sh", "-c",
+					"""
+					echo 'deploying to netlify (not really)'
+					echo 'https://\(domain)/foo' > /tmp/out
+					"""
+				]
+				// https://github.com/blocklayerhq/dagger/issues/6
+				mount: foo: {}
+			},
+            dagger.#Export & {
+        		// https://github.com/blocklayerhq/dagger/issues/8
+                // source: "/tmp/out"
+            }
+        ]
+    }
 }

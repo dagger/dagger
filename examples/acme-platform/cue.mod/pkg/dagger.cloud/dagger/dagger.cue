@@ -10,14 +10,14 @@ package dagger
 // The DAG architecture has many benefits:
 //  - Because DAGs are made of nodes executing in parallel, they are easy to scale.
 //  - Because all inputs and outputs are snapshotted and content-addressed, DAGs
-//		can easily be made repeatable, can be cached aggressively, and can be replayed
-//		at will.
+//  can easily be made repeatable, can be cached aggressively, and can be replayed
+//  at will.
 //  - Because nodes are executed by the same container engine as docker-build, DAGs
-//		can be developed using any language or technology capable of running in a docker.
-//		Dockerfiles and docker images are natively supported for maximum compatibility.
+//  can be developed using any language or technology capable of running in a docker.
+//  Dockerfiles and docker images are natively supported for maximum compatibility.
 //
 //  - Because DAGs are programmed declaratively with a powerful configuration language,
-//		they are much easier to test, debug and refactor than traditional programming languages.
+//  they are much easier to test, debug and refactor than traditional programming languages.
 //
 // To execute a DAG, the dagger runtime JIT-compiles it to a low-level format called
 // llb, and executes it with buildkit.
@@ -31,42 +31,19 @@ package dagger
 // A dagger component is a configuration value augmented
 // by scripts defining how to compute it, present it to a user,
 // encrypt it, etc.
-#Component: #dagger: {
-	// script to compute the value
-	compute?:  #Script
 
-	terminal?: {
-		// Display a message when opening a terminal session
-		greeting?: string
-		command: [string]: #Script
-	}
-	// Configure how the component is incorporated to user settings.
-	// Configure how the end-user can configure this component
-	settings?: {
-		// If not specified, scrape from comments
-		title?:       string
-		description?: string
-		// Disable user input, even if incomplete?
-		hidden: true | *false
-		ui:     _ // insert here something which can be compiled to react-jsonschema-form
-		// Show the cue default value to the user, as a default input value?
-		showDefault: true | *false
-
-		// Insert information needed by:
-		//   1) clients to encrypt
-		//  ie. web wizard, cli
-		//   2) middleware to implement deicphering in the cuellb pipeline
-		//  eg. integration with clcoud KMS, Vault...
-		//
-		//   3) connectors to make sure secrets are preserved 
-		encrypt?: {
-			pubkey: string
-			cipher: string
-		}
-	}
+// FIXME: #Component will not match embedded scalars.
+//   use Runtime.isComponent() for a reliable check
+#Component: {
+	#dagger: #ComponentConfig
+	...
 }
 
-
+// The contents of a #dagger annotation
+#ComponentConfig: {
+	// script to compute the value
+	compute?: #Script
+}
 
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
@@ -75,30 +52,68 @@ package dagger
 #Script: [...#Op]
 
 // One operation in a script
-#Op: #Fetch | #Export | #Run | #Local
+#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load
 
 // Export a value from fs state to cue
-#Export: ["export", string, "json"|"yaml"|"string"|"number"|"boolean"]
-
-#Run: #runNoOpts | #runWithOpts
-#runNoOpts: ["run", ...string]
-#runWithOpts: ["run", #RunOpts, ...string]
-
-#RunOpts: {
-	mount?: string: "tmpfs" | "cache" | { from: #Component|#Script }
-	env: [string]: string
-	dir: string | *"/"
-	always: true | *false
+#Export: {
+	do: "export"
+	// Source path in the container
+	source: string
+	format: "json" | "yaml" | *"string" | "number" | "boolean"
 }
 
-#Local: ["local", string]
+#Local: {
+	do:       "local"
+	dir:      string
+	include?: [...string] | *[]
+}
 
-#Fetch: #FetchGit | #FetchContainer
-#FetchContainer: ["fetch", "container", string]
-#FetchGit: ["fetch", "git", string, string]
+// FIXME: bring back load (more efficient than copy)
 
+#Load: {
+	do:   "load"
+	from: #Component | #Script
+}
+
+#Exec: {
+	do: "exec"
+	args: [...string]
+	env?: [string]: string
+	always?: true | *false
+	dir:     string | *"/"
+	mount?: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
+}
+
+#MountTmp:   "tmpfs"
+#MountCache: "cache"
+#MountComponent: {
+	input: #Component
+	path:  string | *"/"
+}
+#MountScript: {
+	input: #Script
+	path:  string | *"/"
+}
+
+#FetchContainer: {
+	do:  "fetch-container"
+	ref: string
+}
+
+#FetchGit: {
+	do:     "fetch-git"
+	remote: string
+	ref:    string
+}
+
+#Copy: {
+	do:    "copy"
+	from:  #Script | #Component
+	src:  string | *"/"
+	dest: string | *"/"
+}
 
 #TestScript: #Script & [
-	["fetch", "container", "alpine:latest"],
-	["run", "echo", "hello", "world"]
+		{do: "fetch-container", ref: "alpine:latest"},
+		{do: "exec", args: ["echo", "hello", "world"]},
 ]
