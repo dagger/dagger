@@ -30,11 +30,11 @@ func (s *Script) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) 
 		}
 		op, err := v.Op()
 		if err != nil {
-			return errors.Wrapf(err, "validate op %d/%d", idx+1, s.v.Len())
+			return errors.Wrapf(err, "validate op %d/%d", idx+1, s.Value().Len())
 		}
 		fs, err = op.Execute(ctx, fs, out)
 		if err != nil {
-			return errors.Wrapf(err, "execute op %d/%d", idx+1, s.v.Len())
+			return errors.Wrapf(err, "execute op %d/%d", idx+1, s.Value().Len())
 		}
 		return nil
 	})

@@ -49,6 +49,8 @@ func (cc *Compiler) EmptyStruct() (*Value, error) {
 }
 
 func (cc *Compiler) Compile(name string, src interface{}) (*Value, error) {
+	cc.Lock()
+	defer cc.Unlock()
 	inst, err := cc.Cue().Compile(name, src)
 	if err != nil {
 		// FIXME: cleaner way to unwrap cue error details?
@@ -67,8 +69,9 @@ func (cc *Compiler) CompileScript(name string, src interface{}) (*Script, error)
 
 // Build a cue configuration tree from the files in fs.
 func (cc *Compiler) Build(ctx context.Context, fs FS, args ...string) (*Value, error) {
+	cc.Lock()
+	defer cc.Unlock()
 	lg := log.Ctx(ctx)
-
 	// The CUE overlay needs to be prefixed by a non-conflicting path with the
 	// local filesystem, otherwise Cue will merge the Overlay with whatever Cue
 	// files it finds locally.

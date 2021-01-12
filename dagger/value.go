@@ -12,8 +12,7 @@ import (
 // Polyfill for cue.Value.
 // Use instead of cue.Value and cue.Instance
 type Value struct {
-	// FIXME: don't embed, cleaner API
-	cue.Value
+	v    cue.Value
 	cc   *Compiler
 	inst *cue.Instance
 }
@@ -33,6 +32,8 @@ func (v *Value) Unlock() {
 }
 
 func (v *Value) Lookup(path ...string) *Value {
+	v.Lock()
+	defer v.Unlock()
 	return v.Wrap(v.Unwrap().LookupPath(cueStringsToCuePath(path...)))
 }
 
@@ -147,7 +148,10 @@ func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 		}
 		x = xval.Unwrap()
 	}
+	// Release the lock before calling Validate
+	v.Lock()
 	result := v.Wrap(v.Unwrap().Fill(x, path...))
+	v.Unlock()
 	return result, result.Validate()
 }
 
@@ -169,6 +173,7 @@ func (v *Value) RangeList(fn func(int, *Value) error) error {
 	}
 	i := 0
 	for it.Next() {
+		// FIXME: isIterator.Value() concurrent-safe?
 		if err := fn(i, v.Wrap(it.Value())); err != nil {
 			return err
 		}
@@ -183,11 +188,60 @@ func (v *Value) RangeStruct(fn func(string, *Value) error) error {
 		return err
 	}
 	for it.Next() {
+		// FIXME: isIterator.Value() concurrent-safe?
 		if err := fn(it.Label(), v.Wrap(it.Value())); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (v *Value) Len() cue.Value {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().Len()
+}
+
+func (v *Value) List() (cue.Iterator, error) {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().List()
+}
+
+func (v *Value) Fields() (*cue.Iterator, error) {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().Fields()
+}
+
+func (v *Value) Struct() (*cue.Struct, error) {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().Struct()
+}
+
+func (v *Value) Exists() bool {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().Exists()
+}
+
+func (v *Value) String() (string, error) {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().String()
+}
+
+func (v *Value) Path() cue.Path {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().Path()
+}
+
+func (v *Value) Decode(x interface{}) error {
+	v.Lock()
+	defer v.Unlock()
+	return v.Unwrap().Decode(x)
 }
 
 // Recursive concreteness check.
@@ -213,8 +267,8 @@ func (v *Value) IsConcreteR() bool {
 		}
 		return true
 	}
-	dv, _ := v.Default()
-	return v.IsConcrete() || dv.IsConcrete()
+	dv, _ := v.Unwrap().Default()
+	return v.Unwrap().IsConcrete() || dv.IsConcrete()
 }
 
 // Export concrete values to JSON. ignoring non-concrete values.
@@ -224,7 +278,7 @@ func (v *Value) JSON() JSON {
 	v.Lock()
 	defer v.Unlock()
 	var out JSON
-	v.Walk(
+	v.Unwrap().Walk(
 		func(v cue.Value) bool {
 			b, err := v.MarshalJSON()
 			if err == nil {
@@ -262,9 +316,14 @@ func (v *Value) Save(fs FS, filename string) (FS, error) {
 }
 
 func (v *Value) Validate(defs ...string) error {
+	// Release the lock before calling spec.Validate,
+	// which calls other protected Value methods.
+	v.Lock()
 	if err := v.Unwrap().Validate(); err != nil {
+		v.Unlock()
 		return err
 	}
+	v.Unlock()
 	if len(defs) == 0 {
 		return nil
 	}
@@ -284,18 +343,23 @@ func (v *Value) Validate(defs ...string) error {
 // This is the only method which changes the value in-place.
 // FIXME this co-exists awkwardly with the rest of Value.
 func (v *Value) Fill(x interface{}) error {
-	v.Value = v.Value.Fill(x)
+	// Release lock before calling Validate
+	v.Lock()
+	v.v = v.Unwrap().Fill(x)
+	v.Unlock()
 	return v.Validate()
 }
 
 func (v *Value) Source() ([]byte, error) {
 	v.Lock()
 	defer v.Unlock()
-	return cueformat.Node(v.Eval().Syntax())
+	return cueformat.Node(v.Unwrap().Eval().Syntax())
 }
 
 func (v *Value) IsEmptyStruct() bool {
-	if st, err := v.Struct(); err == nil {
+	v.Lock()
+	defer v.Unlock()
+	if st, err := v.Unwrap().Struct(); err == nil {
 		if st.Len() == 0 {
 			return true
 		}
@@ -319,13 +383,13 @@ func (v *Value) Wrap(v2 cue.Value) *Value {
 }
 
 func (v *Value) Unwrap() cue.Value {
-	return v.Value
+	return v.v
 }
 
 func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
 	return &Value{
-		Value: v,
-		cc:    cc,
-		inst:  inst,
+		v:    v,
+		cc:   cc,
+		inst: inst,
 	}
 }
