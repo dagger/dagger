@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"os"
+	"sync"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -104,6 +105,7 @@ type EnvWalkFunc func(*Component, Fillable) error
 func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	debugf("Env.Walk")
 	defer debugf("COMPLETE: Env.Walk")
+	l := sync.Mutex{}
 	// Cueflow cue instance
 	// FIXME: make this cleaner in *Value by keeping intermediary instances
 	flowInst, err := env.base.CueInst().Fill(env.input.CueInst().Value())
@@ -119,6 +121,8 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	// Cueflow config
 	flowCfg := &cueflow.Config{
 		UpdateFunc: func(c *cueflow.Controller, t *cueflow.Task) error {
+			l.Lock()
+			defer l.Unlock()
 			debugf("compute step")
 			if t == nil {
 				return nil
@@ -141,6 +145,8 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	}
 	// Cueflow match func
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
+		l.Lock()
+		defer l.Unlock()
 		debugf("Env.Walk: processing %s", v.Path().String())
 		val := env.cc.Wrap(v, flowInst)
 		c, err := val.Component()
@@ -152,6 +158,8 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			return nil, err
 		}
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
+			l.Lock()
+			defer l.Unlock()
 			return fn(c, t)
 		}), nil
 	}
