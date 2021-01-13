@@ -172,9 +172,17 @@ func (v *Value) RangeList(fn func(int, *Value) error) error {
 		return err
 	}
 	i := 0
-	for it.Next() {
-		// FIXME: isIterator.Value() concurrent-safe?
-		if err := fn(i, v.Wrap(it.Value())); err != nil {
+	for {
+		v.Lock()
+		n := it.Next()
+		v.Unlock()
+		if !n {
+			break
+		}
+		v.Lock()
+		itValue := it.Value()
+		v.Unlock()
+		if err := fn(i, v.Wrap(itValue)); err != nil {
 			return err
 		}
 		i++
@@ -187,9 +195,18 @@ func (v *Value) RangeStruct(fn func(string, *Value) error) error {
 	if err != nil {
 		return err
 	}
-	for it.Next() {
-		// FIXME: isIterator.Value() concurrent-safe?
-		if err := fn(it.Label(), v.Wrap(it.Value())); err != nil {
+	for {
+		v.Lock()
+		n := it.Next()
+		v.Unlock()
+		if !n {
+			break
+		}
+		v.Lock()
+		itLabel := it.Label()
+		itValue := it.Value()
+		v.Unlock()
+		if err := fn(itLabel, v.Wrap(itValue)); err != nil {
 			return err
 		}
 	}
