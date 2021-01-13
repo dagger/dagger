@@ -105,7 +105,7 @@ type EnvWalkFunc func(*Component, Fillable) error
 func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	debugf("Env.Walk")
 	defer debugf("COMPLETE: Env.Walk")
-	l := &sync.Mutex{}
+	l := sync.Mutex{}
 	// Cueflow cue instance
 	// FIXME: make this cleaner in *Value by keeping intermediary instances
 	flowInst, err := env.base.CueInst().Fill(env.input.CueInst().Value())
