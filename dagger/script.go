@@ -41,22 +41,22 @@ func (s *Script) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	return fs, err
 }
 
-func (s *Script) Walk(fn func(op *Op) error) error {
+func (s *Script) Walk(ctx context.Context, fn func(op *Op) error) error {
 	return s.v.RangeList(func(idx int, v *Value) error {
 		op, err := v.Op()
 		if err != nil {
 			return errors.Wrapf(err, "validate op %d/%d", idx+1, s.v.Len())
 		}
-		if err := op.Walk(fn); err != nil {
+		if err := op.Walk(ctx, fn); err != nil {
 			return err
 		}
 		return nil
 	})
 }
 
-func (s *Script) LocalDirs() ([]string, error) {
+func (s *Script) LocalDirs(ctx context.Context) ([]string, error) {
 	var dirs []string
-	err := s.Walk(func(op *Op) error {
+	err := s.Walk(ctx, func(op *Op) error {
 		if err := op.Validate("#Local"); err != nil {
 			return nil
 		}

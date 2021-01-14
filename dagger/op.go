@@ -7,6 +7,7 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 type Op struct {
@@ -21,14 +22,15 @@ func (op *Op) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	return action(ctx, fs, out)
 }
 
-func (op *Op) Walk(fn func(*Op) error) error {
-	debugf("Walk %v", op.v)
+func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
+	lg := log.Ctx(ctx)
+
+	lg.Debug().Interface("v", op.v).Msg("Op.Walk")
 	isCopy := (op.Validate("#Copy") == nil)
 	isLoad := (op.Validate("#Load") == nil)
 	if isCopy || isLoad {
-		debugf("MATCH %v", op.v)
 		if from, err := op.Get("from").Executable(); err == nil {
-			if err := from.Walk(fn); err != nil {
+			if err := from.Walk(ctx, fn); err != nil {
 				return err
 			}
 		}
@@ -37,7 +39,7 @@ func (op *Op) Walk(fn func(*Op) error) error {
 	if err := op.Validate("#Exec"); err == nil {
 		return op.Get("mount").RangeStruct(func(k string, v *Value) error {
 			if from, err := op.Get("from").Executable(); err == nil {
-				if err := from.Walk(fn); err != nil {
+				if err := from.Walk(ctx, fn); err != nil {
 					return err
 				}
 			}
@@ -75,7 +77,6 @@ func (op *Op) Action() (Action, error) {
 	}
 	for def, action := range actions {
 		if err := op.Validate(def); err == nil {
-			op.v.Debugf("OP MATCH: %s", def)
 			return action, nil
 		}
 	}

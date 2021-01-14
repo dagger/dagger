@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,8 @@ func TestValidateEmptyValue(t *testing.T) {
 }
 
 func TestLocalScript(t *testing.T) {
+	ctx := context.TODO()
+
 	cc := &Compiler{}
 	src := `[{do: "local", dir: "foo"}]`
 	v, err := cc.Compile("", src)
@@ -28,7 +31,7 @@ func TestLocalScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := 0
-	err = s.Walk(func(op *Op) error {
+	err = s.Walk(ctx, func(op *Op) error {
 		n++
 		return nil
 	})
@@ -41,6 +44,8 @@ func TestLocalScript(t *testing.T) {
 }
 
 func TestWalkBootScript(t *testing.T) {
+	ctx := context.TODO()
+
 	cc := &Compiler{}
 	cfg, err := cc.Compile("clientconfig.cue", defaultBootScript)
 	if err != nil {
@@ -50,7 +55,7 @@ func TestWalkBootScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dirs, err := script.LocalDirs()
+	dirs, err := script.LocalDirs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +69,8 @@ func TestWalkBootScript(t *testing.T) {
 
 func TestWalkBiggerScript(t *testing.T) {
 	t.Skip("FIXME")
+
+	ctx := context.TODO()
 	cc := &Compiler{}
 	script, err := cc.CompileScript("boot.cue", `
 [
@@ -102,7 +109,7 @@ func TestWalkBiggerScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dirs, err := script.LocalDirs()
+	dirs, err := script.LocalDirs(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
