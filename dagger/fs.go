@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"context"
+	"os"
 	"path"
 
 	"github.com/moby/buildkit/client/llb"
@@ -47,6 +48,12 @@ func (fs FS) ReadFile(ctx context.Context, filename string) ([]byte, error) {
 	if err := (&fs).solve(ctx); err != nil {
 		return nil, err
 	}
+	// NOTE: llb.Scratch is represented by a `nil` reference. If solve result is
+	// Scratch, then `fs.output` is `nil`.
+	if fs.output == nil {
+		return nil, os.ErrNotExist
+	}
+
 	return fs.output.ReadFile(ctx, bkgw.ReadRequest{Filename: filename})
 }
 
@@ -54,6 +61,12 @@ func (fs FS) ReadDir(ctx context.Context, dir string) ([]Stat, error) {
 	// Lazy solve
 	if err := (&fs).solve(ctx); err != nil {
 		return nil, err
+	}
+
+	// NOTE: llb.Scratch is represented by a `nil` reference. If solve result is
+	// Scratch, then `fs.output` is `nil`.
+	if fs.output == nil {
+		return []Stat{}, nil
 	}
 	st, err := fs.output.ReadDir(ctx, bkgw.ReadDirRequest{
 		Path: dir,
