@@ -9,6 +9,10 @@ generate:
 dagger: generate
 	go build -o ./cmd/dagger/ ./cmd/dagger/
 
+.PHONY: test
+test:
+	go test -v ./...
+
 .PHONY: cuefmt
 cuefmt:
 	@(cd ./dagger && cue fmt -s ./... && cue trim -s ./...)
