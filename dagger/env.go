@@ -3,7 +3,6 @@ package dagger
 import (
 	"context"
 	"os"
-	"sync"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -44,7 +43,7 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 	if err != nil {
 		return nil, errors.Wrap(err, "compile boot script")
 	}
-	bootfs, err := boot.Execute(ctx, s.Scratch(), Discard())
+	bootfs, err := boot.Execute(ctx, s.Scratch(), nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "execute boot script")
 	}
@@ -82,7 +81,7 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 
 // Compute missing values in env configuration, and write them to state.
 func (env *Env) Compute(ctx context.Context) error {
-	output, err := env.Walk(ctx, func(ctx context.Context, c *Component, out Fillable) error {
+	output, err := env.Walk(ctx, func(ctx context.Context, c *Component, out *Fillable) error {
 		lg := log.Ctx(ctx)
 
 		lg.
@@ -120,7 +119,7 @@ func (env *Env) Export(fs FS) (FS, error) {
 	return fs, nil
 }
 
-type EnvWalkFunc func(context.Context, *Component, Fillable) error
+type EnvWalkFunc func(context.Context, *Component, *Fillable) error
 
 // Walk components and return any computed values
 func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
@@ -144,34 +143,36 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		return nil, err
 	}
 
-	l := sync.Mutex{}
-
 	// Cueflow config
 	flowCfg := &cueflow.Config{
 		UpdateFunc: func(c *cueflow.Controller, t *cueflow.Task) error {
-			l.Lock()
-			defer l.Unlock()
-
 			if t == nil {
 				return nil
 			}
 
+			env.cc.Lock()
 			lg := lg.
 				With().
 				Str("path", t.Path().String()).
 				Str("state", t.State().String()).
 				Logger()
+			env.cc.Unlock()
 
 			lg.Debug().Msg("cueflow task")
+			env.cc.Lock()
 			if t.State() != cueflow.Terminated {
+				env.cc.Unlock()
 				return nil
 			}
+			env.cc.Unlock()
 			lg.Debug().Msg("cueflow task: filling result")
 			// Merge task value into output
 			var err error
 			// FIXME: does cueflow.Task.Value() contain only filled values,
 			// or base + filled?
+			env.cc.Lock()
 			out, err = out.MergePath(t.Value(), t.Path())
+			env.cc.Unlock()
 			if err != nil {
 				return err
 			}
@@ -180,9 +181,6 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	}
 	// Cueflow match func
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
-		l.Lock()
-		defer l.Unlock()
-
 		lg := lg.
 			With().
 			Str("path", v.Path().String()).
@@ -200,10 +198,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			return nil, err
 		}
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
-			l.Lock()
-			defer l.Unlock()
-
-			return fn(ctx, c, t)
+			return fn(ctx, c, NewFillable(env.cc, t))
 		}), nil
 	}
 	// Orchestrate execution with cueflow

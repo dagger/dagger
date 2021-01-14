@@ -30,7 +30,7 @@ func (mnt *Mount) LLB(ctx context.Context, s Solver) (llb.RunOption, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "from")
 	}
-	fromFS, err := from.Execute(ctx, s.Scratch(), Discard())
+	fromFS, err := from.Execute(ctx, s.Scratch(), nil)
 	if err != nil {
 		return nil, err
 	}

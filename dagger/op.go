@@ -14,7 +14,7 @@ type Op struct {
 	v *Value
 }
 
-func (op *Op) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	action, err := op.Action()
 	if err != nil {
 		return fs, err
@@ -50,7 +50,7 @@ func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
 	return fn(op)
 }
 
-type Action func(context.Context, FS, Fillable) (FS, error)
+type Action func(context.Context, FS, *Fillable) (FS, error)
 
 func (op *Op) Action() (Action, error) {
 	// An empty struct is allowed as a no-op, to be
@@ -88,7 +88,7 @@ func (op *Op) Validate(defs ...string) error {
 	return op.v.Validate(defs...)
 }
 
-func (op *Op) Copy(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Copy(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	// Decode copy options
 	src, err := op.Get("src").String()
 	if err != nil {
@@ -103,7 +103,7 @@ func (op *Op) Copy(ctx context.Context, fs FS, out Fillable) (FS, error) {
 		return fs, errors.Wrap(err, "from")
 	}
 	// Compute source component or script, discarding fs writes & output value
-	fromFS, err := from.Execute(ctx, fs.Solver().Scratch(), Discard())
+	fromFS, err := from.Execute(ctx, fs.Solver().Scratch(), nil)
 	if err != nil {
 		return fs, err
 	}
@@ -123,10 +123,10 @@ func (op *Op) Copy(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	}), nil // lazy solve
 }
 
-func (op *Op) Nothing(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Nothing(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	return fs, nil
 }
-func (op *Op) Local(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Local(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	dir, err := op.Get("dir").String()
 	if err != nil {
 		return fs, err
@@ -138,7 +138,7 @@ func (op *Op) Local(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	return fs.Set(llb.Local(dir, llb.FollowPaths(include))), nil // lazy solve
 }
 
-func (op *Op) Exec(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Exec(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
@@ -187,7 +187,7 @@ func (op *Op) Exec(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	}), nil // lazy solve
 }
 
-func (op *Op) Export(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Export(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	source, err := op.Get("source").String()
 	if err != nil {
 		return fs, err
@@ -219,26 +219,26 @@ func (op *Op) Export(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	return fs, nil
 }
 
-func (op *Op) Load(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) Load(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	from, err := op.Get("from").Executable()
 	if err != nil {
 		return fs, errors.Wrap(err, "load")
 	}
-	fromFS, err := from.Execute(ctx, fs.Solver().Scratch(), Discard())
+	fromFS, err := from.Execute(ctx, fs.Solver().Scratch(), nil)
 	if err != nil {
 		return fs, errors.Wrap(err, "load: compute source")
 	}
 	return fs.Set(fromFS.LLB()), nil
 }
 
-func (op *Op) FetchContainer(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) FetchContainer(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	ref, err := op.Get("ref").String()
 	if err != nil {
 		return fs, err
 	}
 	return fs.Set(llb.Image(ref)), nil
 }
-func (op *Op) FetchGit(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (op *Op) FetchGit(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	remote, err := op.Get("remote").String()
 	if err != nil {
 		return fs, err

@@ -33,15 +33,10 @@ func (v *Value) Unlock() {
 }
 
 func (v *Value) Lookup(path ...string) *Value {
-	v.Lock()
-	defer v.Unlock()
-
 	return v.Wrap(v.Unwrap().LookupPath(cueStringsToCuePath(path...)))
 }
 
 func (v *Value) LookupPath(p cue.Path) *Value {
-	v.Lock()
-	defer v.Unlock()
 	return v.Wrap(v.Unwrap().LookupPath(p))
 }
 
