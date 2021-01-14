@@ -22,3 +22,10 @@ lint: generate cuefmt
 	golangci-lint run
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep gen.go | cut -d ' ' -f3 | tee /dev/stderr)"
+
+.PHONY: integration
+integration: dagger
+	# Self-diagnostics
+	./examples/tests/test-test.sh 2>/dev/null
+	# Actual integration tests
+	./examples/tests/test.sh all
