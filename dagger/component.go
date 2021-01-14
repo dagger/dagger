@@ -67,10 +67,10 @@ func (c *Component) Execute(ctx context.Context, fs FS, out Fillable) (FS, error
 	return script.Execute(ctx, fs, out)
 }
 
-func (c *Component) Walk(fn func(*Op) error) error {
+func (c *Component) Walk(ctx context.Context, fn func(*Op) error) error {
 	script, err := c.ComputeScript()
 	if err != nil {
 		return err
 	}
-	return script.Walk(fn)
+	return script.Walk(ctx, fn)
 }

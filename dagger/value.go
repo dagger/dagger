@@ -319,12 +319,6 @@ func (v *Value) Compiler() *Compiler {
 	return v.cc
 }
 
-func (v *Value) Debugf(msg string, args ...interface{}) {
-	prefix := v.Path().String()
-	args = append([]interface{}{prefix}, args...)
-	debugf("%s: "+msg, args...)
-}
-
 func (v *Value) Wrap(v2 cue.Value) *Value {
 	return wrapValue(v2, v.inst, v.cc)
 }

@@ -1,10 +1,9 @@
 package dagger
 
 import (
-	"fmt"
-
 	"cuelang.org/go/cue"
 	cueerrors "cuelang.org/go/cue/errors"
+	"github.com/pkg/errors"
 )
 
 // Cue spec validator
@@ -18,8 +17,7 @@ func (s Spec) Validate(v *Value, defpath string) (err error) {
 	// FIXME: there is probably a cleaner way to do this.
 	defer func() {
 		if err != nil {
-			//debugf("ERROR while validating %v against %v err=%q", v, defpath, err)
-			err = fmt.Errorf("%s", cueerrors.Details(err, nil))
+			err = errors.New(cueerrors.Details(err, nil))
 		}
 	}()
 

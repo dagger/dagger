@@ -11,6 +11,7 @@ import (
 	cueerrors "cuelang.org/go/cue/errors"
 	cueload "cuelang.org/go/cue/load"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 // Polyfill for a cue runtime
@@ -66,8 +67,8 @@ func (cc *Compiler) CompileScript(name string, src interface{}) (*Script, error)
 
 // Build a cue configuration tree from the files in fs.
 func (cc *Compiler) Build(ctx context.Context, fs FS, args ...string) (*Value, error) {
-	debugf("Compiler.Build")
-	defer debugf("COMPLETE: Compiler.Build")
+	lg := log.Ctx(ctx)
+
 	// The CUE overlay needs to be prefixed by a non-conflicting path with the
 	// local filesystem, otherwise Cue will merge the Overlay with whatever Cue
 	// files it finds locally.
@@ -80,7 +81,7 @@ func (cc *Compiler) Build(ctx context.Context, fs FS, args ...string) (*Value, e
 	buildArgs := args
 
 	err := fs.Walk(ctx, func(p string, f Stat) error {
-		debugf("  Compiler.Build: processing %q", p)
+		lg.Debug().Str("path", p).Msg("Compiler.Build: processing")
 		if f.IsDir() {
 			return nil
 		}

@@ -1,10 +1,13 @@
 package dagger
 
 import (
+	"context"
 	"testing"
 )
 
 func TestLocalMatch(t *testing.T) {
+	ctx := context.TODO()
+
 	cc := &Compiler{}
 	src := `do: "local", dir: "foo"`
 	v, err := cc.Compile("", src)
@@ -16,7 +19,7 @@ func TestLocalMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := 0
-	err = op.Walk(func(op *Op) error {
+	err = op.Walk(ctx, func(op *Op) error {
 		n++
 		return nil
 	})
@@ -29,6 +32,8 @@ func TestLocalMatch(t *testing.T) {
 }
 
 func TestCopyMatch(t *testing.T) {
+	ctx := context.TODO()
+
 	cc := &Compiler{}
 	src := `do: "copy", from: [{do: "local", dir: "foo"}]`
 	v, err := cc.Compile("", src)
@@ -43,7 +48,7 @@ func TestCopyMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := 0
-	err = op.Walk(func(op *Op) error {
+	err = op.Walk(ctx, func(op *Op) error {
 		n++
 		return nil
 	})

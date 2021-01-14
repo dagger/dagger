@@ -11,6 +11,8 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rs/zerolog/log"
+
 	// Cue
 	"cuelang.org/go/cue"
 
@@ -80,12 +82,12 @@ func NewClient(ctx context.Context, host, boot, bootdir string) (*Client, error)
 	}, nil
 }
 
-func (c *Client) LocalDirs() ([]string, error) {
+func (c *Client) LocalDirs(ctx context.Context) ([]string, error) {
 	boot, err := c.BootScript()
 	if err != nil {
 		return nil, err
 	}
-	return boot.LocalDirs()
+	return boot.LocalDirs(ctx)
 }
 
 func (c *Client) BootScript() (*Script, error) {
@@ -102,6 +104,8 @@ func (c *Client) BootScript() (*Script, error) {
 }
 
 func (c *Client) Compute(ctx context.Context) (*Value, error) {
+	lg := log.Ctx(ctx)
+
 	cc := &Compiler{}
 	out, err := cc.EmptyStruct()
 	if err != nil {
@@ -140,7 +144,7 @@ func (c *Client) Compute(ctx context.Context) (*Value, error) {
 		})
 
 		eg.Go(func() error {
-			return c.dockerprintfn(dispCtx, eventsDockerPrint, os.Stderr)
+			return c.dockerprintfn(dispCtx, eventsDockerPrint, lg)
 		})
 	} else {
 		eg.Go(func() error {
@@ -157,6 +161,8 @@ func (c *Client) Compute(ctx context.Context) (*Value, error) {
 }
 
 func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+	lg := log.Ctx(ctx)
+
 	boot, err := c.BootScript()
 	if err != nil {
 		return errors.Wrap(err, "assemble boot script")
@@ -165,7 +171,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 	if err != nil {
 		return errors.Wrap(err, "serialize boot script")
 	}
-	debugf("client: assembled boot script: %s\n", bootSource)
+	lg.Debug().Bytes("bootSource", bootSource).Msg("assembled boot script")
 	// Setup solve options
 	opts := bk.SolveOpt{
 		FrontendAttrs: map[string]string{
@@ -184,7 +190,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 		},
 	}
 	// Connect local dirs
-	localdirs, err := c.LocalDirs()
+	localdirs, err := c.LocalDirs(ctx)
 	if err != nil {
 		return errors.Wrap(err, "connect local dirs")
 	}
@@ -199,14 +205,19 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 	}
 	for k, v := range resp.ExporterResponse {
 		// FIXME consume exporter response
-		fmt.Printf("exporter response: %s=%s\n", k, v)
+		lg.
+			Debug().
+			Str("key", k).
+			Str("value", v).
+			Msg("exporter response")
 	}
 	return nil
 }
 
 // Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(_ context.Context, r io.Reader, out *Value) error {
-	defer debugf("outputfn complete")
+func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value) error {
+	lg := log.Ctx(ctx)
+
 	tr := tar.NewReader(r)
 	for {
 		h, err := tr.Next()
@@ -216,11 +227,17 @@ func (c *Client) outputfn(_ context.Context, r io.Reader, out *Value) error {
 		if err != nil {
 			return errors.Wrap(err, "read tar stream")
 		}
+
+		lg := lg.
+			With().
+			Str("file", h.Name).
+			Logger()
+
 		if !strings.HasSuffix(h.Name, ".cue") {
-			debugf("skipping non-cue file from exporter tar stream: %s", h.Name)
+			lg.Debug().Msg("skipping non-cue file from exporter tar stream")
 			continue
 		}
-		debugf("outputfn: compiling & merging %q", h.Name)
+		lg.Debug().Msg("outputfn: compiling & merging")
 
 		cc := out.Compiler()
 		v, err := cc.Compile(h.Name, tr)
@@ -230,7 +247,6 @@ func (c *Client) outputfn(_ context.Context, r io.Reader, out *Value) error {
 		if err := out.Fill(v); err != nil {
 			return errors.Wrap(err, h.Name)
 		}
-		debugf("outputfn: DONE: compiling & merging %q", h.Name)
 	}
 	return nil
 }
@@ -254,7 +270,7 @@ func (n Node) ComponentPath() cue.Path {
 	return cue.MakePath(parts...)
 }
 
-func (n Node) Logf(msg string, args ...interface{}) {
+func (n Node) Logf(ctx context.Context, msg string, args ...interface{}) {
 	componentPath := n.ComponentPath().String()
 	args = append([]interface{}{componentPath}, args...)
 	if msg != "" && !strings.HasSuffix(msg, "\n") {
@@ -263,34 +279,41 @@ func (n Node) Logf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "[%s] "+msg, args...)
 }
 
-func (n Node) LogStream(nStream int, data []byte) {
-	var stream string
+func (n Node) LogStream(ctx context.Context, nStream int, data []byte) {
+	lg := log.
+		Ctx(ctx).
+		With().
+		Str("path", n.ComponentPath().String()).
+		Logger()
+
 	switch nStream {
 	case 1:
-		stream = "stdout"
+		lg = lg.With().Str("stream", "stdout").Logger()
 	case 2:
-		stream = "stderr"
+		lg = lg.With().Str("stream", "stderr").Logger()
 	default:
-		stream = fmt.Sprintf("%d", nStream)
+		lg = lg.With().Str("stream", fmt.Sprintf("%d", nStream)).Logger()
 	}
-	// FIXME: use bufio reader?
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		n.Logf("[%s] %s", stream, line)
-	}
+
+	lg.Debug().Msg(string(data))
 }
 
-func (n Node) LogError(errmsg string) {
-	n.Logf("ERROR: %s", bkCleanError(errmsg))
+func (n Node) LogError(ctx context.Context, errmsg string) {
+	log.
+		Ctx(ctx).
+		Error().
+		Str("path", n.ComponentPath().String()).
+		Msg(bkCleanError(errmsg))
 }
 
 func (c *Client) printfn(ctx context.Context, ch chan *bk.SolveStatus) error {
+	lg := log.Ctx(ctx)
+
 	// Node status mapped to buildkit vertex digest
 	nodesByDigest := map[string]*Node{}
 	// Node status mapped to cue path
 	nodesByPath := map[string]*Node{}
 
-	defer debugf("printfn complete")
 	for {
 		select {
 		case <-ctx.Done():
@@ -299,11 +322,13 @@ func (c *Client) printfn(ctx context.Context, ch chan *bk.SolveStatus) error {
 			if !ok {
 				return nil
 			}
-			debugf("status event: vertexes:%d statuses:%d logs:%d\n",
-				len(status.Vertexes),
-				len(status.Statuses),
-				len(status.Logs),
-			)
+			lg.
+				Debug().
+				Int("vertexes", len(status.Vertexes)).
+				Int("statuses", len(status.Statuses)).
+				Int("logs", len(status.Logs)).
+				Msg("status event")
+
 			for _, v := range status.Vertexes {
 				// FIXME: insert raw buildkit telemetry here (ie for debugging, etc.)
 
@@ -320,12 +345,12 @@ func (c *Client) printfn(ctx context.Context, ch chan *bk.SolveStatus) error {
 				nodesByPath[n.Path.String()] = n
 				nodesByDigest[n.Digest.String()] = n
 				if n.Error != "" {
-					n.LogError(n.Error)
+					n.LogError(ctx, n.Error)
 				}
 			}
 			for _, log := range status.Logs {
 				if n, ok := nodesByDigest[log.Vertex.String()]; ok {
-					n.LogStream(log.Stream, log.Data)
+					n.LogStream(ctx, log.Stream, log.Data)
 				}
 			}
 			// debugJSON(status)
@@ -351,7 +376,6 @@ func bkCleanError(msg string) string {
 }
 
 func (c *Client) dockerprintfn(ctx context.Context, ch chan *bk.SolveStatus, out io.Writer) error {
-	defer debugf("dockerprintfn complete")
 	var cons console.Console
 	// FIXME: use smarter writer from blr
 	return progressui.DisplaySolveStatus(ctx, "", cons, out, ch)

@@ -7,7 +7,7 @@ import (
 // Implemented by Component, Script, Op
 type Executable interface {
 	Execute(context.Context, FS, Fillable) (FS, error)
-	Walk(func(*Op) error) error
+	Walk(context.Context, func(*Op) error) error
 }
 
 // Something which can be filled in-place with a cue value

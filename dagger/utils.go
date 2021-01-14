@@ -3,24 +3,14 @@ package dagger
 import (
 	"crypto/rand"
 	"fmt"
-	"os"
-	"strings"
 
 	"cuelang.org/go/cue"
 	cueerrors "cuelang.org/go/cue/errors"
+	"github.com/pkg/errors"
 )
 
 func cueErr(err error) error {
-	return fmt.Errorf("%s", cueerrors.Details(err, &cueerrors.Config{}))
-}
-
-func debugf(msg string, args ...interface{}) {
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	if os.Getenv("DEBUG") != "" {
-		fmt.Fprintf(os.Stderr, msg, args...)
-	}
+	return errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 }
 
 func randomID(size int) (string, error) {

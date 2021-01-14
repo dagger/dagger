@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"context"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func TestValidateSimpleComponent(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := 0
-	if err := s.Walk(func(op *Op) error {
+	if err := s.Walk(context.TODO(), func(op *Op) error {
 		n++
 		return nil
 	}); err != nil {

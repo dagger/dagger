@@ -8,6 +8,7 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 type Env struct {
@@ -29,7 +30,14 @@ type Env struct {
 
 // Initialize a new environment
 func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, error) {
-	debugf("NewEnv(boot=%q input=%q)", bootsrc, inputsrc)
+	lg := log.Ctx(ctx)
+
+	lg.
+		Debug().
+		Str("boot", bootsrc).
+		Str("input", inputsrc).
+		Msg("New Env")
+
 	cc := &Compiler{}
 	// 1. Compile & execute boot script
 	boot, err := cc.CompileScript("boot.cue", bootsrc)
@@ -42,13 +50,13 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 	}
 	// 2. load cue files produced by boot script
 	// FIXME: BuildAll() to force all files (no required package..)
-	debugf("building cue configuration from boot state")
+	lg.Debug().Msg("building cue configuration from boot state")
 	base, err := cc.Build(ctx, bootfs)
 	if err != nil {
 		return nil, errors.Wrap(err, "load base config")
 	}
 	// 3. Compile & merge input overlay (user settings, input directories, secrets.)
-	debugf("Loading input overlay")
+	lg.Debug().Msg("loading input overlay")
 	input, err := cc.Compile("input.cue", inputsrc)
 	if err != nil {
 		return nil, err
@@ -58,7 +66,11 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 		return nil, errors.Wrap(err, "merge base & input")
 	}
 
-	debugf("ENV: base=%q input=%q", base.JSON(), input.JSON())
+	lg.
+		Debug().
+		Str("base", base.JSON().String()).
+		Str("input", input.JSON().String()).
+		Msg("ENV")
 
 	return &Env{
 		base:  base,
@@ -70,9 +82,12 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 
 // Compute missing values in env configuration, and write them to state.
 func (env *Env) Compute(ctx context.Context) error {
-	debugf("Computing environment")
-	output, err := env.Walk(ctx, func(c *Component, out Fillable) error {
-		debugf("  [Env.Compute] processing %s", c.Value().Path().String())
+	output, err := env.Walk(ctx, func(ctx context.Context, c *Component, out Fillable) error {
+		lg := log.Ctx(ctx)
+
+		lg.
+			Debug().
+			Msg("[Env.Compute] processing")
 		_, err := c.Compute(ctx, env.s, out)
 		return err
 	})
@@ -99,39 +114,53 @@ func (env *Env) Export(fs FS) (FS, error) {
 	return fs, nil
 }
 
-type EnvWalkFunc func(*Component, Fillable) error
+type EnvWalkFunc func(context.Context, *Component, Fillable) error
 
 // Walk components and return any computed values
 func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
-	debugf("Env.Walk")
-	defer debugf("COMPLETE: Env.Walk")
-	l := sync.Mutex{}
+	lg := log.Ctx(ctx)
+
 	// Cueflow cue instance
 	// FIXME: make this cleaner in *Value by keeping intermediary instances
 	flowInst, err := env.base.CueInst().Fill(env.input.CueInst().Value())
 	if err != nil {
 		return nil, err
 	}
-	debugf("walking: \n----\n%s\n----\n", env.cc.Wrap(flowInst.Value(), flowInst).JSON())
+
+	lg.
+		Debug().
+		Str("value", env.cc.Wrap(flowInst.Value(), flowInst).JSON().String()).
+		Msg("walking")
+
 	// Initialize empty output
 	out, err := env.cc.EmptyStruct()
 	if err != nil {
 		return nil, err
 	}
+
+	l := sync.Mutex{}
+
 	// Cueflow config
 	flowCfg := &cueflow.Config{
 		UpdateFunc: func(c *cueflow.Controller, t *cueflow.Task) error {
 			l.Lock()
 			defer l.Unlock()
-			debugf("compute step")
+
 			if t == nil {
 				return nil
 			}
-			debugf("cueflow task %q: %s", t.Path().String(), t.State().String())
+
+			lg := lg.
+				With().
+				Str("path", t.Path().String()).
+				Str("state", t.State().String()).
+				Logger()
+
+			lg.Debug().Msg("cueflow task")
 			if t.State() != cueflow.Terminated {
 				return nil
 			}
-			debugf("cueflow task %q: filling result", t.Path().String())
+			lg.Debug().Msg("cueflow task: filling result")
 			// Merge task value into output
 			var err error
 			// FIXME: does cueflow.Task.Value() contain only filled values,
@@ -147,7 +176,14 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
 		l.Lock()
 		defer l.Unlock()
-		debugf("Env.Walk: processing %s", v.Path().String())
+
+		lg := lg.
+			With().
+			Str("path", v.Path().String()).
+			Logger()
+		ctx := lg.WithContext(ctx)
+
+		lg.Debug().Msg("Env.Walk: processing")
 		val := env.cc.Wrap(v, flowInst)
 		c, err := val.Component()
 		if os.IsNotExist(err) {
@@ -160,7 +196,8 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 			l.Lock()
 			defer l.Unlock()
-			return fn(c, t)
+
+			return fn(ctx, c, t)
 		}), nil
 	}
 	// Orchestrate execution with cueflow
