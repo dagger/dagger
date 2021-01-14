@@ -82,14 +82,8 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 
 // Compute missing values in env configuration, and write them to state.
 func (env *Env) Compute(ctx context.Context) error {
-	lg := log.Ctx(ctx)
-
-	output, err := env.Walk(ctx, func(c *Component, out Fillable) error {
-		lg := lg.
-			With().
-			Str("path", c.Value().Path().String()).
-			Logger()
-		ctx := lg.WithContext(ctx)
+	output, err := env.Walk(ctx, func(ctx context.Context, c *Component, out Fillable) error {
+		lg := log.Ctx(ctx)
 
 		lg.
 			Debug().
@@ -120,7 +114,7 @@ func (env *Env) Export(fs FS) (FS, error) {
 	return fs, nil
 }
 
-type EnvWalkFunc func(*Component, Fillable) error
+type EnvWalkFunc func(context.Context, *Component, Fillable) error
 
 // Walk components and return any computed values
 func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
@@ -138,7 +132,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		Str("value", env.cc.Wrap(flowInst.Value(), flowInst).JSON().String()).
 		Msg("walking")
 
-		// Initialize empty output
+	// Initialize empty output
 	out, err := env.cc.EmptyStruct()
 	if err != nil {
 		return nil, err
@@ -162,9 +156,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 				Str("state", t.State().String()).
 				Logger()
 
-			lg.
-				Debug().
-				Msg("cueflow task")
+			lg.Debug().Msg("cueflow task")
 			if t.State() != cueflow.Terminated {
 				return nil
 			}
@@ -189,6 +181,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			With().
 			Str("path", v.Path().String()).
 			Logger()
+		ctx := lg.WithContext(ctx)
 
 		lg.Debug().Msg("Env.Walk: processing")
 		val := env.cc.Wrap(v, flowInst)
@@ -204,7 +197,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			l.Lock()
 			defer l.Unlock()
 
-			return fn(c, t)
+			return fn(ctx, c, t)
 		}), nil
 	}
 	// Orchestrate execution with cueflow
