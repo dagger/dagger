@@ -27,8 +27,10 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(appcontext.Context())
 
-		// FIXME: boot and bootdir should be config fields, not args
-		c, err := dagger.NewClient(ctx, "", "", args[0])
+		c, err := dagger.NewClient(ctx, dagger.ClientConfig{
+			Input:   viper.GetString("input"),
+			BootDir: args[0],
+		})
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
@@ -42,4 +44,12 @@ var computeCmd = &cobra.Command{
 		lg.Info().Msg("processing output")
 		fmt.Println(output.JSON())
 	},
+}
+
+func init() {
+	computeCmd.Flags().String("input", "", "Input overlay")
+
+	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
+		panic(err)
+	}
 }

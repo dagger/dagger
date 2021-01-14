@@ -50,34 +50,37 @@ type Client struct {
 	c *bk.Client
 
 	localdirs map[string]string
-	boot      string
-	bootdir   string
-	input     string
+	cfg       ClientConfig
 }
 
-func NewClient(ctx context.Context, host, boot, bootdir string) (*Client, error) {
+type ClientConfig struct {
+	Host    string
+	Boot    string
+	BootDir string
+	Input   string
+}
+
+func NewClient(ctx context.Context, cfg ClientConfig) (*Client, error) {
 	// buildkit client
-	if host == "" {
-		host = os.Getenv("BUILDKIT_HOST")
+	if cfg.Host == "" {
+		cfg.Host = os.Getenv("BUILDKIT_HOST")
 	}
-	if host == "" {
-		host = defaultBuildkitHost
+	if cfg.Host == "" {
+		cfg.Host = defaultBuildkitHost
 	}
-	if boot == "" {
-		boot = defaultBootScript
+	if cfg.Boot == "" {
+		cfg.Boot = defaultBootScript
 	}
-	if bootdir == "" {
-		bootdir = defaultBootDir
+	if cfg.BootDir == "" {
+		cfg.BootDir = defaultBootDir
 	}
-	c, err := bk.New(ctx, host)
+	c, err := bk.New(ctx, cfg.Host)
 	if err != nil {
 		return nil, errors.Wrap(err, "buildkit client")
 	}
 	return &Client{
 		c:         c,
-		boot:      boot,
-		bootdir:   bootdir,
-		input:     `{}`,
+		cfg:       cfg,
 		localdirs: map[string]string{},
 	}, nil
 }
@@ -92,11 +95,11 @@ func (c *Client) LocalDirs(ctx context.Context) ([]string, error) {
 
 func (c *Client) BootScript() (*Script, error) {
 	cc := &Compiler{}
-	src, err := cc.Compile("boot.cue", c.boot)
+	src, err := cc.Compile("boot.cue", c.cfg.Boot)
 	if err != nil {
 		return nil, errors.Wrap(err, "compile")
 	}
-	src, err = src.MergeTarget(c.bootdir, "bootdir")
+	src, err = src.MergeTarget(c.cfg.BootDir, "bootdir")
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +178,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 	// Setup solve options
 	opts := bk.SolveOpt{
 		FrontendAttrs: map[string]string{
-			bkInputKey: c.input,
+			bkInputKey: c.cfg.Input,
 			bkBootKey:  string(bootSource),
 		},
 		LocalDirs: map[string]string{},
