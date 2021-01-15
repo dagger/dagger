@@ -30,6 +30,7 @@ func (s Solver) Scratch() FS {
 	return s.FS(llb.Scratch())
 }
 
+// Solve will block until the state is solved and returns a Reference.
 func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error) {
 	// marshal llb
 	def, err := st.Marshal(ctx, llb.LinuxAmd64)
@@ -37,7 +38,14 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		return nil, err
 	}
 	// call solve
-	res, err := s.c.Solve(ctx, bkgw.SolveRequest{Definition: def.ToPB()})
+	res, err := s.c.Solve(ctx, bkgw.SolveRequest{
+		Definition: def.ToPB(),
+
+		// makes Solve() to block until LLB graph is solved. otherwise it will
+		// return result (that you can for example use for next build) that
+		// will be evaluated on export or if you access files on it.
+		Evaluate: true,
+	})
 	if err != nil {
 		return nil, err
 	}
