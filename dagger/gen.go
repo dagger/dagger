@@ -81,8 +81,8 @@ package dagger
 }
 
 #Exec: {
-	do: "exec"
-	args: [...string]
+	do:   "exec"
+	args: string | [...string]
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"

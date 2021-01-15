@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -141,17 +142,34 @@ func (op *Op) Local(ctx context.Context, fs FS, out Fillable) (FS, error) {
 func (op *Op) Exec(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	opts := []llb.RunOption{}
 	var cmd struct {
-		Args   []string
 		Env    map[string]string
 		Dir    string
 		Always bool
 	}
-	op.v.Decode(&cmd)
+	if err := op.v.Decode(&cmd); err != nil {
+		return fs, err
+	}
 	// marker for status events
 	// FIXME
 	opts = append(opts, llb.WithCustomName(op.v.Path().String()))
+
 	// args
-	opts = append(opts, llb.Args(cmd.Args))
+	args := op.v.Lookup("args")
+	switch args.Kind() {
+	case cue.StringKind:
+		argString, err := args.String()
+		if err != nil {
+			return fs, err
+		}
+		opts = append(opts, llb.Shlex(argString))
+	default:
+		argList := []string{}
+		if err := args.Decode(&argList); err != nil {
+			return fs, err
+		}
+		opts = append(opts, llb.Args(argList))
+	}
+
 	// env
 	for k, v := range cmd.Env {
 		opts = append(opts, llb.AddEnv(k, v))

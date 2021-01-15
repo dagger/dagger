@@ -90,6 +90,8 @@ test::exec(){
   #    "$dagger" compute  "$d"/exec/dir/doesnotexist
   #test::one "Exec: valid dir" --exit=0 --stdout={} \
   #    "$dagger" compute  "$d"/exec/dir/exist
+  test::one "Exec: args" --exit=0 \
+      "$dagger" compute "$d"/exec/args
 }
 
 test::all(){
