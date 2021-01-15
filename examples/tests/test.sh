@@ -91,6 +91,35 @@ test::exec(){
   #    "$dagger" compute  "$d"/exec/dir/exist
 }
 
+test::export(){
+  # XXX https://github.com/blocklayerhq/dagger/issues/36
+  #test::one "Export: number" --exit=0 --stdout='{"test": -123.5}' \
+  #    "$dagger" compute "$d"/export/number
+  #test::one "Export: yaml" --exit=0 --stdout='XXXXXX' \
+  #    "$dagger" compute "$d"/export/yaml
+  # XXX https://github.com/blocklayerhq/dagger/issues/35
+  #test::one "Export: bool" --exit=0 --stdout='{"test": false}' \
+  #    "$dagger" compute "$d"/export/bool
+
+  test::one "Export: json" --exit=0 --stdout='{"test":{"something":"something"}}' \
+      "$dagger" compute "$d"/export/json
+
+  test::one "Export: string" --exit=0 --stdout='{"test":"something"}' \
+      "$dagger" compute "$d"/export/string
+
+  test::one "Export: string with additional constraint success" --exit=0 --stdout='{"test":"something"}' \
+      "$dagger" compute "$d"/export/withvalidation
+
+  test::one "Export: does not pass additional validation" --exit=1 --stdout= \
+      "$dagger" compute "$d"/export/invalid/validation
+
+  test::one "Export: invalid format" --exit=1 --stdout= \
+      "$dagger" compute "$d"/export/invalid/format
+
+  test::one "Export: invalid path" --exit=1 --stdout= \
+      "$dagger" compute "$d"/export/invalid/path
+}
+
 test::all(){
   local dagger="$1"
 
@@ -98,6 +127,7 @@ test::all(){
   test::fetchcontainer "$dagger"
   test::fetchgit "$dagger"
   test::exec "$dagger"
+  test::export "$dagger"
 
   # TODO: exec mounts
   # TODO: copy
