@@ -24,11 +24,11 @@ test::compute(){
       "$dagger" compute "$d"/compute/invalid/struct
   test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{},"realempty":{},"withprops":{}}'  \
       "$dagger" compute "$d"/compute/noop
-  # XXX https://github.com/blocklayerhq/dagger/issues/28
-  #test::one "Compute: unresolved should fail" --exit=1 --stdout=  \
-  #    "$dagger" compute "$d"/compute/invalid/undefined_prop
   test::one "Compute: simple should succeed" --exit=0 --stdout="{}" \
       "$dagger" compute "$d"/compute/simple
+
+  disable test::one "Compute: unresolved should fail (FIXME https://github.com/blocklayerhq/dagger/issues/28)" --exit=1 --stdout=  \
+      "$dagger" compute "$d"/compute/invalid/undefined_prop
 }
 
 test::fetchcontainer(){
@@ -43,11 +43,12 @@ test::fetchcontainer(){
       "$dagger" compute "$d"/fetch-container/nonexistent/tag
   test::one "FetchContainer: non existent container digest" --exit=1 --stdout= \
       "$dagger" compute "$d"/fetch-container/nonexistent/digest
-  # XXX https://github.com/blocklayerhq/dagger/issues/32 - this will fail once cached by buildkit
-  # test::one "FetchContainer: non existent container image with valid digest" --exit=1 --stdout= \
-  #    "$dagger" compute "$d"/fetch-container/nonexistent/image-with-valid-digest
+
   test::one "FetchContainer: valid containers"       --exit=0 \
       "$dagger" compute "$d"/fetch-container/exist
+
+  disable test::one "FetchContainer: non existent container image with valid digest (FIXME https://github.com/blocklayerhq/dagger/issues/32)" --exit=1 --stdout= \
+      "$dagger" compute "$d"/fetch-container/nonexistent/image-with-valid-digest
 }
 
 test::fetchgit(){
@@ -84,23 +85,14 @@ test::exec(){
       "$dagger" compute  "$d"/exec/env/valid
   test::one "Exec: env with overlay" --exit=0 \
       "$dagger" compute --input 'bar: "overlay environment"' "$d"/exec/env/overlay
-  # XXX broken right now: https://github.com/blocklayerhq/dagger/issues/30
-  #test::one "Exec: non existent dir" --exit=0 --stdout={} \
-  #    "$dagger" compute  "$d"/exec/dir/doesnotexist
-  #test::one "Exec: valid dir" --exit=0 --stdout={} \
-  #    "$dagger" compute  "$d"/exec/dir/exist
+
+  disable test::one "Exec: non existent dir (FIXME https://github.com/blocklayerhq/dagger/issues/30)" --exit=0 --stdout={} \
+      "$dagger" compute  "$d"/exec/dir/doesnotexist
+  disable test::one "Exec: valid dir (FIXME https://github.com/blocklayerhq/dagger/issues/30)" --exit=0 --stdout={} \
+      "$dagger" compute  "$d"/exec/dir/exist
 }
 
 test::export(){
-  # XXX https://github.com/blocklayerhq/dagger/issues/36
-  #test::one "Export: number" --exit=0 --stdout='{"test": -123.5}' \
-  #    "$dagger" compute "$d"/export/number
-  #test::one "Export: yaml" --exit=0 --stdout='XXXXXX' \
-  #    "$dagger" compute "$d"/export/yaml
-  # XXX https://github.com/blocklayerhq/dagger/issues/35
-  #test::one "Export: bool" --exit=0 --stdout='{"test": false}' \
-  #    "$dagger" compute "$d"/export/bool
-
   test::one "Export: json" --exit=0 --stdout='{"test":{"something":"something"}}' \
       "$dagger" compute "$d"/export/json
 
@@ -118,22 +110,44 @@ test::export(){
 
   test::one "Export: invalid path" --exit=1 --stdout= \
       "$dagger" compute "$d"/export/invalid/path
+
+  disable test::one "Export: number (FIXME https://github.com/blocklayerhq/dagger/issues/36)" --exit=0 --stdout='{"test": -123.5}' \
+      "$dagger" compute "$d"/export/number
+  disable test::one "Export: yaml (FIXME https://github.com/blocklayerhq/dagger/issues/36)" --exit=0 --stdout='XXXXXX' \
+      "$dagger" compute "$d"/export/yaml
+  disable test::one "Export: bool (FIXME https://github.com/blocklayerhq/dagger/issues/35)" --exit=0 --stdout='{"test": false}' \
+      "$dagger" compute "$d"/export/bool
 }
+
+test::copy(){
+  test::one "Copy: valid components" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
+      "$dagger" compute "$d"/copy/valid/component
+  test::one "Copy: valid script" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
+      "$dagger" compute "$d"/copy/valid/component
+
+  disable test::one "Copy: invalid caching (FIXME https://github.com/blocklayerhq/dagger/issues/44)" --exit=1 --stdout= \
+      "$dagger" compute "$d"/copy/invalid/cache
+}
+
+test::local(){
+  disable "" "There are no local tests right now (the feature is possibly not functioning at all: see https://github.com/blocklayerhq/dagger/issues/41)"
+}
+
 
 test::all(){
   local dagger="$1"
+
+  test::local "$dagger"
 
   test::compute "$dagger"
   test::fetchcontainer "$dagger"
   test::fetchgit "$dagger"
   test::exec "$dagger"
   test::export "$dagger"
+  test::copy "$dagger"
 
   # TODO: exec mounts
-  # TODO: copy
   # TODO: load
-  # TODO: local
-  # TODO: export
 }
 
 case "${1:-all}" in
