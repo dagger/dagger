@@ -82,9 +82,8 @@ test::exec(){
       "$dagger" compute "$d"/exec/env/invalid
   test::one "Exec: env valid" --exit=0 --stdout={} \
       "$dagger" compute  "$d"/exec/env/valid
-  # XXX overlays are not wired yet
-  # test::one "Exec: env with overlay" --exit=0 --stdout={} \
-  #    "$dagger" compute --input-string 'bar: "overlay environment"' "$d"/exec/env/overlay
+  test::one "Exec: env with overlay" --exit=0 \
+      "$dagger" compute --input 'bar: "overlay environment"' "$d"/exec/env/overlay
   # XXX broken right now: https://github.com/blocklayerhq/dagger/issues/30
   #test::one "Exec: non existent dir" --exit=0 --stdout={} \
   #    "$dagger" compute  "$d"/exec/dir/doesnotexist
