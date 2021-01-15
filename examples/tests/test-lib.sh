@@ -126,3 +126,7 @@ test::one(){
   [ "$ret" != 0 ] || logger::info " -> Success"
   return "$ret"
 }
+
+disable(){
+  logger::warning "Test \"$2\" has been disabled."
+}
