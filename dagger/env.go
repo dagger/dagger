@@ -88,8 +88,14 @@ func (env *Env) Compute(ctx context.Context) error {
 		lg.
 			Debug().
 			Msg("[Env.Compute] processing")
-		_, err := c.Compute(ctx, env.s, out)
-		return err
+		if _, err := c.Compute(ctx, env.s, out); err != nil {
+			lg.
+				Error().
+				Err(err).
+				Msg("component failed")
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return err
