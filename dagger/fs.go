@@ -105,10 +105,6 @@ func (fs FS) walk(ctx context.Context, p string, fn WalkFunc) error {
 type WalkFunc func(string, Stat) error
 
 func (fs FS) Walk(ctx context.Context, fn WalkFunc) error {
-	// Lazy solve
-	if err := (&fs).solve(ctx); err != nil {
-		return err
-	}
 	return fs.walk(ctx, "/", fn)
 }
 

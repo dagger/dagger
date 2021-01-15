@@ -57,7 +57,10 @@ func (c *Component) Compute(ctx context.Context, s Solver, out Fillable) (FS, er
 	if err != nil {
 		return fs, err
 	}
-	_, err = fs.ReadDir(ctx, "/")
+
+	// Force a `Solve()` in case it hasn't been called earlier.
+	// If the FS is already solved, this is a noop.
+	_, err = fs.Solve(ctx)
 	return fs, err
 }
 
