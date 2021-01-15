@@ -17,8 +17,10 @@ jobs:
           go-version: 1.14.2
         id: go
 
-      - name: Insatall Dependencies
+      - name: Install Dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
           curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
           curl -L https://github.com/cuelang/cue/releases/download/v0.3.0-alpha6/cue_0.3.0-alpha6_Linux_x86_64.tar.gz | sudo tar zxf - -C /usr/local/bin
 
@@ -32,6 +34,14 @@ jobs:
       - name: Lint
         run: |
           make lint
+
+      - name: Start buildkit
+        run: |
+          docker run -d --name buildkitd --privileged moby/buildkit:v0.8.1@sha256:ecd5ad4910c322cad6995f8a1a0805d9da4b09ed4aaef40627f5bcb8ebf74068
+
+      - name: Integration test
+        run: |
+          make integration
 
       - name: Test
         run: |
