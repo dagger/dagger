@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"context"
+	"os"
 )
 
 type Component struct {
@@ -37,7 +38,11 @@ func (c *Component) Validate() error {
 
 // Return this component's compute script.
 func (c *Component) ComputeScript() (*Script, error) {
-	return c.Value().Get("#dagger.compute").Script()
+	v := c.Value().Get("#dagger.compute")
+	if !v.Exists() {
+		return nil, os.ErrNotExist
+	}
+	return v.Script()
 }
 
 // Compute the configuration for this component.
@@ -62,6 +67,10 @@ func (c *Component) Compute(ctx context.Context, s Solver, out Fillable) (FS, er
 func (c *Component) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	script, err := c.ComputeScript()
 	if err != nil {
+		// If the component has no script, then do not fail.
+		if os.IsNotExist(err) {
+			return fs, nil
+		}
 		return fs, err
 	}
 	return script.Execute(ctx, fs, out)

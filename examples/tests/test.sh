@@ -22,9 +22,8 @@ test::compute(){
       "$dagger" compute "$d"/compute/invalid/int
   test::one "Compute: invalid struct should fail" --exit=1 --stdout= \
       "$dagger" compute "$d"/compute/invalid/struct
-  # XXX https://github.com/blocklayerhq/dagger/issues/22
-  #test::one "Compute: noop should succeed" --exit=0 --stdout="{}"  \
-  #    "$dagger" compute "$d"/compute/noop
+  test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{},"realempty":{},"withprops":{}}'  \
+      "$dagger" compute "$d"/compute/noop
   # XXX https://github.com/blocklayerhq/dagger/issues/28
   #test::one "Compute: unresolved should fail" --exit=1 --stdout=  \
   #    "$dagger" compute "$d"/compute/invalid/undefined_prop
