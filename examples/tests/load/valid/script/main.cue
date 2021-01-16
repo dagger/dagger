@@ -1,23 +1,18 @@
 package testing
 
+
 test: {
 	string
 
 	#dagger: {
 		compute: [
 			{
-				do: "fetch-container"
-				ref: "busybox"
-			},
-			{
-				do: "copy"
+				do: "load"
 				from: [{do: "fetch-container", ref: "alpine"}]
-				src: "/etc/issue"
-				dest: "/"
 			},
 			{
 				do: "export"
-				source: "/issue"
+				source: "/etc/issue"
 				format: "string"
 			},
 		]

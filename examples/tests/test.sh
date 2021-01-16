@@ -102,6 +102,9 @@ test::export(){
   test::one "Export: string with additional constraint success" --exit=0 --stdout='{"test":"something"}' \
       "$dagger" compute "$d"/export/withvalidation
 
+  test::one "Export: many concurrent" --exit=0 \
+      "$dagger" compute "$d"/export/concurrency
+
   test::one "Export: does not pass additional validation" --exit=1 --stdout= \
       "$dagger" compute "$d"/export/invalid/validation
 
@@ -122,11 +125,21 @@ test::export(){
 test::copy(){
   test::one "Copy: valid components" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
       "$dagger" compute "$d"/copy/valid/component
-  test::one "Copy: valid script" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
-      "$dagger" compute "$d"/copy/valid/component
+  test::one "Copy: valid script" --exit=0 \
+      "$dagger" compute "$d"/copy/valid/script
 
   disable test::one "Copy: invalid caching (FIXME https://github.com/blocklayerhq/dagger/issues/44)" --exit=1 --stdout= \
       "$dagger" compute "$d"/copy/invalid/cache
+}
+
+test::load(){
+  test::one "Load: valid components" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
+      "$dagger" compute "$d"/load/valid/component
+  test::one "Load: valid script" --exit=0 \
+      "$dagger" compute "$d"/load/valid/script
+
+  test::one "Load: invalid caching (FIXME https://github.com/blocklayerhq/dagger/issues/44)" --exit=1 --stdout= \
+      "$dagger" compute "$d"/load/invalid/cache
 }
 
 test::local(){
@@ -134,20 +147,33 @@ test::local(){
 }
 
 
+test::mount(){
+  disable test::one "Mount: tmpfs (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+      "$dagger" compute "$d"/mount/valid/tmpfs
+
+  disable test::one "Mount: cache (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+      "$dagger" compute "$d"/mount/valid/cache
+
+  disable test::one "Mount: component (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+      "$dagger" compute "$d"/mount/valid/component
+
+  disable test::one "Mount: script (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+      "$dagger" compute "$d"/mount/valid/script
+}
+
 test::all(){
   local dagger="$1"
 
-  test::local "$dagger"
+  test::load "$dagger"
+  test::mount "$dagger"
 
+  test::copy "$dagger"
+  test::local "$dagger"
   test::compute "$dagger"
   test::fetchcontainer "$dagger"
   test::fetchgit "$dagger"
   test::exec "$dagger"
   test::export "$dagger"
-  test::copy "$dagger"
-
-  # TODO: exec mounts
-  # TODO: load
 }
 
 case "${1:-all}" in
