@@ -1,7 +1,5 @@
 package testing
 
-// XXX https://github.com/blocklayerhq/dagger/issues/10 requires that #dagger are nested under https://github.com/blocklayerhq/dagger/issues/21 makes this very hard to verify
-
 busybox1: {
 	#dagger: compute: [
 		{
