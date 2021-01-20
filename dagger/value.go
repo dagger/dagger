@@ -242,10 +242,7 @@ func (v *Value) Validate(defs ...string) error {
 	if len(defs) == 0 {
 		return nil
 	}
-	spec, err := v.Compiler().Spec()
-	if err != nil {
-		return err
-	}
+	spec := v.Compiler().Spec()
 	for _, def := range defs {
 		if err := spec.Validate(v, def); err != nil {
 			return err
@@ -324,11 +321,8 @@ func (v *Value) ScriptOrComponent() (interface{}, error) {
 
 func (v *Value) Op() (*Op, error) {
 	// Merge #Op definition from spec to get default values
-	spec, err := v.Compiler().Spec()
-	if err != nil {
-		return nil, err
-	}
-	v, err = spec.Get("#Op").Merge(v)
+	spec := v.Compiler().Spec()
+	v, err := spec.Get("#Op").Merge(v)
 	if err != nil {
 		return nil, err
 	}
