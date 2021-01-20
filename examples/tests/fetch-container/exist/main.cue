@@ -31,7 +31,7 @@ busybox4: {
 	#dagger: compute: [
 		{
 			do: "fetch-container"
-			ref: "busyboxa@sha256:e2af53705b841ace3ab3a44998663d4251d33ee8a9acaf71b66df4ae01c3bbe7"
+			ref: "busybox@sha256:e2af53705b841ace3ab3a44998663d4251d33ee8a9acaf71b66df4ae01c3bbe7"
 		},
 	]
 }
