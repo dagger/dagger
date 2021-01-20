@@ -3,7 +3,6 @@ package dagger
 import (
 	"context"
 	"os"
-	"sync"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -144,14 +143,9 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		return nil, err
 	}
 
-	l := sync.Mutex{}
-
 	// Cueflow config
 	flowCfg := &cueflow.Config{
 		UpdateFunc: func(c *cueflow.Controller, t *cueflow.Task) error {
-			l.Lock()
-			defer l.Unlock()
-
 			if t == nil {
 				return nil
 			}
@@ -180,9 +174,6 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	}
 	// Cueflow match func
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
-		l.Lock()
-		defer l.Unlock()
-
 		lg := lg.
 			With().
 			Str("path", v.Path().String()).
@@ -200,9 +191,6 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			return nil, err
 		}
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
-			l.Lock()
-			defer l.Unlock()
-
 			return fn(ctx, c, t)
 		}), nil
 	}

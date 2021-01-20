@@ -18,7 +18,7 @@ import (
 // (we call it compiler to avoid confusion with dagger runtime)
 // Use this instead of cue.Runtime
 type Compiler struct {
-	sync.Mutex
+	sync.RWMutex
 	cue.Runtime
 	spec *Spec
 }

@@ -18,31 +18,18 @@ type Value struct {
 	inst *cue.Instance
 }
 
-func (v *Value) Lock() {
-	if v.cc == nil {
-		return
-	}
-	v.cc.Lock()
-}
-
-func (v *Value) Unlock() {
-	if v.cc == nil {
-		return
-	}
-	v.cc.Unlock()
-}
-
 func (v *Value) Lookup(path ...string) *Value {
-	v.Lock()
-	defer v.Unlock()
+	v.cc.RLock()
+	defer v.cc.RUnlock()
 
-	return v.Wrap(v.Unwrap().LookupPath(cueStringsToCuePath(path...)))
+	return v.Wrap(v.Value.LookupPath(cueStringsToCuePath(path...)))
 }
 
 func (v *Value) LookupPath(p cue.Path) *Value {
-	v.Lock()
-	defer v.Unlock()
-	return v.Wrap(v.Unwrap().LookupPath(p))
+	v.cc.RLock()
+	defer v.cc.RUnlock()
+
+	return v.Wrap(v.Value.LookupPath(p))
 }
 
 // FIXME: deprecated by Get()
@@ -150,9 +137,13 @@ func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 		if xval.Compiler() != v.Compiler() {
 			return nil, fmt.Errorf("can't merge values from different compilers")
 		}
-		x = xval.Unwrap()
+		x = xval.Value
 	}
-	result := v.Wrap(v.Unwrap().Fill(x, path...))
+
+	v.cc.Lock()
+	result := v.Wrap(v.Value.Fill(x, path...))
+	v.cc.Unlock()
+
 	return result, result.Validate()
 }
 
@@ -226,8 +217,6 @@ func (v *Value) IsConcreteR() bool {
 // Contrast with cue.Value.MarshalJSON which requires all values
 // to be concrete.
 func (v *Value) JSON() JSON {
-	v.Lock()
-	defer v.Unlock()
 	var out JSON
 	v.Walk(
 		func(v cue.Value) bool {
@@ -267,7 +256,7 @@ func (v *Value) Save(fs FS, filename string) (FS, error) {
 }
 
 func (v *Value) Validate(defs ...string) error {
-	if err := v.Unwrap().Validate(); err != nil {
+	if err := v.Value.Validate(); err != nil {
 		return err
 	}
 	if len(defs) == 0 {
@@ -289,13 +278,14 @@ func (v *Value) Validate(defs ...string) error {
 // This is the only method which changes the value in-place.
 // FIXME this co-exists awkwardly with the rest of Value.
 func (v *Value) Fill(x interface{}) error {
+	v.cc.Lock()
+	defer v.cc.Unlock()
+
 	v.Value = v.Value.Fill(x)
 	return v.Validate()
 }
 
 func (v *Value) Source() ([]byte, error) {
-	v.Lock()
-	defer v.Unlock()
 	return cueformat.Node(v.Eval().Syntax())
 }
 
@@ -313,18 +303,11 @@ func (v *Value) CueInst() *cue.Instance {
 }
 
 func (v *Value) Compiler() *Compiler {
-	//	if v.cc == nil {
-	//		return &Compiler{}
-	//	}
 	return v.cc
 }
 
 func (v *Value) Wrap(v2 cue.Value) *Value {
 	return wrapValue(v2, v.inst, v.cc)
-}
-
-func (v *Value) Unwrap() cue.Value {
-	return v.Value
 }
 
 func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
