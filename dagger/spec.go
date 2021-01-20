@@ -15,7 +15,7 @@ func (s Spec) Validate(v *Value, defpath string) error {
 	// Lookup def by name, eg. "#Script" or "#Copy"
 	// See dagger/spec.cue
 	def := s.root.Get(defpath)
-	if err := def.Fill(v.Value); err != nil {
+	if err := def.Fill(v); err != nil {
 		return errors.New(cueerrors.Details(err, nil))
 	}
 
