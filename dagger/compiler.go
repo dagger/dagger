@@ -18,7 +18,7 @@ import (
 // (we call it compiler to avoid confusion with dagger runtime)
 // Use this instead of cue.Runtime
 type Compiler struct {
-	sync.Mutex
+	sync.RWMutex
 	cue.Runtime
 	spec *Spec
 }
@@ -27,20 +27,19 @@ func (cc *Compiler) Cue() *cue.Runtime {
 	return &(cc.Runtime)
 }
 
-func (cc *Compiler) Spec() (*Spec, error) {
+func (cc *Compiler) Spec() *Spec {
 	if cc.spec != nil {
-		return cc.spec, nil
+		return cc.spec
 	}
 	v, err := cc.Compile("spec.cue", DaggerSpec)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	spec, err := v.Spec()
+	cc.spec, err = v.Spec()
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	cc.spec = spec
-	return spec, nil
+	return cc.spec
 }
 
 // Compile an empty struct
