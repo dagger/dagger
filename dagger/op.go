@@ -202,6 +202,12 @@ func (op *Op) Export(ctx context.Context, fs FS, out Fillable) (FS, error) {
 	}
 	switch format {
 	case "string":
+		log.
+			Ctx(ctx).
+			Debug().
+			Bytes("contents", contents).
+			Msg("exporting string")
+
 		if err := out.Fill(string(contents)); err != nil {
 			return fs, err
 		}
@@ -210,6 +216,13 @@ func (op *Op) Export(ctx context.Context, fs FS, out Fillable) (FS, error) {
 		if err := json.Unmarshal(contents, &o); err != nil {
 			return fs, err
 		}
+
+		log.
+			Ctx(ctx).
+			Debug().
+			Interface("contents", o).
+			Msg("exporting json")
+
 		if err := out.Fill(o); err != nil {
 			return fs, err
 		}
