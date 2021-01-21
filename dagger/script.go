@@ -4,6 +4,11 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
+)
+
+var (
+	ErrAbortExecution = errors.New("execution stopped")
 )
 
 type Script struct {
@@ -25,8 +30,13 @@ func (s *Script) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
 		// If op not concrete, interrupt without error.
 		// This allows gradual resolution:
 		//    compute what you can compute.. leave the rest incomplete.
-		if !v.IsConcreteR() {
-			return nil
+		if err := v.IsConcreteR(); err != nil {
+			log.
+				Ctx(ctx).
+				Warn().
+				Err(err).
+				Msg("script is unspecified, aborting execution")
+			return ErrAbortExecution
 		}
 		op, err := v.Op()
 		if err != nil {
@@ -38,6 +48,11 @@ func (s *Script) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
 		}
 		return nil
 	})
+
+	// If the execution was gracefully stopped, do not return an error
+	if err == ErrAbortExecution {
+		return fs, nil
+	}
 	return fs, err
 }
 

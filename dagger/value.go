@@ -167,30 +167,8 @@ func (v *Value) MergeTarget(x interface{}, target string) (*Value, error) {
 }
 
 // Recursive concreteness check.
-// Return false if v is not concrete, or contains any
-// non-concrete fields or items.
-func (v *Value) IsConcreteR() bool {
-	// FIXME: use Value.Walk
-	if it, err := v.Fields(); err == nil {
-		for it.Next() {
-			w := v.Wrap(it.Value())
-			if !w.IsConcreteR() {
-				return false
-			}
-		}
-		return true
-	}
-	if it, err := v.List(); err == nil {
-		for it.Next() {
-			w := v.Wrap(it.Value())
-			if !w.IsConcreteR() {
-				return false
-			}
-		}
-		return true
-	}
-	dv, _ := v.val.Default()
-	return v.val.IsConcrete() || dv.IsConcrete()
+func (v *Value) IsConcreteR() error {
+	return v.val.Validate(cue.Concrete(true))
 }
 
 // Export concrete values to JSON. ignoring non-concrete values.
