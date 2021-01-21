@@ -83,10 +83,10 @@ package dagger
 #Exec: {
 	do: "exec"
 	args: [...string]
-	env?: [string]: string
-	always?: true | *false
-	dir:     string | *"/"
-	mount?: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
+	env: [string]: string
+	always: true | *false
+	dir:    string | *"/"
+	mount: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
 }
 
 #MountTmp:   "tmpfs"

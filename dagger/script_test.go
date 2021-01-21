@@ -35,7 +35,6 @@ func TestScriptDefaults(t *testing.T) {
 	if dir != "/" {
 		t.Fatal(dir)
 	}
-	t.Skip("FIXME: issue #19")
 	// Walk triggers issue #19 UNLESS optional fields removed from spec.cue
 	if err := op.Walk(context.TODO(), func(op *Op) error {
 		return nil
