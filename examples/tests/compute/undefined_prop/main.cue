@@ -1,5 +1,7 @@
 package testing
 
+hello: "world"
+
 bar: string
 
 #dagger: {

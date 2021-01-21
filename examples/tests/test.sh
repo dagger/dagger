@@ -29,9 +29,8 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/noop
   test::one "Compute: simple should succeed" --exit=0 --stdout="{}" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/simple
-
-  disable test::one "Compute: unresolved should fail (FIXME https://github.com/blocklayerhq/dagger/issues/28)" --exit=1 --stdout=  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/undefined_prop
+  test::one "Compute: unresolved should be ignored" --exit=0 --stdout='{"hello":"world"}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/undefined_prop
 }
 
 test::fetchcontainer(){
