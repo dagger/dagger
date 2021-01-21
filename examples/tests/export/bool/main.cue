@@ -3,27 +3,24 @@ package testing
 test: {
 	bool
 
-	#dagger: {
-		compute: [
-			{
-				do: "fetch-container"
-				ref: "alpine"
-			},
-			{
-				do: "exec"
-				args: ["sh", "-c", """
+	#dagger: compute: [
+		{
+			do:  "fetch-container"
+			ref: "alpine"
+		},
+		{
+			do: "exec"
+			args: ["sh", "-c", """
 				printf "true" > /tmp/out
-				"""
-				]
-				dir: "/"
-			},
-			{
-				do: "export"
-				// Source path in the container
-				source: "/tmp/out"
-				format: "bool"
-			},
-		]
-	}
+				""",
+			]
+			dir: "/"
+		},
+		{
+			do: "export"
+			// Source path in the container
+			source: "/tmp/out"
+			format: "bool"
+		},
+	]
 }
-

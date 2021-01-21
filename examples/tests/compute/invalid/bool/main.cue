@@ -1,5 +1,3 @@
 package testing
 
-#dagger: {
-	compute: true
-}
+#dagger: compute: true

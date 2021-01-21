@@ -7,14 +7,14 @@ bar: string
 #dagger: {
 	compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
-			do: "exec"
+			do:  "exec"
 			dir: "/"
 			args: ["sh", "-c", "echo \(foo.bar)"]
-		}
+		},
 	]
 	foo: bar: bar
 }

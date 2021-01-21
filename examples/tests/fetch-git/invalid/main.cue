@@ -1,9 +1,7 @@
 package testing
 
-#dagger: {
-	compute: [
-		{
-			do: "fetch-git"
-		}
-	]
-}
+#dagger: compute: [
+	{
+		do: "fetch-git"
+	},
+]

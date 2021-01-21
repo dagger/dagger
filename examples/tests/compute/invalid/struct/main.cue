@@ -1,7 +1,3 @@
 package testing
 
-#dagger: {
-	compute: {
-		whatever: "wrong"
-	}
-}
+#dagger: compute: whatever: "wrong"
