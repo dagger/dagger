@@ -167,6 +167,10 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			// or base + filled?
 			out, err = out.MergePath(t.Value(), t.Path())
 			if err != nil {
+				lg.
+					Error().
+					Err(err).
+					Msg("failed to fill script result")
 				return err
 			}
 			return nil
