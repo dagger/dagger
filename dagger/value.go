@@ -186,6 +186,7 @@ func (v *Value) JSON() JSON {
 		},
 		nil,
 	)
+	out, _ = out.Get(cuePathToStrings(v.Path())...)
 	return out
 }
 
