@@ -5,19 +5,19 @@ test1: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol1 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol1 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -29,19 +29,19 @@ test2: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol2 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol2 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -53,19 +53,19 @@ test3: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol3 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol3 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -77,19 +77,19 @@ test4: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol4 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol4 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -101,19 +101,19 @@ test5: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol5 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol5 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -125,19 +125,19 @@ test6: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol6 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol6 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -149,19 +149,19 @@ test7: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol7 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol7 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -173,19 +173,19 @@ test8: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol8 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol8 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -197,19 +197,19 @@ test9: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol9 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol9 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},
@@ -221,19 +221,19 @@ test10: {
 
 	#dagger: compute: [
 		{
-			do: "fetch-container"
+			do:  "fetch-container"
 			ref: "alpine"
 		},
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-				echo lol10 > /tmp/out
-			"""]
-			dir: "/"
+					echo lol10 > /tmp/out
+				"""]
+			dir:    "/"
 			always: true
 		},
 		{
-			do: "export"
+			do:     "export"
 			source: "/tmp/out"
 			format: "string"
 		},

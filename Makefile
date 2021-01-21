@@ -15,7 +15,7 @@ test:
 
 .PHONY: cuefmt
 cuefmt:
-	@(cd ./dagger && cue fmt -s ./... && cue trim -s ./...)
+	@(cue fmt -s ./... && cue trim -s ./...)
 
 .PHONY: lint
 lint: generate cuefmt
