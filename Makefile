@@ -9,9 +9,13 @@ generate:
 dagger: generate
 	go build -o ./cmd/dagger/ ./cmd/dagger/
 
+.PHONY: dagger
+dagger-debug: generate
+	go build -race -o ./cmd/dagger/dagger-debug ./cmd/dagger/
+
 .PHONY: test
 test:
-	go test -v ./...
+	go test -race -v ./...
 
 .PHONY: cuefmt
 cuefmt:
@@ -24,8 +28,8 @@ lint: generate cuefmt
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep gen.go | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: integration
-integration: dagger
+integration: dagger-debug
 	# Self-diagnostics
 	./examples/tests/test-test.sh 2>/dev/null
 	# Actual integration tests
-	./examples/tests/test.sh all
+	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./examples/tests/test.sh all
