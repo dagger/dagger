@@ -21,10 +21,6 @@ func (v *Value) CueInst() *cue.Instance {
 	return v.inst
 }
 
-func (v *Value) Compiler() *Compiler {
-	return v.cc
-}
-
 func (v *Value) Wrap(v2 cue.Value) *Value {
 	return wrapValue(v2, v.inst, v.cc)
 }
@@ -142,7 +138,7 @@ func (v *Value) RangeStruct(fn func(string, *Value) error) error {
 // FIXME: receive string path?
 func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 	if xval, ok := x.(*Value); ok {
-		if xval.Compiler() != v.Compiler() {
+		if xval.cc != v.cc {
 			return nil, fmt.Errorf("can't merge values from different compilers")
 		}
 		x = xval.val
@@ -242,7 +238,7 @@ func (v *Value) Validate(defs ...string) error {
 	if len(defs) == 0 {
 		return nil
 	}
-	spec := v.Compiler().Spec()
+	spec := v.cc.Spec()
 	for _, def := range defs {
 		if err := spec.Validate(v, def); err != nil {
 			return err
@@ -321,7 +317,7 @@ func (v *Value) ScriptOrComponent() (interface{}, error) {
 
 func (v *Value) Op() (*Op, error) {
 	// Merge #Op definition from spec to get default values
-	spec := v.Compiler().Spec()
+	spec := v.cc.Spec()
 	v, err := spec.Get("#Op").Merge(v)
 	if err != nil {
 		return nil, err

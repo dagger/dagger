@@ -158,7 +158,7 @@ func (c *Client) Compute(ctx context.Context) (*Value, error) {
 	// Retrieve output
 	eg.Go(func() error {
 		defer outr.Close()
-		return c.outputfn(ctx, outr, out)
+		return c.outputfn(ctx, outr, out, cc)
 	})
 	return out, eg.Wait()
 }
@@ -218,7 +218,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 }
 
 // Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value) error {
+func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value, cc *Compiler) error {
 	lg := log.Ctx(ctx)
 
 	tr := tar.NewReader(r)
@@ -242,7 +242,6 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value) error {
 		}
 		lg.Debug().Msg("outputfn: compiling & merging")
 
-		cc := out.Compiler()
 		v, err := cc.Compile(h.Name, tr)
 		if err != nil {
 			return err
