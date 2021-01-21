@@ -12,6 +12,23 @@ func TestSimple(t *testing.T) {
 	}
 }
 
+func TestJSON(t *testing.T) {
+	cc := &Compiler{}
+	v, err := cc.Compile("", `foo: hello: "world"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b1 := v.JSON()
+	if string(b1) != `{"foo":{"hello":"world"}}` {
+		t.Fatal(b1)
+	}
+	// Reproduce a bug where Value.Get().JSON() ignores Get()
+	b2 := v.Get("foo").JSON()
+	if string(b2) != `{"hello":"world"}` {
+		t.Fatal(b2)
+	}
+}
+
 func TestCompileBootScript(t *testing.T) {
 	cc := &Compiler{}
 	cfg, err := cc.Compile("boot.cue", defaultBootScript)
