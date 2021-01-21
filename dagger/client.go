@@ -203,8 +203,7 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 	// Call buildkit solver
 	resp, err := c.c.Build(ctx, opts, "", Compute, ch)
 	if err != nil {
-		err = errors.New(bkCleanError(err.Error()))
-		return errors.Wrap(err, "buildkit solve")
+		return errors.Wrap(bkCleanError(err), "buildkit solve")
 	}
 	for k, v := range resp.ExporterResponse {
 		// FIXME consume exporter response
@@ -305,7 +304,7 @@ func (n Node) LogError(ctx context.Context, errmsg string) {
 		Ctx(ctx).
 		Error().
 		Str("path", n.ComponentPath().String()).
-		Msg(bkCleanError(errmsg))
+		Msg(errmsg)
 }
 
 func (c *Client) printfn(ctx context.Context, ch chan *bk.SolveStatus) error {
@@ -360,21 +359,6 @@ func (c *Client) printfn(ctx context.Context, ch chan *bk.SolveStatus) error {
 			// see proto 67
 		}
 	}
-}
-
-// A helper to remove noise from buildkit error messages.
-// FIXME: Obviously a cleaner solution would be nice.
-func bkCleanError(msg string) string {
-	noise := []string{
-		"executor failed running ",
-		"buildkit-runc did not terminate successfully",
-		"rpc error: code = Unknown desc =",
-		"failed to solve: ",
-	}
-	for _, s := range noise {
-		msg = strings.Replace(msg, s, "", -1)
-	}
-	return msg
 }
 
 func (c *Client) dockerprintfn(ctx context.Context, ch chan *bk.SolveStatus, out io.Writer) error {

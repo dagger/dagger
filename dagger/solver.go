@@ -47,7 +47,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		Evaluate: true,
 	})
 	if err != nil {
-		return nil, err
+		return nil, bkCleanError(err)
 	}
 	// always use single reference (ignore multiple outputs & metadata)
 	return res.SingleRef()

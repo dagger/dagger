@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
@@ -37,7 +39,7 @@ func (fs *FS) solve(ctx context.Context) error {
 	}
 	output, err := fs.s.Solve(ctx, fs.input)
 	if err != nil {
-		return err
+		return bkCleanError(err)
 	}
 	fs.output = output
 	return nil
@@ -54,7 +56,11 @@ func (fs FS) ReadFile(ctx context.Context, filename string) ([]byte, error) {
 		return nil, os.ErrNotExist
 	}
 
-	return fs.output.ReadFile(ctx, bkgw.ReadRequest{Filename: filename})
+	contents, err := fs.output.ReadFile(ctx, bkgw.ReadRequest{Filename: filename})
+	if err != nil {
+		return nil, bkCleanError(err)
+	}
+	return contents, nil
 }
 
 func (fs FS) ReadDir(ctx context.Context, dir string) ([]Stat, error) {
@@ -72,7 +78,7 @@ func (fs FS) ReadDir(ctx context.Context, dir string) ([]Stat, error) {
 		Path: dir,
 	})
 	if err != nil {
-		return nil, err
+		return nil, bkCleanError(err)
 	}
 	out := make([]Stat, len(st))
 	for i := range st {
@@ -149,4 +155,23 @@ func (fs FS) Result(ctx context.Context) (*bkgw.Result, error) {
 	}
 	res.SetRef(ref)
 	return res, nil
+}
+
+// A helper to remove noise from buildkit error messages.
+// FIXME: Obviously a cleaner solution would be nice.
+func bkCleanError(err error) error {
+	noise := []string{
+		"executor failed running ",
+		"buildkit-runc did not terminate successfully",
+		"rpc error: code = Unknown desc =",
+		"failed to solve: ",
+	}
+
+	msg := err.Error()
+
+	for _, s := range noise {
+		msg = strings.Replace(msg, s, "", -1)
+	}
+
+	return errors.New(msg)
 }
