@@ -6,6 +6,37 @@ import (
 	"testing"
 )
 
+// Test that default values in spec are applied
+func TestScriptDefaults(t *testing.T) {
+	cc := &Compiler{}
+	v, err := cc.Compile("", `
+    {
+        do: "exec"
+        args: ["sh", "-c", """
+            echo hello > /tmp/out
+        """]
+//      dir: "/"
+    }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := v.Op()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := op.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := op.Get("dir").String()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != "/" {
+		t.Fatal(dir)
+	}
+}
+
 func TestValidateEmptyValue(t *testing.T) {
 	cc := &Compiler{}
 	v, err := cc.Compile("", "#dagger: compute: _")
