@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile-upstream:experimental@sha256:398a0a10f19875add7fe359a37f2f971c46746b064faf876776ae632a3472c37
 
-FROM golang:1.14-alpine AS build
+FROM golang:1.15.6-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache file
 RUN --mount=target=. --mount=target=/root/.cache,type=cache \
