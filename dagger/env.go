@@ -22,6 +22,9 @@ type Env struct {
 	// Buildkit solver
 	s Solver
 
+	// Full cue state (base + input + output)
+	state *Value
+
 	// shared cue compiler
 	// (because cue API requires shared runtime for everything)
 	cc *Compiler
@@ -60,10 +63,13 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 	if err != nil {
 		return nil, err
 	}
-	// Check that input can be merged on base
-	if _, err := base.Merge(input); err != nil {
+	// Merge base + input into a new cue instance
+	// FIXME: make this cleaner in *Value by keeping intermediary instances
+	stateInst, err := base.CueInst().Fill(input.CueInst().Value())
+	if err != nil {
 		return nil, errors.Wrap(err, "merge base & input")
 	}
+	state := cc.Wrap(stateInst.Value(), stateInst)
 
 	lg.
 		Debug().
@@ -74,6 +80,7 @@ func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, erro
 	return &Env{
 		base:  base,
 		input: input,
+		state: state,
 		s:     s,
 		cc:    cc,
 	}, nil
@@ -126,12 +133,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	lg := log.Ctx(ctx)
 
 	// Cueflow cue instance
-	// FIXME: make this cleaner in *Value by keeping intermediary instances
-	flowInst, err := env.base.CueInst().Fill(env.input.CueInst().Value())
-	if err != nil {
-		return nil, err
-	}
-
+	flowInst := env.state.CueInst()
 	lg.
 		Debug().
 		Str("value", env.cc.Wrap(flowInst.Value(), flowInst).JSON().String()).
