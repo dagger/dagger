@@ -85,11 +85,11 @@ func TestWalkBootScript(t *testing.T) {
 	ctx := context.TODO()
 
 	cc := &Compiler{}
-	cfg, err := cc.Compile("clientconfig.cue", defaultBootScript)
+	cfg, err := cc.Compile("clientconfig.cue", baseClientConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	script, err := cfg.Get("bootscript").Script()
+	script, err := cfg.Get("boot").Script()
 	if err != nil {
 		t.Fatal(err)
 	}

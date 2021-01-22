@@ -31,7 +31,7 @@ func TestJSON(t *testing.T) {
 
 func TestCompileBootScript(t *testing.T) {
 	cc := &Compiler{}
-	cfg, err := cc.Compile("boot.cue", defaultBootScript)
+	cfg, err := cc.Compile("boot.cue", baseClientConfig)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -73,11 +73,12 @@ func (s *Script) LocalDirs(ctx context.Context) ([]string, error) {
 	var dirs []string
 	err := s.Walk(ctx, func(op *Op) error {
 		if err := op.Validate("#Local"); err != nil {
+			// Ignore all operations except 'do:"local"'
 			return nil
 		}
 		dir, err := op.Get("dir").String()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "invalid 'local' operation")
 		}
 		dirs = append(dirs, dir)
 		return nil
