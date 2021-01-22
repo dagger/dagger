@@ -25,7 +25,7 @@ func (s *Script) Value() *Value {
 }
 
 // Run a dagger script
-func (s *Script) Execute(ctx context.Context, fs FS, out Fillable) (FS, error) {
+func (s *Script) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	err := s.v.RangeList(func(idx int, v *Value) error {
 		// If op not concrete, interrupt without error.
 		// This allows gradual resolution:
