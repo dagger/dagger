@@ -114,7 +114,7 @@ func (cfg *ClientConfig) Finalize(ctx context.Context) (map[string]string, error
 		return nil, errors.Wrap(err, "invalid client config")
 	}
 	// Finalize boot script
-	boot, err := v.Get("boot").Script()
+	boot, err := NewScript(v.Get("boot"))
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid env boot script")
 	}

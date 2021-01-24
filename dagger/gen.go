@@ -117,9 +117,4 @@ package dagger
 	src:  string | *"/"
 	dest: string | *"/"
 }
-
-#TestScript: #Script & [
-		{do: "fetch-container", ref: "alpine:latest"},
-		{do: "exec", args: ["echo", "hello", "world"]},
-]
 `

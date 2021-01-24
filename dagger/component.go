@@ -3,19 +3,42 @@ package dagger
 import (
 	"context"
 	"os"
+
+	"github.com/pkg/errors"
 )
 
 type Component struct {
+	// Source value for the component, without spec merged
+	// eg. `{ string, #dagger: compute: [{do:"fetch-container", ...}]}`
 	v *Value
+
+	// Annotation value for the component , with spec merged.
+	// -> the contents of #dagger.compute
+	// eg. `compute: [{do:"fetch-container", ...}]`
+	//
+	// The spec is merged at this level because the Cue API
+	//  does not support merging embedded scalar with nested definition.
+	config *Value
+}
+
+func NewComponent(v *Value) (*Component, error) {
+	config := v.Get("#dagger")
+	if !config.Exists() {
+		return nil, os.ErrNotExist
+	}
+	spec := v.cc.Spec()
+	config, err := spec.Get("#ComponentConfig").Merge(v.Get("#dagger"))
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid component config")
+	}
+	return &Component{
+		v:      v,
+		config: config,
+	}, nil
 }
 
 func (c *Component) Value() *Value {
 	return c.v
-}
-
-func (c *Component) Exists() bool {
-	// Does #dagger exist?
-	return c.Config().Exists()
 }
 
 // Return the contents of the "#dagger" annotation.
@@ -38,11 +61,7 @@ func (c *Component) Validate() error {
 
 // Return this component's compute script.
 func (c *Component) ComputeScript() (*Script, error) {
-	v := c.Value().Get("#dagger.compute")
-	if !v.Exists() {
-		return nil, os.ErrNotExist
-	}
-	return v.Script()
+	return newScript(c.Config().Get("compute"))
 }
 
 // Compute the configuration for this component.

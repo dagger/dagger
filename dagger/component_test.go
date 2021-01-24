@@ -5,6 +5,38 @@ import (
 	"testing"
 )
 
+func TestComponentNotExist(t *testing.T) {
+	cc := &Compiler{}
+	root, err := cc.Compile("root.cue", `
+foo: hello: "world"
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewComponent(root.Get("bar")) // non-existent key
+	if err != ErrNotExist {
+		t.Fatal(err)
+	}
+	_, err = NewComponent(root.Get("foo")) // non-existent #dagger
+	if err != ErrNotExist {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadEmptyComponent(t *testing.T) {
+	cc := &Compiler{}
+	root, err := cc.Compile("root.cue", `
+foo: #dagger: {}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewComponent(root.Get("foo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Test that default values in spec are applied at the component level
 // See issue #19
 func TestComponentDefaults(t *testing.T) {
@@ -28,7 +60,7 @@ func TestComponentDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := v.Component()
+	c, err := NewComponent(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +85,7 @@ func TestValidateEmptyComponent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = v.Component()
+	_, err = NewComponent(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +97,7 @@ func TestValidateSimpleComponent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := v.Component()
+	c, err := NewComponent(v)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,16 @@ type Spec struct {
 	root *Value
 }
 
+func newSpec(v *Value) (*Spec, error) {
+	// Spec contents must be a struct
+	if _, err := v.Struct(); err != nil {
+		return nil, err
+	}
+	return &Spec{
+		root: v,
+	}, nil
+}
+
 // eg. Validate(op, "#Op")
 func (s Spec) Validate(v *Value, defpath string) error {
 	// Lookup def by name, eg. "#Script" or "#Copy"

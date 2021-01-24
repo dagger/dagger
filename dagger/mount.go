@@ -13,6 +13,16 @@ type Mount struct {
 	v    *Value
 }
 
+func newMount(v *Value, dest string) (*Mount, error) {
+	if !v.Exists() {
+		return nil, ErrNotExist
+	}
+	return &Mount{
+		v:    v,
+		dest: dest,
+	}, nil
+}
+
 func (mnt *Mount) Validate(defs ...string) error {
 	return mnt.v.Validate(append(defs, "#Mount")...)
 }
@@ -26,7 +36,7 @@ func (mnt *Mount) LLB(ctx context.Context, s Solver) (llb.RunOption, error) {
 		return nil, fmt.Errorf("FIXME: cache mount not yet implemented")
 	}
 	// Compute source component or script, discarding fs writes & output value
-	from, err := mnt.v.Lookup("from").Executable()
+	from, err := newExecutable(mnt.v.Lookup("from"))
 	if err != nil {
 		return nil, errors.Wrap(err, "from")
 	}
