@@ -6,10 +6,47 @@ import (
 	"testing"
 )
 
+// Test a script which loads a nested script
+func TestScriptLoadScript(t *testing.T) {
+	mkScript(t, 2, `
+	[
+		{
+			do: "load"
+			from: [
+				{
+					do: "fetch-container"
+					ref: "alpine:latest"
+				}
+			]
+		}
+	]
+	`)
+}
+
+// Test a script which loads a nested component
+func TestScriptLoadComponent(t *testing.T) {
+	mkScript(t, 2, `
+[
+	{
+		do: "load"
+		from: {
+			#dagger: compute: [
+				{
+					do: "fetch-container"
+					ref: "alpine:latest"
+				}
+			]
+		}
+	}
+]
+`)
+}
+
 // Test that default values in spec are applied
 func TestScriptDefaults(t *testing.T) {
 	cc := &Compiler{}
 	v, err := cc.Compile("", `
+	[
     {
         do: "exec"
         args: ["sh", "-c", """
@@ -17,15 +54,17 @@ func TestScriptDefaults(t *testing.T) {
         """]
 //      dir: "/"
     }
+	]
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := v.Op()
+	script, err := NewScript(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := op.Validate(); err != nil {
+	op, err := script.Op(0)
+	if err != nil {
 		t.Fatal(err)
 	}
 	dir, err := op.Get("dir").String()
@@ -64,7 +103,7 @@ func TestLocalScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := v.Script()
+	s, err := NewScript(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,12 +123,14 @@ func TestLocalScript(t *testing.T) {
 func TestWalkBootScript(t *testing.T) {
 	ctx := context.TODO()
 
-	cc := &Compiler{}
-	cfg, err := cc.Compile("clientconfig.cue", baseClientConfig)
+	cfg := &ClientConfig{}
+	_, err := cfg.Finalize(context.TODO())
 	if err != nil {
 		t.Fatal(err)
 	}
-	script, err := cfg.Get("boot").Script()
+
+	cc := &Compiler{}
+	script, err := cc.CompileScript("boot.cue", cfg.Boot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,4 +200,29 @@ func TestWalkBiggerScript(t *testing.T) {
 	if wanted != got {
 		t.Fatal(got)
 	}
+}
+
+// UTILITIES
+
+// Compile a script and check that it has the correct
+// number of operations.
+func mkScript(t *testing.T, nOps int, src string) *Script {
+	cc := &Compiler{}
+	s, err := cc.CompileScript("test.cue", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Count ops (including nested `from`)
+	n := 0
+	err = s.Walk(context.TODO(), func(op *Op) error {
+		n++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != nOps {
+		t.Fatal(n)
+	}
+	return s
 }

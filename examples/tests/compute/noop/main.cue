@@ -9,11 +9,3 @@ realempty: {
 empty: {
 	#dagger: compute: []
 }
-
-// additional prop, should not error
-withprops: {
-	#dagger: {
-		compute: []
-		foo: bar: "foo"
-	}
-}

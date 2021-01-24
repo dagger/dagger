@@ -14,6 +14,25 @@ type Op struct {
 	v *Value
 }
 
+func NewOp(v *Value) (*Op, error) {
+	spec := v.cc.Spec().Get("#Op")
+	final, err := spec.Merge(v)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid op")
+	}
+	return newOp(final)
+}
+
+// Same as newOp, but without spec merge + validation.
+func newOp(v *Value) (*Op, error) {
+	if !v.Exists() {
+		return nil, ErrNotExist
+	}
+	return &Op{
+		v: v,
+	}, nil
+}
+
 func (op *Op) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	action, err := op.Action()
 	if err != nil {
@@ -29,7 +48,7 @@ func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
 	isCopy := (op.Validate("#Copy") == nil)
 	isLoad := (op.Validate("#Load") == nil)
 	if isCopy || isLoad {
-		if from, err := op.Get("from").Executable(); err == nil {
+		if from, err := newExecutable(op.Get("from")); err == nil {
 			if err := from.Walk(ctx, fn); err != nil {
 				return err
 			}
@@ -38,7 +57,7 @@ func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
 	}
 	if err := op.Validate("#Exec"); err == nil {
 		return op.Get("mount").RangeStruct(func(k string, v *Value) error {
-			if from, err := op.Get("from").Executable(); err == nil {
+			if from, err := newExecutable(op.Get("from")); err == nil {
 				if err := from.Walk(ctx, fn); err != nil {
 					return err
 				}
@@ -98,7 +117,7 @@ func (op *Op) Copy(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	if err != nil {
 		return fs, err
 	}
-	from, err := op.Get("from").Executable()
+	from, err := newExecutable(op.Get("from"))
 	if err != nil {
 		return fs, errors.Wrap(err, "from")
 	}
@@ -167,7 +186,7 @@ func (op *Op) Exec(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	// mounts
 	if mounts := op.v.Lookup("mount"); mounts.Exists() {
 		if err := mounts.RangeStruct(func(k string, v *Value) error {
-			mnt, err := v.Mount(k)
+			mnt, err := newMount(v, k)
 			if err != nil {
 				return err
 			}
@@ -233,7 +252,7 @@ func (op *Op) Export(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 }
 
 func (op *Op) Load(ctx context.Context, fs FS, out *Fillable) (FS, error) {
-	from, err := op.Get("from").Executable()
+	from, err := newExecutable(op.Get("from"))
 	if err != nil {
 		return fs, errors.Wrap(err, "load")
 	}

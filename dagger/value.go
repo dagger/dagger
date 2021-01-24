@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"fmt"
-	"os"
 
 	"cuelang.org/go/cue"
 	cueformat "cuelang.org/go/cue/format"
@@ -210,6 +209,8 @@ func (v *Value) Save(fs FS, filename string) (FS, error) {
 	}), nil
 }
 
+// Check that a value is valid. Optionally check that it matches
+// all the specified spec definitions..
 func (v *Value) Validate(defs ...string) error {
 	if err := v.val.Validate(); err != nil {
 		return err
@@ -237,91 +238,4 @@ func (v *Value) IsEmptyStruct() bool {
 		}
 	}
 	return false
-}
-
-// Component returns the component value if v is a valid dagger component or an error otherwise.
-// If no '#dagger' annotation is present, os.ErrNotExist
-// is returned.
-func (v *Value) Component() (*Component, error) {
-	c := &Component{
-		v: v,
-	}
-	if !c.Exists() {
-		return c, os.ErrNotExist
-	}
-	if err := c.Validate(); err != nil {
-		return c, err
-	}
-	return c, nil
-}
-
-func (v *Value) Script() (*Script, error) {
-	s := &Script{
-		v: v,
-	}
-	if err := s.Validate(); err != nil {
-		return s, err
-	}
-	return s, nil
-}
-
-func (v *Value) Executable() (Executable, error) {
-	if script, err := v.Script(); err == nil {
-		return script, nil
-	}
-	if component, err := v.Component(); err == nil {
-		return component, nil
-	}
-	if op, err := v.Op(); err == nil {
-		return op, nil
-	}
-	return nil, fmt.Errorf("value is not executable")
-}
-
-// ScriptOrComponent returns one of:
-//  (1) the component value if v is a valid component (type *Component)
-//  (2) the script value if v is a valid script (type *Script)
-//  (3) an error otherwise
-func (v *Value) ScriptOrComponent() (interface{}, error) {
-	s, err := v.Script()
-	if err == nil {
-		return s, nil
-	}
-	c, err := v.Component()
-	if err == nil {
-		return c, nil
-	}
-	return nil, fmt.Errorf("not a script or component")
-}
-
-func (v *Value) Op() (*Op, error) {
-	// Merge #Op definition from spec to get default values
-	spec := v.cc.Spec()
-	v, err := spec.Get("#Op").Merge(v)
-	if err != nil {
-		return nil, err
-	}
-	op := &Op{
-		v: v,
-	}
-	return op, nil
-}
-
-func (v *Value) Mount(dest string) (*Mount, error) {
-	mnt := &Mount{
-		v:    v,
-		dest: dest,
-	}
-	return mnt, mnt.Validate()
-}
-
-// Interpret this value as a spec
-func (v *Value) Spec() (*Spec, error) {
-	// Spec must be a struct
-	if _, err := v.Struct(); err != nil {
-		return nil, err
-	}
-	return &Spec{
-		root: v,
-	}, nil
 }

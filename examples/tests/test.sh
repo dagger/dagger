@@ -25,11 +25,11 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/int
   test::one "Compute: invalid struct should fail" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/struct
-  test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{},"realempty":{},"withprops":{}}'  \
+  test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{},"realempty":{}}'  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/noop
   test::one "Compute: simple should succeed" --exit=0 --stdout="{}" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/simple
-  test::one "Compute: unresolved should be ignored" --exit=0 --stdout='{"hello":"world"}'  \
+  test::one "Compute: script with undefined values should not fail" --exit=0 --stdout='{"hello":"world"}'  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/undefined_prop
 }
 

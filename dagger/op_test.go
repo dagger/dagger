@@ -14,7 +14,7 @@ func TestLocalMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := v.Op()
+	op, err := newOp(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestCopyMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := v.Op()
+	op, err := newOp(v)
 	if err != nil {
 		t.Fatal(err)
 	}

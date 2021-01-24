@@ -35,7 +35,7 @@ func (cc *Compiler) Spec() *Spec {
 	if err != nil {
 		panic(err)
 	}
-	cc.spec, err = v.Spec()
+	cc.spec, err = newSpec(v)
 	if err != nil {
 		panic(err)
 	}
@@ -56,12 +56,15 @@ func (cc *Compiler) Compile(name string, src interface{}) (*Value, error) {
 	return cc.Wrap(inst.Value(), inst), nil
 }
 
+// Compile a cue configuration, and load it as a script.
+// If the cue configuration is invalid, or does not match the script spec,
+//  return an error.
 func (cc *Compiler) CompileScript(name string, src interface{}) (*Script, error) {
 	v, err := cc.Compile(name, src)
 	if err != nil {
 		return nil, err
 	}
-	return v.Script()
+	return NewScript(v)
 }
 
 // Build a cue configuration tree from the files in fs.

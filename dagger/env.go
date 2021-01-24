@@ -187,8 +187,9 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		ctx := lg.WithContext(ctx)
 
 		lg.Debug().Msg("Env.Walk: processing")
+		// FIXME: get directly from state Value ? Locking issue?
 		val := env.cc.Wrap(v, flowInst)
-		c, err := val.Component()
+		c, err := NewComponent(val)
 		if os.IsNotExist(err) {
 			// Not a component: skip
 			return nil, nil
@@ -206,4 +207,10 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		return out, err
 	}
 	return out, nil
+}
+
+// Return the component at the specified path in the config, eg. `www`
+// If the component does not exist, os.ErrNotExist is returned.
+func (env *Env) Component(target string) (*Component, error) {
+	return NewComponent(env.state.Get(target))
 }
