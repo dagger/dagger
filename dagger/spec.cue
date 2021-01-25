@@ -37,9 +37,8 @@ package dagger
 	#dagger: #ComponentConfig
 	...
 } | {
-	// Match embedded strings
-	// FIXME: match all embedded scalar types
-	string
+	// Match embedded scalars
+	bool | int | float | string | bytes
 	#dagger: #ComponentConfig
 }
 
@@ -63,7 +62,7 @@ package dagger
 	do: "export"
 	// Source path in the container
 	source: string
-	format: "json" | "yaml" | *"string" | "number" | "boolean"
+	format: "json" | "yaml" | *"string"
 }
 
 #Local: {

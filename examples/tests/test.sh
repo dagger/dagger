@@ -129,7 +129,7 @@ test::exec(){
 }
 
 test::export(){
-  test::one "Export: json" --exit=0 --stdout='{"test":{"something":"something"}}' \
+  test::one "Export: json" --exit=0 --stdout='{"testMap":{"something":"something"},"testScalar":true}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/export/json
 
   test::one "Export: string" --exit=0 --stdout='{"test":"something"}' \
@@ -150,11 +150,16 @@ test::export(){
   test::one "Export: invalid path" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/export/invalid/path
 
-  disable test::one "Export: number (FIXME https://github.com/blocklayerhq/dagger/issues/36)" --exit=0 --stdout='{"test": -123.5}' \
+  test::one "Export: number" --exit=0 --stdout='{"test":-123.5}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/export/float
+
+  disable test::one "Export: number (FIXME: https://github.com/blocklayerhq/dagger/issues/96)" --exit=0 --stdout='{"test":-123.5}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/export/number
-  disable test::one "Export: yaml (FIXME https://github.com/blocklayerhq/dagger/issues/36)" --exit=0 --stdout='XXXXXX' \
+
+  test::one "Export: yaml" --exit=0 --stdout='{"testMap":{"something":"something"},"testScalar":true}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/export/yaml
-  disable test::one "Export: bool (FIXME https://github.com/blocklayerhq/dagger/issues/35)" --exit=0 --stdout='{"test": false}' \
+
+  test::one "Export: bool" --exit=0 --stdout='{"test":true}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/export/bool
 }
 

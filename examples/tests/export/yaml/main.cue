@@ -1,6 +1,60 @@
 package testing
 
-test: #dagger: compute: [
+testScalar: {
+	bool
+
+	#dagger: compute: [
+		{
+			do:  "fetch-container"
+			ref: "alpine"
+		},
+		{
+			do: "exec"
+			args: ["sh", "-c", """
+				echo true > /tmp/out
+				""",
+			]
+			// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
+			dir: "/"
+		},
+		{
+			do: "export"
+			// Source path in the container
+			source: "/tmp/out"
+			format: "yaml"
+		},
+	]
+}
+
+// FIXME: lists are currently broken
+// testList: {
+//  [...string]
+
+//  #dagger: compute: [
+//   {
+//    do:  "fetch-container"
+//    ref: "alpine"
+//   },
+//   {
+//    do: "exec"
+//    args: ["sh", "-c", """
+//     echo "--- # Shopping list
+//     [milk, pumpkin pie, eggs, juice]" > /tmp/out
+//     """,
+//    ]
+//    // XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
+//    dir: "/"
+//   },
+//   {
+//    do: "export"
+//    // Source path in the container
+//    source: "/tmp/out"
+//    format: "yaml"
+//   },
+//  ]
+// }
+
+testMap: #dagger: compute: [
 	{
 		do:  "fetch-container"
 		ref: "alpine"
@@ -8,8 +62,7 @@ test: #dagger: compute: [
 	{
 		do: "exec"
 		args: ["sh", "-c", """
-			echo "--- # Shopping list
-			[milk, pumpkin pie, eggs, juice]" > /tmp/out
+			echo something: something > /tmp/out
 			""",
 		]
 	},
