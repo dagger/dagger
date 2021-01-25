@@ -12,8 +12,6 @@ test: #dagger: compute: [
 			[milk, pumpkin pie, eggs, juice]" > /tmp/out
 			""",
 		]
-		// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
-		dir: "/"
 	},
 	{
 		do: "export"

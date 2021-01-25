@@ -11,29 +11,24 @@ type Component struct {
 	// Source value for the component, without spec merged
 	// eg. `{ string, #dagger: compute: [{do:"fetch-container", ...}]}`
 	v *Value
-
-	// Annotation value for the component , with spec merged.
-	// -> the contents of #dagger.compute
-	// eg. `compute: [{do:"fetch-container", ...}]`
-	//
-	// The spec is merged at this level because the Cue API
-	//  does not support merging embedded scalar with nested definition.
-	config *Value
 }
 
 func NewComponent(v *Value) (*Component, error) {
-	config := v.Get("#dagger")
-	if !config.Exists() {
-		return nil, os.ErrNotExist
+	if !v.Exists() {
+		// Component value does not exist
+		return nil, ErrNotExist
 	}
-	spec := v.cc.Spec()
-	config, err := spec.Get("#ComponentConfig").Merge(v.Get("#dagger"))
+	if !v.Get("#dagger").Exists() {
+		// Component value exists but has no `#dagger` definition
+		return nil, ErrNotExist
+	}
+	// Validate & merge with spec
+	final, err := v.Finalize(v.cc.Spec().Get("#Component"))
 	if err != nil {
-		return nil, errors.Wrap(err, "invalid component config")
+		return nil, errors.Wrap(err, "invalid component")
 	}
 	return &Component{
-		v:      v,
-		config: config,
+		v: final,
 	}, nil
 }
 
@@ -44,19 +39,6 @@ func (c *Component) Value() *Value {
 // Return the contents of the "#dagger" annotation.
 func (c *Component) Config() *Value {
 	return c.Value().Get("#dagger")
-}
-
-// Verify that this component respects the dagger component spec.
-//
-// NOTE: calling matchSpec("#Component") is not enough because
-//   it does not match embedded scalars.
-func (c *Component) Validate() error {
-	// FIXME: this crashes on `#dagger:compute:_`
-	//  see TestValidateEmptyComponent
-	// Using a workaround for now.
-	// return c.Config().Validate("#ComponentConfig")
-
-	return c.Config().Validate()
 }
 
 // Return this component's compute script.
