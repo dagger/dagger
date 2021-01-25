@@ -17,8 +17,8 @@ type Script struct {
 }
 
 func NewScript(v *Value) (*Script, error) {
-	spec := v.cc.Spec().Get("#Script")
-	final, err := spec.Merge(v)
+	// Validate & merge with spec
+	final, err := v.Finalize(v.cc.Spec().Get("#Script"))
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid script")
 	}
@@ -30,8 +30,6 @@ func newScript(v *Value) (*Script, error) {
 	if !v.Exists() {
 		return nil, ErrNotExist
 	}
-	// Assume script is valid.
-	// Spec validation is already done at component creation.
 	return &Script{
 		v: v,
 	}, nil
@@ -66,8 +64,9 @@ func (s *Script) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) 
 			log.
 				Ctx(ctx).
 				Warn().
-				Err(err).
-				Msg("script is unspecified, aborting execution")
+				Int("op", idx).
+				// FIXME: tell user which inputs are missing (by inspecting references)
+				Msg("script is missing inputs and has not been fully executed")
 			return ErrAbortExecution
 		}
 		op, err := newOp(v)

@@ -40,11 +40,8 @@ func TestCopyMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := newOp(v)
+	op, err := NewOp(v)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := op.Validate("#Copy"); err != nil {
 		t.Fatal(err)
 	}
 	n := 0

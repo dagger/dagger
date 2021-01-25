@@ -40,7 +40,6 @@ foo: #dagger: {}
 // Test that default values in spec are applied at the component level
 // See issue #19
 func TestComponentDefaults(t *testing.T) {
-	t.Skip("FIXME: issue #19")
 	cc := &Compiler{}
 	v, err := cc.Compile("", `
 #dagger: compute: [

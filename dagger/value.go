@@ -134,6 +134,28 @@ func (v *Value) RangeStruct(fn func(string, *Value) error) error {
 	return nil
 }
 
+// Finalize a value using the given spec. This means:
+//   1. Check that the value matches the spec.
+//   2. Merge the value and the spec, and return the result.
+func (v *Value) Finalize(spec *Value) (*Value, error) {
+	v.cc.Lock()
+	unified := spec.val.Unify(v.val)
+	v.cc.Unlock()
+	// FIXME: temporary debug message, remove before merging.
+	//      fmt.Printf("Finalize:\n  spec=%v\n  v=%v\n  unified=%v", spec.val, v.val, unified)
+
+	// OPTION 1: unfinished fields should pass, but don't
+	// if err := unified.Validate(cue.Concrete(true)); err != nil {
+	// OPTION 2: missing fields should fail, but don't
+	// We choose option 2 for now, because it's easier to layer a
+	// fix on top (we access individual fields so have an opportunity
+	//  to return an error if they are not there).
+	if err := unified.Validate(cue.Final()); err != nil {
+		return nil, cueErr(err)
+	}
+	return v.Merge(spec)
+}
+
 // FIXME: receive string path?
 func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 	if xval, ok := x.(*Value); ok {

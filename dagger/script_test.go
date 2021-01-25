@@ -6,6 +6,41 @@ import (
 	"testing"
 )
 
+// Test that a script with missing fields DOES NOT cause an error
+// NOTE: this behavior may change in the future.
+func TestScriptMissingFields(t *testing.T) {
+	cc := &Compiler{}
+	s, err := cc.CompileScript("test.cue", `
+		[
+			{
+				do: "fetch-container"
+				// Missing ref, should cause an error
+			}
+		]
+	`)
+	if err != nil {
+		t.Fatalf("err=%v\nval=%v\n", err, s.v.val)
+	}
+}
+
+// Test that a script with defined, but unfinished fields is ignored.
+func TestScriptUnfinishedField(t *testing.T) {
+	// nOps=1 to make sure only 1 op is counted
+	mkScript(t, 1, `
+		[
+			{
+				do: "fetch-container"
+				// Unfinished op: should ignore subsequent ops.
+				ref: string
+			},
+			{
+				do: "exec"
+				args: ["echo", "hello"]
+			}
+		]
+	`)
+}
+
 // Test a script which loads a nested script
 func TestScriptLoadScript(t *testing.T) {
 	mkScript(t, 2, `
@@ -74,7 +109,6 @@ func TestScriptDefaults(t *testing.T) {
 	if dir != "/" {
 		t.Fatal(dir)
 	}
-	t.Skip("FIXME: issue #19")
 	// Walk triggers issue #19 UNLESS optional fields removed from spec.cue
 	if err := op.Walk(context.TODO(), func(op *Op) error {
 		return nil
