@@ -16,7 +16,7 @@ readonly DAGGER_BINARY_ARGS
 test::compute(){
   local dagger="$1"
 
-  # Compute
+  # Compute: invalid syntax
   test::one "Compute: invalid string should fail" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/string
   test::one "Compute: invalid bool should fail" --exit=1 --stdout= \
@@ -25,12 +25,20 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/int
   test::one "Compute: invalid struct should fail" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/struct
+  test::one "Compute: overloading #ComponentScript with new prop should fail" --exit=1  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/overload/new_prop
+  test::one "Compute: overloading #ComponentScript with new def should fail" --exit=1  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/overload/new_def
+
+  # Compute: success
   test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{},"realempty":{}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/noop
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/noop
   test::one "Compute: simple should succeed" --exit=0 --stdout="{}" \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/simple
-  test::one "Compute: script with undefined values should not fail" --exit=0 --stdout='{"hello":"world"}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/undefined_prop
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/simple
+  test::one "Compute: overloading #Component should work" --exit=0  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/flat
+  test::one "Compute: overloading #Component should work" --exit=0  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/wrapped
 }
 
 test::fetchcontainer(){
@@ -92,6 +100,21 @@ test::exec(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute  "$d"/exec/dir/doesnotexist
   test::one "Exec: valid dir" --exit=0 --stdout={} \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute  "$d"/exec/dir/exist
+
+  disable test::one "Exec: exit code propagation (FIXME https://github.com/blocklayerhq/dagger/issues/74)" --exit=123 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/exec/exit_code
+
+  test::one "Exec: script with referenced non-concrete property should not be executed, and should succeed overall" --exit=0 --stdout='{"hello":"world"}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/exec/undefined/non_concrete_referenced
+  # NOTE: the exec is meant to fail - and we test that as a way to confirm it has been executed
+  test::one "Exec: script with unreferenced undefined properties should be executed" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/exec/undefined/non_concrete_not_referenced
+  test::one "Exec: package with optional def, not referenced, should be executed" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/exec/undefined/with_pkg_def
+  test::one "Exec: script with optional prop, not referenced, should be executed" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/exec/undefined/with_pkg_optional
+  disable test::one "Exec: script with non-optional prop, not referenced, should be executed (FIXME https://github.com/blocklayerhq/dagger/issues/70)" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/exec/undefined/with_pkg_mandatory
 }
 
 test::export(){
