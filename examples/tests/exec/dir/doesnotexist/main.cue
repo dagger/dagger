@@ -7,7 +7,10 @@ package testing
 	},
 	{
 		do: "exec"
-		args: ["sh", "-c", "echo should not succeed"]
+		args: ["sh", "-c", """
+				echo "pwd is: $(pwd)"
+				[ "$(pwd)" == "/thisisnonexistent" ] || exit 1
+			"""]
 		dir: "/thisisnonexistent"
 	},
 ]
