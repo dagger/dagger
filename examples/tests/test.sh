@@ -163,6 +163,21 @@ test::mount(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mount/valid/script
 }
 
+test::input() {
+  test::one "Input: missing input should skip execution" --exit=0 --stdout='{}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/simple
+
+  test::one "Input: simple input" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input 'in: "foobar"' "$d"/input/simple
+
+  test::one "Input: default values" --exit=0 --stdout='{"in":"default input","test":"received: default input"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/default
+
+  test::one "Input: override default value" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input 'in: "foobar"' "$d"/input/default
+}
+
+
 test::all(){
   local dagger="$1"
 
@@ -176,6 +191,7 @@ test::all(){
   test::fetchgit "$dagger"
   test::exec "$dagger"
   test::export "$dagger"
+  test::input "$dagger"
 }
 
 case "${1:-all}" in
