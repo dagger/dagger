@@ -171,6 +171,8 @@ func (op *Op) Exec(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	opts = append(opts, llb.WithCustomName(op.v.Path().String()))
 	// args
 	opts = append(opts, llb.Args(cmd.Args))
+	// dir
+	opts = append(opts, llb.Dir(cmd.Dir))
 	// env
 	for k, v := range cmd.Env {
 		opts = append(opts, llb.AddEnv(k, v))

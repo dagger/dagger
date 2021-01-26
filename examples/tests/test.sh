@@ -88,9 +88,9 @@ test::exec(){
   test::one "Exec: env with overlay" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input 'bar: "overlay environment"' "$d"/exec/env/overlay
 
-  disable test::one "Exec: non existent dir (FIXME https://github.com/blocklayerhq/dagger/issues/30)" --exit=0 --stdout={} \
+  test::one "Exec: non existent dir" --exit=0 --stdout={} \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute  "$d"/exec/dir/doesnotexist
-  disable test::one "Exec: valid dir (FIXME https://github.com/blocklayerhq/dagger/issues/30)" --exit=0 --stdout={} \
+  test::one "Exec: valid dir" --exit=0 --stdout={} \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute  "$d"/exec/dir/exist
 }
 
