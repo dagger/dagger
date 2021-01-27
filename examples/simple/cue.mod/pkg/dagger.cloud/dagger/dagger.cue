@@ -32,11 +32,15 @@ package dagger
 // by scripts defining how to compute it, present it to a user,
 // encrypt it, etc.
 
-// FIXME: #Component will not match embedded scalars.
-//   use Runtime.isComponent() for a reliable check
 #Component: {
+	// Match structs
 	#dagger: #ComponentConfig
 	...
+} | {
+	// Match embedded strings
+	// FIXME: match all embedded scalar types
+	string
+	#dagger: #ComponentConfig
 }
 
 // The contents of a #dagger annotation
@@ -65,7 +69,7 @@ package dagger
 #Local: {
 	do:       "local"
 	dir:      string
-	include?: [...string] | *[]
+	include: [...string] | *[]
 }
 
 // FIXME: bring back load (more efficient than copy)
@@ -81,17 +85,17 @@ package dagger
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount?: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
+	mount: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
 }
 
 #MountTmp:   "tmpfs"
 #MountCache: "cache"
 #MountComponent: {
-	input: #Component
+	from: #Component
 	path:  string | *"/"
 }
 #MountScript: {
-	input: #Script
+	from: #Script
 	path:  string | *"/"
 }
 
@@ -107,13 +111,8 @@ package dagger
 }
 
 #Copy: {
-	do:    "copy"
-	from:  #Script | #Component
+	do:   "copy"
+	from: #Script | #Component
 	src:  string | *"/"
 	dest: string | *"/"
 }
-
-#TestScript: #Script & [
-		{do: "fetch-container", ref: "alpine:latest"},
-		{do: "exec", args: ["echo", "hello", "world"]},
-]
