@@ -118,11 +118,27 @@ func (env *Env) Export(fs FS) (FS, error) {
 	//   client which is undesirable.
 	//   Once Value.Save() resolves non-builtin imports with a tree shake,
 	//   we can use it here.
-	fs = env.base.SaveJSON(fs, "base.cue")
-	fs = env.input.SaveJSON(fs, "input.cue")
+
+	// FIXME: Exporting base/input/output separately causes merge errors.
+	// For instance, `foo: string | *"default foo"` gets serialized as
+	// `{"foo":"default foo"}`, which will fail to merge if output contains
+	// a different definition of `foo`.
+	//
+	// fs = env.base.SaveJSON(fs, "base.cue")
+	// fs = env.input.SaveJSON(fs, "input.cue")
+	// if env.output != nil {
+	// 	fs = env.output.SaveJSON(fs, "output.cue")
+	// }
+	// For now, export a single `state.cue` containing the combined output.
+	var err error
+	state := env.state
 	if env.output != nil {
-		fs = env.output.SaveJSON(fs, "output.cue")
+		state, err = state.Merge(env.output)
+		if err != nil {
+			return env.s.Scratch(), err
+		}
 	}
+	fs = state.SaveJSON(fs, "state.cue")
 	return fs, nil
 }
 
