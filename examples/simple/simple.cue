@@ -21,6 +21,26 @@ www: {
 		#dagger: compute: _
 	}
 
+	// List the contents of the source directory
+	listing: {
+		string
+
+		#dagger: compute: [
+			dagger.#Load & {
+				from: base
+			},
+			dagger.#Exec & {
+				args: ["sh", "-c", "ls /src > /tmp/out"]
+				mount: "/src": {
+					from: source
+				}
+			},
+			dagger.#Export & {
+				source: "/tmp/out"
+			}
+		]
+	}
+
 	host: string
 
 	url: {
@@ -30,12 +50,9 @@ www: {
 			dagger.#Load & { from: base },
 			dagger.#Exec & {
 				args: ["sh", "-c", "echo -n 'https://\(host)/foo' > /tmp/out"]
-				// https://github.com/blocklayerhq/dagger/issues/6
-				mount: foo: {}
 			},
 			dagger.#Export & {
-				// https://github.com/blocklayerhq/dagger/issues/8
-				// source: "/tmp/out"
+				source: "/tmp/out"
 			},
 		]
 	}
