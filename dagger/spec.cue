@@ -91,11 +91,11 @@ package dagger
 #MountTmp:   "tmpfs"
 #MountCache: "cache"
 #MountComponent: {
-	input: #Component
+	from: #Component
 	path:  string | *"/"
 }
 #MountScript: {
-	input: #Script
+	from: #Script
 	path:  string | *"/"
 }
 
