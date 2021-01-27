@@ -72,9 +72,9 @@ package dagger
 }
 
 #Local: {
-	do:       "local"
-	dir:      string
-	include?: [...string] | *[]
+	do:      "local"
+	dir:     string
+	include: [...string] | *[]
 }
 
 // FIXME: bring back load (more efficient than copy)
@@ -97,11 +97,11 @@ package dagger
 #MountCache: "cache"
 #MountComponent: {
 	from: #Component
-	path:  string | *"/"
+	path: string | *"/"
 }
 #MountScript: {
 	from: #Script
-	path:  string | *"/"
+	path: string | *"/"
 }
 
 #FetchContainer: {
