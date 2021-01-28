@@ -13,7 +13,6 @@ import (
 // Use by wrapping in a buildkit client Build call, or buildkit frontend.
 func Compute(ctx context.Context, c bkgw.Client) (r *bkgw.Result, err error) {
 	lg := log.Ctx(ctx)
-
 	// FIXME: wrap errors to avoid crashing buildkit Build()
 	//    with cue error types (why??)
 	defer func() {
@@ -21,37 +20,36 @@ func Compute(ctx context.Context, c bkgw.Client) (r *bkgw.Result, err error) {
 			err = fmt.Errorf("%s", cueerrors.Details(err, nil))
 		}
 	}()
-	// Retrieve boot script form client
-	env, err := NewEnv(ctx, NewSolver(c), getBootScript(c), getInput(c))
+
+	s := NewSolver(c)
+	// Retrieve updater script form client
+	var updater interface{}
+	if o, exists := c.BuildOpts().Opts[bkUpdaterKey]; exists {
+		updater = o
+	}
+	env, err := NewEnv(updater)
 	if err != nil {
 		return nil, err
 	}
+	if err := env.Update(ctx, s); err != nil {
+		return nil, err
+	}
+	if input, exists := c.BuildOpts().Opts["input"]; exists {
+		if err := env.SetInput(input); err != nil {
+			return nil, err
+		}
+	}
 	lg.Debug().Msg("computing env")
 	// Compute output overlay
-	if err := env.Compute(ctx); err != nil {
+	if err := env.Compute(ctx, s); err != nil {
 		return nil, err
 	}
 	lg.Debug().Msg("exporting env")
 	// Export env to a cue directory
-	outdir := NewSolver(c).Scratch()
-	outdir, err = env.Export(outdir)
+	outdir, err := env.Export(s.Scratch())
 	if err != nil {
 		return nil, err
 	}
 	// Wrap cue directory in buildkit result
 	return outdir.Result(ctx)
-}
-
-func getBootScript(c bkgw.Client) string {
-	if boot, exists := c.BuildOpts().Opts["boot"]; exists {
-		return boot
-	}
-	return ""
-}
-
-func getInput(c bkgw.Client) string {
-	if input, exists := c.BuildOpts().Opts["input"]; exists {
-		return input
-	}
-	return ""
 }
