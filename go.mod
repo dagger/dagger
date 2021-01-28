@@ -3,7 +3,7 @@ module dagger.cloud/go
 go 1.13
 
 require (
-	cuelang.org/go v0.3.0-beta.2
+	cuelang.org/go v0.3.0-beta.3
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.1
 	github.com/emicklei/proto v1.9.0 // indirect
@@ -14,6 +14,7 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c // indirect
 	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221
 	golang.org/x/tools v0.1.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200506231410-2ff61e1afc86 // indirect
