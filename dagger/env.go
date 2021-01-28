@@ -11,90 +11,139 @@ import (
 )
 
 type Env struct {
-	// Base config
+	// Env boot script, eg. `[{do:"local",dir:"."}]`
+	// FIXME: rename to 'update' (script to update the env config)
+	// FIXME: embed update script in base as '#update' ?
+	// FIXME: simplify Env by making it single layer? Each layer is one env.
+
+	// Script to update the base configuration
+	updater *Script
+
+	// Layer 1: base configuration
 	base *Value
-	// Input overlay: user settings, external directories, secrets...
+
+	// Layer 2: user inputs
 	input *Value
 
-	// Output overlay: computed values, generated directories
+	// Layer 3: computed values
 	output *Value
 
-	// Buildkit solver
-	s Solver
-
-	// Full cue state (base + input + output)
+	// All layers merged together: base + input + output
 	state *Value
 
-	// shared cue compiler
-	// (because cue API requires shared runtime for everything)
+	// Use the same cue compiler for everything
 	cc *Compiler
 }
 
-// Initialize a new environment
-func NewEnv(ctx context.Context, s Solver, bootsrc, inputsrc string) (*Env, error) {
-	lg := log.Ctx(ctx)
-
-	lg.
-		Debug().
-		Str("boot", bootsrc).
-		Str("input", inputsrc).
-		Msg("New Env")
-
-	cc := &Compiler{}
-	// 1. Compile & execute boot script
-	boot, err := cc.CompileScript("boot.cue", bootsrc)
-	if err != nil {
-		return nil, errors.Wrap(err, "compile boot script")
+func NewEnv(updater interface{}) (*Env, error) {
+	var (
+		env = &Env{}
+		cc  = &Compiler{}
+		err error
+	)
+	// 1. Updater
+	if updater == nil {
+		updater = "[]"
 	}
-	bootfs, err := boot.Execute(ctx, s.Scratch(), nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "execute boot script")
-	}
-	// 2. load cue files produced by boot script
-	// FIXME: BuildAll() to force all files (no required package..)
-	lg.Debug().Msg("building cue configuration from boot state")
-	base, err := cc.Build(ctx, bootfs)
-	if err != nil {
-		return nil, errors.Wrap(err, "load base config")
-	}
-	// 3. Compile & merge input overlay (user settings, input directories, secrets.)
-	lg.Debug().Msg("loading input overlay")
-	input, err := cc.Compile("input.cue", inputsrc)
+	env.updater, err = cc.CompileScript("updater", updater)
 	if err != nil {
 		return nil, err
 	}
-	// Merge base + input into a new cue instance
-	// FIXME: make this cleaner in *Value by keeping intermediary instances
-	stateInst, err := base.CueInst().Fill(input.CueInst().Value())
+	// 2. initialize empty values
+	empty, err := cc.EmptyStruct()
 	if err != nil {
-		return nil, errors.Wrap(err, "merge base & input")
+		return nil, err
 	}
-	state := cc.Wrap(stateInst.Value(), stateInst)
+	env.input = empty
+	env.base = empty
+	env.state = empty
+	env.output = empty
+	// 3. compiler
+	env.cc = cc
+	return env, nil
+}
 
-	lg.
-		Debug().
-		Str("base", base.JSON().String()).
-		Str("input", input.JSON().String()).
-		Msg("ENV")
+func (env *Env) SetInput(src interface{}) error {
+	if src == nil {
+		src = "{}"
+	}
+	input, err := env.cc.Compile("input", src)
+	if err != nil {
+		return err
+	}
+	return env.set(
+		env.base,
+		input,
+		env.output,
+	)
+}
 
-	return &Env{
-		base:  base,
-		input: input,
-		state: state,
-		s:     s,
-		cc:    cc,
-	}, nil
+// Update the base configuration
+func (env *Env) Update(ctx context.Context, s Solver) error {
+	// execute updater script
+	src, err := env.updater.Execute(ctx, s.Scratch(), nil)
+	if err != nil {
+		return err
+	}
+	// load cue files produced by updater
+	// FIXME: BuildAll() to force all files (no required package..)
+	base, err := env.cc.Build(ctx, src)
+	if err != nil {
+		return errors.Wrap(err, "base config")
+	}
+	return env.set(
+		base,
+		env.input,
+		env.output,
+	)
+}
+
+// Scan all scripts in the environment for references to local directories (do:"local"),
+// and return all referenced directory names.
+// This is used by clients to grant access to local directories when they are referenced
+// by user-specified scripts.
+func (env *Env) LocalDirs(ctx context.Context) (map[string]string, error) {
+	lg := log.Ctx(ctx)
+	dirs := map[string]string{}
+	// 1. Walk env state, scan compute script for each component.
+	lg.Debug().Msg("walking env client-side for local dirs")
+	_, err := env.Walk(ctx, func(ctx context.Context, c *Component, out *Fillable) error {
+		lg.Debug().
+			Str("func", "Env.LocalDirs").
+			Str("component", c.Value().Path().String()).
+			Msg("scanning next component for local dirs")
+		cdirs, err := c.LocalDirs(ctx)
+		if err != nil {
+			return err
+		}
+		for k, v := range cdirs {
+			dirs[k] = v
+		}
+		return nil
+	})
+	if err != nil {
+		return dirs, err
+	}
+	// 2. Scan updater script
+	updirs, err := env.updater.LocalDirs(ctx)
+	if err != nil {
+		return dirs, err
+	}
+	for k, v := range updirs {
+		dirs[k] = v
+	}
+	return dirs, nil
 }
 
 // Compute missing values in env configuration, and write them to state.
-func (env *Env) Compute(ctx context.Context) error {
+func (env *Env) Compute(ctx context.Context, s Solver) error {
 	output, err := env.Walk(ctx, func(ctx context.Context, c *Component, out *Fillable) error {
 		lg := log.Ctx(ctx)
 
 		lg.
 			Debug().
 			Msg("[Env.Compute] processing")
-		if _, err := c.Compute(ctx, env.s, out); err != nil {
+		if _, err := c.Compute(ctx, s, out); err != nil {
 			lg.
 				Error().
 				Err(err).
@@ -106,7 +155,41 @@ func (env *Env) Compute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return env.set(
+		env.base,
+		env.input,
+		output,
+	)
+}
+
+// FIXME: this is just a 3-way merge. Add var args to Value.Merge.
+func (env *Env) set(base, input, output *Value) error {
+	// FIXME: make this cleaner in *Value by keeping intermediary instances
+	// FIXME: state.CueInst() must return an instance with the same
+	//  contents as state.v, for the purposes of cueflow.
+	//  That is not currently how *Value works, so we prepare the cue
+	//  instance manually.
+	//   --> refactor the Value API to do this for us.
+	baseInst := base.CueInst()
+	inputInst := input.CueInst()
+	outputInst := output.CueInst()
+
+	stateInst, err := baseInst.Fill(inputInst.Value())
+	if err != nil {
+		return errors.Wrap(err, "merge base & input")
+	}
+	stateInst, err = stateInst.Fill(outputInst.Value())
+	if err != nil {
+		return errors.Wrap(err, "merge output with base & input")
+	}
+
+	state := env.cc.Wrap(stateInst.Value(), stateInst)
+
+	// commit
+	env.base = base
+	env.input = input
 	env.output = output
+	env.state = state
 	return nil
 }
 
@@ -135,13 +218,14 @@ func (env *Env) Export(fs FS) (FS, error) {
 	if env.output != nil {
 		state, err = state.Merge(env.output)
 		if err != nil {
-			return env.s.Scratch(), err
+			return fs, err
 		}
 	}
 	fs = state.SaveJSON(fs, "state.cue")
 	return fs, nil
 }
 
+// FIXME: don't need ctx here
 type EnvWalkFunc func(context.Context, *Component, *Fillable) error
 
 // Walk components and return any computed values

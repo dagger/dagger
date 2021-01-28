@@ -46,6 +46,17 @@ func (c *Component) ComputeScript() (*Script, error) {
 	return newScript(c.Config().Get("compute"))
 }
 
+// Return a list of local dirs required to compute this component.
+// (Scanned from the arg `dir` of operations `do: "local"` in the
+// compute script.
+func (c *Component) LocalDirs(ctx context.Context) (map[string]string, error) {
+	s, err := c.ComputeScript()
+	if err != nil {
+		return nil, err
+	}
+	return s.LocalDirs(ctx)
+}
+
 // Compute the configuration for this component.
 //
 // Difference with Execute:

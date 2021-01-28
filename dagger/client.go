@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -27,25 +28,11 @@ import (
 
 const (
 	defaultBuildkitHost = "docker-container://buildkitd"
-
-	bkBootKey  = "boot"
-	bkInputKey = "input"
-
-	// Base client config, for default values & schema validation.
-	baseClientConfig = `
-	close({
-		bootdir: string | *"."
-		boot: [...{do:string,...}] | *[
-			{
-				do: "local"
-				dir: bootdir
-				include: ["*.cue", "cue.mod"]
-			}
-		]
-	})
-	`
+	bkUpdaterKey        = "updater"
+	bkInputKey          = "input"
 )
 
+// A dagger client
 type Client struct {
 	c *bk.Client
 
@@ -56,31 +43,54 @@ type Client struct {
 type ClientConfig struct {
 	// Buildkit host address, eg. `docker://buildkitd`
 	Host string
-	// Env boot script, eg. `[{do:"local",dir:"."}]`
-	Boot string
-	// Env boot dir, eg. `.`
-	// May be referenced by boot script.
-	BootDir string
-	// Input overlay, eg. `www: source: #dagger: compute: [{do:"local",dir:"./src"}]`
+	// Script to update the env config, eg . `[{do:"local",dir:"."}]`
+	Updater string
+	// Input values to merge on the base config, eg. `www: source: #dagger: compute: [{do:"local",dir:"./src"}]`
 	Input string
 }
 
 func NewClient(ctx context.Context, cfg ClientConfig) (result *Client, err error) {
+	lg := log.Ctx(ctx)
 	defer func() {
 		if err != nil {
 			// Expand cue errors to get full details
 			err = cueErr(err)
 		}
 	}()
-	// Finalize config values
-	localdirs, err := (&cfg).Finalize(ctx)
+	// Load partial env client-side, to validate & scan local dirs
+	env, err := NewEnv(cfg.Updater)
 	if err != nil {
-		return nil, errors.Wrap(err, "client config")
+		return nil, errors.Wrap(err, "updater")
 	}
-	log.Ctx(ctx).Debug().
-		Interface("cfg", cfg).
-		Interface("localdirs", localdirs).
-		Msg("finalized client config")
+	if err := env.SetInput(cfg.Input); err != nil {
+		return nil, errors.Wrap(err, "input")
+	}
+	localdirs, err := env.LocalDirs(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "scan local dirs")
+	}
+	envsrc, err := env.state.SourceString()
+	if err != nil {
+		return nil, err
+	}
+	lg.Debug().
+		Str("func", "NewClient").
+		Str("env", envsrc).
+		Msg("loaded partial env client-side")
+	for label, dir := range localdirs {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return nil, err
+		}
+		localdirs[label] = abs
+	}
+	// Configure buildkit client
+	if cfg.Host == "" {
+		cfg.Host = os.Getenv("BUILDKIT_HOST")
+	}
+	if cfg.Host == "" {
+		cfg.Host = defaultBuildkitHost
+	}
 	c, err := bk.New(ctx, cfg.Host)
 	if err != nil {
 		return nil, errors.Wrap(err, "buildkit client")
@@ -90,78 +100,6 @@ func NewClient(ctx context.Context, cfg ClientConfig) (result *Client, err error
 		cfg:       cfg,
 		localdirs: localdirs,
 	}, nil
-}
-
-// Compile config, fill in final values,
-// and return a rollup of local directories
-// referenced in the config.
-// Localdirs may be referenced in 2 places:
-//  1. Boot script
-//  2. Input overlay (FIXME: scan not yet implemented)
-func (cfg *ClientConfig) Finalize(ctx context.Context) (map[string]string, error) {
-	localdirs := map[string]string{}
-	// buildkit client
-	if cfg.Host == "" {
-		cfg.Host = os.Getenv("BUILDKIT_HOST")
-	}
-	if cfg.Host == "" {
-		cfg.Host = defaultBuildkitHost
-	}
-	// Compile cue template for boot script & boot dir
-	// (using cue because script may reference dir)
-	v, err := cfg.Compile()
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid client config")
-	}
-	// Finalize boot script
-	boot, err := NewScript(v.Get("boot"))
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid env boot script")
-	}
-	cfg.Boot = string(boot.Value().JSON())
-	// Scan boot script for references to local dirs, to grant access.
-	bootLocalDirs, err := boot.LocalDirs(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "scan boot script for local dir access")
-	}
-	// Finalize boot dir
-	cfg.BootDir, err = v.Get("bootdir").String()
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid env boot dir")
-	}
-	// Scan boot script for references to local dirs, to grant access.
-	for _, dir := range bootLocalDirs {
-		// FIXME: randomize local dir references for security
-		// (currently a malicious cue package may guess common local paths
-		//  and access the corresponding host directory)
-		localdirs[dir] = dir
-	}
-	// FIXME: scan input overlay for references to local dirs, to grant access.
-	// See issue #41
-	return localdirs, nil
-}
-
-// Compile client config to a cue value
-// FIXME: include host and input.
-func (cfg ClientConfig) Compile() (v *Value, err error) {
-	cc := &Compiler{}
-	v, err = cc.Compile("client.cue", baseClientConfig)
-	if err != nil {
-		return nil, errors.Wrap(err, "base client config")
-	}
-	if cfg.BootDir != "" {
-		v, err = v.Merge(cfg.BootDir, "bootdir")
-		if err != nil {
-			return nil, errors.Wrap(err, "client config key 'bootdir'")
-		}
-	}
-	if cfg.Boot != "" {
-		v, err = v.Merge(cfg.Boot, "boot")
-		if err != nil {
-			return nil, errors.Wrap(err, "client config key 'boot'")
-		}
-	}
-	return v, nil
 }
 
 func (c *Client) Compute(ctx context.Context) (*Value, error) {
@@ -227,8 +165,8 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 	// Setup solve options
 	opts := bk.SolveOpt{
 		FrontendAttrs: map[string]string{
-			bkInputKey: c.cfg.Input,
-			bkBootKey:  c.cfg.Boot,
+			bkInputKey:   c.cfg.Input,
+			bkUpdaterKey: c.cfg.Updater,
 		},
 		LocalDirs: c.localdirs,
 		// FIXME: catch output & return as cue value

@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"context"
-	"strings"
 	"testing"
 )
 
@@ -154,32 +153,6 @@ func TestLocalScript(t *testing.T) {
 	}
 }
 
-func TestWalkBootScript(t *testing.T) {
-	ctx := context.TODO()
-
-	cfg := &ClientConfig{}
-	_, err := cfg.Finalize(context.TODO())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cc := &Compiler{}
-	script, err := cc.CompileScript("boot.cue", cfg.Boot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dirs, err := script.LocalDirs(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dirs) != 1 {
-		t.Fatal(dirs)
-	}
-	if dirs[0] != "." {
-		t.Fatal(dirs)
-	}
-}
-
 func TestWalkBiggerScript(t *testing.T) {
 	t.Skip("FIXME")
 
@@ -229,10 +202,23 @@ func TestWalkBiggerScript(t *testing.T) {
 	if len(dirs) != 4 {
 		t.Fatal(dirs)
 	}
-	wanted := "ga bu zo meu"
-	got := strings.Join(dirs, " ")
-	if wanted != got {
-		t.Fatal(got)
+	wanted := map[string]string{
+		"ga":  "ga",
+		"bu":  "bu",
+		"zo":  "zo",
+		"meu": "meu",
+	}
+	if len(wanted) != len(dirs) {
+		t.Fatal(dirs)
+	}
+	for k, wantedV := range wanted {
+		gotV, ok := dirs[k]
+		if !ok {
+			t.Fatal(dirs)
+		}
+		if gotV != wantedV {
+			t.Fatal(dirs)
+		}
 	}
 }
 

@@ -249,8 +249,15 @@ func (v *Value) Validate(defs ...string) error {
 	return nil
 }
 
+// Return cue source for this value
 func (v *Value) Source() ([]byte, error) {
 	return cueformat.Node(v.val.Eval().Syntax())
+}
+
+// Return cue source for this value, as a Go string
+func (v *Value) SourceString() (string, error) {
+	b, err := v.Source()
+	return string(b), err
 }
 
 func (v *Value) IsEmptyStruct() bool {

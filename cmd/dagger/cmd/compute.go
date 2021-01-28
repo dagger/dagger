@@ -29,7 +29,7 @@ var computeCmd = &cobra.Command{
 
 		c, err := dagger.NewClient(ctx, dagger.ClientConfig{
 			Input:   viper.GetString("input"),
-			BootDir: args[0],
+			Updater: localUpdater(args[0]),
 		})
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
@@ -44,6 +44,16 @@ var computeCmd = &cobra.Command{
 		lg.Info().Msg("processing output")
 		fmt.Println(output.JSON())
 	},
+}
+
+func localUpdater(dir string) string {
+	return fmt.Sprintf(`[
+		{
+			do: "local"
+			dir: "%s"
+			include: ["*.cue", "cue.mod"]
+		}
+	]`, dir)
 }
 
 func init() {
