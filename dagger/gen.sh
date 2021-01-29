@@ -1,7 +1,6 @@
 #!/bin/bash
 
 set -e
-cue eval spec.cue >/dev/null
 (
 cat <<'EOF'
 package dagger
