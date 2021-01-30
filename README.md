@@ -96,7 +96,7 @@ Here is an example command, using an example configuration:
 $ dagger compute \
 	./examples/simple \
 	--input 'www: hostname: "www.mysuperapp.com"' \
-	--input 'www: source: #dagger: compute: [{do:"fetch-git", remote:"https://github.com/samalba/hellogo", ref:"master"}]'
+	--input 'www: source: #dagger: compute: [{do:"fetch-git", remote:"https://github.com/samalba/hello-go", ref:"master"}]'
 ```
 
 
