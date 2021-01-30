@@ -12,7 +12,7 @@ let alpine={
 	#dagger: compute: [
 		{
 			do: "fetch-container"
-			ref: "index.docker.io@\(digest)"
+			ref: "index.docker.io/alpine@\(digest)"
 		},
 		for pkg, info in package {
 			if (info & true) != _|_ {
