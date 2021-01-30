@@ -3,23 +3,33 @@
 package acme
 
 import (
-	"dagger.cloud/alpine"
 	"dagger.cloud/dagger"
 )
 
-let base=alpine & {
-	package: {
-		bash: ">3.0"
-		rsync: true
-	}
+let alpine={
+	digest: "sha256:3c7497bf0c7af93428242d6176e8f7905f2201d8fc5861f45be7a346b5f23436"
+	package: [string]: true | false | string
+	#dagger: compute: [
+		{
+			do: "fetch-container"
+			ref: "index.docker.io@\(digest)"
+		},
+		for pkg, info in package {
+			if (info & true) != _|_ {
+				do: "exec"
+				args: ["apk", "add", "-U", "--no-cache", pkg]
+			}
+			if (info & string) != _|_  {
+				do: "exec"
+				args: ["apk", "add", "-U", "--no-cache", "\(pkg)\(info)"]
+			}
+		},
+	]
 }
 
 www: {
 
-	source: {
-		// Make this undefined on purpose to require an input directory.
-		#dagger: compute: _
-	}
+	source: dagger.#Dir
 
 	// List the contents of the source directory
 	listing: {
@@ -27,7 +37,7 @@ www: {
 
 		#dagger: compute: [
 			dagger.#Load & {
-				from: base
+				from: alpine
 			},
 			dagger.#Exec & {
 				args: ["sh", "-c", "ls /src > /tmp/out"]
@@ -47,7 +57,10 @@ www: {
 		string
 
 		#dagger: compute: [
-			dagger.#Load & { from: base },
+			{
+				do: "load"
+				from: alpine
+			},
 			dagger.#Exec & {
 				args: ["sh", "-c", "echo -n 'https://\(host)/foo' > /tmp/out"]
 			},

@@ -51,7 +51,9 @@ package dagger
 
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
-#Dir: #Component
+#Dir: #Component & {
+	#dagger: compute: _
+}
 
 #Script: [...#Op]
 
@@ -67,8 +69,8 @@ package dagger
 }
 
 #Local: {
-	do:       "local"
-	dir:      string
+	do:      "local"
+	dir:     string
 	include: [...string] | *[]
 }
 
@@ -92,11 +94,11 @@ package dagger
 #MountCache: "cache"
 #MountComponent: {
 	from: #Component
-	path:  string | *"/"
+	path: string | *"/"
 }
 #MountScript: {
 	from: #Script
-	path:  string | *"/"
+	path: string | *"/"
 }
 
 #FetchContainer: {
