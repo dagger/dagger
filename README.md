@@ -93,10 +93,7 @@ which hide the complexity of `dagger compute` (but it will always be available t
 Here is an example command, using an example configuration:
 
 ```
-$ dagger compute \
-	./examples/simple \
-	--input 'www: hostname: "www.mysuperapp.com"' \
-	--input 'www: source: #dagger: compute: [{do:"fetch-git", remote:"https://github.com/samalba/hello-go", ref:"master"}]'
+$ dagger compute ./examples/simple --input-string www.host=mysuperapp.com --input-dir www.source=.
 ```
 
 

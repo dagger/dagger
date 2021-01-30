@@ -27,8 +27,11 @@ func Compute(ctx context.Context, c bkgw.Client) (r *bkgw.Result, err error) {
 	if o, exists := c.BuildOpts().Opts[bkUpdaterKey]; exists {
 		updater = o
 	}
-	env, err := NewEnv(updater)
+	env, err := NewEnv()
 	if err != nil {
+		return nil, err
+	}
+	if err := env.SetUpdater(updater); err != nil {
 		return nil, err
 	}
 	if err := env.Update(ctx, s); err != nil {

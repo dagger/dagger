@@ -32,8 +32,7 @@ func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
 	}
 }
 
-// Fill is a concurrency safe wrapper around cue.Value.Fill()
-// This is the only method which changes the value in-place.
+// Fill the value in-place, unlike Merge which returns a copy.
 func (v *Value) Fill(x interface{}) error {
 	v.cc.Lock()
 	defer v.cc.Unlock()
@@ -94,6 +93,11 @@ func (v *Value) Exists() bool {
 // Proxy function to the underlying cue.Value
 func (v *Value) String() (string, error) {
 	return v.val.String()
+}
+
+func (v *Value) SourceUnsafe() string {
+	s, _ := v.SourceString()
+	return s
 }
 
 // Proxy function to the underlying cue.Value

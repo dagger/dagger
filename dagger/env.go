@@ -35,39 +35,82 @@ type Env struct {
 	cc *Compiler
 }
 
-func NewEnv(updater interface{}) (*Env, error) {
-	var (
-		env = &Env{}
-		cc  = &Compiler{}
-		err error
-	)
-	// 1. Updater
-	if updater == nil {
-		updater = "[]"
+func (env *Env) Updater() *Script {
+	return env.updater
+}
+
+// Set the updater script for this environment.
+// u may be:
+//  - A compiled script: *Script
+//  - A compiled value: *Value
+//  - A cue source: string, []byte, io.Reader
+func (env *Env) SetUpdater(u interface{}) error {
+	if v, ok := u.(*Value); ok {
+		updater, err := NewScript(v)
+		if err != nil {
+			return errors.Wrap(err, "invalid updater script")
+		}
+		env.updater = updater
+		return nil
 	}
-	env.updater, err = cc.CompileScript("updater", updater)
+	if updater, ok := u.(*Script); ok {
+		env.updater = updater
+		return nil
+	}
+	if u == nil {
+		u = "[]"
+	}
+	updater, err := env.cc.CompileScript("updater", u)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	// 2. initialize empty values
+	env.updater = updater
+	return nil
+}
+
+func NewEnv() (*Env, error) {
+	cc := &Compiler{}
 	empty, err := cc.EmptyStruct()
 	if err != nil {
 		return nil, err
 	}
-	env.input = empty
-	env.base = empty
-	env.state = empty
-	env.output = empty
-	// 3. compiler
-	env.cc = cc
+	env := &Env{
+		cc:     cc,
+		base:   empty,
+		input:  empty,
+		output: empty,
+		state:  empty,
+	}
+	if err := env.SetUpdater(nil); err != nil {
+		return nil, err
+	}
 	return env, nil
 }
 
-func (env *Env) SetInput(src interface{}) error {
-	if src == nil {
-		src = "{}"
+func (env *Env) Compiler() *Compiler {
+	return env.cc
+}
+
+func (env *Env) State() *Value {
+	return env.state
+}
+
+func (env *Env) Input() *Value {
+	return env.input
+}
+
+func (env *Env) SetInput(i interface{}) error {
+	if input, ok := i.(*Value); ok {
+		return env.set(
+			env.base,
+			input,
+			env.output,
+		)
 	}
-	input, err := env.cc.Compile("input", src)
+	if i == nil {
+		i = "{}"
+	}
+	input, err := env.cc.Compile("input", i)
 	if err != nil {
 		return err
 	}
@@ -98,6 +141,14 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 	)
 }
 
+func (env *Env) Base() *Value {
+	return env.base
+}
+
+func (env *Env) Output() *Value {
+	return env.output
+}
+
 // Scan all scripts in the environment for references to local directories (do:"local"),
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
@@ -105,8 +156,15 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 func (env *Env) LocalDirs(ctx context.Context) (map[string]string, error) {
 	lg := log.Ctx(ctx)
 	dirs := map[string]string{}
+	lg.Debug().
+		Str("func", "Env.LocalDirs").
+		Str("state", env.state.SourceUnsafe()).
+		Str("updater", env.updater.Value().SourceUnsafe()).
+		Msg("starting")
+	defer func() {
+		lg.Debug().Str("func", "Env.LocalDirs").Interface("result", dirs).Msg("done")
+	}()
 	// 1. Walk env state, scan compute script for each component.
-	lg.Debug().Msg("walking env client-side for local dirs")
 	_, err := env.Walk(ctx, func(ctx context.Context, c *Component, out *Fillable) error {
 		lg.Debug().
 			Str("func", "Env.LocalDirs").
@@ -163,22 +221,24 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 }
 
 // FIXME: this is just a 3-way merge. Add var args to Value.Merge.
-func (env *Env) set(base, input, output *Value) error {
+func (env *Env) set(base, input, output *Value) (err error) {
 	// FIXME: make this cleaner in *Value by keeping intermediary instances
 	// FIXME: state.CueInst() must return an instance with the same
 	//  contents as state.v, for the purposes of cueflow.
 	//  That is not currently how *Value works, so we prepare the cue
 	//  instance manually.
 	//   --> refactor the Value API to do this for us.
-	baseInst := base.CueInst()
-	inputInst := input.CueInst()
-	outputInst := output.CueInst()
+	stateInst := env.state.CueInst()
 
-	stateInst, err := baseInst.Fill(inputInst.Value())
+	stateInst, err = stateInst.Fill(base.val)
 	if err != nil {
 		return errors.Wrap(err, "merge base & input")
 	}
-	stateInst, err = stateInst.Fill(outputInst.Value())
+	stateInst, err = stateInst.Fill(input.val)
+	if err != nil {
+		return errors.Wrap(err, "merge base & input")
+	}
+	stateInst, err = stateInst.Fill(output.val)
 	if err != nil {
 		return errors.Wrap(err, "merge output with base & input")
 	}

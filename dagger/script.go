@@ -101,6 +101,11 @@ func (s *Script) Walk(ctx context.Context, fn func(op *Op) error) error {
 }
 
 func (s *Script) LocalDirs(ctx context.Context) (map[string]string, error) {
+	lg := log.Ctx(ctx)
+	lg.Debug().
+		Str("func", "Script.LocalDirs").
+		Str("location", s.Value().Path().String()).
+		Msg("starting")
 	dirs := map[string]string{}
 	err := s.Walk(ctx, func(op *Op) error {
 		if err := op.Validate("#Local"); err != nil {
@@ -114,5 +119,11 @@ func (s *Script) LocalDirs(ctx context.Context) (map[string]string, error) {
 		dirs[dir] = dir
 		return nil
 	})
+	lg.Debug().
+		Str("func", "Script.LocalDirs").
+		Str("location", s.Value().Path().String()).
+		Interface("err", err).
+		Interface("result", dirs).
+		Msg("done")
 	return dirs, err
 }
