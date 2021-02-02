@@ -41,6 +41,17 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/wrapped
 }
 
+test::dependencies(){
+  local dagger="$1"
+
+  test::one "Dependencies: simple direct dependency" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/simple
+  test::one "Dependencies: interpolation" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/interpolation
+  test::one "Dependencies: json.Unmarshal" --exit=0 --stdout='{"A":"{\"hello\": \"world\"}\n","B":{"result":"unmarshalled.hello=world"},"unmarshalled":{"hello":"world"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/unmarshal
+}
+
 test::fetchcontainer(){
   local dagger="$1"
 

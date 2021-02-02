@@ -64,6 +64,7 @@ func (s *Script) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) 
 			log.
 				Ctx(ctx).
 				Warn().
+				Err(err).
 				Int("op", idx).
 				// FIXME: tell user which inputs are missing (by inspecting references)
 				Msg("script is missing inputs and has not been fully executed")

@@ -280,24 +280,30 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 	}
 	// Cueflow match func
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
-		lg := lg.
-			With().
-			Str("path", v.Path().String()).
-			Logger()
-		ctx := lg.WithContext(ctx)
-
-		lg.Debug().Msg("Env.Walk: processing")
-		// FIXME: get directly from state Value ? Locking issue?
-		val := env.cc.Wrap(v, flowInst)
-		c, err := NewComponent(val)
-		if os.IsNotExist(err) {
-			// Not a component: skip
-			return nil, nil
-		}
-		if err != nil {
+		if _, err := NewComponent(env.cc.Wrap(v, flowInst)); err != nil {
+			if os.IsNotExist(err) {
+				// Not a component: skip
+				return nil, nil
+			}
 			return nil, err
 		}
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
+			lg := lg.
+				With().
+				Str("path", t.Path().String()).
+				Logger()
+			ctx := lg.WithContext(ctx)
+
+			c, err := NewComponent(env.cc.Wrap(t.Value(), flowInst))
+			if err != nil {
+				return err
+			}
+			for _, dep := range t.Dependencies() {
+				lg.
+					Debug().
+					Str("dependency", dep.Path().String()).
+					Msg("dependency detected")
+			}
 			return fn(ctx, c, NewFillable(t))
 		}), nil
 	}
