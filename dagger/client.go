@@ -37,19 +37,26 @@ type Client struct {
 	c *bk.Client
 
 	localdirs map[string]string
-	cfg       ClientConfig
 }
 
-type ClientConfig struct {
-	// Buildkit host address, eg. `docker://buildkitd`
-	Host string
-	// Script to update the env config, eg . `[{do:"local",dir:"."}]`
-	Updater string
-	// Input values to merge on the base config, eg. `www: source: #dagger: compute: [{do:"local",dir:"./src"}]`
-	Input string
+func NewClient(ctx context.Context, host string) (*Client, error) {
+	if host == "" {
+		host = os.Getenv("BUILDKIT_HOST")
+	}
+	if host == "" {
+		host = defaultBuildkitHost
+	}
+	c, err := bk.New(ctx, host)
+	if err != nil {
+		return nil, errors.Wrap(err, "buildkit client")
+	}
+	return &Client{
+		c: c,
+	}, nil
 }
 
-func NewClient(ctx context.Context, cfg ClientConfig) (result *Client, err error) {
+// FIXME: return completed *Env, instead of *Value
+func (c *Client) Compute(ctx context.Context, env *Env) (o *Value, err error) {
 	lg := log.Ctx(ctx)
 	defer func() {
 		if err != nil {
@@ -57,26 +64,11 @@ func NewClient(ctx context.Context, cfg ClientConfig) (result *Client, err error
 			err = cueErr(err)
 		}
 	}()
-	// Load partial env client-side, to validate & scan local dirs
-	env, err := NewEnv(cfg.Updater)
-	if err != nil {
-		return nil, errors.Wrap(err, "updater")
-	}
-	if err := env.SetInput(cfg.Input); err != nil {
-		return nil, errors.Wrap(err, "input")
-	}
+	// Scan local dirs to grant access
 	localdirs, err := env.LocalDirs(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "scan local dirs")
 	}
-	envsrc, err := env.state.SourceString()
-	if err != nil {
-		return nil, err
-	}
-	lg.Debug().
-		Str("func", "NewClient").
-		Str("env", envsrc).
-		Msg("loaded partial env client-side")
 	for label, dir := range localdirs {
 		abs, err := filepath.Abs(dir)
 		if err != nil {
@@ -84,32 +76,14 @@ func NewClient(ctx context.Context, cfg ClientConfig) (result *Client, err error
 		}
 		localdirs[label] = abs
 	}
-	// Configure buildkit client
-	if cfg.Host == "" {
-		cfg.Host = os.Getenv("BUILDKIT_HOST")
-	}
-	if cfg.Host == "" {
-		cfg.Host = defaultBuildkitHost
-	}
-	c, err := bk.New(ctx, cfg.Host)
-	if err != nil {
-		return nil, errors.Wrap(err, "buildkit client")
-	}
-	return &Client{
-		c:         c,
-		cfg:       cfg,
-		localdirs: localdirs,
-	}, nil
-}
+	c.localdirs = localdirs
 
-func (c *Client) Compute(ctx context.Context) (*Value, error) {
-	lg := log.Ctx(ctx)
-
-	cc := &Compiler{}
-	out, err := cc.EmptyStruct()
+	// FIXME: merge this into env output.
+	out, err := env.Compiler().EmptyStruct()
 	if err != nil {
 		return nil, err
 	}
+
 	// Spawn Build() goroutine
 	eg, ctx := errgroup.WithContext(ctx)
 	events := make(chan *bk.SolveStatus)
@@ -118,7 +92,7 @@ func (c *Client) Compute(ctx context.Context) (*Value, error) {
 	// Spawn build function
 	eg.Go(func() error {
 		defer outw.Close()
-		return c.buildfn(ctx, events, outw)
+		return c.buildfn(ctx, env, events, outw)
 	})
 
 	// Spawn print function(s)
@@ -154,19 +128,28 @@ func (c *Client) Compute(ctx context.Context) (*Value, error) {
 	// Retrieve output
 	eg.Go(func() error {
 		defer outr.Close()
-		return c.outputfn(ctx, outr, out, cc)
+		return c.outputfn(ctx, outr, out, env.cc)
 	})
 	return out, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
+	// Serialize input and updater
+	input, err := env.Input().SourceString()
+	if err != nil {
+		return errors.Wrap(err, "serialize env input")
+	}
+	updater, err := env.Updater().Value().SourceString()
+	if err != nil {
+		return errors.Wrap(err, "serialize updater script")
+	}
 	// Setup solve options
 	opts := bk.SolveOpt{
 		FrontendAttrs: map[string]string{
-			bkInputKey:   c.cfg.Input,
-			bkUpdaterKey: c.cfg.Updater,
+			bkInputKey:   input,
+			bkUpdaterKey: updater,
 		},
 		LocalDirs: c.localdirs,
 		// FIXME: catch output & return as cue value
@@ -183,7 +166,6 @@ func (c *Client) buildfn(ctx context.Context, ch chan *bk.SolveStatus, w io.Writ
 	lg.Debug().
 		Interface("localdirs", opts.LocalDirs).
 		Interface("attrs", opts.FrontendAttrs).
-		Interface("host", c.cfg.Host).
 		Msg("spawning buildkit job")
 	resp, err := c.c.Build(ctx, opts, "", Compute, ch)
 	if err != nil {

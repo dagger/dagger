@@ -12,6 +12,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+var (
+	env     *dagger.Env
+	input   *dagger.InputValue
+	updater *dagger.InputValue
+)
+
 var computeCmd = &cobra.Command{
 	Use:   "compute CONFIG",
 	Short: "Compute a configuration",
@@ -27,17 +33,24 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(appcontext.Context())
 
-		c, err := dagger.NewClient(ctx, dagger.ClientConfig{
-			Input:   viper.GetString("input"),
-			Updater: localUpdater(args[0]),
-		})
+		if err := updater.SourceFlag().Set(args[0]); err != nil {
+			lg.Fatal().Err(err).Msg("invalid local source")
+		}
+
+		if err := env.SetUpdater(updater.Value()); err != nil {
+			lg.Fatal().Err(err).Msg("invalid updater script")
+		}
+		lg.Debug().Str("input", input.Value().SourceUnsafe()).Msg("Setting input")
+		if err := env.SetInput(input.Value()); err != nil {
+			lg.Fatal().Err(err).Msg("invalid input")
+		}
+		lg.Debug().Str("env state", env.State().SourceUnsafe()).Msg("creating client")
+		c, err := dagger.NewClient(ctx, "")
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		// FIXME: configure which config to compute (duh)
-		// FIXME: configure inputs
 		lg.Info().Msg("running")
-		output, err := c.Compute(ctx)
+		output, err := c.Compute(ctx, env)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to compute")
 		}
@@ -46,18 +59,35 @@ var computeCmd = &cobra.Command{
 	},
 }
 
-func localUpdater(dir string) string {
-	return fmt.Sprintf(`[
-		{
-			do: "local"
-			dir: "%s"
-			include: ["*.cue", "cue.mod"]
-		}
-	]`, dir)
-}
-
 func init() {
-	computeCmd.Flags().String("input", "", "Input overlay")
+	// Why is this stuff here?
+	// 1. input must be global for flag parsing
+	// 2. updater must be global for flag parsing
+	// 3. env must have same compiler as input & updater,
+	//   therefore it must be global too.
+	//
+	// FIXME: roll up InputValue into Env?
+	var err error
+	env, err = dagger.NewEnv()
+	if err != nil {
+		panic(err)
+	}
+
+	// Setup --input-* flags
+	input, err = dagger.NewInputValue(env.Compiler(), "{}")
+	if err != nil {
+		panic(err)
+	}
+	computeCmd.Flags().Var(input.StringFlag(), "input-string", "TARGET=STRING")
+	computeCmd.Flags().Var(input.DirFlag(), "input-dir", "TARGET=PATH")
+	computeCmd.Flags().Var(input.GitFlag(), "input-git", "TARGET=REMOTE#REF")
+	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
+
+	// Setup (future) --from-* flags
+	updater, err = dagger.NewInputValue(env.Compiler(), "[...{do:string, ...}]")
+	if err != nil {
+		panic(err)
+	}
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)
