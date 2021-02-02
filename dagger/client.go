@@ -20,6 +20,7 @@ import (
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 
 	// docker output
 	"github.com/containerd/console"
@@ -28,15 +29,11 @@ import (
 
 const (
 	defaultBuildkitHost = "docker-container://buildkitd"
-	bkUpdaterKey        = "updater"
-	bkInputKey          = "input"
 )
 
 // A dagger client
 type Client struct {
 	c *bk.Client
-
-	localdirs map[string]string
 }
 
 func NewClient(ctx context.Context, host string) (*Client, error) {
@@ -64,19 +61,6 @@ func (c *Client) Compute(ctx context.Context, env *Env) (o *Value, err error) {
 			err = cueErr(err)
 		}
 	}()
-	// Scan local dirs to grant access
-	localdirs, err := env.LocalDirs(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "scan local dirs")
-	}
-	for label, dir := range localdirs {
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			return nil, err
-		}
-		localdirs[label] = abs
-	}
-	c.localdirs = localdirs
 
 	// FIXME: merge this into env output.
 	out, err := env.Compiler().EmptyStruct()
@@ -136,22 +120,22 @@ func (c *Client) Compute(ctx context.Context, env *Env) (o *Value, err error) {
 func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
-	// Serialize input and updater
-	input, err := env.Input().SourceString()
+	// Scan local dirs to grant access
+	localdirs, err := env.LocalDirs(ctx)
 	if err != nil {
-		return errors.Wrap(err, "serialize env input")
+		return errors.Wrap(err, "scan local dirs")
 	}
-	updater, err := env.Updater().Value().SourceString()
-	if err != nil {
-		return errors.Wrap(err, "serialize updater script")
+	for label, dir := range localdirs {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		localdirs[label] = abs
 	}
+
 	// Setup solve options
 	opts := bk.SolveOpt{
-		FrontendAttrs: map[string]string{
-			bkInputKey:   input,
-			bkUpdaterKey: updater,
-		},
-		LocalDirs: c.localdirs,
+		LocalDirs: localdirs,
 		// FIXME: catch output & return as cue value
 		Exports: []bk.ExportEntry{
 			{
@@ -162,12 +146,33 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 			},
 		},
 	}
+
 	// Call buildkit solver
 	lg.Debug().
 		Interface("localdirs", opts.LocalDirs).
 		Interface("attrs", opts.FrontendAttrs).
 		Msg("spawning buildkit job")
-	resp, err := c.c.Build(ctx, opts, "", Compute, ch)
+
+	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
+		s := NewSolver(c)
+
+		if err := env.Update(ctx, s); err != nil {
+			return nil, err
+		}
+		lg.Debug().Msg("computing env")
+		// Compute output overlay
+		if err := env.Compute(ctx, s); err != nil {
+			return nil, err
+		}
+		lg.Debug().Msg("exporting env")
+		// Export env to a cue directory
+		outdir, err := env.Export(s.Scratch())
+		if err != nil {
+			return nil, err
+		}
+		// Wrap cue directory in buildkit result
+		return outdir.Result(ctx)
+	}, ch)
 	if err != nil {
 		return errors.Wrap(bkCleanError(err), "buildkit solve")
 	}
