@@ -6,11 +6,16 @@ import (
 )
 
 func TestSimpleEnvSet(t *testing.T) {
-	env, err := NewEnv()
+	cc := &Compiler{}
+	env, err := NewEnv(cc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := env.SetInput(`hello: "world"`); err != nil {
+	input, err := cc.Compile("", `hello: "world"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.SetInput(input); err != nil {
 		t.Fatal(err)
 	}
 	hello, err := env.State().Get("hello").String()
@@ -23,7 +28,7 @@ func TestSimpleEnvSet(t *testing.T) {
 }
 
 func TestSimpleEnvSetFromInputValue(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +50,7 @@ func TestSimpleEnvSetFromInputValue(t *testing.T) {
 }
 
 func TestEnvInputComponent(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

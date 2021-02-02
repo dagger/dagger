@@ -44,32 +44,26 @@ func (env *Env) Updater() *Script {
 //  - A compiled script: *Script
 //  - A compiled value: *Value
 //  - A cue source: string, []byte, io.Reader
-func (env *Env) SetUpdater(u interface{}) error {
-	if v, ok := u.(*Value); ok {
-		updater, err := NewScript(v)
+func (env *Env) SetUpdater(v *Value) error {
+	if v == nil {
+		var err error
+		v, err = env.cc.Compile("", "[]")
 		if err != nil {
-			return errors.Wrap(err, "invalid updater script")
+			return err
 		}
-		env.updater = updater
-		return nil
 	}
-	if updater, ok := u.(*Script); ok {
-		env.updater = updater
-		return nil
-	}
-	if u == nil {
-		u = "[]"
-	}
-	updater, err := env.cc.CompileScript("updater", u)
+	updater, err := NewScript(v)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "invalid updater script")
 	}
 	env.updater = updater
 	return nil
 }
 
-func NewEnv() (*Env, error) {
-	cc := &Compiler{}
+func NewEnv(cc *Compiler) (*Env, error) {
+	if cc == nil {
+		cc = &Compiler{}
+	}
 	empty, err := cc.EmptyStruct()
 	if err != nil {
 		return nil, err
@@ -99,24 +93,17 @@ func (env *Env) Input() *Value {
 	return env.input
 }
 
-func (env *Env) SetInput(i interface{}) error {
-	if input, ok := i.(*Value); ok {
-		return env.set(
-			env.base,
-			input,
-			env.output,
-		)
-	}
-	if i == nil {
-		i = "{}"
-	}
-	input, err := env.cc.Compile("input", i)
-	if err != nil {
-		return err
+func (env *Env) SetInput(v *Value) error {
+	if v == nil {
+		var err error
+		v, err = env.cc.EmptyStruct()
+		if err != nil {
+			return err
+		}
 	}
 	return env.set(
 		env.base,
-		input,
+		v,
 		env.output,
 	)
 }

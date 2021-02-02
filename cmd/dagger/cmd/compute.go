@@ -13,15 +13,28 @@ import (
 )
 
 var (
-	env     *dagger.Env
-	input   *dagger.InputValue
-	updater *dagger.InputValue
+	cc         = &dagger.Compiler{}
+	inputFlags = &UserConfig{
+		Name:        "input",
+		Description: "input value",
+		Dir:         true,
+		Git:         true,
+		String:      true,
+		Cue:         true,
+	}
+	sourceFlags = &UserConfig{
+		Name:        "source",
+		Description: "source config",
+		Dir:         true,
+		DirInclude:  []string{"*.cue", "cue.mod"},
+		Git:         true,
+	}
 )
 
 var computeCmd = &cobra.Command{
 	Use:   "compute CONFIG",
 	Short: "Compute a configuration",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(0),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -33,16 +46,17 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(appcontext.Context())
 
-		if err := updater.SourceFlag().Set(args[0]); err != nil {
-			lg.Fatal().Err(err).Msg("invalid local source")
+		env, err := dagger.NewEnv(cc)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("unable initialize env")
 		}
-
-		if err := env.SetUpdater(updater.Value()); err != nil {
-			lg.Fatal().Err(err).Msg("invalid updater script")
-		}
-		lg.Debug().Str("input", input.Value().SourceUnsafe()).Msg("Setting input")
-		if err := env.SetInput(input.Value()); err != nil {
+		if err := env.SetInput(inputFlags.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid input")
+		}
+		// FIXME: harmonize sourceFlags with Env.Updater
+		//   (one is a component, the other is a script. Keep component everuwhere)
+		if err := env.SetUpdater(sourceFlags.Value().Get("#dagger.compute")); err != nil {
+			lg.Fatal().Err(err).Msg("invalid source")
 		}
 		lg.Debug().Str("env state", env.State().SourceUnsafe()).Msg("creating client")
 		c, err := dagger.NewClient(ctx, "")
@@ -60,34 +74,10 @@ var computeCmd = &cobra.Command{
 }
 
 func init() {
-	// Why is this stuff here?
-	// 1. input must be global for flag parsing
-	// 2. updater must be global for flag parsing
-	// 3. env must have same compiler as input & updater,
-	//   therefore it must be global too.
-	//
-	// FIXME: roll up InputValue into Env?
-	var err error
-	env, err = dagger.NewEnv()
-	if err != nil {
-		panic(err)
-	}
-
-	// Setup --input-* flags
-	input, err = dagger.NewInputValue(env.Compiler(), "{}")
-	if err != nil {
-		panic(err)
-	}
-	computeCmd.Flags().Var(input.StringFlag(), "input-string", "TARGET=STRING")
-	computeCmd.Flags().Var(input.DirFlag(), "input-dir", "TARGET=PATH")
-	computeCmd.Flags().Var(input.GitFlag(), "input-git", "TARGET=REMOTE#REF")
-	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
-
-	// Setup (future) --from-* flags
-	updater, err = dagger.NewInputValue(env.Compiler(), "[...{do:string, ...}]")
-	if err != nil {
-		panic(err)
-	}
+	// --input-* : user-specified env input
+	inputFlags.Install(computeCmd.Flags())
+	// --source-*: user-specified env source
+	sourceFlags.Install(computeCmd.Flags())
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)

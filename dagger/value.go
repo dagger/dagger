@@ -184,6 +184,9 @@ func (v *Value) MergePath(x interface{}, p cue.Path) (*Value, error) {
 }
 
 func (v *Value) MergeTarget(x interface{}, target string) (*Value, error) {
+	if target == "" || target == "." {
+		return v.MergePath(x, cue.MakePath())
+	}
 	return v.MergePath(x, cue.ParsePath(target))
 }
 
