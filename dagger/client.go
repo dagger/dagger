@@ -3,7 +3,6 @@ package dagger
 import (
 	"archive/tar"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	// Cue
-	"cuelang.org/go/cue"
 
 	// buildkit
 	bk "github.com/moby/buildkit/client"
@@ -79,33 +77,11 @@ func (c *Client) Compute(ctx context.Context, env *Env) (o *Value, err error) {
 		return c.buildfn(ctx, env, events, outw)
 	})
 
-	// Spawn print function(s)
-	dispCtx := context.TODO()
+	// Spawn print function
 	if os.Getenv("DOCKER_OUTPUT") != "" {
-		// Multiplex events
-		eventsPrint := make(chan *bk.SolveStatus)
-		eventsDockerPrint := make(chan *bk.SolveStatus)
 		eg.Go(func() error {
-			defer close(eventsPrint)
-			defer close(eventsDockerPrint)
-
-			for e := range events {
-				eventsPrint <- e
-				eventsDockerPrint <- e
-			}
-			return nil
-		})
-
-		eg.Go(func() error {
-			return c.printfn(dispCtx, eventsPrint)
-		})
-
-		eg.Go(func() error {
-			return c.dockerprintfn(dispCtx, eventsDockerPrint, lg)
-		})
-	} else {
-		eg.Go(func() error {
-			return c.printfn(dispCtx, events)
+			dispCtx := context.TODO()
+			return c.dockerprintfn(dispCtx, events, lg)
 		})
 	}
 
@@ -221,115 +197,6 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader, out *Value, cc *Comp
 		}
 	}
 	return nil
-}
-
-// Status of a node in the config tree being computed
-// Node may be a component, or a value within a component
-// (eg. a script or individual operation in a script)
-type Node struct {
-	Path cue.Path
-	*bk.Vertex
-}
-
-func (n Node) ComponentPath() cue.Path {
-	parts := []cue.Selector{}
-	for _, sel := range n.Path.Selectors() {
-		if strings.HasPrefix(sel.String(), "#") {
-			break
-		}
-		parts = append(parts, sel)
-	}
-	return cue.MakePath(parts...)
-}
-
-func (n Node) Logf(ctx context.Context, msg string, args ...interface{}) {
-	componentPath := n.ComponentPath().String()
-	args = append([]interface{}{componentPath}, args...)
-	if msg != "" && !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprintf(os.Stderr, "[%s] "+msg, args...)
-}
-
-func (n Node) LogStream(ctx context.Context, nStream int, data []byte) {
-	lg := log.
-		Ctx(ctx).
-		With().
-		Str("path", n.ComponentPath().String()).
-		Logger()
-
-	switch nStream {
-	case 1:
-		lg = lg.With().Str("stream", "stdout").Logger()
-	case 2:
-		lg = lg.With().Str("stream", "stderr").Logger()
-	default:
-		lg = lg.With().Str("stream", fmt.Sprintf("%d", nStream)).Logger()
-	}
-
-	lg.Debug().Msg(string(data))
-}
-
-func (n Node) LogError(ctx context.Context, errmsg string) {
-	log.
-		Ctx(ctx).
-		Error().
-		Str("path", n.ComponentPath().String()).
-		Msg(errmsg)
-}
-
-func (c *Client) printfn(ctx context.Context, ch chan *bk.SolveStatus) error {
-	lg := log.Ctx(ctx)
-
-	// Node status mapped to buildkit vertex digest
-	nodesByDigest := map[string]*Node{}
-	// Node status mapped to cue path
-	nodesByPath := map[string]*Node{}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case status, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			lg.
-				Debug().
-				Int("vertexes", len(status.Vertexes)).
-				Int("statuses", len(status.Statuses)).
-				Int("logs", len(status.Logs)).
-				Msg("status event")
-
-			for _, v := range status.Vertexes {
-				// FIXME: insert raw buildkit telemetry here (ie for debugging, etc.)
-
-				// IF a buildkit vertex has a valid cue path as name, extract additional info:
-				p := cue.ParsePath(v.Name)
-				if err := p.Err(); err != nil {
-					// Not a valid cue path: skip.
-					continue
-				}
-				n := &Node{
-					Path:   p,
-					Vertex: v,
-				}
-				nodesByPath[n.Path.String()] = n
-				nodesByDigest[n.Digest.String()] = n
-				if n.Error != "" {
-					n.LogError(ctx, n.Error)
-				}
-			}
-			for _, log := range status.Logs {
-				if n, ok := nodesByDigest[log.Vertex.String()]; ok {
-					n.LogStream(ctx, log.Stream, log.Data)
-				}
-			}
-			// debugJSON(status)
-			// FIXME: callbacks for extracting stream/result
-			// see proto 67
-		}
-	}
 }
 
 func (c *Client) dockerprintfn(ctx context.Context, ch chan *bk.SolveStatus, out io.Writer) error {
