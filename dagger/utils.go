@@ -10,6 +10,9 @@ import (
 )
 
 func cueErr(err error) error {
+	if err == nil {
+		return nil
+	}
 	return errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 }
 

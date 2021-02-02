@@ -255,6 +255,9 @@ func (v *Value) Validate(defs ...string) error {
 
 // Return cue source for this value
 func (v *Value) Source() ([]byte, error) {
+	v.cc.RLock()
+	defer v.cc.RUnlock()
+
 	return cueformat.Node(v.val.Eval().Syntax())
 }
 

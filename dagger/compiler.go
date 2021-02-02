@@ -48,6 +48,9 @@ func (cc *Compiler) EmptyStruct() (*Value, error) {
 }
 
 func (cc *Compiler) Compile(name string, src interface{}) (*Value, error) {
+	cc.Lock()
+	defer cc.Unlock()
+
 	inst, err := cc.Cue().Compile(name, src)
 	if err != nil {
 		// FIXME: cleaner way to unwrap cue error details?
