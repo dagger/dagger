@@ -165,7 +165,10 @@ func (op *Op) Exec(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 		Dir    string
 		Always bool
 	}
-	op.v.Decode(&cmd)
+
+	if err := op.v.Decode(&cmd); err != nil {
+		return fs, err
+	}
 	// marker for status events
 	// FIXME
 	opts = append(opts, llb.WithCustomName(op.v.Path().String()))
