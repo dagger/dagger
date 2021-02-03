@@ -170,7 +170,7 @@ func bkCleanError(err error) error {
 	msg := err.Error()
 
 	for _, s := range noise {
-		msg = strings.Replace(msg, s, "", -1)
+		msg = strings.ReplaceAll(msg, s, "")
 	}
 
 	return errors.New(msg)
