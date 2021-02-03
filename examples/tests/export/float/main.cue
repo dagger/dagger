@@ -1,7 +1,7 @@
 package testing
 
 test: {
-	number
+	float
 
 	#dagger: compute: [
 		{

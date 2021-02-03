@@ -20,7 +20,7 @@ test: {
 			do: "export"
 			// Source path in the container
 			source: "/tmp/out"
-			format: "bool"
+			format: "json"
 		},
 	]
 }

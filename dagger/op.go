@@ -8,6 +8,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
 )
 
 type Op struct {
@@ -237,7 +238,8 @@ func (op *Op) Export(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 		}
 	case "json":
 		var o interface{}
-		if err := json.Unmarshal(contents, &o); err != nil {
+		o, err := unmarshalAnything(contents, json.Unmarshal)
+		if err != nil {
 			return fs, err
 		}
 
@@ -250,10 +252,45 @@ func (op *Op) Export(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 		if err := out.Fill(o); err != nil {
 			return fs, err
 		}
+	case "yaml":
+		var o interface{}
+		o, err := unmarshalAnything(contents, yaml.Unmarshal)
+		if err != nil {
+			return fs, err
+		}
+
+		log.
+			Ctx(ctx).
+			Debug().
+			Interface("contents", o).
+			Msg("exporting yaml")
+
+		if err := out.Fill(o); err != nil {
+			return fs, err
+		}
 	default:
 		return fs, fmt.Errorf("unsupported export format: %q", format)
 	}
 	return fs, nil
+}
+
+type unmarshaller func([]byte, interface{}) error
+
+func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
+	// unmarshalling a map into interface{} yields an error:
+	// "unsupported Go type for map key (interface {})"
+	// we want to attempt to unmarshal to a map[string]interface{} first
+	var oMap map[string]interface{}
+	if err := fn(data, &oMap); err == nil {
+		return oMap, nil
+	}
+
+	// If the previous attempt didn't work, we might be facing a scalar (e.g.
+	// bool).
+	// Try to unmarshal to interface{} directly.
+	var o interface{}
+	err := fn(data, &o)
+	return o, err
 }
 
 func (op *Op) Load(ctx context.Context, fs FS, out *Fillable) (FS, error) {

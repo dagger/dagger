@@ -325,8 +325,6 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			lg.Debug().Msg("cueflow task: filling result")
 			// Merge task value into output
 			var err error
-			// FIXME: does cueflow.Task.Value() contain only filled values,
-			// or base + filled?
 			out, err = out.MergePath(t.Value(), t.Path())
 			if err != nil {
 				lg.
