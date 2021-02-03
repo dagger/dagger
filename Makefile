@@ -30,9 +30,9 @@ lint: generate cuefmt
 .PHONY: integration
 integration: dagger-debug
 	# Self-diagnostics
-	./examples/tests/test-test.sh 2>/dev/null
+	./tests/test-test.sh 2>/dev/null
 	# Actual integration tests
-	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./examples/tests/test.sh all
+	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./tests/test.sh all
 
 update-examples:
 	cp ./dagger/spec.cue ./examples/simple/cue.mod/pkg/dagger.cloud/dagger/dagger.cue
