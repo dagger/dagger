@@ -68,8 +68,10 @@ func (env *Env) SetUpdater(u interface{}) error {
 	return nil
 }
 
-func NewEnv() (*Env, error) {
-	cc := &Compiler{}
+func NewEnv(cc *Compiler) (*Env, error) {
+	if cc == nil {
+		cc = &Compiler{}
+	}
 	empty, err := cc.EmptyStruct()
 	if err != nil {
 		return nil, err

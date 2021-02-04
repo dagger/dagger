@@ -13,7 +13,9 @@ import (
 )
 
 var (
-	env     *dagger.Env
+	// FIXME: global shared cue compiler is a workaround to limitation in the cue API
+	//   This can be made cleaner by moving InputValue (or equivalent) under Env.
+	cc      = &dagger.Compiler{}
 	input   *dagger.InputValue
 	updater *dagger.InputValue
 )
@@ -33,6 +35,10 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(appcontext.Context())
 
+		env, err := dagger.NewEnv(cc)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("unable to initialize environment")
+		}
 		if err := updater.SourceFlag().Set(args[0]); err != nil {
 			lg.Fatal().Err(err).Msg("invalid local source")
 		}
@@ -60,21 +66,9 @@ var computeCmd = &cobra.Command{
 }
 
 func init() {
-	// Why is this stuff here?
-	// 1. input must be global for flag parsing
-	// 2. updater must be global for flag parsing
-	// 3. env must have same compiler as input & updater,
-	//   therefore it must be global too.
-	//
-	// FIXME: roll up InputValue into Env?
 	var err error
-	env, err = dagger.NewEnv()
-	if err != nil {
-		panic(err)
-	}
-
 	// Setup --input-* flags
-	input, err = dagger.NewInputValue(env.Compiler(), "{}")
+	input, err = dagger.NewInputValue(cc, "{}")
 	if err != nil {
 		panic(err)
 	}
@@ -84,7 +78,7 @@ func init() {
 	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
 
 	// Setup (future) --from-* flags
-	updater, err = dagger.NewInputValue(env.Compiler(), "[...{do:string, ...}]")
+	updater, err = dagger.NewInputValue(cc, "[...{do:string, ...}]")
 	if err != nil {
 		panic(err)
 	}

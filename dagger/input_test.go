@@ -6,7 +6,7 @@ import (
 )
 
 func TestEnvInputFlag(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
