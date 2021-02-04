@@ -192,6 +192,25 @@ func (v *Value) IsConcreteR() error {
 	return v.val.Validate(cue.Concrete(true))
 }
 
+func (v *Value) Walk(before func(*Value) bool, after func(*Value)) {
+	// FIXME: lock?
+	var (
+		llBefore func(cue.Value) bool
+		llAfter  func(cue.Value)
+	)
+	if before != nil {
+		llBefore = func(child cue.Value) bool {
+			return before(v.Wrap(child))
+		}
+	}
+	if after != nil {
+		llAfter = func(child cue.Value) {
+			after(v.Wrap(child))
+		}
+	}
+	v.val.Walk(llBefore, llAfter)
+}
+
 // Export concrete values to JSON. ignoring non-concrete values.
 // Contrast with cue.Value.MarshalJSON which requires all values
 // to be concrete.

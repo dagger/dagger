@@ -165,22 +165,18 @@ func (env *Env) LocalDirs(ctx context.Context) (map[string]string, error) {
 		lg.Debug().Str("func", "Env.LocalDirs").Interface("result", dirs).Msg("done")
 	}()
 	// 1. Walk env state, scan compute script for each component.
-	_, err := env.Walk(ctx, func(ctx context.Context, c *Component, out *Fillable) error {
+	for _, c := range env.Components() {
 		lg.Debug().
 			Str("func", "Env.LocalDirs").
 			Str("component", c.Value().Path().String()).
 			Msg("scanning next component for local dirs")
 		cdirs, err := c.LocalDirs(ctx)
 		if err != nil {
-			return err
+			return dirs, err
 		}
 		for k, v := range cdirs {
 			dirs[k] = v
 		}
-		return nil
-	})
-	if err != nil {
-		return dirs, err
 	}
 	// 2. Scan updater script
 	updirs, err := env.updater.LocalDirs(ctx)
@@ -193,31 +189,24 @@ func (env *Env) LocalDirs(ctx context.Context) (map[string]string, error) {
 	return dirs, nil
 }
 
-// Compute missing values in env configuration, and write them to state.
-func (env *Env) Compute(ctx context.Context, s Solver) error {
-	output, err := env.Walk(ctx, func(ctx context.Context, c *Component, out *Fillable) error {
-		lg := log.Ctx(ctx)
-
-		lg.
-			Debug().
-			Msg("[Env.Compute] processing")
-		if _, err := c.Compute(ctx, s, out); err != nil {
-			lg.
-				Error().
-				Err(err).
-				Msg("component failed")
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return env.set(
-		env.base,
-		env.input,
-		output,
+// Return a list of components in the env config.
+func (env *Env) Components() []*Component {
+	components := []*Component{}
+	env.State().Walk(
+		func(v *Value) bool {
+			c, err := NewComponent(v)
+			if os.IsNotExist(err) {
+				return true
+			}
+			if err != nil {
+				return false
+			}
+			components = append(components, c)
+			return false // skip nested components, as cueflow does not allow them
+		},
+		nil,
 	)
+	return components
 }
 
 // FIXME: this is just a 3-way merge. Add var args to Value.Merge.
@@ -285,11 +274,8 @@ func (env *Env) Export(fs FS) (FS, error) {
 	return fs, nil
 }
 
-// FIXME: don't need ctx here
-type EnvWalkFunc func(context.Context, *Component, *Fillable) error
-
-// Walk components and return any computed values
-func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
+// Compute missing values in env configuration, and write them to state.
+func (env *Env) Compute(ctx context.Context, s Solver) error {
 	lg := log.Ctx(ctx)
 
 	// Cueflow cue instance
@@ -300,9 +286,9 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 		Msg("walking")
 
 	// Initialize empty output
-	out, err := env.cc.EmptyStruct()
+	output, err := env.cc.EmptyStruct()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Cueflow config
@@ -325,7 +311,7 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 			lg.Debug().Msg("cueflow task: filling result")
 			// Merge task value into output
 			var err error
-			out, err = out.MergePath(t.Value(), t.Path())
+			output, err = output.MergePath(t.Value(), t.Path())
 			if err != nil {
 				lg.
 					Error().
@@ -362,15 +348,26 @@ func (env *Env) Walk(ctx context.Context, fn EnvWalkFunc) (*Value, error) {
 					Str("dependency", dep.Path().String()).
 					Msg("dependency detected")
 			}
-			return fn(ctx, c, NewFillable(t))
+			if _, err := c.Compute(ctx, s, NewFillable(t)); err != nil {
+				lg.
+					Error().
+					Err(err).
+					Msg("component failed")
+				return err
+			}
+			return nil
 		}), nil
 	}
 	// Orchestrate execution with cueflow
 	flow := cueflow.New(flowCfg, flowInst, flowMatchFn)
 	if err := flow.Run(ctx); err != nil {
-		return out, err
+		return err
 	}
-	return out, nil
+	return env.set(
+		env.base,
+		env.input,
+		output,
+	)
 }
 
 // Return the component at the specified path in the config, eg. `www`
