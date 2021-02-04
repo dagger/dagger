@@ -6,7 +6,7 @@ import (
 )
 
 func TestSimpleEnvSet(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestSimpleEnvSet(t *testing.T) {
 }
 
 func TestSimpleEnvSetFromInputValue(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestSimpleEnvSetFromInputValue(t *testing.T) {
 }
 
 func TestEnvInputComponent(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewEnv(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
