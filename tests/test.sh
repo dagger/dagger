@@ -217,6 +217,11 @@ test::input() {
 }
 
 
+test::subdir() {
+  test::one "Subdir: simple usage" --exit=0 --stdout='{"hello":"world"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/subdir/simple
+}
+
 test::all(){
   local dagger="$1"
 
@@ -231,6 +236,7 @@ test::all(){
   test::exec "$dagger"
   test::export "$dagger"
   test::input "$dagger"
+  test::subdir "$dagger"
 }
 
 case "${1:-all}" in

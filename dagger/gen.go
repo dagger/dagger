@@ -60,7 +60,7 @@ package dagger
 #Script: [...#Op]
 
 // One operation in a script
-#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load
+#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
 
 // Export a value from fs state to cue
 #Export: {
@@ -81,6 +81,11 @@ package dagger
 #Load: {
 	do:   "load"
 	from: #Component | #Script
+}
+
+#Subdir: {
+	do:  "subdir"
+	dir: string | *"/"
 }
 
 #Exec: {

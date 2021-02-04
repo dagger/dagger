@@ -94,6 +94,7 @@ func (op *Op) Action() (Action, error) {
 		"#FetchGit":       op.FetchGit,
 		"#Local":          op.Local,
 		"#Load":           op.Load,
+		"#Subdir":         op.Subdir,
 	}
 	for def, action := range actions {
 		if err := op.Validate(def); err == nil {
@@ -106,6 +107,26 @@ func (op *Op) Action() (Action, error) {
 func (op *Op) Validate(defs ...string) error {
 	defs = append(defs, "#Op")
 	return op.v.Validate(defs...)
+}
+
+func (op *Op) Subdir(ctx context.Context, fs FS, out *Fillable) (FS, error) {
+	// FIXME: this could be more optimized by carrying subdir path as metadata,
+	//  and using it in copy, load or mount.
+
+	dir, err := op.Get("dir").String()
+	if err != nil {
+		return fs, err
+	}
+	return fs.Change(func(st llb.State) llb.State {
+		return st.File(llb.Copy(
+			fs.LLB(),
+			dir,
+			"/",
+			&llb.CopyInfo{
+				CopyDirContentsOnly: true,
+			},
+		))
+	}), nil
 }
 
 func (op *Op) Copy(ctx context.Context, fs FS, out *Fillable) (FS, error) {
