@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
@@ -29,11 +28,20 @@ func (mnt *Mount) Validate(defs ...string) error {
 
 func (mnt *Mount) LLB(ctx context.Context, s Solver) (llb.RunOption, error) {
 	if err := mnt.Validate("#MountTmp"); err == nil {
-		return llb.AddMount(mnt.dest, llb.Scratch(), llb.Tmpfs()), nil
+		return llb.AddMount(
+			mnt.dest,
+			llb.Scratch(),
+			llb.Tmpfs(),
+		), nil
 	}
 	if err := mnt.Validate("#MountCache"); err == nil {
-		// FIXME: cache mount
-		return nil, fmt.Errorf("FIXME: cache mount not yet implemented")
+		return llb.AddMount(
+			mnt.dest,
+			llb.Scratch(),
+			llb.AsPersistentCacheDir(
+				mnt.v.Path().String(),
+				llb.CacheMountShared,
+			)), nil
 	}
 	// Compute source component or script, discarding fs writes & output value
 	from, err := newExecutable(mnt.v.Lookup("from"))
