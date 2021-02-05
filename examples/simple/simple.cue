@@ -1,6 +1,4 @@
-// ACME platform: everything you need to develop and ship improvements to
-// the ACME clothing store.
-package acme
+package simple
 
 import (
 	"dagger.io/dagger"
