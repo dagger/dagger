@@ -48,17 +48,15 @@ func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
 	lg := log.Ctx(ctx)
 
 	lg.Debug().Interface("v", op.v).Msg("Op.Walk")
-	isCopy := (op.Validate("#Copy") == nil)
-	isLoad := (op.Validate("#Load") == nil)
-	if isCopy || isLoad {
+	switch op.Do() {
+	case "copy", "load":
 		if from, err := newExecutable(op.Get("from")); err == nil {
 			if err := from.Walk(ctx, fn); err != nil {
 				return err
 			}
 		}
 		// FIXME: we tolerate "from" which is not executable
-	}
-	if err := op.Validate("#Exec"); err == nil {
+	case "exec":
 		return op.Get("mount").RangeStruct(func(k string, v *cc.Value) error {
 			if from, err := newExecutable(op.Get("from")); err == nil {
 				if err := from.Walk(ctx, fn); err != nil {
@@ -74,43 +72,40 @@ func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
 
 type Action func(context.Context, FS, *Fillable) (FS, error)
 
+func (op *Op) Do() string {
+	do, err := op.Get("do").String()
+	if err != nil {
+		return ""
+	}
+	return do
+}
+
 func (op *Op) Action() (Action, error) {
 	// An empty struct is allowed as a no-op, to be
 	//  more tolerant of if() in arrays.
 	if op.v.IsEmptyStruct() {
 		return op.Nothing, nil
 	}
-	// Manually check for a 'do' field.
-	// This is necessary because Runtime.ValidateSpec has a bug
-	// where an empty struct matches everything.
-	// see https://github.com/cuelang/cue/issues/566#issuecomment-749735878
-	// Once the bug is fixed, the manual check can be removed.
-	if _, err := op.Get("do").String(); err != nil {
-		return nil, fmt.Errorf("invalid action: no \"do\" field")
+	switch op.Do() {
+	case "copy":
+		return op.Copy, nil
+	case "exec":
+		return op.Exec, nil
+	case "export":
+		return op.Export, nil
+	case "fetch-container":
+		return op.FetchContainer, nil
+	case "fetch-git":
+		return op.FetchGit, nil
+	case "local":
+		return op.Local, nil
+	case "load":
+		return op.Load, nil
+	case "subdir":
+		return op.Subdir, nil
+	default:
+		return nil, fmt.Errorf("invalid operation: %s", op.v.JSON())
 	}
-	actions := map[string]Action{
-		"#Copy":           op.Copy,
-		"#Exec":           op.Exec,
-		"#Export":         op.Export,
-		"#FetchContainer": op.FetchContainer,
-		"#FetchGit":       op.FetchGit,
-		"#Local":          op.Local,
-		"#Load":           op.Load,
-		"#Subdir":         op.Subdir,
-	}
-	for def, action := range actions {
-		if err := op.Validate(def); err == nil {
-			return action, nil
-		}
-	}
-	return nil, fmt.Errorf("invalid operation: %s", op.v.JSON())
-}
-
-func (op *Op) Validate(def string) error {
-	if err := spec.Validate(op.v, "#Op"); err != nil {
-		return err
-	}
-	return spec.Validate(op.v, def)
 }
 
 func (op *Op) Subdir(ctx context.Context, fs FS, out *Fillable) (FS, error) {
