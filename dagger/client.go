@@ -23,6 +23,8 @@ import (
 	// docker output
 	"github.com/containerd/console"
 	"github.com/moby/buildkit/util/progress/progressui"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 const (
@@ -50,8 +52,8 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 	}, nil
 }
 
-// FIXME: return completed *Env, instead of *Value
-func (c *Client) Compute(ctx context.Context, env *Env) (*Value, error) {
+// FIXME: return completed *Env, instead of *cc.Value
+func (c *Client) Compute(ctx context.Context, env *Env) (*cc.Value, error) {
 	lg := log.Ctx(ctx)
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -75,16 +77,16 @@ func (c *Client) Compute(ctx context.Context, env *Env) (*Value, error) {
 
 	// Spawn output retriever
 	var (
-		out *Value
+		out *cc.Value
 		err error
 	)
 	eg.Go(func() error {
 		defer outr.Close()
-		out, err = c.outputfn(gctx, outr, env.cc)
+		out, err = c.outputfn(gctx, outr)
 		return err
 	})
 
-	return out, cueErr(eg.Wait())
+	return out, cc.Err(eg.Wait())
 }
 
 func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus, w io.WriteCloser) error {
@@ -158,7 +160,7 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 }
 
 // Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(ctx context.Context, r io.Reader, cc *Compiler) (*Value, error) {
+func (c *Client) outputfn(ctx context.Context, r io.Reader) (*cc.Value, error) {
 	lg := log.Ctx(ctx)
 
 	// FIXME: merge this into env output.

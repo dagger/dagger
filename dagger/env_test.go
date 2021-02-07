@@ -3,10 +3,12 @@ package dagger
 import (
 	"context"
 	"testing"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 func TestSimpleEnvSet(t *testing.T) {
-	env, err := NewEnv(nil)
+	env, err := NewEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,12 +25,12 @@ func TestSimpleEnvSet(t *testing.T) {
 }
 
 func TestSimpleEnvSetFromInputValue(t *testing.T) {
-	env, err := NewEnv(nil)
+	env, err := NewEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	v, err := env.Compiler().Compile("", `hello: "world"`)
+	v, err := cc.Compile("", `hello: "world"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,12 +47,12 @@ func TestSimpleEnvSetFromInputValue(t *testing.T) {
 }
 
 func TestEnvInputComponent(t *testing.T) {
-	env, err := NewEnv(nil)
+	env, err := NewEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	v, err := env.Compiler().Compile("", `foo: #dagger: compute: [{do:"local",dir:"."}]`)
+	v, err := cc.Compile("", `foo: #dagger: compute: [{do:"local",dir:"."}]`)
 	if err != nil {
 		t.Fatal(err)
 	}

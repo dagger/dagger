@@ -1,18 +1,14 @@
-package dagger
+package cc
 
 import (
-	"fmt"
-
 	"cuelang.org/go/cue"
 	cueformat "cuelang.org/go/cue/format"
-	"github.com/moby/buildkit/client/llb"
 )
 
 // Value is a wrapper around cue.Value.
 // Use instead of cue.Value and cue.Instance
 type Value struct {
 	val  cue.Value
-	cc   *Compiler
 	inst *cue.Instance
 }
 
@@ -21,21 +17,20 @@ func (v *Value) CueInst() *cue.Instance {
 }
 
 func (v *Value) Wrap(v2 cue.Value) *Value {
-	return wrapValue(v2, v.inst, v.cc)
+	return wrapValue(v2, v.inst)
 }
 
-func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
+func wrapValue(v cue.Value, inst *cue.Instance) *Value {
 	return &Value{
 		val:  v,
-		cc:   cc,
 		inst: inst,
 	}
 }
 
 // Fill the value in-place, unlike Merge which returns a copy.
 func (v *Value) Fill(x interface{}) error {
-	v.cc.Lock()
-	defer v.cc.Unlock()
+	cc.Lock()
+	defer cc.Unlock()
 
 	// If calling Fill() with a Value, we want to use the underlying
 	// cue.Value to fill.
@@ -49,8 +44,8 @@ func (v *Value) Fill(x interface{}) error {
 
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
 func (v *Value) LookupPath(p cue.Path) *Value {
-	v.cc.RLock()
-	defer v.cc.RUnlock()
+	cc.RLock()
+	defer cc.RUnlock()
 
 	return v.Wrap(v.val.LookupPath(p))
 }
@@ -142,9 +137,9 @@ func (v *Value) RangeStruct(fn func(string, *Value) error) error {
 //   1. Check that the value matches the spec.
 //   2. Merge the value and the spec, and return the result.
 func (v *Value) Finalize(spec *Value) (*Value, error) {
-	v.cc.Lock()
+	cc.Lock()
 	unified := spec.val.Unify(v.val)
-	v.cc.Unlock()
+	cc.Unlock()
 	// FIXME: temporary debug message, remove before merging.
 	//      fmt.Printf("Finalize:\n  spec=%v\n  v=%v\n  unified=%v", spec.val, v.val, unified)
 
@@ -155,7 +150,7 @@ func (v *Value) Finalize(spec *Value) (*Value, error) {
 	// fix on top (we access individual fields so have an opportunity
 	//  to return an error if they are not there).
 	if err := unified.Validate(cue.Final()); err != nil {
-		return nil, cueErr(err)
+		return nil, Err(err)
 	}
 	return v.Merge(spec)
 }
@@ -163,15 +158,12 @@ func (v *Value) Finalize(spec *Value) (*Value, error) {
 // FIXME: receive string path?
 func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 	if xval, ok := x.(*Value); ok {
-		if xval.cc != v.cc {
-			return nil, fmt.Errorf("can't merge values from different compilers")
-		}
 		x = xval.val
 	}
 
-	v.cc.Lock()
+	cc.Lock()
 	result := v.Wrap(v.val.Fill(x, path...))
-	v.cc.Unlock()
+	cc.Unlock()
 
 	return result, result.Validate()
 }
@@ -234,48 +226,16 @@ func (v *Value) JSON() JSON {
 	return out
 }
 
-func (v *Value) SaveJSON(fs FS, filename string) FS {
-	return fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Mkfile(filename, 0600, v.JSON()),
-		)
-	})
-}
-
-func (v *Value) Save(fs FS, filename string) (FS, error) {
-	src, err := v.Source()
-	if err != nil {
-		return fs, err
-	}
-	return fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Mkfile(filename, 0600, src),
-		)
-	}), nil
-}
-
 // Check that a value is valid. Optionally check that it matches
 // all the specified spec definitions..
-func (v *Value) Validate(defs ...string) error {
-	if err := v.val.Validate(); err != nil {
-		return err
-	}
-	if len(defs) == 0 {
-		return nil
-	}
-	spec := v.cc.Spec()
-	for _, def := range defs {
-		if err := spec.Validate(v, def); err != nil {
-			return err
-		}
-	}
-	return nil
+func (v *Value) Validate() error {
+	return v.val.Validate()
 }
 
 // Return cue source for this value
 func (v *Value) Source() ([]byte, error) {
-	v.cc.RLock()
-	defer v.cc.RUnlock()
+	cc.RLock()
+	defer cc.RUnlock()
 
 	return cueformat.Node(v.val.Eval().Syntax())
 }
@@ -293,4 +253,8 @@ func (v *Value) IsEmptyStruct() bool {
 		}
 	}
 	return false
+}
+
+func (v *Value) Cue() cue.Value {
+	return v.val
 }

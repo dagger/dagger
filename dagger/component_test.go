@@ -3,10 +3,11 @@ package dagger
 import (
 	"context"
 	"testing"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 func TestComponentNotExist(t *testing.T) {
-	cc := &Compiler{}
 	root, err := cc.Compile("root.cue", `
 foo: hello: "world"
 `)
@@ -24,7 +25,6 @@ foo: hello: "world"
 }
 
 func TestLoadEmptyComponent(t *testing.T) {
-	cc := &Compiler{}
 	root, err := cc.Compile("root.cue", `
 foo: #dagger: {}
 `)
@@ -40,7 +40,6 @@ foo: #dagger: {}
 // Test that default values in spec are applied at the component level
 // See issue #19
 func TestComponentDefaults(t *testing.T) {
-	cc := &Compiler{}
 	v, err := cc.Compile("", `
 #dagger: compute: [
 	{
@@ -79,7 +78,6 @@ func TestComponentDefaults(t *testing.T) {
 }
 
 func TestValidateEmptyComponent(t *testing.T) {
-	cc := &Compiler{}
 	v, err := cc.Compile("", "#dagger: compute: _")
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +89,6 @@ func TestValidateEmptyComponent(t *testing.T) {
 }
 
 func TestValidateSimpleComponent(t *testing.T) {
-	cc := &Compiler{}
 	v, err := cc.Compile("", `hello: "world", #dagger: { compute: [{do:"local",dir:"foo"}]}`)
 	if err != nil {
 		t.Fatal(err)

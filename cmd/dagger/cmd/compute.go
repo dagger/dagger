@@ -13,9 +13,6 @@ import (
 )
 
 var (
-	// FIXME: global shared cue compiler is a workaround to limitation in the cue API
-	//   This can be made cleaner by moving InputValue (or equivalent) under Env.
-	cc      = &dagger.Compiler{}
 	input   *dagger.InputValue
 	updater *dagger.InputValue
 )
@@ -35,7 +32,7 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(appcontext.Context())
 
-		env, err := dagger.NewEnv(cc)
+		env, err := dagger.NewEnv()
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to initialize environment")
 		}
@@ -68,7 +65,7 @@ var computeCmd = &cobra.Command{
 func init() {
 	var err error
 	// Setup --input-* flags
-	input, err = dagger.NewInputValue(cc, "{}")
+	input, err = dagger.NewInputValue("{}")
 	if err != nil {
 		panic(err)
 	}
@@ -78,7 +75,7 @@ func init() {
 	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
 
 	// Setup (future) --from-* flags
-	updater, err = dagger.NewInputValue(cc, "[...{do:string, ...}]")
+	updater, err = dagger.NewInputValue("[...{do:string, ...}]")
 	if err != nil {
 		panic(err)
 	}

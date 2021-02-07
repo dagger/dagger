@@ -1,4 +1,4 @@
-package dagger
+package cc
 
 import (
 	"fmt"

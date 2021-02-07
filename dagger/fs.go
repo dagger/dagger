@@ -10,6 +10,8 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 type Stat struct {
@@ -23,6 +25,26 @@ type FS struct {
 	output bkgw.Reference
 	// How to produce the output
 	s Solver
+}
+
+func (fs FS) WriteValueJSON(filename string, v *cc.Value) FS {
+	return fs.Change(func(st llb.State) llb.State {
+		return st.File(
+			llb.Mkfile(filename, 0600, v.JSON()),
+		)
+	})
+}
+
+func (fs FS) WriteValueCUE(filename string, v *cc.Value) (FS, error) {
+	src, err := v.Source()
+	if err != nil {
+		return fs, err
+	}
+	return fs.Change(func(st llb.State) llb.State {
+		return st.File(
+			llb.Mkfile(filename, 0600, src),
+		)
+	}), nil
 }
 
 func (fs FS) Solver() Solver {

@@ -2,10 +2,11 @@ package dagger
 
 import (
 	"testing"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 func TestValueFinalize(t *testing.T) {
-	cc := &Compiler{}
 	root, err := cc.Compile("test.cue",
 		`
 	#FetchContainer: {
@@ -59,7 +60,6 @@ func TestValueFinalize(t *testing.T) {
 
 // Test that a non-existing field is detected correctly
 func TestFieldNotExist(t *testing.T) {
-	cc := &Compiler{}
 	root, err := cc.Compile("test.cue", `foo: "bar"`)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,6 @@ func TestFieldNotExist(t *testing.T) {
 
 // Test that a non-existing definition is detected correctly
 func TestDefNotExist(t *testing.T) {
-	cc := &Compiler{}
 	root, err := cc.Compile("test.cue", `foo: #bla: "bar"`)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +91,6 @@ func TestDefNotExist(t *testing.T) {
 }
 
 func TestSimple(t *testing.T) {
-	cc := &Compiler{}
 	_, err := cc.EmptyStruct()
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +98,6 @@ func TestSimple(t *testing.T) {
 }
 
 func TestJSON(t *testing.T) {
-	cc := &Compiler{}
 	v, err := cc.Compile("", `foo: hello: "world"`)
 	if err != nil {
 		t.Fatal(err)
@@ -117,8 +114,7 @@ func TestJSON(t *testing.T) {
 }
 
 func TestCompileSimpleScript(t *testing.T) {
-	cc := &Compiler{}
-	_, err := cc.CompileScript("simple.cue", `[{do: "local", dir: "."}]`)
+	_, err := CompileScript("simple.cue", `[{do: "local", dir: "."}]`)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,8 @@ import (
 	"os"
 
 	cueflow "cuelang.org/go/tools/flow"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 var ErrNotExist = os.ErrNotExist
@@ -16,7 +18,7 @@ type Executable interface {
 	Walk(context.Context, func(*Op) error) error
 }
 
-func newExecutable(v *Value) (Executable, error) {
+func newExecutable(v *cc.Value) (Executable, error) {
 	// NOTE: here we need full spec validation,
 	//   so we call NewScript, NewComponent, NewOp.
 	if script, err := NewScript(v); err == nil {

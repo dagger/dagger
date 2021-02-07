@@ -6,12 +6,12 @@ import (
 )
 
 func TestEnvInputFlag(t *testing.T) {
-	env, err := NewEnv(nil)
+	env, err := NewEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	input, err := NewInputValue(env.Compiler(), `{}`)
+	input, err := NewInputValue(`{}`)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,14 +5,16 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 type Mount struct {
 	dest string
-	v    *Value
+	v    *cc.Value
 }
 
-func newMount(v *Value, dest string) (*Mount, error) {
+func newMount(v *cc.Value, dest string) (*Mount, error) {
 	if !v.Exists() {
 		return nil, ErrNotExist
 	}
@@ -22,19 +24,15 @@ func newMount(v *Value, dest string) (*Mount, error) {
 	}, nil
 }
 
-func (mnt *Mount) Validate(defs ...string) error {
-	return mnt.v.Validate(append(defs, "#Mount")...)
-}
-
 func (mnt *Mount) LLB(ctx context.Context, s Solver) (llb.RunOption, error) {
-	if err := mnt.Validate("#MountTmp"); err == nil {
+	if err := spec.Validate(mnt.v, "#MountTmp"); err == nil {
 		return llb.AddMount(
 			mnt.dest,
 			llb.Scratch(),
 			llb.Tmpfs(),
 		), nil
 	}
-	if err := mnt.Validate("#MountCache"); err == nil {
+	if err := spec.Validate(mnt.v, "#MountCache"); err == nil {
 		return llb.AddMount(
 			mnt.dest,
 			llb.Scratch(),

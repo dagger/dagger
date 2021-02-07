@@ -6,6 +6,8 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 var (
@@ -13,12 +15,23 @@ var (
 )
 
 type Script struct {
-	v *Value
+	v *cc.Value
 }
 
-func NewScript(v *Value) (*Script, error) {
+// Compile a cue configuration, and load it as a script.
+// If the cue configuration is invalid, or does not match the script spec,
+//  return an error.
+func CompileScript(name string, src interface{}) (*Script, error) {
+	v, err := cc.Compile(name, src)
+	if err != nil {
+		return nil, err
+	}
+	return NewScript(v)
+}
+
+func NewScript(v *cc.Value) (*Script, error) {
 	// Validate & merge with spec
-	final, err := v.Finalize(v.cc.Spec().Get("#Script"))
+	final, err := v.Finalize(spec.Get("#Script"))
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid script")
 	}
@@ -26,7 +39,7 @@ func NewScript(v *Value) (*Script, error) {
 }
 
 // Same as newScript, but without spec merge + validation.
-func newScript(v *Value) (*Script, error) {
+func newScript(v *cc.Value) (*Script, error) {
 	if !v.Exists() {
 		return nil, ErrNotExist
 	}
@@ -35,7 +48,7 @@ func newScript(v *Value) (*Script, error) {
 	}, nil
 }
 
-func (s *Script) Value() *Value {
+func (s *Script) Value() *cc.Value {
 	return s.v
 }
 
@@ -56,7 +69,7 @@ func (s *Script) Len() uint64 {
 
 // Run a dagger script
 func (s *Script) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) {
-	err := s.v.RangeList(func(idx int, v *Value) error {
+	err := s.v.RangeList(func(idx int, v *cc.Value) error {
 		// If op not concrete, interrupt without error.
 		// This allows gradual resolution:
 		//    compute what you can compute.. leave the rest incomplete.
@@ -89,7 +102,7 @@ func (s *Script) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) 
 }
 
 func (s *Script) Walk(ctx context.Context, fn func(op *Op) error) error {
-	return s.v.RangeList(func(idx int, v *Value) error {
+	return s.v.RangeList(func(idx int, v *cc.Value) error {
 		op, err := newOp(v)
 		if err != nil {
 			return errors.Wrapf(err, "validate op %d/%d", idx+1, s.v.Len())

@@ -8,6 +8,8 @@ import (
 	cueflow "cuelang.org/go/tools/flow"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 type Env struct {
@@ -20,19 +22,16 @@ type Env struct {
 	updater *Script
 
 	// Layer 1: base configuration
-	base *Value
+	base *cc.Value
 
 	// Layer 2: user inputs
-	input *Value
+	input *cc.Value
 
 	// Layer 3: computed values
-	output *Value
+	output *cc.Value
 
 	// All layers merged together: base + input + output
-	state *Value
-
-	// Use the same cue compiler for everything
-	cc *Compiler
+	state *cc.Value
 }
 
 func (env *Env) Updater() *Script {
@@ -42,10 +41,10 @@ func (env *Env) Updater() *Script {
 // Set the updater script for this environment.
 // u may be:
 //  - A compiled script: *Script
-//  - A compiled value: *Value
+//  - A compiled value: *cc.Value
 //  - A cue source: string, []byte, io.Reader
 func (env *Env) SetUpdater(u interface{}) error {
-	if v, ok := u.(*Value); ok {
+	if v, ok := u.(*cc.Value); ok {
 		updater, err := NewScript(v)
 		if err != nil {
 			return errors.Wrap(err, "invalid updater script")
@@ -60,7 +59,7 @@ func (env *Env) SetUpdater(u interface{}) error {
 	if u == nil {
 		u = "[]"
 	}
-	updater, err := env.cc.CompileScript("updater", u)
+	updater, err := CompileScript("updater", u)
 	if err != nil {
 		return err
 	}
@@ -68,16 +67,12 @@ func (env *Env) SetUpdater(u interface{}) error {
 	return nil
 }
 
-func NewEnv(cc *Compiler) (*Env, error) {
-	if cc == nil {
-		cc = &Compiler{}
-	}
+func NewEnv() (*Env, error) {
 	empty, err := cc.EmptyStruct()
 	if err != nil {
 		return nil, err
 	}
 	env := &Env{
-		cc:     cc,
 		base:   empty,
 		input:  empty,
 		output: empty,
@@ -89,20 +84,16 @@ func NewEnv(cc *Compiler) (*Env, error) {
 	return env, nil
 }
 
-func (env *Env) Compiler() *Compiler {
-	return env.cc
-}
-
-func (env *Env) State() *Value {
+func (env *Env) State() *cc.Value {
 	return env.state
 }
 
-func (env *Env) Input() *Value {
+func (env *Env) Input() *cc.Value {
 	return env.input
 }
 
 func (env *Env) SetInput(i interface{}) error {
-	if input, ok := i.(*Value); ok {
+	if input, ok := i.(*cc.Value); ok {
 		return env.set(
 			env.base,
 			input,
@@ -112,7 +103,7 @@ func (env *Env) SetInput(i interface{}) error {
 	if i == nil {
 		i = "{}"
 	}
-	input, err := env.cc.Compile("input", i)
+	input, err := cc.Compile("input", i)
 	if err != nil {
 		return err
 	}
@@ -132,7 +123,7 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 	}
 	// load cue files produced by updater
 	// FIXME: BuildAll() to force all files (no required package..)
-	base, err := env.cc.Build(ctx, src)
+	base, err := CueBuild(ctx, src)
 	if err != nil {
 		return errors.Wrap(err, "base config")
 	}
@@ -143,11 +134,11 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 	)
 }
 
-func (env *Env) Base() *Value {
+func (env *Env) Base() *cc.Value {
 	return env.base
 }
 
-func (env *Env) Output() *Value {
+func (env *Env) Output() *cc.Value {
 	return env.output
 }
 
@@ -195,7 +186,7 @@ func (env *Env) LocalDirs(ctx context.Context) (map[string]string, error) {
 func (env *Env) Components() []*Component {
 	components := []*Component{}
 	env.State().Walk(
-		func(v *Value) bool {
+		func(v *cc.Value) bool {
 			c, err := NewComponent(v)
 			if os.IsNotExist(err) {
 				return true
@@ -211,30 +202,30 @@ func (env *Env) Components() []*Component {
 	return components
 }
 
-// FIXME: this is just a 3-way merge. Add var args to Value.Merge.
-func (env *Env) set(base, input, output *Value) (err error) {
-	// FIXME: make this cleaner in *Value by keeping intermediary instances
+// FIXME: this is just a 3-way merge. Add var args to cc.Value.Merge.
+func (env *Env) set(base, input, output *cc.Value) (err error) {
+	// FIXME: make this cleaner in *cc.Value by keeping intermediary instances
 	// FIXME: state.CueInst() must return an instance with the same
 	//  contents as state.v, for the purposes of cueflow.
-	//  That is not currently how *Value works, so we prepare the cue
+	//  That is not currently how *cc.Value works, so we prepare the cue
 	//  instance manually.
-	//   --> refactor the Value API to do this for us.
+	//   --> refactor the cc.Value API to do this for us.
 	stateInst := env.state.CueInst()
 
-	stateInst, err = stateInst.Fill(base.val)
+	stateInst, err = stateInst.Fill(base.Cue())
 	if err != nil {
 		return errors.Wrap(err, "merge base & input")
 	}
-	stateInst, err = stateInst.Fill(input.val)
+	stateInst, err = stateInst.Fill(input.Cue())
 	if err != nil {
 		return errors.Wrap(err, "merge base & input")
 	}
-	stateInst, err = stateInst.Fill(output.val)
+	stateInst, err = stateInst.Fill(output.Cue())
 	if err != nil {
 		return errors.Wrap(err, "merge output with base & input")
 	}
 
-	state := env.cc.Wrap(stateInst.Value(), stateInst)
+	state := cc.Wrap(stateInst.Value(), stateInst)
 
 	// commit
 	env.base = base
@@ -248,9 +239,9 @@ func (env *Env) set(base, input, output *Value) (err error) {
 // (Use with FS.Change)
 func (env *Env) Export(fs FS) (FS, error) {
 	// FIXME: we serialize as JSON to guarantee a self-contained file.
-	//   Value.Save() leaks imports, so requires a shared cue.mod with
+	//   cc.Value.Save() leaks imports, so requires a shared cue.mod with
 	//   client which is undesirable.
-	//   Once Value.Save() resolves non-builtin imports with a tree shake,
+	//   Once cc.Value.Save() resolves non-builtin imports with a tree shake,
 	//   we can use it here.
 
 	// FIXME: Exporting base/input/output separately causes merge errors.
@@ -272,7 +263,7 @@ func (env *Env) Export(fs FS) (FS, error) {
 			return fs, err
 		}
 	}
-	fs = state.SaveJSON(fs, "state.cue")
+	fs = fs.WriteValueJSON("state.cue", state)
 	return fs, nil
 }
 
@@ -284,11 +275,11 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	flowInst := env.state.CueInst()
 	lg.
 		Debug().
-		Str("value", env.cc.Wrap(flowInst.Value(), flowInst).JSON().String()).
+		Str("value", cc.Wrap(flowInst.Value(), flowInst).JSON().String()).
 		Msg("walking")
 
 	// Initialize empty output
-	output, err := env.cc.EmptyStruct()
+	output, err := cc.EmptyStruct()
 	if err != nil {
 		return err
 	}
@@ -326,7 +317,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	}
 	// Cueflow match func
 	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
-		if _, err := NewComponent(env.cc.Wrap(v, flowInst)); err != nil {
+		if _, err := NewComponent(cc.Wrap(v, flowInst)); err != nil {
 			if os.IsNotExist(err) {
 				// Not a component: skip
 				return nil, nil
@@ -340,7 +331,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 				Logger()
 			ctx := lg.WithContext(ctx)
 
-			c, err := NewComponent(env.cc.Wrap(t.Value(), flowInst))
+			c, err := NewComponent(cc.Wrap(t.Value(), flowInst))
 			if err != nil {
 				return err
 			}
