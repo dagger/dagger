@@ -122,7 +122,7 @@ func (s *Script) LocalDirs(ctx context.Context) (map[string]string, error) {
 		Msg("starting")
 	dirs := map[string]string{}
 	err := s.Walk(ctx, func(op *Op) error {
-		if err := op.Validate("#Local"); err != nil {
+		if op.Do() != "local" {
 			// Ignore all operations except 'do:"local"'
 			return nil
 		}
