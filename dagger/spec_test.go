@@ -2,6 +2,8 @@ package dagger
 
 import (
 	"testing"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 func TestMatch(t *testing.T) {
@@ -25,10 +27,9 @@ func TestMatch(t *testing.T) {
 
 // Test an example op for false positives and negatives
 func testMatch(t *testing.T, src interface{}, def string) {
-	cc := &Compiler{}
-	op := compile(t, cc, src)
+	op := compile(t, src)
 	if def != "" {
-		if err := op.Validate(def); err != nil {
+		if err := spec.Validate(op, def); err != nil {
 			t.Errorf("false negative: %s: %q: %s", def, src, err)
 		}
 	}
@@ -43,13 +44,13 @@ func testMatch(t *testing.T, src interface{}, def string) {
 		if cmpDef == def {
 			continue
 		}
-		if err := op.Validate(cmpDef); err == nil {
+		if err := spec.Validate(op, cmpDef); err == nil {
 			t.Errorf("false positive: %s: %q", cmpDef, src)
 		}
 	}
 }
 
-func compile(t *testing.T, cc *Compiler, src interface{}) *Value {
+func compile(t *testing.T, src interface{}) *cc.Value {
 	v, err := cc.Compile("", src)
 	if err != nil {
 		t.Fatal(err)

@@ -3,13 +3,14 @@ package dagger
 import (
 	"context"
 	"testing"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 // Test that a script with missing fields DOES NOT cause an error
 // NOTE: this behavior may change in the future.
 func TestScriptMissingFields(t *testing.T) {
-	cc := &Compiler{}
-	s, err := cc.CompileScript("test.cue", `
+	s, err := CompileScript("test.cue", `
 		[
 			{
 				do: "fetch-container"
@@ -18,7 +19,7 @@ func TestScriptMissingFields(t *testing.T) {
 		]
 	`)
 	if err != nil {
-		t.Fatalf("err=%v\nval=%v\n", err, s.v.val)
+		t.Fatalf("err=%v\nval=%v\n", err, s.Value().Cue())
 	}
 }
 
@@ -78,7 +79,6 @@ func TestScriptLoadComponent(t *testing.T) {
 
 // Test that default values in spec are applied
 func TestScriptDefaults(t *testing.T) {
-	cc := &Compiler{}
 	v, err := cc.Compile("", `
 	[
     {
@@ -117,12 +117,11 @@ func TestScriptDefaults(t *testing.T) {
 }
 
 func TestValidateEmptyValue(t *testing.T) {
-	cc := &Compiler{}
 	v, err := cc.Compile("", "#dagger: compute: _")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := v.Get("#dagger.compute").Validate("#Script"); err != nil {
+	if err := spec.Validate(v.Get("#dagger.compute"), "#Script"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -130,7 +129,6 @@ func TestValidateEmptyValue(t *testing.T) {
 func TestLocalScript(t *testing.T) {
 	ctx := context.TODO()
 
-	cc := &Compiler{}
 	src := `[{do: "local", dir: "foo"}]`
 	v, err := cc.Compile("", src)
 	if err != nil {
@@ -157,8 +155,7 @@ func TestWalkBiggerScript(t *testing.T) {
 	t.Skip("FIXME")
 
 	ctx := context.TODO()
-	cc := &Compiler{}
-	script, err := cc.CompileScript("boot.cue", `
+	script, err := CompileScript("boot.cue", `
 [
 //	{
 //		do: "load"
@@ -227,8 +224,7 @@ func TestWalkBiggerScript(t *testing.T) {
 // Compile a script and check that it has the correct
 // number of operations.
 func mkScript(t *testing.T, nOps int, src string) *Script {
-	cc := &Compiler{}
-	s, err := cc.CompileScript("test.cue", src)
+	s, err := CompileScript("test.cue", src)
 	if err != nil {
 		t.Fatal(err)
 	}

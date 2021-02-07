@@ -3,12 +3,13 @@ package dagger
 import (
 	"context"
 	"testing"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 func TestLocalMatch(t *testing.T) {
 	ctx := context.TODO()
 
-	cc := &Compiler{}
 	src := `do: "local", dir: "foo"`
 	v, err := cc.Compile("", src)
 	if err != nil {
@@ -34,7 +35,6 @@ func TestLocalMatch(t *testing.T) {
 func TestCopyMatch(t *testing.T) {
 	ctx := context.TODO()
 
-	cc := &Compiler{}
 	src := `do: "copy", from: [{do: "local", dir: "foo"}]`
 	v, err := cc.Compile("", src)
 	if err != nil {

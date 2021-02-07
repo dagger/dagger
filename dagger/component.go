@@ -4,16 +4,17 @@ import (
 	"context"
 	"os"
 
+	"dagger.cloud/go/dagger/cc"
 	"github.com/pkg/errors"
 )
 
 type Component struct {
 	// Source value for the component, without spec merged
 	// eg. `{ string, #dagger: compute: [{do:"fetch-container", ...}]}`
-	v *Value
+	v *cc.Value
 }
 
-func NewComponent(v *Value) (*Component, error) {
+func NewComponent(v *cc.Value) (*Component, error) {
 	if !v.Exists() {
 		// Component value does not exist
 		return nil, ErrNotExist
@@ -23,7 +24,7 @@ func NewComponent(v *Value) (*Component, error) {
 		return nil, ErrNotExist
 	}
 	// Validate & merge with spec
-	final, err := v.Finalize(v.cc.Spec().Get("#Component"))
+	final, err := v.Finalize(spec.Get("#Component"))
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid component")
 	}
@@ -32,12 +33,12 @@ func NewComponent(v *Value) (*Component, error) {
 	}, nil
 }
 
-func (c *Component) Value() *Value {
+func (c *Component) Value() *cc.Value {
 	return c.v
 }
 
 // Return the contents of the "#dagger" annotation.
-func (c *Component) Config() *Value {
+func (c *Component) Config() *cc.Value {
 	return c.Value().Get("#dagger")
 }
 
@@ -78,7 +79,7 @@ func (c *Component) Compute(ctx context.Context, s Solver, out *Fillable) (FS, e
 
 // A component implements the Executable interface by returning its
 // compute script.
-// See Value.Executable().
+// See cc.Value.Executable().
 func (c *Component) Execute(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	script, err := c.ComputeScript()
 	if err != nil {

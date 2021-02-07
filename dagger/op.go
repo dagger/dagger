@@ -9,15 +9,16 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 type Op struct {
-	v *Value
+	v *cc.Value
 }
 
-func NewOp(v *Value) (*Op, error) {
-	spec := v.cc.Spec().Get("#Op")
-	final, err := spec.Merge(v)
+func NewOp(v *cc.Value) (*Op, error) {
+	final, err := spec.Get("#Op").Merge(v)
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid op")
 	}
@@ -25,7 +26,8 @@ func NewOp(v *Value) (*Op, error) {
 }
 
 // Same as newOp, but without spec merge + validation.
-func newOp(v *Value) (*Op, error) {
+func newOp(v *cc.Value) (*Op, error) {
+	// Exists() appears to be buggy, is it needed here?
 	if !v.Exists() {
 		return nil, ErrNotExist
 	}
@@ -57,7 +59,7 @@ func (op *Op) Walk(ctx context.Context, fn func(*Op) error) error {
 		// FIXME: we tolerate "from" which is not executable
 	}
 	if err := op.Validate("#Exec"); err == nil {
-		return op.Get("mount").RangeStruct(func(k string, v *Value) error {
+		return op.Get("mount").RangeStruct(func(k string, v *cc.Value) error {
 			if from, err := newExecutable(op.Get("from")); err == nil {
 				if err := from.Walk(ctx, fn); err != nil {
 					return err
@@ -104,9 +106,11 @@ func (op *Op) Action() (Action, error) {
 	return nil, fmt.Errorf("invalid operation: %s", op.v.JSON())
 }
 
-func (op *Op) Validate(defs ...string) error {
-	defs = append(defs, "#Op")
-	return op.v.Validate(defs...)
+func (op *Op) Validate(def string) error {
+	if err := spec.Validate(op.v, "#Op"); err != nil {
+		return err
+	}
+	return spec.Validate(op.v, def)
 }
 
 func (op *Op) Subdir(ctx context.Context, fs FS, out *Fillable) (FS, error) {
@@ -212,7 +216,7 @@ func (op *Op) Exec(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	}
 	// mounts
 	if mounts := op.v.Lookup("mount"); mounts.Exists() {
-		if err := mounts.RangeStruct(func(k string, v *Value) error {
+		if err := mounts.RangeStruct(func(k string, v *cc.Value) error {
 			mnt, err := newMount(v, k)
 			if err != nil {
 				return err
@@ -345,6 +349,6 @@ func (op *Op) FetchGit(ctx context.Context, fs FS, out *Fillable) (FS, error) {
 	return fs.Set(llb.Git(remote, ref)), nil // lazy solve
 }
 
-func (op *Op) Get(target string) *Value {
+func (op *Op) Get(target string) *cc.Value {
 	return op.v.Get(target)
 }

@@ -8,16 +8,17 @@ import (
 
 	"cuelang.org/go/cue"
 	"github.com/spf13/pflag"
+
+	"dagger.cloud/go/dagger/cc"
 )
 
 // A mutable cue value with an API suitable for user inputs,
 // such as command-line flag parsing.
 type InputValue struct {
-	root *Value
-	cc   *Compiler
+	root *cc.Value
 }
 
-func (iv *InputValue) Value() *Value {
+func (iv *InputValue) Value() *cc.Value {
 	return iv.root
 }
 
@@ -26,21 +27,20 @@ func (iv *InputValue) String() string {
 	return s
 }
 
-func NewInputValue(cc *Compiler, base interface{}) (*InputValue, error) {
+func NewInputValue(base interface{}) (*InputValue, error) {
 	root, err := cc.Compile("base", base)
 	if err != nil {
 		return nil, err
 	}
 	return &InputValue{
-		cc:   cc,
 		root: root,
 	}, nil
 }
 
-func (iv *InputValue) Set(s string, enc func(string, *Compiler) (interface{}, error)) error {
+func (iv *InputValue) Set(s string, enc func(string) (interface{}, error)) error {
 	// Split from eg. 'foo.bar={bla:"bla"}`
 	k, vRaw := splitkv(s)
-	v, err := enc(vRaw, iv.cc)
+	v, err := enc(vRaw)
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ type stringFlag struct {
 }
 
 func (sf stringFlag) Set(s string) error {
-	return sf.iv.Set(s, func(s string, _ *Compiler) (interface{}, error) {
+	return sf.iv.Set(s, func(s string) (interface{}, error) {
 		return s, nil
 	})
 }
@@ -95,7 +95,7 @@ type dirFlag struct {
 }
 
 func (f dirFlag) Set(s string) error {
-	return f.iv.Set(s, func(s string, cc *Compiler) (interface{}, error) {
+	return f.iv.Set(s, func(s string) (interface{}, error) {
 		// FIXME: this is a hack because cue API can't merge into a list
 		include, err := json.Marshal(f.include)
 		if err != nil {
@@ -130,7 +130,7 @@ type gitFlag struct {
 }
 
 func (f gitFlag) Set(s string) error {
-	return f.iv.Set(s, func(s string, cc *Compiler) (interface{}, error) {
+	return f.iv.Set(s, func(s string) (interface{}, error) {
 		u, err := url.Parse(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid git url")
@@ -170,7 +170,7 @@ type sourceFlag struct {
 }
 
 func (f sourceFlag) Set(s string) error {
-	return f.iv.Set(s, func(s string, cc *Compiler) (interface{}, error) {
+	return f.iv.Set(s, func(s string) (interface{}, error) {
 		u, err := url.Parse(s)
 		if err != nil {
 			return nil, err
@@ -209,7 +209,7 @@ type cueFlag struct {
 }
 
 func (f cueFlag) Set(s string) error {
-	return f.iv.Set(s, func(s string, cc *Compiler) (interface{}, error) {
+	return f.iv.Set(s, func(s string) (interface{}, error) {
 		return cc.Compile("cue input", s)
 	})
 }
