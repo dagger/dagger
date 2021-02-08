@@ -93,10 +93,7 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
-	localdirs, err := env.LocalDirs(ctx)
-	if err != nil {
-		return errors.Wrap(err, "scan local dirs")
-	}
+	localdirs := env.LocalDirs()
 	for label, dir := range localdirs {
 		abs, err := filepath.Abs(dir)
 		if err != nil {

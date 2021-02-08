@@ -1,7 +1,6 @@
 package dagger
 
 import (
-	"context"
 	"testing"
 )
 
@@ -22,10 +21,7 @@ func TestEnvInputFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	localdirs, err := env.LocalDirs(context.TODO())
-	if err != nil {
-		t.Fatal(err)
-	}
+	localdirs := env.LocalDirs()
 	if len(localdirs) != 1 {
 		t.Fatal(localdirs)
 	}

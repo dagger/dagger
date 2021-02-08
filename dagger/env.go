@@ -18,8 +18,8 @@ type Env struct {
 	// FIXME: embed update script in base as '#update' ?
 	// FIXME: simplify Env by making it single layer? Each layer is one env.
 
-	// Script to update the base configuration
-	updater *Script
+	// How to update the base configuration
+	updater *cc.Value
 
 	// Layer 1: base configuration
 	base *cc.Value
@@ -34,36 +34,20 @@ type Env struct {
 	state *cc.Value
 }
 
-func (env *Env) Updater() *Script {
+func (env *Env) Updater() *cc.Value {
 	return env.updater
 }
 
 // Set the updater script for this environment.
-// u may be:
-//  - A compiled script: *Script
-//  - A compiled value: *cc.Value
-//  - A cue source: string, []byte, io.Reader
-func (env *Env) SetUpdater(u interface{}) error {
-	if v, ok := u.(*cc.Value); ok {
-		updater, err := NewScript(v)
+func (env *Env) SetUpdater(v *cc.Value) error {
+	if v == nil {
+		var err error
+		v, err = cc.Compile("", "[]")
 		if err != nil {
-			return errors.Wrap(err, "invalid updater script")
+			return err
 		}
-		env.updater = updater
-		return nil
 	}
-	if updater, ok := u.(*Script); ok {
-		env.updater = updater
-		return nil
-	}
-	if u == nil {
-		u = "[]"
-	}
-	updater, err := CompileScript("updater", u)
-	if err != nil {
-		return err
-	}
-	env.updater = updater
+	env.updater = v
 	return nil
 }
 
@@ -92,24 +76,17 @@ func (env *Env) Input() *cc.Value {
 	return env.input
 }
 
-func (env *Env) SetInput(i interface{}) error {
-	if input, ok := i.(*cc.Value); ok {
-		return env.set(
-			env.base,
-			input,
-			env.output,
-		)
-	}
+func (env *Env) SetInput(i *cc.Value) error {
 	if i == nil {
-		i = "{}"
-	}
-	input, err := cc.Compile("input", i)
-	if err != nil {
-		return err
+		var err error
+		i, err = cc.EmptyStruct()
+		if err != nil {
+			return err
+		}
 	}
 	return env.set(
 		env.base,
-		input,
+		i,
 		env.output,
 	)
 }
@@ -117,21 +94,84 @@ func (env *Env) SetInput(i interface{}) error {
 // Update the base configuration
 func (env *Env) Update(ctx context.Context, s Solver) error {
 	// execute updater script
-	src, err := env.updater.Execute(ctx, s.Scratch(), nil)
-	if err != nil {
+	p := NewPipeline(s, nil)
+	if err := p.Do(ctx, env.updater); err != nil {
 		return err
 	}
 	// load cue files produced by updater
 	// FIXME: BuildAll() to force all files (no required package..)
-	base, err := CueBuild(ctx, src)
+	base, err := CueBuild(ctx, p.FS())
 	if err != nil {
 		return errors.Wrap(err, "base config")
 	}
+	final, err := applySpec(base)
+	if err != nil {
+		return err
+	}
+	// Commit
 	return env.set(
-		base,
+		final,
 		env.input,
 		env.output,
 	)
+}
+
+// Scan the env config for compute scripts, and merge the spec over them,
+// for validation and default value expansion.
+//   This is done once when loading the env configuration, as opposed to dynamically
+//   during compute like in previous versions. Hopefully this will improve performance.
+//
+//   Also note that performance was improved DRASTICALLY by splitting the #Component spec
+//   into individual #ComputableStruct, #ComputableString etc. It appears that it is massively
+//   faster to check for the type in Go, then apply the correct spec, than rely on a cue disjunction.
+//
+// FIXME: re-enable support for scalar types beyond string.
+//
+// FIXME: remove dependency on #Component def so it can be deprecated.
+func applySpec(base *cc.Value) (*cc.Value, error) {
+	if os.Getenv("NO_APPLY_SPEC") != "" {
+		return base, nil
+	}
+	// Merge the spec to validate & expand buildkit scripts
+	computableStructs := []cue.Path{}
+	computableStrings := []cue.Path{}
+	base.Walk(
+		func(v *cc.Value) bool {
+			compute := v.Get("#dagger.compute")
+			if !compute.Exists() {
+				return true // keep scanning
+			}
+			if _, err := v.String(); err == nil {
+				// computable string
+				computableStrings = append(computableStrings, v.Path())
+				return false
+			}
+			if _, err := v.Struct(); err == nil {
+				// computable struct
+				computableStructs = append(computableStructs, v.Path())
+				return false
+			}
+			return false
+		},
+		nil,
+	)
+	structSpec := spec.Get("#ComputableStruct")
+	for _, target := range computableStructs {
+		newbase, err := base.MergePath(structSpec, target)
+		if err != nil {
+			return nil, err
+		}
+		base = newbase
+	}
+	stringSpec := spec.Get("#ComputableString")
+	for _, target := range computableStrings {
+		newbase, err := base.MergePath(stringSpec, target)
+		if err != nil {
+			return nil, err
+		}
+		base = newbase
+	}
+	return base, nil
 }
 
 func (env *Env) Base() *cc.Value {
@@ -146,60 +186,44 @@ func (env *Env) Output() *cc.Value {
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
 // by user-specified scripts.
-func (env *Env) LocalDirs(ctx context.Context) (map[string]string, error) {
-	lg := log.Ctx(ctx)
+func (env *Env) LocalDirs() map[string]string {
 	dirs := map[string]string{}
-	lg.Debug().
-		Str("func", "Env.LocalDirs").
-		Str("state", env.state.SourceUnsafe()).
-		Str("updater", env.updater.Value().SourceUnsafe()).
-		Msg("starting")
-	defer func() {
-		lg.Debug().Str("func", "Env.LocalDirs").Interface("result", dirs).Msg("done")
-	}()
-	// 1. Walk env state, scan compute script for each component.
-	for _, c := range env.Components() {
-		lg.Debug().
-			Str("func", "Env.LocalDirs").
-			Str("component", c.Value().Path().String()).
-			Msg("scanning next component for local dirs")
-		cdirs, err := c.LocalDirs(ctx)
-		if err != nil {
-			return dirs, err
-		}
-		for k, v := range cdirs {
-			dirs[k] = v
-		}
+	localdirs := func(code ...*cc.Value) {
+		Analyze(
+			func(op *cc.Value) error {
+				do, err := op.Get("do").String()
+				if err != nil {
+					return err
+				}
+				if do != "local" {
+					return nil
+				}
+				dir, err := op.Get("dir").String()
+				if err != nil {
+					return err
+				}
+				dirs[dir] = dir
+				return nil
+			},
+			code...,
+		)
 	}
-	// 2. Scan updater script
-	updirs, err := env.updater.LocalDirs(ctx)
-	if err != nil {
-		return dirs, err
-	}
-	for k, v := range updirs {
-		dirs[k] = v
-	}
-	return dirs, nil
-}
-
-// Return a list of components in the env config.
-func (env *Env) Components() []*Component {
-	components := []*Component{}
+	// 1. Scan the environment state
 	env.State().Walk(
 		func(v *cc.Value) bool {
-			c, err := NewComponent(v)
-			if os.IsNotExist(err) {
+			compute := v.Get("#dagger.compute")
+			if !compute.Exists() {
+				// No compute script
 				return true
 			}
-			if err != nil {
-				return false
-			}
-			components = append(components, c)
-			return false // skip nested components, as cueflow does not allow them
+			localdirs(compute)
+			return false // no nested executables
 		},
 		nil,
 	)
-	return components
+	// 2. Scan the environment updater
+	localdirs(env.Updater())
+	return dirs
 }
 
 // FIXME: this is just a 3-way merge. Add var args to cc.Value.Merge.
@@ -316,14 +340,18 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 		},
 	}
 	// Cueflow match func
-	flowMatchFn := func(v cue.Value) (cueflow.Runner, error) {
-		if _, err := NewComponent(cc.Wrap(v, flowInst)); err != nil {
-			if os.IsNotExist(err) {
-				// Not a component: skip
-				return nil, nil
-			}
+	flowMatchFn := func(flowVal cue.Value) (cueflow.Runner, error) {
+		v := cc.Wrap(flowVal, flowInst)
+		compute := v.Get("#dagger.compute")
+		if !compute.Exists() {
+			// No compute script
+			return nil, nil
+		}
+		if _, err := compute.List(); err != nil {
+			// invalid compute script
 			return nil, err
 		}
+		// Cueflow run func:
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 			lg := lg.
 				With().
@@ -331,24 +359,22 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 				Logger()
 			ctx := lg.WithContext(ctx)
 
-			c, err := NewComponent(cc.Wrap(t.Value(), flowInst))
-			if err != nil {
-				return err
-			}
 			for _, dep := range t.Dependencies() {
 				lg.
 					Debug().
 					Str("dependency", dep.Path().String()).
 					Msg("dependency detected")
 			}
-			if _, err := c.Compute(ctx, s, NewFillable(t)); err != nil {
-				lg.
-					Error().
-					Err(err).
-					Msg("component failed")
-				return err
+			v := cc.Wrap(t.Value(), flowInst)
+			p := NewPipeline(s, NewFillable(t))
+			err := p.Do(ctx, v)
+			if err == ErrAbortExecution {
+				// Pipeline was partially executed
+				// FIXME: tell user which inputs are missing (by inspecting references)
+				lg.Warn().Msg("pipeline was partially executed because of missing inputs")
+				return nil
 			}
-			return nil
+			return err
 		}), nil
 	}
 	// Orchestrate execution with cueflow
@@ -361,10 +387,4 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 		env.input,
 		output,
 	)
-}
-
-// Return the component at the specified path in the config, eg. `www`
-// If the component does not exist, os.ErrNotExist is returned.
-func (env *Env) Component(target string) (*Component, error) {
-	return NewComponent(env.state.Get(target))
 }

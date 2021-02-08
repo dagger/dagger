@@ -66,11 +66,6 @@ func (v *Value) Len() cue.Value {
 }
 
 // Proxy function to the underlying cue.Value
-func (v *Value) List() (cue.Iterator, error) {
-	return v.val.List()
-}
-
-// Proxy function to the underlying cue.Value
 func (v *Value) Fields() (*cue.Iterator, error) {
 	return v.val.Fields()
 }
@@ -105,8 +100,21 @@ func (v *Value) Decode(x interface{}) error {
 	return v.val.Decode(x)
 }
 
+func (v *Value) List() ([]*Value, error) {
+	l := []*Value{}
+	it, err := v.val.List()
+	if err != nil {
+		return nil, err
+	}
+	for it.Next() {
+		l = append(l, v.Wrap(it.Value()))
+	}
+	return l, nil
+}
+
+// FIXME: deprecate to simplify
 func (v *Value) RangeList(fn func(int, *Value) error) error {
-	it, err := v.List()
+	it, err := v.val.List()
 	if err != nil {
 		return err
 	}
@@ -131,28 +139,6 @@ func (v *Value) RangeStruct(fn func(string, *Value) error) error {
 		}
 	}
 	return nil
-}
-
-// Finalize a value using the given spec. This means:
-//   1. Check that the value matches the spec.
-//   2. Merge the value and the spec, and return the result.
-func (v *Value) Finalize(spec *Value) (*Value, error) {
-	cc.Lock()
-	unified := spec.val.Unify(v.val)
-	cc.Unlock()
-	// FIXME: temporary debug message, remove before merging.
-	//      fmt.Printf("Finalize:\n  spec=%v\n  v=%v\n  unified=%v", spec.val, v.val, unified)
-
-	// OPTION 1: unfinished fields should pass, but don't
-	// if err := unified.Validate(cue.Concrete(true)); err != nil {
-	// OPTION 2: missing fields should fail, but don't
-	// We choose option 2 for now, because it's easier to layer a
-	// fix on top (we access individual fields so have an opportunity
-	//  to return an error if they are not there).
-	if err := unified.Validate(cue.Final()); err != nil {
-		return nil, Err(err)
-	}
-	return v.Merge(spec)
 }
 
 // FIXME: receive string path?
