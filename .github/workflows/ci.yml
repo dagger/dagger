@@ -22,7 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck
           curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
-          curl -L https://github.com/cuelang/cue/releases/download/v0.3.0-beta.3/cue_0.3.0-beta.3_Linux_x86_64.tar.gz | sudo tar zxf - -C /usr/local/bin
+          curl -L https://github.com/cuelang/cue/releases/download/v0.3.0-beta.4/cue_0.3.0-beta.4_Linux_x86_64.tar.gz | sudo tar zxf - -C /usr/local/bin
 
       - name: Check out
         uses: actions/checkout@v2

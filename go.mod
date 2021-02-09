@@ -3,11 +3,12 @@ module dagger.cloud/go
 go 1.13
 
 require (
-	cuelang.org/go v0.3.0-beta.3
+	cuelang.org/go v0.3.0-beta.4
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.1
 	github.com/emicklei/proto v1.9.0 // indirect
 	github.com/moby/buildkit v0.8.1
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.20.0
 	github.com/spf13/cobra v1.0.0
