@@ -41,6 +41,7 @@ func (mnt *Mount) LLB(ctx context.Context, s Solver) (llb.RunOption, error) {
 				llb.CacheMountShared,
 			)), nil
 	}
+
 	// Compute source component or script, discarding fs writes & output value
 	from, err := newExecutable(mnt.v.Lookup("from"))
 	if err != nil {
@@ -50,5 +51,17 @@ func (mnt *Mount) LLB(ctx context.Context, s Solver) (llb.RunOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	return llb.AddMount(mnt.dest, fromFS.LLB()), nil
+
+	// possibly construct mount options for LLB from
+	var mo []llb.MountOption
+	// handle "path" option
+	if p := mnt.v.Lookup("path"); p.Exists() {
+		ps, err := p.String()
+		if err != nil {
+			return nil, err
+		}
+		mo = append(mo, llb.SourcePath(ps))
+	}
+
+	return llb.AddMount(mnt.dest, fromFS.LLB(), mo...), nil
 }
