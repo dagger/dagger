@@ -1,3 +1,5 @@
+//go:generate sh gen.sh
+
 package dagger
 
 import (
