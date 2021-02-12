@@ -1,6 +1,6 @@
 package testing
 
-component: #dagger: compute: [{
+component: #compute: [{
 	do:  "fetch-container"
 	ref: "alpine"
 }, {
@@ -14,7 +14,7 @@ component: #dagger: compute: [{
 test1: {
 	string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:   "load"
 			from: component
@@ -30,10 +30,10 @@ test1: {
 test2: {
 	string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do: "load"
-			from: #dagger: compute: [{
+			from: #compute: [{
 				do:  "fetch-container"
 				ref: "alpine"
 			}, {

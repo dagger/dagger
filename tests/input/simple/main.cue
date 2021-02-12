@@ -5,7 +5,7 @@ X1=in: string
 test: {
 	string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

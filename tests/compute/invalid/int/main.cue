@@ -1,3 +1,3 @@
 package testing
 
-#dagger: compute: 123
+#compute: 123

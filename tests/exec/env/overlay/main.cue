@@ -2,7 +2,7 @@ package testing
 
 bar: string
 
-#dagger: compute: [
+#compute: [
 	{
 		do:  "fetch-container"
 		ref: "alpine"

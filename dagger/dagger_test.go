@@ -8,13 +8,13 @@ import (
 
 func TestLocalDirs(t *testing.T) {
 	env := mkEnv(t,
-		`#dagger: compute: [
+		`#compute: [
 			{
 				do: "local"
 				dir: "bar"
 			}
 		]`,
-		`dir: #dagger: compute: [
+		`dir: #compute: [
 			{
 				do: "local"
 				dir: "foo"

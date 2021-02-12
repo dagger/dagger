@@ -17,7 +17,7 @@ import (
 	// Environment variables
 	env: [string]: string
 
-	#dagger: compute: [
+	#compute: [
 		dagger.#FetchContainer & {
 			ref: "docker.io/golang:\(version)-alpine"
 		},
@@ -62,7 +62,7 @@ import (
 
 	env: [string]: string
 
-	#dagger: compute: [
+	#compute: [
 		dagger.#Copy & {
 			from: #Go & {
 				"version": version

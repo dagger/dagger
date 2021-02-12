@@ -1,6 +1,6 @@
 package testing
 
-#dagger: compute: [
+#compute: [
 	{
 		do:     "fetch-git"
 		remote: "https://github.com/blocklayerhq/lalalala.git"

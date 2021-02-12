@@ -10,7 +10,7 @@ let defaultVersion = "3.13.2@sha256:a75afd8b57e7f34e4dad8d65e2c7ba2e1975c795ce1e
 	package: [string]: true | false | string
 	version: string | *defaultVersion
 
-	#dagger: compute: [
+	#compute: [
 		dagger.#FetchContainer & {
 			ref: "index.docker.io/alpine:\(version)"
 		},

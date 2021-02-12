@@ -7,7 +7,7 @@ import (
 let alpine = {
 	digest: "sha256:3c7497bf0c7af93428242d6176e8f7905f2201d8fc5861f45be7a346b5f23436"
 	package: [string]: true | false | string
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "index.docker.io/alpine@\(digest)"
@@ -33,7 +33,7 @@ www: {
 	listing: {
 		string
 
-		#dagger: compute: [
+		#compute: [
 			dagger.#Load & {
 				from: alpine
 			},
@@ -52,7 +52,7 @@ www: {
 	url: {
 		string
 
-		#dagger: compute: [
+		#compute: [
 			{
 				do:   "load"
 				from: alpine

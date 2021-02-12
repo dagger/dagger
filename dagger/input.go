@@ -102,7 +102,7 @@ func (f dirFlag) Set(s string) error {
 			return nil, err
 		}
 		return compiler.Compile("", fmt.Sprintf(
-			`#dagger: compute: [{do:"local",dir:"%s", include:%s}]`,
+			`#compute: [{do:"local",dir:"%s", include:%s}]`,
 			s,
 			include,
 		))
@@ -140,7 +140,7 @@ func (f gitFlag) Set(s string) error {
 		remote := u.String()
 
 		return compiler.Compile("", fmt.Sprintf(
-			`#dagger: compute: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
+			`#compute: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
 			remote,
 			ref,
 		))
