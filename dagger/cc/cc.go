@@ -35,19 +35,3 @@ func Err(err error) error {
 	}
 	return errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 }
-
-func Lock() {
-	cc.Lock()
-}
-
-func Unlock() {
-	cc.Unlock()
-}
-
-func RLock() {
-	cc.RLock()
-}
-
-func RUnlock() {
-	cc.RUnlock()
-}
