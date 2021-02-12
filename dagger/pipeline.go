@@ -231,7 +231,13 @@ func (p *Pipeline) Local(ctx context.Context, op *cc.Value) error {
 	if err := op.Get("include").Decode(&include); err != nil {
 		return err
 	}
-	p.fs = p.fs.Set(llb.Local(dir, llb.FollowPaths(include)))
+	p.fs = p.fs.Change(func(st llb.State) llb.State {
+		return st.File(llb.Copy(
+			llb.Local(dir, llb.FollowPaths(include)),
+			"/",
+			"/",
+		))
+	})
 	return nil
 }
 

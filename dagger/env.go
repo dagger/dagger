@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"context"
+	"os"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -90,13 +91,41 @@ func (env *Env) SetInput(i *cc.Value) error {
 	)
 }
 
+func stdlibLoader() (*cc.Value, error) {
+	if dev := os.Getenv("DAGGER_DEV_STDLIB"); dev != "" {
+		v, err := cc.Compile("stdlib.cue", `
+			do: "local"
+			dir: string
+			include: ["cue.mod/pkg"]
+		`)
+		if err != nil {
+			return nil, err
+		}
+		return v.MergeTarget(dev, "dir")
+	}
+	return cc.Compile("stdlib.cue", `
+		do: "fetch-git"
+		remote: "https://github.com/blocklayerhq/dagger-stdlib"
+		ref: "0625677b5aec1162621ad18fbd7b90dc9d7d54e5"
+	`)
+}
+
 // Update the base configuration
 func (env *Env) Update(ctx context.Context, s Solver) error {
-	// execute updater script
 	p := NewPipeline(s, nil)
+	// always inject stdlib in cue.mod/pkg
+	stdlib, err := stdlibLoader()
+	if err != nil {
+		return err
+	}
+	if err := p.Do(ctx, stdlib); err != nil {
+		return err
+	}
+	// execute updater script
 	if err := p.Do(ctx, env.updater); err != nil {
 		return err
 	}
+
 	// load cue files produced by updater
 	// FIXME: BuildAll() to force all files (no required package..)
 	base, err := CueBuild(ctx, p.FS())
@@ -160,6 +189,10 @@ func (env *Env) LocalDirs() map[string]string {
 	)
 	// 2. Scan the environment updater
 	localdirs(env.Updater())
+	// 3. In dev mode, always include dev stdlib directory
+	if dev := os.Getenv("DAGGER_DEV_STDLIB"); dev != "" {
+		dirs[dev] = dev
+	}
 	return dirs
 }
 

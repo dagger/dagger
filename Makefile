@@ -15,7 +15,7 @@ test:
 
 .PHONY: cuefmt
 cuefmt:
-	@(cue fmt -s ./... && cue trim -s ./...)
+	@(cue fmt -s ./...)
 
 .PHONY: lint
 lint: cuefmt
