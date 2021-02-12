@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"context"
-	"os"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -91,87 +90,42 @@ func (env *Env) SetInput(i *cc.Value) error {
 	)
 }
 
+func stdlibLoader() (*cc.Value, error) {
+	return cc.Compile("stdlib.cue", `
+		do: "fetch-git"
+		remote: "https://github.com/blocklayerhq/dagger-stdlib"
+		ref: "0625677b5aec1162621ad18fbd7b90dc9d7d54e5"
+	`)
+}
+
 // Update the base configuration
 func (env *Env) Update(ctx context.Context, s Solver) error {
-	// execute updater script
 	p := NewPipeline(s, nil)
+	// always inject stdlib in cue.mod/pkg
+	stdlib, err := stdlibLoader()
+	if err != nil {
+		return err
+	}
+	if err := p.Do(ctx, stdlib); err != nil {
+		return err
+	}
+	// execute updater script
 	if err := p.Do(ctx, env.updater); err != nil {
 		return err
 	}
+
 	// load cue files produced by updater
 	// FIXME: BuildAll() to force all files (no required package..)
 	base, err := CueBuild(ctx, p.FS())
 	if err != nil {
 		return errors.Wrap(err, "base config")
 	}
-	final, err := applySpec(base)
-	if err != nil {
-		return err
-	}
 	// Commit
 	return env.set(
-		final,
+		base,
 		env.input,
 		env.output,
 	)
-}
-
-// Scan the env config for compute scripts, and merge the spec over them,
-// for validation and default value expansion.
-//   This is done once when loading the env configuration, as opposed to dynamically
-//   during compute like in previous versions. Hopefully this will improve performance.
-//
-//   Also note that performance was improved DRASTICALLY by splitting the #Component spec
-//   into individual #ComputableStruct, #ComputableString etc. It appears that it is massively
-//   faster to check for the type in Go, then apply the correct spec, than rely on a cue disjunction.
-//
-// FIXME: re-enable support for scalar types beyond string.
-//
-// FIXME: remove dependency on #Component def so it can be deprecated.
-func applySpec(base *cc.Value) (*cc.Value, error) {
-	if os.Getenv("NO_APPLY_SPEC") != "" {
-		return base, nil
-	}
-	// Merge the spec to validate & expand buildkit scripts
-	computableStructs := []cue.Path{}
-	computableStrings := []cue.Path{}
-	base.Walk(
-		func(v *cc.Value) bool {
-			compute := v.Get("#dagger.compute")
-			if !compute.Exists() {
-				return true // keep scanning
-			}
-			if _, err := v.String(); err == nil {
-				// computable string
-				computableStrings = append(computableStrings, v.Path())
-				return false
-			}
-			if _, err := v.Struct(); err == nil {
-				// computable struct
-				computableStructs = append(computableStructs, v.Path())
-				return false
-			}
-			return false
-		},
-		nil,
-	)
-	structSpec := spec.Get("#ComputableStruct")
-	for _, target := range computableStructs {
-		newbase, err := base.MergePath(structSpec, target)
-		if err != nil {
-			return nil, err
-		}
-		base = newbase
-	}
-	stringSpec := spec.Get("#ComputableString")
-	for _, target := range computableStrings {
-		newbase, err := base.MergePath(stringSpec, target)
-		if err != nil {
-			return nil, err
-		}
-		base = newbase
-	}
-	return base, nil
 }
 
 func (env *Env) Base() *cc.Value {
