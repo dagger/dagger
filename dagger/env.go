@@ -149,7 +149,7 @@ func (env *Env) LocalDirs() map[string]string {
 	flow := cueflow.New(&cueflow.Config{}, inst, newDummyTaskFunc(inst))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
-		localdirs(v.Get("#dagger.compute"))
+		localdirs(v.Get("#compute"))
 	}
 	// 2. Scan the environment updater
 	localdirs(env.Updater())

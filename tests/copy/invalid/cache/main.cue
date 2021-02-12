@@ -3,7 +3,7 @@ package testing
 test1: {
 	string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "busybox"
@@ -25,7 +25,7 @@ test1: {
 test2: {
 	string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "busybox"

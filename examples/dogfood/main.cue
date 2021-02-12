@@ -20,20 +20,20 @@ test: go.#Test & {
 }
 
 // Run a command with the binary we just built
-help: #dagger: compute: [
+help: #compute: [
 	dagger.#Load & {from: build},
 	dagger.#Exec & {args: ["dagger", "-h"]},
 ]
 
 // Build dagger using the (included) Dockerfile
-buildWithDocker: #dagger: compute: [
+buildWithDocker: #compute: [
 	dagger.#DockerBuild & {
 		context: repository
 	},
 ]
 
 // Run a command in the docker image we just built
-helpFromDocker: #dagger: compute: [
+helpFromDocker: #compute: [
 	dagger.#Load & {from: buildWithDocker},
 	dagger.#Exec & {args: ["dagger", "-h"]},
 ]

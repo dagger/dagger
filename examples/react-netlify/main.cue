@@ -6,7 +6,7 @@ import (
 	"dagger.io/yarn"
 )
 
-repository: #dagger: compute: [
+repository: #compute: [
 	dagger.#FetchGit & {
 		remote: "https://github.com/kabirbaidhya/react-todo-app.git"
 		ref:    "624041b17bd62292143f99bce474a0e3c2d2dd61"

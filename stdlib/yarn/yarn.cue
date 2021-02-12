@@ -20,7 +20,7 @@ import (
 	// Set these environment variables during the build
 	env?: [string]: string
 
-	#dagger: compute: [
+	#compute: [
 		dagger.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=~5.1"

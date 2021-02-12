@@ -1,6 +1,6 @@
 package test
 
-#dagger: compute: [
+#compute: [
 	{
 		do:  "fetch-container"
 		ref: "busybox"

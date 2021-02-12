@@ -4,7 +4,7 @@ test: {
 	string
 	=~"^NAAAA.+"
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

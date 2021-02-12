@@ -41,7 +41,7 @@ func (p *Pipeline) FS() FS {
 }
 
 func isComponent(v *compiler.Value) bool {
-	return v.Get("#dagger.compute").Exists()
+	return v.Get("#compute").Exists()
 }
 
 func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
@@ -50,7 +50,7 @@ func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
 	for _, x := range code {
 		// 1. attachment array
 		if isComponent(x) {
-			xops, err := x.Get("#dagger.compute").List()
+			xops, err := x.Get("#compute").List()
 			if err != nil {
 				return nil, err
 			}

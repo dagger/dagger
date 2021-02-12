@@ -5,7 +5,7 @@ import "dagger.io/dagger"
 // Set to `--input-dir=./tests/dockerbuild/testdata`
 TestData: dagger.#Dir
 
-TestInlinedDockerfile: #dagger: compute: [
+TestInlinedDockerfile: #compute: [
 	dagger.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -14,7 +14,7 @@ TestInlinedDockerfile: #dagger: compute: [
 	},
 ]
 
-TestOpChaining: #dagger: compute: [
+TestOpChaining: #compute: [
 	dagger.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -26,7 +26,7 @@ TestOpChaining: #dagger: compute: [
 	}
 ]
 
-TestBuildContext: #dagger: compute: [
+TestBuildContext: #compute: [
 	dagger.#DockerBuild & {
 		context: TestData
 	},
@@ -35,7 +35,7 @@ TestBuildContext: #dagger: compute: [
 	}
 ]
 
-TestBuildContextAndDockerfile: #dagger: compute: [
+TestBuildContextAndDockerfile: #compute: [
 	dagger.#DockerBuild & {
 		context: TestData
 		dockerfile: """
@@ -48,7 +48,7 @@ TestBuildContextAndDockerfile: #dagger: compute: [
 	}
 ]
 
-TestDockerfilePath: #dagger: compute: [
+TestDockerfilePath: #compute: [
 	dagger.#DockerBuild & {
 		context: TestData
 		dockerfilePath: "./dockerfilepath/Dockerfile.custom"
@@ -58,7 +58,7 @@ TestDockerfilePath: #dagger: compute: [
 	}
 ]
 
-TestBuildArgs: #dagger: compute: [
+TestBuildArgs: #compute: [
 	dagger.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -70,7 +70,7 @@ TestBuildArgs: #dagger: compute: [
 ]
 
 // FIXME: this doesn't test anything beside not crashing
-TestBuildLabels: #dagger: compute: [
+TestBuildLabels: #compute: [
 	dagger.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -80,7 +80,7 @@ TestBuildLabels: #dagger: compute: [
 ]
 
 // FIXME: this doesn't test anything beside not crashing
-TestBuildPlatform: #dagger: compute: [
+TestBuildPlatform: #compute: [
 	dagger.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d

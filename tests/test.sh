@@ -43,13 +43,9 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/int
   test::one "Compute: invalid struct should fail" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/struct
-  disable test::one "Compute: overloading #ComponentScript with new prop should fail (FIXME: unauthorized fields are not checked)" --exit=1  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/overload/new_prop
-  test::one "Compute: overloading #ComponentScript with new def should succeed" --exit=0  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/overload/new_def
 
   # Compute: success
-  test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{},"realempty":{}}'  \
+  test::one "Compute: noop should succeed" --exit=0 --stdout='{"empty":{}}'  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/noop
   test::one "Compute: simple should succeed" --exit=0 --stdout="{}" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/simple

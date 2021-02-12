@@ -3,7 +3,7 @@ package testing
 A: {
 	result: string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -28,7 +28,7 @@ A: {
 B: {
 	result: string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

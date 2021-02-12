@@ -3,7 +3,7 @@ package testing
 hello: "world"
 bar:   string
 
-#dagger: compute: [
+#compute: [
 	{
 		do:  "fetch-container"
 		ref: "alpine"

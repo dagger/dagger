@@ -2,7 +2,7 @@ package dagger
 
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
-#Dir: #dagger: compute: [...#Op]
+#Dir: #compute: [...#Op]
 
 // One operation in a script
 #Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir

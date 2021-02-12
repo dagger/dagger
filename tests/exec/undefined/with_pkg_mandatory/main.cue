@@ -4,11 +4,9 @@ import (
 	"dagger.io/nonoptional"
 )
 
-#dagger: {
-	compute: [
-		{
-			do: "load",
-			from: nonoptional
-		},
-	]
-}
+#compute: [
+	{
+		do: "load",
+		from: nonoptional
+	},
+]

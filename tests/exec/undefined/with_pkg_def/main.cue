@@ -4,11 +4,9 @@ import (
 	"dagger.io/def"
 )
 
-#dagger: {
-	compute: [
-		{
-			do: "load",
-			from: def
-		},
-	]
-}
+#compute: [
+	{
+		do: "load",
+		from: def
+	},
+]

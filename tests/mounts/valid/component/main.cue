@@ -3,7 +3,7 @@ package testing
 test: {
 	string
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do: "load"
 			from: [{do: "fetch-container", ref: "alpine"}]
@@ -13,8 +13,8 @@ test: {
 			args: ["sh", "-c", """
 					cat /mnt/test/lol > /out
 				"""]
-			mount: "/mnt/test": {
-				from: #dagger: compute: [
+			mount: "/mnt/test": from: {
+				#compute: [
 					{
 						do:  "fetch-container"
 						ref: "alpine"

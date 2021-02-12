@@ -3,7 +3,7 @@ package testing
 test: {
 	float
 
-	#dagger: compute: [
+	#compute: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
