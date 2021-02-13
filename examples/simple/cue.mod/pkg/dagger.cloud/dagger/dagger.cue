@@ -1,40 +1,9 @@
 package dagger
 
-// A dagger component is a configuration value augmented
-// by scripts defining how to compute it, present it to a user,
-// encrypt it, etc.
-
-#ComputableStruct: {
-	#dagger: compute: [...#Op]
-	...
-}
-
-#ComputableString: {
-	string
-	#dagger: compute: [...#Op]
-}
-
-#Component: {
-	// Match structs
-	#dagger: #ComponentConfig
-	...
-} | {
-	// Match embedded scalars
-	bool | int | float | string | bytes
-	#dagger: #ComponentConfig
-}
-
-// The contents of a #dagger annotation
-#ComponentConfig: {
-	// script to compute the value
-	compute?: #Script
-}
 
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
-#Dir: #Component
-
-#Script: [...#Op]
+#Dir: #dagger: compute: [...#Op]
 
 // One operation in a script
 #Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
@@ -57,7 +26,7 @@ package dagger
 
 #Load: {
 	do:   "load"
-	from: #Component | #Script
+	from: _
 }
 
 #Subdir: {
@@ -71,18 +40,7 @@ package dagger
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: #MountTmp | #MountCache | #MountComponent | #MountScript
-}
-
-#MountTmp:   "tmpfs"
-#MountCache: "cache"
-#MountComponent: {
-	from: #Component
-	path: string | *"/"
-}
-#MountScript: {
-	from: #Script
-	path: string | *"/"
+	mount: [string]: "tmp" | "cache" | { from: _, path: string | *"/" }
 }
 
 #FetchContainer: {
@@ -98,7 +56,7 @@ package dagger
 
 #Copy: {
 	do:   "copy"
-	from: #Script | #Component
+	from: _
 	src:  string | *"/"
 	dest: string | *"/"
 }
