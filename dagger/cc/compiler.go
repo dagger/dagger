@@ -10,8 +10,24 @@ import (
 // (we call it compiler to avoid confusion with dagger runtime)
 // Use this instead of cue.Runtime
 type Compiler struct {
-	sync.RWMutex
+	l sync.RWMutex
 	cue.Runtime
+}
+
+func (cc *Compiler) lock() {
+	cc.l.Lock()
+}
+
+func (cc *Compiler) unlock() {
+	cc.l.Unlock()
+}
+
+func (cc *Compiler) rlock() {
+	cc.l.RLock()
+}
+
+func (cc *Compiler) runlock() {
+	cc.l.RUnlock()
 }
 
 func (cc *Compiler) Cue() *cue.Runtime {
@@ -24,8 +40,8 @@ func (cc *Compiler) EmptyStruct() (*Value, error) {
 }
 
 func (cc *Compiler) Compile(name string, src interface{}) (*Value, error) {
-	cc.Lock()
-	defer cc.Unlock()
+	cc.lock()
+	defer cc.unlock()
 
 	inst, err := cc.Cue().Compile(name, src)
 	if err != nil {

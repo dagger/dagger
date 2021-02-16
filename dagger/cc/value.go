@@ -29,8 +29,8 @@ func wrapValue(v cue.Value, inst *cue.Instance) *Value {
 
 // Fill the value in-place, unlike Merge which returns a copy.
 func (v *Value) Fill(x interface{}) error {
-	cc.Lock()
-	defer cc.Unlock()
+	cc.lock()
+	defer cc.unlock()
 
 	// If calling Fill() with a Value, we want to use the underlying
 	// cue.Value to fill.
@@ -44,8 +44,8 @@ func (v *Value) Fill(x interface{}) error {
 
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
 func (v *Value) LookupPath(p cue.Path) *Value {
-	cc.RLock()
-	defer cc.RUnlock()
+	cc.rlock()
+	defer cc.runlock()
 
 	return v.Wrap(v.val.LookupPath(p))
 }
@@ -147,9 +147,9 @@ func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 		x = xval.val
 	}
 
-	cc.Lock()
+	cc.lock()
 	result := v.Wrap(v.val.Fill(x, path...))
-	cc.Unlock()
+	cc.unlock()
 
 	return result, result.Validate()
 }
@@ -220,8 +220,8 @@ func (v *Value) Validate() error {
 
 // Return cue source for this value
 func (v *Value) Source() ([]byte, error) {
-	cc.RLock()
-	defer cc.RUnlock()
+	cc.rlock()
+	defer cc.runlock()
 
 	return cueformat.Node(v.val.Eval().Syntax())
 }
