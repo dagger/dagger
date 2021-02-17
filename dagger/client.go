@@ -3,6 +3,7 @@ package dagger
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -169,7 +170,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 	tr := tar.NewReader(r)
 	for {
 		h, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
