@@ -2,10 +2,10 @@ package dagger
 
 import (
 	"context"
+	"fmt"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
 	"dagger.cloud/go/dagger/compiler"
@@ -102,7 +102,7 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 	// FIXME: BuildAll() to force all files (no required package..)
 	base, err := CueBuild(ctx, p.FS())
 	if err != nil {
-		return errors.Wrap(err, "base config")
+		return fmt.Errorf("base config: %w", err)
 	}
 	// Commit
 	return env.set(
@@ -176,15 +176,15 @@ func (env *Env) set(base, input, output *compiler.Value) (err error) {
 
 	stateInst, err = stateInst.Fill(base.Cue())
 	if err != nil {
-		return errors.Wrap(err, "merge base & input")
+		return fmt.Errorf("merge base & input: %w", err)
 	}
 	stateInst, err = stateInst.Fill(input.Cue())
 	if err != nil {
-		return errors.Wrap(err, "merge base & input")
+		return fmt.Errorf("merge base & input: %w", err)
 	}
 	stateInst, err = stateInst.Fill(output.Cue())
 	if err != nil {
-		return errors.Wrap(err, "merge output with base & input")
+		return fmt.Errorf("merge output with base & input: %w", err)
 	}
 
 	state := compiler.Wrap(stateInst.Value(), stateInst)

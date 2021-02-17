@@ -2,13 +2,13 @@ package dagger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
 
 	cueerrors "cuelang.org/go/cue/errors"
 	cueload "cuelang.org/go/cue/load"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
 	"dagger.cloud/go/dagger/compiler"

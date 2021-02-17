@@ -2,13 +2,13 @@ package dagger
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path"
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 
 	"dagger.cloud/go/dagger/compiler"
