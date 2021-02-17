@@ -43,6 +43,8 @@ contrib.go.opencensus.io/integrations/ocsql v0.1.4/go.mod h1:8DsSdjz3F+APR+0z0Wk
 contrib.go.opencensus.io/resource v0.1.1/go.mod h1:F361eGI91LCmW1I/Saf+rX0+OFcigGlFvXwEGEnkRLA=
 cuelang.org/go v0.3.0-beta.4 h1:NjjbmTT8zW/kqZsq8Is1WsevvpsCVPzRdeaH3QDRuJM=
 cuelang.org/go v0.3.0-beta.4/go.mod h1:Ikvs157igkGV5gFUdYSFa+lWp/CDteVhubPTXyvPRtA=
+cuelang.org/go v0.3.0-beta.5 h1:c+zS9MBCFzbuz+RI+3dp2PwfnS05aF3MqSEaAGFwzSk=
+cuelang.org/go v0.3.0-beta.5/go.mod h1:Ikvs157igkGV5gFUdYSFa+lWp/CDteVhubPTXyvPRtA=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20201218220906-28db891af037/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 git.apache.org/thrift.git v0.0.0-20180902110319-2566ecd5d999/go.mod h1:fPE2ZNJGynbRyZ4dJvy6G277gSllfV2HJqblrnkyeyg=
