@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"dagger.cloud/go/cmd/dagger/logger"
-	"dagger.cloud/go/dagger"
+	"dagger.io/go/cmd/dagger/logger"
+	"dagger.io/go/dagger"
 
 	"github.com/moby/buildkit/util/appcontext"
 

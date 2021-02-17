@@ -24,7 +24,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/moby/buildkit/util/progress/progressui"
 
-	"dagger.cloud/go/dagger/compiler"
+	"dagger.io/go/dagger/compiler"
 )
 
 const (

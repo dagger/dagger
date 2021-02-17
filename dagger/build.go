@@ -11,8 +11,8 @@ import (
 	cueload "cuelang.org/go/cue/load"
 	"github.com/rs/zerolog/log"
 
-	"dagger.cloud/go/dagger/compiler"
-	"dagger.cloud/go/stdlib"
+	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/stdlib"
 )
 
 // Build a cue configuration tree from the files in fs.

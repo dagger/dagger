@@ -11,7 +11,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	fstypes "github.com/tonistiigi/fsutil/types"
 
-	"dagger.cloud/go/dagger/compiler"
+	"dagger.io/go/dagger/compiler"
 )
 
 type Stat struct {
