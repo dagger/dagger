@@ -9,16 +9,16 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/spf13/pflag"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 )
 
 // A mutable cue value with an API suitable for user inputs,
 // such as command-line flag parsing.
 type InputValue struct {
-	root *cc.Value
+	root *compiler.Value
 }
 
-func (iv *InputValue) Value() *cc.Value {
+func (iv *InputValue) Value() *compiler.Value {
 	return iv.root
 }
 
@@ -28,7 +28,7 @@ func (iv *InputValue) String() string {
 }
 
 func NewInputValue(base interface{}) (*InputValue, error) {
-	root, err := cc.Compile("base", base)
+	root, err := compiler.Compile("base", base)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (f dirFlag) Set(s string) error {
 		if err != nil {
 			return nil, err
 		}
-		return cc.Compile("", fmt.Sprintf(
+		return compiler.Compile("", fmt.Sprintf(
 			`#dagger: compute: [{do:"local",dir:"%s", include:%s}]`,
 			s,
 			include,
@@ -139,7 +139,7 @@ func (f gitFlag) Set(s string) error {
 		u.Fragment = ""
 		remote := u.String()
 
-		return cc.Compile("", fmt.Sprintf(
+		return compiler.Compile("", fmt.Sprintf(
 			`#dagger: compute: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
 			remote,
 			ref,
@@ -177,7 +177,7 @@ func (f sourceFlag) Set(s string) error {
 		}
 		switch u.Scheme {
 		case "", "file":
-			return cc.Compile(
+			return compiler.Compile(
 				"source",
 				// FIXME: include only cue files as a shortcut. Make this configurable somehow.
 				fmt.Sprintf(`[{do:"local",dir:"%s",include:["*.cue","cue.mod"]}]`, u.Host+u.Path),
@@ -210,7 +210,7 @@ type cueFlag struct {
 
 func (f cueFlag) Set(s string) error {
 	return f.iv.Set(s, func(s string) (interface{}, error) {
-		return cc.Compile("cue input", s)
+		return compiler.Compile("cue input", s)
 	})
 }
 

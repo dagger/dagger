@@ -11,12 +11,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 	"dagger.cloud/go/stdlib"
 )
 
 // Build a cue configuration tree from the files in fs.
-func CueBuild(ctx context.Context, fs FS, args ...string) (*cc.Value, error) {
+func CueBuild(ctx context.Context, fs FS, args ...string) (*compiler.Value, error) {
 	var (
 		err error
 		lg  = log.Ctx(ctx)
@@ -59,9 +59,9 @@ func CueBuild(ctx context.Context, fs FS, args ...string) (*cc.Value, error) {
 	if len(instances) != 1 {
 		return nil, errors.New("only one package is supported at a time")
 	}
-	inst, err := cc.Cue().Build(instances[0])
+	inst, err := compiler.Cue().Build(instances[0])
 	if err != nil {
 		return nil, errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 	}
-	return cc.Wrap(inst.Value(), inst), nil
+	return compiler.Wrap(inst.Value(), inst), nil
 }

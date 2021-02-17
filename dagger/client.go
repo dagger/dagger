@@ -24,7 +24,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/moby/buildkit/util/progress/progressui"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 )
 
 const (
@@ -52,8 +52,8 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 	}, nil
 }
 
-// FIXME: return completed *Env, instead of *cc.Value
-func (c *Client) Compute(ctx context.Context, env *Env) (*cc.Value, error) {
+// FIXME: return completed *Env, instead of *compiler.Value
+func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -77,7 +77,7 @@ func (c *Client) Compute(ctx context.Context, env *Env) (*cc.Value, error) {
 
 	// Spawn output retriever
 	var (
-		out *cc.Value
+		out *compiler.Value
 		err error
 	)
 	eg.Go(func() error {
@@ -86,7 +86,7 @@ func (c *Client) Compute(ctx context.Context, env *Env) (*cc.Value, error) {
 		return err
 	})
 
-	return out, cc.Err(eg.Wait())
+	return out, compiler.Err(eg.Wait())
 }
 
 func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus, w io.WriteCloser) error {
@@ -157,11 +157,11 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 }
 
 // Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(ctx context.Context, r io.Reader) (*cc.Value, error) {
+func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	// FIXME: merge this into env output.
-	out, err := cc.EmptyStruct()
+	out, err := compiler.EmptyStruct()
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*cc.Value, error) {
 		}
 		lg.Debug().Msg("outputfn: compiling & merging")
 
-		v, err := cc.Compile(h.Name, tr)
+		v, err := compiler.Compile(h.Name, tr)
 		if err != nil {
 			return nil, err
 		}
