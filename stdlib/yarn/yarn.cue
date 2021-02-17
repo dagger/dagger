@@ -54,7 +54,7 @@ import (
 			dir: "/src"
 			mount: {
 				"/src": from: source
-				"/cache/yarn": dagger.#MountCache
+				"/cache/yarn": "cache"
 			}
 		},
 		dagger.#Subdir & {

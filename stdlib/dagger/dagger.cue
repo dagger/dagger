@@ -1,6 +1,5 @@
 package dagger
 
-
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
 #Dir: #dagger: compute: [...#Op]
@@ -40,7 +39,7 @@ package dagger
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmp" | "cache" | { from: _, path: string | *"/" }
+	mount: [string]: "tmp" | "cache" | {from: _, path: string | *"/"}
 }
 
 #FetchContainer: {

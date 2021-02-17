@@ -57,12 +57,12 @@ A few examples of how Dagger is used in the wild:
 - Allocate cool auto-generated URLs to development instances, and automatically configure your DNS,
 	load-balancer and SSL certificate manager to route traffic to them.
 - Orchestrate application deployment across 2 infrastructure siloes, one managed with CloudFormation, the other with Terraform.
-- Migrate from Helm to Kustomize, without disrupting next week's big release. 
+- Migrate from Helm to Kustomize, without disrupting next week's big release.
 
 
 ## Getting started
 
-1. Build the `dagger` command-line tool. You will need [Go](https://golang.org) version 1.13 or later.
+1. Build the `dagger` command-line tool. You will need [Go](https://golang.org) version 1.16 or later.
 
 ```
 $ make
@@ -148,8 +148,8 @@ Heroku, Elastic Beanstalk, Cloud Foundry, Openshift
 
 Kustomize, Helm, jsonnet
 
-### Gitops 
+### Gitops
 
-Flux, ... 
+Flux, ...
 
 

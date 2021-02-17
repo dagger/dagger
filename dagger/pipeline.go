@@ -13,10 +13,6 @@ import (
 	"dagger.cloud/go/dagger/cc"
 )
 
-var (
-	ErrAbortExecution = errors.New("execution stopped")
-)
-
 // An execution pipeline
 type Pipeline struct {
 	s   Solver
@@ -114,11 +110,11 @@ func (p *Pipeline) Do(ctx context.Context, code ...*cc.Value) error {
 		if err := op.IsConcreteR(); err != nil {
 			log.
 				Ctx(ctx).
-				Debug().
+				Warn().
 				Str("original_cue_error", err.Error()).
 				Int("op", idx).
-				Msg("script is missing inputs and has not been fully executed")
-			return ErrAbortExecution
+				Msg("pipeline was partially executed because of missing inputs")
+			return nil
 		}
 		if err := p.doOp(ctx, op); err != nil {
 			return err

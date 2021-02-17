@@ -1,6 +1,6 @@
 module dagger.cloud/go
 
-go 1.13
+go 1.16
 
 require (
 	cuelang.org/go v0.3.0-beta.4
