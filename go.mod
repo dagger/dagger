@@ -12,7 +12,7 @@ require (
 	github.com/rs/zerolog v1.20.0
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/pflag v1.0.5
-	github.com/spf13/viper v1.7.0
+	github.com/spf13/viper v1.7.1
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c // indirect
