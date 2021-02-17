@@ -3,12 +3,12 @@ package dagger
 import (
 	"archive/tar"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rs/zerolog/log"
@@ -45,7 +45,7 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 	}
 	c, err := bk.New(ctx, host)
 	if err != nil {
-		return nil, errors.Wrap(err, "buildkit client")
+		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 	return &Client{
 		c: c,
@@ -143,7 +143,7 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 		return outdir.Result(ctx)
 	}, ch)
 	if err != nil {
-		return errors.Wrap(bkCleanError(err), "buildkit solve")
+		return fmt.Errorf("buildkit solve: %w", bkCleanError(err))
 	}
 	for k, v := range resp.ExporterResponse {
 		// FIXME consume exporter response
@@ -173,7 +173,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 			break
 		}
 		if err != nil {
-			return nil, errors.Wrap(err, "read tar stream")
+			return nil, fmt.Errorf("read tar stream: %w", err)
 		}
 
 		lg := lg.
@@ -192,7 +192,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 			return nil, err
 		}
 		if err := out.Fill(v); err != nil {
-			return nil, errors.Wrap(err, h.Name)
+			return nil, fmt.Errorf("%s: %w", h.Name, err)
 		}
 	}
 	return out, nil

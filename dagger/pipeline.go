@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
@@ -349,7 +348,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 	}
 	contents, err := p.fs.ReadFile(ctx, source)
 	if err != nil {
-		return errors.Wrapf(err, "export %s", source)
+		return fmt.Errorf("export %s: %w", source, err)
 	}
 	switch format {
 	case "string":
