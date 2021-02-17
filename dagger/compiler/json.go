@@ -1,4 +1,4 @@
-package cc
+package compiler
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"cuelang.org/go/cue"
 	cuejson "cuelang.org/go/encoding/json"
 	"github.com/KromDaniel/jonson"
-	"github.com/pkg/errors"
 )
 
 type JSON []byte
@@ -20,7 +19,7 @@ func (s JSON) Get(path ...string) ([]byte, error) {
 	)
 	root, err := jonson.Parse(s)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse root json")
+		return nil, fmt.Errorf("parse root json: %w", err)
 	}
 	pointer := root
 	for _, key := range path {
@@ -40,7 +39,7 @@ func (s JSON) Unset(path ...string) (JSON, error) {
 	)
 	root, err := jonson.Parse(s)
 	if err != nil {
-		return nil, errors.Wrap(err, "unset: parse root json")
+		return nil, fmt.Errorf("unset: parse root json: %w", err)
 	}
 	var (
 		pointer = root
@@ -71,11 +70,11 @@ func (s JSON) Set(valueJSON []byte, path ...string) (JSON, error) {
 	)
 	root, err := jonson.Parse(s)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse root json")
+		return nil, fmt.Errorf("parse root json: %w", err)
 	}
 	value, err = jonson.Parse(valueJSON)
 	if err != nil {
-		return nil, errors.Wrapf(err, "SetJSON: parse value json: |%s|", valueJSON)
+		return nil, fmt.Errorf("SetJSON: parse value json: |%s|: %w", valueJSON, err)
 	}
 	var (
 		pointer = root

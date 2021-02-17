@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 )
 
 // An execution pipeline
@@ -32,8 +32,8 @@ func (p *Pipeline) FS() FS {
 	return p.fs
 }
 
-func ops(code ...*cc.Value) ([]*cc.Value, error) {
-	ops := []*cc.Value{}
+func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
+	ops := []*compiler.Value{}
 	// 1. Decode 'code' into a single flat array of operations.
 	for _, x := range code {
 		// 1. attachment array
@@ -58,7 +58,7 @@ func ops(code ...*cc.Value) ([]*cc.Value, error) {
 	return ops, nil
 }
 
-func Analyze(fn func(*cc.Value) error, code ...*cc.Value) error {
+func Analyze(fn func(*compiler.Value) error, code ...*compiler.Value) error {
 	ops, err := ops(code...)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func Analyze(fn func(*cc.Value) error, code ...*cc.Value) error {
 	return nil
 }
 
-func analyzeOp(fn func(*cc.Value) error, op *cc.Value) error {
+func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 	if err := fn(op); err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func analyzeOp(fn func(*cc.Value) error, op *cc.Value) error {
 	case "load", "copy":
 		return Analyze(fn, op.Get("from"))
 	case "exec":
-		return op.Get("mount").RangeStruct(func(dest string, mnt *cc.Value) error {
+		return op.Get("mount").RangeStruct(func(dest string, mnt *compiler.Value) error {
 			if from := mnt.Get("from"); from.Exists() {
 				return Analyze(fn, from)
 			}
@@ -97,7 +97,7 @@ func analyzeOp(fn func(*cc.Value) error, op *cc.Value) error {
 //   1) a single operation
 //   2) an array of operations
 //   3) a value with an attached array of operations
-func (p *Pipeline) Do(ctx context.Context, code ...*cc.Value) error {
+func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
 	ops, err := ops(code...)
 	if err != nil {
 		return err
@@ -132,7 +132,7 @@ func (p *Pipeline) Do(ctx context.Context, code ...*cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) doOp(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
 	do, err := op.Get("do").String()
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func (p *Pipeline) Tmp() *Pipeline {
 	return NewPipeline(p.s, nil)
 }
 
-func (p *Pipeline) Subdir(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value) error {
 	// FIXME: this could be more optimized by carrying subdir path as metadata,
 	//  and using it in copy, load or mount.
 
@@ -186,7 +186,7 @@ func (p *Pipeline) Subdir(ctx context.Context, op *cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) Copy(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value) error {
 	// Decode copy options
 	src, err := op.Get("src").String()
 	if err != nil {
@@ -218,7 +218,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) Local(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 	dir, err := op.Get("dir").String()
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func (p *Pipeline) Local(ctx context.Context, op *cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) Exec(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
@@ -284,9 +284,9 @@ func (p *Pipeline) Exec(ctx context.Context, op *cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) mountAll(ctx context.Context, mounts *cc.Value) ([]llb.RunOption, error) {
+func (p *Pipeline) mountAll(ctx context.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
 	opts := []llb.RunOption{}
-	err := mounts.RangeStruct(func(dest string, mnt *cc.Value) error {
+	err := mounts.RangeStruct(func(dest string, mnt *compiler.Value) error {
 		o, err := p.mount(ctx, dest, mnt)
 		if err != nil {
 			return err
@@ -297,7 +297,7 @@ func (p *Pipeline) mountAll(ctx context.Context, mounts *cc.Value) ([]llb.RunOpt
 	return opts, err
 }
 
-func (p *Pipeline) mount(ctx context.Context, dest string, mnt *cc.Value) (llb.RunOption, error) {
+func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
 	if s, err := mnt.String(); err == nil {
 		// eg. mount: "/foo": "cache"
 		switch s {
@@ -338,7 +338,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *cc.Value) (llb.R
 	return llb.AddMount(dest, from.FS().LLB(), mo...), nil
 }
 
-func (p *Pipeline) Export(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 	source, err := op.Get("source").String()
 	if err != nil {
 		return err
@@ -419,7 +419,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 	return o, err
 }
 
-func (p *Pipeline) Load(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) Load(ctx context.Context, op *compiler.Value) error {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
 	from := p.Tmp()
 	if err := from.Do(ctx, op.Get("from")); err != nil {
@@ -429,7 +429,7 @@ func (p *Pipeline) Load(ctx context.Context, op *cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) FetchContainer(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value) error {
 	ref, err := op.Get("ref").String()
 	if err != nil {
 		return err
@@ -439,7 +439,7 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *cc.Value) error {
 	return nil
 }
 
-func (p *Pipeline) FetchGit(ctx context.Context, op *cc.Value) error {
+func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value) error {
 	remote, err := op.Get("remote").String()
 	if err != nil {
 		return err

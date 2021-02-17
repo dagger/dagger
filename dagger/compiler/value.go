@@ -1,4 +1,4 @@
-package cc
+package compiler
 
 import (
 	"cuelang.org/go/cue"
@@ -9,6 +9,7 @@ import (
 // Use instead of cue.Value and cue.Instance
 type Value struct {
 	val  cue.Value
+	cc   *Compiler
 	inst *cue.Instance
 }
 
@@ -17,20 +18,21 @@ func (v *Value) CueInst() *cue.Instance {
 }
 
 func (v *Value) Wrap(v2 cue.Value) *Value {
-	return wrapValue(v2, v.inst)
+	return wrapValue(v2, v.inst, v.cc)
 }
 
-func wrapValue(v cue.Value, inst *cue.Instance) *Value {
+func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
 	return &Value{
 		val:  v,
+		cc:   cc,
 		inst: inst,
 	}
 }
 
 // Fill the value in-place, unlike Merge which returns a copy.
 func (v *Value) Fill(x interface{}) error {
-	cc.lock()
-	defer cc.unlock()
+	v.cc.lock()
+	defer v.cc.unlock()
 
 	// If calling Fill() with a Value, we want to use the underlying
 	// cue.Value to fill.
@@ -44,8 +46,8 @@ func (v *Value) Fill(x interface{}) error {
 
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
 func (v *Value) LookupPath(p cue.Path) *Value {
-	cc.rlock()
-	defer cc.runlock()
+	v.cc.rlock()
+	defer v.cc.runlock()
 
 	return v.Wrap(v.val.LookupPath(p))
 }
@@ -147,9 +149,9 @@ func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 		x = xval.val
 	}
 
-	cc.lock()
+	v.cc.lock()
 	result := v.Wrap(v.val.Fill(x, path...))
-	cc.unlock()
+	v.cc.unlock()
 
 	return result, result.Validate()
 }
@@ -220,8 +222,8 @@ func (v *Value) Validate() error {
 
 // Return cue source for this value
 func (v *Value) Source() ([]byte, error) {
-	cc.rlock()
-	defer cc.runlock()
+	v.cc.rlock()
+	defer v.cc.runlock()
 
 	return cueformat.Node(v.val.Eval().Syntax())
 }

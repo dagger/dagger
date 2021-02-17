@@ -1,4 +1,4 @@
-package cc
+package compiler
 
 import (
 	"testing"
@@ -6,7 +6,8 @@ import (
 
 // Test that a non-existing field is detected correctly
 func TestFieldNotExist(t *testing.T) {
-	root, err := Compile("test.cue", `foo: "bar"`)
+	c := &Compiler{}
+	root, err := c.Compile("test.cue", `foo: "bar"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +23,8 @@ func TestFieldNotExist(t *testing.T) {
 
 // Test that a non-existing definition is detected correctly
 func TestDefNotExist(t *testing.T) {
-	root, err := Compile("test.cue", `foo: #bla: "bar"`)
+	c := &Compiler{}
+	root, err := c.Compile("test.cue", `foo: #bla: "bar"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,14 +39,16 @@ func TestDefNotExist(t *testing.T) {
 }
 
 func TestSimple(t *testing.T) {
-	_, err := EmptyStruct()
+	c := &Compiler{}
+	_, err := c.EmptyStruct()
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestJSON(t *testing.T) {
-	v, err := Compile("", `foo: hello: "world"`)
+	c := &Compiler{}
+	v, err := c.Compile("", `foo: hello: "world"`)
 	if err != nil {
 		t.Fatal(err)
 	}

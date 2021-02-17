@@ -8,7 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 )
 
 type Env struct {
@@ -18,30 +18,30 @@ type Env struct {
 	// FIXME: simplify Env by making it single layer? Each layer is one env.
 
 	// How to update the base configuration
-	updater *cc.Value
+	updater *compiler.Value
 
 	// Layer 1: base configuration
-	base *cc.Value
+	base *compiler.Value
 
 	// Layer 2: user inputs
-	input *cc.Value
+	input *compiler.Value
 
 	// Layer 3: computed values
-	output *cc.Value
+	output *compiler.Value
 
 	// All layers merged together: base + input + output
-	state *cc.Value
+	state *compiler.Value
 }
 
-func (env *Env) Updater() *cc.Value {
+func (env *Env) Updater() *compiler.Value {
 	return env.updater
 }
 
 // Set the updater script for this environment.
-func (env *Env) SetUpdater(v *cc.Value) error {
+func (env *Env) SetUpdater(v *compiler.Value) error {
 	if v == nil {
 		var err error
-		v, err = cc.Compile("", "[]")
+		v, err = compiler.Compile("", "[]")
 		if err != nil {
 			return err
 		}
@@ -51,7 +51,7 @@ func (env *Env) SetUpdater(v *cc.Value) error {
 }
 
 func NewEnv() (*Env, error) {
-	empty, err := cc.EmptyStruct()
+	empty, err := compiler.EmptyStruct()
 	if err != nil {
 		return nil, err
 	}
@@ -67,18 +67,18 @@ func NewEnv() (*Env, error) {
 	return env, nil
 }
 
-func (env *Env) State() *cc.Value {
+func (env *Env) State() *compiler.Value {
 	return env.state
 }
 
-func (env *Env) Input() *cc.Value {
+func (env *Env) Input() *compiler.Value {
 	return env.input
 }
 
-func (env *Env) SetInput(i *cc.Value) error {
+func (env *Env) SetInput(i *compiler.Value) error {
 	if i == nil {
 		var err error
-		i, err = cc.EmptyStruct()
+		i, err = compiler.EmptyStruct()
 		if err != nil {
 			return err
 		}
@@ -112,11 +112,11 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 	)
 }
 
-func (env *Env) Base() *cc.Value {
+func (env *Env) Base() *compiler.Value {
 	return env.base
 }
 
-func (env *Env) Output() *cc.Value {
+func (env *Env) Output() *compiler.Value {
 	return env.output
 }
 
@@ -126,9 +126,9 @@ func (env *Env) Output() *cc.Value {
 // by user-specified scripts.
 func (env *Env) LocalDirs() map[string]string {
 	dirs := map[string]string{}
-	localdirs := func(code ...*cc.Value) {
+	localdirs := func(code ...*compiler.Value) {
 		Analyze(
-			func(op *cc.Value) error {
+			func(op *compiler.Value) error {
 				do, err := op.Get("do").String()
 				if err != nil {
 					return err
@@ -148,7 +148,7 @@ func (env *Env) LocalDirs() map[string]string {
 	}
 	// 1. Scan the environment state
 	env.State().Walk(
-		func(v *cc.Value) bool {
+		func(v *compiler.Value) bool {
 			compute := v.Get("#dagger.compute")
 			if !compute.Exists() {
 				// No compute script
@@ -164,14 +164,14 @@ func (env *Env) LocalDirs() map[string]string {
 	return dirs
 }
 
-// FIXME: this is just a 3-way merge. Add var args to cc.Value.Merge.
-func (env *Env) set(base, input, output *cc.Value) (err error) {
-	// FIXME: make this cleaner in *cc.Value by keeping intermediary instances
+// FIXME: this is just a 3-way merge. Add var args to compiler.Value.Merge.
+func (env *Env) set(base, input, output *compiler.Value) (err error) {
+	// FIXME: make this cleaner in *compiler.Value by keeping intermediary instances
 	// FIXME: state.CueInst() must return an instance with the same
 	//  contents as state.v, for the purposes of cueflow.
-	//  That is not currently how *cc.Value works, so we prepare the cue
+	//  That is not currently how *compiler.Value works, so we prepare the cue
 	//  instance manually.
-	//   --> refactor the cc.Value API to do this for us.
+	//   --> refactor the compiler.Value API to do this for us.
 	stateInst := env.state.CueInst()
 
 	stateInst, err = stateInst.Fill(base.Cue())
@@ -187,7 +187,7 @@ func (env *Env) set(base, input, output *cc.Value) (err error) {
 		return errors.Wrap(err, "merge output with base & input")
 	}
 
-	state := cc.Wrap(stateInst.Value(), stateInst)
+	state := compiler.Wrap(stateInst.Value(), stateInst)
 
 	// commit
 	env.base = base
@@ -201,9 +201,9 @@ func (env *Env) set(base, input, output *cc.Value) (err error) {
 // (Use with FS.Change)
 func (env *Env) Export(fs FS) (FS, error) {
 	// FIXME: we serialize as JSON to guarantee a self-contained file.
-	//   cc.Value.Save() leaks imports, so requires a shared cue.mod with
+	//   compiler.Value.Save() leaks imports, so requires a shared cue.mod with
 	//   client which is undesirable.
-	//   Once cc.Value.Save() resolves non-builtin imports with a tree shake,
+	//   Once compiler.Value.Save() resolves non-builtin imports with a tree shake,
 	//   we can use it here.
 
 	// FIXME: Exporting base/input/output separately causes merge errors.
@@ -237,11 +237,11 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	flowInst := env.state.CueInst()
 	lg.
 		Debug().
-		Str("value", cc.Wrap(flowInst.Value(), flowInst).JSON().String()).
+		Str("value", compiler.Wrap(flowInst.Value(), flowInst).JSON().String()).
 		Msg("walking")
 
 	// Initialize empty output
-	output, err := cc.EmptyStruct()
+	output, err := compiler.EmptyStruct()
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	}
 	// Cueflow match func
 	flowMatchFn := func(flowVal cue.Value) (cueflow.Runner, error) {
-		v := cc.Wrap(flowVal, flowInst)
+		v := compiler.Wrap(flowVal, flowInst)
 		compute := v.Get("#dagger.compute")
 		if !compute.Exists() {
 			// No compute script
@@ -303,7 +303,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 					Str("dependency", dep.Path().String()).
 					Msg("dependency detected")
 			}
-			v := cc.Wrap(t.Value(), flowInst)
+			v := compiler.Wrap(t.Value(), flowInst)
 			p := NewPipeline(s, NewFillable(t))
 			return p.Do(ctx, v)
 		}), nil

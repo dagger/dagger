@@ -3,7 +3,7 @@ package dagger
 import (
 	"testing"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 )
 
 func TestLocalDirs(t *testing.T) {
@@ -38,14 +38,14 @@ func mkEnv(t *testing.T, updater, input string) *Env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, err := cc.Compile("updater.cue", updater)
+	u, err := compiler.Compile("updater.cue", updater)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := env.SetUpdater(u); err != nil {
 		t.Fatal(err)
 	}
-	i, err := cc.Compile("input.cue", input)
+	i, err := compiler.Compile("input.cue", input)
 	if err != nil {
 		t.Fatal(err)
 	}

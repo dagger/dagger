@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 
-	"dagger.cloud/go/dagger/cc"
+	"dagger.cloud/go/dagger/compiler"
 )
 
 type Stat struct {
@@ -27,7 +27,7 @@ type FS struct {
 	s Solver
 }
 
-func (fs FS) WriteValueJSON(filename string, v *cc.Value) FS {
+func (fs FS) WriteValueJSON(filename string, v *compiler.Value) FS {
 	return fs.Change(func(st llb.State) llb.State {
 		return st.File(
 			llb.Mkfile(filename, 0600, v.JSON()),
@@ -35,7 +35,7 @@ func (fs FS) WriteValueJSON(filename string, v *cc.Value) FS {
 	})
 }
 
-func (fs FS) WriteValueCUE(filename string, v *cc.Value) (FS, error) {
+func (fs FS) WriteValueCUE(filename string, v *compiler.Value) (FS, error) {
 	src, err := v.Source()
 	if err != nil {
 		return fs, err

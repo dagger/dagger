@@ -1,4 +1,4 @@
-package cc
+package compiler
 
 import (
 	"cuelang.org/go/cue"
