@@ -15,13 +15,13 @@ test:
 
 .PHONY: cuefmt
 cuefmt:
-	@(cue fmt -s ./...)
+	@(cue fmt -s ./stdlib/...)
+	@(cue fmt -s ./examples/*)
 
 .PHONY: lint
 lint: cuefmt
 	golangci-lint run
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
-	@test -z "$$(git status -s . | grep -e "^ M"  | grep gen.go | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: integration
 integration: dagger-debug
@@ -29,6 +29,3 @@ integration: dagger-debug
 	./tests/test-test.sh 2>/dev/null
 	# Actual integration tests
 	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./tests/test.sh all
-
-update-examples:
-	rsync -avH --delete ./stdlib/cue.mod/pkg/ ./examples/*/cue.mod/pkg/
