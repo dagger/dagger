@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"dagger.cloud/nonoptional"
+	"dagger.io/nonoptional"
 )
 
 #dagger: {

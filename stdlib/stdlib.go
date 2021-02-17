@@ -15,7 +15,7 @@ import (
 var FS embed.FS
 
 const (
-	stdlibPackageName = "dagger.cloud"
+	stdlibPackageName = "dagger.io"
 )
 
 func Overlay(prefixPath string) (map[string]cueload.Source, error) {

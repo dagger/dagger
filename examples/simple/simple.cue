@@ -3,7 +3,7 @@
 package acme
 
 import (
-	"dagger.cloud/dagger"
+	"dagger.io/dagger"
 )
 
 let alpine = {

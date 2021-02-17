@@ -1,6 +1,6 @@
 package netlify
 
-import "dagger.cloud/dagger"
+import "dagger.io/dagger"
 
 // A Netlify account
 #Account: {

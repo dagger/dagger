@@ -1,7 +1,7 @@
 package yarn
 
 import (
-	"dagger.cloud/dagger"
+	"dagger.io/dagger"
 )
 
 // Yarn Script

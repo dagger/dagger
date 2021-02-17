@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"dagger.cloud/def"
+	"dagger.io/def"
 )
 
 #dagger: {
