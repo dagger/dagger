@@ -3,7 +3,7 @@ package dagger
 import (
 	"testing"
 
-	"dagger.cloud/go/dagger/compiler"
+	"dagger.io/go/dagger/compiler"
 )
 
 func TestLocalDirs(t *testing.T) {

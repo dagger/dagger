@@ -1,4 +1,4 @@
-module dagger.cloud/go
+module dagger.io/go
 
 go 1.16
 

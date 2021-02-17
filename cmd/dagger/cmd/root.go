@@ -3,7 +3,7 @@ package cmd
 import (
 	"strings"
 
-	"dagger.cloud/go/cmd/dagger/logger"
+	"dagger.io/go/cmd/dagger/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

@@ -8,7 +8,7 @@ import (
 	cueflow "cuelang.org/go/tools/flow"
 	"github.com/rs/zerolog/log"
 
-	"dagger.cloud/go/dagger/compiler"
+	"dagger.io/go/dagger/compiler"
 )
 
 type Env struct {

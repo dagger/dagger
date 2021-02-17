@@ -9,7 +9,7 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/spf13/pflag"
 
-	"dagger.cloud/go/dagger/compiler"
+	"dagger.io/go/dagger/compiler"
 )
 
 // A mutable cue value with an API suitable for user inputs,
