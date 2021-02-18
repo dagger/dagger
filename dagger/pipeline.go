@@ -223,9 +223,12 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 		return err
 	}
 	var include []string
-	if err := op.Get("include").Decode(&include); err != nil {
-		return err
+	if inc := op.Get("include"); inc.Exists() {
+		if err := inc.Decode(&include); err != nil {
+			return err
+		}
 	}
+
 	p.fs = p.fs.Change(func(st llb.State) llb.State {
 		return st.File(llb.Copy(
 			llb.Local(dir, llb.FollowPaths(include)),
