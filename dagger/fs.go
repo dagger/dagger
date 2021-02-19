@@ -9,6 +9,7 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkpb "github.com/moby/buildkit/solver/pb"
 	fstypes "github.com/tonistiigi/fsutil/types"
 
 	"dagger.io/go/dagger/compiler"
@@ -160,6 +161,14 @@ func (fs FS) Solve(ctx context.Context) (FS, error) {
 
 func (fs FS) LLB() llb.State {
 	return fs.input
+}
+
+func (fs FS) Def(ctx context.Context) (*bkpb.Definition, error) {
+	def, err := fs.LLB().Marshal(ctx, llb.LinuxAmd64)
+	if err != nil {
+		return nil, err
+	}
+	return def.ToPB(), nil
 }
 
 func (fs FS) Ref(ctx context.Context) (bkgw.Reference, error) {

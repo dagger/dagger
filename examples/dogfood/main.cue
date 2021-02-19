@@ -7,6 +7,7 @@ import (
 
 repository: dagger.#Dir // Use `--input-dir repository=.` from the root directory of the project
 
+// Build `dagger` using Go
 build: go.#Build & {
 	source:   repository
 	packages: "./cmd/dagger"
@@ -18,7 +19,21 @@ test: go.#Test & {
 	packages: "./..."
 }
 
+// Run a command with the binary we just built
 help: #dagger: compute: [
 	dagger.#Load & {from: build},
+	dagger.#Exec & {args: ["dagger", "-h"]},
+]
+
+// Build dagger using the (included) Dockerfile
+buildWithDocker: #dagger: compute: [
+	dagger.#DockerBuild & {
+		context: repository
+	},
+]
+
+// Run a command in the docker image we just built
+helpFromDocker: #dagger: compute: [
+	dagger.#Load & {from: buildWithDocker},
 	dagger.#Exec & {args: ["dagger", "-h"]},
 ]

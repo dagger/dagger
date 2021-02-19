@@ -3,9 +3,14 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/moby/buildkit/client/llb"
+	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
@@ -157,6 +162,8 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
 		return p.Load(ctx, op)
 	case "subdir":
 		return p.Subdir(ctx, op)
+	case "docker-build":
+		return p.DockerBuild(ctx, op)
 	default:
 		return fmt.Errorf("invalid operation: %s", op.JSON())
 	}
@@ -431,6 +438,7 @@ func (p *Pipeline) Load(ctx context.Context, op *compiler.Value) error {
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return err
 	}
+
 	p.fs = p.fs.Set(from.FS().LLB())
 	return nil
 }
@@ -455,5 +463,134 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value) error {
 		return err
 	}
 	p.fs = p.fs.Set(llb.Git(remote, ref))
+	return nil
+}
+
+func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
+	var (
+		context    = op.Lookup("context")
+		dockerfile = op.Lookup("dockerfile")
+
+		contextDef    *bkpb.Definition
+		dockerfileDef *bkpb.Definition
+
+		err error
+	)
+
+	if !context.Exists() && !dockerfile.Exists() {
+		return errors.New("context or dockerfile required")
+	}
+
+	// docker build context. This can come from another component, so we need to
+	// compute it first.
+	if context.Exists() {
+		from := p.Tmp()
+		if err := from.Do(ctx, context); err != nil {
+			return err
+		}
+		contextDef, err = from.FS().Def(ctx)
+		if err != nil {
+			return err
+		}
+		dockerfileDef = contextDef
+	}
+
+	// Inlined dockerfile: need to be converted to LLB
+	if dockerfile.Exists() {
+		content, err := dockerfile.String()
+		if err != nil {
+			return err
+		}
+		dockerfileDef, err = p.s.Scratch().Set(
+			llb.Scratch().File(
+				llb.Mkfile("/Dockerfile", 0644, []byte(content)),
+			),
+		).Def(ctx)
+		if err != nil {
+			return err
+		}
+		if contextDef == nil {
+			contextDef = dockerfileDef
+		}
+	}
+
+	req := bkgw.SolveRequest{
+		Frontend:    "dockerfile.v0",
+		FrontendOpt: make(map[string]string),
+		FrontendInputs: map[string]*bkpb.Definition{
+			dockerfilebuilder.DefaultLocalNameContext:    contextDef,
+			dockerfilebuilder.DefaultLocalNameDockerfile: dockerfileDef,
+		},
+	}
+
+	if dockerfilePath := op.Lookup("dockerfilePath"); dockerfilePath.Exists() {
+		filename, err := dockerfilePath.String()
+		if err != nil {
+			return err
+		}
+		req.FrontendOpt["filename"] = filename
+	}
+
+	if buildArgs := op.Lookup("buildArg"); buildArgs.Exists() {
+		err := buildArgs.RangeStruct(func(key string, value *compiler.Value) error {
+			v, err := value.String()
+			if err != nil {
+				return err
+			}
+			req.FrontendOpt["build-arg:"+key] = v
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	if labels := op.Lookup("label"); labels.Exists() {
+		err := labels.RangeStruct(func(key string, value *compiler.Value) error {
+			s, err := value.String()
+			if err != nil {
+				return err
+			}
+			req.FrontendOpt["label:"+key] = s
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	if platforms := op.Lookup("platforms"); platforms.Exists() {
+		p := []string{}
+		list, err := platforms.List()
+		if err != nil {
+			return err
+		}
+
+		for _, platform := range list {
+			s, err := platform.String()
+			if err != nil {
+				return err
+			}
+			p = append(p, s)
+		}
+
+		if len(p) > 0 {
+			req.FrontendOpt["platform"] = strings.Join(p, ",")
+		}
+		if len(p) > 1 {
+			req.FrontendOpt["multi-platform"] = "true"
+		}
+	}
+
+	res, err := p.s.SolveRequest(ctx, req)
+	if err != nil {
+		return err
+	}
+	st, err := res.ToState()
+	if err != nil {
+		return err
+	}
+	p.fs = p.fs.Set(st)
+
 	return nil
 }

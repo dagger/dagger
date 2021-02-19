@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile-upstream:experimental@sha256:398a0a10f19875add7fe359a37f2f971c46746b064faf876776ae632a3472c37
+# syntax = docker/dockerfile:1.2
 
 FROM golang:1.16-alpine AS build
 WORKDIR /src
