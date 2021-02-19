@@ -21,12 +21,7 @@ import (
 		dagger.#FetchContainer & {
 			ref: "docker.io/golang:\(version)-alpine"
 		},
-		dagger.#Copy & {
-			from: source
-			dest: "/src"
-		},
 		dagger.#Exec & {
-			dir:    "/src"
 			"args": ["go"] + args
 
 			env: env
@@ -37,6 +32,9 @@ import (
 				PATH:   "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 				GOPATH: "/go"
 			}
+
+			dir: "/src"
+			mount: "/src": from: source
 
 			mount: "/root/.cache": "cache"
 		},
