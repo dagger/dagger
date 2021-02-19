@@ -102,7 +102,7 @@ func (f dirFlag) Set(s string) error {
 			return nil, err
 		}
 		return compiler.Compile("", fmt.Sprintf(
-			`#dagger: compute: [{do:"local",dir:"%s", include:%s}]`,
+			`#run: [{do:"local",dir:"%s", include:%s}] @dagger()`,
 			s,
 			include,
 		))

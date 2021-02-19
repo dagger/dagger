@@ -73,6 +73,11 @@ func (v *Value) Fields() (*cue.Iterator, error) {
 }
 
 // Proxy function to the underlying cue.Value
+func (v *Value) Attribute(key string) cue.Attribute {
+	return v.val.Attribute(key)
+}
+
+// Proxy function to the underlying cue.Value
 func (v *Value) Struct() (*cue.Struct, error) {
 	return v.val.Struct()
 }
@@ -90,6 +95,10 @@ func (v *Value) String() (string, error) {
 func (v *Value) SourceUnsafe() string {
 	s, _ := v.SourceString()
 	return s
+}
+
+func (v *Value) Kind() cue.Kind {
+	return v.val.Kind()
 }
 
 // Proxy function to the underlying cue.Value

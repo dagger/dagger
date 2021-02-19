@@ -4,6 +4,10 @@ package dagger
 // every dagger script outputs a filesystem state (aka a directory)
 #Dir: #dagger: compute: [...#Op]
 
+#Component: {
+	#run: [...#Op] @dagger()
+}
+
 // One operation in a script
 #Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
 

@@ -90,6 +90,20 @@ func (env *Env) SetInput(i *compiler.Value) error {
 	)
 }
 
+func isComponent(v *compiler.Value) bool {
+	if v.Kind() != cue.StructKind {
+		return false
+	}
+
+	run := v.Get("#run")
+	if !run.Exists() {
+		return false
+	}
+
+	attr := run.Attribute("dagger")
+	return attr.Err() == nil
+}
+
 // Update the base configuration
 func (env *Env) Update(ctx context.Context, s Solver) error {
 	p := NewPipeline(s, nil)
@@ -149,12 +163,10 @@ func (env *Env) LocalDirs() map[string]string {
 	// 1. Scan the environment state
 	env.State().Walk(
 		func(v *compiler.Value) bool {
-			compute := v.Get("#dagger.compute")
-			if !compute.Exists() {
-				// No compute script
+			if !isComponent(v) {
 				return true
 			}
-			localdirs(compute)
+			localdirs(v.Get("#run"))
 			return false // no nested executables
 		},
 		nil,
@@ -280,14 +292,9 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	// Cueflow match func
 	flowMatchFn := func(flowVal cue.Value) (cueflow.Runner, error) {
 		v := compiler.Wrap(flowVal, flowInst)
-		compute := v.Get("#dagger.compute")
-		if !compute.Exists() {
+		if !isComponent(v) {
 			// No compute script
 			return nil, nil
-		}
-		if _, err := compute.List(); err != nil {
-			// invalid compute script
-			return nil, err
 		}
 		// Cueflow run func:
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {

@@ -36,7 +36,7 @@ func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
 	// 1. Decode 'code' into a single flat array of operations.
 	for _, x := range code {
 		// 1. attachment array
-		if xops, err := x.Get("#dagger.compute").List(); err == nil {
+		if xops, err := x.Get("#run").List(); err == nil {
 			// 'from' has an executable attached
 			ops = append(ops, xops...)
 			continue

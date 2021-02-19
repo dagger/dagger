@@ -30,10 +30,10 @@ import "dagger.io/dagger"
 	create: bool | *true
 
 	// Deployment url
-	url: {
-		string
+	url: string
 
-		#dagger: compute: [
+	dagger.#Component & {
+		#run: [
 			dagger.#FetchContainer & {
 				ref: "alpine@sha256:08d6ca16c60fe7490c03d10dc339d9fd8ea67c6466dea8d558526b1330a85930"
 			},
@@ -77,8 +77,8 @@ import "dagger.io/dagger"
 				mount: "/src": from: contents
 			},
 			dagger.#Export & {
-				source: "/url"
-				format: "string"
+				source: "/output"
+				format: "json"
 			},
 		]
 	}
@@ -122,5 +122,5 @@ let code = #"""
 	    --prod \
 	| tee /tmp/stdout
 
-	</tmp/stdout sed -n -e 's/^Website URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n' > /url
+	</tmp/stdout sed -n -e 's/^Website URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n' | jq -R '{url: .}' > /output
 	"""#
