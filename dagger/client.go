@@ -162,10 +162,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 	lg := log.Ctx(ctx)
 
 	// FIXME: merge this into env output.
-	out, err := compiler.EmptyStruct()
-	if err != nil {
-		return nil, err
-	}
+	out := compiler.EmptyStruct()
 
 	tr := tar.NewReader(r)
 	for {

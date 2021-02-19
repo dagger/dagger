@@ -38,14 +38,6 @@ func TestDefNotExist(t *testing.T) {
 	}
 }
 
-func TestSimple(t *testing.T) {
-	c := &Compiler{}
-	_, err := c.EmptyStruct()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestJSON(t *testing.T) {
 	c := &Compiler{}
 	v, err := c.Compile("", `foo: hello: "world"`)
