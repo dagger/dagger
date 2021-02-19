@@ -2,6 +2,7 @@ package yarn
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/alpine"
 )
 
 // Yarn Script
@@ -20,14 +21,11 @@ import (
 	env?: [string]: string
 
 	#dagger: compute: [
-		dagger.#FetchContainer & {
-			ref: "alpine@sha256:08d6ca16c60fe7490c03d10dc339d9fd8ea67c6466dea8d558526b1330a85930"
-		},
-		dagger.#Exec & {
-			args: ["apk", "add", "-U", "--no-cache", "bash=5.1.0-r0"]
-		},
-		dagger.#Exec & {
-			args: ["apk", "add", "-U", "--no-cache", "yarn=1.22.10-r0"]
+		dagger.#Load & {
+			from: alpine.#Image & {
+				package: bash: "=5.1.0-r0"
+				package: yarn: "=1.22.10-r0"
+			}
 		},
 		dagger.#Exec & {
 			args: [
