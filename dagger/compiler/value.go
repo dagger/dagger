@@ -68,6 +68,11 @@ func (v *Value) Len() cue.Value {
 }
 
 // Proxy function to the underlying cue.Value
+func (v *Value) Kind() cue.Kind {
+	return v.val.Kind()
+}
+
+// Proxy function to the underlying cue.Value
 func (v *Value) Fields() (*cue.Iterator, error) {
 	return v.val.Fields()
 }

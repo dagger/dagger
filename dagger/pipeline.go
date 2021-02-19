@@ -31,28 +31,32 @@ func (p *Pipeline) FS() FS {
 	return p.fs
 }
 
+func isComponent(v *compiler.Value) bool {
+	return v.Get("#dagger.compute").Exists()
+}
+
 func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
 	// 1. Decode 'code' into a single flat array of operations.
 	for _, x := range code {
 		// 1. attachment array
-		if xops, err := x.Get("#dagger.compute").List(); err == nil {
+		if isComponent(x) {
+			xops, err := x.Get("#dagger.compute").List()
+			if err != nil {
+				return nil, err
+			}
 			// 'from' has an executable attached
 			ops = append(ops, xops...)
-			continue
-		}
-		// 2. individual op
-		if _, err := x.Get("do").String(); err == nil {
+			// 2. individual op
+		} else if _, err := x.Get("do").String(); err == nil {
 			ops = append(ops, x)
-			continue
-		}
-		// 3. op array
-		if xops, err := x.List(); err == nil {
+			// 3. op array
+		} else if xops, err := x.List(); err == nil {
 			ops = append(ops, xops...)
-			continue
+		} else {
+			// 4. error
+			return nil, fmt.Errorf("not executable: %s", x.SourceUnsafe())
 		}
-		// 4. error
-		return nil, fmt.Errorf("not executable: %s", x.SourceUnsafe())
 	}
 	return ops, nil
 }

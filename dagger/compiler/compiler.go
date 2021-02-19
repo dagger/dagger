@@ -17,7 +17,7 @@ func Compile(name string, src interface{}) (*Value, error) {
 	return DefaultCompiler.Compile(name, src)
 }
 
-func EmptyStruct() (*Value, error) {
+func EmptyStruct() *Value {
 	return DefaultCompiler.EmptyStruct()
 }
 
@@ -63,8 +63,12 @@ func (c *Compiler) Cue() *cue.Runtime {
 }
 
 // Compile an empty struct
-func (c *Compiler) EmptyStruct() (*Value, error) {
-	return c.Compile("", "")
+func (c *Compiler) EmptyStruct() *Value {
+	empty, err := c.Compile("", "")
+	if err != nil {
+		panic(err)
+	}
+	return empty
 }
 
 func (c *Compiler) Compile(name string, src interface{}) (*Value, error) {
