@@ -7,7 +7,7 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
+	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/rs/zerolog/log"
 )
@@ -36,6 +36,17 @@ func (s Solver) Scratch() FS {
 }
 
 // Solve will block until the state is solved and returns a Reference.
+func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (bkgw.Reference, error) {
+	// call solve
+	res, err := s.c.Solve(ctx, req)
+	if err != nil {
+		return nil, bkCleanError(err)
+	}
+	// always use single reference (ignore multiple outputs & metadata)
+	return res.SingleRef()
+}
+
+// Solve will block until the state is solved and returns a Reference.
 func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error) {
 	// marshal llb
 	def, err := st.Marshal(ctx, llb.LinuxAmd64)
@@ -55,7 +66,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		Msg("solving")
 
 	// call solve
-	res, err := s.c.Solve(ctx, bkgw.SolveRequest{
+	return s.SolveRequest(ctx, bkgw.SolveRequest{
 		Definition: def.ToPB(),
 
 		// makes Solve() to block until LLB graph is solved. otherwise it will
@@ -63,23 +74,18 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		// will be evaluated on export or if you access files on it.
 		Evaluate: true,
 	})
-	if err != nil {
-		return nil, bkCleanError(err)
-	}
-	// always use single reference (ignore multiple outputs & metadata)
-	return res.SingleRef()
 }
 
 type llbOp struct {
-	Op         pb.Op
+	Op         bkpb.Op
 	Digest     digest.Digest
-	OpMetadata pb.OpMetadata
+	OpMetadata bkpb.OpMetadata
 }
 
 func dumpLLB(def *llb.Definition) ([]byte, error) {
 	ops := make([]llbOp, 0, len(def.Def))
 	for _, dt := range def.Def {
-		var op pb.Op
+		var op bkpb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
 			return nil, fmt.Errorf("failed to parse op: %w", err)
 		}

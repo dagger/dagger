@@ -59,3 +59,15 @@ package dagger
 	src:  string | *"/"
 	dest: string | *"/"
 }
+
+#DockerBuild: {
+	do: "docker-build"
+	// We accept either a context, a Dockerfile or both together
+	context?:        _
+	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
+	dockerfile?:     string
+
+	platforms?: [...string]
+	buildArg?: [string]: string
+	label?: [string]:    string
+}

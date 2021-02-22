@@ -229,6 +229,11 @@ test::subdir() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/subdir/simple
 }
 
+test::dockerbuild() {
+  test::one "Docker Build" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/dockerbuild/testdata "$d"/dockerbuild
+}
+
 test::all(){
   local dagger="$1"
 
@@ -244,6 +249,7 @@ test::all(){
   test::export "$dagger"
   test::input "$dagger"
   test::subdir "$dagger"
+  test::dockerbuild "$dagger"
 
   test::examples "$dagger"
 }
