@@ -22,8 +22,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 
 	// docker output
-	"github.com/containerd/console"
-	"github.com/moby/buildkit/util/progress/progressui"
+	"dagger.io/go/pkg/progressui"
 
 	"dagger.io/go/dagger/compiler"
 )
@@ -56,18 +55,16 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 // FIXME: return completed *Env, instead of *compiler.Value
 func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
-
 	eg, gctx := errgroup.WithContext(ctx)
 
 	// Spawn print function
-	var events chan *bk.SolveStatus
-	if os.Getenv("DOCKER_OUTPUT") != "" {
-		events = make(chan *bk.SolveStatus)
-		eg.Go(func() error {
-			dispCtx := context.TODO()
-			return c.dockerprintfn(dispCtx, events, lg)
-		})
-	}
+	events := make(chan *bk.SolveStatus)
+	eg.Go(func() error {
+		// Create a background context so that logging will not be cancelled
+		// with the main context.
+		dispCtx := lg.WithContext(context.Background())
+		return c.logSolveStatus(dispCtx, events)
+	})
 
 	// Spawn build function
 	outr, outw := io.Pipe()
@@ -196,8 +193,68 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 	return out, nil
 }
 
-func (c *Client) dockerprintfn(ctx context.Context, ch chan *bk.SolveStatus, out io.Writer) error {
-	var cons console.Console
-	// FIXME: use smarter writer from blr
-	return progressui.DisplaySolveStatus(ctx, "", cons, out, ch)
+func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) error {
+	parseName := func(v *bk.Vertex) (string, string) {
+		// Pattern: `@name@ message`. Minimal length is len("@X@ ")
+		if len(v.Name) < 2 || !strings.HasPrefix(v.Name, "@") {
+			return "", v.Name
+		}
+
+		prefixEndPos := strings.Index(v.Name[1:], "@")
+		if prefixEndPos == -1 {
+			return "", v.Name
+		}
+
+		component := v.Name[1 : prefixEndPos+1]
+		return component, v.Name[prefixEndPos+3 : len(v.Name)]
+	}
+
+	return progressui.PrintSolveStatus(ctx, ch,
+		func(v *bk.Vertex, index int) {
+			component, name := parseName(v)
+			lg := log.
+				Ctx(ctx).
+				With().
+				Str("component", component).
+				Logger()
+
+			lg.
+				Debug().
+				Msg(fmt.Sprintf("#%d %s\n", index, name))
+			lg.
+				Debug().
+				Msg(fmt.Sprintf("#%d %s\n", index, v.Digest))
+		},
+		func(v *bk.Vertex, format string, a ...interface{}) {
+			component, _ := parseName(v)
+			lg := log.
+				Ctx(ctx).
+				With().
+				Str("component", component).
+				Logger()
+
+			lg.
+				Debug().
+				Msg(fmt.Sprintf(format, a...))
+		},
+		func(v *bk.Vertex, stream int, partial bool, format string, a ...interface{}) {
+			component, _ := parseName(v)
+			lg := log.
+				Ctx(ctx).
+				With().
+				Str("component", component).
+				Logger()
+
+			switch stream {
+			case 1:
+				lg.
+					Info().
+					Msg(fmt.Sprintf(format, a...))
+			case 2:
+				lg.
+					Error().
+					Msg(fmt.Sprintf(format, a...))
+			}
+		},
+	)
 }
