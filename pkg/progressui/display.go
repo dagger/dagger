@@ -20,21 +20,90 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w io.Writer, ch chan *client.SolveStatus) error {
+const (
+	defaultTickerTimeout  = 150 * time.Millisecond
+	defaultDisplayTimeout = 100 * time.Millisecond
+)
 
+type VertexPrintFunc func(v *client.Vertex, index int)
+type StatusPrintFunc func(v *client.Vertex, format string, a ...interface{})
+type LogPrintFunc func(v *client.Vertex, stream int, partial bool, format string, a ...interface{})
+
+func PrintSolveStatus(ctx context.Context, ch chan *client.SolveStatus, vertexPrintCb VertexPrintFunc, statusPrintCb StatusPrintFunc, logPrintCb LogPrintFunc) error {
+	printer := &textMux{
+		vertexPrintCb: vertexPrintCb,
+		statusPrintCb: statusPrintCb,
+		logPrintCb:    logPrintCb,
+	}
+
+	t := newTrace(false)
+
+	var done bool
+	ticker := time.NewTicker(defaultTickerTimeout)
+	defer ticker.Stop()
+
+	displayLimiter := rate.NewLimiter(rate.Every(defaultDisplayTimeout), 1)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		case ss, ok := <-ch:
+			if ok {
+				t.update(ss, 80)
+			} else {
+				done = true
+			}
+		}
+
+		if done || displayLimiter.Allow() {
+			printer.print(t)
+			if done {
+				t.printErrorLogs(statusPrintCb)
+				return nil
+			}
+			ticker.Stop()
+			ticker = time.NewTicker(defaultTickerTimeout)
+		}
+	}
+}
+
+func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w io.Writer, ch chan *client.SolveStatus) error {
 	modeConsole := c != nil
 
-	disp := &display{c: c, phase: phase}
-	printer := &textMux{w: w}
+	if !modeConsole {
+		vertexPrintCb := func(v *client.Vertex, index int) {
+			if os.Getenv("PROGRESS_NO_TRUNC") == "0" {
+				fmt.Fprintf(w, "#%d %s\n", index, limitString(v.Name, 72))
+			} else {
+				fmt.Fprintf(w, "#%d %s\n", index, v.Name)
+				fmt.Fprintf(w, "#%d %s\n", index, v.Digest)
+			}
+		}
+		statusPrintCb := func(v *client.Vertex, format string, a ...interface{}) {
+			fmt.Fprintf(w, fmt.Sprintf("%s\n", format), a...)
+		}
+		logPrintCb := func(v *client.Vertex, stream int, partial bool, format string, a ...interface{}) {
+			if partial {
+				fmt.Fprintf(w, format, a...)
+			} else {
+				fmt.Fprintf(w, fmt.Sprintf("%s\n", format), a...)
+			}
+		}
 
+		return PrintSolveStatus(ctx, ch, vertexPrintCb, statusPrintCb, logPrintCb)
+	}
+
+	disp := &display{c: c, phase: phase}
 	if disp.phase == "" {
 		disp.phase = "Building"
 	}
 
-	t := newTrace(w, modeConsole)
+	t := newTrace(true)
 
-	tickerTimeout := 150 * time.Millisecond
-	displayTimeout := 100 * time.Millisecond
+	tickerTimeout := defaultTickerTimeout
+	displayTimeout := defaultDisplayTimeout
 
 	if v := os.Getenv("TTY_DISPLAY_RATE"); v != "" {
 		if r, err := strconv.ParseInt(v, 10, 64); err == nil {
@@ -64,27 +133,17 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 			}
 		}
 
-		if modeConsole {
-			width, height = disp.getSize()
-			if done {
-				disp.print(t.displayInfo(), width, height, true)
-				t.printErrorLogs(c)
-				return nil
-			} else if displayLimiter.Allow() {
-				ticker.Stop()
-				ticker = time.NewTicker(tickerTimeout)
-				disp.print(t.displayInfo(), width, height, false)
-			}
-		} else {
-			if done || displayLimiter.Allow() {
-				printer.print(t)
-				if done {
-					t.printErrorLogs(w)
-					return nil
-				}
-				ticker.Stop()
-				ticker = time.NewTicker(tickerTimeout)
-			}
+		width, height = disp.getSize()
+		if done {
+			disp.print(t.displayInfo(), width, height, true)
+			t.printErrorLogs(func(v *client.Vertex, format string, a ...interface{}) {
+				fmt.Fprintf(w, format, a...)
+			})
+			return nil
+		} else if displayLimiter.Allow() {
+			ticker.Stop()
+			ticker = time.NewTicker(tickerTimeout)
+			disp.print(t.displayInfo(), width, height, false)
 		}
 	}
 }
@@ -111,13 +170,18 @@ type job struct {
 }
 
 type trace struct {
-	w             io.Writer
 	localTimeDiff time.Duration
 	vertexes      []*vertex
 	byDigest      map[digest.Digest]*vertex
 	nextIndex     int
 	updates       map[digest.Digest]struct{}
 	modeConsole   bool
+}
+
+type log struct {
+	index  int
+	line   []byte
+	stream int
 }
 
 type vertex struct {
@@ -127,7 +191,7 @@ type vertex struct {
 	indent   string
 	index    int
 
-	logs          [][]byte
+	logs          []log
 	logsPartial   bool
 	logsOffset    int
 	prev          *client.Vertex
@@ -156,11 +220,10 @@ type status struct {
 	*client.VertexStatus
 }
 
-func newTrace(w io.Writer, modeConsole bool) *trace {
+func newTrace(modeConsole bool) *trace {
 	return &trace{
 		byDigest:    make(map[digest.Digest]*vertex),
 		updates:     make(map[digest.Digest]struct{}),
-		w:           w,
 		modeConsole: modeConsole,
 	}
 }
@@ -252,6 +315,7 @@ func (t *trace) update(s *client.SolveStatus, termWidth int) {
 		v.update(1)
 	}
 	for _, l := range s.Logs {
+		l := l
 		v, ok := t.byDigest[l.Vertex]
 		if !ok {
 			continue // shouldn't happen
@@ -266,8 +330,8 @@ func (t *trace) update(s *client.SolveStatus, termWidth int) {
 		}
 		i := 0
 		complete := split(l.Data, byte('\n'), func(dt []byte) {
-			if v.logsPartial && len(v.logs) != 0 && i == 0 {
-				v.logs[len(v.logs)-1] = append(v.logs[len(v.logs)-1], dt...)
+			if v.logsPartial && len(v.logs) != 0 && i == 0 && v.logs[len(v.logs)-1].stream == l.Stream {
+				v.logs[len(v.logs)-1].line = append(v.logs[len(v.logs)-1].line, dt...)
 			} else {
 				ts := time.Duration(0)
 				if v.Started != nil {
@@ -280,7 +344,11 @@ func (t *trace) update(s *client.SolveStatus, termWidth int) {
 				} else if sec < 100 {
 					prec = 2
 				}
-				v.logs = append(v.logs, []byte(fmt.Sprintf("#%d %s %s", v.index, fmt.Sprintf("%.[2]*[1]f", sec, prec), dt)))
+				v.logs = append(v.logs, log{
+					line:   []byte(fmt.Sprintf("#%d %s %s", v.index, fmt.Sprintf("%.[2]*[1]f", sec, prec), dt)),
+					stream: l.Stream,
+					index:  v.index,
+				})
 			}
 			i++
 		})
@@ -290,16 +358,15 @@ func (t *trace) update(s *client.SolveStatus, termWidth int) {
 	}
 }
 
-func (t *trace) printErrorLogs(f io.Writer) {
+func (t *trace) printErrorLogs(printCb StatusPrintFunc) {
 	for _, v := range t.vertexes {
 		if v.Error != "" && !strings.HasSuffix(v.Error, context.Canceled.Error()) {
-			fmt.Fprintln(f, "------")
-			fmt.Fprintf(f, " > %s:\n", v.Name)
+			printCb(v.Vertex, "------")
+			printCb(v.Vertex, " > %s:", v.Name)
 			for _, l := range v.logs {
-				f.Write(l)
-				fmt.Fprintln(f)
+				printCb(v.Vertex, "%s", l.line)
 			}
-			fmt.Fprintln(f, "------")
+			printCb(v.Vertex, "------")
 		}
 	}
 }
@@ -307,7 +374,7 @@ func (t *trace) printErrorLogs(f io.Writer) {
 func (t *trace) displayInfo() (d displayInfo) {
 	d.startTime = time.Now()
 	if t.localTimeDiff != 0 {
-		d.startTime = (*t.vertexes[0].Started).Add(t.localTimeDiff)
+		d.startTime = t.vertexes[0].Started.Add(t.localTimeDiff)
 	}
 	d.countTotal = len(t.byDigest)
 	for _, v := range t.byDigest {
@@ -325,7 +392,7 @@ func (t *trace) displayInfo() (d displayInfo) {
 		j := &job{
 			startTime:     addTime(v.Started, t.localTimeDiff),
 			completedTime: addTime(v.Completed, t.localTimeDiff),
-			name:          strings.Replace(v.Name, "\t", " ", -1),
+			name:          strings.ReplaceAll(v.Name, "\t", " "),
 			vertex:        v,
 		}
 		if v.Error != "" {
@@ -385,7 +452,7 @@ func addTime(tm *time.Time, d time.Duration) *time.Time {
 	if tm == nil {
 		return nil
 	}
-	t := (*tm).Add(d)
+	t := tm.Add(d)
 	return &t
 }
 
@@ -580,7 +647,8 @@ func wrapHeight(j []*job, limit int) []*job {
 				l--
 			}
 			freespace := len(wrapped) - len(rewrapped)
-			wrapped = append(invisible[len(invisible)-freespace:], rewrapped...)
+			invisible = append(invisible[len(invisible)-freespace:], rewrapped...)
+			wrapped = invisible
 		}
 	}
 	return wrapped
