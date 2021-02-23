@@ -84,7 +84,7 @@ func (env *Env) SetInput(i *compiler.Value) error {
 
 // Update the base configuration
 func (env *Env) Update(ctx context.Context, s Solver) error {
-	p := NewPipeline(s, nil)
+	p := NewPipeline("[internal] source", s, nil)
 	// execute updater script
 	if err := p.Do(ctx, env.updater); err != nil {
 		return err
@@ -229,7 +229,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 
 			lg := lg.
 				With().
-				Str("path", t.Path().String()).
+				Str("component", t.Path().String()).
 				Str("state", t.State().String()).
 				Logger()
 
@@ -284,7 +284,7 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("path", t.Path().String()).
+				Str("component", t.Path().String()).
 				Logger()
 			ctx := lg.WithContext(ctx)
 
@@ -295,7 +295,7 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 					Msg("dependency detected")
 			}
 			v := compiler.Wrap(t.Value(), inst)
-			p := NewPipeline(s, NewFillable(t))
+			p := NewPipeline(t.Path().String(), s, NewFillable(t))
 			return p.Do(ctx, v)
 		}), nil
 	}

@@ -19,16 +19,18 @@ import (
 
 // An execution pipeline
 type Pipeline struct {
-	s   Solver
-	fs  FS
-	out *Fillable
+	name string
+	s    Solver
+	fs   FS
+	out  *Fillable
 }
 
-func NewPipeline(s Solver, out *Fillable) *Pipeline {
+func NewPipeline(name string, s Solver, out *Fillable) *Pipeline {
 	return &Pipeline{
-		s:   s,
-		fs:  s.Scratch(),
-		out: out,
+		name: name,
+		s:    s,
+		fs:   s.Scratch(),
+		out:  out,
 	}
 }
 
@@ -169,10 +171,16 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
 	}
 }
 
+func (p *Pipeline) vertexNamef(format string, a ...interface{}) string {
+	prefix := fmt.Sprintf("@%s@", p.name)
+	name := fmt.Sprintf(format, a...)
+	return prefix + " " + name
+}
+
 // Spawn a temporary pipeline with the same solver.
 // Output values are discarded: the parent pipeline's values are not modified.
-func (p *Pipeline) Tmp() *Pipeline {
-	return NewPipeline(p.s, nil)
+func (p *Pipeline) Tmp(name string) *Pipeline {
+	return NewPipeline(name, p.s, nil)
 }
 
 func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value) error {
@@ -184,14 +192,17 @@ func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value) error {
 		return err
 	}
 	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(llb.Copy(
-			p.fs.LLB(),
-			dir,
-			"/",
-			&llb.CopyInfo{
-				CopyDirContentsOnly: true,
-			},
-		))
+		return st.File(
+			llb.Copy(
+				p.fs.LLB(),
+				dir,
+				"/",
+				&llb.CopyInfo{
+					CopyDirContentsOnly: true,
+				},
+			),
+			llb.WithCustomName(p.vertexNamef("Subdir %s", dir)),
+		)
 	})
 	return nil
 }
@@ -207,23 +218,26 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value) error {
 		return err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := p.Tmp()
+	from := p.Tmp(op.Get("from").Path().String())
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return err
 	}
 	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(llb.Copy(
-			from.FS().LLB(),
-			src,
-			dest,
-			// FIXME: allow more configurable llb options
-			// For now we define the following convenience presets:
-			&llb.CopyInfo{
-				CopyDirContentsOnly: true,
-				CreateDestPath:      true,
-				AllowWildcard:       true,
-			},
-		))
+		return st.File(
+			llb.Copy(
+				from.FS().LLB(),
+				src,
+				dest,
+				// FIXME: allow more configurable llb options
+				// For now we define the following convenience presets:
+				&llb.CopyInfo{
+					CopyDirContentsOnly: true,
+					CreateDestPath:      true,
+					AllowWildcard:       true,
+				},
+			),
+			llb.WithCustomName(p.vertexNamef("Copy %s %s", src, dest)),
+		)
 	})
 	return nil
 }
@@ -241,11 +255,14 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 	}
 
 	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(llb.Copy(
-			llb.Local(dir, llb.FollowPaths(include)),
-			"/",
-			"/",
-		))
+		return st.File(
+			llb.Copy(
+				llb.Local(dir, llb.FollowPaths(include)),
+				"/",
+				"/",
+			),
+			llb.WithCustomName(p.vertexNamef("Local %s", dir)),
+		)
 	})
 	return nil
 }
@@ -262,9 +279,6 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 	if err := op.Decode(&cmd); err != nil {
 		return err
 	}
-	// marker for status events
-	// FIXME
-	opts = append(opts, llb.WithCustomName(op.Path().String()))
 	// args
 	opts = append(opts, llb.Args(cmd.Args))
 	// dir
@@ -290,6 +304,11 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 		}
 		opts = append(opts, mntOpts...)
 	}
+
+	// marker for status events
+	// FIXME
+	opts = append(opts, llb.WithCustomName(p.vertexNamef("Exec %q", strings.Join(cmd.Args, " "))))
+
 	// --> Execute
 	p.fs = p.fs.Change(func(st llb.State) llb.State {
 		return st.Run(opts...).Root()
@@ -334,7 +353,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := p.Tmp()
+	from := p.Tmp(mnt.Get("from").Path().String())
 	if err := from.Do(ctx, mnt.Get("from")); err != nil {
 		return nil, err
 	}
@@ -434,7 +453,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value) error {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := p.Tmp()
+	from := p.Tmp(op.Get("from").Path().String())
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return err
 	}
@@ -449,7 +468,9 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value) error
 		return err
 	}
 	// FIXME: preserve docker image metadata
-	p.fs = p.fs.Set(llb.Image(ref))
+	p.fs = p.fs.Set(
+		llb.Image(ref, llb.WithCustomName(p.vertexNamef("FetchContainer %s", ref))),
+	)
 	return nil
 }
 
@@ -462,7 +483,9 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value) error {
 	if err != nil {
 		return err
 	}
-	p.fs = p.fs.Set(llb.Git(remote, ref))
+	p.fs = p.fs.Set(
+		llb.Git(remote, ref, llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remote, ref))),
+	)
 	return nil
 }
 
@@ -484,7 +507,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if context.Exists() {
-		from := p.Tmp()
+		from := p.Tmp(op.Lookup("context").Path().String())
 		if err := from.Do(ctx, context); err != nil {
 			return err
 		}
