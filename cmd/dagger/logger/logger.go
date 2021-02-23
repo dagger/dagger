@@ -22,7 +22,7 @@ func New() zerolog.Logger {
 		Logger()
 
 	if prettyLogs() {
-		logger = logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+		logger = logger.Output(&Console{Out: os.Stderr})
 	} else {
 		logger = logger.With().Timestamp().Caller().Logger()
 	}
