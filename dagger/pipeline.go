@@ -254,16 +254,13 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 		}
 	}
 
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Copy(
-				llb.Local(dir, llb.FollowPaths(include)),
-				"/",
-				"/",
-			),
+	p.fs = p.fs.Set(
+		llb.Local(
+			dir,
+			llb.FollowPaths(include),
 			llb.WithCustomName(p.vertexNamef("Local %s", dir)),
-		)
-	})
+		),
+	)
 	return nil
 }
 
@@ -307,7 +304,11 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 
 	// marker for status events
 	// FIXME
-	opts = append(opts, llb.WithCustomName(p.vertexNamef("Exec %q", strings.Join(cmd.Args, " "))))
+	args := make([]string, 0, len(cmd.Args))
+	for _, a := range cmd.Args {
+		args = append(args, fmt.Sprintf("%q", a))
+	}
+	opts = append(opts, llb.WithCustomName(p.vertexNamef("Exec [%s]", strings.Join(args, ", "))))
 
 	// --> Execute
 	p.fs = p.fs.Change(func(st llb.State) llb.State {

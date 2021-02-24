@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -212,10 +213,6 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 
 	// Cueflow cue instance
 	flowInst := env.state.CueInst()
-	lg.
-		Debug().
-		Str("value", compiler.Wrap(flowInst.Value(), flowInst).JSON().String()).
-		Msg("walking")
 
 	// Reset the output
 	env.output = compiler.EmptyStruct()
@@ -233,11 +230,9 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 				Str("state", t.State().String()).
 				Logger()
 
-			lg.Debug().Msg("cueflow task")
 			if t.State() != cueflow.Terminated {
 				return nil
 			}
-			lg.Debug().Msg("cueflow task: filling result")
 			// Merge task value into output
 			var err error
 			env.output, err = env.output.MergePath(t.Value(), t.Path())
@@ -245,7 +240,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 				lg.
 					Error().
 					Err(err).
-					Msg("failed to fill script result")
+					Msg("failed to fill task result")
 				return err
 			}
 			return nil
@@ -288,6 +283,10 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 				Logger()
 			ctx := lg.WithContext(ctx)
 
+			start := time.Now()
+			lg.
+				Info().
+				Msg("computing")
 			for _, dep := range t.Dependencies() {
 				lg.
 					Debug().
@@ -296,7 +295,20 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 			}
 			v := compiler.Wrap(t.Value(), inst)
 			p := NewPipeline(t.Path().String(), s, NewFillable(t))
-			return p.Do(ctx, v)
+			err := p.Do(ctx, v)
+			if err != nil {
+				lg.
+					Error().
+					Dur("duration", time.Since(start)).
+					Err(err).
+					Msg("failed")
+			} else {
+				lg.
+					Info().
+					Dur("duration", time.Since(start)).
+					Msg("completed")
+			}
+			return err
 		}), nil
 	}
 }

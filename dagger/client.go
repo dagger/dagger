@@ -123,20 +123,24 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		s := NewSolver(c)
 
+		lg.Debug().Msg("loading configuration")
 		if err := env.Update(ctx, s); err != nil {
 			return nil, err
 		}
-		lg.Debug().Msg("computing env")
+
 		// Compute output overlay
+		lg.Debug().Msg("computing env")
 		if err := env.Compute(ctx, s); err != nil {
 			return nil, err
 		}
-		lg.Debug().Msg("exporting env")
+
 		// Export env to a cue directory
+		lg.Debug().Msg("exporting env")
 		outdir, err := env.Export(s.Scratch())
 		if err != nil {
 			return nil, err
 		}
+
 		// Wrap cue directory in buildkit result
 		return outdir.Result(ctx)
 	}, ch)
