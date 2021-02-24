@@ -32,6 +32,7 @@ func (fs FS) WriteValueJSON(filename string, v *compiler.Value) FS {
 	return fs.Change(func(st llb.State) llb.State {
 		return st.File(
 			llb.Mkfile(filename, 0600, v.JSON()),
+			llb.WithCustomName("[internal] serializing state to JSON"),
 		)
 	})
 }
@@ -44,6 +45,7 @@ func (fs FS) WriteValueCUE(filename string, v *compiler.Value) (FS, error) {
 	return fs.Change(func(st llb.State) llb.State {
 		return st.File(
 			llb.Mkfile(filename, 0600, src),
+			llb.WithCustomName("[internal] serializing state to CUE"),
 		)
 	}), nil
 }

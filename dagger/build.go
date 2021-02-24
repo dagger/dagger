@@ -37,7 +37,7 @@ func CueBuild(ctx context.Context, fs FS, args ...string) (*compiler.Value, erro
 
 	// Add the config files on top of the overlay
 	err = fs.Walk(ctx, func(p string, f Stat) error {
-		lg.Debug().Str("path", p).Msg("Compiler.Build: processing")
+		lg.Debug().Str("path", p).Msg("load")
 		if f.IsDir() {
 			return nil
 		}

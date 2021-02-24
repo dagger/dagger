@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -84,7 +85,7 @@ func (env *Env) SetInput(i *compiler.Value) error {
 
 // Update the base configuration
 func (env *Env) Update(ctx context.Context, s Solver) error {
-	p := NewPipeline(s, nil)
+	p := NewPipeline("[internal] source", s, nil)
 	// execute updater script
 	if err := p.Do(ctx, env.updater); err != nil {
 		return err
@@ -212,10 +213,6 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 
 	// Cueflow cue instance
 	flowInst := env.state.CueInst()
-	lg.
-		Debug().
-		Str("value", compiler.Wrap(flowInst.Value(), flowInst).JSON().String()).
-		Msg("walking")
 
 	// Reset the output
 	env.output = compiler.EmptyStruct()
@@ -229,15 +226,13 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 
 			lg := lg.
 				With().
-				Str("path", t.Path().String()).
+				Str("component", t.Path().String()).
 				Str("state", t.State().String()).
 				Logger()
 
-			lg.Debug().Msg("cueflow task")
 			if t.State() != cueflow.Terminated {
 				return nil
 			}
-			lg.Debug().Msg("cueflow task: filling result")
 			// Merge task value into output
 			var err error
 			env.output, err = env.output.MergePath(t.Value(), t.Path())
@@ -245,7 +240,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 				lg.
 					Error().
 					Err(err).
-					Msg("failed to fill script result")
+					Msg("failed to fill task result")
 				return err
 			}
 			return nil
@@ -284,10 +279,14 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("path", t.Path().String()).
+				Str("component", t.Path().String()).
 				Logger()
 			ctx := lg.WithContext(ctx)
 
+			start := time.Now()
+			lg.
+				Info().
+				Msg("computing")
 			for _, dep := range t.Dependencies() {
 				lg.
 					Debug().
@@ -295,8 +294,21 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 					Msg("dependency detected")
 			}
 			v := compiler.Wrap(t.Value(), inst)
-			p := NewPipeline(s, NewFillable(t))
-			return p.Do(ctx, v)
+			p := NewPipeline(t.Path().String(), s, NewFillable(t))
+			err := p.Do(ctx, v)
+			if err != nil {
+				lg.
+					Error().
+					Dur("duration", time.Since(start)).
+					Err(err).
+					Msg("failed")
+			} else {
+				lg.
+					Info().
+					Dur("duration", time.Since(start)).
+					Msg("completed")
+			}
+			return err
 		}), nil
 	}
 }

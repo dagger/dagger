@@ -43,21 +43,18 @@ var computeCmd = &cobra.Command{
 		if err := env.SetUpdater(updater.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid updater script")
 		}
-		lg.Debug().Str("input", input.Value().SourceUnsafe()).Msg("Setting input")
+		lg.Debug().Str("input", input.Value().SourceUnsafe()).Msg("setting input")
 		if err := env.SetInput(input.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid input")
 		}
-		lg.Debug().Str("env state", env.State().SourceUnsafe()).Msg("creating client")
 		c, err := dagger.NewClient(ctx, "")
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		lg.Info().Msg("running")
 		output, err := c.Compute(ctx, env)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to compute")
 		}
-		lg.Info().Msg("processing output")
 		fmt.Println(output.JSON())
 	},
 }

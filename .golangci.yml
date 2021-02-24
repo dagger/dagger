@@ -1,6 +1,10 @@
+run:
+  skip-dirs:
+    # progressui is a modified 3rd party library from buildkit
+    - pkg/progressui
+
 linters:
   disable-all: true
-  timeout: 30m
   enable:
     - bodyclose
     - deadcode
