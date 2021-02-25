@@ -37,7 +37,7 @@ jobs:
 
       - name: Start buildkit
         run: |
-          docker run -d --name buildkitd --privileged moby/buildkit:v0.8.1@sha256:ecd5ad4910c322cad6995f8a1a0805d9da4b09ed4aaef40627f5bcb8ebf74068
+          docker run -d --name buildkitd --privileged moby/buildkit:v0.8.2
 
       - name: Integration test
         run: |
