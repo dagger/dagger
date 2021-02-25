@@ -253,14 +253,33 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 			return err
 		}
 	}
+	// FIXME: Remove the `Copy` and use `Local` directly.
+	//
+	// Copy'ing is a costly operation which should be unnecessary.
+	// However, for a mysterious reason, `llb.Local` is returning a different
+	// digest at every run, therefore invalidating the cache.
+	//
+	// By wrapping `llb.Local` inside `llb.Copy`, we get the same digest for
+	// the same content.
+	p.fs = p.fs.Change(func(st llb.State) llb.State {
+		return st.File(
+			llb.Copy(
+				llb.Local(
+					dir,
+					llb.FollowPaths(include),
+					llb.WithCustomName(p.vertexNamef("Local %s", dir)),
 
-	p.fs = p.fs.Set(
-		llb.Local(
-			dir,
-			llb.FollowPaths(include),
-			llb.WithCustomName(p.vertexNamef("Local %s", dir)),
-		),
-	)
+					// Without hint, multiple `llb.Local` operations on the
+					// same path get a different digest.
+					llb.SessionID(p.s.SessionID()),
+					llb.SharedKeyHint(dir),
+				),
+				"/",
+				"/",
+			),
+		)
+	})
+
 	return nil
 }
 

@@ -35,6 +35,10 @@ func (s Solver) Scratch() FS {
 	return s.FS(llb.Scratch())
 }
 
+func (s Solver) SessionID() string {
+	return s.c.BuildOpts().SessionID
+}
+
 // Solve will block until the state is solved and returns a Reference.
 func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (bkgw.Reference, error) {
 	// call solve
