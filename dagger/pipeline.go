@@ -267,7 +267,7 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 				llb.Local(
 					dir,
 					llb.FollowPaths(include),
-					llb.WithCustomName(p.vertexNamef("Local %s", dir)),
+					llb.WithCustomName(p.vertexNamef("Local %s [transfer]", dir)),
 
 					// Without hint, multiple `llb.Local` operations on the
 					// same path get a different digest.
@@ -277,6 +277,7 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 				"/",
 				"/",
 			),
+			llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
 		)
 	})
 
