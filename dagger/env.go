@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"cuelang.org/go/cue"
@@ -297,18 +298,26 @@ func newPipelineTaskFunc(ctx context.Context, inst *cue.Instance, s Solver) cuef
 			p := NewPipeline(t.Path().String(), s, NewFillable(t))
 			err := p.Do(ctx, v)
 			if err != nil {
+				// FIXME: this should use errdefs.IsCanceled(err)
+				if strings.Contains(err.Error(), "context canceled") {
+					lg.
+						Error().
+						Dur("duration", time.Since(start)).
+						Msg("canceled")
+					return err
+				}
 				lg.
 					Error().
 					Dur("duration", time.Since(start)).
 					Err(err).
 					Msg("failed")
-			} else {
-				lg.
-					Info().
-					Dur("duration", time.Since(start)).
-					Msg("completed")
+				return err
 			}
-			return err
+			lg.
+				Info().
+				Dur("duration", time.Since(start)).
+				Msg("completed")
+			return nil
 		}), nil
 	}
 }
