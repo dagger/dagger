@@ -180,7 +180,7 @@ func (f sourceFlag) Set(s string) error {
 			return compiler.Compile(
 				"source",
 				// FIXME: include only cue files as a shortcut. Make this configurable somehow.
-				fmt.Sprintf(`[{do:"local",dir:"%s",include:["*.cue","cue.mod"]}]`, u.Host+u.Path),
+				fmt.Sprintf(`[{do:"local",dir:"%s"}]`, u.Host+u.Path),
 			)
 		default:
 			return nil, fmt.Errorf("unsupported source scheme: %q", u.Scheme)

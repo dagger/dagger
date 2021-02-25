@@ -16,7 +16,7 @@ import (
 )
 
 // Build a cue configuration tree from the files in fs.
-func CueBuild(ctx context.Context, fs FS, args ...string) (*compiler.Value, error) {
+func CueBuild(ctx context.Context, fs FS, includeTests bool, args ...string) (*compiler.Value, error) {
 	var (
 		err error
 		lg  = log.Ctx(ctx)
@@ -26,7 +26,8 @@ func CueBuild(ctx context.Context, fs FS, args ...string) (*compiler.Value, erro
 		// The CUE overlay needs to be prefixed by a non-conflicting path with the
 		// local filesystem, otherwise Cue will merge the Overlay with whatever Cue
 		// files it finds locally.
-		Dir: "/config",
+		Dir:   "/config",
+		Tests: includeTests,
 	}
 
 	// Start by creating an overlay with the stdlib

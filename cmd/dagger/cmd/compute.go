@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"dagger.io/go/dagger"
 
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -49,7 +52,38 @@ var computeCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		output, err := c.Compute(ctx, env)
+		test := viper.GetBool("test")
+		target := viper.GetString("target")
+		output, err := c.Session(ctx, env, func(ctx context.Context, s dagger.Solver) (*bkgw.Result, error) {
+			lg.Debug().Msg("loading configuration")
+			if err := env.Update(ctx, s, test); err != nil {
+				return nil, err
+			}
+
+			if !test {
+				// Compute output overlay
+				lg.Debug().Msg("computing env")
+				if err := env.Compute(ctx, s, target); err != nil {
+					return nil, err
+				}
+			} else {
+				// Compute output overlay
+				lg.Debug().Msg("running tests")
+				if err := env.Test(ctx, s, target); err != nil {
+					return nil, err
+				}
+			}
+
+			// Export env to a cue directory
+			lg.Debug().Msg("exporting env")
+			outdir, err := env.Export(ctx, s.Scratch())
+			if err != nil {
+				return nil, err
+			}
+
+			// Wrap cue directory in buildkit result
+			return outdir.Result(ctx)
+		})
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to compute")
 		}
@@ -68,6 +102,9 @@ func init() {
 	computeCmd.Flags().Var(input.DirFlag(), "input-dir", "TARGET=PATH")
 	computeCmd.Flags().Var(input.GitFlag(), "input-git", "TARGET=REMOTE#REF")
 	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
+
+	computeCmd.Flags().StringP("target", "t", "", "target")
+	computeCmd.Flags().Bool("test", false, "Run tests")
 
 	// Setup (future) --from-* flags
 	updater, err = dagger.NewInputValue("[...{do:string, ...}]")

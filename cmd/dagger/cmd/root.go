@@ -23,6 +23,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		computeCmd,
+		targetsCmd,
 		// Create an env
 		// Change settings on an env
 		// View or edit env serti

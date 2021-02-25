@@ -88,7 +88,7 @@ func (env *Env) SetInput(i *compiler.Value) error {
 }
 
 // Update the base configuration
-func (env *Env) Update(ctx context.Context, s Solver) error {
+func (env *Env) Update(ctx context.Context, s Solver, includeTests bool) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Env.Update")
 	defer span.Finish()
 
@@ -100,7 +100,7 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 
 	// load cue files produced by updater
 	// FIXME: BuildAll() to force all files (no required package..)
-	base, err := CueBuild(ctx, p.FS())
+	base, err := CueBuild(ctx, p.FS(), includeTests)
 	if err != nil {
 		return fmt.Errorf("base config: %w", err)
 	}
@@ -115,6 +115,16 @@ func (env *Env) Base() *compiler.Value {
 
 func (env *Env) Output() *compiler.Value {
 	return env.output
+}
+
+func (env *Env) Targets() []string {
+	targets := []string{}
+	inst := env.state.CueInst()
+	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, isComponent, noOpRunner))
+	for _, t := range flow.Tasks() {
+		targets = append(targets, t.Path().String())
+	}
+	return targets
 }
 
 // Scan all scripts in the environment for references to local directories (do:"local"),
@@ -146,7 +156,7 @@ func (env *Env) LocalDirs() map[string]string {
 	// 1. Scan the environment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
 	inst := env.state.CueInst()
-	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
+	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, isComponent, noOpRunner))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
 		localdirs(v.Get("#compute"))
@@ -218,11 +228,9 @@ func (env *Env) Export(ctx context.Context, fs FS) (FS, error) {
 }
 
 // Compute missing values in env configuration, and write them to state.
-func (env *Env) Compute(ctx context.Context, s Solver) error {
+func (env *Env) Compute(ctx context.Context, s Solver, target string) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Env.Compute")
 	defer span.Finish()
-
-	lg := log.Ctx(ctx)
 
 	// Cueflow cue instance
 	inst := env.state.CueInst()
@@ -231,36 +239,49 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	env.output = compiler.EmptyStruct()
 
 	// Cueflow config
-	flowCfg := &cueflow.Config{
-		UpdateFunc: func(c *cueflow.Controller, t *cueflow.Task) error {
-			if t == nil {
-				return nil
-			}
-
-			lg := lg.
-				With().
-				Str("component", t.Path().String()).
-				Str("state", t.State().String()).
-				Logger()
-
-			if t.State() != cueflow.Terminated {
-				return nil
-			}
-			// Merge task value into output
-			var err error
-			env.output, err = env.output.MergePath(t.Value(), t.Path())
-			if err != nil {
-				lg.
-					Error().
-					Err(err).
-					Msg("failed to fill task result")
-				return err
-			}
-			return nil
-		},
+	cfg := &cueflow.Config{
+		UpdateFunc: env.updatefn(ctx),
+	}
+	if target != "" {
+		cfg.Root = cue.ParsePath(target)
+		if err := cfg.Root.Err(); err != nil {
+			return fmt.Errorf("invalid target: %w", err)
+		}
+		// The target may reference dependencies outside of the target path.
+		// InferTasks will include them in the workflow.
+		cfg.InferTasks = true
 	}
 	// Orchestrate execution with cueflow
-	flow := cueflow.New(flowCfg, inst, newTaskFunc(inst, newPipelineRunner(inst, s)))
+	flow := cueflow.New(cfg, inst, newTaskFunc(inst, isComponent, newPipelineRunner(inst, s)))
+	if err := flow.Run(ctx); err != nil {
+		return err
+	}
+	return env.mergeState()
+}
+
+// Test runs unit tests in the given configuration
+func (env *Env) Test(ctx context.Context, s Solver, target string) error {
+	// Cueflow cue instance
+	inst := env.state.CueInst()
+
+	// Reset the output
+	env.output = compiler.EmptyStruct()
+
+	// Cueflow config
+	cfg := &cueflow.Config{
+		UpdateFunc: env.updatefn(ctx),
+	}
+	if target != "" {
+		cfg.Root = cue.ParsePath(target)
+		if err := cfg.Root.Err(); err != nil {
+			return fmt.Errorf("invalid target: %w", err)
+		}
+		// The target may reference dependencies outside of the target path.
+		// InferTasks will include them in the workflow.
+		cfg.InferTasks = true
+	}
+	// Orchestrate execution with cueflow
+	flow := cueflow.New(cfg, inst, newTaskFunc(inst, isTest, newPipelineRunner(inst, s)))
 	if err := flow.Run(ctx); err != nil {
 		return err
 	}
@@ -273,15 +294,54 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	}
 }
 
-func newTaskFunc(inst *cue.Instance, runner cueflow.RunnerFunc) cueflow.TaskFunc {
+func (env *Env) updatefn(ctx context.Context) func(*cueflow.Controller, *cueflow.Task) error {
+	return func(c *cueflow.Controller, t *cueflow.Task) error {
+		if t == nil {
+			return nil
+		}
+
+		lg := log.
+			Ctx(ctx).
+			With().
+			Str("component", t.Path().String()).
+			Str("state", t.State().String()).
+			Logger()
+
+		if t.State() != cueflow.Terminated {
+			return nil
+		}
+		// Merge task value into output
+		var err error
+		env.output, err = env.output.MergePath(t.Value(), t.Path())
+		if err != nil {
+			lg.
+				Error().
+				Err(err).
+				Msg("failed to fill task result")
+			return err
+		}
+		return nil
+	}
+}
+
+type matchFunc func(v *compiler.Value) bool
+
+func newTaskFunc(inst *cue.Instance, matcher matchFunc, runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	return func(flowVal cue.Value) (cueflow.Runner, error) {
 		v := compiler.Wrap(flowVal, inst)
-		if !isComponent(v) {
-			// No compute script
+		if !matcher(v) {
 			return nil, nil
 		}
 		return runner, nil
 	}
+}
+
+func isTest(v *compiler.Value) bool {
+	selectors := v.Path().Selectors()
+	if len(selectors) == 0 || !strings.HasPrefix(selectors[0].String(), "Test") {
+		return false
+	}
+	return isComponent(v)
 }
 
 func noOpRunner(t *cueflow.Task) error {

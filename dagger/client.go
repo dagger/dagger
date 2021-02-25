@@ -59,8 +59,9 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 	}, nil
 }
 
-// FIXME: return completed *Env, instead of *compiler.Value
-func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error) {
+type SessionFunc func(ctx context.Context, s Solver) (*bkgw.Result, error)
+
+func (c *Client) Session(ctx context.Context, env *Env, session SessionFunc) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -77,7 +78,7 @@ func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error)
 	outr, outw := io.Pipe()
 	eg.Go(func() error {
 		defer outw.Close()
-		return c.buildfn(gctx, env, events, outw)
+		return c.buildfn(gctx, env, session, events, outw)
 	})
 
 	// Spawn output retriever
@@ -94,7 +95,7 @@ func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error)
 	return out, compiler.Err(eg.Wait())
 }
 
-func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, env *Env, session SessionFunc, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -128,28 +129,7 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 		Msg("spawning buildkit job")
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
-		s := NewSolver(c)
-
-		lg.Debug().Msg("loading configuration")
-		if err := env.Update(ctx, s); err != nil {
-			return nil, err
-		}
-
-		// Compute output overlay
-		lg.Debug().Msg("computing env")
-		if err := env.Compute(ctx, s); err != nil {
-			return nil, err
-		}
-
-		// Export env to a cue directory
-		lg.Debug().Msg("exporting env")
-		outdir, err := env.Export(ctx, s.Scratch())
-		if err != nil {
-			return nil, err
-		}
-
-		// Wrap cue directory in buildkit result
-		return outdir.Result(ctx)
+		return session(ctx, NewSolver(c))
 	}, ch)
 	if err != nil {
 		return fmt.Errorf("buildkit solve: %w", bkCleanError(err))
