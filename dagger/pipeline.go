@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -484,15 +485,55 @@ func (p *Pipeline) Load(ctx context.Context, op *compiler.Value) error {
 }
 
 func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value) error {
-	ref, err := op.Get("ref").String()
+	rawRef, err := op.Get("ref").String()
 	if err != nil {
 		return err
 	}
-	// FIXME: preserve docker image metadata
-	p.fs = p.fs.Set(
-		llb.Image(ref, llb.WithCustomName(p.vertexNamef("FetchContainer %s", ref))),
+
+	ref, err := reference.ParseNormalizedNamed(rawRef)
+	if err != nil {
+		return fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
+	}
+	// Add the default tag "latest" to a reference if it only has a repo name.
+	ref = reference.TagNameOnly(ref)
+
+	state := llb.Image(
+		ref.String(),
+		llb.WithCustomName(p.vertexNamef("FetchContainer %s", rawRef)),
 	)
+
+	// Load image metadata and convert to to LLB.
+	// FIXME: metadata MUST be injected back into the gateway result
+	// FIXME: there are unhandled sections of the image config
+	image, err := p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
+		LogName: p.vertexNamef("load metadata for %s", ref.String()),
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, env := range image.Config.Env {
+		k, v := parseKeyValue(env)
+		state = state.AddEnv(k, v)
+	}
+	if image.Config.WorkingDir != "" {
+		state = state.Dir(image.Config.WorkingDir)
+	}
+	if image.Config.User != "" {
+		state = state.User(image.Config.User)
+	}
+	p.fs = p.fs.Set(state)
 	return nil
+}
+
+func parseKeyValue(env string) (string, string) {
+	parts := strings.SplitN(env, "=", 2)
+	v := ""
+	if len(parts) > 1 {
+		v = parts[1]
+	}
+
+	return parts[0], v
 }
 
 func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value) error {

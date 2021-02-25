@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -37,6 +38,23 @@ func (s Solver) Scratch() FS {
 
 func (s Solver) SessionID() string {
 	return s.c.BuildOpts().SessionID
+}
+
+func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.ResolveImageConfigOpt) (dockerfile2llb.Image, error) {
+	var image dockerfile2llb.Image
+
+	// Load image metadata and convert to to LLB.
+	// Inspired by https://github.com/moby/buildkit/blob/master/frontend/dockerfile/dockerfile2llb/convert.go
+	// FIXME: this needs to handle platform
+	_, meta, err := s.c.ResolveImageConfig(ctx, ref, opts)
+	if err != nil {
+		return image, err
+	}
+	if err := json.Unmarshal(meta, &image); err != nil {
+		return image, err
+	}
+
+	return image, nil
 }
 
 // Solve will block until the state is solved and returns a Reference.

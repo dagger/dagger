@@ -24,14 +24,8 @@ import (
 		dagger.#Exec & {
 			"args": ["go"] + args
 
-			env: env
-			env: CGO_ENABLED: "0"
-			// FIXME: this should come from the golang image.
-			// https://github.com/dagger/dagger/issues/130
-			env: {
-				PATH:   "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-				GOPATH: "/go"
-			}
+			"env": env
+			"env": CGO_ENABLED: "0"
 
 			dir: "/src"
 			mount: "/src": from: source
