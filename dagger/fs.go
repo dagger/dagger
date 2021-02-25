@@ -196,7 +196,7 @@ func bkCleanError(err error) error {
 	noise := []string{
 		"executor failed running ",
 		"buildkit-runc did not terminate successfully",
-		"rpc error: code = Unknown desc =",
+		"rpc error: code = Unknown desc = ",
 		"failed to solve: ",
 	}
 
