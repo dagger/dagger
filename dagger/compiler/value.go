@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"fmt"
+
 	"cuelang.org/go/cue"
 	cueformat "cuelang.org/go/cue/format"
 )
@@ -92,6 +94,10 @@ func (v *Value) String() (string, error) {
 	return v.val.String()
 }
 
+func (v *Value) Bool() (bool, error) {
+	return v.val.Bool()
+}
+
 func (v *Value) SourceUnsafe() string {
 	s, _ := v.SourceString()
 	return s
@@ -154,11 +160,17 @@ func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
 		x = xval.val
 	}
 
+	fmt.Println("=======================")
+	fmt.Println(v.val, path, x)
+
 	v.cc.lock()
 	result := v.Wrap(v.val.Fill(x, path...))
 	v.cc.unlock()
 
-	return result, result.Validate()
+	valid := result.Validate()
+	fmt.Println("=======================")
+
+	return result, valid
 }
 
 func (v *Value) MergePath(x interface{}, p cue.Path) (*Value, error) {

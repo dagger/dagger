@@ -14,10 +14,10 @@ build: go.#Build & {
 	output:   "/usr/local/bin/dagger"
 }
 
-test: go.#Test & {
-	source:   repository
-	packages: "./..."
-}
+//test: go.#Test & {
+	//source:   repository
+	//packages: "./..."
+//}
 
 // Run a command with the binary we just built
 help: #dagger: compute: [
@@ -26,14 +26,14 @@ help: #dagger: compute: [
 ]
 
 // Build dagger using the (included) Dockerfile
-buildWithDocker: #dagger: compute: [
-	dagger.#DockerBuild & {
-		context: repository
-	},
-]
+//buildWithDocker: #dagger: compute: [
+	//dagger.#DockerBuild & {
+		//context: repository
+	//},
+//]
 
 // Run a command in the docker image we just built
-helpFromDocker: #dagger: compute: [
-	dagger.#Load & {from: buildWithDocker},
-	dagger.#Exec & {args: ["dagger", "-h"]},
-]
+//helpFromDocker: #dagger: compute: [
+	//dagger.#Load & {from: buildWithDocker},
+	//dagger.#Exec & {args: ["dagger", "-h"]},
+//]

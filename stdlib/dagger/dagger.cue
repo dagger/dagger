@@ -7,6 +7,13 @@ package dagger
 // One operation in a script
 #Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
 
+#Eject: {
+	do: "eject"
+	repo: string
+	name: string
+	tag: string
+}
+
 // Export a value from fs state to cue
 #Export: {
 	do: "export"
@@ -58,6 +65,7 @@ package dagger
 	from: _
 	src:  string | *"/"
 	dest: string | *"/"
+	...
 }
 
 #DockerBuild: {

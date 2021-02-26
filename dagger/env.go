@@ -152,6 +152,7 @@ func (env *Env) LocalDirs() map[string]string {
 
 // FIXME: this is just a 3-way merge. Add var args to compiler.Value.Merge.
 func (env *Env) mergeState() error {
+	fmt.Println("env.mergeState.START")
 	// FIXME: make this cleaner in *compiler.Value by keeping intermediary instances
 	// FIXME: state.CueInst() must return an instance with the same
 	//  contents as state.v, for the purposes of cueflow.
@@ -164,23 +165,37 @@ func (env *Env) mergeState() error {
 		err       error
 	)
 
+	fmt.Println(env.base.Cue())
+	fmt.Println(env.input.Cue())
+	fmt.Println(env.output.Cue())
+
 	stateInst, err = stateInst.Fill(env.base.Cue())
 	if err != nil {
 		return fmt.Errorf("merge base & input: %w", err)
 	}
+
+	fmt.Println("env.mergeState.1")
+
 	stateInst, err = stateInst.Fill(env.input.Cue())
 	if err != nil {
 		return fmt.Errorf("merge base & input: %w", err)
 	}
+
+	fmt.Println("env.mergeState.2")
+
 	stateInst, err = stateInst.Fill(env.output.Cue())
 	if err != nil {
 		return fmt.Errorf("merge output with base & input: %w", err)
 	}
 
-	state = compiler.Wrap(stateInst.Value(), stateInst)
+	fmt.Println("env.mergeState.3")
+	mv := stateInst.Value()
+	fmt.Println("env.mergeState.4")
+	state = compiler.Wrap(mv, stateInst)
 
 	// commit
 	env.state = state
+	fmt.Println("env.mergeState.END")
 	return nil
 }
 
@@ -234,9 +249,20 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 			if t.State() != cueflow.Terminated {
 				return nil
 			}
+
+			// Hack
+			p := t.Path()
+			v := t.Value()
+			fmt.Println("====== PREFILL ", p, v)
+
+			v.Validate(cue.Final())
+			lg.Debug().Msg("cueflow task: filling result")
+
 			// Merge task value into output
 			var err error
-			env.output, err = env.output.MergePath(t.Value(), t.Path())
+			env.output, err = env.output.MergePath(v, p)
+
+			lg.Debug().Msg("cueflow task: done filling")
 			if err != nil {
 				lg.
 					Error().
@@ -252,6 +278,8 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	if err := flow.Run(ctx); err != nil {
 		return err
 	}
+
+	fmt.Println("env.mergeState()")
 	return env.mergeState()
 }
 

@@ -37,7 +37,8 @@ import (
 
 #Build: {
 	// Go version to use
-	version: *#Go.version | string
+	// version: *#Go.version | string
+	version: *"1.16" | string
 
 	// Source Directory to build
 	source: dagger.#Dir

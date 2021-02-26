@@ -144,6 +144,15 @@ func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
 }
 
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
+	//eject, err := op.Get("dagger_eject").Bool()
+	//if eject {
+			//log.
+				//Ctx(ctx).
+				//Warn().
+				//Str("val", op.SourceUnsafe()).
+				//Msg("dagger_eject found")
+	//}
+
 	do, err := op.Get("do").String()
 	if err != nil {
 		return err
@@ -223,6 +232,12 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value) error {
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return err
 	}
+			log.
+				Ctx(ctx).
+				Warn().
+				Str("src", src).
+				Str("dest", dest).
+				Msg("COPY")
 	p.fs = p.fs.Change(func(st llb.State) llb.State {
 		return st.File(
 			llb.Copy(
