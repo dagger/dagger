@@ -27,7 +27,7 @@ dagger catalog               Manage the dagger package catalog
 dagger init      Initialize an environment
 
     --interactive no|yes|auto         Specify whether to present user with interactive setup  
-    -n, --name NAME                   Specify the environment's name. (default: computed from current directory. See ENVIRONMENT SELECTION)
+    -n, --name NAME                   Specify the environment's name. (default: the name of the current directory)
     
     -b, --base ENV_ID | ENV_NAME | PACKAGE       Load base configuration from the given cue package or environment
                                       Examples:
@@ -64,7 +64,9 @@ dagger change                    Make a change to the current environment
     --input-secret KEY[=PATH]
     --input-json KEY=JSON
     --input-git KEY=REMOTE#REF
-
+    --rollback VERSION              Roll back environment state to the specified version.
+                                      Changes are re-computed and dagger cannot guarantee that all external state will be perfectly reverted.
+                                      (aka "roll forward").
 
 
 dagger query [EXPR...]         Query an environment's state
@@ -72,6 +74,7 @@ dagger query [EXPR...]         Query an environment's state
     EXPR may be any valid CUE expression. The expression is evaluated against the environment state,
     and written to standard output.
 
+    -v,--version                      Query a specific version of the environment (default: last known version)
     -f,--format cue|json|yaml|text    Specify output format (default: cue)
     -i,--import PACKAGE               Specify cue packages to import when evaluating the query
 
@@ -90,3 +93,12 @@ dagger sync       Synchronize local state to Dagger Cloud (optional)
 dagger login			Login to Dagger Cloud (optional)
 dagger logout			Logout from Dagger Cloud (optional)
 ```
+
+# Environment selection
+
+Almost all dagger commands take place within an environment.
+
+Before executing each command, `dagger` selects which environment to execute the command in. The selection process is the following:
+
+1. If an environment is explicitly specified with `--env` or `-e`, use that.
+2. If .daggerenv exists in the current directory, use its contents.
