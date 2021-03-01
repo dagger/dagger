@@ -7,13 +7,6 @@ package dagger
 // One operation in a script
 #Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
 
-#Eject: {
-	do: "eject"
-	repo: string
-	name: string
-	tag: string
-}
-
 // Export a value from fs state to cue
 #Export: {
 	do: "export"
@@ -46,8 +39,10 @@ package dagger
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmp" | "cache" | {from: _, path: string | *"/"}
+	mount: [string]: #MountType
 }
+
+#MountType: "tmp" | "cache" | {from: _, path: string | *"/"}
 
 #FetchContainer: {
 	do:  "fetch-container"
@@ -65,7 +60,6 @@ package dagger
 	from: _
 	src:  string | *"/"
 	dest: string | *"/"
-	...
 }
 
 #DockerBuild: {

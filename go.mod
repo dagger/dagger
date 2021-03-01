@@ -6,7 +6,7 @@ require (
 	cuelang.org/go v0.3.0-beta.5
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.1
-	github.com/docker/distribution v2.7.1+incompatible // indirect
+	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
