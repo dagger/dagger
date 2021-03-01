@@ -20,7 +20,6 @@ base: {
 input: {
 	repository: {
 		steps: [{
-			do:  "local"
 			dir: "."
 			include: []
 		}]
@@ -39,8 +38,7 @@ output: {
 	build: {
 	  version: *"1.16" | string
 		source: {
-			steps: [#Op & #Op & {
-				do:  "local"
+			steps: [{
 				dir: "."
 				include: []
 			}]
@@ -63,8 +61,7 @@ output: {
 		}]
 	}
 	repository: {
-		steps: [#Op & {
-			do:  "local"
+		steps: [{
 			dir: "."
 			include: []
 		}]
@@ -74,21 +71,18 @@ output: {
 #Dir: steps: [...#Op]
 
 // One operation in a script
-#Op: #FetchContainer | #Exec | #Local | #Copy | #Load
+#Op: #Fetch | #Exec | #Local | #Copy | #Load
 
 #Local: {
-	do:      "local"
 	dir:     string
 	include: [...string] | *[]
 }
 
 #Load: {
-	do:   "load"
 	from: _
 }
 
 #Exec: {
-	do: "exec"
 	args: [...string]
 	env?: [string]: string
 	always?: true | *false
@@ -96,13 +90,11 @@ output: {
 	mount: [string]: "tmp" | "cache" | {from: _, path: string | *"/"}
 }
 
-#FetchContainer: {
-	do:  "fetch-container"
+#Fetch: {
 	ref: string
 }
 
 #Copy: {
-	do:   "copy"
 	from: _
 	src:  string | *"/"
 	dest: string | *"/"
@@ -110,7 +102,6 @@ output: {
 }
 
 #DockerBuild: {
-	do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
 	context?:        _
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
@@ -135,7 +126,7 @@ output: {
 	env: [string]: string
 
 	steps: [
-		#FetchContainer & {
+		#Fetch & {
 			ref: "docker.io/golang:\(version)-alpine"
 		},
 		#Exec & {
