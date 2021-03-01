@@ -49,18 +49,6 @@ output: {
 		// Packages to build
 		packages: "./cmd"
 
-		// Target architecture
-		arch: *"amd64" | string
-
-		// Target OS
-		os: *"linux" | string
-
-		// Build tags to use for building
-		tags: *"" | string
-
-		// LDFLAGS to use for linking
-		ldflags: *"" | string
-
 		// Specify the targeted binary name
 		output: "/usr/local/bin/cmd"
 		env: [string]: string
@@ -69,7 +57,6 @@ output: {
 				version: version
 				"source":  source
 				"env":     env
-				args: ["build", "-v", "-tags", tags, "-ldflags", ldflags, "-o", output, packages]
 			}
 			src:  output
 			dest: output
@@ -156,12 +143,6 @@ output: {
 
 			"env": env
 			env: CGO_ENABLED: "0"
-			// FIXME: this should come from the golang image.
-			// https://github.com/dagger/dagger/issues/130
-			env: {
-				PATH:   "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-				GOPATH: "/go"
-			}
 
 			dir: "/src"
 			mount: "/src": from: source
@@ -181,18 +162,6 @@ output: {
 	// Packages to build
 	packages: *"." | string
 
-	// Target architecture
-	arch: *"amd64" | string
-
-	// Target OS
-	os: *"linux" | string
-
-	// Build tags to use for building
-	tags: *"" | string
-
-	// LDFLAGS to use for linking
-	ldflags: *"" | string
-
 	// Specify the targeted binary name
 	output: string
 
@@ -204,7 +173,7 @@ output: {
 				"version": version
 				"source":  source
 				"env":     env
-				args: ["build", "-v", "-tags", tags, "-ldflags", ldflags, "-o", output, packages]
+				args: ["build", "-o", output, packages]
 			}
 			src:  output
 			dest: output
