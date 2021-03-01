@@ -57,18 +57,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("empty:", empty.Value())
+	// fmt.Println("empty:", empty.Value())
 
 	base := I.Lookup("base")
-	fmt.Println("base:", base)
+	// fmt.Println("base:", base)
 
 	input := I.Lookup("input")
-	fmt.Println("input:", input)
+	// fmt.Println("input:", input)
 
 	output := I.Lookup("output")
-	fmt.Println("output:", output)
+	// fmt.Println("output:", output)
 
-	fmt.Println("===============")
+	// fmt.Println("===============")
 
 	merged := empty
 

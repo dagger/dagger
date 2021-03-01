@@ -7,9 +7,12 @@ import (
 
 base: {
 	repository: dagger.#Dir
-
+	test: go.#Test & {
+		source: repository
+		packages: "./..."
+	}
 	build: go.#Build & {
-					source:   repository
+					source:   test
 					packages: "./cmd/dagger"
 					output:   "/usr/local/bin/dagger"
 	}
@@ -19,6 +22,24 @@ base: {
 													from: build
 									}, dagger.#Exec & {
 													args: ["dagger", "-h"]
+									}]
+					}
+	}
+	cmd1: {
+					#dagger: {
+									compute: [dagger.#Load & {
+													from: help
+									}, dagger.#Exec & {
+													args: ["dagger", "compute", "-h"]
+									}]
+					}
+	}
+	cmd2: {
+					#dagger: {
+									compute: [dagger.#Load & {
+													from: cmd1
+									}, dagger.#Exec & {
+													args: ["dagger", "compute", "-h"]
 									}]
 					}
 	}
@@ -37,6 +58,28 @@ input: {
 }
 
 output: {
+	cmd2: {
+					#dagger: {
+									// Run a command with the binary we just built
+									compute: [dagger.#Load & {
+													from: cmd1
+									}, dagger.#Exec & {
+													args: ["dagger", "compute", "-h"]
+									}]
+					}
+	}
+
+	cmd1: {
+					#dagger: {
+									// Run a command with the binary we just built
+									compute: [dagger.#Load & {
+													from: help
+									}, dagger.#Exec & {
+													args: ["dagger", "compute", "-h"]
+									}]
+					}
+	}
+
 	help: {
 					#dagger: {
 									// Run a command with the binary we just built
@@ -50,10 +93,10 @@ output: {
 
 	build: {
 					// Go version to use
-					// version: *#Go.version | string
 					version: *"1.16" | string
 
 					// Source Directory to build
+					// source: input.repository
 					source: {
 									#dagger: {
 													compute: [dagger.#Op & dagger.#Op & {
@@ -81,13 +124,13 @@ output: {
 
 					// Specify the targeted binary name
 					output: "/usr/local/bin/dagger"
-					env: {}
+					env: [string]: string
 					#dagger: {
 									compute: [dagger.#Copy & {
 													from: go.#Go & {
 																	version: version
-																	source:  source
-																	env:     env
+																	"source":  source
+																	"env":     env
 																	args: ["build", "-v", "-tags", tags, "-ldflags", ldflags, "-o", output, packages]
 													}
 													src:  output
