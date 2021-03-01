@@ -2,6 +2,7 @@
 # Commands
 
 
+```
 dagger info			Show contextual information
 
 dagger new      Create an environment
@@ -15,3 +16,4 @@ dagger download Download data from an environment
 dagger sync       Synchronize local state to Dagger Cloud (optional)
 dagger login			Login to Dagger Cloud (optional)
 dagger logout			Logout from Dagger Cloud (optional)
+```
