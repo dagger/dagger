@@ -109,18 +109,6 @@ output: {
 	...
 }
 
-#DockerBuild: {
-	// do: "docker-build"
-	// We accept either a context, a Dockerfile or both together
-	context?:        _
-	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
-	dockerfile?:     string
-
-	platforms?: [...string]
-	buildArg?: [string]: string
-	label?: [string]:    string
-}
-
 #Go: {
 	// Go version to use
 	version: *"1.16" | string
