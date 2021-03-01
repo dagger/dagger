@@ -20,6 +20,7 @@ base: {
 input: {
 	repository: {
 		steps: [{
+			// do:  "local"
 			dir: "."
 			include: []
 		}]
@@ -39,6 +40,7 @@ output: {
 	  version: *"1.16" | string
 		source: {
 			steps: [{
+				// do:  "local"
 				dir: "."
 				include: []
 			}]
@@ -62,6 +64,7 @@ output: {
 	}
 	repository: {
 		steps: [{
+			// do:  "local"
 			dir: "."
 			include: []
 		}]
@@ -74,15 +77,18 @@ output: {
 #Op: #Fetch | #Exec | #Local | #Copy | #Load
 
 #Local: {
+	// do:      "local"
 	dir:     string
 	include: [...string] | *[]
 }
 
 #Load: {
+	// do:   "load"
 	from: _
 }
 
 #Exec: {
+	// do: "exec"
 	args: [...string]
 	env?: [string]: string
 	always?: true | *false
@@ -91,10 +97,12 @@ output: {
 }
 
 #Fetch: {
+	// do:  "fetch-container"
 	ref: string
 }
 
 #Copy: {
+	// do:   "copy"
 	from: _
 	src:  string | *"/"
 	dest: string | *"/"
@@ -102,6 +110,7 @@ output: {
 }
 
 #DockerBuild: {
+	// do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
 	context?:        _
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
