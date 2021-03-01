@@ -28,8 +28,6 @@ func init() {
 		//		unsetCmd,
 		//		computeCmd,
 		//		listCmd,
-
-		hackCmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
