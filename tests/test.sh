@@ -197,16 +197,16 @@ test::local(){
 
 test::mount(){
   disable test::one "Mount: tmpfs (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mount/valid/tmpfs
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/tmpfs
 
-  disable test::one "Mount: cache (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mount/valid/cache
+  test::one "Mount: cache (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/cache
 
-  disable test::one "Mount: component (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mount/valid/component
+  test::one "Mount: component (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0  --stdout='{"test":"hello world"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/component
 
   disable test::one "Mount: script (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mount/valid/script
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/script
 }
 
 test::input() {
