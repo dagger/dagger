@@ -3,100 +3,213 @@
 
 
 ```
-Global flags
+$ dagger help
 
-  -w, --workspace     Select a workspace (default: $HOME/.dagger)
-  -e, --env           Select an environment (default: computed from current directory. See ENVIRONMENT SELECTION)
-  
+A reactive automation platform
 
-dagger info			Show contextual information
+Usage:
+  dagger [command]
 
-    -q EXPR       Filter output with a cue expression
+Available Commands:
+  help        Help about any command
+  info        Show contextual information
 
+  init        Initialize an environment
+  destroy     Destroy an environment
+  change      Make a change to an environment
 
-dagger catalog               Manage the dagger package catalog
+  query       Query the state of an environment
+  history     List past changes to an environment
+  download    Download data from an environment
 
-    --select-stdlib VERSION   Select a version of the standard library (default: stable)
-    --add-dir PATH            Add a local directory to the package catalog
-    --rm-dir PATH             Remove a local directory from the package catalog
-    --add-git REMOTE#REF      Add a git repository to the package catalog
-    --rm-git REMOTE#REF       Remove a git repository from the package catalog
-    --rm-all                  Remove all local directories and git repositories from the package catalog
+  sync        Synchronize local state with Dagger Cloud
+  login       Login to Dagger Cloud
+  logout      Logout from Dagger Cloud
 
+Flags:
+  -h, --help                help for dagger
 
-dagger init      Initialize an environment
+  -w, --workspace           Select a workspace (default "$HOME/.dagger")
+  -e, --env                 Select an environment (default: see ENVIRONMENT SELECTION)
 
-    --interactive no|yes|auto         Specify whether to present user with interactive setup  
-    -n, --name NAME                   Specify the environment's name. (default: the name of the current directory)
-    
-    -b, --base ENV_ID | ENV_NAME | PACKAGE       Load base configuration from the given cue package or environment
-                                      Examples:
-                                         cue package: `dagger new --base dagger.io/templates/jamstack`
-                                         env name: `dagger new --base acme-prod`
-                                         env ID: `dagger new --base acme-prod-happy-panda-8411`
+Use "dagger [command] --help" for more information about a command.
+```
 
-    --input-string KEY=STRING
-    --input-dir KEY=PATH
-    --input-secret KEY[=PATH]
-    --input-json KEY=JSON
-    --input-git KEY=REMOTE#REF
-    --input-container KEY=REF
+## Info
 
 
-dagger destroy                  Destroy an environment
-    
-    -f, --force               Destroy environment state even if cleanup pipelines fail to complete (EXPERTS ONLY)
+```
+$ dagger help info
+Show contextual information
+
+Usage:
+  dagger info
+```
+
+### Init
+
+```
+$ dagger help init
+Initialize an environment
+
+Usage:
+  dagger init [flags]
+
+Flags:
+  -n, --name                Specify the new environment's name. (default: name of current directory)
+  --setup no|yes|auto       Specify whether to prompt user for initial setup
+```
+
+### Destroy
+
+```
+$ dagger help destroy
+Destroy an environment
+
+Usage:
+  dagger destroy [flags]
+
+Flags:
+  -f, --force                Destroy environment state even if cleanup pipelines fail to complete (EXPERTS ONLY)
+```
 
 
-dagger change                    Make a change to the current environment
+### Change
 
-    --interactive no|yes|auto         Specify whether to present user with interactive setup  
-    -n, --name NAME                   Specify the environment's name. (default: name of current directory)
-    
-    -b, --base ENV_ID | ENV_NAME | PACKAGE       Load base configuration from the given cue package or environment
-                                      Examples:
-                                         cue package: `dagger new --base dagger.io/templates/jamstack`
-                                         env name: `dagger new --base acme-prod`
-                                         env ID: `dagger new --base acme-prod-happy-panda-8411`
+```
+$ dagger help change
+Make a change to an environment
 
-    --input-string KEY=STRING
-    --input-dir KEY=PATH
-    --input-secret KEY[=PATH]
-    --input-json KEY=JSON
-    --input-git KEY=REMOTE#REF
-    --rollback VERSION              Roll back environment state to the specified version.
-                                      Changes are re-computed and dagger cannot guarantee that all external state will be perfectly reverted.
-                                      (aka "roll forward").
+Usage:
+  dagger change [flags]
+
+Examples:
+
+  $ dagger change -i
+  [...] rough approximation of an interactive terminal wizard below
+  [www.domain] Netlify domain: acme.infralabs.io
+  [www.token] Netlify API token: ************
+  [api.auth.accessKey] AWS Access Key: ***********
+  [api.auth.secretKey] AWS Secret Key: ***********
+  [api.source] Source code: [directory...]
+
+  # Migrate website to a new domain
+  $ dagger change --input-string www.domain=acme.infralabs.io
+
+  # Migrate to a new infrastructure stack
+  $ dagger change --base infrav2
+
+  # Deploy a new app version
+  $ dagger change --input-dir www.source=./frontend --input-git api.source=https://github.com/foo/bar#main
+
+  # Rollback to 2 versions ago
+  $ dagger change --rollback -- -2
+
+Flags:
+  -i, --interactive            Interactively prompt for change information 
+  -n, --name NAME              Change the environment name
+  -b, --base ENV | PKG         Change the environment base configuration. May be another environment or a cue package.
+
+  --stdlib VERSION             Select stdlib version (default "latest")
+
+  --input-string KEY=VALUE     Add a string value to the environment input
+  --input-dir KEY=PATH         Add a directory to the environment input
+  --input-secret KEY[=PATH]    Add an encrypted secret to the environment input
+  --input-json KEY=JSON        Add a json value to the environment input
+  --input-git KEY=REMOTE#REF   Add a git repository to the environment input
+
+  --rollback [VERSION]         Roll back the environment state to a previous version.
+
+  --log-format string          Log format (json, pretty). Defaults to json if the terminal is not a tty
+  -l, --log-level string       Log level (default "debug")
+```
+
+### Query
+
+```
+$ dagger help query
+Query the state of an environment
+
+Usage:
+  dagger query [EXPR] [flags]
+
+  EXPR may be any valid CUE expression. The expression is evaluated against the environment state. The environment state is not changed.
+
+Examples:
+
+  # Print all input values
+  $ dagger query --input
+
+  # Print complete state for a particular component
+  $ dagger query www.build
+
+  # Export environment variables from a deployment
+  $ dagger query -o json api.environment
 
 
-dagger query [EXPR...]         Query an environment's state
-
-    EXPR may be any valid CUE expression. The expression is evaluated against the environment state,
-    and written to standard output.
-
-    -v,--version                      Query a specific version of the environment (default: last known version)
-    -f,--format cue|json|yaml|text    Specify output format (default: cue)
-    -i,--import PACKAGE               Specify cue packages to import when evaluating the query
+Flags:
+  -h, --help           help for query
+  -v,--version         Environment version to query (default "latest")
+  -o, --out string      Output format ("json", "yaml", "cue", "text", "envfile"). Default "cue".
+```
 
 
-dagger history  Show an environment's history of changes
+### History
 
-    -q EXPR          Filter output with a cue expression
+```
+$ dagger help history
+List past changes to an environment
+
+Usage:
+  dagger history
+```
 
 
-dagger download [KEY...]               Download data from an environment
+### Download
 
-    -o PATH         Select a destination directory (default: .)
+```
+$ dagger help download
+Download data from an environment
 
+Usage:
+  dagger download [KEY...] [flags]
 
-dagger sync       Synchronize local state to Dagger Cloud (optional)
-dagger login			Login to Dagger Cloud (optional)
-dagger logout			Logout from Dagger Cloud (optional)
+Flags:
+  -a,--all            Download all available data in the environment
+  -d DIR              Target directory (default "dagger-download")
+```
+
+### Cloud commands
+
+```
+$ dagger help sync
+Synchronize local state with Dagger Cloud
+
+Usage:
+  dagger sync [flags]
+```
+
+```
+$ dagger help login
+Login to Dagger Cloud
+
+Usage:
+  dagger login
+```
+
+```
+$ dagger help logout
+Logout from Dagger Cloud
+
+Usage:
+  dagger logout
 ```
 
 # Environment selection
 
 Almost all dagger commands take place within an environment.
+
+Each environment has a globally unique ID
 
 Before executing each command, `dagger` selects which environment to execute the command in. The selection process is the following:
 
