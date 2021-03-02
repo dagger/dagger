@@ -11,15 +11,21 @@ test: {
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-					ls -lA /lol > /out
+					cat /mnt/test/lol > /out
 				"""]
-			dir: "/"
-			mount: something: {
-				input: dagger: #compute: [{
-					do:  "fetch-container"
-					ref: "alpine"
-				}]
-				path: "/lol"
+			mount: "/mnt/test": {
+				from: #dagger: compute: [
+					{
+						do:  "fetch-container"
+						ref: "alpine"
+					},
+					{
+						do: "exec"
+						args: ["sh", "-c", """
+							echo -n "hello world" > /lol
+							"""]
+					}
+				]
 			}
 		},
 		{
