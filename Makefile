@@ -19,7 +19,7 @@ cuefmt:
 	@(cue fmt -s ./examples/*)
 
 .PHONY: lint
-lint: cuefmt check-buildkit-version
+lint: cuefmt check-buildkit-version check-cue-version
 	golangci-lint run
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
 
@@ -30,9 +30,16 @@ check-buildkit-version:
 		"$(shell grep ' = "v' ./pkg/buildkitd/buildkitd.go | sed -E 's/^.*version.*=.*\"(v.*)\"/\1/' )" \
 		|| { echo buildkit version mismatch go.mod != pkg/buildkitd/buildkitd.go ; exit 1; }
 
+.PHONY: check-cue-version
+check-cue-version:
+	@grep -q "$(shell grep cue ./go.mod | cut -d' ' -f2)" .github/workflows/ci.yml \
+		|| { echo cue version mismatch go.mod != .github/workflows/ci.yml ; exit 1; }
+
+
 .PHONY: integration
 integration: dagger-debug
 	# Self-diagnostics
 	./tests/test-test.sh 2>/dev/null
 	# Actual integration tests
 	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./tests/test.sh all
+
