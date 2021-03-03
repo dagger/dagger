@@ -27,7 +27,7 @@ import (
 	name: string
 
 	// Host the site at this address
-	customDomain: string
+	customDomain?: string
 
 	// Create the Netlify site if it doesn't exist?
 	create: bool | *true
@@ -39,10 +39,10 @@ import (
 		#dagger: compute: [
 			dagger.#Load & {
 				from: alpine.#Image & {
-					package: bash: "=5.1.0-r0"
-					package: jq:   "=1.6-r1"
-					package: curl: "=7.74.0-r0"
-					package: yarn: "=1.22.10-r0"
+					package: bash: "=~5.1"
+					package: jq:   "=~1.6"
+					package: curl: "=~7.74"
+					package: yarn: "=~1.22"
 				}
 			},
 			dagger.#Exec & {

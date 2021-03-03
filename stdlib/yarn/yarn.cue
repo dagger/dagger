@@ -23,8 +23,8 @@ import (
 	#dagger: compute: [
 		dagger.#Load & {
 			from: alpine.#Image & {
-				package: bash: "=5.1.0-r0"
-				package: yarn: "=1.22.10-r0"
+				package: bash: "=~5.1"
+				package: yarn: "=~1.22"
 			}
 		},
 		dagger.#Exec & {
