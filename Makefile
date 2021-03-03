@@ -19,9 +19,16 @@ cuefmt:
 	@(cue fmt -s ./examples/*)
 
 .PHONY: lint
-lint: cuefmt
+lint: cuefmt check-buildkit-version
 	golangci-lint run
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
+
+.PHONY: check-buildkit-version
+check-buildkit-version:
+	@test \
+		"$(shell grep buildkit ./go.mod | cut -d' ' -f2)" = \
+		"$(shell grep ' = "v' ./pkg/buildkitd/buildkitd.go | sed -E 's/^.*version.*=.*\"(v.*)\"/\1/' )" \
+		|| { echo buildkit version mismatch go.mod != pkg/buildkitd/buildkitd.go ; exit 1; }
 
 .PHONY: integration
 integration: dagger-debug

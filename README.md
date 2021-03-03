@@ -74,15 +74,7 @@ $ make
 $ cp ./cmd/dagger/dagger /usr/local/bin
 ```
 
-3. Run [buildkitd](https://github.com/moby/buildkit) on your local machine. The simplest way to do this is using [Docker](https://docker.com): `docker run -d --name buildkitd --privileged moby/buildkit:latest`
-
-On a machine with Docker installed, run:
-
-```
-$ docker run -d --name buildkitd --privileged moby/buildkit:latest
-```
-
-4. Compute a test configuration
+3. Compute a test configuration
 
 Currently `dagger` can only do one thing: compute a configuration with optional inputs, and print the result.
 

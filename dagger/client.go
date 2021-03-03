@@ -22,13 +22,10 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 
 	// docker output
+	"dagger.io/go/pkg/buildkitd"
 	"dagger.io/go/pkg/progressui"
 
 	"dagger.io/go/dagger/compiler"
-)
-
-const (
-	defaultBuildkitHost = "docker-container://buildkitd"
 )
 
 // A dagger client
@@ -41,7 +38,12 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
 	if host == "" {
-		host = defaultBuildkitHost
+		h, err := buildkitd.Start(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		host = h
 	}
 	c, err := bk.New(ctx, host)
 	if err != nil {
