@@ -15,6 +15,7 @@ const (
 	version       = "v0.8.2"
 	imageVersion  = image + ":" + version
 	containerName = "dagger-buildkitd"
+	volumeName    = "dagger-buildkitd"
 )
 
 func Start(ctx context.Context) (string, error) {
@@ -104,6 +105,7 @@ func startBuildkit(ctx context.Context) error {
 		"run",
 		"-d",
 		"--restart", "always",
+		"-v", volumeName+":/var/lib/buildkit",
 		"--name", containerName,
 		"--privileged",
 		imageVersion,
