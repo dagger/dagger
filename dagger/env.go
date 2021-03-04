@@ -246,9 +246,15 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 			if t.State() != cueflow.Terminated {
 				return nil
 			}
+
+			span, _ := opentracing.StartSpanFromContext(t.Context(),
+				fmt.Sprintf("update: %s", t.Path().String()),
+			)
+			defer span.Finish()
+
 			// Merge task value into output
 			var err error
-			env.output, err = env.output.MergePath(t.Value(), t.Path())
+			env.state, err = env.state.MergePath(t.Value(), t.Path())
 			if err != nil {
 				lg.
 					Error().
@@ -265,12 +271,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 		return err
 	}
 
-	{
-		span, _ := opentracing.StartSpanFromContext(ctx, "Env.Compute: merge state")
-		defer span.Finish()
-
-		return env.mergeState()
-	}
+	return nil
 }
 
 func newDummyTaskFunc(inst *cue.Instance) cueflow.TaskFunc {
