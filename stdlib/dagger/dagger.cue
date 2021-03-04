@@ -80,8 +80,8 @@ package dagger
 }
 
 #Mkdir: {
-	do:      "mkdir"
-	dir:     *"/" | string
-	path:    string
-	mode:    int | *0o755
+	do:   "mkdir"
+	dir:  *"/" | string
+	path: string
+	mode: int | *0o755
 }

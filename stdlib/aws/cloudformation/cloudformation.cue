@@ -49,53 +49,53 @@ import (
 		[string]: string
 
 		#dagger: compute: [
-		dagger.#Load & {
-			from: alpine.#Image & {
-				package: bash:      "=5.1.0-r0"
-				package: jq:        "=1.6-r1"
-				package: "aws-cli": "=1.18.177-r0"
-			}
-		},
-		dagger.#Mkdir & {
-			path: "/src"
-		},
-		for dest, content in #files {
-			dagger.#WriteFile & {
-				"dest":    dest
-				"content": content
-			}
-		},
-		dagger.#Exec & {
-			args: [
-				"/bin/bash",
-				"--noprofile",
-				"--norc",
-				"-eo",
-				"pipefail",
-				"/entrypoint.sh",
-			]
-			env: {
-				AWS_CONFIG_FILE:       "/cache/aws/config"
-				AWS_ACCESS_KEY_ID:     config.accessKey
-				AWS_SECRET_ACCESS_KEY: config.secretKey
-				AWS_DEFAULT_REGION:    config.region
-				AWS_REGION:            config.region
-				AWS_DEFAULT_OUTPUT:    "json"
-				AWS_PAGER:             ""
-				if neverUpdate {
-					NEVER_UPDATE: "true"
+			dagger.#Load & {
+				from: alpine.#Image & {
+					package: bash:      "=5.1.0-r0"
+					package: jq:        "=1.6-r1"
+					package: "aws-cli": "=1.18.177-r0"
 				}
-				STACK_NAME: stackName
-				TIMEOUT:    "\(timeout)"
-				ON_FAILURE: onFailure
-			}
-			dir: "/src"
-			mount: "/cache/aws": "cache"
-		},
-		dagger.#Export & {
-			source: "/outputs.json"
-			format: "json"
-		},
-	]
+			},
+			dagger.#Mkdir & {
+				path: "/src"
+			},
+			for dest, content in #files {
+				dagger.#WriteFile & {
+					"dest":    dest
+					"content": content
+				}
+			},
+			dagger.#Exec & {
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					"/entrypoint.sh",
+				]
+				env: {
+					AWS_CONFIG_FILE:       "/cache/aws/config"
+					AWS_ACCESS_KEY_ID:     config.accessKey
+					AWS_SECRET_ACCESS_KEY: config.secretKey
+					AWS_DEFAULT_REGION:    config.region
+					AWS_REGION:            config.region
+					AWS_DEFAULT_OUTPUT:    "json"
+					AWS_PAGER:             ""
+					if neverUpdate {
+						NEVER_UPDATE: "true"
+					}
+					STACK_NAME: stackName
+					TIMEOUT:    "\(timeout)"
+					ON_FAILURE: onFailure
+				}
+				dir: "/src"
+				mount: "/cache/aws": "cache"
+			},
+			dagger.#Export & {
+				source: "/outputs.json"
+				format: "json"
+			},
+		]
 	}
 }
