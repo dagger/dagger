@@ -20,6 +20,17 @@ test::examples() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir www.source="$d"/../examples/simple "$d"/../examples/simple
 }
 
+test::stdlib() {
+  local dagger="$1"
+
+  test::one "stdlib: alpine" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/alpine
+  disable test::one "stdlib: yarn (FIXME: performance)" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/yarn --input-dir TestData="$d"/stdlib/yarn/testdata
+  disable test::one "stdlib: go (FIXME: performance)" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
+}
+
 test::compute(){
   local dagger="$1"
 
@@ -32,7 +43,7 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/int
   test::one "Compute: invalid struct should fail" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/struct
-	disable test::one "Compute: overloading #ComponentScript with new prop should fail (FIXME: unauthorized fields are not checked)" --exit=1  \
+  disable test::one "Compute: overloading #ComponentScript with new prop should fail (FIXME: unauthorized fields are not checked)" --exit=1  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/overload/new_prop
   test::one "Compute: overloading #ComponentScript with new def should succeed" --exit=0  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/invalid/overload/new_def
@@ -251,6 +262,7 @@ test::all(){
   test::subdir "$dagger"
   test::dockerbuild "$dagger"
 
+  test::stdlib "$dagger"
   test::examples "$dagger"
 }
 
