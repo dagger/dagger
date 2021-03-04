@@ -71,3 +71,17 @@ package dagger
 	buildArg?: [string]: string
 	label?: [string]:    string
 }
+
+#WriteFile: {
+	do:      "write-file"
+	content: string
+	dest:    string
+	mode:    int | *0o644
+}
+
+#Mkdir: {
+	do:   "mkdir"
+	dir:  *"/" | string
+	path: string
+	mode: int | *0o755
+}

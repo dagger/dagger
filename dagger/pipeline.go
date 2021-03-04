@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/docker/distribution/reference"
@@ -167,6 +168,10 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
 		return p.Subdir(ctx, op)
 	case "docker-build":
 		return p.DockerBuild(ctx, op)
+	case "write-file":
+		return p.WriteFile(ctx, op)
+	case "mkdir":
+		return p.Mkdir(ctx, op)
 	default:
 		return fmt.Errorf("invalid operation: %s", op.JSON())
 	}
@@ -676,6 +681,58 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 		return err
 	}
 	p.fs = p.fs.Set(st)
+
+	return nil
+}
+
+func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value) error {
+	content, err := op.Get("content").String()
+	if err != nil {
+		return err
+	}
+
+	dest, err := op.Get("dest").String()
+	if err != nil {
+		return err
+	}
+
+	mode, err := op.Get("mode").Int64()
+	if err != nil {
+		return err
+	}
+
+	p.fs = p.fs.Change(func(st llb.State) llb.State {
+		return st.File(
+			llb.Mkfile(dest, fs.FileMode(mode), []byte(content)),
+			llb.WithCustomName(p.vertexNamef("WriteFile %s", dest)),
+		)
+	})
+
+	return nil
+}
+
+func (p *Pipeline) Mkdir(ctx context.Context, op *compiler.Value) error {
+	path, err := op.Get("path").String()
+	if err != nil {
+		return err
+	}
+
+	dir, err := op.Get("dir").String()
+	if err != nil {
+		return err
+	}
+
+	mode, err := op.Get("mode").Int64()
+	if err != nil {
+		return err
+	}
+
+	p.fs = p.fs.Change(func(st llb.State) llb.State {
+		return st.Dir(dir).File(
+			llb.Mkdir(path, fs.FileMode(mode)),
+			llb.WithCustomName(p.vertexNamef("Mkdir %s", path)),
+		)
+	})
 
 	return nil
 }

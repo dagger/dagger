@@ -11,7 +11,7 @@ import (
 )
 
 // FS contains the filesystem of the stdlib.
-//go:embed **/*.cue
+//go:embed **/*.cue **/*/*.cue
 var FS embed.FS
 
 const (
