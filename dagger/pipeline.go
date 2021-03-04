@@ -418,7 +418,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 			Bytes("contents", contents).
 			Msg("exporting string")
 
-		if err := p.out.Fill(string(contents)); err != nil {
+		if err := p.out.Fill(ctx, string(contents)); err != nil {
 			return err
 		}
 	case "json":
@@ -434,7 +434,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 			Interface("contents", o).
 			Msg("exporting json")
 
-		if err := p.out.Fill(o); err != nil {
+		if err := p.out.Fill(ctx, o); err != nil {
 			return err
 		}
 	case "yaml":
@@ -450,7 +450,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 			Interface("contents", o).
 			Msg("exporting yaml")
 
-		if err := p.out.Fill(o); err != nil {
+		if err := p.out.Fill(ctx, o); err != nil {
 			return err
 		}
 	default:

@@ -25,9 +25,9 @@ test::stdlib() {
 
   test::one "stdlib: alpine" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/alpine
-  disable test::one "stdlib: yarn (FIXME: performance)" \
+  test::one "stdlib: yarn" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/yarn --input-dir TestData="$d"/stdlib/yarn/testdata
-  disable test::one "stdlib: go (FIXME: performance)" \
+  test::one "stdlib: go" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
 }
 

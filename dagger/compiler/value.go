@@ -30,18 +30,23 @@ func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
 }
 
 // Fill the value in-place, unlike Merge which returns a copy.
-func (v *Value) Fill(x interface{}) error {
+func (v *Value) Fill(x interface{}, path ...string) error {
 	v.cc.lock()
 	defer v.cc.unlock()
 
 	// If calling Fill() with a Value, we want to use the underlying
 	// cue.Value to fill.
 	if val, ok := x.(*Value); ok {
-		v.val = v.val.Fill(val.val)
+		v.val = v.val.Fill(val.val, path...)
 	} else {
-		v.val = v.val.Fill(x)
+		v.val = v.val.Fill(x, path...)
 	}
 	return v.Validate()
+}
+
+// FillPath fills the value in-place, unlike MergePath which returns a copy.
+func (v *Value) FillPath(x interface{}, p cue.Path) error {
+	return v.Fill(x, cuePathToStrings(p)...)
 }
 
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
