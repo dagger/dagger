@@ -92,6 +92,11 @@ func (v *Value) String() (string, error) {
 	return v.val.String()
 }
 
+// Proxy function to the underlying cue.Value
+func (v *Value) Int64() (int64, error) {
+	return v.val.Int64()
+}
+
 func (v *Value) SourceUnsafe() string {
 	s, _ := v.SourceString()
 	return s
