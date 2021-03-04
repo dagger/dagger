@@ -11,10 +11,19 @@ test: {
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-					echo "NOT SURE WHAT TO TEST YET" > /out
+				echo ok > /out
+				echo ok > /tmpdir/out
 				"""]
 			dir: "/"
-			mount: something: "tmpfs"
+			mount: "/tmpdir": "tmpfs"
+		},
+		{
+			do: "exec"
+			args: ["sh", "-c", """
+			[ -f /out ] || exit 1
+			# content of /cache/tmp must not exist in this layer
+			[ ! -f /tmpdir/out ] || exit 1
+			"""]
 		},
 		{
 			do:     "export"
