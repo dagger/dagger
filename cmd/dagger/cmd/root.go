@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"os"
 	"strings"
 
 	"dagger.io/go/cmd/dagger/logger"
+	"github.com/moby/buildkit/util/appcontext"
+	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -39,9 +43,27 @@ func init() {
 }
 
 func Execute() {
-	lg := logger.New()
+	var (
+		lg  = logger.New()
+		ctx = lg.WithContext(appcontext.Context())
 
-	if err := rootCmd.Execute(); err != nil {
+		closer = logger.InitTracing()
+		span   opentracing.Span
+	)
+
+	if len(os.Args) > 1 {
+		span, ctx = opentracing.StartSpanFromContext(ctx, os.Args[1])
+		span.LogFields(otlog.String("command", strings.Join(os.Args, " ")))
+	}
+
+	defer func() {
+		if span != nil {
+			span.Finish()
+		}
+		closer.Close()
+	}()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		lg.Fatal().Err(err).Msg("failed to execute command")
 	}
 }

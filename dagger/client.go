@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/rs/zerolog/log"
 
 	// Cue
@@ -45,7 +46,11 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 
 		host = h
 	}
-	c, err := bk.New(ctx, host)
+	opts := []bk.ClientOpt{}
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		opts = append(opts, bk.WithTracer(span.Tracer()))
+	}
+	c, err := bk.New(ctx, host, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
@@ -138,7 +143,7 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 
 		// Export env to a cue directory
 		lg.Debug().Msg("exporting env")
-		outdir, err := env.Export(s.Scratch())
+		outdir, err := env.Export(ctx, s.Scratch())
 		if err != nil {
 			return nil, err
 		}

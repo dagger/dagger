@@ -1,0 +1,16 @@
+version: "3.7"
+
+services:
+  buildkitd:
+    container_name: dagger-buildkitd-jaeger
+    image: moby/buildkit:v0.8.2
+    privileged: true
+    environment:
+      - JAEGER_TRACE=jaeger:6831
+
+  jaeger:
+    container_name: jaeger
+    image: jaegertracing/all-in-one:1.22.0
+    ports:
+      - "6831:6831/udp"
+      - "16686:16686"
