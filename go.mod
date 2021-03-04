@@ -13,12 +13,14 @@ require (
 	github.com/moby/buildkit v0.8.2
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/opentracing/opentracing-go v1.2.0
 	github.com/rs/zerolog v1.20.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.1
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
+	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c // indirect
 	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221
