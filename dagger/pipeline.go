@@ -369,7 +369,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 					llb.CacheMountShared,
 				),
 			), nil
-		case "tmp":
+		case "tmpfs":
 			return llb.AddMount(
 				dest,
 				llb.Scratch(),

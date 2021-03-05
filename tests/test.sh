@@ -207,13 +207,13 @@ test::local(){
 
 
 test::mount(){
-  disable test::one "Mount: tmpfs (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+  test::one "Mount: tmpfs" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/tmpfs
 
-  test::one "Mount: cache (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \
+  test::one "Mount: cache" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/cache
 
-  test::one "Mount: component (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0  --stdout='{"test":"hello world"}' \
+  test::one "Mount: component" --exit=0  --stdout='{"test":"hello world"}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/component
 
   disable test::one "Mount: script (FIXME https://github.com/blocklayerhq/dagger/issues/46)" --exit=0 \

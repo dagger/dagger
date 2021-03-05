@@ -39,7 +39,7 @@ package dagger
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmp" | "cache" | {from: _, path: string | *"/"}
+	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
 }
 
 #FetchContainer: {
