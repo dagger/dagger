@@ -16,8 +16,8 @@ package dagger
 }
 
 #Local: {
-	do:      "local"
-	dir:     string
+	do:  "local"
+	dir: string
 	include: [...string]
 }
 
