@@ -18,7 +18,7 @@ package dagger
 #Local: {
 	do:      "local"
 	dir:     string
-	include: [...string] | *[]
+	include: [...string]
 }
 
 // FIXME: bring back load (more efficient than copy)
