@@ -7,7 +7,7 @@ readonly d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 . "$d/test-lib.sh"
 
 # Point this to your dagger binary
-readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../../cmd/dagger/dagger}"
+readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../cmd/dagger/dagger}"
 # The default arguments are a no-op, but having "anything" is a little cheat necessary for "${DAGGER_BINARY_ARGS[@]}" to not be empty down there
 DAGGER_BINARY_ARGS="${DAGGER_BINARY_ARGS:---log-format json}"
 read -ra DAGGER_BINARY_ARGS <<< "${DAGGER_BINARY_ARGS:-}"
@@ -25,9 +25,9 @@ test::stdlib() {
 
   test::one "stdlib: alpine" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/alpine
-  disable test::one "stdlib: yarn (FIXME: performance)" \
+  test::one "stdlib: yarn" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/yarn --input-dir TestData="$d"/stdlib/yarn/testdata
-  disable test::one "stdlib: go (FIXME: performance)" \
+  test::one "stdlib: go" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
 }
 
