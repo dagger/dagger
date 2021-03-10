@@ -13,7 +13,7 @@ TestYarn: {
 		source: TestData
 	}
 
-	test: #dagger: compute: [
+	test: #compute: [
 		dagger.#Load & {from: alpine.#Image & {
 			package: bash: "=5.1.0-r0"
 		}},

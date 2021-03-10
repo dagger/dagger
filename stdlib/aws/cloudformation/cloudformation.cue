@@ -48,7 +48,7 @@ import (
 	outputs: {
 		[string]: string
 
-		#dagger: compute: [
+		#compute: [
 			dagger.#Load & {
 				from: alpine.#Image & {
 					package: bash:      "=5.1.0-r0"

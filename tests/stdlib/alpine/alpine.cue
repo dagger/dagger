@@ -11,7 +11,7 @@ TestImageVersion: {
 		version: "3.10.6"
 	}
 
-	test: #dagger: compute: [
+	test: #compute: [
 		dagger.#Load & {from: image},
 		dagger.#Exec & {
 			args: [
@@ -31,7 +31,7 @@ TestPackageInstall: {
 		package: curl: "=~7.74.0"
 	}
 
-	test: #dagger: compute: [
+	test: #compute: [
 		dagger.#Load & {from: image},
 		dagger.#Exec & {
 			args: ["jq", "--version"]
