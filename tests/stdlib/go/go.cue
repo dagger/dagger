@@ -14,7 +14,7 @@ TestGoBuild: {
 		output: "/bin/testbin"
 	}
 
-	test: #dagger: compute: [
+	test: #compute: [
 		dagger.#Load & {from: alpine.#Image},
 		dagger.#Exec & {
 			args: [
