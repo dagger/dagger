@@ -12,7 +12,7 @@ import (
 	name: string | *""
 
 	// Netlify authentication token
-	token: string
+	token: dagger.#Secret
 }
 
 // A Netlify site

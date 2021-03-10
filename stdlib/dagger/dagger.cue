@@ -4,6 +4,11 @@ package dagger
 // every dagger script outputs a filesystem state (aka a directory)
 #Dir: #compute: [...#Op]
 
+// Secret value
+// FIXME: currently aliased as a string to mark secrets
+// this requires proper support.
+#Secret: string
+
 // One operation in a script
 #Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
 

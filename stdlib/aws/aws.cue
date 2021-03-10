@@ -1,10 +1,12 @@
 package aws
 
+import "dagger.io/dagger"
+
 #Config: {
 	// AWS region
 	region: string
 	// AWS access key
-	accessKey: string // FIXME: should be a secret
+	accessKey: dagger.#Secret
 	// AWS secret key
-	secretKey: string // FIXME: should be a secret
+	secretKey: dagger.#Secret
 }
