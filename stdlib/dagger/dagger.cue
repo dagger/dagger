@@ -1,8 +1,17 @@
 package dagger
 
+// A dagger component is a configuration value augmented
+// by scripts defining how to compute it, present it to a user,
+// encrypt it, etc.
+#Component: {
+	#compute: [...#Op]
+	_
+	...
+}
+
 // Any component can be referenced as a directory, since
 // every dagger script outputs a filesystem state (aka a directory)
-#Dir: #compute: [...#Op]
+#Dir: #Component
 
 // Secret value
 // FIXME: currently aliased as a string to mark secrets
@@ -30,7 +39,7 @@ package dagger
 
 #Load: {
 	do:   "load"
-	from: _
+	from: #Component
 }
 
 #Subdir: {
@@ -44,7 +53,7 @@ package dagger
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
+	mount: [string]: "tmpfs" | "cache" | {from: #Component, path: string | *"/"}
 }
 
 #FetchContainer: {
@@ -60,7 +69,7 @@ package dagger
 
 #Copy: {
 	do:   "copy"
-	from: _
+	from: #Component
 	src:  string | *"/"
 	dest: string | *"/"
 }
@@ -68,7 +77,7 @@ package dagger
 #DockerBuild: {
 	do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
-	context?:        _
+	context?:        #Component
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
 	dockerfile?:     string
 
