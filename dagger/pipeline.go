@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/docker/distribution/reference"
+	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -158,6 +159,8 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
 		return p.Export(ctx, op)
 	case "fetch-container":
 		return p.FetchContainer(ctx, op)
+	case "push-container":
+		return p.PushContainer(ctx, op)
 	case "fetch-git":
 		return p.FetchGit(ctx, op)
 	case "local":
@@ -539,6 +542,29 @@ func parseKeyValue(env string) (string, string) {
 	}
 
 	return parts[0], v
+}
+
+func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value) error {
+	rawRef, err := op.Get("ref").String()
+	if err != nil {
+		return err
+	}
+
+	ref, err := reference.ParseNormalizedNamed(rawRef)
+	if err != nil {
+		return fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
+	}
+	// Add the default tag "latest" to a reference if it only has a repo name.
+	ref = reference.TagNameOnly(ref)
+
+	_, err = p.fs.Export(ctx, bk.ExportEntry{
+		Type: bk.ExporterImage,
+		Attrs: map[string]string{
+			"name": ref.String(),
+			"push": "true",
+		},
+	})
+	return err
 }
 
 func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value) error {

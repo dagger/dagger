@@ -127,8 +127,8 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 		Interface("attrs", opts.FrontendAttrs).
 		Msg("spawning buildkit job")
 
-	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
-		s := NewSolver(c)
+	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		s := NewSolver(c.c, gw, ch)
 
 		lg.Debug().Msg("loading configuration")
 		if err := env.Update(ctx, s); err != nil {

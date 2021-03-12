@@ -52,6 +52,11 @@ package dagger
 	ref: string
 }
 
+#PushContainer: {
+	do:  "push-container"
+	ref: string
+}
+
 #FetchGit: {
 	do:     "fetch-git"
 	remote: string

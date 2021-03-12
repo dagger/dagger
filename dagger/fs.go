@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
@@ -188,6 +189,25 @@ func (fs FS) Result(ctx context.Context) (*bkgw.Result, error) {
 	}
 	res.SetRef(ref)
 	return res, nil
+}
+
+func (fs FS) Export(ctx context.Context, output bk.ExportEntry) (*bk.SolveResponse, error) {
+	// Lazy solve
+	if err := (&fs).solve(ctx); err != nil {
+		return nil, err
+	}
+	// NOTE: llb.Scratch is represented by a `nil` reference. If solve result is
+	// Scratch, then `fs.output` is `nil`.
+	if fs.output == nil {
+		return nil, os.ErrNotExist
+	}
+
+	st, err := fs.output.ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	return fs.s.Export(ctx, st, output)
 }
 
 // A helper to remove noise from buildkit error messages.
