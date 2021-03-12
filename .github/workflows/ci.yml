@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends shellcheck
 
           export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2)"
-          export CUE_TARBALL="cue_$(echo "$CUE_VERSION" | sed 's/^v//')_Linux_x86_64.tar.gz"
+          export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
 
           echo "Installing cue version $CUE_VERSION"
           curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
