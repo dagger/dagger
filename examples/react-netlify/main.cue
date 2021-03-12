@@ -1,17 +1,15 @@
 package main
 
 import (
-	"dagger.io/dagger"
 	"dagger.io/netlify"
 	"dagger.io/yarn"
+	"dagger.io/git"
 )
 
-repository: #compute: [
-	dagger.#FetchGit & {
-		remote: "https://github.com/kabirbaidhya/react-todo-app.git"
-		ref:    "624041b17bd62292143f99bce474a0e3c2d2dd61"
-	},
-]
+repository: git.#Repository & {
+	remote: "https://github.com/kabirbaidhya/react-todo-app.git"
+	ref:    "624041b17bd62292143f99bce474a0e3c2d2dd61"
+}
 
 todoApp: netlify.#Site & {
 	account: {

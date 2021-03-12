@@ -13,13 +13,6 @@ DAGGER_BINARY_ARGS="${DAGGER_BINARY_ARGS:---log-format json}"
 read -ra DAGGER_BINARY_ARGS <<< "${DAGGER_BINARY_ARGS:-}"
 readonly DAGGER_BINARY_ARGS
 
-test::examples() {
-  local dagger="$1"
-
-  test::one "Examples: simple" --stdout='{"www":{"listing":"simple.cue\n","source":{}}}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir www.source="$d"/../examples/simple "$d"/../examples/simple
-}
-
 test::stdlib() {
   local dagger="$1"
 
@@ -259,7 +252,6 @@ test::all(){
   test::dockerbuild "$dagger"
 
   test::stdlib "$dagger"
-  test::examples "$dagger"
 }
 
 case "${1:-all}" in
