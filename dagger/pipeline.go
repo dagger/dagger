@@ -195,12 +195,6 @@ func (p *Pipeline) vertexNamef(format string, a ...interface{}) string {
 	return prefix + " " + name
 }
 
-// Spawn a temporary pipeline with the same solver.
-// Output values are discarded: the parent pipeline's values are not modified.
-func (p *Pipeline) Tmp(name string) *Pipeline {
-	return NewPipeline(name, p.s, nil)
-}
-
 func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// FIXME: this could be more optimized by carrying subdir path as metadata,
 	//  and using it in copy, load or mount.
@@ -233,13 +227,17 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := p.Tmp(op.Get("from").Path().String())
+	from := NewPipeline(op.Get("from").Path().String(), p.s, nil)
 	if err := from.Do(ctx, op.Get("from")); err != nil {
+		return st, err
+	}
+	fromResult, err := from.Result().ToState()
+	if err != nil {
 		return st, err
 	}
 	return st.File(
 		llb.Copy(
-			from.State(),
+			fromResult,
 			src,
 			dest,
 			// FIXME: allow more configurable llb options
@@ -379,8 +377,12 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := p.Tmp(mnt.Get("from").Path().String())
+	from := NewPipeline(mnt.Get("from").Path().String(), p.s, nil)
 	if err := from.Do(ctx, mnt.Get("from")); err != nil {
+		return nil, err
+	}
+	fromResult, err := from.Result().ToState()
+	if err != nil {
 		return nil, err
 	}
 	// possibly construct mount options for LLB from
@@ -393,7 +395,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 		mo = append(mo, llb.SourcePath(mps))
 	}
-	return llb.AddMount(dest, from.State(), mo...), nil
+	return llb.AddMount(dest, fromResult, mo...), nil
 }
 
 func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -479,12 +481,11 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := p.Tmp(op.Get("from").Path().String())
+	from := NewPipeline(op.Get("from").Path().String(), p.s, nil)
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return st, err
 	}
-
-	return from.State(), nil
+	return from.Result().ToState()
 }
 
 func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -551,7 +552,7 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	pushSt, err := p.result.ToState()
+	pushSt, err := p.Result().ToState()
 	if err != nil {
 		return st, err
 	}
@@ -601,11 +602,15 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if context.Exists() {
-		from := p.Tmp(op.Lookup("context").Path().String())
+		from := NewPipeline(op.Lookup("context").Path().String(), p.s, nil)
 		if err := from.Do(ctx, context); err != nil {
 			return st, err
 		}
-		contextDef, err = p.s.Marshal(ctx, from.State())
+		fromResult, err := from.Result().ToState()
+		if err != nil {
+			return st, err
+		}
+		contextDef, err = p.s.Marshal(ctx, fromResult)
 		if err != nil {
 			return st, err
 		}
