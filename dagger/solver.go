@@ -3,7 +3,9 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -16,8 +18,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Polyfill for buildkit gateway client
-// Use instead of bkgw.Client
 type Solver struct {
 	events  chan *bk.SolveStatus
 	control *bk.Client
@@ -32,15 +32,13 @@ func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus) 
 	}
 }
 
-func (s Solver) FS(input llb.State) FS {
-	return FS{
-		s:     s,
-		input: input,
+func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, error) {
+	// FIXME: do not hardcode the platform
+	def, err := st.Marshal(ctx, llb.LinuxAmd64)
+	if err != nil {
+		return nil, err
 	}
-}
-
-func (s Solver) Scratch() FS {
-	return s.FS(llb.Scratch())
+	return def.ToPB(), nil
 }
 
 func (s Solver) SessionID() string {
@@ -78,7 +76,7 @@ func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (bkgw.R
 // Solve will block until the state is solved and returns a Reference.
 func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error) {
 	// marshal llb
-	def, err := st.Marshal(ctx, llb.LinuxAmd64)
+	def, err := s.Marshal(ctx, st)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +94,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 
 	// call solve
 	return s.SolveRequest(ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
+		Definition: def,
 
 		// makes Solve() to block until LLB graph is solved. otherwise it will
 		// return result (that you can for example use for next build) that
@@ -110,7 +108,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 // within buildkit from the Control API. Ideally the Gateway API should allow to
 // Export directly.
 func (s Solver) Export(ctx context.Context, st llb.State, output bk.ExportEntry) (*bk.SolveResponse, error) {
-	def, err := st.Marshal(ctx, llb.LinuxAmd64)
+	def, err := s.Marshal(ctx, st)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +122,8 @@ func (s Solver) Export(ctx context.Context, st llb.State, output bk.ExportEntry)
 
 	ch := make(chan *bk.SolveStatus)
 
+	// Forward this build session events to the main events channel, for logging
+	// purposes.
 	go func() {
 		for event := range ch {
 			s.events <- event
@@ -132,7 +132,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, output bk.ExportEntry)
 
 	return s.control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		return c.Solve(ctx, bkgw.SolveRequest{
-			Definition: def.ToPB(),
+			Definition: def,
 		})
 	}, ch)
 }
@@ -143,7 +143,7 @@ type llbOp struct {
 	OpMetadata bkpb.OpMetadata
 }
 
-func dumpLLB(def *llb.Definition) ([]byte, error) {
+func dumpLLB(def *bkpb.Definition) ([]byte, error) {
 	ops := make([]llbOp, 0, len(def.Def))
 	for _, dt := range def.Def {
 		var op bkpb.Op
@@ -155,4 +155,23 @@ func dumpLLB(def *llb.Definition) ([]byte, error) {
 		ops = append(ops, ent)
 	}
 	return json.Marshal(ops)
+}
+
+// A helper to remove noise from buildkit error messages.
+// FIXME: Obviously a cleaner solution would be nice.
+func bkCleanError(err error) error {
+	noise := []string{
+		"executor failed running ",
+		"buildkit-runc did not terminate successfully",
+		"rpc error: code = Unknown desc = ",
+		"failed to solve: ",
+	}
+
+	msg := err.Error()
+
+	for _, s := range noise {
+		msg = strings.ReplaceAll(msg, s, "")
+	}
+
+	return errors.New(msg)
 }

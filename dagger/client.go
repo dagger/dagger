@@ -20,6 +20,7 @@ import (
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 
 	// docker output
@@ -142,14 +143,22 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 		}
 
 		// Export env to a cue directory
+		// FIXME: this should be elsewhere
 		lg.Debug().Msg("exporting env")
-		outdir, err := env.Export(ctx, s.Scratch())
+		span, _ := opentracing.StartSpanFromContext(ctx, "Env.Export")
+		defer span.Finish()
+
+		st := llb.Scratch().File(
+			llb.Mkfile("state.cue", 0600, env.State().JSON()),
+			llb.WithCustomName("[internal] serializing state to JSON"),
+		)
+		ref, err := s.Solve(ctx, st)
 		if err != nil {
 			return nil, err
 		}
-
-		// Wrap cue directory in buildkit result
-		return outdir.Result(ctx)
+		res := bkgw.NewResult()
+		res.SetRef(ref)
+		return res, nil
 	}, ch)
 	if err != nil {
 		return fmt.Errorf("buildkit solve: %w", bkCleanError(err))

@@ -3,12 +3,14 @@ package dagger
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/stdlib"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -98,9 +100,12 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 		return err
 	}
 
-	// load cue files produced by updater
-	// FIXME: BuildAll() to force all files (no required package..)
-	base, err := CueBuild(ctx, p.FS())
+	// Build a Cue config by overlaying the source with the stdlib
+	sources := map[string]fs.FS{
+		stdlib.Path: stdlib.FS,
+		"/":         p.FS(),
+	}
+	base, err := compiler.Build(sources)
 	if err != nil {
 		return fmt.Errorf("base config: %w", err)
 	}
@@ -188,33 +193,6 @@ func (env *Env) mergeState() error {
 	// commit
 	env.state = state
 	return nil
-}
-
-// Export env to a directory of cue files
-// (Use with FS.Change)
-func (env *Env) Export(ctx context.Context, fs FS) (FS, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "Env.Export")
-	defer span.Finish()
-
-	// FIXME: we serialize as JSON to guarantee a self-contained file.
-	//   compiler.Value.Save() leaks imports, so requires a shared cue.mod with
-	//   client which is undesirable.
-	//   Once compiler.Value.Save() resolves non-builtin imports with a tree shake,
-	//   we can use it here.
-
-	// FIXME: Exporting base/input/output separately causes merge errors.
-	// For instance, `foo: string | *"default foo"` gets serialized as
-	// `{"foo":"default foo"}`, which will fail to merge if output contains
-	// a different definition of `foo`.
-	//
-	// fs = env.base.SaveJSON(fs, "base.cue")
-	// fs = env.input.SaveJSON(fs, "input.cue")
-	// if env.output != nil {
-	// 	fs = env.output.SaveJSON(fs, "output.cue")
-	// }
-	// For now, export a single `state.cue` containing the combined output.
-	fs = fs.WriteValueJSON("state.cue", env.state)
-	return fs, nil
 }
 
 // Compute missing values in env configuration, and write them to state.

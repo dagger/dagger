@@ -22,23 +22,32 @@ import (
 
 // An execution pipeline
 type Pipeline struct {
-	name string
-	s    Solver
-	fs   FS
-	out  *Fillable
+	name   string
+	s      Solver
+	state  llb.State
+	result bkgw.Reference
+	out    *Fillable
 }
 
 func NewPipeline(name string, s Solver, out *Fillable) *Pipeline {
 	return &Pipeline{
-		name: name,
-		s:    s,
-		fs:   s.Scratch(),
-		out:  out,
+		name:  name,
+		s:     s,
+		state: llb.Scratch(),
+		out:   out,
 	}
 }
 
-func (p *Pipeline) FS() FS {
-	return p.fs
+func (p *Pipeline) State() llb.State {
+	return p.state
+}
+
+func (p *Pipeline) Result() bkgw.Reference {
+	return p.result
+}
+
+func (p *Pipeline) FS() fs.FS {
+	return NewBuildkitFS(p.result)
 }
 
 func isComponent(v *compiler.Value) bool {
@@ -129,54 +138,54 @@ func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
 				Msg("pipeline was partially executed because of missing inputs")
 			return nil
 		}
-		if err := p.doOp(ctx, op); err != nil {
+		p.state, err = p.doOp(ctx, op, p.state)
+		if err != nil {
 			return err
 		}
 		// Force a buildkit solve request at each operation,
 		// so that errors map to the correct cue path.
 		// FIXME: might as well change FS to make every operation
 		// synchronous.
-		fs, err := p.fs.Solve(ctx)
+		p.result, err = p.s.Solve(ctx, p.state)
 		if err != nil {
 			return err
 		}
-		p.fs = fs
 	}
 	return nil
 }
 
-func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	do, err := op.Get("do").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 	switch do {
 	case "copy":
-		return p.Copy(ctx, op)
+		return p.Copy(ctx, op, st)
 	case "exec":
-		return p.Exec(ctx, op)
+		return p.Exec(ctx, op, st)
 	case "export":
-		return p.Export(ctx, op)
+		return p.Export(ctx, op, st)
 	case "fetch-container":
-		return p.FetchContainer(ctx, op)
+		return p.FetchContainer(ctx, op, st)
 	case "push-container":
-		return p.PushContainer(ctx, op)
+		return p.PushContainer(ctx, op, st)
 	case "fetch-git":
-		return p.FetchGit(ctx, op)
+		return p.FetchGit(ctx, op, st)
 	case "local":
-		return p.Local(ctx, op)
+		return p.Local(ctx, op, st)
 	case "load":
-		return p.Load(ctx, op)
+		return p.Load(ctx, op, st)
 	case "subdir":
-		return p.Subdir(ctx, op)
+		return p.Subdir(ctx, op, st)
 	case "docker-build":
-		return p.DockerBuild(ctx, op)
+		return p.DockerBuild(ctx, op, st)
 	case "write-file":
-		return p.WriteFile(ctx, op)
+		return p.WriteFile(ctx, op, st)
 	case "mkdir":
-		return p.Mkdir(ctx, op)
+		return p.Mkdir(ctx, op, st)
 	default:
-		return fmt.Errorf("invalid operation: %s", op.JSON())
+		return st, fmt.Errorf("invalid operation: %s", op.JSON())
 	}
 }
 
@@ -192,74 +201,68 @@ func (p *Pipeline) Tmp(name string) *Pipeline {
 	return NewPipeline(name, p.s, nil)
 }
 
-func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// FIXME: this could be more optimized by carrying subdir path as metadata,
 	//  and using it in copy, load or mount.
 
 	dir, err := op.Get("dir").String()
 	if err != nil {
-		return err
+		return st, err
 	}
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Copy(
-				p.fs.LLB(),
-				dir,
-				"/",
-				&llb.CopyInfo{
-					CopyDirContentsOnly: true,
-				},
-			),
-			llb.WithCustomName(p.vertexNamef("Subdir %s", dir)),
-		)
-	})
-	return nil
+	return st.File(
+		llb.Copy(
+			st,
+			dir,
+			"/",
+			&llb.CopyInfo{
+				CopyDirContentsOnly: true,
+			},
+		),
+		llb.WithCustomName(p.vertexNamef("Subdir %s", dir)),
+	), nil
 }
 
-func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Decode copy options
 	src, err := op.Get("src").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 	dest, err := op.Get("dest").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
 	from := p.Tmp(op.Get("from").Path().String())
 	if err := from.Do(ctx, op.Get("from")); err != nil {
-		return err
+		return st, err
 	}
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Copy(
-				from.FS().LLB(),
-				src,
-				dest,
-				// FIXME: allow more configurable llb options
-				// For now we define the following convenience presets:
-				&llb.CopyInfo{
-					CopyDirContentsOnly: true,
-					CreateDestPath:      true,
-					AllowWildcard:       true,
-				},
-			),
-			llb.WithCustomName(p.vertexNamef("Copy %s %s", src, dest)),
-		)
-	})
-	return nil
+	return st.File(
+		llb.Copy(
+			from.State(),
+			src,
+			dest,
+			// FIXME: allow more configurable llb options
+			// For now we define the following convenience presets:
+			&llb.CopyInfo{
+				CopyDirContentsOnly: true,
+				CreateDestPath:      true,
+				AllowWildcard:       true,
+			},
+		),
+		llb.WithCustomName(p.vertexNamef("Copy %s %s", src, dest)),
+	), nil
 }
 
-func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	dir, err := op.Get("dir").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 	var include []string
 	if inc := op.Get("include"); inc.Exists() {
 		if err := inc.Decode(&include); err != nil {
-			return err
+			return st, err
 		}
 	}
 	// FIXME: Remove the `Copy` and use `Local` directly.
@@ -270,30 +273,26 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value) error {
 	//
 	// By wrapping `llb.Local` inside `llb.Copy`, we get the same digest for
 	// the same content.
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Copy(
-				llb.Local(
-					dir,
-					llb.FollowPaths(include),
-					llb.WithCustomName(p.vertexNamef("Local %s [transfer]", dir)),
+	return st.File(
+		llb.Copy(
+			llb.Local(
+				dir,
+				llb.FollowPaths(include),
+				llb.WithCustomName(p.vertexNamef("Local %s [transfer]", dir)),
 
-					// Without hint, multiple `llb.Local` operations on the
-					// same path get a different digest.
-					llb.SessionID(p.s.SessionID()),
-					llb.SharedKeyHint(dir),
-				),
-				"/",
-				"/",
+				// Without hint, multiple `llb.Local` operations on the
+				// same path get a different digest.
+				llb.SessionID(p.s.SessionID()),
+				llb.SharedKeyHint(dir),
 			),
-			llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
-		)
-	})
-
-	return nil
+			"/",
+			"/",
+		),
+		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
+	), nil
 }
 
-func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
@@ -303,7 +302,7 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 	}
 
 	if err := op.Decode(&cmd); err != nil {
-		return err
+		return st, err
 	}
 	// args
 	opts = append(opts, llb.Args(cmd.Args))
@@ -318,7 +317,7 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 	if cmd.Always {
 		cacheBuster, err := randomID(8)
 		if err != nil {
-			return err
+			return st, err
 		}
 		opts = append(opts, llb.AddEnv("DAGGER_CACHEBUSTER", cacheBuster))
 	}
@@ -326,7 +325,7 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 	if mounts := op.Lookup("mount"); mounts.Exists() {
 		mntOpts, err := p.mountAll(ctx, mounts)
 		if err != nil {
-			return err
+			return st, err
 		}
 		opts = append(opts, mntOpts...)
 	}
@@ -340,10 +339,7 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value) error {
 	opts = append(opts, llb.WithCustomName(p.vertexNamef("Exec [%s]", strings.Join(args, ", "))))
 
 	// --> Execute
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.Run(opts...).Root()
-	})
-	return nil
+	return st.Run(opts...).Root(), nil
 }
 
 func (p *Pipeline) mountAll(ctx context.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
@@ -397,21 +393,21 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 		mo = append(mo, llb.SourcePath(mps))
 	}
-	return llb.AddMount(dest, from.FS().LLB(), mo...), nil
+	return llb.AddMount(dest, from.State(), mo...), nil
 }
 
-func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	source, err := op.Get("source").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 	format, err := op.Get("format").String()
 	if err != nil {
-		return err
+		return st, err
 	}
-	contents, err := p.fs.ReadFile(ctx, source)
+	contents, err := fs.ReadFile(p.FS(), source)
 	if err != nil {
-		return fmt.Errorf("export %s: %w", source, err)
+		return st, fmt.Errorf("export %s: %w", source, err)
 	}
 	switch format {
 	case "string":
@@ -422,13 +418,13 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 			Msg("exporting string")
 
 		if err := p.out.Fill(string(contents)); err != nil {
-			return err
+			return st, err
 		}
 	case "json":
 		var o interface{}
 		o, err := unmarshalAnything(contents, json.Unmarshal)
 		if err != nil {
-			return err
+			return st, err
 		}
 
 		log.
@@ -438,13 +434,13 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 			Msg("exporting json")
 
 		if err := p.out.Fill(o); err != nil {
-			return err
+			return st, err
 		}
 	case "yaml":
 		var o interface{}
 		o, err := unmarshalAnything(contents, yaml.Unmarshal)
 		if err != nil {
-			return err
+			return st, err
 		}
 
 		log.
@@ -454,12 +450,12 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value) error {
 			Msg("exporting yaml")
 
 		if err := p.out.Fill(o); err != nil {
-			return err
+			return st, err
 		}
 	default:
-		return fmt.Errorf("unsupported export format: %q", format)
+		return st, fmt.Errorf("unsupported export format: %q", format)
 	}
-	return nil
+	return st, nil
 }
 
 type unmarshaller func([]byte, interface{}) error
@@ -481,31 +477,30 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 	return o, err
 }
 
-func (p *Pipeline) Load(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
 	from := p.Tmp(op.Get("from").Path().String())
 	if err := from.Do(ctx, op.Get("from")); err != nil {
-		return err
+		return st, err
 	}
 
-	p.fs = p.fs.Set(from.FS().LLB())
-	return nil
+	return from.State(), nil
 }
 
-func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	rawRef, err := op.Get("ref").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	ref, err := reference.ParseNormalizedNamed(rawRef)
 	if err != nil {
-		return fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
+		return st, fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
 	}
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	state := llb.Image(
+	st = llb.Image(
 		ref.String(),
 		llb.WithCustomName(p.vertexNamef("FetchContainer %s", rawRef)),
 	)
@@ -517,21 +512,20 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value) error
 		LogName: p.vertexNamef("load metadata for %s", ref.String()),
 	})
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	for _, env := range image.Config.Env {
 		k, v := parseKeyValue(env)
-		state = state.AddEnv(k, v)
+		st = st.AddEnv(k, v)
 	}
 	if image.Config.WorkingDir != "" {
-		state = state.Dir(image.Config.WorkingDir)
+		st = st.Dir(image.Config.WorkingDir)
 	}
 	if image.Config.User != "" {
-		state = state.User(image.Config.User)
+		st = st.User(image.Config.User)
 	}
-	p.fs = p.fs.Set(state)
-	return nil
+	return st, nil
 }
 
 func parseKeyValue(env string) (string, string) {
@@ -544,45 +538,52 @@ func parseKeyValue(env string) (string, string) {
 	return parts[0], v
 }
 
-func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	rawRef, err := op.Get("ref").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	ref, err := reference.ParseNormalizedNamed(rawRef)
 	if err != nil {
-		return fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
+		return st, fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
 	}
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	_, err = p.fs.Export(ctx, bk.ExportEntry{
+	pushSt, err := p.result.ToState()
+	if err != nil {
+		return st, err
+	}
+
+	_, err = p.s.Export(ctx, pushSt, bk.ExportEntry{
 		Type: bk.ExporterImage,
 		Attrs: map[string]string{
 			"name": ref.String(),
 			"push": "true",
 		},
 	})
-	return err
+
+	return st, err
 }
 
-func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	remote, err := op.Get("remote").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 	ref, err := op.Get("ref").String()
 	if err != nil {
-		return err
+		return st, err
 	}
-	p.fs = p.fs.Set(
-		llb.Git(remote, ref, llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remote, ref))),
-	)
-	return nil
+	return llb.Git(
+		remote,
+		ref,
+		llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remote, ref)),
+	), nil
 }
 
-func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	var (
 		context    = op.Lookup("context")
 		dockerfile = op.Lookup("dockerfile")
@@ -594,7 +595,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 	)
 
 	if !context.Exists() && !dockerfile.Exists() {
-		return errors.New("context or dockerfile required")
+		return st, errors.New("context or dockerfile required")
 	}
 
 	// docker build context. This can come from another component, so we need to
@@ -602,11 +603,11 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 	if context.Exists() {
 		from := p.Tmp(op.Lookup("context").Path().String())
 		if err := from.Do(ctx, context); err != nil {
-			return err
+			return st, err
 		}
-		contextDef, err = from.FS().Def(ctx)
+		contextDef, err = p.s.Marshal(ctx, from.State())
 		if err != nil {
-			return err
+			return st, err
 		}
 		dockerfileDef = contextDef
 	}
@@ -615,15 +616,15 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 	if dockerfile.Exists() {
 		content, err := dockerfile.String()
 		if err != nil {
-			return err
+			return st, err
 		}
-		dockerfileDef, err = p.s.Scratch().Set(
+		dockerfileDef, err = p.s.Marshal(ctx,
 			llb.Scratch().File(
 				llb.Mkfile("/Dockerfile", 0644, []byte(content)),
 			),
-		).Def(ctx)
+		)
 		if err != nil {
-			return err
+			return st, err
 		}
 		if contextDef == nil {
 			contextDef = dockerfileDef
@@ -642,7 +643,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 	if dockerfilePath := op.Lookup("dockerfilePath"); dockerfilePath.Exists() {
 		filename, err := dockerfilePath.String()
 		if err != nil {
-			return err
+			return st, err
 		}
 		req.FrontendOpt["filename"] = filename
 	}
@@ -657,7 +658,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 			return nil
 		})
 		if err != nil {
-			return err
+			return st, err
 		}
 	}
 
@@ -671,7 +672,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 			return nil
 		})
 		if err != nil {
-			return err
+			return st, err
 		}
 	}
 
@@ -679,13 +680,13 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 		p := []string{}
 		list, err := platforms.List()
 		if err != nil {
-			return err
+			return st, err
 		}
 
 		for _, platform := range list {
 			s, err := platform.String()
 			if err != nil {
-				return err
+				return st, err
 			}
 			p = append(p, s)
 		}
@@ -700,65 +701,51 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value) error {
 
 	res, err := p.s.SolveRequest(ctx, req)
 	if err != nil {
-		return err
+		return st, err
 	}
-	st, err := res.ToState()
-	if err != nil {
-		return err
-	}
-	p.fs = p.fs.Set(st)
-
-	return nil
+	return res.ToState()
 }
 
-func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	content, err := op.Get("content").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	dest, err := op.Get("dest").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	mode, err := op.Get("mode").Int64()
 	if err != nil {
-		return err
+		return st, err
 	}
 
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.File(
-			llb.Mkfile(dest, fs.FileMode(mode), []byte(content)),
-			llb.WithCustomName(p.vertexNamef("WriteFile %s", dest)),
-		)
-	})
-
-	return nil
+	return st.File(
+		llb.Mkfile(dest, fs.FileMode(mode), []byte(content)),
+		llb.WithCustomName(p.vertexNamef("WriteFile %s", dest)),
+	), nil
 }
 
-func (p *Pipeline) Mkdir(ctx context.Context, op *compiler.Value) error {
+func (p *Pipeline) Mkdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	path, err := op.Get("path").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	dir, err := op.Get("dir").String()
 	if err != nil {
-		return err
+		return st, err
 	}
 
 	mode, err := op.Get("mode").Int64()
 	if err != nil {
-		return err
+		return st, err
 	}
 
-	p.fs = p.fs.Change(func(st llb.State) llb.State {
-		return st.Dir(dir).File(
-			llb.Mkdir(path, fs.FileMode(mode)),
-			llb.WithCustomName(p.vertexNamef("Mkdir %s", path)),
-		)
-	})
-
-	return nil
+	return st.Dir(dir).File(
+		llb.Mkdir(path, fs.FileMode(mode)),
+		llb.WithCustomName(p.vertexNamef("Mkdir %s", path)),
+	), nil
 }
