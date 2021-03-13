@@ -21,7 +21,7 @@ import (
 	account: #Account
 
 	// Contents of the application to deploy
-	contents: dagger.#Dir
+	contents: dagger.#Artifact
 
 	// Deploy to this Netlify site
 	name: string
