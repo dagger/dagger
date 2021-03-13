@@ -43,9 +43,6 @@ jobs:
           curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
 
           curl -L https://github.com/cuelang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
-      - name: Build
-        run: |
-          make
 
       - name: Lint
         run: |
