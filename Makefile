@@ -17,6 +17,7 @@ test:
 cuefmt:
 	@(cue fmt -s ./stdlib/...)
 	@(cue fmt -s ./examples/*)
+	@(cue fmt -s ./tests/...)
 
 .PHONY: lint
 lint: cuefmt check-buildkit-version

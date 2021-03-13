@@ -20,10 +20,10 @@ test: {
 		{
 			do: "exec"
 			args: ["sh", "-c", """
-			[ -f /out ] || exit 1
-			# content of /cache/tmp must not exist in this layer
-			[ ! -f /tmpdir/out ] || exit 1
-			"""]
+				[ -f /out ] || exit 1
+				# content of /cache/tmp must not exist in this layer
+				[ ! -f /tmpdir/out ] || exit 1
+				"""]
 		},
 		{
 			do:     "export"
