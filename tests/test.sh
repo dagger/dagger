@@ -94,9 +94,8 @@ test::fetchcontainer(){
 test::pushcontainer(){
   local dagger="$1"
 
-  # Fetch container
-  secret test::one "FetchContainer: valid containers"       --exit=0 \
-        "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/fetch-container/exist
+  secret test::one "PushContainer: simple"       --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/push-container
 }
 
 test::fetchgit(){
@@ -214,7 +213,6 @@ test::local(){
   disable "" "There are no local tests right now (the feature is possibly not functioning at all: see https://github.com/blocklayerhq/dagger/issues/41)"
 }
 
-
 test::mount(){
   test::one "Mount: tmpfs" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/tmpfs
@@ -257,23 +255,23 @@ test::dockerbuild() {
 test::all(){
   local dagger="$1"
 
-#   test::load "$dagger"
-#   test::mount "$dagger"
+  test::load "$dagger"
+  test::mount "$dagger"
 
-#   test::copy "$dagger"
-#   test::local "$dagger"
-#   test::compute "$dagger"
-#   test::fetchcontainer "$dagger"
+  test::copy "$dagger"
+  test::local "$dagger"
+  test::compute "$dagger"
+  test::fetchcontainer "$dagger"
   test::pushcontainer "$dagger"
-#   test::fetchgit "$dagger"
-#   test::exec "$dagger"
-#   test::export "$dagger"
-#   test::input "$dagger"
-#   test::subdir "$dagger"
-#   test::dockerbuild "$dagger"
+  test::fetchgit "$dagger"
+  test::exec "$dagger"
+  test::export "$dagger"
+  test::input "$dagger"
+  test::subdir "$dagger"
+  test::dockerbuild "$dagger"
 
-#   test::stdlib "$dagger"
-#   test::examples "$dagger"
+  test::stdlib "$dagger"
+  test::examples "$dagger"
 }
 
 case "${1:-all}" in
