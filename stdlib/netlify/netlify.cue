@@ -3,6 +3,7 @@ package netlify
 import (
 	"dagger.io/dagger"
 	"dagger.io/alpine"
+	"dagger.io/llb"
 )
 
 // A Netlify account
@@ -37,7 +38,7 @@ import (
 		string
 
 		#compute: [
-			dagger.#Load & {
+			llb.#Load & {
 				from: alpine.#Image & {
 					package: bash: "=~5.1"
 					package: jq:   "=~1.6"
@@ -45,10 +46,10 @@ import (
 					package: yarn: "=~1.22"
 				}
 			},
-			dagger.#Exec & {
+			llb.#Exec & {
 				args: ["yarn", "global", "add", "netlify-cli@2.47.0"]
 			},
-			dagger.#Exec & {
+			llb.#Exec & {
 				args: [
 					"/bin/bash",
 					"--noprofile",
@@ -72,7 +73,7 @@ import (
 				dir: "/src"
 				mount: "/src": from: contents
 			},
-			dagger.#Export & {
+			llb.#Export & {
 				source: "/url"
 				format: "string"
 			},

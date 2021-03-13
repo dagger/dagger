@@ -3,9 +3,9 @@ package cloudformation
 import (
 	"encoding/json"
 
-	"dagger.io/dagger"
 	"dagger.io/alpine"
 	"dagger.io/aws"
+	"dagger.io/llb"
 )
 
 // AWS CloudFormation Stack
@@ -49,23 +49,23 @@ import (
 		[string]: string
 
 		#compute: [
-			dagger.#Load & {
+			llb.#Load & {
 				from: alpine.#Image & {
 					package: bash:      "=5.1.0-r0"
 					package: jq:        "=1.6-r1"
 					package: "aws-cli": "=1.18.177-r0"
 				}
 			},
-			dagger.#Mkdir & {
+			llb.#Mkdir & {
 				path: "/src"
 			},
 			for dest, content in #files {
-				dagger.#WriteFile & {
+				llb.#WriteFile & {
 					"dest":    dest
 					"content": content
 				}
 			},
-			dagger.#Exec & {
+			llb.#Exec & {
 				args: [
 					"/bin/bash",
 					"--noprofile",
@@ -92,7 +92,7 @@ import (
 				dir: "/src"
 				mount: "/cache/aws": "cache"
 			},
-			dagger.#Export & {
+			llb.#Export & {
 				source: "/outputs.json"
 				format: "json"
 			},
