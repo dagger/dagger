@@ -6,6 +6,11 @@ readonly d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 # shellcheck source=/dev/null
 . "$d/test-lib.sh"
 
+# shellcheck source=/dev/null
+if grep -q "DAGGER_SECRETS" "$d/test.secret"; then
+    source "$d/test.secret"
+fi
+
 # Point this to your dagger binary
 readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../cmd/dagger/dagger}"
 # The default arguments are a no-op, but having "anything" is a little cheat necessary for "${DAGGER_BINARY_ARGS[@]}" to not be empty down there
@@ -84,6 +89,14 @@ test::fetchcontainer(){
 
   disable test::one "FetchContainer: non existent container image with valid digest (FIXME https://github.com/blocklayerhq/dagger/issues/32)" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/fetch-container/nonexistent/image-with-valid-digest
+}
+
+test::pushcontainer(){
+  local dagger="$1"
+
+  # Fetch container
+  secret test::one "FetchContainer: valid containers"       --exit=0 \
+        "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/fetch-container/exist
 }
 
 test::fetchgit(){
@@ -244,22 +257,23 @@ test::dockerbuild() {
 test::all(){
   local dagger="$1"
 
-  test::load "$dagger"
-  test::mount "$dagger"
+#   test::load "$dagger"
+#   test::mount "$dagger"
 
-  test::copy "$dagger"
-  test::local "$dagger"
-  test::compute "$dagger"
-  test::fetchcontainer "$dagger"
-  test::fetchgit "$dagger"
-  test::exec "$dagger"
-  test::export "$dagger"
-  test::input "$dagger"
-  test::subdir "$dagger"
-  test::dockerbuild "$dagger"
+#   test::copy "$dagger"
+#   test::local "$dagger"
+#   test::compute "$dagger"
+#   test::fetchcontainer "$dagger"
+  test::pushcontainer "$dagger"
+#   test::fetchgit "$dagger"
+#   test::exec "$dagger"
+#   test::export "$dagger"
+#   test::input "$dagger"
+#   test::subdir "$dagger"
+#   test::dockerbuild "$dagger"
 
-  test::stdlib "$dagger"
-  test::examples "$dagger"
+#   test::stdlib "$dagger"
+#   test::examples "$dagger"
 }
 
 case "${1:-all}" in
