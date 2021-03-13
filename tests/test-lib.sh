@@ -130,3 +130,11 @@ test::one(){
 disable(){
   logger::warning "Test \"$2\" has been disabled."
 }
+
+secret(){
+  if [ -z "${DAGGER_SECRETS_LOADED+x}" ] || [ "$DAGGER_SECRETS_LOADED" != "1" ]; then
+    logger::warning "Skip \"$2\": secrets not available"
+  else
+    "$@"
+  fi
+}

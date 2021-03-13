@@ -6,6 +6,11 @@ readonly d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 # shellcheck source=/dev/null
 . "$d/test-lib.sh"
 
+# shellcheck source=/dev/null
+if grep -q "DAGGER_SECRETS" "$d/test.secret"; then
+    source "$d/test.secret"
+fi
+
 # Point this to your dagger binary
 readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../cmd/dagger/dagger}"
 # The default arguments are a no-op, but having "anything" is a little cheat necessary for "${DAGGER_BINARY_ARGS[@]}" to not be empty down there
@@ -77,6 +82,13 @@ test::fetchcontainer(){
 
   disable test::one "FetchContainer: non existent container image with valid digest (FIXME https://github.com/blocklayerhq/dagger/issues/32)" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/fetch-container/nonexistent/image-with-valid-digest
+}
+
+test::pushcontainer(){
+  local dagger="$1"
+
+  secret test::one "PushContainer: simple"       --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/push-container
 }
 
 test::fetchgit(){
@@ -194,7 +206,6 @@ test::local(){
   disable "" "There are no local tests right now (the feature is possibly not functioning at all: see https://github.com/blocklayerhq/dagger/issues/41)"
 }
 
-
 test::mount(){
   test::one "Mount: tmpfs" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/mounts/valid/tmpfs
@@ -244,6 +255,7 @@ test::all(){
   test::local "$dagger"
   test::compute "$dagger"
   test::fetchcontainer "$dagger"
+  test::pushcontainer "$dagger"
   test::fetchgit "$dagger"
   test::exec "$dagger"
   test::export "$dagger"
