@@ -11,14 +11,25 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Unlock secrets
+        uses: sliteteam/github-action-git-crypt-unlock@1.2.0
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Set up Go
         uses: actions/setup-go@v1
         with:
           go-version: 1.16
         id: go
-
-      - name: Check out
-        uses: actions/checkout@v2
 
       - name: Install Dependencies
         run: |
