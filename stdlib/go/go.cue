@@ -12,7 +12,7 @@ import (
 	args: [...string]
 
 	// Source Directory to build
-	source: dagger.#Dir
+	source: dagger.#Artifact
 
 	// Environment variables
 	env: [string]: string
@@ -40,7 +40,7 @@ import (
 	version: *#Go.version | string
 
 	// Source Directory to build
-	source: dagger.#Dir
+	source: dagger.#Artifact
 
 	// Packages to build
 	packages: *"." | string
@@ -81,7 +81,7 @@ import (
 	version: *#Go.version | string
 
 	// Source Directory to build
-	source: dagger.#Dir
+	source: dagger.#Artifact
 
 	// Packages to test
 	packages: *"." | string

@@ -1,8 +1,11 @@
 package dagger
 
-// Any component can be referenced as a directory, since
-// every dagger script outputs a filesystem state (aka a directory)
-#Dir: #compute: [...#Op]
+// An artifact such as source code checkout, container image, binary archive...
+// May be passed as user input, or computed by a buildkit pipeline
+#Artifact: #compute: [...#Op]
+
+// deprecated, use #Artifact instead.
+#Dir: #Artifact
 
 // Secret value
 // FIXME: currently aliased as a string to mark secrets

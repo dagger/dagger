@@ -8,7 +8,7 @@ import (
 // Yarn Script
 #Script: {
 	// Source code of the javascript application
-	source: dagger.#Dir
+	source: dagger.#Artifact
 
 	// Run this yarn script
 	run: string | *"build"

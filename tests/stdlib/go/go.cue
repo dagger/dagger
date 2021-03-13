@@ -6,7 +6,7 @@ import (
 	"dagger.io/alpine"
 )
 
-TestData: dagger.#Dir
+TestData: dagger.#Artifact
 
 TestGoBuild: {
 	build: go.#Build & {

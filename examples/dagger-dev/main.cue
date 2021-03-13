@@ -13,7 +13,7 @@ import (
 	"dagger.io/docker"
 )
 
-repository: dagger.#Dir
+repository: dagger.#Artifact
 
 // Build `dagger` using Go
 build: go.#Build & {

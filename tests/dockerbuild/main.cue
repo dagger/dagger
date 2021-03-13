@@ -3,7 +3,7 @@ package test
 import "dagger.io/dagger"
 
 // Set to `--input-dir=./tests/dockerbuild/testdata`
-TestData: dagger.#Dir
+TestData: dagger.#Artifact
 
 TestInlinedDockerfile: #compute: [
 	dagger.#DockerBuild & {
