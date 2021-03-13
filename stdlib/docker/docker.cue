@@ -2,6 +2,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/llb"
 )
 
 #Ref: string
@@ -11,7 +12,7 @@ import (
 	source: dagger.#Dir
 
 	image: #compute: [
-		dagger.#DockerBuild & {context: source},
+		llb.#DockerBuild & {context: source},
 	]
 }
 
@@ -22,15 +23,15 @@ import (
 	{
 		image: #Ref
 		out: #compute: [
-			dagger.#FetchContainer & {ref: image},
-			dagger.#Exec & {"args":        args},
+			llb.#FetchContainer & {ref: image},
+			llb.#Exec & {"args":        args},
 		]
 
 	} | {
 		image: _
 		out: #compute: [
-			dagger.#Load & {from:   image},
-			dagger.#Exec & {"args": args},
+			llb.#Load & {from:   image},
+			llb.#Exec & {"args": args},
 		]
 	}
 }

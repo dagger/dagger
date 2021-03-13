@@ -4,6 +4,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/go"
 	"dagger.io/alpine"
+	"dagger.io/llb"
 )
 
 TestData: dagger.#Artifact
@@ -15,8 +16,8 @@ TestGoBuild: {
 	}
 
 	test: #compute: [
-		dagger.#Load & {from: alpine.#Image},
-		dagger.#Exec & {
+		llb.#Load & {from: alpine.#Image},
+		llb.#Exec & {
 			args: [
 				"sh",
 				"-ec",

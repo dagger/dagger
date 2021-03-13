@@ -4,6 +4,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/yarn"
 	"dagger.io/alpine"
+	"dagger.io/llb"
 )
 
 TestData: dagger.#Artifact
@@ -14,10 +15,10 @@ TestYarn: {
 	}
 
 	test: #compute: [
-		dagger.#Load & {from: alpine.#Image & {
+		llb.#Load & {from: alpine.#Image & {
 			package: bash: "=5.1.0-r0"
 		}},
-		dagger.#Exec & {
+		llb.#Exec & {
 			mount: "/build": from: run
 			args: [
 				"/bin/bash",

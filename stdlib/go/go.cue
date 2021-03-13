@@ -2,6 +2,7 @@ package go
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/llb"
 )
 
 #Go: {
@@ -18,10 +19,10 @@ import (
 	env: [string]: string
 
 	#compute: [
-		dagger.#FetchContainer & {
+		llb.#FetchContainer & {
 			ref: "docker.io/golang:\(version)-alpine"
 		},
-		dagger.#Exec & {
+		llb.#Exec & {
 			"args": ["go"] + args
 
 			"env": env
@@ -63,7 +64,7 @@ import (
 	env: [string]: string
 
 	#compute: [
-		dagger.#Copy & {
+		llb.#Copy & {
 			from: #Go & {
 				"version": version
 				"source":  source

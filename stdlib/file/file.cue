@@ -3,6 +3,7 @@ package file
 import (
 	"strings"
 	"dagger.io/dagger"
+	"dagger.io/llb"
 )
 
 #Create: {
@@ -11,7 +12,7 @@ import (
 	contents:    string | bytes
 
 	#compute: [
-		dagger.#WriteFile & {dest: filename, content: contents, mode: permissions},
+		llb.#WriteFile & {dest: filename, content: contents, mode: permissions},
 	]
 }
 
@@ -24,7 +25,7 @@ import (
 	orig: (#read & {path: filename, "from": from}).data
 
 	#compute: [
-		dagger.#WriteFile & {dest: filename, content: "\(orig)\(contents)", mode: permissions},
+		llb.#WriteFile & {dest: filename, content: "\(orig)\(contents)", mode: permissions},
 	]
 }
 
@@ -40,8 +41,8 @@ import (
 	data: {
 		string
 		#compute: [
-			dagger.#Load & {"from":   from},
-			dagger.#Export & {source: path},
+			llb.#Load & {"from":   from},
+			llb.#Export & {source: path},
 		]
 	}
 }
@@ -62,11 +63,11 @@ _#glob: {
 		string
 		_tmppath: "/tmp/ls.out"
 		#compute: [
-			dagger.#Load & {"from": from},
-			dagger.#Exec & {
+			llb.#Load & {"from": from},
+			llb.#Exec & {
 				args: ["sh", "-c", "ls \(glob) > \(_tmppath)"]
 			},
-			dagger.#Export & {source: _tmppath},
+			llb.#Export & {source: _tmppath},
 		]
 	}
 }
