@@ -13,7 +13,7 @@ package dagger
 #Secret: string
 
 // One operation in a script
-#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir
+#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir | #WriteFile | #Mkdir
 
 // Export a value from fs state to cue
 #Export: {
