@@ -6,32 +6,32 @@ import (
 )
 
 #Create: {
-	filename: !=""
-  permissions: int | *0o644
-	contents: string | bytes
+	filename:    !=""
+	permissions: int | *0o644
+	contents:    string | bytes
 
 	#compute: [
-		dagger.#WriteFile & { dest: filename, content: contents, mode: permissions}
+		dagger.#WriteFile & {dest: filename, content: contents, mode: permissions},
 	]
 }
 
 #Append: {
-	filename: !=""
-  permissions: int | *0o644
-	contents: string | bytes
-	from: dagger.#Artifact
+	filename:    !=""
+	permissions: int | *0o644
+	contents:    string | bytes
+	from:        dagger.#Artifact
 
-	orig: (#read & { path: filename, "from": from }).data
+	orig: (#read & {path: filename, "from": from}).data
 
 	#compute: [
-		dagger.#WriteFile & { dest: filename, content: "\(orig)\(contents)", mode: permissions}
+		dagger.#WriteFile & {dest: filename, content: "\(orig)\(contents)", mode: permissions},
 	]
 }
 
 #Read: {
 	filename: !=""
-	from: dagger.#Artifact
-	contents: (#read & { path: filename, "from": from }).data
+	from:     dagger.#Artifact
+	contents: (#read & {path: filename, "from": from}).data
 }
 
 #read: {
@@ -40,8 +40,8 @@ import (
 	data: {
 		string
 		#compute: [
-			dagger.#Load & {"from": from},
-			dagger.#Export & { source: path }
+			dagger.#Load & {"from":   from},
+			dagger.#Export & {source: path},
 		]
 	}
 }
@@ -49,8 +49,8 @@ import (
 #Glob: {
 	glob: !=""
 	filenames: [...string]
-	from: dagger.#Artifact
-	files: (_#glob & { "glob": glob, "from": from }).data
+	from:  dagger.#Artifact
+	files: (_#glob & {"glob": glob, "from": from}).data
 	// trim suffix because ls always ends with newline
 	filenames: strings.Split(strings.TrimSuffix(files, "\n"), "\n")
 }
@@ -66,7 +66,7 @@ _#glob: {
 			dagger.#Exec & {
 				args: ["sh", "-c", "ls \(glob) > \(_tmppath)"]
 			},
-			dagger.#Export & { source: _tmppath }
+			dagger.#Export & {source: _tmppath},
 		]
 	}
 }

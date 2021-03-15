@@ -21,8 +21,8 @@ TestCreate: {
 				"sh",
 				"-ec",
 				"""
-				test "$(cat /file.txt)" = "hello world"
-				""",
+					test "$(cat /file.txt)" = "hello world"
+					""",
 			]
 			mount: "/file.txt": {
 				from: write
@@ -35,7 +35,7 @@ TestCreate: {
 TestRead: {
 	read: file.#Read & {
 		filename: "/etc/alpine-release"
-		from: alpine.#Image & { version: "3.10.6" }
+		from:     alpine.#Image & {version: "3.10.6"}
 	}
 	test: #compute: [
 		dagger.#Load & {from: alpine.#Image},
@@ -60,7 +60,7 @@ TestRead2: {
 
 	read: file.#Read & {
 		filename: "/file.txt"
-		from: write
+		from:     write
 	}
 
 	test: #compute: [
@@ -88,14 +88,14 @@ TestAppend: {
 	append: file.#Append & {
 		filename: "/file.txt"
 		contents: content2
-		from: write
+		from:     write
 	}
 
 	orig: append.orig
 
 	read: file.#Read & {
 		filename: "/file.txt"
-		from: append
+		from:     append
 	}
 
 	new: read.contents
@@ -103,20 +103,20 @@ TestAppend: {
 	test: new & "hello worldfoo bar"
 
 	//test: #compute: [
-		//dagger.#Load & {from: alpine.#Image},
-		//dagger.#Exec & {
-			//args: [
-				//"sh",
-				//"-ec",
-				//"""
-				//test "$(cat /file.txt)" = "hello worldfoo bar"
-				//""",
-			//]
-			//mount: "/file.txt": {
-				//from: append
-				//path: "/file.txt"
-			//}
-		//},
+	//dagger.#Load & {from: alpine.#Image},
+	//dagger.#Exec & {
+	//args: [
+	//"sh",
+	//"-ec",
+	//"""
+	//test "$(cat /file.txt)" = "hello worldfoo bar"
+	//""",
+	//]
+	//mount: "/file.txt": {
+	//from: append
+	//path: "/file.txt"
+	//}
+	//},
 	//]
 }
 
@@ -127,5 +127,3 @@ TestGlob: {
 	}
 	test: list.filenames & ["/etc/resolv.conf"]
 }
-
-
