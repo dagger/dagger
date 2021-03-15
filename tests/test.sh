@@ -27,6 +27,8 @@ test::stdlib() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/yarn --input-dir TestData="$d"/stdlib/yarn/testdata
   test::one "stdlib: go" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
+  test::one "stdlib: file" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
 }
 
 test::compute(){
