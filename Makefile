@@ -21,7 +21,7 @@ cuefmt:
 
 .PHONY: lint
 lint: cuefmt check-buildkit-version
-	golangci-lint run
+	golangci-lint run --timeout 3m
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: check-buildkit-version

@@ -48,7 +48,6 @@ jobs:
         id: go
 
       - name: Lint
-        timeout-minutes: 3
         run: |
           make lint
 
