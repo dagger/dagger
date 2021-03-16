@@ -6,12 +6,12 @@ package llb
 	#FetchContainer |
 	#PushContainer |
 	#FetchGit |
-	#Exec | 
+	#Exec |
 	#Local |
 	#Copy |
 	#Load |
 	#Subdir |
-	#WriteFile | 
+	#WriteFile |
 	#Mkdir |
 	#Dockerbuild
 
