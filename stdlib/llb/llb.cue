@@ -2,7 +2,18 @@
 package llb
 
 // One operation in a script
-#Op: #FetchContainer | #FetchGit | #Export | #Exec | #Local | #Copy | #Load | #Subdir | #WriteFile | #Mkdir
+#Op: #Export |
+	#FetchContainer |
+	#PushContainer |
+	#FetchGit |
+	#Exec | 
+	#Local |
+	#Copy |
+	#Load |
+	#Subdir |
+	#WriteFile | 
+	#Mkdir |
+	#Dockerbuild
 
 // Export a value from fs state to cue
 #Export: {
