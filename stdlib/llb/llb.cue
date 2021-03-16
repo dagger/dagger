@@ -1,6 +1,15 @@
 // llb: compile LLB graphs executable by buildkit
 package llb
 
+// A dagger component is a configuration value augmented
+// by scripts defining how to compute it, present it to a user,
+// encrypt it, etc.
+#Component: {
+	#compute: [...#Op]
+	_
+	...
+}
+
 // One operation in a script
 #Op: #Export |
 	#FetchContainer |
@@ -33,7 +42,7 @@ package llb
 
 #Load: {
 	do:   "load"
-	from: _
+	from: #Component
 }
 
 #Subdir: {
@@ -47,7 +56,7 @@ package llb
 	env?: [string]: string
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
+	mount: [string]: "tmpfs" | "cache" | {from: #Component, path: string | *"/"}
 }
 
 #FetchContainer: {
@@ -68,7 +77,7 @@ package llb
 
 #Copy: {
 	do:   "copy"
-	from: _
+	from: #Component
 	src:  string | *"/"
 	dest: string | *"/"
 }
@@ -76,7 +85,7 @@ package llb
 #DockerBuild: {
 	do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
-	context?:        _
+	context?:        #Component
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
 	dockerfile?:     string
 
