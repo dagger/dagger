@@ -13,7 +13,7 @@ package llb
 	#Subdir |
 	#WriteFile |
 	#Mkdir |
-	#Dockerbuild
+	#DockerBuild
 
 // Export a value from fs state to cue
 #Export: {
