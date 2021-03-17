@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,10 +15,15 @@ import (
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
 	"dagger.io/go/dagger/compiler"
+)
+
+const (
+	daggerignoreFilename = ".daggerignore"
 )
 
 // An execution pipeline
@@ -257,12 +263,46 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 	if err != nil {
 		return st, err
 	}
-	var include []string
-	if inc := op.Get("include"); inc.Exists() {
-		if err := inc.Decode(&include); err != nil {
-			return st, err
-		}
+
+	// daggerignore processing
+	// buildkit related setup
+	daggerignoreState := llb.Local(
+		dir,
+		llb.SessionID(p.s.SessionID()),
+		llb.FollowPaths([]string{daggerignoreFilename}),
+		llb.SharedKeyHint(dir+"-"+daggerignoreFilename),
+		llb.WithCustomName(p.vertexNamef("Load %s", daggerignoreFilename)),
+	)
+
+	var daggerignore []byte
+
+	def, err := p.s.Marshal(ctx, daggerignoreState)
+	if err != nil {
+		return st, err
 	}
+	ref, err := p.s.SolveRequest(ctx, bkgw.SolveRequest{
+		Definition: def,
+	})
+	if err != nil {
+		return st, err
+	}
+
+	// try to read file
+	daggerignore, err = ref.ReadFile(ctx, bkgw.ReadRequest{
+		Filename: daggerignoreFilename,
+	})
+	// hack for string introspection because !errors.Is(err, os.ErrNotExist) does not work, same for fs
+	if err != nil && !strings.Contains(err.Error(), ".daggerignore: no such file or directory") {
+		return st, err
+	}
+
+	// parse out excludes, works even if file does not exist
+	var excludes []string
+	excludes, err = dockerignore.ReadAll(bytes.NewBuffer(daggerignore))
+	if err != nil {
+		return st, fmt.Errorf("%w failed to parse daggerignore", err)
+	}
+
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
 	// Copy'ing is a costly operation which should be unnecessary.
@@ -275,7 +315,8 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 		llb.Copy(
 			llb.Local(
 				dir,
-				llb.FollowPaths(include),
+				// llb.FollowPaths(include),
+				llb.ExcludePatterns(excludes),
 				llb.WithCustomName(p.vertexNamef("Local %s [transfer]", dir)),
 
 				// Without hint, multiple `llb.Local` operations on the
