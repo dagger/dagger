@@ -2,11 +2,15 @@ package buildkitd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/docker/distribution/reference"
+	bk "github.com/moby/buildkit/client"
+	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 	"github.com/rs/zerolog/log"
 )
 
@@ -120,7 +124,31 @@ func startBuildkit(ctx context.Context) error {
 			Msg("unable to start buildkitd")
 		return err
 	}
-	return nil
+	return waitBuildkit(ctx)
+}
+
+// waitBuildkit waits for the buildkit daemon to be responsive.
+func waitBuildkit(ctx context.Context) error {
+	c, err := bk.New(ctx, "docker-container://"+containerName)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	// Try to connect every 100ms up to 50 times (5 seconds total)
+	const (
+		retryPeriod   = 100 * time.Millisecond
+		retryAttempts = 50
+	)
+
+	for retry := 0; retry < retryAttempts; retry++ {
+		_, err = c.ListWorkers(ctx)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(retryPeriod)
+	}
+	return errors.New("buildkit failed to respond")
 }
 
 func remvoveBuildkit(ctx context.Context) error {
