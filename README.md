@@ -2,13 +2,13 @@
 
 *WARNING: Dagger is alpha-quality software. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still willing to try it, thank you! We appreciate your help and encourage you to ask questions and report issues.*
 
-Dagger is a programmable PaaS (*platform-as-a-service*).
+Dagger is an *Application Delivery as Code* (ADC) platform.
 
-Using Dagger, software teams can replace their artisanal deployment scripts with a state-of-the-art PaaS that is perfectly tailored to their application and infrastructure, in just a few lines of code.
+Using Dagger, software teams can replace their artisanal deployment scripts with a state-of-the-art deployment pipeline, tailor-made for their application and infrastructure, in just a few lines of code.
 
 - Do you spend too much time getting your home-made deployment scripts to work?
 - Do you wish you could just use a PaaS like Heroku or Firebase but can’t because your stack is too custom?
-- Do you put off infrastructure and workflow improvements because changing your tooling is just too much work?
+- Do you put off infrastructure and workflow improvements because it would slow down development?
 - Do you wish you could visualize your entire application delivery workflow as code, all in one place?
 
 If you answered “yes” to any of the above, Dagger might be a good fit for you.
