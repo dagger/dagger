@@ -45,9 +45,9 @@ import (
 		}
 	}
 
-	outputs: {
-		[string]: string
+	outputs: [string]: string
 
+	outputs: {
 		#compute: [
 			llb.#Load & {
 				from: alpine.#Image & {
