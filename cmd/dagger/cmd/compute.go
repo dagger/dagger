@@ -41,7 +41,6 @@ var computeCmd = &cobra.Command{
 		if err := env.SetUpdater(updater.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid updater script")
 		}
-		lg.Debug().Str("input", input.Value().SourceUnsafe()).Msg("setting input")
 		if err := env.SetInput(input.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid input")
 		}
