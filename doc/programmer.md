@@ -1,6 +1,8 @@
-# The Dagger architecture
+# Dagger Programmer Guide
 
-This document provides details on the internals of Dagger, key design decisions and the rationale behind them.
+## The Dagger programming model
+
+*FIXME*
 
 ## What is a DAG?
 
@@ -25,3 +27,11 @@ The DAG architecture has many benefits:
 To execute a DAG, the dagger runtime JIT-compiles it to a low-level format called llb, and executes it with buildkit. Think of buildkit as a specialized VM for running compute graphs; and dagger as a complete programming environment for that VM.
 
 The tradeoff for all those wonderful features is that a DAG architecture cannot be used for all software: only software than can be run as a pipeline.
+
+## The CUE language
+
+*FIXME*
+
+## The Buildkit runtime environment
+
+*FIXME*
