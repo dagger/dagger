@@ -46,51 +46,49 @@ import (
 
 	outputs: [string]: string
 
-	outputs: {
-		#compute: [
-			llb.#Load & {
-				from: aws.#CLI
-			},
-			llb.#Mkdir & {
-				path: "/src"
-			},
-			for dest, content in #files {
-				llb.#WriteFile & {
-					"dest":    dest
-					"content": content
+	outputs: #compute: [
+		llb.#Load & {
+			from: aws.#CLI
+		},
+		llb.#Mkdir & {
+			path: "/src"
+		},
+		for dest, content in #files {
+			llb.#WriteFile & {
+				"dest":    dest
+				"content": content
+			}
+		},
+		llb.#Exec & {
+			args: [
+				"/bin/bash",
+				"--noprofile",
+				"--norc",
+				"-eo",
+				"pipefail",
+				"/entrypoint.sh",
+			]
+			env: {
+				AWS_CONFIG_FILE:       "/cache/aws/config"
+				AWS_ACCESS_KEY_ID:     config.accessKey
+				AWS_SECRET_ACCESS_KEY: config.secretKey
+				AWS_DEFAULT_REGION:    config.region
+				AWS_REGION:            config.region
+				AWS_DEFAULT_OUTPUT:    "json"
+				AWS_PAGER:             ""
+				if neverUpdate {
+					NEVER_UPDATE: "true"
 				}
-			},
-			llb.#Exec & {
-				args: [
-					"/bin/bash",
-					"--noprofile",
-					"--norc",
-					"-eo",
-					"pipefail",
-					"/entrypoint.sh",
-				]
-				env: {
-					AWS_CONFIG_FILE:       "/cache/aws/config"
-					AWS_ACCESS_KEY_ID:     config.accessKey
-					AWS_SECRET_ACCESS_KEY: config.secretKey
-					AWS_DEFAULT_REGION:    config.region
-					AWS_REGION:            config.region
-					AWS_DEFAULT_OUTPUT:    "json"
-					AWS_PAGER:             ""
-					if neverUpdate {
-						NEVER_UPDATE: "true"
-					}
-					STACK_NAME: stackName
-					TIMEOUT:    "\(timeout)"
-					ON_FAILURE: onFailure
-				}
-				dir: "/src"
-				mount: "/cache/aws": "cache"
-			},
-			llb.#Export & {
-				source: "/outputs.json"
-				format: "json"
-			},
-		]
-	}
+				STACK_NAME: stackName
+				TIMEOUT:    "\(timeout)"
+				ON_FAILURE: onFailure
+			}
+			dir: "/src"
+			mount: "/cache/aws": "cache"
+		},
+		llb.#Export & {
+			source: "/outputs.json"
+			format: "json"
+		},
+	]
 }
