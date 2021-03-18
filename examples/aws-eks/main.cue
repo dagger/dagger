@@ -2,6 +2,7 @@ package main
 
 import (
 	"dagger.io/aws"
+	"dagger.io/aws/eks"
 )
 
 // Fill using:
@@ -22,4 +23,9 @@ infra: #Infrastructure & {
 	// Cluster size is 1 for the example purpose
 	workerNodeCapacity:     1
 	workerNodeInstanceType: "t3.small"
+}
+
+kubeconfig: eks.#KubeConfig & {
+	config:      awsConfig
+	clusterName: infra.clusterName
 }

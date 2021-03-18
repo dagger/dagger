@@ -13,23 +13,23 @@ import (
 	workerNodeCapacity:     *3 | >=1
 	workerNodeInstanceType: *"t3.medium" | string
 
-	let clusterName = "\(namePrefix)eks-cluster"
+	clusterName: "\(namePrefix)eks-cluster"
 
 	eksControlPlane: cloudformation.#Stack & {
-		config:    awsConfig
-		source:    json.Marshal(#CFNTemplate.eksControlPlane)
-		stackName: "\(namePrefix)eks-controlplane"
+		config:      awsConfig
+		source:      json.Marshal(#CFNTemplate.eksControlPlane)
+		stackName:   "\(namePrefix)eks-controlplane"
 		neverUpdate: true
-		timeout: 30
+		timeout:     30
 		parameters: ClusterName: clusterName
 	}
 
 	eksNodeGroup: cloudformation.#Stack & {
-		config:    awsConfig
-		source:    json.Marshal(#CFNTemplate.eksNodeGroup)
-		stackName: "\(namePrefix)eks-nodegroup"
+		config:      awsConfig
+		source:      json.Marshal(#CFNTemplate.eksNodeGroup)
+		stackName:   "\(namePrefix)eks-nodegroup"
 		neverUpdate: true
-		timeout: 30
+		timeout:     30
 		parameters: {
 			ClusterName:                         clusterName
 			NodeAutoScalingGroupDesiredCapacity: 1
