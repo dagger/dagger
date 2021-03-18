@@ -44,9 +44,10 @@ func init() {
 
 func Execute() {
 	var (
-		lg  = logger.New()
-		ctx = lg.WithContext(appcontext.Context())
-
+		ctx = appcontext.Context()
+		// `--log-*` flags have not been parsed yet at this point so we get a
+		// default logger. Therefore, we can't store the logger into the context.
+		lg     = logger.New()
 		closer = logger.InitTracing()
 		span   opentracing.Span
 	)
