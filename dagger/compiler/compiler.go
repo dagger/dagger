@@ -6,6 +6,8 @@ import (
 
 	"cuelang.org/go/cue"
 	cueerrors "cuelang.org/go/cue/errors"
+	cuejson "cuelang.org/go/encoding/json"
+	cueyaml "cuelang.org/go/encoding/yaml"
 )
 
 var (
@@ -32,6 +34,14 @@ func Cue() *cue.Runtime {
 
 func Err(err error) error {
 	return DefaultCompiler.Err(err)
+}
+
+func DecodeJSON(path string, data []byte) (*Value, error) {
+	return DefaultCompiler.DecodeJSON(path, data)
+}
+
+func DecodeYAML(path string, data []byte) (*Value, error) {
+	return DefaultCompiler.DecodeYAML(path, data)
 }
 
 // Polyfill for a cue runtime
@@ -78,6 +88,22 @@ func (c *Compiler) Compile(name string, src interface{}) (*Value, error) {
 	inst, err := c.Cue().Compile(name, src)
 	if err != nil {
 		// FIXME: cleaner way to unwrap cue error details?
+		return nil, Err(err)
+	}
+	return c.Wrap(inst.Value(), inst), nil
+}
+
+func (c *Compiler) DecodeJSON(path string, data []byte) (*Value, error) {
+	inst, err := cuejson.Decode(c.Cue(), path, data)
+	if err != nil {
+		return nil, Err(err)
+	}
+	return c.Wrap(inst.Value(), inst), nil
+}
+
+func (c *Compiler) DecodeYAML(path string, data []byte) (*Value, error) {
+	inst, err := cueyaml.Decode(c.Cue(), path, data)
+	if err != nil {
 		return nil, Err(err)
 	}
 	return c.Wrap(inst.Value(), inst), nil

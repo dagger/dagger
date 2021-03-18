@@ -68,6 +68,8 @@ func init() {
 	computeCmd.Flags().Var(input.DirFlag(), "input-dir", "TARGET=PATH")
 	computeCmd.Flags().Var(input.GitFlag(), "input-git", "TARGET=REMOTE#REF")
 	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
+	computeCmd.Flags().Var(input.JSONFlag(), "input-json", "JSON")
+	computeCmd.Flags().Var(input.YAMLFlag(), "input-yaml", "YAML")
 
 	// Setup (future) --from-* flags
 	updater, err = dagger.NewInputValue("[...{do:string, ...}]")
