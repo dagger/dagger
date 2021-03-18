@@ -247,6 +247,11 @@ test::dockerbuild() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/dockerbuild/testdata "$d"/dockerbuild
 }
 
+test::daggerignore() {
+  test::one "Dagger Ignore" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/testdata "$d"/ignore
+}
+
 test::all(){
   local dagger="$1"
 
@@ -264,6 +269,7 @@ test::all(){
   test::input "$dagger"
   test::subdir "$dagger"
   test::dockerbuild "$dagger"
+  test::daggerignore "$dagger"
 
   test::stdlib "$dagger"
 }

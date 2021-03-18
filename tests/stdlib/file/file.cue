@@ -1,7 +1,7 @@
 package f
 
 import (
-	"dagger.io/dagger"
+	"dagger.io/llb"
 	"dagger.io/alpine"
 	"dagger.io/file"
 )
@@ -15,8 +15,8 @@ TestCreate: {
 	}
 
 	test: #compute: [
-		dagger.#Load & {from: alpine.#Image},
-		dagger.#Exec & {
+		llb.#Load & {from: alpine.#Image},
+		llb.#Exec & {
 			args: [
 				"sh",
 				"-ec",
@@ -38,8 +38,8 @@ TestRead: {
 		from:     alpine.#Image & {version: "3.10.6"}
 	}
 	test: #compute: [
-		dagger.#Load & {from: alpine.#Image},
-		dagger.#Exec & {
+		llb.#Load & {from: alpine.#Image},
+		llb.#Exec & {
 			args: [
 				"sh",
 				"-ec",
@@ -64,8 +64,8 @@ TestRead2: {
 	}
 
 	test: #compute: [
-		dagger.#Load & {from: alpine.#Image},
-		dagger.#Exec & {
+		llb.#Load & {from: alpine.#Image},
+		llb.#Exec & {
 			args: [
 				"sh",
 				"-ec",
@@ -101,23 +101,6 @@ TestAppend: {
 	new: read.contents
 
 	test: new & "hello worldfoo bar"
-
-	//test: #compute: [
-	//dagger.#Load & {from: alpine.#Image},
-	//dagger.#Exec & {
-	//args: [
-	//"sh",
-	//"-ec",
-	//"""
-	//test "$(cat /file.txt)" = "hello worldfoo bar"
-	//""",
-	//]
-	//mount: "/file.txt": {
-	//from: append
-	//path: "/file.txt"
-	//}
-	//},
-	//]
 }
 
 TestGlob: {

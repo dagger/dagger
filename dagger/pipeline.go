@@ -7,15 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"strings"
 
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
@@ -271,29 +272,26 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 		llb.SessionID(p.s.SessionID()),
 		llb.FollowPaths([]string{daggerignoreFilename}),
 		llb.SharedKeyHint(dir+"-"+daggerignoreFilename),
-		llb.WithCustomName(p.vertexNamef("Load %s", daggerignoreFilename)),
+		llb.WithCustomName(p.vertexNamef("Try loading %s", path.Join(dir, daggerignoreFilename))),
 	)
-
-	var daggerignore []byte
-
-	def, err := p.s.Marshal(ctx, daggerignoreState)
-	if err != nil {
-		return st, err
-	}
-	ref, err := p.s.SolveRequest(ctx, bkgw.SolveRequest{
-		Definition: def,
-	})
+	ref, err := p.s.Solve(ctx, daggerignoreState)
 	if err != nil {
 		return st, err
 	}
 
 	// try to read file
+	var daggerignore []byte
+	// bool in case file is empty
+	ignorefound := true
 	daggerignore, err = ref.ReadFile(ctx, bkgw.ReadRequest{
 		Filename: daggerignoreFilename,
 	})
 	// hack for string introspection because !errors.Is(err, os.ErrNotExist) does not work, same for fs
-	if err != nil && !strings.Contains(err.Error(), ".daggerignore: no such file or directory") {
-		return st, err
+	if err != nil {
+		if !strings.Contains(err.Error(), ".daggerignore: no such file or directory") {
+			return st, err
+		}
+		ignorefound = false
 	}
 
 	// parse out excludes, works even if file does not exist
@@ -303,6 +301,14 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 		return st, fmt.Errorf("%w failed to parse daggerignore", err)
 	}
 
+	// log out patterns if file exists
+	if ignorefound {
+		log.
+			Ctx(ctx).
+			Debug().
+			Str("patterns", fmt.Sprint(excludes)).
+			Msg("daggerignore exclude patterns")
+	}
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
 	// Copy'ing is a costly operation which should be unnecessary.
