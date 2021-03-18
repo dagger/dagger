@@ -6,11 +6,6 @@ readonly d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 # shellcheck source=/dev/null
 . "$d/test-lib.sh"
 
-# shellcheck source=/dev/null
-if grep -q "DAGGER_SECRETS" "$d/test.secret"; then
-    source "$d/test.secret"
-fi
-
 # Point this to your dagger binary
 readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../cmd/dagger/dagger}"
 # The default arguments are a no-op, but having "anything" is a little cheat necessary for "${DAGGER_BINARY_ARGS[@]}" to not be empty down there

@@ -14,38 +14,37 @@ jobs:
       - name: Check out
         uses: actions/checkout@v2
 
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
       - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck git-crypt
-
+          # Cue
           export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2)"
           export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
-
           echo "Installing cue version $CUE_VERSION"
-          curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
-
           curl -L https://github.com/cuelang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
 
-      - name: Unlock secrets
+          # SOPS
+          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.6.1/sops-v3.6.1.linux
+          sudo chmod +x /usr/local/bin/sops
+
+          # golangci
+          curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
+
+      - name: Import PGP private key
         env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+          SOPS_PGP_KEY: ${{ secrets.SOPS_PGP_KEY }}
         run: |
-          echo "$GIT_CRYPT_KEY" | base64  -d > /tmp/git-crypt-key
-          git-crypt unlock /tmp/git-crypt-key
-          rm -f /tmp/git-crypt-key
+          echo "$SOPS_PGP_KEY" | base64 -d | gpg --import
 
       - name: Login to Docker Hub
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: 1.16
-        id: go
 
       - name: Lint
         run: |

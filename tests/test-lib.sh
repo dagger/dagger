@@ -127,14 +127,18 @@ test::one(){
   return "$ret"
 }
 
-disable(){
-  logger::warning "Test \"$2\" has been disabled."
+# Similar to test::one, however tests will be skipped if secrets cannot be decrypted
+test::secret(){
+  local inputFile="$1"
+  shift
+
+  if sops exec-file "$inputFile" echo  > /dev/null 2>&1; then
+    test::one "$@" --input-yaml "$inputFile"
+  else
+    logger::warning "Skip \"$1\": secrets not available"
+  fi
 }
 
-secret(){
-  if [ -z "${DAGGER_SECRETS_LOADED+x}" ] || [ "$DAGGER_SECRETS_LOADED" != "1" ]; then
-    logger::warning "Skip \"$2\": secrets not available"
-  else
-    "$@"
-  fi
+disable(){
+  logger::warning "Test \"$2\" has been disabled."
 }
