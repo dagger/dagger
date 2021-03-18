@@ -15,7 +15,7 @@ import (
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
-		string
+		dagger.#Secret
 
 		#compute: [
 			llb.#Load & {
