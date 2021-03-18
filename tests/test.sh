@@ -26,6 +26,12 @@ test::stdlib() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
 }
 
+test::examples() {
+    test::secret "$d"/../examples/react-netlify/inputs.yaml "examples: React Netlify" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/../examples/react-netlify
+
+}
+
 test::compute(){
   local dagger="$1"
 
@@ -84,7 +90,7 @@ test::fetchcontainer(){
 test::pushcontainer(){
   local dagger="$1"
 
-  secret test::one "PushContainer: simple"       --exit=0 \
+  test::secret "$d"/push-container/inputs.yaml "PushContainer: simple"       --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/push-container
 }
 
@@ -267,6 +273,8 @@ test::all(){
   test::daggerignore "$dagger"
 
   test::stdlib "$dagger"
+
+  test::examples "$dagger"
 }
 
 case "${1:-all}" in
