@@ -312,11 +312,7 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
 	// Copy'ing is a costly operation which should be unnecessary.
-	// However, for a mysterious reason, `llb.Local` is returning a different
-	// digest at every run, therefore invalidating the cache.
-	//
-	// By wrapping `llb.Local` inside `llb.Copy`, we get the same digest for
-	// the same content.
+	// However, using llb.Local directly breaks caching sometimes for unknown reasons.
 	return st.File(
 		llb.Copy(
 			llb.Local(
@@ -624,10 +620,22 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 	if err != nil {
 		return st, err
 	}
-	return llb.Git(
-		remote,
-		ref,
-		llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remote, ref)),
+
+	// FIXME: Remove the `Copy` and use `Git` directly.
+	//
+	// Copy'ing is a costly operation which should be unnecessary.
+	// However, using llb.Git directly breaks caching sometimes for unknown reasons.
+	return st.File(
+		llb.Copy(
+			llb.Git(
+				remote,
+				ref,
+				llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remote, ref)),
+			),
+			"/",
+			"/",
+		),
+		llb.WithCustomName(p.vertexNamef("FetchGit %s@%s [copy]", remote, ref)),
 	), nil
 }
 
