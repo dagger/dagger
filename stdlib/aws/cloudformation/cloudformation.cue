@@ -3,9 +3,8 @@ package cloudformation
 import (
 	"encoding/json"
 
-	"dagger.io/alpine"
-	"dagger.io/aws"
 	"dagger.io/llb"
+	"dagger.io/aws"
 )
 
 // AWS CloudFormation Stack
@@ -50,11 +49,7 @@ import (
 	outputs: {
 		#compute: [
 			llb.#Load & {
-				from: alpine.#Image & {
-					package: bash:      "=5.1.0-r0"
-					package: jq:        "=1.6-r1"
-					package: "aws-cli": "=1.18.177-r0"
-				}
+				from: aws.#CLI
 			},
 			llb.#Mkdir & {
 				path: "/src"
