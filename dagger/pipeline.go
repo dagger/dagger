@@ -1,23 +1,30 @@
 package dagger
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"strings"
 
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
 	"dagger.io/go/dagger/compiler"
+)
+
+const (
+	daggerignoreFilename = ".daggerignore"
 )
 
 // An execution pipeline
@@ -257,11 +264,50 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 	if err != nil {
 		return st, err
 	}
-	var include []string
-	if inc := op.Get("include"); inc.Exists() {
-		if err := inc.Decode(&include); err != nil {
+
+	// daggerignore processing
+	// buildkit related setup
+	daggerignoreState := llb.Local(
+		dir,
+		llb.SessionID(p.s.SessionID()),
+		llb.FollowPaths([]string{daggerignoreFilename}),
+		llb.SharedKeyHint(dir+"-"+daggerignoreFilename),
+		llb.WithCustomName(p.vertexNamef("Try loading %s", path.Join(dir, daggerignoreFilename))),
+	)
+	ref, err := p.s.Solve(ctx, daggerignoreState)
+	if err != nil {
+		return st, err
+	}
+
+	// try to read file
+	var daggerignore []byte
+	// bool in case file is empty
+	ignorefound := true
+	daggerignore, err = ref.ReadFile(ctx, bkgw.ReadRequest{
+		Filename: daggerignoreFilename,
+	})
+	// hack for string introspection because !errors.Is(err, os.ErrNotExist) does not work, same for fs
+	if err != nil {
+		if !strings.Contains(err.Error(), ".daggerignore: no such file or directory") {
 			return st, err
 		}
+		ignorefound = false
+	}
+
+	// parse out excludes, works even if file does not exist
+	var excludes []string
+	excludes, err = dockerignore.ReadAll(bytes.NewBuffer(daggerignore))
+	if err != nil {
+		return st, fmt.Errorf("%w failed to parse daggerignore", err)
+	}
+
+	// log out patterns if file exists
+	if ignorefound {
+		log.
+			Ctx(ctx).
+			Debug().
+			Str("patterns", fmt.Sprint(excludes)).
+			Msg("daggerignore exclude patterns")
 	}
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
@@ -275,7 +321,8 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 		llb.Copy(
 			llb.Local(
 				dir,
-				llb.FollowPaths(include),
+				// llb.FollowPaths(include),
+				llb.ExcludePatterns(excludes),
 				llb.WithCustomName(p.vertexNamef("Local %s [transfer]", dir)),
 
 				// Without hint, multiple `llb.Local` operations on the
