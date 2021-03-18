@@ -8,11 +8,10 @@ import (
 )
 
 #Infrastructure: {
-	awsConfig:  aws.#Config
-	namePrefix: *"dagger-example-" | string
-	// Cluster size is 1 for example (to limit resources)
-	workerNodeCapacity:     *1 | >1
-	workerNodeInstanceType: *"t3.small" | string
+	awsConfig:              aws.#Config
+	namePrefix:             *"" | string
+	workerNodeCapacity:     *3 | >=1
+	workerNodeInstanceType: *"t3.medium" | string
 
 	let clusterName = "\(namePrefix)eks-cluster"
 
@@ -21,6 +20,7 @@ import (
 		source:    json.Marshal(#CFNTemplate.eksControlPlane)
 		stackName: "\(namePrefix)eks-controlplane"
 		neverUpdate: true
+		timeout: 30
 		parameters: ClusterName: clusterName
 	}
 
@@ -29,14 +29,12 @@ import (
 		source:    json.Marshal(#CFNTemplate.eksNodeGroup)
 		stackName: "\(namePrefix)eks-nodegroup"
 		neverUpdate: true
+		timeout: 30
 		parameters: {
 			ClusterName:                         clusterName
-			ClusterControlPlaneSecurityGroup:    eksControlPlane.outputs.DefaultSecurityGroup
 			NodeAutoScalingGroupDesiredCapacity: 1
 			NodeAutoScalingGroupMaxSize:         NodeAutoScalingGroupDesiredCapacity + 1
-			NodeGroupName:                       "\(namePrefix)eks-nodegroup"
 			NodeInstanceType:                    workerNodeInstanceType
-			VpcId:                               eksControlPlane.outputs.VPC
 			Subnets:                             eksControlPlane.outputs.SubnetIds
 		}
 	}

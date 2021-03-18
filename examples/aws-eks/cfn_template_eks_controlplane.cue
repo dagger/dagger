@@ -33,10 +33,6 @@ package main
 			Type:        "String"
 			Description: "The EKS cluster name"
 		}
-		// EKSIAMRoleName: {
-		//  Type:        "String"
-		//  Description: "The name of the IAM role for the EKS service to assume"
-		// }
 	}
 	Metadata: "AWS::CloudFormation::Interface": ParameterGroups: [
 		{
@@ -214,6 +210,7 @@ package main
 			Type: "AWS::EC2::Subnet"
 			Metadata: Comment: "Subnet 01"
 			Properties: {
+				MapPublicIpOnLaunch: true
 				AvailabilityZone: "Fn::Select": [
 					"0",
 					{
@@ -227,6 +224,10 @@ package main
 						Key: "Name"
 						Value: "Fn::Sub": "${AWS::StackName}-PublicSubnet01"
 					},
+					{
+						Key: "Fn::Sub": "kubernetes.io/cluster/${ClusterName}"
+						Value: "shared"
+					},
 				]
 			}
 		}
@@ -234,6 +235,7 @@ package main
 			Type: "AWS::EC2::Subnet"
 			Metadata: Comment: "Subnet 02"
 			Properties: {
+				MapPublicIpOnLaunch: true
 				AvailabilityZone: "Fn::Select": [
 					"1",
 					{
@@ -246,6 +248,10 @@ package main
 					{
 						Key: "Name"
 						Value: "Fn::Sub": "${AWS::StackName}-PublicSubnet02"
+					},
+					{
+						Key: "Fn::Sub": "kubernetes.io/cluster/${ClusterName}"
+						Value: "shared"
 					},
 				]
 			}
@@ -267,6 +273,10 @@ package main
 						Key: "Name"
 						Value: "Fn::Sub": "${AWS::StackName}-PrivateSubnet01"
 					},
+					{
+						Key: "Fn::Sub": "kubernetes.io/cluster/${ClusterName}"
+						Value: "shared"
+					},
 				]
 			}
 		}
@@ -286,6 +296,10 @@ package main
 					{
 						Key: "Name"
 						Value: "Fn::Sub": "${AWS::StackName}-PrivateSubnet02"
+					},
+					{
+						Key: "Fn::Sub": "kubernetes.io/cluster/${ClusterName}"
+						Value: "shared"
 					},
 				]
 			}
@@ -340,7 +354,6 @@ package main
 
 					},
 				]
-				// RoleName: Ref: "EKSIAMRoleName"
 				ManagedPolicyArns: [
 					"arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
 					"arn:aws:iam::aws:policy/AmazonEKSServicePolicy",
@@ -351,6 +364,7 @@ package main
 			Type: "AWS::EKS::Cluster"
 			Properties: {
 				Name: Ref: "ClusterName"
+				Version: "1.19"
 				RoleArn: "Fn::GetAtt": ["EKSIAMRole", "Arn"]
 				ResourcesVpcConfig: {
 					SecurityGroupIds: [{Ref: "ControlPlaneSecurityGroup"}]

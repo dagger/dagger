@@ -18,4 +18,8 @@ awsConfig: aws.#Config & {
 // base config can be changed (number of EC2 instances, types, etc...)
 infra: #Infrastructure & {
 	"awsConfig": awsConfig
+	namePrefix:  "dagger-example-"
+	// Cluster size is 1 for the example purpose
+	workerNodeCapacity:     1
+	workerNodeInstanceType: "t3.small"
 }
