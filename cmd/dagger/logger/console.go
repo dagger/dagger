@@ -163,6 +163,12 @@ func (c *Console) formatFields(entry map[string]interface{}) string {
 			fields = append(fields, fmt.Sprintf("%s=%s", key, s))
 		case nil:
 			fields = append(fields, fmt.Sprintf("%s=null", key))
+		default:
+			o, err := json.MarshalIndent(v, "", "    ")
+			if err != nil {
+				panic(err)
+			}
+			fields = append(fields, fmt.Sprintf("%s=%s", key, o))
 		}
 	}
 
