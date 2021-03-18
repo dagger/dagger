@@ -112,6 +112,10 @@ func (v *Value) Decode(x interface{}) error {
 	return v.val.Decode(x)
 }
 
+func (v *Value) Dereference() *Value {
+	return v.Wrap(cue.Dereference(v.val))
+}
+
 func (v *Value) List() ([]*Value, error) {
 	l := []*Value{}
 	it, err := v.val.List()

@@ -27,14 +27,16 @@ type Pipeline struct {
 	state  llb.State
 	result bkgw.Reference
 	out    *Fillable
+	m      *PipelineManager
 }
 
-func NewPipeline(name string, s Solver, out *Fillable) *Pipeline {
+func NewPipeline(name string, s Solver, out *Fillable, m *PipelineManager) *Pipeline {
 	return &Pipeline{
 		name:  name,
 		s:     s,
 		state: llb.Scratch(),
 		out:   out,
+		m:     m,
 	}
 }
 
@@ -227,8 +229,8 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Get("from").Path().String(), p.s, nil)
-	if err := from.Do(ctx, op.Get("from")); err != nil {
+	from, err := p.m.Do(ctx, op.Get("from"), nil)
+	if err != nil {
 		return st, err
 	}
 	fromResult, err := from.Result().ToState()
@@ -377,8 +379,8 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := NewPipeline(mnt.Get("from").Path().String(), p.s, nil)
-	if err := from.Do(ctx, mnt.Get("from")); err != nil {
+	from, err := p.m.Do(ctx, mnt.Get("from"), nil)
+	if err != nil {
 		return nil, err
 	}
 	fromResult, err := from.Result().ToState()
@@ -481,8 +483,8 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Get("from").Path().String(), p.s, nil)
-	if err := from.Do(ctx, op.Get("from")); err != nil {
+	from, err := p.m.Do(ctx, op.Get("from"), nil)
+	if err != nil {
 		return st, err
 	}
 	return from.Result().ToState()
@@ -602,8 +604,8 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if context.Exists() {
-		from := NewPipeline(op.Lookup("context").Path().String(), p.s, nil)
-		if err := from.Do(ctx, context); err != nil {
+		from, err := p.m.Do(ctx, op.Lookup("context"), nil)
+		if err != nil {
 			return st, err
 		}
 		fromResult, err := from.Result().ToState()

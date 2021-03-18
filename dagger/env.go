@@ -94,7 +94,7 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Env.Update")
 	defer span.Finish()
 
-	p := NewPipeline("[internal] source", s, nil)
+	p := NewPipeline("[internal] source", s, nil, NewPipelineManager(s))
 	// execute updater script
 	if err := p.Do(ctx, env.updater); err != nil {
 		return err
@@ -237,8 +237,10 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 			return nil
 		},
 	}
+
 	// Orchestrate execution with cueflow
-	flow := cueflow.New(flowCfg, inst, newTaskFunc(inst, newPipelineRunner(inst, s)))
+	m := NewPipelineManager(s)
+	flow := cueflow.New(flowCfg, inst, newTaskFunc(inst, newPipelineRunner(inst, m)))
 	if err := flow.Run(ctx); err != nil {
 		return err
 	}
@@ -266,7 +268,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(inst *cue.Instance, s Solver) cueflow.RunnerFunc {
+func newPipelineRunner(inst *cue.Instance, m *PipelineManager) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -291,8 +293,7 @@ func newPipelineRunner(inst *cue.Instance, s Solver) cueflow.RunnerFunc {
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value(), inst)
-		p := NewPipeline(t.Path().String(), s, NewFillable(t))
-		err := p.Do(ctx, v)
+		_, err := m.Do(ctx, v, NewFillable(t))
 		if err != nil {
 			span.LogFields(otlog.String("error", err.Error()))
 			ext.Error.Set(span, true)
