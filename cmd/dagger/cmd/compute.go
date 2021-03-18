@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
+	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,8 +27,8 @@ var computeCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		ctx := cmd.Context()
-		lg := log.Ctx(ctx)
+		lg := logger.New()
+		ctx := lg.WithContext(cmd.Context())
 
 		env, err := dagger.NewEnv()
 		if err != nil {
