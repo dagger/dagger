@@ -52,7 +52,7 @@ TestNetlify: {
 				"pipefail",
 				"-c",
 				#"""
-                test "$(curl \#(deploy.url))" = "\#(random)"
+                test "$(curl \#(deploy.deployUrl))" = "\#(random)"
                 """#,
 			]
 		},
