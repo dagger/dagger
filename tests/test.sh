@@ -24,6 +24,8 @@ test::stdlib() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
   test::one "stdlib: file" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
+  test::secret "$d"/stdlib/netlify/inputs.yaml "stdlib: netlify" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/netlify
 }
 
 test::examples() {
