@@ -132,7 +132,8 @@ test::secret(){
   local inputFile="$1"
   shift
 
-  if sops exec-file "$inputFile" echo  > /dev/null 2>&1; then
+  # if sops exec-file "$inputFile" echo  > /dev/null 2>&1; then
+  if sops exec-file "$inputFile" echo; then
     test::one "$@" --input-yaml "$inputFile"
   else
     logger::warning "Skip \"$1\": secrets not available"
