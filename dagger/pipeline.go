@@ -112,12 +112,15 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 	case "load", "copy":
 		return Analyze(fn, op.Get("from"))
 	case "exec":
-		return op.Get("mount").RangeStruct(func(dest string, mnt *compiler.Value) error {
-			if from := mnt.Get("from"); from.Exists() {
+		fields, err := op.Get("mount").Fields()
+		if err != nil {
+			return err
+		}
+		for _, mnt := range fields {
+			if from := mnt.Value.Get("from"); from.Exists() {
 				return Analyze(fn, from)
 			}
-			return nil
-		})
+		}
 	}
 	return nil
 }
@@ -337,7 +340,6 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
-		Env    map[string]string
 		Dir    string
 		Always bool
 	}
@@ -349,10 +351,22 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 	opts = append(opts, llb.Args(cmd.Args))
 	// dir
 	opts = append(opts, llb.Dir(cmd.Dir))
+
 	// env
-	for k, v := range cmd.Env {
-		opts = append(opts, llb.AddEnv(k, v))
+	if env := op.Get("env"); env.Exists() {
+		envs, err := op.Get("env").Fields()
+		if err != nil {
+			return st, err
+		}
+		for _, env := range envs {
+			v, err := env.Value.String()
+			if err != nil {
+				return st, err
+			}
+			opts = append(opts, llb.AddEnv(env.Label, v))
+		}
 	}
+
 	// always?
 	// FIXME: initialize once for an entire compute job, to avoid cache misses
 	if cmd.Always {
@@ -385,14 +399,17 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 
 func (p *Pipeline) mountAll(ctx context.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
 	opts := []llb.RunOption{}
-	err := mounts.RangeStruct(func(dest string, mnt *compiler.Value) error {
-		o, err := p.mount(ctx, dest, mnt)
+	fields, err := mounts.Fields()
+	if err != nil {
+		return nil, err
+	}
+	for _, mnt := range fields {
+		o, err := p.mount(ctx, mnt.Label, mnt.Value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		opts = append(opts, o)
-		return nil
-	})
+	}
 	return opts, err
 }
 
@@ -709,30 +726,30 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	}
 
 	if buildArgs := op.Lookup("buildArg"); buildArgs.Exists() {
-		err := buildArgs.RangeStruct(func(key string, value *compiler.Value) error {
-			v, err := value.String()
-			if err != nil {
-				return err
-			}
-			req.FrontendOpt["build-arg:"+key] = v
-			return nil
-		})
+		fields, err := buildArgs.Fields()
 		if err != nil {
 			return st, err
+		}
+		for _, buildArg := range fields {
+			v, err := buildArg.Value.String()
+			if err != nil {
+				return st, err
+			}
+			req.FrontendOpt["build-arg:"+buildArg.Label] = v
 		}
 	}
 
 	if labels := op.Lookup("label"); labels.Exists() {
-		err := labels.RangeStruct(func(key string, value *compiler.Value) error {
-			s, err := value.String()
-			if err != nil {
-				return err
-			}
-			req.FrontendOpt["label:"+key] = s
-			return nil
-		})
+		fields, err := labels.Fields()
 		if err != nil {
 			return st, err
+		}
+		for _, label := range fields {
+			s, err := label.Value.String()
+			if err != nil {
+				return st, err
+			}
+			req.FrontendOpt["label:"+label.Label] = s
 		}
 	}
 

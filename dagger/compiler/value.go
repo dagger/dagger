@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"sort"
+
 	"cuelang.org/go/cue"
 	cueformat "cuelang.org/go/cue/format"
 )
@@ -72,9 +74,33 @@ func (v *Value) Kind() cue.Kind {
 	return v.val.Kind()
 }
 
+// Field represents a struct field
+type Field struct {
+	Label string
+	Value *Value
+}
+
 // Proxy function to the underlying cue.Value
-func (v *Value) Fields() (*cue.Iterator, error) {
-	return v.val.Fields()
+// Field ordering is guaranteed to be stable.
+func (v *Value) Fields() ([]Field, error) {
+	it, err := v.val.Fields()
+	if err != nil {
+		return nil, err
+	}
+
+	fields := []Field{}
+	for it.Next() {
+		fields = append(fields, Field{
+			Label: it.Label(),
+			Value: v.Wrap(it.Value()),
+		})
+	}
+
+	sort.SliceStable(fields, func(i, j int) bool {
+		return fields[i].Label < fields[j].Label
+	})
+
+	return fields, nil
 }
 
 // Proxy function to the underlying cue.Value
@@ -121,36 +147,8 @@ func (v *Value) List() ([]*Value, error) {
 	for it.Next() {
 		l = append(l, v.Wrap(it.Value()))
 	}
+
 	return l, nil
-}
-
-// FIXME: deprecate to simplify
-func (v *Value) RangeList(fn func(int, *Value) error) error {
-	it, err := v.val.List()
-	if err != nil {
-		return err
-	}
-	i := 0
-	for it.Next() {
-		if err := fn(i, v.Wrap(it.Value())); err != nil {
-			return err
-		}
-		i++
-	}
-	return nil
-}
-
-func (v *Value) RangeStruct(fn func(string, *Value) error) error {
-	it, err := v.Fields()
-	if err != nil {
-		return err
-	}
-	for it.Next() {
-		if err := fn(it.Label(), v.Wrap(it.Value())); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // FIXME: receive string path?
