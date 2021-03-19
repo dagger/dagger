@@ -41,7 +41,6 @@ var computeCmd = &cobra.Command{
 		if err := env.SetUpdater(updater.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid updater script")
 		}
-		lg.Debug().Str("input", input.Value().SourceUnsafe()).Msg("setting input")
 		if err := env.SetInput(input.Value()); err != nil {
 			lg.Fatal().Err(err).Msg("invalid input")
 		}
@@ -68,6 +67,8 @@ func init() {
 	computeCmd.Flags().Var(input.DirFlag(), "input-dir", "TARGET=PATH")
 	computeCmd.Flags().Var(input.GitFlag(), "input-git", "TARGET=REMOTE#REF")
 	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
+	computeCmd.Flags().Var(input.JSONFlag(), "input-json", "JSON")
+	computeCmd.Flags().Var(input.YAMLFlag(), "input-yaml", "YAML")
 
 	// Setup (future) --from-* flags
 	updater, err = dagger.NewInputValue("[...{do:string, ...}]")

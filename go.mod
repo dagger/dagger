@@ -21,6 +21,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
+	go.mozilla.org/sops v0.0.0-20190912205235-14a22d7a7060 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c // indirect
 	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221

@@ -1,0 +1,35 @@
+TestNetlify:
+    deploy:
+        account:
+            name: ENC[AES256_GCM,data:AupEMRKMWvb8Wg==,iv:M4ni+CrI0udcYqgSTciuYZOVyZkTUVSrluSwJFIjqiE=,tag:dztVg8S/db5uI0cC7rivQg==,type:str]
+            token: ENC[AES256_GCM,data:W7Y1Qf4w5gn5OeGigY3a35VFP9THOZ7Hu9L5l84afwEpYlAQm+M8C67CHA==,iv:Jey3UX/3DihTGG87aFU2FWzEIuXlQ+pboxTd8Gx5gNY=,tag:LnpTzsVzTZkkk+jsbtkpKw==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    lastmodified: '2021-03-19T00:15:11Z'
+    mac: ENC[AES256_GCM,data:bXUJxpw4wIzqzNRjYnyxiYqfTCk78YGOI8CdyIjhFsVgEhla8FmS/CCeUlEunfbTwaYQkWx+Uodz8MVk1yGcvjOl6KQvcIL8/U2uA3WYJaHI94ZdlE1J+YlLOdQR8D+RJbDkJiEhQKek2d21CM3A8njx5uUvWkzQE43lmeQAKgI=,iv:kITjaVpxc3vqLPl+mhufC5mADNk+86+u664jltBN9ro=,tag:j8/xMpLjgI8TvNb+O21C4g==,type:str]
+    pgp:
+    -   created_at: '2021-03-19T00:15:11Z'
+        enc: |
+            -----BEGIN PGP MESSAGE-----
+
+            hQIMAzqVY590vudzAQ//XsnreKKngyWdere1fMGDZxJgS7+e6dkg/2NfH58gcHvp
+            qv3/MqYN9rz/WhmpbZTdkahxuNOrsVjGT1hcBjjqgkK5wBiUqTaEGR6GKd1bhZ5o
+            t8oyYEPu4hUdzD52bcO/sapTymYSA6tc9XsGaMlferzsZVZ2T25nXpFrQ8gcRtbi
+            12Tmx6FbiaqfOcNjCgcyQ7sS1oDLSXgKtj9yS8rC3LuD1ZR9HgeqBWycH318hFEH
+            Dkj0FlmVhF6cOZGK5WgUR7ibp5v44ta+A94HXIyUbEfN2yCo1iLxJRjH5s/S0xsJ
+            CwssAK3NtSxnxTk9UgX//pyl29WX2Bc3tbSEYn1pelHvWNfb6zWUMmc4O0pTtLJO
+            AFjeZvmB33ry1AFkuy+5NTp2B66NiiNTa7ojamTF3i2d6zVCGUJ9HO560i3pURax
+            7YM1fsexBk0P6GohEdgWwx41BGqd8jt0vmrhrVIXeqDiykwYNUAkv55PTDWmG8MJ
+            bUNAEsKOaDHT0MaIGIqAmIdIWm//IdmK7sL8r9T3mnBQovtANRV1A+ejSWZF0fbG
+            DY8b4knVJVL8BMu0QnToSyHDChgAqr2liciZ+Cmx72hTVi8RkJzsBXMtjNG6bEiK
+            R8eBUueEsnU44PkHCJBg2gs3v+m2KUjlVbwNLFDG6/xFUs21j6bV7dhn2l3RZSPS
+            XgE0hKI6GK8uyu24E8mJ+pYZF4CYIgkTbyTN2fn64N3aNMn8L1bHonpXxexcnWaI
+            46fatc3YtQg2mgoeNhvM7xtJYJU5RwfaTsjdjecK9jBKWiXXlgoLBwHJgkB03YQ=
+            =Lrp5
+            -----END PGP MESSAGE-----
+        fp: 6CB37404020B5F0A0B41B5BB225EBAB0B936AC65
+    unencrypted_suffix: _unencrypted
+    version: 3.6.1

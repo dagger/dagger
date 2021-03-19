@@ -6,11 +6,6 @@ readonly d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 # shellcheck source=/dev/null
 . "$d/test-lib.sh"
 
-# shellcheck source=/dev/null
-if grep -q "DAGGER_SECRETS" "$d/test.secret"; then
-    source "$d/test.secret"
-fi
-
 # Point this to your dagger binary
 readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../cmd/dagger/dagger}"
 # The default arguments are a no-op, but having "anything" is a little cheat necessary for "${DAGGER_BINARY_ARGS[@]}" to not be empty down there
@@ -29,6 +24,14 @@ test::stdlib() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
   test::one "stdlib: file" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
+  test::secret "$d"/stdlib/netlify/inputs.yaml "stdlib: netlify" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/netlify
+}
+
+test::examples() {
+    test::secret "$d"/../examples/react-netlify/inputs.yaml "examples: React Netlify" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/../examples/react-netlify
+
 }
 
 test::compute(){
@@ -89,7 +92,7 @@ test::fetchcontainer(){
 test::pushcontainer(){
   local dagger="$1"
 
-  secret test::one "PushContainer: simple"       --exit=0 \
+  test::secret "$d"/push-container/inputs.yaml "PushContainer: simple"       --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/push-container
 }
 
@@ -272,6 +275,8 @@ test::all(){
   test::daggerignore "$dagger"
 
   test::stdlib "$dagger"
+
+  test::examples "$dagger"
 }
 
 case "${1:-all}" in

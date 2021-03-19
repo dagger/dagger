@@ -2,14 +2,19 @@ package dagger
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"cuelang.org/go/cue"
 	"github.com/spf13/pflag"
 
 	"dagger.io/go/dagger/compiler"
+
+	"go.mozilla.org/sops"
+	"go.mozilla.org/sops/decrypt"
 )
 
 // A mutable cue value with an API suitable for user inputs,
@@ -220,6 +225,60 @@ func (f cueFlag) String() string {
 
 func (f cueFlag) Type() string {
 	return "CUE"
+}
+
+func (iv *InputValue) YAMLFlag() pflag.Value {
+	return fileFlag{
+		iv:     iv,
+		format: "yaml",
+	}
+}
+
+func (iv *InputValue) JSONFlag() pflag.Value {
+	return fileFlag{
+		iv:     iv,
+		format: "json",
+	}
+}
+
+type fileFlag struct {
+	format string
+	iv     *InputValue
+}
+
+func (f fileFlag) Set(s string) error {
+	return f.iv.Set(s, func(s string) (interface{}, error) {
+		content, err := os.ReadFile(s)
+		if err != nil {
+			return nil, err
+		}
+
+		plaintext, err := decrypt.Data(content, f.format)
+		if err != nil && !errors.Is(err, sops.MetadataNotFound) {
+			return nil, fmt.Errorf("unable to decrypt %q: %w", s, err)
+		}
+
+		if len(plaintext) > 0 {
+			content = plaintext
+		}
+
+		switch f.format {
+		case "json":
+			return compiler.DecodeJSON(s, content)
+		case "yaml":
+			return compiler.DecodeYAML(s, content)
+		default:
+			panic("unsupported file format")
+		}
+	})
+}
+
+func (f fileFlag) String() string {
+	return f.iv.String()
+}
+
+func (f fileFlag) Type() string {
+	return strings.ToUpper(f.format)
 }
 
 // UTILITIES

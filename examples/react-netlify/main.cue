@@ -13,11 +13,14 @@ repository: git.#Repository & {
 
 todoApp: netlify.#Site & {
 	account: {
-		name:  "blocklayer"
-		token: string // Fill using --input-string todoApp.account.token=XXX
+		// Create an API token in your Netlify account settings
+		// https://app.netlify.com/user/applications/personal
+		//
+		// Fill using --input-string todoApp.account.token=XXX
+		token: string
 	}
 
-	name: "dagger-test"
+	name: "dagger-example-react-netlify"
 
 	contents: yarn.#Script & {
 		source: repository

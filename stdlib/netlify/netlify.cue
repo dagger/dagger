@@ -33,52 +33,56 @@ import (
 	// Create the Netlify site if it doesn't exist?
 	create: bool | *true
 
-	// Deployment url
-	url: {
-		string
+	// Website url
+	url: string
 
-		#compute: [
-			llb.#Load & {
-				from: alpine.#Image & {
-					package: bash: "=~5.1"
-					package: jq:   "=~1.6"
-					package: curl: "=~7.74"
-					package: yarn: "=~1.22"
+	// Unique Deploy URL
+	deployUrl: string
+
+	// Logs URL for this deployment
+	logsUrl: string
+
+	#compute: [
+		llb.#Load & {
+			from: alpine.#Image & {
+				package: bash: "=~5.1"
+				package: jq:   "=~1.6"
+				package: curl: "=~7.74"
+				package: yarn: "=~1.22"
+			}
+		},
+		llb.#Exec & {
+			args: ["yarn", "global", "add", "netlify-cli@2.47.0"]
+		},
+		llb.#Exec & {
+			args: [
+				"/bin/bash",
+				"--noprofile",
+				"--norc",
+				"-eo",
+				"pipefail",
+				"-c",
+				code,
+			]
+			env: {
+				NETLIFY_SITE_NAME: name
+				if (create) {
+					NETLIFY_SITE_CREATE: "1"
 				}
-			},
-			llb.#Exec & {
-				args: ["yarn", "global", "add", "netlify-cli@2.47.0"]
-			},
-			llb.#Exec & {
-				args: [
-					"/bin/bash",
-					"--noprofile",
-					"--norc",
-					"-eo",
-					"pipefail",
-					"-c",
-					code,
-				]
-				env: {
-					NETLIFY_SITE_NAME: name
-					if (create) {
-						NETLIFY_SITE_CREATE: "1"
-					}
-					if customDomain != _|_ {
-						NETLIFY_DOMAIN: customDomain
-					}
-					NETLIFY_ACCOUNT:    account.name
-					NETLIFY_AUTH_TOKEN: account.token
+				if customDomain != _|_ {
+					NETLIFY_DOMAIN: customDomain
 				}
-				dir: "/src"
-				mount: "/src": from: contents
-			},
-			llb.#Export & {
-				source: "/url"
-				format: "string"
-			},
-		]
-	}
+				NETLIFY_ACCOUNT:    account.name
+				NETLIFY_AUTH_TOKEN: account.token
+			}
+			dir: "/src"
+			mount: "/src": from: contents
+		},
+		llb.#Export & {
+			source: "/output.json"
+			format: "json"
+		},
+	]
 }
 
 // FIXME: this should be outside
@@ -119,5 +123,13 @@ let code = #"""
 	    --prod \
 	| tee /tmp/stdout
 
-	</tmp/stdout sed -n -e 's/^Website URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n' > /url
+	url=$(</tmp/stdout sed -n -e 's/^Website URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
+	deployUrl=$(</tmp/stdout sed -n -e 's/^Unique Deploy URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
+	logsUrl=$(</tmp/stdout sed -n -e 's/^Logs:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
+
+	jq -n \
+		--arg url "$url" \
+		--arg deployUrl "$deployUrl" \
+		--arg logsUrl "$logsUrl" \
+		'{url: $url, deployUrl: $deployUrl, logsUrl: $logsUrl}' > /output.json
 	"""#
