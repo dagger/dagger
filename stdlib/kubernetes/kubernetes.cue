@@ -20,9 +20,9 @@ import (
 	#compute: [
 		llb.#Load & {
 			from: alpine.#Image & {
-				package: bash:      "=5.1.0-r0"
-				package: jq:        "=1.6-r1"
-				package: curl:      "=7.74.0-r1"
+				package: bash: "=5.1.0-r0"
+				package: jq:   "=1.6-r1"
+				package: curl: "=7.74.0-r1"
 			}
 		},
 		llb.#WriteFile & {
@@ -38,10 +38,8 @@ import (
 				"pipefail",
 				"/entrypoint.sh",
 			]
-			env: {
-				KUBECTL_VERSION: version
-			}
-		}
+			env: KUBECTL_VERSION: version
+		},
 	]
 }
 
@@ -66,7 +64,7 @@ import (
 
 	#compute: [
 		llb.#Load & {
-			from: #Kubectl & { "version": version }
+			from: #Kubectl & {"version": version}
 		},
 		llb.#WriteFile & {
 			dest:    "/entrypoint.sh"
@@ -79,10 +77,10 @@ import (
 		},
 		if (source & string) != _|_ {
 			llb.#WriteFile & {
-				dest: "/source"
+				dest:    "/source"
 				content: source
 			}
-		}
+		},
 		llb.#Exec & {
 			always: true
 			args: [
@@ -94,12 +92,12 @@ import (
 				"/entrypoint.sh",
 			]
 			env: {
-				KUBECONFIG: "/kubeconfig"
+				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
 			if (source & dagger.#Artifact) != _|_ {
-				mount: "/source": source
+				mount: "/source": from: source
 			}
-		}
+		},
 	]
 }

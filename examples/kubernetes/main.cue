@@ -1,25 +1,25 @@
 package main
 
 import (
-    "encoding/yaml"
-    "dagger.io/aws"
-    "dagger.io/aws/eks"
-    "dagger.io/kubernetes"
+	"encoding/yaml"
+	"dagger.io/dagger"
+	"dagger.io/aws"
+	"dagger.io/aws/eks"
+	"dagger.io/kubernetes"
+	"dagger.io/kubernetes/helm"
 )
 
 kubeSrc: {
-    apiVersion: "v1"
-    kind:       "Pod"
-    metadata: {
-        name: "kube-test"
-    }
-    spec: {
-        restartPolicy: "Never"
-        containers: [{
-            name:  "test"
-            image: "hello-world"
-        }]
-    }
+	apiVersion: "v1"
+	kind:       "Pod"
+	metadata: name: "kube-test"
+	spec: {
+		restartPolicy: "Never"
+		containers: [{
+			name:  "test"
+			image: "hello-world"
+		}]
+	}
 }
 
 // Fill using:
@@ -29,13 +29,25 @@ awsConfig: aws.#Config & {
 	region: *"us-east-2" | string
 }
 
+// Take the kubeconfig from the EKS cluster
 cluster: eks.#KubeConfig & {
 	config:      awsConfig
 	clusterName: *"dagger-example-eks-cluster" | string
 }
 
-apply: kubernetes.#Apply & {
-    source: yaml.Marshal(kubeSrc)
+// Example of a simple `kubectl apply` using a simple config
+kubeApply: kubernetes.#Apply & {
+	source:     yaml.Marshal(kubeSrc)
+	namespace:  "test"
+	kubeconfig: cluster.kubeconfig
+}
+
+// Example of a `helm install` using a local chart
+// Fill using:
+//          --input-dir helmChart.chart=./testdata/mychart
+helmChart: helm.#Chart & {
+    name: "test-helm"
     namespace: "test"
-    kubeconfig: cluster.kubeconfig
+	kubeconfig: cluster.kubeconfig
+    chart: dagger.#Artifact
 }
