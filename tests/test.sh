@@ -251,32 +251,34 @@ test::dockerbuild() {
 }
 
 test::daggerignore() {
-  test::one "Dagger Ignore" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/testdata "$d"/ignore
+  test::one "Daggerignore: simple" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/simple/testdata "$d"/ignore/simple
+  test::one "Daggerignore: docker" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/docker/testdata "$d"/ignore/docker
 }
 
 test::all(){
   local dagger="$1"
 
-  test::load "$dagger"
-  test::mount "$dagger"
+  #test::load "$dagger"
+  #test::mount "$dagger"
 
-  test::copy "$dagger"
-  test::local "$dagger"
-  test::compute "$dagger"
-  test::fetchcontainer "$dagger"
-  test::pushcontainer "$dagger"
-  test::fetchgit "$dagger"
-  test::exec "$dagger"
-  test::export "$dagger"
-  test::input "$dagger"
-  test::subdir "$dagger"
-  test::dockerbuild "$dagger"
+  #test::copy "$dagger"
+  #test::local "$dagger"
+  #test::compute "$dagger"
+  #test::fetchcontainer "$dagger"
+  #test::pushcontainer "$dagger"
+  #test::fetchgit "$dagger"
+  #test::exec "$dagger"
+  #test::export "$dagger"
+  #test::input "$dagger"
+  #test::subdir "$dagger"
+  #test::dockerbuild "$dagger"
   test::daggerignore "$dagger"
 
-  test::stdlib "$dagger"
+  #test::stdlib "$dagger"
 
-  test::examples "$dagger"
+  #test::examples "$dagger"
 }
 
 case "${1:-all}" in
