@@ -48,6 +48,7 @@ cuelang.org/go v0.3.0-beta.5 h1:c+zS9MBCFzbuz+RI+3dp2PwfnS05aF3MqSEaAGFwzSk=
 cuelang.org/go v0.3.0-beta.5/go.mod h1:Ikvs157igkGV5gFUdYSFa+lWp/CDteVhubPTXyvPRtA=
 cuelang.org/go v0.3.0-beta.6 h1:od1S/Hbl2S45TLSONl95X3O4TXN1za6CUSD13bTxCVk=
 cuelang.org/go v0.3.0-beta.6/go.mod h1:Ikvs157igkGV5gFUdYSFa+lWp/CDteVhubPTXyvPRtA=
+cuelang.org/go v0.3.0-beta.7 h1:Ui7Jtp9rEFI6J8FcGiI17CB/XiGtQlCCIrvR5A15GEU=
 cuelang.org/go v0.3.0-beta.7/go.mod h1:jvMO35Q4D2D3m2ujAmKESICaYkjMbu5+D+2zIGuWTpQ=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20201218220906-28db891af037/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
