@@ -11,7 +11,7 @@
 //   development, we tolerate a lag between the spec and implementation. This may change in the
 //   future once the project is more mature.
 
-package cli
+package spec
 
 import (
 	"text/tabwriter"
