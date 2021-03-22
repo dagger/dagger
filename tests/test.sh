@@ -253,8 +253,10 @@ test::dockerbuild() {
 test::daggerignore() {
   test::one "Daggerignore: simple" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/simple/testdata "$d"/ignore/simple
-  test::one "Daggerignore: docker" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/docker/testdata "$d"/ignore/docker
+  test::one "Daggerignore: docker/context" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/docker/context/testdata "$d"/ignore/docker/context
+  test::one "Daggerignore: docker/invalid" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/docker/invalid/testdata "$d"/ignore/docker/invalid
 }
 
 test::all(){
