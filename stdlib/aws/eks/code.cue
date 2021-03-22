@@ -2,7 +2,8 @@ package eks
 
 #Code: #"""
 	[ -e /cache/bin/kubectl ] || {
-	    curl -sfL https://dl.k8s.io/v1.19.9/bin/linux/amd64/kubectl -o /cache/bin/kubectl && chmod +x /cache/bin/kubectl
+	    curl -sfL https://dl.k8s.io/${KUBECTL_VERSION}/bin/linux/amd64/kubectl -o /cache/bin/kubectl \
+		&& chmod +x /cache/bin/kubectl
 	}
 
 	export KUBECONFIG=/kubeconfig
