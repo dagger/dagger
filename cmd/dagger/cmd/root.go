@@ -29,6 +29,10 @@ func init() {
 		queryCmd,
 		upCmd,
 		downCmd,
+		deleteCmd,
+		historyCmd,
+		loginCmd,
+		logoutCmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {

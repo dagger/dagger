@@ -1,3 +1,4 @@
+// nolint:dupl
 package cmd
 
 import (
@@ -21,6 +22,7 @@ var downCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
+		// nolint:staticcheck
 		ctx := lg.WithContext(cmd.Context())
 
 		routeName := getRouteName(lg, cmd)
@@ -37,9 +39,9 @@ var downCmd = &cobra.Command{
 }
 
 func init() {
-	newCmd.Flags().Bool("--no-cache", false, "Disable all run cache")
+	downCmd.Flags().Bool("--no-cache", false, "Disable all run cache")
 
-	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(downCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

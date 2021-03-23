@@ -23,6 +23,7 @@ var queryCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
+		// nolint:staticcheck
 		ctx := lg.WithContext(cmd.Context())
 
 		routeName := getRouteName(lg, cmd)
@@ -45,14 +46,14 @@ var queryCmd = &cobra.Command{
 }
 
 func init() {
-	newCmd.Flags().String("revision", "latest", "Query a specific version of the route")
-	newCmd.Flags().StringP("format", "f", "", "Output format (json|yaml|cue|text|env)")
+	queryCmd.Flags().String("revision", "latest", "Query a specific version of the route")
+	queryCmd.Flags().StringP("format", "f", "", "Output format (json|yaml|cue|text|env)")
 
-	newCmd.Flags().BoolP("--no-input", "I", false, "Exclude inputs from query")
-	newCmd.Flags().BoolP("--no-output", "O", false, "Exclude outputs from query")
-	newCmd.Flags().BoolP("--no-layout", "L", false, "Exclude outputs from query")
+	queryCmd.Flags().BoolP("--no-input", "I", false, "Exclude inputs from query")
+	queryCmd.Flags().BoolP("--no-output", "O", false, "Exclude outputs from query")
+	queryCmd.Flags().BoolP("--no-layout", "L", false, "Exclude outputs from query")
 
-	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(queryCmd.Flags()); err != nil {
 		panic(err)
 	}
 }
