@@ -33,8 +33,7 @@ var newCmd = &cobra.Command{
 		routeName := getRouteName(lg, cmd)
 
 		// TODO: Implement options: --layout-*, --setup
-		// FIXME: give route name in create opts
-		route, err := dagger.CreateRoute(ctx)
+		route, err := dagger.CreateRoute(ctx, routeName, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create route")
 		}
@@ -42,7 +41,7 @@ var newCmd = &cobra.Command{
 
 		if upRoute {
 			lg.Info().Str("route-id", route.ID).Msg("bringing route online")
-			if err := route.Up(ctx); err != nil {
+			if err := route.Up(ctx, nil); err != nil {
 				lg.Fatal().Err(err).Str("route-id", route.ID).Msg("failed to create route")
 			}
 		}

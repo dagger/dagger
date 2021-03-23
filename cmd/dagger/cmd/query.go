@@ -27,14 +27,14 @@ var queryCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		routeName := getRouteName(lg, cmd)
-		route, err := dagger.LookupRoute(routeName)
+		route, err := dagger.LookupRoute(routeName, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Str("route-name", routeName).Msg("failed to lookup route")
 		}
 
 		expr := args[0]
 
-		out, err := route.Query(ctx, expr)
+		out, err := route.Query(ctx, expr, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Str("route-name", routeName).Str("route-id", route.ID).Msg("failed to query route")
 		}

@@ -135,6 +135,8 @@ func (env *Env) LocalDirs() map[string]string {
 				if err != nil {
 					return err
 				}
+				// nolint:goconst
+				// FIXME: merge Env into Route, or fix the linter error
 				if do != "local" {
 					return nil
 				}
