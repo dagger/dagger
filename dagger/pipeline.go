@@ -49,8 +49,11 @@ func (p *Pipeline) State() llb.State {
 	return p.state
 }
 
-func (p *Pipeline) Result() bkgw.Reference {
-	return p.result
+func (p *Pipeline) Result() (llb.State, error) {
+	if p.result == nil {
+		return llb.Scratch(), nil
+	}
+	return p.result.ToState()
 }
 
 func (p *Pipeline) FS() fs.FS {
@@ -134,7 +137,8 @@ func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
 	if err != nil {
 		return err
 	}
-	// 2. Execute each operation in sequence
+
+	// Execute each operation in sequence
 	for idx, op := range ops {
 		// If op not concrete, interrupt without error.
 		// This allows gradual resolution:
@@ -161,6 +165,7 @@ func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -241,7 +246,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return st, err
 	}
-	fromResult, err := from.Result().ToState()
+	fromResult, err := from.Result()
 	if err != nil {
 		return st, err
 	}
@@ -441,7 +446,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 	if err := from.Do(ctx, mnt.Get("from")); err != nil {
 		return nil, err
 	}
-	fromResult, err := from.Result().ToState()
+	fromResult, err := from.Result()
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +550,7 @@ func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (
 	if err := from.Do(ctx, op.Get("from")); err != nil {
 		return st, err
 	}
-	return from.Result().ToState()
+	return from.Result()
 }
 
 func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -612,7 +617,7 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	pushSt, err := p.Result().ToState()
+	pushSt, err := p.Result()
 	if err != nil {
 		return st, err
 	}
@@ -678,7 +683,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		if err := from.Do(ctx, context); err != nil {
 			return st, err
 		}
-		fromResult, err := from.Result().ToState()
+		fromResult, err := from.Result()
 		if err != nil {
 			return st, err
 		}
