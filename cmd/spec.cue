@@ -152,14 +152,18 @@ import (
 					arg:         "json|yaml|cue|text|env"
 				}
 
-				"--layer": {
-					alt: "-l"
-					description: """
-						Comma-separated list of layers to query (any of "input", "plan", "output")
-						"""
-					default: "all"
+				"--no-input": {
+					alt:         "-I"
+					description: "Exclude inputs from query"
 				}
-
+				"--no-output": {
+					alt:         "-O"
+					description: "Exclude outputs from query"
+				}
+				"--no-plan": {
+					alt:         "-L"
+					description: "Exclude deployment plan from query"
+				}
 			}
 		}
 
