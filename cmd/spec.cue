@@ -29,29 +29,21 @@ import (
 	description: "A system for application delivery as code (ADC)"
 
 	doc: """
-		Every dagger operation happens inside a STACK: an isolated sandbox with its own state and execution environment.
+		Every dagger command is applied to a route. A route is a complete delivery environment with its own layout, inputs and outputs.
 
-		A stack is made of 3 layers:
-			1. Base configuration (see `dagger base`)
-			2. Input values and artifacts (see `dagger input`)
-			3. Output values and artifacts (see `dagger output`)
+		The same application can be delivered in different configurations using different routes.
+		For example, an application may have a "production" route, staging routes for QA, and experimental development routes.
 
-		If a command does not specify a stack explicitly, dagger tries to auto-select by searching for stacks connected
-		to the current directory, either as a base, input or base:
-			- If no stack matches the search, the command fails
-			- If exactly one stack matches, the command proceeds in that stack
-			- If more than one stack matches, the user is prompted to select one of them
+		If a route is not specified, dagger auto-selects one as follows:
+		  * If exactly one route is connected to the current directory, the command proceeds automatically.
+		  * If more than one route matches, the user is prompted to select one.
+		  * If no route matches, the command returns an error.
 		"""
 
 	flag: {
-		"--workspace": {
-			alt:         "-w"
-			description: "Select a workspace"
-			default:     "$HOME/.dagger"
-		}
-		"--stack": {
-			alt:         "-s"
-			description: "Select a stack"
+		"--route": {
+			alt:         "-r"
+			description: "Select a route"
 			arg:         "NAME"
 		}
 		"--log-format": {
@@ -68,25 +60,25 @@ import (
 
 	command: {
 		new: {
-			description: "Create a new stack"
+			description: "Create a new route"
 			flag: {
 				"--name": {
 					alt:         "-n"
-					description: "Specify a stack name"
+					description: "Specify a route name"
 					default:     "name of current directory"
 				}
 
-				"--base-dir": description: "Load base configuration from a local directory"
+				"--layout-dir": description: "Load layout from a local directory"
 
-				"--base-git": description: "Load base configuration from a git repository"
+				"--layout-git": description: "Load layout from a git repository"
 
-				"--base-package": description: "Load base configuration from a cue package"
+				"--layout-package": description: "Load layout from a cue package"
 
-				"--base-file": description: "Load base configuration from a cue or json file"
+				"--layout-file": description: "Load layout from a cue or json file"
 
 				"--up": {
 					alt:         "-u"
-					description: "Bring the stack online"
+					description: "Bring the route online"
 				}
 
 				"--setup": {
@@ -96,18 +88,18 @@ import (
 			}
 		}
 
-		list: description: "List available stacks"
+		list: description: "List available routes"
 
 		query: {
 			arg:         "[EXPR] [flags]"
-			description: "Query the contents of a stack"
+			description: "Query the contents of a route"
 			doc:
 				"""
-					EXPR may be any valid CUE expression. The expression is evaluated against the stack contents. The stack is not changed.
+					EXPR may be any valid CUE expression. The expression is evaluated against the route contents. The route is not changed.
 					Examples:
 
-					  # Print all contents of the input and base layers (omit output)
-					  $ dagger query -l input,base
+					  # Print all contents of the layout and input layers (omit output)
+					  $ dagger query -l input,layout
 
 					  # Print complete contents for a particular component
 					  $ dagger query www.build
@@ -126,7 +118,7 @@ import (
 				// Use --revision or --change or --change-id instead?
 				"--version": {
 					alt:         "-v"
-					description: "Query a specific version of the stack"
+					description: "Query a specific version of the route"
 					default:     "latest"
 				}
 
@@ -139,7 +131,7 @@ import (
 				"--layer": {
 					alt: "-l"
 					description: """
-						Comma-separated list of layers to query (any of "input", "base", "output")
+						Comma-separated list of layers to query (any of "input", "layout", "output")
 						"""
 					default: "all"
 				}
@@ -148,75 +140,70 @@ import (
 		}
 
 		up: {
-			description: "Bring a stack online using latest base and inputs"
+			description: "Bring a route online with latest layout and inputs"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
 		down: {
-			description: "Take a stack offline (WARNING: may destroy infrastructure)"
+			description: "Take a route offline (WARNING: may destroy infrastructure)"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
-		history: description: "List past changes to a stack"
+		history: description: "List past changes to a route"
 
-		destroy: {
-			description: "Destroy a stack"
-
-			flag: "--force": {
-				alt:         "-f"
-				description: "Destroy environment state even if cleanup pipelines fail to complete (EXPERTS ONLY)"
-			}
+		delete: {
+			description: "Delete a route after taking it offline (WARNING: may destroy infrastructure)"
 		}
 
-		base: {
-			description: "Manage a stack's base configuration"
+		layout: {
+			description: "Manage a route's layout"
 
 			command: {
 				package: {
-					description: "Load base configuration from a cue package"
+					description: "Load layout from a cue package"
 					arg:         "PKG"
 					doc:
 						"""
 						Examples:
-						  dagger base package dagger.io/templates/jamstack
+						  dagger layout package dagger.io/templates/jamstack
 						"""
 				}
 
 				dir: {
-					description: "Load base configuration from a local directory"
+					description: "Load layout from a local directory"
 					arg:         "PATH"
 					doc:
 						"""
 						Examples:
-						  dagger base dir ./infra/prod
+						  dagger layout dir ./infra/prod
 						"""
 				}
 
 				git: {
-					description: "Load base configuration from a git repository"
+					description: "Load layout from a git repository"
 					arg:         "REMOTE REF [SUBDIR]"
 					doc:
 						"""
 						Examples:
-						  dagger base git https://github.com/dagger/dagger main examples/simple
+						  dagger layout git https://github.com/dagger/dagger main examples/simple
 						"""
 				}
 
 				file: {
-					description: "Load base configuration from a cue file"
+					description: "Load layout from a cue file"
 					arg:         "PATH|-"
 					doc:
 						"""
 						Examples:
-						  dagger base file ./base.cue
-						  echo 'message: "hello, \(name)!", name: string | *"world"' | dagger base file -
+						  dagger layout file ./layout.cue
+						  echo 'message: "hello, \(name)!", name: string | *"world"' | dagger layout file -
 						"""
 				}
 			}
 		}
 
 		input: {
-			description: "Manage a stack's inputs"
+			description: "Manage a route's inputs"
 
 			command: {
 				// FIXME: details of individual input commands
@@ -229,10 +216,10 @@ import (
 		}
 
 		output: {
-			description: "Manage a stack's outputs"
+			description: "Manage a route's outputs"
 			// FIXME: bind output values or artifacts
 			// to local dir or file
-			// BONUS: bind a stack output to another stack's input?
+			// BONUS: bind a route output to another route's input?
 		}
 
 		login: description: "Login to Dagger Cloud"
