@@ -1,16 +1,14 @@
 # Dagger
 
-Dagger is an *Application Delivery as Code* (ADC) platform.
+Dagger is a platform for deploying your code using code.
 
+Using Dagger, software teams can create custom deployment routes for their application, tailor-made for their infrastructure and workflow, in just a few lines of code.
 
-Using Dagger, software teams can create state-of-the-art deployment pipelines, tailor-made for their application and infrastructure, in just a few lines of code.
+For example, an application may have a production route, a staging route for QA and product reviews, and on-demand development routes for testing new features.
 
-Dagger might be a good fit for you if:
+Dagger can create routes dynamically, which makes it a great fit for custom scripting and CI integration. Ever wanted to stand up a production-like deployment of your entire app for each pull request? Run integration tests across the development branches of multiple microservice repositories? See what your code will look like in production *before* opening a PR? Dagger provides a reliable foundation for automating these workflows, and many more.
 
-* You spend too much time fixing your artisanal deployment scripts
-* You wish you could use Heroku or Firebase, but your stack is too custom
-* You put off important infrastructure changes because they would slow down development
-* You wish you could visualize your whole application's supply chain as one big graph
+Every Dagger route exposes the same standardized interface, designed for maximum developer productivity. Do you wish you could get the ease of use of Heroku without its limitations? With Dagger, each deployment route is like a miniature Heroku custom-built around your stack, instead of the other way around.
 
 ## Alpha disclaimer
 
