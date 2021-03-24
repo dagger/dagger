@@ -1,6 +1,7 @@
 package eks
 
 import (
+	"dagger.io/dagger"
 	"dagger.io/llb"
 	"dagger.io/aws"
 )
@@ -12,6 +13,9 @@ import (
 
 	// EKS cluster name
 	clusterName: string
+
+	// Kubectl version
+	version: *"v1.19.9" | string
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
@@ -44,6 +48,7 @@ import (
 					AWS_DEFAULT_OUTPUT:    "json"
 					AWS_PAGER:             ""
 					EKS_CLUSTER:           clusterName
+					KUBECTL_VERSION:       version
 				}
 				mount: {
 					"/cache/aws": "cache"
