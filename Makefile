@@ -16,7 +16,7 @@ test:
 .PHONY: cuefmt
 cuefmt:
 	@(cue fmt -s ./stdlib/...)
-	@(cue fmt -s ./examples/*)
+	@(cue fmt -s ./examples/*/)
 	@(cue fmt -s ./tests/...)
 
 .PHONY: lint

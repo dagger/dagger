@@ -46,8 +46,8 @@ kubeApply: kubernetes.#Apply & {
 // Fill using:
 //          --input-dir helmChart.chart=./testdata/mychart
 helmChart: helm.#Chart & {
-    name: "test-helm"
-    namespace: "test"
+	name:       "test-helm"
+	namespace:  "test"
 	kubeconfig: cluster.kubeconfig
-    chart: dagger.#Artifact
+	chart:      dagger.#Artifact
 }
