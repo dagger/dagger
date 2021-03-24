@@ -11,7 +11,7 @@ import (
 )
 
 var queryCmd = &cobra.Command{
-	Use:   "query",
+	Use:   "query [EXPR] [flags]",
 	Short: "Query the contents of a route",
 	Args:  cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
