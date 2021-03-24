@@ -56,6 +56,24 @@ import (
 				version: kubectlVersion
 			}
 		},
+		llb.#Exec & {
+			env: HELM_VERSION: version
+			args: [
+				"/bin/bash",
+				"--noprofile",
+				"--norc",
+				"-eo",
+				"pipefail",
+				"-c",
+				#"""
+					# Install Yarn
+					curl -sfL -S https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz | \
+					    tar -zx -C /tmp && \
+					    mv /tmp/linux-amd64/helm /usr/local/bin && \
+					    chmod +x /usr/local/bin/helm
+					"""#,
+			]
+		},
 		llb.#Mkdir & {
 			path: "/helm"
 		},
@@ -88,7 +106,6 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 
-				HELM_VERSION: version
 				HELM_REPO:    repository
 				HELM_NAME:    name
 				HELM_ACTION:  action
@@ -98,7 +115,7 @@ import (
 			}
 			mount: {
 				if (values & string) != _|_ {
-					"/helm/varlues.yaml": values
+					"/helm/values.yaml": values
 				}
 				if (chart & dagger.#Artifact) != _|_ {
 					"/helm/chart": from: chart

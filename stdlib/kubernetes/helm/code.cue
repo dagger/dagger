@@ -1,12 +1,6 @@
 package helm
 
 #code: #"""
-    # Install Helm
-    curl -sfL -S https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz | \
-        tar -zx -C /tmp && \
-        mv /tmp/linux-amd64/helm /usr/local/bin && \
-        chmod +x /usr/local/bin/helm
-
     # Add the repository
     helm repo add repository "${HELM_REPO}"
     helm repo update
