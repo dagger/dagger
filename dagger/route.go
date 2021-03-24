@@ -8,16 +8,67 @@ import (
 
 // A deployment route
 type Route struct {
+	st routeState
+}
+
+func (r Route) ID() string {
+	return r.st.ID
+}
+
+func (r Route) Name() string {
+	return r.st.Name
+}
+
+func (r Route) LayoutSource() Input {
+	return r.st.LayoutSource
+}
+
+func (r *Route) SetLayoutSource(ctx context.Context, src Input) error {
+	r.st.LayoutSource = src
+	return nil
+}
+
+func (r *Route) AddInput(ctx context.Context, key string, value Input) error {
+	r.st.Inputs = append(r.st.Inputs, inputKV{Key: key, Value: value})
+	return nil
+}
+
+// Remove all inputs at the given key, including sub-keys.
+// For example RemoveInputs("foo.bar") will remove all inputs
+//   at foo.bar, foo.bar.baz, etc.
+func (r *Route) RemoveInputs(ctx context.Context, key string) error {
+	panic("NOT IMPLEMENTED")
+}
+
+// Contents of a route serialized to a file
+type routeState struct {
 	// Globally unique route ID
 	ID string
 
 	// Human-friendly route name.
 	// A route may have more than one name.
+	// FIXME: store multiple names?
 	Name string
+
+	// Cue module containing the route layout
+	// The input's top-level artifact is used as a module directory.
+	LayoutSource Input
+
+	Inputs []inputKV
+}
+
+type inputKV struct {
+	Key   string
+	Value Input
 }
 
 func CreateRoute(ctx context.Context, name string, o *CreateOpts) (*Route, error) {
-	panic("NOT IMPLEMENTED")
+	return &Route{
+		st: routeState{
+			ID:   "FIXME",
+			Name: name,
+		},
+	}, nil
 }
 
 type CreateOpts struct{}
@@ -57,66 +108,3 @@ func (r *Route) Query(ctx context.Context, expr interface{}, o *QueryOpts) (*com
 }
 
 type QueryOpts struct{}
-
-func (r *Route) SetLayout(ctx context.Context, a *Artifact) error {
-	panic("NOT IMPLEMENTED")
-}
-
-func (r *Route) Layout() (*Artifact, error) {
-	panic("NOT IMPLEMENTED")
-}
-
-func (r *Route) AddInputArtifact(ctx context.Context, target string, a *Artifact) error {
-	panic("NOT IMPLEMENTED")
-}
-
-func (r *Route) AddInputValue(ctx context.Context, target string, v *compiler.Value) error {
-	panic("NOT IMPLEMENTED")
-}
-
-// FIXME: how does remove work? Does it require a specific file layout?
-func (r *Route) RemoveInputs(ctx context.Context, target string) error {
-	panic("NOT IMPLEMENTED")
-}
-
-// FIXME: connect outputs to auto-export values and artifacts.
-
-// An artifact is a piece of data, like a source code checkout,
-// binary bundle, container image, database backup etc.
-//
-// Artifacts can be passed as inputs, generated dynamically from
-// other inputs, and received as outputs.
-//
-// Under the hood, an artifact is encoded as a LLB pipeline, and
-// attached to the cue configuration as a
-type Artifact struct {
-	llb interface{}
-}
-
-func Dir(path string, include []string) *Artifact {
-	var llb struct {
-		Do      string
-		Include []string
-	}
-	llb.Do = "local"
-	llb.Include = include
-	return &Artifact{
-		llb: llb,
-	}
-}
-
-func Git(remote, ref, dir string) *Artifact {
-	panic("NOT IMPLEMENTED")
-}
-
-func Container(ref string) *Artifact {
-	panic("NOT IMPLEMENTED")
-}
-
-func LLB(code interface{}) *Artifact {
-	panic("NOT IMPLEMENTED")
-}
-
-// FIXME: manage base
-// FIXME: manage inputs
-// FIXME: manage outputs

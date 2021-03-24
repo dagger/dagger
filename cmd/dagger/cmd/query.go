@@ -36,7 +36,7 @@ var queryCmd = &cobra.Command{
 
 		out, err := route.Query(ctx, expr, nil)
 		if err != nil {
-			lg.Fatal().Err(err).Str("route-name", routeName).Str("route-id", route.ID).Msg("failed to query route")
+			lg.Fatal().Err(err).Str("route-name", routeName).Str("route-id", route.ID()).Msg("failed to query route")
 		}
 
 		fmt.Println(out)
