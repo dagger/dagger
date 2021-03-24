@@ -2,24 +2,38 @@ package dagger
 
 import (
 	"context"
+	"os"
 
 	"dagger.io/go/dagger/compiler"
+
+	"github.com/google/uuid"
 )
+
+const (
+	routeLocation = "$HOME/.config/dagger/routes"
+)
+
+func init() {
+	f := os.ExpandEnv(routeLocation)
+	if err := os.MkdirAll(f, 0755); err != nil {
+		panic(err)
+	}
+}
 
 // A deployment route
 type Route struct {
 	st routeState
 }
 
-func (r Route) ID() string {
+func (r *Route) ID() string {
 	return r.st.ID
 }
 
-func (r Route) Name() string {
+func (r *Route) Name() string {
 	return r.st.Name
 }
 
-func (r Route) LayoutSource() Input {
+func (r *Route) LayoutSource() Input {
 	return r.st.LayoutSource
 }
 
@@ -65,7 +79,7 @@ type inputKV struct {
 func CreateRoute(ctx context.Context, name string, o *CreateOpts) (*Route, error) {
 	return &Route{
 		st: routeState{
-			ID:   "FIXME",
+			ID:   uuid.New().String(),
 			Name: name,
 		},
 	}, nil
