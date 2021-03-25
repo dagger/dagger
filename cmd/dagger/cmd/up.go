@@ -32,10 +32,7 @@ var upCmd = &cobra.Command{
 		}
 
 		// TODO: Implement options: --no-cache
-		// FIXME
-		if err := route.FIXME(ctx); err != nil {
-			lg.Fatal().Err(err).Str("route-name", routeName).Str("route-id", route.ID()).Msg("failed to up the route")
-		}
+		routeUp(ctx, lg, route)
 	},
 }
 

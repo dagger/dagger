@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
+	"dagger.io/go/dagger"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
@@ -30,4 +33,16 @@ func getRouteName(lg zerolog.Logger, cmd *cobra.Command) string {
 	}
 
 	return currentDir
+}
+
+func routeUp(ctx context.Context, lg zerolog.Logger, route *dagger.Route) {
+	c, err := dagger.NewClient(ctx, "")
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to create client")
+	}
+	output, err := c.Up(ctx, route)
+	if err != nil {
+		lg.Fatal().Err(err).Msg("failed to compute")
+	}
+	fmt.Println(output.JSON())
 }

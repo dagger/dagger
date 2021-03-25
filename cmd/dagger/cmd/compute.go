@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 
@@ -121,15 +120,7 @@ var computeCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to initialize route")
 		}
 
-		c, err := dagger.NewClient(ctx, "")
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
-		}
-		output, err := c.Up(ctx, route)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to compute")
-		}
-		fmt.Println(output.JSON())
+		routeUp(ctx, lg, route)
 	},
 }
 

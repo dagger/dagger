@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -65,6 +67,26 @@ type LoadOpts struct{}
 
 func LoadRoute(ctx context.Context, id string, o *LoadOpts) (*Route, error) {
 	panic("NOT IMPLEMENTED")
+}
+
+func ListRoutes(ctx context.Context) ([]string, error) {
+	routes := []string{}
+
+	rootDir := os.ExpandEnv(storeLocation)
+	files, err := ioutil.ReadDir(rootDir)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+			// There is extra data in the directory, ignore
+			continue
+		}
+		routes = append(routes, f.Name()[:len(f.Name())-5])
+	}
+
+	return routes, nil
 }
 
 func routePath(name string) string {

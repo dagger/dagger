@@ -24,7 +24,7 @@ var newCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		// nolint:staticcheck
-		upRoute, err := cmd.Flags().GetBool("up")
+		upRouteFlag, err := cmd.Flags().GetBool("up")
 		if err != nil {
 			lg.Fatal().Err(err).Str("flag", "up").Msg("unable to resolve flag")
 		}
@@ -39,12 +39,8 @@ var newCmd = &cobra.Command{
 		}
 		lg.Info().Str("route-id", route.ID()).Str("route-name", routeName).Msg("created route")
 
-		if upRoute {
-			lg.Info().Str("route-id", route.ID()).Msg("bringing route online")
-			// FIXME
-			if err := route.FIXME(ctx); err != nil {
-				lg.Fatal().Err(err).Str("route-id", route.ID()).Msg("failed to create route")
-			}
+		if upRouteFlag {
+			routeUp(ctx, lg, route)
 		}
 	},
 }

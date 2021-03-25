@@ -2,7 +2,6 @@ package dagger
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -309,10 +308,6 @@ func (r *Route) Down(ctx context.Context, _ *DownOpts) error {
 
 func (r *Route) Query(ctx context.Context, expr interface{}, o *QueryOpts) (*compiler.Value, error) {
 	panic("NOT IMPLEMENTED")
-}
-
-func (r *Route) FIXME(ctx context.Context) error {
-	return errors.New("FIXME")
 }
 
 type QueryOpts struct{}
