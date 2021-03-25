@@ -16,11 +16,9 @@ system changes.
 
 Dagger is *alpha-quality software*. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still willing to try it, thank you! We appreciate your help and encourage you to ask questions and report issues.
 
-## Examples
-
-
 ## Learn More
 
+* [Examples](examples/README.md)
 * [Dagger vs. Other Software](doc/vs.md)
 * [Installing Dagger](doc/install.md)
 * [Tutorials](doc/tutorials.md)
