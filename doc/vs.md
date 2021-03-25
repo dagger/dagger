@@ -24,3 +24,10 @@ A deploy script may be written in virtually any scripting language. The most com
 Most teams are unhappy with their deploy script. They are high maintenance, tend to break at the worst possible time, and are less convenient to use than a PaaS. But when you need control of your stack, what other choice is there?
 
 Dagger can either replace artisanal deploy scripts altogether, or augment them by incorporating them into a more standardized deployment system. This is a good strategy for teams which already have scripts and want to improve their deployment gradually, without the disruption of a "big bang" rewrite.
+
+## Dagger vs. CI (Github Actions, Gitlab, CircleCI, Jenkins, etc.)
+
+*Summary: Dagger can be used with or without a CI system.*
+
+Dagger is not a replacement for a CI system. It can be used to deploy applications directly from the terminal,
+or automatically as part of a CI script.
