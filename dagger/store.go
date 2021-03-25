@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/google/uuid"
 )
@@ -95,18 +94,16 @@ func (s *Store) ListRoutes(ctx context.Context) ([]string, error) {
 	}
 
 	for _, f := range files {
-		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
-			// There is extra data in the directory, ignore
-			continue
+		if f.IsDir() {
+			routes = append(routes, f.Name())
 		}
-		routes = append(routes, f.Name()[:len(f.Name())-5])
 	}
 
 	return routes, nil
 }
 
 func (s *Store) routePath(name string) string {
-	return path.Join(s.root, name+".json")
+	return path.Join(s.root, name, "route.json")
 }
 
 func (s *Store) syncRoute(r *Route) error {
