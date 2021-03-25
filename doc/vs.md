@@ -31,3 +31,11 @@ Dagger can either replace artisanal deploy scripts altogether, or augment them b
 
 Dagger is not a replacement for a CI system. It can be used to deploy applications directly from the terminal,
 or automatically as part of a CI script.
+
+## Dagger vs. Build Systems (Make, Maven, Bazel, Npm/Yarn, etc.)
+
+*Summary: Dagger can be used with or without a build system.*
+
+Most deployment workflows involve building: the process of producing executable artifacts from source code. Build systems are highly specific to the type of application, the programming language in use, etc.
+
+Dagger can integrate any build system into an overall deployment workflow. If a Dagger module is not already available for a particular build system, a custom module can easily be written, and perhaps even contributed to the open-source catalog for everyone else to use.
