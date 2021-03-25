@@ -5,10 +5,10 @@ Dagger is a platform for deploying your code using code.
 Using Dagger, software builders can create powerful deployment workflows, tailor-made for their application,
 in just a few lines of code.
 
-Thanks to its vast ecosystem of reusable packages and flexible scripting environment, Dagger can deploy virtually any
+The Dagger platform adapts to your application, not the other way around. Thanks to its vast ecosystem of reusable packages and flexible scripting system, Dagger can deploy virtually any
 application to any infrastructure, and integrate with any CI and build system. Think of it as your "devops superglu".
 
-Using Dagger, no matter how your deployment works under the hood, you can always manage it with the same intuitive interface.
+No matter how your deployment works under the hood, you can manage it with the same Dagger user interface.
 This makes developers more productive, because they don't have to learn a new workflow every time their deployment
 system changes.
 
