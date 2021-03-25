@@ -32,8 +32,7 @@ import (
 		Dagger works by running *controllers*: specialized programs each automating
 		the deployment of a particular application in a particular way.
 
-		Multiple controllers can deploy the same application in different ways,
-		for example to deploy distinct production and staging environments.
+		The same application can be deployed in different ways by different controllers, for example to create distinct production and staging environments.
 
 		Technically speaking, a controller is a standalone program with its own code and data,
 		run by the Dagger platform.

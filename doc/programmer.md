@@ -1,8 +1,29 @@
 # Dagger Programmer Guide
 
-## The Dagger programming model
+## Overview
 
-*FIXME*
+Dagger works by running *controllers*: specialized programs each automating
+the deployment of a particular application in a particular way.
+
+The same application can be deployed in different ways by different controllers, for example to create distinct production and staging environments.
+
+Technically speaking, a controller is a standalone program with its own code and data,
+run by the Dagger platform.
+
+Unlike traditional programs which strictly separate code and data,
+Dagger merges them into a unified DAG (direct acyclic graph)
+using a powerful declarative language called [CUE](https://cuelang.org).
+Each node of the DAG represents a step of the controller's deployment plan. 
+
+Unlike traditional programs which run continuously, Dagger controllers are
+*reactive*: their DAG is recomputed upon receiving a new input.
+
+The Dagger platform natively supports [LLB](https://github.com/moby/buildkit) pipelines
+pioneered by the Buildkit project.
+This allows controllers to run sophisticated pipelines to ingest and process
+artifacts such as source code, binaries, database exports, ML models, etc.
+Best of all, LLB pipelines can securely build and run any docker/OCI container,
+effectively allowing Dagger to be scriptable in any language.
 
 ## What is a DAG?
 
