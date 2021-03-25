@@ -24,16 +24,9 @@ var newCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		store := dagger.DefaultStore()
 
-		upRouteFlag, err := cmd.Flags().GetBool("up")
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Str("flag", "up").
-				Msg("unable to resolve flag")
-		}
+		upRouteFlag := viper.GetBool("up")
 
-		routeName := getRouteName(ctx, cmd)
+		routeName := getRouteName(ctx)
 
 		// TODO: Implement options: --layout-*, --setup
 		route, err := store.CreateRoute(ctx, routeName, nil)

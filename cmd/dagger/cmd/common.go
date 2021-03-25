@@ -8,22 +8,14 @@ import (
 
 	"dagger.io/go/dagger"
 	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // getRouteName returns the selected route name (based on explicit CLI selection or current work dir)
-func getRouteName(ctx context.Context, cmd *cobra.Command) string {
+func getRouteName(ctx context.Context) string {
 	lg := log.Ctx(ctx)
 
-	routeName, err := cmd.Flags().GetString("route")
-	if err != nil {
-		lg.
-			Fatal().
-			Err(err).
-			Str("flag", "route").
-			Msg("unable to resolve flag")
-	}
-
+	routeName := viper.GetString("route")
 	if routeName != "" {
 		return routeName
 	}

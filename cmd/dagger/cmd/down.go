@@ -25,7 +25,7 @@ var downCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		store := dagger.DefaultStore()
 
-		routeName := getRouteName(ctx, cmd)
+		routeName := getRouteName(ctx)
 		route, err := store.LookupRoute(ctx, routeName, nil)
 		if err != nil {
 			lg.

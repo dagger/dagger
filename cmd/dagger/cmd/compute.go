@@ -31,7 +31,7 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		name := getRouteName(ctx, cmd)
+		name := getRouteName(ctx)
 		st := &dagger.RouteState{
 			ID:           uuid.New().String(),
 			Name:         name,
