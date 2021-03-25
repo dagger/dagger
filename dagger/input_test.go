@@ -5,7 +5,7 @@ import (
 )
 
 func TestEnvInputFlag(t *testing.T) {
-	env, err := NewEnv()
+	env, err := NewRoute()
 	if err != nil {
 		t.Fatal(err)
 	}

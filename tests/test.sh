@@ -129,7 +129,7 @@ test::exec(){
   test::one "Exec: env valid" --exit=0 --stdout={} \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute  "$d"/exec/env/valid
   test::one "Exec: env with overlay" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-cue 'bar: "overlay environment"' "$d"/exec/env/overlay
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'bar=overlay environment' "$d"/exec/env/overlay
 
   test::one "Exec: non existent dir" --exit=0 --stdout={} \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute  "$d"/exec/dir/doesnotexist
@@ -230,15 +230,14 @@ test::input() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/simple
 
   test::one "Input: simple input" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-cue 'in: "foobar"' "$d"/input/simple
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/simple
 
   test::one "Input: default values" --exit=0 --stdout='{"in":"default input","test":"received: default input"}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/default
 
   test::one "Input: override default value" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-cue 'in: "foobar"' "$d"/input/default
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/default
 }
-
 
 test::subdir() {
   test::one "Subdir: simple usage" --exit=0 --stdout='{"hello":"world"}' \

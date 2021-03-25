@@ -34,9 +34,9 @@ func DirInput(path string, include []string) Input {
 }
 
 type dirInput struct {
-	Type    string
-	Path    string
-	Include []string
+	Type    string   `json:"type,omitempty"`
+	Path    string   `json:"path,omitempty"`
+	Include []string `json:"include,omitempty"`
 }
 
 func (dir dirInput) Compile() (*compiler.Value, error) {
@@ -46,7 +46,7 @@ func (dir dirInput) Compile() (*compiler.Value, error) {
 		return nil, err
 	}
 	llb := fmt.Sprintf(
-		`[{do:"local",dir:"%s",include:%s}]`,
+		`#compute: [{do:"local",dir:"%s", include:%s}]`,
 		dir.Path,
 		includeLLB,
 	)
@@ -55,10 +55,10 @@ func (dir dirInput) Compile() (*compiler.Value, error) {
 
 // An input artifact loaded from a git repository
 type gitInput struct {
-	Type   string
-	Remote string
-	Ref    string
-	Dir    string
+	Type   string `json:"type,omitempty"`
+	Remote string `json:"remote,omitempty"`
+	Ref    string `json:"ref,omitempty"`
+	Dir    string `json:"dir,omitempty"`
 }
 
 func GitInput(remote, ref, dir string) Input {
@@ -83,8 +83,8 @@ func DockerInput(ref string) Input {
 }
 
 type dockerInput struct {
-	Type string
-	Ref  string
+	Type string `json:"type,omitempty"`
+	Ref  string `json:"ref,omitempty"`
 }
 
 func (i dockerInput) Compile() (*compiler.Value, error) {
@@ -100,12 +100,12 @@ func TextInput(data string) Input {
 }
 
 type textInput struct {
-	Type string
-	Data string
+	Type string `json:"type,omitempty"`
+	Data string `json:"data,omitempty"`
 }
 
 func (i textInput) Compile() (*compiler.Value, error) {
-	panic("NOT IMPLEMENTED")
+	return compiler.Compile("", fmt.Sprintf("%q", i.Data))
 }
 
 // An input value encoded as JSON
@@ -117,13 +117,13 @@ func JSONInput(data string) Input {
 }
 
 type jsonInput struct {
-	Type string
+	Type string `json:"type,omitempty"`
 	// Marshalled JSON data
-	Data string
+	Data string `json:"data,omitempty"`
 }
 
 func (i jsonInput) Compile() (*compiler.Value, error) {
-	panic("NOT IMPLEMENTED")
+	return compiler.DecodeJSON("", []byte(i.Data))
 }
 
 // An input value encoded as YAML
@@ -135,11 +135,11 @@ func YAMLInput(data string) Input {
 }
 
 type yamlInput struct {
-	Type string
+	Type string `json:"type,omitempty"`
 	// Marshalled YAML data
-	Data string
+	Data string `json:"data,omitempty"`
 }
 
 func (i yamlInput) Compile() (*compiler.Value, error) {
-	panic("NOT IMPLEMENTED")
+	return compiler.DecodeYAML("", []byte(i.Data))
 }

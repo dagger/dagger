@@ -41,7 +41,8 @@ var newCmd = &cobra.Command{
 
 		if upRoute {
 			lg.Info().Str("route-id", route.ID()).Msg("bringing route online")
-			if err := route.Up(ctx, nil); err != nil {
+			// FIXME
+			if err := route.FIXME(ctx); err != nil {
 				lg.Fatal().Err(err).Str("route-id", route.ID()).Msg("failed to create route")
 			}
 		}

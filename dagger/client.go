@@ -61,7 +61,7 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 }
 
 // FIXME: return completed *Env, instead of *compiler.Value
-func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error) {
+func (c *Client) Up(ctx context.Context, env *Route) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -95,7 +95,7 @@ func (c *Client) Compute(ctx context.Context, env *Env) (*compiler.Value, error)
 	return out, compiler.Err(eg.Wait())
 }
 
-func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, env *Route, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -138,7 +138,7 @@ func (c *Client) buildfn(ctx context.Context, env *Env, ch chan *bk.SolveStatus,
 
 		// Compute output overlay
 		lg.Debug().Msg("computing env")
-		if err := env.Compute(ctx, s); err != nil {
+		if err := env.Up(ctx, s, nil); err != nil {
 			return nil, err
 		}
 

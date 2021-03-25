@@ -33,8 +33,8 @@ func TestLocalDirs(t *testing.T) {
 	}
 }
 
-func mkEnv(t *testing.T, updater, input string) *Env {
-	env, err := NewEnv()
+func mkEnv(t *testing.T, updater, input string) *Route {
+	env, err := NewRoute()
 	if err != nil {
 		t.Fatal(err)
 	}
