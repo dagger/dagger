@@ -19,6 +19,40 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Contents of a route serialized to a file
+type RouteState struct {
+	// Globally unique route ID
+	ID string `json:"id,omitempty"`
+
+	// Human-friendly route name.
+	// A route may have more than one name.
+	// FIXME: store multiple names?
+	Name string `json:"name,omitempty"`
+
+	// Cue module containing the route layout
+	// The input's top-level artifact is used as a module directory.
+	LayoutSource Input `json:"layout,omitempty"`
+
+	Inputs []inputKV `json:"inputs,omitempty"`
+}
+
+type inputKV struct {
+	Key   string `json:"key,omitempty"`
+	Value Input  `json:"value,omitempty"`
+}
+
+func (r *RouteState) AddInput(key string, value Input) error {
+	r.Inputs = append(r.Inputs, inputKV{Key: key, Value: value})
+	return nil
+}
+
+// Remove all inputs at the given key, including sub-keys.
+// For example RemoveInputs("foo.bar") will remove all inputs
+//   at foo.bar, foo.bar.baz, etc.
+func (r *RouteState) RemoveInputs(key string) error {
+	panic("NOT IMPLEMENTED")
+}
+
 type Route struct {
 	st *RouteState
 
