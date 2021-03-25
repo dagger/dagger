@@ -26,24 +26,48 @@ import (
 #Dagger: #Command & {
 
 	name:        "dagger"
-	description: "A system for application delivery as code (ADC)"
+	description: "Write code to deploy your code"
 
 	doc: """
-		Every dagger command is applied to a route. A route is a complete delivery environment with its own layout, inputs and outputs.
+		Dagger works by running *controllers*: specialized programs each automating
+		the deployment of a particular application in a particular way.
 
-		The same application can be delivered in different configurations using different routes.
-		For example, an application may have a "production" route, staging routes for QA, and experimental development routes.
+		Multiple controllers can deploy the same application in different ways,
+		for example to deploy distinct production and staging environments.
 
-		If a route is not specified, dagger auto-selects one as follows:
-		  * If exactly one route is connected to the current directory, the command proceeds automatically.
-		  * If more than one route matches, the user is prompted to select one.
-		  * If no route matches, the command returns an error.
+		Technically speaking, a controller is a standalone program with its own code and data,
+		run by the Dagger platform.
+
+		Unlike traditional programs which strictly separate code and data,
+		Dagger merges them into a unified DAG (direct acyclic graph)
+		using a powerful declarative language called [CUE](https://cuelang.org).
+		Each node of the DAG represents a step of the controller's deployment plan. 
+
+		Unlike traditional programs which run continuously, Dagger controllers are
+		*reactive*: their DAG is recomputed upon receiving a new input.
+
+		The Dagger platform natively supports [LLB](https://github.com/moby/buildkit) pipelines
+		pioneered by the Buildkit project.
+		This allows controllers to run sophisticated pipelines to ingest and process
+		artifacts such as source code, binaries, database exports, ML models, etc.
+		Best of all, LLB pipelines can securely build and run any docker/OCI container,
+		effectively allowing Dagger to be scriptable in any language.
 		"""
 
 	flag: {
-		"--route": {
-			alt:         "-r"
-			description: "Select a route"
+		"--deployment": {
+			alt:         "-d"
+			description:
+				"""
+				Select a controller
+
+				If no controller is specified, dagger searches for controllers using the current
+				directory as input.
+
+				* If exactly one controller matches the search, it is selected.
+				* If there is more than one match, the user is prompted to select one.
+				* If there is no match, the command returns an error.
+				"""
 			arg:         "NAME"
 		}
 		"--log-format": {
@@ -60,25 +84,25 @@ import (
 
 	command: {
 		new: {
-			description: "Create a new route"
+			description: "Create a new controller"
 			flag: {
 				"--name": {
 					alt:         "-n"
-					description: "Specify a route name"
+					description: "Specify a controller name"
 					default:     "name of current directory"
 				}
 
-				"--layout-dir": description: "Load layout from a local directory"
+				"--plan-dir": description: "Load deployment plan from a local directory"
 
-				"--layout-git": description: "Load layout from a git repository"
+				"--plan-git": description: "Load deployment plan from a git repository"
 
-				"--layout-package": description: "Load layout from a cue package"
+				"--plan-package": description: "Load deployment plan from a cue package"
 
-				"--layout-file": description: "Load layout from a cue or json file"
+				"--plan-file": description: "Load deployment plan from a cue or json file"
 
 				"--up": {
 					alt:         "-u"
-					description: "Bring the route online"
+					description: "Bring the controller online"
 				}
 
 				"--setup": {
@@ -88,20 +112,20 @@ import (
 			}
 		}
 
-		list: description: "List available routes"
+		list: description: "List available controllers"
 
 		query: {
 			arg:         "[EXPR] [flags]"
-			description: "Query the contents of a route"
+			description: "Query the contents of a controller"
 			doc:
 				"""
-					EXPR may be any valid CUE expression. The expression is evaluated against the route contents. The route is not changed.
+					EXPR may be any valid CUE expression. The expression is evaluated against the controller contents. The controller is not changed.
 					Examples:
 
-					  # Print all contents of the layout and input layers (omit output)
-					  $ dagger query -l input,layout
+					  # Print the entire deployment plan with inputs merged in (but no outputs)
+					  $ dagger query --no-output
 
-					  # Print complete contents for a particular component
+					  # Print the deployment plan, inputs and outputs of a particular step
 					  $ dagger query www.build
 
 					  # Print the URL of a deployed service
@@ -118,7 +142,7 @@ import (
 				// Use --revision or --change or --change-id instead?
 				"--version": {
 					alt:         "-v"
-					description: "Query a specific version of the route"
+					description: "Query a specific version of the controller"
 					default:     "latest"
 				}
 
@@ -131,7 +155,7 @@ import (
 				"--layer": {
 					alt: "-l"
 					description: """
-						Comma-separated list of layers to query (any of "input", "layout", "output")
+						Comma-separated list of layers to query (any of "input", "plan", "output")
 						"""
 					default: "all"
 				}
@@ -140,70 +164,70 @@ import (
 		}
 
 		up: {
-			description: "Bring a route online with latest layout and inputs"
+			description: "Bring a controller online with latest deployment plan and inputs"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
 		down: {
-			description: "Take a route offline (WARNING: may destroy infrastructure)"
+			description: "Take a controller offline (WARNING: may destroy infrastructure)"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
-		history: description: "List past changes to a route"
+		history: description: "List past changes to a controller"
 
 		delete: {
-			description: "Delete a route after taking it offline (WARNING: may destroy infrastructure)"
+			description: "Delete a controller after taking it offline (WARNING: may destroy infrastructure)"
 		}
 
-		layout: {
-			description: "Manage a route's layout"
+		plan: {
+			description: "Manage a controller's deployment plan"
 
 			command: {
 				package: {
-					description: "Load layout from a cue package"
+					description: "Load plan from a cue package"
 					arg:         "PKG"
 					doc:
 						"""
 						Examples:
-						  dagger layout package dagger.io/templates/jamstack
+						  dagger plan package dagger.io/templates/jamstack
 						"""
 				}
 
 				dir: {
-					description: "Load layout from a local directory"
+					description: "Load plan from a local directory"
 					arg:         "PATH"
 					doc:
 						"""
 						Examples:
-						  dagger layout dir ./infra/prod
+						  dagger plan dir ./infra/prod
 						"""
 				}
 
 				git: {
-					description: "Load layout from a git repository"
+					description: "Load plan from a git repository"
 					arg:         "REMOTE REF [SUBDIR]"
 					doc:
 						"""
 						Examples:
-						  dagger layout git https://github.com/dagger/dagger main examples/simple
+						  dagger plan git https://github.com/dagger/dagger main examples/simple
 						"""
 				}
 
 				file: {
-					description: "Load layout from a cue file"
+					description: "Load plan from a cue file"
 					arg:         "PATH|-"
 					doc:
 						"""
 						Examples:
-						  dagger layout file ./layout.cue
-						  echo 'message: "hello, \(name)!", name: string | *"world"' | dagger layout file -
+						  dagger plan file ./myapp-staging.cue
+						  echo 'message: "hello, \(name)!", name: string | *"world"' | dagger plan file -
 						"""
 				}
 			}
 		}
 
 		input: {
-			description: "Manage a route's inputs"
+			description: "Manage a controller's inputs"
 
 			command: {
 				// FIXME: details of individual input commands
@@ -216,10 +240,10 @@ import (
 		}
 
 		output: {
-			description: "Manage a route's outputs"
+			description: "Manage a controller's outputs"
 			// FIXME: bind output values or artifacts
 			// to local dir or file
-			// BONUS: bind a route output to another route's input?
+			// BONUS: bind a controller output to another controller's input?
 		}
 
 		login: description: "Login to Dagger Cloud"
