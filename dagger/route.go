@@ -60,9 +60,6 @@ type Route struct {
 	// FIXME: embed update script in base as '#update' ?
 	// FIXME: simplify Env by making it single layer? Each layer is one r.
 
-	// How to update the base configuration
-	updater *compiler.Value
-
 	// Layer 1: layout configuration
 	layout *compiler.Value
 
@@ -200,11 +197,13 @@ func (r *Route) LocalDirs() map[string]string {
 	}
 
 	// 2. Scan the layout
-	layout, err := r.st.LayoutSource.Compile()
-	if err != nil {
-		panic(err)
+	if r.st.LayoutSource != nil {
+		layout, err := r.st.LayoutSource.Compile()
+		if err != nil {
+			panic(err)
+		}
+		localdirs(layout)
 	}
-	localdirs(layout)
 	return dirs
 }
 

@@ -2,22 +2,16 @@ package dagger
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestEnvInputFlag(t *testing.T) {
-	env, err := NewRoute()
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := &RouteState{}
+	require.NoError(t, st.AddInput("www.source", DirInput(".", []string{})))
 
-	input, err := NewInputValue(`{}`)
+	env, err := NewRoute(st)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := input.DirFlag().Set("www.source=."); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.SetInput(input.Value()); err != nil {
 		t.Fatal(err)
 	}
 
