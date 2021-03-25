@@ -4,22 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"os"
 	"path"
-	"strings"
+	"path/filepath"
 
 	"github.com/google/uuid"
 )
 
 const (
-	storeLocation = "$HOME/.config/dagger/routes"
+	defaultStoreRoot = "$HOME/.config/dagger/routes"
 )
+
+type Store struct {
+	root string
+}
+
+func NewStore(root string) *Store {
+	return &Store{
+		root: root,
+	}
+}
+
+func DefaultStore() *Store {
+	return NewStore(os.ExpandEnv(defaultStoreRoot))
+}
 
 type CreateOpts struct{}
 
-func CreateRoute(ctx context.Context, name string, o *CreateOpts) (*Route, error) {
-	r, err := LookupRoute(ctx, name, &LookupOpts{})
+func (s *Store) CreateRoute(ctx context.Context, name string, o *CreateOpts) (*Route, error) {
+	r, err := s.LookupRoute(ctx, name, &LookupOpts{})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -36,50 +49,53 @@ func CreateRoute(ctx context.Context, name string, o *CreateOpts) (*Route, error
 		return nil, err
 	}
 
-	return r, syncRoute(r)
+	return r, s.syncRoute(r)
 }
 
 type UpdateOpts struct{}
 
-func UpdateRoute(ctx context.Context, r *Route, o *UpdateOpts) error {
-	return syncRoute(r)
+func (s *Store) UpdateRoute(ctx context.Context, r *Route, o *UpdateOpts) error {
+	return s.syncRoute(r)
 }
 
 type DeleteOpts struct{}
 
-func DeleteRoute(ctx context.Context, r *Route, o *DeleteOpts) error {
-	return deleteRoute(r)
+func (s *Store) DeleteRoute(ctx context.Context, r *Route, o *DeleteOpts) error {
+	return os.Remove(s.routePath(r.st.Name))
 }
 
 type LookupOpts struct{}
 
-func LookupRoute(ctx context.Context, name string, o *LookupOpts) (*Route, error) {
-	st, err := loadRoute(name)
+func (s *Store) LookupRoute(ctx context.Context, name string, o *LookupOpts) (*Route, error) {
+	data, err := os.ReadFile(s.routePath(name))
 	if err != nil {
 		return nil, err
 	}
+	var st RouteState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return nil, err
+	}
 	return &Route{
-		st: st,
+		st: &st,
 	}, nil
 }
 
 type LoadOpts struct{}
 
-func LoadRoute(ctx context.Context, id string, o *LoadOpts) (*Route, error) {
+func (s *Store) LoadRoute(ctx context.Context, id string, o *LoadOpts) (*Route, error) {
 	panic("NOT IMPLEMENTED")
 }
 
-func ListRoutes(ctx context.Context) ([]string, error) {
+func (s *Store) ListRoutes(ctx context.Context) ([]string, error) {
 	routes := []string{}
 
-	rootDir := os.ExpandEnv(storeLocation)
-	files, err := ioutil.ReadDir(rootDir)
+	files, err := os.ReadDir(s.root)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, f := range files {
-		if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
 			// There is extra data in the directory, ignore
 			continue
 		}
@@ -89,12 +105,12 @@ func ListRoutes(ctx context.Context) ([]string, error) {
 	return routes, nil
 }
 
-func routePath(name string) string {
-	return path.Join(os.ExpandEnv(storeLocation), name+".json")
+func (s *Store) routePath(name string) string {
+	return path.Join(s.root, name+".json")
 }
 
-func syncRoute(r *Route) error {
-	p := routePath(r.st.Name)
+func (s *Store) syncRoute(r *Route) error {
+	p := s.routePath(r.st.Name)
 
 	if err := os.MkdirAll(path.Dir(p), 0755); err != nil {
 		return err
@@ -106,20 +122,4 @@ func syncRoute(r *Route) error {
 	}
 
 	return os.WriteFile(p, data, 0644)
-}
-
-func deleteRoute(r *Route) error {
-	return os.Remove(routePath(r.st.Name))
-}
-
-func loadRoute(name string) (*RouteState, error) {
-	data, err := os.ReadFile(routePath(name))
-	if err != nil {
-		return nil, err
-	}
-	var st *RouteState
-	if err := json.Unmarshal(data, st); err != nil {
-		return nil, err
-	}
-	return st, nil
 }

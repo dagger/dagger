@@ -25,6 +25,5 @@ todoApp: netlify.#Site & {
 	contents: yarn.#Script & {
 		source: repository
 		run:    "build"
-		env: "xx" :"bar"
 	}
 }

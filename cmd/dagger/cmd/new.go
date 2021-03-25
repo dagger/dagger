@@ -22,18 +22,17 @@ var newCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
+		store := dagger.DefaultStore()
 
-		// nolint:staticcheck
 		upRouteFlag, err := cmd.Flags().GetBool("up")
 		if err != nil {
 			lg.Fatal().Err(err).Str("flag", "up").Msg("unable to resolve flag")
 		}
 
-		// nolint:staticcheck
 		routeName := getRouteName(lg, cmd)
 
 		// TODO: Implement options: --layout-*, --setup
-		route, err := dagger.CreateRoute(ctx, routeName, nil)
+		route, err := store.CreateRoute(ctx, routeName, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create route")
 		}

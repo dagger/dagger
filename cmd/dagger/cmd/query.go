@@ -23,11 +23,11 @@ var queryCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
-		// nolint:staticcheck
 		ctx := lg.WithContext(cmd.Context())
+		store := dagger.DefaultStore()
 
 		routeName := getRouteName(lg, cmd)
-		route, err := dagger.LookupRoute(ctx, routeName, nil)
+		route, err := store.LookupRoute(ctx, routeName, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Str("route-name", routeName).Msg("failed to lookup route")
 		}

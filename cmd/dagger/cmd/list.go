@@ -23,8 +23,9 @@ var listCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
+		store := dagger.DefaultStore()
 
-		routes, err := dagger.ListRoutes(ctx)
+		routes, err := store.ListRoutes(ctx)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("cannot list routes")
 		}
