@@ -26,20 +26,28 @@ var newCmd = &cobra.Command{
 
 		upRouteFlag, err := cmd.Flags().GetBool("up")
 		if err != nil {
-			lg.Fatal().Err(err).Str("flag", "up").Msg("unable to resolve flag")
+			lg.
+				Fatal().
+				Err(err).
+				Str("flag", "up").
+				Msg("unable to resolve flag")
 		}
 
-		routeName := getRouteName(lg, cmd)
+		routeName := getRouteName(ctx, cmd)
 
 		// TODO: Implement options: --layout-*, --setup
 		route, err := store.CreateRoute(ctx, routeName, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create route")
 		}
-		lg.Info().Str("route-id", route.ID()).Str("route-name", routeName).Msg("created route")
+		lg.
+			Info().
+			Str("routeId", route.ID()).
+			Str("routeName", routeName).
+			Msg("route created")
 
 		if upRouteFlag {
-			routeUp(ctx, lg, route)
+			routeUp(ctx, route)
 		}
 	},
 }

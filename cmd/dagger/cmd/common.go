@@ -7,15 +7,21 @@ import (
 	"path/filepath"
 
 	"dagger.io/go/dagger"
-	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
 // getRouteName returns the selected route name (based on explicit CLI selection or current work dir)
-func getRouteName(lg zerolog.Logger, cmd *cobra.Command) string {
+func getRouteName(ctx context.Context, cmd *cobra.Command) string {
+	lg := log.Ctx(ctx)
+
 	routeName, err := cmd.Flags().GetString("route")
 	if err != nil {
-		lg.Fatal().Err(err).Str("flag", "route").Msg("unable to resolve flag")
+		lg.
+			Fatal().
+			Err(err).
+			Str("flag", "route").
+			Msg("unable to resolve flag")
 	}
 
 	if routeName != "" {
@@ -24,7 +30,10 @@ func getRouteName(lg zerolog.Logger, cmd *cobra.Command) string {
 
 	workDir, err := os.Getwd()
 	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to get current working dir")
+		lg.
+			Fatal().
+			Err(err).
+			Msg("failed to get current working dir")
 	}
 
 	currentDir := filepath.Base(workDir)
@@ -35,7 +44,9 @@ func getRouteName(lg zerolog.Logger, cmd *cobra.Command) string {
 	return currentDir
 }
 
-func routeUp(ctx context.Context, lg zerolog.Logger, route *dagger.Route) {
+func routeUp(ctx context.Context, route *dagger.Route) {
+	lg := log.Ctx(ctx)
+
 	c, err := dagger.NewClient(ctx, "")
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")

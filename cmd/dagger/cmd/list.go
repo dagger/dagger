@@ -27,7 +27,10 @@ var listCmd = &cobra.Command{
 
 		routes, err := store.ListRoutes(ctx)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("cannot list routes")
+			lg.
+				Fatal().
+				Err(err).
+				Msg("cannot list routes")
 		}
 
 		for _, name := range routes {

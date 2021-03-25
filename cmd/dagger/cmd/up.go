@@ -25,14 +25,18 @@ var upCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		store := dagger.DefaultStore()
 
-		routeName := getRouteName(lg, cmd)
+		routeName := getRouteName(ctx, cmd)
 		route, err := store.LookupRoute(ctx, routeName, nil)
 		if err != nil {
-			lg.Fatal().Err(err).Str("route-name", routeName).Msg("failed to lookup route")
+			lg.
+				Fatal().
+				Err(err).
+				Str("routeName", routeName).
+				Msg("failed to lookup route")
 		}
 
 		// TODO: Implement options: --no-cache
-		routeUp(ctx, lg, route)
+		routeUp(ctx, route)
 	},
 }
 

@@ -31,7 +31,7 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		name := getRouteName(lg, cmd)
+		name := getRouteName(ctx, cmd)
 		st := &dagger.RouteState{
 			ID:           uuid.New().String(),
 			Name:         name,
@@ -43,7 +43,11 @@ var computeCmd = &cobra.Command{
 			k, v := parts[0], parts[1]
 			err := st.AddInput(k, dagger.TextInput(v))
 			if err != nil {
-				lg.Fatal().Err(err).Str("input", k).Msg("failed to add input")
+				lg.
+					Fatal().
+					Err(err).
+					Str("input", k).
+					Msg("failed to add input")
 			}
 		}
 
@@ -52,7 +56,11 @@ var computeCmd = &cobra.Command{
 			k, v := parts[0], parts[1]
 			err := st.AddInput(k, dagger.DirInput(v, []string{}))
 			if err != nil {
-				lg.Fatal().Err(err).Str("input", k).Msg("failed to add input")
+				lg.
+					Fatal().
+					Err(err).
+					Str("input", k).
+					Msg("failed to add input")
 			}
 		}
 
@@ -61,7 +69,11 @@ var computeCmd = &cobra.Command{
 			k, v := parts[0], parts[1]
 			err := st.AddInput(k, dagger.GitInput(v, "", ""))
 			if err != nil {
-				lg.Fatal().Err(err).Str("input", k).Msg("failed to add input")
+				lg.
+					Fatal().
+					Err(err).
+					Str("input", k).
+					Msg("failed to add input")
 			}
 		}
 
@@ -120,7 +132,7 @@ var computeCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to initialize route")
 		}
 
-		routeUp(ctx, lg, route)
+		routeUp(ctx, route)
 	},
 }
 
