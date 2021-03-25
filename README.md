@@ -19,7 +19,7 @@ Dagger is *alpha-quality software*. It has many bugs, the user interface is mini
 
 ## Learn More
 
-* [What is Application Delivery as Code?](doc/what_is_adc.md)
+* [Dagger vs. Other Software](doc/vs.md)
 * [Installing Dagger](doc/install.md)
 * [Tutorials](doc/tutorials.md)
 * [Adding Dagger to your project](doc/adding_dagger.md)
