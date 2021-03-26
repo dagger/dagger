@@ -1,4 +1,4 @@
-package cmd
+package common
 
 import (
 	"context"
@@ -11,7 +11,19 @@ import (
 )
 
 // getCurrentRoute returns the current selected route based on its abs path
-func getCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
+func GetCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
+	lg := log.Ctx(ctx)
+	st := GetCurrentRouteState(ctx, store)
+
+	route, err := dagger.NewRoute(st)
+	if err != nil {
+		lg.Fatal().Err(err).Interface("routeState", st).Msg("failed to init route")
+	}
+
+	return route
+}
+
+func GetCurrentRouteState(ctx context.Context, store *dagger.Store) *dagger.RouteState {
 	lg := log.Ctx(ctx)
 
 	var (
@@ -37,15 +49,10 @@ func getCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
 		}
 	}
 
-	route, err := dagger.NewRoute(st)
-	if err != nil {
-		lg.Fatal().Err(err).Interface("routeState", st).Msg("failed to init route")
-	}
-
-	return route
+	return st
 }
 
-func routeUp(ctx context.Context, route *dagger.Route) {
+func RouteUp(ctx context.Context, route *dagger.Route) {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "")

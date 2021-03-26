@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 	"go.mozilla.org/sops"
@@ -131,7 +132,7 @@ var computeCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to initialize route")
 		}
 
-		routeUp(ctx, route)
+		common.RouteUp(ctx, route)
 	},
 }
 

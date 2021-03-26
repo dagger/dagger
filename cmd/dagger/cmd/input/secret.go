@@ -6,9 +6,9 @@ import (
 )
 
 var secretCmd = &cobra.Command{
-	Use:   "secret VALUE",
+	Use:   "secret TARGET VALUE",
 	Short: "Add an encrypted input secret",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
@@ -56,7 +57,7 @@ var newCmd = &cobra.Command{
 		}
 
 		if viper.GetBool("up") {
-			routeUp(ctx, route)
+			common.RouteUp(ctx, route)
 		}
 	},
 }

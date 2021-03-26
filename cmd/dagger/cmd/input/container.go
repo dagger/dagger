@@ -1,14 +1,16 @@
 package input
 
 import (
+	"dagger.io/go/cmd/dagger/logger"
+	"dagger.io/go/dagger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var containerCmd = &cobra.Command{
-	Use:   "container ID",
+	Use:   "container TARGET CONTAINER-IMAGE",
 	Short: "Add a container image as input artifact",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -17,10 +19,10 @@ var containerCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// lg := logger.New()
-		// ctx := lg.WithContext(cmd.Context())
+		lg := logger.New()
+		ctx := lg.WithContext(cmd.Context())
 
-		panic("not implemented")
+		updateRouteInput(ctx, args[0], dagger.DockerInput(args[1]))
 	},
 }
 

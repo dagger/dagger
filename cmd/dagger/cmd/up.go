@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
@@ -28,10 +29,10 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		route := getCurrentRoute(ctx, store)
+		route := common.GetCurrentRoute(ctx, store)
 
 		// TODO: Implement options: --no-cache
-		routeUp(ctx, route)
+		common.RouteUp(ctx, route)
 	},
 }
 

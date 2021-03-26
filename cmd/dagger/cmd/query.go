@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
@@ -30,7 +31,7 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		route := getCurrentRoute(ctx, store)
+		route := common.GetCurrentRoute(ctx, store)
 
 		expr := args[0]
 
