@@ -22,22 +22,35 @@ var newCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
-		store := dagger.DefaultStore()
+		store, err := dagger.DefaultStore()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to load store")
+		}
 
 		upRouteFlag := viper.GetBool("up")
 
-		routeName := getRouteName(ctx)
+		st := &dagger.RouteState{
+			Name: getRouteName(ctx),
+		}
 
 		// TODO: Implement options: --layout-*, --setup
-		route, err := store.CreateRoute(ctx, routeName, nil)
+		err = store.CreateRoute(ctx, st)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create route")
 		}
 		lg.
 			Info().
-			Str("routeId", route.ID()).
-			Str("routeName", routeName).
+			Str("routeId", st.ID).
+			Str("routeName", st.Name).
 			Msg("route created")
+
+		route, err := dagger.NewRoute(st)
+		if err != nil {
+			lg.
+				Fatal().
+				Err(err).
+				Msg("failed to initialize route")
+		}
 
 		if upRouteFlag {
 			routeUp(ctx, route)

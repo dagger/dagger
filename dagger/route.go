@@ -49,7 +49,16 @@ func (r *RouteState) AddInput(key string, value Input) error {
 // For example RemoveInputs("foo.bar") will remove all inputs
 //   at foo.bar, foo.bar.baz, etc.
 func (r *RouteState) RemoveInputs(key string) error {
-	panic("NOT IMPLEMENTED")
+	newInputs := make([]inputKV, 0, len(r.Inputs))
+	for _, i := range r.Inputs {
+		if i.Key == key {
+			continue
+		}
+		newInputs = append(newInputs, i)
+	}
+	r.Inputs = newInputs
+
+	return nil
 }
 
 type Route struct {

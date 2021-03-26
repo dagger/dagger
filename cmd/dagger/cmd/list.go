@@ -23,7 +23,10 @@ var listCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
-		store := dagger.DefaultStore()
+		store, err := dagger.DefaultStore()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to load store")
+		}
 
 		routes, err := store.ListRoutes(ctx)
 		if err != nil {
@@ -33,8 +36,8 @@ var listCmd = &cobra.Command{
 				Msg("cannot list routes")
 		}
 
-		for _, name := range routes {
-			fmt.Println(name)
+		for _, r := range routes {
+			fmt.Println(r.Name)
 		}
 	},
 }
