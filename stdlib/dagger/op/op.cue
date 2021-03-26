@@ -48,6 +48,7 @@ package op
 	always?: true | *false
 	dir:     string | *"/"
 	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
+	network: "host" | "none" | *"sandbox"
 }
 
 #FetchContainer: {
