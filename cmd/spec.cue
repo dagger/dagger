@@ -57,12 +57,12 @@ import (
 			alt:         "-d"
 			description:
 				"""
-				Select a controller
+				Select a deployment
 
-				If no controller is specified, dagger searches for controllers using the current
+				If no deployment is specified, dagger searches for deployments using the current
 				directory as input.
 
-				* If exactly one controller matches the search, it is selected.
+				* If exactly one deployment matches the search, it is selected.
 				* If there is more than one match, the user is prompted to select one.
 				* If there is no match, the command returns an error.
 				"""
@@ -82,11 +82,11 @@ import (
 
 	command: {
 		new: {
-			description: "Create a new controller"
+			description: "Create a new deployment"
 			flag: {
 				"--name": {
 					alt:         "-n"
-					description: "Specify a controller name"
+					description: "Specify a deployment name"
 					default:     "name of current directory"
 				}
 
@@ -100,7 +100,7 @@ import (
 
 				"--up": {
 					alt:         "-u"
-					description: "Bring the controller online"
+					description: "Bring the deployment online"
 				}
 
 				"--setup": {
@@ -110,14 +110,14 @@ import (
 			}
 		}
 
-		list: description: "List available controllers"
+		list: description: "List available deployments"
 
 		query: {
 			arg:         "[EXPR] [flags]"
-			description: "Query the contents of a controller"
+			description: "Query the contents of a deployment"
 			doc:
 				"""
-					EXPR may be any valid CUE expression. The expression is evaluated against the controller contents. The controller is not changed.
+					EXPR may be any valid CUE expression. The expression is evaluated against the deployment contents. The deployment is not changed.
 					Examples:
 
 					  # Print the entire deployment plan with inputs merged in (but no outputs)
@@ -140,7 +140,7 @@ import (
 				// Use --revision or --change or --change-id instead?
 				"--version": {
 					alt:         "-v"
-					description: "Query a specific version of the controller"
+					description: "Query a specific version of the deployment"
 					default:     "latest"
 				}
 
@@ -166,23 +166,23 @@ import (
 		}
 
 		up: {
-			description: "Bring a controller online with latest deployment plan and inputs"
+			description: "Bring a deployment online with latest deployment plan and inputs"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
 		down: {
-			description: "Take a controller offline (WARNING: may destroy infrastructure)"
+			description: "Take a deployment offline (WARNING: may destroy infrastructure)"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
-		history: description: "List past changes to a controller"
+		history: description: "List past changes to a deployment"
 
 		delete: {
-			description: "Delete a controller after taking it offline (WARNING: may destroy infrastructure)"
+			description: "Delete a deployment after taking it offline (WARNING: may destroy infrastructure)"
 		}
 
 		plan: {
-			description: "Manage a controller's deployment plan"
+			description: "Manage a deployment plan"
 
 			command: {
 				package: {
@@ -229,7 +229,7 @@ import (
 		}
 
 		input: {
-			description: "Manage a controller's inputs"
+			description: "Manage a deployment's inputs"
 
 			command: {
 				// FIXME: details of individual input commands
@@ -242,10 +242,10 @@ import (
 		}
 
 		output: {
-			description: "Manage a controller's outputs"
+			description: "Manage a deployment's outputs"
 			// FIXME: bind output values or artifacts
 			// to local dir or file
-			// BONUS: bind a controller output to another controller's input?
+			// BONUS: bind a deployment output to another deployment's input?
 		}
 
 		login: description: "Login to Dagger Cloud"
