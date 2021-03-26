@@ -29,28 +29,27 @@ import (
 	description: "Write code to deploy your code"
 
 	doc: """
-		Dagger works by running *controllers*: specialized programs each automating
-		the deployment of a particular application in a particular way.
+		A Dagger deployment is a continuously running workflow delivering a specific application in a specific way.
 
-		The same application can be deployed in different ways by different controllers, for example to create distinct production and staging environments.
+		The same application can be delivered via different deployments, each with a different configuration.
+		For example a production deployment might include manual validation and addition performance testing,
+		while a staging deployment might automatically deploy from a git branch, load test data into the database,
+		and run on a separate cluster.
 
-		Technically speaking, a controller is a standalone program with its own code and data,
-		run by the Dagger platform.
+		A deployment is made of 3 parts: a deployment plan, inputs, and outputs.
+		```
 
-		Unlike traditional programs which strictly separate code and data,
-		Dagger merges them into a unified DAG (direct acyclic graph)
-		using a powerful declarative language called [CUE](https://cuelang.org).
-		Each node of the DAG represents a step of the controller's deployment plan. 
 
-		Unlike traditional programs which run continuously, Dagger controllers are
-		*reactive*: their DAG is recomputed upon receiving a new input.
+		# Creating a new component
 
-		The Dagger platform natively supports [LLB](https://github.com/moby/buildkit) pipelines
-		pioneered by the Buildkit project.
-		This allows controllers to run sophisticated pipelines to ingest and process
-		artifacts such as source code, binaries, database exports, ML models, etc.
-		Best of all, LLB pipelines can securely build and run any docker/OCI container,
-		effectively allowing Dagger to be scriptable in any language.
+		Sometimes there is no third-party component available for a particular node in the application's supply chain;
+		or it exists but needs to be customized.
+
+		A Dagger component is simply a Cue definition annotated with [LLB](https://github.com/moby/buildkit) pipelines.
+		LLB is a standard executable format pioneered by the Buildkit project. It allows Dagger components to run
+		sophisticated pipelines to ingest, and process artifacts such as source code, binaries, database exports, etc.
+		Best of all LLB pipelines can securely build and run any docker container, effectively making Dagger
+		scriptable in any language.
 		"""
 
 	flag: {
