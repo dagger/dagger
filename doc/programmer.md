@@ -2,57 +2,71 @@
 
 ## Overview
 
-Dagger works by running *controllers*: specialized programs each automating
-the deployment of a particular application in a particular way.
+A Dagger deployment is a continuously running workflow delivering a specific application in a specific way.
 
-The same application can be deployed in different ways by different controllers, for example to create distinct production and staging environments.
+The same application can be delivered via different deployments, each with a different configuration.
+For example a production deployment might include manual validation and addition performance testing,
+while a staging deployment might automatically deploy from a git branch, load test data into the database,
+and run on a separate cluster.
 
-Technically speaking, a controller is a standalone program with its own code and data,
-run by the Dagger platform.
+A deployment is made of 3 parts: a deployment plan, inputs, and outputs.
 
-Unlike traditional programs which strictly separate code and data,
-Dagger merges them into a unified DAG (direct acyclic graph)
-using a powerful declarative language called [CUE](https://cuelang.org).
-Each node of the DAG represents a step of the controller's deployment plan. 
 
-Unlike traditional programs which run continuously, Dagger controllers are
-*reactive*: their DAG is recomputed upon receiving a new input.
+## The Deployment Plan
 
-The Dagger platform natively supports [LLB](https://github.com/moby/buildkit) pipelines
-pioneered by the Buildkit project.
-This allows controllers to run sophisticated pipelines to ingest and process
-artifacts such as source code, binaries, database exports, ML models, etc.
-Best of all, LLB pipelines can securely build and run any docker/OCI container,
-effectively allowing Dagger to be scriptable in any language.
+The deployment plan is the source code of the deployment. It is written in [Cue](https://cuelang.org),
+a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google.
 
-## What is a DAG?
+The deployment plan lays out every node in the application supply chain, and how they are interconnected:
 
-A DAG is the basic unit of programming in dagger.
-It is a special kind of program which runs as a aipeline of inter-connected computing nodes running in parallel, instead of a sequence of operations to be run by a single node.
+* Development tools: source control, CI, build systems, testing systems
+* Hosting infrastructure: compute, storage, networking, databases, CDN..
+* Software dependencies: operating systems, languages, libraries, frameworks, etc.
 
-DAGs are a powerful way to automate various parts of an application delivery workflow:
-build, test, deploy, generate configuration, enforce policies, publish artifacts, etc.
+Each node is a standalone software component, with its own code, inputs and outputs.
+The interconnected network of component inputs and outputs forms a special kind of graph called a [DAG]().
 
-The DAG architecture has many benefits:
+Dagger follows a *reactive* programming model: when a component receives a new input
+(for example a new version of source code, or a new setting), it recomputes its outputs,
+which then propagate to adjacent nodes, and so on. Thus the flow of data through
+the DAG mimics the flow of goods through a supply chain.
 
-  - Because DAGs are made of nodes executing in parallel, they are easy to scale.
-  - Because all inputs and outputs are snapshotted and content-addressed, DAGs
-  can easily be made repeatable, can be cached aggressively, and can be replayed
-  at will.
-  - Because nodes are executed by the same container engine as docker-build, DAGs
-  can be developed using any language or technology capable of running in a docker.
-  Dockerfiles and docker images are natively supported for maximum compatibility.
-  - Because DAGs are programmed declaratively with a powerful configuration language,
-  they are much easier to test, debug and refactor than traditional programming languages.
 
-To execute a DAG, the dagger runtime JIT-compiles it to a low-level format called llb, and executes it with buildkit. Think of buildkit as a specialized VM for running compute graphs; and dagger as a complete programming environment for that VM.
+## Using third-party components
 
-The tradeoff for all those wonderful features is that a DAG architecture cannot be used for all software: only software than can be run as a pipeline.
+Cue includes a complete package system. This makes it easy to create a complex deployment plan in very few
+lines of codes, simply by composing existing packages.
 
-## The CUE language
+For example, to create a deployment plan involving Github, Heroku and Amazon RDS, one might import the three
+corresponding packages:
 
-*FIXME*
+```
+import (
+	"dagger.io/github"
+	"dagger.io/heroku"
+	"dagger.io/amazon/rds"
+)
 
-## The Buildkit runtime environment
+repo: github.#Repository & {
+	// Github configuration values
+}
 
-*FIXME*
+backend: heroku.#App & {
+	// Heroku configuration values
+}
+
+db: rds.#Database & {
+	// RDS configuration values
+}
+
+
+## Creating a new component
+
+Sometimes there is no third-party component available for a particular node in the application's supply chain;
+or it exists but needs to be customized.
+
+A Dagger component is simply a Cue definition annotated with [LLB](https://github.com/moby/buildkit) pipelines.
+LLB is a standard executable format pioneered by the Buildkit project. It allows Dagger components to run
+sophisticated pipelines to ingest, and process artifacts such as source code, binaries, database exports, etc.
+Best of all LLB pipelines can securely build and run any docker container, effectively making Dagger
+scriptable in any language.
