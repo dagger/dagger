@@ -82,18 +82,6 @@ type Route struct {
 	state *compiler.Value
 }
 
-func (r *Route) ID() string {
-	return r.st.ID
-}
-
-func (r *Route) Name() string {
-	return r.st.Name
-}
-
-func (r *Route) LayoutSource() Input {
-	return r.st.LayoutSource
-}
-
 func NewRoute(st *RouteState) (*Route, error) {
 	empty := compiler.EmptyStruct()
 	r := &Route{
@@ -125,23 +113,47 @@ func NewRoute(st *RouteState) (*Route, error) {
 	return r, nil
 }
 
+func (r *Route) ID() string {
+	return r.st.ID
+}
+
+func (r *Route) Name() string {
+	return r.st.Name
+}
+
+func (r *Route) LayoutSource() Input {
+	return r.st.LayoutSource
+}
+
+func (r *Route) Layout() *compiler.Value {
+	return r.layout
+}
+
+func (r *Route) Input() *compiler.Value {
+	return r.input
+}
+
+func (r *Route) Output() *compiler.Value {
+	return r.output
+}
+
 func (r *Route) State() *compiler.Value {
 	return r.state
 }
 
-// Update the base configuration
-func (r *Route) Update(ctx context.Context, s Solver) error {
+// LoadLayout loads the layout
+func (r *Route) LoadLayout(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "r.Update")
 	defer span.Finish()
 
-	layout, err := r.st.LayoutSource.Compile()
+	layoutSource, err := r.st.LayoutSource.Compile()
 	if err != nil {
 		return err
 	}
 
 	p := NewPipeline("[internal] source", s, nil)
 	// execute updater script
-	if err := p.Do(ctx, layout); err != nil {
+	if err := p.Do(ctx, layoutSource); err != nil {
 		return err
 	}
 
@@ -150,22 +162,14 @@ func (r *Route) Update(ctx context.Context, s Solver) error {
 		stdlib.Path: stdlib.FS,
 		"/":         p.FS(),
 	}
-	base, err := compiler.Build(sources)
+	layout, err := compiler.Build(sources)
 	if err != nil {
-		return fmt.Errorf("base config: %w", err)
+		return fmt.Errorf("layout config: %w", err)
 	}
-	r.layout = base
+	r.layout = layout
 
 	// Commit
 	return r.mergeState()
-}
-
-func (r *Route) Base() *compiler.Value {
-	return r.layout
-}
-
-func (r *Route) Output() *compiler.Value {
-	return r.output
 }
 
 // Scan all scripts in the environment for references to local directories (do:"local"),
@@ -299,7 +303,7 @@ func (r *Route) Up(ctx context.Context, s Solver, _ *UpOpts) error {
 	}
 
 	{
-		span, _ := opentracing.StartSpanFromContext(ctx, "r.Compute: merge state")
+		span, _ := opentracing.StartSpanFromContext(ctx, "merge state")
 		defer span.Finish()
 
 		return r.mergeState()

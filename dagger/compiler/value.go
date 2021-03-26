@@ -123,11 +123,6 @@ func (v *Value) Int64() (int64, error) {
 	return v.val.Int64()
 }
 
-func (v *Value) SourceUnsafe() string {
-	s, _ := v.SourceString()
-	return s
-}
-
 // Proxy function to the underlying cue.Value
 func (v *Value) Path() cue.Path {
 	return v.val.Path()
@@ -234,12 +229,6 @@ func (v *Value) Source() ([]byte, error) {
 	defer v.cc.runlock()
 
 	return cueformat.Node(v.val.Eval().Syntax())
-}
-
-// Return cue source for this value, as a Go string
-func (v *Value) SourceString() (string, error) {
-	b, err := v.Source()
-	return string(b), err
 }
 
 func (v *Value) IsEmptyStruct() bool {
