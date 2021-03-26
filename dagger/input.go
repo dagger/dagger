@@ -19,22 +19,61 @@ import (
 //   Under the hood, an artifact is encoded as a LLB pipeline, and
 //   attached to the cue configuration as a
 //
-type Input interface {
-	// Compile to a cue value which can be merged into a route config
-	Compile() (*compiler.Value, error)
+type InputType string
+
+const (
+	InputTypeDir    InputType = "dir"
+	InputTypeGit    InputType = "git"
+	InputTypeDocker InputType = "docker"
+	InputTypeText   InputType = "text"
+	InputTypeJSON   InputType = "json"
+	InputTypeYAML   InputType = "yaml"
+)
+
+type Input struct {
+	Type InputType `json:"type,omitempty"`
+
+	Dir    *dirInput    `json:"dir,omitempty"`
+	Git    *gitInput    `json:"git,omitempty"`
+	Docker *dockerInput `json:"docker,omitempty"`
+	Text   *textInput   `json:"text,omitempty"`
+	JSON   *jsonInput   `json:"json,omitempty"`
+	YAML   *yamlInput   `json:"yaml,omitempty"`
+}
+
+func (i Input) Compile() (*compiler.Value, error) {
+	switch i.Type {
+	case InputTypeDir:
+		return i.Dir.Compile()
+	case InputTypeGit:
+		return i.Git.Compile()
+	case InputTypeDocker:
+		return i.Docker.Compile()
+	case InputTypeText:
+		return i.Text.Compile()
+	case InputTypeJSON:
+		return i.JSON.Compile()
+	case InputTypeYAML:
+		return i.YAML.Compile()
+	case "":
+		return nil, fmt.Errorf("input has not been set")
+	default:
+		return nil, fmt.Errorf("unsupported input type: %s", i.Type)
+	}
 }
 
 // An input artifact loaded from a local directory
 func DirInput(path string, include []string) Input {
-	return &dirInput{
-		Type:    "dir",
-		Path:    path,
-		Include: include,
+	return Input{
+		Type: InputTypeDir,
+		Dir: &dirInput{
+			Path:    path,
+			Include: include,
+		},
 	}
 }
 
 type dirInput struct {
-	Type    string   `json:"type,omitempty"`
 	Path    string   `json:"path,omitempty"`
 	Include []string `json:"include,omitempty"`
 }
@@ -55,18 +94,19 @@ func (dir dirInput) Compile() (*compiler.Value, error) {
 
 // An input artifact loaded from a git repository
 type gitInput struct {
-	Type   string `json:"type,omitempty"`
 	Remote string `json:"remote,omitempty"`
 	Ref    string `json:"ref,omitempty"`
 	Dir    string `json:"dir,omitempty"`
 }
 
 func GitInput(remote, ref, dir string) Input {
-	return &gitInput{
-		Type:   "git",
-		Remote: remote,
-		Ref:    ref,
-		Dir:    dir,
+	return Input{
+		Type: InputTypeGit,
+		Git: &gitInput{
+			Remote: remote,
+			Ref:    ref,
+			Dir:    dir,
+		},
 	}
 }
 
@@ -76,15 +116,16 @@ func (git gitInput) Compile() (*compiler.Value, error) {
 
 // An input artifact loaded from a docker container
 func DockerInput(ref string) Input {
-	return &dockerInput{
-		Type: "docker",
-		Ref:  ref,
+	return Input{
+		Type: InputTypeDocker,
+		Docker: &dockerInput{
+			Ref: ref,
+		},
 	}
 }
 
 type dockerInput struct {
-	Type string `json:"type,omitempty"`
-	Ref  string `json:"ref,omitempty"`
+	Ref string `json:"ref,omitempty"`
 }
 
 func (i dockerInput) Compile() (*compiler.Value, error) {
@@ -93,14 +134,15 @@ func (i dockerInput) Compile() (*compiler.Value, error) {
 
 // An input value encoded as text
 func TextInput(data string) Input {
-	return &textInput{
-		Type: "text",
-		Data: data,
+	return Input{
+		Type: InputTypeText,
+		Text: &textInput{
+			Data: data,
+		},
 	}
 }
 
 type textInput struct {
-	Type string `json:"type,omitempty"`
 	Data string `json:"data,omitempty"`
 }
 
@@ -110,14 +152,15 @@ func (i textInput) Compile() (*compiler.Value, error) {
 
 // An input value encoded as JSON
 func JSONInput(data string) Input {
-	return &jsonInput{
-		Type: "json",
-		Data: data,
+	return Input{
+		Type: InputTypeJSON,
+		JSON: &jsonInput{
+			Data: data,
+		},
 	}
 }
 
 type jsonInput struct {
-	Type string `json:"type,omitempty"`
 	// Marshalled JSON data
 	Data string `json:"data,omitempty"`
 }
@@ -128,14 +171,15 @@ func (i jsonInput) Compile() (*compiler.Value, error) {
 
 // An input value encoded as YAML
 func YAMLInput(data string) Input {
-	return &yamlInput{
-		Type: "yaml",
-		Data: data,
+	return Input{
+		Type: InputTypeYAML,
+		YAML: &yamlInput{
+			Data: data,
+		},
 	}
 }
 
 type yamlInput struct {
-	Type string `json:"type,omitempty"`
 	// Marshalled YAML data
 	Data string `json:"data,omitempty"`
 }

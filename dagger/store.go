@@ -107,12 +107,11 @@ func (s *Store) indexRoute(r *RouteState) {
 	s.routesByName[r.Name] = r
 
 	mapPath := func(i Input) {
-		d, ok := i.(*dirInput)
-		if !ok {
+		if i.Type != InputTypeDir {
 			return
 		}
-		s.routesByPath[d.Path] = r
-		s.pathsByRoute[r.ID] = append(s.pathsByRoute[r.ID], d.Path)
+		s.routesByPath[i.Dir.Path] = r
+		s.pathsByRoute[r.ID] = append(s.pathsByRoute[r.ID], i.Dir.Path)
 	}
 
 	mapPath(r.LayoutSource)

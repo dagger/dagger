@@ -206,13 +206,11 @@ func (r *Route) LocalDirs() map[string]string {
 	}
 
 	// 2. Scan the layout
-	if r.st.LayoutSource != nil {
-		layout, err := r.st.LayoutSource.Compile()
-		if err != nil {
-			panic(err)
-		}
-		localdirs(layout)
+	layout, err := r.st.LayoutSource.Compile()
+	if err != nil {
+		panic(err)
 	}
+	localdirs(layout)
 	return dirs
 }
 
