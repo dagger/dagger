@@ -28,23 +28,7 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		routeName := getRouteName(ctx)
-		st, err := store.LookupRouteByName(ctx, routeName)
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Str("routeName", routeName).
-				Msg("failed to lookup route")
-		}
-
-		route, err := dagger.NewRoute(st)
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Msg("failed to initialize route")
-		}
+		route := getCurrentRoute(ctx, store)
 
 		// TODO: Implement options: --no-cache
 		routeUp(ctx, route)

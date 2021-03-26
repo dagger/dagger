@@ -4,36 +4,45 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"dagger.io/go/dagger"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
-// getRouteName returns the selected route name (based on explicit CLI selection or current work dir)
-func getRouteName(ctx context.Context) string {
+// getCurrentRoute returns the current selected route based on its abs path
+func getCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
 	lg := log.Ctx(ctx)
+
+	var (
+		st  *dagger.RouteState
+		err error
+	)
 
 	routeName := viper.GetString("route")
 	if routeName != "" {
-		return routeName
+		st, err = store.LookupRouteByName(ctx, routeName)
+		if err != nil {
+			lg.Fatal().Err(err).Str("routeName", routeName).Msg("failed to lookup route by name")
+		}
+	} else {
+		wd, err := os.Getwd()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("cannot get current working directory")
+		}
+
+		st, err = store.LookupRouteByPath(ctx, wd)
+		if err != nil {
+			lg.Fatal().Err(err).Str("routePath", wd).Msg("failed to lookup route by path")
+		}
 	}
 
-	workDir, err := os.Getwd()
+	route, err := dagger.NewRoute(st)
 	if err != nil {
-		lg.
-			Fatal().
-			Err(err).
-			Msg("failed to get current working dir")
+		lg.Fatal().Err(err).Interface("routeState", st).Msg("failed to init route")
 	}
 
-	currentDir := filepath.Base(workDir)
-	if currentDir == "/" {
-		return "root"
-	}
-
-	return currentDir
+	return route
 }
 
 func routeUp(ctx context.Context, route *dagger.Route) {

@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -27,13 +32,11 @@ var newCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		upRouteFlag := viper.GetBool("up")
-
 		st := &dagger.RouteState{
-			Name: getRouteName(ctx),
+			Name:         getNewRouteName(ctx),
+			LayoutSource: getLayoutSource(ctx),
 		}
 
-		// TODO: Implement options: --layout-*, --setup
 		err = store.CreateRoute(ctx, st)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create route")
@@ -52,10 +55,46 @@ var newCmd = &cobra.Command{
 				Msg("failed to initialize route")
 		}
 
-		if upRouteFlag {
+		if viper.GetBool("up") {
 			routeUp(ctx, route)
 		}
 	},
+}
+
+func getNewRouteName(ctx context.Context) string {
+	lg := log.Ctx(ctx)
+
+	routeName := viper.GetString("route")
+	if routeName != "" {
+		return routeName
+	}
+
+	workDir, err := os.Getwd()
+	if err != nil {
+		lg.
+			Fatal().
+			Err(err).
+			Msg("failed to get current working dir")
+	}
+
+	currentDir := filepath.Base(workDir)
+	if currentDir == "/" {
+		return "root"
+	}
+
+	return currentDir
+}
+
+// FIXME: Implement options: --layout-*
+func getLayoutSource(ctx context.Context) dagger.Input {
+	lg := log.Ctx(ctx)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot get current working directory")
+	}
+
+	return dagger.DirInput(wd, []string{"*.cue", "cue.mod"})
 }
 
 func init() {

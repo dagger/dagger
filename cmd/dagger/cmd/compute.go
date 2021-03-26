@@ -31,10 +31,9 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		name := getRouteName(ctx)
 		st := &dagger.RouteState{
 			ID:           uuid.New().String(),
-			Name:         name,
+			Name:         "FIXME",
 			LayoutSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
 		}
 
