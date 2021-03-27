@@ -37,19 +37,6 @@ import (
 		and run on a separate cluster.
 
 		A deployment is made of 3 parts: a deployment plan, inputs, and outputs.
-		```
-
-
-		# Creating a new component
-
-		Sometimes there is no third-party component available for a particular node in the application's supply chain;
-		or it exists but needs to be customized.
-
-		A Dagger component is simply a Cue definition annotated with [LLB](https://github.com/moby/buildkit) pipelines.
-		LLB is a standard executable format pioneered by the Buildkit project. It allows Dagger components to run
-		sophisticated pipelines to ingest, and process artifacts such as source code, binaries, database exports, etc.
-		Best of all LLB pipelines can securely build and run any docker container, effectively making Dagger
-		scriptable in any language.
 		"""
 
 	flag: {
