@@ -1,16 +1,14 @@
 package defn
 
 import (
-	"strings"
+	"dagger.io/defns"
+	"dagger.io/llb"
 )
 
-#Input: {
-	_input: true
-	_
-	...
-}
+siteID: string & llb.#Input & {_, #help: "site id"}
 
-#Site: {
-	name: string & #Input & {_,  _help: "name of site" }
-	url: string & strings.MinRunes(2)
+acct: defns.#Account
+
+site: defns.#Site & {
+	name: siteID
 }
