@@ -112,17 +112,73 @@ func main() {
 }
 
 func findAttrs(val cue.Value) error {
-	before := func(v cue.Value) bool {
-		fmt.Println(v)
-		return true
+	before := func(v cue.Value) (bool, error) {
+		label, _ := v.Label()
+		attrs := v.Attributes(cue.ValueAttr)
+		for _, attr := range attrs {
+			name :=  attr.Name()
+			if name == "input" {
+				fmt.Println("input: ", label, attrs)
+			}
+			if name == "output" {
+				fmt.Println("output: ", label, attrs)
+			}
+		}
+		return true, nil
 	}
 
-	val.Walk(before, nil)
+	err := walkValue(val, before, nil)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func findDefns(val cue.Value) error {
+
+	return nil
+}
+
+func walkValue(val cue.Value, before func (cue.Value) (bool, error), after func(cue.Value) error) error {
+
+	if before != nil {
+
+		recurse, err := before(val)
+		if err != nil {
+			return err
+		}
+
+		// should we recurse into fields
+		if recurse {
+
+			// is val a struct?
+			if _, err := val.Struct(); err == nil {
+
+				iter, err := val.Fields(
+					cue.Definitions(true),
+					cue.Optional(true),
+				)
+				if err != nil {
+					return err
+				}
+				for iter.Next() {
+					err := walkValue(iter.Value(), before, after)
+					if err != nil {
+						return err
+					}
+				}
+
+			}
+		}
+	}
+
+	if after != nil {
+		err := after(val)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

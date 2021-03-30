@@ -34,4 +34,6 @@ replace (
 	github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
 	// genproto: corresponds to containerd
 	google.golang.org/genproto => google.golang.org/genproto v0.0.0-20200224152610-e50cd9704f63
+
+  cuelang.org/go => ../../cue/gerrit
 )
