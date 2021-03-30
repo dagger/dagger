@@ -21,10 +21,10 @@ Dagger is *alpha-quality software*. It has many bugs, the user interface is mini
 
 ## Learn More
 
+* [Installing Dagger](doc/install.md)
+* [Adding Dagger to your project](doc/adding_dagger.md)
+* [Tutorials](doc/tutorials.md)
 * [Examples](examples/README.md)
 * [Dagger vs. Other Software](doc/vs.md)
-* [Installing Dagger](doc/install.md)
-* [Tutorials](doc/tutorials.md)
-* [Adding Dagger to your project](doc/adding_dagger.md)
 * [Dagger Programmer Manual](doc/programmer.md)
 * [Dagger Operator Manual](doc/operator.md)
