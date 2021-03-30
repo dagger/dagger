@@ -118,7 +118,11 @@ func findAttrs(val cue.Value) error {
 		for _, attr := range attrs {
 			name :=  attr.Name()
 			if name == "input" {
-				fmt.Println("input: ", label, attrs)
+				fmt.Println("input: ", label)
+				for i := 0; i < attr.NumArgs(); i++ {
+					k, v := attr.Arg(i)
+					fmt.Println(" -", k, v)
+				}
 			}
 			if name == "output" {
 				fmt.Println("output: ", label, attrs)
