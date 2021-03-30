@@ -4,14 +4,15 @@ import (
 	"strings"
 )
 
-#Site: {
-	name: string @input(help="name of site")
-	name: _ @input(ui=input,ios=button)
-	url: string & strings.MinRunes(2)
+#Account: {
+	id: string @input(help="account id")
+	apikey: string @input(help="apikey")
 }
 
-foo: {
-	bar: {
-		moo: "cow"
-	}
+#Site: {
+	acct: #Account
+	name: string @input(help="name of site")
+	url: string & strings.MinRunes(2)
+	deployURL: string @output(help="URL returned for the deployment")
 }
+
