@@ -9,7 +9,7 @@ import (
 
 // Build a docker container image
 #Build: {
-	source: dagger.#Dir
+	source: dagger.#Artifact
 
 	image: #compute: [
 		llb.#DockerBuild & {context: source},
