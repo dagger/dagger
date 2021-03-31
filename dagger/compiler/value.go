@@ -55,13 +55,8 @@ func (v *Value) LookupPath(p cue.Path) *Value {
 }
 
 // Lookup is a helper function to lookup by path parts.
-func (v *Value) Lookup(path ...string) *Value {
-	return v.LookupPath(cueStringsToCuePath(path...))
-}
-
-// Get is a helper function to lookup by path string
-func (v *Value) Get(target string) *Value {
-	return v.LookupPath(cue.ParsePath(target))
+func (v *Value) Lookup(path string) *Value {
+	return v.LookupPath(cue.ParsePath(path))
 }
 
 // Proxy function to the underlying cue.Value
@@ -174,6 +169,15 @@ func (v *Value) Walk(before func(*Value) bool, after func(*Value)) {
 // Contrast with cue.Value.MarshalJSON which requires all values
 // to be concrete.
 func (v *Value) JSON() JSON {
+	cuePathToStrings := func(p cue.Path) []string {
+		selectors := p.Selectors()
+		out := make([]string, len(selectors))
+		for i, sel := range selectors {
+			out[i] = sel.String()
+		}
+		return out
+	}
+
 	var out JSON
 	v.val.Walk(
 		func(v cue.Value) bool {

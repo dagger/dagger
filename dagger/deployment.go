@@ -176,14 +176,14 @@ func (d *Deployment) LocalDirs() map[string]string {
 	localdirs := func(code ...*compiler.Value) {
 		Analyze(
 			func(op *compiler.Value) error {
-				do, err := op.Get("do").String()
+				do, err := op.Lookup("do").String()
 				if err != nil {
 					return err
 				}
 				if do != "local" {
 					return nil
 				}
-				dir, err := op.Get("dir").String()
+				dir, err := op.Lookup("dir").String()
 				if err != nil {
 					return err
 				}
@@ -199,7 +199,7 @@ func (d *Deployment) LocalDirs() map[string]string {
 	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
-		localdirs(v.Get("#compute"))
+		localdirs(v.Lookup("#compute"))
 	}
 
 	// 2. Scan the plan
