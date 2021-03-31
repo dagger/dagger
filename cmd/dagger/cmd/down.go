@@ -11,7 +11,7 @@ import (
 
 var downCmd = &cobra.Command{
 	Use:   "down",
-	Short: "Take a route offline (WARNING: may destroy infrastructure)",
+	Short: "Take a deployment offline (WARNING: may destroy infrastructure)",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -29,16 +29,16 @@ var downCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		route := common.GetCurrentRoute(ctx, store)
+		deployment := common.GetCurrentDeployment(ctx, store)
 
 		// TODO: Implement options: --no-cache
-		if err := route.Down(ctx, nil); err != nil {
+		if err := deployment.Down(ctx, nil); err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Str("routeName", route.Name()).
-				Str("routeId", route.ID()).
-				Msg("failed to up the route")
+				Str("deploymentName", deployment.Name()).
+				Str("deploymentId", deployment.ID()).
+				Msg("failed to up the deployment")
 		}
 	},
 }

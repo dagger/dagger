@@ -23,7 +23,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().String("log-format", "", "Log format (json, pretty). Defaults to json if the terminal is not a tty")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "debug", "Log level")
-	rootCmd.PersistentFlags().StringP("route", "r", "", "Select a route")
+	rootCmd.PersistentFlags().StringP("deployment", "d", "", "Select a deployment")
 
 	rootCmd.AddCommand(
 		computeCmd,

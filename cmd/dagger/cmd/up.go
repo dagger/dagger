@@ -11,7 +11,7 @@ import (
 
 var upCmd = &cobra.Command{
 	Use:   "up",
-	Short: "Bring a route online with latest layout and inputs",
+	Short: "Bring a deployment online with latest layout and inputs",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -28,10 +28,10 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		route := common.GetCurrentRoute(ctx, store)
+		deployment := common.GetCurrentDeployment(ctx, store)
 
 		// TODO: Implement options: --no-cache
-		common.RouteUp(ctx, route)
+		common.DeploymentUp(ctx, deployment)
 	},
 }
 

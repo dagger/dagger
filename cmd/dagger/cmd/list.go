@@ -11,7 +11,7 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List available routes",
+	Short: "List available deployments",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -28,15 +28,15 @@ var listCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		routes, err := store.ListRoutes(ctx)
+		deployments, err := store.ListDeployments(ctx)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Msg("cannot list routes")
+				Msg("cannot list deployments")
 		}
 
-		for _, r := range routes {
+		for _, r := range deployments {
 			fmt.Println(r.Name)
 		}
 	},

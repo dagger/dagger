@@ -13,7 +13,7 @@ import (
 
 var queryCmd = &cobra.Command{
 	Use:   "query [EXPR] [flags]",
-	Short: "Query the contents of a route",
+	Short: "Query the contents of a deployment",
 	Args:  cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -31,18 +31,18 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		route := common.GetCurrentRoute(ctx, store)
+		deployment := common.GetCurrentDeployment(ctx, store)
 
 		expr := args[0]
 
-		out, err := route.Query(ctx, expr, nil)
+		out, err := deployment.Query(ctx, expr, nil)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Str("routeName", route.Name()).
-				Str("routeId", route.ID()).
-				Msg("failed to query route")
+				Str("deploymentName", deployment.Name()).
+				Str("deploymentId", deployment.ID()).
+				Msg("failed to query deployment")
 		}
 
 		fmt.Println(out)
@@ -52,7 +52,7 @@ var queryCmd = &cobra.Command{
 }
 
 func init() {
-	queryCmd.Flags().String("revision", "latest", "Query a specific version of the route")
+	queryCmd.Flags().String("revision", "latest", "Query a specific version of the deployment")
 	queryCmd.Flags().StringP("format", "f", "", "Output format (json|yaml|cue|text|env)")
 
 	queryCmd.Flags().BoolP("--no-input", "I", false, "Exclude inputs from query")

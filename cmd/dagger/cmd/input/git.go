@@ -27,7 +27,7 @@ var gitCmd = &cobra.Command{
 			subDir = args[3]
 		}
 
-		updateRouteInput(ctx, args[0], dagger.GitInput(args[1], args[2], subDir))
+		updateDeploymentInput(ctx, args[0], dagger.GitInput(args[1], args[2], subDir))
 	},
 }
 

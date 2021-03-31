@@ -32,7 +32,7 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		st := &dagger.RouteState{
+		st := &dagger.DeploymentState{
 			ID:           uuid.New().String(),
 			Name:         "FIXME",
 			LayoutSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
@@ -127,12 +127,12 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		route, err := dagger.NewRoute(st)
+		deployment, err := dagger.NewDeployment(st)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to initialize route")
+			lg.Fatal().Err(err).Msg("unable to initialize deployment")
 		}
 
-		common.RouteUp(ctx, route)
+		common.DeploymentUp(ctx, deployment)
 	},
 }
 

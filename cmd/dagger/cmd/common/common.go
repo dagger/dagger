@@ -10,35 +10,35 @@ import (
 	"github.com/spf13/viper"
 )
 
-// getCurrentRoute returns the current selected route based on its abs path
-func GetCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
+// GetCurrentDeployment returns the current selected deployment based on its abs path
+func GetCurrentDeployment(ctx context.Context, store *dagger.Store) *dagger.Deployment {
 	lg := log.Ctx(ctx)
-	st := GetCurrentRouteState(ctx, store)
+	st := GetCurrentDeploymentState(ctx, store)
 
-	route, err := dagger.NewRoute(st)
+	deployment, err := dagger.NewDeployment(st)
 	if err != nil {
 		lg.
 			Fatal().
 			Err(err).
-			Interface("routeState", st).
-			Msg("failed to init route")
+			Interface("deploymentState", st).
+			Msg("failed to init deployment")
 	}
 
-	return route
+	return deployment
 }
 
-func GetCurrentRouteState(ctx context.Context, store *dagger.Store) *dagger.RouteState {
+func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger.DeploymentState {
 	lg := log.Ctx(ctx)
 
-	routeName := viper.GetString("route")
-	if routeName != "" {
-		st, err := store.LookupRouteByName(ctx, routeName)
+	deploymentName := viper.GetString("deployment")
+	if deploymentName != "" {
+		st, err := store.LookupDeploymentByName(ctx, deploymentName)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Str("routeName", routeName).
-				Msg("failed to lookup route by name")
+				Str("deploymentName", deploymentName).
+				Msg("failed to lookup deployment by name")
 		}
 		return st
 	}
@@ -47,25 +47,25 @@ func GetCurrentRouteState(ctx context.Context, store *dagger.Store) *dagger.Rout
 	if err != nil {
 		lg.Fatal().Err(err).Msg("cannot get current working directory")
 	}
-	st, err := store.LookupRouteByPath(ctx, wd)
+	st, err := store.LookupDeploymentByPath(ctx, wd)
 	if err != nil {
 		lg.
 			Fatal().
 			Err(err).
-			Str("routePath", wd).
-			Msg("failed to lookup route by path")
+			Str("deploymentPath", wd).
+			Msg("failed to lookup deployment by path")
 	}
 	return st
 }
 
-func RouteUp(ctx context.Context, route *dagger.Route) {
+func DeploymentUp(ctx context.Context, deployment *dagger.Deployment) {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "")
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
-	output, err := c.Up(ctx, route)
+	output, err := c.Up(ctx, deployment)
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to compute")
 	}
