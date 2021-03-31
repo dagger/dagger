@@ -4,11 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"sync"
 
 	"github.com/google/uuid"
+)
+
+var (
+	ErrRouteExist    = errors.New("route already exists")
+	ErrRouteNotExist = errors.New("route doesn't exist")
 )
 
 const (
@@ -144,7 +150,7 @@ func (s *Store) CreateRoute(ctx context.Context, st *RouteState) error {
 	defer s.l.Unlock()
 
 	if _, ok := s.routesByName[st.Name]; ok {
-		return os.ErrExist
+		return fmt.Errorf("%s: %w", st.Name, ErrRouteExist)
 	}
 
 	st.ID = uuid.New().String()
@@ -179,7 +185,7 @@ func (s *Store) LookupRouteByID(ctx context.Context, id string) (*RouteState, er
 
 	st, ok := s.routes[id]
 	if !ok {
-		return nil, os.ErrNotExist
+		return nil, fmt.Errorf("%s: %w", id, ErrRouteNotExist)
 	}
 	return st, nil
 }
@@ -190,7 +196,7 @@ func (s *Store) LookupRouteByName(ctx context.Context, name string) (*RouteState
 
 	st, ok := s.routesByName[name]
 	if !ok {
-		return nil, os.ErrNotExist
+		return nil, fmt.Errorf("%s: %w", name, ErrRouteNotExist)
 	}
 	return st, nil
 }
@@ -201,7 +207,7 @@ func (s *Store) LookupRouteByPath(ctx context.Context, path string) (*RouteState
 
 	st, ok := s.routesByPath[path]
 	if !ok {
-		return nil, os.ErrNotExist
+		return nil, fmt.Errorf("%s: %w", path, ErrRouteNotExist)
 	}
 	return st, nil
 }

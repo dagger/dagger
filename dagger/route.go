@@ -143,7 +143,7 @@ func (r *Route) State() *compiler.Value {
 
 // LoadLayout loads the layout
 func (r *Route) LoadLayout(ctx context.Context, s Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "r.Update")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "route.Update")
 	defer span.Finish()
 
 	layoutSource, err := r.st.LayoutSource.Compile()
@@ -185,7 +185,6 @@ func (r *Route) LocalDirs() map[string]string {
 				if err != nil {
 					return err
 				}
-				// nolint:goconst
 				// FIXME: merge Env into Route, or fix the linter error
 				if do != "local" {
 					return nil

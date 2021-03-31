@@ -19,7 +19,7 @@ func TestStoreLoad(t *testing.T) {
 
 	_, err = store.LookupRouteByName(ctx, "notexist")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, os.ErrNotExist))
+	require.True(t, errors.Is(err, ErrRouteNotExist))
 
 	st := &RouteState{
 		Name: "test",

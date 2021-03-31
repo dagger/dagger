@@ -17,7 +17,11 @@ func GetCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
 
 	route, err := dagger.NewRoute(st)
 	if err != nil {
-		lg.Fatal().Err(err).Interface("routeState", st).Msg("failed to init route")
+		lg.
+			Fatal().
+			Err(err).
+			Interface("routeState", st).
+			Msg("failed to init route")
 	}
 
 	return route
@@ -26,29 +30,31 @@ func GetCurrentRoute(ctx context.Context, store *dagger.Store) *dagger.Route {
 func GetCurrentRouteState(ctx context.Context, store *dagger.Store) *dagger.RouteState {
 	lg := log.Ctx(ctx)
 
-	var (
-		st  *dagger.RouteState
-		err error
-	)
-
 	routeName := viper.GetString("route")
 	if routeName != "" {
-		st, err = store.LookupRouteByName(ctx, routeName)
+		st, err := store.LookupRouteByName(ctx, routeName)
 		if err != nil {
-			lg.Fatal().Err(err).Str("routeName", routeName).Msg("failed to lookup route by name")
+			lg.
+				Fatal().
+				Err(err).
+				Str("routeName", routeName).
+				Msg("failed to lookup route by name")
 		}
-	} else {
-		wd, err := os.Getwd()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("cannot get current working directory")
-		}
-
-		st, err = store.LookupRouteByPath(ctx, wd)
-		if err != nil {
-			lg.Fatal().Err(err).Str("routePath", wd).Msg("failed to lookup route by path")
-		}
+		return st
 	}
 
+	wd, err := os.Getwd()
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot get current working directory")
+	}
+	st, err := store.LookupRouteByPath(ctx, wd)
+	if err != nil {
+		lg.
+			Fatal().
+			Err(err).
+			Str("routePath", wd).
+			Msg("failed to lookup route by path")
+	}
 	return st
 }
 
