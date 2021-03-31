@@ -93,7 +93,7 @@ func (c *Client) Up(ctx context.Context, deployment *Deployment) (*compiler.Valu
 		return err
 	})
 
-	return out, compiler.Err(eg.Wait())
+	return out, eg.Wait()
 }
 
 func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *bk.SolveStatus, w io.WriteCloser) error {
@@ -140,7 +140,7 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *b
 		// Compute output overlay
 		lg.Debug().Msg("computing deployment")
 		if err := deployment.Up(ctx, s, nil); err != nil {
-			return nil, err
+			return nil, compiler.Err(err)
 		}
 
 		// Export deployment to a cue directory
@@ -208,7 +208,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 			return nil, err
 		}
 		if err := out.FillPath(cue.MakePath(), v); err != nil {
-			return nil, fmt.Errorf("%s: %w", h.Name, err)
+			return nil, fmt.Errorf("%s: %w", h.Name, compiler.Err(err))
 		}
 	}
 	return out, nil
