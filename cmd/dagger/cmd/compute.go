@@ -33,9 +33,9 @@ var computeCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		st := &dagger.DeploymentState{
-			ID:           uuid.New().String(),
-			Name:         "FIXME",
-			LayoutSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
+			ID:         uuid.New().String(),
+			Name:       "FIXME",
+			PlanSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
 		}
 
 		for _, input := range viper.GetStringSlice("input-string") {

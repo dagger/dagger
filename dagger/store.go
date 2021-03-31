@@ -120,7 +120,7 @@ func (s *Store) indexDeployment(r *DeploymentState) {
 		s.pathsByDeployment[r.ID] = append(s.pathsByDeployment[r.ID], i.Dir.Path)
 	}
 
-	mapPath(r.LayoutSource)
+	mapPath(r.PlanSource)
 	for _, i := range r.Inputs {
 		mapPath(i.Value)
 	}

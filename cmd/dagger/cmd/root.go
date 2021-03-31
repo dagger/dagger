@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	inputCmd "dagger.io/go/cmd/dagger/cmd/input"
-	"dagger.io/go/cmd/dagger/cmd/layout"
 	"dagger.io/go/cmd/dagger/cmd/output"
+	"dagger.io/go/cmd/dagger/cmd/plan"
 	"dagger.io/go/cmd/dagger/logger"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/opentracing/opentracing-go"
@@ -36,7 +36,7 @@ func init() {
 		historyCmd,
 		loginCmd,
 		logoutCmd,
-		layout.Cmd,
+		plan.Cmd,
 		inputCmd.Cmd,
 		output.Cmd,
 	)

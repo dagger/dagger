@@ -28,9 +28,9 @@ type DeploymentState struct {
 	// FIXME: store multiple names?
 	Name string `json:"name,omitempty"`
 
-	// Cue module containing the deployment layout
+	// Cue module containing the deployment plan
 	// The input's top-level artifact is used as a module directory.
-	LayoutSource Input `json:"layout,omitempty"`
+	PlanSource Input `json:"plan,omitempty"`
 
 	Inputs []inputKV `json:"inputs,omitempty"`
 }
@@ -64,8 +64,8 @@ func (s *DeploymentState) RemoveInputs(key string) error {
 type Deployment struct {
 	st *DeploymentState
 
-	// Layer 1: layout configuration
-	layout *compiler.Value
+	// Layer 1: plan configuration
+	plan *compiler.Value
 
 	// Layer 2: user inputs
 	input *compiler.Value
@@ -73,7 +73,7 @@ type Deployment struct {
 	// Layer 3: computed values
 	output *compiler.Value
 
-	// All layers merged together: layout + input + output
+	// All layers merged together: plan + input + output
 	state *compiler.Value
 }
 
@@ -81,7 +81,7 @@ func NewDeployment(st *DeploymentState) (*Deployment, error) {
 	empty := compiler.EmptyStruct()
 	d := &Deployment{
 		st:     st,
-		layout: empty,
+		plan:   empty,
 		input:  empty,
 		output: empty,
 	}
@@ -116,12 +116,12 @@ func (d *Deployment) Name() string {
 	return d.st.Name
 }
 
-func (d *Deployment) LayoutSource() Input {
-	return d.st.LayoutSource
+func (d *Deployment) PlanSource() Input {
+	return d.st.PlanSource
 }
 
-func (d *Deployment) Layout() *compiler.Value {
-	return d.layout
+func (d *Deployment) Plan() *compiler.Value {
+	return d.plan
 }
 
 func (d *Deployment) Input() *compiler.Value {
@@ -136,19 +136,19 @@ func (d *Deployment) State() *compiler.Value {
 	return d.state
 }
 
-// LoadLayout loads the layout
-func (d *Deployment) LoadLayout(ctx context.Context, s Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.LoadLayout")
+// LoadPlan loads the plan
+func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.LoadPlan")
 	defer span.Finish()
 
-	layoutSource, err := d.st.LayoutSource.Compile()
+	planSource, err := d.st.PlanSource.Compile()
 	if err != nil {
 		return err
 	}
 
 	p := NewPipeline("[internal] source", s, nil)
 	// execute updater script
-	if err := p.Do(ctx, layoutSource); err != nil {
+	if err := p.Do(ctx, planSource); err != nil {
 		return err
 	}
 
@@ -157,11 +157,11 @@ func (d *Deployment) LoadLayout(ctx context.Context, s Solver) error {
 		stdlib.Path: stdlib.FS,
 		"/":         p.FS(),
 	}
-	layout, err := compiler.Build(sources)
+	plan, err := compiler.Build(sources)
 	if err != nil {
-		return fmt.Errorf("layout config: %w", err)
+		return fmt.Errorf("plan config: %w", err)
 	}
-	d.layout = layout
+	d.plan = plan
 
 	// Commit
 	return d.mergeState()
@@ -202,12 +202,12 @@ func (d *Deployment) LocalDirs() map[string]string {
 		localdirs(v.Get("#compute"))
 	}
 
-	// 2. Scan the layout
-	layout, err := d.st.LayoutSource.Compile()
+	// 2. Scan the plan
+	plan, err := d.st.PlanSource.Compile()
 	if err != nil {
 		panic(err)
 	}
-	localdirs(layout)
+	localdirs(plan)
 	return dirs
 }
 
@@ -225,7 +225,7 @@ func (d *Deployment) mergeState() error {
 		err       error
 	)
 
-	stateInst, err = stateInst.Fill(d.layout.Cue())
+	stateInst, err = stateInst.Fill(d.plan.Cue())
 	if err != nil {
 		return fmt.Errorf("merge base & input: %w", err)
 	}
