@@ -204,11 +204,11 @@ func (v *Value) Validate() error {
 }
 
 // Return cue source for this value
-func (v *Value) Source() ([]byte, error) {
+func (v *Value) Source(opts ...cue.Option) ([]byte, error) {
 	v.cc.rlock()
 	defer v.cc.runlock()
 
-	return cueformat.Node(v.val.Eval().Syntax())
+	return cueformat.Node(v.val.Eval().Syntax(opts...))
 }
 
 func (v *Value) IsEmptyStruct() bool {
