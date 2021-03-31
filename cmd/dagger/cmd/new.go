@@ -65,7 +65,7 @@ var newCmd = &cobra.Command{
 func getNewDeploymentName(ctx context.Context) string {
 	lg := log.Ctx(ctx)
 
-	deploymentName := viper.GetString("deployment")
+	deploymentName := viper.GetString("name")
 	if deploymentName != "" {
 		return deploymentName
 	}
