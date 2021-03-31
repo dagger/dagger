@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"cuelang.org/go/cue"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/opentracing/opentracing-go"
@@ -206,7 +207,7 @@ func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, er
 		if err != nil {
 			return nil, err
 		}
-		if err := out.Fill(v); err != nil {
+		if err := out.FillPath(cue.MakePath(), v); err != nil {
 			return nil, fmt.Errorf("%s: %w", h.Name, err)
 		}
 	}

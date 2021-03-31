@@ -93,9 +93,9 @@ func NewDeployment(st *DeploymentState) (*Deployment, error) {
 			return nil, err
 		}
 		if input.Key == "" {
-			d.input, err = d.input.Merge(v)
+			err = d.input.FillPath(cue.MakePath(), v)
 		} else {
-			d.input, err = d.input.MergeTarget(v, input.Key)
+			err = d.input.FillPath(cue.ParsePath(input.Key), v)
 		}
 		if err != nil {
 			return nil, err
@@ -277,8 +277,7 @@ func (d *Deployment) Up(ctx context.Context, s Solver, _ *UpOpts) error {
 				return nil
 			}
 			// Merge task value into output
-			var err error
-			d.output, err = d.output.MergePath(t.Value(), t.Path())
+			err := d.output.FillPath(t.Path(), t.Value())
 			if err != nil {
 				lg.
 					Error().
