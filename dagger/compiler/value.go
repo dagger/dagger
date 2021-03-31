@@ -31,19 +31,19 @@ func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
 	}
 }
 
-// Fill the value in-place, unlike Merge which returns a copy.
-func (v *Value) Fill(x interface{}) error {
+// FillPath fills the value in-place
+func (v *Value) FillPath(p cue.Path, x interface{}) error {
 	v.cc.lock()
 	defer v.cc.unlock()
 
 	// If calling Fill() with a Value, we want to use the underlying
 	// cue.Value to fill.
 	if val, ok := x.(*Value); ok {
-		v.val = v.val.Fill(val.val)
+		v.val = v.val.FillPath(p, val.val)
 	} else {
-		v.val = v.val.Fill(x)
+		v.val = v.val.FillPath(p, x)
 	}
-	return v.Validate()
+	return v.val.Err()
 }
 
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
@@ -55,13 +55,8 @@ func (v *Value) LookupPath(p cue.Path) *Value {
 }
 
 // Lookup is a helper function to lookup by path parts.
-func (v *Value) Lookup(path ...string) *Value {
-	return v.LookupPath(cueStringsToCuePath(path...))
-}
-
-// Get is a helper function to lookup by path string
-func (v *Value) Get(target string) *Value {
-	return v.LookupPath(cue.ParsePath(target))
+func (v *Value) Lookup(path string) *Value {
+	return v.LookupPath(cue.ParsePath(path))
 }
 
 // Proxy function to the underlying cue.Value
@@ -146,30 +141,6 @@ func (v *Value) List() ([]*Value, error) {
 	return l, nil
 }
 
-// FIXME: receive string path?
-func (v *Value) Merge(x interface{}, path ...string) (*Value, error) {
-	if xval, ok := x.(*Value); ok {
-		x = xval.val
-	}
-
-	v.cc.lock()
-	result := v.Wrap(v.val.Fill(x, path...))
-	v.cc.unlock()
-
-	return result, result.Validate()
-}
-
-func (v *Value) MergePath(x interface{}, p cue.Path) (*Value, error) {
-	// FIXME: array indexes and defs are not supported,
-	//  they will be silently converted to regular fields.
-	//  eg.  `foo.#bar[0]` will become `foo["#bar"]["0"]`
-	return v.Merge(x, cuePathToStrings(p)...)
-}
-
-func (v *Value) MergeTarget(x interface{}, target string) (*Value, error) {
-	return v.MergePath(x, cue.ParsePath(target))
-}
-
 // Recursive concreteness check.
 func (v *Value) IsConcreteR() error {
 	return v.val.Validate(cue.Concrete(true))
@@ -198,6 +169,15 @@ func (v *Value) Walk(before func(*Value) bool, after func(*Value)) {
 // Contrast with cue.Value.MarshalJSON which requires all values
 // to be concrete.
 func (v *Value) JSON() JSON {
+	cuePathToStrings := func(p cue.Path) []string {
+		selectors := p.Selectors()
+		out := make([]string, len(selectors))
+		for i, sel := range selectors {
+			out[i] = sel.String()
+		}
+		return out
+	}
+
 	var out JSON
 	v.val.Walk(
 		func(v cue.Value) bool {

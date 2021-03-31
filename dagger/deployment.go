@@ -93,9 +93,9 @@ func NewDeployment(st *DeploymentState) (*Deployment, error) {
 			return nil, err
 		}
 		if input.Key == "" {
-			d.input, err = d.input.Merge(v)
+			err = d.input.FillPath(cue.MakePath(), v)
 		} else {
-			d.input, err = d.input.MergeTarget(v, input.Key)
+			err = d.input.FillPath(cue.ParsePath(input.Key), v)
 		}
 		if err != nil {
 			return nil, err
@@ -176,14 +176,14 @@ func (d *Deployment) LocalDirs() map[string]string {
 	localdirs := func(code ...*compiler.Value) {
 		Analyze(
 			func(op *compiler.Value) error {
-				do, err := op.Get("do").String()
+				do, err := op.Lookup("do").String()
 				if err != nil {
 					return err
 				}
 				if do != "local" {
 					return nil
 				}
-				dir, err := op.Get("dir").String()
+				dir, err := op.Lookup("dir").String()
 				if err != nil {
 					return err
 				}
@@ -199,7 +199,7 @@ func (d *Deployment) LocalDirs() map[string]string {
 	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
-		localdirs(v.Get("#compute"))
+		localdirs(v.Lookup("#compute"))
 	}
 
 	// 2. Scan the plan
@@ -277,8 +277,7 @@ func (d *Deployment) Up(ctx context.Context, s Solver, _ *UpOpts) error {
 				return nil
 			}
 			// Merge task value into output
-			var err error
-			d.output, err = d.output.MergePath(t.Value(), t.Path())
+			err := d.output.FillPath(t.Path(), t.Value())
 			if err != nil {
 				lg.
 					Error().

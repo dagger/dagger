@@ -61,7 +61,7 @@ func (p *Pipeline) FS() fs.FS {
 }
 
 func isComponent(v *compiler.Value) bool {
-	return v.Get("#compute").Exists()
+	return v.Lookup("#compute").Exists()
 }
 
 func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
@@ -70,14 +70,14 @@ func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
 	for _, x := range code {
 		// 1. attachment array
 		if isComponent(x) {
-			xops, err := x.Get("#compute").List()
+			xops, err := x.Lookup("#compute").List()
 			if err != nil {
 				return nil, err
 			}
 			// 'from' has an executable attached
 			ops = append(ops, xops...)
 			// 2. individual op
-		} else if _, err := x.Get("do").String(); err == nil {
+		} else if _, err := x.Lookup("do").String(); err == nil {
 			ops = append(ops, x)
 			// 3. op array
 		} else if xops, err := x.List(); err == nil {
@@ -111,20 +111,20 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 	if err := fn(op); err != nil {
 		return err
 	}
-	do, err := op.Get("do").String()
+	do, err := op.Lookup("do").String()
 	if err != nil {
 		return err
 	}
 	switch do {
 	case "load", "copy":
-		return Analyze(fn, op.Get("from"))
+		return Analyze(fn, op.Lookup("from"))
 	case "exec":
-		fields, err := op.Get("mount").Fields()
+		fields, err := op.Lookup("mount").Fields()
 		if err != nil {
 			return err
 		}
 		for _, mnt := range fields {
-			if from := mnt.Value.Get("from"); from.Exists() {
+			if from := mnt.Value.Lookup("from"); from.Exists() {
 				return Analyze(fn, from)
 			}
 		}
@@ -174,7 +174,7 @@ func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
 }
 
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	do, err := op.Get("do").String()
+	do, err := op.Lookup("do").String()
 	if err != nil {
 		return st, err
 	}
@@ -218,7 +218,7 @@ func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value, st llb.State)
 	// FIXME: this could be more optimized by carrying subdir path as metadata,
 	//  and using it in copy, load or mount.
 
-	dir, err := op.Get("dir").String()
+	dir, err := op.Lookup("dir").String()
 	if err != nil {
 		return st, err
 	}
@@ -237,17 +237,17 @@ func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value, st llb.State)
 
 func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Decode copy options
-	src, err := op.Get("src").String()
+	src, err := op.Lookup("src").String()
 	if err != nil {
 		return st, err
 	}
-	dest, err := op.Get("dest").String()
+	dest, err := op.Lookup("dest").String()
 	if err != nil {
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Get("from").Path().String(), p.s, nil)
-	if err := from.Do(ctx, op.Get("from")); err != nil {
+	from := NewPipeline(op.Lookup("from").Path().String(), p.s, nil)
+	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
 	fromResult, err := from.Result()
@@ -272,7 +272,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 }
 
 func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	dir, err := op.Get("dir").String()
+	dir, err := op.Lookup("dir").String()
 	if err != nil {
 		return st, err
 	}
@@ -362,8 +362,8 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 	opts = append(opts, llb.Dir(cmd.Dir))
 
 	// env
-	if env := op.Get("env"); env.Exists() {
-		envs, err := op.Get("env").Fields()
+	if env := op.Lookup("env"); env.Exists() {
+		envs, err := op.Lookup("env").Fields()
 		if err != nil {
 			return st, err
 		}
@@ -446,8 +446,8 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := NewPipeline(mnt.Get("from").Path().String(), p.s, nil)
-	if err := from.Do(ctx, mnt.Get("from")); err != nil {
+	from := NewPipeline(mnt.Lookup("from").Path().String(), p.s, nil)
+	if err := from.Do(ctx, mnt.Lookup("from")); err != nil {
 		return nil, err
 	}
 	fromResult, err := from.Result()
@@ -468,11 +468,11 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 }
 
 func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	source, err := op.Get("source").String()
+	source, err := op.Lookup("source").String()
 	if err != nil {
 		return st, err
 	}
-	format, err := op.Get("format").String()
+	format, err := op.Lookup("format").String()
 	if err != nil {
 		return st, err
 	}
@@ -550,15 +550,15 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Get("from").Path().String(), p.s, nil)
-	if err := from.Do(ctx, op.Get("from")); err != nil {
+	from := NewPipeline(op.Lookup("from").Path().String(), p.s, nil)
+	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
 	return from.Result()
 }
 
 func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	rawRef, err := op.Get("ref").String()
+	rawRef, err := op.Lookup("ref").String()
 	if err != nil {
 		return st, err
 	}
@@ -609,7 +609,7 @@ func parseKeyValue(env string) (string, string) {
 }
 
 func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	rawRef, err := op.Get("ref").String()
+	rawRef, err := op.Lookup("ref").String()
 	if err != nil {
 		return st, err
 	}
@@ -638,11 +638,11 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 }
 
 func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	remote, err := op.Get("remote").String()
+	remote, err := op.Lookup("remote").String()
 	if err != nil {
 		return st, err
 	}
-	ref, err := op.Get("ref").String()
+	ref, err := op.Lookup("ref").String()
 	if err != nil {
 		return st, err
 	}
@@ -793,17 +793,17 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 }
 
 func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	content, err := op.Get("content").String()
+	content, err := op.Lookup("content").String()
 	if err != nil {
 		return st, err
 	}
 
-	dest, err := op.Get("dest").String()
+	dest, err := op.Lookup("dest").String()
 	if err != nil {
 		return st, err
 	}
 
-	mode, err := op.Get("mode").Int64()
+	mode, err := op.Lookup("mode").Int64()
 	if err != nil {
 		return st, err
 	}
@@ -815,17 +815,17 @@ func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.Sta
 }
 
 func (p *Pipeline) Mkdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	path, err := op.Get("path").String()
+	path, err := op.Lookup("path").String()
 	if err != nil {
 		return st, err
 	}
 
-	dir, err := op.Get("dir").String()
+	dir, err := op.Lookup("dir").String()
 	if err != nil {
 		return st, err
 	}
 
-	mode, err := op.Get("mode").Int64()
+	mode, err := op.Lookup("mode").Int64()
 	if err != nil {
 		return st, err
 	}
