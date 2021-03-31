@@ -61,7 +61,7 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 }
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Up(ctx context.Context, route *Route) (*compiler.Value, error) {
+func (c *Client) Up(ctx context.Context, deployment *Deployment) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -78,7 +78,7 @@ func (c *Client) Up(ctx context.Context, route *Route) (*compiler.Value, error) 
 	outr, outw := io.Pipe()
 	eg.Go(func() error {
 		defer outw.Close()
-		return c.buildfn(gctx, route, events, outw)
+		return c.buildfn(gctx, deployment, events, outw)
 	})
 
 	// Spawn output retriever
@@ -95,11 +95,11 @@ func (c *Client) Up(ctx context.Context, route *Route) (*compiler.Value, error) 
 	return out, compiler.Err(eg.Wait())
 }
 
-func (c *Client) buildfn(ctx context.Context, route *Route, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
-	localdirs := route.LocalDirs()
+	localdirs := deployment.LocalDirs()
 	for label, dir := range localdirs {
 		abs, err := filepath.Abs(dir)
 		if err != nil {
@@ -132,24 +132,24 @@ func (c *Client) buildfn(ctx context.Context, route *Route, ch chan *bk.SolveSta
 		s := NewSolver(c.c, gw, ch)
 
 		lg.Debug().Msg("loading configuration")
-		if err := route.LoadLayout(ctx, s); err != nil {
+		if err := deployment.LoadLayout(ctx, s); err != nil {
 			return nil, err
 		}
 
 		// Compute output overlay
-		lg.Debug().Msg("computing route")
-		if err := route.Up(ctx, s, nil); err != nil {
+		lg.Debug().Msg("computing deployment")
+		if err := deployment.Up(ctx, s, nil); err != nil {
 			return nil, err
 		}
 
-		// Export route to a cue directory
+		// Export deployment to a cue directory
 		// FIXME: this should be elsewhere
-		lg.Debug().Msg("exporting route")
-		span, _ := opentracing.StartSpanFromContext(ctx, "Route.Export")
+		lg.Debug().Msg("exporting deployment")
+		span, _ := opentracing.StartSpanFromContext(ctx, "Deployment.Export")
 		defer span.Finish()
 
 		st := llb.Scratch().File(
-			llb.Mkfile("state.cue", 0600, route.State().JSON()),
+			llb.Mkfile("state.cue", 0600, deployment.State().JSON()),
 			llb.WithCustomName("[internal] serializing state to JSON"),
 		)
 		ref, err := s.Solve(ctx, st)
@@ -178,7 +178,7 @@ func (c *Client) buildfn(ctx context.Context, route *Route, ch chan *bk.SolveSta
 func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
-	// FIXME: merge this into route output.
+	// FIXME: merge this into deployment output.
 	out := compiler.EmptyStruct()
 
 	tr := tar.NewReader(r)

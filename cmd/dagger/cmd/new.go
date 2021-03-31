@@ -16,7 +16,7 @@ import (
 
 var newCmd = &cobra.Command{
 	Use:   "new",
-	Short: "Create a new route",
+	Short: "Create a new deployment",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -33,41 +33,41 @@ var newCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		st := &dagger.RouteState{
-			Name:         getNewRouteName(ctx),
+		st := &dagger.DeploymentState{
+			Name:         getNewDeploymentName(ctx),
 			LayoutSource: getLayoutSource(ctx),
 		}
 
-		err = store.CreateRoute(ctx, st)
+		err = store.CreateDeployment(ctx, st)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to create route")
+			lg.Fatal().Err(err).Msg("failed to create deployment")
 		}
 		lg.
 			Info().
-			Str("routeId", st.ID).
-			Str("routeName", st.Name).
-			Msg("route created")
+			Str("deploymentId", st.ID).
+			Str("deploymentName", st.Name).
+			Msg("deployment created")
 
-		route, err := dagger.NewRoute(st)
+		deployment, err := dagger.NewDeployment(st)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Msg("failed to initialize route")
+				Msg("failed to initialize deployment")
 		}
 
 		if viper.GetBool("up") {
-			common.RouteUp(ctx, route)
+			common.DeploymentUp(ctx, deployment)
 		}
 	},
 }
 
-func getNewRouteName(ctx context.Context) string {
+func getNewDeploymentName(ctx context.Context) string {
 	lg := log.Ctx(ctx)
 
-	routeName := viper.GetString("route")
-	if routeName != "" {
-		return routeName
+	deploymentName := viper.GetString("deployment")
+	if deploymentName != "" {
+		return deploymentName
 	}
 
 	workDir, err := os.Getwd()
@@ -99,8 +99,8 @@ func getLayoutSource(ctx context.Context) dagger.Input {
 }
 
 func init() {
-	newCmd.Flags().StringP("name", "n", "", "Specify a route name")
-	newCmd.Flags().BoolP("up", "u", false, "Bring the route online")
+	newCmd.Flags().StringP("name", "n", "", "Specify a deployment name")
+	newCmd.Flags().BoolP("up", "u", false, "Bring the deployment online")
 
 	newCmd.Flags().String("layout-dir", "", "Load layout from a local directory")
 	newCmd.Flags().String("layout-git", "", "Load layout from a git repository")

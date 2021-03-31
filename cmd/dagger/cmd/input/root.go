@@ -12,7 +12,7 @@ import (
 // Cmd exposes the top-level command
 var Cmd = &cobra.Command{
 	Use:   "input",
-	Short: "Manage a route's inputs",
+	Short: "Manage a deployment's inputs",
 }
 
 func init() {
@@ -25,7 +25,7 @@ func init() {
 	)
 }
 
-func updateRouteInput(ctx context.Context, target string, input dagger.Input) {
+func updateDeploymentInput(ctx context.Context, target string, input dagger.Input) {
 	lg := log.Ctx(ctx)
 
 	store, err := dagger.DefaultStore()
@@ -33,11 +33,11 @@ func updateRouteInput(ctx context.Context, target string, input dagger.Input) {
 		lg.Fatal().Err(err).Msg("failed to load store")
 	}
 
-	st := common.GetCurrentRouteState(ctx, store)
+	st := common.GetCurrentDeploymentState(ctx, store)
 	st.AddInput(target, input)
 
-	if err := store.UpdateRoute(ctx, st, nil); err != nil {
-		lg.Fatal().Err(err).Str("routeId", st.ID).Str("routeName", st.Name).Msg("cannot update route")
+	if err := store.UpdateDeployment(ctx, st, nil); err != nil {
+		lg.Fatal().Err(err).Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("cannot update deployment")
 	}
-	lg.Info().Str("routeId", st.ID).Str("routeName", st.Name).Msg("updated route")
+	lg.Info().Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("updated deployment")
 }

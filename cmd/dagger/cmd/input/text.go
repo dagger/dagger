@@ -22,7 +22,7 @@ var textCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateRouteInput(ctx, args[0], dagger.TextInput(args[1]))
+		updateDeploymentInput(ctx, args[0], dagger.TextInput(args[1]))
 	},
 }
 
