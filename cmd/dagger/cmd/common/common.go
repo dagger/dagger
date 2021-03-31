@@ -65,9 +65,12 @@ func DeploymentUp(ctx context.Context, deployment *dagger.Deployment) {
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
-	output, err := c.Up(ctx, deployment)
+	output, err := c.Do(ctx, deployment, func(ctx context.Context, deployment *dagger.Deployment, s dagger.Solver) error {
+		log.Ctx(ctx).Debug().Msg("bringing deployment up")
+		return deployment.Up(ctx, s, nil)
+	})
 	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to compute")
+		lg.Fatal().Err(err).Msg("failed to up deployment")
 	}
 	fmt.Println(output.JSON())
 }
