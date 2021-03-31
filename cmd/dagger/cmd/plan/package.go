@@ -1,13 +1,13 @@
-package layout
+package plan
 
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var dirCmd = &cobra.Command{
-	Use:   "dir PATH",
-	Short: "Load layout from a local directory",
+var packageCmd = &cobra.Command{
+	Use:   "package PKG",
+	Short: "Load plan from a cue package",
 	Args:  cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -25,7 +25,7 @@ var dirCmd = &cobra.Command{
 }
 
 func init() {
-	if err := viper.BindPFlags(dirCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(packageCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

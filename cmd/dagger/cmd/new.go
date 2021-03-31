@@ -34,8 +34,8 @@ var newCmd = &cobra.Command{
 		}
 
 		st := &dagger.DeploymentState{
-			Name:         getNewDeploymentName(ctx),
-			LayoutSource: getLayoutSource(ctx),
+			Name:       getNewDeploymentName(ctx),
+			PlanSource: getPlanSource(ctx),
 		}
 
 		err = store.CreateDeployment(ctx, st)
@@ -86,8 +86,8 @@ func getNewDeploymentName(ctx context.Context) string {
 	return currentDir
 }
 
-// FIXME: Implement options: --layout-*
-func getLayoutSource(ctx context.Context) dagger.Input {
+// FIXME: Implement options: --plan-*
+func getPlanSource(ctx context.Context) dagger.Input {
 	lg := log.Ctx(ctx)
 
 	wd, err := os.Getwd()
@@ -102,10 +102,10 @@ func init() {
 	newCmd.Flags().StringP("name", "n", "", "Specify a deployment name")
 	newCmd.Flags().BoolP("up", "u", false, "Bring the deployment online")
 
-	newCmd.Flags().String("layout-dir", "", "Load layout from a local directory")
-	newCmd.Flags().String("layout-git", "", "Load layout from a git repository")
-	newCmd.Flags().String("layout-package", "", "Load layout from a cue package")
-	newCmd.Flags().String("layout-file", "", "Load layout from a cue or json file")
+	newCmd.Flags().String("plan-dir", "", "Load plan from a local directory")
+	newCmd.Flags().String("plan-git", "", "Load plan from a git repository")
+	newCmd.Flags().String("plan-package", "", "Load plan from a cue package")
+	newCmd.Flags().String("plan-file", "", "Load plan from a cue or json file")
 
 	newCmd.Flags().String("setup", "auto", "Specify whether to prompt user for initial setup (no|yes|auto)")
 

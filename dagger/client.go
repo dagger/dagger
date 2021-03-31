@@ -132,7 +132,7 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *b
 		s := NewSolver(c.c, gw, ch)
 
 		lg.Debug().Msg("loading configuration")
-		if err := deployment.LoadLayout(ctx, s); err != nil {
+		if err := deployment.LoadPlan(ctx, s); err != nil {
 			return nil, err
 		}
 

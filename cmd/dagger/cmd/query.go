@@ -57,7 +57,7 @@ func init() {
 
 	queryCmd.Flags().BoolP("--no-input", "I", false, "Exclude inputs from query")
 	queryCmd.Flags().BoolP("--no-output", "O", false, "Exclude outputs from query")
-	queryCmd.Flags().BoolP("--no-layout", "L", false, "Exclude outputs from query")
+	queryCmd.Flags().BoolP("--no-plan", "P", false, "Exclude outputs from query")
 
 	if err := viper.BindPFlags(queryCmd.Flags()); err != nil {
 		panic(err)

@@ -11,7 +11,7 @@ import (
 
 var upCmd = &cobra.Command{
 	Use:   "up",
-	Short: "Bring a deployment online with latest layout and inputs",
+	Short: "Bring a deployment online with latest plan and inputs",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:

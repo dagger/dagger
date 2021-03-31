@@ -8,7 +8,7 @@ import (
 
 func TestInputDir(t *testing.T) {
 	st := &DeploymentState{
-		LayoutSource: DirInput("/tmp/source", []string{}),
+		PlanSource: DirInput("/tmp/source", []string{}),
 	}
 	require.NoError(t, st.AddInput("www.source", DirInput(".", []string{})))
 
