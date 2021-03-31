@@ -18,17 +18,59 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type Env struct {
+// Contents of a route serialized to a file
+type RouteState struct {
+	// Globally unique route ID
+	ID string `json:"id,omitempty"`
+
+	// Human-friendly route name.
+	// A route may have more than one name.
+	// FIXME: store multiple names?
+	Name string `json:"name,omitempty"`
+
+	// Cue module containing the route layout
+	// The input's top-level artifact is used as a module directory.
+	LayoutSource Input `json:"layout,omitempty"`
+
+	Inputs []inputKV `json:"inputs,omitempty"`
+}
+
+type inputKV struct {
+	Key   string `json:"key,omitempty"`
+	Value Input  `json:"value,omitempty"`
+}
+
+func (r *RouteState) AddInput(key string, value Input) error {
+	r.Inputs = append(r.Inputs, inputKV{Key: key, Value: value})
+	return nil
+}
+
+// Remove all inputs at the given key, including sub-keys.
+// For example RemoveInputs("foo.bar") will remove all inputs
+//   at foo.bar, foo.bar.baz, etc.
+func (r *RouteState) RemoveInputs(key string) error {
+	newInputs := make([]inputKV, 0, len(r.Inputs))
+	for _, i := range r.Inputs {
+		if i.Key == key {
+			continue
+		}
+		newInputs = append(newInputs, i)
+	}
+	r.Inputs = newInputs
+
+	return nil
+}
+
+type Route struct {
+	st *RouteState
+
 	// Env boot script, eg. `[{do:"local",dir:"."}]`
 	// FIXME: rename to 'update' (script to update the env config)
 	// FIXME: embed update script in base as '#update' ?
-	// FIXME: simplify Env by making it single layer? Each layer is one env.
+	// FIXME: simplify Env by making it single layer? Each layer is one r.
 
-	// How to update the base configuration
-	updater *compiler.Value
-
-	// Layer 1: base configuration
-	base *compiler.Value
+	// Layer 1: layout configuration
+	layout *compiler.Value
 
 	// Layer 2: user inputs
 	input *compiler.Value
@@ -36,67 +78,82 @@ type Env struct {
 	// Layer 3: computed values
 	output *compiler.Value
 
-	// All layers merged together: base + input + output
+	// All layers merged together: layout + input + output
 	state *compiler.Value
 }
 
-func (env *Env) Updater() *compiler.Value {
-	return env.updater
-}
-
-// Set the updater script for this environment.
-func (env *Env) SetUpdater(v *compiler.Value) error {
-	if v == nil {
-		var err error
-		v, err = compiler.Compile("", "[]")
-		if err != nil {
-			return err
-		}
-	}
-	env.updater = v
-	return nil
-}
-
-func NewEnv() (*Env, error) {
+func NewRoute(st *RouteState) (*Route, error) {
 	empty := compiler.EmptyStruct()
-	env := &Env{
-		base:   empty,
+	r := &Route{
+		st:     st,
+		layout: empty,
 		input:  empty,
 		output: empty,
 	}
-	if err := env.mergeState(); err != nil {
+
+	// Prepare inputs
+	for _, input := range st.Inputs {
+		v, err := input.Value.Compile()
+		if err != nil {
+			return nil, err
+		}
+		if input.Key == "" {
+			r.input, err = r.input.Merge(v)
+		} else {
+			r.input, err = r.input.MergeTarget(v, input.Key)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := r.mergeState(); err != nil {
 		return nil, err
 	}
-	if err := env.SetUpdater(nil); err != nil {
-		return nil, err
-	}
-	return env, nil
+
+	return r, nil
 }
 
-func (env *Env) State() *compiler.Value {
-	return env.state
+func (r *Route) ID() string {
+	return r.st.ID
 }
 
-func (env *Env) Input() *compiler.Value {
-	return env.input
+func (r *Route) Name() string {
+	return r.st.Name
 }
 
-func (env *Env) SetInput(i *compiler.Value) error {
-	if i == nil {
-		i = compiler.EmptyStruct()
-	}
-	env.input = i
-	return env.mergeState()
+func (r *Route) LayoutSource() Input {
+	return r.st.LayoutSource
 }
 
-// Update the base configuration
-func (env *Env) Update(ctx context.Context, s Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Env.Update")
+func (r *Route) Layout() *compiler.Value {
+	return r.layout
+}
+
+func (r *Route) Input() *compiler.Value {
+	return r.input
+}
+
+func (r *Route) Output() *compiler.Value {
+	return r.output
+}
+
+func (r *Route) State() *compiler.Value {
+	return r.state
+}
+
+// LoadLayout loads the layout
+func (r *Route) LoadLayout(ctx context.Context, s Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "route.Update")
 	defer span.Finish()
+
+	layoutSource, err := r.st.LayoutSource.Compile()
+	if err != nil {
+		return err
+	}
 
 	p := NewPipeline("[internal] source", s, nil)
 	// execute updater script
-	if err := p.Do(ctx, env.updater); err != nil {
+	if err := p.Do(ctx, layoutSource); err != nil {
 		return err
 	}
 
@@ -105,28 +162,21 @@ func (env *Env) Update(ctx context.Context, s Solver) error {
 		stdlib.Path: stdlib.FS,
 		"/":         p.FS(),
 	}
-	base, err := compiler.Build(sources)
+	layout, err := compiler.Build(sources)
 	if err != nil {
-		return fmt.Errorf("base config: %w", err)
+		return fmt.Errorf("layout config: %w", err)
 	}
-	env.base = base
+	r.layout = layout
+
 	// Commit
-	return env.mergeState()
-}
-
-func (env *Env) Base() *compiler.Value {
-	return env.base
-}
-
-func (env *Env) Output() *compiler.Value {
-	return env.output
+	return r.mergeState()
 }
 
 // Scan all scripts in the environment for references to local directories (do:"local"),
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
 // by user-specified scripts.
-func (env *Env) LocalDirs() map[string]string {
+func (r *Route) LocalDirs() map[string]string {
 	dirs := map[string]string{}
 	localdirs := func(code ...*compiler.Value) {
 		Analyze(
@@ -135,6 +185,7 @@ func (env *Env) LocalDirs() map[string]string {
 				if err != nil {
 					return err
 				}
+				// FIXME: merge Env into Route, or fix the linter error
 				if do != "local" {
 					return nil
 				}
@@ -150,19 +201,24 @@ func (env *Env) LocalDirs() map[string]string {
 	}
 	// 1. Scan the environment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
-	inst := env.state.CueInst()
+	inst := r.state.CueInst()
 	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
 		localdirs(v.Get("#compute"))
 	}
-	// 2. Scan the environment updater
-	localdirs(env.Updater())
+
+	// 2. Scan the layout
+	layout, err := r.st.LayoutSource.Compile()
+	if err != nil {
+		panic(err)
+	}
+	localdirs(layout)
 	return dirs
 }
 
 // FIXME: this is just a 3-way merge. Add var args to compiler.Value.Merge.
-func (env *Env) mergeState() error {
+func (r *Route) mergeState() error {
 	// FIXME: make this cleaner in *compiler.Value by keeping intermediary instances
 	// FIXME: state.CueInst() must return an instance with the same
 	//  contents as state.v, for the purposes of cueflow.
@@ -175,15 +231,15 @@ func (env *Env) mergeState() error {
 		err       error
 	)
 
-	stateInst, err = stateInst.Fill(env.base.Cue())
+	stateInst, err = stateInst.Fill(r.layout.Cue())
 	if err != nil {
 		return fmt.Errorf("merge base & input: %w", err)
 	}
-	stateInst, err = stateInst.Fill(env.input.Cue())
+	stateInst, err = stateInst.Fill(r.input.Cue())
 	if err != nil {
 		return fmt.Errorf("merge base & input: %w", err)
 	}
-	stateInst, err = stateInst.Fill(env.output.Cue())
+	stateInst, err = stateInst.Fill(r.output.Cue())
 	if err != nil {
 		return fmt.Errorf("merge output with base & input: %w", err)
 	}
@@ -191,22 +247,24 @@ func (env *Env) mergeState() error {
 	state = compiler.Wrap(stateInst.Value(), stateInst)
 
 	// commit
-	env.state = state
+	r.state = state
 	return nil
 }
 
-// Compute missing values in env configuration, and write them to state.
-func (env *Env) Compute(ctx context.Context, s Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Env.Compute")
+type UpOpts struct{}
+
+// Up missing values in env configuration, and write them to state.
+func (r *Route) Up(ctx context.Context, s Solver, _ *UpOpts) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "r.Compute")
 	defer span.Finish()
 
 	lg := log.Ctx(ctx)
 
 	// Cueflow cue instance
-	inst := env.state.CueInst()
+	inst := r.state.CueInst()
 
 	// Reset the output
-	env.output = compiler.EmptyStruct()
+	r.output = compiler.EmptyStruct()
 
 	// Cueflow config
 	flowCfg := &cueflow.Config{
@@ -226,7 +284,7 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 			}
 			// Merge task value into output
 			var err error
-			env.output, err = env.output.MergePath(t.Value(), t.Path())
+			r.output, err = r.output.MergePath(t.Value(), t.Path())
 			if err != nil {
 				lg.
 					Error().
@@ -244,12 +302,24 @@ func (env *Env) Compute(ctx context.Context, s Solver) error {
 	}
 
 	{
-		span, _ := opentracing.StartSpanFromContext(ctx, "Env.Compute: merge state")
+		span, _ := opentracing.StartSpanFromContext(ctx, "merge state")
 		defer span.Finish()
 
-		return env.mergeState()
+		return r.mergeState()
 	}
 }
+
+type DownOpts struct{}
+
+func (r *Route) Down(ctx context.Context, _ *DownOpts) error {
+	panic("NOT IMPLEMENTED")
+}
+
+func (r *Route) Query(ctx context.Context, expr interface{}, o *QueryOpts) (*compiler.Value, error) {
+	panic("NOT IMPLEMENTED")
+}
+
+type QueryOpts struct{}
 
 func newTaskFunc(inst *cue.Instance, runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	return func(flowVal cue.Value) (cueflow.Runner, error) {

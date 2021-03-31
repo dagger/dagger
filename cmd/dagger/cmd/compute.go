@@ -1,18 +1,20 @@
 package cmd
 
 import (
-	"fmt"
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
 
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
+	"go.mozilla.org/sops"
+	"go.mozilla.org/sops/decrypt"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-)
-
-var (
-	input   *dagger.InputValue
-	updater *dagger.InputValue
 )
 
 var computeCmd = &cobra.Command{
@@ -30,51 +32,116 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		env, err := dagger.NewEnv()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to initialize environment")
-		}
-		if err := updater.SourceFlag().Set(args[0]); err != nil {
-			lg.Fatal().Err(err).Msg("invalid local source")
+		st := &dagger.RouteState{
+			ID:           uuid.New().String(),
+			Name:         "FIXME",
+			LayoutSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
 		}
 
-		if err := env.SetUpdater(updater.Value()); err != nil {
-			lg.Fatal().Err(err).Msg("invalid updater script")
+		for _, input := range viper.GetStringSlice("input-string") {
+			parts := strings.SplitN(input, "=", 2)
+			k, v := parts[0], parts[1]
+			err := st.AddInput(k, dagger.TextInput(v))
+			if err != nil {
+				lg.
+					Fatal().
+					Err(err).
+					Str("input", k).
+					Msg("failed to add input")
+			}
 		}
-		if err := env.SetInput(input.Value()); err != nil {
-			lg.Fatal().Err(err).Msg("invalid input")
+
+		for _, input := range viper.GetStringSlice("input-dir") {
+			parts := strings.SplitN(input, "=", 2)
+			k, v := parts[0], parts[1]
+			err := st.AddInput(k, dagger.DirInput(v, []string{}))
+			if err != nil {
+				lg.
+					Fatal().
+					Err(err).
+					Str("input", k).
+					Msg("failed to add input")
+			}
 		}
-		c, err := dagger.NewClient(ctx, "")
+
+		for _, input := range viper.GetStringSlice("input-git") {
+			parts := strings.SplitN(input, "=", 2)
+			k, v := parts[0], parts[1]
+			err := st.AddInput(k, dagger.GitInput(v, "", ""))
+			if err != nil {
+				lg.
+					Fatal().
+					Err(err).
+					Str("input", k).
+					Msg("failed to add input")
+			}
+		}
+
+		if f := viper.GetString("input-json"); f != "" {
+			lg := lg.With().Str("path", f).Logger()
+
+			content, err := os.ReadFile(f)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to read file")
+			}
+
+			plaintext, err := decrypt.Data(content, "json")
+			if err != nil && !errors.Is(err, sops.MetadataNotFound) {
+				lg.Fatal().Err(err).Msg("unable to decrypt")
+			}
+
+			if len(plaintext) > 0 {
+				content = plaintext
+			}
+
+			if !json.Valid(content) {
+				lg.Fatal().Msg("invalid json")
+			}
+
+			err = st.AddInput("", dagger.JSONInput(string(content)))
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to add input")
+			}
+		}
+
+		if f := viper.GetString("input-yaml"); f != "" {
+			lg := lg.With().Str("path", f).Logger()
+
+			content, err := os.ReadFile(f)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to read file")
+			}
+
+			plaintext, err := decrypt.Data(content, "yaml")
+			if err != nil && !errors.Is(err, sops.MetadataNotFound) {
+				lg.Fatal().Err(err).Msg("unable to decrypt")
+			}
+
+			if len(plaintext) > 0 {
+				content = plaintext
+			}
+
+			err = st.AddInput("", dagger.YAMLInput(string(content)))
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to add input")
+			}
+		}
+
+		route, err := dagger.NewRoute(st)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
+			lg.Fatal().Err(err).Msg("unable to initialize route")
 		}
-		output, err := c.Compute(ctx, env)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to compute")
-		}
-		fmt.Println(output.JSON())
+
+		common.RouteUp(ctx, route)
 	},
 }
 
 func init() {
-	var err error
-	// Setup --input-* flags
-	input, err = dagger.NewInputValue("{}")
-	if err != nil {
-		panic(err)
-	}
-	computeCmd.Flags().Var(input.StringFlag(), "input-string", "TARGET=STRING")
-	computeCmd.Flags().Var(input.DirFlag(), "input-dir", "TARGET=PATH")
-	computeCmd.Flags().Var(input.GitFlag(), "input-git", "TARGET=REMOTE#REF")
-	computeCmd.Flags().Var(input.CueFlag(), "input-cue", "CUE")
-	computeCmd.Flags().Var(input.JSONFlag(), "input-json", "JSON")
-	computeCmd.Flags().Var(input.YAMLFlag(), "input-yaml", "YAML")
-
-	// Setup (future) --from-* flags
-	updater, err = dagger.NewInputValue("[...{do:string, ...}]")
-	if err != nil {
-		panic(err)
-	}
+	computeCmd.Flags().StringSlice("input-string", []string{}, "TARGET=STRING")
+	computeCmd.Flags().StringSlice("input-dir", []string{}, "TARGET=PATH")
+	computeCmd.Flags().StringSlice("input-git", []string{}, "TARGET=REMOTE#REF")
+	computeCmd.Flags().String("input-json", "", "JSON")
+	computeCmd.Flags().String("input-yaml", "", "YAML")
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)

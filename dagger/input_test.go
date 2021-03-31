@@ -2,30 +2,21 @@ package dagger
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestEnvInputFlag(t *testing.T) {
-	env, err := NewEnv()
-	if err != nil {
-		t.Fatal(err)
+func TestInputDir(t *testing.T) {
+	st := &RouteState{
+		LayoutSource: DirInput("/tmp/source", []string{}),
 	}
+	require.NoError(t, st.AddInput("www.source", DirInput(".", []string{})))
 
-	input, err := NewInputValue(`{}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := input.DirFlag().Set("www.source=."); err != nil {
-		t.Fatal(err)
-	}
-	if err := env.SetInput(input.Value()); err != nil {
-		t.Fatal(err)
-	}
+	route, err := NewRoute(st)
+	require.NoError(t, err)
 
-	localdirs := env.LocalDirs()
-	if len(localdirs) != 1 {
-		t.Fatal(localdirs)
-	}
-	if dir, ok := localdirs["."]; !ok || dir != "." {
-		t.Fatal(localdirs)
-	}
+	localdirs := route.LocalDirs()
+	require.Len(t, localdirs, 2)
+	require.Contains(t, localdirs, ".")
+	require.Contains(t, localdirs, "/tmp/source")
 }

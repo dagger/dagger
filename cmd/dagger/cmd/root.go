@@ -4,6 +4,9 @@ import (
 	"os"
 	"strings"
 
+	inputCmd "dagger.io/go/cmd/dagger/cmd/input"
+	"dagger.io/go/cmd/dagger/cmd/layout"
+	"dagger.io/go/cmd/dagger/cmd/output"
 	"dagger.io/go/cmd/dagger/logger"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/opentracing/opentracing-go"
@@ -14,24 +17,28 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "dagger",
-	Short: "Open-source workflow engine",
+	Short: "A system for application delivery as code (ADC)",
 }
 
 func init() {
 	rootCmd.PersistentFlags().String("log-format", "", "Log format (json, pretty). Defaults to json if the terminal is not a tty")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "debug", "Log level")
+	rootCmd.PersistentFlags().StringP("route", "r", "", "Select a route")
 
 	rootCmd.AddCommand(
 		computeCmd,
-		// Create an env
-		// Change settings on an env
-		// View or edit env serti
-		//		settingsCmd,
-		// Query the state of an env
-		//		getCmd,
-		//		unsetCmd,
-		//		computeCmd,
-		//		listCmd,
+		newCmd,
+		listCmd,
+		queryCmd,
+		upCmd,
+		downCmd,
+		deleteCmd,
+		historyCmd,
+		loginCmd,
+		logoutCmd,
+		layout.Cmd,
+		inputCmd.Cmd,
+		output.Cmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {

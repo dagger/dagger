@@ -8,6 +8,7 @@ require (
 	github.com/containerd/console v1.0.1
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
+	github.com/google/uuid v1.2.0 // indirect
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/moby/buildkit v0.8.2
@@ -18,6 +19,7 @@ require (
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.1
+	github.com/stretchr/testify v1.5.1 // indirect
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/uber/jaeger-client-go v2.25.0+incompatible

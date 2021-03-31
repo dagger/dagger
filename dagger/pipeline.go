@@ -84,7 +84,11 @@ func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
 			ops = append(ops, xops...)
 		} else {
 			// 4. error
-			return nil, fmt.Errorf("not executable: %s", x.SourceUnsafe())
+			source, err := x.Source()
+			if err != nil {
+				panic(err)
+			}
+			return nil, fmt.Errorf("not executable: %s", source)
 		}
 	}
 	return ops, nil
