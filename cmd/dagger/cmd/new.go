@@ -98,12 +98,16 @@ func getNewDeploymentName(ctx context.Context) string {
 func getPlanSource(ctx context.Context) dagger.Input {
 	lg := log.Ctx(ctx)
 
-	wd, err := os.Getwd()
-	if err != nil {
-		lg.Fatal().Err(err).Msg("cannot get current working directory")
+	planDir := viper.GetString("plan-dir")
+	if planDir == "" {
+		var err error
+		planDir, err = os.Getwd()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("cannot get current working directory")
+		}
 	}
 
-	return dagger.DirInput(wd, []string{"*.cue", "cue.mod"})
+	return dagger.DirInput(planDir, []string{"*.cue", "cue.mod"})
 }
 
 func init() {
