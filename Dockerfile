@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.2
 ARG GO_VERSION=1.16
 
-FROM --platform=$BUILDPLATFORM crazymax/goreleaser-xx:latest AS goreleaser-xx
+FROM --platform=$BUILDPLATFORM crazymax/goreleaser-xx:0.161.1 AS goreleaser-xx
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS base
 RUN apk add --no-cache gcc git musl-dev
 COPY --from=goreleaser-xx / /
@@ -33,6 +33,25 @@ RUN --mount=type=bind,target=. \
 
 FROM scratch AS test-coverage
 COPY --from=test /tmp/coverage.txt /coverage.txt
+
+FROM vendored AS build-debug
+RUN --mount=type=bind,target=/src,rw \
+  --mount=type=cache,target=/root/.cache/go-build \
+  --mount=target=/go/pkg/mod,type=cache \
+  go build -race -o /tmp/dagger-debug ./cmd/dagger/
+
+FROM crazymax/docker:20.10.5 AS docker
+FROM alpine AS e2e
+RUN apk add --no-cache bash gcc gnupg ncurses shellcheck
+COPY --from=build-debug /tmp/dagger-debug /usr/bin/dagger-debug
+COPY --from=mozilla/sops:v3-alpine /usr/local/bin/sops /usr/local/bin/sops
+COPY --from=docker /usr/libexec/docker/cli-plugins/docker-buildx /usr/libexec/docker/cli-plugins/docker-buildx
+COPY --from=docker /usr/local/bin/buildkitd /usr/bin/buildkitd
+COPY --from=docker /usr/local/bin/buildctl /usr/bin/buildctl
+COPY --from=docker /usr/local/bin/docker /usr/bin/docker
+WORKDIR /src
+ENV DAGGER_BINARY="/usr/bin/dagger-debug"
+COPY . .
 
 FROM vendored AS golangci-lint
 RUN --mount=type=bind,target=. \

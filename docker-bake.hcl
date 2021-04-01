@@ -20,6 +20,11 @@ target "git-ref" {
   }
 }
 
+// Special target: https://github.com/crazy-max/ghaction-docker-meta#bake-definition
+target "ghaction-docker-meta" {
+  tags = ["dagger:local"]
+}
+
 group "default" {
   targets = ["image-local"]
 }
@@ -67,15 +72,23 @@ target "artifact-all" {
     "linux/amd64",
     "linux/arm/v6",
     "linux/arm/v7",
-    "linux/386",
     "linux/arm64",
     "linux/ppc64le",
+    "windows/amd64",
+    "darwin/arm64",
+    "darwin/amd64"
   ]
 }
 
+target "image-e2e" {
+  inherits = ["go-version"]
+  tags = ["dagger-e2e:local"]
+  output = ["type=docker"]
+  target = "e2e"
+}
+
 target "image" {
-  inherits = ["go-version", "git-ref"]
-  tags = ["dagger"]
+  inherits = ["go-version", "git-ref", "ghaction-docker-meta"]
 }
 
 target "image-local" {
@@ -90,7 +103,6 @@ target "image-all" {
     "linux/arm/v6",
     "linux/arm/v7",
     "linux/arm64",
-    "linux/386",
     "linux/ppc64le"
   ]
 }

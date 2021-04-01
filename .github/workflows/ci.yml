@@ -34,16 +34,50 @@ jobs:
         with:
           fetch-depth: 0
       -
+        name: Docker meta
+        id: meta
+        uses: crazy-max/ghaction-docker-meta@v2
+        with:
+          images: dagger/dagger
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=pr
+            type=edge
+      -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v1
       -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
       -
+        name: Import PGP private key
+        # PR from fork can't access secrets object unfortunately (needs to use a special event if you want to)
+        if: github.event_name != 'pull_request'
+        env:
+          SOPS_PGP_KEY: ${{ secrets.SOPS_PGP_KEY }}
+        run: |
+          echo "$SOPS_PGP_KEY" | base64 -d | gpg --import
+      -
         name: Test
         uses: docker/bake-action@v1
         with:
           targets: test
+      -
+        name: Build e2e image
+        if: github.event_name != 'pull_request'
+        uses: docker/bake-action@v1
+        with:
+          targets: image-e2e
+      -
+        name: Test e2e
+        if: github.event_name != 'pull_request'
+        run: |
+          # dagger-e2e:local commes from "Build e2e image" step
+          docker run --rm -t dagger-e2e:local time ./tests/test-test.sh
+          docker run --rm -it \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $HOME/.gnupg:/root/.gnupg \
+            dagger-e2e:local time ./tests/test.sh all
       -
         name: Login to DockerHub
         if: github.event_name != 'pull_request'
@@ -71,8 +105,12 @@ jobs:
         name: Build
         uses: docker/bake-action@v1
         with:
+          files: |
+            ./docker-bake.hcl
+            ${{ steps.meta.outputs.bake-file }}
           targets: image-all
-          push: ${{ github.event_name != 'pull_request' }}
+          # Don't push image for now
+          #push: ${{ github.event_name != 'pull_request' }}
       -
         name: GitHub Release
         uses: softprops/action-gh-release@v1
