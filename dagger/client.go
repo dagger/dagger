@@ -61,8 +61,10 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 	}, nil
 }
 
+type ClientDoFunc func(context.Context, *Deployment, Solver) error
+
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Up(ctx context.Context, deployment *Deployment) (*compiler.Value, error) {
+func (c *Client) Do(ctx context.Context, deployment *Deployment, fn ClientDoFunc) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -79,7 +81,7 @@ func (c *Client) Up(ctx context.Context, deployment *Deployment) (*compiler.Valu
 	outr, outw := io.Pipe()
 	eg.Go(func() error {
 		defer outw.Close()
-		return c.buildfn(gctx, deployment, events, outw)
+		return c.buildfn(gctx, deployment, fn, events, outw)
 	})
 
 	// Spawn output retriever
@@ -96,7 +98,7 @@ func (c *Client) Up(ctx context.Context, deployment *Deployment) (*compiler.Valu
 	return out, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -138,9 +140,10 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *b
 		}
 
 		// Compute output overlay
-		lg.Debug().Msg("computing deployment")
-		if err := deployment.Up(ctx, s, nil); err != nil {
-			return nil, compiler.Err(err)
+		if fn != nil {
+			if err := fn(ctx, deployment, s); err != nil {
+				return nil, compiler.Err(err)
+			}
 		}
 
 		// Export deployment to a cue directory
@@ -149,9 +152,14 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, ch chan *b
 		span, _ := opentracing.StartSpanFromContext(ctx, "Deployment.Export")
 		defer span.Finish()
 
+		stateSource, err := deployment.State().Source()
+		if err != nil {
+			return nil, compiler.Err(err)
+		}
+
 		st := llb.Scratch().File(
-			llb.Mkfile("state.cue", 0600, deployment.State().JSON()),
-			llb.WithCustomName("[internal] serializing state to JSON"),
+			llb.Mkfile("state.cue", 0600, stateSource),
+			llb.WithCustomName("[internal] serializing state to CUE"),
 		)
 		ref, err := s.Solve(ctx, st)
 		if err != nil {

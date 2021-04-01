@@ -308,10 +308,6 @@ func (d *Deployment) Down(ctx context.Context, _ *DownOpts) error {
 	panic("NOT IMPLEMENTED")
 }
 
-func (d *Deployment) Query(ctx context.Context, expr interface{}, o *QueryOpts) (*compiler.Value, error) {
-	panic("NOT IMPLEMENTED")
-}
-
 type QueryOpts struct{}
 
 func newTaskFunc(inst *cue.Instance, runner cueflow.RunnerFunc) cueflow.TaskFunc {
