@@ -17,7 +17,7 @@ import (
 var newCmd = &cobra.Command{
 	Use:   "new",
 	Short: "Create a new deployment",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -33,8 +33,21 @@ var newCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
+		if viper.GetString("deployment") != "" {
+			lg.
+				Fatal().
+				Msg("cannot use option -d,--deployment for this command")
+		}
+
+		name := ""
+		if len(args) > 0 {
+			name = args[0]
+		} else {
+			name = getNewDeploymentName(ctx)
+		}
+
 		st := &dagger.DeploymentState{
-			Name:       getNewDeploymentName(ctx),
+			Name:       name,
 			PlanSource: getPlanSource(ctx),
 		}
 
@@ -65,11 +78,6 @@ var newCmd = &cobra.Command{
 func getNewDeploymentName(ctx context.Context) string {
 	lg := log.Ctx(ctx)
 
-	deploymentName := viper.GetString("deployment")
-	if deploymentName != "" {
-		return deploymentName
-	}
-
 	workDir, err := os.Getwd()
 	if err != nil {
 		lg.
@@ -90,16 +98,19 @@ func getNewDeploymentName(ctx context.Context) string {
 func getPlanSource(ctx context.Context) dagger.Input {
 	lg := log.Ctx(ctx)
 
-	wd, err := os.Getwd()
-	if err != nil {
-		lg.Fatal().Err(err).Msg("cannot get current working directory")
+	planDir := viper.GetString("plan-dir")
+	if planDir == "" {
+		var err error
+		planDir, err = os.Getwd()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("cannot get current working directory")
+		}
 	}
 
-	return dagger.DirInput(wd, []string{"*.cue", "cue.mod"})
+	return dagger.DirInput(planDir, []string{"*.cue", "cue.mod"})
 }
 
 func init() {
-	newCmd.Flags().StringP("name", "n", "", "Specify a deployment name")
 	newCmd.Flags().BoolP("up", "u", false, "Bring the deployment online")
 
 	newCmd.Flags().String("plan-dir", "", "Load plan from a local directory")
