@@ -107,12 +107,15 @@ func startBuildkit(ctx context.Context) error {
 	cmd = exec.CommandContext(ctx,
 		"docker",
 		"run",
+		"--net=host",
 		"-d",
 		"--restart", "always",
 		"-v", volumeName+":/var/lib/buildkit",
 		"--name", containerName,
 		"--privileged",
 		imageVersion,
+		"--allow-insecure-entitlement",
+		"network.host",
 	)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
