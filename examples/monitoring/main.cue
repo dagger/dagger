@@ -4,24 +4,29 @@ import (
 	"dagger.io/aws"
 )
 
-// Fill using:
-//          --input-string awsConfig.accessKey=XXX
-//          --input-string awsConfig.secretKey=XXX
+// AWS account: credentials and region
 awsConfig: aws.#Config & {
 	region: *"us-east-1" | string
 }
 
+// URL of the website to monitor
+website: string | *"https://www.google.com"
+
+// Email address to notify of monitoring alerts
+email: string
+
+// The monitoring service running on AWS Cloudwatch
 monitor: #HTTPMonitor & {
 	notifications: [
 		#Notification & {
-			endpoint: "sam+test@blocklayerhq.com"
+			endpoint: email
 			protocol: "email"
 		},
 	]
 	canaries: [
 		#Canary & {
-			name: "website-test"
-			url:  "https://www.google.com/"
+			name: "default"
+			url:  website
 		},
 	]
 	cfnStackName: "my-monitor"
