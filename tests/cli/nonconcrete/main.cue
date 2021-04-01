@@ -1,0 +1,3 @@
+package testing
+
+nonConcrete: string
