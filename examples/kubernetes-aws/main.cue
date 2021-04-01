@@ -16,8 +16,8 @@ awsConfig: aws.#Config & {
 // - Instance Node Group: auto-scaling-group, ec2 instances, etc...
 // base config can be changed (number of EC2 instances, types, etc...)
 infra: #Infrastructure & {
-	"awsConfig": awsConfig
-	namePrefix:  "dagger-example-"
+	"awsConfig":            awsConfig
+	namePrefix:             "dagger-example-"
 	workerNodeCapacity:     int | *1
 	workerNodeInstanceType: "t3.small"
 }

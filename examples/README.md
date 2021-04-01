@@ -92,30 +92,110 @@ dagger up
 dagger query kubeconfig.kubeconfig | jq . > kubeconfig
 ```
 
-## aws-monitoring: HTTP Monitoring on AWS
+## Add HTTP monitoring to your application
 
-This example implements a full HTTP(s) Monitoring solution on AWS using
-Cloudformation and Cloudwatch Synthetics.
+This example shows how to implement a robust HTTP(s) monitoring service on top of AWS. [Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/monitoring).
 
-How to run:
+Audience: application team looking to improve the reliability of their application.
+
+Components:
+
+- [Amazon Cloudwatch Synthetics](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Synthetics_Canaries.html) for hosting the monitoring scripts
+- [Amazon CloudFormation](https://aws.amazon.com/cloudformation) for infrastructure provisioning
+
+
+1. Change the current directory to the example deployment plan
 
 ```sh
-dagger compute ./aws-monitoring \
-    --input-string awsConfig.accessKey="MY_AWS_ACCESS_KEY" \
-    --input-string awsConfig.secretKey="MY_AWS_SECRET_KEY" \
+cd ./monitoring
 ```
 
-## kubernetes: Deploy to an existing Kubernetes cluster
+2. Create a new deployment from the plan
 
-This example shows two different ways for deploying to an existing Kubernetes
-(EKS) cluster: a simple deployment spec (written in Cue), and a local helm
-chart.
+```sh
+dagger new
+```
+
+3. Configure the deployment with your AWS credentials
+
+```sh
+dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
+```
+
+```sh
+dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+```
+
+4. Configure the monitoring parameters
+
+```sh
+dagger input text website https://MYWEBSITE.TLD
+```
+
+```sh
+dagger input text email my_email@my_domain.tld
+```
+
+5. Deploy!
+
+```sh
+dagger up
+```
+
+
+## Deploy an application to your Kubernetes cluster
+
+This example shows two different ways to deploy an application to an existing Kubernetes cluster: with and without a Helm chart. Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/kubernetes-app)
+
+NOTE: this example requires an EKS cluster to allow authentication with your AWS credentials; but can easily be adapter to deploy to any Kubernetes cluster.
+
+Components:
+
+- [Amazon EKS](https://aws.amazon.com/eks) for Kubernetes hosting
+- [Kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) as kubernetes client
+- [Helm](https://helm.sh) to manage kubernetes configuration (optional)
 
 How to run:
 
+
+1. Change the current directory to the example deployment plan
+
 ```sh
-dagger compute ./kubernetes \
-    --input-string awsConfig.accessKey="MY_AWS_ACCESS_KEY" \
-    --input-string awsConfig.secretKey="MY_AWS_SECRET_KEY" \
-    --input-dir helmChart.chart=./kubernetes/testdata/mychart
+cd ./kubernetes-app
+```
+
+2. Create a new deployment from the plan
+
+```sh
+dagger new
+```
+
+3. Configure the deployment with your AWS credentials
+
+```sh
+dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
+```
+
+```sh
+dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+```
+
+4. Configure the EKS cluster to deploy to
+
+Note: if you have run the `kubernetes-aws` example, you may skip this step.
+
+```sh
+dagger input text cluster.clusterName MY_CLUSTER_NAME
+```
+
+5. Load the Helm chart
+
+```sh
+dagger input dir helmChart.chart=./kubernetes-app/testdata/mychart
+```
+
+6. Deploy!
+
+```sh
+dagger up
 ```
