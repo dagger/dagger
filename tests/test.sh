@@ -13,7 +13,46 @@ DAGGER_BINARY_ARGS="${DAGGER_BINARY_ARGS:---log-format json}"
 read -ra DAGGER_BINARY_ARGS <<< "${DAGGER_BINARY_ARGS:-}"
 readonly DAGGER_BINARY_ARGS
 
-test::stdlib() {
+test::all(){
+  local dagger="$1"
+
+  test::llb "$dagger"
+  test::dependencies "$dagger"
+  test::stdlib "$dagger"
+  test::compute "$dagger"
+  test::input "$dagger"
+  test::daggerignore "$dagger"
+  test::examples "$dagger"
+}
+
+test::llb(){
+  local dagger="$1"
+
+  test::llb::load "$dagger"
+  test::llb::mount "$dagger"
+  test::llb::copy "$dagger"
+  test::llb::local "$dagger"
+  test::llb::fetchcontainer "$dagger"
+  test::llb::pushcontainer "$dagger"
+  test::llb::fetchgit "$dagger"
+  test::llb::exec "$dagger"
+  test::llb::export "$dagger"
+  test::llb::subdir "$dagger"
+  test::llb::dockerbuild "$dagger"
+}
+
+test::dependencies(){
+  local dagger="$1"
+
+  test::one "Dependencies: simple direct dependency" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/simple
+  test::one "Dependencies: interpolation" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/interpolation
+  test::one "Dependencies: json.Unmarshal" --exit=0 --stdout='{"A":"{\"hello\": \"world\"}\n","B":{"result":"unmarshalled.hello=world"},"unmarshalled":{"hello":"world"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/unmarshal
+}
+
+test::stdlib(){
   local dagger="$1"
 
   test::one "stdlib: alpine" \
@@ -26,12 +65,6 @@ test::stdlib() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
   test::secret "$d"/stdlib/netlify/inputs.yaml "stdlib: netlify" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/netlify
-}
-
-test::examples() {
-    test::secret "$d"/../examples/react-netlify/inputs.yaml "examples: React Netlify" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/../examples/react-netlify
-
 }
 
 test::compute(){
@@ -58,18 +91,32 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/wrapped
 }
 
-test::dependencies(){
-  local dagger="$1"
+test::input() {
+  test::one "Input: missing input should skip execution" --exit=0 --stdout='{}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/simple
 
-  test::one "Dependencies: simple direct dependency" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/simple
-  test::one "Dependencies: interpolation" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/interpolation
-  test::one "Dependencies: json.Unmarshal" --exit=0 --stdout='{"A":"{\"hello\": \"world\"}\n","B":{"result":"unmarshalled.hello=world"},"unmarshalled":{"hello":"world"}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/unmarshal
+  test::one "Input: simple input" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/simple
+
+  test::one "Input: default values" --exit=0 --stdout='{"in":"default input","test":"received: default input"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/default
+
+  test::one "Input: override default value" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/default
 }
 
-test::fetchcontainer(){
+test::daggerignore() {
+  test::one "Dagger Ignore" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/testdata "$d"/ignore
+}
+
+test::examples() {
+    test::secret "$d"/../examples/react-netlify/inputs.yaml "examples: React Netlify" --exit=0 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/../examples/react-netlify
+
+}
+
+test::llb::fetchcontainer(){
   local dagger="$1"
 
   # Fetch container
@@ -89,14 +136,14 @@ test::fetchcontainer(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/fetch-container/nonexistent/image-with-valid-digest
 }
 
-test::pushcontainer(){
+test::llb::pushcontainer(){
   local dagger="$1"
 
-  test::secret "$d"/push-container/inputs.yaml "PushContainer: simple"       --exit=0 \
+  test::secret "$d"/llb/push-container/inputs.yaml "PushContainer: simple"       --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/push-container
 }
 
-test::fetchgit(){
+test::llb::fetchgit(){
   local dagger="$1"
 
   # Fetch git
@@ -112,7 +159,7 @@ test::fetchgit(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/fetch-git/nonexistent/bork
 }
 
-test::exec(){
+test::llb::exec(){
   # Exec
   test::one "Exec: invalid" --exit=1 --stdout= \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/exec/invalid
@@ -152,7 +199,7 @@ test::exec(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/exec/undefined/with_pkg_mandatory
 }
 
-test::export(){
+test::llb::export(){
   test::one "Export: json" --exit=0 --stdout='{"testMap":{"something":"something"},"testScalar":true}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/export/json
 
@@ -187,7 +234,7 @@ test::export(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/export/bool
 }
 
-test::copy(){
+test::llb::copy(){
   test::one "Copy: valid components" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/copy/valid/component
   test::one "Copy: valid script" --exit=0 \
@@ -197,7 +244,7 @@ test::copy(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/copy/invalid/cache
 }
 
-test::load(){
+test::llb::load(){
   test::one "Load: valid components" --exit=0 --stdout='{"component":{},"test1":"lol","test2":"lol"}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/load/valid/component
   test::one "Load: valid script" --exit=0 \
@@ -207,11 +254,11 @@ test::load(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/load/invalid/cache
 }
 
-test::local(){
+test::llb::local(){
   disable "" "There are no local tests right now (the feature is possibly not functioning at all: see https://github.com/blocklayerhq/dagger/issues/41)"
 }
 
-test::mount(){
+test::llb::mount(){
   test::one "Mount: tmpfs" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/mounts/valid/tmpfs
 
@@ -225,60 +272,14 @@ test::mount(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/mounts/valid/script
 }
 
-test::input() {
-  test::one "Input: missing input should skip execution" --exit=0 --stdout='{}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/simple
-
-  test::one "Input: simple input" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/simple
-
-  test::one "Input: default values" --exit=0 --stdout='{"in":"default input","test":"received: default input"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/default
-
-  test::one "Input: override default value" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/default
-}
-
-test::subdir() {
+test::llb::subdir() {
   test::one "Subdir: simple usage" --exit=0 --stdout='{"hello":"world"}' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/llb/subdir/simple
 }
 
-test::dockerbuild() {
+test::llb::dockerbuild() {
   test::one "Docker Build" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/llb/dockerbuild/testdata "$d"/llb/dockerbuild
-}
-
-test::daggerignore() {
-  test::one "Dagger Ignore" --exit=0 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/testdata "$d"/ignore
-}
-
-test::llb(){
-  local dagger="$1"
-
-  test::load "$dagger"
-  test::mount "$dagger"
-  test::copy "$dagger"
-  test::local "$dagger"
-  test::fetchcontainer "$dagger"
-  test::pushcontainer "$dagger"
-  test::fetchgit "$dagger"
-  test::exec "$dagger"
-  test::export "$dagger"
-  test::subdir "$dagger"
-  test::dockerbuild "$dagger"
-}
-
-test::all(){
-  local dagger="$1"
-
-  test::llb "$dagger"
-  test::compute "$dagger"
-  test::input "$dagger"
-  test::daggerignore "$dagger"
-  test::stdlib "$dagger"
-  test::examples "$dagger"
 }
 
 case "${1:-all}" in
