@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/moby/buildkit/util/entitlements"
 	"io"
 	"os"
 	"path/filepath"
@@ -126,10 +125,7 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 				},
 			},
 		},
-		// TODO only add this if user ask it
-		AllowedEntitlements: []entitlements.Entitlement{
-			entitlements.EntitlementNetworkHost,
-		},
+		AllowedEntitlements: deployment.Entitlement(),
 	}
 
 	// Call buildkit solver

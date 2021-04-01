@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	bk "github.com/moby/buildkit/cmd/buildctl/build"
 	"os"
 	"strings"
 
@@ -49,6 +50,17 @@ var computeCmd = &cobra.Command{
 					Str("input", k).
 					Msg("failed to add input")
 			}
+		}
+
+		if f := viper.GetStringSlice("allow"); len(f) != 0 {
+			entitlements, err := bk.ParseAllow(f)
+			if err != nil {
+				lg.
+					Fatal().
+					Err(err).
+					Msg("entitlements errors")
+			}
+			st.Entitlements = entitlements
 		}
 
 		for _, input := range viper.GetStringSlice("input-dir") {
@@ -137,6 +149,7 @@ func init() {
 	computeCmd.Flags().StringSlice("input-git", []string{}, "TARGET=REMOTE#REF")
 	computeCmd.Flags().String("input-json", "", "JSON")
 	computeCmd.Flags().String("input-yaml", "", "YAML")
+	computeCmd.Flags().StringSlice("allow", []string{}, "Allow insecure operations (network.host)")
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)

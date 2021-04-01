@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"fmt"
+	"github.com/moby/buildkit/util/entitlements"
 	"io/fs"
 	"strings"
 	"time"
@@ -33,6 +34,9 @@ type DeploymentState struct {
 	PlanSource Input `json:"plan,omitempty"`
 
 	Inputs []inputKV `json:"inputs,omitempty"`
+
+	// Deployments entitlements
+	Entitlements []entitlements.Entitlement `json:"entitlements,omitempty"`
 }
 
 type inputKV struct {
@@ -138,6 +142,10 @@ func (d *Deployment) Input() *compiler.Value {
 
 func (d *Deployment) Output() *compiler.Value {
 	return d.output
+}
+
+func (d *Deployment) Entitlement() []entitlements.Entitlement {
+	return d.st.Entitlements
 }
 
 func (d *Deployment) State() *compiler.Value {

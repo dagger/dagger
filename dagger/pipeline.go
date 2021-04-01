@@ -376,8 +376,8 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 		}
 	}
 
-	if network := op.Get("network"); network.Exists() {
-		mode, err := op.Get("network").String()
+	if network := op.Lookup("network"); network.Exists() {
+		mode, err := op.Lookup("network").String()
 
 		if err != nil {
 			return st, err
