@@ -69,7 +69,6 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to lookup source")
 		}
 
-		output.IsConcreteR()
 		fmt.Println(string(out))
 	},
 }
