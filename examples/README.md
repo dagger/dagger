@@ -3,9 +3,11 @@
 All example commands should be executed in the `examples/` directory
 in an up-to-date checkout of the [dagger repository](https://github.com/dagger/dagger).
 
-## react: Deploy a simple React application
+## Deploy a simple React application
 
-This example shows how to deploy an example React Application.
+This example shows how to deploy an example React Application. [Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/react)
+
+Audience: Javascript developers looking to deploy their application.
 
 Components:
 
@@ -43,18 +45,51 @@ dagger up
 ```
 
 
-## aws-eks: Kubernetes on AWS (EKS)
+## Provision a Kubernetes cluster on AWS
 
-This example provisions a Kubernetes (EKS) cluster on AWS using Cloudformation,
-it also outputs the new generated kubeconfig for the `kubectl` client.
+This example shows how to provision a new Kubernetes cluster on AWS, and configure your `kubectl` client to use it. [Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/kubernetes-aws)
 
-How to run:
+Audience: infrastructure teams looking to provisioning kubernetes clusters as part of automated CICD pipelines.
+
+Components:
+
+- [Amazon EKS](https://aws.amazon.com/eks) for Kubernetes hosting
+- [Amazon CloudFormation](https://aws.amazon.com/cloudformation) for infrastructure provisioning
+- [Kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) as kubernetes client
+
+1. Change the current directory to the example deployment plan
 
 ```sh
-dagger compute ./aws-eks \
-    --input-string awsConfig.accessKey="MY_AWS_ACCESS_KEY" \
-    --input-string awsConfig.secretKey="MY_AWS_SECRET_KEY" \
-    | jq -j '.kubeconfig.kubeconfig' > kubeconfig
+cd ./kubernetes-aws
+```
+
+2. Create a new deployment from the plan
+
+```sh
+dagger new
+```
+
+3. Configure the deployment with your AWS credentials
+
+```sh
+dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
+```
+
+```sh
+dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+```
+
+
+4. Deploy!
+
+```sh
+dagger up
+```
+
+5. Export the generated kubectl config
+
+```sh
+dagger query kubeconfig.kubeconfig | jq . > kubeconfig
 ```
 
 ## aws-monitoring: HTTP Monitoring on AWS

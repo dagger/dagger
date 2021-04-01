@@ -5,9 +5,7 @@ import (
 	"dagger.io/aws/eks"
 )
 
-// Fill using:
-//          --input-string awsConfig.accessKey=XXX
-//          --input-string awsConfig.secretKey=XXX
+// AWS account: credentials and region
 awsConfig: aws.#Config & {
 	region: *"us-east-2" | string
 }
@@ -20,11 +18,11 @@ awsConfig: aws.#Config & {
 infra: #Infrastructure & {
 	"awsConfig": awsConfig
 	namePrefix:  "dagger-example-"
-	// Cluster size is 1 for the example purpose
-	workerNodeCapacity:     1
+	workerNodeCapacity:     int | *1
 	workerNodeInstanceType: "t3.small"
 }
 
+// Client configuration for kubectl
 kubeconfig: eks.#KubeConfig & {
 	config:      awsConfig
 	clusterName: infra.clusterName
