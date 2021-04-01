@@ -17,10 +17,9 @@ test::all(){
   local dagger="$1"
 
   test::llb "$dagger"
-  test::dependencies "$dagger"
   test::stdlib "$dagger"
+  test::dependencies "$dagger"
   test::compute "$dagger"
-  test::input "$dagger"
   test::daggerignore "$dagger"
   test::examples "$dagger"
 }
@@ -41,17 +40,6 @@ test::llb(){
   test::llb::dockerbuild "$dagger"
 }
 
-test::dependencies(){
-  local dagger="$1"
-
-  test::one "Dependencies: simple direct dependency" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/simple
-  test::one "Dependencies: interpolation" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/interpolation
-  test::one "Dependencies: json.Unmarshal" --exit=0 --stdout='{"A":"{\"hello\": \"world\"}\n","B":{"result":"unmarshalled.hello=world"},"unmarshalled":{"hello":"world"}}'  \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/unmarshal
-}
-
 test::stdlib(){
   local dagger="$1"
 
@@ -65,6 +53,17 @@ test::stdlib(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
   test::secret "$d"/stdlib/netlify/inputs.yaml "stdlib: netlify" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/netlify
+}
+
+test::dependencies(){
+  local dagger="$1"
+
+  test::one "Dependencies: simple direct dependency" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/simple
+  test::one "Dependencies: interpolation" --exit=0 --stdout='{"A":{"result":"from A"},"B":{"result":"dependency from A"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/interpolation
+  test::one "Dependencies: json.Unmarshal" --exit=0 --stdout='{"A":"{\"hello\": \"world\"}\n","B":{"result":"unmarshalled.hello=world"},"unmarshalled":{"hello":"world"}}'  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/dependencies/unmarshal
 }
 
 test::compute(){
@@ -89,20 +88,20 @@ test::compute(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/flat
   test::one "Compute: overloading #Component should work" --exit=0  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/wrapped
-}
 
-test::input() {
-  test::one "Input: missing input should skip execution" --exit=0 --stdout='{}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/simple
+  # Compute: `--input-*`
+  test::one "Compute: Input: missing input should skip execution" --exit=0 --stdout='{}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/input/simple
 
-  test::one "Input: simple input" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/simple
+  test::one "Compute: Input: simple input" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/compute/input/simple
 
-  test::one "Input: default values" --exit=0 --stdout='{"in":"default input","test":"received: default input"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/input/default
+  test::one "Compute: Input: default values" --exit=0 --stdout='{"in":"default input","test":"received: default input"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/input/default
 
-  test::one "Input: override default value" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/input/default
+  test::one "Compute: Input: override default value" --exit=0 --stdout='{"in":"foobar","test":"received: foobar"}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-string 'in=foobar' "$d"/compute/input/default
+
 }
 
 test::daggerignore() {
