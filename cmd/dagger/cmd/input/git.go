@@ -8,9 +8,9 @@ import (
 )
 
 var gitCmd = &cobra.Command{
-	Use:   "git TARGET REMOTE REF [SUBDIR]",
+	Use:   "git TARGET REMOTE [REF] [SUBDIR]",
 	Short: "Add a git repository as input artifact",
-	Args:  cobra.RangeArgs(3, 4),
+	Args:  cobra.RangeArgs(2, 4),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -22,12 +22,17 @@ var gitCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
+		ref := "HEAD"
+		if len(args) > 2 {
+			ref = args[2]
+		}
+
 		subDir := ""
 		if len(args) > 3 {
 			subDir = args[3]
 		}
 
-		updateDeploymentInput(ctx, args[0], dagger.GitInput(args[1], args[2], subDir))
+		updateDeploymentInput(ctx, args[0], dagger.GitInput(args[1], ref, subDir))
 	},
 }
 
