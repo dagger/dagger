@@ -2,72 +2,85 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - 'main'
+    tags:
+      - 'v*'
   pull_request:
-    branches: [main]
+    branches:
+      - 'main'
 
 jobs:
-  lint:
-    name: Lint
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out
+      -
+        name: Check out
         uses: actions/checkout@v2
-
-      - name: Set up Go
-        uses: actions/setup-go@v1
         with:
-          go-version: 1.16
+          fetch-depth: 0
+      -
+        name: Validate
+        uses: docker/bake-action@v1
+        with:
+          targets: validate
 
-      - name: Install Dependencies
-        run: |
-          # Cue
-          export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2)"
-          export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
-          echo "Installing cue version $CUE_VERSION"
-          curl -L https://github.com/cuelang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
-
-          # golangci
-          curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
-
-      - name: Lint
-        run: |
-          make lint
-
-  test:
-    name: Test
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out
+      -
+        name: Check out
         uses: actions/checkout@v2
-
-      - name: Set up Go
-        uses: actions/setup-go@v1
         with:
-          go-version: 1.16
-
-      - name: Install Dependencies
-        run: |
-          # SOPS
-          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.6.1/sops-v3.6.1.linux
-          sudo chmod +x /usr/local/bin/sops
-
-      - name: Import PGP private key
-        env:
-          SOPS_PGP_KEY: ${{ secrets.SOPS_PGP_KEY }}
-        run: |
-          echo "$SOPS_PGP_KEY" | base64 -d | gpg --import
-
-      - name: Login to Docker Hub
+          fetch-depth: 0
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      -
+        name: Test
+        uses: docker/bake-action@v1
+        with:
+          targets: test
+      -
+        name: Login to DockerHub
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Integration test
+      -
+        name: Build artifacts
+        uses: docker/bake-action@v1
+        with:
+          targets: artifact-all
+      -
+        name: Move artifacts
         run: |
-          make integration
-
-      - name: Test
-        run: |
-          make test
+          mv ./dist/**/* ./dist/
+      -
+        name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: dagger
+          path: ./dist/*
+          if-no-files-found: error
+      -
+        name: Build
+        uses: docker/bake-action@v1
+        with:
+          targets: image-all
+          push: ${{ github.event_name != 'pull_request' }}
+      -
+        name: GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          draft: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
