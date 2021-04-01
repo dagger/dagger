@@ -1,12 +1,15 @@
 package test
 
-import "dagger.io/dagger"
+import (
+	"dagger.io/dagger"
+	"dagger.io/llb"
+)
 
 // Set to `--input-dir=./tests/dockerbuild/testdata`
 TestData: dagger.#Artifact
 
 TestInlinedDockerfile: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			RUN echo hello world
@@ -15,51 +18,51 @@ TestInlinedDockerfile: #compute: [
 ]
 
 TestOpChaining: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			RUN echo foobar > /output
 			"""
 	},
-	dagger.#Exec & {
+	llb.#Exec & {
 		args: ["sh", "-c", "test $(cat /output) = foobar"]
 	},
 ]
 
 TestBuildContext: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		context: TestData
 	},
-	dagger.#Exec & {
+	llb.#Exec & {
 		args: ["sh", "-c", "test $(cat /dir/foo) = foobar"]
 	},
 ]
 
 TestBuildContextAndDockerfile: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		context: TestData
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			COPY foo /override
 			"""
 	},
-	dagger.#Exec & {
+	llb.#Exec & {
 		args: ["sh", "-c", "test $(cat /override) = foobar"]
 	},
 ]
 
 TestDockerfilePath: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		context:        TestData
 		dockerfilePath: "./dockerfilepath/Dockerfile.custom"
 	},
-	dagger.#Exec & {
+	llb.#Exec & {
 		args: ["sh", "-c", "test $(cat /test) = dockerfilePath"]
 	},
 ]
 
 TestBuildArgs: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			ARG TEST=foo
@@ -71,7 +74,7 @@ TestBuildArgs: #compute: [
 
 // FIXME: this doesn't test anything beside not crashing
 TestBuildLabels: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			"""
@@ -81,7 +84,7 @@ TestBuildLabels: #compute: [
 
 // FIXME: this doesn't test anything beside not crashing
 TestBuildPlatform: #compute: [
-	dagger.#DockerBuild & {
+	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			"""
