@@ -376,6 +376,25 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 		}
 	}
 
+	if network := op.Get("network"); network.Exists() {
+		mode, err := op.Get("network").String()
+
+		if err != nil {
+			return st, err
+		}
+
+		switch mode {
+		case "none":
+			opts = append(opts, llb.Network(llb.NetModeNone))
+		case "host":
+			opts = append(opts, llb.Network(llb.NetModeHost))
+		case "sandbox":
+			opts = append(opts, llb.Network(llb.NetModeSandbox))
+		default:
+			return st, fmt.Errorf("network %v doesn't exist", mode)
+		}
+	}
+
 	// always?
 	// FIXME: initialize once for an entire compute job, to avoid cache misses
 	if cmd.Always {
