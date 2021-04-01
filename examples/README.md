@@ -3,30 +3,45 @@
 All example commands should be executed in the `examples/` directory
 in an up-to-date checkout of the [dagger repository](https://github.com/dagger/dagger).
 
-## react-netlify: Deploy a React Web app to Netlify
+## react: Deploy a simple React application
 
-This example shows how to deploy an example React Application to Netlify,
-using Dagger.
+This example shows how to deploy an example React Application.
 
-1. Create a new deployment with the react-netlify deployment plan.
+Components:
+
+- [Netlify](https://netlify.com) for application hosting
+- [Yarn](https://yarnpkg.com) for building
+- [Github](https://github.com) for source code hosting
+- [React-Todo-App](https://github.com/kabirbaidhya/react-todo-app) by Kabir Baidhya as a sample application.
+
+1. Change the current directory to the example deployment plan
 
 ```sh
-dagger new --name example-one --base-dir ./react-netlify
+cd ./react
 ```
 
-2. Configure the deployment with your Netlify access token.
+2. Create a new deployment from the plan
+
+```sh
+dagger new
+```
+
+3. Configure the deployment with your Netlify access token.
 You can create new tokens from the [Netlify dashboard](https://app.netlify.com/user/applications/personal).
 
-
 ```sh
-dagger -d example-one input secret todoApp.account.token MY_TOKEN
+dagger input text www.account.token MY_TOKEN
 ```
 
-3. You can deploy updates at any time
+*NOTE: there is a dedicated command for encrypted secret inputs, but it is
+not yet implemented. Coming soon!*
+
+4. Deploy!
 
 ```sh
-dagger -d example-one up
+dagger up
 ```
+
 
 ## aws-eks: Kubernetes on AWS (EKS)
 
