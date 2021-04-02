@@ -208,7 +208,10 @@ func (v *Value) Source(opts ...cue.Option) ([]byte, error) {
 	v.cc.rlock()
 	defer v.cc.runlock()
 
-	return cueformat.Node(v.val.Eval().Syntax(opts...))
+	return cueformat.Node(v.val.Eval().Syntax(opts...),
+		cueformat.UseSpaces(4),
+		cueformat.TabIndent(false),
+	)
 }
 
 func (v *Value) IsEmptyStruct() bool {

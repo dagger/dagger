@@ -21,6 +21,7 @@ test::all(){
   test::dependencies "$dagger"
   test::compute "$dagger"
   test::daggerignore "$dagger"
+  test::cli "$dagger"
   test::examples "$dagger"
 }
 
@@ -107,6 +108,83 @@ test::compute(){
 test::daggerignore() {
   test::one "Dagger Ignore" --exit=0 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute --input-dir TestData="$d"/ignore/testdata "$d"/ignore
+}
+
+test::cli() {
+  local dagger="$1"
+
+  test::cli::list "$dagger"
+  test::cli::newdir "$dagger"
+  test::cli::query "$dagger"
+}
+
+test::cli::list() {
+  local dagger="$1"
+
+  # Create temporary store
+  local DAGGER_STORE
+  DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
+  export DAGGER_STORE
+
+  test::one "CLI: list: no deployments" --stdout="" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" list
+
+  test::one "CLI: list: create deployment" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
+
+  test::one "CLI: list: with deployments" --stdout="simple" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" list
+}
+
+test::cli::newdir() {
+  local dagger="$1"
+
+  # Create temporary store
+  local DAGGER_STORE
+  DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
+  export DAGGER_STORE
+
+  test::one "CLI: new: --plan-dir" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
+
+  test::one "CLI: new: duplicate name" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
+
+  test::one "CLI: new: verify plan can be upped" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "simple"
+
+  test::one "CLI: new: verify we have the right plan" --stdout='{
+    foo: "value"
+    bar: "another value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+}
+
+test::cli::query() {
+  local dagger="$1"
+
+  # Create temporary store
+  local DAGGER_STORE
+  DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
+  export DAGGER_STORE
+
+  test::one "CLI: query: initialize simple" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
+
+  test::one "CLI: query: concrete" --stdout='{
+    foo: "value"
+    bar: "another value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+
+  test::one "CLI: query: target" --stdout='"value"' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" foo
+
+  test::one "CLI: query: initialize nonconcrete" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/nonconcrete nonconcrete
+
+  test::one "CLI: query: non concrete" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "nonconcrete" -c
 }
 
 test::examples() {
