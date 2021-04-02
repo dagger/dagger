@@ -11,6 +11,7 @@ test::cli() {
   test::cli::newdir "$dagger"
   test::cli::newgit "$dagger"
   test::cli::query "$dagger"
+  test::cli::plan "$dagger"
 }
 
 test::cli::list() {
@@ -101,4 +102,31 @@ test::cli::query() {
 
   test::one "CLI: query: non concrete" --exit=1 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "nonconcrete" -c
+}
+
+test::cli::plan() {
+  local dagger="$1"
+
+  # Create temporary store
+  local DAGGER_STORE
+  DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
+  export DAGGER_STORE
+
+  test::one "CLI: new" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
+
+  test::one "CLI: plan dir" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" plan dir "$d"/cli/nonconcrete
+
+  test::one "CLI: plan dir: query non-concrete" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" query -c
+
+  test::one "CLI: plan git" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" plan git https://github.com/samalba/dagger-test.git
+
+  test::one "CLI: plan git: verify we have the right plan" --stdout='{
+    foo: "value"
+    bar: "another value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
 }
