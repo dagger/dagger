@@ -6,7 +6,7 @@ import (
 )
 
 source: dagger.#Artifact
-foo: "bar"
+foo:    "bar"
 
 bar: {
 	string
@@ -14,12 +14,12 @@ bar: {
 	#compute: [
 		llb.#FetchContainer & {ref: "busybox"},
 		llb.#Exec & {
-			args: ["cp", "/source/testfile", "/out"],
+			args: ["cp", "/source/testfile", "/out"]
 			mount: "/source": from: source
 		},
 		llb.#Export & {
 			format: "string"
 			source: "/out"
-		}
+		},
 	]
 }
