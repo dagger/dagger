@@ -1,6 +1,6 @@
 package testing
 
-#compute: [
+#up: [
 	{
 		do: "fetch-git"
 	},

@@ -9,7 +9,7 @@ TestPushContainer: {
 	// Generate a random number
 	random: {
 		string
-		#compute: [
+		#up: [
 			llb.#Load & {from: alpine.#Image},
 			llb.#Exec & {
 				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
@@ -23,7 +23,7 @@ TestPushContainer: {
 	// Push an image with a random tag
 	push: {
 		ref: "daggerio/ci-test:\(random)"
-		#compute: [
+		#up: [
 			llb.#WriteFile & {
 				content: random
 				dest:    "/rand"
@@ -35,14 +35,14 @@ TestPushContainer: {
 	}
 
 	// Pull the image back
-	pull: #compute: [
+	pull: #up: [
 		llb.#FetchContainer & {
 			ref: push.ref
 		},
 	]
 
 	// Check the content
-	check: #compute: [
+	check: #up: [
 		llb.#Load & {from: alpine.#Image},
 		llb.#Exec & {
 			args: [

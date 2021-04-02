@@ -3,7 +3,7 @@ package testing
 A: {
 	result: string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -28,7 +28,7 @@ A: {
 B: {
 	result: string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

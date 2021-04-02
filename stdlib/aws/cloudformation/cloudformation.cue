@@ -46,7 +46,7 @@ import (
 
 	outputs: [string]: string
 
-	outputs: #compute: [
+	outputs: #up: [
 		llb.#Load & {
 			from: aws.#CLI
 		},

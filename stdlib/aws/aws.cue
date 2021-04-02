@@ -18,7 +18,7 @@ import (
 
 // Re-usable aws-cli component
 #CLI: {
-	#compute: [
+	#up: [
 		llb.#Load & {
 			from: alpine.#Image & {
 				package: bash:      "=5.1.0-r0"

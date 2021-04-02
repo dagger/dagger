@@ -42,7 +42,7 @@ import (
 	// Logs URL for this deployment
 	logsUrl: string
 
-	#compute: [
+	#up: [
 		llb.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=~5.1"

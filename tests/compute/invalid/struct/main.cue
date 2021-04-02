@@ -1,3 +1,3 @@
 package testing
 
-#compute: whatever: "wrong"
+#up: whatever: "wrong"

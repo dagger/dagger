@@ -18,7 +18,7 @@ import (
 	// Environment variables
 	env: [string]: string
 
-	#compute: [
+	#up: [
 		llb.#FetchContainer & {
 			ref: "docker.io/golang:\(version)-alpine"
 		},
@@ -63,7 +63,7 @@ import (
 
 	env: [string]: string
 
-	#compute: [
+	#up: [
 		llb.#Copy & {
 			from: #Go & {
 				"version": version

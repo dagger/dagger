@@ -14,7 +14,7 @@ TestCreate: {
 		contents: _content
 	}
 
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: alpine.#Image},
 		llb.#Exec & {
 			args: [
@@ -37,7 +37,7 @@ TestRead: {
 		filename: "/etc/alpine-release"
 		from:     alpine.#Image & {version: "3.10.6"}
 	}
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: alpine.#Image},
 		llb.#Exec & {
 			args: [
@@ -63,7 +63,7 @@ TestRead2: {
 		from:     write
 	}
 
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: alpine.#Image},
 		llb.#Exec & {
 			args: [

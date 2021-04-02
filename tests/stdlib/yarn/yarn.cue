@@ -14,7 +14,7 @@ TestYarn: {
 		source: TestData
 	}
 
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: alpine.#Image & {
 			package: bash: "=5.1.0-r0"
 		}},

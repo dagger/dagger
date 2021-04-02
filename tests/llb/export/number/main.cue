@@ -3,7 +3,7 @@ package testing
 test: {
 	number
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

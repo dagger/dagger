@@ -17,7 +17,7 @@ import (
 		}
 		"""#
 
-	#compute: [
+	#up: [
 		llb.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=5.1.0-r0"
@@ -62,7 +62,7 @@ import (
 		kubectl --namespace "$KUBE_NAMESPACE" apply -R -f /source
 		"""#
 
-	#compute: [
+	#up: [
 		llb.#Load & {
 			from: #Kubectl & {"version": version}
 		},

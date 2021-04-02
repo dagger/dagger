@@ -5,7 +5,7 @@ import "encoding/json"
 A: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -32,7 +32,7 @@ unmarshalled: json.Unmarshal(A)
 B: {
 	result: string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

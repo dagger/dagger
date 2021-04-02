@@ -15,9 +15,6 @@ package llb
 	#Mkdir |
 	#DockerBuild
 
-// Pipeline is a series of operations
-#Pipeline: [...llb.#Op]
-
 // Export a value from fs state to cue
 #Export: {
 	do: "export"

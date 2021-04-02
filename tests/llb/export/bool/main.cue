@@ -3,7 +3,7 @@ package testing
 test: {
 	bool
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

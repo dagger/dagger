@@ -4,7 +4,7 @@ import (
 	"dagger.io/optional"
 )
 
-#compute: [
+#up: [
 	{
 		do: "load",
 		from: optional

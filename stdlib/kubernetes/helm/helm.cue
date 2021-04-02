@@ -50,7 +50,7 @@ import (
 	// Kubectl version
 	kubectlVersion: *"v1.19.9" | string
 
-	#compute: [
+	#up: [
 		llb.#Load & {
 			from: kubernetes.#Kubectl & {
 				version: kubectlVersion

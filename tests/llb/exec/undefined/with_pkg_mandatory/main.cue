@@ -4,7 +4,7 @@ import (
 	"dagger.io/nonoptional"
 )
 
-#compute: [
+#up: [
 	{
 		do: "load",
 		from: nonoptional

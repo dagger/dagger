@@ -4,7 +4,7 @@ test: {
 	string
 	=~"^some.+"
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

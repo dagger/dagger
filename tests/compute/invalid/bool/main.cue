@@ -1,3 +1,3 @@
 package testing
 
-#compute: true
+#up: true

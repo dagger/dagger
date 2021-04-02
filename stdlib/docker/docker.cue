@@ -11,7 +11,7 @@ import (
 #Build: {
 	source: dagger.#Artifact
 
-	image: #compute: [
+	image: #up: [
 		llb.#DockerBuild & {context: source},
 	]
 }
@@ -22,14 +22,14 @@ import (
 	// image may be a remote image ref, or a computed artifact
 	{
 		image: #Ref
-		out: #compute: [
+		out: #up: [
 			llb.#FetchContainer & {ref: image},
 			llb.#Exec & {"args":        args},
 		]
 
 	} | {
 		image: _
-		out: #compute: [
+		out: #up: [
 			llb.#Load & {from:   image},
 			llb.#Exec & {"args": args},
 		]

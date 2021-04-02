@@ -1,3 +1,3 @@
 package testing
 
-#compute: 123
+#up: 123
