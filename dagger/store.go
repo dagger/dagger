@@ -18,7 +18,7 @@ var (
 )
 
 const (
-	defaultStoreRoot = "$HOME/.config/dagger/deployments"
+	defaultStoreRoot = "$HOME/.data/share/dagger/deployments"
 )
 
 type Store struct {
