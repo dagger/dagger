@@ -35,11 +35,11 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		deployment := common.GetCurrentDeployment(ctx, store)
+		state := common.GetCurrentDeploymentState(ctx, store)
 
 		lg = lg.With().
-			Str("deploymentName", deployment.Name()).
-			Str("deploymentId", deployment.ID()).
+			Str("deploymentName", state.Name).
+			Str("deploymentId", state.ID).
 			Logger()
 
 		cuePath := cue.MakePath()
@@ -51,7 +51,7 @@ var queryCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		output, err := c.Do(ctx, deployment, nil)
+		output, err := c.Do(ctx, state, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to query deployment")
 		}

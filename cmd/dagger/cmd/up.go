@@ -28,10 +28,10 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		deployment := common.GetCurrentDeployment(ctx, store)
+		state := common.GetCurrentDeploymentState(ctx, store)
 
 		// TODO: Implement options: --no-cache
-		common.DeploymentUp(ctx, deployment, false)
+		common.DeploymentUp(ctx, state, false)
 	},
 }
 
