@@ -10,6 +10,7 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/pkg/cuetils"
 	"dagger.io/go/stdlib"
 
 	"github.com/opentracing/opentracing-go"
@@ -289,4 +290,12 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 			Msg("completed")
 		return nil
 	})
+}
+
+func (D *Deployment) ScanInputs() error {
+	err := cuetils.Hack(D.state.Cue())
+	if err != nil {
+		return err
+	}
+	return nil
 }

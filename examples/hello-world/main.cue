@@ -1,4 +1,4 @@
 package main
 
-name:    string | *"world"
+name:    string | *"world" @input()
 message: "Hello, \(name)!"
