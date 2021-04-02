@@ -1,6 +1,6 @@
 package testing
 
-component: #compute: [{
+component: #up: [{
 	do:  "fetch-container"
 	ref: "alpine"
 }, {
@@ -14,7 +14,7 @@ component: #compute: [{
 test1: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "busybox"
@@ -36,14 +36,14 @@ test1: {
 test2: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "busybox"
 		},
 		{
 			do: "copy"
-			from: #compute: [{
+			from: #up: [{
 				do:  "fetch-container"
 				ref: "alpine"
 			}, {

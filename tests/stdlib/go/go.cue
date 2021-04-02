@@ -15,7 +15,7 @@ TestGoBuild: {
 		output: "/bin/testbin"
 	}
 
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: alpine.#Image},
 		llb.#Exec & {
 			args: [

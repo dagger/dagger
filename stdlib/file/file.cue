@@ -11,7 +11,7 @@ import (
 	permissions: int | *0o644
 	contents:    string | bytes
 
-	#compute: [
+	#up: [
 		llb.#WriteFile & {dest: filename, content: contents, mode: permissions},
 	]
 }
@@ -24,7 +24,7 @@ import (
 
 	orig: (#read & {path: filename, "from": from}).data
 
-	#compute: [
+	#up: [
 		llb.#WriteFile & {dest: filename, content: "\(orig)\(contents)", mode: permissions},
 	]
 }
@@ -40,7 +40,7 @@ import (
 	from: dagger.#Artifact
 	data: {
 		string
-		#compute: [
+		#up: [
 			llb.#Load & {"from":   from},
 			llb.#Export & {source: path},
 		]
@@ -62,7 +62,7 @@ _#glob: {
 	data: {
 		string
 		_tmppath: "/tmp/ls.out"
-		#compute: [
+		#up: [
 			llb.#Load & {"from": from},
 			llb.#Exec & {
 				args: ["sh", "-c", "ls \(glob) > \(_tmppath)"]

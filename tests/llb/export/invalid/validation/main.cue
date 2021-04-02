@@ -4,7 +4,7 @@ test: {
 	string
 	=~"^NAAAA.+"
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

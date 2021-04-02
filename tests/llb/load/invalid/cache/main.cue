@@ -3,7 +3,7 @@ package testing
 test1: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do: "load"
 			from: [{do: "fetch-container", ref: "alpine"}]
@@ -19,7 +19,7 @@ test1: {
 test2: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do: "load"
 			from: [{do: "fetch-container", ref: "busybox"}]

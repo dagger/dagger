@@ -4,7 +4,7 @@ import (
 	"dagger.io/def"
 )
 
-#compute: [
+#up: [
 	{
 		do: "load",
 		from: def

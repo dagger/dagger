@@ -10,7 +10,7 @@ TestNetlify: {
 	// Generate a random number
 	random: {
 		string
-		#compute: [
+		#up: [
 			llb.#Load & {from: alpine.#Image},
 			llb.#Exec & {
 				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
@@ -22,7 +22,7 @@ TestNetlify: {
 	}
 
 	// Generate a website containing the random number
-	html: #compute: [
+	html: #up: [
 		llb.#WriteFile & {
 			content: random
 			dest:    "index.html"
@@ -36,7 +36,7 @@ TestNetlify: {
 	}
 
 	// Check if the deployed site has the random marker
-	check: #compute: [
+	check: #up: [
 		llb.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=~5.1"

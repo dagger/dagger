@@ -3,7 +3,7 @@ package testing
 test1: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -27,7 +27,7 @@ test1: {
 test2: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -51,7 +51,7 @@ test2: {
 test3: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -75,7 +75,7 @@ test3: {
 test4: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -99,7 +99,7 @@ test4: {
 test5: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -123,7 +123,7 @@ test5: {
 test6: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -147,7 +147,7 @@ test6: {
 test7: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -171,7 +171,7 @@ test7: {
 test8: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -195,7 +195,7 @@ test8: {
 test9: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -219,7 +219,7 @@ test9: {
 test10: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

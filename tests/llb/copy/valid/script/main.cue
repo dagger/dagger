@@ -3,7 +3,7 @@ package testing
 test: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "busybox"

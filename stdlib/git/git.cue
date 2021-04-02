@@ -10,7 +10,7 @@ import (
 	remote: string
 	ref:    string
 
-	#compute: [
+	#up: [
 		llb.#FetchGit & {
 			"remote": remote
 			"ref":    ref

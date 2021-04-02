@@ -2,7 +2,7 @@ package optional
 
 dang?: string
 
-#compute: [
+#up: [
 	{
 		do:  "fetch-container"
 		ref: "alpine"

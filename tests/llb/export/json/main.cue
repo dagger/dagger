@@ -3,7 +3,7 @@ package testing
 testScalar: {
 	bool
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
@@ -25,7 +25,7 @@ testScalar: {
 	]
 }
 
-testMap: #compute: [
+testMap: #up: [
 	{
 		do:  "fetch-container"
 		ref: "alpine"
@@ -50,7 +50,7 @@ testMap: #compute: [
 // testList: {
 //  [...string]
 
-//  #compute: [
+//  #up: [
 //   {
 //    do:  "fetch-container"
 //    ref: "alpine"

@@ -8,7 +8,7 @@ import (
 // Set to `--input-dir=./tests/dockerbuild/testdata`
 TestData: dagger.#Artifact
 
-TestInlinedDockerfile: #compute: [
+TestInlinedDockerfile: #up: [
 	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -17,7 +17,7 @@ TestInlinedDockerfile: #compute: [
 	},
 ]
 
-TestOpChaining: #compute: [
+TestOpChaining: #up: [
 	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -29,7 +29,7 @@ TestOpChaining: #compute: [
 	},
 ]
 
-TestBuildContext: #compute: [
+TestBuildContext: #up: [
 	llb.#DockerBuild & {
 		context: TestData
 	},
@@ -38,7 +38,7 @@ TestBuildContext: #compute: [
 	},
 ]
 
-TestBuildContextAndDockerfile: #compute: [
+TestBuildContextAndDockerfile: #up: [
 	llb.#DockerBuild & {
 		context: TestData
 		dockerfile: """
@@ -51,7 +51,7 @@ TestBuildContextAndDockerfile: #compute: [
 	},
 ]
 
-TestDockerfilePath: #compute: [
+TestDockerfilePath: #up: [
 	llb.#DockerBuild & {
 		context:        TestData
 		dockerfilePath: "./dockerfilepath/Dockerfile.custom"
@@ -61,7 +61,7 @@ TestDockerfilePath: #compute: [
 	},
 ]
 
-TestBuildArgs: #compute: [
+TestBuildArgs: #up: [
 	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -73,7 +73,7 @@ TestBuildArgs: #compute: [
 ]
 
 // FIXME: this doesn't test anything beside not crashing
-TestBuildLabels: #compute: [
+TestBuildLabels: #up: [
 	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
@@ -83,7 +83,7 @@ TestBuildLabels: #compute: [
 ]
 
 // FIXME: this doesn't test anything beside not crashing
-TestBuildPlatform: #compute: [
+TestBuildPlatform: #up: [
 	llb.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d

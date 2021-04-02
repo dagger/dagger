@@ -3,7 +3,7 @@ package main
 hello: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"

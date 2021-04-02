@@ -21,7 +21,7 @@ import (
 	kubeconfig: {
 		dagger.#Secret
 
-		#compute: [
+		#up: [
 			llb.#Load & {
 				from: aws.#CLI
 			},

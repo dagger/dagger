@@ -11,7 +11,7 @@ TestImageVersion: {
 		version: "3.10.6"
 	}
 
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: image},
 		llb.#Exec & {
 			args: [
@@ -31,7 +31,7 @@ TestPackageInstall: {
 		package: curl: "=~7.74.0"
 	}
 
-	test: #compute: [
+	test: #up: [
 		llb.#Load & {from: image},
 		llb.#Exec & {
 			args: ["jq", "--version"]

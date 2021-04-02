@@ -18,7 +18,7 @@ _expected: """
 
 TestIgnore: {
 	string
-	#compute: [
+	#up: [
 		llb.#Load & {from: alpine.#Image},
 		llb.#Exec & {
 			args: ["sh", "-c", "ls /src/* > /out.txt"]

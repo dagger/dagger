@@ -5,7 +5,7 @@ X1=in: string | *"default input"
 test: {
 	string
 
-	#compute: [
+	#up: [
 		{
 			do:  "fetch-container"
 			ref: "alpine"
