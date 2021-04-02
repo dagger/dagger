@@ -1,7 +1,7 @@
 // llb: compile LLB graphs executable by buildkit
 package llb
 
-// One operation in a script
+// One operation in a pipeline
 #Op: #Export |
 	#FetchContainer |
 	#PushContainer |
@@ -14,6 +14,9 @@ package llb
 	#WriteFile |
 	#Mkdir |
 	#DockerBuild
+
+// Pipeline is a series of operations
+#Pipeline: [...llb.#Op]
 
 // Export a value from fs state to cue
 #Export: {
