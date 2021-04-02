@@ -13,16 +13,22 @@ dagger-debug:
 test:
 	go test -race -v ./...
 
+.PHONY: golint
+golint:
+	golangci-lint run --timeout 3m
+
 .PHONY: cuefmt
 cuefmt:
 	@(cue fmt -s ./stdlib/...)
 	@(cue fmt -s ./examples/*/)
 	@(cue fmt -s ./tests/...)
 
-.PHONY: lint
-lint: cuefmt check-buildkit-version
-	golangci-lint run --timeout 3m
+.PHONY: cuelint
+cuelint: cuefmt
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
+
+.PHONY: lint
+lint: cuelint golint check-buildkit-version
 
 .PHONY: check-buildkit-version
 check-buildkit-version:
