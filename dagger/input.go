@@ -81,9 +81,16 @@ type dirInput struct {
 
 func (dir dirInput) Compile() (*compiler.Value, error) {
 	// FIXME: serialize an intermediate struct, instead of generating cue source
-	includeLLB, err := json.Marshal(dir.Include)
-	if err != nil {
-		return nil, err
+
+	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
+	// in Cue because `null` is not a `[...string]`
+	includeLLB := []byte("[]")
+	if len(dir.Include) > 0 {
+		var err error
+		includeLLB, err = json.Marshal(dir.Include)
+		if err != nil {
+			return nil, err
+		}
 	}
 	llb := fmt.Sprintf(
 		`#compute: [{do:"local",dir:"%s", include:%s}]`,
