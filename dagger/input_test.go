@@ -10,7 +10,7 @@ func TestInputDir(t *testing.T) {
 	st := &DeploymentState{
 		PlanSource: DirInput("/tmp/source", []string{}),
 	}
-	require.NoError(t, st.AddInput("www.source", DirInput(".", []string{})))
+	require.NoError(t, st.SetInput("www.source", DirInput(".", []string{})))
 
 	deployment, err := NewDeployment(st)
 	require.NoError(t, err)

@@ -62,7 +62,7 @@ func TestStoreLookupByPath(t *testing.T) {
 	st := &DeploymentState{
 		Name: "test",
 	}
-	require.NoError(t, st.AddInput("foo", DirInput("/test/path", []string{})))
+	require.NoError(t, st.SetInput("foo", DirInput("/test/path", []string{})))
 	require.NoError(t, store.CreateDeployment(ctx, st))
 
 	// Lookup by path
@@ -72,7 +72,7 @@ func TestStoreLookupByPath(t *testing.T) {
 	require.Equal(t, st.ID, r.ID)
 
 	// Add a new path
-	require.NoError(t, st.AddInput("bar", DirInput("/test/anotherpath", []string{})))
+	require.NoError(t, st.SetInput("bar", DirInput("/test/anotherpath", []string{})))
 	require.NoError(t, store.UpdateDeployment(ctx, st, nil))
 
 	// Lookup by the previous path
