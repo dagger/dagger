@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -94,20 +95,48 @@ func getNewDeploymentName(ctx context.Context) string {
 	return currentDir
 }
 
-// FIXME: Implement options: --plan-*
 func getPlanSource(ctx context.Context) dagger.Input {
 	lg := log.Ctx(ctx)
 
-	planDir := viper.GetString("plan-dir")
-	if planDir == "" {
-		var err error
-		planDir, err = os.Getwd()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("cannot get current working directory")
+	src := dagger.Input{}
+	checkFirstSet := func() {
+		if src.Type != dagger.InputTypeEmpty {
+			lg.Fatal().Msg("only one of those options can be set: --plan-dir, --plan-git, --plan-package, --plan-file")
 		}
 	}
 
-	return dagger.DirInput(planDir, []string{"*.cue", "cue.mod"})
+	planDir := viper.GetString("plan-dir")
+	planGit := viper.GetString("plan-git")
+
+	if planDir != "" {
+		checkFirstSet()
+		src = dagger.DirInput(planDir, []string{"*.cue", "cue.mod"})
+	}
+
+	if planGit != "" {
+		checkFirstSet()
+
+		u, err := url.Parse(planGit)
+		if err != nil {
+			lg.Fatal().Err(err).Str("url", planGit).Msg("cannot get current working directory")
+		}
+		ref := u.Fragment // eg. #main
+		u.Fragment = ""
+		remote := u.String()
+
+		src = dagger.GitInput(remote, ref, "")
+	}
+
+	if src.Type == dagger.InputTypeEmpty {
+		var err error
+		wd, err := os.Getwd()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("cannot get current working directory")
+		}
+		return dagger.DirInput(wd, []string{"*.cue", "cue.mod"})
+	}
+
+	return src
 }
 
 func init() {

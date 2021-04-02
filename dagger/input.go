@@ -28,6 +28,7 @@ const (
 	InputTypeText   InputType = "text"
 	InputTypeJSON   InputType = "json"
 	InputTypeYAML   InputType = "yaml"
+	InputTypeEmpty  InputType = ""
 )
 
 type Input struct {
@@ -111,7 +112,16 @@ func GitInput(remote, ref, dir string) Input {
 }
 
 func (git gitInput) Compile() (*compiler.Value, error) {
-	panic("NOT IMPLEMENTED")
+	ref := "HEAD"
+	if git.Ref != "" {
+		ref = git.Ref
+	}
+
+	return compiler.Compile("", fmt.Sprintf(
+		`#compute: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
+		git.Remote,
+		ref,
+	))
 }
 
 // An input artifact loaded from a docker container

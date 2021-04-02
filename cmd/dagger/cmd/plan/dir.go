@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"dagger.io/go/cmd/dagger/logger"
+	"dagger.io/go/dagger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -17,10 +19,10 @@ var dirCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		// lg := logger.New()
-		// ctx := lg.WithContext(cmd.Context())
+		lg := logger.New()
+		ctx := lg.WithContext(cmd.Context())
 
-		panic("not implemented")
+		updateDeploymentPlan(ctx, dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}))
 	},
 }
 
