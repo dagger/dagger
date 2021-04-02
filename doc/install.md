@@ -12,3 +12,5 @@ $ make
 $ cp ./cmd/dagger/dagger /usr/local/bin
 ```
 
+3. Make sure your machine is running a buildkit daemon. If you have Docker installed, you're already good to go.
+Otherwise, install either [Docker](https://www.docker.com/products/docker-desktop) or [buildkit](https://github.com/moby/buildkit#quick-start).
