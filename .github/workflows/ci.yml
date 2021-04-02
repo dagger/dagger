@@ -27,12 +27,20 @@ jobs:
           echo "Installing cue version $CUE_VERSION"
           curl -L https://github.com/cuelang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
 
-          # golangci
-          curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sudo sh -s -- -b /usr/local/bin v1.23.8
+      - name: Go Lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.39
+          skip-go-installation: true
+          args: --timeout=3m
+
+      - name: Cue Lint
+        run: |
+          make cuelint
 
       - name: Lint
         run: |
-          make lint
+          make check-buildkit-version
 
   test:
     name: Test
