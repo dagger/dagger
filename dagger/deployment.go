@@ -292,10 +292,10 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 	})
 }
 
-func (D *Deployment) ScanInputs() error {
-	err := cuetils.Hack(D.state.Cue())
+func (D *Deployment) ScanInputs() ([]cue.Value, error) {
+	vals, err := cuetils.FindAttributes(D.state.Cue(), []string{"input"})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return vals, nil
 }

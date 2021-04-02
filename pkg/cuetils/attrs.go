@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"cuelang.org/go/cue"
-	"cuelang.org/go/cue/format"
 )
 
-func Hack(value cue.Value) error {
+// FindsAttributes returns CUE values with @daggger(key) as long as any key is found.
+func FindAttributes(value cue.Value, keys []string) ([]cue.Value, error) {
 
 	var err error
 
@@ -15,71 +15,41 @@ func Hack(value cue.Value) error {
 	err = value.Validate()
 	if err != nil {
 		fmt.Println("Error during validate:", err)
-		return err
+		return nil, err
 	}
 
-	// Generate an AST
-	//   try out different options
-	syn := value.Syntax(
-		// cue.Final(), // close structs and lists
-		cue.Concrete(false),   // allow incomplete values
-		cue.Definitions(true),
-		cue.Hidden(true),
-		cue.Optional(true),
-		cue.Attributes(true),
-		cue.Docs(true),
-	)
+	var vals []cue.Value
 
-	// Pretty print the AST, returns ([]byte, error)
-	bs, err := format.Node(
-		syn,
-		format.TabIndent(false),
-		format.UseSpaces(2),
-		// format.Simplify(),
-	)
-	if err != nil {
-		fmt.Println("Error during format:", err)
-		return err
-	}
-
-	fmt.Println(string(bs))
-
-	// Process inputs
-	err = findAttrs(value)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return err
-	}
-
-	return nil
-}
-
-func findAttrs(val cue.Value) error {
+	// walk function
 	before := func(v cue.Value) (bool, error) {
-		label, _ := v.Label()
 		attrs := v.Attributes(cue.ValueAttr)
 		for _, attr := range attrs {
 			name :=  attr.Name()
-			if name == "input" {
-				fmt.Println("input: ", label)
+			// match `@dagger(...)`
+			if name == "dagger" {
+				// loop over args (CSV content in attribute)
 				for i := 0; i < attr.NumArgs(); i++ {
-					k, v := attr.Arg(i)
-					fmt.Println(" -", k, v)
+					kA, _ := attr.Arg(i)
+					for _, key := range keys {
+						if kA == key {
+							vals = append(vals, v)
+							// we found a match, stop processing by returning from before
+							return true, nil
+						}
+					}
 				}
-			}
-			if name == "output" {
-				fmt.Println("output: ", label, attrs)
 			}
 		}
 		return true, nil
 	}
 
-	err := walkValue(val, before, nil)
+	// walk
+	err = walkValue(value, before, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return vals, nil
 }
 
 func walkValue(val cue.Value, before func (cue.Value) (bool, error), after func(cue.Value) error) error {

@@ -43,16 +43,19 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		output, err := c.Do(ctx, deployment, func(lCtx context.Context, lDeploy *dagger.Deployment, lSolver dagger.Solver) error {
-			err := lDeploy.ScanInputs()
+		_, err = c.Do(ctx, deployment, func(lCtx context.Context, lDeploy *dagger.Deployment, lSolver dagger.Solver) error {
+			inputs, err := lDeploy.ScanInputs()
 			if err != nil {
 				return err
 			}
 
+			for _, i := range inputs {
+				l, _ := i.Label()
+				fmt.Printf("%v: %v\n", l, i)
+			}
+
 			return nil
 		})
-
-		fmt.Println("output:", output.Cue())
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to query deployment")
