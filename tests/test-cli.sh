@@ -9,6 +9,7 @@ test::cli() {
 
   test::cli::list "$dagger"
   test::cli::newdir "$dagger"
+  test::cli::newgit "$dagger"
   test::cli::query "$dagger"
 }
 
@@ -52,6 +53,27 @@ test::cli::newdir() {
     bar: "another value"
 }' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
+}
+
+test::cli::newgit() {
+  local dagger="$1"
+
+  # Create temporary store
+  local DAGGER_STORE
+  DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
+  export DAGGER_STORE
+
+  test::one "CLI: new: --plan-git" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-git https://github.com/samalba/dagger-test.git simple
+
+  test::one "CLI: new: verify plan can be upped" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "simple"
+
+  test::one "CLI: new: verify we have the right plan" --stdout='{
+    foo: "value"
+    bar: "another value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
 }
 
 test::cli::query() {
