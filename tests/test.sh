@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o errexit -o errtrace -o functrace -o nounset -o pipefail
 
-readonly SUITE="${SUITE:-""}"
+readonly SUITE="${SUITE:-"all"}"
 
 # Point this to your dagger binary
 readonly DAGGER_BINARY="${DAGGER_BINARY:-$d/../cmd/dagger/dagger}"
@@ -29,11 +29,23 @@ d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 test::all(){
   local dagger="$1"
 
-  [ -z "$SUITE" ] || [ "$SUITE" = "compute" ] && test::compute "$dagger"
-  [ -z "$SUITE" ] || [ "$SUITE" = "llb" ] && test::llb "$dagger"
-  [ -z "$SUITE" ] || [ "$SUITE" = "stdlib" ] && test::stdlib "$dagger"
-  [ -z "$SUITE" ] || [ "$SUITE" = "cli" ] && test::cli "$dagger"
-  [ -z "$SUITE" ] || [ "$SUITE" = "examples" ] && test::examples "$dagger"
+  test::suite "compute" && test::compute "$dagger"
+  test::suite "llb" && test::llb "$dagger"
+  test::suite "stdlib" && test::stdlib "$dagger"
+  test::suite "cli" && test::cli "$dagger"
+  test::suite "examples" && test::examples "$dagger"
+}
+
+test::suite() {
+    local name="$1"
+
+  {
+    # if SUITE is "-foo", run everything that's not "foo"
+    [[ "$SUITE" = -* ]] && [[ "$SUITE" != "-${name}" ]]
+  } || {
+    # Run a specific suite, or match all of them if suite is "all"
+    [ "${SUITE}" = "all" ] || [ "${SUITE}" = "${name}" ]
+  } || false
 }
 
 case "${1:-all}" in
