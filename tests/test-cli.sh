@@ -51,7 +51,7 @@ test::cli::newdir() {
     foo: "value"
     bar: "another value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
 }
 
 test::cli::query() {
@@ -69,14 +69,14 @@ test::cli::query() {
     foo: "value"
     bar: "another value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
 
   test::one "CLI: query: target" --stdout='"value"' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" foo
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" foo
 
   test::one "CLI: query: initialize nonconcrete" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/nonconcrete nonconcrete
 
   test::one "CLI: query: non concrete" --exit=1 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "nonconcrete" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "nonconcrete" -c
 }

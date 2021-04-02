@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"cuelang.org/go/cue"
@@ -134,4 +136,14 @@ func (s JSON) String() string {
 		return "{}"
 	}
 	return string(s)
+}
+
+func (s JSON) PrettyString() string {
+	raw := s.String()
+	b := &bytes.Buffer{}
+	// If indenting fails, return raw string
+	if err := json.Indent(b, []byte(raw), "", "  "); err != nil {
+		return raw
+	}
+	return b.String()
 }
