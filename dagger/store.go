@@ -46,7 +46,7 @@ func NewStore(root string) (*Store, error) {
 }
 
 func DefaultStore() (*Store, error) {
-	root := defaultStoreRoot
+	root := os.ExpandEnv(defaultStoreRoot)
 	if r := os.Getenv("DAGGER_STORE"); r != "" {
 		root = r
 	}
