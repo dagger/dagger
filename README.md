@@ -16,6 +16,14 @@ No matter how your deployment works under the hood, you can manage it with the s
 This makes developers more productive, because they don't have to learn a new workflow every time their deployment
 system changes.
 
+## Examples
+
+* [Deploy a simple React application](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
+* [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
+* [Provision a Kubernetes cluster on AWS](https://github.com/dagger/dagger/blob/main/examples/README.md#provision-a-kubernetes-cluster-on-aws)
+* [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
+* [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
+
 ## Alpha disclaimer
 
 Dagger is *alpha-quality software*. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still willing to try it, thank you! We appreciate your help and encourage you to ask questions and report issues.
@@ -24,7 +32,6 @@ Dagger is *alpha-quality software*. It has many bugs, the user interface is mini
 
 * [Installing Dagger](doc/install.md)
 * [Adding Dagger to your project](doc/adding_dagger.md)
-* [Tutorials](doc/tutorials.md)
 * [Examples](examples/README.md)
 * [Dagger vs. Other Software](doc/vs.md)
 * [Dagger Programmer Manual](doc/programmer.md)
