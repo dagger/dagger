@@ -58,7 +58,9 @@ func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger
 	return st
 }
 
-func DeploymentUp(ctx context.Context, deployment *dagger.Deployment) {
+// Re-compute a deployment (equivalent to `dagger up`).
+// If printOutput is true, print the JSON-encoded computed state to standard output
+func DeploymentUp(ctx context.Context, deployment *dagger.Deployment, printOutput bool) {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "")
@@ -72,5 +74,7 @@ func DeploymentUp(ctx context.Context, deployment *dagger.Deployment) {
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to up deployment")
 	}
-	fmt.Println(output.JSON())
+	if printOutput {
+		fmt.Println(output.JSON())
+	}
 }

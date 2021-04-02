@@ -70,7 +70,7 @@ var newCmd = &cobra.Command{
 		}
 
 		if viper.GetBool("up") {
-			common.DeploymentUp(ctx, deployment)
+			common.DeploymentUp(ctx, deployment, false)
 		}
 	},
 }
