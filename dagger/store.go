@@ -29,18 +29,18 @@ type Store struct {
 	deployments map[string]*DeploymentState
 
 	// Various indices for fast lookups
-	deploymentsByName map[string]*DeploymentState
-	deploymentsByPath map[string]*DeploymentState
-	pathsByDeployment map[string][]string
+	deploymentsByName   map[string]*DeploymentState
+	deploymentsByPath   map[string][]*DeploymentState
+	pathsByDeploymentID map[string][]string
 }
 
 func NewStore(root string) (*Store, error) {
 	store := &Store{
-		root:              root,
-		deployments:       make(map[string]*DeploymentState),
-		deploymentsByName: make(map[string]*DeploymentState),
-		deploymentsByPath: make(map[string]*DeploymentState),
-		pathsByDeployment: make(map[string][]string),
+		root:                root,
+		deployments:         make(map[string]*DeploymentState),
+		deploymentsByName:   make(map[string]*DeploymentState),
+		deploymentsByPath:   make(map[string][]*DeploymentState),
+		pathsByDeploymentID: make(map[string][]string),
 	}
 	return store, store.loadAll()
 }
@@ -120,8 +120,8 @@ func (s *Store) indexDeployment(r *DeploymentState) {
 		if i.Type != InputTypeDir {
 			return
 		}
-		s.deploymentsByPath[i.Dir.Path] = r
-		s.pathsByDeployment[r.ID] = append(s.pathsByDeployment[r.ID], i.Dir.Path)
+		s.deploymentsByPath[i.Dir.Path] = append(s.deploymentsByPath[i.Dir.Path], r)
+		s.pathsByDeploymentID[r.ID] = append(s.pathsByDeploymentID[r.ID], i.Dir.Path)
 	}
 
 	mapPath(r.PlanSource)
@@ -138,10 +138,18 @@ func (s *Store) deindexDeployment(id string) {
 	delete(s.deployments, r.ID)
 	delete(s.deploymentsByName, r.Name)
 
-	for _, p := range s.pathsByDeployment[r.ID] {
-		delete(s.deploymentsByPath, p)
+	for _, p := range s.pathsByDeploymentID[r.ID] {
+		// Remove this deployments from the path->deployment mapping
+		deployments := []*DeploymentState{}
+		for _, d := range s.deploymentsByPath[p] {
+			if d.ID == r.ID {
+				continue
+			}
+			deployments = append(deployments, d)
+		}
+		s.deploymentsByPath[p] = deployments
 	}
-	delete(s.pathsByDeployment, r.ID)
+	delete(s.pathsByDeploymentID, r.ID)
 }
 
 func (s *Store) reindexDeployment(r *DeploymentState) {
@@ -205,13 +213,13 @@ func (s *Store) LookupDeploymentByName(ctx context.Context, name string) (*Deplo
 	return st, nil
 }
 
-func (s *Store) LookupDeploymentByPath(ctx context.Context, path string) (*DeploymentState, error) {
+func (s *Store) LookupDeploymentByPath(ctx context.Context, path string) ([]*DeploymentState, error) {
 	s.l.RLock()
 	defer s.l.RUnlock()
 
 	st, ok := s.deploymentsByPath[path]
 	if !ok {
-		return nil, fmt.Errorf("%s: %w", path, ErrDeploymentNotExist)
+		return []*DeploymentState{}, nil
 	}
 	return st, nil
 }
