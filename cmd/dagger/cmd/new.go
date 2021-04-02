@@ -62,16 +62,8 @@ var newCmd = &cobra.Command{
 			Str("deploymentName", st.Name).
 			Msg("deployment created")
 
-		deployment, err := dagger.NewDeployment(st)
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Msg("failed to initialize deployment")
-		}
-
 		if viper.GetBool("up") {
-			common.DeploymentUp(ctx, deployment, false)
+			common.DeploymentUp(ctx, st, false)
 		}
 	},
 }

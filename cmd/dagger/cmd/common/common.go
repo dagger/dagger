@@ -10,23 +10,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// GetCurrentDeployment returns the current selected deployment based on its abs path
-func GetCurrentDeployment(ctx context.Context, store *dagger.Store) *dagger.Deployment {
-	lg := log.Ctx(ctx)
-	st := GetCurrentDeploymentState(ctx, store)
-
-	deployment, err := dagger.NewDeployment(st)
-	if err != nil {
-		lg.
-			Fatal().
-			Err(err).
-			Interface("deploymentState", st).
-			Msg("failed to init deployment")
-	}
-
-	return deployment
-}
-
 func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger.DeploymentState {
 	lg := log.Ctx(ctx)
 
@@ -60,14 +43,14 @@ func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger
 
 // Re-compute a deployment (equivalent to `dagger up`).
 // If printOutput is true, print the JSON-encoded computed state to standard output
-func DeploymentUp(ctx context.Context, deployment *dagger.Deployment, printOutput bool) {
+func DeploymentUp(ctx context.Context, state *dagger.DeploymentState, printOutput bool) {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "")
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
-	output, err := c.Do(ctx, deployment, func(ctx context.Context, deployment *dagger.Deployment, s dagger.Solver) error {
+	output, err := c.Do(ctx, state, func(ctx context.Context, deployment *dagger.Deployment, s dagger.Solver) error {
 		log.Ctx(ctx).Debug().Msg("bringing deployment up")
 		return deployment.Up(ctx, s, nil)
 	})

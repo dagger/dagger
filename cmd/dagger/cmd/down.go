@@ -1,10 +1,6 @@
 package cmd
 
 import (
-	"dagger.io/go/cmd/dagger/cmd/common"
-	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,25 +17,7 @@ var downCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		lg := logger.New()
-		ctx := lg.WithContext(cmd.Context())
-
-		store, err := dagger.DefaultStore()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load store")
-		}
-
-		deployment := common.GetCurrentDeployment(ctx, store)
-
-		// TODO: Implement options: --no-cache
-		if err := deployment.Down(ctx, nil); err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Str("deploymentName", deployment.Name()).
-				Str("deploymentId", deployment.ID()).
-				Msg("failed to up the deployment")
-		}
+		panic("not implemented")
 	},
 }
 

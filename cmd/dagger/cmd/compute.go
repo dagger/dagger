@@ -127,12 +127,7 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		deployment, err := dagger.NewDeployment(st)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to initialize deployment")
-		}
-
-		common.DeploymentUp(ctx, deployment, true)
+		common.DeploymentUp(ctx, st, true)
 	},
 }
 

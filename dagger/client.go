@@ -64,9 +64,14 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 type ClientDoFunc func(context.Context, *Deployment, Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, deployment *Deployment, fn ClientDoFunc) (*compiler.Value, error) {
+func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
+
+	deployment, err := NewDeployment(state)
+	if err != nil {
+		return nil, err
+	}
 
 	// Spawn print function
 	events := make(chan *bk.SolveStatus)
@@ -85,10 +90,7 @@ func (c *Client) Do(ctx context.Context, deployment *Deployment, fn ClientDoFunc
 	})
 
 	// Spawn output retriever
-	var (
-		out *compiler.Value
-		err error
-	)
+	var out *compiler.Value
 	eg.Go(func() error {
 		defer outr.Close()
 		out, err = c.outputfn(gctx, outr)
