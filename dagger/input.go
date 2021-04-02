@@ -93,7 +93,7 @@ func (dir dirInput) Compile() (*compiler.Value, error) {
 		}
 	}
 	llb := fmt.Sprintf(
-		`#compute: [{do:"local",dir:"%s", include:%s}]`,
+		`#up: [{do:"local",dir:"%s", include:%s}]`,
 		dir.Path,
 		includeLLB,
 	)
@@ -125,7 +125,7 @@ func (git gitInput) Compile() (*compiler.Value, error) {
 	}
 
 	return compiler.Compile("", fmt.Sprintf(
-		`#compute: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
+		`#up: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
 		git.Remote,
 		ref,
 	))

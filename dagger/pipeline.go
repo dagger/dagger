@@ -61,7 +61,7 @@ func (p *Pipeline) FS() fs.FS {
 }
 
 func isComponent(v *compiler.Value) bool {
-	return v.Lookup("#compute").Exists()
+	return v.Lookup("#up").Exists()
 }
 
 func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
@@ -70,7 +70,7 @@ func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
 	for _, x := range code {
 		// 1. attachment array
 		if isComponent(x) {
-			xops, err := x.Lookup("#compute").List()
+			xops, err := x.Lookup("#up").List()
 			if err != nil {
 				return nil, err
 			}

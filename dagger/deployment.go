@@ -199,7 +199,7 @@ func (d *Deployment) LocalDirs() map[string]string {
 	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
-		localdirs(v.Lookup("#compute"))
+		localdirs(v.Lookup("#up"))
 	}
 
 	// 2. Scan the plan
