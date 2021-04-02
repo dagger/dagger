@@ -132,7 +132,7 @@ var computeCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to initialize deployment")
 		}
 
-		common.DeploymentUp(ctx, deployment)
+		common.DeploymentUp(ctx, deployment, true)
 	},
 }
 

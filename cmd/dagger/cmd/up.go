@@ -31,7 +31,7 @@ var upCmd = &cobra.Command{
 		deployment := common.GetCurrentDeployment(ctx, store)
 
 		// TODO: Implement options: --no-cache
-		common.DeploymentUp(ctx, deployment)
+		common.DeploymentUp(ctx, deployment, false)
 	},
 }
 
