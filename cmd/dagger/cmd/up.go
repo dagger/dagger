@@ -4,7 +4,6 @@ import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -36,7 +35,9 @@ var upCmd = &cobra.Command{
 }
 
 func init() {
+	// FIXME Why newCMD.Flags here ?
 	newCmd.Flags().Bool("--no-cache", false, "Disable all run cache")
+	upCmd.Flags().StringSlice("allow", []string{}, "Allow insecure operations (network.host)")
 
 	if err := viper.BindPFlags(upCmd.Flags()); err != nil {
 		panic(err)
