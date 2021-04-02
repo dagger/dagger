@@ -64,12 +64,27 @@ var queryCmd = &cobra.Command{
 			}
 		}
 
-		out, err := cueVal.Source(cueOpts...)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to lookup source")
+		format := viper.GetString("format")
+		switch format {
+		case "cue":
+			out, err := cueVal.Source(cueOpts...)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to lookup source")
+			}
+			fmt.Println(string(out))
+		case "json":
+			fmt.Println(cueVal.JSON().PrettyString())
+		case "yaml":
+			lg.Fatal().Err(err).Msg("yaml format not yet implemented")
+		case "text":
+			out, err := cueVal.String()
+			if err != nil {
+				lg.Fatal().Err(err).Msg("value can't be formatted as text")
+			}
+			fmt.Println(out)
+		default:
+			lg.Fatal().Msgf("unsupported format: %q", format)
 		}
-
-		fmt.Println(string(out))
 	},
 }
 
@@ -95,12 +110,12 @@ func parseQueryFlags() []cue.Option {
 
 func init() {
 	queryCmd.Flags().BoolP("concrete", "c", false, "Require the evaluation to be concrete")
-	queryCmd.Flags().BoolP("show-optional", "O", false, "Display optional fields")
-	queryCmd.Flags().BoolP("show-attributes", "A", false, "Display field attributes")
+	queryCmd.Flags().BoolP("show-optional", "O", false, "Display optional fields (cue format only)")
+	queryCmd.Flags().BoolP("show-attributes", "A", false, "Display field attributes (cue format only)")
 
 	// FIXME: implement the flags below
 	// queryCmd.Flags().String("revision", "latest", "Query a specific version of the deployment")
-	// queryCmd.Flags().StringP("format", "f", "", "Output format (json|yaml|cue|text|env)")
+	queryCmd.Flags().StringP("format", "f", "json", "Output format (json|yaml|cue|text|env)")
 	// queryCmd.Flags().BoolP("no-input", "I", false, "Exclude inputs from query")
 	// queryCmd.Flags().BoolP("no-output", "O", false, "Exclude outputs from query")
 	// queryCmd.Flags().BoolP("no-plan", "P", false, "Exclude outputs from query")

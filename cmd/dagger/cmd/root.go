@@ -17,7 +17,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "dagger",
-	Short: "A system for application delivery as code (ADC)",
+	Short: "A programmable deployment system",
 }
 
 func init() {
