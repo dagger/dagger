@@ -1,6 +1,8 @@
 package input
 
 import (
+	"path/filepath"
+
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 	"github.com/spf13/cobra"
@@ -22,7 +24,12 @@ var dirCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(ctx, args[0], dagger.DirInput(args[1], []string{}))
+		path, err := filepath.Abs(args[1])
+		if err != nil {
+			lg.Error().Err(err).Str("path", args[1]).Msg("cannot get absolute path")
+		}
+
+		updateDeploymentInput(ctx, args[0], dagger.DirInput(path, []string{}))
 	},
 }
 
