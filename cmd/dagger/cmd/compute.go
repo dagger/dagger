@@ -9,8 +9,8 @@ import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
-	"go.mozilla.org/sops"
-	"go.mozilla.org/sops/decrypt"
+	"go.mozilla.org/sops/v3"
+	"go.mozilla.org/sops/v3/decrypt"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
