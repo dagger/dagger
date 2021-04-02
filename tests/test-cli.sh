@@ -12,6 +12,7 @@ test::cli() {
   test::cli::newgit "$dagger"
   test::cli::query "$dagger"
   test::cli::plan "$dagger"
+  test::cli::input "$dagger"
 }
 
 test::cli::list() {
@@ -129,4 +130,31 @@ test::cli::plan() {
     bar: "another value"
 }' \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+}
+
+test::cli::input() {
+  local dagger="$1"
+
+  # Create temporary store
+  local DAGGER_STORE
+  DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
+  export DAGGER_STORE
+
+  test::one "CLI: new input" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/input "input"
+
+  test::one "CLI: up: missing input" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"foo":"bar"}'
+
+  test::one "CLI: plan dir" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" input -d "input" dir "source" ./tests/cli/input/testdata
+
+  test::one "CLI: up: input is set with input dir" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"bar":"thisisatest\n","foo":"bar","source":{}}'
+
+  test::one "CLI: plan dir" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" input -d "input" git "source" https://github.com/samalba/dagger-test-simple.git
+
+  test::one "CLI: up: input is set with input git" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"bar":"testgit\n","foo":"bar","source":{}}'
 }
