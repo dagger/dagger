@@ -3,6 +3,16 @@
 All example commands should be executed in the `examples/` directory
 in an up-to-date checkout of the [dagger repository](https://github.com/dagger/dagger).
 
+## Summary
+
+- [Dagger Examples](#dagger-examples)
+- [Summary](#summary)
+- [Deploy a simple React application](#deploy-a-simple-react-application)
+- [Provision a Kubernetes cluster on AWS](#provision-a-kubernetes-cluster-on-aws)
+- [Add HTTP monitoring to your application](#add-http-monitoring-to-your-application)
+- [Deploy an application to your Kubernetes cluster](#deploy-an-application-to-your-kubernetes-cluster)
+- [Deploy an application to your kind kubernetes cluster](#Deploy-an-application-to-your-kind-kubernetes-cluster)
+
 ## Deploy a simple React application
 
 This example shows how to deploy an example React Application. [Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/react)
@@ -145,7 +155,7 @@ dagger up
 
 ## Deploy an application to your Kubernetes cluster
 
-This example shows two different ways to deploy an application to an existing Kubernetes cluster: with and without a Helm chart. Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/kubernetes-app)
+This example shows two different ways to deploy an application to an existing Kubernetes cluster: with and without a Helm chart. [Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/kubernetes-app)
 
 NOTE: this example requires an EKS cluster to allow authentication with your AWS credentials; but can easily be adapter to deploy to any Kubernetes cluster.
 
@@ -197,5 +207,46 @@ dagger input dir helmChart.chart=./kubernetes-app/testdata/mychart
 6. Deploy!
 
 ```sh
+dagger up
+```
+
+## Deploy an application to your kind kubernetes cluster
+
+This example show you how to deploy kubernetes application with dagger in a local kubernetes cluster powered by kind.
+[Read the deployment plan]() <!-- //TODO -->
+
+Audience: developers and devops looking to provisioning local kubernetes clusters.
+
+Components:
+ - [Kind](https://kind.sigs.k8s.io/) for Kubernetes local cluster
+ - [Kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) as kubernetes client
+
+How to run :
+
+1. Change the current directory to the example deployment plan
+
+```sh
+cd ./kubernetes-kind
+```
+
+2. Run a new kind cluster
+
+```sh
+kind create cluster
+```
+
+3. Create a new deployment from the plan
+
+```sh
+dagger new
+```
+
+4. Configure the kind cluster to deploy to
+```sh
+dagger input dir kubeDirectory=/home/$USER/.kube
+```
+
+5. Deploy
+```sh 
 dagger up
 ```
