@@ -65,17 +65,17 @@ test::cli::newgit() {
   DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
   export DAGGER_STORE
 
-  test::one "CLI: new: --plan-git" \
+  test::one "CLI: new git: --plan-git" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-git https://github.com/samalba/dagger-test.git simple
 
-  test::one "CLI: new: verify plan can be upped" \
+  test::one "CLI: new git: verify plan can be upped" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "simple"
 
-  test::one "CLI: new: verify we have the right plan" --stdout='{
+  test::one "CLI: new git: verify we have the right plan" --stdout='{
     foo: "value"
     bar: "another value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
 }
 
 test::cli::query() {
@@ -129,7 +129,7 @@ test::cli::plan() {
     foo: "value"
     bar: "another value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
 }
 
 test::cli::input() {
@@ -146,13 +146,13 @@ test::cli::input() {
   test::one "CLI: up: missing input" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"foo":"bar"}'
 
-  test::one "CLI: plan dir" \
+  test::one "CLI: input dir" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" input -d "input" dir "source" ./tests/cli/input/testdata
 
   test::one "CLI: up: input is set with input dir" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"bar":"thisisatest\n","foo":"bar","source":{}}'
 
-  test::one "CLI: plan dir" \
+  test::one "CLI: input git" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" input -d "input" git "source" https://github.com/samalba/dagger-test-simple.git
 
   test::one "CLI: up: input is set with input git" \

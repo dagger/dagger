@@ -11,7 +11,7 @@ foo:    "bar"
 bar: {
 	string
 
-	#compute: [
+	#up: [
 		llb.#FetchContainer & {ref: "busybox"},
 		llb.#Exec & {
 			args: ["cp", "/source/testfile", "/out"]
