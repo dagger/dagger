@@ -66,6 +66,12 @@ func (i Input) Compile() (*compiler.Value, error) {
 
 // An input artifact loaded from a local directory
 func DirInput(path string, include []string) Input {
+	// resolve absolute path
+	path, err := filepath.Abs(path)
+	if err != nil {
+		panic(err)
+	}
+
 	return Input{
 		Type: InputTypeDir,
 		Dir: &dirInput{
@@ -82,13 +88,6 @@ type dirInput struct {
 
 func (dir dirInput) Compile() (*compiler.Value, error) {
 	// FIXME: serialize an intermediate struct, instead of generating cue source
-
-	// resolve absolute path
-	path, err := filepath.Abs(dir.Path)
-	if err != nil {
-		return nil, err
-	}
-	dir.Path = path
 
 	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
 	// in Cue because `null` is not a `[...string]`
