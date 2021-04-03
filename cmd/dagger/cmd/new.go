@@ -103,11 +103,7 @@ func getPlanSource(ctx context.Context) dagger.Input {
 	if planDir != "" {
 		checkFirstSet()
 
-		path, err := filepath.Abs(planDir)
-		if err != nil {
-			lg.Error().Err(err).Str("path", planDir).Msg("cannot get absolute path")
-		}
-		src = dagger.DirInput(path, []string{"*.cue", "cue.mod"})
+		src = dagger.DirInput(planDir, []string{"*.cue", "cue.mod"})
 	}
 
 	if planGit != "" {

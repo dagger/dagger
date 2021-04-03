@@ -3,6 +3,7 @@ package dagger
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"dagger.io/go/dagger/compiler"
 )
@@ -81,6 +82,13 @@ type dirInput struct {
 
 func (dir dirInput) Compile() (*compiler.Value, error) {
 	// FIXME: serialize an intermediate struct, instead of generating cue source
+
+	// resolve absolute path
+	path, err := filepath.Abs(dir.Path)
+	if err != nil {
+		return nil, err
+	}
+	dir.Path = path
 
 	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
 	// in Cue because `null` is not a `[...string]`
