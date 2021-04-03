@@ -102,6 +102,7 @@ func getPlanSource(ctx context.Context) dagger.Input {
 
 	if planDir != "" {
 		checkFirstSet()
+
 		src = dagger.DirInput(planDir, []string{"*.cue", "cue.mod"})
 	}
 

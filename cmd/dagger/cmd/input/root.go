@@ -34,7 +34,7 @@ func updateDeploymentInput(ctx context.Context, target string, input dagger.Inpu
 	}
 
 	st := common.GetCurrentDeploymentState(ctx, store)
-	st.AddInput(target, input)
+	st.SetInput(target, input)
 
 	if err := store.UpdateDeployment(ctx, st, nil); err != nil {
 		lg.Fatal().Err(err).Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("cannot update deployment")

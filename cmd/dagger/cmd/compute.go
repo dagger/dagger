@@ -41,7 +41,7 @@ var computeCmd = &cobra.Command{
 		for _, input := range viper.GetStringSlice("input-string") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.AddInput(k, dagger.TextInput(v))
+			err := st.SetInput(k, dagger.TextInput(v))
 			if err != nil {
 				lg.
 					Fatal().
@@ -54,7 +54,7 @@ var computeCmd = &cobra.Command{
 		for _, input := range viper.GetStringSlice("input-dir") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.AddInput(k, dagger.DirInput(v, []string{}))
+			err := st.SetInput(k, dagger.DirInput(v, []string{}))
 			if err != nil {
 				lg.
 					Fatal().
@@ -67,7 +67,7 @@ var computeCmd = &cobra.Command{
 		for _, input := range viper.GetStringSlice("input-git") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.AddInput(k, dagger.GitInput(v, "", ""))
+			err := st.SetInput(k, dagger.GitInput(v, "", ""))
 			if err != nil {
 				lg.
 					Fatal().
@@ -98,7 +98,7 @@ var computeCmd = &cobra.Command{
 				lg.Fatal().Msg("invalid json")
 			}
 
-			err = st.AddInput("", dagger.JSONInput(string(content)))
+			err = st.SetInput("", dagger.JSONInput(string(content)))
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to add input")
 			}
@@ -121,7 +121,7 @@ var computeCmd = &cobra.Command{
 				content = plaintext
 			}
 
-			err = st.AddInput("", dagger.YAMLInput(string(content)))
+			err = st.SetInput("", dagger.YAMLInput(string(content)))
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to add input")
 			}

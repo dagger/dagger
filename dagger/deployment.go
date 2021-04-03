@@ -40,7 +40,15 @@ type inputKV struct {
 	Value Input  `json:"value,omitempty"`
 }
 
-func (s *DeploymentState) AddInput(key string, value Input) error {
+func (s *DeploymentState) SetInput(key string, value Input) error {
+	for i, inp := range s.Inputs {
+		if inp.Key != key {
+			continue
+		}
+		// Remove existing inputs with the same key
+		s.Inputs = append(s.Inputs[:i], s.Inputs[i+1:]...)
+	}
+
 	s.Inputs = append(s.Inputs, inputKV{Key: key, Value: value})
 	return nil
 }

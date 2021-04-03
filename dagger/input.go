@@ -3,6 +3,7 @@ package dagger
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"dagger.io/go/dagger/compiler"
 )
@@ -65,6 +66,12 @@ func (i Input) Compile() (*compiler.Value, error) {
 
 // An input artifact loaded from a local directory
 func DirInput(path string, include []string) Input {
+	// resolve absolute path
+	path, err := filepath.Abs(path)
+	if err != nil {
+		panic(err)
+	}
+
 	return Input{
 		Type: InputTypeDir,
 		Dir: &dirInput{
