@@ -66,34 +66,58 @@ func TestStoreLookupByPath(t *testing.T) {
 	require.NoError(t, store.CreateDeployment(ctx, st))
 
 	// Lookup by path
-	r, err := store.LookupDeploymentByPath(ctx, "/test/path")
+	deployments, err := store.LookupDeploymentByPath(ctx, "/test/path")
 	require.NoError(t, err)
-	require.NotNil(t, r)
-	require.Equal(t, st.ID, r.ID)
+	require.Len(t, deployments, 1)
+	require.Equal(t, st.ID, deployments[0].ID)
 
 	// Add a new path
 	require.NoError(t, st.SetInput("bar", DirInput("/test/anotherpath", []string{})))
 	require.NoError(t, store.UpdateDeployment(ctx, st, nil))
 
 	// Lookup by the previous path
-	r, err = store.LookupDeploymentByPath(ctx, "/test/path")
+	deployments, err = store.LookupDeploymentByPath(ctx, "/test/path")
 	require.NoError(t, err)
-	require.Equal(t, st.ID, r.ID)
+	require.Len(t, deployments, 1)
+	require.Equal(t, st.ID, deployments[0].ID)
 
 	// Lookup by the new path
-	r, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
 	require.NoError(t, err)
-	require.Equal(t, st.ID, r.ID)
+	require.Len(t, deployments, 1)
+	require.Equal(t, st.ID, deployments[0].ID)
 
 	// Remove a path
 	require.NoError(t, st.RemoveInputs("foo"))
 	require.NoError(t, store.UpdateDeployment(ctx, st, nil))
 
 	// Lookup by the removed path should fail
-	_, err = store.LookupDeploymentByPath(ctx, "/test/path")
-	require.Error(t, err)
+	deployments, err = store.LookupDeploymentByPath(ctx, "/test/path")
+	require.NoError(t, err)
+	require.Len(t, deployments, 0)
 
 	// Lookup by the other path should still work
-	_, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
 	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+
+	// Add another deployment using the same path
+	otherSt := &DeploymentState{
+		Name: "test2",
+	}
+	require.NoError(t, otherSt.AddInput("foo", DirInput("/test/anotherpath", []string{})))
+	require.NoError(t, store.CreateDeployment(ctx, otherSt))
+
+	// Lookup by path should return both deployments
+	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	require.NoError(t, err)
+	require.Len(t, deployments, 2)
+
+	// Remove the first deployment. Lookup by path should still return the
+	// second deployment.
+	require.NoError(t, store.DeleteDeployment(ctx, st, nil))
+	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	require.NoError(t, err)
+	require.Len(t, deployments, 1)
+	require.Equal(t, otherSt.ID, deployments[0].ID)
 }

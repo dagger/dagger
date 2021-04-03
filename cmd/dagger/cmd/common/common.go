@@ -38,7 +38,26 @@ func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger
 			Str("deploymentPath", wd).
 			Msg("failed to lookup deployment by path")
 	}
-	return st
+	if len(st) == 0 {
+		lg.
+			Fatal().
+			Err(err).
+			Str("deploymentPath", wd).
+			Msg("no deployments match the current directory")
+	}
+	if len(st) > 1 {
+		deployments := []string{}
+		for _, s := range st {
+			deployments = append(deployments, s.Name)
+		}
+		lg.
+			Fatal().
+			Err(err).
+			Str("deploymentPath", wd).
+			Strs("deployments", deployments).
+			Msg("multiple deployments match the current directory, select one with `--deployment`")
+	}
+	return st[0]
 }
 
 // Re-compute a deployment (equivalent to `dagger up`).
