@@ -44,3 +44,6 @@ integration: dagger-debug
 	# Actual integration tests
 	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./tests/test.sh all
 
+.PHONY: install
+install: dagger
+	go install ./cmd/dagger
