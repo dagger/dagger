@@ -105,7 +105,7 @@ func TestStoreLookupByPath(t *testing.T) {
 	otherSt := &DeploymentState{
 		Name: "test2",
 	}
-	require.NoError(t, otherSt.AddInput("foo", DirInput("/test/anotherpath", []string{})))
+	require.NoError(t, otherSt.SetInput("foo", DirInput("/test/anotherpath", []string{})))
 	require.NoError(t, store.CreateDeployment(ctx, otherSt))
 
 	// Lookup by path should return both deployments
