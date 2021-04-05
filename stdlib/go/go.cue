@@ -27,6 +27,7 @@ import (
 
 			"env": env
 			"env": CGO_ENABLED: "0"
+			"env": GOMODCACHE:  "/root/.cache/gocache"
 
 			dir: "/src"
 			mount: "/src": from: source
