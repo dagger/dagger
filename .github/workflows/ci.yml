@@ -72,10 +72,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Test
+        run: |
+          make test
+
       - name: Integration test
         run: |
           make integration
 
-      - name: Test
-        run: |
-          make test
