@@ -33,6 +33,7 @@ var listCmd = &cobra.Command{
 		}
 
 		deployment := common.GetCurrentDeploymentState(ctx, store)
+		fmt.Println("Current Inputs", deployment.Inputs)
 
 		lg = lg.With().
 			Str("deploymentName", deployment.Name).
@@ -43,11 +44,13 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
+
 		_, err = c.Do(ctx, deployment, func(lCtx context.Context, lDeploy *dagger.Deployment, lSolver dagger.Solver) error {
 			inputs, err := lDeploy.ScanInputs()
 			if err != nil {
 				return err
 			}
+
 
 			for _, i := range inputs {
 				// inst, ipath := i.Reference()
@@ -60,7 +63,7 @@ var listCmd = &cobra.Command{
 				if inst != nil {
 					pkg = fmt.Sprintf("(from %s)", inst.ImportPath)
 				}
-				fmt.Printf("%s: %v  %s\n", i.Path(), i, pkg)
+				fmt.Printf("%s: %v  %s %v\n", i.Path(), i, pkg, i.IsConcrete())
 			}
 
 			return nil
@@ -72,5 +75,4 @@ var listCmd = &cobra.Command{
 
 	},
 }
-
 

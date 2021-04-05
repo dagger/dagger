@@ -297,5 +297,10 @@ func (D *Deployment) ScanInputs() ([]cue.Value, error) {
 	if err != nil {
 		return nil, err
 	}
+	//cvals := make([]compiler.Value, len(vals))
+	//for _, val := range vals {
+		//cval := compiler.Wrap(val, val)
+	//}
+
 	return vals, nil
 }
