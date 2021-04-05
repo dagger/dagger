@@ -10,10 +10,10 @@ import (
 #Account: {
 	// Use this Netlify account name
 	// (also referred to as "team" in the Netlify docs)
-	name: string | *""
+	name: string | *"" @dagger(input)
 
 	// Netlify authentication token
-	token: dagger.#Secret @dagger(input)
+	token: dagger.#Secret @dagger(input,secret)
 }
 
 // A Netlify site
