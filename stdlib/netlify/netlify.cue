@@ -13,13 +13,13 @@ import (
 	name: string | *""
 
 	// Netlify authentication token
-	token: dagger.#Secret
+	token: dagger.#Secret @dagger(input)
 }
 
 // A Netlify site
 #Site: {
 	// Netlify account this site is attached to
-	account: #Account
+	account: #Account @dagger(input)
 
 	// Contents of the application to deploy
 	contents: dagger.#Artifact

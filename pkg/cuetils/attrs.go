@@ -1,24 +1,16 @@
 package cuetils
 
 import (
-	"fmt"
-
 	"cuelang.org/go/cue"
 )
 
 // FindsAttributes returns CUE values with @daggger(key) as long as any key is found.
 func FindAttributes(value cue.Value, keys []string) ([]cue.Value, error) {
 
-	var err error
-
-	// Validate the value
-	err = value.Validate()
-	if err != nil {
-		fmt.Println("Error during validate:", err)
-		return nil, err
-	}
-
-	var vals []cue.Value
+	var (
+		vals []cue.Value
+		err error
+	)
 
 	// walk function
 	before := func(v cue.Value) (bool, error) {
