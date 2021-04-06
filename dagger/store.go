@@ -26,12 +26,17 @@ type Store struct {
 
 	l sync.RWMutex
 
+	// ID -> Deployment
 	deployments map[string]*DeploymentState
 
-	// Various indices for fast lookups
-	deploymentsByName   map[string]*DeploymentState
-	deploymentsByPath   map[string][]*DeploymentState
-	pathsByDeploymentID map[string][]string
+	// Name -> Deployment
+	deploymentsByName map[string]*DeploymentState
+
+	// Path -> (ID->Deployment)
+	deploymentsByPath map[string]map[string]*DeploymentState
+
+	// ID -> (Path->{})
+	pathsByDeploymentID map[string]map[string]struct{}
 }
 
 func NewStore(root string) (*Store, error) {
@@ -39,8 +44,8 @@ func NewStore(root string) (*Store, error) {
 		root:                root,
 		deployments:         make(map[string]*DeploymentState),
 		deploymentsByName:   make(map[string]*DeploymentState),
-		deploymentsByPath:   make(map[string][]*DeploymentState),
-		pathsByDeploymentID: make(map[string][]string),
+		deploymentsByPath:   make(map[string]map[string]*DeploymentState),
+		pathsByDeploymentID: make(map[string]map[string]struct{}),
 	}
 	return store, store.loadAll()
 }
@@ -120,8 +125,15 @@ func (s *Store) indexDeployment(r *DeploymentState) {
 		if i.Type != InputTypeDir {
 			return
 		}
-		s.deploymentsByPath[i.Dir.Path] = append(s.deploymentsByPath[i.Dir.Path], r)
-		s.pathsByDeploymentID[r.ID] = append(s.pathsByDeploymentID[r.ID], i.Dir.Path)
+		if s.deploymentsByPath[i.Dir.Path] == nil {
+			s.deploymentsByPath[i.Dir.Path] = make(map[string]*DeploymentState)
+		}
+		s.deploymentsByPath[i.Dir.Path][r.ID] = r
+
+		if s.pathsByDeploymentID[r.ID] == nil {
+			s.pathsByDeploymentID[r.ID] = make(map[string]struct{})
+		}
+		s.pathsByDeploymentID[r.ID][i.Dir.Path] = struct{}{}
 	}
 
 	mapPath(r.PlanSource)
@@ -138,16 +150,8 @@ func (s *Store) deindexDeployment(id string) {
 	delete(s.deployments, r.ID)
 	delete(s.deploymentsByName, r.Name)
 
-	for _, p := range s.pathsByDeploymentID[r.ID] {
-		// Remove this deployments from the path->deployment mapping
-		deployments := []*DeploymentState{}
-		for _, d := range s.deploymentsByPath[p] {
-			if d.ID == r.ID {
-				continue
-			}
-			deployments = append(deployments, d)
-		}
-		s.deploymentsByPath[p] = deployments
+	for p := range s.pathsByDeploymentID[r.ID] {
+		delete(s.deploymentsByPath[p], r.ID)
 	}
 	delete(s.pathsByDeploymentID, r.ID)
 }
@@ -217,11 +221,18 @@ func (s *Store) LookupDeploymentByPath(ctx context.Context, path string) ([]*Dep
 	s.l.RLock()
 	defer s.l.RUnlock()
 
-	st, ok := s.deploymentsByPath[path]
+	res := []*DeploymentState{}
+
+	deployments, ok := s.deploymentsByPath[path]
 	if !ok {
-		return []*DeploymentState{}, nil
+		return res, nil
 	}
-	return st, nil
+
+	for _, d := range deployments {
+		res = append(res, d)
+	}
+
+	return res, nil
 }
 
 func (s *Store) ListDeployments(ctx context.Context) ([]*DeploymentState, error) {
