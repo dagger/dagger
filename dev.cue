@@ -8,12 +8,18 @@ import (
 // Dagger source code
 source: dagger.#Artifact
 
+// Build the dagger binaries
 build: #Container & {
 	image: #ImageFromRef & {ref: "docker.io/golang:1.16-alpine"}
 
 	setup: [
 		"apk add --no-cache file",
 	]
+
+	command: """
+		go test -v ./...
+		go build -o /binaries/ ./cmd/...
+		"""
 
 	volume: {
 		daggerSource: {
@@ -36,20 +42,17 @@ build: #Container & {
 
 	dir:       "/src"
 	outputDir: "/binaries"
-	command: """
-		go test -v ./...
-		go build -o /binaries/ ./cmd/...
-		"""
 }
 
+// Execute `dagger help`
 usage: #Container & {
 	image: alpine.#Image
+
+	command: "dagger help"
 
 	volume: binaries: {
 		from: build
 		dest: "/usr/local/dagger/bin/"
 	}
 	shell: search: "/usr/local/dagger/bin": true
-
-	command: "dagger help"
 }
