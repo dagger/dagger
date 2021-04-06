@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"dagger.io/dagger"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/kubernetes"
 )
 
@@ -51,12 +51,12 @@ import (
 	kubectlVersion: *"v1.19.9" | string
 
 	#up: [
-		llb.#Load & {
+		op.#Load & {
 			from: kubernetes.#Kubectl & {
 				version: kubectlVersion
 			}
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			env: HELM_VERSION: version
 			args: [
 				"/bin/bash",
@@ -74,25 +74,25 @@ import (
 					"""#,
 			]
 		},
-		llb.#Mkdir & {
+		op.#Mkdir & {
 			path: "/helm"
 		},
-		llb.#WriteFile & {
+		op.#WriteFile & {
 			dest:    "/entrypoint.sh"
 			content: #code
 		},
-		llb.#WriteFile & {
+		op.#WriteFile & {
 			dest:    "/kubeconfig"
 			content: kubeconfig
 			mode:    0o600
 		},
 		if (chart & string) != _|_ {
-			llb.#WriteFile & {
+			op.#WriteFile & {
 				dest:    "/helm/chart"
 				content: chart
 			}
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			always: true
 			args: [
 				"/bin/bash",

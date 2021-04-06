@@ -1,11 +1,11 @@
 package testing
 
-import "dagger.io/llb"
+import "dagger.io/dagger/op"
 
 foo: "value"
 bar: "another value"
 
 #up: [
-	llb.#FetchContainer & {ref: "busybox"},
-	llb.#Exec & {args: ["true"]},
+	op.#FetchContainer & {ref: "busybox"},
+	op.#Exec & {args: ["true"]},
 ]

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 )
 
@@ -10,11 +10,11 @@ TestPushContainer: {
 	random: {
 		string
 		#up: [
-			llb.#Load & {from: alpine.#Image},
-			llb.#Exec & {
+			op.#Load & {from: alpine.#Image},
+			op.#Exec & {
 				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
 			},
-			llb.#Export & {
+			op.#Export & {
 				source: "/rand"
 			},
 		]
@@ -24,11 +24,11 @@ TestPushContainer: {
 	push: {
 		ref: "daggerio/ci-test:\(random)"
 		#up: [
-			llb.#WriteFile & {
+			op.#WriteFile & {
 				content: random
 				dest:    "/rand"
 			},
-			llb.#PushContainer & {
+			op.#PushContainer & {
 				"ref": ref
 			},
 		]
@@ -36,15 +36,15 @@ TestPushContainer: {
 
 	// Pull the image back
 	pull: #up: [
-		llb.#FetchContainer & {
+		op.#FetchContainer & {
 			ref: push.ref
 		},
 	]
 
 	// Check the content
 	check: #up: [
-		llb.#Load & {from: alpine.#Image},
-		llb.#Exec & {
+		op.#Load & {from: alpine.#Image},
+		op.#Exec & {
 			args: [
 				"sh", "-c", #"""
                 test "$(cat /src/rand)" = "\#(random)"

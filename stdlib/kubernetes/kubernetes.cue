@@ -1,7 +1,7 @@
 package kubernetes
 
 import (
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/dagger"
 	"dagger.io/alpine"
 )
@@ -18,18 +18,18 @@ import (
 		"""#
 
 	#up: [
-		llb.#Load & {
+		op.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=5.1.0-r0"
 				package: jq:   "=1.6-r1"
 				package: curl: "=7.74.0-r1"
 			}
 		},
-		llb.#WriteFile & {
+		op.#WriteFile & {
 			dest:    "/entrypoint.sh"
 			content: #code
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			args: [
 				"/bin/bash",
 				"--noprofile",
@@ -63,25 +63,25 @@ import (
 		"""#
 
 	#up: [
-		llb.#Load & {
+		op.#Load & {
 			from: #Kubectl & {"version": version}
 		},
-		llb.#WriteFile & {
+		op.#WriteFile & {
 			dest:    "/entrypoint.sh"
 			content: #code
 		},
-		llb.#WriteFile & {
+		op.#WriteFile & {
 			dest:    "/kubeconfig"
 			content: kubeconfig
 			mode:    0o600
 		},
 		if (source & string) != _|_ {
-			llb.#WriteFile & {
+			op.#WriteFile & {
 				dest:    "/source"
 				content: source
 			}
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			always: true
 			args: [
 				"/bin/bash",

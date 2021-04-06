@@ -2,7 +2,7 @@ package alpine
 
 import (
 	"dagger.io/alpine"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 )
 
 TestImageVersion: {
@@ -12,8 +12,8 @@ TestImageVersion: {
 	}
 
 	test: #up: [
-		llb.#Load & {from: image},
-		llb.#Exec & {
+		op.#Load & {from: image},
+		op.#Exec & {
 			args: [
 				"sh",
 				"-ec",
@@ -32,11 +32,11 @@ TestPackageInstall: {
 	}
 
 	test: #up: [
-		llb.#Load & {from: image},
-		llb.#Exec & {
+		op.#Load & {from: image},
+		op.#Exec & {
 			args: ["jq", "--version"]
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			args: ["sh", "-ec", "curl --version | grep -q 7.74.0"]
 		},
 	]

@@ -1,7 +1,7 @@
 package git
 
 import (
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 )
 
 // A git repository
@@ -11,7 +11,7 @@ import (
 	ref:    string
 
 	#up: [
-		llb.#FetchGit & {
+		op.#FetchGit & {
 			"remote": remote
 			"ref":    ref
 		},

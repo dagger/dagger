@@ -2,14 +2,14 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 )
 
 #ImageFromSource: {
 	source: dagger.#Artifact
 
 	#up: [
-		llb.#DockerBuild & {
+		op.#DockerBuild & {
 			context: source
 		},
 	]
@@ -19,7 +19,7 @@ import (
 	ref: string
 
 	#up: [
-		llb.#FetchContainer & {
+		op.#FetchContainer & {
 			"ref": ref
 		},
 	]
@@ -30,7 +30,7 @@ import (
 	context:    dagger.#Artifact
 
 	#up: [
-		llb.#DockerBuild & {
+		op.#DockerBuild & {
 			"context":    context
 			"dockerfile": dockerfile
 		},
@@ -74,10 +74,10 @@ import (
 		// Execute each command in a pristine filesystem state
 		// (commands do not interfere with each other's changes)
 		#up: [
-			llb.#Load & {from: image},
+			op.#Load & {from: image},
 			// Copy volumes with type=copy
 			for _, v in volume if v.type == "copy" {
-				llb.#Copy & {
+				op.#Copy & {
 					from: v.from
 					dest: v.dest
 					src:  v.source
@@ -85,12 +85,12 @@ import (
 			},
 			// Execute setup script
 			if setup != null {
-				llb.#Exec & {
+				op.#Exec & {
 					"env": env
 					args: ["/bin/sh", "-c", setup]
 				}
 			},
-			llb.#Exec & {
+			op.#Exec & {
 				"args":   args
 				"env":    env
 				"dir":    dir
@@ -110,7 +110,7 @@ import (
 					}
 				}
 			},
-			llb.#Subdir & {
+			op.#Subdir & {
 				dir: outputDir
 			},
 		]

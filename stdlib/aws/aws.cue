@@ -2,7 +2,7 @@ package aws
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 )
 
@@ -19,7 +19,7 @@ import (
 // Re-usable aws-cli component
 #CLI: {
 	#up: [
-		llb.#Load & {
+		op.#Load & {
 			from: alpine.#Image & {
 				package: bash:      "=5.1.0-r0"
 				package: jq:        "=1.6-r1"

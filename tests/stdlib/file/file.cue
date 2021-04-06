@@ -1,7 +1,7 @@
 package f
 
 import (
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 	"dagger.io/file"
 )
@@ -15,8 +15,8 @@ TestCreate: {
 	}
 
 	test: #up: [
-		llb.#Load & {from: alpine.#Image},
-		llb.#Exec & {
+		op.#Load & {from: alpine.#Image},
+		op.#Exec & {
 			args: [
 				"sh",
 				"-ec",
@@ -38,8 +38,8 @@ TestRead: {
 		from:     alpine.#Image & {version: "3.10.6"}
 	}
 	test: #up: [
-		llb.#Load & {from: alpine.#Image},
-		llb.#Exec & {
+		op.#Load & {from: alpine.#Image},
+		op.#Exec & {
 			args: [
 				"sh",
 				"-ec",
@@ -64,8 +64,8 @@ TestRead2: {
 	}
 
 	test: #up: [
-		llb.#Load & {from: alpine.#Image},
-		llb.#Exec & {
+		op.#Load & {from: alpine.#Image},
+		op.#Exec & {
 			args: [
 				"sh",
 				"-ec",

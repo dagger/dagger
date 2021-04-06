@@ -3,7 +3,7 @@ package test
 import (
 	"dagger.io/alpine"
 	"dagger.io/dagger"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 )
 
 TestData: dagger.#Artifact
@@ -19,13 +19,13 @@ _expected: """
 TestIgnore: {
 	string
 	#up: [
-		llb.#Load & {from: alpine.#Image},
-		llb.#Exec & {
+		op.#Load & {from: alpine.#Image},
+		op.#Exec & {
 			args: ["sh", "-c", "ls /src/* > /out.txt"]
 			mount: "/src": from: TestData
 		},
-		llb.#Export & {source: "/out.txt"},
-		llb.#Exec & {
+		op.#Export & {source: "/out.txt"},
+		op.#Exec & {
 			args: [
 				"sh",
 				"-ec",
