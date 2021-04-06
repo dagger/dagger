@@ -1,6 +1,7 @@
 // docker: build and run Docker containers
 // https://docker.com
-package main
+
+package docker
 
 import (
 	"strings"
@@ -8,38 +9,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 )
-
-#ImageFromSource: {
-	source: dagger.#Artifact
-
-	#up: [
-		op.#DockerBuild & {
-			context: source
-		},
-	]
-}
-
-#ImageFromRef: {
-	ref: string
-
-	#up: [
-		op.#FetchContainer & {
-			"ref": ref
-		},
-	]
-}
-
-#ImageFromDockerfile: {
-	dockerfile: string
-	context:    dagger.#Artifact
-
-	#up: [
-		op.#DockerBuild & {
-			"context":    context
-			"dockerfile": dockerfile
-		},
-	]
-}
 
 // Run a Docker container
 #Container: {

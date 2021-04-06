@@ -3,14 +3,15 @@ package main
 import (
 	"dagger.io/dagger"
 	"dagger.io/alpine"
+	"dagger.io/docker"
 )
 
 // Dagger source code
 source: dagger.#Artifact
 
 // Build the dagger binaries
-build: #Container & {
-	image: #ImageFromRef & {ref: "docker.io/golang:1.16-alpine"}
+build: docker.#Container & {
+	image: docker.#ImageFromRef & {ref: "docker.io/golang:1.16-alpine"}
 
 	setup: [
 		"apk add --no-cache file",
@@ -45,7 +46,7 @@ build: #Container & {
 }
 
 // Execute `dagger help`
-usage: #Container & {
+usage: docker.#Container & {
 	image: alpine.#Image
 
 	command: "dagger help"
