@@ -1,7 +1,7 @@
 package netlify
 
 import (
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 	"dagger.io/netlify"
 )
@@ -11,11 +11,11 @@ TestNetlify: {
 	random: {
 		string
 		#up: [
-			llb.#Load & {from: alpine.#Image},
-			llb.#Exec & {
+			op.#Load & {from: alpine.#Image},
+			op.#Exec & {
 				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
 			},
-			llb.#Export & {
+			op.#Export & {
 				source: "/rand"
 			},
 		]
@@ -23,7 +23,7 @@ TestNetlify: {
 
 	// Generate a website containing the random number
 	html: #up: [
-		llb.#WriteFile & {
+		op.#WriteFile & {
 			content: random
 			dest:    "index.html"
 		},
@@ -37,13 +37,13 @@ TestNetlify: {
 
 	// Check if the deployed site has the random marker
 	check: #up: [
-		llb.#Load & {
+		op.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=~5.1"
 				package: curl: "=~7.74"
 			}
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			args: [
 				"/bin/bash",
 				"--noprofile",

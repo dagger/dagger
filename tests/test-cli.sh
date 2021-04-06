@@ -65,13 +65,13 @@ test::cli::newgit() {
   DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
   export DAGGER_STORE
 
-  test::one "CLI: new git: --plan-git" \
+  disable test::one "CLI: new git: --plan-git" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-git https://github.com/samalba/dagger-test.git simple
 
-  test::one "CLI: new git: verify plan can be upped" \
+  disable test::one "CLI: new git: verify plan can be upped" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "simple"
 
-  test::one "CLI: new git: verify we have the right plan" --stdout='{
+  disable test::one "CLI: new git: verify we have the right plan" --stdout='{
     foo: "value"
     bar: "another value"
 }' \
@@ -122,10 +122,10 @@ test::cli::plan() {
   test::one "CLI: plan dir: query non-concrete" --exit=1 \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" query -c
 
-  test::one "CLI: plan git" \
+  disable test::one "CLI: plan git (Disabled: external dependency)" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" plan git https://github.com/samalba/dagger-test.git
 
-  test::one "CLI: plan git: verify we have the right plan" --stdout='{
+  disable test::one "CLI: plan git: verify we have the right plan" --stdout='{
     foo: "value"
     bar: "another value"
 }' \
@@ -152,9 +152,9 @@ test::cli::input() {
   test::one "CLI: up: input is set with input dir" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"bar":"thisisatest\n","foo":"bar","source":{}}'
 
-  test::one "CLI: input git" \
+  disable test::one "CLI: input git" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" input -d "input" git "source" https://github.com/samalba/dagger-test-simple.git
 
-  test::one "CLI: up: input is set with input git" \
+  disable test::one "CLI: up: input is set with input git" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "input" --stdout='{"bar":"testgit\n","foo":"bar","source":{}}'
 }

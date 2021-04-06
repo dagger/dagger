@@ -1,5 +1,5 @@
-// llb: compile LLB graphs executable by buildkit
-package llb
+// op: low-level operations for Dagger processing pipelines
+package op
 
 // One operation in a pipeline
 #Op: #Export |

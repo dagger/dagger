@@ -2,7 +2,7 @@ package eks
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/aws"
 )
 
@@ -22,14 +22,14 @@ import (
 		dagger.#Secret
 
 		#up: [
-			llb.#Load & {
+			op.#Load & {
 				from: aws.#CLI
 			},
-			llb.#WriteFile & {
+			op.#WriteFile & {
 				dest:    "/entrypoint.sh"
 				content: #Code
 			},
-			llb.#Exec & {
+			op.#Exec & {
 				always: true
 				args: [
 					"/bin/bash",
@@ -55,7 +55,7 @@ import (
 					"/cache/bin": "cache"
 				}
 			},
-			llb.#Export & {
+			op.#Export & {
 				source: "/kubeconfig"
 				format: "string"
 			},

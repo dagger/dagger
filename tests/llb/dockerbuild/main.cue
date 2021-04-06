@@ -2,14 +2,14 @@ package test
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 )
 
 // Set to `--input-dir=./tests/dockerbuild/testdata`
 TestData: dagger.#Artifact
 
 TestInlinedDockerfile: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			RUN echo hello world
@@ -18,51 +18,51 @@ TestInlinedDockerfile: #up: [
 ]
 
 TestOpChaining: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			RUN echo foobar > /output
 			"""
 	},
-	llb.#Exec & {
+	op.#Exec & {
 		args: ["sh", "-c", "test $(cat /output) = foobar"]
 	},
 ]
 
 TestBuildContext: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		context: TestData
 	},
-	llb.#Exec & {
+	op.#Exec & {
 		args: ["sh", "-c", "test $(cat /dir/foo) = foobar"]
 	},
 ]
 
 TestBuildContextAndDockerfile: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		context: TestData
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			COPY foo /override
 			"""
 	},
-	llb.#Exec & {
+	op.#Exec & {
 		args: ["sh", "-c", "test $(cat /override) = foobar"]
 	},
 ]
 
 TestDockerfilePath: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		context:        TestData
 		dockerfilePath: "./dockerfilepath/Dockerfile.custom"
 	},
-	llb.#Exec & {
+	op.#Exec & {
 		args: ["sh", "-c", "test $(cat /test) = dockerfilePath"]
 	},
 ]
 
 TestBuildArgs: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			ARG TEST=foo
@@ -74,7 +74,7 @@ TestBuildArgs: #up: [
 
 // FIXME: this doesn't test anything beside not crashing
 TestBuildLabels: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			"""
@@ -84,7 +84,7 @@ TestBuildLabels: #up: [
 
 // FIXME: this doesn't test anything beside not crashing
 TestBuildPlatform: #up: [
-	llb.#DockerBuild & {
+	op.#DockerBuild & {
 		dockerfile: """
 			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 			"""

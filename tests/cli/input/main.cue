@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/dagger"
 )
 
@@ -12,12 +12,12 @@ bar: {
 	string
 
 	#up: [
-		llb.#FetchContainer & {ref: "busybox"},
-		llb.#Exec & {
+		op.#FetchContainer & {ref: "busybox"},
+		op.#Exec & {
 			args: ["cp", "/source/testfile", "/out"]
 			mount: "/source": from: source
 		},
-		llb.#Export & {
+		op.#Export & {
 			format: "string"
 			source: "/out"
 		},

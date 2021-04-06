@@ -3,7 +3,7 @@ package cloudformation
 import (
 	"encoding/json"
 
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 	"dagger.io/aws"
 )
 
@@ -47,19 +47,19 @@ import (
 	outputs: [string]: string
 
 	outputs: #up: [
-		llb.#Load & {
+		op.#Load & {
 			from: aws.#CLI
 		},
-		llb.#Mkdir & {
+		op.#Mkdir & {
 			path: "/src"
 		},
 		for dest, content in #files {
-			llb.#WriteFile & {
+			op.#WriteFile & {
 				"dest":    dest
 				"content": content
 			}
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			args: [
 				"/bin/bash",
 				"--noprofile",
@@ -86,7 +86,7 @@ import (
 			dir: "/src"
 			mount: "/cache/aws": "cache"
 		},
-		llb.#Export & {
+		op.#Export & {
 			source: "/outputs.json"
 			format: "json"
 		},

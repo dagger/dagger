@@ -3,7 +3,7 @@ package yarn
 import (
 	"dagger.io/dagger"
 	"dagger.io/alpine"
-	"dagger.io/llb"
+	"dagger.io/dagger/op"
 )
 
 // Yarn Script
@@ -22,13 +22,13 @@ import (
 	env?: [string]: string
 
 	#up: [
-		llb.#Load & {
+		op.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=~5.1"
 				package: yarn: "=~1.22"
 			}
 		},
-		llb.#Exec & {
+		op.#Exec & {
 			args: [
 				"/bin/bash",
 				"--noprofile",
@@ -56,7 +56,7 @@ import (
 				"/cache/yarn": "cache"
 			}
 		},
-		llb.#Subdir & {
+		op.#Subdir & {
 			dir: "/build"
 		},
 	]
