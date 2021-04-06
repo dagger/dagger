@@ -62,7 +62,7 @@ import (
 				"-eo",
 				"pipefail",
 				"-c",
-				#code,
+				hack,
 			]
 			env: {
 				NETLIFY_SITE_NAME: name
@@ -84,3 +84,8 @@ import (
 		},
 	]
 }
+
+let hack = "echo '{}' > /output.json"
+_hack: code
+
+
