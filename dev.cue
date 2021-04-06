@@ -1,8 +1,6 @@
 package main
 
 import (
-	"strings"
-
 	"dagger.io/dagger"
 	"dagger.io/alpine"
 )
@@ -10,13 +8,12 @@ import (
 // Dagger source code
 source: dagger.#Artifact
 
-// Go environment
-goenv: #Container & {
-	image: #ImageFromRef & {
-		ref: "docker.io/golang:1.16-alpine"
-	}
+build: #Container & {
+	image: #ImageFromRef & {ref: "docker.io/golang:1.16-alpine"}
 
-	setup: "apk add --no-cache file"
+	setup: [
+		"apk add --no-cache file",
+	]
 
 	volume: {
 		daggerSource: {
@@ -28,53 +25,31 @@ goenv: #Container & {
 			dest: "/root/.cache/gocache"
 		}
 	}
+
+	// Add go to search path (FIXME: should be inherited from image metadata)
+	shell: search: "/usr/local/go/bin": true
+
 	env: {
 		GOMODCACHE:  volume.goCache.dest
 		CGO_ENABLED: "0"
+	}
 
-		let pathPrefixes = ["/", "/usr/", "/usr/local/", "/usr/local/go/"]
-		PATH: strings.Join([
-			for prefix in pathPrefixes {prefix + "sbin"},
-			for prefix in pathPrefixes {prefix + "bin"},
-		], ":")
-	}
-	command: {
-		debug: {
-			args: ["env"]
-			always: true
-		}
-		test: {
-			dir: "/src"
-			args: ["go", "test", "-v", "/src/..."]
-		}
-		build: {
-			dir: "/src"
-			args: ["go", "build", "-o", "/binaries/", "/src/cmd/..."]
-			outputDir: "/binaries"
-		}
-	}
+	dir:       "/src"
+	outputDir: "/binaries"
+	command: """
+		go test -v ./...
+		go build -o /binaries/ ./cmd/...
+		"""
 }
 
-runner: #Container & {
-	image: alpine.#Image & {
-		package: make: true
-	}
+usage: #Container & {
+	image: alpine.#Image
 
-	volume: daggerBinaries: {
-		from: goenv.command.build
-		dest: "/usr/local/dagger/bin"
+	volume: binaries: {
+		from: build
+		dest: "/usr/local/dagger/bin/"
 	}
-	env: PATH: "/bin:/usr/bin:/usr/local/bin:/usr/local/dagger/bin"
+	shell: search: "/usr/local/dagger/bin": true
 
-	command: {
-		// Run `dagger help`
-		usage: args: ["dagger", "help"]
-		// FIXME: run integration tests
-
-		// Just a debug command to check that this config works
-		debug: {
-			args: ["env"]
-			env: FOO: "BAR"
-		}
-	}
+	command: "dagger help"
 }

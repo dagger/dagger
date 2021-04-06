@@ -5,6 +5,8 @@ import (
 	"dagger.io/dagger/op"
 )
 
+#Image: dagger.#Artifact
+
 #Ref: string
 
 // Build a docker container image

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 )
@@ -41,8 +43,8 @@ import (
 
 	image: dagger.#Artifact
 
-	// Optional setup script
-	setup: string | *null
+	// Optional setup scripts
+	setup: [...string]
 
 	// Environment variables shared by all commands
 	env: [string]: string
@@ -62,36 +64,44 @@ import (
 		}
 	}
 
-	command: [name=string]: {
-		args: [...string]
-		dir:   string | *"/"
-		"env": env & {
-			[string]: string
+	shell: {
+		path: string | *"/bin/sh"
+		args: [...string] | *["-c"]
+		search: [string]: bool
+		search: {
+			"/sbin":           true
+			"/bin":            true
+			"/usr/sbin":       true
+			"/usr/bin":        true
+			"/usr/local/sbin": true
+			"/usr/local/bin":  true
 		}
-		outputDir: string | *"/"
-		always:    true | *false
+	}
+	env: PATH: string | *strings.Join([ for p, v in shell.search if v {p}], ":")
 
-		// Execute each command in a pristine filesystem state
-		// (commands do not interfere with each other's changes)
-		#up: [
-			op.#Load & {from: image},
-			// Copy volumes with type=copy
-			for _, v in volume if v.type == "copy" {
-				op.#Copy & {
-					from: v.from
-					dest: v.dest
-					src:  v.source
-				}
-			},
-			// Execute setup script
-			if setup != null {
-				op.#Exec & {
-					"env": env
-					args: ["/bin/sh", "-c", setup]
-				}
-			},
+	command: string
+
+	dir: string | *"/"
+
+	env: [string]: string
+
+	outputDir: string | *"/"
+	always:    true | *false
+
+	#up: [
+		op.#Load & {from: image},
+		// Copy volumes with type=copy
+		for _, v in volume if v.type == "copy" {
+			op.#Copy & {
+				from: v.from
+				dest: v.dest
+				src:  v.source
+			}
+		},
+		// Execute setup commands, then main command
+		for cmd in setup + [command] {
 			op.#Exec & {
-				"args":   args
+				args:     [shell.path] + shell.args + [cmd]
 				"env":    env
 				"dir":    dir
 				"always": always
@@ -109,11 +119,10 @@ import (
 						}
 					}
 				}
-			},
-			op.#Subdir & {
-				dir: outputDir
-			},
-		]
-	}
-
+			}
+		},
+		op.#Subdir & {
+			dir: outputDir
+		},
+	]
 }
