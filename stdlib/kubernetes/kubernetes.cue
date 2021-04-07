@@ -45,8 +45,12 @@ import (
 
 // Apply a Kubernetes configuration
 #Apply: {
+
 	// Kubernetes config to deploy
-	source: string | dagger.#Artifact
+	source: dagger.#Artifact
+
+	// Kubernetes config to deploy inlined in a string
+	sourceInline?: string
 
 	// Kubernetes Namespace to deploy to
 	namespace: string
@@ -59,6 +63,8 @@ import (
 
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE" || true
+		ls -la /source
+		cat /source
 		kubectl --namespace "$KUBE_NAMESPACE" apply -R -f /source
 		"""#
 
@@ -75,7 +81,7 @@ import (
 			content: kubeconfig
 			mode:    0o600
 		},
-		if (source & string) != _|_ {
+		if sourceInline != _|_ {
 			op.#WriteFile & {
 				dest:    "/source"
 				content: source
@@ -95,7 +101,7 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
-			if (source & dagger.#Artifact) != _|_ {
+			if sourceInline == _|_ {
 				mount: "/source": from: source
 			}
 		},

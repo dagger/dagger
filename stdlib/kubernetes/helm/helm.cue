@@ -14,7 +14,10 @@ import (
 	name: string
 
 	// Helm chart to install
-	chart: string | dagger.#Artifact
+	chart: dagger.#Artifact
+
+	// Helm chart to install inlined
+	chartInline?: string
 
 	// Helm chart repository (defaults to stable)
 	repository: *"https://charts.helm.sh/stable" | string
@@ -86,7 +89,7 @@ import (
 			content: kubeconfig
 			mode:    0o600
 		},
-		if (chart & string) != _|_ {
+		if chartInline != _|_ {
 			op.#WriteFile & {
 				dest:    "/helm/chart"
 				content: chart
@@ -117,7 +120,7 @@ import (
 				if (values & string) != _|_ {
 					"/helm/values.yaml": values
 				}
-				if (chart & dagger.#Artifact) != _|_ {
+				if chartInline == _|_ {
 					"/helm/chart": from: chart
 				}
 			}
