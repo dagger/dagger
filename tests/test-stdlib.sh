@@ -9,8 +9,8 @@ test::stdlib(){
 
   test::one "stdlib: alpine" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/alpine
-  test::one "stdlib: yarn" \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/yarn --input-dir TestData="$d"/stdlib/yarn/testdata
+  test::one "stdlib: react" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/js/react --input-dir TestData="$d"/stdlib/js/react/testdata
   test::one "stdlib: go" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/go --input-dir TestData="$d"/stdlib/go/testdata
   test::one "stdlib: file" \

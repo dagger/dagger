@@ -2,7 +2,7 @@ package main
 
 import (
 	"dagger.io/netlify"
-	"dagger.io/yarn"
+	"dagger.io/js/react"
 	"dagger.io/git"
 )
 
@@ -19,14 +19,9 @@ www: netlify.#Site & {
 
 	// Deploy the output of yarn build
 	// (Netlify build feature is not used, to avoid extra cost).
-	contents: build
+	contents: app.build
 }
 
-// Build the application with Yarn
-build: yarn.#Script & {
-	// What to build
+app: react.#App & {
 	source: repo
-
-	// How to build it (name of yarn script)
-	run: "build"
 }
