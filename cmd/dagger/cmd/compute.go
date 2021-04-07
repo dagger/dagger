@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -127,7 +128,14 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		common.DeploymentUp(ctx, st, true)
+		result := common.DeploymentUp(ctx, st)
+
+		cueVal, err := result.Merge()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to merge result")
+		}
+
+		fmt.Println(cueVal.JSON())
 	},
 }
 

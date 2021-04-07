@@ -1,0 +1,161 @@
+package dagger
+
+import (
+	"archive/tar"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+
+	"dagger.io/go/dagger/compiler"
+	"github.com/moby/buildkit/client/llb"
+	"github.com/rs/zerolog/log"
+)
+
+const (
+	planFile     = "plan.cue"
+	inputFile    = "input.cue"
+	computedFile = "computed.cue"
+)
+
+// DeploymentResult represents the layers of a deployment run
+type DeploymentResult struct {
+	// Layer 1: plan configuration
+	plan *compiler.Value
+
+	// Layer 2: user inputs
+	input *compiler.Value
+
+	// Layer 3: computed values
+	computed *compiler.Value
+}
+
+func NewDeploymentResult() *DeploymentResult {
+	return &DeploymentResult{
+		plan:     compiler.EmptyStruct(),
+		input:    compiler.EmptyStruct(),
+		computed: compiler.EmptyStruct(),
+	}
+}
+
+func (r *DeploymentResult) Plan() *compiler.Value {
+	return r.plan
+}
+
+func (r *DeploymentResult) Input() *compiler.Value {
+	return r.input
+}
+
+func (r *DeploymentResult) Computed() *compiler.Value {
+	return r.computed
+}
+
+func (r *DeploymentResult) Merge() (*compiler.Value, error) {
+	// FIXME: v.CueInst() must return an instance with the same
+	//  contents as v, for the purposes of cueflow.
+	//  That is not currently how *compiler.Value works, so we prepare the cue
+	//  instance manually.
+	//   --> refactor the compiler.Value API to do this for us.
+	var (
+		v    = compiler.EmptyStruct()
+		inst = v.CueInst()
+		err  error
+	)
+
+	inst, err = inst.Fill(r.plan.Cue())
+	if err != nil {
+		return nil, fmt.Errorf("merge plan: %w", err)
+	}
+	inst, err = inst.Fill(r.input.Cue())
+	if err != nil {
+		return nil, fmt.Errorf("merge input: %w", err)
+	}
+	inst, err = inst.Fill(r.computed.Cue())
+	if err != nil {
+		return nil, fmt.Errorf("merge computed: %w", err)
+	}
+
+	v = compiler.Wrap(inst.Value(), inst)
+	return v, nil
+}
+
+func (r *DeploymentResult) ToLLB() (llb.State, error) {
+	st := llb.Scratch()
+
+	planSource, err := r.plan.Source()
+	if err != nil {
+		return st, compiler.Err(err)
+	}
+
+	inputSource, err := r.input.Source()
+	if err != nil {
+		return st, compiler.Err(err)
+	}
+
+	outputSource, err := r.computed.Source()
+	if err != nil {
+		return st, compiler.Err(err)
+	}
+
+	st = st.
+		File(
+			llb.Mkfile(planFile, 0600, planSource),
+			llb.WithCustomName("[internal] serializing plan"),
+		).
+		File(
+			llb.Mkfile(inputFile, 0600, inputSource),
+			llb.WithCustomName("[internal] serializing input"),
+		).
+		File(
+			llb.Mkfile(computedFile, 0600, outputSource),
+			llb.WithCustomName("[internal] serializing output"),
+		)
+
+	return st, nil
+}
+
+func DeploymentResultFromTar(ctx context.Context, r io.Reader) (*DeploymentResult, error) {
+	lg := log.Ctx(ctx)
+	result := NewDeploymentResult()
+	tr := tar.NewReader(r)
+
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read tar stream: %w", err)
+		}
+
+		lg := lg.
+			With().
+			Str("file", h.Name).
+			Logger()
+
+		if !strings.HasSuffix(h.Name, ".cue") {
+			lg.Debug().Msg("skipping non-cue file from exporter tar stream")
+			continue
+		}
+
+		lg.Debug().Msg("outputfn: compiling")
+
+		v, err := compiler.Compile(h.Name, tr)
+		if err != nil {
+			return nil, err
+		}
+
+		switch h.Name {
+		case planFile:
+			result.plan = v
+		case inputFile:
+			result.input = v
+		case computedFile:
+			result.computed = v
+		default:
+			lg.Warn().Msg("unexpected file")
+		}
+	}
+	return result, nil
+}

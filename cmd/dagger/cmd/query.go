@@ -51,12 +51,36 @@ var queryCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		output, err := c.Do(ctx, state, nil)
+		result, err := c.Do(ctx, state, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to query deployment")
 		}
 
-		cueVal := output.LookupPath(cuePath)
+		cueVal := compiler.EmptyStruct()
+
+		if !viper.GetBool("no-plan") {
+			if err := cueVal.FillPath(cue.MakePath(), result.Plan()); err != nil {
+				lg.Fatal().Err(err).Msg("failed to merge plan")
+			}
+		}
+
+		if !viper.GetBool("no-input") {
+			if err := cueVal.FillPath(cue.MakePath(), result.Input()); err != nil {
+				lg.Fatal().Err(err).Msg("failed to merge plan with output")
+			}
+		}
+
+		if !viper.GetBool("no-computed") && state.Computed != "" {
+			computed, err := compiler.DecodeJSON("", []byte(state.Computed))
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to decode json")
+			}
+			if err := cueVal.FillPath(cue.MakePath(), computed); err != nil {
+				lg.Fatal().Err(err).Msg("failed to merge plan with computed")
+			}
+		}
+
+		cueVal = cueVal.LookupPath(cuePath)
 
 		if viper.GetBool("concrete") {
 			if err := cueVal.IsConcreteR(); err != nil {
@@ -116,9 +140,9 @@ func init() {
 	// FIXME: implement the flags below
 	// queryCmd.Flags().String("revision", "latest", "Query a specific version of the deployment")
 	queryCmd.Flags().StringP("format", "f", "json", "Output format (json|yaml|cue|text|env)")
-	// queryCmd.Flags().BoolP("no-input", "I", false, "Exclude inputs from query")
-	// queryCmd.Flags().BoolP("no-output", "O", false, "Exclude outputs from query")
-	// queryCmd.Flags().BoolP("no-plan", "P", false, "Exclude outputs from query")
+	queryCmd.Flags().BoolP("no-plan", "P", false, "Exclude plan from query")
+	queryCmd.Flags().BoolP("no-input", "I", false, "Exclude inputs from query")
+	queryCmd.Flags().BoolP("no-computed", "C", false, "Exclude computed values from query")
 
 	if err := viper.BindPFlags(queryCmd.Flags()); err != nil {
 		panic(err)

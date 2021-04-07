@@ -18,80 +18,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Contents of a deployment serialized to a file
-type DeploymentState struct {
-	// Globally unique deployment ID
-	ID string `json:"id,omitempty"`
-
-	// Human-friendly deployment name.
-	// A deployment may have more than one name.
-	// FIXME: store multiple names?
-	Name string `json:"name,omitempty"`
-
-	// Cue module containing the deployment plan
-	// The input's top-level artifact is used as a module directory.
-	PlanSource Input `json:"plan,omitempty"`
-
-	Inputs []inputKV `json:"inputs,omitempty"`
-}
-
-type inputKV struct {
-	Key   string `json:"key,omitempty"`
-	Value Input  `json:"value,omitempty"`
-}
-
-func (s *DeploymentState) SetInput(key string, value Input) error {
-	for i, inp := range s.Inputs {
-		if inp.Key != key {
-			continue
-		}
-		// Remove existing inputs with the same key
-		s.Inputs = append(s.Inputs[:i], s.Inputs[i+1:]...)
-	}
-
-	s.Inputs = append(s.Inputs, inputKV{Key: key, Value: value})
-	return nil
-}
-
-// Remove all inputs at the given key, including sub-keys.
-// For example RemoveInputs("foo.bar") will remove all inputs
-//   at foo.bar, foo.bar.baz, etc.
-func (s *DeploymentState) RemoveInputs(key string) error {
-	newInputs := make([]inputKV, 0, len(s.Inputs))
-	for _, i := range s.Inputs {
-		if i.Key == key {
-			continue
-		}
-		newInputs = append(newInputs, i)
-	}
-	s.Inputs = newInputs
-
-	return nil
-}
-
 type Deployment struct {
-	st *DeploymentState
-
-	// Layer 1: plan configuration
-	plan *compiler.Value
-
-	// Layer 2: user inputs
-	input *compiler.Value
-
-	// Layer 3: computed values
-	output *compiler.Value
-
-	// All layers merged together: plan + input + output
-	state *compiler.Value
+	state  *DeploymentState
+	result *DeploymentResult
 }
 
 func NewDeployment(st *DeploymentState) (*Deployment, error) {
-	empty := compiler.EmptyStruct()
 	d := &Deployment{
-		st:     st,
-		plan:   empty,
-		input:  empty,
-		output: empty,
+		state:  st,
+		result: NewDeploymentResult(),
 	}
 
 	// Prepare inputs
@@ -101,47 +36,32 @@ func NewDeployment(st *DeploymentState) (*Deployment, error) {
 			return nil, err
 		}
 		if input.Key == "" {
-			err = d.input.FillPath(cue.MakePath(), v)
+			err = d.result.input.FillPath(cue.MakePath(), v)
 		} else {
-			err = d.input.FillPath(cue.ParsePath(input.Key), v)
+			err = d.result.input.FillPath(cue.ParsePath(input.Key), v)
 		}
 		if err != nil {
 			return nil, err
 		}
-	}
-	if err := d.mergeState(); err != nil {
-		return nil, err
 	}
 
 	return d, nil
 }
 
 func (d *Deployment) ID() string {
-	return d.st.ID
+	return d.state.ID
 }
 
 func (d *Deployment) Name() string {
-	return d.st.Name
+	return d.state.Name
 }
 
 func (d *Deployment) PlanSource() Input {
-	return d.st.PlanSource
+	return d.state.PlanSource
 }
 
-func (d *Deployment) Plan() *compiler.Value {
-	return d.plan
-}
-
-func (d *Deployment) Input() *compiler.Value {
-	return d.input
-}
-
-func (d *Deployment) Output() *compiler.Value {
-	return d.output
-}
-
-func (d *Deployment) State() *compiler.Value {
-	return d.state
+func (d *Deployment) Result() *DeploymentResult {
+	return d.result
 }
 
 // LoadPlan loads the plan
@@ -149,7 +69,7 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.LoadPlan")
 	defer span.Finish()
 
-	planSource, err := d.st.PlanSource.Compile()
+	planSource, err := d.state.PlanSource.Compile()
 	if err != nil {
 		return err
 	}
@@ -169,10 +89,9 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 	if err != nil {
 		return fmt.Errorf("plan config: %w", err)
 	}
-	d.plan = plan
+	d.result.plan = plan
 
-	// Commit
-	return d.mergeState()
+	return nil
 }
 
 // Scan all scripts in the deployment for references to local directories (do:"local"),
@@ -203,15 +122,22 @@ func (d *Deployment) LocalDirs() map[string]string {
 	}
 	// 1. Scan the deployment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
-	inst := d.state.CueInst()
-	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
+	src, err := d.result.Merge()
+	if err != nil {
+		panic(err)
+	}
+	flow := cueflow.New(
+		&cueflow.Config{},
+		src.CueInst(),
+		newTaskFunc(src.CueInst(), noOpRunner),
+	)
 	for _, t := range flow.Tasks() {
-		v := compiler.Wrap(t.Value(), inst)
+		v := compiler.Wrap(t.Value(), src.CueInst())
 		localdirs(v.Lookup("#up"))
 	}
 
 	// 2. Scan the plan
-	plan, err := d.st.PlanSource.Compile()
+	plan, err := d.state.PlanSource.Compile()
 	if err != nil {
 		panic(err)
 	}
@@ -219,54 +145,21 @@ func (d *Deployment) LocalDirs() map[string]string {
 	return dirs
 }
 
-// FIXME: this is just a 3-way merge. Add var args to compiler.Value.Merge.
-func (d *Deployment) mergeState() error {
-	// FIXME: make this cleaner in *compiler.Value by keeping intermediary instances
-	// FIXME: state.CueInst() must return an instance with the same
-	//  contents as state.v, for the purposes of cueflow.
-	//  That is not currently how *compiler.Value works, so we prepare the cue
-	//  instance manually.
-	//   --> refactor the compiler.Value API to do this for us.
-	var (
-		state     = compiler.EmptyStruct()
-		stateInst = state.CueInst()
-		err       error
-	)
-
-	stateInst, err = stateInst.Fill(d.plan.Cue())
-	if err != nil {
-		return fmt.Errorf("merge base & input: %w", err)
-	}
-	stateInst, err = stateInst.Fill(d.input.Cue())
-	if err != nil {
-		return fmt.Errorf("merge base & input: %w", err)
-	}
-	stateInst, err = stateInst.Fill(d.output.Cue())
-	if err != nil {
-		return fmt.Errorf("merge output with base & input: %w", err)
-	}
-
-	state = compiler.Wrap(stateInst.Value(), stateInst)
-
-	// commit
-	d.state = state
-	return nil
-}
-
-type UpOpts struct{}
-
 // Up missing values in deployment configuration, and write them to state.
-func (d *Deployment) Up(ctx context.Context, s Solver, _ *UpOpts) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "r.Compute")
+func (d *Deployment) Up(ctx context.Context, s Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.Up")
 	defer span.Finish()
 
 	lg := log.Ctx(ctx)
 
-	// Cueflow cue instance
-	inst := d.state.CueInst()
+	// Reset the computed values
+	d.result.computed = compiler.EmptyStruct()
 
-	// Reset the output
-	d.output = compiler.EmptyStruct()
+	// Cueflow cue instance
+	src, err := d.result.Merge()
+	if err != nil {
+		return err
+	}
 
 	// Cueflow config
 	flowCfg := &cueflow.Config{
@@ -285,7 +178,7 @@ func (d *Deployment) Up(ctx context.Context, s Solver, _ *UpOpts) error {
 				return nil
 			}
 			// Merge task value into output
-			err := d.output.FillPath(t.Path(), t.Value())
+			err := d.result.computed.FillPath(t.Path(), t.Value())
 			if err != nil {
 				lg.
 					Error().
@@ -297,17 +190,16 @@ func (d *Deployment) Up(ctx context.Context, s Solver, _ *UpOpts) error {
 		},
 	}
 	// Orchestrate execution with cueflow
-	flow := cueflow.New(flowCfg, inst, newTaskFunc(inst, newPipelineRunner(inst, s)))
+	flow := cueflow.New(
+		flowCfg,
+		src.CueInst(),
+		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), s)),
+	)
 	if err := flow.Run(ctx); err != nil {
 		return err
 	}
 
-	{
-		span, _ := opentracing.StartSpanFromContext(ctx, "merge state")
-		defer span.Finish()
-
-		return d.mergeState()
-	}
+	return nil
 }
 
 type DownOpts struct{}
