@@ -30,6 +30,8 @@ Dagger is *alpha-quality software*. It has many bugs, the user interface is mini
 
 ## Learn More
 
+Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
+
 * [Installing Dagger](doc/install.md)
 * [Adding Dagger to your project](doc/adding_dagger.md)
 * [Examples](examples/README.md)
