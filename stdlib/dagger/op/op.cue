@@ -38,7 +38,7 @@ package op
 
 #Subdir: {
 	do:  "subdir"
-	dir: string | *"/"
+	dir: string
 }
 
 #Exec: {
