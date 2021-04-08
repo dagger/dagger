@@ -61,6 +61,9 @@ import (
 	// Kube config file
 	kubeconfig: dagger.#Secret
 
+    // Network //FIXME I can't use network field because llb.#Exec already have network field
+    kNetwork: string
+
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE" || true
 		ls -la /source
@@ -101,7 +104,8 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
-			if sourceInline == _|_ {
+			network: kNetwork
+			if (source & dagger.#Artifact) != _|_ {
 				mount: "/source": from: source
 			}
 		},

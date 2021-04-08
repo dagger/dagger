@@ -36,4 +36,5 @@ kubeApply: kubernetes.#Apply & {
 	source:     yaml.Marshal(kubeSrc) // FIXME file /source isn't find during execution
 	namespace:  "test"
 	kubeconfig: kubeconfigFile.contents
+	kNetwork: "host"
 }
