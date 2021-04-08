@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
-	bk "github.com/moby/buildkit/cmd/buildctl/build"
 	"os"
 	"strings"
 
@@ -50,17 +49,6 @@ var computeCmd = &cobra.Command{
 					Str("input", k).
 					Msg("failed to add input")
 			}
-		}
-
-		if f := viper.GetStringSlice("allow"); len(f) != 0 {
-			entitlements, err := bk.ParseAllow(f)
-			if err != nil {
-				lg.
-					Fatal().
-					Err(err).
-					Msg("entitlements errors")
-			}
-			st.Entitlements = entitlements
 		}
 
 		for _, input := range viper.GetStringSlice("input-dir") {
