@@ -86,6 +86,12 @@ import (
 	}
 	env: PATH: string | *strings.Join([ for p, v in shell.search if v {p}], ":")
 
+	// Export values from the container to the cue configuration
+	export: *null | {
+		source: string
+		format: op.#Export.format
+	}
+
 	#up: [
 		op.#Load & {from: image},
 		// Copy volumes with type=copy
@@ -121,6 +127,12 @@ import (
 		},
 		op.#Subdir & {
 			dir: outputDir
+		},
+		if export != null {
+			op.#Export & {
+				source: export.source
+				format: export.format
+			}
 		},
 	]
 }
