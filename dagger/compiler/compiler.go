@@ -19,8 +19,8 @@ func Compile(name string, src interface{}) (*Value, error) {
 	return DefaultCompiler.Compile(name, src)
 }
 
-func EmptyStruct() *Value {
-	return DefaultCompiler.EmptyStruct()
+func NewValue() *Value {
+	return DefaultCompiler.NewValue()
 }
 
 // FIXME can be refactored away now?
@@ -72,9 +72,14 @@ func (c *Compiler) Cue() *cue.Runtime {
 	return &(c.Runtime)
 }
 
-// Compile an empty struct
-func (c *Compiler) EmptyStruct() *Value {
-	empty, err := c.Compile("", "")
+// Compile an empty value
+func (c *Compiler) NewValue() *Value {
+	empty, err := c.Compile("", `
+	{
+		...
+		_
+	}
+	`)
 	if err != nil {
 		panic(err)
 	}

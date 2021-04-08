@@ -33,9 +33,9 @@ type DeploymentResult struct {
 
 func NewDeploymentResult() *DeploymentResult {
 	return &DeploymentResult{
-		plan:     compiler.EmptyStruct(),
-		input:    compiler.EmptyStruct(),
-		computed: compiler.EmptyStruct(),
+		plan:     compiler.NewValue(),
+		input:    compiler.NewValue(),
+		computed: compiler.NewValue(),
 	}
 }
 
@@ -58,7 +58,7 @@ func (r *DeploymentResult) Merge() (*compiler.Value, error) {
 	//  instance manually.
 	//   --> refactor the compiler.Value API to do this for us.
 	var (
-		v    = compiler.EmptyStruct()
+		v    = compiler.NewValue()
 		inst = v.CueInst()
 		err  error
 	)
@@ -115,7 +115,7 @@ func (r *DeploymentResult) ToLLB() (llb.State, error) {
 	return st, nil
 }
 
-func DeploymentResultFromTar(ctx context.Context, r io.Reader) (*DeploymentResult, error) {
+func ReadDeploymentResult(ctx context.Context, r io.Reader) (*DeploymentResult, error) {
 	lg := log.Ctx(ctx)
 	result := NewDeploymentResult()
 	tr := tar.NewReader(r)
@@ -141,9 +141,19 @@ func DeploymentResultFromTar(ctx context.Context, r io.Reader) (*DeploymentResul
 
 		lg.Debug().Msg("outputfn: compiling")
 
-		v, err := compiler.Compile(h.Name, tr)
+		src, err := io.ReadAll(tr)
 		if err != nil {
 			return nil, err
+		}
+
+		v, err := compiler.Compile(h.Name, src)
+		if err != nil {
+			lg.
+				Debug().
+				Err(compiler.Err(err)).
+				Bytes("src", src).
+				Msg("invalid result file")
+			return nil, fmt.Errorf("failed to compile result: %w", compiler.Err(err))
 		}
 
 		switch h.Name {

@@ -74,7 +74,7 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 		return err
 	}
 
-	p := NewPipeline("[internal] source", s, nil)
+	p := NewPipeline("[internal] source", s)
 	// execute updater script
 	if err := p.Do(ctx, planSource); err != nil {
 		return err
@@ -150,10 +150,8 @@ func (d *Deployment) Up(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.Up")
 	defer span.Finish()
 
-	lg := log.Ctx(ctx)
-
 	// Reset the computed values
-	d.result.computed = compiler.EmptyStruct()
+	d.result.computed = compiler.NewValue()
 
 	// Cueflow cue instance
 	src, err := d.result.Merge()
@@ -161,39 +159,11 @@ func (d *Deployment) Up(ctx context.Context, s Solver) error {
 		return err
 	}
 
-	// Cueflow config
-	flowCfg := &cueflow.Config{
-		UpdateFunc: func(c *cueflow.Controller, t *cueflow.Task) error {
-			if t == nil {
-				return nil
-			}
-
-			lg := lg.
-				With().
-				Str("component", t.Path().String()).
-				Str("state", t.State().String()).
-				Logger()
-
-			if t.State() != cueflow.Terminated {
-				return nil
-			}
-			// Merge task value into output
-			err := d.result.computed.FillPath(t.Path(), t.Value())
-			if err != nil {
-				lg.
-					Error().
-					Err(err).
-					Msg("failed to fill task result")
-				return err
-			}
-			return nil
-		},
-	}
 	// Orchestrate execution with cueflow
 	flow := cueflow.New(
-		flowCfg,
+		&cueflow.Config{},
 		src.CueInst(),
-		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), s)),
+		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), d.result, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -225,7 +195,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(inst *cue.Instance, s Solver) cueflow.RunnerFunc {
+func newPipelineRunner(inst *cue.Instance, result *DeploymentResult, s Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -250,7 +220,7 @@ func newPipelineRunner(inst *cue.Instance, s Solver) cueflow.RunnerFunc {
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value(), inst)
-		p := NewPipeline(t.Path().String(), s, NewFillable(t))
+		p := NewPipeline(t.Path().String(), s)
 		err := p.Do(ctx, v)
 		if err != nil {
 			span.LogFields(otlog.String("error", err.Error()))
@@ -271,6 +241,30 @@ func newPipelineRunner(inst *cue.Instance, s Solver) cueflow.RunnerFunc {
 				Msg("failed")
 			return err
 		}
+
+		// Mirror the computed values in both `Task` and `Result`
+		computed := p.Computed()
+		if computed.IsEmptyStruct() {
+			return nil
+		}
+
+		if err := t.Fill(computed.Cue()); err != nil {
+			lg.
+				Error().
+				Err(err).
+				Msg("failed to fill task")
+			return err
+		}
+
+		// Merge task value into output
+		if err := result.computed.FillPath(t.Path(), computed); err != nil {
+			lg.
+				Error().
+				Err(err).
+				Msg("failed to fill task result")
+			return err
+		}
+
 		lg.
 			Info().
 			Dur("duration", time.Since(start)).

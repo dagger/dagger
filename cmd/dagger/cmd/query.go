@@ -56,7 +56,7 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to query deployment")
 		}
 
-		cueVal := compiler.EmptyStruct()
+		cueVal := compiler.NewValue()
 
 		if !viper.GetBool("no-plan") {
 			if err := cueVal.FillPath(cue.MakePath(), result.Plan()); err != nil {

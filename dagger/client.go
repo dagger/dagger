@@ -90,7 +90,7 @@ func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc
 	eg.Go(func() error {
 		defer outr.Close()
 
-		result, err = DeploymentResultFromTar(gctx, outr)
+		result, err = ReadDeploymentResult(gctx, outr)
 		return err
 	})
 
