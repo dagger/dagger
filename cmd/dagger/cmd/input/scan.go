@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"cuelang.org/go/cue"
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
@@ -13,9 +12,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-var listCmd = &cobra.Command{
-	Use:   "list [TARGET] [flags]",
-	Short: "List the inputs of a deployment",
+var scanCmd = &cobra.Command{
+	Use:   "scan [TARGET] [flags]",
+	Short: "Scan for the inputs of a deployment",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -47,22 +46,24 @@ var listCmd = &cobra.Command{
 		}
 
 		_, err = c.Do(ctx, deployment, func(lCtx context.Context, lDeploy *dagger.Deployment, lSolver dagger.Solver) error {
-			inputs, err := lDeploy.ListInputs()
+			inputs, err := lDeploy.ScanInputs()
 			if err != nil {
 				return err
 			}
 
 
 			for _, i := range inputs {
+				// inst, ipath := i.Reference()
+				//l, _ := i.Label()
+				////fmt.Printf("%v: %v\n", l, i)
+				//fmt.Printf("%v: %v\n", ipath, inst)
 
 				inst, _ := i.Reference()
 				pkg := ""
 				if inst != nil {
 					pkg = fmt.Sprintf("(from %s)", inst.ImportPath)
 				}
-
-				isValid := i.Validate(cue.Concrete(true), cue.ResolveReferences(true), cue.Final(), cue.Definitions(false))
-				fmt.Printf("%s: %v  %s %v\n", i.Path(), i, pkg, isValid == nil)
+				fmt.Printf("%s: %v  %s %v\n", i.Path(), i, pkg, i.IsConcrete())
 			}
 
 			return nil

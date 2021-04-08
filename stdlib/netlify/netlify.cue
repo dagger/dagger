@@ -19,7 +19,7 @@ import (
 // A Netlify site
 #Site: {
 	// Netlify account this site is attached to
-	account: #Account @dagger(input)
+	account: #Account
 
 	// Contents of the application to deploy
 	contents: dagger.#Artifact
@@ -34,13 +34,13 @@ import (
 	create: bool | *true
 
 	// Website url
-	url: string
+	url: string @dagger(computed)
 
 	// Unique Deploy URL
-	deployUrl: string
+	deployUrl: string @dagger(computed)
 
 	// Logs URL for this deployment
-	logsUrl: string
+	logsUrl: string @dagger(computed)
 
 	#up: [
 		op.#Load & {

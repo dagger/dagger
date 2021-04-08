@@ -6,8 +6,6 @@ import (
 	"dagger.io/git"
 )
 
-siteID: string @dagger(input)
-
 // Source code of the sample application
 repo: git.#Repository & {
 	remote: "https://github.com/kabirbaidhya/react-todo-app.git"
@@ -16,7 +14,6 @@ repo: git.#Repository & {
 
 // Host the application with Netlify
 www: netlify.#Site & {
-
 	// Site name can be overridden
 	name: string | *"dagger-examples-react" @dagger(input)
 
