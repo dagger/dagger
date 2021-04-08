@@ -8,13 +8,21 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
+
+	"dagger.io/alpine"
 )
+
+// Default image for basic use cases
+// FIXME: should just be 'alpine.#Image'.
+//   referring to '#.up' is a workaround to a dagger engine bug.
+//   see https://github.com/dagger/dagger/issues/304
+#DefaultImage: alpine.#Image.#up
 
 // Run a Docker container
 #Container: {
 
 	// Container image
-	image: dagger.#Artifact
+	image: dagger.#Artifact | *#DefaultImage
 
 	// Independently cacheable setup commands
 	setup: [...string]
