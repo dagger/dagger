@@ -7,6 +7,7 @@ import (
 	"hash/adler32"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mitchellh/colorstring"
@@ -21,6 +22,7 @@ var colorize = colorstring.Colorize{
 type Console struct {
 	Out       io.Writer
 	maxLength int
+	l         sync.Mutex
 }
 
 func (c *Console) Write(p []byte) (n int, err error) {
@@ -31,9 +33,12 @@ func (c *Console) Write(p []byte) (n int, err error) {
 	}
 
 	source := c.parseSource(event)
+
+	c.l.Lock()
 	if len(source) > c.maxLength {
 		c.maxLength = len(source)
 	}
+	c.l.Unlock()
 
 	return fmt.Fprintln(c.Out,
 		colorize.Color(fmt.Sprintf("%s %s %s%s%s",
