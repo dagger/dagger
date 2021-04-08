@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	bkEntitlements "github.com/moby/buildkit/util/entitlements"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,33 +32,42 @@ import (
 	"dagger.io/go/dagger/compiler"
 )
 
-// A dagger client
-type Client struct {
-	c *bk.Client
+// A dagger client options
+type ClientOpts struct {
+	Host         string
+	Entitlements []bkEntitlements.Entitlement
 }
 
-func NewClient(ctx context.Context, host string) (*Client, error) {
-	if host == "" {
-		host = os.Getenv("BUILDKIT_HOST")
+// A dagger client
+type Client struct {
+	c    *bk.Client
+	opts *ClientOpts
+}
+
+// TODO Host = Client opts
+func NewClient(ctx context.Context, clientOpts *ClientOpts) (*Client, error) {
+	if clientOpts.Host == "" {
+		clientOpts.Host = os.Getenv("BUILDKIT_HOST")
 	}
-	if host == "" {
+	if clientOpts.Host == "" {
 		h, err := buildkitd.Start(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		host = h
+		clientOpts.Host = h
 	}
 	opts := []bk.ClientOpt{}
 	if span := opentracing.SpanFromContext(ctx); span != nil {
 		opts = append(opts, bk.WithTracer(span.Tracer()))
 	}
-	c, err := bk.New(ctx, host, opts...)
+	c, err := bk.New(ctx, clientOpts.Host, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 	return &Client{
-		c: c,
+		c:    c,
+		opts: clientOpts,
 	}, nil
 }
 
@@ -100,6 +110,24 @@ func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc
 	return out, eg.Wait()
 }
 
+func (c *Client) checkEntitlements(entitlements []bkEntitlements.Entitlement) error {
+	check := func(entitlement bkEntitlements.Entitlement) error {
+		for _, elem := range c.opts.Entitlements {
+			if elem == entitlement {
+				return nil
+			}
+		}
+		return errors.New(fmt.Sprintf("Config require entitlement. To enable it use \"%v\"", entitlement))
+	}
+
+	for _, elem := range entitlements {
+		if err := check(elem); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus, w io.WriteCloser) error {
 	lg := log.Ctx(ctx)
 
@@ -125,7 +153,7 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 				},
 			},
 		},
-		AllowedEntitlements: deployment.Entitlement(),
+		AllowedEntitlements: c.opts.Entitlements,
 	}
 
 	// Call buildkit solver
@@ -144,6 +172,13 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 
 		// Compute output overlay
 		if fn != nil {
+			entitlements := deployment.ScanEntitlements()
+
+			// TODO Check if entitlements is necessary if fn  != nil
+			if err := c.checkEntitlements(entitlements); err != nil {
+				return nil, err
+			}
+
 			if err := fn(ctx, deployment, s); err != nil {
 				return nil, compiler.Err(err)
 			}
