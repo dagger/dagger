@@ -172,7 +172,7 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 
 		// Compute output overlay
 		if fn != nil {
-			entitlements := deployment.ScanEntitlements()
+			entitlements := deployment.Entitlements()
 
 			// TODO Check if entitlements is necessary if fn  != nil
 			if err := c.checkEntitlements(entitlements); err != nil {

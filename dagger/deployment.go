@@ -3,7 +3,7 @@ package dagger
 import (
 	"context"
 	"fmt"
-	"github.com/moby/buildkit/util/entitlements"
+	bkEntitlements "github.com/moby/buildkit/util/entitlements"
 	"io/fs"
 	"strings"
 	"time"
@@ -34,9 +34,6 @@ type DeploymentState struct {
 	PlanSource Input `json:"plan,omitempty"`
 
 	Inputs []inputKV `json:"inputs,omitempty"`
-
-	// Deployments entitlements
-	Entitlements []entitlements.Entitlement `json:"entitlements,omitempty"`
 }
 
 type inputKV struct {
@@ -144,10 +141,6 @@ func (d *Deployment) Output() *compiler.Value {
 	return d.output
 }
 
-func (d *Deployment) Entitlement() []entitlements.Entitlement {
-	return d.st.Entitlements
-}
-
 func (d *Deployment) State() *compiler.Value {
 	return d.state
 }
@@ -181,6 +174,47 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 
 	// Commit
 	return d.mergeState()
+}
+
+// Scan all scripts in the deployment for references to entitlements,
+// and return all referenced entitlements.
+//
+// TODO Use op.Path().String() to get Cue config file
+func (d *Deployment) Entitlements() []bkEntitlements.Entitlement {
+	entitlements := []bkEntitlements.Entitlement{}
+
+	confEntitlements := func(code ...*compiler.Value) {
+		Analyze(func(op *compiler.Value) error {
+			if network := op.Lookup("network"); network.Exists() {
+				mode, err := op.Lookup("network").String()
+				if err != nil {
+					return err
+				}
+
+				if mode == "host" {
+					entitlements = append(entitlements, bkEntitlements.EntitlementNetworkHost)
+				}
+			}
+			return nil
+		}, code...)
+	}
+
+	// 1. Scan the deployment state
+	// FIXME: use a common `flow` instance to avoid rescanning the tree.
+	inst := d.state.CueInst()
+	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
+	for _, t := range flow.Tasks() {
+		v := compiler.Wrap(t.Value(), inst)
+		confEntitlements(v.Lookup("#compute"))
+	}
+
+	// 2. Scan the plan
+	plan, err := d.st.PlanSource.Compile()
+	if err != nil {
+		panic(err)
+	}
+	confEntitlements(plan)
+	return entitlements
 }
 
 // Scan all scripts in the deployment for references to local directories (do:"local"),
@@ -261,6 +295,7 @@ func (d *Deployment) mergeState() error {
 	return nil
 }
 
+// Store entitlements here
 type UpOpts struct{}
 
 // Up missing values in deployment configuration, and write them to state.
