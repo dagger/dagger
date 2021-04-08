@@ -61,8 +61,8 @@ import (
 	// Kube config file
 	kubeconfig: dagger.#Secret
 
-    // Network //FIXME I can't use network field because llb.#Exec already have network field
-    kNetwork: string
+	// Network //FIXME I can't use network field because llb.#Exec already have network field
+	kNetwork: string
 
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE" || true
