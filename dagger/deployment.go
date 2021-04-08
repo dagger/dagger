@@ -3,7 +3,6 @@ package dagger
 import (
 	"context"
 	"fmt"
-	bkEntitlements "github.com/moby/buildkit/util/entitlements"
 	"io/fs"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
 	"dagger.io/go/stdlib"
+	bkEntitlements "github.com/moby/buildkit/util/entitlements"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -295,7 +295,6 @@ func (d *Deployment) mergeState() error {
 	return nil
 }
 
-// Store entitlements here
 type UpOpts struct{}
 
 // Up missing values in deployment configuration, and write them to state.

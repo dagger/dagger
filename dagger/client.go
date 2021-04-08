@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	bkEntitlements "github.com/moby/buildkit/util/entitlements"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"cuelang.org/go/cue"
+	bkEntitlements "github.com/moby/buildkit/util/entitlements"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/opentracing/opentracing-go"
@@ -117,7 +117,7 @@ func (c *Client) checkEntitlements(entitlements []bkEntitlements.Entitlement) er
 				return nil
 			}
 		}
-		return errors.New(fmt.Sprintf("Config require entitlement. To enable it use \"%v\"", entitlement))
+		return fmt.Errorf("config require entitlement. To enable it use \"%v\"", entitlement)
 	}
 
 	for _, elem := range entitlements {
