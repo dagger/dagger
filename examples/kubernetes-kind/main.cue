@@ -31,9 +31,10 @@ kubeSrc: {
 	}
 }
 
+// FIXME original_cue_error=kubeApply.#up.3.content: incomplete value string op=0s
 // Example of a simple `kubectl apply` using a simple config
 kubeApply: kubernetes.#Apply & {
-	source:     yaml.Marshal(kubeSrc) // FIXME file /source isn't find during execution
+	sourceInline: yaml.Marshal(kubeSrc)
 	namespace:  "test"
 	kubeconfig: kubeconfigFile.contents
 	kNetwork: "host"
