@@ -205,7 +205,7 @@ func (d *Deployment) Entitlements() []bkEntitlements.Entitlement {
 	flow := cueflow.New(&cueflow.Config{}, inst, newTaskFunc(inst, noOpRunner))
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), inst)
-		confEntitlements(v.Lookup("#compute"))
+		confEntitlements(v.Lookup("#up"))
 	}
 
 	// 2. Scan the plan
