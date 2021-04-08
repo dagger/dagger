@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"cuelang.org/go/cue"
@@ -26,6 +27,10 @@ func NewValue() *Value {
 // FIXME can be refactored away now?
 func Wrap(v cue.Value, inst *cue.Instance) *Value {
 	return DefaultCompiler.Wrap(v, inst)
+}
+
+func InstanceMerge(src ...interface{}) (*Value, error) {
+	return DefaultCompiler.InstanceMerge(src...)
 }
 
 func Cue() *cue.Runtime {
@@ -74,12 +79,7 @@ func (c *Compiler) Cue() *cue.Runtime {
 
 // Compile an empty value
 func (c *Compiler) NewValue() *Value {
-	empty, err := c.Compile("", `
-	{
-		...
-		_
-	}
-	`)
+	empty, err := c.Compile("", "_")
 	if err != nil {
 		panic(err)
 	}
@@ -96,6 +96,40 @@ func (c *Compiler) Compile(name string, src interface{}) (*Value, error) {
 		return nil, Err(err)
 	}
 	return c.Wrap(inst.Value(), inst), nil
+}
+
+// InstanceMerge merges multiple values and mirrors the value in the cue.Instance.
+// FIXME: AVOID THIS AT ALL COST
+// Special case: we must return an instance with the same
+// contents as v, for the purposes of cueflow.
+func (c *Compiler) InstanceMerge(src ...interface{}) (*Value, error) {
+	var (
+		v    = c.NewValue()
+		inst = v.CueInst()
+		err  error
+	)
+
+	c.lock()
+	defer c.unlock()
+
+	for _, s := range src {
+		// If calling Fill() with a Value, we want to use the underlying
+		// cue.Value to fill.
+		if val, ok := s.(*Value); ok {
+			inst, err = inst.Fill(val.val)
+			if err != nil {
+				return nil, fmt.Errorf("merge failed: %w", err)
+			}
+		} else {
+			inst, err = inst.Fill(s)
+			if err != nil {
+				return nil, fmt.Errorf("merge failed: %w", err)
+			}
+		}
+	}
+
+	v = c.Wrap(inst.Value(), inst)
+	return v, nil
 }
 
 func (c *Compiler) DecodeJSON(path string, data []byte) (*Value, error) {

@@ -52,32 +52,11 @@ func (r *DeploymentResult) Computed() *compiler.Value {
 }
 
 func (r *DeploymentResult) Merge() (*compiler.Value, error) {
-	// FIXME: v.CueInst() must return an instance with the same
-	//  contents as v, for the purposes of cueflow.
-	//  That is not currently how *compiler.Value works, so we prepare the cue
-	//  instance manually.
-	//   --> refactor the compiler.Value API to do this for us.
-	var (
-		v    = compiler.NewValue()
-		inst = v.CueInst()
-		err  error
+	return compiler.InstanceMerge(
+		r.plan,
+		r.input,
+		r.computed,
 	)
-
-	inst, err = inst.Fill(r.plan.Cue())
-	if err != nil {
-		return nil, fmt.Errorf("merge plan: %w", err)
-	}
-	inst, err = inst.Fill(r.input.Cue())
-	if err != nil {
-		return nil, fmt.Errorf("merge input: %w", err)
-	}
-	inst, err = inst.Fill(r.computed.Cue())
-	if err != nil {
-		return nil, fmt.Errorf("merge computed: %w", err)
-	}
-
-	v = compiler.Wrap(inst.Value(), inst)
-	return v, nil
 }
 
 func (r *DeploymentResult) ToLLB() (llb.State, error) {
