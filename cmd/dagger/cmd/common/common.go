@@ -66,7 +66,20 @@ func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger
 func DeploymentUp(ctx context.Context, state *dagger.DeploymentState, printOutput bool) {
 	lg := log.Ctx(ctx)
 
-	c, err := dagger.NewClient(ctx, "")
+	clientOpts := &dagger.ClientOpts{}
+
+	if f := viper.GetStringSlice("allow"); len(f) != 0 {
+		entitlements, err := bk.ParseAllow(f)
+		if err != nil {
+			lg.
+				Fatal().
+				Err(err).
+				Msg("entitlements errors")
+		}
+		clientOpts.Entitlements = entitlements
+	}
+
+	c, err := dagger.NewClient(ctx, clientOpts)
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
