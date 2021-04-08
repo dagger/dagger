@@ -19,9 +19,7 @@ www: netlify.#Site & {
 
 	// Deploy the output of yarn build
 	// (Netlify build feature is not used, to avoid extra cost).
-	contents: app.build
-}
-
-app: react.#App & {
-	source: repo
+	contents: {react.#App & {
+		source: repo
+	}}.build
 }
