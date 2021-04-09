@@ -29,15 +29,18 @@ import (
 	roleArn: string | *""
 
 	containerOverrides: {
-		"containerOverrides": [{
-				name: containerName
-				if len(containerCommand) > 0 {
-					"command": containerCommand
-				}
-				if len(containerEnvironment) > 0 {
-					"environment": [ for k, v in containerEnvironment {"name": k, "value": v}]
-				}
-			}]
+		containerOverrides: [{
+			name: containerName
+			if len(containerCommand) > 0 {
+				command: containerCommand
+			}
+			if len(containerEnvironment) > 0 {
+				environment: [ for k, v in containerEnvironment {
+					name:  k
+					value: v
+				}]
+			}
+		}]
 		if roleArn != "" {
 			taskRoleArn: roleArn
 		}
@@ -45,10 +48,10 @@ import (
 
 	aws.#Script & {
 		"config": config
-		export: "/out"
+		export:   "/out"
 		files: {
-			"/inputs/cluster": cluster
-			"/inputs/task_arn": taskArn
+			"/inputs/cluster":             cluster
+			"/inputs/task_arn":            taskArn
 			"/inputs/container_overrides": containerOverrides
 		}
 		code: #"""

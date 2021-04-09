@@ -21,7 +21,7 @@ import (
 			"/inputs/aws/secret_key": config.secretKey
 			"/inputs/listenerArn":    listenerArn
 			if vhost != _|_ {
-				"/inputs/vhost":          vhost
+				"/inputs/vhost": vhost
 			}
 		}
 

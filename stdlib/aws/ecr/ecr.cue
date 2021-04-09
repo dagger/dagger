@@ -19,12 +19,12 @@ import (
 	// ECR credentials
 	credentials: dagger.#RegistryCredentials & {
 		username: "AWS"
-		secret: out
+		secret:   out
 	}
 
 	aws.#Script & {
 		"config": config
-		export: "/out"
+		export:   "/out"
 		code: """
 			aws ecr get-login-password > /out
 			"""
