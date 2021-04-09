@@ -1,16 +1,12 @@
 package dagger
 
 import (
-	"archive/tar"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"cuelang.org/go/cue"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/opentracing/opentracing-go"
@@ -64,7 +60,7 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 type ClientDoFunc func(context.Context, *Deployment, Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc) (*compiler.Value, error) {
+func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc) (*Deployment, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -83,24 +79,14 @@ func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc
 	})
 
 	// Spawn build function
-	outr, outw := io.Pipe()
 	eg.Go(func() error {
-		defer outw.Close()
-		return c.buildfn(gctx, deployment, fn, events, outw)
+		return c.buildfn(gctx, deployment, fn, events)
 	})
 
-	// Spawn output retriever
-	var out *compiler.Value
-	eg.Go(func() error {
-		defer outr.Close()
-		out, err = c.outputfn(gctx, outr)
-		return err
-	})
-
-	return out, eg.Wait()
+	return deployment, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -116,15 +102,6 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
-		// FIXME: catch output & return as cue value
-		Exports: []bk.ExportEntry{
-			{
-				Type: bk.ExporterTar,
-				Output: func(m map[string]string) (io.WriteCloser, error) {
-					return w, nil
-				},
-			},
-		},
 	}
 
 	// Call buildkit solver
@@ -154,15 +131,14 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		span, _ := opentracing.StartSpanFromContext(ctx, "Deployment.Export")
 		defer span.Finish()
 
-		stateSource, err := deployment.State().Source()
-		if err != nil {
-			return nil, compiler.Err(err)
-		}
+		computed := deployment.Computed().JSON().PrettyString()
+		st := llb.
+			Scratch().
+			File(
+				llb.Mkfile("computed.json", 0600, []byte(computed)),
+				llb.WithCustomName("[internal] serializing computed values"),
+			)
 
-		st := llb.Scratch().File(
-			llb.Mkfile("state.cue", 0600, stateSource),
-			llb.WithCustomName("[internal] serializing state to CUE"),
-		)
 		ref, err := s.Solve(ctx, st)
 		if err != nil {
 			return nil, err
@@ -183,45 +159,6 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 			Msg("exporter response")
 	}
 	return nil
-}
-
-// Read tar export stream from buildkit Build(), and extract cue output
-func (c *Client) outputfn(ctx context.Context, r io.Reader) (*compiler.Value, error) {
-	lg := log.Ctx(ctx)
-
-	// FIXME: merge this into deployment output.
-	out := compiler.EmptyStruct()
-
-	tr := tar.NewReader(r)
-	for {
-		h, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read tar stream: %w", err)
-		}
-
-		lg := lg.
-			With().
-			Str("file", h.Name).
-			Logger()
-
-		if !strings.HasSuffix(h.Name, ".cue") {
-			lg.Debug().Msg("skipping non-cue file from exporter tar stream")
-			continue
-		}
-		lg.Debug().Msg("outputfn: compiling & merging")
-
-		v, err := compiler.Compile(h.Name, tr)
-		if err != nil {
-			return nil, err
-		}
-		if err := out.FillPath(cue.MakePath(), v); err != nil {
-			return nil, fmt.Errorf("%s: %w", h.Name, compiler.Err(err))
-		}
-	}
-	return out, nil
 }
 
 func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) error {

@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 
+	"cuelang.org/go/cue"
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -29,19 +30,19 @@ const (
 
 // An execution pipeline
 type Pipeline struct {
-	name   string
-	s      Solver
-	state  llb.State
-	result bkgw.Reference
-	out    *Fillable
+	name     string
+	s        Solver
+	state    llb.State
+	result   bkgw.Reference
+	computed *compiler.Value
 }
 
-func NewPipeline(name string, s Solver, out *Fillable) *Pipeline {
+func NewPipeline(name string, s Solver) *Pipeline {
 	return &Pipeline{
-		name:  name,
-		s:     s,
-		state: llb.Scratch(),
-		out:   out,
+		name:     name,
+		s:        s,
+		state:    llb.Scratch(),
+		computed: compiler.NewValue(),
 	}
 }
 
@@ -58,6 +59,10 @@ func (p *Pipeline) Result() (llb.State, error) {
 
 func (p *Pipeline) FS() fs.FS {
 	return NewBuildkitFS(p.result)
+}
+
+func (p *Pipeline) Computed() *compiler.Value {
+	return p.computed
 }
 
 func isComponent(v *compiler.Value) bool {
@@ -246,7 +251,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from").Path().String(), p.s, nil)
+	from := NewPipeline(op.Lookup("from").Path().String(), p.s)
 	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
@@ -446,7 +451,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := NewPipeline(mnt.Lookup("from").Path().String(), p.s, nil)
+	from := NewPipeline(mnt.Lookup("from").Path().String(), p.s)
 	if err := from.Do(ctx, mnt.Lookup("from")); err != nil {
 		return nil, err
 	}
@@ -488,7 +493,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State)
 			Bytes("contents", contents).
 			Msg("exporting string")
 
-		if err := p.out.Fill(string(contents)); err != nil {
+		if err := p.computed.FillPath(cue.MakePath(), string(contents)); err != nil {
 			return st, err
 		}
 	case "json":
@@ -504,7 +509,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State)
 			Interface("contents", o).
 			Msg("exporting json")
 
-		if err := p.out.Fill(o); err != nil {
+		if err := p.computed.FillPath(cue.MakePath(), o); err != nil {
 			return st, err
 		}
 	case "yaml":
@@ -520,7 +525,7 @@ func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State)
 			Interface("contents", o).
 			Msg("exporting yaml")
 
-		if err := p.out.Fill(o); err != nil {
+		if err := p.computed.FillPath(cue.MakePath(), o); err != nil {
 			return st, err
 		}
 	default:
@@ -550,7 +555,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from").Path().String(), p.s, nil)
+	from := NewPipeline(op.Lookup("from").Path().String(), p.s)
 	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
@@ -683,7 +688,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if context.Exists() {
-		from := NewPipeline(op.Lookup("context").Path().String(), p.s, nil)
+		from := NewPipeline(op.Lookup("context").Path().String(), p.s)
 		if err := from.Do(ctx, context); err != nil {
 			return st, err
 		}

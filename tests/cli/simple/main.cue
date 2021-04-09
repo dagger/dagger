@@ -4,8 +4,18 @@ import "dagger.io/dagger/op"
 
 foo: "value"
 bar: "another value"
-
-#up: [
-	op.#FetchContainer & {ref: "busybox"},
-	op.#Exec & {args: ["true"]},
-]
+computed: {
+	string
+	#up: [
+		op.#FetchContainer & {ref: "busybox"},
+		op.#Exec & {
+			args: ["sh", "-c", """
+				printf test > /export
+				"""]
+		},
+		op.#Export & {
+			source: "/export"
+			format: "string"
+		},
+	]
+}

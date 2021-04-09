@@ -2,7 +2,6 @@ package common
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"dagger.io/go/dagger"
@@ -61,22 +60,19 @@ func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger
 }
 
 // Re-compute a deployment (equivalent to `dagger up`).
-// If printOutput is true, print the JSON-encoded computed state to standard output
-func DeploymentUp(ctx context.Context, state *dagger.DeploymentState, printOutput bool) {
+func DeploymentUp(ctx context.Context, state *dagger.DeploymentState) *dagger.Deployment {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "")
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
-	output, err := c.Do(ctx, state, func(ctx context.Context, deployment *dagger.Deployment, s dagger.Solver) error {
+	result, err := c.Do(ctx, state, func(ctx context.Context, deployment *dagger.Deployment, s dagger.Solver) error {
 		log.Ctx(ctx).Debug().Msg("bringing deployment up")
-		return deployment.Up(ctx, s, nil)
+		return deployment.Up(ctx, s)
 	})
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to up deployment")
 	}
-	if printOutput {
-		fmt.Println(output.JSON())
-	}
+	return result
 }

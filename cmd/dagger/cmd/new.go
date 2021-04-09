@@ -63,7 +63,7 @@ var newCmd = &cobra.Command{
 			Msg("deployment created")
 
 		if viper.GetBool("up") {
-			common.DeploymentUp(ctx, st, false)
+			common.DeploymentUp(ctx, st)
 		}
 	},
 }

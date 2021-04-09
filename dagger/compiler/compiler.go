@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"cuelang.org/go/cue"
@@ -19,13 +20,17 @@ func Compile(name string, src interface{}) (*Value, error) {
 	return DefaultCompiler.Compile(name, src)
 }
 
-func EmptyStruct() *Value {
-	return DefaultCompiler.EmptyStruct()
+func NewValue() *Value {
+	return DefaultCompiler.NewValue()
 }
 
 // FIXME can be refactored away now?
 func Wrap(v cue.Value, inst *cue.Instance) *Value {
 	return DefaultCompiler.Wrap(v, inst)
+}
+
+func InstanceMerge(src ...*Value) (*Value, error) {
+	return DefaultCompiler.InstanceMerge(src...)
 }
 
 func Cue() *cue.Runtime {
@@ -72,9 +77,9 @@ func (c *Compiler) Cue() *cue.Runtime {
 	return &(c.Runtime)
 }
 
-// Compile an empty struct
-func (c *Compiler) EmptyStruct() *Value {
-	empty, err := c.Compile("", "")
+// Compile an empty value
+func (c *Compiler) NewValue() *Value {
+	empty, err := c.Compile("", "_")
 	if err != nil {
 		panic(err)
 	}
@@ -91,6 +96,34 @@ func (c *Compiler) Compile(name string, src interface{}) (*Value, error) {
 		return nil, Err(err)
 	}
 	return c.Wrap(inst.Value(), inst), nil
+}
+
+// InstanceMerge merges multiple values and mirrors the value in the cue.Instance.
+// FIXME: AVOID THIS AT ALL COST
+// Special case: we must return an instance with the same
+// contents as v, for the purposes of cueflow.
+func (c *Compiler) InstanceMerge(src ...*Value) (*Value, error) {
+	var (
+		v    = c.NewValue()
+		inst = v.CueInst()
+		err  error
+	)
+
+	c.lock()
+	defer c.unlock()
+
+	for _, s := range src {
+		inst, err = inst.Fill(s.val)
+		if err != nil {
+			return nil, fmt.Errorf("merge failed: %w", err)
+		}
+		if err := inst.Value().Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	v = c.Wrap(inst.Value(), inst)
+	return v, nil
 }
 
 func (c *Compiler) DecodeJSON(path string, data []byte) (*Value, error) {

@@ -31,7 +31,11 @@ var upCmd = &cobra.Command{
 		state := common.GetCurrentDeploymentState(ctx, store)
 
 		// TODO: Implement options: --no-cache
-		common.DeploymentUp(ctx, state, true)
+		result := common.DeploymentUp(ctx, state)
+		state.Computed = result.Computed().JSON().String()
+		if err := store.UpdateDeployment(ctx, state, nil); err != nil {
+			lg.Fatal().Err(err).Msg("failed to update deployment")
+		}
 	},
 }
 
