@@ -8,13 +8,21 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
+
+	"dagger.io/alpine"
 )
+
+// Default image for basic use cases
+// FIXME: should just be 'alpine.#Image'.
+//   referring to '#.up' is a workaround to a dagger engine bug.
+//   see https://github.com/dagger/dagger/issues/304
+#DefaultImage: alpine.#Image.#up
 
 // Run a Docker container
 #Container: {
 
 	// Container image
-	image: dagger.#Artifact
+	image: dagger.#Artifact | *#DefaultImage
 
 	// Independently cacheable setup commands
 	setup: [...string]
@@ -86,6 +94,12 @@ import (
 	}
 	env: PATH: string | *strings.Join([ for p, v in shell.search if v {p}], ":")
 
+	// Export values from the container to the cue configuration
+	export: *null | {
+		source: string
+		format: op.#Export.format
+	}
+
 	#up: [
 		op.#Load & {from: image},
 		// Copy volumes with type=copy
@@ -121,6 +135,12 @@ import (
 		},
 		op.#Subdir & {
 			dir: outputDir
+		},
+		if export != null {
+			op.#Export & {
+				source: export.source
+				format: export.format
+			}
 		},
 	]
 }
