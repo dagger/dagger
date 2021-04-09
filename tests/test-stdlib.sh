@@ -17,4 +17,6 @@ test::stdlib(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
   test::secret "$d"/stdlib/netlify/inputs.yaml "stdlib: netlify" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/netlify
+  test::one "stdlib:: kubernetes" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/kubernetes --input-dir TestKubeconfig="/home/$USER/.kube"  --input-string uid="dagger-id"
 }
