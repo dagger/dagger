@@ -1,4 +1,4 @@
 package main
 
-name:    string | *"world" @dagger(input)
+name:    string | *"world"
 message: "Hello, \(name)!"
