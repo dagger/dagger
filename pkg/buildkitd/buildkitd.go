@@ -104,9 +104,14 @@ func startBuildkit(ctx context.Context) error {
 		return err
 	}
 
+	// FIXME: buildkitd currently runs without network isolation (--net=host)
+	// in order for containers to be able to reach localhost.
+	//This is required for things such as kubectl being able to
+	//reach a KinD/minikube cluster locally
 	cmd = exec.CommandContext(ctx,
 		"docker",
 		"run",
+		"--net=host",
 		"-d",
 		"--restart", "always",
 		"-v", volumeName+":/var/lib/buildkit",
