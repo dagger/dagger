@@ -63,8 +63,6 @@ import (
 
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE" || true
-		ls -la /source
-		cat /source
 		kubectl --namespace "$KUBE_NAMESPACE" apply -R -f /source
 		"""#
 
