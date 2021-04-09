@@ -51,10 +51,11 @@ test::cli::newdir() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "simple"
 
   test::one "CLI: new: verify we have the right plan" --stdout='{
-    foo: "value"
-    bar: "another value"
+  "bar": "another value",
+  "computed": "test",
+  "foo": "value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c -f json
 }
 
 test::cli::newgit() {
@@ -89,20 +90,45 @@ test::cli::query() {
   test::one "CLI: query: initialize simple" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
 
-  test::one "CLI: query: concrete" --stdout='{
-    foo: "value"
-    bar: "another value"
+  test::one "CLI: query: before up" --stdout='{
+  "bar": "another value",
+  "foo": "value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple"
+
+  test::one "CLI: query: concrete should fail" --exit=1 \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
 
   test::one "CLI: query: target" --stdout='"value"' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" foo
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" foo
 
-  test::one "CLI: query: initialize nonconcrete" \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/nonconcrete nonconcrete
+  test::one "CLI: query: compute missing values" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" up -d "simple"
 
-  test::one "CLI: query: non concrete" --exit=1 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "nonconcrete" -c
+  test::one "CLI: query: all values" --stdout='{
+  "bar": "another value",
+  "computed": "test",
+  "foo": "value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple"
+
+  test::one "CLI: query: concrete should work" --stdout='{
+  "bar": "another value",
+  "computed": "test",
+  "foo": "value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
+
+  test::one "CLI: query --no-computed" --stdout='{
+  "bar": "another value",
+  "foo": "value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" --no-computed
+
+  test::one "CLI: query: --no-plan" --stdout='{
+  "computed": "test"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c --no-plan
 }
 
 test::cli::plan() {
@@ -117,19 +143,22 @@ test::cli::plan() {
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" new --plan-dir "$d"/cli/simple simple
 
   test::one "CLI: plan dir" \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" plan dir "$d"/cli/nonconcrete
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" plan dir "$d"/cli/simple
 
-  test::one "CLI: plan dir: query non-concrete" --exit=1 \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" query -c
+  test::one "CLI: plan dir: verify we have the right plan" --stdout='{
+  "bar": "another value",
+  "foo": "value"
+}' \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" query
 
   test::one "CLI: plan git" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" -d "simple" plan git https://github.com/samalba/dagger-test.git
 
   test::one "CLI: plan git: verify we have the right plan" --stdout='{
-    foo: "value"
-    bar: "another value"
+  "bar": "another value",
+  "foo": "value"
 }' \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -f cue -d "simple" -c
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" query -d "simple" -c
 }
 
 test::cli::input() {
