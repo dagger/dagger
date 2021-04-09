@@ -15,4 +15,6 @@ import (
 // Secret value
 // FIXME: currently aliased as a string to mark secrets
 // this requires proper support.
-#Secret: string
+#Secret: {
+	string | bytes
+}

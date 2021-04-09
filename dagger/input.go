@@ -3,7 +3,10 @@ package dagger
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"path/filepath"
+
+	"cuelang.org/go/cue"
 
 	"dagger.io/go/dagger/compiler"
 )
@@ -29,6 +32,7 @@ const (
 	InputTypeText   InputType = "text"
 	InputTypeJSON   InputType = "json"
 	InputTypeYAML   InputType = "yaml"
+	InputTypeFile   InputType = "file"
 	InputTypeEmpty  InputType = ""
 )
 
@@ -41,6 +45,7 @@ type Input struct {
 	Text   *textInput   `json:"text,omitempty"`
 	JSON   *jsonInput   `json:"json,omitempty"`
 	YAML   *yamlInput   `json:"yaml,omitempty"`
+	File   *fileInput   `json:"file,omitempty"`
 }
 
 func (i Input) Compile() (*compiler.Value, error) {
@@ -57,6 +62,8 @@ func (i Input) Compile() (*compiler.Value, error) {
 		return i.JSON.Compile()
 	case InputTypeYAML:
 		return i.YAML.Compile()
+	case InputTypeFile:
+		return i.File.Compile()
 	case "":
 		return nil, fmt.Errorf("input has not been set")
 	default:
@@ -210,4 +217,29 @@ type yamlInput struct {
 
 func (i yamlInput) Compile() (*compiler.Value, error) {
 	return compiler.DecodeYAML("", []byte(i.Data))
+}
+
+func FileInput(data string) Input {
+	return Input{
+		Type: InputTypeFile,
+		File: &fileInput{
+			Path: data,
+		},
+	}
+}
+
+type fileInput struct {
+	Path string `json:"data,omitempty"`
+}
+
+func (i fileInput) Compile() (*compiler.Value, error) {
+	data, err := ioutil.ReadFile(i.Path)
+	if err != nil {
+		return nil, err
+	}
+	value := compiler.NewValue()
+	if err := value.FillPath(cue.MakePath(), data); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
