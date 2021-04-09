@@ -29,7 +29,7 @@ func Wrap(v cue.Value, inst *cue.Instance) *Value {
 	return DefaultCompiler.Wrap(v, inst)
 }
 
-func InstanceMerge(src ...interface{}) (*Value, error) {
+func InstanceMerge(src ...*Value) (*Value, error) {
 	return DefaultCompiler.InstanceMerge(src...)
 }
 
@@ -102,7 +102,7 @@ func (c *Compiler) Compile(name string, src interface{}) (*Value, error) {
 // FIXME: AVOID THIS AT ALL COST
 // Special case: we must return an instance with the same
 // contents as v, for the purposes of cueflow.
-func (c *Compiler) InstanceMerge(src ...interface{}) (*Value, error) {
+func (c *Compiler) InstanceMerge(src ...*Value) (*Value, error) {
 	var (
 		v    = c.NewValue()
 		inst = v.CueInst()
@@ -113,18 +113,12 @@ func (c *Compiler) InstanceMerge(src ...interface{}) (*Value, error) {
 	defer c.unlock()
 
 	for _, s := range src {
-		// If calling Fill() with a Value, we want to use the underlying
-		// cue.Value to fill.
-		if val, ok := s.(*Value); ok {
-			inst, err = inst.Fill(val.val)
-			if err != nil {
-				return nil, fmt.Errorf("merge failed: %w", err)
-			}
-		} else {
-			inst, err = inst.Fill(s)
-			if err != nil {
-				return nil, fmt.Errorf("merge failed: %w", err)
-			}
+		inst, err = inst.Fill(s.val)
+		if err != nil {
+			return nil, fmt.Errorf("merge failed: %w", err)
+		}
+		if err := inst.Value().Err(); err != nil {
+			return nil, err
 		}
 	}
 
