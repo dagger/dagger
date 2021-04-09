@@ -7,9 +7,11 @@ import (
 	"os"
 	"strings"
 
+	"cuelang.org/go/cue"
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/compiler"
 	"go.mozilla.org/sops/v3"
 	"go.mozilla.org/sops/v3/decrypt"
 
@@ -128,14 +130,20 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		result := common.DeploymentUp(ctx, st)
+		deployment := common.DeploymentUp(ctx, st)
 
-		cueVal, err := result.Merge()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge result")
+		v := compiler.NewValue()
+		if err := v.FillPath(cue.MakePath(), deployment.Plan()); err != nil {
+			lg.Fatal().Err(err).Msg("failed to merge")
+		}
+		if err := v.FillPath(cue.MakePath(), deployment.Input()); err != nil {
+			lg.Fatal().Err(err).Msg("failed to merge")
+		}
+		if err := v.FillPath(cue.MakePath(), deployment.Computed()); err != nil {
+			lg.Fatal().Err(err).Msg("failed to merge")
 		}
 
-		fmt.Println(cueVal.JSON())
+		fmt.Println(v.JSON())
 	},
 }
 

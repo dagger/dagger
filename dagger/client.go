@@ -3,7 +3,6 @@ package dagger
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 
 	// docker output
@@ -60,7 +60,7 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 type ClientDoFunc func(context.Context, *Deployment, Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc) (*DeploymentResult, error) {
+func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc) (*Deployment, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -79,25 +79,14 @@ func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc
 	})
 
 	// Spawn build function
-	outr, outw := io.Pipe()
 	eg.Go(func() error {
-		defer outw.Close()
-		return c.buildfn(gctx, deployment, fn, events, outw)
+		return c.buildfn(gctx, deployment, fn, events)
 	})
 
-	// Spawn output retriever
-	var result *DeploymentResult
-	eg.Go(func() error {
-		defer outr.Close()
-
-		result, err = ReadDeploymentResult(gctx, outr)
-		return err
-	})
-
-	return result, eg.Wait()
+	return deployment, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus, w io.WriteCloser) error {
+func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -113,15 +102,6 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
-		// FIXME: catch output & return as cue value
-		Exports: []bk.ExportEntry{
-			{
-				Type: bk.ExporterTar,
-				Output: func(m map[string]string) (io.WriteCloser, error) {
-					return w, nil
-				},
-			},
-		},
 	}
 
 	// Call buildkit solver
@@ -151,11 +131,13 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		span, _ := opentracing.StartSpanFromContext(ctx, "Deployment.Export")
 		defer span.Finish()
 
-		result := deployment.Result()
-		st, err := result.ToLLB()
-		if err != nil {
-			return nil, err
-		}
+		computed := deployment.Computed().JSON().PrettyString()
+		st := llb.
+			Scratch().
+			File(
+				llb.Mkfile("computed.json", 0600, []byte(computed)),
+				llb.WithCustomName("[internal] serializing computed values"),
+			)
 
 		ref, err := s.Solve(ctx, st)
 		if err != nil {

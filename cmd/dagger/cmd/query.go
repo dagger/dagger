@@ -51,7 +51,8 @@ var queryCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
-		result, err := c.Do(ctx, state, nil)
+
+		deployment, err := c.Do(ctx, state, nil)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to query deployment")
 		}
@@ -59,13 +60,13 @@ var queryCmd = &cobra.Command{
 		cueVal := compiler.NewValue()
 
 		if !viper.GetBool("no-plan") {
-			if err := cueVal.FillPath(cue.MakePath(), result.Plan()); err != nil {
+			if err := cueVal.FillPath(cue.MakePath(), deployment.Plan()); err != nil {
 				lg.Fatal().Err(err).Msg("failed to merge plan")
 			}
 		}
 
 		if !viper.GetBool("no-input") {
-			if err := cueVal.FillPath(cue.MakePath(), result.Input()); err != nil {
+			if err := cueVal.FillPath(cue.MakePath(), deployment.Input()); err != nil {
 				lg.Fatal().Err(err).Msg("failed to merge plan with output")
 			}
 		}

@@ -19,14 +19,25 @@ import (
 )
 
 type Deployment struct {
-	state  *DeploymentState
-	result *DeploymentResult
+	state *DeploymentState
+
+	// Layer 1: plan configuration
+	plan *compiler.Value
+
+	// Layer 2: user inputs
+	input *compiler.Value
+
+	// Layer 3: computed values
+	computed *compiler.Value
 }
 
 func NewDeployment(st *DeploymentState) (*Deployment, error) {
 	d := &Deployment{
-		state:  st,
-		result: NewDeploymentResult(),
+		state: st,
+
+		plan:     compiler.NewValue(),
+		input:    compiler.NewValue(),
+		computed: compiler.NewValue(),
 	}
 
 	// Prepare inputs
@@ -36,9 +47,9 @@ func NewDeployment(st *DeploymentState) (*Deployment, error) {
 			return nil, err
 		}
 		if input.Key == "" {
-			err = d.result.input.FillPath(cue.MakePath(), v)
+			err = d.input.FillPath(cue.MakePath(), v)
 		} else {
-			err = d.result.input.FillPath(cue.ParsePath(input.Key), v)
+			err = d.input.FillPath(cue.ParsePath(input.Key), v)
 		}
 		if err != nil {
 			return nil, err
@@ -60,8 +71,16 @@ func (d *Deployment) PlanSource() Input {
 	return d.state.PlanSource
 }
 
-func (d *Deployment) Result() *DeploymentResult {
-	return d.result
+func (d *Deployment) Plan() *compiler.Value {
+	return d.plan
+}
+
+func (d *Deployment) Input() *compiler.Value {
+	return d.input
+}
+
+func (d *Deployment) Computed() *compiler.Value {
+	return d.computed
 }
 
 // LoadPlan loads the plan
@@ -89,7 +108,7 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 	if err != nil {
 		return fmt.Errorf("plan config: %w", err)
 	}
-	d.result.plan = plan
+	d.plan = plan
 
 	return nil
 }
@@ -122,7 +141,7 @@ func (d *Deployment) LocalDirs() map[string]string {
 	}
 	// 1. Scan the deployment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
-	src, err := d.result.Merge()
+	src, err := compiler.InstanceMerge(d.plan, d.input)
 	if err != nil {
 		panic(err)
 	}
@@ -151,10 +170,10 @@ func (d *Deployment) Up(ctx context.Context, s Solver) error {
 	defer span.Finish()
 
 	// Reset the computed values
-	d.result.computed = compiler.NewValue()
+	d.computed = compiler.NewValue()
 
 	// Cueflow cue instance
-	src, err := d.result.Merge()
+	src, err := compiler.InstanceMerge(d.plan, d.input)
 	if err != nil {
 		return err
 	}
@@ -163,7 +182,7 @@ func (d *Deployment) Up(ctx context.Context, s Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		src.CueInst(),
-		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), d.result, s)),
+		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), d.computed, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -195,7 +214,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(inst *cue.Instance, result *DeploymentResult, s Solver) cueflow.RunnerFunc {
+func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -243,12 +262,11 @@ func newPipelineRunner(inst *cue.Instance, result *DeploymentResult, s Solver) c
 		}
 
 		// Mirror the computed values in both `Task` and `Result`
-		computed := p.Computed()
-		if computed.IsEmptyStruct() {
+		if p.Computed().IsEmptyStruct() {
 			return nil
 		}
 
-		if err := t.Fill(computed.Cue()); err != nil {
+		if err := t.Fill(p.Computed().Cue()); err != nil {
 			lg.
 				Error().
 				Err(err).
@@ -257,7 +275,7 @@ func newPipelineRunner(inst *cue.Instance, result *DeploymentResult, s Solver) c
 		}
 
 		// Merge task value into output
-		if err := result.computed.FillPath(t.Path(), computed); err != nil {
+		if err := computed.FillPath(t.Path(), p.Computed()); err != nil {
 			lg.
 				Error().
 				Err(err).

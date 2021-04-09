@@ -60,7 +60,7 @@ func GetCurrentDeploymentState(ctx context.Context, store *dagger.Store) *dagger
 }
 
 // Re-compute a deployment (equivalent to `dagger up`).
-func DeploymentUp(ctx context.Context, state *dagger.DeploymentState) *dagger.DeploymentResult {
+func DeploymentUp(ctx context.Context, state *dagger.DeploymentState) *dagger.Deployment {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "")
