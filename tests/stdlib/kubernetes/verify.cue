@@ -8,6 +8,8 @@ import (
 #VerifyApply: {
 	podname: string
 
+	namespace: string
+
 	// Verify that pod exist
 	#GetPods:
 		"""
@@ -27,7 +29,7 @@ import (
 
 		op.#WriteFile & {
 			dest:    "/kubeconfig"
-			content: Config.contents
+			content: config.contents
 			mode:    0o600
 		},
 

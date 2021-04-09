@@ -3,6 +3,8 @@ package kubernetes
 import (
 	"encoding/yaml"
 	"dagger.io/dagger"
+	"dagger.io/dagger/op"
+	"dagger.io/alpine"
 	"dagger.io/file"
 	"dagger.io/kubernetes"
 )
@@ -17,36 +19,47 @@ config: file.#Read & {
 	from:     kubeconfig
 }
 
-// Pod uid
-// Can be better if it's a random id in real test
-uid: string
-
-kubeSrc: {
-	apiVersion: "v1"
-	kind:       "Pod"
-	metadata: name: "kube-test-\(uid)"
-	spec: {
-		restartPolicy: "Never"
-		containers: [{
-			name:  "test"
-			image: "hello-world"
-		}]
-	}
+// Generate a random number
+// It trigger a "cycle error" if I put it in TestKubeApply ?!
+// failed to up deployment: buildkit solve: TestKubeApply.#up: cycle error
+random: {
+	string
+	#up: [
+		op.#Load & {from: alpine.#Image},
+		op.#Exec & {
+			args: ["sh", "-c", "cat /dev/urandom | tr -dc 'a-z' | fold -w 10 | head -n 1 | tr -d '\n' > /rand"]
+		},
+		op.#Export & {
+			source: "/rand"
+		},
+	]
 }
 
-// Dagger test k8s namespace
-namespace: "dagger-test"
-
 TestKubeApply: {
-	kubernetes.#Apply & {
+	// Pod spec
+	kubeSrc: {
+		apiVersion: "v1"
+		kind:       "Pod"
+		metadata: name: "kube-test-\(random)"
+		spec: {
+			restartPolicy: "Never"
+			containers: [{
+				name:  "test"
+				image: "hello-world"
+			}]
+		}
+	}
+
+	// Apply deployment
+	apply: kubernetes.#Apply & {
 		kubeconfig:   config.contents
-		"namespace":  namespace
+		namespace:    "dagger-test"
 		sourceInline: yaml.Marshal(kubeSrc)
 	}
 
+	// Verify deployment
 	verify: #VerifyApply & {
-		podname: "kube-test-\(uid)"
+		podname:   kubeSrc.metadata.name
+		namespace: apply.namespace
 	}
 }
-
-result: kubeApply: TestKubeApply.verify

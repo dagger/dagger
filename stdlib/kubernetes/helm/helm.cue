@@ -13,11 +13,11 @@ import (
 	// Helm deployment name
 	name: string
 
-	// Helm chart to install
-	chart: dagger.#Artifact
+	// Helm chart to install from source
+	chartSource: dagger.#Artifact
 
-	// Helm chart to install inlined
-	chartInline?: string
+	// Helm chart to install from repository
+	chart?: string
 
 	// Helm chart repository (defaults to stable)
 	repository: *"https://charts.helm.sh/stable" | string
@@ -89,10 +89,16 @@ import (
 			content: kubeconfig
 			mode:    0o600
 		},
-		if chartInline != _|_ {
+		if chart != _|_ {
 			op.#WriteFile & {
 				dest:    "/helm/chart"
 				content: chart
+			}
+		},
+		if (values & string) != _|_ {
+			op.#WriteFile & {
+				dest:    "/helm/values.yaml"
+				content: values
 			}
 		},
 		op.#Exec & {
@@ -117,11 +123,8 @@ import (
 				HELM_ATOMIC:  strconv.FormatBool(atomic)
 			}
 			mount: {
-				if (values & string) != _|_ {
-					"/helm/values.yaml": values
-				}
-				if chartInline == _|_ {
-					"/helm/chart": from: chart
+				if chartSource != _|_ && chart == _|_ {
+					"/helm/chart": from: chartSource
 				}
 			}
 		},

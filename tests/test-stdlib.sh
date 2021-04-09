@@ -17,6 +17,15 @@ test::stdlib(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/file
   test::secret "$d"/stdlib/netlify/inputs.yaml "stdlib: netlify" \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/netlify
-  test::one "stdlib:: kubernetes" \
-      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/kubernetes --input-dir TestKubeconfig="/home/$USER/.kube"  --input-string uid="dagger-id"
+
+  # Check if there is a kubeconfig and if it for a kind cluster
+  if [ -f ~/.kube/config ] && grep -q "kind" ~/.kube/config &> /dev/null; then
+      test::one "stdlib: kubernetes" \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/kubernetes --input-dir kubeconfig=~/.kube
+      test::one "stdlib: helm" \
+        "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/stdlib/kubernetes/helm --input-dir kubeconfig=~/.kube --input-dir TestHelmSimpleChart.deploy.chartSource="$d"/stdlib/kubernetes/helm/testdata/mychart
+  else
+    logger::warning "Skip kubernetes test: local cluster not available"
+  fi
+
 }
