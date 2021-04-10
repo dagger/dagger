@@ -72,7 +72,7 @@ backend: {
 
 	// Docker image built from source, pushed to ECR
 	image: #ECRImage & {
-		source:     source
+		source:     backend.source
 		repository: infra.ecrRepository
 		tag:        slug
 		awsConfig:  infra.awsConfig
@@ -92,7 +92,7 @@ backend: {
 		if infra.ecsTaskRoleArn != _|_ {
 			taskRoleArn: infra.ecsTaskRoleArn
 		}
-		hostname: hostname
+		hostname: backend.hostname
 		healthCheck: {
 			timeout:                 backend.container.healthCheckTimeout
 			path:                    backend.container.healthCheckPath
@@ -101,7 +101,7 @@ backend: {
 		desiredCount: backend.container.desiredCount
 		container: {
 			command:     backend.container.command
-			environment: environment
+			environment: backend.environment
 			port:        backend.container.port
 			memory:      backend.container.memory
 			"image":     image.ref

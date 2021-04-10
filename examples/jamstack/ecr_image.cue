@@ -42,11 +42,8 @@ import (
 			}
 			buildArg: buildArgs
 		},
-		op.Export & {
-			format: "string"
-			source: op.#PushContainer & {
-				ref: pushTarget
-			}
+		op.#PushContainer & {
+			ref: pushTarget
 		},
 	]
 

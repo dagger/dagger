@@ -9,14 +9,13 @@ import (
 )
 
 #ECSApp: {
-	awsConfig:         aws.#Config
-	slug:              string
-	clusterName:       string
-	vpcId:             string
-	elbListenerArn:    string
-	tlsCertificateArn: string
-	taskRoleArn:       *"" | string
-	hostname:          string
+	awsConfig:      aws.#Config
+	slug:           string
+	clusterName:    string
+	vpcId:          string
+	elbListenerArn: string
+	taskRoleArn:    *"" | string
+	hostname:       string
 	healthCheck: {
 		timeout:                 *10 | int
 		path:                    *"/" | string
@@ -45,10 +44,9 @@ import (
 		stackName: slug
 		onFailure: "DO_NOTHING"
 		parameters: {
-			ELBRulePriority:   elbRulePriority.out
-			ImageRef:          container.image
-			ELBListenerArn:    elbListenerArn
-			TLSCertificateArn: tlsCertificateArn
+			ELBRulePriority: elbRulePriority.out
+			ImageRef:        container.image
+			ELBListenerArn:  elbListenerArn
 		}
 		source: json.Marshal(template)
 	}
@@ -57,19 +55,11 @@ import (
 		AWSTemplateFormatVersion: "2010-09-09"
 		Description:              "Blocklayer deployed app"
 		Parameters: {
-			ELBRulePriority: Type:   "Number"
-			ImageRef: Type:          "String"
-			ELBListenerArn: Type:    "String"
-			TLSCertificateArn: Type: "String"
+			ELBRulePriority: Type: "Number"
+			ImageRef: Type:        "String"
+			ELBListenerArn: Type:  "String"
 		}
 		Resources: {
-			TLSCertificate: {
-				Type: "AWS::ElasticLoadBalancingV2::ListenerCertificate"
-				Properties: {
-					Certificates: [ {CertificateArn: Ref: "TLSCertificateArn"}]
-					ListenerArn: Ref: "ELBListenerArn"
-				}
-			}
 			ECSTaskDefinition: {
 				Type: "AWS::ECS::TaskDefinition"
 				Properties: {

@@ -17,8 +17,6 @@ import (
 
 	aws.#Script & {
 		files: {
-			"/inputs/aws/access_key": config.accessKey
-			"/inputs/aws/secret_key": config.secretKey
 			"/inputs/listenerArn":    listenerArn
 			if vhost != _|_ {
 				"/inputs/vhost": vhost
