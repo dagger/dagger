@@ -672,8 +672,8 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 
 func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	var (
-		context    = op.Lookup("context")
-		dockerfile = op.Lookup("dockerfile")
+		dockerContext = op.Lookup("context")
+		dockerfile    = op.Lookup("dockerfile")
 
 		contextDef    *bkpb.Definition
 		dockerfileDef *bkpb.Definition
@@ -681,15 +681,15 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		err error
 	)
 
-	if !context.Exists() && !dockerfile.Exists() {
+	if !dockerContext.Exists() && !dockerfile.Exists() {
 		return st, errors.New("context or dockerfile required")
 	}
 
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
-	if context.Exists() {
+	if dockerContext.Exists() {
 		from := NewPipeline(op.Lookup("context").Path().String(), p.s)
-		if err := from.Do(ctx, context); err != nil {
+		if err := from.Do(ctx, dockerContext); err != nil {
 			return st, err
 		}
 		fromResult, err := from.Result()
@@ -820,7 +820,7 @@ func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.Sta
 }
 
 func (p *Pipeline) Mkdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	path, err := op.Lookup("path").String()
+	pathString, err := op.Lookup("path").String()
 	if err != nil {
 		return st, err
 	}
@@ -836,7 +836,7 @@ func (p *Pipeline) Mkdir(ctx context.Context, op *compiler.Value, st llb.State) 
 	}
 
 	return st.Dir(dir).File(
-		llb.Mkdir(path, fs.FileMode(mode)),
-		llb.WithCustomName(p.vertexNamef("Mkdir %s", path)),
+		llb.Mkdir(pathString, fs.FileMode(mode)),
+		llb.WithCustomName(p.vertexNamef("Mkdir %s", pathString)),
 	), nil
 }
