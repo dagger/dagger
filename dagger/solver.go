@@ -81,7 +81,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		return nil, err
 	}
 
-	llb, err := dumpLLB(def)
+	jsonLLB, err := dumpLLB(def)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 	log.
 		Ctx(ctx).
 		Trace().
-		RawJSON("llb", llb).
+		RawJSON("llb", jsonLLB).
 		Msg("solving")
 
 	// call solve
