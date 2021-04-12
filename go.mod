@@ -3,7 +3,7 @@ module dagger.io/go
 go 1.16
 
 require (
-	cuelang.org/go v0.3.0
+	cuelang.org/go v0.3.1
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.1
 	github.com/docker/distribution v2.7.1+incompatible
