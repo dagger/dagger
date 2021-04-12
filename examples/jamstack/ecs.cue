@@ -53,7 +53,7 @@ import (
 
 	template: {
 		AWSTemplateFormatVersion: "2010-09-09"
-		Description:              "Blocklayer deployed app"
+		Description:              "Dagger deployed app"
 		Parameters: {
 			ELBRulePriority: Type: "Number"
 			ImageRef: Type:        "String"

@@ -2,29 +2,8 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/aws"
 	"dagger.io/aws/ecs"
 )
-
-infra: {
-	// AWS auth & default region
-	awsConfig: aws.#Config
-
-	// VPC Id
-	vpcId: string
-
-	// ECR Image repository
-	ecrRepository: string
-
-	// ECS cluster name
-	ecsClusterName: string
-
-	// Execution Role ARN used for all tasks running on the cluster
-	ecsTaskRoleArn?: string
-
-	// ELB listener ARN
-	elbListenerArn: string
-}
 
 // Backend configuration
 backend: {
