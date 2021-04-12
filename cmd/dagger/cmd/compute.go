@@ -130,6 +130,25 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
+		if f := viper.GetString("input-file"); f != "" {
+			lg := lg.With().Str("path", f).Logger()
+
+			parts := strings.SplitN(f, "=", 2)
+			k, v := parts[0], parts[1]
+
+			content, err := os.ReadFile(v)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to read file")
+			}
+
+			if len(content) > 0 {
+				err = st.SetInput(k, dagger.FileInput(v))
+				if err != nil {
+					lg.Fatal().Err(err).Msg("failed to set input string")
+				}
+			}
+		}
+
 		deployment := common.DeploymentUp(ctx, st)
 
 		v := compiler.NewValue()
@@ -150,6 +169,7 @@ var computeCmd = &cobra.Command{
 func init() {
 	computeCmd.Flags().StringSlice("input-string", []string{}, "TARGET=STRING")
 	computeCmd.Flags().StringSlice("input-dir", []string{}, "TARGET=PATH")
+	computeCmd.Flags().String("input-file", "", "TARGET=PATH")
 	computeCmd.Flags().StringSlice("input-git", []string{}, "TARGET=REMOTE#REF")
 	computeCmd.Flags().String("input-json", "", "JSON")
 	computeCmd.Flags().String("input-yaml", "", "YAML")

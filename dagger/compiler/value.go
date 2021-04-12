@@ -109,6 +109,11 @@ func (v *Value) Exists() bool {
 }
 
 // Proxy function to the underlying cue.Value
+func (v *Value) Bytes() ([]byte, error) {
+	return v.val.Bytes()
+}
+
+// Proxy function to the underlying cue.Value
 func (v *Value) String() (string, error) {
 	return v.val.String()
 }

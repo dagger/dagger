@@ -798,7 +798,21 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 }
 
 func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	content, err := op.Lookup("content").String()
+	var content []byte
+	var err error
+
+	switch kind := op.Lookup("content").Kind(); kind {
+	case cue.BytesKind:
+		content, err = op.Lookup("content").Bytes()
+	case cue.StringKind:
+		var str string
+		str, err = op.Lookup("content").String()
+		if err == nil {
+			content = []byte(str)
+		}
+	default:
+		err = fmt.Errorf("unhandled data type in WriteFile: %s", kind)
+	}
 	if err != nil {
 		return st, err
 	}
@@ -814,7 +828,7 @@ func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.Sta
 	}
 
 	return st.File(
-		llb.Mkfile(dest, fs.FileMode(mode), []byte(content)),
+		llb.Mkfile(dest, fs.FileMode(mode), content),
 		llb.WithCustomName(p.vertexNamef("WriteFile %s", dest)),
 	), nil
 }

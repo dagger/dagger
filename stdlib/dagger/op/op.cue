@@ -87,7 +87,7 @@ package op
 
 #WriteFile: {
 	do:      "write-file"
-	content: string
+	content: string | bytes
 	dest:    string
 	mode:    int | *0o644
 }
