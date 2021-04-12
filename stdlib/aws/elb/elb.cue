@@ -15,9 +15,12 @@ import (
 	// Optional vhost for reusing priorities
 	vhost?: string
 
+	// exported priority
+	out: string
+
 	aws.#Script & {
 		files: {
-			"/inputs/listenerArn":    listenerArn
+			"/inputs/listenerArn": listenerArn
 			if vhost != _|_ {
 				"/inputs/vhost": vhost
 			}
