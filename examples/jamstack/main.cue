@@ -3,9 +3,6 @@ package main
 // Name of the application
 name: string & =~"[a-z0-9-]+"
 
-// FIXME: temporary workaround (GH issue #142) - image metadata is lost after build
-backend: container: command: ["/bin/hello-go"]
-
 // Inject db info in the container environment
 backend: environment: {
 	DB_USERNAME: database.username
@@ -16,7 +13,10 @@ backend: environment: {
 	DB_TYPE:     database.dbType
 }
 
+// Configure the frontend with the API URL
+frontend: environment: APP_URL_API: url.backendURL
+
 url: {
-	frontendURL: "FIXME"
+	frontendURL: frontend.site.url
 	backendURL:  "https://\(backend.hostname)/"
 }

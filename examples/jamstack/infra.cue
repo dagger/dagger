@@ -2,6 +2,7 @@ package main
 
 import (
 	"dagger.io/aws"
+	"dagger.io/netlify"
 )
 
 infra: {
@@ -28,4 +29,7 @@ infra: {
 
 	// ARN of the RDS Instance
 	rdsInstanceArn: string
+
+	// Netlify credentials
+	netlifyAccount: netlify.#Account
 }
