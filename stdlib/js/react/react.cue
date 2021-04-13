@@ -47,7 +47,6 @@ import (
 				"-c",
 				"""
 					[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
-					cat .env
 					yarn install --production false
 					yarn run "$YARN_BUILD_SCRIPT"
 					mv "$YARN_BUILD_DIRECTORY" /build
