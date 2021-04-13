@@ -20,14 +20,10 @@ infra: {
 	elbListenerArn:    "arn:aws:elasticloadbalancing:us-east-1:8563296674124:listener/app/bl-ec-ECSAL-OSYI03K07BCO/3c2d3e78347bde5b/d02ac88cc007e24e"
 	rdsAdminSecretArn: "arn:aws:secretsmanager:us-east-1:8563296674124:secret:AdminPassword-NQbBi7oU4CYS9-IGgS3B"
 	rdsInstanceArn:    "arn:aws:rds:us-east-1:8563296674124:cluster:bl-rds-acme-764-rdscluster-8eg3xbfjggkfdg"
-	netlifyAccount: {
-		token: "<REPLACE WITH NETLIFY TOKEN>"
-	}
+	netlifyAccount: token: "<REPLACE WITH NETLIFY TOKEN>"
 }
 
-database: {
-	dbType: "mysql"
-}
+database: dbType: "mysql"
 
 backend: {
 	source: git.#Repository & {
