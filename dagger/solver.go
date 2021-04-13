@@ -9,6 +9,7 @@ import (
 
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -63,14 +64,13 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 }
 
 // Solve will block until the state is solved and returns a Reference.
-func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (bkgw.Reference, error) {
+func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
 	// call solve
 	res, err := s.gw.Solve(ctx, req)
 	if err != nil {
 		return nil, bkCleanError(err)
 	}
-	// always use single reference (ignore multiple outputs & metadata)
-	return res.SingleRef()
+	return res, nil
 }
 
 // Solve will block until the state is solved and returns a Reference.
@@ -93,7 +93,7 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		Msg("solving")
 
 	// call solve
-	return s.SolveRequest(ctx, bkgw.SolveRequest{
+	res, err := s.SolveRequest(ctx, bkgw.SolveRequest{
 		Definition: def,
 
 		// makes Solve() to block until LLB graph is solved. otherwise it will
@@ -101,13 +101,18 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 		// will be evaluated on export or if you access files on it.
 		Evaluate: true,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res.SingleRef()
 }
 
 // Export will export `st` to `output`
 // FIXME: this is currently impleneted as a hack, starting a new Build session
 // within buildkit from the Control API. Ideally the Gateway API should allow to
 // Export directly.
-func (s Solver) Export(ctx context.Context, st llb.State, output bk.ExportEntry) (*bk.SolveResponse, error) {
+func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry) (*bk.SolveResponse, error) {
 	def, err := s.Marshal(ctx, st)
 	if err != nil {
 		return nil, err
@@ -131,9 +136,24 @@ func (s Solver) Export(ctx context.Context, st llb.State, output bk.ExportEntry)
 	}()
 
 	return s.control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
-		return c.Solve(ctx, bkgw.SolveRequest{
+		res, err := c.Solve(ctx, bkgw.SolveRequest{
 			Definition: def,
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Attach the image config if provided
+		if img != nil {
+			config, err := json.Marshal(img)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal image config: %w", err)
+			}
+
+			res.AddMeta(exptypes.ExporterImageConfigKey, config)
+		}
+
+		return res, nil
 	}, ch)
 }
 

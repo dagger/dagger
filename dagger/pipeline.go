@@ -14,7 +14,9 @@ import (
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
@@ -34,6 +36,7 @@ type Pipeline struct {
 	s        Solver
 	state    llb.State
 	result   bkgw.Reference
+	image    dockerfile2llb.Image
 	computed *compiler.Value
 }
 
@@ -59,6 +62,10 @@ func (p *Pipeline) Result() (llb.State, error) {
 
 func (p *Pipeline) FS() fs.FS {
 	return NewBuildkitFS(p.result)
+}
+
+func (p *Pipeline) ImageConfig() dockerfile2llb.Image {
+	return p.image
 }
 
 func (p *Pipeline) Computed() *compiler.Value {
@@ -255,13 +262,9 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
-	fromResult, err := from.Result()
-	if err != nil {
-		return st, err
-	}
 	return st.File(
 		llb.Copy(
-			fromResult,
+			from.State(),
 			src,
 			dest,
 			// FIXME: allow more configurable llb options
@@ -455,10 +458,6 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 	if err := from.Do(ctx, mnt.Lookup("from")); err != nil {
 		return nil, err
 	}
-	fromResult, err := from.Result()
-	if err != nil {
-		return nil, err
-	}
 	// possibly construct mount options for LLB from
 	var mo []llb.MountOption
 	// handle "path" option
@@ -469,7 +468,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 		mo = append(mo, llb.SourcePath(mps))
 	}
-	return llb.AddMount(dest, fromResult, mo...), nil
+	return llb.AddMount(dest, from.State(), mo...), nil
 }
 
 func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -559,7 +558,8 @@ func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (
 	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
-	return from.Result()
+	p.image = from.ImageConfig()
+	return from.State(), nil
 }
 
 func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -581,15 +581,19 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 	)
 
 	// Load image metadata and convert to to LLB.
-	// FIXME: metadata MUST be injected back into the gateway result
-	// FIXME: there are unhandled sections of the image config
-	image, err := p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
+	p.image, err = p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
 		LogName: p.vertexNamef("load metadata for %s", ref.String()),
 	})
 	if err != nil {
 		return st, err
 	}
 
+	return applyImageToState(p.image, st), nil
+}
+
+// applyImageToState converts an image config into LLB instructions
+func applyImageToState(image dockerfile2llb.Image, st llb.State) llb.State {
+	// FIXME: there are unhandled sections of the image config
 	for _, env := range image.Config.Env {
 		k, v := parseKeyValue(env)
 		st = st.AddEnv(k, v)
@@ -600,7 +604,7 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 	if image.Config.User != "" {
 		st = st.User(image.Config.User)
 	}
-	return st, nil
+	return st
 }
 
 func parseKeyValue(env string) (string, string) {
@@ -626,12 +630,7 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	pushSt, err := p.Result()
-	if err != nil {
-		return st, err
-	}
-
-	_, err = p.s.Export(ctx, pushSt, bk.ExportEntry{
+	_, err = p.s.Export(ctx, p.State(), &p.image, bk.ExportEntry{
 		Type: bk.ExporterImage,
 		Attrs: map[string]string{
 			"name": ref.String(),
@@ -692,11 +691,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		if err := from.Do(ctx, dockerContext); err != nil {
 			return st, err
 		}
-		fromResult, err := from.Result()
-		if err != nil {
-			return st, err
-		}
-		contextDef, err = p.s.Marshal(ctx, fromResult)
+		contextDef, err = p.s.Marshal(ctx, from.State())
 		if err != nil {
 			return st, err
 		}
@@ -722,48 +717,77 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		}
 	}
 
+	opts, err := dockerBuildOpts(op)
+	if err != nil {
+		return st, err
+	}
+
 	req := bkgw.SolveRequest{
 		Frontend:    "dockerfile.v0",
-		FrontendOpt: make(map[string]string),
+		FrontendOpt: opts,
 		FrontendInputs: map[string]*bkpb.Definition{
 			dockerfilebuilder.DefaultLocalNameContext:    contextDef,
 			dockerfilebuilder.DefaultLocalNameDockerfile: dockerfileDef,
 		},
 	}
 
+	res, err := p.s.SolveRequest(ctx, req)
+	if err != nil {
+		return st, err
+	}
+	if meta, ok := res.Metadata[exptypes.ExporterImageConfigKey]; ok {
+		if err := json.Unmarshal(meta, &p.image); err != nil {
+			return st, fmt.Errorf("failed to unmarshal image config: %w", err)
+		}
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return st, err
+	}
+	st, err = ref.ToState()
+	if err != nil {
+		return st, err
+	}
+	return applyImageToState(p.image, st), nil
+}
+
+func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
+	opts := map[string]string{}
+
 	if dockerfilePath := op.Lookup("dockerfilePath"); dockerfilePath.Exists() {
 		filename, err := dockerfilePath.String()
 		if err != nil {
-			return st, err
+			return nil, err
 		}
-		req.FrontendOpt["filename"] = filename
+		opts["filename"] = filename
 	}
 
 	if buildArgs := op.Lookup("buildArg"); buildArgs.Exists() {
 		fields, err := buildArgs.Fields()
 		if err != nil {
-			return st, err
+			return nil, err
 		}
 		for _, buildArg := range fields {
 			v, err := buildArg.Value.String()
 			if err != nil {
-				return st, err
+				return nil, err
 			}
-			req.FrontendOpt["build-arg:"+buildArg.Label] = v
+			opts["build-arg:"+buildArg.Label] = v
 		}
 	}
 
 	if labels := op.Lookup("label"); labels.Exists() {
 		fields, err := labels.Fields()
 		if err != nil {
-			return st, err
+			return nil, err
 		}
 		for _, label := range fields {
 			s, err := label.Value.String()
 			if err != nil {
-				return st, err
+				return nil, err
 			}
-			req.FrontendOpt["label:"+label.Label] = s
+			opts["label:"+label.Label] = s
 		}
 	}
 
@@ -771,30 +795,26 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		p := []string{}
 		list, err := platforms.List()
 		if err != nil {
-			return st, err
+			return nil, err
 		}
 
 		for _, platform := range list {
 			s, err := platform.String()
 			if err != nil {
-				return st, err
+				return nil, err
 			}
 			p = append(p, s)
 		}
 
 		if len(p) > 0 {
-			req.FrontendOpt["platform"] = strings.Join(p, ",")
+			opts["platform"] = strings.Join(p, ",")
 		}
 		if len(p) > 1 {
-			req.FrontendOpt["multi-platform"] = "true"
+			opts["multi-platform"] = "true"
 		}
 	}
 
-	res, err := p.s.SolveRequest(ctx, req)
-	if err != nil {
-		return st, err
-	}
-	return res.ToState()
+	return opts, nil
 }
 
 func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
