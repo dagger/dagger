@@ -7,7 +7,7 @@ import (
 
 database: {
 	let slug = name
-	dbType: "mysql"
+	dbType: "mysql" | "postgresql"
 
 	db: rds.#CreateDB & {
 		config:    infra.awsConfig
