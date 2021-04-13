@@ -1,15 +1,24 @@
 package react
 
 import (
+	"strings"
+
 	"dagger.io/dagger"
+	"dagger.io/dagger/op"
 	"dagger.io/alpine"
-	"dagger.io/docker"
 )
 
 // A ReactJS application
 #App: {
 	// Application source code
 	source: dagger.#Artifact
+
+	// Environment variables
+	env: [string]: string
+
+	// Write the contents of `environment` to this file,
+	// in the "envfile" format.
+	writeEnvFile: string | *""
 
 	// Yarn-specific settings
 	yarn: {
@@ -20,47 +29,50 @@ import (
 		// Run this yarn script
 		script: string | *"build"
 	}
-	setup: [
-		"mkdir -p /cache/yarn",
-	]
 
-	// Build the application in a container, using yarn
-	build: docker.#Container & {
-		image: alpine.#Image & {
-			package: bash: "=~5.1"
-			package: yarn: "=~1.22"
-		}
-		dir:     "/src"
-		command: """
-			yarn install --production false
-			yarn run "$YARN_BUILD_SCRIPT"
-			mv "$YARN_BUILD_DIRECTORY" \(outputDir)
-			"""
-		volume: {
-			src: {
-				from: source
-				dest: "/src"
+	build: #up: [
+		op.#Load & {
+			from: alpine.#Image & {
+				package: bash: "=~5.1"
+				package: yarn: "=~1.22"
 			}
-			//   yarnCache: {
-			//    type: "cache"
-			//    dest: "/cache/yarn"
-			//   }
-		}
-		outputDir: "/build"
-		shell: {
-			path: "/bin/bash"
+		},
+		op.#Exec & {
 			args: [
+				"/bin/bash",
 				"--noprofile",
 				"--norc",
-				"-eo", "pipefail",
+				"-eo",
+				"pipefail",
 				"-c",
+				"""
+					[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
+					cat .env
+					yarn install --production false
+					yarn run "$YARN_BUILD_SCRIPT"
+					mv "$YARN_BUILD_DIRECTORY" /build
+					""",
 			]
-		}
-		env: {
-			YARN_BUILD_SCRIPT:    yarn.script
-			YARN_CACHE_FOLDER:    "/cache/yarn"
-			YARN_BUILD_DIRECTORY: yarn.buildDir
-		}
-	}
-
+			if env != _|_ {
+				"env": env
+			}
+			"env": {
+				YARN_BUILD_SCRIPT:    yarn.script
+				YARN_CACHE_FOLDER:    "/cache/yarn"
+				YARN_BUILD_DIRECTORY: yarn.buildDir
+				if writeEnvFile != "" {
+					ENVFILE_NAME: writeEnvFile
+					ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
+				}
+			}
+			dir: "/src"
+			mount: {
+				"/src": from: source
+				"/cache/yarn": "cache"
+			}
+		},
+		op.#Subdir & {
+			dir: "/build"
+		},
+	]
 }
