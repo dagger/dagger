@@ -19,6 +19,10 @@ import (
 	out: string
 
 	aws.#Script & {
+		// FIXME: we should not rely on the cache for this but it's being
+		// executed several times if enabled: https://github.com/dagger/dagger/issues/42
+		// always: true
+
 		files: {
 			"/inputs/listenerArn": listenerArn
 			if vhost != _|_ {
