@@ -60,6 +60,7 @@ import (
 			}
 		},
 		op.#Exec & {
+			always: true
 			args: [
 				"/bin/bash",
 				"--noprofile",

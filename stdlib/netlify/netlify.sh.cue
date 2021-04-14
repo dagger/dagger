@@ -1,6 +1,6 @@
 package netlify
 
-#Site: #deploy: command: #"""
+#code: #"""
 	create_site() {
 	    url="https://api.netlify.com/api/v1/${NETLIFY_ACCOUNT:-}/sites"
 

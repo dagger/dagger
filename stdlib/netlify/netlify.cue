@@ -3,7 +3,7 @@ package netlify
 import (
 	"dagger.io/dagger"
 	"dagger.io/alpine"
-	"dagger.io/docker"
+	"dagger.io/dagger/op"
 )
 
 // A Netlify account
@@ -42,52 +42,45 @@ import (
 	// Logs URL for this deployment
 	logsUrl: string
 
-	// Deployment container
-	#deploy: docker.#Container & {
-		image: alpine.#Image & {
-			package: {
-				bash: "=~5.1"
-				jq:   "=~1.6"
-				curl: "=~7.74"
-				yarn: "=~1.22"
+	#up: [
+		op.#Load & {
+			from: alpine.#Image & {
+				package: bash: "=~5.1"
+				package: jq:   "=~1.6"
+				package: curl: "=~7.74"
+				package: yarn: "=~1.22"
 			}
-		}
-		setup: [
-			"yarn global add netlify-cli@2.47.0",
-		]
-		shell: {
-			path: "/bin/bash"
+		},
+		op.#Exec & {
+			args: ["yarn", "global", "add", "netlify-cli@2.47.0"]
+		},
+		op.#Exec & {
 			args: [
+				"/bin/bash",
 				"--noprofile",
 				"--norc",
 				"-eo",
 				"pipefail",
 				"-c",
+				#code,
 			]
-		}
-		dir: "/src"
-		volume: "contents": {
-			dest: "/src"
-			from: contents
-		}
-		env: {
-			NETLIFY_SITE_NAME: name
-			if (create) {
-				NETLIFY_SITE_CREATE: "1"
+			env: {
+				NETLIFY_SITE_NAME: name
+				if (create) {
+					NETLIFY_SITE_CREATE: "1"
+				}
+				if customDomain != _|_ {
+					NETLIFY_DOMAIN: customDomain
+				}
+				NETLIFY_ACCOUNT:    account.name
+				NETLIFY_AUTH_TOKEN: account.token
 			}
-			if customDomain != _|_ {
-				NETLIFY_DOMAIN: customDomain
-			}
-			NETLIFY_ACCOUNT:    account.name
-			NETLIFY_AUTH_TOKEN: account.token
-		}
-		export: {
+			dir: "/src"
+			mount: "/src": from: contents
+		},
+		op.#Export & {
 			source: "/output.json"
 			format: "json"
-		}
-	}
-
-	// FIXME: this is a hack to use docker.#Container while exporting 
-	// values.
-	#up: #deploy.#up
+		},
+	]
 }
