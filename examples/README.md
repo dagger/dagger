@@ -48,7 +48,7 @@ dagger up
 
 This example shows how to deploy a complete app with a backend, a database and a frontend.
 
-This app assumes the followinf infrastructure is available:
+This app assumes the following infrastructure is available:
 
 - AWS ECS Cluster
 - AWS ALB with a TLS certificate
