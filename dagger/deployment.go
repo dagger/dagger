@@ -293,7 +293,7 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 }
 
 func (D *Deployment) ListInputs() ([]cue.Value, error) {
-	vals, err := cuetils.FindAttributes(D.state.Cue(), []string{"input"})
+	vals, err := cuetils.FindAttributes(D.plan.Cue(), []string{"input"})
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func (D *Deployment) ListInputs() ([]cue.Value, error) {
 	return vals, nil
 }
 func (D *Deployment) ScanInputs() ([]cue.Value, error) {
-	vals, err := cuetils.InferInputs(D.state.Cue())
+	vals, err := cuetils.InferInputs(D.plan.Cue())
 	if err != nil {
 		return nil, err
 	}
