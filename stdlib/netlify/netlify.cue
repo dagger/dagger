@@ -47,7 +47,7 @@ import (
 			from: alpine.#Image & {
 				package: bash: "=~5.1"
 				package: jq:   "=~1.6"
-				package: curl: "=~7.74"
+				package: curl: "=~7.76"
 				package: yarn: "=~1.22"
 			}
 		},
