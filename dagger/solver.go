@@ -14,7 +14,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/moby/buildkit/solver/pb"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/rs/zerolog/log"
@@ -38,14 +37,14 @@ func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus, 
 
 func invalidateCache(def *llb.Definition) error {
 	for _, dt := range def.Def {
-		var op pb.Op
+		var op bkpb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
 			return err
 		}
 		dgst := digest.FromBytes(dt)
 		opMetadata, ok := def.Metadata[dgst]
 		if !ok {
-			opMetadata = pb.OpMetadata{}
+			opMetadata = bkpb.OpMetadata{}
 		}
 		c := llb.Constraints{Metadata: opMetadata}
 		llb.IgnoreCache(&c)
