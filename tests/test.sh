@@ -22,8 +22,6 @@ d=$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD}")" 2>/dev/null 1>&2 && pwd)
 # shellcheck source=/dev/null
 . "$d/test-stdlib.sh"
 # shellcheck source=/dev/null
-. "$d/test-cli.sh"
-# shellcheck source=/dev/null
 . "$d/test-examples.sh"
 
 test::all(){
@@ -32,7 +30,6 @@ test::all(){
   test::suite "compute" && test::compute "$dagger"
   test::suite "llb" && test::llb "$dagger"
   test::suite "stdlib" && test::stdlib "$dagger"
-  test::suite "cli" && test::cli "$dagger"
   test::suite "examples" && test::examples "$dagger"
 }
 

@@ -34,13 +34,9 @@ jobs:
           skip-go-installation: true
           args: --timeout=3m
 
-      - name: Cue Lint
-        run: |
-          make cuelint
-
       - name: Lint
         run: |
-          make check-buildkit-version
+          make shellcheck cuelint check-buildkit-version
 
   test:
     name: Test
