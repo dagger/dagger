@@ -22,7 +22,7 @@ var downCmd = &cobra.Command{
 }
 
 func init() {
-	downCmd.Flags().Bool("--no-cache", false, "Disable all run cache")
+	downCmd.Flags().Bool("no-cache", false, "Disable all run cache")
 
 	if err := viper.BindPFlags(downCmd.Flags()); err != nil {
 		panic(err)

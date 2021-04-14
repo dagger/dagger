@@ -29,8 +29,6 @@ var upCmd = &cobra.Command{
 		}
 
 		state := common.GetCurrentDeploymentState(ctx, store)
-
-		// TODO: Implement options: --no-cache
 		result := common.DeploymentUp(ctx, state, viper.GetBool("no-cache"))
 		state.Computed = result.Computed().JSON().String()
 		if err := store.UpdateDeployment(ctx, state, nil); err != nil {
