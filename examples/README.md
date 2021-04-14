@@ -3,6 +3,44 @@
 All example commands should be executed in the `examples/` directory
 in an up-to-date checkout of the [dagger repository](https://github.com/dagger/dagger).
 
+## Deploy a static page to S3
+
+This example shows how to generate a simple HTML page and serve it from an S3 bucket.
+
+Components:
+
+- [Amazon S3](https://aws.amazon.com/s3/) for hosting
+
+1. Change the current directory to the example deployment plan and create a new deployment
+
+```sh
+cd ./simple-s3
+dagger new
+```
+
+2. Configure your AWS credentials
+
+```sh
+dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
+dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+```
+
+3. Deploy!
+
+```sh
+dagger up
+```
+
+4. Change a variable to alter the content
+
+In this example config, the HTML content is created from a variable `name` that has a default value, here is a simple
+way to change it without changing the code:
+
+```sh
+dagger input text name "someone else!"
+dagger up
+```
+
 ## Deploy a simple React application
 
 This example shows how to deploy an example React Application. [Read the deployment plan](https://github.com/dagger/dagger/tree/main/examples/react)
@@ -120,9 +158,6 @@ dagger new
 
 ```sh
 dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
-```
-
-```sh
 dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
@@ -165,9 +200,6 @@ dagger new
 
 ```sh
 dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
-```
-
-```sh
 dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
@@ -217,9 +249,6 @@ dagger new
 
 ```sh
 dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
-```
-
-```sh
 dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
