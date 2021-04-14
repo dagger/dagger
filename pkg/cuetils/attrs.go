@@ -1,48 +1,9 @@
 package cuetils
 
 import (
+	"fmt"
 	"cuelang.org/go/cue"
 )
-
-// FindsAttributes returns CUE values with @daggger(key) as long as any key is found.
-func FindAttributes(value cue.Value, keys []string) ([]cue.Value, error) {
-
-	var (
-		vals []cue.Value
-		err error
-	)
-
-	// walk function
-	before := func(v cue.Value) (bool, error) {
-		attrs := v.Attributes(cue.ValueAttr)
-		for _, attr := range attrs {
-			name :=  attr.Name()
-			// match `@dagger(...)`
-			if name == "dagger" {
-				// loop over args (CSV content in attribute)
-				for i := 0; i < attr.NumArgs(); i++ {
-					kA, _ := attr.Arg(i)
-					for _, key := range keys {
-						if kA == key {
-							vals = append(vals, v)
-							// we found a match, stop processing by returning from before
-							return true, nil
-						}
-					}
-				}
-			}
-		}
-		return true, nil
-	}
-
-	// walk
-	err = walkValue(value, before, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return vals, nil
-}
 
 func InferInputs(value cue.Value) ([]cue.Value, error) {
 	var (
@@ -53,13 +14,27 @@ func InferInputs(value cue.Value) ([]cue.Value, error) {
 	// walk function
 	before := func(v cue.Value) (bool, error) {
 		switch v.IncompleteKind() {
-			case cue.StructKind, cue.ListKind:
+
+			case cue.StructKind:
+				return true, nil
+
+			case cue.ListKind:
+				l, _ := v.Label()
+
+				if !v.IsConcrete() {
+					vals = append(vals, v)
+					return false, nil
+				}
+				fmt.Println("List:", l, v, v.IsConcrete())
 				return true, nil
 
 			default:
 
 				// is this leaf not concrete?
 				if v.Validate(cue.Concrete(true)) != nil {
+					fmt.Println("Non-concrete:")
+					L, _ := v.Label()
+					fmt.Println(L, v)
 
 					// look for @dagger(computed)
 					attrs := v.Attributes(cue.ValueAttr)
@@ -73,6 +48,17 @@ func InferInputs(value cue.Value) ([]cue.Value, error) {
 								}
 							}
 						}
+					}
+
+					i,p := v.Reference()
+					fmt.Println("Ref:", i,p)
+
+					// look for reference to some other field
+					o,l := v.Expr()
+					fmt.Println("Expr:", o,l)
+					for _, ex := range l {
+						ei, ep := ex.Reference()
+						fmt.Println("-", ei, ep)
 					}
 
 					// If we make it here, then @dagger(computed) is NOT on this value, so add it

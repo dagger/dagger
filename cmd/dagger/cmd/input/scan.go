@@ -51,19 +51,23 @@ var scanCmd = &cobra.Command{
 				return err
 			}
 
+			fmt.Println("\nDiscovered Inputs:\n===========================")
 
-			for _, i := range inputs {
+			for idx, val := range inputs {
 				// inst, ipath := i.Reference()
 				//l, _ := i.Label()
 				////fmt.Printf("%v: %v\n", l, i)
 				//fmt.Printf("%v: %v\n", ipath, inst)
 
-				inst, _ := i.Reference()
-				pkg := ""
+				inst, _ := val.Reference()
+				pkg := "(from: ENTRY)"
 				if inst != nil {
 					pkg = fmt.Sprintf("(from %s)", inst.ImportPath)
 				}
-				fmt.Printf("%s: %v  %s %v\n", i.Path(), i, pkg, i.IsConcrete())
+				fmt.Printf("\n%d :: %s: %v  %s %v\n", idx, val.Path(), val, pkg, val.IsConcrete())
+
+				fmt.Println(val.Expr())
+
 			}
 
 			return nil

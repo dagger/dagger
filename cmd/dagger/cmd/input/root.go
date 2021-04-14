@@ -20,7 +20,6 @@ func init() {
 		containerCmd,
 		dirCmd,
 		gitCmd,
-		listCmd,
 		scanCmd,
 		secretCmd,
 		textCmd,
