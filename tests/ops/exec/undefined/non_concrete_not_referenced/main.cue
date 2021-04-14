@@ -1,15 +1,15 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 hello: "world"
 bar:   string
 
 #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do:  "exec"
+	op.#Exec & {
 		dir: "/"
 		args: ["sh", "-c", """
 		echo \(hello)

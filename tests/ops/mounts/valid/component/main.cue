@@ -1,33 +1,34 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 test: {
 	string
 
 	#up: [
-		{
-			do: "load"
-			from: [{do: "fetch-container", ref: "alpine"}]
+		op.#Load & {
+			from: [
+				op.#FetchContainer & {
+					ref: "alpine"
+				},
+			]
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 					cat /mnt/test/lol > /out
 				"""]
 			mount: "/mnt/test": from: #up: [
-				{
-					do:  "fetch-container"
+				op.#FetchContainer & {
 					ref: "alpine"
 				},
-				{
-					do: "exec"
+				op.#Exec & {
 					args: ["sh", "-c", """
 						echo -n "hello world" > /lol
 						"""]
 				},
 			]
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/out"
 			format: "string"
 		},

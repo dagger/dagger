@@ -4,12 +4,10 @@ teststring: {
 	string
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/lalala"
 			format: "string"

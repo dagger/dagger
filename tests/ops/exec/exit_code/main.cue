@@ -1,14 +1,12 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do: "exec"
+	op.#Exec & {
 		args: ["sh", "-c", "exit 123"]
-		// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
-		dir: "/"
 	},
 ]

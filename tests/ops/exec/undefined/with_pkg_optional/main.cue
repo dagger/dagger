@@ -2,11 +2,11 @@ package testing
 
 import (
 	"dagger.io/optional"
+	"dagger.io/dagger/op"
 )
 
 #up: [
-	{
-		do: "load",
+	op.#Load & {
 		from: optional
 	},
 ]

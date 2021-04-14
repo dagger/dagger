@@ -1,7 +1,8 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 #up: [
-	{
-		do: "fetch-git"
+	op.#FetchGit & {
 	},
 ]

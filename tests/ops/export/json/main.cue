@@ -1,23 +1,21 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 testScalar: {
 	bool
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo true > /tmp/out
 				""",
 			]
-			dir: "/"
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/out"
 			format: "json"
@@ -26,20 +24,16 @@ testScalar: {
 }
 
 testMap: #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do: "exec"
+	op.#Exec & {
 		args: ["sh", "-c", """
 			echo '{"something": "something"}' > /tmp/out
 			""",
 		]
-		dir: "/"
 	},
-	{
-		do: "export"
+	op.#Export & {
 		// Source path in the container
 		source: "/tmp/out"
 		format: "json"

@@ -1,27 +1,24 @@
 package main
 
+import "dagger.io/dagger/op"
+
 hello: {
 	string
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["mkdir", "-p", "/tmp/foo"]
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", "echo -n world > /tmp/foo/hello"]
 		},
-		{
-			do:  "subdir"
+		op.#Subdir & {
 			dir: "/tmp/foo"
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/hello"
 			format: "string"
 		},

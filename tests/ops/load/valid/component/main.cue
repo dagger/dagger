@@ -1,26 +1,26 @@
 package testing
 
-component: #up: [{
-	do:  "fetch-container"
-	ref: "alpine"
-}, {
-	do: "exec"
-	args: ["sh", "-c", """
-		printf lol > /id
-		"""]
-	dir: "/"
-}]
+import "dagger.io/dagger/op"
+
+component: #up: [
+	op.#FetchContainer & {
+		ref: "alpine"
+	},
+	op.#Exec & {
+		args: ["sh", "-c", """
+			printf lol > /id
+			"""]
+	},
+]
 
 test1: {
 	string
 
 	#up: [
-		{
-			do:   "load"
+		op.#Load & {
 			from: component
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/id"
 			format: "string"
 		},
@@ -31,21 +31,19 @@ test2: {
 	string
 
 	#up: [
-		{
-			do: "load"
-			from: #up: [{
-				do:  "fetch-container"
-				ref: "alpine"
-			}, {
-				do: "exec"
-				args: ["sh", "-c", """
-					printf lol > /id
-					"""]
-				dir: "/"
-			}]
+		op.#Load & {
+			from: #up: [
+				op.#FetchContainer & {
+					ref: "alpine"
+				},
+				op.#Exec & {
+					args: ["sh", "-c", """
+						printf lol > /id
+						"""]
+				},
+			]
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/id"
 			format: "string"
 		},

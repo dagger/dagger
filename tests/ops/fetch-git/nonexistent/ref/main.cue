@@ -1,8 +1,9 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 #up: [
-	{
-		do:     "fetch-git"
+	op.#FetchGit & {
 		remote: "https://github.com/blocklayerhq/acme-clothing.git"
 		ref:    "lalalalal"
 	},

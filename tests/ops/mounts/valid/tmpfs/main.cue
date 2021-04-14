@@ -1,32 +1,33 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 test: {
 	string
 
 	#up: [
-		{
-			do: "load"
-			from: [{do: "fetch-container", ref: "alpine"}]
+		op.#Load & {
+			from: [
+				op.#FetchContainer & {
+					ref: "alpine"
+				},
+			]
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo ok > /out
 				echo ok > /tmpdir/out
 				"""]
-			dir: "/"
 			mount: "/tmpdir": "tmpfs"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				[ -f /out ] || exit 1
 				# content of /cache/tmp must not exist in this layer
 				[ ! -f /tmpdir/out ] || exit 1
 				"""]
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/out"
 			format: "string"
 		},

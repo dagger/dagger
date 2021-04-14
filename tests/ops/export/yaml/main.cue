@@ -1,24 +1,21 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 testScalar: {
 	bool
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo true > /tmp/out
 				""",
 			]
-			// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
-			dir: "/"
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/out"
 			format: "yaml"

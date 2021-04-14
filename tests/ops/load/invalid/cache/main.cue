@@ -1,15 +1,19 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 test1: {
 	string
 
 	#up: [
-		{
-			do: "load"
-			from: [{do: "fetch-container", ref: "alpine"}]
+		op.#Load & {
+			from: [
+				op.#FetchContainer & {
+					ref: "alpine"
+				},
+			]
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/etc/issue"
 			format: "string"
 		},
@@ -20,12 +24,14 @@ test2: {
 	string
 
 	#up: [
-		{
-			do: "load"
-			from: [{do: "fetch-container", ref: "busybox"}]
+		op.#Load & {
+			from: [
+				op.#FetchContainer & {
+					ref: "busybox"
+				},
+			]
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/etc/issue"
 			format: "string"
 		},

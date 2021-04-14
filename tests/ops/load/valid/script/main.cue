@@ -1,15 +1,19 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 test: {
 	string
 
 	#up: [
-		{
-			do: "load"
-			from: [{do: "fetch-container", ref: "alpine"}]
+		op.#Load & {
+			from: [
+				op.#FetchContainer & {
+					ref: "alpine"
+				},
+			]
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/etc/issue"
 			format: "string"
 		},

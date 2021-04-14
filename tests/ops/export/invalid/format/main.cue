@@ -1,22 +1,21 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 teststring: {
 	string
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo something > /tmp/out
 				""",
 			]
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/out"
 			format: "lalalalal"

@@ -1,12 +1,12 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do: "exec"
+	op.#Exec & {
 		args: ["sh", "-c", """
 				echo "pwd is: $(pwd)"
 				[ "$(pwd)" == "/etc" ] || exit 1

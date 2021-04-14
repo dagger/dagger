@@ -1,14 +1,14 @@
 package testing
 
+import "dagger.io/dagger/op"
+
 bar: string
 
 #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do: "exec"
+	op.#Exec & {
 		args: ["sh", "-c", """
 				echo "foo: $foo"
 				[ "$foo" == "overlay environment" ] || exit 1
