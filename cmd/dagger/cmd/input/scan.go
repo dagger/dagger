@@ -3,11 +3,14 @@ package input
 import (
 	"context"
 	"fmt"
+	"os"
+	"text/tabwriter"
 
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
+	"cuelang.org/go/cue/ast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -51,24 +54,34 @@ var scanCmd = &cobra.Command{
 				return err
 			}
 
-			fmt.Println("\nDiscovered Inputs:\n===========================")
+			// fmt.Println("\n\nDiscovered Inputs:\n===========================")
+			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "Path\tFrom\tRequired\tType\t")
 
-			for idx, val := range inputs {
-				// inst, ipath := i.Reference()
-				//l, _ := i.Label()
-				////fmt.Printf("%v: %v\n", l, i)
-				//fmt.Printf("%v: %v\n", ipath, inst)
+			for _, val := range inputs {
+				required := true
 
-				inst, _ := val.Reference()
-				pkg := "(from: ENTRY)"
-				if inst != nil {
-					pkg = fmt.Sprintf("(from %s)", inst.ImportPath)
+				// check for optional
+				src := val.Source()
+				switch src.(type) {
+				case *ast.Field:
+					f := src.(*ast.Field)
+					if f.Optional.File() != nil {
+						required = false
+					}
 				}
-				fmt.Printf("\n%d :: %s: %v  %s %v\n", idx, val.Path(), val, pkg, val.IsConcrete())
 
-				fmt.Println(val.Expr())
+				// get path / pkg import (if available)
+				inst, _ := val.Reference()
+				pkg := "(plan)"
+				if inst != nil {
+					pkg = fmt.Sprintf("%s", inst.ImportPath)
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%v\t%v\t\n", val.Path(), pkg, required, val)
 
 			}
+			w.Flush()
 
 			return nil
 		})

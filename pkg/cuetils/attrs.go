@@ -1,7 +1,6 @@
 package cuetils
 
 import (
-	"fmt"
 	"cuelang.org/go/cue"
 )
 
@@ -19,22 +18,24 @@ func InferInputs(value cue.Value) ([]cue.Value, error) {
 				return true, nil
 
 			case cue.ListKind:
-				l, _ := v.Label()
-
 				if !v.IsConcrete() {
 					vals = append(vals, v)
 					return false, nil
 				}
-				fmt.Println("List:", l, v, v.IsConcrete())
 				return true, nil
 
 			default:
 
+				// a leaf with default?
+				_, has := v.Default()
+				if has {
+					vals = append(vals, v)
+					// recurse here?
+					return false, nil
+				}
+
 				// is this leaf not concrete?
-				if v.Validate(cue.Concrete(true)) != nil {
-					fmt.Println("Non-concrete:")
-					L, _ := v.Label()
-					fmt.Println(L, v)
+				if v.Validate(cue.Concrete(true), cue.Optional(true)) != nil {
 
 					// look for @dagger(computed)
 					attrs := v.Attributes(cue.ValueAttr)
@@ -48,17 +49,6 @@ func InferInputs(value cue.Value) ([]cue.Value, error) {
 								}
 							}
 						}
-					}
-
-					i,p := v.Reference()
-					fmt.Println("Ref:", i,p)
-
-					// look for reference to some other field
-					o,l := v.Expr()
-					fmt.Println("Expr:", o,l)
-					for _, ex := range l {
-						ei, ep := ex.Reference()
-						fmt.Println("-", ei, ep)
 					}
 
 					// If we make it here, then @dagger(computed) is NOT on this value, so add it
