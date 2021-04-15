@@ -7,6 +7,9 @@ common_setup() {
     DAGGER="${DAGGER_BINARY:-$TESTDIR/../cmd/dagger/dagger}"
     export DAGGER
 
+    DAGGER_LOG_FORMAT="pretty"
+    export DAGGER_LOG_FORMAT
+
     DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
     export DAGGER_STORE
 }

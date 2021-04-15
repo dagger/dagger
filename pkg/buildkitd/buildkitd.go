@@ -116,13 +116,18 @@ func startBuildkit(ctx context.Context) error {
 	)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
-		log.
-			Ctx(ctx).
-			Error().
-			Err(err).
-			Bytes("output", output).
-			Msg("unable to start buildkitd")
-		return err
+		// If the daemon failed to start because it's already running,
+		// chances are another dagger instance started it. We can just ignore
+		// the error.
+		if !strings.Contains(string(output), "Error response from daemon: Conflict.") {
+			log.
+				Ctx(ctx).
+				Error().
+				Err(err).
+				Bytes("output", output).
+				Msg("unable to start buildkitd")
+			return err
+		}
 	}
 	return waitBuildkit(ctx)
 }
