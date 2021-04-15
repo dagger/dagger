@@ -22,6 +22,8 @@ func init() {
 		containerCmd,
 		secretCmd,
 		textCmd,
+		jsonCmd,
+		yamlCmd,
 	)
 }
 
