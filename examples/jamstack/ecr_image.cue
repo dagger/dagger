@@ -19,15 +19,6 @@ import (
 
 	pushTarget: "\(repository):\(tag)"
 
-	// Build the image
-	buildImage: op.#DockerBuild & {
-		context: source
-		if dockerfilePath != _|_ {
-			"dockerfilePath": dockerfilePath
-		}
-		buildArg: buildArgs
-	}
-
 	// Use these credentials to push
 	ecrCreds: ecr.#Credentials & {
 		config: awsConfig
@@ -35,6 +26,7 @@ import (
 	}
 
 	push: #up: [
+		// Build the docker image
 		op.#DockerBuild & {
 			context: source
 			if dockerfilePath != _|_ {
@@ -42,6 +34,7 @@ import (
 			}
 			buildArg: buildArgs
 		},
+		// Push the image to the registry
 		op.#PushContainer & {
 			ref: pushTarget
 		},
