@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-var textCmd = &cobra.Command{
-	Use:   "text <TARGET> [-f] <VALUE|PATH>",
-	Short: "Add a text input",
+var yamlCmd = &cobra.Command{
+	Use:   "yaml <TARGET> [-f] <VALUE|PATH>",
+	Short: "Add a YAML input",
 	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -25,15 +25,15 @@ var textCmd = &cobra.Command{
 		updateDeploymentInput(
 			ctx,
 			args[0],
-			dagger.TextInput(readInput(ctx, args[1])),
+			dagger.YAMLInput(readInput(ctx, args[1])),
 		)
 	},
 }
 
 func init() {
-	textCmd.Flags().BoolP("file", "f", false, "Read value from file")
+	yamlCmd.Flags().BoolP("file", "f", false, "Read value from file")
 
-	if err := viper.BindPFlags(textCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(yamlCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-var textCmd = &cobra.Command{
-	Use:   "text <TARGET> [-f] <VALUE|PATH>",
-	Short: "Add a text input",
+var jsonCmd = &cobra.Command{
+	Use:   "json <TARGET> [-f] <VALUE|PATH>",
+	Short: "Add a JSON input",
 	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -25,15 +25,15 @@ var textCmd = &cobra.Command{
 		updateDeploymentInput(
 			ctx,
 			args[0],
-			dagger.TextInput(readInput(ctx, args[1])),
+			dagger.JSONInput(readInput(ctx, args[1])),
 		)
 	},
 }
 
 func init() {
-	textCmd.Flags().BoolP("file", "f", false, "Read value from file")
+	jsonCmd.Flags().BoolP("file", "f", false, "Read value from file")
 
-	if err := viper.BindPFlags(textCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(jsonCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

@@ -109,21 +109,93 @@ setup() {
     assert_output --partial '"foo": "value"'
 }
 
-@test "dagger input" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input "input"
+@test "dagger input text" {
+    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
 
-    # missing input
-    "$DAGGER"  up -d "input"
-    run "$DAGGER" -l error query -d "input"
+    # simple input
+    "$DAGGER" input -d "input" text "input" "my input"
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" input
+    assert_success
+    assert_output '"my input"'
+
+    # nested input
+    "$DAGGER" input -d "input" text "nested.input" "nested input"
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" nested
     assert_success
     assert_output '{
-  "foo": "bar"
+  "input": "nested input"
 }'
 
-    # input dir
-    "$DAGGER" input -d "input" dir "source" "$TESTDIR"/cli/input/testdata
-    "$DAGGER" "${DAGGER_BINARY_ARGS[@]}" up -d "input"
-    "$DAGGER"  up -d "input"
+    # file input
+    "$DAGGER" input -d "input" text "input" -f "$TESTDIR"/cli/input/simple/testdata/input.txt
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" input
+    assert_success
+    assert_output '"from file\n"'
+
+    # invalid file
+    run "$DAGGER" input -d "input" text "input" -f "$TESTDIR"/cli/input/simple/testdata/notexist
+    assert_failure
+
+    # stdin input
+    echo -n "from stdin" | "$DAGGER" input -d "input" text "input" -f -
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" input
+    assert_success
+    assert_output '"from stdin"'
+}
+
+@test "dagger input json" {
+    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
+
+    "$DAGGER" input -d "input" json "structured" '{"a": "foo", "b": 42}'
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" structured
+    assert_success
+    assert_output '{
+  "a": "foo",
+  "b": 42
+}'
+
+    "$DAGGER" input -d "input" json "structured" -f "$TESTDIR"/cli/input/simple/testdata/input.json
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" structured
+    assert_success
+    assert_output '{
+  "a": "from file",
+  "b": 42
+}'
+}
+
+@test "dagger input yaml" {
+    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
+
+    "$DAGGER" input -d "input" yaml "structured" '{"a": "foo", "b": 42}'
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" structured
+    assert_success
+    assert_output '{
+  "a": "foo",
+  "b": 42
+}'
+
+    "$DAGGER" input -d "input" yaml "structured" -f "$TESTDIR"/cli/input/simple/testdata/input.yaml
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" structured
+    assert_success
+    assert_output '{
+  "a": "from file",
+  "b": 42
+}'
+}
+
+@test "dagger input dir" {
+    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/artifact "input"
+
+    "$DAGGER" input -d "input" dir "source" "$TESTDIR"/cli/input/artifact/testdata
+    "$DAGGER" up -d "input"
     run "$DAGGER" -l error query -d "input"
     assert_success
     assert_output '{
@@ -131,8 +203,11 @@ setup() {
   "foo": "bar",
   "source": {}
 }'
+}
 
-    # input git
+@test "dagger input git" {
+    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/artifact "input"
+
     "$DAGGER" input -d "input" git "source" https://github.com/samalba/dagger-test-simple.git
     "$DAGGER" up -d "input"
     run "$DAGGER" -l error query -d "input"

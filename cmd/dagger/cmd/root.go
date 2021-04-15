@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	inputCmd "dagger.io/go/cmd/dagger/cmd/input"
+	"dagger.io/go/cmd/dagger/cmd/input"
 	"dagger.io/go/cmd/dagger/cmd/output"
 	"dagger.io/go/cmd/dagger/cmd/plan"
 	"dagger.io/go/cmd/dagger/logger"
@@ -37,7 +37,7 @@ func init() {
 		loginCmd,
 		logoutCmd,
 		plan.Cmd,
-		inputCmd.Cmd,
+		input.Cmd,
 		output.Cmd,
 	)
 
