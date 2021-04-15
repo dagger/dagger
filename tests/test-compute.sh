@@ -35,6 +35,8 @@ test::compute::simple(){
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/flat
   test::one "Compute: overloading #Component should work" --exit=0  \
       "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/overload/wrapped
+  test::one "Compute: Disabling the cache on exec should not compute twice when referenced by another key" --exit=0  \
+      "$dagger" "${DAGGER_BINARY_ARGS[@]}" compute "$d"/compute/success/exec-nocache
 }
 
 test::compute::dependencies(){

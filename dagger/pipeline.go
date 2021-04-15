@@ -385,13 +385,10 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 	}
 
 	// always?
-	// FIXME: initialize once for an entire compute job, to avoid cache misses
 	if cmd.Always {
-		cacheBuster, err := randomID(8)
-		if err != nil {
-			return st, err
-		}
-		opts = append(opts, llb.AddEnv("DAGGER_CACHEBUSTER", cacheBuster))
+		// FIXME: also disables persistent cache directories
+		// There's an ongoing proposal that would fix this: https://github.com/moby/buildkit/issues/1213
+		opts = append(opts, llb.IgnoreCache)
 	}
 	// mounts
 	if mounts := op.Lookup("mount"); mounts.Exists() {
