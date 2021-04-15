@@ -45,6 +45,7 @@ package op
 	do: "exec"
 	args: [...string]
 	env?: [string]: string
+	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
 	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}

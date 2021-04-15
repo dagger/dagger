@@ -386,6 +386,8 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 
 	// always?
 	if cmd.Always {
+		// FIXME: also disables persistent cache directories
+		// There's an ongoing proposal that would fix this: https://github.com/moby/buildkit/issues/1213
 		opts = append(opts, llb.IgnoreCache)
 	}
 	// mounts
