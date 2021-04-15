@@ -112,12 +112,14 @@ setup() {
 @test "dagger input text" {
     "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
 
+    # simple input
     "$DAGGER" input -d "input" text "input" "my input"
     "$DAGGER" up -d "input"
     run "$DAGGER" -l error query -d "input" input
     assert_success
     assert_output '"my input"'
 
+    # nested input
     "$DAGGER" input -d "input" text "nested.input" "nested input"
     "$DAGGER" up -d "input"
     run "$DAGGER" -l error query -d "input" nested
@@ -125,6 +127,24 @@ setup() {
     assert_output '{
   "input": "nested input"
 }'
+
+    # file input
+    "$DAGGER" input -d "input" text "input" -f "$TESTDIR"/cli/input/simple/testdata/input.txt
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" input
+    assert_success
+    assert_output '"from file\n"'
+
+    # invalid file
+    run "$DAGGER" input -d "input" text "input" -f "$TESTDIR"/cli/input/simple/testdata/notexist
+    assert_failure
+
+    # stdin input
+    echo -n "from stdin" | "$DAGGER" input -d "input" text "input" -f -
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" input
+    assert_success
+    assert_output '"from stdin"'
 }
 
 @test "dagger input json" {
@@ -138,6 +158,15 @@ setup() {
   "a": "foo",
   "b": 42
 }'
+
+    "$DAGGER" input -d "input" json "structured" -f "$TESTDIR"/cli/input/simple/testdata/input.json
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" structured
+    assert_success
+    assert_output '{
+  "a": "from file",
+  "b": 42
+}'
 }
 
 @test "dagger input yaml" {
@@ -149,6 +178,15 @@ setup() {
     assert_success
     assert_output '{
   "a": "foo",
+  "b": 42
+}'
+
+    "$DAGGER" input -d "input" yaml "structured" -f "$TESTDIR"/cli/input/simple/testdata/input.yaml
+    "$DAGGER" up -d "input"
+    run "$DAGGER" -l error query -d "input" structured
+    assert_success
+    assert_output '{
+  "a": "from file",
   "b": 42
 }'
 }

@@ -8,7 +8,7 @@ import (
 )
 
 var yamlCmd = &cobra.Command{
-	Use:   "yaml TARGET VALUE",
+	Use:   "yaml <TARGET> [-f] <VALUE|PATH>",
 	Short: "Add a YAML input",
 	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
@@ -22,11 +22,17 @@ var yamlCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(ctx, args[0], dagger.YAMLInput(args[1]))
+		updateDeploymentInput(
+			ctx,
+			args[0],
+			dagger.YAMLInput(readInput(ctx, args[1])),
+		)
 	},
 }
 
 func init() {
+	yamlCmd.Flags().BoolP("file", "f", false, "Read value from file")
+
 	if err := viper.BindPFlags(yamlCmd.Flags()); err != nil {
 		panic(err)
 	}

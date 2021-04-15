@@ -8,7 +8,7 @@ import (
 )
 
 var jsonCmd = &cobra.Command{
-	Use:   "json TARGET VALUE",
+	Use:   "json <TARGET> [-f] <VALUE|PATH>",
 	Short: "Add a JSON input",
 	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
@@ -22,11 +22,17 @@ var jsonCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(ctx, args[0], dagger.JSONInput(args[1]))
+		updateDeploymentInput(
+			ctx,
+			args[0],
+			dagger.JSONInput(readInput(ctx, args[1])),
+		)
 	},
 }
 
 func init() {
+	jsonCmd.Flags().BoolP("file", "f", false, "Read value from file")
+
 	if err := viper.BindPFlags(jsonCmd.Flags()); err != nil {
 		panic(err)
 	}
