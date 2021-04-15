@@ -385,13 +385,8 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 	}
 
 	// always?
-	// FIXME: initialize once for an entire compute job, to avoid cache misses
 	if cmd.Always {
-		cacheBuster, err := randomID(8)
-		if err != nil {
-			return st, err
-		}
-		opts = append(opts, llb.AddEnv("DAGGER_CACHEBUSTER", cacheBuster))
+		opts = append(opts, llb.IgnoreCache)
 	}
 	// mounts
 	if mounts := op.Lookup("mount"); mounts.Exists() {
