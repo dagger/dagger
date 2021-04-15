@@ -10,6 +10,7 @@ import (
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
+	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/ast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -56,7 +57,7 @@ var scanCmd = &cobra.Command{
 
 			// fmt.Println("\n\nDiscovered Inputs:\n===========================")
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Path\tFrom\tRequired\tType\t")
+			fmt.Fprintln(w, "Path\tFrom\tRequired\tReference\tVals\tType\t")
 
 			for _, val := range inputs {
 				required := true
@@ -71,6 +72,23 @@ var scanCmd = &cobra.Command{
 					}
 				}
 
+				// check for references
+				ident := ""
+				op, vals := val.Expr()
+				if op == cue.AndOp {
+					for _, ve := range vals {
+						if _, has := ve.Label(); has {
+							// foundIdent = true
+							ident = fmt.Sprintf("%t", ve)
+							break
+						}
+					}
+					//if foundIdent {
+						//continue
+					//}
+				}
+
+
 				// get path / pkg import (if available)
 				inst, _ := val.Reference()
 				pkg := "(plan)"
@@ -78,7 +96,7 @@ var scanCmd = &cobra.Command{
 					pkg = fmt.Sprintf("%s", inst.ImportPath)
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%v\t%v\t\n", val.Path(), pkg, required, val)
+				fmt.Fprintf(w, "%s\t%s\t%v\t%v\t%v\t%v\t\n", val.Path(), pkg, required, ident, vals, val)
 
 			}
 			w.Flush()
