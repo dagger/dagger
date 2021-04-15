@@ -15,6 +15,14 @@ common_setup() {
 }
 
 skip_unless_secrets_available() {
-  local inputFile="$1"
-  sops exec-file "$inputFile" echo  > /dev/null 2>&1 || skip "$inputFile cannot be decrypted"
+    local inputFile="$1"
+    sops exec-file "$inputFile" echo  > /dev/null 2>&1 || skip "$inputFile cannot be decrypted"
+}
+
+skip_unless_local_kube() {
+    if [ -f ~/.kube/config ] && grep -q "kind" ~/.kube/config &> /dev/null; then
+        echo "Kubernetes available"
+    else
+        skip "local kubernetes cluster not available"
+    fi
 }
