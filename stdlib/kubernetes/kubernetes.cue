@@ -82,7 +82,7 @@ import (
 		if sourceInline != _|_ {
 			op.#WriteFile & {
 				dest:    "/source"
-				content: source
+				content: sourceInline
 			}
 		},
 		op.#Exec & {

@@ -44,10 +44,10 @@ kubeApply: kubernetes.#Apply & {
 
 // Example of a `helm install` using a local chart
 // Fill using:
-//          --input-dir helmChart.chart=./testdata/mychart
+//          --input-dir helmChart.chartSource=./testdata/mychart
 helmChart: helm.#Chart & {
-	name:       "test-helm"
-	namespace:  "test"
-	kubeconfig: cluster.kubeconfig
-	chart:      dagger.#Artifact
+	name:        "test-helm"
+	namespace:   "test"
+	kubeconfig:  cluster.kubeconfig
+	chartSource: dagger.#Artifact
 }
