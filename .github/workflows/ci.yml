@@ -76,3 +76,11 @@ jobs:
       - name: Integration test
         run: |
           make integration
+
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v2
+        if: always()
+        with:
+          report_paths: "tests/*.xml"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          check_name: "Test Report"

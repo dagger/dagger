@@ -1,7 +1,7 @@
 {
   "license": "Apache-2.0",
   "scripts": {
-    "test": "bats ."
+    "test": "bats --report-formatter junit ."
   },
   "devDependencies": {
     "bats": "https://github.com/bats-core/bats-core.git",
