@@ -43,13 +43,8 @@ check-buildkit-version:
 
 .PHONY: integration
 integration: dagger-debug
-	# Self-diagnostics
-	./tests/test-test.sh 2>/dev/null
-	# Bats based integration tests
 	yarn --cwd "./tests" install
 	DAGGER_BINARY="../cmd/dagger/dagger-debug" yarn --cwd "./tests" test
-	# Old style integration tests tests
-	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./tests/test.sh all
 
 .PHONY: install
 install: dagger
