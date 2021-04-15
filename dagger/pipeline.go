@@ -722,6 +722,10 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		return st, err
 	}
 
+	if p.s.noCache {
+		opts["no-cache"] = ""
+	}
+
 	req := bkgw.SolveRequest{
 		Frontend:    "dockerfile.v0",
 		FrontendOpt: opts,
