@@ -23,14 +23,35 @@ type Solver struct {
 	events  chan *bk.SolveStatus
 	control *bk.Client
 	gw      bkgw.Client
+	noCache bool
 }
 
-func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus) Solver {
+func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus, noCache bool) Solver {
 	return Solver{
 		events:  events,
 		control: control,
 		gw:      gw,
+		noCache: noCache,
 	}
+}
+
+func invalidateCache(def *llb.Definition) error {
+	for _, dt := range def.Def {
+		var op bkpb.Op
+		if err := (&op).Unmarshal(dt); err != nil {
+			return err
+		}
+		dgst := digest.FromBytes(dt)
+		opMetadata, ok := def.Metadata[dgst]
+		if !ok {
+			opMetadata = bkpb.OpMetadata{}
+		}
+		c := llb.Constraints{Metadata: opMetadata}
+		llb.IgnoreCache(&c)
+		def.Metadata[dgst] = c.Metadata
+	}
+
+	return nil
 }
 
 func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, error) {
@@ -39,6 +60,13 @@ func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, er
 	if err != nil {
 		return nil, err
 	}
+
+	if s.noCache {
+		if err := invalidateCache(def); err != nil {
+			return nil, err
+		}
+	}
+
 	return def.ToPB(), nil
 }
 
