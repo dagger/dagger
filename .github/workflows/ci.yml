@@ -51,6 +51,23 @@ jobs:
         with:
           go-version: 1.16
 
+      - name: Test
+        run: |
+          make test
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
       - name: Install Dependencies
         run: |
           # SOPS
@@ -69,10 +86,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Test
-        run: |
-          make test
-
       - name: Integration test
         run: |
           make integration
@@ -83,4 +96,4 @@ jobs:
         with:
           report_paths: "tests/*.xml"
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          check_name: "Test Report"
+          check_name: "Report"
