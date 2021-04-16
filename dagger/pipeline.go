@@ -627,13 +627,36 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	_, err = p.s.Export(ctx, p.State(), &p.image, bk.ExportEntry{
+	resp, err := p.s.Export(ctx, p.State(), &p.image, bk.ExportEntry{
 		Type: bk.ExporterImage,
 		Attrs: map[string]string{
 			"name": ref.String(),
 			"push": "true",
 		},
 	})
+
+	if err != nil {
+		return st, err
+	}
+
+	if digest, ok := resp.ExporterResponse["containerimage.digest"]; ok {
+		imageRef := fmt.Sprintf(
+			"%s@%s",
+			resp.ExporterResponse["image.name"],
+			digest,
+		)
+
+		return st.File(
+			llb.Mkdir("/dagger", fs.FileMode(0755)),
+			llb.WithCustomName(p.vertexNamef("Mkdir /dagger")),
+		).File(
+			llb.Mkfile("/dagger/image_digest", fs.FileMode(0644), []byte(digest)),
+			llb.WithCustomName(p.vertexNamef("Storing image digest to /dagger/image_digest")),
+		).File(
+			llb.Mkfile("/dagger/image_ref", fs.FileMode(0644), []byte(imageRef)),
+			llb.WithCustomName(p.vertexNamef("Storing image ref to /dagger/image_ref")),
+		), nil
+	}
 
 	return st, err
 }
