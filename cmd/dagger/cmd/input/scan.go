@@ -62,6 +62,9 @@ var scanCmd = &cobra.Command{
 			for _, val := range inputs {
 				required := true
 
+				//L, _ := val.Label()
+				//fmt.Printf("\n%s\n", L)
+
 				// check for optional
 				src := val.Source()
 				switch src.(type) {
@@ -73,20 +76,18 @@ var scanCmd = &cobra.Command{
 				}
 
 				// check for references
+				foundRef := false
 				_, vals := val.Expr()
-				//if op == cue.AndOp {
-					//for _, ve := range vals {
-						//if _, has := ve.Label(); has {
-							//// foundIdent = true
-							//ident = fmt.Sprintf("%t", ve)
-							//break
-						//}
-					//}
-					////if foundIdent {
-						////continue
-					////}
-				//}
-
+				for _, ve := range vals {
+					s := ve.Source()
+					switch s.(type) {
+					case *ast.Ident:
+						foundRef = true
+					}
+				}
+				if foundRef == true {
+					continue
+				}
 
 				// get path / pkg import (if available)
 				inst, _ := val.Reference()

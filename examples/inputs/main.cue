@@ -17,10 +17,13 @@ bar: {
 	b: int @dagger(computed)
 }
 
+let A = string
+
 refd: {
 	a: string
 	b: {
-		ref: a
+		ref1: a
+		ref2: A
 	}
 }
 
