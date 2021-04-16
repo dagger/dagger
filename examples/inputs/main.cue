@@ -17,6 +17,10 @@ bar: {
 	b: int @dagger(computed)
 }
 
+#def: {
+	missing: *"" | string
+}
+
 let A = string
 
 refd: {
