@@ -12,6 +12,36 @@ func InferInputs(value cue.Value) ([]cue.Value, error) {
 
 	// walk function
 	before := func(v cue.Value) (bool, error) {
+		// explicit phase
+		// look for #up
+		label, _ := v.Label()
+		if label == "#up" {
+			return false, nil
+		}
+
+		// look for @dagger(input/computed)
+		attrs := v.Attributes(cue.ValueAttr)
+		for _, attr := range attrs {
+			name :=  attr.Name()
+			// match `@dagger(...)`
+			if name == "dagger" {
+				// loop over args (CSV content in attribute)
+				for i := 0; i < attr.NumArgs(); i++ {
+					key, _ := attr.Arg(i)
+					// we found an explicit computed value
+					if key == "computed" {
+						return false, nil
+					}
+					// we found an explicit input
+					if key == "input" {
+						vals = append(vals, v)
+						return false, nil
+					}
+				}
+			}
+		}
+
+		// inferrence phase
 		switch v.IncompleteKind() {
 
 			case cue.StructKind:
@@ -36,24 +66,7 @@ func InferInputs(value cue.Value) ([]cue.Value, error) {
 
 				// is this leaf not concrete?
 				if v.Validate(cue.Concrete(true), cue.Optional(true)) != nil {
-
-					// look for @dagger(computed)
-					attrs := v.Attributes(cue.ValueAttr)
-					for _, attr := range attrs {
-						if attr.Name() == "dagger" {
-							for i := 0; i < attr.NumArgs(); i++ {
-								kA, _ := attr.Arg(i)
-								// found, so omit, and don't continue the walk
-								if kA == "computed" {
-									return false, nil
-								}
-							}
-						}
-					}
-
-					// If we make it here, then @dagger(computed) is NOT on this value, so add it
 					vals = append(vals, v)
-
 				}
 
 				return false, nil
