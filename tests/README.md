@@ -4,10 +4,10 @@
 
 ```
 # Install dependancies
-yarn --cwd . install
+yarn --cwd install
 
 # Run all tests
-yarn --cwd . test
+yarn --cwd test
 ```
 
 By default, the `dagger` binary is expected to be found in `../cmd/dagger/dagger` relative to the `tests` directory.
