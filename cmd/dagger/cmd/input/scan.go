@@ -44,7 +44,7 @@ var scanCmd = &cobra.Command{
 			Str("deploymentId", deployment.ID).
 			Logger()
 
-		c, err := dagger.NewClient(ctx, "")
+		c, err := dagger.NewClient(ctx, "", false)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
