@@ -20,7 +20,7 @@ skip_unless_secrets_available() {
 }
 
 skip_unless_local_kube() {
-    if [ -f ~/.kube/config ] && grep -q "kind" ~/.kube/config &> /dev/null; then
+    if [ -f ~/.kube/config ] && grep -q "user: kind-kind" ~/.kube/config &> /dev/null && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
         echo "Kubernetes available"
     else
         skip "local kubernetes cluster not available"
