@@ -20,9 +20,9 @@ import (
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
-				package: bash: "=5.1.0-r0"
-				package: jq:   "=1.6-r1"
-				package: curl: "=7.74.0-r1"
+				package: bash: "=~5.1"
+				package: jq:   "=~1.6"
+				package: curl: "=~7.76"
 			}
 		},
 		op.#WriteFile & {
@@ -82,7 +82,7 @@ import (
 		if sourceInline != _|_ {
 			op.#WriteFile & {
 				dest:    "/source"
-				content: source
+				content: sourceInline
 			}
 		},
 		op.#Exec & {

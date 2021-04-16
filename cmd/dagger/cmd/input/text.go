@@ -8,8 +8,8 @@ import (
 )
 
 var textCmd = &cobra.Command{
-	Use:   "text TARGET VALUE",
-	Short: "Add an input text",
+	Use:   "text <TARGET> [-f] <VALUE|PATH>",
+	Short: "Add a text input",
 	Args:  cobra.ExactArgs(2),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -22,11 +22,17 @@ var textCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(ctx, args[0], dagger.TextInput(args[1]))
+		updateDeploymentInput(
+			ctx,
+			args[0],
+			dagger.TextInput(readInput(ctx, args[1])),
+		)
 	},
 }
 
 func init() {
+	textCmd.Flags().BoolP("file", "f", false, "Read value from file")
+
 	if err := viper.BindPFlags(textCmd.Flags()); err != nil {
 		panic(err)
 	}

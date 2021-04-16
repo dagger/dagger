@@ -47,7 +47,7 @@ var queryCmd = &cobra.Command{
 			cuePath = cue.ParsePath(args[0])
 		}
 
-		c, err := dagger.NewClient(ctx, "")
+		c, err := dagger.NewClient(ctx, "", false)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}

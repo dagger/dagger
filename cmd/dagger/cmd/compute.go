@@ -149,7 +149,7 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		deployment := common.DeploymentUp(ctx, st)
+		deployment := common.DeploymentUp(ctx, st, viper.GetBool("no-cache"))
 
 		v := compiler.NewValue()
 		if err := v.FillPath(cue.MakePath(), deployment.Plan()); err != nil {
@@ -173,6 +173,7 @@ func init() {
 	computeCmd.Flags().StringSlice("input-git", []string{}, "TARGET=REMOTE#REF")
 	computeCmd.Flags().String("input-json", "", "JSON")
 	computeCmd.Flags().String("input-yaml", "", "YAML")
+	computeCmd.Flags().Bool("no-cache", false, "disable cache")
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)

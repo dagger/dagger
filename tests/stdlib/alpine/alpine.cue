@@ -8,7 +8,7 @@ import (
 TestImageVersion: {
 	image: alpine.#Image & {
 		// install an old version on purpose
-		version: "3.10.6"
+		version: "3.10.9"
 	}
 
 	test: #up: [
@@ -18,7 +18,7 @@ TestImageVersion: {
 				"sh",
 				"-ec",
 				"""
-					test "$(cat /etc/alpine-release)" = 3.10.6
+					test "$(cat /etc/alpine-release)" = 3.10.9
 					""",
 			]
 		},
@@ -28,7 +28,8 @@ TestImageVersion: {
 TestPackageInstall: {
 	image: alpine.#Image & {
 		package: jq:   true
-		package: curl: "=~7.74.0"
+		package: curl: "=~7.76"
+		version: "3.13"
 	}
 
 	test: #up: [
@@ -37,7 +38,7 @@ TestPackageInstall: {
 			args: ["jq", "--version"]
 		},
 		op.#Exec & {
-			args: ["sh", "-ec", "curl --version | grep -q 7.74.0"]
+			args: ["sh", "-ec", "curl --version | grep -q 7.76"]
 		},
 	]
 }

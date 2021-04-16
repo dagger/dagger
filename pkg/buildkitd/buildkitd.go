@@ -104,9 +104,14 @@ func startBuildkit(ctx context.Context) error {
 		return err
 	}
 
+	// FIXME: buildkitd currently runs without network isolation (--net=host)
+	// in order for containers to be able to reach localhost.
+	// This is required for things such as kubectl being able to
+	// reach a KinD/minikube cluster locally
 	cmd = exec.CommandContext(ctx,
 		"docker",
 		"run",
+		"--net=host",
 		"-d",
 		"--restart", "always",
 		"-v", volumeName+":/var/lib/buildkit",
@@ -116,13 +121,18 @@ func startBuildkit(ctx context.Context) error {
 	)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
-		log.
-			Ctx(ctx).
-			Error().
-			Err(err).
-			Bytes("output", output).
-			Msg("unable to start buildkitd")
-		return err
+		// If the daemon failed to start because it's already running,
+		// chances are another dagger instance started it. We can just ignore
+		// the error.
+		if !strings.Contains(string(output), "Error response from daemon: Conflict.") {
+			log.
+				Ctx(ctx).
+				Error().
+				Err(err).
+				Bytes("output", output).
+				Msg("unable to start buildkitd")
+			return err
+		}
 	}
 	return waitBuildkit(ctx)
 }

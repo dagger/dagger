@@ -29,10 +29,11 @@ import (
 
 // A dagger client
 type Client struct {
-	c *bk.Client
+	c       *bk.Client
+	noCache bool
 }
 
-func NewClient(ctx context.Context, host string) (*Client, error) {
+func NewClient(ctx context.Context, host string, noCache bool) (*Client, error) {
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
@@ -53,7 +54,8 @@ func NewClient(ctx context.Context, host string) (*Client, error) {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 	return &Client{
-		c: c,
+		c:       c,
+		noCache: noCache,
 	}, nil
 }
 
@@ -111,7 +113,7 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		Msg("spawning buildkit job")
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		s := NewSolver(c.c, gw, ch)
+		s := NewSolver(c.c, gw, ch, c.noCache)
 
 		lg.Debug().Msg("loading configuration")
 		if err := deployment.LoadPlan(ctx, s); err != nil {

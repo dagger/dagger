@@ -34,16 +34,29 @@ jobs:
           skip-go-installation: true
           args: --timeout=3m
 
-      - name: Cue Lint
-        run: |
-          make cuelint
-
       - name: Lint
         run: |
-          make check-buildkit-version
+          make shellcheck cuelint check-buildkit-version
 
   test:
     name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: Test
+        run: |
+          make test
+
+  integration:
+    name: Integration
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -73,10 +86,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Test
-        run: |
-          make test
-
       - name: Integration test
         run: |
           make integration
+
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v2
+        if: always()
+        with:
+          report_paths: "tests/*.xml"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          check_name: "Report"

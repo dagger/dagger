@@ -27,8 +27,12 @@ cuefmt:
 cuelint: cuefmt
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
 
+.PHONY: shellcheck
+shellcheck:
+	shellcheck ./tests/*.bats ./tests/*.bash
+
 .PHONY: lint
-lint: cuelint golint check-buildkit-version
+lint: shellcheck cuelint golint check-buildkit-version
 
 .PHONY: check-buildkit-version
 check-buildkit-version:
@@ -39,10 +43,8 @@ check-buildkit-version:
 
 .PHONY: integration
 integration: dagger-debug
-	# Self-diagnostics
-	./tests/test-test.sh 2>/dev/null
-	# Actual integration tests
-	DAGGER_BINARY="./cmd/dagger/dagger-debug" time ./tests/test.sh all
+	yarn --cwd "./tests" install
+	DAGGER_BINARY="../cmd/dagger/dagger-debug" yarn --cwd "./tests" test
 
 .PHONY: install
 install: dagger
