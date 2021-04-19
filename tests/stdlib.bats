@@ -27,14 +27,12 @@ setup() {
 }
 
 @test "stdlib: kubernetes" {
-    skip "disabled"
     skip_unless_local_kube
 
     "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes --input-dir kubeconfig=~/.kube
 }
 
 @test "stdlib: helm" {
-    skip "disabled"
     skip_unless_local_kube
 
     "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes/helm --input-dir kubeconfig=~/.kube --input-dir TestHelmSimpleChart.deploy.chartSource="$TESTDIR"/stdlib/kubernetes/helm/testdata/mychart
