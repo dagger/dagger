@@ -217,3 +217,10 @@ setup() {
   "source": {}
 }'
 }
+
+@test "dagger input scan" {
+    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/scan "scan"
+    run "$DAGGER" input scan -d "input"
+    assert_success
+
+}
