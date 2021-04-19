@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	cuelang.org/go v0.3.2
+	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.2
 	github.com/docker/distribution v2.7.1+incompatible
@@ -21,8 +22,10 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/uber/jaeger-client-go v2.25.0+incompatible
+	github.com/uber/jaeger-client-go v2.27.0+incompatible
+	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	go.mozilla.org/sops/v3 v3.7.1
+	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
