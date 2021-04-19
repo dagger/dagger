@@ -1,0 +1,86 @@
+# Contributing to Dagger
+
+## GitHub Workflow
+
+The recommended workflow is to clone the repository from `dagger/dagger` and
+open pull requests from your own fork.
+
+### 1) Cloning the repository
+
+```sh
+git clone https://github.com/dagger/dagger.git
+```
+
+**NOTE**: If you cloned your fork, either switch back to `dagger/dagger` using
+`git remote` or start over.
+
+### 2) Forking
+
+- Click on the *Fork* button on GitHub
+- Add your fork as a remote
+
+```sh
+git remote add fork git@github.com:MYFORK/dagger.git
+```
+
+### 3) Creating a Pull Request
+
+```sh
+# create a branch
+git checkout -b mybranch
+
+# make chances to your branch, use `git commit -s`, ...
+# ...
+
+# push the branch to your own fork
+git push -u fork mybranch
+
+# create a pull request from https://github.com/dagger/dagger
+```
+
+### 4) Rebasing
+
+```sh
+git checkout main
+git pull  # <-- this will pull from `dagger/dagger`
+git checkout mybranch
+git rebase main  # <-- this will rebase `dagger/dagger` into your `FORK/dagger`
+git push -f -u fork mybranch  # <-- update the pull request
+```
+
+## Commits
+
+### DCO
+
+Contributions to this project must be accompanied by a Developer Certificate of
+Origin (DCO).
+
+All commit messages must contain the Signed-off-by line with an email address that
+matches the commit author. When commiting, use the `--signoff` flag:
+
+```sh
+git commit -s
+```
+
+### Commit Messages
+
+[How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/)
+
+Guidelines:
+
+- Group Commits: Each commit should represent a meaningful change (e.g. implement
+  feature X, fix bug Y, ...).
+- For instance, a PR should not look like *1) Add Feature X 2) Fix Typo
+  3) Changes to features X 5) Bugfix for feature X 6) Fix Linter 7) ...*
+- Instead, these commits should be squashed together into a single "Add Feature"
+  commit.
+- Each commit should work on its own: it must compile, pass the linter and so on.
+- This makes life much easier when using `git log`, `git blame`, `git bisect`, etc.
+- For instance, when doing a `git blame` on a file to figure out why a change
+  was introduced, it's pretty meaningless to see a *Fix linter* commit message.
+  "Add Feature X" is much more meaningful.
+- Use `git rebase -i main` to group commits together and rewrite their commit message
+- To add changes to the previous commit, use `git commit --amend -s`. This will
+  change the last commit (amend) instead of creating a new commit.
+- Format: Use the imperative mood in the subject line: "If applied, this commit
+  will _your subject line here_"
