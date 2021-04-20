@@ -1,13 +1,14 @@
-registry:
-    username: ENC[AES256_GCM,data:8AH6p9WHidanCA==,iv:ezThCQJv+bVBf8SdfSa2HFoP+eu6IZMPl5xvMOGDcps=,tag:mzR7xTKeQNDvkyd2Dm3AKw==,type:str]
-    token: ENC[AES256_GCM,data:68d31b3EfnQJofIt6j+iBCtDyLOBWjFqvVmejyDjIOh8oBXP,iv:PMghC2nd7jqAzrQzm/PW1YdbE0VAbEBkK0/Ri1WwduI=,tag:0JH4WbcJHvgzF4VIK4deBg==,type:str]
+TestAuth:
+    https://index.docker.io/v1/:
+        username: ENC[AES256_GCM,data:cyrR2uKcJBPz9Q==,iv:c6gdvv+OQo/CoFcURoFE5KVdcbsRWFgTC6lOBYqgSKI=,tag:4mXf7SdDzzLOXcuCjNKM3A==,type:str]
+        secret: ENC[AES256_GCM,data:ITq2j0iskLGl3kzLNuqZwjFeY6qhFiZki8+6nfvcCdoQyjwA,iv:wxBQHO2i3usQY6P/Xl7IUNd7FCt92SI4Xzpr0iJf/+Y=,tag:sdT4Vc2bU1WpYBmRx69+NQ==,type:str]
 sops:
     kms: []
     gcp_kms: []
     azure_kv: []
     hc_vault: []
-    lastmodified: '2021-03-18T22:59:59Z'
-    mac: ENC[AES256_GCM,data:3++nHOAJaYFCEuUXim4/gOsG1ZVWt8Ab88qaqHM6jpCA2gLSyADWpB5iQfU9bM7Sq3PgCcWd5+mDHxl5Q8r9fiozrS025OLtsn7qQQQ84WaiFz9Y4Trsbe4EJXNpxYDXjLZEkEtkKs4/Dl+y2Ey3nVyIWKZEX9cPogJ64zfFS9Q=,iv:jvSwxJ8Of2Nfp1ijKItOraDO8aS6aGHQKFY61kF8JS8=,tag:I+AWPIZsPeXU30zxbgq2eQ==,type:str]
+    lastmodified: '2021-04-20T00:38:24Z'
+    mac: ENC[AES256_GCM,data:N7LDE81LW39k9x5Q4JSgcTXiHbXQY9pkJ14g6mIyXd/rtAk8g9nCp2dRSFo75cJDQigh6u4m0AbkvtJ0r1s1Cc87gT+ZXujdb7crEfZLLY23DIEoO1nSgKbh1Snv/uXMDGXG8oCk4pMmUJIc+XtsH0Z/jxuRMVqfyQG7HRm3lVk=,iv:hicEQ0iBDm8hafw6fKCHty5deF0dLr3e2v70LTeYQ1I=,tag:dW3AX5udWxsC3lC2/720RQ==,type:str]
     pgp:
     -   created_at: '2021-03-18T22:59:59Z'
         enc: |

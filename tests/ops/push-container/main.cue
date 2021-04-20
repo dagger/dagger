@@ -5,6 +5,8 @@ import (
 	"dagger.io/alpine"
 )
 
+TestAuth: op.#RegistryAuth
+
 TestPushContainer: {
 	// Generate a random number
 	random: {
@@ -13,6 +15,7 @@ TestPushContainer: {
 			op.#Load & {from: alpine.#Image},
 			op.#Exec & {
 				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
+				always: true
 			},
 			op.#Export & {
 				source: "/rand"
@@ -30,6 +33,7 @@ TestPushContainer: {
 			},
 			op.#PushContainer & {
 				"ref": ref
+				auth:  TestAuth
 			},
 		]
 	}
@@ -64,6 +68,7 @@ TestPushContainerMetadata: {
 			op.#Load & {from: alpine.#Image},
 			op.#Exec & {
 				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
+				always: true
 			},
 			op.#Export & {
 				source: "/rand"
@@ -83,6 +88,7 @@ TestPushContainerMetadata: {
 			},
 			op.#PushContainer & {
 				"ref": ref
+				auth:  TestAuth
 			},
 		]
 	}
@@ -113,6 +119,7 @@ TestPushContainerMetadata: {
 			},
 			op.#PushContainer & {
 				"ref": ref
+				auth:  TestAuth
 			},
 		]
 	}
