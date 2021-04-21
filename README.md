@@ -18,8 +18,9 @@ system changes.
 
 ## Examples
 
+* [Deploy a static page to S3](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-static-page-to-s3)
 * [Deploy a simple React application](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
-* [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
+* [Deploy a complete JAMstack app](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-complete-jamstack-app)
 * [Provision a Kubernetes cluster on AWS](https://github.com/dagger/dagger/blob/main/examples/README.md#provision-a-kubernetes-cluster-on-aws)
 * [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
 * [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
@@ -33,7 +34,6 @@ Dagger is *alpha-quality software*. It has many bugs, the user interface is mini
 Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
 
 * [Installing Dagger](doc/install.md)
-* [Adding Dagger to your project](doc/adding_dagger.md)
 * [Examples](examples/README.md)
 * [Dagger vs. Other Software](doc/vs.md)
 * [Dagger Programmer Manual](doc/programmer.md)
