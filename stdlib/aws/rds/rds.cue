@@ -47,6 +47,8 @@ import (
 			    sql="CREATE DATABASE \"$(cat /inputs/name)\""
 			fi
 
+			cp /inputs/name /db_created
+
 			aws rds-data execute-statement \
 			    --resource-arn "$(cat /inputs/db_arn)" \
 			    --secret-arn "$(cat /inputs/secret_arn)" \
@@ -56,11 +58,8 @@ import (
 			|& tee /tmp/out
 			exit_code=${PIPESTATUS[0]}
 			if [ $exit_code -ne 0 ]; then
-			    cat /tmp/out
-			    grep -q "database exists\|already exists" /tmp/out
-			    [ $? -ne 0 ] && exit $exit_code
+			    grep -q "database exists\|already exists" /tmp/out || exit $exit_code
 			fi
-			cp /inputs/name /db_created
 			"""#
 	}
 }
@@ -113,6 +112,8 @@ import (
 			    sql="CREATE USER \"$(cat /inputs/username)\" WITH PASSWORD '$(cat /inputs/password)'"
 			fi
 
+			cp /inputs/username /username
+
 			aws rds-data execute-statement \
 			    --resource-arn "$(cat /inputs/db_arn)" \
 			    --secret-arn "$(cat /inputs/secret_arn)" \
@@ -122,11 +123,8 @@ import (
 			|& tee tmp/out
 			exit_code=${PIPESTATUS[0]}
 			if [ $exit_code -ne 0 ]; then
-			    cat tmp/out
-			    grep -q "Operation CREATE USER failed for\|ERROR" tmp/out
-			    [ $? -ne 0 ] && exit $exit_code
+			    grep -q "Operation CREATE USER failed for\|ERROR" tmp/out || exit $exit_code
 			fi
-			cp /inputs/username /username
 
 			sql="SET PASSWORD FOR '$(cat /inputs/username)'@'%' = PASSWORD('$(cat /inputs/password)')"
 			if [ "$dbType" = postgres ]; then
