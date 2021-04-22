@@ -78,6 +78,11 @@ setup() {
 @test "op.#PushContainer" {
     skip_unless_secrets_available "$TESTDIR"/ops/push-container/inputs.yaml
 
+    # ensure the tests fail without credentials
+    run "$DAGGER" compute "$TESTDIR"/ops/push-container/valid
+    assert_failure
+
+    # check that they succeed with the credentials
     "$DAGGER" compute --input-yaml "$TESTDIR"/ops/push-container/inputs.yaml "$TESTDIR"/ops/push-container
 }
 
