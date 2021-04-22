@@ -1,7 +1,7 @@
 package eks
 
 import (
-	"dagger.io/dagger"
+	// "dagger.io/dagger"
 	"dagger.io/dagger/op"
 	"dagger.io/aws"
 )
@@ -19,16 +19,18 @@ import (
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
-		dagger.#Secret
+		string// FIXME There is a problem with dagger.#Artifact type
 
 		#up: [
 			op.#Load & {
 				from: aws.#CLI
 			},
+
 			op.#WriteFile & {
 				dest:    "/entrypoint.sh"
 				content: #Code
 			},
+
 			op.#Exec & {
 				always: true
 				args: [
