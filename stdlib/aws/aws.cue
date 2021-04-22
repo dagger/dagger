@@ -56,6 +56,9 @@ import (
 	// Always execute the script?
 	always?: bool
 
+	// Directory
+	dir?: dagger.#Artifact
+
 	out: {
 		string
 
@@ -101,6 +104,9 @@ import (
 					AWS_PAGER:             ""
 				}
 				mount: "/cache/aws": "cache"
+				if dir != _|_ {
+					mount: "/inputs/source": from: dir
+				}
 			},
 			op.#Export & {
 				source: export

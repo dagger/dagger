@@ -37,3 +37,9 @@ setup() {
 
     "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes/helm --input-dir kubeconfig=~/.kube --input-dir TestHelmSimpleChart.deploy.chartSource="$TESTDIR"/stdlib/kubernetes/helm/testdata/mychart
 }
+
+@test "stdlib: s3" {
+    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
+
+    "$DAGGER" compute "$TESTDIR"/stdlib/aws/s3 --input-dir TestDirectory="$TESTDIR"/stdlib/aws/s3/testdata --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+}
