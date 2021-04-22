@@ -42,20 +42,21 @@ import (
 
 		code: #"""
 			opts=""
+			op=cp
 			if [ -d /inputs/source ]; then
-			    opts="--recursive"
+			    op=sync
 			fi
 			if [ -f /inputs/content_type ]; then
 			    opts="--content-type $(cat /inputs/content_type)"
 			fi
-			aws s3 cp $opts /inputs/source "$(cat /inputs/target)"
+			aws s3 $op $opts /inputs/source "$(cat /inputs/target)"
 			cat /inputs/target \
 			    | sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
 			    > /url
 			"""#
 
 		if sourceInline == _|_ {
-			mount: "/inputs/source": from: source
+			dir: source
 		}
 	}
 }
