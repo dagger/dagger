@@ -1,6 +1,11 @@
 // op: low-level operations for Dagger processing pipelines
 package op
 
+// Cue data which can be executed as code
+#Runnable: [...#Op] | {#up: [...#Op]
+	...
+}
+
 // One operation in a pipeline
 #Op: #Export |
 	#FetchContainer |
@@ -33,7 +38,7 @@ package op
 
 #Load: {
 	do:   "load"
-	from: _
+	from: #Runnable
 }
 
 #Subdir: {
@@ -48,7 +53,7 @@ package op
 	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
+	mount: [string]: "tmpfs" | "cache" | {from: #Runnable, path: string | *"/"}
 }
 
 #FetchContainer: {
@@ -69,7 +74,7 @@ package op
 
 #Copy: {
 	do:   "copy"
-	from: _
+	from: #Runnable
 	src:  string | *"/"
 	dest: string | *"/"
 }
@@ -77,7 +82,7 @@ package op
 #DockerBuild: {
 	do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
-	context?:        _
+	context?:        #Runnable
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
 	dockerfile?:     string
 
