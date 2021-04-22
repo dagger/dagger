@@ -831,8 +831,10 @@ func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.Sta
 		if err == nil {
 			content = []byte(str)
 		}
+	case cue.BottomKind:
+		err = fmt.Errorf("%s: WriteFile content is not set", op.Path().String())
 	default:
-		err = fmt.Errorf("unhandled data type in WriteFile: %s", kind)
+		err = fmt.Errorf("%s: unhandled data type in WriteFile: %s", op.Path().String(), kind)
 	}
 	if err != nil {
 		return st, err
