@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"dagger.io/dagger"
 	"dagger.io/aws"
 	"dagger.io/aws/s3"
 )
@@ -20,5 +21,25 @@ TestS3UploadFile: {
 		target:       "s3://\(bucket)/test.txt"
 	}
 
-	verify: #VerifyS3
+	verify: #VerifyS3 & {
+		file: "test.txt"
+	}
+}
+
+TestDirectory: dagger.#Artifact
+
+TestS3UploadDir: {
+	deploy: s3.#Put & {
+		config: TestConfig.awsConfig
+		source: TestDirectory
+		target: "s3://\(bucket)/"
+	}
+
+	verifyFile: #VerifyS3 & {
+		file: "dirFile.txt"
+	}
+
+	verifyDir: #VerifyS3 & {
+		file: "foo.txt"
+	}
 }

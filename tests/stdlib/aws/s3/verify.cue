@@ -19,12 +19,14 @@ import (
 	// Script
 	aws.#Script & {
 		code: """
-			aws s3 ls \(target) > /contents
+			aws s3 ls --recursive \(target) >> /contents
 		"""
 	}
 }
 
 #VerifyS3: {
+	file: string
+
 	lists: #List & {
 		config: TestConfig.awsConfig
 		target: "s3://\(bucket)"
@@ -32,7 +34,7 @@ import (
 
 	#CheckFiles:
 		"""
-				grep -q test.txt /test
+				grep -q \(file) /test
 			"""
 
 	test: #up: [
