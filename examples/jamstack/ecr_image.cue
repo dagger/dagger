@@ -25,21 +25,26 @@ import (
 		target: pushTarget
 	}
 
-	push: #up: [
-		// Build the docker image
-		op.#DockerBuild & {
-			context: source
-			if dockerfilePath != _|_ {
-				"dockerfilePath": dockerfilePath
-			}
-			buildArg: buildArgs
-		},
-		// Push the image to the registry
-		op.#PushContainer & {
-			ref: pushTarget
-		},
-	]
+	ref: {
+		string
 
-	// FIXME: ref does not include the sha256: https://github.com/dagger/dagger/issues/303
-	ref: pushTarget
+		#up: [
+			// Build the docker image
+			op.#DockerBuild & {
+				context: source
+				if dockerfilePath != _|_ {
+					"dockerfilePath": dockerfilePath
+				}
+				buildArg: buildArgs
+			},
+			// Push the image to the registry
+			op.#PushContainer & {
+				ref: pushTarget
+			},
+			op.#Export & {
+				source: "/dagger/image_ref"
+				format: "string"
+			},
+		]
+	}
 }
