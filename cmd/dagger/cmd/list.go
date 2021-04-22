@@ -70,15 +70,27 @@ func getCurrentDeploymentID(ctx context.Context, store *dagger.Store) string {
 		lg.Warn().Err(err).Msg("cannot get current working directory")
 		return ""
 	}
-	st, _ := store.LookupDeploymentByPath(ctx, wd)
+
+	st, err := store.LookupDeploymentByPath(ctx, wd)
+	if err != nil {
+		// Ignore error
+		return ""
+	}
+
 	if len(st) == 1 {
 		return st[0].ID
 	}
+
 	return ""
 }
 
 func formatPath(p string) string {
-	usr, _ := user.Current()
+	usr, err := user.Current()
+	if err != nil {
+		// Ignore error
+		return p
+	}
+
 	dir := usr.HomeDir
 
 	if strings.HasPrefix(p, dir) {
