@@ -1,10 +1,10 @@
 {
   "license": "Apache-2.0",
   "scripts": {
-    "test": "bats --report-formatter junit ."
+    "test": "bats --report-formatter junit --jobs 4 ."
   },
   "devDependencies": {
-    "bats": "https://github.com/bats-core/bats-core.git",
+    "bats": "https://github.com/bats-core/bats-core#master",
     "bats-assert": "https://github.com/bats-core/bats-assert",
     "bats-support": "https://github.com/bats-core/bats-support"
   }
