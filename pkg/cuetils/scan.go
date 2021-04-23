@@ -1,6 +1,8 @@
 package cuetils
 
 import (
+	"fmt"
+
 	"cuelang.org/go/cue"
 )
 
@@ -58,6 +60,7 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 			// a leaf with default?
 			_, has := v.Default()
 			if has {
+				fmt.Println("Default:", v)
 				vals = append(vals, v)
 				// recurse here?
 				return false, nil

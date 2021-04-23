@@ -69,6 +69,7 @@ var listCmd = &cobra.Command{
 			fmt.Fprintln(w, "Path\tFrom\tType")
 
 			for _, val := range inputs {
+				fmt.Println(val)
 				// check for references
 				// this is here because it has issues
 				// so we wrap it in a flag to control its usage while debugging
@@ -76,7 +77,9 @@ var listCmd = &cobra.Command{
 				if !viper.GetBool("keep-references") {
 					foundRef := false
 					for _, ve := range vals {
+						fmt.Println(ve)
 						s := ve.Source()
+						fmt.Printf("%#+v\n", s)
 						switch s.(type) {
 						case *ast.Ident:
 							foundRef = true
@@ -86,6 +89,8 @@ var listCmd = &cobra.Command{
 						continue
 					}
 				}
+
+				fmt.Println()
 
 				// Construct output as a tab-table
 				// get path / pkg import (if available)
