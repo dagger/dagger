@@ -27,6 +27,7 @@ func init() {
 		textCmd,
 		jsonCmd,
 		yamlCmd,
+		listCmd,
 	)
 }
 

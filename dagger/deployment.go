@@ -10,6 +10,7 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/pkg/cuetils"
 	"dagger.io/go/stdlib"
 
 	bkauth "github.com/moby/buildkit/session/auth"
@@ -359,4 +360,13 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 			Msg("completed")
 		return nil
 	})
+}
+
+func (d *Deployment) ScanInputs() ([]cue.Value, error) {
+	vals, err := cuetils.ScanForInputs(d.plan.Cue())
+	if err != nil {
+		return nil, err
+	}
+
+	return vals, nil
 }
