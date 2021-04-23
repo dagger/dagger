@@ -33,14 +33,17 @@ import (
 	// Create the Netlify site if it doesn't exist?
 	create: bool | *true
 
+	// Site ID
+	siteId: string @dagger(computed)
+
 	// Website url
-	url: string
+	url: string @dagger(computed)
 
 	// Unique Deploy URL
-	deployUrl: string
+	deployUrl: string @dagger(computed)
 
 	// Logs URL for this deployment
-	logsUrl: string
+	logsUrl: string @dagger(computed)
 
 	#up: [
 		op.#Load & {
@@ -55,6 +58,7 @@ import (
 			args: ["yarn", "global", "add", "netlify-cli@2.47.0"]
 		},
 		op.#Exec & {
+			always: true
 			args: [
 				"/bin/bash",
 				"--noprofile",
@@ -83,4 +87,17 @@ import (
 			format: "json"
 		},
 	]
+
+	if create {
+		#down: [
+			op.#Exec & {
+				always: true
+				args: ["netlify", "sites:delete", "-f", siteId]
+				env: {
+					NETLIFY_ACCOUNT:    account.name
+					NETLIFY_AUTH_TOKEN: account.token
+				}
+			},
+		]
+	}
 }

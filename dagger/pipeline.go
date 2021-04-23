@@ -26,23 +26,33 @@ import (
 	"dagger.io/go/dagger/compiler"
 )
 
+type PipelineAction string
+
+const (
+	PipelineActionUp   PipelineAction = "up"
+	PipelineActionDown PipelineAction = "down"
+)
+
 const (
 	daggerignoreFilename = ".daggerignore"
 )
 
 // An execution pipeline
 type Pipeline struct {
-	name     string
-	s        Solver
+	name   string
+	action PipelineAction
+	s      Solver
+
 	state    llb.State
 	result   bkgw.Reference
 	image    dockerfile2llb.Image
 	computed *compiler.Value
 }
 
-func NewPipeline(name string, s Solver) *Pipeline {
+func NewPipeline(name string, action PipelineAction, s Solver) *Pipeline {
 	return &Pipeline{
 		name:     name,
+		action:   action,
 		s:        s,
 		state:    llb.Scratch(),
 		computed: compiler.NewValue(),
@@ -76,50 +86,56 @@ func isComponent(v *compiler.Value) bool {
 	return v.Lookup("#up").Exists()
 }
 
-func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
+func ops(action PipelineAction, code *compiler.Value) ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
 	// 1. Decode 'code' into a single flat array of operations.
-	for _, x := range code {
-		// 1. attachment array
-		if isComponent(x) {
-			xops, err := x.Lookup("#up").List()
+	// 1. attachment array
+	if isComponent(code) {
+		upOps, err := code.Lookup("#up").List()
+		if err != nil {
+			return nil, err
+		}
+		ops = append(ops, upOps...)
+
+		down := code.Lookup("#down")
+		if action == PipelineActionDown && down.Exists() {
+			downOps, err := down.List()
 			if err != nil {
 				return nil, err
 			}
-			// 'from' has an executable attached
-			ops = append(ops, xops...)
-			// 2. individual op
-		} else if _, err := x.Lookup("do").String(); err == nil {
-			ops = append(ops, x)
-			// 3. op array
-		} else if xops, err := x.List(); err == nil {
-			ops = append(ops, xops...)
-		} else {
-			// 4. error
-			source, err := x.Source()
-			if err != nil {
-				panic(err)
-			}
-			return nil, fmt.Errorf("not executable: %s", source)
+			ops = append(ops, downOps...)
 		}
+		// 2. individual op
+	} else if _, err := code.Lookup("do").String(); err == nil {
+		ops = append(ops, code)
+		// 3. op array
+	} else if xops, err := code.List(); err == nil {
+		ops = append(ops, xops...)
+	} else {
+		// 4. error
+		source, err := code.Source()
+		if err != nil {
+			panic(err)
+		}
+		return nil, fmt.Errorf("not executable: %s", source)
 	}
 	return ops, nil
 }
 
-func Analyze(fn func(*compiler.Value) error, code ...*compiler.Value) error {
-	ops, err := ops(code...)
+func Analyze(action PipelineAction, fn func(*compiler.Value) error, code *compiler.Value) error {
+	ops, err := ops(action, code)
 	if err != nil {
 		return err
 	}
 	for _, op := range ops {
-		if err := analyzeOp(fn, op); err != nil {
+		if err := analyzeOp(action, fn, op); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
+func analyzeOp(action PipelineAction, fn func(*compiler.Value) error, op *compiler.Value) error {
 	if err := fn(op); err != nil {
 		return err
 	}
@@ -129,7 +145,7 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 	}
 	switch do {
 	case "load", "copy":
-		return Analyze(fn, op.Lookup("from"))
+		return Analyze(action, fn, op.Lookup("from"))
 	case "exec":
 		fields, err := op.Lookup("mount").Fields()
 		if err != nil {
@@ -137,7 +153,7 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 		}
 		for _, mnt := range fields {
 			if from := mnt.Value.Lookup("from"); from.Exists() {
-				return Analyze(fn, from)
+				return Analyze(action, fn, from)
 			}
 		}
 	}
@@ -148,8 +164,8 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 //   1) a single operation
 //   2) an array of operations
 //   3) a value with an attached array of operations
-func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
-	ops, err := ops(code...)
+func (p *Pipeline) Do(ctx context.Context, code *compiler.Value) error {
+	ops, err := ops(p.action, code)
 	if err != nil {
 		return err
 	}
@@ -260,7 +276,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from").Path().String(), p.s)
+	from := NewPipeline(op.Lookup("from").Path().String(), p.action, p.s)
 	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
@@ -453,7 +469,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := NewPipeline(mnt.Lookup("from").Path().String(), p.s)
+	from := NewPipeline(mnt.Lookup("from").Path().String(), p.action, p.s)
 	if err := from.Do(ctx, mnt.Lookup("from")); err != nil {
 		return nil, err
 	}
@@ -553,7 +569,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from").Path().String(), p.s)
+	from := NewPipeline(op.Lookup("from").Path().String(), p.action, p.s)
 	if err := from.Do(ctx, op.Lookup("from")); err != nil {
 		return st, err
 	}
@@ -735,7 +751,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if dockerContext.Exists() {
-		from := NewPipeline(op.Lookup("context").Path().String(), p.s)
+		from := NewPipeline(op.Lookup("context").Path().String(), p.action, p.s)
 		if err := from.Do(ctx, dockerContext); err != nil {
 			return st, err
 		}

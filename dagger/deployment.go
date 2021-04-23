@@ -94,22 +94,27 @@ func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
 		return err
 	}
 
-	p := NewPipeline("[internal] source", s)
+	p := NewPipeline("[internal] source", PipelineActionUp, s)
 	// execute updater script
 	if err := p.Do(ctx, planSource); err != nil {
 		return err
 	}
 
 	// Build a Cue config by overlaying the source with the stdlib
-	sources := map[string]fs.FS{
-		stdlib.Path: stdlib.FS,
-		"/":         p.FS(),
+	{
+		span, _ := opentracing.StartSpanFromContext(ctx, "compiler.Build")
+		defer span.Finish()
+
+		sources := map[string]fs.FS{
+			stdlib.Path: stdlib.FS,
+			"/":         p.FS(),
+		}
+		plan, err := compiler.Build(sources)
+		if err != nil {
+			return fmt.Errorf("plan config: %w", err)
+		}
+		d.plan = plan
 	}
-	plan, err := compiler.Build(sources)
-	if err != nil {
-		return fmt.Errorf("plan config: %w", err)
-	}
-	d.plan = plan
 
 	return nil
 }
@@ -120,8 +125,9 @@ func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
 // by user-specified scripts.
 func (d *Environment) LocalDirs() map[string]string {
 	dirs := map[string]string{}
-	localdirs := func(code ...*compiler.Value) {
+	localdirs := func(code *compiler.Value) {
 		Analyze(
+			PipelineActionUp,
 			func(op *compiler.Value) error {
 				do, err := op.Lookup("do").String()
 				if err != nil {
@@ -137,7 +143,7 @@ func (d *Environment) LocalDirs() map[string]string {
 				dirs[dir] = dir
 				return nil
 			},
-			code...,
+			code,
 		)
 	}
 	// 1. Scan the environment state
@@ -154,6 +160,7 @@ func (d *Environment) LocalDirs() map[string]string {
 	for _, t := range flow.Tasks() {
 		v := compiler.Wrap(t.Value(), src.CueInst())
 		localdirs(v.Lookup("#up"))
+		localdirs(v.Lookup("#down"))
 	}
 
 	// 2. Scan the plan
@@ -183,19 +190,32 @@ func (d *Environment) Up(ctx context.Context, s Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		src.CueInst(),
-		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), d.computed, s)),
+		newTaskFunc(src.CueInst(), newPipelineRunner(PipelineActionUp, src.CueInst(), d.computed, s)),
 	)
-	if err := flow.Run(ctx); err != nil {
+	return flow.Run(ctx)
+}
+
+// Down brings down an environment
+func (d *Environment) Down(ctx context.Context, s Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Down")
+	defer span.Finish()
+
+	// Reset the computed values
+	d.computed = compiler.NewValue()
+
+	// Cueflow cue instance
+	src, err := compiler.InstanceMerge(d.plan, d.input)
+	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-type DownOpts struct{}
-
-func (d *Environment) Down(ctx context.Context, _ *DownOpts) error {
-	panic("NOT IMPLEMENTED")
+	// Orchestrate execution with cueflow
+	flow := cueflow.New(
+		&cueflow.Config{},
+		src.CueInst(),
+		newTaskFunc(src.CueInst(), newPipelineRunner(PipelineActionDown, src.CueInst(), d.computed, s)),
+	)
+	return flow.Run(ctx)
 }
 
 type QueryOpts struct{}
@@ -215,7 +235,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) cueflow.RunnerFunc {
+func newPipelineRunner(action PipelineAction, inst *cue.Instance, computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -240,7 +260,7 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value(), inst)
-		p := NewPipeline(t.Path().String(), s)
+		p := NewPipeline(t.Path().String(), action, s)
 		err := p.Do(ctx, v)
 		if err != nil {
 			span.LogFields(otlog.String("error", err.Error()))

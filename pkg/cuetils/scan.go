@@ -22,6 +22,9 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 		if label == "#up" {
 			return false, nil
 		}
+		if label == "#down" {
+			return false, nil
+		}
 
 		// look to exclude any @dagger(computed)
 		attrs := v.Attributes(cue.ValueAttr)

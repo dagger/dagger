@@ -8,6 +8,7 @@ import (
 // May be passed as user input, or computed by a buildkit pipeline
 #Artifact: {
 	#up: [...op.#Op]
+	#down?: [...op.#Op]
 	_
 	...
 }

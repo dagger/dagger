@@ -67,12 +67,29 @@ func EnvironmentUp(ctx context.Context, state *dagger.EnvironmentState, noCache 
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
-	result, err := c.Do(ctx, state, func(ctx context.Context, environment *dagger.Environment, s dagger.Solver) error {
+	environment, err := c.Do(ctx, state, func(ctx context.Context, environment *dagger.Environment, s dagger.Solver) error {
 		log.Ctx(ctx).Debug().Msg("bringing environment up")
 		return environment.Up(ctx, s)
 	})
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to up environment")
 	}
-	return result
+	return environment
+}
+
+func DeploymentDown(ctx context.Context, state *dagger.EnvironmentState, noCache bool) *dagger.Environment {
+	lg := log.Ctx(ctx)
+
+	c, err := dagger.NewClient(ctx, "", noCache)
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to create client")
+	}
+	environment, err := c.Do(ctx, state, func(ctx context.Context, environment *dagger.Environment, s dagger.Solver) error {
+		log.Ctx(ctx).Debug().Msg("bringing environmnet down")
+		return environment.Down(ctx, s)
+	})
+	if err != nil {
+		lg.Fatal().Err(err).Msg("failed to down environment")
+	}
+	return environment
 }

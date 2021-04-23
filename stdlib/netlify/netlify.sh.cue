@@ -42,8 +42,9 @@ package netlify
 	logsUrl=$(</tmp/stdout sed -n -e 's/^Logs:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
 
 	jq -n \
+		--arg siteId "$site_id" \
 		--arg url "$url" \
 		--arg deployUrl "$deployUrl" \
 		--arg logsUrl "$logsUrl" \
-		'{url: $url, deployUrl: $deployUrl, logsUrl: $logsUrl}' > /output.json
+		'{siteId: $siteId, url: $url, deployUrl: $deployUrl, logsUrl: $logsUrl}' > /output.json
 	"""#
