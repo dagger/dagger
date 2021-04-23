@@ -13,7 +13,6 @@ import (
 	"dagger.io/go/pkg/cuetils"
 	"dagger.io/go/stdlib"
 
-	bkauth "github.com/moby/buildkit/session/auth"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -115,7 +114,7 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 	return nil
 }
 
-// Scan all pipelines in the deployment for references to local directories (do:"local"),
+// Scan all scripts in the deployment for references to local directories (do:"local"),
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
 // by user-specified scripts.
@@ -164,75 +163,6 @@ func (d *Deployment) LocalDirs() map[string]string {
 	}
 	localdirs(plan)
 	return dirs
-}
-
-// Scan all pipelines in the deployment for registry credentials
-func (d *Deployment) RegistryCredentials(ctx context.Context) map[string]*bkauth.CredentialsResponse {
-	credentials := map[string]*bkauth.CredentialsResponse{}
-
-	src, err := compiler.InstanceMerge(d.plan, d.input)
-	if err != nil {
-		panic(err)
-	}
-	flow := cueflow.New(
-		&cueflow.Config{},
-		src.CueInst(),
-		newTaskFunc(src.CueInst(), noOpRunner),
-	)
-
-	authenticatedOps := map[string]struct{}{
-		"push-container":  {},
-		"fetch-container": {},
-		"docker-build":    {},
-	}
-
-	for _, t := range flow.Tasks() {
-		v := compiler.Wrap(t.Value(), src.CueInst())
-		Analyze(
-			func(op *compiler.Value) error {
-				do, err := op.Lookup("do").String()
-				if err != nil {
-					return err
-				}
-				if _, ok := authenticatedOps[do]; !ok {
-					return nil
-				}
-				auth, err := op.Lookup("auth").Fields()
-				if err != nil {
-					return err
-				}
-				for _, a := range auth {
-					host := a.Label
-
-					username, err := a.Value.Lookup("username").String()
-					if err != nil {
-						return err
-					}
-
-					secret, err := a.Value.Lookup("secret").String()
-					if err != nil {
-						return err
-					}
-
-					log.
-						Ctx(ctx).
-						Debug().
-						Str("component", t.Path().String()).
-						Str("host", host).
-						Msg("loading registry credentials")
-
-					credentials[host] = &bkauth.CredentialsResponse{
-						Username: username,
-						Secret:   secret,
-					}
-				}
-				return nil
-			},
-			v.Lookup("#up"),
-		)
-	}
-
-	return credentials
 }
 
 // Up missing values in deployment configuration, and write them to state.
