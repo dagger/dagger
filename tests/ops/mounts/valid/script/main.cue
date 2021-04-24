@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test: {
+TestInvalidMountPath: {
 	string
 
 	#up: [
@@ -18,7 +18,7 @@ test: {
 					ls -lA /lol > /out
 				"""]
 			mount: something: {
-				input: [{
+				from: [{
 					do:  "fetch-container"
 					ref: "alpine"
 				}]

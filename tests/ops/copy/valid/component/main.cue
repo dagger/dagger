@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-component: #up: [
+TestComponent: #up: [
 	op.#FetchContainer & {
 		ref: "alpine"
 	},
@@ -13,7 +13,7 @@ component: #up: [
 	},
 ]
 
-test1: {
+TestComponentCopy: {
 	string
 
 	#up: [
@@ -21,7 +21,7 @@ test1: {
 			ref: "busybox"
 		},
 		op.#Copy & {
-			from: component
+			from: TestComponent
 			src:  "/id"
 			dest: "/"
 		},
@@ -32,7 +32,7 @@ test1: {
 	]
 }
 
-test2: {
+TestNestedCopy: {
 	string
 
 	#up: [

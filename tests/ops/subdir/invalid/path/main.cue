@@ -1,8 +1,8 @@
-package main
+package testing
 
 import "dagger.io/dagger/op"
 
-hello: {
+TestInvalidPathSubdir: {
 	string
 
 	#up: [
@@ -16,12 +16,7 @@ hello: {
 			args: ["sh", "-c", "echo -n world > /tmp/foo/hello"]
 		},
 		op.#Subdir & {
-			dir: "/tmp/foo"
-		},
-		// Should FAIL
-		op.#Exec & {
-			always: true
-			args: ["ls"]
+			dir: "/directorynotfound"
 		},
 		op.#Export & {
 			source: "./hello"

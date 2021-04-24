@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-teststring: {
+TestExportInvalidFormat: {
 	string
 
 	#up: [

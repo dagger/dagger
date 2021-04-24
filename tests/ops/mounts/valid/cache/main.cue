@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test: {
+TestMountCache: {
 	string
 
 	#up: [
@@ -11,7 +11,7 @@ test: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo "NOT SURE WHAT TO TEST YET" > /out
+					echo -n "NOT SURE WHAT TO TEST YET" > /out
 				"""]
 			dir: "/"
 			mount: something: "cache"

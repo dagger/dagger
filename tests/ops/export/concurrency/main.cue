@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test1: {
+TestExportConcurrency1: {
 	string
 
 	#up: [
@@ -11,7 +11,7 @@ test1: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol1 > /tmp/out
+					echo -n lol1 > /tmp/out
 				"""]
 			dir:    "/"
 			always: true
@@ -23,7 +23,7 @@ test1: {
 	]
 }
 
-test2: {
+TestExportConcurrency2: {
 	string
 
 	#up: [
@@ -32,7 +32,7 @@ test2: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol2 > /tmp/out
+					echo -n lol2 > /tmp/out
 				"""]
 			dir:    "/"
 			always: true
@@ -44,7 +44,7 @@ test2: {
 	]
 }
 
-test3: {
+TestExportConcurrency3: {
 	string
 
 	#up: [
@@ -53,7 +53,7 @@ test3: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol3 > /tmp/out
+					echo -n lol3 > /tmp/out
 				"""]
 			dir:    "/"
 			always: true
@@ -65,7 +65,7 @@ test3: {
 	]
 }
 
-test4: {
+TestExportConcurrency4: {
 	string
 
 	#up: [
@@ -74,7 +74,7 @@ test4: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol4 > /tmp/out
+					echo -n lol4 > /tmp/out
 				"""]
 			dir:    "/"
 			always: true
@@ -86,7 +86,7 @@ test4: {
 	]
 }
 
-test5: {
+TestExportConcurrency5: {
 	string
 
 	#up: [
@@ -95,7 +95,7 @@ test5: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol5 > /tmp/out
+					echo -n lol5 > /tmp/out
 				"""]
 			always: true
 		},
@@ -106,7 +106,7 @@ test5: {
 	]
 }
 
-test6: {
+TestExportConcurrency6: {
 	string
 
 	#up: [
@@ -115,7 +115,7 @@ test6: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol6 > /tmp/out
+					echo -n lol6 > /tmp/out
 				"""]
 			always: true
 		},
@@ -126,7 +126,7 @@ test6: {
 	]
 }
 
-test7: {
+TestExportConcurrency7: {
 	string
 
 	#up: [
@@ -135,7 +135,7 @@ test7: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol7 > /tmp/out
+					echo -n lol7 > /tmp/out
 				"""]
 			always: true
 		},
@@ -146,7 +146,7 @@ test7: {
 	]
 }
 
-test8: {
+TestExportConcurrency8: {
 	string
 
 	#up: [
@@ -155,28 +155,7 @@ test8: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol8 > /tmp/out
-				"""]
-			dir:    "/"
-			always: true
-		},
-		op.#Export & {
-			source: "/tmp/out"
-			format: "string"
-		},
-	]
-}
-
-test9: {
-	string
-
-	#up: [
-		op.#FetchContainer & {
-			ref: "alpine"
-		},
-		op.#Exec & {
-			args: ["sh", "-c", """
-					echo lol9 > /tmp/out
+					echo -n lol8 > /tmp/out
 				"""]
 			dir:    "/"
 			always: true
@@ -188,7 +167,7 @@ test9: {
 	]
 }
 
-test10: {
+TestExportConcurrency9: {
 	string
 
 	#up: [
@@ -197,7 +176,28 @@ test10: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo lol10 > /tmp/out
+					echo -n lol9 > /tmp/out
+				"""]
+			dir:    "/"
+			always: true
+		},
+		op.#Export & {
+			source: "/tmp/out"
+			format: "string"
+		},
+	]
+}
+
+TestExportConcurrency10: {
+	string
+
+	#up: [
+		op.#FetchContainer & {
+			ref: "alpine"
+		},
+		op.#Exec & {
+			args: ["sh", "-c", """
+					echo -n lol10 > /tmp/out
 				"""]
 			dir:    "/"
 			always: true

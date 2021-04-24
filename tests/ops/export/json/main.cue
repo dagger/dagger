@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-testScalar: {
+TestExportScalar: {
 	bool
 
 	#up: [
@@ -23,7 +23,7 @@ testScalar: {
 	]
 }
 
-testMap: #up: [
+TestExportMap: #up: [
 	op.#FetchContainer & {
 		ref: "alpine"
 	},
@@ -40,28 +40,27 @@ testMap: #up: [
 	},
 ]
 
-// FIXME: lists are currently broken
-// testList: {
-//  [...string]
+TestExportList: {
+	[...string]
 
-//  #up: [
-//   {
-//    do:  "fetch-container"
-//    ref: "alpine"
-//   },
-//   {
-//    do: "exec"
-//    args: ["sh", "-c", """
-//     echo '["milk", "pumpkin pie", "eggs", "juice"]' > /tmp/out
-//     """,
-//    ]
-//    dir: "/"
-//   },
-//   {
-//    do: "export"
-//    // Source path in the container
-//    source: "/tmp/out"
-//    format: "json"
-//   },
-//  ]
-// }
+	#up: [
+		{
+			do:  "fetch-container"
+			ref: "alpine"
+		},
+		{
+			do: "exec"
+			args: ["sh", "-c", """
+				echo '["milk", "pumpkin pie", "eggs", "juice"]' > /tmp/out
+				""",
+			]
+			dir: "/"
+		},
+		{
+			do: "export"
+			// Source path in the container
+			source: "/tmp/out"
+			format: "json"
+		},
+	]
+}

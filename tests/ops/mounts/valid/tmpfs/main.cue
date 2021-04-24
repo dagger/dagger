@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test: {
+TestMountTmpfs: {
 	string
 
 	#up: [
@@ -15,8 +15,8 @@ test: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-				echo ok > /out
-				echo ok > /tmpdir/out
+				echo -n ok > /out
+				echo -n ok > /tmpdir/out
 				"""]
 			mount: "/tmpdir": "tmpfs"
 		},
