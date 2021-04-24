@@ -17,12 +17,9 @@ import (
 	awsConfig:       aws.#Config
 	buildArgs: [string]: string
 
-	pushTarget: "\(repository):\(tag)"
-
 	// Use these credentials to push
 	ecrCreds: ecr.#Credentials & {
 		config: awsConfig
-		target: pushTarget
 	}
 
 	ref: {
@@ -37,9 +34,16 @@ import (
 				}
 				buildArg: buildArgs
 			},
+			// Login to Registry
+			op.#DockerLogin & {
+				target:   repository
+				username: ecrCreds.username
+				secret:   ecrCreds.secret
+			},
 			// Push the image to the registry
 			op.#PushContainer & {
-				ref: pushTarget
+				ref:  "\(repository):\(tag)"
+				auth: ecrCreds.auth
 			},
 			op.#Export & {
 				source: "/dagger/image_ref"
