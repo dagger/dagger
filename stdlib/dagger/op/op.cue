@@ -32,8 +32,7 @@ package op
 // FIXME: bring back load (more efficient than copy)
 
 #Load: {
-	do: "load"
-	// FIXME: this should be a `dagger.#Artifact`
+	do:   "load"
 	from: _
 }
 
@@ -49,32 +48,17 @@ package op
 	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
-	// FIXME: this should be `from: dagger.#Artifact`
 	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
 }
 
-// RegistryCredentials encodes Container Registry credentials
-#RegistryCredentials: {
-	username: string
-	// FIXME: this should `dagger.#Secret`
-	secret: string
-}
-
-// RegistryAuth maps registry hosts to credentials
-#RegistryAuth: {
-	[host=string]: #RegistryCredentials
-}
-
 #FetchContainer: {
-	do:   "fetch-container"
-	ref:  string
-	auth: #RegistryAuth
+	do:  "fetch-container"
+	ref: string
 }
 
 #PushContainer: {
-	do:   "push-container"
-	ref:  string
-	auth: #RegistryAuth
+	do:  "push-container"
+	ref: string
 }
 
 #FetchGit: {
@@ -84,8 +68,7 @@ package op
 }
 
 #Copy: {
-	do: "copy"
-	// FIXME: this should `dagger.#Artifact`
+	do:   "copy"
 	from: _
 	src:  string | *"/"
 	dest: string | *"/"
@@ -94,7 +77,6 @@ package op
 #DockerBuild: {
 	do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
-	// FIXME: this should `dagger.#Artifact`
 	context?:        _
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
 	dockerfile?:     string
@@ -102,10 +84,6 @@ package op
 	platforms?: [...string]
 	buildArg?: [string]: string
 	label?: [string]:    string
-
-	// credentials for the registry (optional)
-	// used to pull images in `FROM` statements
-	auth: #RegistryAuth
 }
 
 #WriteFile: {

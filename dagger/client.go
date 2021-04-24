@@ -19,7 +19,6 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/session"
 
 	// docker output
 	"dagger.io/go/pkg/buildkitd"
@@ -102,13 +101,9 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		localdirs[label] = abs
 	}
 
-	// buildkit auth provider (registry)
-	auth := newRegistryAuthProvider()
-
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
-		Session:   []session.Attachable{auth},
 	}
 
 	// Call buildkit solver
@@ -118,15 +113,12 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		Msg("spawning buildkit job")
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		s := NewSolver(c.c, gw, ch, opts.Session, c.noCache)
+		s := NewSolver(c.c, gw, ch, c.noCache)
 
 		lg.Debug().Msg("loading configuration")
 		if err := deployment.LoadPlan(ctx, s); err != nil {
 			return nil, err
 		}
-
-		lg.Debug().Msg("loading registry credentials from plan")
-		auth.SetCredentials(deployment.RegistryCredentials(ctx))
 
 		// Compute output overlay
 		if fn != nil {
