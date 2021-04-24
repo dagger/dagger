@@ -1,8 +1,8 @@
-package main
+package testing
 
 import "dagger.io/dagger/op"
 
-hello: {
+TestInvalidExecSubdir: {
 	string
 
 	#up: [
@@ -17,6 +17,11 @@ hello: {
 		},
 		op.#Subdir & {
 			dir: "/tmp/foo"
+		},
+		// Should FAIL
+		op.#Exec & {
+			always: true
+			args: ["ls"]
 		},
 		op.#Export & {
 			source: "./hello"

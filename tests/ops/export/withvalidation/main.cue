@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test: {
+TestExportStringValidation: {
 	string
 	=~"^some.+"
 

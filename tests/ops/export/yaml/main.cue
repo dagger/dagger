@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-testScalar: {
+TestExportScalar: {
 	bool
 
 	#up: [
@@ -23,35 +23,34 @@ testScalar: {
 	]
 }
 
-// FIXME: lists are currently broken
-// testList: {
-//  [...string]
+TestExportList: {
+	[...string]
 
-//  #up: [
-//   {
-//    do:  "fetch-container"
-//    ref: "alpine"
-//   },
-//   {
-//    do: "exec"
-//    args: ["sh", "-c", """
-//     echo "--- # Shopping list
-//     [milk, pumpkin pie, eggs, juice]" > /tmp/out
-//     """,
-//    ]
-//    // XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
-//    dir: "/"
-//   },
-//   {
-//    do: "export"
-//    // Source path in the container
-//    source: "/tmp/out"
-//    format: "yaml"
-//   },
-//  ]
-// }
+	#up: [
+		{
+			do:  "fetch-container"
+			ref: "alpine"
+		},
+		{
+			do: "exec"
+			args: ["sh", "-c", """
+				echo "--- # Shopping list
+				[milk, pumpkin pie, eggs, juice]" > /tmp/out
+				""",
+			]
+			// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
+			dir: "/"
+		},
+		{
+			do: "export"
+			// Source path in the container
+			source: "/tmp/out"
+			format: "yaml"
+		},
+	]
+}
 
-testMap: #up: [
+TestExportMap: #up: [
 	{
 		do:  "fetch-container"
 		ref: "alpine"

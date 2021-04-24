@@ -7,9 +7,10 @@ setup() {
 @test "op.#Load" {
     run "$DAGGER" compute "$TESTDIR"/ops/load/valid/component
     assert_success
-    assert_line '{"component":{},"test1":"lol","test2":"lol"}'
+    assert_line '{"TestComponent":{},"TestComponentLoad":"lol","TestNestedLoad":"lol"}'
 
-    "$DAGGER" compute "$TESTDIR"/ops/load/valid/script
+    run "$DAGGER" compute "$TESTDIR"/ops/load/valid/script
+    assert_success
 
     run "$DAGGER" compute "$TESTDIR"/ops/load/invalid/cache
     assert_failure
@@ -17,30 +18,35 @@ setup() {
 
 @test "op.#Mount" {
     # tmpfs
-    "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/tmpfs
+    run "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/tmpfs
+    assert_line '{"TestMountTmpfs":"ok"}'
+    assert_success
 
     # cache
-    "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/cache
+    run "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/cache
+    assert_line '{"TestMountCache":"NOT SURE WHAT TO TEST YET"}'
+    assert_success
 
     # component
     run "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/component
     assert_success
     assert_line '{"test":"hello world"}'
 
-    # FIXME https://github.com/blocklayerhq/dagger/issues/46
-    # "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/script
+    # Invalid mount path
+    run "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/script
+    assert_failure
 }
 
 @test "op.#Copy" {
     run "$DAGGER" compute "$TESTDIR"/ops/copy/valid/component
     assert_success
-    assert_line '{"component":{},"test1":"lol","test2":"lol"}'
+    assert_line '{"TestComponent":{},"TestComponentCopy":"lol","TestNestedCopy":"lol"}'
 
-    "$DAGGER" compute "$TESTDIR"/ops/copy/valid/script
+    run "$DAGGER" compute "$TESTDIR"/ops/copy/valid/script
+    assert_success
 
-    # FIXME https://github.com/blocklayerhq/dagger/issues/44
-    # run "$DAGGER" compute "$TESTDIR"/ops/copy/invalid/cache
-    # assert_failure
+    run "$DAGGER" compute "$TESTDIR"/ops/copy/invalid/cache
+    assert_failure
 }
 
 @test "op.#Local" {
@@ -78,7 +84,8 @@ setup() {
 @test "op.#PushContainer" {
     skip_unless_secrets_available "$TESTDIR"/ops/push-container/inputs.yaml
 
-    "$DAGGER" compute --input-yaml "$TESTDIR"/ops/push-container/inputs.yaml "$TESTDIR"/ops/push-container
+    run "$DAGGER" compute --input-yaml "$TESTDIR"/ops/push-container/inputs.yaml "$TESTDIR"/ops/push-container
+    assert_success
 }
 
 @test "op.#FetchGit" {
@@ -151,26 +158,26 @@ setup() {
     # assert_failure # --exit=123
 
     # script with non-optional prop, not referenced, should be executed
-    # FIXME https://github.com/blocklayerhq/dagger/issues/70
-    # run "$DAGGER" compute "$TESTDIR"/ops/exec/undefined/with_pkg_mandatory
-    # assert_failure
+    run "$DAGGER" compute "$TESTDIR"/ops/exec/undefined/with_pkg_mandatory
+    assert_success
 }
 
 @test "op.#Export" {
     run "$DAGGER" compute "$TESTDIR"/ops/export/json
     assert_success
-    assert_line '{"testMap":{"something":"something"},"testScalar":true}'
+    assert_line '{"TestExportList":["milk","pumpkin pie","eggs","juice"],"TestExportMap":{"something":"something"},"TestExportScalar":true}'
 
     run "$DAGGER" compute "$TESTDIR"/ops/export/string
     assert_success
-    assert_line '{"test":"something"}'
+    assert_line '{"TestExportString":"something"}'
 
     run "$DAGGER" compute "$TESTDIR"/ops/export/withvalidation
     assert_success
-    assert_line '{"test":"something"}'
+    assert_line '{"TestExportStringValidation":"something"}'
 
     run "$DAGGER" compute "$TESTDIR"/ops/export/concurrency
     assert_success
+    assert_line '{"TestExportConcurrency1":"lol1","TestExportConcurrency10":"lol10","TestExportConcurrency2":"lol2","TestExportConcurrency3":"lol3","TestExportConcurrency4":"lol4","TestExportConcurrency5":"lol5","TestExportConcurrency6":"lol6","TestExportConcurrency7":"lol7","TestExportConcurrency8":"lol8","TestExportConcurrency9":"lol9"}'
 
     # does not pass additional validation
     run "$DAGGER" compute "$TESTDIR"/ops/export/invalid/validation
@@ -184,31 +191,36 @@ setup() {
     run "$DAGGER" compute "$TESTDIR"/ops/export/invalid/path
     assert_failure
 
-
     run "$DAGGER" compute "$TESTDIR"/ops/export/float
     assert_success
-    assert_line '{"test":-123.5}'
+    assert_line '{"TestExportFloat":-123.5}'
 
     run "$DAGGER" compute "$TESTDIR"/ops/export/yaml
     assert_success
-    assert_line '{"testMap":{"something":"something"},"testScalar":true}'
+    assert_line '{"TestExportList":["milk","pumpkin pie","eggs","juice"],"TestExportMap":{"something":"something"},"TestExportScalar":true}'
 
     run "$DAGGER" compute "$TESTDIR"/ops/export/bool
     assert_success
-    assert_line '{"test":true}'
+    assert_line '{"TestExportBool":true}'
 
-    # FIXME: https://github.com/blocklayerhq/dagger/issues/96
-    # run "$DAGGER" compute "$TESTDIR"/ops/export/number
-    # assert_success
-    # assert_line '{"test":-123.5}'
+    run "$DAGGER" compute "$TESTDIR"/ops/export/number
+    assert_success
+    assert_line '{"TestExportNumber":-123.5}'
 }
 
 @test "op.#Subdir" {
-    run "$DAGGER" compute "$TESTDIR"/ops/subdir/simple
+    run "$DAGGER" compute "$TESTDIR"/ops/subdir/valid/simple
     assert_success
-    assert_line '{"hello":"world"}'
+    assert_line '{"TestSimpleSubdir":"world"}'
 
-    run "$DAGGER" compute "$TESTDIR"/ops/subdir/error
+    run "$DAGGER" compute "$TESTDIR"/ops/subdir/valid/container
+    assert_success
+    assert_line '{"TestSubdirMount":"world"}'
+
+    run "$DAGGER" compute "$TESTDIR"/ops/subdir/invalid/exec
+    assert_failure
+
+    run "$DAGGER" compute "$TESTDIR"/ops/subdir/invalid/path
     assert_failure
 }
 

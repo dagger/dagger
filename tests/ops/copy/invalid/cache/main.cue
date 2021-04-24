@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test1: {
+TestCacheCopyLoadAlpine: {
 	string
 
 	#up: [
@@ -25,7 +25,7 @@ test1: {
 	]
 }
 
-test2: {
+TestCacheCopy: {
 	string
 
 	#up: [

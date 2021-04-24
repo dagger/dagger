@@ -1,6 +1,6 @@
 package testing
 
-teststring: {
+TestExportInvalidPath: {
 	string
 
 	#up: [

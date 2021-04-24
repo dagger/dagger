@@ -2,7 +2,7 @@ package testing
 
 import "dagger.io/dagger/op"
 
-test: {
+TestExportInvalidValidation: {
 	string
 	=~"^NAAAA.+"
 
@@ -12,7 +12,7 @@ test: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-				printf something > /tmp/out
+				echo -n something > /tmp/out
 				""",
 			]
 		},
