@@ -2,42 +2,50 @@
 
 ## Overview
 
-A Dagger deployment is a continuously running workflow delivering a specific application in a specific way.
+Dagger automates application delivery by executing *plans* in *environments*.
 
-The same application can be delivered via different deployments, each with a different configuration.
-For example a production deployment might include manual validation and addition performance testing,
-while a staging deployment might automatically deploy from a git branch, load test data into the database,
-and run on a separate cluster.
+## Plans
 
-A deployment is made of 3 parts: a deployment plan, inputs, and outputs.
+A *plan* specifies, in code, how to deliver a particular application in a particular way.
 
-
-## The Deployment Plan
-
-The deployment plan is the source code of the deployment. It is written in [Cue](https://cuelang.org),
-a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google.
-
-The deployment plan lays out every node in the application supply chain, and how they are interconnected:
+It lays out the application's supply chain as a graph of interconnected nodes:
 
 * Development tools: source control, CI, build systems, testing systems
 * Hosting infrastructure: compute, storage, networking, databases, CDN..
 * Software dependencies: operating systems, languages, libraries, frameworks, etc.
 
-Nodes are interconnected to model the flow of code and data through the supply chain:
-source code flows from a git repository to a build system; system dependencies are
-combined in a docker image, then uploaded to a registry; configuration files are
-generated then sent to a compute cluster or load balancer; etc.
+The graph models the flow of code and data through the supply chain:
+* source code flows from a git repository to a build system;
+* system dependencies are combined in a docker image, then uploaded to a registry;
+* configuration files are generated then sent to a compute cluster or load balancer;
+* etc.
+
+Dagger plans are written in [Cue](https://cuelang.org), a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google.
+
+
+## Environments
+
+An *environment* is a live implementation of a *plan*, with its own user inputs and state.
+The same plan can be executed in multiple environments, for example to differentiate production from staging.
+
+An environment can be updated with `dagger up`. When updating an environment, Dagger determines which inputs have
+changed since the last update, and runs them through the corresponding pipelines to produce new outputs.
+
+For example, if an application has a new version of its frontend source code available, but no changes to
+the frontend, it will build, test and deploy the new frontend, without changing the backend.
 
 ## Relays
 
-Dagger executes deployments by running *relays*.
+*Relays* are the basic components of a *plan*. Each relay is a node in the graph defined by the plan,
+performing the task assigned to that node. For example one relay fetches source code; another runs a build;
+another uploads a container image; etc.
 
-A relay is a standalone software component assigned to a single node in the deployment plan.
-One relay fetches might source code; another runs the build system; another uploads the container image; etc.
+Relays are standalone software components: they are defined in [Cue](https://cuelang.org), but can
+execute code in any language using the [Dagger pipeline API](FIXME).
 
-Relays are written in Cue, like the deployment plan they are part of. A relay is made of 3 parts:
+A relay is made of 3 parts:
 * Inputs: data received from the user, or upstream relays
-* A processing pipeline: code executed against each new input
+* A processing pipeline: code executed against each new input, using the [pipeline API](FIXME)
 * Outputs: data produced by the processing pipeline
 
 Relays run in parallel, with their inputs and outputs interconnected into a special kind of graph,
@@ -47,10 +55,10 @@ and produces new outputs, which are propagated to downstream relays as inputs, a
 
 ## Using third-party relays
 
-Cue includes a complete package system. This makes it easy to create a complex deployment plan in very few
+Cue includes a complete package system. This makes it easy to create a complex plan in very few
 lines of codes, simply by importing relays from third-party packages.
 
-For example, to create a deployment plan involving Github, Heroku and Amazon RDS, one might import the three
+For example, to create a plan involving Github, Heroku and Amazon RDS, one might import the three
 corresponding packages:
 
 ```
@@ -76,20 +84,16 @@ db: rds.#Database & {
 
 ## Creating a new relay
 
-Sometimes there is no third-party relay available for a particular node in the deployment plan;
-or it may exist but need to be customized.
+Sometimes there is no third-party relay available for a particular task in your workflow; or it may exist but need to be customized.
 
-A relay is typically contained in a cue definition, with the definition name reflecting its function.
+A relay is typically contained in a [cue definition](https://cuetorials.com/overview/foundations/#definitions), with the definition name describing its function.
 For example a relay for a git repository might be defined as `#Repository`.
-
-The inputs and outputs of a relay are simply cue values in the definition.
 
 The processing pipeline is a crucial feature of Dagger. It uses the [LLB](https://github.com/moby/buildkit)
 executable format pioneered by the Buildkit project. It allows Dagger components to run
 sophisticated pipelines to ingest produce artifacts such as source code, binaries, database exports, etc.
 Best of all, LLB pipelines can securely build and run any docker container, effectively making Dagger
 scriptable in any language.
-
 
 ## Docker compatibility
 
