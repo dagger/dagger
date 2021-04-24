@@ -207,6 +207,9 @@ setup() {
     run "$DAGGER" compute "$TESTDIR"/ops/subdir/simple
     assert_success
     assert_line '{"hello":"world"}'
+
+    run "$DAGGER" compute "$TESTDIR"/ops/subdir/error
+    assert_failure
 }
 
 @test "op.#DockerBuild" {
