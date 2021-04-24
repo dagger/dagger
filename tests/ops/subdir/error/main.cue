@@ -18,6 +18,11 @@ hello: {
 		op.#Subdir & {
 			dir: "/tmp/foo"
 		},
+		// Should FAIL
+		op.#Exec & {
+			always: true
+			args: ["ls"]
+		},
 		op.#Export & {
 			source: "./hello"
 			format: "string"

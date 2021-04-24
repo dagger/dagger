@@ -234,7 +234,7 @@ func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value, st llb.State)
 	if err != nil {
 		return st, err
 	}
-	return st.File(
+	return llb.Scratch().File(
 		llb.Copy(
 			st,
 			dir,
