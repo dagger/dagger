@@ -10,6 +10,6 @@
   version "0.3.0"
   resolved "https://github.com/bats-core/bats-support#d140a65044b2d6810381935ae7f0c94c7023c8c3"
 
-"bats@https://github.com/bats-core/bats-core.git":
+"bats@https://github.com/bats-core/bats-core#master":
   version "1.3.0"
-  resolved "https://github.com/bats-core/bats-core.git#b81de286448ae3a11e3342783dcdc1b08765a421"
+  resolved "https://github.com/bats-core/bats-core#fba8ff68d739bf5049fbd77c25d3331c788145a5"
