@@ -1,5 +1,7 @@
 package bar
 
+CONST: "const-value"
+
 #A: {
 	a: string
 }

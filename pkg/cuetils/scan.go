@@ -21,7 +21,7 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 		// explicit phase
 		// look for #up
 		label, _ := v.Label()
-		if label == "#up" {
+		if label == "#up" || label == "#computed"{
 			return false, nil
 		}
 
@@ -57,7 +57,7 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 
 		default:
 
-			// a leaf with default?
+			// a value with default?
 			_, has := v.Default()
 			if has {
 				fmt.Println("Default:", v)
@@ -66,11 +66,12 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 				return false, nil
 			}
 
-			// is this leaf not concrete? (should cause an error)
+			// is this value incomplete? (should cause an error because we are asking for concrete)
 			if v.Validate(cue.Concrete(true), cue.Optional(true)) != nil {
 				vals = append(vals, v)
 			}
 
+			// not a struct or list king, so don't recurse
 			return false, nil
 		}
 	}

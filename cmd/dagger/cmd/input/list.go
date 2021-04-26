@@ -69,17 +69,26 @@ var listCmd = &cobra.Command{
 			fmt.Fprintln(w, "Path\tFrom\tType")
 
 			for _, val := range inputs {
+				fmt.Println("======================")
 				fmt.Println(val)
+				fmt.Printf("%#+v\n", val.Source())
 				// check for references
 				// this is here because it has issues
 				// so we wrap it in a flag to control its usage while debugging
 				_, vals := val.Expr()
+				for _, ve := range vals {
+					fmt.Println(ve)
+					s := ve.Source()
+					fmt.Printf("%#+v\n", s)
+				}
 				if !viper.GetBool("keep-references") {
 					foundRef := false
 					for _, ve := range vals {
-						fmt.Println(ve)
+						// fmt.Println(ve)
 						s := ve.Source()
-						fmt.Printf("%#+v\n", s)
+						// fmt.Printf("%#+v\n", s)
+
+						// how do we determine references? (i.e. imports look the same, re: dagger.#Secret)
 						switch s.(type) {
 						case *ast.Ident:
 							foundRef = true
@@ -90,6 +99,7 @@ var listCmd = &cobra.Command{
 					}
 				}
 
+				fmt.Println("======================")
 				fmt.Println()
 
 				// Construct output as a tab-table
