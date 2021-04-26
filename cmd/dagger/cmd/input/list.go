@@ -70,16 +70,19 @@ var listCmd = &cobra.Command{
 
 			for _, val := range inputs {
 				fmt.Println("======================")
-				fmt.Println(val)
-				fmt.Printf("%#+v\n", val.Source())
+				inst, path := val.Reference()
+				fmt.Println(val, inst, path)
+				//fmt.Printf("%#+v\n", val.Source())
+
 				// check for references
 				// this is here because it has issues
 				// so we wrap it in a flag to control its usage while debugging
 				_, vals := val.Expr()
 				for _, ve := range vals {
-					fmt.Println(ve)
-					s := ve.Source()
-					fmt.Printf("%#+v\n", s)
+					inst, path := ve.Reference()
+					fmt.Println(ve, inst, path)
+					//s := ve.Source()
+					//fmt.Printf("%d: %#+v\n", i, s)
 				}
 				if !viper.GetBool("keep-references") {
 					foundRef := false
@@ -104,7 +107,7 @@ var listCmd = &cobra.Command{
 
 				// Construct output as a tab-table
 				// get path / pkg import (if available)
-				inst, _ := val.Reference()
+				// inst, _ := val.Reference()
 				pkg := "(plan)"
 				if inst != nil {
 					pkg = inst.ImportPath

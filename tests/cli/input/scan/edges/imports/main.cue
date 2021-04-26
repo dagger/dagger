@@ -1,9 +1,10 @@
 package main
 
-import "dagger.io/dagger"
+import "strings"
+// import "dagger.io/dagger"
 import "foo.io/bar"
 
-shh: dagger.#Secret
+// shh: dagger.#Secret
 
 a: bar.#A
 b: bar.B
@@ -20,3 +21,8 @@ ex3: #Ex.a
 
 const: bar.CONST
 
+
+foo: "strings": [...string]
+// bar: strings.Join(["bar", "baz"], " ")
+
+myString: strings.MaxRunes(5)
