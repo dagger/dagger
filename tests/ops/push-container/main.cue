@@ -8,7 +8,7 @@ import (
 
 registry: {
 	username: string
-	secret: dagger.#Secret
+	secret:   dagger.#Secret
 }
 
 TestPushContainer: {

@@ -42,7 +42,7 @@ import (
 			},
 			// Push the image to the registry
 			op.#PushContainer & {
-				ref:  "\(repository):\(tag)"
+				ref: "\(repository):\(tag)"
 			},
 			op.#Export & {
 				source: "/dagger/image_ref"
