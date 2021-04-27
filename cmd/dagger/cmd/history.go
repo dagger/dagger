@@ -7,7 +7,7 @@ import (
 
 var historyCmd = &cobra.Command{
 	Use:   "history",
-	Short: "List past changes to a deployment",
+	Short: "List past changes to an environment",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:

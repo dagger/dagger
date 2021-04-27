@@ -17,7 +17,7 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list [TARGET] [flags]",
-	Short: "List for the inputs of a deployment",
+	Short: "List for the inputs of an environment",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -35,12 +35,12 @@ var listCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		deployment := common.GetCurrentDeploymentState(ctx, store)
+		environment := common.GetCurrentEnvironmentState(ctx, store)
 
 		// print any persisted inputs
-		if len(deployment.Inputs) > 0 {
+		if len(environment.Inputs) > 0 {
 			fmt.Println("Saved Inputs:")
-			for _, input := range deployment.Inputs {
+			for _, input := range environment.Inputs {
 				// Todo, how to pull apart an input to print relevant information
 				fmt.Printf("%s: %v\n", input.Key, input.Value)
 			}
@@ -49,8 +49,8 @@ var listCmd = &cobra.Command{
 		}
 
 		lg = lg.With().
-			Str("deploymentName", deployment.Name).
-			Str("deploymentId", deployment.ID).
+			Str("environmentName", environment.Name).
+			Str("environmentId", environment.ID).
 			Logger()
 
 		c, err := dagger.NewClient(ctx, "", false)
@@ -58,7 +58,7 @@ var listCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
 
-		_, err = c.Do(ctx, deployment, func(lCtx context.Context, lDeploy *dagger.Deployment, lSolver dagger.Solver) error {
+		_, err = c.Do(ctx, environment, func(lCtx context.Context, lDeploy *dagger.Environment, lSolver dagger.Solver) error {
 			inputs, err := lDeploy.ScanInputs()
 			if err != nil {
 				return err
@@ -105,7 +105,7 @@ var listCmd = &cobra.Command{
 		})
 
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to query deployment")
+			lg.Fatal().Err(err).Msg("failed to query environment")
 		}
 
 	},

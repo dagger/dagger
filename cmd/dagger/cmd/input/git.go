@@ -32,7 +32,7 @@ var gitCmd = &cobra.Command{
 			subDir = args[3]
 		}
 
-		updateDeploymentInput(ctx, args[0], dagger.GitInput(args[1], ref, subDir))
+		updateEnvironmentInput(ctx, args[0], dagger.GitInput(args[1], ref, subDir))
 	},
 }
 

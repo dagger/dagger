@@ -1,16 +1,16 @@
 package dagger
 
-// Contents of a deployment serialized to a file
-type DeploymentState struct {
-	// Globally unique deployment ID
+// Contents of an environment serialized to a file
+type EnvironmentState struct {
+	// Globally unique environment ID
 	ID string `json:"id,omitempty"`
 
-	// Human-friendly deployment name.
-	// A deployment may have more than one name.
+	// Human-friendly environment name.
+	// A environment may have more than one name.
 	// FIXME: store multiple names?
 	Name string `json:"name,omitempty"`
 
-	// Cue module containing the deployment plan
+	// Cue module containing the environment plan
 	// The input's top-level artifact is used as a module directory.
 	PlanSource Input `json:"plan,omitempty"`
 
@@ -26,7 +26,7 @@ type inputKV struct {
 	Value Input  `json:"value,omitempty"`
 }
 
-func (s *DeploymentState) SetInput(key string, value Input) error {
+func (s *EnvironmentState) SetInput(key string, value Input) error {
 	for i, inp := range s.Inputs {
 		if inp.Key != key {
 			continue
@@ -42,7 +42,7 @@ func (s *DeploymentState) SetInput(key string, value Input) error {
 // Remove all inputs at the given key, including sub-keys.
 // For example RemoveInputs("foo.bar") will remove all inputs
 //   at foo.bar, foo.bar.baz, etc.
-func (s *DeploymentState) RemoveInputs(key string) error {
+func (s *EnvironmentState) RemoveInputs(key string) error {
 	newInputs := make([]inputKV, 0, len(s.Inputs))
 	for _, i := range s.Inputs {
 		if i.Key == key {

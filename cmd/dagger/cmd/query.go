@@ -15,7 +15,7 @@ import (
 
 var queryCmd = &cobra.Command{
 	Use:   "query [TARGET] [flags]",
-	Short: "Query the contents of a deployment",
+	Short: "Query the contents of an environment",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -35,11 +35,11 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		state := common.GetCurrentDeploymentState(ctx, store)
+		state := common.GetCurrentEnvironmentState(ctx, store)
 
 		lg = lg.With().
-			Str("deploymentName", state.Name).
-			Str("deploymentId", state.ID).
+			Str("environmentName", state.Name).
+			Str("environmentId", state.ID).
 			Logger()
 
 		cuePath := cue.MakePath()
@@ -52,21 +52,21 @@ var queryCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
 
-		deployment, err := c.Do(ctx, state, nil)
+		environment, err := c.Do(ctx, state, nil)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to query deployment")
+			lg.Fatal().Err(err).Msg("failed to query environment")
 		}
 
 		cueVal := compiler.NewValue()
 
 		if !viper.GetBool("no-plan") {
-			if err := cueVal.FillPath(cue.MakePath(), deployment.Plan()); err != nil {
+			if err := cueVal.FillPath(cue.MakePath(), environment.Plan()); err != nil {
 				lg.Fatal().Err(err).Msg("failed to merge plan")
 			}
 		}
 
 		if !viper.GetBool("no-input") {
-			if err := cueVal.FillPath(cue.MakePath(), deployment.Input()); err != nil {
+			if err := cueVal.FillPath(cue.MakePath(), environment.Input()); err != nil {
 				lg.Fatal().Err(err).Msg("failed to merge plan with output")
 			}
 		}
@@ -139,7 +139,7 @@ func init() {
 	queryCmd.Flags().BoolP("show-attributes", "A", false, "Display field attributes (cue format only)")
 
 	// FIXME: implement the flags below
-	// queryCmd.Flags().String("revision", "latest", "Query a specific version of the deployment")
+	// queryCmd.Flags().String("revision", "latest", "Query a specific version of the environment")
 	queryCmd.Flags().StringP("format", "f", "json", "Output format (json|yaml|cue|text|env)")
 	queryCmd.Flags().BoolP("no-plan", "P", false, "Exclude plan from query")
 	queryCmd.Flags().BoolP("no-input", "I", false, "Exclude inputs from query")

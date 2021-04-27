@@ -11,7 +11,7 @@ import (
 
 var upCmd = &cobra.Command{
 	Use:   "up",
-	Short: "Bring a deployment online with latest plan and inputs",
+	Short: "Bring an environment online with latest plan and inputs",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -28,11 +28,11 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		state := common.GetCurrentDeploymentState(ctx, store)
-		result := common.DeploymentUp(ctx, state, viper.GetBool("no-cache"))
+		state := common.GetCurrentEnvironmentState(ctx, store)
+		result := common.EnvironmentUp(ctx, state, viper.GetBool("no-cache"))
 		state.Computed = result.Computed().JSON().String()
-		if err := store.UpdateDeployment(ctx, state, nil); err != nil {
-			lg.Fatal().Err(err).Msg("failed to update deployment")
+		if err := store.UpdateEnvironment(ctx, state, nil); err != nil {
+			lg.Fatal().Err(err).Msg("failed to update environment")
 		}
 	},
 }

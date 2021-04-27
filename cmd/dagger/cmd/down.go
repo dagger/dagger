@@ -7,7 +7,7 @@ import (
 
 var downCmd = &cobra.Command{
 	Use:   "down",
-	Short: "Take a deployment offline (WARNING: may destroy infrastructure)",
+	Short: "Take an environment offline (WARNING: may destroy infrastructure)",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:

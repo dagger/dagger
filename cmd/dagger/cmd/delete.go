@@ -7,7 +7,7 @@ import (
 
 var deleteCmd = &cobra.Command{
 	Use:   "delete",
-	Short: "Delete a deployment after taking it offline (WARNING: may destroy infrastructure)",
+	Short: "Delete an environment after taking it offline (WARNING: may destroy infrastructure)",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:

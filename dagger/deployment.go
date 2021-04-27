@@ -19,8 +19,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type Deployment struct {
-	state *DeploymentState
+type Environment struct {
+	state *EnvironmentState
 
 	// Layer 1: plan configuration
 	plan *compiler.Value
@@ -32,8 +32,8 @@ type Deployment struct {
 	computed *compiler.Value
 }
 
-func NewDeployment(st *DeploymentState) (*Deployment, error) {
-	d := &Deployment{
+func NewEnvironment(st *EnvironmentState) (*Environment, error) {
+	d := &Environment{
 		state: st,
 
 		plan:     compiler.NewValue(),
@@ -60,33 +60,33 @@ func NewDeployment(st *DeploymentState) (*Deployment, error) {
 	return d, nil
 }
 
-func (d *Deployment) ID() string {
+func (d *Environment) ID() string {
 	return d.state.ID
 }
 
-func (d *Deployment) Name() string {
+func (d *Environment) Name() string {
 	return d.state.Name
 }
 
-func (d *Deployment) PlanSource() Input {
+func (d *Environment) PlanSource() Input {
 	return d.state.PlanSource
 }
 
-func (d *Deployment) Plan() *compiler.Value {
+func (d *Environment) Plan() *compiler.Value {
 	return d.plan
 }
 
-func (d *Deployment) Input() *compiler.Value {
+func (d *Environment) Input() *compiler.Value {
 	return d.input
 }
 
-func (d *Deployment) Computed() *compiler.Value {
+func (d *Environment) Computed() *compiler.Value {
 	return d.computed
 }
 
 // LoadPlan loads the plan
-func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.LoadPlan")
+func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
 	planSource, err := d.state.PlanSource.Compile()
@@ -114,11 +114,11 @@ func (d *Deployment) LoadPlan(ctx context.Context, s Solver) error {
 	return nil
 }
 
-// Scan all scripts in the deployment for references to local directories (do:"local"),
+// Scan all scripts in the environment for references to local directories (do:"local"),
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
 // by user-specified scripts.
-func (d *Deployment) LocalDirs() map[string]string {
+func (d *Environment) LocalDirs() map[string]string {
 	dirs := map[string]string{}
 	localdirs := func(code ...*compiler.Value) {
 		Analyze(
@@ -140,7 +140,7 @@ func (d *Deployment) LocalDirs() map[string]string {
 			code...,
 		)
 	}
-	// 1. Scan the deployment state
+	// 1. Scan the environment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
 	src, err := compiler.InstanceMerge(d.plan, d.input)
 	if err != nil {
@@ -165,9 +165,9 @@ func (d *Deployment) LocalDirs() map[string]string {
 	return dirs
 }
 
-// Up missing values in deployment configuration, and write them to state.
-func (d *Deployment) Up(ctx context.Context, s Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "deployment.Up")
+// Up missing values in environment configuration, and write them to state.
+func (d *Environment) Up(ctx context.Context, s Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Up")
 	defer span.Finish()
 
 	// Reset the computed values
@@ -194,7 +194,7 @@ func (d *Deployment) Up(ctx context.Context, s Solver) error {
 
 type DownOpts struct{}
 
-func (d *Deployment) Down(ctx context.Context, _ *DownOpts) error {
+func (d *Environment) Down(ctx context.Context, _ *DownOpts) error {
 	panic("NOT IMPLEMENTED")
 }
 
@@ -292,7 +292,7 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 	})
 }
 
-func (d *Deployment) ScanInputs() ([]cue.Value, error) {
+func (d *Environment) ScanInputs() ([]cue.Value, error) {
 	vals, err := cuetils.ScanForInputs(d.plan.Cue())
 	if err != nil {
 		return nil, err

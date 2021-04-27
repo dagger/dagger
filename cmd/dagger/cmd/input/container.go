@@ -22,7 +22,7 @@ var containerCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(ctx, args[0], dagger.DockerInput(args[1]))
+		updateEnvironmentInput(ctx, args[0], dagger.DockerInput(args[1]))
 	},
 }
 

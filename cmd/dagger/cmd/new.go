@@ -17,7 +17,7 @@ import (
 
 var newCmd = &cobra.Command{
 	Use:   "new",
-	Short: "Create a new deployment",
+	Short: "Create a new environment",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -34,41 +34,41 @@ var newCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		if viper.GetString("deployment") != "" {
+		if viper.GetString("environment") != "" {
 			lg.
 				Fatal().
-				Msg("cannot use option -d,--deployment for this command")
+				Msg("cannot use option -d,--environment for this command")
 		}
 
 		name := ""
 		if len(args) > 0 {
 			name = args[0]
 		} else {
-			name = getNewDeploymentName(ctx)
+			name = getNewEnvironmentName(ctx)
 		}
 
-		st := &dagger.DeploymentState{
+		st := &dagger.EnvironmentState{
 			Name:       name,
 			PlanSource: getPlanSource(ctx),
 		}
 
-		err = store.CreateDeployment(ctx, st)
+		err = store.CreateEnvironment(ctx, st)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to create deployment")
+			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
 		lg.
 			Info().
-			Str("deploymentId", st.ID).
-			Str("deploymentName", st.Name).
-			Msg("deployment created")
+			Str("environmentId", st.ID).
+			Str("environmentName", st.Name).
+			Msg("environment created")
 
 		if viper.GetBool("up") {
-			common.DeploymentUp(ctx, st, false)
+			common.EnvironmentUp(ctx, st, false)
 		}
 	},
 }
 
-func getNewDeploymentName(ctx context.Context) string {
+func getNewEnvironmentName(ctx context.Context) string {
 	lg := log.Ctx(ctx)
 
 	workDir, err := os.Getwd()
@@ -133,7 +133,7 @@ func getPlanSource(ctx context.Context) dagger.Input {
 }
 
 func init() {
-	newCmd.Flags().BoolP("up", "u", false, "Bring the deployment online")
+	newCmd.Flags().BoolP("up", "u", false, "Bring the environment online")
 
 	newCmd.Flags().String("plan-dir", "", "Load plan from a local directory")
 	newCmd.Flags().String("plan-git", "", "Load plan from a git repository")

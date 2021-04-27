@@ -22,7 +22,7 @@ var yamlCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(
+		updateEnvironmentInput(
 			ctx,
 			args[0],
 			dagger.YAMLInput(readInput(ctx, args[1])),

@@ -29,27 +29,27 @@ import (
 	description: "Write code to deploy your code"
 
 	doc: """
-		A Dagger deployment is a continuously running workflow delivering a specific application in a specific way.
+		A Dagger environment is a continuously running workflow delivering a specific application in a specific way.
 
-		The same application can be delivered via different deployments, each with a different configuration.
-		For example a production deployment might include manual validation and addition performance testing,
-		while a staging deployment might automatically deploy from a git branch, load test data into the database,
+		The same application can be delivered via different environments, each with a different configuration.
+		For example a production environment might include manual validation and addition performance testing,
+		while a staging environment might automatically deploy from a git branch, load test data into the database,
 		and run on a separate cluster.
 
-		A deployment is made of 3 parts: a deployment plan, inputs, and outputs.
+		An environment is made of 3 parts: a plan, inputs, and outputs.
 		"""
 
 	flag: {
-		"--deployment": {
+		"--environment": {
 			alt:         "-d"
 			description:
 				"""
-				Select a deployment
+				Select an environment
 
-				If no deployment is specified, dagger searches for deployments using the current
+				If no environment is specified, dagger searches for environments using the current
 				directory as input.
 
-				* If exactly one deployment matches the search, it is selected.
+				* If exactly one environment matches the search, it is selected.
 				* If there is more than one match, the user is prompted to select one.
 				* If there is no match, the command returns an error.
 				"""
@@ -69,25 +69,25 @@ import (
 
 	command: {
 		new: {
-			description: "Create a new deployment"
+			description: "Create a new environment"
 			flag: {
 				"--name": {
 					alt:         "-n"
-					description: "Specify a deployment name"
+					description: "Specify an environment name"
 					default:     "name of current directory"
 				}
 
-				"--plan-dir": description: "Load deployment plan from a local directory"
+				"--plan-dir": description: "Load plan from a local directory"
 
-				"--plan-git": description: "Load deployment plan from a git repository"
+				"--plan-git": description: "Load plan from a git repository"
 
-				"--plan-package": description: "Load deployment plan from a cue package"
+				"--plan-package": description: "Load plan from a cue package"
 
-				"--plan-file": description: "Load deployment plan from a cue or json file"
+				"--plan-file": description: "Load plan from a cue or json file"
 
 				"--up": {
 					alt:         "-u"
-					description: "Bring the deployment online"
+					description: "Bring the environment online"
 				}
 
 				"--setup": {
@@ -97,26 +97,26 @@ import (
 			}
 		}
 
-		list: description: "List available deployments"
+		list: description: "List available environments"
 
 		query: {
 			arg:         "[EXPR] [flags]"
-			description: "Query the contents of a deployment"
+			description: "Query the contents of an environment"
 			doc:
 				"""
-					EXPR may be any valid CUE expression. The expression is evaluated against the deployment contents. The deployment is not changed.
+					EXPR may be any valid CUE expression. The expression is evaluated against the environment contents. The environment is not changed.
 					Examples:
 
-					  # Print the entire deployment plan with inputs merged in (but no outputs)
+					  # Print the entire plan with inputs merged in (but no outputs)
 					  $ dagger query --no-output
 
-					  # Print the deployment plan, inputs and outputs of a particular step
+					  # Print the plan, inputs and outputs of a particular step
 					  $ dagger query www.build
 
 					  # Print the URL of a deployed service
 					  $ dagger query api.url
 
-					  # Export environment variables from a deployment
+					  # Export environment variables from an environment
 					  $ dagger query -f json api.environment
 
 					"""
@@ -127,7 +127,7 @@ import (
 				// Use --revision or --change or --change-id instead?
 				"--version": {
 					alt:         "-v"
-					description: "Query a specific version of the deployment"
+					description: "Query a specific version of the environment"
 					default:     "latest"
 				}
 
@@ -147,29 +147,29 @@ import (
 				}
 				"--no-plan": {
 					alt:         "-L"
-					description: "Exclude deployment plan from query"
+					description: "Exclude plan from query"
 				}
 			}
 		}
 
 		up: {
-			description: "Bring a deployment online with latest deployment plan and inputs"
+			description: "Bring an environment online with latest plan and inputs"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
 		down: {
-			description: "Take a deployment offline (WARNING: may destroy infrastructure)"
+			description: "Take an environment offline (WARNING: may destroy infrastructure)"
 			flag: "--no-cache": description: "Disable all run cache"
 		}
 
-		history: description: "List past changes to a deployment"
+		history: description: "List past changes to an environment"
 
 		delete: {
-			description: "Delete a deployment after taking it offline (WARNING: may destroy infrastructure)"
+			description: "Delete an environment after taking it offline (WARNING: may destroy infrastructure)"
 		}
 
 		plan: {
-			description: "Manage a deployment plan"
+			description: "Manage an environment plan"
 
 			command: {
 				package: {
@@ -216,7 +216,7 @@ import (
 		}
 
 		input: {
-			description: "Manage a deployment's inputs"
+			description: "Manage an environment's inputs"
 
 			command: {
 				// FIXME: details of individual input commands
@@ -229,10 +229,10 @@ import (
 		}
 
 		output: {
-			description: "Manage a deployment's outputs"
+			description: "Manage an environment's outputs"
 			// FIXME: bind output values or artifacts
 			// to local dir or file
-			// BONUS: bind a deployment output to another deployment's input?
+			// BONUS: bind an environment output to another environment's input?
 		}
 
 		login: description: "Login to Dagger Cloud"

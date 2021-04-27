@@ -17,13 +17,13 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "dagger",
-	Short: "A programmable deployment system",
+	Short: "A programmable environment system",
 }
 
 func init() {
 	rootCmd.PersistentFlags().String("log-format", "", "Log format (json, pretty). Defaults to json if the terminal is not a tty")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
-	rootCmd.PersistentFlags().StringP("deployment", "d", "", "Select a deployment")
+	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 
 	rootCmd.AddCommand(
 		computeCmd,
