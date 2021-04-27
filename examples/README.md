@@ -93,30 +93,30 @@ This app assumes the following infrastructure is available:
 - AWS RDS Instance (MySQL or PostgreSQL)
 - AWS ECR repository
 
-1. Prepare the app configuration
-
-Edit the file `./examples/jamstack/app_config.cue` and review all values to match to your own needs.
-
-2. Login your local docker daemon to ECR
-
-_This step is temporary and will be removed soon (gh issue #301)._
-
-```sh
-AWS_REGION="<REPLACE_WITH_AWS_REGION>"
-AWS_ID="<REPLACE_WITH_AWS_ACCOUNT_ID>"
-aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${AWS_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-```
-
-3. Deploy!
+1. Create a new deployment from the plan
 
 ```sh
 cd ./examples/jamstack
 dagger new
+```
+
+2. Edit the inputs
+
+Edit the file `inputs.yaml` and review all values to match to your infrastructure.
+
+Add the inputs to the deployment:
+
+```sh
+dagger input yaml "" -f ./inputs.yaml
+```
+
+1. Deploy!
+
+```sh
 dagger up
 ```
 
-The example `app_config.cue` from the `./examples/jamstack` directory takes the source code from a remote git repository,
-but you can remove this from the file and instead points to a local source code:
+The example `inputs.yaml` from the `./examples/jamstack` directory takes the source code from a remote git repository, but you can remove this from the file and instead points to a local source code:
 
 ```sh
 dagger input dir backend.source ./my/local/backend/code
