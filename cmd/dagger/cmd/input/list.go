@@ -71,30 +71,39 @@ var listCmd = &cobra.Command{
 			for _, val := range inputs {
 				fmt.Println("======================")
 				inst, path := val.Reference()
-				fmt.Println(val, inst, path)
+				l, _ := val.Label()
+				op, vals := val.Expr()
+				fmt.Println(l, val, inst, path, op)
 				//fmt.Printf("%#+v\n", val.Source())
 
-				// check for references
-				// this is here because it has issues
-				// so we wrap it in a flag to control its usage while debugging
-				_, vals := val.Expr()
+				// Debug, print expression vals
 				for _, ve := range vals {
 					inst, path := ve.Reference()
 					fmt.Println(ve, inst, path)
 					//s := ve.Source()
 					//fmt.Printf("%d: %#+v\n", i, s)
 				}
-				if !viper.GetBool("keep-references") {
+
+				if !viper.GetBool("keep-references") && !viper.GetBool("show-all") {
 					foundRef := false
 					for _, ve := range vals {
-						// fmt.Println(ve)
-						s := ve.Source()
-						// fmt.Printf("%#+v\n", s)
 
-						// how do we determine references? (i.e. imports look the same, re: dagger.#Secret)
-						switch s.(type) {
-						case *ast.Ident:
-							foundRef = true
+						if !viper.GetBool("no-deep-references") {
+							inst, path :=  ve.Reference()
+							if inst != nil {
+								fmt.Println("Hiding:", path)
+								// continue
+								foundRef = true
+							}
+						}
+
+						// check if there is an Ident
+						if viper.GetBool("elem-identifiers") {
+							s := ve.Source()
+							switch s.(type) {
+							case *ast.Ident:
+								foundRef = true
+							}
 						}
 					}
 					if foundRef {
@@ -130,7 +139,11 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().BoolP("keep-references", "R", false, "Try to eliminate references")
+	listCmd.Flags().BoolP("show-all", "A", false, "Show all inputs")
+	listCmd.Flags().BoolP("keep-references", "K", false, "Do not eliminate references")
+	listCmd.Flags().BoolP("no-deep-references", "D", false, "Do not try to recurse and find deep references")
+	listCmd.Flags().BoolP("elem-identifiers", "I", false, "Try to recurse and remove identifiers")
+
 
 	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
 		panic(err)
