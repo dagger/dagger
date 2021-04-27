@@ -197,6 +197,8 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (
 		return p.Exec(ctx, op, st)
 	case "export":
 		return p.Export(ctx, op, st)
+	case "docker-login":
+		return p.DockerLogin(ctx, op, st)
 	case "fetch-container":
 		return p.FetchContainer(ctx, op, st)
 	case "push-container":
@@ -557,6 +559,32 @@ func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (
 	}
 	p.image = from.ImageConfig()
 	return from.State(), nil
+}
+
+func (p *Pipeline) DockerLogin(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	username, err := op.Lookup("username").String()
+	if err != nil {
+		return st, err
+	}
+
+	secret, err := op.Lookup("secret").String()
+	if err != nil {
+		return st, err
+	}
+
+	target, err := op.Lookup("target").String()
+	if err != nil {
+		return st, err
+	}
+
+	p.s.auth.AddCredentials(target, username, secret)
+	log.
+		Ctx(ctx).
+		Debug().
+		Str("target", target).
+		Msg("docker login to registry")
+
+	return st, nil
 }
 
 func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {

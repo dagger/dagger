@@ -51,6 +51,14 @@ package op
 	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
 }
 
+#DockerLogin: {
+	do:       "docker-login"
+	target:   string | *"https://index.docker.io/v1/"
+	username: string
+	// FIXME: should be a #Secret (circular import)
+	secret: string | bytes
+}
+
 #FetchContainer: {
 	do:  "fetch-container"
 	ref: string

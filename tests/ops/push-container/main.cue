@@ -1,9 +1,15 @@
 package testing
 
 import (
+	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 )
+
+registry: {
+	username: string
+	secret:   dagger.#Secret
+}
 
 TestPushContainer: {
 	// Generate a random number
@@ -24,6 +30,9 @@ TestPushContainer: {
 	push: {
 		ref: "daggerio/ci-test:\(random)"
 		#up: [
+			op.#DockerLogin & {
+				registry
+			},
 			op.#WriteFile & {
 				content: random
 				dest:    "/rand"
