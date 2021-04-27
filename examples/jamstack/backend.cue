@@ -3,12 +3,13 @@ package main
 import (
 	"dagger.io/dagger"
 	"dagger.io/aws/ecs"
+	"dagger.io/git"
 )
 
 // Backend configuration
 backend: {
 	// Source code to build this container
-	source: dagger.#Artifact
+	source: git.#Repository | dagger.#Artifact
 
 	// Container environment variables
 	environment: [string]: string

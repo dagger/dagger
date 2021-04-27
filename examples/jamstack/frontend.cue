@@ -4,11 +4,12 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/netlify"
 	"dagger.io/js/react"
+	"dagger.io/git"
 )
 
 frontend: {
 	// Source code to build the app
-	source: dagger.#Artifact
+	source: git.#Repository | dagger.#Artifact
 
 	writeEnvFile?: string
 
