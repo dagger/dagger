@@ -43,7 +43,6 @@ import (
 			// Push the image to the registry
 			op.#PushContainer & {
 				ref:  "\(repository):\(tag)"
-				auth: ecrCreds.auth
 			},
 			op.#Export & {
 				source: "/dagger/image_ref"
