@@ -23,7 +23,18 @@ setup() {
 @test "stdlib: netlify" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/netlify/inputs.yaml
 
-    "$DAGGER" compute "$TESTDIR"/stdlib/netlify --input-yaml "$TESTDIR"/stdlib/netlify/inputs.yaml
+    "$DAGGER" new --plan-dir "$TESTDIR"/stdlib/netlify netlify
+    sops -d "$TESTDIR"/stdlib/netlify/inputs.yaml | "$DAGGER" -d "netlify" input yaml "" -f -
+    "$DAGGER" up -d "netlify"
+
+    url=$("$DAGGER" query -l error -f text -d "netlify" TestNetlify.deploy.url)
+    run curl -sSf "$url"
+    assert_success
+
+    # bring the site down, ensure curl fails
+    "$DAGGER" down -d "netlify"
+    run curl -sSf "$url"
+    assert_failure
 }
 
 @test "stdlib: kubernetes" {

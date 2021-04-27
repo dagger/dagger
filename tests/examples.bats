@@ -13,8 +13,7 @@ setup() {
 
     # curl the URL we just deployed to check if it worked
     deployUrl=$("$DAGGER" query -l error -f text -e "react" www.deployUrl)
-    echo "=>$deployUrl<="
-    run curl -sS "$deployUrl"
+    run curl -sSf "$deployUrl"
     assert_success
     assert_output --partial "Todo App"
 }

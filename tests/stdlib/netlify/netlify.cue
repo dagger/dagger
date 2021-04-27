@@ -32,7 +32,8 @@ TestNetlify: {
 	// Deploy to netlify
 	deploy: netlify.#Site & {
 		contents: html
-		name:     "dagger-test"
+		create:   true
+		name:     "dagger-ci-\(random)"
 	}
 
 	// Check if the deployed site has the random marker
@@ -52,7 +53,7 @@ TestNetlify: {
 				"pipefail",
 				"-c",
 				#"""
-                test "$(curl \#(deploy.deployUrl))" = "\#(random)"
+                test "$(curl -sSf \#(deploy.deployUrl))" = "\#(random)"
                 """#,
 			]
 		},
