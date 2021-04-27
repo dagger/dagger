@@ -60,14 +60,14 @@ func NewClient(ctx context.Context, host string, noCache bool) (*Client, error) 
 	}, nil
 }
 
-type ClientDoFunc func(context.Context, *Deployment, Solver) error
+type ClientDoFunc func(context.Context, *Environment, Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc) (*Deployment, error) {
+func (c *Client) Do(ctx context.Context, state *EnvironmentState, fn ClientDoFunc) (*Environment, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
-	deployment, err := NewDeployment(state)
+	environment, err := NewEnvironment(state)
 	if err != nil {
 		return nil, err
 	}
@@ -83,17 +83,17 @@ func (c *Client) Do(ctx context.Context, state *DeploymentState, fn ClientDoFunc
 
 	// Spawn build function
 	eg.Go(func() error {
-		return c.buildfn(gctx, deployment, fn, events)
+		return c.buildfn(gctx, environment, fn, events)
 	})
 
-	return deployment, eg.Wait()
+	return environment, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, environment *Environment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
-	localdirs := deployment.LocalDirs()
+	localdirs := environment.LocalDirs()
 	for label, dir := range localdirs {
 		abs, err := filepath.Abs(dir)
 		if err != nil {
@@ -121,24 +121,24 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		s := NewSolver(c.c, gw, ch, auth, c.noCache)
 
 		lg.Debug().Msg("loading configuration")
-		if err := deployment.LoadPlan(ctx, s); err != nil {
+		if err := environment.LoadPlan(ctx, s); err != nil {
 			return nil, err
 		}
 
 		// Compute output overlay
 		if fn != nil {
-			if err := fn(ctx, deployment, s); err != nil {
+			if err := fn(ctx, environment, s); err != nil {
 				return nil, compiler.Err(err)
 			}
 		}
 
-		// Export deployment to a cue directory
+		// Export environment to a cue directory
 		// FIXME: this should be elsewhere
-		lg.Debug().Msg("exporting deployment")
-		span, _ := opentracing.StartSpanFromContext(ctx, "Deployment.Export")
+		lg.Debug().Msg("exporting environment")
+		span, _ := opentracing.StartSpanFromContext(ctx, "Environment.Export")
 		defer span.Finish()
 
-		computed := deployment.Computed().JSON().PrettyString()
+		computed := environment.Computed().JSON().PrettyString()
 		st := llb.
 			Scratch().
 			File(

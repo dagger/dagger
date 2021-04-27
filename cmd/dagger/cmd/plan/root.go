@@ -12,7 +12,7 @@ import (
 // Cmd exposes the top-level command
 var Cmd = &cobra.Command{
 	Use:   "plan",
-	Short: "Manage a deployment's plan",
+	Short: "Manage an environment's plan",
 }
 
 func init() {
@@ -24,7 +24,7 @@ func init() {
 	)
 }
 
-func updateDeploymentPlan(ctx context.Context, planSource dagger.Input) {
+func updateEnvironmentPlan(ctx context.Context, planSource dagger.Input) {
 	lg := log.Ctx(ctx)
 
 	store, err := dagger.DefaultStore()
@@ -32,11 +32,11 @@ func updateDeploymentPlan(ctx context.Context, planSource dagger.Input) {
 		lg.Fatal().Err(err).Msg("failed to load store")
 	}
 
-	st := common.GetCurrentDeploymentState(ctx, store)
+	st := common.GetCurrentEnvironmentState(ctx, store)
 	st.PlanSource = planSource
 
-	if err := store.UpdateDeployment(ctx, st, nil); err != nil {
-		lg.Fatal().Err(err).Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("cannot update deployment")
+	if err := store.UpdateEnvironment(ctx, st, nil); err != nil {
+		lg.Fatal().Err(err).Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("cannot update environment")
 	}
-	lg.Info().Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("updated deployment")
+	lg.Info().Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("updated environment")
 }

@@ -18,7 +18,7 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List available deployments",
+	Short: "List available environments",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -35,20 +35,20 @@ var listCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load store")
 		}
 
-		deployments, err := store.ListDeployments(ctx)
+		environments, err := store.ListEnvironments(ctx)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Msg("cannot list deployments")
+				Msg("cannot list environments")
 		}
 
-		deploymentID := getCurrentDeploymentID(ctx, store)
+		environmentID := getCurrentEnvironmentID(ctx, store)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.TabIndent)
-		for _, r := range deployments {
+		for _, r := range environments {
 			line := fmt.Sprintf("%s\t%s\t", r.Name, formatPlanSource(r.PlanSource))
-			if r.ID == deploymentID {
-				line = fmt.Sprintf("%s- active deployment", line)
+			if r.ID == environmentID {
+				line = fmt.Sprintf("%s- active environment", line)
 			}
 			fmt.Fprintln(w, line)
 		}
@@ -62,7 +62,7 @@ func init() {
 	}
 }
 
-func getCurrentDeploymentID(ctx context.Context, store *dagger.Store) string {
+func getCurrentEnvironmentID(ctx context.Context, store *dagger.Store) string {
 	lg := log.Ctx(ctx)
 
 	wd, err := os.Getwd()
@@ -71,7 +71,7 @@ func getCurrentDeploymentID(ctx context.Context, store *dagger.Store) string {
 		return ""
 	}
 
-	st, err := store.LookupDeploymentByPath(ctx, wd)
+	st, err := store.LookupEnvironmentByPath(ctx, wd)
 	if err != nil {
 		// Ignore error
 		return ""

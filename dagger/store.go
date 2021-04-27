@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	ErrDeploymentExist    = errors.New("deployment already exists")
-	ErrDeploymentNotExist = errors.New("deployment doesn't exist")
+	ErrEnvironmentExist    = errors.New("environment already exists")
+	ErrEnvironmentNotExist = errors.New("environment doesn't exist")
 )
 
 const (
@@ -26,26 +26,26 @@ type Store struct {
 
 	l sync.RWMutex
 
-	// ID -> Deployment
-	deployments map[string]*DeploymentState
+	// ID -> Environment
+	environments map[string]*EnvironmentState
 
-	// Name -> Deployment
-	deploymentsByName map[string]*DeploymentState
+	// Name -> Environment
+	environmentsByName map[string]*EnvironmentState
 
-	// Path -> (ID->Deployment)
-	deploymentsByPath map[string]map[string]*DeploymentState
+	// Path -> (ID->Environment)
+	environmentsByPath map[string]map[string]*EnvironmentState
 
 	// ID -> (Path->{})
-	pathsByDeploymentID map[string]map[string]struct{}
+	pathsByEnvironmentID map[string]map[string]struct{}
 }
 
 func NewStore(root string) (*Store, error) {
 	store := &Store{
-		root:                root,
-		deployments:         make(map[string]*DeploymentState),
-		deploymentsByName:   make(map[string]*DeploymentState),
-		deploymentsByPath:   make(map[string]map[string]*DeploymentState),
-		pathsByDeploymentID: make(map[string]map[string]struct{}),
+		root:                 root,
+		environments:         make(map[string]*EnvironmentState),
+		environmentsByName:   make(map[string]*EnvironmentState),
+		environmentsByPath:   make(map[string]map[string]*EnvironmentState),
+		pathsByEnvironmentID: make(map[string]map[string]struct{}),
 	}
 	return store, store.loadAll()
 }
@@ -58,8 +58,8 @@ func DefaultStore() (*Store, error) {
 	return NewStore(os.ExpandEnv(defaultStoreRoot))
 }
 
-func (s *Store) deploymentPath(name string) string {
-	return path.Join(s.root, name, "deployment.json")
+func (s *Store) environmentPath(name string) string {
+	return path.Join(s.root, name, "environment.json")
 }
 
 func (s *Store) loadAll() error {
@@ -75,7 +75,7 @@ func (s *Store) loadAll() error {
 		if !f.IsDir() {
 			continue
 		}
-		if err := s.loadDeployment(f.Name()); err != nil {
+		if err := s.loadEnvironment(f.Name()); err != nil {
 			return err
 		}
 	}
@@ -83,21 +83,21 @@ func (s *Store) loadAll() error {
 	return nil
 }
 
-func (s *Store) loadDeployment(name string) error {
-	data, err := os.ReadFile(s.deploymentPath(name))
+func (s *Store) loadEnvironment(name string) error {
+	data, err := os.ReadFile(s.environmentPath(name))
 	if err != nil {
 		return err
 	}
-	var st DeploymentState
+	var st EnvironmentState
 	if err := json.Unmarshal(data, &st); err != nil {
 		return err
 	}
-	s.indexDeployment(&st)
+	s.indexEnvironment(&st)
 	return nil
 }
 
-func (s *Store) syncDeployment(r *DeploymentState) error {
-	p := s.deploymentPath(r.Name)
+func (s *Store) syncEnvironment(r *EnvironmentState) error {
+	p := s.environmentPath(r.Name)
 
 	if err := os.MkdirAll(path.Dir(p), 0755); err != nil {
 		return err
@@ -112,28 +112,28 @@ func (s *Store) syncDeployment(r *DeploymentState) error {
 		return err
 	}
 
-	s.reindexDeployment(r)
+	s.reindexEnvironment(r)
 
 	return nil
 }
 
-func (s *Store) indexDeployment(r *DeploymentState) {
-	s.deployments[r.ID] = r
-	s.deploymentsByName[r.Name] = r
+func (s *Store) indexEnvironment(r *EnvironmentState) {
+	s.environments[r.ID] = r
+	s.environmentsByName[r.Name] = r
 
 	mapPath := func(i Input) {
 		if i.Type != InputTypeDir {
 			return
 		}
-		if s.deploymentsByPath[i.Dir.Path] == nil {
-			s.deploymentsByPath[i.Dir.Path] = make(map[string]*DeploymentState)
+		if s.environmentsByPath[i.Dir.Path] == nil {
+			s.environmentsByPath[i.Dir.Path] = make(map[string]*EnvironmentState)
 		}
-		s.deploymentsByPath[i.Dir.Path][r.ID] = r
+		s.environmentsByPath[i.Dir.Path][r.ID] = r
 
-		if s.pathsByDeploymentID[r.ID] == nil {
-			s.pathsByDeploymentID[r.ID] = make(map[string]struct{})
+		if s.pathsByEnvironmentID[r.ID] == nil {
+			s.pathsByEnvironmentID[r.ID] = make(map[string]struct{})
 		}
-		s.pathsByDeploymentID[r.ID][i.Dir.Path] = struct{}{}
+		s.pathsByEnvironmentID[r.ID][i.Dir.Path] = struct{}{}
 	}
 
 	mapPath(r.PlanSource)
@@ -142,108 +142,108 @@ func (s *Store) indexDeployment(r *DeploymentState) {
 	}
 }
 
-func (s *Store) deindexDeployment(id string) {
-	r, ok := s.deployments[id]
+func (s *Store) deindexEnvironment(id string) {
+	r, ok := s.environments[id]
 	if !ok {
 		return
 	}
-	delete(s.deployments, r.ID)
-	delete(s.deploymentsByName, r.Name)
+	delete(s.environments, r.ID)
+	delete(s.environmentsByName, r.Name)
 
-	for p := range s.pathsByDeploymentID[r.ID] {
-		delete(s.deploymentsByPath[p], r.ID)
+	for p := range s.pathsByEnvironmentID[r.ID] {
+		delete(s.environmentsByPath[p], r.ID)
 	}
-	delete(s.pathsByDeploymentID, r.ID)
+	delete(s.pathsByEnvironmentID, r.ID)
 }
 
-func (s *Store) reindexDeployment(r *DeploymentState) {
-	s.deindexDeployment(r.ID)
-	s.indexDeployment(r)
+func (s *Store) reindexEnvironment(r *EnvironmentState) {
+	s.deindexEnvironment(r.ID)
+	s.indexEnvironment(r)
 }
 
-func (s *Store) CreateDeployment(ctx context.Context, st *DeploymentState) error {
+func (s *Store) CreateEnvironment(ctx context.Context, st *EnvironmentState) error {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	if _, ok := s.deploymentsByName[st.Name]; ok {
-		return fmt.Errorf("%s: %w", st.Name, ErrDeploymentExist)
+	if _, ok := s.environmentsByName[st.Name]; ok {
+		return fmt.Errorf("%s: %w", st.Name, ErrEnvironmentExist)
 	}
 
 	st.ID = uuid.New().String()
-	return s.syncDeployment(st)
+	return s.syncEnvironment(st)
 }
 
 type UpdateOpts struct{}
 
-func (s *Store) UpdateDeployment(ctx context.Context, r *DeploymentState, o *UpdateOpts) error {
+func (s *Store) UpdateEnvironment(ctx context.Context, r *EnvironmentState, o *UpdateOpts) error {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	return s.syncDeployment(r)
+	return s.syncEnvironment(r)
 }
 
 type DeleteOpts struct{}
 
-func (s *Store) DeleteDeployment(ctx context.Context, r *DeploymentState, o *DeleteOpts) error {
+func (s *Store) DeleteEnvironment(ctx context.Context, r *EnvironmentState, o *DeleteOpts) error {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	if err := os.Remove(s.deploymentPath(r.Name)); err != nil {
+	if err := os.Remove(s.environmentPath(r.Name)); err != nil {
 		return err
 	}
-	s.deindexDeployment(r.ID)
+	s.deindexEnvironment(r.ID)
 	return nil
 }
 
-func (s *Store) LookupDeploymentByID(ctx context.Context, id string) (*DeploymentState, error) {
+func (s *Store) LookupEnvironmentByID(ctx context.Context, id string) (*EnvironmentState, error) {
 	s.l.RLock()
 	defer s.l.RUnlock()
 
-	st, ok := s.deployments[id]
+	st, ok := s.environments[id]
 	if !ok {
-		return nil, fmt.Errorf("%s: %w", id, ErrDeploymentNotExist)
+		return nil, fmt.Errorf("%s: %w", id, ErrEnvironmentNotExist)
 	}
 	return st, nil
 }
 
-func (s *Store) LookupDeploymentByName(ctx context.Context, name string) (*DeploymentState, error) {
+func (s *Store) LookupEnvironmentByName(ctx context.Context, name string) (*EnvironmentState, error) {
 	s.l.RLock()
 	defer s.l.RUnlock()
 
-	st, ok := s.deploymentsByName[name]
+	st, ok := s.environmentsByName[name]
 	if !ok {
-		return nil, fmt.Errorf("%s: %w", name, ErrDeploymentNotExist)
+		return nil, fmt.Errorf("%s: %w", name, ErrEnvironmentNotExist)
 	}
 	return st, nil
 }
 
-func (s *Store) LookupDeploymentByPath(ctx context.Context, path string) ([]*DeploymentState, error) {
+func (s *Store) LookupEnvironmentByPath(ctx context.Context, path string) ([]*EnvironmentState, error) {
 	s.l.RLock()
 	defer s.l.RUnlock()
 
-	res := []*DeploymentState{}
+	res := []*EnvironmentState{}
 
-	deployments, ok := s.deploymentsByPath[path]
+	environments, ok := s.environmentsByPath[path]
 	if !ok {
 		return res, nil
 	}
 
-	for _, d := range deployments {
+	for _, d := range environments {
 		res = append(res, d)
 	}
 
 	return res, nil
 }
 
-func (s *Store) ListDeployments(ctx context.Context) ([]*DeploymentState, error) {
+func (s *Store) ListEnvironments(ctx context.Context) ([]*EnvironmentState, error) {
 	s.l.RLock()
 	defer s.l.RUnlock()
 
-	deployments := make([]*DeploymentState, 0, len(s.deployments))
+	environments := make([]*EnvironmentState, 0, len(s.environments))
 
-	for _, st := range s.deployments {
-		deployments = append(deployments, st)
+	for _, st := range s.environments {
+		environments = append(environments, st)
 	}
 
-	return deployments, nil
+	return environments, nil
 }

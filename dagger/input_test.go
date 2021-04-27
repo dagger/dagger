@@ -7,15 +7,15 @@ import (
 )
 
 func TestInputDir(t *testing.T) {
-	st := &DeploymentState{
+	st := &EnvironmentState{
 		PlanSource: DirInput("/tmp/source", []string{}),
 	}
 	require.NoError(t, st.SetInput("www.source", DirInput("/", []string{})))
 
-	deployment, err := NewDeployment(st)
+	environment, err := NewEnvironment(st)
 	require.NoError(t, err)
 
-	localdirs := deployment.LocalDirs()
+	localdirs := environment.LocalDirs()
 	require.Len(t, localdirs, 2)
 	require.Contains(t, localdirs, "/")
 	require.Contains(t, localdirs, "/tmp/source")

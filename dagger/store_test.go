@@ -17,38 +17,38 @@ func TestStoreLoad(t *testing.T) {
 	store, err := NewStore(root)
 	require.NoError(t, err)
 
-	_, err = store.LookupDeploymentByName(ctx, "notexist")
+	_, err = store.LookupEnvironmentByName(ctx, "notexist")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrDeploymentNotExist))
+	require.True(t, errors.Is(err, ErrEnvironmentNotExist))
 
-	st := &DeploymentState{
+	st := &EnvironmentState{
 		Name: "test",
 	}
-	require.NoError(t, store.CreateDeployment(ctx, st))
+	require.NoError(t, store.CreateEnvironment(ctx, st))
 
-	checkDeployments := func(store *Store) {
-		r, err := store.LookupDeploymentByID(ctx, st.ID)
+	checkEnvironments := func(store *Store) {
+		r, err := store.LookupEnvironmentByID(ctx, st.ID)
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		require.Equal(t, "test", r.Name)
 
-		r, err = store.LookupDeploymentByName(ctx, "test")
+		r, err = store.LookupEnvironmentByName(ctx, "test")
 		require.NoError(t, err)
 		require.NotNil(t, r)
 		require.Equal(t, "test", r.Name)
 
-		deployments, err := store.ListDeployments(ctx)
+		environments, err := store.ListEnvironments(ctx)
 		require.NoError(t, err)
-		require.Len(t, deployments, 1)
-		require.Equal(t, "test", deployments[0].Name)
+		require.Len(t, environments, 1)
+		require.Equal(t, "test", environments[0].Name)
 	}
 
-	checkDeployments(store)
+	checkEnvironments(store)
 
-	// Reload the deployments from disk and check again
+	// Reload the environments from disk and check again
 	newStore, err := NewStore(root)
 	require.NoError(t, err)
-	checkDeployments(newStore)
+	checkEnvironments(newStore)
 }
 
 func TestStoreLookupByPath(t *testing.T) {
@@ -59,65 +59,65 @@ func TestStoreLookupByPath(t *testing.T) {
 	store, err := NewStore(root)
 	require.NoError(t, err)
 
-	st := &DeploymentState{
+	st := &EnvironmentState{
 		Name: "test",
 	}
 	require.NoError(t, st.SetInput("foo", DirInput("/test/path", []string{})))
-	require.NoError(t, store.CreateDeployment(ctx, st))
+	require.NoError(t, store.CreateEnvironment(ctx, st))
 
 	// Lookup by path
-	deployments, err := store.LookupDeploymentByPath(ctx, "/test/path")
+	environments, err := store.LookupEnvironmentByPath(ctx, "/test/path")
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	require.Equal(t, st.ID, deployments[0].ID)
+	require.Len(t, environments, 1)
+	require.Equal(t, st.ID, environments[0].ID)
 
 	// Add a new path
 	require.NoError(t, st.SetInput("bar", DirInput("/test/anotherpath", []string{})))
-	require.NoError(t, store.UpdateDeployment(ctx, st, nil))
+	require.NoError(t, store.UpdateEnvironment(ctx, st, nil))
 
 	// Lookup by the previous path
-	deployments, err = store.LookupDeploymentByPath(ctx, "/test/path")
+	environments, err = store.LookupEnvironmentByPath(ctx, "/test/path")
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	require.Equal(t, st.ID, deployments[0].ID)
+	require.Len(t, environments, 1)
+	require.Equal(t, st.ID, environments[0].ID)
 
 	// Lookup by the new path
-	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	environments, err = store.LookupEnvironmentByPath(ctx, "/test/anotherpath")
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	require.Equal(t, st.ID, deployments[0].ID)
+	require.Len(t, environments, 1)
+	require.Equal(t, st.ID, environments[0].ID)
 
 	// Remove a path
 	require.NoError(t, st.RemoveInputs("foo"))
-	require.NoError(t, store.UpdateDeployment(ctx, st, nil))
+	require.NoError(t, store.UpdateEnvironment(ctx, st, nil))
 
 	// Lookup by the removed path should fail
-	deployments, err = store.LookupDeploymentByPath(ctx, "/test/path")
+	environments, err = store.LookupEnvironmentByPath(ctx, "/test/path")
 	require.NoError(t, err)
-	require.Len(t, deployments, 0)
+	require.Len(t, environments, 0)
 
 	// Lookup by the other path should still work
-	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	environments, err = store.LookupEnvironmentByPath(ctx, "/test/anotherpath")
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
+	require.Len(t, environments, 1)
 
-	// Add another deployment using the same path
-	otherSt := &DeploymentState{
+	// Add another environment using the same path
+	otherSt := &EnvironmentState{
 		Name: "test2",
 	}
 	require.NoError(t, otherSt.SetInput("foo", DirInput("/test/anotherpath", []string{})))
-	require.NoError(t, store.CreateDeployment(ctx, otherSt))
+	require.NoError(t, store.CreateEnvironment(ctx, otherSt))
 
-	// Lookup by path should return both deployments
-	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	// Lookup by path should return both environments
+	environments, err = store.LookupEnvironmentByPath(ctx, "/test/anotherpath")
 	require.NoError(t, err)
-	require.Len(t, deployments, 2)
+	require.Len(t, environments, 2)
 
-	// Remove the first deployment. Lookup by path should still return the
-	// second deployment.
-	require.NoError(t, store.DeleteDeployment(ctx, st, nil))
-	deployments, err = store.LookupDeploymentByPath(ctx, "/test/anotherpath")
+	// Remove the first environment. Lookup by path should still return the
+	// second environment.
+	require.NoError(t, store.DeleteEnvironment(ctx, st, nil))
+	environments, err = store.LookupEnvironmentByPath(ctx, "/test/anotherpath")
 	require.NoError(t, err)
-	require.Len(t, deployments, 1)
-	require.Equal(t, otherSt.ID, deployments[0].ID)
+	require.Len(t, environments, 1)
+	require.Equal(t, otherSt.ID, environments[0].ID)
 }

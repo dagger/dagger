@@ -35,7 +35,7 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		st := &dagger.DeploymentState{
+		st := &dagger.EnvironmentState{
 			ID:         uuid.New().String(),
 			Name:       "FIXME",
 			PlanSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
@@ -149,16 +149,16 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		deployment := common.DeploymentUp(ctx, st, viper.GetBool("no-cache"))
+		environment := common.EnvironmentUp(ctx, st, viper.GetBool("no-cache"))
 
 		v := compiler.NewValue()
-		if err := v.FillPath(cue.MakePath(), deployment.Plan()); err != nil {
+		if err := v.FillPath(cue.MakePath(), environment.Plan()); err != nil {
 			lg.Fatal().Err(err).Msg("failed to merge")
 		}
-		if err := v.FillPath(cue.MakePath(), deployment.Input()); err != nil {
+		if err := v.FillPath(cue.MakePath(), environment.Input()); err != nil {
 			lg.Fatal().Err(err).Msg("failed to merge")
 		}
-		if err := v.FillPath(cue.MakePath(), deployment.Computed()); err != nil {
+		if err := v.FillPath(cue.MakePath(), environment.Computed()); err != nil {
 			lg.Fatal().Err(err).Msg("failed to merge")
 		}
 

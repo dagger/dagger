@@ -15,7 +15,7 @@ import (
 // Cmd exposes the top-level command
 var Cmd = &cobra.Command{
 	Use:   "input",
-	Short: "Manage a deployment's inputs",
+	Short: "Manage an environment's inputs",
 }
 
 func init() {
@@ -31,7 +31,7 @@ func init() {
 	)
 }
 
-func updateDeploymentInput(ctx context.Context, target string, input dagger.Input) {
+func updateEnvironmentInput(ctx context.Context, target string, input dagger.Input) {
 	lg := log.Ctx(ctx)
 
 	store, err := dagger.DefaultStore()
@@ -39,13 +39,13 @@ func updateDeploymentInput(ctx context.Context, target string, input dagger.Inpu
 		lg.Fatal().Err(err).Msg("failed to load store")
 	}
 
-	st := common.GetCurrentDeploymentState(ctx, store)
+	st := common.GetCurrentEnvironmentState(ctx, store)
 	st.SetInput(target, input)
 
-	if err := store.UpdateDeployment(ctx, st, nil); err != nil {
-		lg.Fatal().Err(err).Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("cannot update deployment")
+	if err := store.UpdateEnvironment(ctx, st, nil); err != nil {
+		lg.Fatal().Err(err).Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("cannot update environment")
 	}
-	lg.Info().Str("deploymentId", st.ID).Str("deploymentName", st.Name).Msg("updated deployment")
+	lg.Info().Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("updated environment")
 }
 
 func readInput(ctx context.Context, source string) string {

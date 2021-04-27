@@ -22,7 +22,7 @@ var dirCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateDeploymentInput(ctx, args[0], dagger.DirInput(args[1], []string{}))
+		updateEnvironmentInput(ctx, args[0], dagger.DirInput(args[1], []string{}))
 	},
 }
 
