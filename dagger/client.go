@@ -113,7 +113,9 @@ func (c *Client) buildfn(ctx context.Context, deployment *Deployment, fn ClientD
 		Msg("spawning buildkit job")
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		s := NewSolver(c.c, gw, ch, c.noCache)
+		// buildkit auth provider (registry)
+		auth := newRegistryAuthProvider()
+		s := NewSolver(c.c, gw, ch, auth, c.noCache)
 
 		lg.Debug().Msg("loading configuration")
 		if err := deployment.LoadPlan(ctx, s); err != nil {

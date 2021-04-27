@@ -13,7 +13,6 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth/authprovider"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/rs/zerolog/log"
@@ -23,14 +22,16 @@ type Solver struct {
 	events  chan *bk.SolveStatus
 	control *bk.Client
 	gw      bkgw.Client
+	auth    *registryAuthProvider
 	noCache bool
 }
 
-func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus, noCache bool) Solver {
+func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus, auth *registryAuthProvider, noCache bool) Solver {
 	return Solver{
 		events:  events,
 		control: control,
 		gw:      gw,
+		auth:    auth,
 		noCache: noCache,
 	}
 }
@@ -148,9 +149,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 
 	opts := bk.SolveOpt{
 		Exports: []bk.ExportEntry{output},
-		Session: []session.Attachable{
-			authprovider.NewDockerAuthProvider(log.Ctx(ctx)),
-		},
+		Session: []session.Attachable{s.auth},
 	}
 
 	ch := make(chan *bk.SolveStatus)
