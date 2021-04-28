@@ -59,7 +59,8 @@ func DefaultStore() (*Store, error) {
 }
 
 func (s *Store) environmentPath(name string) string {
-	return path.Join(s.root, name, "environment.json")
+	// FIXME: rename to environment.json ?
+	return path.Join(s.root, name, "deployment.json")
 }
 
 func (s *Store) loadAll() error {
