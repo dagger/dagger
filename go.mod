@@ -29,7 +29,7 @@ require (
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
-	google.golang.org/grpc v1.29.1
+	google.golang.org/grpc v1.37.0
 	gopkg.in/yaml.v3 v3.0.0-20210107172259-749611fa9fcc
 )
 
