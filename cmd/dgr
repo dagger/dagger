@@ -1,0 +1,105 @@
+#!/bin/bash
+
+set -e
+
+if [ "$DEBUG" ]; then
+	set -x
+fi
+
+function main() {
+	cmd="$1"; shift
+	case "$cmd" in
+		info)
+			cat <<-EOF
+			repo: $(repo)
+			branch: $(branch)
+			EOF
+		;;
+		list)
+			{
+				ls "$(envdir)" 2>/dev/null || true
+			} | sort
+		;;
+		up)
+			env="$1"; shift
+			dagger "$env" up "$@"
+		;;
+		query)
+			env="$1"; shift
+			dagger "$env" query "$@"
+		;;
+		set)
+			env="$1"; shift
+			dagger "$env" input json "$@"
+		;;
+		dir)
+			env="$1"; shift
+			dagger "$env" input dir "$@"
+		;;
+		*)
+			env="$1"; shift
+			dagger "$env" "$cmd" "$@"
+		;;
+	esac
+}
+
+function envdir() {
+	echo "$(repo)/.dagger/env/${1:-}"
+}
+
+function repo() {
+	git rev-parse --show-toplevel
+}
+
+function branch() {
+	git branch --show-current
+}
+
+function dagger() {
+	local env="$1"; shift
+
+	# Check that env exists
+	if [ ! -d "$(envdir $env)" ]; then
+		echo >&2 "no such environment: $env"
+		return 1
+	fi
+
+	tmpHome="$(mktemp -d)"
+	tmpState="${tmpHome}/.dagger/store/$env/deployment.json"
+	mkdir -p "$(dirname $tmpState)"
+	loadState "$env" > "$tmpState"
+	HOME="$tmpHome" "$(which dagger)" -e "$env" "$@"
+	cat "$tmpState" | saveState "$env"
+}
+
+function loadState() {
+	local env="$1"; shift
+	# echo >&2 "Loading state for $(branch)::$env"
+	loadStore | jq ".env[\"$env\"]" |
+		jq ".name=\"$env\"" |
+		jq ".plan.type=\"dir\"" |
+		jq ".plan.dir.path=\"$(envdir $env)\"" |
+		jq ".id=\"$env\""
+}
+
+function saveState() {
+	local env="$1"; shift
+	# echo >&2 "Saving state for $(branch)::$env"
+	newState="$(cat)"
+	loadStore | jq ".env[\"$env\"]=$newState" | saveStore
+}
+
+function saveStore() {
+	git config "branch.$(branch).dagger" "$(cat)"
+}
+
+function loadStore() {
+	git config "branch.$(branch).dagger" || echo '{}'
+}
+
+function fatal() {
+	echo >&2 "$@"
+	exit 1
+}
+
+main "$@"
