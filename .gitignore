@@ -25,3 +25,4 @@ tests/report.xml
 
 # node_modules
 tests/node_modules
+dist/
