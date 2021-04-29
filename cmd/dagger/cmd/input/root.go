@@ -28,6 +28,7 @@ func init() {
 		jsonCmd,
 		yamlCmd,
 		listCmd,
+		unsetCmd,
 	)
 }
 
@@ -78,4 +79,21 @@ func readInput(ctx context.Context, source string) string {
 	}
 
 	return string(data)
+}
+
+func removeEnvironmentInput(ctx context.Context, key string) {
+	lg := log.Ctx(ctx)
+
+	store, err := dagger.DefaultStore()
+	if err != nil {
+		lg.Fatal().Err(err).Msg("failed to load store")
+	}
+
+	st := common.GetCurrentEnvironmentState(ctx, store)
+	st.RemoveInputs(key)
+
+	if err := store.UpdateEnvironment(ctx, st, nil); err != nil {
+		lg.Fatal().Err(err).Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("cannot update environment")
+	}
+	lg.Info().Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("updated environment")
 }
