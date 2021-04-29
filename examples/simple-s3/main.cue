@@ -28,6 +28,7 @@ page: """
 deploy: s3.#Put & {
 	config:       awsConfig
 	sourceInline: page
+	always:       true
 	contentType:  "text/html"
 	target:       "s3://\(bucket)/index.html"
 }
