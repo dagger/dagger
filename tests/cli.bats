@@ -119,6 +119,13 @@ setup() {
     assert_success
     assert_output '"my input"'
 
+    # unset simple input
+    "$DAGGER" input -e "input" unset "input"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" input
+    assert_success
+    assert_output 'null'
+
     # nested input
     "$DAGGER" input -e "input" text "nested.input" "nested input"
     "$DAGGER" up -e "input"
@@ -128,12 +135,26 @@ setup() {
   "input": "nested input"
 }'
 
+    # unset nested input
+    "$DAGGER" input -e "input" unset "nested.input"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" nested
+    assert_success
+    assert_output 'null'
+
     # file input
     "$DAGGER" input -e "input" text "input" -f "$TESTDIR"/cli/input/simple/testdata/input.txt
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input" input
     assert_success
     assert_output '"from file\n"'
+
+    # unset file input
+    "$DAGGER" input -e "input" unset "input"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" input
+    assert_success
+    assert_output 'null'
 
     # invalid file
     run "$DAGGER" input -e "input" text "input" -f "$TESTDIR"/cli/input/simple/testdata/notexist
@@ -145,11 +166,19 @@ setup() {
     run "$DAGGER" -l error query -e "input" input
     assert_success
     assert_output '"from stdin"'
+
+    # unset stdin input
+    "$DAGGER" input -e "input" unset "input"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" input
+    assert_success
+    assert_output 'null'
 }
 
 @test "dagger input json" {
     "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
 
+    # simple json
     "$DAGGER" input -e "input" json "structured" '{"a": "foo", "b": 42}'
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input" structured
@@ -159,6 +188,14 @@ setup() {
   "b": 42
 }'
 
+    # unset simple json
+    "$DAGGER" input -e "input" unset "structured"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" structured
+    assert_success
+    assert_output 'null'
+
+    # json from file
     "$DAGGER" input -e "input" json "structured" -f "$TESTDIR"/cli/input/simple/testdata/input.json
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input" structured
@@ -167,11 +204,19 @@ setup() {
   "a": "from file",
   "b": 42
 }'
+
+    # unset json from file
+    "$DAGGER" input -e "input" unset "structured"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" structured
+    assert_success
+    assert_output 'null'
 }
 
 @test "dagger input yaml" {
     "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
 
+    # simple yaml
     "$DAGGER" input -e "input" yaml "structured" '{"a": "foo", "b": 42}'
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input" structured
@@ -181,6 +226,14 @@ setup() {
   "b": 42
 }'
 
+    # unset simple yaml
+    "$DAGGER" input -e "input" unset "structured"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" structured
+    assert_success
+    assert_output 'null'
+
+    # yaml from file
     "$DAGGER" input -e "input" yaml "structured" -f "$TESTDIR"/cli/input/simple/testdata/input.yaml
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input" structured
@@ -189,11 +242,19 @@ setup() {
   "a": "from file",
   "b": 42
 }'
+
+    # unset yaml from file
+    "$DAGGER" input -e "input" unset "structured"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input" structured
+    assert_success
+    assert_output 'null'
 }
 
 @test "dagger input dir" {
     "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/artifact "input"
 
+    # input dir
     "$DAGGER" input -e "input" dir "source" "$TESTDIR"/cli/input/artifact/testdata
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input"
@@ -203,11 +264,21 @@ setup() {
   "foo": "bar",
   "source": {}
 }'
+
+    # unset dir
+    "$DAGGER" input -e "input" unset "source"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input"
+    assert_success
+    assert_output '{
+  "foo": "bar"
+}'
 }
 
 @test "dagger input git" {
     "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/artifact "input"
 
+    # input git
     "$DAGGER" input -e "input" git "source" https://github.com/samalba/dagger-test-simple.git
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input"
@@ -216,11 +287,20 @@ setup() {
   "foo": "bar",
   "source": {}
 }'
+
+    # unset input git
+    "$DAGGER" input -e "input" unset "source"
+    "$DAGGER" up -e "input"
+    run "$DAGGER" -l error query -e "input"
+    assert_output '{
+  "foo": "bar"
+}'
 }
 
 @test "dagger input scan" {
     "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/scan "scan"
+
+    # TODO "scan" option isn't implemented
     run "$DAGGER" input scan -e "input"
     assert_success
-
 }
