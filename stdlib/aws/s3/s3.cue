@@ -26,8 +26,14 @@ import (
 	// URL of the uploaded S3 object
 	url: out
 
+	// Always write the object to S3
+	always?: bool
+
 	out: string
 	aws.#Script & {
+		if always != _|_ {
+			"always": always
+		}
 		files: {
 			if sourceInline != _|_ {
 				"/inputs/source": sourceInline
