@@ -8,6 +8,10 @@ builds:
   - env:
       - CGO_ENABLED=0
     main: ./cmd/dagger
+    binary: dagger
+    ldflags:
+      - -s -w
+      - -X dagger.io/go/cmd/dagger/cmd.version={{.Version}}
     goos:
       - linux
       - windows
