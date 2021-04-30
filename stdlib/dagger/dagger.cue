@@ -1,20 +1,14 @@
 package dagger
 
-import (
-	"dagger.io/dagger/op"
-)
-
 // An artifact such as source code checkout, container image, binary archive...
 // May be passed as user input, or computed by a buildkit pipeline
-#Artifact: {
-	#up: [...op.#Op]
-	_
-	...
-}
+#Artifact: _ @dagger(artifact)
 
-// Secret value
-// FIXME: currently aliased as a string to mark secrets
-// this requires proper support.
-#Secret: {
-	string | bytes
-}
+// An encrypted secret
+#Secret: _ @dagger(secret)
+
+// A computed value
+#Computed: _ @dagger(computed)
+
+// A dagger relay
+#Relay: _ @dagger(relay)
