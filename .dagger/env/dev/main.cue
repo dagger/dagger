@@ -3,7 +3,7 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"dagger.io/file"
 	"dagger.io/alpine"
 	"dagger.io/docker"
 )
@@ -14,20 +14,11 @@ source: dagger.#Artifact
 // Build the dagger binaries
 build: {
 	testLogs: {
-		string
-		#up: [
-			op.#Load & {
-				from: ctr
-			},
-			op.#Exec & {
-				args: ["ls", "-l", "/"]
-			},
-			op.#Export & {
-				source: "/test.log"
-				format: "string"
-			}
-		]
-	}
+		file.#Read & {
+			from: ctr
+			filename: "/test.log"
+		}
+	}.contents
 
 	ctr: docker.#Container & {
 		image: docker.#ImageFromRegistry & {
