@@ -11,7 +11,9 @@ import (
 // Dagger source code
 source: dagger.#Artifact
 
+
 test: {
+	// Go unit tests
 	unit: {
 		logs: (io.#File & {
 			from: build.ctr
@@ -19,6 +21,8 @@ test: {
 			read: format: "string"
 		}).read.data
 	}
+
+	// Full suite of bats integration tests
 	integration: {
 		// FIXME
 	}
@@ -28,7 +32,9 @@ test: {
 build: {
 	ctr: docker.#Container & {
 		image: docker.#ImageFromRegistry & {
-			ref: "docker.io/golang:1.16-alpine"
+			ref: "docker.io/golang:1.16-alpine@\(digest)"
+			// FIXME: this digest is arch-specific (amd64)
+			let digest="sha256:6600d9933c681cb38c13c2218b474050e6a9a288ac62bdb23aee13bc6dedce18"
 		}
 
 		setup: [
