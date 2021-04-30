@@ -28,6 +28,7 @@ func init() {
 		jsonCmd,
 		yamlCmd,
 		listCmd,
+		unsetCmd,
 	)
 }
 
