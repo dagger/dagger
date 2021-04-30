@@ -3,7 +3,7 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/file"
+	"dagger.io/io"
 	"dagger.io/alpine"
 	"dagger.io/docker"
 )
@@ -11,15 +11,21 @@ import (
 // Dagger source code
 source: dagger.#Artifact
 
+test: {
+	unit: {
+		logs: (io.#File & {
+			from: build.ctr
+			path: "/test.log"
+			read: format: "string"
+		}).read.data
+	}
+	integration: {
+		// FIXME
+	}
+}
+
 // Build the dagger binaries
 build: {
-	testLogs: {
-		file.#Read & {
-			from: ctr
-			filename: "/test.log"
-		}
-	}.contents
-
 	ctr: docker.#Container & {
 		image: docker.#ImageFromRegistry & {
 			ref: "docker.io/golang:1.16-alpine"
