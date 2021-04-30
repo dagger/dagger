@@ -28,7 +28,7 @@ import (
 	setup: [...string]
 
 	// Command to execute
-	command: string
+	command: string | *""
 
 	// Environment variables shared by all commands
 	env: [string]: string
