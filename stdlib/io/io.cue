@@ -8,18 +8,13 @@ import (
 #File: {
 	from: dagger.#Artifact
 	path: string
-	read: *null | {
-		format: op.#Export.format
+	read: {
+		format: "string" | "json" | "yaml" | "lines"
 		data: {
-			_
+			string
 			#up: [
-				op.#Load & {
-					"from": from
-				},
-				op.#Export & {
-					source:   path
-					"format": format
-				},
+				op.#Load & {"from":   from},
+				op.#Export & {source: path, "format": format},
 			]
 		}
 	}
