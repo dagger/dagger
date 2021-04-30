@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.2.0
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
-	github.com/moby/buildkit v0.8.2
+	github.com/moby/buildkit v0.8.3
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
