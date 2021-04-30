@@ -5,7 +5,8 @@ before:
     - go mod download
 
 builds:
-  - env:
+  -
+    env:
       - CGO_ENABLED=0
     main: ./cmd/dagger
     binary: dagger
@@ -21,12 +22,11 @@ builds:
       - arm64
 
 archives:
-- name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+-
+  name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
   replacements:
   files:
     - LICENSE
-    - README.md
-    - doc/**/*
     - examples/**/*
   format_overrides:
     - goos: windows
@@ -46,13 +46,22 @@ changelog:
       - '^test:'
 
 brews:
-- tap:
+-
+  tap:
     owner: dagger
     name: homebrew-tap
   commit_author:
     name: dagger-bot
     email: noreply@dagger.io
+  url_template: "http://dagger-io.s3-website-us-east-1.amazonaws.com/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
   homepage: "https://github.com/dagger/dagger"
   description: "Dagger is a programmable deployment system."
   test: |
     system "#{bin}/dagger version"
+
+blobs:
+-
+  provider: s3
+  region: us-east-1
+  bucket: dagger-io
+  folder: "dagger/releases/{{ .Version }}"
