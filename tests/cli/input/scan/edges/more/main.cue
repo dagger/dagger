@@ -1,17 +1,20 @@
 package main
 
 // Inuitively, MyPort is the input
-MyStr: string & =~"[d]{4:5}"
-MyInt: int & >1024
-MyPort: MyStr | MyInt
+#MyStr: string & =~"[d]{4:5}"
+#MyInt: int & >1024
+#MyPort: #MyStr | #MyInt
+
+port: #MyPort
 
 site: {
 	// certainly an input
 	name: string
 	// is this an input despite the reference?
-	subdomain: string | "\(name).site"
+	_envs: ["dev", "stg", "qa"]
+	subdomain: or(_envs)
 	// not an input
-	domain: "\(subdomain).domain.com"
+	domain: "\(name).\(subdomain).domain.com"
 }
 
 app: {

@@ -37,10 +37,10 @@ import (
 	url: string
 
 	// Unique Deploy URL
-	deployUrl: string
+	deployUrl: string @dagger(computed)
 
 	// Logs URL for this deployment
-	logsUrl: string
+	logsUrl: string @dagger(computed)
 
 	#up: [
 		op.#Load & {
