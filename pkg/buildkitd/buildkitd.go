@@ -16,7 +16,7 @@ import (
 
 const (
 	image         = "moby/buildkit"
-	version       = "v0.8.3"
+	version       = "v0.8.2"
 	imageVersion  = image + ":" + version
 	containerName = "dagger-buildkitd"
 	volumeName    = "dagger-buildkitd"
