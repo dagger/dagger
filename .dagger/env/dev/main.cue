@@ -6,6 +6,7 @@ import (
 	"dagger.io/io"
 	"dagger.io/alpine"
 	"dagger.io/docker"
+	"dagger.io/go"
 )
 
 // Dagger source code
@@ -30,42 +31,15 @@ test: {
 
 // Build the dagger binaries
 build: {
-	ctr: docker.#Container & {
-		image: docker.#ImageFromRegistry & {
-			ref: "docker.io/golang:1.16-alpine@\(digest)"
-			// FIXME: this digest is arch-specific (amd64)
-			let digest="sha256:6600d9933c681cb38c13c2218b474050e6a9a288ac62bdb23aee13bc6dedce18"
-		}
-
+	ctr: go.#Container & {
+		"source": source
 		setup: [
 			"apk add --no-cache file",
 		]
-
 		command: """
 			go test -v ./... > /test.log
 			go build -o /binaries/ ./cmd/... > /build.log
 			"""
-
-		volume: {
-			daggerSource: {
-				from: source
-				dest: "/src"
-			}
-			goCache: {
-				type: "cache"
-				dest: "/root/.cache/gocache"
-			}
-		}
-
-		// Add go to search path (FIXME: should be inherited from image metadata)
-		shell: search: "/usr/local/go/bin": true
-
-		env: {
-			GOMODCACHE:  volume.goCache.dest
-			CGO_ENABLED: "0"
-		}
-
-		dir:       "/src"
 	}
 
 	binaries: docker.#Container & {
