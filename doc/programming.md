@@ -21,7 +21,12 @@ Cue extends JSON with powerful features:
 * Data composition with references and string interpolation
 * Multi-line strings, string interpolation
 
-To learn the basics of Cue, we recommend following the tutorials at [Cuetorials](https://cuetorials.com).
+To get started with Cue, we recommend the following resources:
+
+* [Cuetorials](https://cuetorials.com)
+* [Cue playground](https://cuelang.org/play/)
+
+
 
 ## Writing your first plan
 
@@ -31,7 +36,7 @@ To create a Dagger plan:
 
 For example: `mkdir staging`.
 
-2. Create a new file with the `.cue` extension, and open it with any text editor or IDE.
+2. Create a new file with the *.cue* extension, and open it with any text editor or IDE.
 
 For example: `staging.cue`.
 
@@ -40,7 +45,7 @@ For example: `staging.cue`.
 For example:
 
 ```
-package staging
+package main
 
 import (
 	"dagger.io/docker"
