@@ -3,7 +3,41 @@ package go
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
+
+	"dagger.io/docker"
 )
+
+// A standalone go environment
+#Container: {
+	// Go version to use
+	version: *"1.16" | string
+	source:  dagger.#Artifact
+
+	docker.#Container & {
+		env: {
+			GOMODCACHE:  volume.goCache.dest
+			CGO_ENABLED: "0"
+		}
+
+		image: docker.#ImageFromRegistry & {
+			ref: "docker.io/golang:\(version)-alpine"
+		}
+		volume: {
+			goSource: {
+				from: source
+				dest: "/src"
+			}
+			goCache: {
+				type: "cache"
+				dest: "/root/.cache/gocache"
+			}
+		}
+
+		dir: volume.goSource.dest
+		// Add go to search path (FIXME: should be inherited from image metadata)
+		shell: search: "/usr/local/go/bin": true
+	}
+}
 
 #Go: {
 	// Go version to use
