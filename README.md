@@ -25,7 +25,7 @@ system changes.
 
 ## Download and Install
 
-* [Install Dagger form source](doc/install.md)
+* [Install Dagger from source](doc/install.md)
 * Binary distributions [*coming soon*]
 
 ## Community
