@@ -22,15 +22,15 @@ builds:
       - arm64
 
 archives:
--
-  name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
-  replacements:
-  files:
-    - LICENSE
-    - examples/**/*
-  format_overrides:
-    - goos: windows
-      format: zip
+  -
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    replacements:
+    files:
+      - LICENSE
+      - examples/**/*
+    format_overrides:
+      - goos: windows
+        format: zip
 
 checksum:
   name_template: 'checksums.txt'
@@ -46,27 +46,29 @@ changelog:
       - '^test:'
 
 brews:
--
-  tap:
-    owner: dagger
-    name: homebrew-tap
-  commit_author:
-    name: dagger-bot
-    email: noreply@dagger.io
-  url_template: "https://dagger-io.s3.amazonaws.com/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
-  homepage: "https://github.com/dagger/dagger"
-  description: "Dagger is a programmable deployment system."
-  test: |
-    system "#{bin}/dagger version"
+  -
+    tap:
+      owner: dagger
+      name: homebrew-tap
+    commit_author:
+      name: dagger-bot
+      email: noreply@dagger.io
+    url_template: "https://dagger-io.s3.amazonaws.com/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/dagger/dagger"
+    description: "Dagger is a programmable deployment system."
+    test: |
+      system "#{bin}/dagger version"
 
 blobs:
--
-  provider: s3
-  region: us-east-1
-  bucket: dagger-io
-  folder: "dagger/releases/{{ .Version }}"
+  -
+    provider: s3
+    region: us-east-1
+    bucket: dagger-io
+    folder: "dagger/releases/{{ .Version }}"
 
 publishers:
   -
     name: publish-version
     cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
+    env:
+      - PATH={{ .Env.PATH }}
