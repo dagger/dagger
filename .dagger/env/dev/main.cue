@@ -46,6 +46,12 @@ build: {
 		image: ctr
 		outputDir: "/binaries"
 	}
+
+	logs: (io.#File & {
+		from: ctr
+		path: "/build.log"
+		read: format: "string"
+	}).read.data
 }
 
 
