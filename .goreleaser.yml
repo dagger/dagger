@@ -72,3 +72,4 @@ publishers:
     cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
     env:
       - PATH={{ .Env.PATH }}
+      - AWS_EC2_METADATA_DISABLED=true
