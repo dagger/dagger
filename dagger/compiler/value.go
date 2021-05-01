@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"sort"
+	"strconv"
 
 	"cuelang.org/go/cue"
 	cueformat "cuelang.org/go/cue/format"
@@ -10,25 +11,8 @@ import (
 // Value is a wrapper around cue.Value.
 // Use instead of cue.Value and cue.Instance
 type Value struct {
-	val  cue.Value
-	cc   *Compiler
-	inst *cue.Instance
-}
-
-func (v *Value) CueInst() *cue.Instance {
-	return v.inst
-}
-
-func (v *Value) Wrap(v2 cue.Value) *Value {
-	return wrapValue(v2, v.inst, v.cc)
-}
-
-func wrapValue(v cue.Value, inst *cue.Instance, cc *Compiler) *Value {
-	return &Value{
-		val:  v,
-		cc:   cc,
-		inst: inst,
-	}
+	val cue.Value
+	cc  *Compiler
 }
 
 // FillPath fills the value in-place
@@ -51,7 +35,7 @@ func (v *Value) LookupPath(p cue.Path) *Value {
 	v.cc.rlock()
 	defer v.cc.runlock()
 
-	return v.Wrap(v.val.LookupPath(p))
+	return v.cc.Wrap(v.val.LookupPath(p))
 }
 
 // Lookup is a helper function to lookup by path parts.
@@ -71,8 +55,17 @@ func (v *Value) Kind() cue.Kind {
 
 // Field represents a struct field
 type Field struct {
-	Label string
-	Value *Value
+	Selector cue.Selector
+	Value    *Value
+}
+
+// Label returns the unquoted selector
+func (f Field) Label() string {
+	l := f.Selector.String()
+	if unquoted, err := strconv.Unquote(l); err == nil {
+		return unquoted
+	}
+	return l
 }
 
 // Proxy function to the underlying cue.Value
@@ -86,13 +79,13 @@ func (v *Value) Fields() ([]Field, error) {
 	fields := []Field{}
 	for it.Next() {
 		fields = append(fields, Field{
-			Label: it.Label(),
-			Value: v.Wrap(it.Value()),
+			Selector: it.Selector(),
+			Value:    v.cc.Wrap(it.Value()),
 		})
 	}
 
 	sort.SliceStable(fields, func(i, j int) bool {
-		return fields[i].Label < fields[j].Label
+		return fields[i].Selector.String() < fields[j].Selector.String()
 	})
 
 	return fields, nil
@@ -140,7 +133,7 @@ func (v *Value) List() ([]*Value, error) {
 		return nil, err
 	}
 	for it.Next() {
-		l = append(l, v.Wrap(it.Value()))
+		l = append(l, v.cc.Wrap(it.Value()))
 	}
 
 	return l, nil
@@ -159,12 +152,12 @@ func (v *Value) Walk(before func(*Value) bool, after func(*Value)) {
 	)
 	if before != nil {
 		llBefore = func(child cue.Value) bool {
-			return before(v.Wrap(child))
+			return before(v.cc.Wrap(child))
 		}
 	}
 	if after != nil {
 		llAfter = func(child cue.Value) {
-			after(v.Wrap(child))
+			after(v.cc.Wrap(child))
 		}
 	}
 	v.val.Walk(llBefore, llAfter)

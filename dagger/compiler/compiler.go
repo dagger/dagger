@@ -2,10 +2,10 @@ package compiler
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 
 	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
 	cueerrors "cuelang.org/go/cue/errors"
 	cuejson "cuelang.org/go/encoding/json"
 	cueyaml "cuelang.org/go/encoding/yaml"
@@ -13,10 +13,10 @@ import (
 
 var (
 	// DefaultCompiler is the default Compiler and is used by Compile
-	DefaultCompiler = &Compiler{}
+	DefaultCompiler = New()
 )
 
-func Compile(name string, src interface{}) (*Value, error) {
+func Compile(name string, src string) (*Value, error) {
 	return DefaultCompiler.Compile(name, src)
 }
 
@@ -25,16 +25,8 @@ func NewValue() *Value {
 }
 
 // FIXME can be refactored away now?
-func Wrap(v cue.Value, inst *cue.Instance) *Value {
-	return DefaultCompiler.Wrap(v, inst)
-}
-
-func InstanceMerge(src ...*Value) (*Value, error) {
-	return DefaultCompiler.InstanceMerge(src...)
-}
-
-func Cue() *cue.Runtime {
-	return DefaultCompiler.Cue()
+func Wrap(v cue.Value) *Value {
+	return DefaultCompiler.Wrap(v)
 }
 
 func Err(err error) error {
@@ -54,7 +46,13 @@ func DecodeYAML(path string, data []byte) (*Value, error) {
 // Use this instead of cue.Runtime
 type Compiler struct {
 	l sync.RWMutex
-	cue.Runtime
+	*cue.Context
+}
+
+func New() *Compiler {
+	return &Compiler{
+		Context: cuecontext.New(),
+	}
 }
 
 func (c *Compiler) lock() {
@@ -73,10 +71,6 @@ func (c *Compiler) runlock() {
 	c.l.RUnlock()
 }
 
-func (c *Compiler) Cue() *cue.Runtime {
-	return &(c.Runtime)
-}
-
 // Compile an empty value
 func (c *Compiler) NewValue() *Value {
 	empty, err := c.Compile("", "_")
@@ -86,64 +80,47 @@ func (c *Compiler) NewValue() *Value {
 	return empty
 }
 
-func (c *Compiler) Compile(name string, src interface{}) (*Value, error) {
+func (c *Compiler) Compile(name string, src string) (*Value, error) {
 	c.lock()
 	defer c.unlock()
 
-	inst, err := c.Cue().Compile(name, src)
-	if err != nil {
+	v := c.Context.CompileString(src, cue.Filename(name))
+	if v.Err() != nil {
 		// FIXME: cleaner way to unwrap cue error details?
-		return nil, Err(err)
+		return nil, Err(v.Err())
 	}
-	return c.Wrap(inst.Value(), inst), nil
-}
-
-// InstanceMerge merges multiple values and mirrors the value in the cue.Instance.
-// FIXME: AVOID THIS AT ALL COST
-// Special case: we must return an instance with the same
-// contents as v, for the purposes of cueflow.
-func (c *Compiler) InstanceMerge(src ...*Value) (*Value, error) {
-	var (
-		v    = c.NewValue()
-		inst = v.CueInst()
-		err  error
-	)
-
-	c.lock()
-	defer c.unlock()
-
-	for _, s := range src {
-		inst, err = inst.Fill(s.val)
-		if err != nil {
-			return nil, fmt.Errorf("merge failed: %w", err)
-		}
-		if err := inst.Value().Err(); err != nil {
-			return nil, err
-		}
-	}
-
-	v = c.Wrap(inst.Value(), inst)
-	return v, nil
+	return c.Wrap(v), nil
 }
 
 func (c *Compiler) DecodeJSON(path string, data []byte) (*Value, error) {
-	inst, err := cuejson.Decode(c.Cue(), path, data)
+	expr, err := cuejson.Extract(path, data)
 	if err != nil {
 		return nil, Err(err)
 	}
-	return c.Wrap(inst.Value(), inst), nil
+	v := c.Context.BuildExpr(expr, cue.Filename(path))
+	if err := v.Err(); err != nil {
+		return nil, Err(err)
+	}
+	return c.Wrap(v), nil
 }
 
 func (c *Compiler) DecodeYAML(path string, data []byte) (*Value, error) {
-	inst, err := cueyaml.Decode(c.Cue(), path, data)
+	f, err := cueyaml.Extract(path, data)
 	if err != nil {
 		return nil, Err(err)
 	}
-	return c.Wrap(inst.Value(), inst), nil
+	v := c.Context.BuildFile(f, cue.Filename(path))
+	if err := v.Err(); err != nil {
+		return nil, Err(err)
+	}
+	return c.Wrap(v), nil
 }
 
-func (c *Compiler) Wrap(v cue.Value, inst *cue.Instance) *Value {
-	return wrapValue(v, inst, c)
+func (c *Compiler) Wrap(v cue.Value) *Value {
+	return &Value{
+		val: v,
+		cc:  c,
+	}
 }
 
 func (c *Compiler) Err(err error) error {

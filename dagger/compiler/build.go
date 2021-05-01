@@ -13,6 +13,8 @@ import (
 
 // Build a cue configuration tree from the files in fs.
 func Build(sources map[string]fs.FS, args ...string) (*Value, error) {
+	c := DefaultCompiler
+
 	buildConfig := &cueload.Config{
 		// The CUE overlay needs to be prefixed by a non-conflicting path with the
 		// local filesystem, otherwise Cue will merge the Overlay with whatever Cue
@@ -55,9 +57,12 @@ func Build(sources map[string]fs.FS, args ...string) (*Value, error) {
 	if len(instances) != 1 {
 		return nil, errors.New("only one package is supported at a time")
 	}
-	inst, err := Cue().Build(instances[0])
+	v, err := c.Context.BuildInstances(instances)
 	if err != nil {
 		return nil, errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 	}
-	return Wrap(inst.Value(), inst), nil
+	if len(v) != 1 {
+		return nil, errors.New("internal: wrong number of values")
+	}
+	return Wrap(v[0]), nil
 }

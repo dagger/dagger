@@ -382,7 +382,7 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 			if err != nil {
 				return st, err
 			}
-			opts = append(opts, llb.AddEnv(env.Label, v))
+			opts = append(opts, llb.AddEnv(env.Label(), v))
 		}
 	}
 
@@ -420,7 +420,7 @@ func (p *Pipeline) mountAll(ctx context.Context, mounts *compiler.Value) ([]llb.
 		return nil, err
 	}
 	for _, mnt := range fields {
-		o, err := p.mount(ctx, mnt.Label, mnt.Value)
+		o, err := p.mount(ctx, mnt.Label(), mnt.Value)
 		if err != nil {
 			return nil, err
 		}
@@ -825,7 +825,7 @@ func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			opts["build-arg:"+buildArg.Label] = v
+			opts["build-arg:"+buildArg.Label()] = v
 		}
 	}
 
@@ -839,7 +839,7 @@ func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			opts["label:"+label.Label] = s
+			opts["label:"+label.Label()] = s
 		}
 	}
 
