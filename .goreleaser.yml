@@ -53,7 +53,7 @@ brews:
   commit_author:
     name: dagger-bot
     email: noreply@dagger.io
-  url_template: "http://dagger-io.s3-website-us-east-1.amazonaws.com/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+  url_template: "https://dagger-io.s3.amazonaws.com/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
   homepage: "https://github.com/dagger/dagger"
   description: "Dagger is a programmable deployment system."
   test: |
@@ -65,3 +65,8 @@ blobs:
   region: us-east-1
   bucket: dagger-io
   folder: "dagger/releases/{{ .Version }}"
+
+publishers:
+  -
+    name: publish-version
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
