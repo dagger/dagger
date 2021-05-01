@@ -2,9 +2,99 @@
 
 ## Overview
 
-Dagger automates application delivery by executing *plans* in *environments*.
+1. A developer writes a *plan* specifying how to deliver their application. Plans are written in the [Cue](https://cuelang.org) data language.
+2. Dagger executes plans in isolated *environments*. Each environment has its own configuration and state.
 
-## Plans
+## Programming in Cue
+
+[Cue](https://cuelang.org) is a next-generation data language by Marcel van Lohuizen and the spiritual successor
+of GCL, the language used to configure all of Google's infrastructure. 
+
+Cue extends JSON with powerful features:
+
+* Go-like tooling and package system
+* Custom types
+* Schemas
+* Templating
+* Reusable packages
+* Builtin functions
+* Data composition with references and string interpolation
+* Multi-line strings, string interpolation
+
+To learn the basics of Cue, we recommend following the tutorials at [Cuetorials](https://cuetorials.com).
+
+## Writing your first plan
+
+To create a Dagger plan:
+
+1. Create a new directory anywhere in your git repository.
+
+For example: `mkdir staging`.
+
+2. Create a new file with the `.cue` extension, and open it with any text editor or IDE.
+
+For example: `staging.cue`.
+
+3. Describe each relay in your plan as a field in the cue configuration.
+
+For example:
+
+```
+package staging
+
+import (
+	"dagger.io/docker"
+	"dagger.io/git"
+)
+
+// Relay for fetching a git repository
+repo: git.#Repository & {
+	remote: "https://github.com/dagger/dagger"
+	ref: "main"
+}
+
+// Relay for building a docker image
+ctr: docker.#Build & {
+	source: repo
+}
+```
+
+For more inspiration, see [Examples](../examples/README.md).
+
+
+4. Extend your plan with relay definitions from [Dagger Universe](../universe), an encyclopedia of cue packages curated by the Dagger community.
+
+5. If you can't find the relay you need in the Universe, you can simply create your own.
+
+For example:
+
+```
+// Create a relay definition which generates a greeting message
+#Greeting: {
+	salutation: string | *"hello"
+	name: string | *"world"
+	message: "\(strings.ToTitle(salutation)), \(name)!"
+}
+```
+
+You may then create any number of relays from the same definition:
+
+```
+french: #Greeting & {
+	salutation: "bonjour"
+	name: "monde"
+}
+
+american: #Greeting & {
+	salutation: "hi"
+	name: "y'all"
+}
+```
+
+
+## Concepts
+
+### Plans
 
 A *plan* specifies, in code, how to deliver a particular application in a particular way.
 
@@ -23,7 +113,7 @@ The graph models the flow of code and data through the supply chain:
 Dagger plans are written in [Cue](https://cuelang.org), a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google.
 
 
-## Environments
+### Environments
 
 An *environment* is a live implementation of a *plan*, with its own user inputs and state.
 The same plan can be executed in multiple environments, for example to differentiate production from staging.
@@ -34,7 +124,7 @@ changed since the last update, and runs them through the corresponding pipelines
 For example, if an application has a new version of its frontend source code available, but no changes to
 the frontend, it will build, test and deploy the new frontend, without changing the backend.
 
-## Relays
+### Relays
 
 *Relays* are the basic components of a *plan*. Each relay is a node in the graph defined by the plan,
 performing the task assigned to that node. For example one relay fetches source code; another runs a build;
@@ -53,7 +143,7 @@ called a *DAG*. When a relay receives a new input, it runs it through the proces
 and produces new outputs, which are propagated to downstream relays as inputs, and so on.
 
 
-## Using third-party relays
+### Using third-party relays
 
 Cue includes a complete package system. This makes it easy to create a complex plan in very few
 lines of codes, simply by importing relays from third-party packages.
@@ -82,7 +172,7 @@ db: rds.#Database & {
 ```
 
 
-## Creating a new relay
+### Creating a new relay
 
 Sometimes there is no third-party relay available for a particular task in your workflow; or it may exist but need to be customized.
 
@@ -95,7 +185,7 @@ sophisticated pipelines to ingest produce artifacts such as source code, binarie
 Best of all, LLB pipelines can securely build and run any docker container, effectively making Dagger
 scriptable in any language.
 
-## Docker compatibility
+### Docker compatibility
 
 Thanks to its native support of LLB, Dagger offers native compatibility with Docker.
 
