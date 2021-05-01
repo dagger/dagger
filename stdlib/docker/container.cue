@@ -110,14 +110,24 @@ import (
 				src:  v.source
 			}
 		},
-		// Execute setup commands, then main command
-		for cmd in setup + [command] {
+		// Execute setup commands, without volumes
+		for cmd in setup {
 			op.#Exec & {
 				args:     [shell.path] + shell.args + [cmd]
 				"env":    env
 				"dir":    dir
 				"always": always
+			}
+		},
+		// Execute main command with volumes
+		if command != "" {
+			op.#Exec & {
+				args:     [shell.path] + shell.args + [command]
+				"env":    env
+				"dir":    dir
+				"always": always
 				mount: {
+					// FIXME: fix perf issue
 					for _, v in volume if v.type == "cache" {
 						"\(v.dest)": "cache"
 					}
@@ -133,9 +143,11 @@ import (
 				}
 			}
 		},
+		// FIXME: is subdir deprecated by dagger.io/io.#Dir ?
 		op.#Subdir & {
 			dir: outputDir
 		},
+		// FIXME: is export deprecated by dagger.io/io.#File ?
 		if export != null {
 			op.#Export & {
 				source: export.source
