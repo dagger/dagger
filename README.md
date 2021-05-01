@@ -16,25 +16,25 @@ No matter how your deployment works under the hood, you can manage it with the s
 This makes developers more productive, because they don't have to learn a new workflow every time their deployment
 system changes.
 
-## Examples
+## Learn More
 
-* [Deploy a static page to S3](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-static-page-to-s3)
-* [Deploy a simple React application](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
-* [Deploy a complete JAMstack app](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-complete-jamstack-app)
-* [Provision a Kubernetes cluster on AWS](https://github.com/dagger/dagger/blob/main/examples/README.md#provision-a-kubernetes-cluster-on-aws)
-* [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
-* [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
+* [Dagger vs. Other Software](doc/vs.md)
+* [Dagger Programming Guide](doc/programming.md)
+* [Dagger Operator Manual](doc/operator.md)
+
+
+## Download and Install
+
+* [Install Dagger form source](doc/install.md)
+* Binary distributions [*coming soon*]
+
+## Community
+
+Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
+We welcome beginners and experts alike!
+
 
 ## Alpha disclaimer
 
 Dagger is *alpha-quality software*. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still willing to try it, thank you! We appreciate your help and encourage you to ask questions and report issues.
 
-## Learn More
-
-Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
-
-* [Installing Dagger](doc/install.md)
-* [Examples](examples/README.md)
-* [Dagger vs. Other Software](doc/vs.md)
-* [Dagger Programming Guide](doc/programming.md)
-* [Dagger Operator Manual](doc/operator.md)
