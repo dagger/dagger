@@ -12,20 +12,15 @@ of GCL, the language used to configure all of Google's infrastructure.
 
 Cue extends JSON with powerful features:
 
-* Go-like tooling and package system
-* Custom types
-* Schemas
-* Templating
-* Reusable packages
-* Builtin functions
-* Data composition with references and string interpolation
-* Multi-line strings, string interpolation
+* Composition: layering, templating, references
+* Correctness: types, schemas
+* Developer experience: comments, packages, first-class tooling, builtin functions
+* And mucn more.
 
 To get started with Cue, we recommend the following resources:
 
 * [Cuetorials](https://cuetorials.com)
 * [Cue playground](https://cuelang.org/play/)
-
 
 
 ## Writing your first plan
@@ -80,6 +75,10 @@ For more inspiration, see these examples:
 For example:
 
 ```
+import (
+	"strings"
+)
+
 // Create a relay definition which generates a greeting message
 #Greeting: {
 	salutation: string | *"hello"
