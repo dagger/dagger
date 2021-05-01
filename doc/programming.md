@@ -68,7 +68,7 @@ For more inspiration, see these examples:
 * [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
 
 
-4. Extend your plan with relay definitions from [Dagger Universe](../universe), an encyclopedia of cue packages curated by the Dagger community.
+4. Extend your plan with relay definitions from [Dagger Universe](../stdlib), an encyclopedia of cue packages curated by the Dagger community.
 
 5. If you can't find the relay you need in the Universe, you can simply create your own.
 
