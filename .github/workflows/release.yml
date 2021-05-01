@@ -27,6 +27,6 @@ jobs:
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v2
       with:
-        args: release --rm-dist
+        args: release --rm-dist --debug
       env:
         GITHUB_TOKEN: ${{ secrets.DAGGERCI_TOKEN }}
