@@ -66,7 +66,7 @@ var listCmd = &cobra.Command{
 
 			fmt.Println("Plan Inputs:")
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Path\tFrom\tType")
+			fmt.Fprintln(w, "Path\tType")
 
 			for _, val := range inputs {
 				// check for references
@@ -87,15 +87,7 @@ var listCmd = &cobra.Command{
 					}
 				}
 
-				// Construct output as a tab-table
-				// get path / pkg import (if available)
-				inst, _ := val.Reference()
-				pkg := "(plan)"
-				if inst != nil {
-					pkg = inst.ImportPath
-				}
-
-				fmt.Fprintf(w, "%s\t%s\t%v\n", val.Path(), pkg, val)
+				fmt.Fprintf(w, "%s\t%v\n", val.Path(), val)
 
 			}
 			// ensure we flush the output buf
