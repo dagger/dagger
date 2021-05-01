@@ -36,5 +36,5 @@ Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
 * [Installing Dagger](doc/install.md)
 * [Examples](examples/README.md)
 * [Dagger vs. Other Software](doc/vs.md)
-* [Dagger Programmer Manual](doc/programmer.md)
+* [Dagger Programming Guide](doc/programming.md)
 * [Dagger Operator Manual](doc/operator.md)
