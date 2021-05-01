@@ -59,7 +59,13 @@ ctr: docker.#Build & {
 }
 ```
 
-For more inspiration, see [Examples](../examples/README.md).
+For more inspiration, see these examples:
+* [Deploy a static page to S3](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-static-page-to-s3)
+* [Deploy a simple React application](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
+* [Deploy a complete JAMstack app](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-complete-jamstack-app)
+* [Provision a Kubernetes cluster on AWS](https://github.com/dagger/dagger/blob/main/examples/README.md#provision-a-kubernetes-cluster-on-aws)
+* [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
+* [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
 
 
 4. Extend your plan with relay definitions from [Dagger Universe](../universe), an encyclopedia of cue packages curated by the Dagger community.
