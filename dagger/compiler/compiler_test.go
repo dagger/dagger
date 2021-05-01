@@ -8,7 +8,7 @@ import (
 
 // Test that a non-existing field is detected correctly
 func TestFieldNotExist(t *testing.T) {
-	c := &Compiler{}
+	c := New()
 	root, err := c.Compile("test.cue", `foo: "bar"`)
 	require.NoError(t, err)
 	require.True(t, root.Lookup("foo").Exists())
@@ -17,7 +17,7 @@ func TestFieldNotExist(t *testing.T) {
 
 // Test that a non-existing definition is detected correctly
 func TestDefNotExist(t *testing.T) {
-	c := &Compiler{}
+	c := New()
 	root, err := c.Compile("test.cue", `foo: #bla: "bar"`)
 	require.NoError(t, err)
 	require.True(t, root.Lookup("foo.#bla").Exists())
@@ -25,7 +25,7 @@ func TestDefNotExist(t *testing.T) {
 }
 
 func TestJSON(t *testing.T) {
-	c := &Compiler{}
+	c := New()
 	v, err := c.Compile("", `foo: hello: "world"`)
 	require.NoError(t, err)
 	require.Equal(t, `{"foo":{"hello":"world"}}`, string(v.JSON()))

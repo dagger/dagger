@@ -142,17 +142,20 @@ func (d *Environment) LocalDirs() map[string]string {
 	}
 	// 1. Scan the environment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
-	src, err := compiler.InstanceMerge(d.plan, d.input)
-	if err != nil {
-		panic(err)
+	src := compiler.NewValue()
+	if err := src.FillPath(cue.MakePath(), d.plan); err != nil {
+		return nil
+	}
+	if err := src.FillPath(cue.MakePath(), d.input); err != nil {
+		return nil
 	}
 	flow := cueflow.New(
 		&cueflow.Config{},
-		src.CueInst(),
-		newTaskFunc(src.CueInst(), noOpRunner),
+		src.Cue(),
+		newTaskFunc(noOpRunner),
 	)
 	for _, t := range flow.Tasks() {
-		v := compiler.Wrap(t.Value(), src.CueInst())
+		v := compiler.Wrap(t.Value())
 		localdirs(v.Lookup("#up"))
 	}
 
@@ -173,17 +176,19 @@ func (d *Environment) Up(ctx context.Context, s Solver) error {
 	// Reset the computed values
 	d.computed = compiler.NewValue()
 
-	// Cueflow cue instance
-	src, err := compiler.InstanceMerge(d.plan, d.input)
-	if err != nil {
+	src := compiler.NewValue()
+	if err := src.FillPath(cue.MakePath(), d.plan); err != nil {
+		return err
+	}
+	if err := src.FillPath(cue.MakePath(), d.input); err != nil {
 		return err
 	}
 
 	// Orchestrate execution with cueflow
 	flow := cueflow.New(
 		&cueflow.Config{},
-		src.CueInst(),
-		newTaskFunc(src.CueInst(), newPipelineRunner(src.CueInst(), d.computed, s)),
+		src.Cue(),
+		newTaskFunc(newPipelineRunner(d.computed, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -200,9 +205,9 @@ func (d *Environment) Down(ctx context.Context, _ *DownOpts) error {
 
 type QueryOpts struct{}
 
-func newTaskFunc(inst *cue.Instance, runner cueflow.RunnerFunc) cueflow.TaskFunc {
+func newTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	return func(flowVal cue.Value) (cueflow.Runner, error) {
-		v := compiler.Wrap(flowVal, inst)
+		v := compiler.Wrap(flowVal)
 		if !isComponent(v) {
 			// No compute script
 			return nil, nil
@@ -215,7 +220,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) cueflow.RunnerFunc {
+func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -239,7 +244,7 @@ func newPipelineRunner(inst *cue.Instance, computed *compiler.Value, s Solver) c
 				Str("dependency", dep.Path().String()).
 				Msg("dependency detected")
 		}
-		v := compiler.Wrap(t.Value(), inst)
+		v := compiler.Wrap(t.Value())
 		p := NewPipeline(t.Path().String(), s)
 		err := p.Do(ctx, v)
 		if err != nil {

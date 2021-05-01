@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cuelang.org/go/cue"
-	cuejson "cuelang.org/go/encoding/json"
 	"github.com/KromDaniel/jonson"
 )
 
@@ -98,37 +96,6 @@ func (s JSON) Set(valueJSON []byte, path ...string) (JSON, error) {
 		pointer.MapSet(key, value)
 	}
 	return root.ToJSON()
-}
-
-func (s JSON) Merge(layers ...JSON) (JSON, error) {
-	r := new(cue.Runtime)
-	var resultInst *cue.Instance
-	for i, l := range append([]JSON{s}, layers...) {
-		if l == nil {
-			continue
-		}
-		filename := fmt.Sprintf("%d", i)
-		inst, err := cuejson.Decode(r, filename, []byte(l))
-		if err != nil {
-			return nil, err
-		}
-		if resultInst == nil {
-			resultInst = inst
-		} else {
-			resultInst, err = resultInst.Fill(inst.Value())
-			if err != nil {
-				return nil, err
-			}
-			if resultInst.Err != nil {
-				return nil, resultInst.Err
-			}
-		}
-	}
-	b, err := resultInst.Value().MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	return JSON(b), nil
 }
 
 func (s JSON) String() string {
