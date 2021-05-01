@@ -6,7 +6,7 @@ import (
 )
 
 // Build a Docker image from source, using included Dockerfile
-#ImageFromSource: {
+#Build: {
 	source: dagger.#Artifact
 
 	#up: [
@@ -14,7 +14,12 @@ import (
 			context: source
 		},
 	]
+
 }
+
+// Build a Docker image from source, using included Dockerfile
+// FIXME: DEPRECATED by #Build
+#ImageFromSource: #Build
 
 // Fetch an image from a remote registry
 #ImageFromRegistry: {
