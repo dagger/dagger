@@ -22,7 +22,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/uber/jaeger-client-go v2.27.0+incompatible
+	github.com/uber/jaeger-client-go v2.28.0+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	go.mozilla.org/sops/v3 v3.7.1
 	go.uber.org/atomic v1.7.0 // indirect
