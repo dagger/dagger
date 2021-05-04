@@ -1,59 +1,37 @@
 package io
 
-import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
-)
-
+// Standard interface for directory operations in cue
 #Dir: {
-	from: dagger.#Artifact
-	path: string
-
-	// Read the tree structure (not file contents)
-	read: tree: {
-		string// FIXME: only raw 'find' output for now
-		#up: [
-			op.#FetchContainer & {
-				ref: "alpine" // FIXME: use alpine or docker package
-			},
-			op.#Exec & {
-				mount: "/data": "from": from
-				args: [
-					"sh", "-c",
-					#"find /data | sed 's/^\/data//' > /export.txt"#,
-				]
-			},
-			op.#Export & {
-				source: "/export.txt"
-				format: "string"
-			},
-		]
-	}
+	read: tree: string
+	...
 }
 
+// Standard interface for file operations in cue
 #File: {
-	from: dagger.#Artifact
-	path: string
+	#Reader
+	#Writer
+	...
+}
+
+#ReadWriter: #Reader & #Writer
+
+#Reader: {
 	read: {
+		// FIXME: support different data schemas for different formats
 		format: "string" | "json" | "yaml" | "lines"
 		data: {
 			string
-			#up: [
-				op.#Load & {"from":   from},
-				op.#Export & {source: path, "format": format},
-			]
+			...
 		}
 	}
+	...
+}
+
+#Writer: {
 	write: *null | {
 		// FIXME: support writing in multiple formats
 		// FIXME: append
 		data: _
-		#up: [
-			op.#Load & {"from": from},
-			op.#WriteFile & {
-				dest:     path
-				contents: data
-			},
-		]
 	}
+	...
 }
