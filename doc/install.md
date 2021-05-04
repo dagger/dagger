@@ -1,16 +1,53 @@
 # Installing Dagger
 
-1. Build the `dagger` command-line tool. You will need [Go](https://golang.org) version 1.16 or later.
+## Option 1 (Mac OS only): install from Homebrew
 
-```
-$ make
-```
+From your Mac OS terminal, run the following command:
 
-2. Copy the `dagger` tool to a location listed in your `$PATH`. For example, to copy it to `/usr/local/bin`:
-
-```
-$ cp ./cmd/dagger/dagger /usr/local/bin
+```shell
+brew install dagger/tap/dagger
 ```
 
-3. Make sure your machine is running a buildkit daemon. If you have Docker installed, you're already good to go.
-Otherwise, install either [Docker](https://www.docker.com/products/docker-desktop) or [buildkit](https://github.com/moby/buildkit#quick-start).
+## Option 2: install from a shell script
+
+From a terminal, run the following command:
+
+```shell
+curl -sfL https://dagger-io.s3.amazonaws.com/dagger/install.sh | sh
+```
+
+You now have the dagger binary in the local directory under `./bin/dagger`.
+
+You can then install it globally on your system:
+
+```shell
+sudo mv ./bin/dagger /usr/local/bin
+```
+
+## Option 3: Manually fetch the latest binary release from Github
+
+Open your web browser to [the latest release](https://github.com/dagger/dagger/releases/latest).
+
+From the **assets** section, download the archive corresponding to your OS and Arch.
+
+## Option 4: Compile from source
+
+You will need [Go](https://golang.org) version 1.16 or later.
+
+1. Clone the dagger repository
+
+```shell
+git clone https://github.com/dagger/dagger.git
+```
+
+2. Build the `dagger` binary.
+
+```shell
+cd dagger; make
+```
+
+3. Copy the `dagger` tool to a location listed in your `$PATH`. For example, to copy it to `/usr/local/bin`:
+
+```shell
+cp ./cmd/dagger/dagger /usr/local/bin
+```
