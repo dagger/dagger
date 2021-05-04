@@ -13,42 +13,48 @@ function main() {
 			cat <<-EOF
 			repo: $(repo)
 			branch: $(branch)
+			env: $(current_env)
 			EOF
 		;;
 		list)
-			{
-				ls "$(envdir)" 2>/dev/null || true
-			} | sort
-		;;
-		up)
-			env="$1"; shift
-			dagger "$env" up "$@"
-		;;
-		query)
-			env="$1"; shift
-			dagger "$env" query "$@"
-		;;
-		set)
-			env="$1"; shift
-			dagger "$env" input json "$@"
-		;;
-		dir)
-			env="$1"; shift
-			dagger "$env" input dir "$@"
+			dashA="${1:-}"
+			if [ "$dashA" = "-a" ]; then
+				list_all_envs
+			else
+				list_all_envs | {
+					while read path; do
+						if store_stat "dagger/$(branch)" "$path" ; then
+							echo "$path"
+						fi
+					done
+				}
+			fi
 		;;
 		*)
-			env="$1"; shift
-			dagger "$env" "$cmd" "$@"
+			dagger "$cmd" "$@"
 		;;
 	esac
 }
 
-function envdir() {
-	echo "$(repo)/.dagger/env/${1:-}"
+function current_env() {
+	if [ "$(ls -A | grep '^.*\.cue$')" ]; then
+		git rev-parse --show-prefix
+	fi
 }
 
 function repo() {
 	git rev-parse --show-toplevel
+}
+
+function list_all_envs() {
+	(
+		cd $(repo)
+		find . \
+			-type f -name '*.cue' -exec dirname {} \; \
+			-o \
+			-type d -name 'cue.mod' -prune \
+		| sed 's/^\.\///' | sort -u
+	)
 }
 
 function branch() {
@@ -56,50 +62,84 @@ function branch() {
 }
 
 function dagger() {
-	local env="$1"; shift
-
-	# Check that env exists
-	if [ ! -d "$(envdir $env)" ]; then
-		echo >&2 "no such environment: $env"
-		return 1
+	local env="$(current_env)"
+	if [ -z "$env" ]; then
+		fatal "current directory is not a valid environment"
 	fi
 
 	tmpHome="$(mktemp -d)"
-	tmpState="${tmpHome}/.dagger/store/$env/deployment.json"
+	tmpState="${tmpHome}/.dagger/store/my/deployment.json"
 	mkdir -p "$(dirname $tmpState)"
 	loadState "$env" > "$tmpState"
-	HOME="$tmpHome" "$(which dagger)" -e "$env" "$@"
+	HOME="$tmpHome" "$(which dagger)" -e "my" "$@"
 	cat "$tmpState" | saveState "$env"
 }
 
+function cleanPath() {
+	echo "$1" | sed -E 's/\/+/\//g'
+}
+
 function loadState() {
-	local env="$1"; shift
+	local env="$1"
+	local stateFile="$(cleanPath $env/state.json)"
 	# echo >&2 "Loading state for $(branch)::$env"
-	loadStore | jq ".env[\"$env\"]" |
-		jq ".name=\"$env\"" |
+	store_read "dagger/$(branch)" "$stateFile" |
+		jq ".name=\"my\"" |
 		jq ".plan.type=\"dir\"" |
-		jq ".plan.dir.path=\"$(envdir $env)\"" |
-		jq ".id=\"$env\""
+		jq ".plan.dir.path=\"$(repo)/$env\"" |
+		jq ".id=\"my\""
 }
 
 function saveState() {
-	local env="$1"; shift
+	local env="$1"
+	local stateFile="$(cleanPath $env/state.json)"
 	# echo >&2 "Saving state for $(branch)::$env"
 	newState="$(cat)"
-	loadStore | jq ".env[\"$env\"]=$newState" | saveStore
-}
-
-function saveStore() {
-	git config "branch.$(branch).dagger" "$(cat)"
-}
-
-function loadStore() {
-	git config "branch.$(branch).dagger" || echo '{}'
+	echo "$newState" | store_write "dagger/$(branch)" "$stateFile" "Write state for env $env"
 }
 
 function fatal() {
 	echo >&2 "$@"
 	exit 1
+}
+
+function store_read() {
+	local \
+		branch="$1" \
+		path="$2"
+	git cat-file -p "${branch}^{tree}:$path" 2>/dev/null || echo '{}'
+}
+
+function store_stat() {
+	local \
+		branch="$1" \
+		path="$2"
+	git cat-file -p "${branch}^{tree}:$path" >/dev/null 2>&1
+}
+
+function store_write() {
+	local \
+		branch="$1" \
+		path="$2" \
+		msg="${3:-write $path}"
+		blob="$(git hash-object -w --stdin)" \
+		idx="$(mktemp -d)/idx" \
+		oldcommit="$(git show-ref "refs/$branch" -s || true)"
+	# Load current state into index (will fail if state branch doesn't exist)
+	GIT_INDEX_FILE="$idx" git read-tree "refs/$branch" 2>&1 || true
+	GIT_INDEX_FILE="$idx" git \
+		update-index \
+		--add \
+		--cacheinfo 100644 "$blob" "$path"
+	# Create new tree object
+	local newtree=$(GIT_INDEX_FILE="$idx" git write-tree)
+	# Create new commit object
+	if [ -z "$oldcommit" ]; then
+		local newcommit="$(echo $msg | git commit-tree $newtree)"
+	else
+		local newcommit="$(echo $msg | git commit-tree $newtree -p $oldcommit)"
+	fi
+	git update-ref "refs/$branch" "$newcommit"
 }
 
 main "$@"
