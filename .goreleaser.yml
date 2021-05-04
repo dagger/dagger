@@ -43,7 +43,10 @@ changelog:
   filters:
     exclude:
       - '^docs:'
+      - '^doc:'
       - '^test:'
+      - '^tests:'
+      - '^Merge pull request'
 
 brews:
   -
