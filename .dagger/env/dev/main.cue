@@ -3,7 +3,7 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/io"
+	"dagger.io/os"
 	"dagger.io/alpine"
 	"dagger.io/docker"
 	"dagger.io/go"
@@ -16,7 +16,7 @@ source: dagger.#Artifact
 test: {
 	// Go unit tests
 	unit: {
-		logs: (io.#File & {
+		logs: (os.#File & {
 			from: build.ctr
 			path: "/test.log"
 			read: format: "string"
@@ -47,7 +47,7 @@ build: {
 		outputDir: "/binaries"
 	}
 
-	logs: (io.#File & {
+	logs: (os.#File & {
 		from: ctr
 		path: "/build.log"
 		read: format: "string"
