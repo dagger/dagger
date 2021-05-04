@@ -190,6 +190,14 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (
 	if err != nil {
 		return st, err
 	}
+	// FIXME: make this more readable then promote to INFO
+	//   we need a readable trace of what operations are executed.
+	log.
+		Ctx(ctx).
+		Debug().
+		Str("pipeline", p.name).
+		Str("do", do).
+		Msg("executing operation")
 	switch do {
 	case "copy":
 		return p.Copy(ctx, op, st)
