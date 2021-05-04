@@ -2,20 +2,20 @@ package main
 
 import (
 	"dagger.io/docker"
-	"dagger.io/io"
+	"dagger.io/os"
 )
 
 let ctr = docker.#Container & {
 	command: "echo 'hello world!' > /etc/motd"
 }
 
-motd: (io.#File & {
+motd: (os.#File & {
 	from: ctr
 	path: "/etc/motd"
 	read: format: "string"
 }).read.data
 
-etc: (io.#Dir & {
+etc: (os.#Dir & {
 	from: ctr
 	path: "/etc"
 }).read.tree
