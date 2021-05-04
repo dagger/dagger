@@ -32,6 +32,10 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes --input-dir kubeconfig=~/.kube
 }
 
+@test "stdlib: kustomize" {
+    "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes/kustomize --input-dir TestKustomize.kustom.source="$TESTDIR"/stdlib/kubernetes/kustomize/testdata
+}
+
 @test "stdlib: helm" {
     skip_unless_local_kube
 
