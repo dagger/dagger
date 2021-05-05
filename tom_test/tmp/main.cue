@@ -1,3 +1,0 @@
-package tom
-
-name: string
