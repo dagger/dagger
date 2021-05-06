@@ -1,13 +1,23 @@
 package os
 
 import (
-	"dagger.io/io"
-
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 )
 
-#Dir: io.#Dir & {
+#Dir: {
+	from: dagger.#Artifact
+	path: string | *"/"
+
+	#up: [
+		op.#Load & {"from": from},
+		op.#Subdir & {
+			dir: path
+		},
+	]
+}
+
+#ReadDir: {
 	from: dagger.#Artifact
 	path: string
 
@@ -30,36 +40,5 @@ import (
 				format: "string"
 			},
 		]
-	}
-}
-
-#File: {
-	from: dagger.#Artifact
-	path: string
-
-	io.#Reader & {
-		read: {
-			format: _
-			data: {
-				_
-				#up: [
-					op.#Load & {"from":   from},
-					op.#Export & {source: path, "format": format},
-				]
-			}
-		}
-	}
-
-	io.#Writer & {
-		write: *null | {
-			data: _
-			#up: [
-				op.#Load & {"from": from},
-				op.#WriteFile & {
-					dest:     path
-					contents: data
-				},
-			]
-		}
 	}
 }

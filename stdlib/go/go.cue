@@ -4,7 +4,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 
-	"dagger.io/docker"
+	"dagger.io/os"
 )
 
 // A standalone go environment
@@ -13,15 +13,14 @@ import (
 	version: *"1.16" | string
 	source:  dagger.#Artifact
 
-	docker.#Container & {
+	os.#Container & {
 		env: {
 			GOMODCACHE:  volume.goCache.dest
 			CGO_ENABLED: "0"
 		}
 
-		image: docker.#ImageFromRegistry & {
-			ref: "docker.io/golang:\(version)-alpine"
-		}
+		from: "docker.io/golang:\(version)-alpine"
+
 		volume: {
 			goSource: {
 				from: source

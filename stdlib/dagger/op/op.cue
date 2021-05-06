@@ -48,7 +48,10 @@ package op
 	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
+	// FIXME (perf): complex schema in low-level ops causes explosive perf issues
+	//    see https://github.com/dagger/dagger/issues/445
+	// mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
+	mount: [string]: _
 }
 
 #DockerLogin: {
