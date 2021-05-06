@@ -1,0 +1,23 @@
+name: Doc
+
+on:
+  push:
+    paths:
+      - 'doc/**'
+
+jobs:
+  copy-file:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Pushes docs file
+      uses: slumbering/copy_file_to_another_repo_action@main
+      env:
+        API_TOKEN_GITHUB: ${{ secrets.API_TOKEN_GITHUB }}
+      with:
+        source_file: 'doc/'
+        destination_repo: 'slumbering/launch.dagger.io'
+        destination_folder: 'site/'
+        user_email: 'slumbering.pierrot@gmail.com'
+        user_name: 'slumbering'
