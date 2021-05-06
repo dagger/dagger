@@ -60,6 +60,19 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/aws/ecr --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
 }
 
+@test "stdlib: docker-build" {
+    skip_unless_file_exist "$TESTDIR"/stdlib/docker/build/Dockerfile
+
+    "$DAGGER" compute "$TESTDIR"/stdlib/docker/build/ --input-dir source="$TESTDIR"/stdlib/docker/build
+}
+
+@test "stdlib: docker-pull" {
+    "$DAGGER" compute "$TESTDIR"/stdlib/docker/pull/
+}
+
+@test "stdlib: docker-dockerfile" {
+    "$DAGGER" compute "$TESTDIR"/stdlib/docker/dockerfile/ --input-dir source="$TESTDIR"/stdlib/docker/dockerfile/testdata
+}
 @test "stdlib: terraform" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
 
