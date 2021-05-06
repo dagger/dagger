@@ -46,7 +46,7 @@ var versionCmd = &cobra.Command{
 			runtime.GOOS, runtime.GOARCH,
 		)
 
-		if check := viper.GetBool("check"); check != false {
+		if check := viper.GetBool("check"); check {
 			upToDate, err := isVersionLatest()
 			if err != nil {
 				fmt.Println("error: could not check version.")
@@ -110,10 +110,12 @@ func getOnlineVersion(currentVersion *goVersion.Version) (*goVersion.Version, er
 		return nil, err
 	}
 
+	defer resp.Body.Close()
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+
 	latestVersion := strings.TrimSuffix(string(data), "\n")
 	return goVersion.NewVersion(latestVersion)
 }
@@ -164,7 +166,7 @@ func checkVersion() {
 
 		// Update check timestamps file
 		now := time.Now().Format(time.RFC3339)
-		ioutil.WriteFile(daggerDirectory+"/version_check.txt", []byte(now), 0644)
+		ioutil.WriteFile(daggerDirectory+"/version_check.txt", []byte(now), 0600)
 	}
 }
 

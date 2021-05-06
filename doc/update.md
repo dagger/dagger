@@ -1,22 +1,22 @@
-# Installing Dagger
+# Updating Dagger
 
 ## Summary
- - [Option 1 (Mac OS only): install from Homebrew](#option-1--mac-os-only---install-from-homebrew)
- - [Option 2: install from a shell script](#option-2--install-from-a-shell-script)
+ - [Option 1: (Mac OS only): update from Homebrew](#option-1--mac-os-only---update-from-homebrew)
+ - [Option 2: update from a shell script](#option-2--update-from-a-shell-script)
  - [Option 3: Manually fetch the latest binary release from Github](#option-3--manually-fetch-the-latest-binary-release-from-github)
  - [Option 4: Compile from source](#option-4--compile-from-source)
 
-## Option 1 (Mac OS only): install from Homebrew
+## Option 1: (Mac OS only): update from Homebrew
 
 From your Mac OS terminal, run the following command:
 
 ```shell
-brew install dagger/tap/dagger
+brew update dagger/tap/dagger
 ```
 
-> :bulb: Verify the installation with `dagger version`.
+> :bulb: Verify the update with `dagger version`.
 
-## Option 2: install from a shell script
+## Option 2: update from a shell script
 
 From a terminal, run the following command:
 
@@ -26,13 +26,13 @@ curl -sfL https://releases.dagger.io/dagger/install.sh | sh
 
 You now have the dagger binary in the local directory under `./bin/dagger`.
 
-You can then install it globally on your system:
+You can then update it globally on your system:
 
 ```shell
 sudo mv ./bin/dagger /usr/local/bin
 ```
 
-> :bulb: Verify the installation with `dagger version`.
+> :bulb: Verify the update with `dagger version`.
 
 ## Option 3: Manually fetch the latest binary release from Github
 
@@ -40,7 +40,7 @@ Open your web browser to [the latest release](https://github.com/dagger/dagger/r
 
 From the **assets** section, download the archive corresponding to your OS and Arch.
 
-> :bulb: Verify the installation with `dagger version`.
+> :bulb: Verify the update with `dagger version`.
 
 ## Option 4: Compile from source
 
@@ -64,4 +64,4 @@ cd dagger; make
 cp ./cmd/dagger/dagger /usr/local/bin
 ```
 
-> :bulb: Verify the installation with `dagger version`.
+> :bulb: Verify the update with `dagger version`.
