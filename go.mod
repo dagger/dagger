@@ -6,11 +6,12 @@ require (
 	cuelang.org/go v0.4.0-beta.1
 	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
+	github.com/cli/cli v1.9.2
 	github.com/containerd/console v1.0.2
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
 	github.com/google/uuid v1.2.0
-	github.com/hashicorp/go-version v1.2.0
+	github.com/hashicorp/go-version v1.2.1
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/moby/buildkit v0.8.2
@@ -28,10 +29,10 @@ require (
 	go.mozilla.org/sops/v3 v3.7.1
 	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221
+	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
 	google.golang.org/grpc v1.37.0
-	gopkg.in/yaml.v3 v3.0.0-20210107172259-749611fa9fcc
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
 replace (

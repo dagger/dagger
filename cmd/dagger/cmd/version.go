@@ -6,19 +6,20 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/cli/cli/utils"
 	goVersion "github.com/hashicorp/go-version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 const (
-	defaultVersion  = "devel"
-	outdatedMessage = "dagger binary is outdated, go to https://github.com/dagger/dagger/doc/update.md to update dagger."
+	defaultVersion = "devel"
 )
 
 // set by goreleaser or other builder using
@@ -31,11 +32,10 @@ var (
 // Disable version hook here
 // It can lead to a double check if --check flag is enable
 var versionCmd = &cobra.Command{
-	Use:     "version",
-	Short:   "Print dagger version",
-	PreRun:  nil,
-	PostRun: nil,
-	Args:    cobra.NoArgs,
+	Use:              "version",
+	Short:            "Print dagger version",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {},
+	Args:             cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if bi, ok := debug.ReadBuildInfo(); ok && version == defaultVersion {
 			// No specific version provided via version
@@ -47,14 +47,14 @@ var versionCmd = &cobra.Command{
 		)
 
 		if check := viper.GetBool("check"); check {
-			upToDate, err := isVersionLatest()
+			latestVersion, err := isVersionLatest()
 			if err != nil {
 				fmt.Println("error: could not check version.")
 				return
 			}
 
-			if !upToDate {
-				fmt.Println(outdatedMessage)
+			if latestVersion != "" {
+				fmt.Printf("there is a new version available (%s), please go to https://github.com/dagger/dagger/doc/update.md for instructions.\n", latestVersion)
 			} else {
 				fmt.Println("dagger is up to date.")
 			}
@@ -71,6 +71,16 @@ func init() {
 }
 
 func isCheckOutdated(path string) bool {
+	// Ignore if not in terminal
+	if !utils.IsTerminal(os.Stdout) || !utils.IsTerminal(os.Stderr) {
+		return false
+	}
+
+	// Ignore if CI
+	if os.Getenv("CI") != "" || os.Getenv("BUILD_NUMBER") != "" || os.Getenv("RUN_ID") != "" {
+		return false
+	}
+
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return true
@@ -83,18 +93,19 @@ func isCheckOutdated(path string) bool {
 	return !time.Now().Before(nextCheck)
 }
 
-func getVersion() (*goVersion.Version, error) {
+func getCurrentVersion() (*goVersion.Version, error) {
 	if version != defaultVersion {
 		return goVersion.NewVersion(version)
 	}
 
 	if build, ok := debug.ReadBuildInfo(); ok {
+		// Also return error if version == (devel)
 		return goVersion.NewVersion(build.Main.Version)
 	}
 	return nil, errors.New("could not read dagger version")
 }
 
-func getOnlineVersion(currentVersion *goVersion.Version) (*goVersion.Version, error) {
+func getLatestVersion(currentVersion *goVersion.Version) (*goVersion.Version, error) {
 	req, err := http.NewRequest("GET", "https://releases.dagger.io/dagger/latest_version", nil)
 	if err != nil {
 		return nil, err
@@ -103,7 +114,6 @@ func getOnlineVersion(currentVersion *goVersion.Version) (*goVersion.Version, er
 	// dagger/<version> (<OS>; <ARCH>)
 	agent := fmt.Sprintf("dagger/%s (%s; %s)", currentVersion.String(), runtime.GOOS, runtime.GOARCH)
 	req.Header.Set("User-Agent", agent)
-	req.Header.Set("X-Dagger-Version", currentVersion.String())
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -121,21 +131,22 @@ func getOnlineVersion(currentVersion *goVersion.Version) (*goVersion.Version, er
 }
 
 // Compare the binary version with the latest version online
-func isVersionLatest() (bool, error) {
-	currentVersion, err := getVersion()
+// Return the latest version if current is outdated
+func isVersionLatest() (string, error) {
+	currentVersion, err := getCurrentVersion()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
-	latestVersion, err := getOnlineVersion(currentVersion)
+	latestVersion, err := getLatestVersion(currentVersion)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	if currentVersion.LessThan(latestVersion) {
-		return false, nil
+		return latestVersion.String(), nil
 	}
-	return true, nil
+	return "", nil
 }
 
 func checkVersion() {
@@ -144,30 +155,28 @@ func checkVersion() {
 		return
 	}
 
-	daggerDirectory := home + "/.dagger"
-	if folder, err := os.Stat(daggerDirectory); !os.IsNotExist(err) {
-		if !folder.IsDir() {
-			return
-		}
-
-		if !isCheckOutdated(daggerDirectory + "/version_check.txt") {
-			return
-		}
-
-		// Check timestamp
-		upToDate, err := isVersionLatest()
-		if err != nil {
-			return
-		}
-
-		if !upToDate {
-			versionMessage = outdatedMessage
-		}
-
-		// Update check timestamps file
-		now := time.Now().Format(time.RFC3339)
-		ioutil.WriteFile(daggerDirectory+"/version_check.txt", []byte(now), 0600)
+	daggerDirectory := path.Join(home, ".dagger")
+	if err := os.MkdirAll(daggerDirectory, 0666); err != nil {
+		return
 	}
+
+	if !isCheckOutdated(path.Join(daggerDirectory, "version_check.txt")) {
+		return
+	}
+
+	// Check timestamp
+	latestVersion, err := isVersionLatest()
+	if err != nil {
+		return
+	}
+
+	if latestVersion != "" {
+		versionMessage = fmt.Sprintf("there is a new version available (%s), please go to https://github.com/dagger/dagger/doc/update.md for instructions.", latestVersion)
+	}
+
+	// Update check timestamps file
+	now := time.Now().Format(time.RFC3339)
+	ioutil.WriteFile(path.Join(daggerDirectory, "version_check.txt"), []byte(now), 0600)
 }
 
 func warnVersion() {
