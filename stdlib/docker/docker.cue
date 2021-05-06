@@ -17,22 +17,21 @@ import (
 
 }
 
-// Build a Docker image from source, using included Dockerfile
-// FIXME: DEPRECATED by #Build
-#ImageFromSource: #Build
-
-// Fetch an image from a remote registry
-#ImageFromRegistry: {
-	ref: string
+// Pull a docker container
+#Pull: {
+	// Remote ref (example: "index.docker.io/alpine:latest")
+	from: string
 
 	#up: [
-		op.#FetchContainer & {
-			"ref": ref
-		},
+		op.#FetchContainer & {ref: from},
 	]
 }
 
+// FIXME: #Push
+// FIXME: #Run
+
 // Build a Docker image from the provided Dockerfile contents
+// FIXME: incorporate into #Build
 #ImageFromDockerfile: {
 	dockerfile: string
 	context:    dagger.#Artifact

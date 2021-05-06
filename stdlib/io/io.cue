@@ -21,7 +21,6 @@ package io
 		format: "string" | "json" | "yaml" | "lines"
 		data: {
 			string
-			...
 		}
 	}
 	...

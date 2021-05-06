@@ -1,6 +1,6 @@
 package netlify
 
-#code: #"""
+#Site: ctr: command: #"""
 	create_site() {
 	    url="https://api.netlify.com/api/v1/${NETLIFY_ACCOUNT:-}/sites"
 
@@ -41,9 +41,10 @@ package netlify
 	deployUrl=$(</tmp/stdout sed -n -e 's/^Unique Deploy URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
 	logsUrl=$(</tmp/stdout sed -n -e 's/^Logs:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
 
-	jq -n \
-		--arg url "$url" \
-		--arg deployUrl "$deployUrl" \
-		--arg logsUrl "$logsUrl" \
-		'{url: $url, deployUrl: $deployUrl, logsUrl: $logsUrl}' > /output.json
+	# Write output files
+	mkdir -p /netlify
+	echo "$url" > /netlify/url
+	echo "$deployUrl" > /netlify/deployUrl
+	echo "$logsUrl" > /netlify/logsUrl
+
 	"""#
