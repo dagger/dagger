@@ -25,6 +25,13 @@ func init() {
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 
+	rootCmd.PersistentPreRun = func(*cobra.Command, []string) {
+		go checkVersion()
+	}
+	rootCmd.PersistentPostRun = func(*cobra.Command, []string) {
+		warnVersion()
+	}
+
 	rootCmd.AddCommand(
 		computeCmd,
 		newCmd,
