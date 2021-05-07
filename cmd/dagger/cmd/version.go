@@ -20,6 +20,8 @@ import (
 
 const (
 	defaultVersion = "devel"
+	versionFile    = "$HOME/.dagger/version-check"
+	versionURL     = "https://releases.dagger.io/dagger/latest_version"
 )
 
 // set by goreleaser or other builder using
@@ -29,13 +31,13 @@ var (
 	versionMessage = ""
 )
 
-// Disable version hook here
-// It can lead to a double check if --check flag is enable
 var versionCmd = &cobra.Command{
-	Use:              "version",
-	Short:            "Print dagger version",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {},
-	Args:             cobra.NoArgs,
+	Use:   "version",
+	Short: "Print dagger version",
+	// Disable version hook here to avoid double version check
+	PersistentPreRun:  func(*cobra.Command, []string) {},
+	PersistentPostRun: func(*cobra.Command, []string) {},
+	Args:              cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if bi, ok := debug.ReadBuildInfo(); ok && version == defaultVersion {
 			// No specific version provided via version
@@ -47,15 +49,9 @@ var versionCmd = &cobra.Command{
 		)
 
 		if check := viper.GetBool("check"); check {
-			latestVersion, err := isVersionLatest()
-			if err != nil {
-				fmt.Println("error: could not check version.")
-				return
-			}
-
-			if latestVersion != "" {
-				fmt.Printf("there is a new version available (%s), please go to https://github.com/dagger/dagger/doc/update.md for instructions.\n", latestVersion)
-			} else {
+			_ = os.Remove(os.ExpandEnv(versionFile))
+			checkVersion()
+			if !warnVersion() {
 				fmt.Println("dagger is up to date.")
 			}
 		}
@@ -106,7 +102,7 @@ func getCurrentVersion() (*goVersion.Version, error) {
 }
 
 func getLatestVersion(currentVersion *goVersion.Version) (*goVersion.Version, error) {
-	req, err := http.NewRequest("GET", "https://releases.dagger.io/dagger/latest_version", nil)
+	req, err := http.NewRequest("GET", versionURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -150,17 +146,22 @@ func isVersionLatest() (string, error) {
 }
 
 func checkVersion() {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	if version == defaultVersion {
+		// running devel version
 		return
 	}
 
-	daggerDirectory := path.Join(home, ".dagger")
-	if err := os.MkdirAll(daggerDirectory, 0666); err != nil {
-		return
+	versionFilePath := os.ExpandEnv(versionFile)
+	baseDir := path.Dir(versionFilePath)
+
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(baseDir, 0755); err != nil {
+			// mkdir fails, ignore silently
+			return
+		}
 	}
 
-	if !isCheckOutdated(path.Join(daggerDirectory, "version_check.txt")) {
+	if !isCheckOutdated(versionFilePath) {
 		return
 	}
 
@@ -171,16 +172,30 @@ func checkVersion() {
 	}
 
 	if latestVersion != "" {
-		versionMessage = fmt.Sprintf("there is a new version available (%s), please go to https://github.com/dagger/dagger/doc/update.md for instructions.", latestVersion)
+		versionMessage = fmt.Sprintf("\nA new version is available (%s), please go to https://github.com/dagger/dagger/doc/install.md for instructions.", latestVersion)
 	}
 
 	// Update check timestamps file
 	now := time.Now().Format(time.RFC3339)
-	ioutil.WriteFile(path.Join(daggerDirectory, "version_check.txt"), []byte(now), 0600)
+	ioutil.WriteFile(path.Join(versionFilePath), []byte(now), 0600)
 }
 
-func warnVersion() {
-	if versionMessage != "" {
-		fmt.Println(versionMessage)
+func warnVersion() bool {
+	if versionMessage == "" {
+		return false
 	}
+
+	if binPath, err := os.Executable(); err == nil {
+		if p, err := os.Readlink(binPath); err == nil {
+			// Homebrew detected, print custom message
+			if strings.Contains(p, "/Cellar/") {
+				fmt.Println("\nA new version is available, please run:\n\nbrew update && brew upgrade dagger")
+				return true
+			}
+		}
+	}
+
+	// Print default message
+	fmt.Println(versionMessage)
+	return true
 }

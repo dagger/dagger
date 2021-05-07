@@ -25,8 +25,12 @@ func init() {
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 
-	rootCmd.PersistentPreRun = checkVersionHook
-	rootCmd.PersistentPostRun = warnVersionHook
+	rootCmd.PersistentPreRun = func(*cobra.Command, []string) {
+		go checkVersion()
+	}
+	rootCmd.PersistentPostRun = func(*cobra.Command, []string) {
+		warnVersion()
+	}
 
 	rootCmd.AddCommand(
 		computeCmd,
@@ -51,14 +55,6 @@ func init() {
 	viper.SetEnvPrefix("dagger")
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
-}
-
-func checkVersionHook(cmd *cobra.Command, args []string) {
-	go checkVersion()
-}
-
-func warnVersionHook(cmd *cobra.Command, args []string) {
-	warnVersion()
 }
 
 func Execute() {
