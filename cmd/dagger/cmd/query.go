@@ -30,16 +30,10 @@ var queryCmd = &cobra.Command{
 
 		cueOpts := parseQueryFlags()
 
-		store, err := dagger.DefaultStore()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load store")
-		}
-
-		state := common.GetCurrentEnvironmentState(ctx, store)
+		state := common.GetCurrentEnvironmentState(ctx)
 
 		lg = lg.With().
-			Str("environmentName", state.Name).
-			Str("environmentId", state.ID).
+			Str("environment", state.Name).
 			Logger()
 
 		cuePath := cue.MakePath()

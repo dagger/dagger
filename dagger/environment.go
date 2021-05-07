@@ -10,6 +10,8 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/state"
+	"dagger.io/go/pkg/cuetils"
 	"dagger.io/go/stdlib"
 
 	"github.com/opentracing/opentracing-go"
@@ -19,7 +21,7 @@ import (
 )
 
 type Environment struct {
-	state *EnvironmentState
+	state *state.State
 
 	// Layer 1: plan configuration
 	plan *compiler.Value
@@ -31,7 +33,7 @@ type Environment struct {
 	computed *compiler.Value
 }
 
-func NewEnvironment(st *EnvironmentState) (*Environment, error) {
+func NewEnvironment(st *state.State) (*Environment, error) {
 	e := &Environment{
 		state: st,
 
@@ -42,7 +44,7 @@ func NewEnvironment(st *EnvironmentState) (*Environment, error) {
 
 	// Prepare inputs
 	for _, input := range st.Inputs {
-		v, err := input.Value.Compile()
+		v, err := input.Value.Compile(st)
 		if err != nil {
 			return nil, err
 		}
@@ -59,16 +61,12 @@ func NewEnvironment(st *EnvironmentState) (*Environment, error) {
 	return e, nil
 }
 
-func (e *Environment) ID() string {
-	return e.state.ID
-}
-
 func (e *Environment) Name() string {
 	return e.state.Name
 }
 
-func (e *Environment) PlanSource() Input {
-	return e.state.PlanSource
+func (e *Environment) PlanSource() state.Input {
+	return e.state.PlanSource()
 }
 
 func (e *Environment) Plan() *compiler.Value {
@@ -88,7 +86,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
-	planSource, err := e.state.PlanSource.Compile()
+	planSource, err := e.state.PlanSource().Compile(e.state)
 	if err != nil {
 		return err
 	}
@@ -159,7 +157,7 @@ func (e *Environment) LocalDirs() map[string]string {
 	}
 
 	// 2. Scan the plan
-	plan, err := e.state.PlanSource.Compile()
+	plan, err := e.state.PlanSource().Compile(e.state)
 	if err != nil {
 		panic(err)
 	}

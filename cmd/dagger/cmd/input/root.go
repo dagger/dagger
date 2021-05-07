@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"dagger.io/go/cmd/dagger/cmd/common"
-	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/state"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -32,21 +32,15 @@ func init() {
 	)
 }
 
-func updateEnvironmentInput(ctx context.Context, target string, input dagger.Input) {
+func updateEnvironmentInput(ctx context.Context, target string, input state.Input) {
 	lg := log.Ctx(ctx)
 
-	store, err := dagger.DefaultStore()
-	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to load store")
-	}
-
-	st := common.GetCurrentEnvironmentState(ctx, store)
+	st := common.GetCurrentEnvironmentState(ctx)
 	st.SetInput(target, input)
 
-	if err := store.UpdateEnvironment(ctx, st, nil); err != nil {
-		lg.Fatal().Err(err).Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("cannot update environment")
+	if err := state.Save(ctx, st); err != nil {
+		lg.Fatal().Err(err).Str("environment", st.Name).Msg("cannot update environment")
 	}
-	lg.Info().Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("updated environment")
 }
 
 func readInput(ctx context.Context, source string) string {

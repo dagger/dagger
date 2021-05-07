@@ -3,14 +3,15 @@ package dagger
 import (
 	"testing"
 
+	"dagger.io/go/dagger/state"
 	"github.com/stretchr/testify/require"
 )
 
-func TestInputDir(t *testing.T) {
-	st := &EnvironmentState{
-		PlanSource: DirInput("/tmp/source", []string{}),
+func TestLocalDirs(t *testing.T) {
+	st := &state.State{
+		Path: "/tmp/source",
 	}
-	require.NoError(t, st.SetInput("www.source", DirInput("/", []string{})))
+	require.NoError(t, st.SetInput("www.source", state.DirInput("/", []string{})))
 
 	environment, err := NewEnvironment(st)
 	require.NoError(t, err)

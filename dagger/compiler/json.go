@@ -112,5 +112,5 @@ func (s JSON) PrettyString() string {
 	if err := json.Indent(b, []byte(raw), "", "  "); err != nil {
 		return raw
 	}
-	return b.String()
+	return fmt.Sprintf("%s\n", b.String())
 }

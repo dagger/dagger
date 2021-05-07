@@ -2,65 +2,79 @@ package common
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/state"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
-func GetCurrentEnvironmentState(ctx context.Context, store *dagger.Store) *dagger.EnvironmentState {
+func GetCurrentEnvironmentState(ctx context.Context) *state.State {
 	lg := log.Ctx(ctx)
 
-	environmentName := viper.GetString("environment")
-	if environmentName != "" {
-		st, err := store.LookupEnvironmentByName(ctx, environmentName)
+	// 1) If no environment name has been given, look for the current environment
+	environment := viper.GetString("environment")
+	if environment == "" {
+		st, err := state.Current(ctx)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Str("environmentName", environmentName).
-				Msg("failed to lookup environment by name")
+				Msg("failed to load environment")
 		}
 		return st
 	}
 
-	wd, err := os.Getwd()
-	if err != nil {
-		lg.Fatal().Err(err).Msg("cannot get current working directory")
+	// 2) Check if it's an environment path (can be opened directly)
+	st, err := state.Open(ctx, environment)
+	if err == nil {
+		return st
 	}
-	st, err := store.LookupEnvironmentByPath(ctx, wd)
-	if err != nil {
+	if !errors.Is(err, os.ErrNotExist) {
 		lg.
 			Fatal().
 			Err(err).
-			Str("environmentPath", wd).
-			Msg("failed to lookup environment by path")
+			Str("environmentPath", environment).
+			Msg("failed to load environment")
 	}
-	if len(st) == 0 {
-		lg.
-			Fatal().
-			Err(err).
-			Str("environmentPath", wd).
-			Msg("no environments match the current directory")
-	}
-	if len(st) > 1 {
-		environments := []string{}
-		for _, s := range st {
-			environments = append(environments, s.Name)
+
+	// At this point, it must be an environment name
+	workspace := viper.GetString("workspace")
+	if workspace == "" {
+		workspace, err = state.CurrentWorkspace(ctx)
+		if err != nil {
+			lg.
+				Fatal().
+				Err(err).
+				Msg("failed to determine current workspace")
 		}
+	}
+
+	environments, err := state.List(ctx, workspace)
+	if err != nil {
 		lg.
 			Fatal().
 			Err(err).
-			Str("environmentPath", wd).
-			Strs("environments", environments).
-			Msg("multiple environments match the current directory, select one with `--environment`")
+			Msg("failed to list environments")
 	}
-	return st[0]
+	for _, e := range environments {
+		if e.Name == environment {
+			return e
+		}
+	}
+
+	lg.
+		Fatal().
+		Str("environment", environment).
+		Msg("environment not found")
+
+	return nil
 }
 
 // Re-compute an environment (equivalent to `dagger up`).
-func EnvironmentUp(ctx context.Context, state *dagger.EnvironmentState, noCache bool) *dagger.Environment {
+func EnvironmentUp(ctx context.Context, state *state.State, noCache bool) *dagger.Environment {
 	lg := log.Ctx(ctx)
 
 	c, err := dagger.NewClient(ctx, "", noCache)

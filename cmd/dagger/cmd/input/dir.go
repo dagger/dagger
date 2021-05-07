@@ -2,7 +2,7 @@ package input
 
 import (
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -22,7 +22,7 @@ var dirCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateEnvironmentInput(ctx, args[0], dagger.DirInput(args[1], []string{}))
+		updateEnvironmentInput(ctx, args[0], state.DirInput(args[1], []string{}))
 	},
 }
 

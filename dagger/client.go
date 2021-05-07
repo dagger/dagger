@@ -26,6 +26,7 @@ import (
 	"dagger.io/go/pkg/progressui"
 
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/state"
 )
 
 // A dagger client
@@ -63,7 +64,7 @@ func NewClient(ctx context.Context, host string, noCache bool) (*Client, error) 
 type ClientDoFunc func(context.Context, *Environment, Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *EnvironmentState, fn ClientDoFunc) (*Environment, error) {
+func (c *Client) Do(ctx context.Context, state *state.State, fn ClientDoFunc) (*Environment, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 

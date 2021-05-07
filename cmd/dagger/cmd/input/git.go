@@ -2,7 +2,7 @@ package input
 
 import (
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -32,7 +32,7 @@ var gitCmd = &cobra.Command{
 			subDir = args[3]
 		}
 
-		updateEnvironmentInput(ctx, args[0], dagger.GitInput(args[1], ref, subDir))
+		updateEnvironmentInput(ctx, args[0], state.GitInput(args[1], ref, subDir))
 	},
 }
 

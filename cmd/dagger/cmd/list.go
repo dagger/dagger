@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -10,7 +11,7 @@ import (
 	"text/tabwriter"
 
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/state"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,12 +31,22 @@ var listCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
-		store, err := dagger.DefaultStore()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load store")
+
+		var (
+			workspace = viper.GetString("workspace")
+			err       error
+		)
+		if workspace == "" {
+			workspace, err = state.CurrentWorkspace(ctx)
+			if err != nil {
+				lg.
+					Fatal().
+					Err(err).
+					Msg("failed to determine current workspace")
+			}
 		}
 
-		environments, err := store.ListEnvironments(ctx)
+		environments, err := state.List(ctx, workspace)
 		if err != nil {
 			lg.
 				Fatal().
@@ -43,45 +54,32 @@ var listCmd = &cobra.Command{
 				Msg("cannot list environments")
 		}
 
-		environmentID := getCurrentEnvironmentID(ctx, store)
+		environmentPath := getCurrentEnvironmentPath(ctx)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.TabIndent)
-		for _, r := range environments {
-			line := fmt.Sprintf("%s\t%s\t", r.Name, formatPlanSource(r.PlanSource))
-			if r.ID == environmentID {
+		defer w.Flush()
+		for _, e := range environments {
+			line := fmt.Sprintf("%s\t%s\t", e.Name, formatPath(e.Path))
+			if e.Path == environmentPath {
 				line = fmt.Sprintf("%s- active environment", line)
 			}
 			fmt.Fprintln(w, line)
 		}
-		w.Flush()
 	},
 }
 
-func init() {
-	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
-		panic(err)
-	}
-}
-
-func getCurrentEnvironmentID(ctx context.Context, store *dagger.Store) string {
+func getCurrentEnvironmentPath(ctx context.Context) string {
 	lg := log.Ctx(ctx)
 
-	wd, err := os.Getwd()
+	st, err := state.Current(ctx)
 	if err != nil {
-		lg.Warn().Err(err).Msg("cannot get current working directory")
-		return ""
+		// Ignore error if not initialized
+		if errors.Is(err, state.ErrNotInit) {
+			return ""
+		}
+		lg.Fatal().Err(err).Msg("failed to load current environment")
 	}
 
-	st, err := store.LookupEnvironmentByPath(ctx, wd)
-	if err != nil {
-		// Ignore error
-		return ""
-	}
-
-	if len(st) == 1 {
-		return st[0].ID
-	}
-
-	return ""
+	return st.Path
 }
 
 func formatPath(p string) string {
@@ -99,15 +97,8 @@ func formatPath(p string) string {
 	return p
 }
 
-func formatPlanSource(i dagger.Input) string {
-	switch i.Type {
-	case dagger.InputTypeDir:
-		return formatPath(i.Dir.Path)
-	case dagger.InputTypeGit:
-		return i.Git.Remote
-	case dagger.InputTypeDocker:
-		return i.Docker.Ref
+func init() {
+	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
+		panic(err)
 	}
-
-	return "no plan"
 }

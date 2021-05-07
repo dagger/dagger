@@ -9,7 +9,6 @@ require (
 	github.com/containerd/console v1.0.2
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
-	github.com/google/uuid v1.2.0
 	github.com/hashicorp/go-version v1.3.0
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mattn/go-colorable v0.1.8 // indirect

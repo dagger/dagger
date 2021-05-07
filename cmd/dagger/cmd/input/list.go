@@ -30,16 +30,10 @@ var listCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		store, err := dagger.DefaultStore()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load store")
-		}
-
-		environment := common.GetCurrentEnvironmentState(ctx, store)
+		environment := common.GetCurrentEnvironmentState(ctx)
 
 		lg = lg.With().
-			Str("environmentName", environment.Name).
-			Str("environmentId", environment.ID).
+			Str("environment", environment.Name).
 			Logger()
 
 		c, err := dagger.NewClient(ctx, "", false)

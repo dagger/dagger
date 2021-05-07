@@ -1,9 +1,10 @@
-package dagger
+package state
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"path"
 	"path/filepath"
 
 	"cuelang.org/go/cue"
@@ -37,33 +38,33 @@ const (
 )
 
 type Input struct {
-	Type InputType `json:"type,omitempty"`
+	Type InputType `yaml:"type,omitempty"`
 
-	Dir    *dirInput    `json:"dir,omitempty"`
-	Git    *gitInput    `json:"git,omitempty"`
-	Docker *dockerInput `json:"docker,omitempty"`
-	Text   *textInput   `json:"text,omitempty"`
-	JSON   *jsonInput   `json:"json,omitempty"`
-	YAML   *yamlInput   `json:"yaml,omitempty"`
-	File   *fileInput   `json:"file,omitempty"`
+	Dir    *dirInput    `yaml:"dir,omitempty"`
+	Git    *gitInput    `yaml:"git,omitempty"`
+	Docker *dockerInput `yaml:"docker,omitempty"`
+	Text   *textInput   `yaml:"text,omitempty"`
+	JSON   *jsonInput   `yaml:"json,omitempty"`
+	YAML   *yamlInput   `yaml:"yaml,omitempty"`
+	File   *fileInput   `yaml:"file,omitempty"`
 }
 
-func (i Input) Compile() (*compiler.Value, error) {
+func (i Input) Compile(state *State) (*compiler.Value, error) {
 	switch i.Type {
 	case InputTypeDir:
-		return i.Dir.Compile()
+		return i.Dir.Compile(state)
 	case InputTypeGit:
-		return i.Git.Compile()
+		return i.Git.Compile(state)
 	case InputTypeDocker:
-		return i.Docker.Compile()
+		return i.Docker.Compile(state)
 	case InputTypeText:
-		return i.Text.Compile()
+		return i.Text.Compile(state)
 	case InputTypeJSON:
-		return i.JSON.Compile()
+		return i.JSON.Compile(state)
 	case InputTypeYAML:
-		return i.YAML.Compile()
+		return i.YAML.Compile(state)
 	case InputTypeFile:
-		return i.File.Compile()
+		return i.File.Compile(state)
 	case "":
 		return nil, fmt.Errorf("input has not been set")
 	default:
@@ -73,12 +74,6 @@ func (i Input) Compile() (*compiler.Value, error) {
 
 // An input artifact loaded from a local directory
 func DirInput(path string, include []string) Input {
-	// resolve absolute path
-	path, err := filepath.Abs(path)
-	if err != nil {
-		panic(err)
-	}
-
 	return Input{
 		Type: InputTypeDir,
 		Dir: &dirInput{
@@ -93,7 +88,7 @@ type dirInput struct {
 	Include []string `json:"include,omitempty"`
 }
 
-func (dir dirInput) Compile() (*compiler.Value, error) {
+func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
 	// FIXME: serialize an intermediate struct, instead of generating cue source
 
 	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
@@ -106,9 +101,15 @@ func (dir dirInput) Compile() (*compiler.Value, error) {
 			return nil, err
 		}
 	}
+
+	p := dir.Path
+	if !filepath.IsAbs(p) {
+		p = filepath.Clean(path.Join(state.Path, p))
+	}
+
 	llb := fmt.Sprintf(
 		`#up: [{do:"local",dir:"%s", include:%s}]`,
-		dir.Path,
+		p,
 		includeLLB,
 	)
 	return compiler.Compile("", llb)
@@ -132,7 +133,7 @@ func GitInput(remote, ref, dir string) Input {
 	}
 }
 
-func (git gitInput) Compile() (*compiler.Value, error) {
+func (git gitInput) Compile(_ *State) (*compiler.Value, error) {
 	ref := "HEAD"
 	if git.Ref != "" {
 		ref = git.Ref
@@ -159,7 +160,7 @@ type dockerInput struct {
 	Ref string `json:"ref,omitempty"`
 }
 
-func (i dockerInput) Compile() (*compiler.Value, error) {
+func (i dockerInput) Compile(_ *State) (*compiler.Value, error) {
 	panic("NOT IMPLEMENTED")
 }
 
@@ -177,7 +178,7 @@ type textInput struct {
 	Data string `json:"data,omitempty"`
 }
 
-func (i textInput) Compile() (*compiler.Value, error) {
+func (i textInput) Compile(_ *State) (*compiler.Value, error) {
 	return compiler.Compile("", fmt.Sprintf("%q", i.Data))
 }
 
@@ -196,7 +197,7 @@ type jsonInput struct {
 	Data string `json:"data,omitempty"`
 }
 
-func (i jsonInput) Compile() (*compiler.Value, error) {
+func (i jsonInput) Compile(_ *State) (*compiler.Value, error) {
 	return compiler.DecodeJSON("", []byte(i.Data))
 }
 
@@ -215,7 +216,7 @@ type yamlInput struct {
 	Data string `json:"data,omitempty"`
 }
 
-func (i yamlInput) Compile() (*compiler.Value, error) {
+func (i yamlInput) Compile(_ *State) (*compiler.Value, error) {
 	return compiler.DecodeYAML("", []byte(i.Data))
 }
 
@@ -232,7 +233,7 @@ type fileInput struct {
 	Path string `json:"data,omitempty"`
 }
 
-func (i fileInput) Compile() (*compiler.Value, error) {
+func (i fileInput) Compile(_ *State) (*compiler.Value, error) {
 	data, err := ioutil.ReadFile(i.Path)
 	if err != nil {
 		return nil, err

@@ -10,12 +10,11 @@ import (
 	"cuelang.org/go/cue"
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/state"
 	"go.mozilla.org/sops/v3"
 	"go.mozilla.org/sops/v3/decrypt"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -36,16 +35,15 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		st := &dagger.EnvironmentState{
-			ID:         uuid.New().String(),
-			Name:       "FIXME",
-			PlanSource: dagger.DirInput(args[0], []string{"*.cue", "cue.mod"}),
+		st := &state.State{
+			Name: "FIXME",
+			Path: args[0],
 		}
 
 		for _, input := range viper.GetStringSlice("input-string") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.SetInput(k, dagger.TextInput(v))
+			err := st.SetInput(k, state.TextInput(v))
 			if err != nil {
 				lg.
 					Fatal().
@@ -58,7 +56,7 @@ var computeCmd = &cobra.Command{
 		for _, input := range viper.GetStringSlice("input-dir") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.SetInput(k, dagger.DirInput(v, []string{}))
+			err := st.SetInput(k, state.DirInput(v, []string{}))
 			if err != nil {
 				lg.
 					Fatal().
@@ -71,7 +69,7 @@ var computeCmd = &cobra.Command{
 		for _, input := range viper.GetStringSlice("input-git") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.SetInput(k, dagger.GitInput(v, "", ""))
+			err := st.SetInput(k, state.GitInput(v, "", ""))
 			if err != nil {
 				lg.
 					Fatal().
@@ -102,7 +100,7 @@ var computeCmd = &cobra.Command{
 				lg.Fatal().Msg("invalid json")
 			}
 
-			err = st.SetInput("", dagger.JSONInput(string(content)))
+			err = st.SetInput("", state.JSONInput(string(content)))
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to add input")
 			}
@@ -125,7 +123,7 @@ var computeCmd = &cobra.Command{
 				content = plaintext
 			}
 
-			err = st.SetInput("", dagger.YAMLInput(string(content)))
+			err = st.SetInput("", state.YAMLInput(string(content)))
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to add input")
 			}
@@ -143,7 +141,7 @@ var computeCmd = &cobra.Command{
 			}
 
 			if len(content) > 0 {
-				err = st.SetInput(k, dagger.FileInput(v))
+				err = st.SetInput(k, state.FileInput(v))
 				if err != nil {
 					lg.Fatal().Err(err).Msg("failed to set input string")
 				}
