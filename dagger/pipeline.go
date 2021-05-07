@@ -721,6 +721,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	var (
 		dockerContext = op.Lookup("context")
 		dockerfile    = op.Lookup("dockerfile")
+		dockerfileDir    = op.Lookup("dockerfileDir")
 
 		contextDef    *bkpb.Definition
 		dockerfileDef *bkpb.Definition
@@ -744,6 +745,17 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 			return st, err
 		}
 		dockerfileDef = contextDef
+
+		if dockerfileDir.Exists(){
+			from = NewPipeline(op.Lookup("dockerfileDir").Path().String(), p.s)
+			if err = from.Do(ctx, dockerfileDir); err != nil {
+				return st, err
+			}
+			dockerfileDef, err = p.s.Marshal(ctx, from.State())
+			if err != nil {
+				return st, err
+			}
+		}
 	}
 
 	// Inlined dockerfile: need to be converted to LLB

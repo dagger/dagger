@@ -86,6 +86,7 @@ package op
 	do: "docker-build"
 	// We accept either a context, a Dockerfile or both together
 	context?:        _
+	dockerfileDir?:  _
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
 	dockerfile?:     string
 
