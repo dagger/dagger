@@ -94,9 +94,9 @@ func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
 		return err
 	}
 
-	p := NewPipeline("[internal] source", s)
+	p := NewPipeline(planSource, s).WithCustomName("[internal] source")
 	// execute updater script
-	if err := p.Do(ctx, planSource); err != nil {
+	if err := p.Run(ctx); err != nil {
 		return err
 	}
 
@@ -120,7 +120,7 @@ func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
 // by user-specified scripts.
 func (d *Environment) LocalDirs() map[string]string {
 	dirs := map[string]string{}
-	localdirs := func(code ...*compiler.Value) {
+	localdirs := func(code *compiler.Value) {
 		Analyze(
 			func(op *compiler.Value) error {
 				do, err := op.Lookup("do").String()
@@ -137,7 +137,7 @@ func (d *Environment) LocalDirs() map[string]string {
 				dirs[dir] = dir
 				return nil
 			},
-			code...,
+			code,
 		)
 	}
 	// 1. Scan the environment state
@@ -245,8 +245,8 @@ func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value())
-		p := NewPipeline(t.Path().String(), s)
-		err := p.Do(ctx, v)
+		p := NewPipeline(v, s)
+		err := p.Run(ctx)
 		if err != nil {
 			span.LogFields(otlog.String("error", err.Error()))
 			ext.Error.Set(span, true)

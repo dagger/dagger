@@ -24,7 +24,6 @@ setup() {
 
     # cache
     run "$DAGGER" compute "$TESTDIR"/ops/mounts/valid/cache
-    assert_line '{"TestMountCache":"NOT SURE WHAT TO TEST YET"}'
     assert_success
 
     # component

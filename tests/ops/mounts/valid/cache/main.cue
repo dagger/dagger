@@ -1,6 +1,8 @@
 package testing
 
-import "dagger.io/dagger/op"
+import (
+	"dagger.io/dagger/op"
+)
 
 TestMountCache: {
 	string
@@ -11,7 +13,7 @@ TestMountCache: {
 		},
 		op.#Exec & {
 			args: ["sh", "-c", """
-					echo -n "NOT SURE WHAT TO TEST YET" > /out
+					echo -n "$RANDOM" > /out
 				"""]
 			dir: "/"
 			mount: something: "cache"
@@ -22,3 +24,6 @@ TestMountCache: {
 		},
 	]
 }
+
+// Make sure references to pipelines with cache mounts never get re-executed. #399
+TestReference: TestMountCache

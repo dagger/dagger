@@ -43,6 +43,11 @@ func (v *Value) Lookup(path string) *Value {
 	return v.LookupPath(cue.ParsePath(path))
 }
 
+func (v *Value) ReferencePath() (*Value, cue.Path) {
+	vv, p := v.val.ReferencePath()
+	return v.cc.Wrap(vv), p
+}
+
 // Proxy function to the underlying cue.Value
 func (v *Value) Len() cue.Value {
 	return v.val.Len()

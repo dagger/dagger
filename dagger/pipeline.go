@@ -32,6 +32,7 @@ const (
 
 // An execution pipeline
 type Pipeline struct {
+	code     *compiler.Value
 	name     string
 	s        Solver
 	state    llb.State
@@ -40,13 +41,19 @@ type Pipeline struct {
 	computed *compiler.Value
 }
 
-func NewPipeline(name string, s Solver) *Pipeline {
+func NewPipeline(code *compiler.Value, s Solver) *Pipeline {
 	return &Pipeline{
-		name:     name,
+		code:     code,
+		name:     code.Path().String(),
 		s:        s,
 		state:    llb.Scratch(),
 		computed: compiler.NewValue(),
 	}
+}
+
+func (p *Pipeline) WithCustomName(name string) *Pipeline {
+	p.name = name
+	return p
 }
 
 func (p *Pipeline) State() llb.State {
@@ -76,38 +83,35 @@ func isComponent(v *compiler.Value) bool {
 	return v.Lookup("#up").Exists()
 }
 
-func ops(code ...*compiler.Value) ([]*compiler.Value, error) {
+func ops(code *compiler.Value) ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
-	// 1. Decode 'code' into a single flat array of operations.
-	for _, x := range code {
-		// 1. attachment array
-		if isComponent(x) {
-			xops, err := x.Lookup("#up").List()
-			if err != nil {
-				return nil, err
-			}
-			// 'from' has an executable attached
-			ops = append(ops, xops...)
-			// 2. individual op
-		} else if _, err := x.Lookup("do").String(); err == nil {
-			ops = append(ops, x)
-			// 3. op array
-		} else if xops, err := x.List(); err == nil {
-			ops = append(ops, xops...)
-		} else {
-			// 4. error
-			source, err := x.Source()
-			if err != nil {
-				panic(err)
-			}
-			return nil, fmt.Errorf("not executable: %s", source)
+	// 1. attachment array
+	if isComponent(code) {
+		xops, err := code.Lookup("#up").List()
+		if err != nil {
+			return nil, err
 		}
+		// 'from' has an executable attached
+		ops = append(ops, xops...)
+		// 2. individual op
+	} else if _, err := code.Lookup("do").String(); err == nil {
+		ops = append(ops, code)
+		// 3. op array
+	} else if xops, err := code.List(); err == nil {
+		ops = append(ops, xops...)
+	} else {
+		// 4. error
+		source, err := code.Source()
+		if err != nil {
+			panic(err)
+		}
+		return nil, fmt.Errorf("not executable: %s", source)
 	}
 	return ops, nil
 }
 
-func Analyze(fn func(*compiler.Value) error, code ...*compiler.Value) error {
-	ops, err := ops(code...)
+func Analyze(fn func(*compiler.Value) error, code *compiler.Value) error {
+	ops, err := ops(code)
 	if err != nil {
 		return err
 	}
@@ -144,12 +148,8 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 	return nil
 }
 
-// x may be:
-//   1) a single operation
-//   2) an array of operations
-//   3) a value with an attached array of operations
-func (p *Pipeline) Do(ctx context.Context, code ...*compiler.Value) error {
-	ops, err := ops(code...)
+func (p *Pipeline) Run(ctx context.Context) error {
+	ops, err := ops(p.code)
 	if err != nil {
 		return err
 	}
@@ -260,8 +260,8 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from").Path().String(), p.s)
-	if err := from.Do(ctx, op.Lookup("from")); err != nil {
+	from := NewPipeline(op.Lookup("from"), p.s)
+	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
 	return st.File(
@@ -438,7 +438,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 				dest,
 				llb.Scratch(),
 				llb.AsPersistentCacheDir(
-					mnt.Path().String(),
+					p.canonicalPath(mnt),
 					llb.CacheMountShared,
 				),
 			), nil
@@ -453,8 +453,8 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		}
 	}
 	// eg. mount: "/foo": { from: www.source }
-	from := NewPipeline(mnt.Lookup("from").Path().String(), p.s)
-	if err := from.Do(ctx, mnt.Lookup("from")); err != nil {
+	from := NewPipeline(mnt.Lookup("from"), p.s)
+	if err := from.Run(ctx); err != nil {
 		return nil, err
 	}
 	// possibly construct mount options for LLB from
@@ -468,6 +468,33 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		mo = append(mo, llb.SourcePath(mps))
 	}
 	return llb.AddMount(dest, from.State(), mo...), nil
+}
+
+// canonicalPath returns the canonical path of `v`
+// If the pipeline is a reference to another pipeline, `canonicalPath()` will
+// return the path of the reference of `v`.
+// FIXME: this doesn't work with references of references.
+func (p *Pipeline) canonicalPath(v *compiler.Value) string {
+	// value path
+	vPath := v.Path().Selectors()
+
+	// pipeline path
+	pipelinePath := p.code.Path().Selectors()
+
+	// check if the pipeline is a reference
+	_, ref := p.code.ReferencePath()
+	if len(ref.Selectors()) == 0 {
+		return v.Path().String()
+	}
+	canonicalPipelinePath := ref.Selectors()
+
+	// replace the pipeline path with the canonical pipeline path
+	// 1. strip the pipeline path from the value path
+	vPath = vPath[len(pipelinePath):]
+	// 2. inject the canonical pipeline path
+	vPath = append(canonicalPipelinePath, vPath...)
+
+	return cue.MakePath(vPath...).String()
 }
 
 func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -553,8 +580,8 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from").Path().String(), p.s)
-	if err := from.Do(ctx, op.Lookup("from")); err != nil {
+	from := NewPipeline(op.Lookup("from"), p.s)
+	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
 	p.image = from.ImageConfig()
@@ -735,8 +762,8 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if dockerContext.Exists() {
-		from := NewPipeline(op.Lookup("context").Path().String(), p.s)
-		if err := from.Do(ctx, dockerContext); err != nil {
+		from := NewPipeline(op.Lookup("context"), p.s)
+		if err := from.Run(ctx); err != nil {
 			return st, err
 		}
 		contextDef, err = p.s.Marshal(ctx, from.State())
@@ -883,9 +910,9 @@ func (p *Pipeline) WriteFile(ctx context.Context, op *compiler.Value, st llb.Sta
 			content = []byte(str)
 		}
 	case cue.BottomKind:
-		err = fmt.Errorf("%s: WriteFile content is not set", op.Path().String())
+		err = fmt.Errorf("%s: WriteFile content is not set", p.canonicalPath(op))
 	default:
-		err = fmt.Errorf("%s: unhandled data type in WriteFile: %s", op.Path().String(), kind)
+		err = fmt.Errorf("%s: unhandled data type in WriteFile: %s", p.canonicalPath(op), kind)
 	}
 	if err != nil {
 		return st, err
