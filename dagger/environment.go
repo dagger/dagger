@@ -33,7 +33,7 @@ type Environment struct {
 }
 
 func NewEnvironment(st *EnvironmentState) (*Environment, error) {
-	d := &Environment{
+	e := &Environment{
 		state: st,
 
 		plan:     compiler.NewValue(),
@@ -48,48 +48,48 @@ func NewEnvironment(st *EnvironmentState) (*Environment, error) {
 			return nil, err
 		}
 		if input.Key == "" {
-			err = d.input.FillPath(cue.MakePath(), v)
+			err = e.input.FillPath(cue.MakePath(), v)
 		} else {
-			err = d.input.FillPath(cue.ParsePath(input.Key), v)
+			err = e.input.FillPath(cue.ParsePath(input.Key), v)
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return d, nil
+	return e, nil
 }
 
-func (d *Environment) ID() string {
-	return d.state.ID
+func (e *Environment) ID() string {
+	return e.state.ID
 }
 
-func (d *Environment) Name() string {
-	return d.state.Name
+func (e *Environment) Name() string {
+	return e.state.Name
 }
 
-func (d *Environment) PlanSource() Input {
-	return d.state.PlanSource
+func (e *Environment) PlanSource() Input {
+	return e.state.PlanSource
 }
 
-func (d *Environment) Plan() *compiler.Value {
-	return d.plan
+func (e *Environment) Plan() *compiler.Value {
+	return e.plan
 }
 
-func (d *Environment) Input() *compiler.Value {
-	return d.input
+func (e *Environment) Input() *compiler.Value {
+	return e.input
 }
 
-func (d *Environment) Computed() *compiler.Value {
-	return d.computed
+func (e *Environment) Computed() *compiler.Value {
+	return e.computed
 }
 
 // LoadPlan loads the plan
-func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
+func (e *Environment) LoadPlan(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
-	planSource, err := d.state.PlanSource.Compile()
+	planSource, err := e.state.PlanSource.Compile()
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
 	if err != nil {
 		return fmt.Errorf("plan config: %w", err)
 	}
-	d.plan = plan
+	e.plan = plan
 
 	return nil
 }
@@ -118,7 +118,7 @@ func (d *Environment) LoadPlan(ctx context.Context, s Solver) error {
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
 // by user-specified scripts.
-func (d *Environment) LocalDirs() map[string]string {
+func (e *Environment) LocalDirs() map[string]string {
 	dirs := map[string]string{}
 	localdirs := func(code *compiler.Value) {
 		Analyze(
@@ -143,10 +143,10 @@ func (d *Environment) LocalDirs() map[string]string {
 	// 1. Scan the environment state
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
 	src := compiler.NewValue()
-	if err := src.FillPath(cue.MakePath(), d.plan); err != nil {
+	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
 		return nil
 	}
-	if err := src.FillPath(cue.MakePath(), d.input); err != nil {
+	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
 		return nil
 	}
 	flow := cueflow.New(
@@ -160,7 +160,7 @@ func (d *Environment) LocalDirs() map[string]string {
 	}
 
 	// 2. Scan the plan
-	plan, err := d.state.PlanSource.Compile()
+	plan, err := e.state.PlanSource.Compile()
 	if err != nil {
 		panic(err)
 	}
@@ -169,18 +169,18 @@ func (d *Environment) LocalDirs() map[string]string {
 }
 
 // Up missing values in environment configuration, and write them to state.
-func (d *Environment) Up(ctx context.Context, s Solver) error {
+func (e *Environment) Up(ctx context.Context, s Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Up")
 	defer span.Finish()
 
 	// Reset the computed values
-	d.computed = compiler.NewValue()
+	e.computed = compiler.NewValue()
 
 	src := compiler.NewValue()
-	if err := src.FillPath(cue.MakePath(), d.plan); err != nil {
+	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
 		return err
 	}
-	if err := src.FillPath(cue.MakePath(), d.input); err != nil {
+	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
 		return err
 	}
 
@@ -188,7 +188,7 @@ func (d *Environment) Up(ctx context.Context, s Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		src.Cue(),
-		newTaskFunc(newPipelineRunner(d.computed, s)),
+		newTaskFunc(newPipelineRunner(e.computed, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -199,7 +199,7 @@ func (d *Environment) Up(ctx context.Context, s Solver) error {
 
 type DownOpts struct{}
 
-func (d *Environment) Down(ctx context.Context, _ *DownOpts) error {
+func (e *Environment) Down(ctx context.Context, _ *DownOpts) error {
 	panic("NOT IMPLEMENTED")
 }
 
@@ -297,8 +297,8 @@ func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 	})
 }
 
-func (d *Environment) ScanInputs() ([]cue.Value, error) {
-	vals, err := cuetils.ScanForInputs(d.plan.Cue())
+func (e *Environment) ScanInputs() ([]cue.Value, error) {
+	vals, err := cuetils.ScanForInputs(e.plan.Cue())
 	if err != nil {
 		return nil, err
 	}
