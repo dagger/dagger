@@ -59,3 +59,33 @@ setup() {
 
     "$DAGGER" compute "$TESTDIR"/stdlib/aws/ecr --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
 }
+
+@test "stdlib: terraform" {
+    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
+
+    "$DAGGER" new --plan-dir "$TESTDIR"/stdlib/terraform/s3 terraform
+    "$DAGGER" -e terraform input dir TestData "$TESTDIR"/stdlib/terraform/s3/testdata
+    sops -d "$TESTDIR"/stdlib/aws/inputs.yaml | "$DAGGER" -e "terraform" input yaml "" -f -
+
+    # it must fail because of a missing var
+    run "$DAGGER" up -e terraform
+    assert_failure
+
+    # add the var and try again
+    "$DAGGER" -e terraform input text TestTerraform.apply.tfvars.input "42"
+    run "$DAGGER" up -e terraform
+    assert_success
+
+    # ensure the tfvar was passed correctly
+    run "$DAGGER" query -e terraform \
+        TestTerraform.apply.output.input.value  -f text
+    assert_success
+    assert_output "42"
+
+    # ensure the random value is always the same
+    # this proves we're effectively using the s3 backend
+    run "$DAGGER" query -e terraform \
+        TestTerraform.apply.output.random.value  -f json
+    assert_success
+    assert_output "36"
+}
