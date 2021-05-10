@@ -849,6 +849,25 @@ func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
 		}
 		opts["target"] = tgr
 	}
+
+	if hosts := op.Lookup("hosts"); hosts.Exists() {
+		p := []string{}
+		fields, err := hosts.Fields()
+		if err != nil {
+			return nil, err
+		}
+		for _, host := range fields {
+			s, err := host.Value.String()
+			if err != nil {
+				return nil, err
+			}
+			p = append(p, host.Label()+"="+s)
+		}
+		if len(p) > 0 {
+			opts["add-hosts"] = strings.Join(p, ",")
+		}
+	}
+
 	if buildArgs := op.Lookup("buildArg"); buildArgs.Exists() {
 		fields, err := buildArgs.Fields()
 		if err != nil {
