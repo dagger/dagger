@@ -842,6 +842,13 @@ func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
 		opts["filename"] = filename
 	}
 
+	if target := op.Lookup("target"); target.Exists() {
+		tgr, err := target.String()
+		if err != nil {
+			return nil, err
+		}
+		opts["target"] = tgr
+	}
 	if buildArgs := op.Lookup("buildArg"); buildArgs.Exists() {
 		fields, err := buildArgs.Fields()
 		if err != nil {

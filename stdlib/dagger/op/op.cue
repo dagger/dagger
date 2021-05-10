@@ -92,6 +92,7 @@ package op
 	platforms?: [...string]
 	buildArg?: [string]: string
 	label?: [string]:    string
+	target?: string
 }
 
 #WriteFile: {
