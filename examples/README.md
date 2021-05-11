@@ -25,20 +25,22 @@ dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
 dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
-3. Deploy!
+3. Specify the source code location
+
+```sh
+dagger input dir source website
+```
+
+4. Deploy!
 
 ```sh
 dagger up
 ```
 
-4. Change a variable to alter the content
-
-In this example config, the HTML content is created from a variable `name` that has a default value, here is a simple
-way to change it without changing the code:
+5. Check the URL
 
 ```sh
-dagger input text name "someone else!"
-dagger up
+curl -i $(dagger query url -f text)
 ```
 
 ## Deploy a simple React application
