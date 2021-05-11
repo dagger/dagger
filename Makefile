@@ -43,6 +43,8 @@ check-buildkit-version:
 
 .PHONY: integration
 integration: dagger-debug
+	$(shell command -v sops > /dev/null || { echo "You need sops. On macOS: brew install sops"; exit 1; })
+	$(shell command -v parallel > /dev/null || { echo "You need gnu parallel. On macOS: brew install parallel"; exit 1; })
 	yarn --cwd "./tests" install
 	DAGGER_BINARY="../cmd/dagger/dagger-debug" yarn --cwd "./tests" test
 
