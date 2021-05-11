@@ -3,6 +3,7 @@ package main
 import (
 	"dagger.io/aws"
 	"dagger.io/aws/s3"
+	"dagger.io/dagger"
 )
 
 // AWS Config for credentials and default region
@@ -11,24 +12,14 @@ awsConfig: aws.#Config & {
 }
 
 // Name of the S3 bucket to use
-bucket: *"hello-s3.infralabs.io" | string
+bucket: *"dagger-io-examples" | string
 
-name: string | *"world"
-
-page: """
-    <html>
-    </head>
-    <title>Simple static website on S3</title>
-    </head>
-    <h1>Hello!</h1>
-    <li>Hey \(name)</li>
-    </html>
-    """
+source: dagger.#Artifact
+url:    "\(deploy.url)index.html"
 
 deploy: s3.#Put & {
-	config:       awsConfig
-	sourceInline: page
-	always:       true
-	contentType:  "text/html"
-	target:       "s3://\(bucket)/index.html"
+	config:      awsConfig
+	"source":    source
+	contentType: "text/html"
+	target:      "s3://\(bucket)/"
 }
