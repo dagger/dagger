@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"path"
 	"strings"
 
@@ -392,6 +393,33 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 		// There's an ongoing proposal that would fix this: https://github.com/moby/buildkit/issues/1213
 		opts = append(opts, llb.IgnoreCache)
 	}
+
+	if hosts := op.Lookup("hosts"); hosts.Exists() {
+		fields, err := hosts.Fields()
+		if err != nil {
+			return st, err
+		}
+		for _, host := range fields {
+			s, err := host.Value.String()
+			if err != nil {
+				return st, err
+			}
+
+			if err != nil {
+				return st, err
+			}
+			opts = append(opts, llb.AddExtraHost(host.Label(), net.ParseIP(s)))
+		}
+	}
+
+	if user := op.Lookup("user"); user.Exists() {
+		u, err := user.String()
+		if err != nil {
+			return st, err
+		}
+		opts = append(opts, llb.User(u))
+	}
+
 	// mounts
 	if mounts := op.Lookup("mount"); mounts.Exists() {
 		mntOpts, err := p.mountAll(ctx, mounts)

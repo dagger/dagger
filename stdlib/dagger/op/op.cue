@@ -52,6 +52,10 @@ package op
 	//    see https://github.com/dagger/dagger/issues/445
 	// mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
 	mount: [string]: _
+	// Map of hostnames to ip
+	hosts?: [string]: string
+	// User to exec with (if left empty, will default to the set user in the image)
+	user?: string
 }
 
 #DockerLogin: {
