@@ -66,6 +66,11 @@ func Build(sources map[string]fs.FS, args ...string) (*Value, error) {
 	if err != nil {
 		return nil, errors.New(cueerrors.Details(err, &cueerrors.Config{}))
 	}
+	for _, value := range v {
+		if value.Err() != nil {
+			return nil, value.Err()
+		}
+	}
 	if len(v) != 1 {
 		return nil, errors.New("internal: wrong number of values")
 	}
