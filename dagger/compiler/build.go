@@ -57,9 +57,19 @@ func Build(sources map[string]fs.FS, args ...string) (*Value, error) {
 	if len(instances) != 1 {
 		return nil, errors.New("only one package is supported at a time")
 	}
+	for _, value := range instances {
+		if value.Err != nil {
+			return nil, value.Err
+		}
+	}
 	v, err := c.Context.BuildInstances(instances)
 	if err != nil {
 		return nil, errors.New(cueerrors.Details(err, &cueerrors.Config{}))
+	}
+	for _, value := range v {
+		if value.Err() != nil {
+			return nil, value.Err()
+		}
 	}
 	if len(v) != 1 {
 		return nil, errors.New("internal: wrong number of values")
