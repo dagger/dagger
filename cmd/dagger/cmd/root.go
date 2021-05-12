@@ -17,7 +17,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "dagger",
-	Short: "A programmable environment system",
+	Short: "A programmable deployment system",
 }
 
 func init() {
