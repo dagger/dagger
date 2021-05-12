@@ -33,7 +33,6 @@ func init() {
 	}
 
 	rootCmd.AddCommand(
-		computeCmd,
 		newCmd,
 		listCmd,
 		queryCmd,
