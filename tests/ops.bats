@@ -49,7 +49,7 @@ setup() {
 }
 
 @test "op.#Local" {
-    skip "There are no local tests right now (the feature is possibly not functioning at all: see https://github.com/blocklayerhq/dagger/issues/41)"
+    skip "There are no local tests right now"
 }
 
 @test "op.#FetchContainer" {
