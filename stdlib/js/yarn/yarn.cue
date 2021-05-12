@@ -1,4 +1,6 @@
-package react
+// Yarn is a package manager for Javascript applications
+// https://yarnpkg.com
+package yarn
 
 import (
 	"strings"
@@ -8,9 +10,8 @@ import (
 	"dagger.io/os"
 )
 
-// A ReactJS application
-// FIXME: move this to a 'yarn' package for clarity
-#App: {
+// A Yarn package.
+#Package: {
 	// Application source code
 	source: dagger.#Artifact
 
@@ -21,15 +22,12 @@ import (
 	// in the "envfile" format.
 	writeEnvFile: string | *""
 
-	// Yarn-specific settings
-	yarn: {
-		// Read build output from this directory
-		// (path must be relative to working directory).
-		buildDir: string | *"build"
+	// Read build output from this directory
+	// (path must be relative to working directory).
+	buildDir: string | *"build"
 
-		// Run this yarn script
-		script: string | *"build"
-	}
+	// Run this yarn script
+	script: string | *"build"
 
 	build: os.#Dir & {
 		from: ctr
@@ -51,9 +49,9 @@ import (
 			mv "$YARN_BUILD_DIRECTORY" /build
 			"""
 		"env": env & {
-			YARN_BUILD_SCRIPT:    yarn.script
+			YARN_BUILD_SCRIPT:    script
 			YARN_CACHE_FOLDER:    "/cache/yarn"
-			YARN_BUILD_DIRECTORY: yarn.buildDir
+			YARN_BUILD_DIRECTORY: buildDir
 			if writeEnvFile != "" {
 				ENVFILE_NAME: writeEnvFile
 				ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")

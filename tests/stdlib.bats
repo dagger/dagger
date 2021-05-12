@@ -8,8 +8,8 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/alpine
 }
 
-@test "stdlib: react" {
-    "$DAGGER" compute "$TESTDIR"/stdlib/js/react --input-dir TestData="$TESTDIR"/stdlib/js/react/testdata
+@test "stdlib: yarn" {
+    "$DAGGER" compute "$TESTDIR"/stdlib/js/yarn --input-dir TestData="$TESTDIR"/stdlib/js/yarn/testdata
 }
 
 @test "stdlib: go" {

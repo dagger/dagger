@@ -2,7 +2,7 @@ package main
 
 import (
 	"dagger.io/netlify"
-	"dagger.io/js/react"
+	"dagger.io/js/yarn"
 	"dagger.io/git"
 )
 
@@ -22,6 +22,6 @@ www: netlify.#Site & {
 	contents: app.build
 }
 
-app: react.#App & {
+app: yarn.#Package & {
 	source: repo
 }

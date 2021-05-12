@@ -3,7 +3,7 @@ package main
 import (
 	"dagger.io/dagger"
 	"dagger.io/netlify"
-	"dagger.io/js/react"
+	"dagger.io/js/yarn"
 	"dagger.io/git"
 )
 
@@ -30,7 +30,7 @@ frontend: {
 }
 
 frontend: {
-	app: react.#App & {
+	app: yarn.#Package & {
 		source: frontend.source
 		env:    frontend.environment
 
@@ -38,10 +38,8 @@ frontend: {
 			writeEnvFile: frontend.writeEnvFile
 		}
 
-		yarn: {
-			script:   frontend.yarn.script
-			buildDir: frontend.yarn.buildDir
-		}
+		script:   frontend.yarn.script
+		buildDir: frontend.yarn.buildDir
 	}
 
 	// Host the application with Netlify
