@@ -14,10 +14,10 @@ jobs:
     - name: Pushes docs file
       uses: slumbering/copy_file_to_another_repo_action@main
       env:
-        API_TOKEN_GITHUB: ${{ secrets.API_TOKEN_GITHUB }}
+        API_TOKEN_GITHUB: ${{ secrets.DAGGERCI_TOKEN }}
       with:
         source_file: 'doc/'
-        destination_repo: 'slumbering/launch.dagger.io'
+        destination_repo: 'dagger/launch.dagger.io'
         destination_folder: 'site/'
-        user_email: 'slumbering.pierrot@gmail.com'
-        user_name: 'slumbering'
+        user_email: 'noreply@dagger.io'
+        user_name: 'dagger-bot'
