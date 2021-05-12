@@ -4,10 +4,20 @@
 
 ```
 # Install dependancies
-yarn --cwd install
+yarn install
+
+# Install gnu parallel if needed
+# macOS
+brew install parallel
+# Debian derivatives
+# apt-get install parallel
+
+# Install sops if needed
+# macOS
+brew install sops
 
 # Run all tests
-yarn --cwd test
+yarn test
 ```
 
 By default, the `dagger` binary is expected to be found in `../cmd/dagger/dagger` relative to the `tests` directory.
