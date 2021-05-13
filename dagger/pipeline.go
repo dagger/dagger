@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/url"
 	"path"
 	"strings"
 
@@ -762,6 +763,34 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 		return st, err
 	}
 
+	remoteRedacted := remote
+	if u, err := url.Parse(remote); err == nil {
+		remoteRedacted = u.Redacted()
+	}
+
+	gitOpts := []llb.GitOption{}
+	var opts struct {
+		AuthTokenSecret  string
+		AuthHeaderSecret string
+		KeepGitDir       bool
+	}
+
+	if err := op.Decode(&opts); err != nil {
+		return st, err
+	}
+
+	if opts.KeepGitDir {
+		gitOpts = append(gitOpts, llb.KeepGitDir())
+	}
+	if opts.AuthTokenSecret != "" {
+		gitOpts = append(gitOpts, llb.AuthTokenSecret(opts.AuthTokenSecret))
+	}
+	if opts.AuthHeaderSecret != "" {
+		gitOpts = append(gitOpts, llb.AuthTokenSecret(opts.AuthHeaderSecret))
+	}
+
+	gitOpts = append(gitOpts, llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remoteRedacted, ref)))
+
 	// FIXME: Remove the `Copy` and use `Git` directly.
 	//
 	// Copy'ing is a costly operation which should be unnecessary.
@@ -771,12 +800,12 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 			llb.Git(
 				remote,
 				ref,
-				llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remote, ref)),
+				gitOpts...,
 			),
 			"/",
 			"/",
 		),
-		llb.WithCustomName(p.vertexNamef("FetchGit %s@%s [copy]", remote, ref)),
+		llb.WithCustomName(p.vertexNamef("FetchGit %s@%s [copy]", remoteRedacted, ref)),
 	), nil
 }
 
