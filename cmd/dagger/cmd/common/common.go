@@ -2,8 +2,6 @@ package common
 
 import (
 	"context"
-	"errors"
-	"os"
 
 	"dagger.io/go/dagger"
 	"dagger.io/go/dagger/state"
@@ -14,7 +12,7 @@ import (
 func GetCurrentEnvironmentState(ctx context.Context) *state.State {
 	lg := log.Ctx(ctx)
 
-	// 1) If no environment name has been given, look for the current environment
+	// If no environment name has been given, look for the current environment
 	environment := viper.GetString("environment")
 	if environment == "" {
 		st, err := state.Current(ctx)
@@ -27,21 +25,9 @@ func GetCurrentEnvironmentState(ctx context.Context) *state.State {
 		return st
 	}
 
-	// 2) Check if it's an environment path (can be opened directly)
-	st, err := state.Open(ctx, environment)
-	if err == nil {
-		return st
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		lg.
-			Fatal().
-			Err(err).
-			Str("environmentPath", environment).
-			Msg("failed to load environment")
-	}
-
 	// At this point, it must be an environment name
 	workspace := viper.GetString("workspace")
+	var err error
 	if workspace == "" {
 		workspace, err = state.CurrentWorkspace(ctx)
 		if err != nil {
