@@ -50,8 +50,7 @@ import (
 	// Mount is active when executing `command`, but not `setup`.
 
 	mount: [string]: {
-		// FIXME(perf) should be #Artifact. See https://github.com/dagger/dagger/issues/445
-		from: {...}
+		from: dagger.#Artifact
 		// FIXME: support source path
 	}
 
