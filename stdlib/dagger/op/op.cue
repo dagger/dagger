@@ -77,9 +77,13 @@ package op
 }
 
 #FetchGit: {
-	do:     "fetch-git"
-	remote: string
-	ref:    string
+	do:          "fetch-git"
+	remote:      string
+	ref:         string
+	keepGitDir?: bool
+	// FIXME: the two options are currently ignored until we support buildkit secrets
+	authTokenSecret?:  string | bytes
+	authHeaderSecret?: string | bytes
 }
 
 #Copy: {
