@@ -106,7 +106,7 @@ setup() {
     assert_failure
 
     run "$DAGGER" compute "$TESTDIR"/ops/fetch-git/gitdir
-    assert_failure
+    assert_success
 
     # FIXME: distinguish missing inputs from incorrect config
     # run "$DAGGER" compute "$TESTDIR"/ops/fetch-git/invalid
