@@ -18,11 +18,3 @@ setup() {
     assert_success
     assert_output --partial "Todo App"
 }
-
-@test "example: docker" {
-     skip_unless_file_exist "$TESTDIR"/examples/docker/Dockerfile
-
-    "$DAGGER" new --plan-dir "$TESTDIR"/../examples/docker/ docker
-    "$DAGGER" input dir source "$TESTDIR"/examples/docker/ -e "docker"
-    "$DAGGER" up -e "docker"
-}

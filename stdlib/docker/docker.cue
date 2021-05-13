@@ -27,7 +27,20 @@ import (
 	]
 }
 
-// FIXME: #Push
+// Push a docker image
+#Push: {
+	// Remote ref (example: "index.docker.io/alpine:latest")
+	ref: string
+
+	// Image
+	source: dagger.#Artifact
+
+	#up: [
+		op.#Load & {from:           source},
+		op.#PushContainer & {"ref": ref},
+	]
+}
+
 // FIXME: #Run
 
 // Build a Docker image from the provided Dockerfile contents
