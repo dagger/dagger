@@ -2,7 +2,16 @@
 package op
 
 // One operation in a pipeline
-#Op: #Export |
+//
+// #Op does not enforce the op spec at full resolution, to avoid triggering performance issues.
+// See https://github.com/dagger/dagger/issues/445
+#Op: {
+	do: string
+	...
+}
+
+// Full resolution schema enforciong the complete op spec
+#OpFull: #Export |
 	#FetchContainer |
 	#PushContainer |
 	#FetchGit |
@@ -48,10 +57,7 @@ package op
 	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
-	// FIXME (perf): complex schema in low-level ops causes explosive perf issues
-	//    see https://github.com/dagger/dagger/issues/445
-	// mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
-	mount: [string]: _
+	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"}
 	// Map of hostnames to ip
 	hosts?: [string]: string
 	// User to exec with (if left empty, will default to the set user in the image)
