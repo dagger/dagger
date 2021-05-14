@@ -60,6 +60,24 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/aws/ecr --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
 }
 
+@test "stdlib: docker-build" {
+    skip_unless_file_exist "$TESTDIR"/stdlib/docker/build/Dockerfile
+
+    "$DAGGER" compute "$TESTDIR"/stdlib/docker/build/ --input-dir source="$TESTDIR"/stdlib/docker/build
+}
+
+@test "stdlib: docker-dockerfile" {
+    "$DAGGER" compute "$TESTDIR"/stdlib/docker/dockerfile/ --input-dir source="$TESTDIR"/stdlib/docker/dockerfile/testdata
+}
+
+@test "stdlib: docker-push-and-pull" {
+    skip_unless_secrets_available "$TESTDIR"/stdlib/docker/push-pull/inputs.yaml
+
+    # check that they succeed with the credentials
+    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/push-pull/inputs.yaml --input-dir source="$TESTDIR"/stdlib/docker/push-pull/testdata "$TESTDIR"/stdlib/docker/push-pull/
+    assert_success
+}
+
 @test "stdlib: terraform" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
 

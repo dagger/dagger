@@ -19,6 +19,11 @@ skip_unless_secrets_available() {
     sops exec-file "$inputFile" echo  > /dev/null 2>&1 || skip "$inputFile cannot be decrypted"
 }
 
+skip_unless_file_exist() {
+    local inputFile="$1"
+    test -f "$inputFile" || skip "$inputFile does not exist"
+}
+
 skip_unless_local_kube() {
     if [ -f ~/.kube/config ] && grep -q "user: kind-kind" ~/.kube/config &> /dev/null && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
         echo "Kubernetes available"
