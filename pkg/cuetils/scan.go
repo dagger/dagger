@@ -14,46 +14,26 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 		err  error
 	)
 
-	// walk before function, bool return is if the walk should recurse again
+	// walk before function, bool return true if the walk should recurse again
 	before := func(v cue.Value) (bool, error) {
-		// explicit phase
-		// look for #up
-		label, _ := v.Label()
-		if label == "#up" {
-			return false, nil
-		}
-
-		// look to exclude any @dagger(computed)
-		attrs := v.Attributes(cue.ValueAttr)
-		for _, attr := range attrs {
-			name := attr.Name()
-			// match `@dagger(...)`
-			if name == "dagger" {
-				// loop over args (CSV content in attribute)
-				for i := 0; i < attr.NumArgs(); i++ {
-					key, _ := attr.Arg(i)
-
-					// we found an explicit computed value
-					if key == "computed" {
-						return false, nil
-					}
-				}
-			}
-		}
-
 		// inference phase
 		switch v.IncompleteKind() {
 		case cue.StructKind:
 			return true, nil
 
 		case cue.ListKind:
-			if !v.IsConcrete() {
+			if !v.IsConcrete() && isInput(v) {
 				vals = append(vals, v)
 				return false, nil
 			}
 			return true, nil
 
 		default:
+
+			if !isInput(v) {
+				// Not an input
+				return false, nil
+			}
 
 			// a leaf with default?
 			_, has := v.Default()
@@ -79,6 +59,28 @@ func ScanForInputs(value cue.Value) ([]cue.Value, error) {
 	}
 
 	return vals, nil
+}
+
+func isInput(v cue.Value) bool {
+	attrs := v.Attributes(cue.ValueAttr)
+
+	for _, attr := range attrs {
+		name := attr.Name()
+		// match `@dagger(...)`
+		if name == "dagger" {
+			// loop over args (CSV content in attribute)
+			for i := 0; i < attr.NumArgs(); i++ {
+				key, _ := attr.Arg(i)
+
+				// we found an explicit input value
+				if key == "input" {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // walkValue is a custome walk function so that we recurse into more types than CUE's buildin walk
