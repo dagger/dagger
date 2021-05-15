@@ -9,6 +9,6 @@ import (
 source: dagger.#Artifact
 
 // Container image
-container: docker.#Build & {
+image: docker.#Build & {
 	"source": source
 }
