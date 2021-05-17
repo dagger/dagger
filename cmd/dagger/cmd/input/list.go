@@ -10,6 +10,7 @@ import (
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/state"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -84,9 +85,9 @@ var listCmd = &cobra.Command{
 	},
 }
 
-func isUserSet(env *dagger.EnvironmentState, val *compiler.Value) bool {
-	for _, i := range env.Inputs {
-		if val.Path().String() == i.Key {
+func isUserSet(env *state.State, val *compiler.Value) bool {
+	for key := range env.Inputs {
+		if val.Path().String() == key {
 			return true
 		}
 	}

@@ -11,15 +11,10 @@ type State struct {
 	Name string `yaml:"name,omitempty"`
 
 	// User Inputs
-	Inputs []inputKV `yaml:"inputs,omitempty"`
+	Inputs map[string]Input `yaml:"inputs,omitempty"`
 
 	// Computed values
 	Computed string `yaml:"-"`
-}
-
-type inputKV struct {
-	Key   string `yaml:"key,omitempty"`
-	Value Input  `yaml:"value,omitempty"`
 }
 
 // Cue module containing the environment plan
@@ -29,15 +24,10 @@ func (s *State) PlanSource() Input {
 }
 
 func (s *State) SetInput(key string, value Input) error {
-	for i, inp := range s.Inputs {
-		if inp.Key != key {
-			continue
-		}
-		// Remove existing inputs with the same key
-		s.Inputs = append(s.Inputs[:i], s.Inputs[i+1:]...)
+	if s.Inputs == nil {
+		s.Inputs = make(map[string]Input)
 	}
-
-	s.Inputs = append(s.Inputs, inputKV{Key: key, Value: value})
+	s.Inputs[key] = value
 	return nil
 }
 
@@ -45,14 +35,6 @@ func (s *State) SetInput(key string, value Input) error {
 // For example RemoveInputs("foo.bar") will remove all inputs
 //   at foo.bar, foo.bar.baz, etc.
 func (s *State) RemoveInputs(key string) error {
-	newInputs := make([]inputKV, 0, len(s.Inputs))
-	for _, i := range s.Inputs {
-		if i.Key == key {
-			continue
-		}
-		newInputs = append(newInputs, i)
-	}
-	s.Inputs = newInputs
-
+	delete(s.Inputs, key)
 	return nil
 }

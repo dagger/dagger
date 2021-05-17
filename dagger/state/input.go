@@ -24,25 +24,12 @@ import (
 //   Under the hood, an artifact is encoded as a LLB pipeline, and
 //   attached to the cue configuration as a
 //
-type InputType string
-
-const (
-	InputTypeDir    InputType = "dir"
-	InputTypeGit    InputType = "git"
-	InputTypeDocker InputType = "docker"
-	InputTypeText   InputType = "text"
-	InputTypeJSON   InputType = "json"
-	InputTypeYAML   InputType = "yaml"
-	InputTypeFile   InputType = "file"
-	InputTypeEmpty  InputType = ""
-)
 
 type Input struct {
-	Type InputType `yaml:"type,omitempty"`
-
 	Dir    *dirInput    `yaml:"dir,omitempty"`
 	Git    *gitInput    `yaml:"git,omitempty"`
 	Docker *dockerInput `yaml:"docker,omitempty"`
+	Secret *secretInput `yaml:"secret,omitempty"`
 	Text   *textInput   `yaml:"text,omitempty"`
 	JSON   *jsonInput   `yaml:"json,omitempty"`
 	YAML   *yamlInput   `yaml:"yaml,omitempty"`
@@ -50,32 +37,31 @@ type Input struct {
 }
 
 func (i Input) Compile(state *State) (*compiler.Value, error) {
-	switch i.Type {
-	case InputTypeDir:
+	switch {
+	case i.Dir != nil:
 		return i.Dir.Compile(state)
-	case InputTypeGit:
+	case i.Git != nil:
 		return i.Git.Compile(state)
-	case InputTypeDocker:
+	case i.Docker != nil:
 		return i.Docker.Compile(state)
-	case InputTypeText:
+	case i.Text != nil:
 		return i.Text.Compile(state)
-	case InputTypeJSON:
+	case i.Secret != nil:
+		return i.Secret.Compile(state)
+	case i.JSON != nil:
 		return i.JSON.Compile(state)
-	case InputTypeYAML:
+	case i.YAML != nil:
 		return i.YAML.Compile(state)
-	case InputTypeFile:
+	case i.File != nil:
 		return i.File.Compile(state)
-	case "":
-		return nil, fmt.Errorf("input has not been set")
 	default:
-		return nil, fmt.Errorf("unsupported input type: %s", i.Type)
+		return nil, fmt.Errorf("input has not been set")
 	}
 }
 
 // An input artifact loaded from a local directory
 func DirInput(path string, include []string) Input {
 	return Input{
-		Type: InputTypeDir,
 		Dir: &dirInput{
 			Path:    path,
 			Include: include,
@@ -124,7 +110,6 @@ type gitInput struct {
 
 func GitInput(remote, ref, dir string) Input {
 	return Input{
-		Type: InputTypeGit,
 		Git: &gitInput{
 			Remote: remote,
 			Ref:    ref,
@@ -149,7 +134,6 @@ func (git gitInput) Compile(_ *State) (*compiler.Value, error) {
 // An input artifact loaded from a docker container
 func DockerInput(ref string) Input {
 	return Input{
-		Type: InputTypeDocker,
 		Docker: &dockerInput{
 			Ref: ref,
 		},
@@ -166,63 +150,62 @@ func (i dockerInput) Compile(_ *State) (*compiler.Value, error) {
 
 // An input value encoded as text
 func TextInput(data string) Input {
+	i := textInput(data)
 	return Input{
-		Type: InputTypeText,
-		Text: &textInput{
-			Data: data,
-		},
+		Text: &i,
 	}
 }
 
-type textInput struct {
-	Data string `json:"data,omitempty"`
-}
+type textInput string
 
 func (i textInput) Compile(_ *State) (*compiler.Value, error) {
-	return compiler.Compile("", fmt.Sprintf("%q", i.Data))
+	return compiler.Compile("", fmt.Sprintf("%q", i))
+}
+
+// A secret input value
+func SecretInput(data string) Input {
+	i := secretInput(data)
+	return Input{
+		Secret: &i,
+	}
+}
+
+type secretInput string
+
+func (i secretInput) Compile(_ *State) (*compiler.Value, error) {
+	return compiler.Compile("", fmt.Sprintf("%q", i))
 }
 
 // An input value encoded as JSON
 func JSONInput(data string) Input {
+	i := jsonInput(data)
 	return Input{
-		Type: InputTypeJSON,
-		JSON: &jsonInput{
-			Data: data,
-		},
+		JSON: &i,
 	}
 }
 
-type jsonInput struct {
-	// Marshalled JSON data
-	Data string `json:"data,omitempty"`
-}
+type jsonInput string
 
 func (i jsonInput) Compile(_ *State) (*compiler.Value, error) {
-	return compiler.DecodeJSON("", []byte(i.Data))
+	return compiler.DecodeJSON("", []byte(i))
 }
 
 // An input value encoded as YAML
 func YAMLInput(data string) Input {
+	i := yamlInput(data)
 	return Input{
-		Type: InputTypeYAML,
-		YAML: &yamlInput{
-			Data: data,
-		},
+		YAML: &i,
 	}
 }
 
-type yamlInput struct {
-	// Marshalled YAML data
-	Data string `json:"data,omitempty"`
-}
+type yamlInput string
 
 func (i yamlInput) Compile(_ *State) (*compiler.Value, error) {
-	return compiler.DecodeYAML("", []byte(i.Data))
+	return compiler.DecodeYAML("", []byte(i))
 }
 
 func FileInput(data string) Input {
 	return Input{
-		Type: InputTypeFile,
 		File: &fileInput{
 			Path: data,
 		},

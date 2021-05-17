@@ -11,7 +11,6 @@ import (
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
 	"dagger.io/go/dagger/state"
-	"dagger.io/go/pkg/cuetils"
 	"dagger.io/go/stdlib"
 
 	"github.com/opentracing/opentracing-go"
@@ -43,15 +42,15 @@ func NewEnvironment(st *state.State) (*Environment, error) {
 	}
 
 	// Prepare inputs
-	for _, input := range st.Inputs {
-		v, err := input.Value.Compile(st)
+	for key, input := range st.Inputs {
+		v, err := input.Compile(st)
 		if err != nil {
 			return nil, err
 		}
-		if input.Key == "" {
+		if key == "" {
 			err = e.input.FillPath(cue.MakePath(), v)
 		} else {
-			err = e.input.FillPath(cue.ParsePath(input.Key), v)
+			err = e.input.FillPath(cue.ParsePath(key), v)
 		}
 		if err != nil {
 			return nil, err
