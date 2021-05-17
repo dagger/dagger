@@ -39,7 +39,6 @@ func init() {
 		queryCmd,
 		upCmd,
 		downCmd,
-		deleteCmd,
 		historyCmd,
 		loginCmd,
 		logoutCmd,
