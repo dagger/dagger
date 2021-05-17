@@ -61,8 +61,6 @@ setup() {
 }
 
 @test "stdlib: docker-build" {
-    skip_unless_file_exist "$TESTDIR"/stdlib/docker/build/Dockerfile
-
     "$DAGGER" compute "$TESTDIR"/stdlib/docker/build/ --input-dir source="$TESTDIR"/stdlib/docker/build
 }
 
