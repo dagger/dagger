@@ -3,7 +3,8 @@ module dagger.io/go
 go 1.16
 
 require (
-	cuelang.org/go v0.4.0-rc.1
+	cuelang.org/go v0.4.0-beta.1
+	filippo.io/age v1.0.0-rc.1
 	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.2
@@ -17,7 +18,7 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
-	github.com/rs/zerolog v1.22.0
+	github.com/rs/zerolog v1.21.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0

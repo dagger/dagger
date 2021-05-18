@@ -3,11 +3,13 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
+	"dagger.io/go/dagger/keychain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,11 +28,31 @@ const (
 
 func Init(ctx context.Context, dir, name string) (*State, error) {
 	root := path.Join(dir, daggerDir)
-	err := os.Mkdir(root, 0755)
-	if err != nil {
+	if err := os.Mkdir(root, 0755); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, ErrAlreadyInit
 		}
+		return nil, err
+	}
+	manifestPath := path.Join(dir, daggerDir, manifestFile)
+
+	st := &State{
+		Path: dir,
+		Name: name,
+	}
+	data, err := yaml.Marshal(st)
+	if err != nil {
+		return nil, err
+	}
+	key, err := keychain.Default(ctx)
+	if err != nil {
+		return nil, err
+	}
+	encrypted, err := keychain.Encrypt(ctx, manifestPath, data, key)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(manifestPath, encrypted, 0600); err != nil {
 		return nil, err
 	}
 
@@ -43,12 +65,7 @@ func Init(ctx context.Context, dir, name string) (*State, error) {
 		return nil, err
 	}
 
-	st := &State{
-		Path: dir,
-		Name: name,
-	}
-
-	return st, Save(ctx, st)
+	return st, nil
 }
 
 func Current(ctx context.Context) (*State, error) {
@@ -91,6 +108,11 @@ func Open(ctx context.Context, dir string) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
+	data, err = keychain.Decrypt(ctx, data)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decrypt state: %w", err)
+	}
+
 	var st State
 	if err := yaml.Unmarshal(data, &st); err != nil {
 		return nil, err
@@ -111,7 +133,13 @@ func Save(ctx context.Context, st *State) error {
 		return err
 	}
 
-	if err := os.WriteFile(path.Join(st.Path, daggerDir, manifestFile), data, 0600); err != nil {
+	manifestPath := path.Join(st.Path, daggerDir, manifestFile)
+
+	encrypted, err := keychain.Reencrypt(ctx, manifestPath, data)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(manifestPath, encrypted, 0600); err != nil {
 		return err
 	}
 
