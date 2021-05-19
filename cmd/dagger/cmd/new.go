@@ -3,15 +3,13 @@ package cmd
 import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var upCmd = &cobra.Command{
-	Use:   "up",
-	Short: "Bring an environment online with latest plan and inputs",
-	Args:  cobra.NoArgs,
+var newCmd = &cobra.Command{
+	Use:  "new",
+	Args: cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -24,20 +22,21 @@ var upCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
-		result := common.EnvironmentUp(ctx, st, viper.GetBool("no-cache"))
 
-		st.Computed = result.Computed().JSON().PrettyString()
-		if err := workspace.Save(ctx, st); err != nil {
-			lg.Fatal().Err(err).Msg("failed to update environment")
+		if viper.GetString("environment") != "" {
+			lg.
+				Fatal().
+				Msg("cannot use option -e,--environment for this command")
+		}
+		name := args[0]
+		if _, err := workspace.Create(ctx, name); err != nil {
+			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
 	},
 }
 
 func init() {
-	upCmd.Flags().Bool("no-cache", false, "Disable all run cache")
-
-	if err := viper.BindPFlags(upCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

@@ -1,9 +1,14 @@
 package state
 
+import "path"
+
 // Contents of an environment serialized to a file
 type State struct {
 	// State path
 	Path string `yaml:"-"`
+
+	// Workspace path
+	Workspace string `yaml:"-"`
 
 	// Human-friendly environment name.
 	// A environment may have more than one name.
@@ -20,7 +25,7 @@ type State struct {
 // Cue module containing the environment plan
 // The input's top-level artifact is used as a module directory.
 func (s *State) PlanSource() Input {
-	return DirInput(s.Path, []string{"*.cue", "cue.mod"})
+	return DirInput(path.Join(s.Path, planDir), []string{"*.cue", "cue.mod"})
 }
 
 func (s *State) SetInput(key string, value Input) error {

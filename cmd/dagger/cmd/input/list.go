@@ -31,7 +31,8 @@ var listCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		environment := common.GetCurrentEnvironmentState(ctx)
+		workspace := common.CurrentWorkspace(ctx)
+		environment := common.CurrentEnvironmentState(ctx, workspace)
 
 		lg = lg.With().
 			Str("environment", environment.Name).

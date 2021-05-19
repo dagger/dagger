@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -10,9 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger/state"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -32,21 +29,8 @@ var listCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		var (
-			workspace = viper.GetString("workspace")
-			err       error
-		)
-		if workspace == "" {
-			workspace, err = state.CurrentWorkspace(ctx)
-			if err != nil {
-				lg.
-					Fatal().
-					Err(err).
-					Msg("failed to determine current workspace")
-			}
-		}
-
-		environments, err := state.List(ctx, workspace)
+		workspace := common.CurrentWorkspace(ctx)
+		environments, err := workspace.List(ctx)
 		if err != nil {
 			lg.
 				Fatal().
@@ -54,32 +38,13 @@ var listCmd = &cobra.Command{
 				Msg("cannot list environments")
 		}
 
-		environmentPath := getCurrentEnvironmentPath(ctx)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.TabIndent)
 		defer w.Flush()
 		for _, e := range environments {
 			line := fmt.Sprintf("%s\t%s\t", e.Name, formatPath(e.Path))
-			if e.Path == environmentPath {
-				line = fmt.Sprintf("%s- active environment", line)
-			}
 			fmt.Fprintln(w, line)
 		}
 	},
-}
-
-func getCurrentEnvironmentPath(ctx context.Context) string {
-	lg := log.Ctx(ctx)
-
-	st, err := state.Current(ctx)
-	if err != nil {
-		// Ignore error if not initialized
-		if errors.Is(err, state.ErrNotInit) {
-			return ""
-		}
-		lg.Fatal().Err(err).Msg("failed to load current environment")
-	}
-
-	return st.Path
 }
 
 func formatPath(p string) string {

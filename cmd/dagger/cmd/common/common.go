@@ -9,13 +9,37 @@ import (
 	"github.com/spf13/viper"
 )
 
-func GetCurrentEnvironmentState(ctx context.Context) *state.State {
+func CurrentWorkspace(ctx context.Context) *state.Workspace {
 	lg := log.Ctx(ctx)
 
-	// If no environment name has been given, look for the current environment
-	environment := viper.GetString("environment")
-	if environment == "" {
-		st, err := state.Current(ctx)
+	if workspacePath := viper.GetString("workspace"); workspacePath != "" {
+		workspace, err := state.Open(ctx, workspacePath)
+		if err != nil {
+			lg.
+				Fatal().
+				Err(err).
+				Str("path", workspacePath).
+				Msg("failed to open workspace")
+		}
+		return workspace
+	}
+
+	workspace, err := state.Current(ctx)
+	if err != nil {
+		lg.
+			Fatal().
+			Err(err).
+			Msg("failed to determine current workspace")
+	}
+	return workspace
+}
+
+func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *state.State {
+	lg := log.Ctx(ctx)
+
+	environmentName := viper.GetString("environment")
+	if environmentName != "" {
+		st, err := workspace.Get(ctx, environmentName)
 		if err != nil {
 			lg.
 				Fatal().
@@ -25,38 +49,33 @@ func GetCurrentEnvironmentState(ctx context.Context) *state.State {
 		return st
 	}
 
-	// At this point, it must be an environment name
-	workspace := viper.GetString("workspace")
-	var err error
-	if workspace == "" {
-		workspace, err = state.CurrentWorkspace(ctx)
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Msg("failed to determine current workspace")
-		}
-	}
-
-	environments, err := state.List(ctx, workspace)
+	environments, err := workspace.List(ctx)
 	if err != nil {
 		lg.
 			Fatal().
 			Err(err).
 			Msg("failed to list environments")
 	}
-	for _, e := range environments {
-		if e.Name == environment {
-			return e
-		}
+
+	if len(environments) == 0 {
+		lg.
+			Fatal().
+			Msg("no environments")
 	}
 
-	lg.
-		Fatal().
-		Str("environment", environment).
-		Msg("environment not found")
+	if len(environments) > 1 {
+		envNames := []string{}
+		for _, e := range environments {
+			envNames = append(envNames, e.Name)
+		}
+		lg.
+			Fatal().
+			Err(err).
+			Strs("environments", envNames).
+			Msg("multiple environments available in the workspace, select one with `--environment`")
+	}
 
-	return nil
+	return environments[0]
 }
 
 // Re-compute an environment (equivalent to `dagger up`).

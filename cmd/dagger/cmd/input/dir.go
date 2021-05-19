@@ -1,6 +1,10 @@
 package input
 
 import (
+	"path/filepath"
+	"strings"
+
+	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
@@ -22,7 +26,24 @@ var dirCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateEnvironmentInput(ctx, args[0], state.DirInput(args[1], []string{}))
+		p, err := filepath.Abs(args[1])
+		if err != nil {
+			lg.Fatal().Err(err).Str("path", args[1]).Msg("unable to resolve path")
+		}
+
+		workspace := common.CurrentWorkspace(ctx)
+		if !strings.HasPrefix(p, workspace.Path) {
+			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir is outside the workspace")
+		}
+		p, err = filepath.Rel(workspace.Path, p)
+		if err != nil {
+			lg.Fatal().Err(err).Str("path", args[1]).Msg("unable to resolve path")
+		}
+		if !strings.HasPrefix(p, ".") {
+			p = "./" + p
+		}
+
+		updateEnvironmentInput(ctx, args[0], state.DirInput(p, []string{}))
 	},
 }
 

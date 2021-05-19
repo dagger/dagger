@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"cuelang.org/go/cue"
 
@@ -90,7 +91,10 @@ func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
 
 	p := dir.Path
 	if !filepath.IsAbs(p) {
-		p = filepath.Clean(path.Join(state.Path, p))
+		p = filepath.Clean(path.Join(state.Workspace, dir.Path))
+	}
+	if !strings.HasPrefix(p, state.Workspace) {
+		return nil, fmt.Errorf("%q is outside the workspace", dir.Path)
 	}
 
 	llb := fmt.Sprintf(

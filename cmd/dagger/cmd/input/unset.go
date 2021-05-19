@@ -3,7 +3,6 @@ package input
 import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -23,10 +22,11 @@ var unsetCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		st := common.GetCurrentEnvironmentState(ctx)
+		workspace := common.CurrentWorkspace(ctx)
+		st := common.CurrentEnvironmentState(ctx, workspace)
 		st.RemoveInputs(args[0])
 
-		if err := state.Save(ctx, st); err != nil {
+		if err := workspace.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Str("environment", st.Name).Msg("cannot update environment")
 		}
 		lg.Info().Str("environment", st.Name).Msg("updated environment")

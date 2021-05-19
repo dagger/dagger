@@ -35,10 +35,11 @@ func init() {
 func updateEnvironmentInput(ctx context.Context, target string, input state.Input) {
 	lg := log.Ctx(ctx)
 
-	st := common.GetCurrentEnvironmentState(ctx)
+	workspace := common.CurrentWorkspace(ctx)
+	st := common.CurrentEnvironmentState(ctx, workspace)
 	st.SetInput(target, input)
 
-	if err := state.Save(ctx, st); err != nil {
+	if err := workspace.Save(ctx, st); err != nil {
 		lg.Fatal().Err(err).Str("environment", st.Name).Msg("cannot update environment")
 	}
 }

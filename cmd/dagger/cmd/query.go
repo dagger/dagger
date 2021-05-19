@@ -30,7 +30,8 @@ var queryCmd = &cobra.Command{
 
 		cueOpts := parseQueryFlags()
 
-		state := common.GetCurrentEnvironmentState(ctx)
+		workspace := common.CurrentWorkspace(ctx)
+		state := common.CurrentEnvironmentState(ctx, workspace)
 
 		lg = lg.With().
 			Str("environment", state.Name).

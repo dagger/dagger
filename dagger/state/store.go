@@ -7,26 +7,32 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"dagger.io/go/dagger/keychain"
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	ErrNotInit            = errors.New("not initialized")
-	ErrAlreadyInit        = errors.New("already initialized")
-	ErrNoCurrentWorkspace = errors.New("not in a git directory")
+	ErrNotInit     = errors.New("not initialized")
+	ErrAlreadyInit = errors.New("already initialized")
+	ErrNotExist    = errors.New("environment doesn't exist")
+	ErrExist       = errors.New("environment already exists")
 )
 
 const (
 	daggerDir    = ".dagger"
+	envDir       = "env"
 	stateDir     = "state"
+	planDir      = "plan"
 	manifestFile = "values.yaml"
 	computedFile = "computed.json"
 )
 
-func Init(ctx context.Context, dir, name string) (*State, error) {
+type Workspace struct {
+	Path string
+}
+
+func Init(ctx context.Context, dir string) (*Workspace, error) {
 	root := path.Join(dir, daggerDir)
 	if err := os.Mkdir(root, 0755); err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -34,41 +40,31 @@ func Init(ctx context.Context, dir, name string) (*State, error) {
 		}
 		return nil, err
 	}
-	manifestPath := path.Join(dir, daggerDir, manifestFile)
-
-	st := &State{
-		Path: dir,
-		Name: name,
-	}
-	data, err := yaml.Marshal(st)
-	if err != nil {
-		return nil, err
-	}
-	key, err := keychain.Default(ctx)
-	if err != nil {
-		return nil, err
-	}
-	encrypted, err := keychain.Encrypt(ctx, manifestPath, data, key)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(manifestPath, encrypted, 0600); err != nil {
-		return nil, err
-	}
-
-	err = os.WriteFile(
-		path.Join(root, ".gitignore"),
-		[]byte("# dagger state\nstate/**\n"),
-		0600,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return st, nil
+	return &Workspace{
+		Path: root,
+	}, nil
 }
 
-func Current(ctx context.Context) (*State, error) {
+func Open(ctx context.Context, dir string) (*Workspace, error) {
+	_, err := os.Stat(path.Join(dir, daggerDir))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotInit
+		}
+		return nil, err
+	}
+
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Workspace{
+		Path: root,
+	}, nil
+}
+
+func Current(ctx context.Context) (*Workspace, error) {
 	current, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -90,36 +86,63 @@ func Current(ctx context.Context) (*State, error) {
 	return nil, ErrNotInit
 }
 
-func Open(ctx context.Context, dir string) (*State, error) {
-	_, err := os.Stat(path.Join(dir, daggerDir))
+func (w *Workspace) envPath(name string) string {
+	return path.Join(w.Path, daggerDir, envDir, name)
+}
+
+func (w *Workspace) List(ctx context.Context) ([]*State, error) {
+	var (
+		environments = []*State{}
+		err          error
+	)
+
+	files, err := os.ReadDir(path.Join(w.Path, daggerDir, envDir))
 	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if !f.IsDir() {
+			continue
+		}
+		st, err := w.Get(ctx, f.Name())
+		if err != nil {
+			return nil, err
+		}
+		environments = append(environments, st)
+	}
+
+	return environments, nil
+}
+
+func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
+	envPath, err := filepath.Abs(w.envPath(name))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(envPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNotInit
+			return nil, ErrNotExist
 		}
 		return nil, err
 	}
 
-	root, err := filepath.Abs(dir)
+	manifest, err := os.ReadFile(path.Join(envPath, manifestFile))
 	if err != nil {
 		return nil, err
 	}
-
-	data, err := os.ReadFile(path.Join(root, daggerDir, manifestFile))
-	if err != nil {
-		return nil, err
-	}
-	data, err = keychain.Decrypt(ctx, data)
+	manifest, err = keychain.Decrypt(ctx, manifest)
 	if err != nil {
 		return nil, fmt.Errorf("unable to decrypt state: %w", err)
 	}
 
 	var st State
-	if err := yaml.Unmarshal(data, &st); err != nil {
+	if err := yaml.Unmarshal(manifest, &st); err != nil {
 		return nil, err
 	}
-	st.Path = root
+	st.Path = envPath
+	st.Workspace = w.Path
 
-	computed, err := os.ReadFile(path.Join(root, daggerDir, stateDir, computedFile))
+	computed, err := os.ReadFile(path.Join(envPath, stateDir, computedFile))
 	if err == nil {
 		st.Computed = string(computed)
 	}
@@ -127,13 +150,13 @@ func Open(ctx context.Context, dir string) (*State, error) {
 	return &st, nil
 }
 
-func Save(ctx context.Context, st *State) error {
+func (w *Workspace) Save(ctx context.Context, st *State) error {
 	data, err := yaml.Marshal(st)
 	if err != nil {
 		return err
 	}
 
-	manifestPath := path.Join(st.Path, daggerDir, manifestFile)
+	manifestPath := path.Join(st.Path, manifestFile)
 
 	encrypted, err := keychain.Reencrypt(ctx, manifestPath, data)
 	if err != nil {
@@ -144,7 +167,7 @@ func Save(ctx context.Context, st *State) error {
 	}
 
 	if st.Computed != "" {
-		state := path.Join(st.Path, daggerDir, stateDir)
+		state := path.Join(st.Path, stateDir)
 		if err := os.MkdirAll(state, 0755); err != nil {
 			return err
 		}
@@ -160,74 +183,59 @@ func Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-func CurrentWorkspace(ctx context.Context) (string, error) {
-	current, err := os.Getwd()
+func (w *Workspace) Create(ctx context.Context, name string) (*State, error) {
+	envPath, err := filepath.Abs(w.envPath(name))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Walk every parent directory to find .dagger
-	for {
-		_, err := os.Stat(path.Join(current, ".git"))
-		if err == nil {
-			return current, nil
+	// Environment directory
+	if err := os.MkdirAll(envPath, 0755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, ErrExist
 		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			break
-		}
-		current = parent
+		return nil, err
 	}
 
-	return "", ErrNoCurrentWorkspace
-}
+	// Plan directory
+	if err := os.Mkdir(path.Join(envPath, planDir), 0755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, ErrExist
+		}
+		return nil, err
+	}
 
-func List(ctx context.Context, workspace string) ([]*State, error) {
-	var (
-		environments = []*State{}
-		err          error
+	manifestPath := path.Join(envPath, manifestFile)
+
+	st := &State{
+		Path:      envPath,
+		Workspace: w.Path,
+		Name:      name,
+	}
+	data, err := yaml.Marshal(st)
+	if err != nil {
+		return nil, err
+	}
+	key, err := keychain.Default(ctx)
+	if err != nil {
+		return nil, err
+	}
+	encrypted, err := keychain.Encrypt(ctx, manifestPath, data, key)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(manifestPath, encrypted, 0600); err != nil {
+		return nil, err
+	}
+
+	err = os.WriteFile(
+		path.Join(envPath, ".gitignore"),
+		[]byte("# dagger state\nstate/**\n"),
+		0600,
 	)
-
-	workspace, err = filepath.Abs(workspace)
 	if err != nil {
 		return nil, err
 	}
 
-	err = filepath.WalkDir(workspace, func(p string, info os.DirEntry, err error) error {
-		// Ignore errors while we walk
-		if err != nil {
-			return nil
-		}
-
-		// Skip regular files
-		if !info.IsDir() {
-			return nil
-		}
-
-		// Skip non-dagger directories
-		if info.Name() != daggerDir {
-			// Caveat: limit traversal to a depth of 10 (arbitrary)
-			relPath := strings.TrimPrefix(p, workspace)
-			if strings.Count(relPath, string(os.PathSeparator)) > 10 {
-				return filepath.SkipDir
-			}
-
-			// Otherwise, continue traversing
-			return nil
-		}
-
-		st, err := Open(ctx, filepath.Dir(p))
-		if err != nil {
-			return err
-		}
-		environments = append(environments, st)
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return environments, nil
+	return st, nil
 }

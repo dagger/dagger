@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger/state"
@@ -24,7 +23,7 @@ var initCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		dir := viper.GetString("environment")
+		dir := viper.GetString("workspace")
 		if dir == "" {
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -36,27 +35,11 @@ var initCmd = &cobra.Command{
 			dir = cwd
 		}
 
-		var name string
-		if len(args) > 0 {
-			name = args[0]
-		} else {
-			name = getNewEnvironmentName(dir)
-		}
-
-		_, err := state.Init(ctx, dir, name)
+		_, err := state.Init(ctx, dir)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to initialize")
+			lg.Fatal().Err(err).Msg("failed to initialize workspace")
 		}
 	},
-}
-
-func getNewEnvironmentName(dir string) string {
-	dirName := filepath.Base(dir)
-	if dirName == "/" {
-		return "root"
-	}
-
-	return dirName
 }
 
 func init() {
