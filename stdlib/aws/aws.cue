@@ -9,11 +9,11 @@ import (
 // Base AWS Config
 #Config: {
 	// AWS region
-	region: string
+	region: string @dagger(input)
 	// AWS access key
-	accessKey: dagger.#Secret
+	accessKey: dagger.#Secret @dagger(input)
 	// AWS secret key
-	secretKey: dagger.#Secret
+	secretKey: dagger.#Secret @dagger(input)
 }
 
 // Re-usable aws-cli component
