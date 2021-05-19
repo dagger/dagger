@@ -9,7 +9,7 @@ import (
 #Put: {
 
 	// AWS Config
-	config: aws.#Config @dagger(input)
+	config: aws.#Config
 
 	// Source Artifact to upload to S3
 	source?: dagger.#Artifact @dagger(input)
