@@ -42,22 +42,28 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes/helm --input-dir kubeconfig=~/.kube --input-dir TestHelmSimpleChart.deploy.chartSource="$TESTDIR"/stdlib/kubernetes/helm/testdata/mychart
 }
 
-@test "stdlib: s3" {
+@test "stdlib: aws: s3" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
 
     "$DAGGER" compute "$TESTDIR"/stdlib/aws/s3 --input-dir TestDirectory="$TESTDIR"/stdlib/aws/s3/testdata --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
 }
 
-@test "stdlib: aws" {
+@test "stdlib: aws: eks" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
 
     "$DAGGER" compute "$TESTDIR"/stdlib/aws/eks --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
 }
 
-@test "stdlib: ecr" {
+@test "stdlib: aws: ecr" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
 
     "$DAGGER" compute "$TESTDIR"/stdlib/aws/ecr --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+}
+
+@test "stdlib: gcp: gke" {
+    skip_unless_secrets_available "$TESTDIR"/stdlib/gcp/inputs.yaml
+
+    "$DAGGER" compute "$TESTDIR"/stdlib/gcp/gke --input-yaml "$TESTDIR"/stdlib/gcp/inputs.yaml
 }
 
 @test "stdlib: docker-build" {
