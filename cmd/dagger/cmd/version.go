@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cli/cli/utils"
 	goVersion "github.com/hashicorp/go-version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/term"
 )
 
 const (
@@ -72,7 +72,7 @@ func init() {
 
 func isCheckOutdated(path string) bool {
 	// Ignore if not in terminal
-	if !utils.IsTerminal(os.Stdout) || !utils.IsTerminal(os.Stderr) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) || !term.IsTerminal(int(os.Stderr.Fd())) {
 		return false
 	}
 
