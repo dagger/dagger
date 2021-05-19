@@ -10,7 +10,6 @@ import (
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
 
-	"cuelang.org/go/cue/ast"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -69,26 +68,7 @@ var listCmd = &cobra.Command{
 			fmt.Fprintln(w, "Path\tType")
 
 			for _, val := range inputs {
-				// check for references
-				// this is here because it has issues
-				// so we wrap it in a flag to control its usage while debugging
-				_, vals := val.Expr()
-				if !viper.GetBool("keep-references") {
-					foundRef := false
-					for _, ve := range vals {
-						s := ve.Source()
-						switch s.(type) {
-						case *ast.Ident:
-							foundRef = true
-						}
-					}
-					if foundRef {
-						continue
-					}
-				}
-
 				fmt.Fprintf(w, "%s\t%v\n", val.Path(), val)
-
 			}
 			// ensure we flush the output buf
 			w.Flush()
@@ -104,8 +84,6 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().BoolP("keep-references", "R", false, "Try to eliminate references")
-
 	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
 		panic(err)
 	}
