@@ -229,3 +229,32 @@ func (v *Value) IsEmptyStruct() bool {
 func (v *Value) Cue() cue.Value {
 	return v.val
 }
+
+// Returns true if value has a dagger attribute (eg. artifact, secret, input)
+func (v *Value) HasAttr(filter ...string) bool {
+	attrs := v.val.Attributes(cue.FieldAttr)
+
+	for _, attr := range attrs {
+		name := attr.Name()
+		// match `@dagger(...)`
+		if name == "dagger" {
+			// did not provide filter, match any @dagger attr
+			if len(filter) == 0 {
+				return true
+			}
+
+			// loop over args (CSV content in attribute)
+			for i := 0; i < attr.NumArgs(); i++ {
+				key, _ := attr.Arg(i)
+				// one or several values where provided, filter
+				for _, val := range filter {
+					if key == val {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
