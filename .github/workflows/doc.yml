@@ -22,7 +22,7 @@ jobs:
         env:
           API_TOKEN_GITHUB: ${{ secrets.DAGGERCI_TOKEN }}
         with:
-          source_file: "doc/"
+          source_file: "doc/."
           destination_repo: "dagger/launch.dagger.io"
           destination_folder: "site/doc"
           user_email: "noreply@dagger.io"
