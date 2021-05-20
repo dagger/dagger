@@ -95,7 +95,6 @@ import (
 				]
 				"env": env
 				"env": {
-					AWS_CONFIG_FILE:       "/cache/aws/config"
 					AWS_ACCESS_KEY_ID:     config.accessKey
 					AWS_SECRET_ACCESS_KEY: config.secretKey
 					AWS_DEFAULT_REGION:    config.region
@@ -103,7 +102,6 @@ import (
 					AWS_DEFAULT_OUTPUT:    "json"
 					AWS_PAGER:             ""
 				}
-				mount: "/cache/aws": "cache"
 				if dir != _|_ {
 					mount: "/inputs/source": from: dir
 				}
