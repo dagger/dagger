@@ -1,0 +1,53 @@
+package gcp
+
+import (
+	"dagger.io/dagger/op"
+	"dagger.io/alpine"
+)
+
+// Re-usable gcloud component
+#GCloud: {
+	config:  #Config
+	version: string | *"288.0.0"
+	package: [string]: string
+
+	#up: [
+		op.#Load & {
+			from: alpine.#Image & {
+				"package": package
+				"package": bash:    "=~5.1"
+				"package": python3: "=~3.8"
+				"package": jq:      "=~1.6"
+				"package": curl:    "=~7.76"
+			}
+		},
+
+		// Install the gcloud cli
+		op.#Exec & {
+			args: ["sh", "-c",
+				#"""
+                curl -sfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-\#(version)-linux-x86_64.tar.gz | tar -C /usr/local -zx
+                ln -s /usr/local/google-cloud-sdk/bin/gcloud /usr/local/bin
+                """#,
+			]
+		},
+
+		// Setup auth
+		op.#WriteFile & {
+			dest:    "/service_key"
+			content: config.serviceKey
+		},
+
+		op.#Exec & {
+			args: ["gcloud", "-q", "auth", "activate-service-account", "--key-file=/service_key"]
+		},
+
+		op.#Exec & {
+			args: ["gcloud", "-q", "config", "set", "project", config.project]
+		},
+
+		op.#Exec & {
+			args: ["gcloud", "-q", "config", "set", "compute/zone", config.region]
+		},
+	]
+}
