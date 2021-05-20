@@ -14,8 +14,7 @@ import (
 
 	// ECR credentials
 	username: "AWS"
-	// FIXME Exected twice and trigger error : "TestECR.creds.secret: 2 errors in empty disjunction"
-	// Happend because of v0.8.3 of buildkit container
+
 	secret: out
 
 	aws.#Script & {
