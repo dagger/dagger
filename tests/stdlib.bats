@@ -88,6 +88,13 @@ setup() {
     assert_success
 }
 
+@test "stdlib: docker run" {
+    skip_unless_secrets_available "$TESTDIR"/stdlib/docker/run/key.yaml
+
+    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/key.yaml "$TESTDIR"/stdlib/docker/run/simple/
+    assert_success
+}
+
 @test "stdlib: terraform" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
 

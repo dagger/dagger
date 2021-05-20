@@ -1,0 +1,34 @@
+registry:
+    username: ENC[AES256_GCM,data:8AH6p9WHidanCA==,iv:ezThCQJv+bVBf8SdfSa2HFoP+eu6IZMPl5xvMOGDcps=,tag:mzR7xTKeQNDvkyd2Dm3AKw==,type:str]
+    secret: ENC[AES256_GCM,data:GtuaBAhFBw2JFaeuOm6mUr3m1j5fvCJjcWAzjsdU2xASFxwO,iv:YAXcRzBoemmef5PBdAOBa5acNPo4BoKH7Ngud/CWYfA=,tag:MCCUCOSutjRCI92raYrxdg==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age: []
+    lastmodified: "2021-04-27T00:59:33Z"
+    mac: ENC[AES256_GCM,data:qk+oo4m5OpfuQ+R3pZUuvn+gqAk15OAJzOULrlYqt1FIDRk/Q5ah5QpIbVxeP1EDVyuY/V/E0ZngRlSV7Dyx6Cp/moMd8AFBHNgnTB+Lq+NmZ9HR1QMOxpbMpJmUGn7MqQ1Ys4wy0p2q2Y2+TuUpKwmRGJbGVYEVmqvV5OT3jhc=,iv:QsUFa2GVzy6iqqLXRz8HascQZPIIzKBhxHdlabov02k=,tag:7lk63FeXsOlTCgfmWd7zrg==,type:str]
+    pgp:
+        - created_at: "2021-03-18T22:59:59Z"
+          enc: |
+            -----BEGIN PGP MESSAGE-----
+
+            hQIMAzqVY590vudzAQ//etnfnpfCo9rAkctR+Fwg/7VdVL3Rov+6gnyjUnoN1BS1
+            8jnBF/86AZ7uK89dTcTZCsK1hKPxeYg1kJTKpA+zfDORupzTWcMrRyjwNk5wQ2Vg
+            N1adUwFsBQpk8WptpsU/ro6+3yH+Nn35begs6hP2fH/EQ9XOxw5gY0kp0AFjGaKJ
+            tRZVrr3f2hpLESo6LILRO97UXZiGcwTn5onslECL92260cU1nqEQp+ESK7XrdYIG
+            99oM3eXEraKw4WuQDaDE6U135aUl6vIJWD1JZzyr3RW3+5O9pn5rpN3Wc0TbDR6+
+            9Fs/TjuA1h5eJzbt+lkA74BtxPOBv9O7HJnWJpXjiG0VUGHdFXoq5Tr5Ol68RQxa
+            BWe7IfTO6FHN0xOl1dY7cn5jtf+xlFjL86s9OkrJUFa9lbQx8L/QPCeA2Xiu4tpW
+            +wTSel13k8Uv/JSGgLwSohW6N4XTQYdxPkO+a1V08adwFBXaGgqxfg0rNehcS5fp
+            y3TEq84cOlBsaI+rYpnOTPEajtYWfTe8WFf+lBOn1vZ9EiupjZtefGX2MIWPXoaK
+            kVBgRvzjp4/BY68yRvdi5sZFd2nakl+DOXzouuFbzsOkxL3o9FA9aCVsXtFqqzSG
+            Hvq4ZJ5ivXf6vQf+s7Tgc4qxW2CQwIPZVkHhQossrWgtkQ4WDAyzfhF0YuhEnpLS
+            XgGNLr82LMVmempaJd7GfAR2nwGnLUTYny1KoiW/1ie6DPwLZBX/UxPOplaS5wYH
+            Xd3gV3smg5xZ7/rfvzKTzJ1a5yH6D3xI05UtnUWdqojONcXS9NS+P7RArngJwSs=
+            =m0OS
+            -----END PGP MESSAGE-----
+          fp: 6CB37404020B5F0A0B41B5BB225EBAB0B936AC65
+    unencrypted_suffix: _unencrypted
+    version: 3.7.1

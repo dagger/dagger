@@ -46,7 +46,7 @@ import (
 	host: string
 
 	// Remote user
-	user: *"root" | string
+	user: string
 
 	// Ssh remote port
 	port: *22 | int
@@ -65,19 +65,20 @@ import (
 
 	// Image registry
 	registry?: {
+		target:   string
 		username: string
 		secret:   dagger.#Secret
 	}
 
 	#code: #"""
 			# Add host to known hosts
-			ssh -i /key -o "UserKnownHostsFile $HOME/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p \#(port) \#(user)@\#(host) /bin/true &> /dev/null
+			ssh -i /key -o "UserKnownHostsFile $HOME/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p \#(port) \#(user)@\#(host) /bin/true > /dev/null 2>&1
 
 			# Start ssh-agent
-			eval $(ssh-agent) &> /dev/null
+			eval $(ssh-agent) > /dev/null 2>&1
 
 			# Add key
-			ssh-add /key &> /dev/null
+			ssh-add /key > /dev/null 2>&1
 
 			# Run detach container
 			OPTS=""

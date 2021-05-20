@@ -1,0 +1,31 @@
+key: ENC[AES256_GCM,data:WVwwHYqXbaMtZu3bMbNrwhexIsfUHRaocq+6yvS55I+9BI2T9X2xvFz7IiMC+1gY9tcVkq4Fs0/bIOjDpjQ14GPNxxnbhtzyp7nFI7EnrSWCwRnHjmc+2fMcpdRFRDaYvZt+aHA9x874nCOT5DQLniKTwi8WAKMcKVuMg6g+gHVXtrFEG0d+1pJuypRannXgOlt2TgpNO9VhZFFivJbJ5fATX0xMuctBEV6CVR2gBqx62Zqz1C/znDv+BiEYHntFeXntb/n0gIL2gmTAcQbBMC5e0i8LmqmZkbCgs3GwiImNEnjaSQf97DsrfzSOEAPpz0hCo7EIF9gQHimNads/WYDvSvvH4MD1ReLBtQD22jO3JFxFrTyimAKKd0IqdMsh+S2ZqxeG8tt2yq0dEYWUdVxPpr5fgmlsfHuBE+qbPE+s2QvWvgFo3ZIaxvcKe1NSVLrNh2u666uUJK2/wetzLllYomkqvqmJxUtJHtyQg+cDOErKomFXXbeSoMw9/xnTpR5oHj7icAqehYilAm71cKWA1qpuUtbhYe8Z,iv:b3AG6AWe/Rw26R1ZPHvTGoONpjQMdf/OWLoazyySRig=,tag:lv413iPTOejZwPdUDGUsAw==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    lastmodified: '2021-05-21T13:38:51Z'
+    mac: ENC[AES256_GCM,data:RqXtx/iwDw0y35cJV7JHxRF8fZHW/E8KFf0akDZSjHn3N71pCnzA+gNh8gyiFb4PDlSKSMSt58TdaVQMAClkdKMvrihlYexaTE3BHTT1PSL9mIsfQw7GEmiaAh/bsitlFrEcLEoxYxeP8tjTFiIQ8tEDjGqp4uqbYCDpxODVfVw=,iv:CIqIwCAcdGl4Sid4h58u7vV+JdBkGVVnYtkSz9lhrgI=,tag:r+VrlOwJtwJ97SjecM5PNQ==,type:str]
+    pgp:
+    -   created_at: '2021-03-18T22:59:59Z'
+        enc: |
+            -----BEGIN PGP MESSAGE-----
+
+            hQIMAzqVY590vudzAQ//etnfnpfCo9rAkctR+Fwg/7VdVL3Rov+6gnyjUnoN1BS1
+            8jnBF/86AZ7uK89dTcTZCsK1hKPxeYg1kJTKpA+zfDORupzTWcMrRyjwNk5wQ2Vg
+            N1adUwFsBQpk8WptpsU/ro6+3yH+Nn35begs6hP2fH/EQ9XOxw5gY0kp0AFjGaKJ
+            tRZVrr3f2hpLESo6LILRO97UXZiGcwTn5onslECL92260cU1nqEQp+ESK7XrdYIG
+            99oM3eXEraKw4WuQDaDE6U135aUl6vIJWD1JZzyr3RW3+5O9pn5rpN3Wc0TbDR6+
+            9Fs/TjuA1h5eJzbt+lkA74BtxPOBv9O7HJnWJpXjiG0VUGHdFXoq5Tr5Ol68RQxa
+            BWe7IfTO6FHN0xOl1dY7cn5jtf+xlFjL86s9OkrJUFa9lbQx8L/QPCeA2Xiu4tpW
+            +wTSel13k8Uv/JSGgLwSohW6N4XTQYdxPkO+a1V08adwFBXaGgqxfg0rNehcS5fp
+            y3TEq84cOlBsaI+rYpnOTPEajtYWfTe8WFf+lBOn1vZ9EiupjZtefGX2MIWPXoaK
+            kVBgRvzjp4/BY68yRvdi5sZFd2nakl+DOXzouuFbzsOkxL3o9FA9aCVsXtFqqzSG
+            Hvq4ZJ5ivXf6vQf+s7Tgc4qxW2CQwIPZVkHhQossrWgtkQ4WDAyzfhF0YuhEnpLS
+            XgGNLr82LMVmempaJd7GfAR2nwGnLUTYny1KoiW/1ie6DPwLZBX/UxPOplaS5wYH
+            Xd3gV3smg5xZ7/rfvzKTzJ1a5yH6D3xI05UtnUWdqojONcXS9NS+P7RArngJwSs=
+            =m0OS
+            -----END PGP MESSAGE-----
+        fp: 6CB37404020B5F0A0B41B5BB225EBAB0B936AC65
+    unencrypted_suffix: _unencrypted
+    version: 3.7.1
