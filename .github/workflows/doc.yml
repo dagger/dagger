@@ -2,22 +2,28 @@ name: Doc
 
 on:
   push:
+    branches:
+      - main
+    tags:
+      - v*
     paths:
-      - 'doc/**'
+      - "doc/**"
 
 jobs:
   copy-file:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-    - name: Pushes docs file
-      uses: slumbering/copy_file_to_another_repo_action@main
-      env:
-        API_TOKEN_GITHUB: ${{ secrets.DAGGERCI_TOKEN }}
-      with:
-        source_file: 'doc/'
-        destination_repo: 'dagger/launch.dagger.io'
-        destination_folder: 'site/'
-        user_email: 'noreply@dagger.io'
-        user_name: 'dagger-bot'
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Pushes docs file
+        uses: dagger/doc_copy_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.DAGGERCI_TOKEN }}
+        with:
+          source_file: "doc/"
+          destination_repo: "dagger/launch.dagger.io"
+          destination_folder: "site/doc"
+          user_email: "noreply@dagger.io"
+          user_name: "dagger-bot"
