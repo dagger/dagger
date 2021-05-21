@@ -6,23 +6,22 @@ Dagger can be configured to use an existing buildkit daemon, running either loca
 
 To use a buildkit daemon listening on TCP port `1234` on localhost:
 
-```
-$ export BUILDKIT_HOST=tcp://localhost:1234
+```shell
+export BUILDKIT_HOST=tcp://localhost:1234
 ```
 
 To use a buildkit daemon running in a container named "super-buildkit" on the local docker host:
 
-```
-$ export BUILDKIT_HOST=docker-container://super-buildkit
+```shell
+export BUILDKIT_HOST=docker-container://super-buildkit
 ```
 
 To use a buildkit daemon running on a remote docker host (be careful to properly secure remotely accessible docker hosts!)
 
+```shell
+export BUILDKIT_HOST=docker-container://super-buildkit
+export DOCKER_HOST=tcp://my-remote-docker-host:2376
 ```
-$ export BUILDKIT_HOST=docker-container://super-buildkit
-$ export DOCKER_HOST=tcp://my-remote-docker-host:2376
-```
-
 
 ## OpenTracing Support
 
@@ -31,7 +30,7 @@ Both Dagger and buildkit support opentracing. To capture traces to
 
 A `docker-compose` file is available to help bootstrap the tracing environment:
 
-```sh
+```shell
 docker-compose -f ./tracing.compose.yaml up -d
 export JAEGER_TRACE=localhost:6831
 export BUILDKIT_HOST=docker-container://dagger-buildkitd-jaeger
@@ -40,4 +39,3 @@ dagger compute ...
 ```
 
 You can then go to [http://localhost:16686/](http://localhost:16686/) in your browser to see the traces.
-
