@@ -23,7 +23,9 @@ jobs:
     steps:
       - name: Set Version
         id: vars
-        run: echo ::set-output name=tag::${${GITHUB_REF#refs/*/}//main/devel}
+        run: |
+          tag=${GITHUB_REF#refs/*/}
+          [ "$tag" = "main" ] && echo ::set-output name=tag::devel || echo ::set-output name=tag::$tag
 
       # fetch-depth: '0' enables listing all tags for version selector
       - uses: actions/checkout@v2
