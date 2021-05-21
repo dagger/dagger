@@ -9,8 +9,6 @@ import (
 // AWS Config for credentials and default region
 awsConfig: aws.#Config & {
 	region: *"us-east-1" | string @dagger(input)
-	accessKey: dagger.#Secret @dagger(input)
-	secretKey: dagger.#Secret @dagger(input)
 }
 
 // Name of the S3 bucket to use
