@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"go.mozilla.org/sops/v3"
-	"go.mozilla.org/sops/v3/aes"
+	sopsaes "go.mozilla.org/sops/v3/aes"
 	sopsage "go.mozilla.org/sops/v3/age"
 	"go.mozilla.org/sops/v3/cmd/sops/common"
-	"go.mozilla.org/sops/v3/cmd/sops/formats"
-	sopsdecrypt "go.mozilla.org/sops/v3/decrypt"
 	sopskeys "go.mozilla.org/sops/v3/keys"
 	sopsyaml "go.mozilla.org/sops/v3/stores/yaml"
 	"go.mozilla.org/sops/v3/version"
+)
+
+var (
+	cipher = sopsaes.NewCipher()
 )
 
 // setupEnv: hack to inject a SOPS env var for age
@@ -65,7 +68,7 @@ func Encrypt(ctx context.Context, path string, plaintext []byte, key string) ([]
 	}
 
 	err = common.EncryptTree(common.EncryptTreeOpts{
-		DataKey: dataKey, Tree: &tree, Cipher: aes.NewCipher(),
+		DataKey: dataKey, Tree: &tree, Cipher: cipher,
 	})
 	if err != nil {
 		return nil, err
@@ -104,7 +107,7 @@ func Reencrypt(_ context.Context, path string, plaintext []byte) ([]byte, error)
 		return nil, err
 	}
 	err = common.EncryptTree(common.EncryptTreeOpts{
-		DataKey: key, Tree: &tree, Cipher: aes.NewCipher(),
+		DataKey: key, Tree: &tree, Cipher: cipher,
 	})
 	if err != nil {
 		return nil, err
@@ -119,5 +122,38 @@ func Decrypt(_ context.Context, encrypted []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return sopsdecrypt.DataWithFormat(encrypted, formats.Yaml)
+	store := &sopsyaml.Store{}
+
+	// Load SOPS file and access the data key
+	tree, err := store.LoadEncryptedFile(encrypted)
+	if err != nil {
+		return nil, err
+	}
+	key, err := tree.Metadata.GetDataKey()
+	if err != nil {
+		return nil, err
+	}
+
+	// Decrypt the tree
+	mac, err := tree.Decrypt(key, cipher)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compute the hash of the cleartext tree and compare it with
+	// the one that was stored in the document. If they match,
+	// integrity was preserved
+	originalMac, err := cipher.Decrypt(
+		tree.Metadata.MessageAuthenticationCode,
+		key,
+		tree.Metadata.LastModified.Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if originalMac != mac {
+		return nil, fmt.Errorf("failed to verify data integrity. expected mac %q, got %q", originalMac, mac)
+	}
+
+	return store.EmitPlainFile(tree.Branches)
 }
