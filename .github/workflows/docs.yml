@@ -21,9 +21,9 @@ jobs:
       AWS_DEFAULT_REGION: "us-east-1"
 
     steps:
-      - name: Set Tag Name
+      - name: Set Version
         id: vars
-        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+        run: echo ::set-output name=tag::${${GITHUB_REF#refs/*/}//main/devel}
 
       # fetch-depth: '0' enables listing all tags for version selector
       - uses: actions/checkout@v2
@@ -48,7 +48,7 @@ jobs:
       #              DEPLOY TO S3
       #################################################################
 
-      # deploy the site in the right foder ( tag or main)
+      # deploy the site in the right foder ( tag or devel)
       - name: S3 Sync
         uses: ItsKarma/aws-cli@v1.70.0
         with:
@@ -57,7 +57,7 @@ jobs:
       # list All Tags in json file for version selector
       # upload to /tags.json
       - name: Create tags.json
-        run: echo "[" {\"tag\"':' \"$(git tag -l "v*" | tr '\n' '|' | sed -e 's/|/"}, {\"tag\"':' "/g')main\"} "]" > tags.json
+        run: echo "[" {\"tag\"':' \"$(git tag -l "v*" | tr '\n' '|' | sed -e 's/|/"}, {\"tag\"':' "/g')devel\"} "]" > tags.json
       - name: Copy tags.json
         uses: ItsKarma/aws-cli@v1.70.0
         with:
@@ -69,10 +69,10 @@ jobs:
       - run: touch index.html
       - name: Redirect Latest tag on landing
         # FIXME
-        # if: ${{ steps.vars.outputs.tag != 'main' }}
+        # if: ${{ steps.vars.outputs.tag != 'devel' }}
         uses: ItsKarma/aws-cli@v1.70.0
         with:
           # FIXME: `--website-redirect` uses a permanent redirect, therefore if
           # we use the latest version it will be in cache forever.
           # args: s3 cp --cache-control max-age=0 --website-redirect /docs/${{steps.vars.outputs.tag}}/ ./index.html s3://docs.dagger.io/docs/
-          args: s3 cp --cache-control max-age=0 --website-redirect /main/ ./index.html s3://docs.dagger.io/
+          args: s3 cp --cache-control max-age=0 --website-redirect /devel/ ./index.html s3://docs.dagger.io/
