@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"dagger.io/go/dagger/keychain"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,7 +110,12 @@ func (w *Workspace) List(ctx context.Context) ([]*State, error) {
 		}
 		st, err := w.Get(ctx, f.Name())
 		if err != nil {
-			return nil, err
+			log.
+				Ctx(ctx).
+				Err(err).
+				Str("name", f.Name()).
+				Msg("failed to load environment")
+			continue
 		}
 		environments = append(environments, st)
 	}
