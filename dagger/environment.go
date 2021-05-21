@@ -296,11 +296,6 @@ func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 	})
 }
 
-func (e *Environment) ScanInputs() ([]*compiler.Value, error) {
-	vals, err := ScanInputs(e.plan)
-	if err != nil {
-		return nil, err
-	}
-
-	return vals, nil
+func (e *Environment) ScanInputs(ctx context.Context) []*compiler.Value {
+	return ScanInputs(ctx, e.plan)
 }

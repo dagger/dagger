@@ -1,82 +1,49 @@
 package dagger
 
 import (
-	"fmt"
+	"context"
 
-	"cuelang.org/go/cue"
 	"dagger.io/go/dagger/compiler"
+	"github.com/rs/zerolog/log"
 )
 
-// func isReference(val cue.Value) bool {
-// 	_, ref := val.ReferencePath()
-// 	isRef := len(ref.Selectors()) > 0
+func isReference(val *compiler.Value) bool {
+	_, ref := val.ReferencePath()
 
-// 	if isRef {
-// 		return true
-// 	}
-
-// 	_, vals := val.Expr()
-// 	for _, v := range vals {
-// 		// walk recursively
-// 		if v.Path().String() == val.Path().String() {
-// 			// avoid loop by checking the same value
-// 			continue
-// 		}
-// 		return isReference(v)
-// 	}
-
-// 	return isRef
-// }
-
-// walk recursively to find references
-// func isReference(val cue.Value) bool {
-// 	_, vals := val.Expr()
-// 	for _, v := range vals {
-// 		// walk recursively
-// 		if v.Path().String() == val.Path().String() {
-// 			// avoid loop by checking the same value
-// 			continue
-// 		}
-// 		return isReference(v)
-// 	}
-
-// 	_, ref := val.ReferencePath()
-// 	return len(ref.Selectors()) > 0
-// }
-
-func isReference(val cue.Value) bool {
-	checkRef := func(vv cue.Value) bool {
-		_, ref := vv.ReferencePath()
-		return len(ref.Selectors()) > 0
+	if ref.String() == "" || val.Path().String() == ref.String() {
+		return false
 	}
 
-	_, vals := val.Expr()
-	for _, v := range vals {
-		if checkRef(v) {
-			return true
+	for _, s := range ref.Selectors() {
+		if s.IsDefinition() {
+			return false
 		}
 	}
 
-	return checkRef(val)
+	return true
 }
 
-func ScanInputs(value *compiler.Value) ([]*compiler.Value, error) {
-	vals := []*compiler.Value{}
+func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
+	lg := log.Ctx(ctx)
+	inputs := []*compiler.Value{}
 
 	value.Walk(
 		func(val *compiler.Value) bool {
-			// if isReference(val.Cue()) {
-			// 	fmt.Println("### isReference ->", val.Cue().Path())
-			// 	return false
-			// }
-
-			if val.HasAttr("input") && !isReference(val.Cue()) {
-				fmt.Printf("#### FOUND: %s\n", val.Path())
-				vals = append(vals, val)
+			if isReference(val) {
+				lg.Debug().Str("value.Path", val.Path().String()).Msg("found reference, stop walk")
+				return false
 			}
+
+			if !val.HasAttr("input") {
+				return true
+			}
+
+			lg.Debug().Str("value.Path", val.Path().String()).Msg("found input")
+			inputs = append(inputs, val)
+
 			return true
 		}, nil,
 	)
 
-	return vals, nil
+	return inputs
 }
