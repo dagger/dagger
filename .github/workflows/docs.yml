@@ -18,7 +18,7 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.DOCS_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: "eu-west-1"
+      AWS_DEFAULT_REGION: "eu-east-1"
 
     steps:
       - name: Set Tag Name
@@ -52,7 +52,7 @@ jobs:
       - name: S3 Sync
         uses: ItsKarma/aws-cli@v1.70.0
         with:
-          args: s3 sync --delete --acl public-read ./tools/gendocs/public/ s3://daggerdoc.humans-it.com/${{steps.vars.outputs.tag}}/
+          args: s3 sync --delete ./tools/gendocs/public/ s3://docs.dagger.io/${{steps.vars.outputs.tag}}/
 
       # list All Tags in json file for version selector
       # upload to /tags.json
@@ -61,7 +61,7 @@ jobs:
       - name: Copy tags.json
         uses: ItsKarma/aws-cli@v1.70.0
         with:
-          args: s3 cp --acl public-read ./tags.json s3://daggerdoc.humans-it.com/
+          args: s3 cp ./tags.json s3://docs.dagger.io/
 
       # landing alway on latest tag
       # use S3 Rediret objet
@@ -74,5 +74,5 @@ jobs:
         with:
           # FIXME: `--website-redirect` uses a permanent redirect, therefore if
           # we use the latest version it will be in cache forever.
-          # args: s3 cp --cache-control max-age=0 --acl public-read --website-redirect /docs/${{steps.vars.outputs.tag}}/ ./index.html s3://daggerdoc.humans-it.com/docs/
-          args: s3 cp --cache-control max-age=0 --acl public-read --website-redirect /main/ ./index.html s3://daggerdoc.humans-it.com/
+          # args: s3 cp --cache-control max-age=0 --website-redirect /docs/${{steps.vars.outputs.tag}}/ ./index.html s3://docs.dagger.io/docs/
+          args: s3 cp --cache-control max-age=0 --website-redirect /main/ ./index.html s3://docs.dagger.io/
