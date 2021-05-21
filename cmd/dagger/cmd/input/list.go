@@ -9,6 +9,7 @@ import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/compiler"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -36,17 +37,6 @@ var listCmd = &cobra.Command{
 
 		environment := common.GetCurrentEnvironmentState(ctx, store)
 
-		// print any persisted inputs
-		if len(environment.Inputs) > 0 {
-			fmt.Println("Saved Inputs:")
-			for _, input := range environment.Inputs {
-				// Todo, how to pull apart an input to print relevant information
-				fmt.Printf("%s: %v\n", input.Key, input.Value)
-			}
-			// add some space
-			fmt.Println()
-		}
-
 		lg = lg.With().
 			Str("environmentName", environment.Name).
 			Str("environmentId", environment.ID).
@@ -58,21 +48,32 @@ var listCmd = &cobra.Command{
 		}
 
 		_, err = c.Do(ctx, environment, func(lCtx context.Context, lDeploy *dagger.Environment, lSolver dagger.Solver) error {
-			inputs, err := lDeploy.ScanInputs()
-			if err != nil {
-				return err
-			}
+			inputs := lDeploy.ScanInputs(ctx)
 
-			fmt.Println("Plan Inputs:")
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Path\tType")
+			fmt.Fprintln(w, "Input\tType\tValue\tSet by user\tSet in plan")
 
-			for _, val := range inputs {
-				fmt.Fprintf(w, "%s\t%v\n", val.Path(), val)
+			for _, inp := range inputs {
+				isConcrete := (inp.IsConcreteR() == nil)
+				_, hasDefault := inp.Default()
+				valStr := "-"
+				if isConcrete {
+					valStr, _ = inp.Cue().String()
+				}
+				if hasDefault {
+					valStr = fmt.Sprintf("%s (default)", valStr)
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%t\n",
+					inp.Path(),
+					getType(inp),
+					valStr,
+					isUserSet(environment, inp),
+					isConcrete,
+				)
 			}
-			// ensure we flush the output buf
-			w.Flush()
 
+			w.Flush()
 			return nil
 		})
 
@@ -81,6 +82,26 @@ var listCmd = &cobra.Command{
 		}
 
 	},
+}
+
+func isUserSet(env *dagger.EnvironmentState, val *compiler.Value) bool {
+	for _, i := range env.Inputs {
+		if val.Path().String() == i.Key {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getType(val *compiler.Value) string {
+	if val.HasAttr("artifact") {
+		return "dagger.#Artifact"
+	}
+	if val.HasAttr("secret") {
+		return "dagger.#Secret"
+	}
+	return val.Cue().IncompleteKind().String()
 }
 
 func init() {
