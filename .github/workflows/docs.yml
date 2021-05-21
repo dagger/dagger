@@ -1,0 +1,78 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+    paths:
+      - "docs/**"
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.DOCS_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: "eu-east-1"
+
+    steps:
+      - name: Set Tag Name
+        id: vars
+        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+
+      # fetch-depth: '0' enables listing all tags for version selector
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: "0"
+
+      #################################################################
+      #              BUILD SITE
+      #################################################################
+
+      # Install Node
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "14"
+      - run: yarn --cwd ./tools/gendocs
+      - name: Build Site
+        run: yarn --cwd ./tools/gendocs build --prefix-paths
+        env:
+          VERSION: ${{steps.vars.outputs.tag}}
+
+      #################################################################
+      #              DEPLOY TO S3
+      #################################################################
+
+      # deploy the site in the right foder ( tag or main)
+      - name: S3 Sync
+        uses: ItsKarma/aws-cli@v1.70.0
+        with:
+          args: s3 sync --delete ./tools/gendocs/public/ s3://docs.dagger.io/${{steps.vars.outputs.tag}}/
+
+      # list All Tags in json file for version selector
+      # upload to /tags.json
+      - name: Create tags.json
+        run: echo "[" {\"tag\"':' \"$(git tag -l "v*" | tr '\n' '|' | sed -e 's/|/"}, {\"tag\"':' "/g')main\"} "]" > tags.json
+      - name: Copy tags.json
+        uses: ItsKarma/aws-cli@v1.70.0
+        with:
+          args: s3 cp ./tags.json s3://docs.dagger.io/
+
+      # landing alway on latest tag
+      # use S3 Rediret objet
+      # upload to /docs/index.html
+      - run: touch index.html
+      - name: Redirect Latest tag on landing
+        # FIXME
+        # if: ${{ steps.vars.outputs.tag != 'main' }}
+        uses: ItsKarma/aws-cli@v1.70.0
+        with:
+          # FIXME: `--website-redirect` uses a permanent redirect, therefore if
+          # we use the latest version it will be in cache forever.
+          # args: s3 cp --cache-control max-age=0 --website-redirect /docs/${{steps.vars.outputs.tag}}/ ./index.html s3://docs.dagger.io/docs/
+          args: s3 cp --cache-control max-age=0 --website-redirect /main/ ./index.html s3://docs.dagger.io/
