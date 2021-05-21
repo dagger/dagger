@@ -18,24 +18,22 @@ system changes.
 
 ## Learn More
 
-* [Dagger vs. Other Software](doc/vs)
-* [Dagger Programming Guide](doc/programming)
-* [Dagger Operator Manual](doc/operator)
-
+* [Dagger vs. Other Software](vs)
+* [Dagger Programming Guide](programming)
+* [Dagger Operator Manual](operator)
 
 ## Download and Install
 
-* [Install Dagger from source](doc/install)
-* Binary distributions [*coming soon*]
+* [Install Dagger](install)
 
 ## Community
 
 Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
 We welcome beginners and experts alike!
 
-
 ## Alpha disclaimer
 
-Dagger is *alpha-quality software*. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still willing to try it, thank you! We appreciate your help and encourage you to ask questions and report issues.
-
-
+Dagger is *alpha-quality software*. It has many bugs, the user interface is
+minimal, and it may change in incompatible ways at any time. If you are still
+willing to try it, thank you! We appreciate your help and encourage you to ask
+questions and report issues.

@@ -9,15 +9,17 @@ const Select = () => {
 
     useEffect(() => {
         async function getTags() {
-            const fetchTags = await fetch('https://s3-eu-west-1.amazonaws.com/daggerdoc.humans-it.com/tags.json').then(result => result.json());
-            setTagsList(fetchTags);
+            const fetchTags = await fetch('/tags.json').then(result => result.json());
+            if (fetchTags.length > 0) {
+                setTagsList(fetchTags);
+            }
         }
 
         getTags()
     }, [])
 
     return (
-        <SelectStyled value={currentLocation[currentLocation.length - 1]} onChange={(e) => isBrowser ? window.location.pathname = `/${e.currentTarget.value}/index.html` : null}>
+        <SelectStyled value={currentLocation[currentLocation.length - 1]} onChange={(e) => isBrowser ? window.location.pathname = `/${e.currentTarget.value}` : null}>
             {tagsList.map(t => (
                 <option>{t.tag}</option>
             ))}
