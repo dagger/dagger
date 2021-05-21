@@ -7,7 +7,6 @@ import (
 // An artifact such as source code checkout, container image, binary archive...
 // May be passed as user input, or computed by a buildkit pipeline
 
-// FIXME (perf). See https://github.com/dagger/dagger/issues/445
 #Artifact: {
 	@dagger(artifact)
 	#up: [...op.#Op]

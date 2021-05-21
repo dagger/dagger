@@ -11,11 +11,13 @@ func isReference(val *compiler.Value) bool {
 	_, ref := val.ReferencePath()
 
 	if ref.String() == "" || val.Path().String() == ref.String() {
+		// not a reference
 		return false
 	}
 
 	for _, s := range ref.Selectors() {
 		if s.IsDefinition() {
+			// if we reference to a definition, we skip the check
 			return false
 		}
 	}
