@@ -145,8 +145,10 @@ func (v *Value) List() ([]*Value, error) {
 }
 
 // Recursive concreteness check.
-func (v *Value) IsConcreteR() error {
-	return v.val.Validate(cue.Concrete(true))
+func (v *Value) IsConcreteR(opts ...cue.Option) error {
+	o := []cue.Option{cue.Concrete(true)}
+	o = append(o, opts...)
+	return v.val.Validate(o...)
 }
 
 func (v *Value) Walk(before func(*Value) bool, after func(*Value)) {
@@ -232,7 +234,7 @@ func (v *Value) Cue() cue.Value {
 
 // Returns true if value has a dagger attribute (eg. artifact, secret, input)
 func (v *Value) HasAttr(filter ...string) bool {
-	attrs := v.val.Attributes(cue.FieldAttr)
+	attrs := v.val.Attributes(cue.ValueAttr)
 
 	for _, attr := range attrs {
 		name := attr.Name()
@@ -257,4 +259,14 @@ func (v *Value) HasAttr(filter ...string) bool {
 	}
 
 	return false
+}
+
+func (v *Value) Dereference() *Value {
+	dVal := cue.Dereference(v.val)
+	return v.cc.Wrap(dVal)
+}
+
+func (v *Value) Default() (*Value, bool) {
+	val, hasDef := v.val.Default()
+	return v.cc.Wrap(val), hasDef
 }
