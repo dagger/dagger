@@ -43,51 +43,72 @@ import (
 
 #Run: {
 	// Remote host
-	host: string
+	host: string @dagger(input)
 
 	// Remote user
-	user: string
+	user: string @dagger(input)
 
 	// Ssh remote port
-	port: *22 | int
+	port: *22 | int @dagger(input)
 
 	// Ssh private key
-	key: dagger.#Artifact
+	key: dagger.#Artifact @dagger(input)
+
+	// User fingerprint
+	fingerprint?: string @dagger(input)
 
 	// Ssh passphrase
-	passphrase?: string
+	passphrase?: string @dagger(input)
 
 	// Image reference (e.g: nginx:alpine)
-	ref: string
+	ref: string @dagger(input)
 
 	// Container name
-	name?: string
+	name?: string @dagger(input)
 
 	// Image registry
 	registry?: {
 		target:   string
 		username: string
 		secret:   dagger.#Secret
-	}
+	} @dagger(input)
 
 	#code: #"""
-			# Add host to known hosts
-			ssh -i /key -o "UserKnownHostsFile $HOME/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p \#(port) \#(user)@\#(host) /bin/true > /dev/null 2>&1
+	export DOCKER_HOST="ssh://$DOCKER_USERNAME@$DOCKER_HOSTNAME:\#(port)"
 
-			# Start ssh-agent
-			eval $(ssh-agent) > /dev/null 2>&1
+	# Start ssh-agent
+	eval $(ssh-agent) > /dev/null
 
-			# Add key
-			ssh-add /key > /dev/null 2>&1
+	# Add key
+	message="$(ssh-keygen -y -f /key < /dev/null 2>&1)" || {
+		>&2 echo "$message"
+		exit 1
+	}
 
-			# Run detach container
-			OPTS=""
+	ssh-add /key > /dev/null
+	if [ "$?" != 0 ]; then
+		exit 1
+	fi
 
-			if [ ! -z $CONTAINER_NAME ]; then
-				OPTS="$OPTS --name $CONTAINER_NAME"
-			fi
+	if [[ ! -z $FINGERPRINT ]]; then
+		mkdir -p "$HOME"/.ssh
 
-			docker container run -d $OPTS \#(ref)
+		# Add user's fingerprint to known hosts
+		echo "$FINGERPRINT" >> "$HOME"/.ssh/known_hosts
+	else
+		# Add host to known hosts
+		ssh -i /key -o "UserKnownHostsFile "$HOME"/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p \#(port) "$DOCKER_USERNAME"@"$DOCKER_HOSTNAME" /bin/true > /dev/null 2>&1
+	fi
+
+
+	# Run detach container
+	OPTS=""
+
+	if [ ! -z "$CONTAINER_NAME" ]; then
+		OPTS="$OPTS --name $CONTAINER_NAME"
+	fi
+
+	docker container run -d $OPTS \#(ref)
 	"""#
 
 	#up: [
@@ -96,7 +117,7 @@ import (
 		op.#WriteFile & {
 			content: key
 			dest:    "/key"
-			mode:    0o600
+			mode:    0o400
 		},
 
 		if registry != _|_ {
@@ -105,11 +126,20 @@ import (
 
 		if passphrase != _|_ {
 			op.#WriteFile & {
-				content: #"""
-				#!/bin/sh
-				echo '\#(passphrase)'
-				"""#
+				content: passphrase
 				dest:    "/passphrase"
+				mode:    0o400
+			}
+		},
+
+		if passphrase != _|_ {
+			op.#WriteFile & {
+				content: #"""
+					#!/bin/bash
+					cat /passphrase
+					"""#
+				dest: "/get_passphrase"
+				mode: 0o500
 			}
 		},
 
@@ -129,13 +159,17 @@ import (
 				"/entrypoint.sh",
 			]
 			env: {
-				DOCKER_HOST: "ssh://\(user)@\(host):\(port)"
+				DOCKER_HOSTNAME: host
+				DOCKER_USERNAME: user
 				if passphrase != _|_ {
-					SSH_ASKPASS: "/passphrase"
-					DISPLAY:     ""
+					SSH_ASKPASS: "/get_passphrase"
+					DISPLAY:     "1"
 				}
 				if name != _|_ {
 					CONTAINER_NAME: name
+				}
+				if fingerprint != _|_ {
+					FINGERPRINT: fingerprint
 				}
 			}
 		},

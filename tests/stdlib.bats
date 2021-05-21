@@ -72,15 +72,15 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/gcp/gcr --input-yaml "$TESTDIR"/stdlib/gcp/inputs.yaml
 }
 
-@test "stdlib: docker-build" {
+@test "stdlib: docker: build" {
     "$DAGGER" compute "$TESTDIR"/stdlib/docker/build/ --input-dir source="$TESTDIR"/stdlib/docker/build
 }
 
-@test "stdlib: docker-dockerfile" {
+@test "stdlib: docker: dockerfile" {
     "$DAGGER" compute "$TESTDIR"/stdlib/docker/dockerfile/ --input-dir source="$TESTDIR"/stdlib/docker/dockerfile/testdata
 }
 
-@test "stdlib: docker-push-and-pull" {
+@test "stdlib: docker: push-and-pull" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/docker/push-pull/inputs.yaml
 
     # check that they succeed with the credentials
@@ -88,10 +88,21 @@ setup() {
     assert_success
 }
 
-@test "stdlib: docker run" {
+@test "stdlib: docker: run" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/docker/run/key.yaml
 
+    # Simple run
     run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/key.yaml "$TESTDIR"/stdlib/docker/run/simple/
+    assert_success
+
+    # Handle key with passphrase
+    skip_unless_secrets_available "$TESTDIR"/stdlib/docker/run/protected-key.yaml
+
+    # Fail if invalid password
+    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/protected-key.yaml "$TESTDIR"/stdlib/docker/run/wrrong-passphrase/
+    assert_failure
+
+    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/protected-key.yaml "$TESTDIR"/stdlib/docker/run/passphrase/
     assert_success
 }
 
