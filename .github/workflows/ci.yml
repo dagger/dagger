@@ -40,6 +40,12 @@ jobs:
         run: |
           make shellcheck cuelint check-buildkit-version
 
+      - name: Markdown Lint
+        uses: nosborn/github-action-markdown-cli@v1.1.1
+        with:
+          files: ./docs README.md
+          config_file: ".markdownlint.yaml"
+
   test:
     name: Test
     runs-on: ubuntu-latest

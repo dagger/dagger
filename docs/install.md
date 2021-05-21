@@ -55,19 +55,19 @@ From the **assets** section, download the archive corresponding to your OS and A
 
 You will need [Go](https://golang.org) version 1.16 or later.
 
-1. Clone the dagger repository
+1\. Clone the dagger repository
 
 ```shell
 git clone https://github.com/dagger/dagger.git
 ```
 
-2. Build the `dagger` binary.
+2\. Build the `dagger` binary.
 
 ```shell
 cd dagger; make
 ```
 
-3. Copy the `dagger` tool to a location listed in your `$PATH`. For example, to copy it to `/usr/local/bin`:
+3\. Copy the `dagger` tool to a location listed in your `$PATH`. For example, to copy it to `/usr/local/bin`:
 
 ```shell
 cp ./cmd/dagger/dagger /usr/local/bin

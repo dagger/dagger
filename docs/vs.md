@@ -1,6 +1,5 @@
 # Dagger vs. Other Software
 
-
 ## Dagger vs. PaaS (Heroku, Firebase, etc.)
 
 *Summary: Dagger can be used with or without a PaaS system.*
@@ -11,7 +10,6 @@ A PaaS system is a complete platform for deploying and running certain types of 
 * The drawback of using a PaaS system is lack of flexibility: only certain types of applications are supported.
 
 As an application grows, it is almost certain to outgrow the capabilities of a PaaS system, leaving no choice but to look for alternatives. A good strategy is to choose the right platform for each component. Some components continue to run on a PaaS system; others run on specialized infrastructure. This strategy can be implemented with Dagger: each component gets its own deployment plan expressed as code, and Dagger glues it all together into a single workflow.
-
 
 ## Dagger vs. artisanal deploy scripts
 

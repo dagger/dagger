@@ -8,7 +8,7 @@
 ## Programming in Cue
 
 [Cue](https://cuelang.org) is a next-generation data language by Marcel van Lohuizen and the spiritual successor
-of GCL, the language used to configure all of Google's infrastructure. 
+of GCL, the language used to configure all of Google's infrastructure.
 
 Cue extends JSON with powerful features:
 
@@ -22,44 +22,44 @@ To get started with Cue, we recommend the following resources:
 * [Cuetorials](https://cuetorials.com)
 * [Cue playground](https://cuelang.org/play/)
 
-
 ## Writing your first plan
 
 To create a Dagger plan:
 
-1. Create a new directory anywhere in your git repository.
+1\. Create a new directory anywhere in your git repository.
 
 For example: `mkdir staging`.
 
-2. Create a new file with the *.cue* extension, and open it with any text editor or IDE.
+2\. Create a new file with the *.cue* extension, and open it with any text editor or IDE.
 
 For example: `staging.cue`.
 
-3. Describe each relay in your plan as a field in the cue configuration.
+3\. Describe each relay in your plan as a field in the cue configuration.
 
 For example:
 
-```
+```cue
 package main
 
 import (
-	"dagger.io/docker"
-	"dagger.io/git"
+    "dagger.io/docker"
+    "dagger.io/git"
 )
 
 // Relay for fetching a git repository
 repo: git.#Repository & {
-	remote: "https://github.com/dagger/dagger"
-	ref: "main"
+    remote: "https://github.com/dagger/dagger"
+    ref: "main"
 }
 
 // Relay for building a docker image
 ctr: docker.#Build & {
-	source: repo
+    source: repo
 }
 ```
 
 For more inspiration, see these examples:
+
 * [Deploy a static page to S3](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-static-page-to-s3)
 * [Deploy a simple React application](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
 * [Deploy a complete JAMstack app](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-complete-jamstack-app)
@@ -67,40 +67,38 @@ For more inspiration, see these examples:
 * [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
 * [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
 
+4\. Extend your plan with relay definitions from [Dagger Universe](../stdlib), an encyclopedia of cue packages curated by the Dagger community.
 
-4. Extend your plan with relay definitions from [Dagger Universe](../stdlib), an encyclopedia of cue packages curated by the Dagger community.
-
-5. If you can't find the relay you need in the Universe, you can simply create your own.
+5\. If you can't find the relay you need in the Universe, you can simply create your own.
 
 For example:
 
-```
+```cue
 import (
-	"strings"
+    "strings"
 )
 
 // Create a relay definition which generates a greeting message
 #Greeting: {
-	salutation: string | *"hello"
-	name: string | *"world"
-	message: "\(strings.ToTitle(salutation)), \(name)!"
+    salutation: string | *"hello"
+    name: string | *"world"
+    message: "\(strings.ToTitle(salutation)), \(name)!"
 }
 ```
 
 You may then create any number of relays from the same definition:
 
-```
+```cue
 french: #Greeting & {
-	salutation: "bonjour"
-	name: "monde"
+    salutation: "bonjour"
+    name: "monde"
 }
 
 american: #Greeting & {
-	salutation: "hi"
-	name: "y'all"
+    salutation: "hi"
+    name: "y'all"
 }
 ```
-
 
 ## Concepts
 
@@ -115,13 +113,13 @@ It lays out the application's supply chain as a graph of interconnected nodes:
 * Software dependencies: operating systems, languages, libraries, frameworks, etc.
 
 The graph models the flow of code and data through the supply chain:
+
 * source code flows from a git repository to a build system;
 * system dependencies are combined in a docker image, then uploaded to a registry;
 * configuration files are generated then sent to a compute cluster or load balancer;
 * etc.
 
 Dagger plans are written in [Cue](https://cuelang.org), a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google.
-
 
 ### Environments
 
@@ -144,6 +142,7 @@ Relays are standalone software components: they are defined in [Cue](https://cue
 execute code in any language using the [Dagger pipeline API](FIXME).
 
 A relay is made of 3 parts:
+
 * Inputs: data received from the user, or upstream relays
 * A processing pipeline: code executed against each new input, using the [pipeline API](FIXME)
 * Outputs: data produced by the processing pipeline
@@ -151,7 +150,6 @@ A relay is made of 3 parts:
 Relays run in parallel, with their inputs and outputs interconnected into a special kind of graph,
 called a *DAG*. When a relay receives a new input, it runs it through the processing pipeline,
 and produces new outputs, which are propagated to downstream relays as inputs, and so on.
-
 
 ### Using third-party relays
 
@@ -161,26 +159,25 @@ lines of codes, simply by importing relays from third-party packages.
 For example, to create a plan involving Github, Heroku and Amazon RDS, one might import the three
 corresponding packages:
 
-```
+```cue
 import (
-	"dagger.io/github"
-	"dagger.io/heroku"
-	"dagger.io/amazon/rds"
+    "dagger.io/github"
+    "dagger.io/heroku"
+    "dagger.io/amazon/rds"
 )
 
 repo: github.#Repository & {
-	// Github configuration values
+    // Github configuration values
 }
 
 backend: heroku.#App & {
-	// Heroku configuration values
+    // Heroku configuration values
 }
 
 db: rds.#Database & {
-	// RDS configuration values
+    // RDS configuration values
 }
 ```
-
 
 ### Creating a new relay
 
