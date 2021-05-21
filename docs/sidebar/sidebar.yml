@@ -1,32 +1,24 @@
 # Sidebar navigation
 
-- label: 'Install deploy'
-  link: '/install'
+- label: Introduction
+  link: "/"
 
-- label: 'Operator'
-  link: '/operator'
+- label: "Getting started"
+  link: "/install"
 
-- label: 'Programming'
-  link: '/programming'
+- label: "Dagger vs. Other"
+  link: "/vs"
 
-- label: 'VS'
-  link: '/vs'
-
-- label: 'Getting started'
-  link: '/getting-started'
-
-- label: Usage
+- label: Guides
   items:
-    - label: 'Creating docs'
-      link: '/usage/creating-docs'
-    - label: 'Navigation'
-      link: '/usage/navigation'
-    - label: 'Shadowing'
-      link: '/usage/shadowing'
+    - label: "Programming Guide"
+      link: "/programming"
+    - label: "Operator Manual"
+      link: "/operator"
 
 - label: More
   items:
-    - label: FAQ
-      link: /faq
-    - label: 'Github'
+    - label: "GitHub"
       link: https://github.com/dagger/dagger
+    - label: "Discord"
+      link: https://discord.gg/Rmffpmc
