@@ -91,7 +91,7 @@ import (
 	"""#
 
 	#up: [
-		op.#FetchContainer & {ref: "index.docker.io/docker:latest"},
+		op.#Load & {from: #Client},
 
 		op.#WriteFile & {
 			content: key
