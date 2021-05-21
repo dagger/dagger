@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -167,12 +168,24 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 
 	manifestPath := path.Join(st.Path, manifestFile)
 
-	encrypted, err := keychain.Reencrypt(ctx, manifestPath, data)
+	currentEncrypted, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(manifestPath, encrypted, 0600); err != nil {
-		return err
+	currentPlain, err := keychain.Decrypt(ctx, currentEncrypted)
+	if err != nil {
+		return fmt.Errorf("unable to decrypt state: %w", err)
+	}
+
+	// Only update the encrypted file if there were changes
+	if bytes.Compare(data, currentPlain) != 0 {
+		encrypted, err := keychain.Reencrypt(ctx, manifestPath, data)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(manifestPath, encrypted, 0600); err != nil {
+			return err
+		}
 	}
 
 	if st.Computed != "" {
