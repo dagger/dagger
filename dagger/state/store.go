@@ -40,6 +40,9 @@ func Init(ctx context.Context, dir string) (*Workspace, error) {
 		}
 		return nil, err
 	}
+	if err := os.Mkdir(path.Join(root, envDir), 0755); err != nil {
+		return nil, err
+	}
 	return &Workspace{
 		Path: root,
 	}, nil
@@ -72,7 +75,7 @@ func Current(ctx context.Context) (*Workspace, error) {
 
 	// Walk every parent directory to find .dagger
 	for {
-		_, err := os.Stat(path.Join(current, daggerDir))
+		_, err := os.Stat(path.Join(current, daggerDir, envDir))
 		if err == nil {
 			return Open(ctx, current)
 		}
