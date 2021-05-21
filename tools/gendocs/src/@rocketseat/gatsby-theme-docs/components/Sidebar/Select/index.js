@@ -19,7 +19,7 @@ const Select = () => {
     }, [])
 
     return (
-        <SelectStyled value={currentLocation[currentLocation.length - 1]} onChange={(e) => isBrowser ? window.location.pathname = `/${e.currentTarget.value}/index.html` : null}>
+        <SelectStyled value={currentLocation[currentLocation.length - 1]} onChange={(e) => isBrowser ? window.location.pathname = `/${e.currentTarget.value}` : null}>
             {tagsList.map(t => (
                 <option>{t.tag}</option>
             ))}
