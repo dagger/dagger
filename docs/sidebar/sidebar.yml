@@ -1,0 +1,32 @@
+# Sidebar navigation
+
+- label: 'Install deploy'
+  link: '/install'
+
+- label: 'Operator'
+  link: '/operator'
+
+- label: 'Programming'
+  link: '/programming'
+
+- label: 'VS'
+  link: '/vs'
+
+- label: 'Getting started'
+  link: '/getting-started'
+
+- label: Usage
+  items:
+    - label: 'Creating docs'
+      link: '/usage/creating-docs'
+    - label: 'Navigation'
+      link: '/usage/navigation'
+    - label: 'Shadowing'
+      link: '/usage/shadowing'
+
+- label: More
+  items:
+    - label: FAQ
+      link: /faq
+    - label: 'Github'
+      link: https://github.com/dagger/dagger
