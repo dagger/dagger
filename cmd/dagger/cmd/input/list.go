@@ -51,7 +51,7 @@ var listCmd = &cobra.Command{
 			inputs := lDeploy.ScanInputs(ctx)
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Input\tType\tValue\tSet by user\tSet in plan")
+			fmt.Fprintln(w, "Input\tType\tValue\tSet by user")
 
 			for _, inp := range inputs {
 				isConcrete := (inp.IsConcreteR() == nil)
@@ -64,12 +64,18 @@ var listCmd = &cobra.Command{
 					valStr = fmt.Sprintf("%s (default)", valStr)
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%t\n",
+				if !viper.GetBool("all") {
+					// skip input that is not overridable
+					if !hasDefault && isConcrete {
+						continue
+					}
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%t\n",
 					inp.Path(),
 					getType(inp),
 					valStr,
 					isUserSet(environment, inp),
-					isConcrete,
 				)
 			}
 
@@ -105,6 +111,8 @@ func getType(val *compiler.Value) string {
 }
 
 func init() {
+	listCmd.Flags().BoolP("all", "a", false, "List all inputs (include non-overridable)")
+
 	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
 		panic(err)
 	}
