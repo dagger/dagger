@@ -8,6 +8,7 @@ import (
 // May be passed as user input, or computed by a buildkit pipeline
 
 #Artifact: {
+	@dagger(artifact)
 	#up: [...op.#Op]
 	_
 	...
@@ -17,5 +18,6 @@ import (
 // FIXME: currently aliased as a string to mark secrets
 // this requires proper support.
 #Secret: {
+	@dagger(secret)
 	string | bytes
 }

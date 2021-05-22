@@ -8,13 +8,13 @@ import (
 
 // AWS Config for credentials and default region
 awsConfig: aws.#Config & {
-	region: *"us-east-1" | string
+	region: *"us-east-1" | string @dagger(input)
 }
 
 // Name of the S3 bucket to use
-bucket: *"dagger-io-examples" | string
+bucket: *"dagger-io-examples" | string @dagger(input)
 
-source: dagger.#Artifact
+source: dagger.#Artifact @dagger(input)
 url:    "\(deploy.url)index.html"
 
 deploy: s3.#Put & {

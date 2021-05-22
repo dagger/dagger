@@ -10,7 +10,6 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
-	"dagger.io/go/pkg/cuetils"
 	"dagger.io/go/stdlib"
 
 	"github.com/opentracing/opentracing-go"
@@ -297,11 +296,6 @@ func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 	})
 }
 
-func (e *Environment) ScanInputs() ([]cue.Value, error) {
-	vals, err := cuetils.ScanForInputs(e.plan.Cue())
-	if err != nil {
-		return nil, err
-	}
-
-	return vals, nil
+func (e *Environment) ScanInputs(ctx context.Context) []*compiler.Value {
+	return ScanInputs(ctx, e.plan)
 }

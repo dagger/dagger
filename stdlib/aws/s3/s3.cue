@@ -12,22 +12,22 @@ import (
 	config: aws.#Config
 
 	// Source Artifact to upload to S3
-	source?: dagger.#Artifact
+	source?: dagger.#Artifact @dagger(input)
 
 	// Source inlined as a string to upload to S3
-	sourceInline?: string
+	sourceInline?: string @dagger(input)
 
 	// Target S3 URL (eg. s3://<bucket-name>/<path>/<sub-path>)
-	target: string
+	target: string @dagger(input)
 
 	// Object content type
-	contentType: string | *""
+	contentType: string | *"" @dagger(input)
 
 	// URL of the uploaded S3 object
-	url: out
+	url: out @dagger(output)
 
 	// Always write the object to S3
-	always?: bool
+	always?: bool @dagger(input)
 
 	out: string
 	aws.#Script & {
