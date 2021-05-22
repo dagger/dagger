@@ -7,20 +7,6 @@ import (
 )
 
 TestNetlify: {
-	// Generate a random number
-	random: {
-		string
-		#up: [
-			op.#Load & {from: alpine.#Image},
-			op.#Exec & {
-				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
-			},
-			op.#Export & {
-				source: "/rand"
-			},
-		]
-	}
-
 	// Generate a website containing the random number
 	html: #up: [
 		op.#WriteFile & {
