@@ -18,6 +18,7 @@ source: dagger.#Artifact @dagger(input)
 url:    "\(deploy.url)index.html"
 
 deploy: s3.#Put & {
+	always:      true
 	config:      awsConfig
 	"source":    source
 	contentType: "text/html"
