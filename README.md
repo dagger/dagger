@@ -18,13 +18,13 @@ don't have to learn a new workflow every time their deployment system changes.
 
 ## Learn More
 
-* [Dagger vs. Other Software](doc/vs.md)
-* [Dagger Programming Guide](doc/programming.md)
-* [Dagger Operator Manual](doc/operator.md)
+* [Dagger vs. Other Software](docs/vs.md)
+* [Dagger Programming Guide](docs/programming.md)
+* [Dagger Operator Manual](docs/operator.md)
 
 ## Download and Install
 
-* [Install Dagger from source](doc/install.md)
+* [Install Dagger from source](docs/install.md)
 * Binary distributions [*coming soon*]
 
 ## Community
