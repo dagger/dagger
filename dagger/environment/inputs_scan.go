@@ -1,4 +1,4 @@
-package dagger
+package environment
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func isReference(val cue.Value) bool {
 	return isRef(val)
 }
 
-func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
+func scanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 	lg := log.Ctx(ctx)
 	inputs := []*compiler.Value{}
 

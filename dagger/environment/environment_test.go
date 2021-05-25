@@ -1,4 +1,4 @@
-package dagger
+package environment
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ func TestLocalDirs(t *testing.T) {
 	}
 	require.NoError(t, st.SetInput("www.source", state.DirInput("/", []string{})))
 
-	environment, err := NewEnvironment(st)
+	environment, err := New(st)
 	require.NoError(t, err)
 
 	localdirs := environment.LocalDirs()

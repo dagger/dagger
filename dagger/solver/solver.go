@@ -1,11 +1,9 @@
-package dagger
+package solver
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -19,20 +17,20 @@ import (
 )
 
 type Solver struct {
-	events  chan *bk.SolveStatus
-	control *bk.Client
-	gw      bkgw.Client
-	auth    *registryAuthProvider
-	noCache bool
+	opts Opts
 }
 
-func NewSolver(control *bk.Client, gw bkgw.Client, events chan *bk.SolveStatus, auth *registryAuthProvider, noCache bool) Solver {
+type Opts struct {
+	Control *bk.Client
+	Gateway bkgw.Client
+	Events  chan *bk.SolveStatus
+	Auth    *RegistryAuthProvider
+	NoCache bool
+}
+
+func New(opts Opts) Solver {
 	return Solver{
-		events:  events,
-		control: control,
-		gw:      gw,
-		auth:    auth,
-		noCache: noCache,
+		opts: opts,
 	}
 }
 
@@ -55,6 +53,14 @@ func invalidateCache(def *llb.Definition) error {
 	return nil
 }
 
+func (s Solver) NoCache() bool {
+	return s.opts.NoCache
+}
+
+func (s Solver) AddCredentials(target, username, secret string) {
+	s.opts.Auth.AddCredentials(target, username, secret)
+}
+
 func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, error) {
 	// FIXME: do not hardcode the platform
 	def, err := st.Marshal(ctx, llb.LinuxAmd64)
@@ -62,7 +68,7 @@ func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, er
 		return nil, err
 	}
 
-	if s.noCache {
+	if s.opts.NoCache {
 		if err := invalidateCache(def); err != nil {
 			return nil, err
 		}
@@ -72,7 +78,7 @@ func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, er
 }
 
 func (s Solver) SessionID() string {
-	return s.gw.BuildOpts().SessionID
+	return s.opts.Gateway.BuildOpts().SessionID
 }
 
 func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.ResolveImageConfigOpt) (dockerfile2llb.Image, error) {
@@ -81,7 +87,7 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 	// Load image metadata and convert to to LLB.
 	// Inspired by https://github.com/moby/buildkit/blob/master/frontend/dockerfile/dockerfile2llb/convert.go
 	// FIXME: this needs to handle platform
-	_, meta, err := s.gw.ResolveImageConfig(ctx, ref, opts)
+	_, meta, err := s.opts.Gateway.ResolveImageConfig(ctx, ref, opts)
 	if err != nil {
 		return image, err
 	}
@@ -94,12 +100,7 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 
 // Solve will block until the state is solved and returns a Reference.
 func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
-	// call solve
-	res, err := s.gw.Solve(ctx, req)
-	if err != nil {
-		return nil, bkCleanError(err)
-	}
-	return res, nil
+	return s.opts.Gateway.Solve(ctx, req)
 }
 
 // Solve will block until the state is solved and returns a Reference.
@@ -149,7 +150,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 
 	opts := bk.SolveOpt{
 		Exports: []bk.ExportEntry{output},
-		Session: []session.Attachable{s.auth},
+		Session: []session.Attachable{s.opts.Auth},
 	}
 
 	ch := make(chan *bk.SolveStatus)
@@ -158,11 +159,11 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 	// purposes.
 	go func() {
 		for event := range ch {
-			s.events <- event
+			s.opts.Events <- event
 		}
 	}()
 
-	return s.control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
+	return s.opts.Control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		res, err := c.Solve(ctx, bkgw.SolveRequest{
 			Definition: def,
 		})
@@ -202,23 +203,4 @@ func dumpLLB(def *bkpb.Definition) ([]byte, error) {
 		ops = append(ops, ent)
 	}
 	return json.Marshal(ops)
-}
-
-// A helper to remove noise from buildkit error messages.
-// FIXME: Obviously a cleaner solution would be nice.
-func bkCleanError(err error) error {
-	noise := []string{
-		"executor failed running ",
-		"buildkit-runc did not terminate successfully",
-		"rpc error: code = Unknown desc = ",
-		"failed to solve: ",
-	}
-
-	msg := err.Error()
-
-	for _, s := range noise {
-		msg = strings.ReplaceAll(msg, s, "")
-	}
-
-	return errors.New(msg)
 }

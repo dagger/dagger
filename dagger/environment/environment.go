@@ -1,4 +1,4 @@
-package dagger
+package environment
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/solver"
 	"dagger.io/go/dagger/state"
 	"dagger.io/go/stdlib"
 
@@ -32,7 +33,7 @@ type Environment struct {
 	computed *compiler.Value
 }
 
-func NewEnvironment(st *state.State) (*Environment, error) {
+func New(st *state.State) (*Environment, error) {
 	e := &Environment{
 		state: st,
 
@@ -81,7 +82,7 @@ func (e *Environment) Computed() *compiler.Value {
 }
 
 // LoadPlan loads the plan
-func (e *Environment) LoadPlan(ctx context.Context, s Solver) error {
+func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
@@ -165,7 +166,7 @@ func (e *Environment) LocalDirs() map[string]string {
 }
 
 // Up missing values in environment configuration, and write them to state.
-func (e *Environment) Up(ctx context.Context, s Solver) error {
+func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Up")
 	defer span.Finish()
 
@@ -216,7 +217,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
+func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -294,5 +295,5 @@ func newPipelineRunner(computed *compiler.Value, s Solver) cueflow.RunnerFunc {
 }
 
 func (e *Environment) ScanInputs(ctx context.Context) []*compiler.Value {
-	return ScanInputs(ctx, e.plan)
+	return scanInputs(ctx, e.plan)
 }

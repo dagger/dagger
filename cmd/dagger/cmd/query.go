@@ -6,7 +6,7 @@ import (
 	"cuelang.org/go/cue"
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/client"
 	"dagger.io/go/dagger/compiler"
 
 	"github.com/spf13/cobra"
@@ -42,7 +42,7 @@ var queryCmd = &cobra.Command{
 			cuePath = cue.ParsePath(args[0])
 		}
 
-		c, err := dagger.NewClient(ctx, "", false)
+		c, err := client.New(ctx, "", false)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}

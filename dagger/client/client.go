@@ -1,7 +1,8 @@
-package dagger
+package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,8 @@ import (
 	"dagger.io/go/pkg/progressui"
 
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/environment"
+	"dagger.io/go/dagger/solver"
 	"dagger.io/go/dagger/state"
 )
 
@@ -35,7 +38,7 @@ type Client struct {
 	noCache bool
 }
 
-func NewClient(ctx context.Context, host string, noCache bool) (*Client, error) {
+func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
@@ -61,14 +64,14 @@ func NewClient(ctx context.Context, host string, noCache bool) (*Client, error) 
 	}, nil
 }
 
-type ClientDoFunc func(context.Context, *Environment, Solver) error
+type ClientDoFunc func(context.Context, *environment.Environment, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *state.State, fn ClientDoFunc) (*Environment, error) {
+func (c *Client) Do(ctx context.Context, state *state.State, fn ClientDoFunc) (*environment.Environment, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
-	environment, err := NewEnvironment(state)
+	environment, err := environment.New(state)
 	if err != nil {
 		return nil, err
 	}
@@ -90,11 +93,11 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn ClientDoFunc) (*
 	return environment, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, environment *Environment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
-	localdirs := environment.LocalDirs()
+	localdirs := env.LocalDirs()
 	for label, dir := range localdirs {
 		abs, err := filepath.Abs(dir)
 		if err != nil {
@@ -104,7 +107,7 @@ func (c *Client) buildfn(ctx context.Context, environment *Environment, fn Clien
 	}
 
 	// buildkit auth provider (registry)
-	auth := newRegistryAuthProvider()
+	auth := solver.NewRegistryAuthProvider()
 
 	// Setup solve options
 	opts := bk.SolveOpt{
@@ -119,16 +122,22 @@ func (c *Client) buildfn(ctx context.Context, environment *Environment, fn Clien
 		Msg("spawning buildkit job")
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		s := NewSolver(c.c, gw, ch, auth, c.noCache)
+		s := solver.New(solver.Opts{
+			Control: c.c,
+			Gateway: gw,
+			Events:  ch,
+			Auth:    auth,
+			NoCache: c.noCache,
+		})
 
 		lg.Debug().Msg("loading configuration")
-		if err := environment.LoadPlan(ctx, s); err != nil {
+		if err := env.LoadPlan(ctx, s); err != nil {
 			return nil, err
 		}
 
 		// Compute output overlay
 		if fn != nil {
-			if err := fn(ctx, environment, s); err != nil {
+			if err := fn(ctx, env, s); err != nil {
 				return nil, compiler.Err(err)
 			}
 		}
@@ -139,7 +148,7 @@ func (c *Client) buildfn(ctx context.Context, environment *Environment, fn Clien
 		span, _ := opentracing.StartSpanFromContext(ctx, "Environment.Export")
 		defer span.Finish()
 
-		computed := environment.Computed().JSON().PrettyString()
+		computed := env.Computed().JSON().PrettyString()
 		st := llb.
 			Scratch().
 			File(
@@ -233,4 +242,23 @@ func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) er
 			}
 		},
 	)
+}
+
+// A helper to remove noise from buildkit error messages.
+// FIXME: Obviously a cleaner solution would be nice.
+func bkCleanError(err error) error {
+	noise := []string{
+		"executor failed running ",
+		"buildkit-runc did not terminate successfully",
+		"rpc error: code = Unknown desc = ",
+		"failed to solve: ",
+	}
+
+	msg := err.Error()
+
+	for _, s := range noise {
+		msg = strings.ReplaceAll(msg, s, "")
+	}
+
+	return errors.New(msg)
 }

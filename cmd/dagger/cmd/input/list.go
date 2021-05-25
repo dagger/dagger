@@ -8,8 +8,10 @@ import (
 
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
+	"dagger.io/go/dagger/client"
 	"dagger.io/go/dagger/compiler"
+	"dagger.io/go/dagger/environment"
+	"dagger.io/go/dagger/solver"
 	"dagger.io/go/dagger/state"
 
 	"github.com/spf13/cobra"
@@ -32,19 +34,19 @@ var listCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		workspace := common.CurrentWorkspace(ctx)
-		environment := common.CurrentEnvironmentState(ctx, workspace)
+		st := common.CurrentEnvironmentState(ctx, workspace)
 
 		lg = lg.With().
-			Str("environment", environment.Name).
+			Str("environment", st.Name).
 			Logger()
 
-		c, err := dagger.NewClient(ctx, "", false)
+		c, err := client.New(ctx, "", false)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
 
-		_, err = c.Do(ctx, environment, func(lCtx context.Context, lDeploy *dagger.Environment, lSolver dagger.Solver) error {
-			inputs := lDeploy.ScanInputs(ctx)
+		_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			inputs := env.ScanInputs(ctx)
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "Input\tType\tValue\tSet by user")
@@ -71,7 +73,7 @@ var listCmd = &cobra.Command{
 					inp.Path(),
 					getType(inp),
 					valStr,
-					isUserSet(environment, inp),
+					isUserSet(st, inp),
 				)
 			}
 
