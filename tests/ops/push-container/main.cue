@@ -12,20 +12,6 @@ registry: {
 }
 
 TestPushContainer: {
-	// Generate a random number
-	random: {
-		string
-		#up: [
-			op.#Load & {from: alpine.#Image},
-			op.#Exec & {
-				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
-			},
-			op.#Export & {
-				source: "/rand"
-			},
-		]
-	}
-
 	// Push an image with a random tag
 	push: {
 		ref: "daggerio/ci-test:\(random)"
@@ -66,20 +52,6 @@ TestPushContainer: {
 
 // Ensures image metadata is preserved in a push
 TestPushContainerMetadata: {
-	// Generate a random number
-	random: {
-		string
-		#up: [
-			op.#Load & {from: alpine.#Image},
-			op.#Exec & {
-				args: ["sh", "-c", "echo -n $RANDOM > /rand"]
-			},
-			op.#Export & {
-				source: "/rand"
-			},
-		]
-	}
-
 	// `docker build` using an `ENV` and push the image
 	push: {
 		ref: "daggerio/ci-test:\(random)-dockerbuild"
