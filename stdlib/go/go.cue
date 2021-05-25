@@ -3,6 +3,7 @@ package go
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
+	"dagger.io/docker"
 
 	"dagger.io/os"
 )
@@ -14,25 +15,22 @@ import (
 	source:  dagger.#Artifact
 
 	os.#Container & {
-		env: {
-			GOMODCACHE:  volume.goCache.dest
-			CGO_ENABLED: "0"
+		env: CGO_ENABLED: "0"
+
+		image: docker.#Pull & {
+			from: "docker.io/golang:\(version)-alpine"
 		}
 
-		from: "docker.io/golang:\(version)-alpine"
+		// Setup source dir
+		let srcPath = "/src"
+		mount: "\(srcPath)": from: source
+		dir: srcPath
 
-		volume: {
-			goSource: {
-				from: source
-				dest: "/src"
-			}
-			goCache: {
-				type: "cache"
-				dest: "/root/.cache/gocache"
-			}
-		}
+		// Setup go cache
+		let cachePath = "/root/.cache/gocache"
+		cache: "\(cachePath)": true
+		env: GOMODCACHE:       cachePath
 
-		dir: volume.goSource.dest
 		// Add go to search path (FIXME: should be inherited from image metadata)
 		shell: search: "/usr/local/go/bin": true
 	}
