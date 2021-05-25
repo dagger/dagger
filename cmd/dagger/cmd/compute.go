@@ -38,6 +38,7 @@ var computeCmd = &cobra.Command{
 		st := &state.State{
 			Name: "FIXME",
 			Path: args[0],
+			Plan: args[0],
 		}
 
 		for _, input := range viper.GetStringSlice("input-string") {

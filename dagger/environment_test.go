@@ -10,6 +10,7 @@ import (
 func TestLocalDirs(t *testing.T) {
 	st := &state.State{
 		Path: "/tmp/source",
+		Plan: "/tmp/source/plan",
 	}
 	require.NoError(t, st.SetInput("www.source", state.DirInput("/", []string{})))
 

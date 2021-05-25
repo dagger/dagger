@@ -155,6 +155,7 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 		return nil, err
 	}
 	st.Path = envPath
+	st.Plan = path.Join(envPath, planDir)
 	st.Workspace = w.Path
 
 	computed, err := os.ReadFile(path.Join(envPath, stateDir, computedFile))
@@ -237,6 +238,7 @@ func (w *Workspace) Create(ctx context.Context, name string) (*State, error) {
 	st := &State{
 		Path:      envPath,
 		Workspace: w.Path,
+		Plan:      path.Join(envPath, planDir),
 		Name:      name,
 	}
 	data, err := yaml.Marshal(st)
