@@ -1,15 +1,6 @@
 # Installing or upgrading Dagger
 
-## Summary
-
-- [Installing or upgrading Dagger](#installing-or-upgrading-dagger)
-  - [Summary](#summary)
-  - [Option 1 (Mac OS only): install or upgrade from Homebrew](#option-1-mac-os-only-install-or-upgrade-from-homebrew)
-  - [Option 2: install or upgrade from a shell script](#option-2-install-or-upgrade-from-a-shell-script)
-  - [Option 3: Manually fetch the latest binary release from Github](#option-3-manually-fetch-the-latest-binary-release-from-github)
-  - [Option 4: Compile from source](#option-4-compile-from-source)
-
-## Option 1 (Mac OS only): install or upgrade from Homebrew
+## Option 1: Use Homebrew (Mac OS only)
 
 From your Mac OS terminal, run the following command:
 
@@ -23,9 +14,7 @@ If dagger is already installed, you can upgrade it using this command:
 brew update; brew upgrade dagger
 ```
 
-> :bulb: Verify the installation with `dagger version`.
-
-## Option 2: install or upgrade from a shell script
+## Option 2: Run a shell script
 
 From a terminal, run the following command:
 
@@ -41,17 +30,13 @@ You can then install it globally on your system:
 sudo mv ./bin/dagger /usr/local/bin
 ```
 
-> :bulb: Verify the installation with `dagger version`.
-
-## Option 3: Manually fetch the latest binary release from Github
+## Option 3: Download a binary release
 
 Open your web browser to [the latest release](https://github.com/dagger/dagger/releases/latest).
 
 From the **assets** section, download the archive corresponding to your OS and Arch.
 
-> :bulb: Verify the installation with `dagger version`.
-
-## Option 4: Compile from source
+## Option 4: Install from source
 
 You will need [Go](https://golang.org) version 1.16 or later.
 
@@ -72,5 +57,3 @@ cd dagger; make
 ```shell
 cp ./cmd/dagger/dagger /usr/local/bin
 ```
-
-> :bulb: Verify the installation with `dagger version`.

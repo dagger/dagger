@@ -3,7 +3,7 @@
 - label: Introduction
   link: "/"
 
-- label: "Getting started"
+- label: "Install Dagger"
   link: "/install"
 
 - label: "Dagger vs. Other software"
@@ -16,7 +16,7 @@
     - label: "Operator Manual"
       link: "/operator"
 
-- label: More
+- label: Community
   items:
     - label: "GitHub"
       link: https://github.com/dagger/dagger
