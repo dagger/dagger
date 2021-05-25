@@ -35,14 +35,19 @@ type Workspace struct {
 }
 
 func Init(ctx context.Context, dir string) (*Workspace, error) {
-	root := path.Join(dir, daggerDir)
-	if err := os.Mkdir(root, 0755); err != nil {
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	daggerRoot := path.Join(root, daggerDir)
+	if err := os.Mkdir(daggerRoot, 0755); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, ErrAlreadyInit
 		}
 		return nil, err
 	}
-	if err := os.Mkdir(path.Join(root, envDir), 0755); err != nil {
+	if err := os.Mkdir(path.Join(daggerRoot, envDir), 0755); err != nil {
 		return nil, err
 	}
 	return &Workspace{
@@ -178,7 +183,7 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 	}
 
 	// Only update the encrypted file if there were changes
-	if bytes.Compare(data, currentPlain) != 0 {
+	if !bytes.Equal(data, currentPlain) {
 		encrypted, err := keychain.Reencrypt(ctx, manifestPath, data)
 		if err != nil {
 			return err
