@@ -6,7 +6,6 @@ import (
 
 	"dagger.io/go/cmd/dagger/cmd/input"
 	"dagger.io/go/cmd/dagger/cmd/output"
-	"dagger.io/go/cmd/dagger/cmd/plan"
 	"dagger.io/go/cmd/dagger/logger"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/opentracing/opentracing-go"
@@ -24,6 +23,7 @@ func init() {
 	rootCmd.PersistentFlags().String("log-format", "", "Log format (json, pretty). Defaults to json if the terminal is not a tty")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
+	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Specify a workspace (defaults to current git repository)")
 
 	rootCmd.PersistentPreRun = func(*cobra.Command, []string) {
 		go checkVersion()
@@ -33,17 +33,16 @@ func init() {
 	}
 
 	rootCmd.AddCommand(
-		computeCmd,
+		initCmd,
 		newCmd,
+		computeCmd,
 		listCmd,
 		queryCmd,
 		upCmd,
 		downCmd,
-		deleteCmd,
 		historyCmd,
 		loginCmd,
 		logoutCmd,
-		plan.Cmd,
 		input.Cmd,
 		output.Cmd,
 		versionCmd,

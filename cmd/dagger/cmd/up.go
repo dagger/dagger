@@ -3,7 +3,6 @@ package cmd
 import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -23,15 +22,13 @@ var upCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
-		store, err := dagger.DefaultStore()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load store")
-		}
 
-		state := common.GetCurrentEnvironmentState(ctx, store)
-		result := common.EnvironmentUp(ctx, state, viper.GetBool("no-cache"))
-		state.Computed = result.Computed().JSON().String()
-		if err := store.UpdateEnvironment(ctx, state, nil); err != nil {
+		workspace := common.CurrentWorkspace(ctx)
+		st := common.CurrentEnvironmentState(ctx, workspace)
+		result := common.EnvironmentUp(ctx, st, viper.GetBool("no-cache"))
+
+		st.Computed = result.Computed().JSON().PrettyString()
+		if err := workspace.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Msg("failed to update environment")
 		}
 	},

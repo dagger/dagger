@@ -26,15 +26,19 @@ To get started with Cue, we recommend the following resources:
 
 To create a Dagger plan:
 
-1\. Create a new directory anywhere in your git repository.
+1\. Initialize a Dagger workspace anywhere in your git repository.
 
-For example: `mkdir staging`.
+`dagger init`.
 
-2\. Create a new file with the *.cue* extension, and open it with any text editor or IDE.
+2\. Create a new environment.
 
-For example: `staging.cue`.
+For example: `dagger new staging`.
 
-3\. Describe each relay in your plan as a field in the cue configuration.
+3\. Create a new file with the *.cue* extension in `.dagger/env/staging/plan`, and open it with any text editor or IDE.
+
+For example: `.dagger/env/staging/plan/staging.cue`.
+
+4\. Describe each relay in your plan as a field in the cue configuration.
 
 For example:
 
@@ -67,9 +71,9 @@ For more inspiration, see these examples:
 * [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
 * [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
 
-4\. Extend your plan with relay definitions from [Dagger Universe](../stdlib), an encyclopedia of cue packages curated by the Dagger community.
+5\. Extend your plan with relay definitions from [Dagger Universe](../stdlib), an encyclopedia of cue packages curated by the Dagger community.
 
-5\. If you can't find the relay you need in the Universe, you can simply create your own.
+6\. If you can't find the relay you need in the Universe, you can simply create your own.
 
 For example:
 

@@ -1,16 +1,17 @@
-package input
+package cmd
 
 import (
+	"os"
+
 	"dagger.io/go/cmd/dagger/logger"
 	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var textCmd = &cobra.Command{
-	Use:   "text <TARGET> [-f] <VALUE|PATH>",
-	Short: "Add a text input",
-	Args:  cobra.ExactArgs(2),
+var initCmd = &cobra.Command{
+	Use:  "init",
+	Args: cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -22,18 +23,27 @@ var textCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateEnvironmentInput(
-			ctx,
-			args[0],
-			state.TextInput(readInput(ctx, args[1])),
-		)
+		dir := viper.GetString("workspace")
+		if dir == "" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				lg.
+					Fatal().
+					Err(err).
+					Msg("failed to get current working dir")
+			}
+			dir = cwd
+		}
+
+		_, err := state.Init(ctx, dir)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to initialize workspace")
+		}
 	},
 }
 
 func init() {
-	textCmd.Flags().BoolP("file", "f", false, "Read value from file")
-
-	if err := viper.BindPFlags(textCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(initCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

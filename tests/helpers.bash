@@ -10,8 +10,18 @@ common_setup() {
     DAGGER_LOG_FORMAT="pretty"
     export DAGGER_LOG_FORMAT
 
-    DAGGER_STORE="$(mktemp -d -t dagger-store-XXXXXX)"
-    export DAGGER_STORE
+    DAGGER_WORKSPACE="$(mktemp -d -t dagger-workspace-XXXXXX)"
+    export DAGGER_WORKSPACE
+}
+
+dagger_new_with_plan() {
+    local name="$1"
+    local sourcePlan="$2"
+    local targetPlan="$DAGGER_WORKSPACE"/.dagger/env/"$name"/plan
+
+    "$DAGGER" new "$name"
+    rmdir "$targetPlan"
+    ln -s "$sourcePlan" "$targetPlan"
 }
 
 skip_unless_secrets_available() {

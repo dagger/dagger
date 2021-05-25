@@ -3,13 +3,13 @@ module dagger.io/go
 go 1.16
 
 require (
-	cuelang.org/go v0.4.0-rc.1
+	cuelang.org/go v0.4.0-beta.1
+	filippo.io/age v1.0.0-rc.1
 	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.2
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
-	github.com/google/uuid v1.2.0
 	github.com/hashicorp/go-version v1.3.0
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mattn/go-colorable v0.1.8 // indirect

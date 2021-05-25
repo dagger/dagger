@@ -3,7 +3,6 @@ package input
 import (
 	"dagger.io/go/cmd/dagger/cmd/common"
 	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -23,17 +22,13 @@ var unsetCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		store, err := dagger.DefaultStore()
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load store")
-		}
-
-		st := common.GetCurrentEnvironmentState(ctx, store)
+		workspace := common.CurrentWorkspace(ctx)
+		st := common.CurrentEnvironmentState(ctx, workspace)
 		st.RemoveInputs(args[0])
 
-		if err := store.UpdateEnvironment(ctx, st, nil); err != nil {
-			lg.Fatal().Err(err).Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("cannot update environment")
+		if err := workspace.Save(ctx, st); err != nil {
+			lg.Fatal().Err(err).Str("environment", st.Name).Msg("cannot update environment")
 		}
-		lg.Info().Str("environmentId", st.ID).Str("environmentName", st.Name).Msg("updated environment")
+		lg.Info().Str("environment", st.Name).Msg("updated environment")
 	},
 }

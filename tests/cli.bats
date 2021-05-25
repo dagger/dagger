@@ -4,55 +4,45 @@ setup() {
     common_setup
 }
 
-@test "dagger list" {
-    run "$DAGGER" list
+@test "dagger init" {
+    run "$DAGGER" init
     assert_success
-    assert_output ""
-
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/simple simple
 
     run "$DAGGER" list
     assert_success
-    assert_output --partial "simple"
+    refute_output
+
+    run "$DAGGER" init
+    assert_failure
 }
 
-@test "dagger new --plan-dir" {
-    run "$DAGGER" list
-    assert_success
-    assert_output ""
-
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/simple simple
-
-    # duplicate name
-    run "$DAGGER" new --plan-dir "$TESTDIR"/cli/simple simple
+@test "dagger new" {
+    run "$DAGGER" new "test"
     assert_failure
 
-    # verify the plan works
-    "$DAGGER" up -e "simple"
-
-    # verify we have the right plan
-    run "$DAGGER" query -f cue -e "simple" -c -f json
+    run "$DAGGER" init
     assert_success
-    assert_output --partial '{
-  "bar": "another value",
-  "computed": "test",
-  "foo": "value"
-}'
-}
 
-@test "dagger new --plan-git" {
-    "$DAGGER" new --plan-git https://github.com/samalba/dagger-test.git simple
-    "$DAGGER" up -e "simple"
-    run "$DAGGER" query -f cue -e "simple" -c
+    run "$DAGGER" list
     assert_success
-    assert_output --partial '{
-    foo: "value"
-    bar: "another value"
-}'
+    refute_output
+
+    run "$DAGGER" new "test"
+    assert_success
+
+    run "$DAGGER" list
+    assert_success
+    assert_output --partial "test"
+
+    run "$DAGGER" new "test"
+    assert_failure
 }
 
 @test "dagger query" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/simple simple
+    "$DAGGER" init
+
+    dagger_new_with_plan simple "$TESTDIR"/cli/simple
+
     run "$DAGGER" query -l error -e "simple"
     assert_success
     assert_output '{
@@ -93,24 +83,10 @@ setup() {
 }'
 }
 
-@test "dagger plan" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/simple simple
-
-    # plan dir
-    "$DAGGER" -e "simple" plan dir "$TESTDIR"/cli/simple
-    run "$DAGGER" -e "simple" query
-    assert_success
-    assert_output --partial '"foo": "value"'
-
-    # plan git
-    "$DAGGER" -e "simple" plan git https://github.com/samalba/dagger-test.git
-    run "$DAGGER" -e "simple" query
-    assert_success
-    assert_output --partial '"foo": "value"'
-}
-
 @test "dagger input text" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
+    "$DAGGER" init
+
+    dagger_new_with_plan input "$TESTDIR"/cli/input/simple
 
     # simple input
     "$DAGGER" input -e "input" text "input" "my input"
@@ -176,7 +152,9 @@ setup() {
 }
 
 @test "dagger input json" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
+    "$DAGGER" init
+
+    dagger_new_with_plan input "$TESTDIR"/cli/input/simple
 
     # simple json
     "$DAGGER" input -e "input" json "structured" '{"a": "foo", "b": 42}'
@@ -214,7 +192,9 @@ setup() {
 }
 
 @test "dagger input yaml" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/simple "input"
+    "$DAGGER" init
+
+    dagger_new_with_plan input "$TESTDIR"/cli/input/simple
 
     # simple yaml
     "$DAGGER" input -e "input" yaml "structured" '{"a": "foo", "b": 42}'
@@ -252,10 +232,17 @@ setup() {
 }
 
 @test "dagger input dir" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/artifact "input"
+    "$DAGGER" init
 
-    # input dir
-    "$DAGGER" input -e "input" dir "source" "$TESTDIR"/cli/input/artifact/testdata
+    dagger_new_with_plan input "$TESTDIR"/cli/input/artifact
+
+    # input dir outside the workspace
+    run "$DAGGER" input -e "input" dir "source" /tmp
+    assert_failure
+
+    # input dir inside the workspace
+    cp -R "$TESTDIR"/cli/input/artifact/testdata/ "$DAGGER_WORKSPACE"/testdata
+    "$DAGGER" input -e "input" dir "source" "$DAGGER_WORKSPACE"/testdata
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input"
     assert_success
@@ -276,7 +263,9 @@ setup() {
 }
 
 @test "dagger input git" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/artifact "input"
+    "$DAGGER" init
+
+    dagger_new_with_plan input "$TESTDIR"/cli/input/artifact
 
     # input git
     "$DAGGER" input -e "input" git "source" https://github.com/samalba/dagger-test-simple.git
@@ -295,12 +284,4 @@ setup() {
     assert_output '{
   "foo": "bar"
 }'
-}
-
-@test "dagger input scan" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/scan "scan"
-
-    # TODO "scan" option isn't implemented
-    run "$DAGGER" input scan -e "input"
-    assert_success
 }
