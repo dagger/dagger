@@ -1,7 +1,7 @@
 package main
 
 import (
-	"dagger.io/go/cmd/dagger/cmd"
+	"go.dagger.io/dagger/cmd/dagger/cmd"
 )
 
 func main() {

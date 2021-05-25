@@ -25,8 +25,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
-	"dagger.io/go/dagger/compiler"
-	"dagger.io/go/dagger/solver"
+	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/solver"
 )
 
 const (

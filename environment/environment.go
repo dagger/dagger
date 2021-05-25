@@ -9,10 +9,10 @@ import (
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
-	"dagger.io/go/dagger/compiler"
-	"dagger.io/go/dagger/solver"
-	"dagger.io/go/dagger/state"
-	"dagger.io/go/stdlib"
+	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/state"
+	"go.dagger.io/dagger/stdlib"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"

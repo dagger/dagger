@@ -25,7 +25,7 @@ const (
 )
 
 // set by goreleaser or other builder using
-// -ldflags='-X dagger.io/go/cmd/dagger/cmd.version=<version>'
+// -ldflags='-X go.dagger.io/dagger/cmd/dagger/cmd.version=<version>'
 var (
 	version        = defaultVersion
 	versionMessage = ""

@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"cuelang.org/go/cue"
-	"dagger.io/go/dagger/compiler"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/compiler"
 )
 
 func isReference(val cue.Value) bool {

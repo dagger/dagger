@@ -3,12 +3,12 @@ package common
 import (
 	"context"
 
-	"dagger.io/go/dagger/client"
-	"dagger.io/go/dagger/environment"
-	"dagger.io/go/dagger/solver"
-	"dagger.io/go/dagger/state"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/client"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/state"
 )
 
 func CurrentWorkspace(ctx context.Context) *state.Workspace {

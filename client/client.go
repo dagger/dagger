@@ -23,13 +23,13 @@ import (
 	"github.com/moby/buildkit/session"
 
 	// docker output
-	"dagger.io/go/pkg/buildkitd"
-	"dagger.io/go/pkg/progressui"
+	"go.dagger.io/dagger/util/buildkitd"
+	"go.dagger.io/dagger/util/progressui"
 
-	"dagger.io/go/dagger/compiler"
-	"dagger.io/go/dagger/environment"
-	"dagger.io/go/dagger/solver"
-	"dagger.io/go/dagger/state"
+	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/state"
 )
 
 // A dagger client
@@ -64,10 +64,10 @@ func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 	}, nil
 }
 
-type ClientDoFunc func(context.Context, *environment.Environment, solver.Solver) error
+type DoFunc func(context.Context, *environment.Environment, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *state.State, fn ClientDoFunc) (*environment.Environment, error) {
+func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) (*environment.Environment, error) {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -93,7 +93,7 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn ClientDoFunc) (*
 	return environment, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn ClientDoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access

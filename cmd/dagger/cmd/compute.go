@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
-	"dagger.io/go/cmd/dagger/cmd/common"
-	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger/compiler"
-	"dagger.io/go/dagger/state"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
+	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/state"
 	"go.mozilla.org/sops/v3"
 	"go.mozilla.org/sops/v3/decrypt"
 

@@ -3,8 +3,8 @@ package environment
 import (
 	"testing"
 
-	"dagger.io/go/dagger/state"
 	"github.com/stretchr/testify/require"
+	"go.dagger.io/dagger/state"
 )
 
 func TestLocalDirs(t *testing.T) {

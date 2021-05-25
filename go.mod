@@ -1,4 +1,4 @@
-module dagger.io/go
+module go.dagger.io/dagger
 
 go 1.16
 

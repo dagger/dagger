@@ -3,10 +3,10 @@ package cmd
 import (
 	"os"
 
-	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/state"
 )
 
 var initCmd = &cobra.Command{
