@@ -995,8 +995,8 @@ github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea/go.mod h1:WPnis/6
 github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305 h1:y/1cL5AL2oRcfzz8CAHHhR6kDDfIOT0WEyH5k40sccM=
 github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305/go.mod h1:gXOLibKqQTRAVuVZ9gX7G9Ykky8ll8yb4slxsEMoY0c=
 github.com/uber/jaeger-client-go v2.25.0+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
-github.com/uber/jaeger-client-go v2.29.0+incompatible h1:wG3BqQcZG4M4+3/6BKjmlhXLC97Qy6w0nZqeM75R4q4=
-github.com/uber/jaeger-client-go v2.29.0+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
+github.com/uber/jaeger-client-go v2.29.1+incompatible h1:R9ec3zO3sGpzs0abd43Y+fBZRJ9uiH6lXyR/+u6brW4=
+github.com/uber/jaeger-client-go v2.29.1+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
 github.com/uber/jaeger-lib v2.2.0+incompatible/go.mod h1:ComeNDZlWwrWnDv8aPp0Ba6+uUTzImX/AauajbLI56U=
 github.com/uber/jaeger-lib v2.4.1+incompatible h1:td4jdvLcExb4cBISKIpHuGoVXh+dVKhn2Um6rjCsSsg=
 github.com/uber/jaeger-lib v2.4.1+incompatible/go.mod h1:ComeNDZlWwrWnDv8aPp0Ba6+uUTzImX/AauajbLI56U=
