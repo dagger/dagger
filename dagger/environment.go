@@ -103,7 +103,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s Solver) error {
 	}
 	plan, err := compiler.Build(sources)
 	if err != nil {
-		return fmt.Errorf("plan config: %w", err)
+		return fmt.Errorf("plan config: %w", compiler.Err(err))
 	}
 	e.plan = plan
 
