@@ -16,21 +16,6 @@ No matter how your deployment works under the hood, you can manage it with the s
 This makes developers more productive, because they don't have to learn a new workflow every time their deployment
 system changes.
 
-## Learn More
-
-* [Dagger vs. Other Software](vs)
-* [Dagger Programming Guide](programming)
-* [Dagger Operator Manual](operator)
-
-## Download and Install
-
-* [Install Dagger](install)
-
-## Community
-
-Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
-We welcome beginners and experts alike!
-
 ## Alpha disclaimer
 
 Dagger is _alpha-quality software_. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still
