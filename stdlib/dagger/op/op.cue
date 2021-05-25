@@ -3,26 +3,15 @@ package op
 
 // One operation in a pipeline
 //
-// #Op does not enforce the op spec at full resolution, to avoid triggering performance issues.
-// See https://github.com/dagger/dagger/issues/445
+// #Op does not current enforce the op spec at full resolution, to avoid
+// triggering performance issues. See
+// https://github.com/dagger/dagger/issues/445
+//
+// To enforce the full #Op spec (see op_fullop.cue), run with "-t fullop"
 #Op: {
 	do: string
 	...
 }
-
-// Full resolution schema enforciong the complete op spec
-#OpFull: #Export |
-	#FetchContainer |
-	#PushContainer |
-	#FetchGit |
-	#Exec |
-	#Local |
-	#Copy |
-	#Load |
-	#Subdir |
-	#WriteFile |
-	#Mkdir |
-	#DockerBuild
 
 // Export a value from fs state to cue
 #Export: {
