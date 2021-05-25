@@ -1,4 +1,4 @@
-# Installing or upgrading Dagger
+# Install Dagger
 
 ## Option 1: Use Homebrew (Mac OS only)
 
