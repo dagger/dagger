@@ -19,5 +19,5 @@ func TestLocalDirs(t *testing.T) {
 	localdirs := environment.LocalDirs()
 	require.Len(t, localdirs, 2)
 	require.Contains(t, localdirs, "/")
-	require.Contains(t, localdirs, "/tmp/source")
+	require.Contains(t, localdirs, "/tmp/source/plan")
 }
