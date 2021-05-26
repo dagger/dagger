@@ -8,13 +8,13 @@ import (
 )
 
 #Configuration: {
-	version: string | *"latest"
+	version: string | *"latest" @dagger(input)
 
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
-	tfvars?: [string]: _
+	tfvars?: [string]: _ @dagger(input)
 
-	env: [string]: string
+	env: [string]: string @dagger(input)
 
 	state: #up: [
 		op.#FetchContainer & {
@@ -61,5 +61,5 @@ import (
 			},
 		]
 		...
-	}
+	} @dagger(output)
 }

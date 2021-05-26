@@ -11,15 +11,15 @@ import (
 	config: aws.#Config
 
 	// EKS cluster name
-	clusterName: string
+	clusterName: string @dagger(input)
 
 	// Kubectl version
-	version: *"v1.19.9" | string
+	version: *"v1.19.9" | string @dagger(input)
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
 		// FIXME There is a problem with dagger.#Secret type
-		string
+		string @dagger(output)
 
 		#up: [
 			op.#Load & {

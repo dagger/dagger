@@ -7,9 +7,9 @@ import (
 // Base Google Cloud Config
 #Config: {
 	// GCP region
-	region: string
+	region: string @dagger(input)
 	// GCP projcet
-	project: string
+	project: string @dagger(input)
 	// GCP service key
-	serviceKey: dagger.#Secret
+	serviceKey: dagger.#Secret @dagger(input)
 }

@@ -15,7 +15,7 @@ import (
 	// ECR credentials
 	username: "AWS"
 
-	secret: out
+	secret: out @dagger(output)
 
 	aws.#Script & {
 		always:   true

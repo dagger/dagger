@@ -13,7 +13,7 @@ import (
 	// GCR credentials
 	username: "oauth2accesstoken"
 	secret: {
-		string
+		string @dagger(output)
 
 		#up: [
 			op.#Load & {

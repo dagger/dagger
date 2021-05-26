@@ -7,7 +7,7 @@ import (
 
 // Build a Docker image from source, using included Dockerfile
 #Build: {
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	#up: [
 		op.#DockerBuild & {
@@ -20,7 +20,7 @@ import (
 // Pull a docker container
 #Pull: {
 	// Remote ref (example: "index.docker.io/alpine:latest")
-	from: string
+	from: string @dagger(input)
 
 	#up: [
 		op.#FetchContainer & {ref: from},
@@ -30,10 +30,10 @@ import (
 // Push a docker image
 #Push: {
 	// Remote ref (example: "index.docker.io/alpine:latest")
-	ref: string
+	ref: string @dagger(input)
 
 	// Image
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	#up: [
 		op.#Load & {from:           source},
@@ -46,8 +46,8 @@ import (
 // Build a Docker image from the provided Dockerfile contents
 // FIXME: incorporate into #Build
 #ImageFromDockerfile: {
-	dockerfile: string
-	context:    dagger.#Artifact
+	dockerfile: string @dagger(input)
+	context:    dagger.#Artifact @dagger(input)
 
 	#up: [
 		op.#DockerBuild & {

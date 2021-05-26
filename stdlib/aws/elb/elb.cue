@@ -10,12 +10,14 @@ import (
 	config: aws.#Config
 
 	// ListenerArn
-	listenerArn: string
+	listenerArn: string @dagger(input)
 
 	// Optional vhost for reusing priorities
-	vhost?: string
+	vhost?: string @dagger(input)
 
 	// exported priority
+	priority: out @dagger(output)
+
 	out: string
 
 	aws.#Script & {
