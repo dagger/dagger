@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,13 +86,13 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) (*enviro
 
 	// Spawn build function
 	eg.Go(func() error {
-		return c.buildfn(gctx, environment, fn, events)
+		return c.buildfn(gctx, state, environment, fn, events)
 	})
 
 	return environment, eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -109,10 +108,13 @@ func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn D
 	// buildkit auth provider (registry)
 	auth := solver.NewRegistryAuthProvider()
 
+	// secrets
+	secrets := solver.NewSecretsProvider(st)
+
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
-		Session:   []session.Attachable{auth},
+		Session:   []session.Attachable{auth, secrets},
 	}
 
 	// Call buildkit solver
@@ -127,6 +129,7 @@ func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn D
 			Gateway: gw,
 			Events:  ch,
 			Auth:    auth,
+			Secrets: secrets,
 			NoCache: c.noCache,
 		})
 
@@ -165,7 +168,7 @@ func (c *Client) buildfn(ctx context.Context, env *environment.Environment, fn D
 		return res, nil
 	}, ch)
 	if err != nil {
-		return fmt.Errorf("buildkit solve: %w", bkCleanError(err))
+		return solver.CleanError(err)
 	}
 	for k, v := range resp.ExporterResponse {
 		// FIXME consume exporter response
@@ -242,23 +245,4 @@ func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) er
 			}
 		},
 	)
-}
-
-// A helper to remove noise from buildkit error messages.
-// FIXME: Obviously a cleaner solution would be nice.
-func bkCleanError(err error) error {
-	noise := []string{
-		"executor failed running ",
-		"buildkit-runc did not terminate successfully",
-		"rpc error: code = Unknown desc = ",
-		"failed to solve: ",
-	}
-
-	msg := err.Error()
-
-	for _, s := range noise {
-		msg = strings.ReplaceAll(msg, s, "")
-	}
-
-	return errors.New(msg)
 }

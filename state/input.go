@@ -37,24 +37,24 @@ type Input struct {
 	File   *fileInput   `yaml:"file,omitempty"`
 }
 
-func (i Input) Compile(state *State) (*compiler.Value, error) {
+func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
 	switch {
 	case i.Dir != nil:
-		return i.Dir.Compile(state)
+		return i.Dir.Compile(key, state)
 	case i.Git != nil:
-		return i.Git.Compile(state)
+		return i.Git.Compile(key, state)
 	case i.Docker != nil:
-		return i.Docker.Compile(state)
+		return i.Docker.Compile(key, state)
 	case i.Text != nil:
-		return i.Text.Compile(state)
+		return i.Text.Compile(key, state)
 	case i.Secret != nil:
-		return i.Secret.Compile(state)
+		return i.Secret.Compile(key, state)
 	case i.JSON != nil:
-		return i.JSON.Compile(state)
+		return i.JSON.Compile(key, state)
 	case i.YAML != nil:
-		return i.YAML.Compile(state)
+		return i.YAML.Compile(key, state)
 	case i.File != nil:
-		return i.File.Compile(state)
+		return i.File.Compile(key, state)
 	default:
 		return nil, fmt.Errorf("input has not been set")
 	}
@@ -75,7 +75,7 @@ type dirInput struct {
 	Include []string `json:"include,omitempty"`
 }
 
-func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
+func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 	// FIXME: serialize an intermediate struct, instead of generating cue source
 
 	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
@@ -122,7 +122,7 @@ func GitInput(remote, ref, dir string) Input {
 	}
 }
 
-func (git gitInput) Compile(_ *State) (*compiler.Value, error) {
+func (git gitInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	ref := "HEAD"
 	if git.Ref != "" {
 		ref = git.Ref
@@ -148,7 +148,7 @@ type dockerInput struct {
 	Ref string `json:"ref,omitempty"`
 }
 
-func (i dockerInput) Compile(_ *State) (*compiler.Value, error) {
+func (i dockerInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	panic("NOT IMPLEMENTED")
 }
 
@@ -162,7 +162,7 @@ func TextInput(data string) Input {
 
 type textInput string
 
-func (i textInput) Compile(_ *State) (*compiler.Value, error) {
+func (i textInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	return compiler.Compile("", fmt.Sprintf("%q", i))
 }
 
@@ -176,8 +176,12 @@ func SecretInput(data string) Input {
 
 type secretInput string
 
-func (i secretInput) Compile(_ *State) (*compiler.Value, error) {
-	return compiler.Compile("", fmt.Sprintf("%q", i))
+func (i secretInput) Compile(key string, _ *State) (*compiler.Value, error) {
+	return compiler.Compile("", fmt.Sprintf(`{id:%q}`, "secret="+key))
+}
+
+func (i secretInput) PlainText() string {
+	return string(i)
 }
 
 // An input value encoded as JSON
@@ -190,7 +194,7 @@ func JSONInput(data string) Input {
 
 type jsonInput string
 
-func (i jsonInput) Compile(_ *State) (*compiler.Value, error) {
+func (i jsonInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	return compiler.DecodeJSON("", []byte(i))
 }
 
@@ -204,7 +208,7 @@ func YAMLInput(data string) Input {
 
 type yamlInput string
 
-func (i yamlInput) Compile(_ *State) (*compiler.Value, error) {
+func (i yamlInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	return compiler.DecodeYAML("", []byte(i))
 }
 
@@ -220,7 +224,7 @@ type fileInput struct {
 	Path string `json:"data,omitempty"`
 }
 
-func (i fileInput) Compile(_ *State) (*compiler.Value, error) {
+func (i fileInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	data, err := ioutil.ReadFile(i.Path)
 	if err != nil {
 		return nil, err
