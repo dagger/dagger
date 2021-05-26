@@ -52,6 +52,8 @@ import (
 	mount: [string]: {
 		from: dagger.#Artifact
 		// FIXME: support source path
+	} | {
+		secret: dagger.#Secret
 	}
 
 	// Mount persistent cache directories
@@ -94,10 +96,9 @@ import (
 		// Execute setup commands, without volumes
 		for cmd in setup {
 			op.#Exec & {
-				args:     [shell.path] + shell.args + [cmd]
-				"env":    env
-				"dir":    dir
-				"always": always
+				args:  [shell.path] + shell.args + [cmd]
+				"env": env
+				"dir": dir
 			}
 		},
 		// Execute main command with volumes
@@ -109,7 +110,7 @@ import (
 				"always": always
 				"mount": {
 					for dest, o in mount {
-						"\(dest)": from: o.from
+						"\(dest)": o
 						// FIXME: support source path
 					}
 					for dest in cache {

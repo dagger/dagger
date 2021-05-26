@@ -80,10 +80,10 @@ import (
 			if customDomain != _|_ {
 				NETLIFY_DOMAIN: customDomain
 			}
-			NETLIFY_ACCOUNT:    account.name
-			NETLIFY_AUTH_TOKEN: account.token
+			NETLIFY_ACCOUNT: account.name
 		}
 		dir: "/src"
-		mount: "/src": from: contents
+		mount: "/src": from:     contents
+		mount: "/token": secret: account.token
 	}
 }

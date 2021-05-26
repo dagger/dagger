@@ -44,7 +44,7 @@ func New(st *state.State) (*Environment, error) {
 
 	// Prepare inputs
 	for key, input := range st.Inputs {
-		v, err := input.Compile(st)
+		v, err := input.Compile(key, st)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +86,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
-	planSource, err := e.state.PlanSource().Compile(e.state)
+	planSource, err := e.state.PlanSource().Compile("", e.state)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (e *Environment) LocalDirs() map[string]string {
 	}
 
 	// 2. Scan the plan
-	plan, err := e.state.PlanSource().Compile(e.state)
+	plan, err := e.state.PlanSource().Compile("", e.state)
 	if err != nil {
 		panic(err)
 	}

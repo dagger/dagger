@@ -67,6 +67,33 @@ setup() {
     assert_line '{"in":"foobar","test":"received: foobar"}'
 }
 
+@test "compute: secrets" {
+    # secrets used as environment variables must fail
+    run "$DAGGER" compute  "$TESTDIR"/compute/secrets/invalid/env
+    assert_failure
+    assert_line --partial "conflicting values"
+
+    # strings passed as secrets must fail
+    run "$DAGGER" compute  "$TESTDIR"/compute/secrets/invalid/string
+    assert_failure
+
+    # Setting a text input for a secret value should fail
+    run "$DAGGER" compute --input-string 'mySecret=SecretValue' "$TESTDIR"/compute/secrets/simple
+    assert_failure
+
+    # Now test with an actual secret and make sure it works
+    "$DAGGER" init
+    dagger_new_with_plan secrets "$TESTDIR"/compute/secrets/simple
+    "$DAGGER" input secret mySecret SecretValue
+    run "$DAGGER" up
+    assert_success
+
+    # Make sure the secret doesn't show in dagger query
+    run "$DAGGER" query mySecret.id -f text
+    assert_success
+    assert_output "secret=mySecret"
+}
+
 @test ".daggerignore" {
     "$DAGGER" compute --input-dir TestData="$TESTDIR"/compute/ignore/testdata "$TESTDIR"/compute/ignore
 }
