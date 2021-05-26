@@ -11,33 +11,40 @@ Components:
 
 - [Amazon S3](https://aws.amazon.com/s3/) for hosting
 
-1. Change the current directory to the example deployment plan and create a new deployment
+1. Initialize a new workspace
 
 ```sh
 cd ./simple-s3
-dagger new
+dagger init
 ```
 
-2. Configure your AWS credentials
+2. Create a new environment
 
 ```sh
-dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
-dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+dagger new simple-s3
+cp *.cue ./.dagger/env/simple-s3/plan/
 ```
 
-3. Specify the source code location
+3. Configure your AWS credentials
+
+```sh
+dagger input secret awsConfig.accessKey MY_AWS_ACCESS_KEY
+dagger input secret awsConfig.secretKey MY_AWS_SECRET_KEY
+```
+
+4. Specify the source code location
 
 ```sh
 dagger input dir source website
 ```
 
-4. Deploy!
+5. Deploy!
 
 ```sh
 dagger up
 ```
 
-5. Check the URL
+6. Check the URL
 
 ```sh
 curl -i $(dagger query url -f text)
@@ -56,23 +63,25 @@ Components:
 - [Github](https://github.com) for source code hosting
 - [React-Todo-App](https://github.com/kabirbaidhya/react-todo-app) by Kabir Baidhya as a sample application.
 
-1. Change the current directory to the example deployment plan
+1. Initialize a new workspace
 
 ```sh
 cd ./react
+dagger init
 ```
 
-2. Create a new deployment from the plan
+2. Create a new environment
 
 ```sh
-dagger new
+dagger new react
+cp *.cue ./.dagger/env/react/plan/
 ```
 
 3. Configure the deployment with your Netlify access token.
    You can create new tokens from the [Netlify dashboard](https://app.netlify.com/user/applications/personal).
 
 ```sh
-dagger input text www.account.token MY_TOKEN
+dagger input secret www.account.token MY_TOKEN
 ```
 
 _NOTE: there is a dedicated command for encrypted secret inputs, but it is
@@ -95,14 +104,21 @@ This app assumes the following infrastructure is available:
 - AWS RDS Instance (MySQL or PostgreSQL)
 - AWS ECR repository
 
-1. Create a new deployment from the plan
+1. Initialize a new workspace
 
 ```sh
-cd ./examples/jamstack
-dagger new
+cd ./jamstack
+dagger init
 ```
 
-2. Edit the inputs
+2. Create a new environment
+
+```sh
+dagger new jamstack
+cp *.cue ./.dagger/env/jamstack/plan/
+```
+
+3. Edit the inputs
 
 Edit the file `inputs.yaml` and review all values to match to your infrastructure.
 
@@ -112,7 +128,7 @@ Add the inputs to the deployment:
 dagger input yaml "" -f ./inputs.yaml
 ```
 
-1. Deploy!
+4. Deploy!
 
 ```sh
 dagger up
@@ -126,7 +142,7 @@ dagger input dir backend.source ./my/local/backend/code
 
 And the same mechanism applies for every single key in this file.
 
-4. Get the App URL
+5. Get the App URL
 
 ```sh
 dagger query url
@@ -144,23 +160,25 @@ Components:
 - [Amazon CloudFormation](https://aws.amazon.com/cloudformation) for infrastructure provisioning
 - [Kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) as kubernetes client
 
-1. Change the current directory to the example deployment plan
+1. Initialize a new workspace
 
 ```sh
 cd ./kubernetes-aws
+dagger init
 ```
 
-2. Create a new deployment from the plan
+2. Create a new environment
 
 ```sh
-dagger new
+dagger new kubernetes-aws
+cp *.cue ./.dagger/env/kubernetes-aws/plan/
 ```
 
 3. Configure the deployment with your AWS credentials
 
 ```sh
-dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
-dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+dagger input secret awsConfig.accessKey MY_AWS_ACCESS_KEY
+dagger input secret awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
 4. Deploy!
@@ -186,26 +204,28 @@ Components:
 - [Amazon Cloudwatch Synthetics](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Synthetics_Canaries.html) for hosting the monitoring scripts
 - [Amazon CloudFormation](https://aws.amazon.com/cloudformation) for infrastructure provisioning
 
-1. Change the current directory to the example deployment plan
+1. Initialize a new workspace
 
 ```sh
 cd ./monitoring
+dagger init
 ```
 
-2. Create a new deployment from the plan
+2. Create a new environment
 
 ```sh
-dagger new
+dagger new monitoring
+cp *.cue ./.dagger/env/monitoring/plan/
 ```
 
-3. Configure the deployment with your AWS credentials
+2. Configure the deployment with your AWS credentials
 
 ```sh
 dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
 dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
-4. Configure the monitoring parameters
+3. Configure the monitoring parameters
 
 ```sh
 dagger input text website https://MYWEBSITE.TLD
@@ -215,7 +235,7 @@ dagger input text website https://MYWEBSITE.TLD
 dagger input text email my_email@my_domain.tld
 ```
 
-5. Deploy!
+4. Deploy!
 
 ```sh
 dagger up
@@ -235,23 +255,25 @@ Components:
 
 How to run:
 
-1. Change the current directory to the example deployment plan
+1. Initialize a new workspace
 
 ```sh
 cd ./kubernetes-app
+dagger init
 ```
 
-2. Create a new deployment from the plan
+2. Create a new environment
 
 ```sh
-dagger new
+dagger new kubernetes-app
+cp *.cue ./.dagger/env/kubernetes-app/plan/
 ```
 
 3. Configure the deployment with your AWS credentials
 
 ```sh
-dagger input text awsConfig.accessKey MY_AWS_ACCESS_KEY
-dagger input text awsConfig.secretKey MY_AWS_SECRET_KEY
+dagger input secret awsConfig.accessKey MY_AWS_ACCESS_KEY
+dagger input secret awsConfig.secretKey MY_AWS_SECRET_KEY
 ```
 
 4. Configure the EKS cluster to deploy to
@@ -265,7 +287,7 @@ dagger input text cluster.clusterName MY_CLUSTER_NAME
 5. Load the Helm chart
 
 ```sh
-dagger input dir helmChart.chart=./kubernetes-app/testdata/mychart
+dagger input dir helmChart.chart ./kubernetes-app/testdata/mychart
 ```
 
 6. Deploy!
