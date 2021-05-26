@@ -8,8 +8,9 @@ import (
 )
 
 var newCmd = &cobra.Command{
-	Use:  "new",
-	Args: cobra.ExactArgs(1),
+	Use:   "new",
+	Short: "Create a new empty environment",
+	Args:  cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233

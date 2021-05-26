@@ -10,8 +10,9 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:  "init",
-	Args: cobra.MaximumNArgs(1),
+	Use:   "init",
+	Short: "Initialize a new empty workspace",
+	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
