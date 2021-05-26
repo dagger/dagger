@@ -11,18 +11,18 @@ import (
 	config: aws.#Config
 
 	// DB name
-	name: string
+	name: string @dagger(input)
 
 	// ARN of the database instance
-	dbArn: string
+	dbArn: string @dagger(input)
 
 	// ARN of the database secret (for connecting via rds api)
-	secretArn: string
+	secretArn: string @dagger(input)
 
-	dbType: "mysql" | "postgres"
+	dbType: "mysql" | "postgres" @dagger(input)
 
 	// Name of the DB created
-	out: string
+	out: string @dagger(output)
 
 	aws.#Script & {
 		"config": config

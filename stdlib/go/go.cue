@@ -11,8 +11,8 @@ import (
 // A standalone go environment
 #Container: {
 	// Go version to use
-	version: *"1.16" | string
-	source:  dagger.#Artifact
+	version: *"1.16" | string @dagger(input)
+	source:  dagger.#Artifact @dagger(input)
 
 	os.#Container & {
 		env: CGO_ENABLED: "0"
@@ -38,16 +38,18 @@ import (
 
 #Go: {
 	// Go version to use
-	version: *"1.16" | string
+	version: *"1.16" | string @dagger(input)
 
 	// Arguments to the Go binary
-	args: [...string]
+	args: [...string] @dagger(input)
 
 	// Source Directory to build
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	// Environment variables
-	env: [string]: string
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	#up: [
 		op.#FetchContainer & {
@@ -70,30 +72,32 @@ import (
 
 #Build: {
 	// Go version to use
-	version: *#Go.version | string
+	version: *#Go.version | string @dagger(input)
 
 	// Source Directory to build
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	// Packages to build
-	packages: *"." | string
+	packages: *"." | string @dagger(input)
 
 	// Target architecture
-	arch: *"amd64" | string
+	arch: *"amd64" | string @dagger(input)
 
 	// Target OS
-	os: *"linux" | string
+	os: *"linux" | string @dagger(input)
 
 	// Build tags to use for building
-	tags: *"" | string
+	tags: *"" | string @dagger(input)
 
 	// LDFLAGS to use for linking
-	ldflags: *"" | string
+	ldflags: *"" | string @dagger(input)
 
 	// Specify the targeted binary name
-	output: string
+	output: string @dagger(output)
 
-	env: [string]: string
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	#up: [
 		op.#Copy & {
@@ -111,13 +115,13 @@ import (
 
 #Test: {
 	// Go version to use
-	version: *#Go.version | string
+	version: *#Go.version | string @dagger(input)
 
 	// Source Directory to build
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	// Packages to test
-	packages: *"." | string
+	packages: *"." | string @dagger(input)
 
 	#Go & {
 		"version": version

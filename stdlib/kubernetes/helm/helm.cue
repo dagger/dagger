@@ -11,47 +11,47 @@ import (
 // Install a Helm chart
 #Chart: {
 	// Helm deployment name
-	name: string
+	name: string @dagger(input)
 
 	// Helm chart to install from source
-	chartSource: dagger.#Artifact
+	chartSource: dagger.#Artifact @dagger(input)
 
 	// Helm chart to install from repository
-	chart?: string
+	chart?: string @dagger(input)
 
 	// Helm chart repository (defaults to stable)
-	repository: *"https://charts.helm.sh/stable" | string
+	repository: *"https://charts.helm.sh/stable" | string @dagger(input)
 
 	// Helm values (either a YAML string or a Cue structure)
-	values?: string
+	values?: string @dagger(input)
 
 	// Kubernetes Namespace to deploy to
-	namespace: string
+	namespace: string @dagger(input)
 
 	// Helm action to apply
-	action: *"installOrUpgrade" | "install" | "upgrade"
+	action: *"installOrUpgrade" | "install" | "upgrade" @dagger(input)
 
 	// time to wait for any individual Kubernetes operation (like Jobs for hooks)
-	timeout: string | *"5m"
+	timeout: string | *"5m" @dagger(input)
 
 	// if set, will wait until all Pods, PVCs, Services, and minimum number of
 	// Pods of a Deployment, StatefulSet, or ReplicaSet are in a ready state
 	// before marking the release as successful.
 	// It will wait for as long as timeout
-	wait: *true | bool
+	wait: *true | bool @dagger(input)
 
 	// if set, installation process purges chart on fail.
 	// The wait option will be set automatically if atomic is used
-	atomic: *true | bool
+	atomic: *true | bool @dagger(input)
 
 	// Kube config file
-	kubeconfig: dagger.#Secret
+	kubeconfig: dagger.#Secret @dagger(input)
 
 	// Helm version
-	version: *"3.5.2" | string
+	version: *"3.5.2" | string @dagger(input)
 
 	// Kubectl version
-	kubectlVersion: *"v1.19.9" | string
+	kubectlVersion: *"v1.19.9" | string @dagger(input)
 
 	#up: [
 		op.#Load & {

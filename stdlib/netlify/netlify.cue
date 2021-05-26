@@ -10,10 +10,10 @@ import (
 #Account: {
 	// Use this Netlify account name
 	// (also referred to as "team" in the Netlify docs)
-	name: string | *""
+	name: string | *"" @dagger(input)
 
 	// Netlify authentication token
-	token: dagger.#Secret
+	token: dagger.#Secret @dagger(input)
 }
 
 // A Netlify site
@@ -22,40 +22,40 @@ import (
 	account: #Account
 
 	// Contents of the application to deploy
-	contents: dagger.#Artifact
+	contents: dagger.#Artifact @dagger(input)
 
 	// Deploy to this Netlify site
-	name: string
+	name: string @dagger(input)
 
 	// Host the site at this address
-	customDomain?: string
+	customDomain?: string @dagger(input)
 
 	// Create the Netlify site if it doesn't exist?
-	create: bool | *true
+	create: bool | *true @dagger(input)
 
 	// Website url
 	url: {
 		os.#File & {
-			from: ctr
-			path: "/netlify/url"
-		}
-	}.read.data
+				from: ctr
+				path: "/netlify/url"
+			}
+	}.read.data @dagger(output)
 
 	// Unique Deploy URL
 	deployUrl: {
 		os.#File & {
-			from: ctr
-			path: "/netlify/deployUrl"
-		}
-	}.read.data
+				from: ctr
+				path: "/netlify/deployUrl"
+			}
+	}.read.data @dagger(output)
 
 	// Logs URL for this deployment
 	logsUrl: {
 		os.#File & {
-			from: ctr
-			path: "/netlify/logsUrl"
-		}
-	}.read.data
+				from: ctr
+				path: "/netlify/logsUrl"
+			}
+	}.read.data @dagger(output)
 
 	ctr: os.#Container & {
 		image: alpine.#Image & {

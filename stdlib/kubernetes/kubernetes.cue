@@ -47,19 +47,19 @@ import (
 #Apply: {
 
 	// Kubernetes config to deploy
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	// Kubernetes config to deploy inlined in a string
-	sourceInline?: string
+	sourceInline?: string @dagger(input)
 
 	// Kubernetes Namespace to deploy to
-	namespace: string
+	namespace: string @dagger(input)
 
 	// Version of kubectl client
-	version: *"v1.19.9" | string
+	version: *"v1.19.9" | string @dagger(input)
 
 	// Kube config file
-	kubeconfig: dagger.#Secret
+	kubeconfig: dagger.#Secret @dagger(input)
 
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE" || true

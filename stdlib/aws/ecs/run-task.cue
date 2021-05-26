@@ -11,22 +11,24 @@ import (
 	config: aws.#Config
 
 	// ECS cluster name
-	cluster: string
+	cluster: string @dagger(input)
 
 	// Arn of the task to run
-	taskArn: string
+	taskArn: string @dagger(input)
 
 	// Environment variables of the task
-	containerEnvironment: [string]: string
+	containerEnvironment: {
+		[string]: string @dagger(input)
+	}
 
 	// Container name
-	containerName: string
+	containerName: string @dagger(input)
 
 	// Container command to give
-	containerCommand: [...string]
+	containerCommand: [...string] @dagger(input)
 
 	// Task role ARN
-	roleArn: string | *""
+	roleArn: string | *"" @dagger(input)
 
 	containerOverrides: {
 		containerOverrides: [{

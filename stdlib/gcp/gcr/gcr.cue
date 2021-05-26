@@ -40,5 +40,5 @@ import (
 				source: "/token.txt"
 			},
 		]
-	}
+	} @dagger(output)
 }

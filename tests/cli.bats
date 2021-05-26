@@ -285,3 +285,38 @@ setup() {
   "foo": "bar"
 }'
 }
+
+@test "dagger input list" {
+    "$DAGGER" init
+
+    dagger_new_with_plan list "$TESTDIR"/cli/input/list
+    "$DAGGER" input text cfg.str "foobar" -e "list"
+
+    out="$("$DAGGER" input list -e "list")"
+    outAll="$("$DAGGER" input list --all -e "list")"
+
+    #note: this is the recommended way to use pipes with bats
+    run bash -c "echo \"$out\" | grep awsConfig.accessKey | grep '#Secret' | grep false"
+    assert_success
+
+    run bash -c "echo \"$out\" | grep cfgInline.source | grep '#Artifact' | grep false | grep 'source dir'"
+    assert_success
+
+    run bash -c "echo \"$outAll\" | grep cfg2"
+    assert_failure
+
+    run bash -c "echo \"$out\" | grep cfgInline.strDef | grep string | grep 'yolo (default)' | grep false"
+    assert_success
+
+    run bash -c "echo \"$out\" | grep cfg.num"
+    assert_failure
+
+    run bash -c "echo \"$outAll\" | grep cfg.num | grep int"
+    assert_success
+
+    run bash -c "echo \"$out\" | grep cfg.strSet"
+    assert_failure
+
+    run bash -c "echo \"$outAll\" | grep cfg.strSet | grep string | grep pipo"
+    assert_success
+}

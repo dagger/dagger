@@ -7,9 +7,9 @@ import (
 )
 
 #Create: {
-	filename:    !=""
-	permissions: int | *0o644
-	contents:    string | bytes
+	filename:    !=""           @dagger(input)
+	permissions: int | *0o644   @dagger(input)
+	contents:    string | bytes @dagger(input)
 
 	#up: [
 		op.#WriteFile & {dest: filename, content: contents, mode: permissions},
@@ -17,12 +17,12 @@ import (
 }
 
 #Append: {
-	filename:    !=""
-	permissions: int | *0o644
-	contents:    string | bytes
-	from:        dagger.#Artifact
+	filename:    !=""             @dagger(input)
+	permissions: int | *0o644     @dagger(input)
+	contents:    string | bytes   @dagger(input)
+	from:        dagger.#Artifact @dagger(input)
 
-	orig: (#read & {path: filename, "from": from}).data
+	orig: (#read & {path: filename, "from": from}).data @dagger(output)
 
 	#up: [
 		op.#WriteFile & {dest: filename, content: "\(orig)\(contents)", mode: permissions},
@@ -30,30 +30,30 @@ import (
 }
 
 #Read: {
-	filename: !=""
-	from:     dagger.#Artifact
-	contents: (#read & {path: filename, "from": from}).data
+	filename: !=""             @dagger(input)
+	from:     dagger.#Artifact @dagger(input)
+	contents: (#read & {path:  filename, "from": from}).data @dagger(output)
 }
 
 #read: {
-	path: !=""
-	from: dagger.#Artifact
+	path: !=""             @dagger(input)
+	from: dagger.#Artifact @dagger(input)
 	data: {
 		string
 		#up: [
 			op.#Load & {"from":   from},
 			op.#Export & {source: path},
 		]
-	}
+	} @dagger(output)
 }
 
 #Glob: {
-	glob: !=""
-	filenames: [...string]
-	from:  dagger.#Artifact
-	files: (_#glob & {"glob": glob, "from": from}).data
+	glob: !="" @dagger(input)
+	filenames: [...string] @dagger(input)
+	from:  dagger.#Artifact   @dagger(input)
+	files: (_#glob & {"glob": glob, "from": from}).data @dagger(output)
 	// trim suffix because ls always ends with newline
-	filenames: strings.Split(strings.TrimSuffix(files, "\n"), "\n")
+	filenames: strings.Split(strings.TrimSuffix(files, "\n"), "\n") @dagger(output)
 }
 
 _#glob: {

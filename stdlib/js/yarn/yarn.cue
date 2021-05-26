@@ -13,26 +13,28 @@ import (
 // A Yarn package.
 #Package: {
 	// Application source code
-	source: dagger.#Artifact
+	source: dagger.#Artifact @dagger(input)
 
 	// Environment variables
-	env: [string]: string
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	// Write the contents of `environment` to this file,
 	// in the "envfile" format.
-	writeEnvFile: string | *""
+	writeEnvFile: string | *"" @dagger(input)
 
 	// Read build output from this directory
 	// (path must be relative to working directory).
-	buildDir: string | *"build"
+	buildDir: string | *"build" @dagger(input)
 
 	// Run this yarn script
-	script: string | *"build"
+	script: string | *"build" @dagger(input)
 
 	build: os.#Dir & {
 		from: ctr
 		path: "/build"
-	}
+	} @dagger(output)
 
 	ctr: os.#Container & {
 		image: alpine.#Image & {

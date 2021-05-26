@@ -14,22 +14,24 @@ import (
 	config: aws.#Config
 
 	// Source is the Cloudformation template (JSON/YAML string)
-	source: string
+	source: string @dagger(input)
 
 	// Stackname is the cloudformation stack
-	stackName: string
+	stackName: string @dagger(input)
 
 	// Stack parameters
-	parameters: [string]: _
+	parameters: {
+		...
+	}
 
 	// Behavior when failure to create/update the Stack
-	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE"
+	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE" @dagger(input)
 
 	// Timeout for waiting for the stack to be created/updated (in minutes)
-	timeout: *10 | uint
+	timeout: *10 | uint @dagger(input)
 
 	// Never update the stack if already exists
-	neverUpdate: *false | bool
+	neverUpdate: *false | bool @dagger(input)
 
 	#files: {
 		"/entrypoint.sh":     #Code
@@ -44,7 +46,9 @@ import (
 		}
 	}
 
-	outputs: [string]: string
+	outputs: {
+		[string]: string @dagger(output)
+	}
 
 	outputs: #up: [
 		op.#Load & {

@@ -7,9 +7,9 @@ import (
 // A git repository
 #Repository: {
 
-	remote: string
-	ref:    string
-	subdir: string | *""
+	remote: string       @dagger(input)
+	ref:    string       @dagger(input)
+	subdir: string | *"" @dagger(input)
 
 	#up: [
 		op.#FetchGit & {

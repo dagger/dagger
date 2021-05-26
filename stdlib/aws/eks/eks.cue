@@ -11,10 +11,10 @@ import (
 	config: aws.#Config
 
 	// EKS cluster name
-	clusterName: string
+	clusterName: string @dagger(input)
 
 	// Kubectl version
-	version: *"v1.19.9" | string
+	version: *"v1.19.9" | string @dagger(input)
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
@@ -62,5 +62,5 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} @dagger(output)
 }

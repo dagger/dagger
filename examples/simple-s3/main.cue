@@ -14,6 +14,7 @@ awsConfig: aws.#Config & {
 // Name of the S3 bucket to use
 bucket: *"dagger-io-examples" | string @dagger(input)
 
+// Source code to deploy
 source: dagger.#Artifact @dagger(input)
 url:    "\(deploy.url)index.html"
 
