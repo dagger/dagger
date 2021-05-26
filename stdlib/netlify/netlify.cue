@@ -36,25 +36,25 @@ import (
 	// Website url
 	url: {
 		os.#File & {
-			from: ctr
-			path: "/netlify/url"
-		}
+				from: ctr
+				path: "/netlify/url"
+			}
 	}.read.data @dagger(output)
 
 	// Unique Deploy URL
 	deployUrl: {
 		os.#File & {
-			from: ctr
-			path: "/netlify/deployUrl"
-		}
+				from: ctr
+				path: "/netlify/deployUrl"
+			}
 	}.read.data @dagger(output)
 
 	// Logs URL for this deployment
 	logsUrl: {
 		os.#File & {
-			from: ctr
-			path: "/netlify/logsUrl"
-		}
+				from: ctr
+				path: "/netlify/logsUrl"
+			}
 	}.read.data @dagger(output)
 
 	ctr: os.#Container & {

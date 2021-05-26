@@ -47,7 +47,9 @@ import (
 	source: dagger.#Artifact @dagger(input)
 
 	// Environment variables
-	env: [string]: string @dagger(input)
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	#up: [
 		op.#FetchContainer & {
@@ -93,7 +95,9 @@ import (
 	// Specify the targeted binary name
 	output: string @dagger(output)
 
-	env: [string]: string @dagger(input)
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	#up: [
 		op.#Copy & {

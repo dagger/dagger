@@ -13,7 +13,7 @@ import (
 	// GCR credentials
 	username: "oauth2accesstoken"
 	secret: {
-		string @dagger(output)
+		string
 
 		#up: [
 			op.#Load & {
@@ -40,5 +40,5 @@ import (
 				source: "/token.txt"
 			},
 		]
-	}
+	} @dagger(output)
 }

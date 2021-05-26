@@ -46,7 +46,7 @@ import (
 // Build a Docker image from the provided Dockerfile contents
 // FIXME: incorporate into #Build
 #ImageFromDockerfile: {
-	dockerfile: string @dagger(input)
+	dockerfile: string           @dagger(input)
 	context:    dagger.#Artifact @dagger(input)
 
 	#up: [

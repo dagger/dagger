@@ -20,7 +20,9 @@ import (
 	stackName: string @dagger(input)
 
 	// Stack parameters
-	parameters: [string]: _ @dagger(input)
+	parameters: {
+		...
+	}
 
 	// Behavior when failure to create/update the Stack
 	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE" @dagger(input)
@@ -44,7 +46,9 @@ import (
 		}
 	}
 
-	outputs: [string]: string @dagger(output)
+	outputs: {
+		[string]: string @dagger(output)
+	}
 
 	outputs: #up: [
 		op.#Load & {

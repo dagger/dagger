@@ -19,7 +19,7 @@ import (
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
 		// FIXME There is a problem with dagger.#Secret type
-		string @dagger(output)
+		string
 
 		#up: [
 			op.#Load & {
@@ -62,5 +62,5 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} @dagger(output)
 }

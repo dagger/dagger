@@ -12,9 +12,13 @@ import (
 
 	source: dagger.#Artifact @dagger(input)
 
-	tfvars?: [string]: _ @dagger(input)
+	tfvars?: {
+		...
+	}
 
-	env: [string]: string @dagger(input)
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	state: #up: [
 		op.#FetchContainer & {

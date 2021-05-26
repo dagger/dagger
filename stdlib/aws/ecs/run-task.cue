@@ -17,7 +17,9 @@ import (
 	taskArn: string @dagger(input)
 
 	// Environment variables of the task
-	containerEnvironment: [string]: string @dagger(input)
+	containerEnvironment: {
+		[string]: string @dagger(input)
+	}
 
 	// Container name
 	containerName: string @dagger(input)

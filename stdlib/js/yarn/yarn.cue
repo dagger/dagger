@@ -16,7 +16,9 @@ import (
 	source: dagger.#Artifact @dagger(input)
 
 	// Environment variables
-	env: [string]: string @dagger(input)
+	env: {
+		[string]: string @dagger(input)
+	}
 
 	// Write the contents of `environment` to this file,
 	// in the "envfile" format.

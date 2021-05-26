@@ -7,8 +7,8 @@ import (
 // A git repository
 #Repository: {
 
-	remote: string @dagger(input)
-	ref:    string @dagger(input)
+	remote: string       @dagger(input)
+	ref:    string       @dagger(input)
 	subdir: string | *"" @dagger(input)
 
 	#up: [
