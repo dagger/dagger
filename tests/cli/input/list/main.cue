@@ -2,12 +2,12 @@ package main
 
 import (
 	"dagger.io/dagger"
-    "dagger.io/aws"
+	"dagger.io/aws"
 )
 
 awsConfig: aws.#Config & {
-    // force region
-    region: "us-east-1"
+	// force region
+	region: "us-east-1"
 }
 
 #A: {
@@ -28,17 +28,17 @@ awsConfig: aws.#Config & {
 	num:         int | *42 @dagger(input)
 	numNotInput: int
 
-    // aws config
-    cfg: awsConfig
+	// aws config
+	cfg: awsConfig
 }
 
 cfgInline: {
-    #A
+	#A
 }
 
 cfg: #A & {
-    // force this key
-    num: 21
+	// force this key
+	num: 21
 }
 
 cfg2: cfg
