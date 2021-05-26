@@ -36,10 +36,12 @@ var initCmd = &cobra.Command{
 			dir = cwd
 		}
 
-		_, err := state.Init(ctx, dir)
+		ws, err := state.Init(ctx, dir)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize workspace")
 		}
+
+		lg.Info().Str("path", ws.DaggerDir()).Msg("initialized new empty workspace")
 	},
 }
 

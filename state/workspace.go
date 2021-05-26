@@ -268,3 +268,7 @@ func (w *Workspace) Create(ctx context.Context, name string) (*State, error) {
 
 	return st, nil
 }
+
+func (w *Workspace) DaggerDir() string {
+	return path.Join(w.Path, daggerDir)
+}
