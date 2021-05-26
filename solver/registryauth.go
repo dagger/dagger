@@ -1,4 +1,4 @@
-package dagger
+package solver
 
 import (
 	"context"
@@ -12,20 +12,20 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// registryAuthProvider is a buildkit provider for registry authentication
+// RegistryAuthProvider is a buildkit provider for registry authentication
 // Adapted from: https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go
-type registryAuthProvider struct {
+type RegistryAuthProvider struct {
 	credentials map[string]*bkauth.CredentialsResponse
 	m           sync.RWMutex
 }
 
-func newRegistryAuthProvider() *registryAuthProvider {
-	return &registryAuthProvider{
+func NewRegistryAuthProvider() *RegistryAuthProvider {
+	return &RegistryAuthProvider{
 		credentials: map[string]*bkauth.CredentialsResponse{},
 	}
 }
 
-func (a *registryAuthProvider) AddCredentials(target, username, secret string) {
+func (a *RegistryAuthProvider) AddCredentials(target, username, secret string) {
 	a.m.Lock()
 	defer a.m.Unlock()
 
@@ -35,11 +35,11 @@ func (a *registryAuthProvider) AddCredentials(target, username, secret string) {
 	}
 }
 
-func (a *registryAuthProvider) Register(server *grpc.Server) {
+func (a *RegistryAuthProvider) Register(server *grpc.Server) {
 	bkauth.RegisterAuthServer(server, a)
 }
 
-func (a *registryAuthProvider) Credentials(ctx context.Context, req *bkauth.CredentialsRequest) (*bkauth.CredentialsResponse, error) {
+func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.CredentialsRequest) (*bkauth.CredentialsResponse, error) {
 	reqURL, err := parseAuthHost(req.Host)
 	if err != nil {
 		return nil, err
@@ -73,14 +73,14 @@ func parseAuthHost(host string) (*url.URL, error) {
 	return url.Parse(host)
 }
 
-func (a *registryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (rr *bkauth.FetchTokenResponse, err error) {
+func (a *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (rr *bkauth.FetchTokenResponse, err error) {
 	return nil, status.Errorf(codes.Unavailable, "client side tokens not implemented")
 }
 
-func (a *registryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenAuthorityRequest) (*bkauth.GetTokenAuthorityResponse, error) {
+func (a *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenAuthorityRequest) (*bkauth.GetTokenAuthorityResponse, error) {
 	return nil, status.Errorf(codes.Unavailable, "client side tokens not implemented")
 }
 
-func (a *registryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bkauth.VerifyTokenAuthorityRequest) (*bkauth.VerifyTokenAuthorityResponse, error) {
+func (a *RegistryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bkauth.VerifyTokenAuthorityRequest) (*bkauth.VerifyTokenAuthorityResponse, error) {
 	return nil, status.Errorf(codes.Unavailable, "client side tokens not implemented")
 }

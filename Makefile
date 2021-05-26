@@ -38,8 +38,8 @@ lint: shellcheck cuelint golint check-buildkit-version
 check-buildkit-version:
 	@test \
 		"$(shell grep buildkit ./go.mod | cut -d' ' -f2)" = \
-		"$(shell grep ' = "v' ./pkg/buildkitd/buildkitd.go | sed -E 's/^.*version.*=.*\"(v.*)\"/\1/' )" \
-		|| { echo buildkit version mismatch go.mod != pkg/buildkitd/buildkitd.go ; exit 1; }
+		"$(shell grep ' = "v' ./util/buildkitd/buildkitd.go | sed -E 's/^.*version.*=.*\"(v.*)\"/\1/' )" \
+		|| { echo buildkit version mismatch go.mod != util/buildkitd/buildkitd.go ; exit 1; }
 
 .PHONY: integration
 integration: dagger-debug

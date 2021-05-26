@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"cuelang.org/go/cue"
-	"dagger.io/go/cmd/dagger/cmd/common"
-	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger"
-	"dagger.io/go/dagger/compiler"
+	"go.dagger.io/dagger/client"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
+	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/compiler"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -42,7 +42,7 @@ var queryCmd = &cobra.Command{
 			cuePath = cue.ParsePath(args[0])
 		}
 
-		c, err := dagger.NewClient(ctx, "", false)
+		c, err := client.New(ctx, "", false)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}

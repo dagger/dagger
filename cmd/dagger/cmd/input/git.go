@@ -1,10 +1,10 @@
 package input
 
 import (
-	"dagger.io/go/cmd/dagger/logger"
-	"dagger.io/go/dagger/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/state"
 )
 
 var gitCmd = &cobra.Command{

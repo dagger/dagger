@@ -1,4 +1,4 @@
-package dagger
+package environment
 
 import (
 	"bytes"
@@ -25,7 +25,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
-	"dagger.io/go/dagger/compiler"
+	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/solver"
 )
 
 const (
@@ -36,14 +37,14 @@ const (
 type Pipeline struct {
 	code     *compiler.Value
 	name     string
-	s        Solver
+	s        solver.Solver
 	state    llb.State
 	result   bkgw.Reference
 	image    dockerfile2llb.Image
 	computed *compiler.Value
 }
 
-func NewPipeline(code *compiler.Value, s Solver) *Pipeline {
+func NewPipeline(code *compiler.Value, s solver.Solver) *Pipeline {
 	return &Pipeline{
 		code:     code,
 		name:     code.Path().String(),
@@ -70,7 +71,7 @@ func (p *Pipeline) Result() (llb.State, error) {
 }
 
 func (p *Pipeline) FS() fs.FS {
-	return NewBuildkitFS(p.result)
+	return solver.NewBuildkitFS(p.result)
 }
 
 func (p *Pipeline) ImageConfig() dockerfile2llb.Image {
@@ -641,7 +642,7 @@ func (p *Pipeline) DockerLogin(ctx context.Context, op *compiler.Value, st llb.S
 		return st, err
 	}
 
-	p.s.auth.AddCredentials(target, username, secret)
+	p.s.AddCredentials(target, username, secret)
 	log.
 		Ctx(ctx).
 		Debug().
@@ -862,7 +863,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		return st, err
 	}
 
-	if p.s.noCache {
+	if p.s.NoCache() {
 		opts["no-cache"] = ""
 	}
 

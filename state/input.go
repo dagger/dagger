@@ -10,7 +10,7 @@ import (
 
 	"cuelang.org/go/cue"
 
-	"dagger.io/go/dagger/compiler"
+	"go.dagger.io/dagger/compiler"
 )
 
 // An input is a value or artifact supplied by the user.

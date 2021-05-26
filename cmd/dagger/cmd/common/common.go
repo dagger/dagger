@@ -3,10 +3,12 @@ package common
 import (
 	"context"
 
-	"dagger.io/go/dagger"
-	"dagger.io/go/dagger/state"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/client"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/state"
 )
 
 func CurrentWorkspace(ctx context.Context) *state.Workspace {
@@ -79,14 +81,14 @@ func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *s
 }
 
 // Re-compute an environment (equivalent to `dagger up`).
-func EnvironmentUp(ctx context.Context, state *state.State, noCache bool) *dagger.Environment {
+func EnvironmentUp(ctx context.Context, state *state.State, noCache bool) *environment.Environment {
 	lg := log.Ctx(ctx)
 
-	c, err := dagger.NewClient(ctx, "", noCache)
+	c, err := client.New(ctx, "", noCache)
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
-	result, err := c.Do(ctx, state, func(ctx context.Context, environment *dagger.Environment, s dagger.Solver) error {
+	result, err := c.Do(ctx, state, func(ctx context.Context, environment *environment.Environment, s solver.Solver) error {
 		log.Ctx(ctx).Debug().Msg("bringing environment up")
 		return environment.Up(ctx, s)
 	})

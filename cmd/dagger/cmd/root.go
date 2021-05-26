@@ -4,14 +4,14 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/go/cmd/dagger/cmd/input"
-	"dagger.io/go/cmd/dagger/cmd/output"
-	"dagger.io/go/cmd/dagger/logger"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/input"
+	"go.dagger.io/dagger/cmd/dagger/cmd/output"
+	"go.dagger.io/dagger/cmd/dagger/logger"
 )
 
 var rootCmd = &cobra.Command{

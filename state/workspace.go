@@ -9,8 +9,8 @@ import (
 	"path"
 	"path/filepath"
 
-	"dagger.io/go/dagger/keychain"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/keychain"
 	"gopkg.in/yaml.v3"
 )
 

@@ -5,11 +5,11 @@ import (
 	"io"
 	"os"
 
-	"dagger.io/go/cmd/dagger/cmd/common"
-	"dagger.io/go/dagger/state"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
+	"go.dagger.io/dagger/state"
 )
 
 // Cmd exposes the top-level command

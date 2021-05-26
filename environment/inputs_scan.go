@@ -1,11 +1,11 @@
-package dagger
+package environment
 
 import (
 	"context"
 
 	"cuelang.org/go/cue"
-	"dagger.io/go/dagger/compiler"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/compiler"
 )
 
 func isReference(val cue.Value) bool {
@@ -42,7 +42,7 @@ func isReference(val cue.Value) bool {
 	return isRef(val)
 }
 
-func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
+func scanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 	lg := log.Ctx(ctx)
 	inputs := []*compiler.Value{}
 
