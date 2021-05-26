@@ -287,7 +287,9 @@ setup() {
 }
 
 @test "dagger input list" {
-    "$DAGGER" new --plan-dir "$TESTDIR"/cli/input/list "list"
+    "$DAGGER" init
+
+    dagger_new_with_plan list "$TESTDIR"/cli/input/list
     "$DAGGER" input text cfg.str "foobar" -e "list"
 
     out="$("$DAGGER" input list -e "list")"
