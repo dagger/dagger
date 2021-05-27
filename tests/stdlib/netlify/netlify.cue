@@ -26,7 +26,7 @@ TestNetlify: {
 		op.#Load & {
 			from: alpine.#Image & {
 				package: bash: "=~5.1"
-				package: curl: "=~7.76"
+				package: curl: "=~7.77"
 			}
 		},
 		op.#Exec & {

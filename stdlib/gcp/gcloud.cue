@@ -18,7 +18,7 @@ import (
 				"package": bash:    "=~5.1"
 				"package": python3: "=~3.8"
 				"package": jq:      "=~1.6"
-				"package": curl:    "=~7.76"
+				"package": curl:    "=~7.77"
 			}
 		},
 

@@ -28,7 +28,7 @@ TestImageVersion: {
 TestPackageInstall: {
 	image: alpine.#Image & {
 		package: jq:   true
-		package: curl: "=~7.76"
+		package: curl: "=~7.77"
 		version: "3.13"
 	}
 

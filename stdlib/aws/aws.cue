@@ -26,7 +26,7 @@ import (
 				"package": package
 				"package": bash:      "=~5.1"
 				"package": jq:        "=~1.6"
-				"package": curl:      "=~7.76"
+				"package": curl:      "=~7.77"
 				"package": "aws-cli": "=~1.18"
 			}
 		},
