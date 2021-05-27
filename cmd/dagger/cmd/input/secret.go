@@ -2,7 +2,7 @@ package input
 
 import (
 	"fmt"
-	"syscall"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,7 +30,7 @@ var secretCmd = &cobra.Command{
 		if len(args) == 1 {
 			// No value specified: prompt terminal
 			fmt.Print("Secret: ")
-			data, err := term.ReadPassword(syscall.Stdin)
+			data, err := term.ReadPassword(int(os.Stdin.Fd()))
 			if err != nil {
 				lg.Fatal().Err(err).Msg("unable to read secret from terminal")
 			}
