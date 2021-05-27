@@ -22,6 +22,8 @@ TestS3UploadFile: {
 	}
 
 	verify: #VerifyS3 & {
+		config: TestConfig.awsConfig
+		target: deploy.target
 		file: "test.txt"
 	}
 }
@@ -36,10 +38,14 @@ TestS3UploadDir: {
 	}
 
 	verifyFile: #VerifyS3 & {
+		config: TestConfig.awsConfig
+		target: deploy.target
 		file: "dirFile.txt"
 	}
 
 	verifyDir: #VerifyS3 & {
+		config: TestConfig.awsConfig
+		target: deploy.target
 		file: "foo.txt"
 	}
 }

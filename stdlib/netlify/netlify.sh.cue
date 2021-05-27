@@ -1,7 +1,7 @@
 package netlify
 
 #Site: ctr: command: #"""
-	export NETLIFY_AUTH_TOKEN="$(cat /token)"
+	export NETLIFY_AUTH_TOKEN="$(cat /run/secrets/token)"
 
 	create_site() {
 	    url="https://api.netlify.com/api/v1/${NETLIFY_ACCOUNT:-}/sites"
