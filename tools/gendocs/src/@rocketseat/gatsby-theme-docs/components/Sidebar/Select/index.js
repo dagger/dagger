@@ -5,7 +5,7 @@ const Select = () => {
     const isBrowser = typeof window !== "undefined"
     const [tagsList, setTagsList] = useState([])
     const currentLocation = isBrowser ? window.location.pathname.split('/') : []
-    currentLocation.pop() //remove last trailing slash
+    currentLocation.shift() //remove last trailing slash
 
     useEffect(() => {
         async function getTags() {
@@ -19,7 +19,7 @@ const Select = () => {
     }, [])
 
     return (
-        <SelectStyled value={currentLocation[currentLocation.length - 1]} onChange={(e) => isBrowser ? window.location.pathname = `/${e.currentTarget.value}` : null}>
+        <SelectStyled value={currentLocation[0]} onChange={(e) => isBrowser ? window.location.pathname = `/${e.currentTarget.value}` : null}>
             {tagsList.map(t => (
                 <option>{t.tag}</option>
             ))}
