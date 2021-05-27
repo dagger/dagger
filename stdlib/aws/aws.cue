@@ -18,6 +18,7 @@ import (
 
 // Re-usable aws-cli component
 #CLI: {
+	config: #Config
 	package: [string]: string | bool
 
 	#up: [
@@ -30,86 +31,26 @@ import (
 				"package": "aws-cli": "=~1.18"
 			}
 		},
+		op.#Exec & {
+			args: [
+				"/bin/bash",
+				"--noprofile",
+				"--norc",
+				"-eo",
+				"pipefail",
+				"-c",
+				#"""
+				aws configure set aws_access_key_id "$(cat /run/secrets/access_key)"
+				aws configure set aws_secret_access_key "$(cat /run/secrets/secret_key)"
+
+				aws configure set default.region "$AWS_DEFAULT_REGION"
+				aws configure set default.cli_pager ""
+				aws configure set default.output "json"
+				"""#
+			]
+			mount: "/run/secrets/access_key": secret: config.accessKey
+			mount: "/run/secrets/secret_key": secret: config.secretKey
+			env: AWS_DEFAULT_REGION:    config.region
+		},
 	]
-}
-
-// Helper for writing scripts based on AWS CLI
-#Script: {
-	// AWS code
-	config: #Config
-
-	// Script code (bash)
-	code: string
-
-	// Extra pkgs to install
-	package: [string]: string | bool
-
-	// Files to mount
-	files: [string]: string
-
-	// Env variables
-	env: [string]: string
-
-	// Export file
-	export: string
-
-	// Always execute the script?
-	always?: bool
-
-	// Directory
-	dir?: dagger.#Artifact
-
-	out: {
-		string
-
-		#up: [
-			op.#Load & {
-				from: #CLI & {
-					"package": package
-				}
-			},
-			op.#Mkdir & {
-				path: "/inputs"
-			},
-			for k, v in files {
-				op.#WriteFile & {
-					dest:    k
-					content: v
-				}
-			},
-			op.#WriteFile & {
-				dest:    "/entrypoint.sh"
-				content: code
-			},
-			op.#Exec & {
-				if always != _|_ {
-					"always": always
-				}
-				args: [
-					"/bin/bash",
-					"--noprofile",
-					"--norc",
-					"-eo",
-					"pipefail",
-					"/entrypoint.sh",
-				]
-				"env": env
-				"env": {
-					AWS_ACCESS_KEY_ID:     config.accessKey
-					AWS_SECRET_ACCESS_KEY: config.secretKey
-					AWS_DEFAULT_REGION:    config.region
-					AWS_REGION:            config.region
-					AWS_DEFAULT_OUTPUT:    "json"
-					AWS_PAGER:             ""
-				}
-				if dir != _|_ {
-					mount: "/inputs/source": from: dir
-				}
-			},
-			op.#Export & {
-				source: export
-				format: "string"
-			},
-		]
-	}
 }

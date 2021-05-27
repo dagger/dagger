@@ -1,0 +1,26 @@
+name: default
+inputs:
+    TestConfig.awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:iu6LfQNgGZUVnHVeMRYPrcBtlZk=,iv:U5PLxDKXwJnUDdk1ayFGvvJfWdVqh1PK5ujb20YYPP0=,tag:QyqIJRiR6nE16ZDV0CP7Pw==,type:str]
+    TestConfig.awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:Q/W+KH3NEouGt6C5S+KiC43837soYi2Mjb/z5K8rD9gtaNaBjjkJHg==,iv:8nGEzLXd91rF5YBZ/EdQoMN27yrpc0sgm26DEvIuSHM=,tag:/oyKl/vj5MJAm+jZMOOAuQ==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKeEk5MS9nVmFoOVNNOHdE
+            WnZCTXBWbW9LL1NJYndCYjhIM2JsNXNEUmxJCkUya0dlZjZ0dGRIM1pVdzg5eWFH
+            MVpiaE9PclNudGdUZm5FcytuVDZGTDAKLS0tIEQxWDdteHgzS3JkdmtNTVpxMUh1
+            aXlvVWJVSGNTSkVyYmpZbi9nUVJZdmMK6csXZ2RMxFw5DB+Hb2TyhyoZT8c2/z7Y
+            Lc9Pe8gb8aUq5Ha+wCybYvY6JWEM5A9XYJKbE7f4borTfGKS72d6pw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-05-27T00:53:54Z"
+    mac: ENC[AES256_GCM,data:ho/e/xUzRdwwe3VRCz9p8UNHgxdhAxkNtWUJLS5fEXBGnw28hjwNBbPYN78bX0k9SQ/5bgvXT2O/Z+zmOSWfrCYD2eojh9mDR4aCV5m/liVh5Dxha65u6zPl9VVcSunYg3wqe9Zl+pMG8BJXvczQS7S5QEGEaWojfaA/o7HM1BE=,iv:o/cVw6GBCCdgIqIZGDzqSCiBHUmrhAoIRcyGS9P83j0=,tag:WSQO0C0lPH2vOzl07rmRGg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

@@ -13,29 +13,47 @@ import (
 	// Target S3 URL (e.g. s3://<bucket-name>/<path>/<sub-path>)
 	target?: string
 
-	// Export folder
-	export: "/contents"
+	contents: {
+		string
 
-	// Script
-	aws.#Script & {
-		code: """
-			aws s3 ls --recursive \(target) >> /contents
-		"""
+		#up: [
+			op.#Load & {
+				from: aws.#CLI & {
+					"config": config
+				}
+			},
+
+			op.#Exec & {
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					"-c",
+					#"""
+					aws s3 ls --recursive \#(target) > /contents
+					"""#
+				]
+			},
+
+			op.#Export & {
+				source: "/contents"
+				format: "string"
+			}
+		]
 	}
 }
 
 #VerifyS3: {
 	file: string
+	config: aws.#Config
+	target: string
 
 	lists: #List & {
-		config: TestConfig.awsConfig
-		target: "s3://\(bucket)"
+		"config": config
+		"target": target
 	}
-
-	#CheckFiles:
-		"""
-				grep -q \(file) /test
-			"""
 
 	test: #up: [
 		op.#Load & {
@@ -46,12 +64,7 @@ import (
 
 		op.#WriteFile & {
 			dest:    "/test"
-			content: lists.out
-		},
-
-		op.#WriteFile & {
-			dest:    "/checkFiles.sh"
-			content: #CheckFiles
+			content: lists.contents
 		},
 
 		op.#Exec & {
@@ -62,7 +75,8 @@ import (
 				"--norc",
 				"-eo",
 				"pipefail",
-				"/checkFiles.sh",
+				"-c",
+				"grep -q \(file) /test"
 			]
 		},
 	]

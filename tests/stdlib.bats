@@ -43,9 +43,7 @@ setup() {
 }
 
 @test "stdlib: aws: s3" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/aws/s3 --input-dir TestDirectory="$TESTDIR"/stdlib/aws/s3/testdata --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/s3
 }
 
 @test "stdlib: aws: eks" {
@@ -55,9 +53,7 @@ setup() {
 }
 
 @test "stdlib: aws: ecr" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/aws/ecr --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/ecr
 }
 
 @test "stdlib: gcp: gke" {

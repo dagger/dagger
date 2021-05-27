@@ -84,6 +84,6 @@ import (
 		}
 		dir: "/src"
 		mount: "/src": from:     contents
-		mount: "/token": secret: account.token
+		mount: "/run/secrets/token": secret: account.token
 	}
 }
