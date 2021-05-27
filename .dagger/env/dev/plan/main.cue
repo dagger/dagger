@@ -10,7 +10,6 @@ import (
 // Dagger source code
 source: dagger.#Artifact @dagger(input)
 
-
 test: {
 	// Go unit tests
 	unit: {
@@ -52,12 +51,11 @@ build: {
 	}).read.data
 }
 
-
 // Execute `dagger help`
 usage: os.#Container & {
 	command: "dagger help"
 
-	let binpath="/usr/local/dagger/bin"
-	mount: "\(binpath)": from: build.binaries
+	let binpath = "/usr/local/dagger/bin"
+	mount: "\(binpath)": from:   build.binaries
 	shell: search: "\(binpath)": true
 }

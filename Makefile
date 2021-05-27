@@ -19,9 +19,7 @@ golint:
 
 .PHONY: cuefmt
 cuefmt:
-	@(cue fmt -s ./stdlib/...)
-	@(cue fmt -s ./examples/*/)
-	@(cue fmt -s ./tests/...)
+	@(find . -name '*.cue' -exec cue fmt -s {} \;)
 
 .PHONY: cuelint
 cuelint: cuefmt
