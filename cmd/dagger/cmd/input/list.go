@@ -47,7 +47,10 @@ var listCmd = &cobra.Command{
 		}
 
 		_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
-			inputs := env.ScanInputs(ctx)
+			inputs, err := env.ScanInputs(ctx, false)
+			if err != nil {
+				return err
+			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "Input\tType\tValue\tSet by user\tDescription")

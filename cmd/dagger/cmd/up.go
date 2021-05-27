@@ -1,9 +1,20 @@
 package cmd
 
 import (
+	"context"
+	"os"
+
+	"cuelang.org/go/cue"
+	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/state"
+	"golang.org/x/term"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -25,6 +36,10 @@ var upCmd = &cobra.Command{
 
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
+
+		// check that all inputs are set
+		checkInputs(ctx, st)
+
 		result := common.EnvironmentUp(ctx, st, viper.GetBool("no-cache"))
 
 		st.Computed = result.Computed().JSON().PrettyString()
@@ -34,8 +49,53 @@ var upCmd = &cobra.Command{
 	},
 }
 
+func checkInputs(ctx context.Context, st *state.State) {
+	lg := log.Ctx(ctx)
+	warnOnly := viper.GetBool("force") || !term.IsTerminal(int(os.Stdout.Fd()))
+
+	// FIXME: find a way to merge this with the EnvironmentUp client to avoid
+	// creating the client + solver twice
+	c, err := client.New(ctx, "", false)
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to create client")
+	}
+
+	notConcreteInputs := []*compiler.Value{}
+	_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		inputs, err := env.ScanInputs(ctx, true)
+		if err != nil {
+			return err
+		}
+
+		for _, i := range inputs {
+			if i.IsConcreteR(cue.Optional(true)) != nil {
+				notConcreteInputs = append(notConcreteInputs, i)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		lg.Fatal().Err(err).Msg("failed to query environment")
+	}
+
+	for _, i := range notConcreteInputs {
+		if warnOnly {
+			lg.Warn().Str("input", i.Path().String()).Msg("required input is missing")
+		} else {
+			lg.Error().Str("input", i.Path().String()).Msg("required input is missing")
+		}
+	}
+
+	if !warnOnly && len(notConcreteInputs) > 0 {
+		lg.Fatal().Int("missing", len(notConcreteInputs)).Msg("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
+	}
+}
+
 func init() {
 	upCmd.Flags().Bool("no-cache", false, "Disable all run cache")
+	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
 
 	if err := viper.BindPFlags(upCmd.Flags()); err != nil {
 		panic(err)
