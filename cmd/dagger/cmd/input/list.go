@@ -21,7 +21,7 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list [TARGET] [flags]",
-	Short: "List for the inputs of an environment",
+	Short: "List the inputs of an environment",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:

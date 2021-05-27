@@ -10,8 +10,9 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:  "init",
-	Args: cobra.MaximumNArgs(1),
+	Use:   "init",
+	Short: "Initialize a new empty workspace",
+	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -35,10 +36,12 @@ var initCmd = &cobra.Command{
 			dir = cwd
 		}
 
-		_, err := state.Init(ctx, dir)
+		ws, err := state.Init(ctx, dir)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize workspace")
 		}
+
+		lg.Info().Str("path", ws.DaggerDir()).Msg("initialized new empty workspace")
 	},
 }
 

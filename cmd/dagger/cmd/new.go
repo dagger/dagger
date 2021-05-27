@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -8,8 +10,9 @@ import (
 )
 
 var newCmd = &cobra.Command{
-	Use:  "new",
-	Args: cobra.ExactArgs(1),
+	Use:   "new <NAME>",
+	Short: "Create a new empty environment",
+	Args:  cobra.ExactArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -29,9 +32,13 @@ var newCmd = &cobra.Command{
 				Msg("cannot use option -e,--environment for this command")
 		}
 		name := args[0]
-		if _, err := workspace.Create(ctx, name); err != nil {
+		ws, err := workspace.Create(ctx, name)
+		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
+
+		lg.Info().Str("name", name).Msg("created new empty environment")
+		lg.Info().Str("name", name).Msg(fmt.Sprintf("to add code to the plan, copy or create cue files under: %s", ws.Plan))
 	},
 }
 
