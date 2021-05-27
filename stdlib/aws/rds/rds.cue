@@ -22,45 +22,60 @@ import (
 	dbType: "mysql" | "postgres" @dagger(input)
 
 	// Name of the DB created
-	out: string @dagger(output)
+	out: {
+		@dagger(output)
+		string
 
-	aws.#Script & {
-		"config": config
+		#up: [
+			op.#Load & {
+				from: aws.#CLI & {
+					"config": config
+				}
+			},
 
-		files: {
-			"/inputs/name":       name
-			"/inputs/db_arn":     dbArn
-			"/inputs/secret_arn": secretArn
-			"/inputs/db_type":    dbType
-		}
+			op.#Exec & {
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					#"""
+    			echo "dbType: $DB_TYPE"
 
-		export: "/db_created"
+    			sql="CREATE DATABASE \`"$NAME" \`"
+    			if [ "$DB_TYPE" = postgres ]; then
+    			    sql="CREATE DATABASE \""$NAME"\""
+    			fi
 
-		code: #"""
-			set +o pipefail
+    			echo "$NAME" >> /db_created
 
-			dbType="$(cat /inputs/db_type)"
-			echo "dbType: $dbType"
+    			aws rds-data execute-statement \
+    			    --resource-arn "$DB_ARN" \
+    			    --secret-arn "$SECRET_ARN" \
+    			    --sql "$sql" \
+    			    --database "$DB_TYPE" \
+    			    --no-include-result-metadata \
+    			|& tee /tmp/out
+    			exit_code=${PIPESTATUS[0]}
+    			if [ $exit_code -ne 0 ]; then
+    			    grep -q "database exists\|already exists" /tmp/out || exit $exit_code
+    			fi
+						"""#,
+				]
+				env: {
+					NAME:       name
+					DB_ARN:     dbArn
+					SECRET_ARN: secretArn
+					DB_TYPE:    dbType
+				}
+			},
 
-			sql="CREATE DATABASE \`$(cat /inputs/name)\`"
-			if [ "$dbType" = postgres ]; then
-			    sql="CREATE DATABASE \"$(cat /inputs/name)\""
-			fi
-
-			cp /inputs/name /db_created
-
-			aws rds-data execute-statement \
-			    --resource-arn "$(cat /inputs/db_arn)" \
-			    --secret-arn "$(cat /inputs/secret_arn)" \
-			    --sql "$sql" \
-			    --database "$dbType" \
-			    --no-include-result-metadata \
-			|& tee /tmp/out
-			exit_code=${PIPESTATUS[0]}
-			if [ $exit_code -ne 0 ]; then
-			    grep -q "database exists\|already exists" /tmp/out || exit $exit_code
-			fi
-			"""#
+			op.#Export & {
+				source: "/db_created"
+				format: "string"
+			},
+		]
 	}
 }
 
@@ -69,89 +84,104 @@ import (
 	config: aws.#Config
 
 	// Username
-	username: dagger.#Secret
+	username: dagger.#Secret @dagger(input)
 
 	// Password
-	password: dagger.#Secret
+	password: dagger.#Secret @dagger(input)
 
 	// ARN of the database instance
-	dbArn: string
+	dbArn: string @dagger(input)
 
 	// ARN of the database secret (for connecting via rds api)
-	secretArn: string
+	secretArn: string @dagger(input)
 
-	grantDatabase: string | *""
+	grantDatabase: string | *"" @dagger(input)
 
-	dbType: "mysql" | "postgres"
+	dbType: "mysql" | "postgres" @dagger(input)
 
 	// Outputed username
-	out: string
+	out: {
+		@dagger(output)
+		string
 
-	aws.#Script & {
-		"config": config
+		#up: [
+			op.#Load & {
+				from: aws.#CLI & {
+					"config": config
+				}
+			},
 
-		files: {
-			"/inputs/username":       username
-			"/inputs/password":       password
-			"/inputs/db_arn":         dbArn
-			"/inputs/secret_arn":     secretArn
-			"/inputs/grant_database": grantDatabase
-			"/inputs/db_type":        dbType
-		}
+			op.#Exec & {
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					#"""
+    			echo "dbType: $DB_TYPE"
+    
+    			sql="CREATE USER '"$USERNAME"'@'%' IDENTIFIED BY '"$PASSWORD"'"
+    			if [ "$DB_TYPE" = postgres ]; then
+    			    sql="CREATE USER \""$USERNAME"\" WITH PASSWORD '"$PASSWORD"'"
+    			fi
+    
+    			echo "$USERNAME" >> /username
+    
+    			aws rds-data execute-statement \
+    			    --resource-arn "$DB_ARN" \
+    			    --secret-arn "$SECRET_ARN" \
+    			    --sql "$sql" \
+    			    --database "$DB_TYPE" \
+    			    --no-include-result-metadata \
+    			|& tee tmp/out
+    			exit_code=${PIPESTATUS[0]}
+    			if [ $exit_code -ne 0 ]; then
+    			    grep -q "Operation CREATE USER failed for\|ERROR" tmp/out || exit $exit_code
+    			fi
+    
+    			sql="SET PASSWORD FOR '"$USERNAME"'@'%' = PASSWORD('"$PASSWORD"')"
+    			if [ "$DB_TYPE" = postgres ]; then
+    			    sql="ALTER ROLE \""$USERNAME"\" WITH PASSWORD '"$PASSWORD"'"
+    			fi
+    
+    			aws rds-data execute-statement \
+    			    --resource-arn "$DB_ARN" \
+    			    --secret-arn "$SECRET_ARN" \
+    			    --sql "$sql" \
+    			    --database "$DB_TYPE" \
+    			    --no-include-result-metadata
+    
+    			sql="GRANT ALL ON \`"$GRAND_DATABASE"\`.* to '"$USERNAME"'@'%'"
+    			if [ "$DB_TYPE" = postgres ]; then
+    			    sql="GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \""$USERNAME"\"; GRANT ALL PRIVILEGES ON DATABASE \""$GRAND_DATABASE"\" to \""$USERNAME"\"; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO \""$USERNAME"\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO \""$USERNAME"\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO \""$USERNAME"\"; GRANT USAGE ON SCHEMA public TO \""$USERNAME"\";"
+    			fi
+    
+    			if [ -s "$GRAND_DATABASE ]; then
+    			    aws rds-data execute-statement \
+    			        --resource-arn "$DB_ARN" \
+    			        --secret-arn "$SECRET_ARN" \
+    			        --sql "$sql" \
+    			        --database "$DB_TYPE" \
+    			        --no-include-result-metadata
+    			fi			
+						"""#,
+				]
+				env: {
+					USERNAME:       unsername
+					PASSWORD:       password
+					DB_ARN:         dbArn
+					SECRET_ARN:     secretArn
+					GRAND_DATABASE: grandDatabase
+					DB_TYPE:        dbType
+				}
+			},
 
-		export: "/username"
-
-		code: #"""
-			set +o pipefail
-
-			dbType="$(cat /inputs/db_type)"
-			echo "dbType: $dbType"
-
-			sql="CREATE USER '$(cat /inputs/username)'@'%' IDENTIFIED BY '$(cat /inputs/password)'"
-			if [ "$dbType" = postgres ]; then
-			    sql="CREATE USER \"$(cat /inputs/username)\" WITH PASSWORD '$(cat /inputs/password)'"
-			fi
-
-			cp /inputs/username /username
-
-			aws rds-data execute-statement \
-			    --resource-arn "$(cat /inputs/db_arn)" \
-			    --secret-arn "$(cat /inputs/secret_arn)" \
-			    --sql "$sql" \
-			    --database "$dbType" \
-			    --no-include-result-metadata \
-			|& tee tmp/out
-			exit_code=${PIPESTATUS[0]}
-			if [ $exit_code -ne 0 ]; then
-			    grep -q "Operation CREATE USER failed for\|ERROR" tmp/out || exit $exit_code
-			fi
-
-			sql="SET PASSWORD FOR '$(cat /inputs/username)'@'%' = PASSWORD('$(cat /inputs/password)')"
-			if [ "$dbType" = postgres ]; then
-			    sql="ALTER ROLE \"$(cat /inputs/username)\" WITH PASSWORD '$(cat /inputs/password)'"
-			fi
-
-			aws rds-data execute-statement \
-			    --resource-arn "$(cat /inputs/db_arn)" \
-			    --secret-arn "$(cat /inputs/secret_arn)" \
-			    --sql "$sql" \
-			    --database "$dbType" \
-			    --no-include-result-metadata
-
-			sql="GRANT ALL ON \`$(cat /inputs/grant_database)\`.* to '$(cat /inputs/username)'@'%'"
-			if [ "$dbType" = postgres ]; then
-			    sql="GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \"$(cat /inputs/username)\"; GRANT ALL PRIVILEGES ON DATABASE \"$(cat /inputs/grant_database)\" to \"$(cat /inputs/username)\"; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO \"$(cat /inputs/username)\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO \"$(cat /inputs/username)\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO \"$(cat /inputs/username)\"; GRANT USAGE ON SCHEMA public TO \"$(cat /inputs/username)\";"
-			fi
-
-			if [ -s /inputs/grant_database ]; then
-			    aws rds-data execute-statement \
-			        --resource-arn "$(cat /inputs/db_arn)" \
-			        --secret-arn "$(cat /inputs/secret_arn)" \
-			        --sql "$sql" \
-			        --database "$dbType" \
-			        --no-include-result-metadata
-			fi
-			"""#
+			op.#Export & {
+				source: "/username"
+				format: "string"
+			},
+		]
 	}
 }
 
@@ -160,35 +190,51 @@ import (
 	config: aws.#Config
 
 	// ARN of the database instance
-	dbArn: string
+	dbArn: string @dagger(input)
 
 	// DB hostname
-	hostname: info.hostname
+	hostname: info.hostname @dagger(output)
 
 	// DB port
-	port: info.port
+	port: info.port @dagger(output)
 
 	info: {
 		hostname: string
 		port:     int
 	}
 
-	info: json.Unmarshal(out)
-	out:  string
+	info: json.Unmarshal(out) @dagger(output)
+	out: {
+		string
 
-	aws.#Script & {
-		"config": config
+		#up: [
+			op.#Load & {
+				from: aws.#CLI & {
+					"config": config
+				}
+			},
 
-		files: "/inputs/db_arn": dbArn
+			op.#Exec & {
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					#"""
+					data=$(aws rds describe-db-clusters --filters "Name=db-cluster-id,Values=$DB_URN" )
+    			echo "$data" | jq -r '.DBClusters[].Endpoint' > /tmp/out
+    			echo "$data" | jq -r '.DBClusters[].Port' >> /tmp/out
+    			cat /tmp/out | jq -sR 'split("\n") | {hostname: .[0], port: (.[1] | tonumber)}' > /out
+						"""#,
+				]
+				env: DB_ARN: dbArn
+			},
 
-		export: "/out"
-
-		code: #"""
-			db_arn="$(cat /inputs/db_arn)"
-			data=$(aws rds describe-db-clusters --filters "Name=db-cluster-id,Values=$db_arn" )
-			echo "$data" | jq -r '.DBClusters[].Endpoint' > /tmp/out
-			echo "$data" | jq -r '.DBClusters[].Port' >> /tmp/out
-			cat /tmp/out | jq -sR 'split("\n") | {hostname: .[0], port: (.[1] | tonumber)}' > /out
-			"""#
+			op.#Export & {
+				source: "/out"
+				format: "json"
+			},
+		]
 	}
 }

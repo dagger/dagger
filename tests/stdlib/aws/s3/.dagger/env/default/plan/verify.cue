@@ -33,20 +33,20 @@ import (
 					"-c",
 					#"""
 					aws s3 ls --recursive \#(target) > /contents
-					"""#
+					"""#,
 				]
 			},
 
 			op.#Export & {
 				source: "/contents"
 				format: "string"
-			}
+			},
 		]
 	}
 }
 
 #VerifyS3: {
-	file: string
+	file:   string
 	config: aws.#Config
 	target: string
 
@@ -76,7 +76,7 @@ import (
 				"-eo",
 				"pipefail",
 				"-c",
-				"grep -q \(file) /test"
+				"grep -q \(file) /test",
 			]
 		},
 	]

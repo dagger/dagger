@@ -40,17 +40,17 @@ import (
 				"pipefail",
 				"-c",
 				#"""
-				aws configure set aws_access_key_id "$(cat /run/secrets/access_key)"
-				aws configure set aws_secret_access_key "$(cat /run/secrets/secret_key)"
+					aws configure set aws_access_key_id "$(cat /run/secrets/access_key)"
+					aws configure set aws_secret_access_key "$(cat /run/secrets/secret_key)"
 
-				aws configure set default.region "$AWS_DEFAULT_REGION"
-				aws configure set default.cli_pager ""
-				aws configure set default.output "json"
-				"""#
+					aws configure set default.region "$AWS_DEFAULT_REGION"
+					aws configure set default.cli_pager ""
+					aws configure set default.output "json"
+					"""#,
 			]
 			mount: "/run/secrets/access_key": secret: config.accessKey
 			mount: "/run/secrets/secret_key": secret: config.secretKey
-			env: AWS_DEFAULT_REGION:    config.region
+			env: AWS_DEFAULT_REGION: config.region
 		},
 	]
 }

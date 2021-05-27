@@ -38,15 +38,15 @@ import (
 					"pipefail",
 					"-c",
 					#"""
-					aws ecr get-login-password > /out
-					"""#
+						aws ecr get-login-password > /out
+						"""#,
 				]
 			},
 
 			op.#Export & {
 				source: "/out"
 				format: "string"
-			}
+			},
 		]
 	}
 }

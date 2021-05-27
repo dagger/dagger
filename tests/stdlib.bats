@@ -21,9 +21,7 @@ setup() {
 }
 
 @test "stdlib: netlify" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/netlify/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/netlify --input-yaml "$TESTDIR"/stdlib/netlify/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/netlify/
 }
 
 @test "stdlib: kubernetes" {
@@ -47,9 +45,7 @@ setup() {
 }
 
 @test "stdlib: aws: eks" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/aws/eks --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/eks
 }
 
 @test "stdlib: aws: ecr" {

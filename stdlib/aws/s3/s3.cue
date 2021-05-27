@@ -41,17 +41,17 @@ import (
 
 			if sourceInline != _|_ {
 				op.#WriteFile & {
-					dest: "/source"
+					dest:    "/source"
 					content: sourceInline
 				}
-			}
+			},
 
 			op.#Exec & {
 				if always != _|_ {
 					"always": always
 				}
 				env: {
-					TARGET: target
+					TARGET:       target
 					CONTENT_TYPE: contentType
 				}
 
@@ -67,26 +67,26 @@ import (
 					"pipefail",
 					"-c",
 					#"""
-					opts=""
-					op=cp
-					if [ -d /source ]; then
-						op=sync
-					fi
-					if [ -n "$CONTENT_TYPE" ]; then
-						opts="--content-type $CONTENT_TYPE"
-					fi
-					aws s3 $op $opts /source "$TARGET"
-					echo "$TARGET" \
-						| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
-						> /url
-					"""#
+						opts=""
+						op=cp
+						if [ -d /source ]; then
+							op=sync
+						fi
+						if [ -n "$CONTENT_TYPE" ]; then
+							opts="--content-type $CONTENT_TYPE"
+						fi
+						aws s3 $op $opts /source "$TARGET"
+						echo "$TARGET" \
+							| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
+							> /url
+						"""#,
 				]
 			},
 
 			op.#Export & {
 				source: "/url"
 				format: "string"
-			}
+			},
 		]
 	}
 }

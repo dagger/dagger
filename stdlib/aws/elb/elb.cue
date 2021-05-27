@@ -18,54 +18,65 @@ import (
 	// exported priority
 	priority: out @dagger(output)
 
-	out: string
+	out: {
+		string
 
-	aws.#Script & {
-		always: true
+		#up: [
+			op.#Load & {
+				from: aws.#CLI & {
+					"config": config
+				}
+			},
 
-		files: {
-			"/inputs/listenerArn": listenerArn
-			if vhost != _|_ {
-				"/inputs/vhost": vhost
-			}
-		}
+			op.#Exec & {
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					#"""
+						if [ -s "$VHOST" ]; then
+    				# We passed a vhost as input, try to recycle priority from previously allocated vhost
+    				priority=$(aws elbv2 describe-rules \
+    					--listener-arn "$LISTENER_ARN" | \
+    					jq -r --arg vhost "$VHOST" '.Rules[] | select(.Conditions[].HostHeaderConfig.Values[] == $VHOST) | .Priority')
 
-		export: "/priority"
+    				if [ -n "${priority}" ]; then
+    					echo -n "${priority}" > /priority
+    					exit 0
+    				fi
+    			fi
 
-		//FIXME: The code below can end up not finding an available prio
-		// Better to exclude the existing allocated priorities from the random sequence
-		code: #"""
-			if [ -s /inputs/vhost ]; then
-				# We passed a vhost as input, try to recycle priority from previously allocated vhost
-				vhost="$(cat /inputs/vhost)"
+    			# Grab a priority random from 1-50k and check if available, retry 10 times if none available
+    			priority=0
+    			for i in {1..10}
+    			do
+    				p=$(shuf -i 1-50000 -n 1)
+    				# Find the next priority available that we can allocate
+    				aws elbv2 describe-rules \
+    					--listener-arn "$LISTENER_ARN" \
+    					| jq -e "select(.Rules[].Priority == \"${p}\") | true" && continue
+    				priority="${p}"
+    				break
+    			done
+    			if [ "${priority}" -lt 1 ]; then
+    				echo "Error: cannot determine a Rule priority"
+    				exit 1
+    			fi
+    			echo -n "${priority}" > /priority
+						"""#,
+				]
+				env: {
+					LISTENER_ARN: listenerArn
+					VHOST:        vhost
+				}
+			},
 
-				priority=$(aws elbv2 describe-rules \
-					--listener-arn "$(cat /inputs/listenerArn)" | \
-					jq -r --arg vhost "$vhost" '.Rules[] | select(.Conditions[].HostHeaderConfig.Values[] == $vhost) | .Priority')
-
-				if [ -n "${priority}" ]; then
-					echo -n "${priority}" > /priority
-					exit 0
-				fi
-			fi
-
-			# Grab a priority random from 1-50k and check if available, retry 10 times if none available
-			priority=0
-			for i in {1..10}
-			do
-				p=$(shuf -i 1-50000 -n 1)
-				# Find the next priority available that we can allocate
-				aws elbv2 describe-rules \
-					--listener-arn "$(cat /inputs/listenerArn)" \
-					| jq -e "select(.Rules[].Priority == \"${p}\") | true" && continue
-				priority="${p}"
-				break
-			done
-			if [ "${priority}" -lt 1 ]; then
-				echo "Error: cannot determine a Rule priority"
-				exit 1
-			fi
-			echo -n "${priority}" > /priority
-			"""#
+			op.#Export & {
+				source: "/db_created"
+				format: "string"
+			},
+		]
 	}
 }

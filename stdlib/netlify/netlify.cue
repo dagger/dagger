@@ -83,7 +83,7 @@ import (
 			NETLIFY_ACCOUNT: account.name
 		}
 		dir: "/src"
-		mount: "/src": from:     contents
+		mount: "/src": from:                 contents
 		mount: "/run/secrets/token": secret: account.token
 	}
 }
