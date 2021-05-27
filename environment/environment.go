@@ -165,9 +165,9 @@ func (e *Environment) LocalDirs() map[string]string {
 	return dirs
 }
 
-// Up missing values in environment configuration, and write them to state.
-func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Up")
+// prepare initializes the Environment with inputs and plan code
+func (e *Environment) prepare(ctx context.Context) (*compiler.Value, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "environment.Prepare")
 	defer span.Finish()
 
 	// Reset the computed values
@@ -175,9 +175,23 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 
 	src := compiler.NewValue()
 	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
-		return err
+		return nil, err
 	}
 	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
+		return nil, err
+	}
+
+	return src, nil
+}
+
+// Up missing values in environment configuration, and write them to state.
+func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Up")
+	defer span.Finish()
+
+	// Set user inputs and plan code
+	src, err := e.prepare(ctx)
+	if err != nil {
 		return err
 	}
 
@@ -294,6 +308,17 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 	})
 }
 
-func (e *Environment) ScanInputs(ctx context.Context) []*compiler.Value {
-	return scanInputs(ctx, e.plan)
+func (e *Environment) ScanInputs(ctx context.Context, mergeUserInputs bool) ([]*compiler.Value, error) {
+	src := e.plan
+
+	if mergeUserInputs {
+		// Set user inputs and plan code
+		var err error
+		src, err = e.prepare(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return scanInputs(ctx, src), nil
 }
