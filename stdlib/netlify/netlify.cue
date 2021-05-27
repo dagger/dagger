@@ -62,7 +62,7 @@ import (
 			package: {
 				bash: "=~5.1"
 				jq:   "=~1.6"
-				curl: "=~7.76"
+				curl: true
 				yarn: "=~1.22"
 			}
 		}
