@@ -3,7 +3,7 @@ module go.dagger.io/dagger
 go 1.16
 
 require (
-	cuelang.org/go v0.4.0-beta.1
+	cuelang.org/go v0.4.0
 	filippo.io/age v1.0.0-rc.1
 	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
