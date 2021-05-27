@@ -18,7 +18,7 @@ import (
 
 // Re-usable aws-cli component
 #CLI: {
-	package: [string]: string
+	package: [string]: string | bool
 
 	#up: [
 		op.#Load & {
@@ -26,7 +26,7 @@ import (
 				"package": package
 				"package": bash:      "=~5.1"
 				"package": jq:        "=~1.6"
-				"package": curl:      "=~7.77"
+				"package": curl:      true
 				"package": "aws-cli": "=~1.18"
 			}
 		},
@@ -42,7 +42,7 @@ import (
 	code: string
 
 	// Extra pkgs to install
-	package: [string]: string
+	package: [string]: string | bool
 
 	// Files to mount
 	files: [string]: string

@@ -9,7 +9,7 @@ import (
 #GCloud: {
 	config:  #Config
 	version: string | *"288.0.0"
-	package: [string]: string
+	package: [string]: string | bool
 
 	#up: [
 		op.#Load & {
@@ -18,7 +18,7 @@ import (
 				"package": bash:    "=~5.1"
 				"package": python3: "=~3.8"
 				"package": jq:      "=~1.6"
-				"package": curl:    "=~7.77"
+				"package": curl:    true
 			}
 		},
 
