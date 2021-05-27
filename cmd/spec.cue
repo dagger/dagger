@@ -41,19 +41,19 @@ import (
 
 	flag: {
 		"--environment": {
-			alt:         "-d"
+			alt: "-d"
 			description:
 				"""
-				Select an environment
+					Select an environment
 
-				If no environment is specified, dagger searches for environments using the current
-				directory as input.
+					If no environment is specified, dagger searches for environments using the current
+					directory as input.
 
-				* If exactly one environment matches the search, it is selected.
-				* If there is more than one match, the user is prompted to select one.
-				* If there is no match, the command returns an error.
-				"""
-			arg:         "NAME"
+					* If exactly one environment matches the search, it is selected.
+					* If there is more than one match, the user is prompted to select one.
+					* If there is no match, the command returns an error.
+					"""
+			arg: "NAME"
 		}
 		"--log-format": {
 			arg:         "string"
@@ -164,9 +164,7 @@ import (
 
 		history: description: "List past changes to an environment"
 
-		delete: {
-			description: "Delete an environment after taking it offline (WARNING: may destroy infrastructure)"
-		}
+		delete: description: "Delete an environment after taking it offline (WARNING: may destroy infrastructure)"
 
 		plan: {
 			description: "Manage an environment plan"

@@ -11,7 +11,7 @@ dang?: string
 		do:  "exec"
 		dir: "/"
 		args: ["sh", "-c", """
-		echo success
-		"""]
+			echo success
+			"""]
 	},
 ]

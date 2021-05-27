@@ -11,8 +11,8 @@ dang: string
 		do:  "exec"
 		dir: "/"
 		args: ["sh", "-c", """
-		echo "This test SHOULD fail, because this SHOULD be executed"
-		exit 1
-		"""]
+			echo "This test SHOULD fail, because this SHOULD be executed"
+			exit 1
+			"""]
 	},
 ]
