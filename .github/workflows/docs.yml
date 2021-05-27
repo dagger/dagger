@@ -68,13 +68,22 @@ jobs:
       # landing alway on latest tag
       # use S3 Rediret objet
       # upload to /docs/index.html
-      - run: touch index.html
-      - name: Redirect Latest tag on landing
-        # FIXME
-        # if: ${{ steps.vars.outputs.tag != 'devel' }}
+      - name: Create index.html
+        run: |
+          cat <<EOF > index.html
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta http-equiv="refresh" content="0; url=/${{steps.vars.outputs.tag}}">
+            </head>
+            <body>
+              Nothing to see here; <a href="/${{steps.vars.outputs.tag}}">see the
+              latest version of the docs</a>.
+            </body>
+          </html>
+          EOF
+      - name: Copy index.html
+        if: ${{ steps.vars.outputs.tag != 'devel' }}
         uses: ItsKarma/aws-cli@v1.70.0
         with:
-          # FIXME: `--website-redirect` uses a permanent redirect, therefore if
-          # we use the latest version it will be in cache forever.
-          # args: s3 cp --cache-control max-age=0 --website-redirect /docs/${{steps.vars.outputs.tag}}/ ./index.html s3://docs.dagger.io/docs/
-          args: s3 cp --cache-control max-age=0 --website-redirect /devel/ ./index.html s3://docs.dagger.io/
+          args: s3 cp --cache-control max-age=0 ./index.html s3://docs.dagger.io/
