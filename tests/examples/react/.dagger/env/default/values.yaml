@@ -1,0 +1,26 @@
+name: default
+inputs:
+    www.account.name:
+        text: blocklayer
+    www.account.token:
+        secret: ENC[AES256_GCM,data:AGeCt/UJzWJ4UnzS/+t21GYz5wXPUoplYXTi1USXdi72wZemhzZncR2a+A==,iv:07DgGFL0oKgQsSZnp9s/Zz+6rdLShtHfStJZ9tHpsI4=,tag:jkY6TMrf7DaJMAc8/kJcAw==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBudkl4d2czaHZkSGt0SnVm
+            dm8xRTdaRE1WenpOczYxRFdMcDRkWDNmL1VzCjRHeWt3dnBITjlSNDZteWJhRmha
+            NWsrTThTZCt2eDJkRjgyOTFJeHdBMzgKLS0tIE9jOTFWMTRQei9iUkcvZDFrbmxn
+            ZnFaRWtEM241cDVCTStnK25BcDYyWlUKT2U8IFC21xMigjaTHHgkdUxIXKshxTmg
+            Q8254/qEWk+mJfsGxPf54d1RtqNqDX17kK/LeooSYAz7aqBjVLfG6w==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-05-28T20:06:11Z"
+    mac: ENC[AES256_GCM,data:GnbN0nu7ZFZHtyXxZIQ+p1CuYm3TPR+zAZa7FcsIvuQgase1DEMySIV2MJIwhhj/6PMEngs4HSIIo/61qFpFI47CELxgwmfUPadtJVG9Z3o9HterMFrHHXQL+ULxXjP7jDeXhcsEDh1GN+yroc7mFy3SM9Typ3FVzyIq/Lqek5U=,iv:68S92VPpLtj+rwTapqx6IyHJQFmiXpHOQoyxpvH7MD4=,tag:C3Jj9mkeTNCe8EkFAwRYAg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
