@@ -1,4 +1,4 @@
-name: net
+name: default
 inputs:
     TestNetlify.deploy.account.name:
         text: blocklayer
@@ -19,8 +19,8 @@ sops:
             SEdUK2RsaUxuVWg2aXUwdVJ0eUtrWWMKWkQDBuL5e4QDx5Wy6+fHiD+J4fp7QdMm
             lsqgmxRvJMWgEvm1U+hDAo/Pkn8PFUFJf0KxEvkdF4qGuguQePgzFQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-05-27T14:36:27Z"
-    mac: ENC[AES256_GCM,data:S3l8tVat/Yp7fH5feeL4JxL+uQwZ0zwv8/LPsOoBebfDFWuE/j9sFZD304OT7XNCsfG8R/lqdpoxYmiyH6ToHeZyktXalpk0tAkwFXUV4VUZKyIn81UirbtWx4OT6fW7jusqqg2uX3nhvjGd+QerhEC4Qu4o8lQCKCMzLuQjmVw=,iv:4ucl0O+VgdK/SwtEad1jXIWJ4pQSxlWCCUzFbqNLDgg=,tag:xno2U/FIVW6KgSXW5RWDsw==,type:str]
+    lastmodified: "2021-05-28T20:40:41Z"
+    mac: ENC[AES256_GCM,data:12suvaaHfmdt0jaldFmaixGvWUbl0RP/By3l1S9XiUGLbB4tNfV65qsWv9BnjfD//98iV21dYkpCbXPQAITjM0MOGcrkZ9u3lDrmD2dTybHgxgniYJVe/X7BA5Y8uw4a3g+k+HqV5Z8i/iMGCEBbqakt20rNXqzGAFiWJfRcPGo=,iv:6TdOLjFJxn1uDsCLRNGpyUSiLszKHctN0crywXB5PfQ=,tag:XGcPX6lGeJcigxvOuiqyyw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

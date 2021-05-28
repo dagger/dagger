@@ -4,13 +4,14 @@ import (
 	"dagger.io/dagger"
 
 	"dagger.io/terraform"
-	"dagger.io/aws"
 )
 
 TestData: dagger.#Artifact
 
-TestConfig: awsConfig: aws.#Config & {
-	region: "us-east-2"
+TestConfig: awsConfig: {
+	accessKey: string
+	secretkey: string
+	region:    "us-east-2"
 }
 
 TestTerraform: apply: terraform.#Configuration & {

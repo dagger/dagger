@@ -89,12 +89,6 @@ jobs:
           mkdir ~/.dagger
           echo "$DAGGER_AGE_KEY" > ~/.dagger/keys.txt
 
-      - name: Import PGP private key
-        env:
-          SOPS_PGP_KEY: ${{ secrets.SOPS_PGP_KEY }}
-        run: |
-          echo "$SOPS_PGP_KEY" | base64 -d | gpg --import
-
       - name: Login to Docker Hub
         uses: docker/login-action@v1
         with:

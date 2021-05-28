@@ -77,14 +77,14 @@ setup() {
 }
 
 @test "stdlib: terraform" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
+    skip_unless_secrets_available "$TESTDIR"/stdlib/terraform/s3/inputs.yaml
 
     "$DAGGER" init
     dagger_new_with_plan terraform "$TESTDIR"/stdlib/terraform/s3
 
     cp -R "$TESTDIR"/stdlib/terraform/s3/testdata "$DAGGER_WORKSPACE"/testdata
     "$DAGGER" -e terraform input dir TestData "$DAGGER_WORKSPACE"/testdata
-    sops -d "$TESTDIR"/stdlib/aws/inputs.yaml | "$DAGGER" -e "terraform" input yaml "" -f -
+    sops -d "$TESTDIR"/stdlib/terraform/s3/inputs.yaml | "$DAGGER" -e "terraform" input yaml "" -f -
 
     # it must fail because of a missing var
     run "$DAGGER" up -e terraform
