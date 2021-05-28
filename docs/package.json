@@ -1,0 +1,19 @@
+{
+  "name": "dagger",
+  "version": "0.0.1",
+  "description": "Dagger is a programmable deployment system.",
+  "main": "index.js",
+  "authors": {
+    "name": "Dagger",
+    "email": "hello@dagger.io"
+  },
+  "repository": "github.com/dagger/dagger/dagger",
+  "scripts": {
+    "dev": "vuepress dev",
+    "build": "vuepress build"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "vuepress": "^1.5.3"
+  }
+}
