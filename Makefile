@@ -5,7 +5,7 @@ all: dagger
 dagger:
 	go build -o ./cmd/dagger/ ./cmd/dagger/
 
-.PHONY: dagger
+.PHONY: dagger-debug
 dagger-debug:
 	go build -race -o ./cmd/dagger/dagger-debug ./cmd/dagger/
 
