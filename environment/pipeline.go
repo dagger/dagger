@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +8,6 @@ import (
 	"io/fs"
 	"net"
 	"net/url"
-	"path"
 	"strings"
 
 	"cuelang.org/go/cue"
@@ -19,7 +17,6 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerignore"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/rs/zerolog/log"
@@ -27,10 +24,6 @@ import (
 
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/solver"
-)
-
-const (
-	daggerignoreFilename = ".daggerignore"
 )
 
 // An execution pipeline
@@ -298,71 +291,50 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 		return st, err
 	}
 
-	// daggerignore processing
-	// buildkit related setup
-	daggerignoreState := llb.Local(
-		dir,
+	opts := []llb.LocalOption{
+		llb.WithCustomName(p.vertexNamef("Local %s", dir)),
+		// Without hint, multiple `llb.Local` operations on the
+		// same path get a different digest.
 		llb.SessionID(p.s.SessionID()),
-		llb.FollowPaths([]string{daggerignoreFilename}),
-		llb.SharedKeyHint(dir+"-"+daggerignoreFilename),
-		llb.WithCustomName(p.vertexNamef("Try loading %s", path.Join(dir, daggerignoreFilename))),
-	)
-	ref, err := p.s.Solve(ctx, daggerignoreState)
+		llb.SharedKeyHint(dir),
+	}
+
+	includes, err := op.Lookup("include").List()
 	if err != nil {
 		return st, err
 	}
-
-	// try to read file
-	var daggerignore []byte
-	// bool in case file is empty
-	ignorefound := true
-	daggerignore, err = ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: daggerignoreFilename,
-	})
-	// hack for string introspection because !errors.Is(err, os.ErrNotExist) does not work, same for fs
-	if err != nil {
-		if !strings.Contains(err.Error(), ".daggerignore: no such file or directory") {
-			return st, err
+	if len(includes) > 0 {
+		includePatterns := []string{}
+		for _, i := range includes {
+			pattern, err := i.String()
+			if err != nil {
+				return st, err
+			}
+			includePatterns = append(includePatterns, pattern)
 		}
-		ignorefound = false
+		opts = append(opts, llb.IncludePatterns(includePatterns))
 	}
 
-	// parse out excludes, works even if file does not exist
-	var excludes []string
-	excludes, err = dockerignore.ReadAll(bytes.NewBuffer(daggerignore))
+	excludes, err := op.Lookup("exclude").List()
 	if err != nil {
-		return st, fmt.Errorf("%w failed to parse daggerignore", err)
+		return st, err
+	}
+	if len(excludes) > 0 {
+		excludePatterns := []string{}
+		for _, i := range excludes {
+			pattern, err := i.String()
+			if err != nil {
+				return st, err
+			}
+			excludePatterns = append(excludePatterns, pattern)
+		}
+
+		opts = append(opts, llb.ExcludePatterns(excludePatterns))
 	}
 
-	// log out patterns if file exists
-	if ignorefound {
-		log.
-			Ctx(ctx).
-			Debug().
-			Str("patterns", fmt.Sprint(excludes)).
-			Msg("daggerignore exclude patterns")
-	}
-	// FIXME: Remove the `Copy` and use `Local` directly.
-	//
-	// Copy'ing is a costly operation which should be unnecessary.
-	// However, using llb.Local directly breaks caching sometimes for unknown reasons.
-	return st.File(
-		llb.Copy(
-			llb.Local(
-				dir,
-				// llb.FollowPaths(include),
-				llb.ExcludePatterns(excludes),
-				llb.WithCustomName(p.vertexNamef("Local %s [transfer]", dir)),
-
-				// Without hint, multiple `llb.Local` operations on the
-				// same path get a different digest.
-				llb.SessionID(p.s.SessionID()),
-				llb.SharedKeyHint(dir),
-			),
-			"/",
-			"/",
-		),
-		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
+	return llb.Local(
+		dir,
+		opts...,
 	), nil
 }
 
@@ -811,21 +783,10 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 
 	gitOpts = append(gitOpts, llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remoteRedacted, ref)))
 
-	// FIXME: Remove the `Copy` and use `Git` directly.
-	//
-	// Copy'ing is a costly operation which should be unnecessary.
-	// However, using llb.Git directly breaks caching sometimes for unknown reasons.
-	return st.File(
-		llb.Copy(
-			llb.Git(
-				remote,
-				ref,
-				gitOpts...,
-			),
-			"/",
-			"/",
-		),
-		llb.WithCustomName(p.vertexNamef("FetchGit %s@%s [copy]", remoteRedacted, ref)),
+	return llb.Git(
+		remote,
+		ref,
+		gitOpts...,
 	), nil
 }
 

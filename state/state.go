@@ -26,7 +26,7 @@ type State struct {
 // Cue module containing the environment plan
 // The input's top-level artifact is used as a module directory.
 func (s *State) PlanSource() Input {
-	return DirInput(s.Plan, []string{"*.cue", "cue.mod"})
+	return DirInput(s.Plan, []string{"*.cue", "cue.mod"}, []string{})
 }
 
 func (s *State) SetInput(key string, value Input) error {

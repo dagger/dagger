@@ -12,7 +12,7 @@ func TestLocalDirs(t *testing.T) {
 		Path: "/tmp/source",
 		Plan: "/tmp/source/plan",
 	}
-	require.NoError(t, st.SetInput("www.source", state.DirInput("/", []string{})))
+	require.NoError(t, st.SetInput("www.source", state.DirInput("/", []string{}, []string{})))
 
 	environment, err := New(st)
 	require.NoError(t, err)

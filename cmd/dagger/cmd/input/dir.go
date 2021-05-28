@@ -43,11 +43,20 @@ var dirCmd = &cobra.Command{
 			p = "./" + p
 		}
 
-		updateEnvironmentInput(ctx, args[0], state.DirInput(p, []string{}))
+		updateEnvironmentInput(ctx, args[0],
+			state.DirInput(
+				p,
+				viper.GetStringSlice("include"),
+				viper.GetStringSlice("exclude"),
+			),
+		)
 	},
 }
 
 func init() {
+	dirCmd.Flags().StringSlice("include", []string{}, "Include pattern")
+	dirCmd.Flags().StringSlice("exclude", []string{}, "Exclude pattern")
+
 	if err := viper.BindPFlags(dirCmd.Flags()); err != nil {
 		panic(err)
 	}

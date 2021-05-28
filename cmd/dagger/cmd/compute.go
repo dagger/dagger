@@ -57,7 +57,7 @@ var computeCmd = &cobra.Command{
 		for _, input := range viper.GetStringSlice("input-dir") {
 			parts := strings.SplitN(input, "=", 2)
 			k, v := parts[0], parts[1]
-			err := st.SetInput(k, state.DirInput(v, []string{}))
+			err := st.SetInput(k, state.DirInput(v, []string{}, []string{}))
 			if err != nil {
 				lg.
 					Fatal().

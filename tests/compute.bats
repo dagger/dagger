@@ -94,6 +94,6 @@ setup() {
     assert_output "secret=mySecret"
 }
 
-@test ".daggerignore" {
-    "$DAGGER" compute --input-dir TestData="$TESTDIR"/compute/ignore/testdata "$TESTDIR"/compute/ignore
+@test "compute: exclude" {
+    "$DAGGER" up -w "$TESTDIR"/compute/exclude
 }
