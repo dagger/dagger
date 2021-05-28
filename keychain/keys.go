@@ -5,22 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"path"
 	"path/filepath"
 	"time"
 
 	"filippo.io/age"
+	"github.com/mitchellh/go-homedir"
 	"github.com/rs/zerolog/log"
 )
 
 func Path() (string, error) {
-	usr, err := user.Current()
+	h, err := homedir.Dir()
 	if err != nil {
 		return "", err
 	}
 
-	return path.Join(usr.HomeDir, ".dagger", "keys.txt"), nil
+	return path.Join(h, ".dagger", "keys.txt"), nil
 }
 
 func Default(ctx context.Context) (string, error) {
