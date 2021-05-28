@@ -61,18 +61,20 @@ func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
 }
 
 // An input artifact loaded from a local directory
-func DirInput(path string, include []string) Input {
+func DirInput(path string, include []string, exclude []string) Input {
 	return Input{
 		Dir: &dirInput{
 			Path:    path,
 			Include: include,
+			Exclude: exclude,
 		},
 	}
 }
 
 type dirInput struct {
-	Path    string   `json:"path,omitempty"`
-	Include []string `json:"include,omitempty"`
+	Path    string   `yaml:"path,omitempty"`
+	Include []string `yaml:"include,omitempty"`
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
@@ -88,6 +90,14 @@ func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 			return nil, err
 		}
 	}
+	excludeLLB := []byte("[]")
+	if len(dir.Exclude) > 0 {
+		var err error
+		excludeLLB, err = json.Marshal(dir.Exclude)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	p := dir.Path
 	if !filepath.IsAbs(p) {
@@ -98,18 +108,19 @@ func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 	}
 
 	llb := fmt.Sprintf(
-		`#up: [{do:"local",dir:"%s", include:%s}]`,
+		`#up: [{do:"local",dir:"%s", include:%s, exclude:%s}]`,
 		p,
 		includeLLB,
+		excludeLLB,
 	)
 	return compiler.Compile("", llb)
 }
 
 // An input artifact loaded from a git repository
 type gitInput struct {
-	Remote string `json:"remote,omitempty"`
-	Ref    string `json:"ref,omitempty"`
-	Dir    string `json:"dir,omitempty"`
+	Remote string `yaml:"remote,omitempty"`
+	Ref    string `yaml:"ref,omitempty"`
+	Dir    string `yaml:"dir,omitempty"`
 }
 
 func GitInput(remote, ref, dir string) Input {
@@ -145,7 +156,7 @@ func DockerInput(ref string) Input {
 }
 
 type dockerInput struct {
-	Ref string `json:"ref,omitempty"`
+	Ref string `yaml:"ref,omitempty"`
 }
 
 func (i dockerInput) Compile(_ string, _ *State) (*compiler.Value, error) {

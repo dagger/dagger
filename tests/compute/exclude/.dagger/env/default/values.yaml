@@ -1,0 +1,28 @@
+name: default
+inputs:
+    TestData:
+        dir:
+            path: ./testdata
+            exclude:
+                - a.txt
+                - '*/*.json'
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSArcmRHMFByQkZSdGhteHhm
+            T2pSWW1UcU5LaFJabFJORllydFk3UkVsSHhVCndQZWNUKzVOeUovTTdCR3FmUXpO
+            c29GQXhpZkxwSmoweWxqZG1CMkcrRGcKLS0tIDhRMTVSc3NXSWIxSm55TGkwT1E1
+            L0NzY0RIMWNkc3k2WStOUGg4SndNRm8Kk7QSP/8spn1Set08VejVW9k4ZwBFqR0T
+            Ff/N73yNvo633hrfEJtTkhA/aZYyG9bPJy9s9vRDoNFkdTLSFcYX5g==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-05-28T23:20:28Z"
+    mac: ENC[AES256_GCM,data:nuRBGMu6MkiZ5DyuZy3drz4NXoUod8bYzOkJJiIj/fq2shN7oJNShF7UWDpW4FcknD5uldXpKqO3PmGpoxra95TTkoIHsbsQxSIrXUDhXl9CD5WOCwelUstv8f5r4nl+m3tSsW+4rIXdj/9ZB0DulMO0AqPp9I3XHG7glBMWYro=,iv:XGYGZpmC1dOIaTxcEJKtUmv1Fax+8ESPeWnjIGeOVPI=,tag:U/AKlJub9HsMrIpsjDxrYA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

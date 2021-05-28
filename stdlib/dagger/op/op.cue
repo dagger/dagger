@@ -36,6 +36,7 @@ package op
 	do:  "local"
 	dir: string
 	include: [...string]
+	exclude: [...string]
 }
 
 // FIXME: bring back load (more efficient than copy)
