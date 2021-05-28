@@ -53,15 +53,11 @@ setup() {
 }
 
 @test "stdlib: gcp: gke" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/gcp/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/gcp/gke --input-yaml "$TESTDIR"/stdlib/gcp/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/gcp/gke
 }
 
 @test "stdlib: gcp: gcr" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/gcp/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/gcp/gcr --input-yaml "$TESTDIR"/stdlib/gcp/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/gcp/gcr
 }
 
 @test "stdlib: docker-build" {

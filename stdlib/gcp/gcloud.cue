@@ -32,14 +32,9 @@ import (
 			]
 		},
 
-		// Setup auth
-		op.#WriteFile & {
-			dest:    "/service_key"
-			content: config.serviceKey
-		},
-
 		op.#Exec & {
 			args: ["gcloud", "-q", "auth", "activate-service-account", "--key-file=/service_key"]
+			mount: "/service_key": secret: config.serviceKey
 		},
 
 		op.#Exec & {
