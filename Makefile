@@ -3,7 +3,7 @@ all: dagger
 
 .PHONY: dagger
 dagger:
-	go build -o ./cmd/dagger/ ./cmd/dagger/
+	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
 
 .PHONY: dagger-debug
 dagger-debug:

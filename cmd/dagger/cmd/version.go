@@ -13,6 +13,7 @@ import (
 	"time"
 
 	goVersion "github.com/hashicorp/go-version"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/term"
@@ -20,7 +21,7 @@ import (
 
 const (
 	defaultVersion = "devel"
-	versionFile    = "$HOME/.dagger/version-check"
+	versionFile    = "~/.dagger/version-check"
 	versionURL     = "https://releases.dagger.io/dagger/latest_version"
 )
 
@@ -49,7 +50,12 @@ var versionCmd = &cobra.Command{
 		)
 
 		if check := viper.GetBool("check"); check {
-			_ = os.Remove(os.ExpandEnv(versionFile))
+			versionFilePath, err := homedir.Expand(versionFile)
+			if err != nil {
+				panic(err)
+			}
+
+			_ = os.Remove(versionFilePath)
 			checkVersion()
 			if !warnVersion() {
 				fmt.Println("dagger is up to date.")
@@ -155,7 +161,10 @@ func checkVersion() {
 		return
 	}
 
-	versionFilePath := os.ExpandEnv(versionFile)
+	versionFilePath, err := homedir.Expand(versionFile)
+	if err != nil {
+		panic(err)
+	}
 	baseDir := path.Dir(versionFilePath)
 
 	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
