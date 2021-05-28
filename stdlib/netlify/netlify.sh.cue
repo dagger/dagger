@@ -45,8 +45,8 @@ package netlify
 
 	# Write output files
 	mkdir -p /netlify
-	echo "$url" > /netlify/url
-	echo "$deployUrl" > /netlify/deployUrl
-	echo "$logsUrl" > /netlify/logsUrl
+	printf "$url" > /netlify/url
+	printf "$deployUrl" > /netlify/deployUrl
+	printf "$logsUrl" > /netlify/logsUrl
 
 	"""#
