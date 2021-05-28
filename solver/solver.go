@@ -3,7 +3,9 @@ package solver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -25,6 +27,7 @@ type Opts struct {
 	Gateway bkgw.Client
 	Events  chan *bk.SolveStatus
 	Auth    *RegistryAuthProvider
+	Secrets session.Attachable
 	NoCache bool
 }
 
@@ -100,7 +103,11 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 
 // Solve will block until the state is solved and returns a Reference.
 func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
-	return s.opts.Gateway.Solve(ctx, req)
+	res, err := s.opts.Gateway.Solve(ctx, req)
+	if err != nil {
+		return nil, CleanError(err)
+	}
+	return res, nil
 }
 
 // Solve will block until the state is solved and returns a Reference.
@@ -150,7 +157,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 
 	opts := bk.SolveOpt{
 		Exports: []bk.ExportEntry{output},
-		Session: []session.Attachable{s.opts.Auth},
+		Session: []session.Attachable{s.opts.Auth, s.opts.Secrets},
 	}
 
 	ch := make(chan *bk.SolveStatus)
@@ -203,4 +210,23 @@ func dumpLLB(def *bkpb.Definition) ([]byte, error) {
 		ops = append(ops, ent)
 	}
 	return json.Marshal(ops)
+}
+
+// A helper to remove noise from buildkit error messages.
+// FIXME: Obviously a cleaner solution would be nice.
+func CleanError(err error) error {
+	noise := []string{
+		"executor failed running ",
+		"buildkit-runc did not terminate successfully",
+		"rpc error: code = Unknown desc = ",
+		"failed to solve: ",
+	}
+
+	msg := err.Error()
+
+	for _, s := range noise {
+		msg = strings.ReplaceAll(msg, s, "")
+	}
+
+	return errors.New(msg)
 }

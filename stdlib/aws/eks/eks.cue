@@ -18,12 +18,14 @@ import (
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
-		// FIXME There is a problem with dagger.#Secret type
+		@dagger(output)
 		string
 
 		#up: [
 			op.#Load & {
-				from: aws.#CLI
+				from: aws.#CLI & {
+					"config": config
+				}
 			},
 
 			op.#WriteFile & {
@@ -42,15 +44,8 @@ import (
 					"/entrypoint.sh",
 				]
 				env: {
-					AWS_CONFIG_FILE:       "/cache/aws/config"
-					AWS_ACCESS_KEY_ID:     config.accessKey
-					AWS_SECRET_ACCESS_KEY: config.secretKey
-					AWS_DEFAULT_REGION:    config.region
-					AWS_REGION:            config.region
-					AWS_DEFAULT_OUTPUT:    "json"
-					AWS_PAGER:             ""
-					EKS_CLUSTER:           clusterName
-					KUBECTL_VERSION:       version
+					EKS_CLUSTER:     clusterName
+					KUBECTL_VERSION: version
 				}
 				mount: {
 					"/cache/aws": "cache"
@@ -62,5 +57,5 @@ import (
 				format: "string"
 			},
 		]
-	} @dagger(output)
+	}
 }

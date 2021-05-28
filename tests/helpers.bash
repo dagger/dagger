@@ -12,6 +12,9 @@ common_setup() {
 
     DAGGER_WORKSPACE="$(mktemp -d -t dagger-workspace-XXXXXX)"
     export DAGGER_WORKSPACE
+
+    SOPS_AGE_KEY_FILE=~/.dagger/keys.txt
+    export SOPS_AGE_KEY_FILE
 }
 
 dagger_new_with_plan() {

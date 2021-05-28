@@ -11,7 +11,7 @@ source: dagger.#Artifact
 
 registry: {
 	username: string
-	secret:   dagger.#Secret
+	secret:   string
 }
 
 TestPushAndPull: {

@@ -2,6 +2,7 @@ package s3
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/op"
 	"dagger.io/aws"
 )
 
@@ -23,46 +24,69 @@ import (
 	// Object content type
 	contentType: string | *"" @dagger(input)
 
-	// URL of the uploaded S3 object
-	url: out @dagger(output)
-
 	// Always write the object to S3
 	always?: bool @dagger(input)
 
-	out: string
-	aws.#Script & {
-		if always != _|_ {
-			"always": always
-		}
-		files: {
+	// URL of the uploaded S3 object
+	url: {
+		@dagger(output)
+		string
+
+		#up: [
+			op.#Load & {
+				from: aws.#CLI & {
+					"config": config
+				}
+			},
+
 			if sourceInline != _|_ {
-				"/inputs/source": sourceInline
-			}
-			"/inputs/target": target
-			if contentType != "" {
-				"/inputs/content_type": contentType
-			}
-		}
+				op.#WriteFile & {
+					dest:    "/source"
+					content: sourceInline
+				}
+			},
 
-		export: "/url"
+			op.#Exec & {
+				if always != _|_ {
+					"always": always
+				}
+				env: {
+					TARGET:       target
+					CONTENT_TYPE: contentType
+				}
 
-		code: #"""
-			opts=""
-			op=cp
-			if [ -d /inputs/source ]; then
-			    op=sync
-			fi
-			if [ -f /inputs/content_type ]; then
-			    opts="--content-type $(cat /inputs/content_type)"
-			fi
-			aws s3 $op $opts /inputs/source "$(cat /inputs/target)"
-			cat /inputs/target \
-			    | sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
-			    > /url
-			"""#
+				if sourceInline == _|_ {
+					mount: "/source": from: source
+				}
 
-		if sourceInline == _|_ {
-			dir: source
-		}
+				args: [
+					"/bin/bash",
+					"--noprofile",
+					"--norc",
+					"-eo",
+					"pipefail",
+					"-c",
+					#"""
+						opts=""
+						op=cp
+						if [ -d /source ]; then
+							op=sync
+						fi
+						if [ -n "$CONTENT_TYPE" ]; then
+							opts="--content-type $CONTENT_TYPE"
+						fi
+						aws s3 $op $opts /source "$TARGET"
+						echo "$TARGET" \
+							| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
+							> /url
+						"""#,
+				]
+			},
+
+			op.#Export & {
+				source: "/url"
+				format: "string"
+			},
+		]
 	}
 }

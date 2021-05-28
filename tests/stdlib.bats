@@ -21,9 +21,7 @@ setup() {
 }
 
 @test "stdlib: netlify" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/netlify/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/netlify --input-yaml "$TESTDIR"/stdlib/netlify/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/netlify/
 }
 
 @test "stdlib: kubernetes" {
@@ -43,33 +41,23 @@ setup() {
 }
 
 @test "stdlib: aws: s3" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/aws/s3 --input-dir TestDirectory="$TESTDIR"/stdlib/aws/s3/testdata --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/s3
 }
 
 @test "stdlib: aws: eks" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/aws/eks --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/eks
 }
 
 @test "stdlib: aws: ecr" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/aws/ecr --input-yaml "$TESTDIR"/stdlib/aws/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/ecr
 }
 
 @test "stdlib: gcp: gke" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/gcp/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/gcp/gke --input-yaml "$TESTDIR"/stdlib/gcp/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/gcp/gke
 }
 
 @test "stdlib: gcp: gcr" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/gcp/inputs.yaml
-
-    "$DAGGER" compute "$TESTDIR"/stdlib/gcp/gcr --input-yaml "$TESTDIR"/stdlib/gcp/inputs.yaml
+    "$DAGGER" up -w "$TESTDIR"/stdlib/gcp/gcr
 }
 
 @test "stdlib: docker-build" {
@@ -89,14 +77,14 @@ setup() {
 }
 
 @test "stdlib: terraform" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/aws/inputs.yaml
+    skip_unless_secrets_available "$TESTDIR"/stdlib/terraform/s3/inputs.yaml
 
     "$DAGGER" init
     dagger_new_with_plan terraform "$TESTDIR"/stdlib/terraform/s3
 
     cp -R "$TESTDIR"/stdlib/terraform/s3/testdata "$DAGGER_WORKSPACE"/testdata
     "$DAGGER" -e terraform input dir TestData "$DAGGER_WORKSPACE"/testdata
-    sops -d "$TESTDIR"/stdlib/aws/inputs.yaml | "$DAGGER" -e "terraform" input yaml "" -f -
+    sops -d "$TESTDIR"/stdlib/terraform/s3/inputs.yaml | "$DAGGER" -e "terraform" input yaml "" -f -
 
     # it must fail because of a missing var
     run "$DAGGER" up -e terraform
