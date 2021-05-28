@@ -82,6 +82,13 @@ jobs:
           sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.6.1/sops-v3.6.1.linux
           sudo chmod +x /usr/local/bin/sops
 
+      - name: Import Dagger private key
+        env:
+          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
+        run: |
+          mkdir ~/.dagger
+          echo "$DAGGER_AGE_KEY" > ~/.dagger/keys.txt
+
       - name: Import PGP private key
         env:
           SOPS_PGP_KEY: ${{ secrets.SOPS_PGP_KEY }}
