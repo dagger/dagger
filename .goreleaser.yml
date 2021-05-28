@@ -12,7 +12,7 @@ builds:
     binary: dagger
     ldflags:
       - -s -w
-      - -X dagger.io/go/cmd/dagger/cmd.version={{.Version}}
+      - -X go.dagger.io/dagger/cmd/dagger/cmd.version={{.Version}}
     goos:
       - linux
       - windows
