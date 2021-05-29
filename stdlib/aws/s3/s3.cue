@@ -25,7 +25,7 @@ import (
 	contentType: string | *"" @dagger(input)
 
 	// Always write the object to S3
-	always?: bool @dagger(input)
+	always: bool | *true @dagger(input)
 
 	// URL of the uploaded S3 object
 	url: {
