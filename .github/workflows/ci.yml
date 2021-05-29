@@ -79,7 +79,7 @@ jobs:
       - name: Install Dependencies
         run: |
           # SOPS
-          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.6.1/sops-v3.6.1.linux
+          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
           sudo chmod +x /usr/local/bin/sops
 
       - name: Import Dagger private key

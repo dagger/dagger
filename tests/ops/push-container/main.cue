@@ -1,7 +1,6 @@
 package testing
 
 import (
-	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 )
