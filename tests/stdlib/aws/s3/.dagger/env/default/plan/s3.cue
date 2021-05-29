@@ -49,3 +49,23 @@ TestS3UploadDir: {
 		file:   "foo.txt"
 	}
 }
+
+TestS3Sync: {
+	deploy: s3.#Sync & {
+		config: TestConfig.awsConfig
+		source: TestDirectory
+		target: "s3://\(bucket)/"
+	}
+
+	verifyFile: #VerifyS3 & {
+		config: TestConfig.awsConfig
+		target: deploy.target
+		file:   "dirFile.txt"
+	}
+
+	verifyDir: #VerifyS3 & {
+		config: TestConfig.awsConfig
+		target: deploy.target
+		file:   "foo.txt"
+	}
+}
