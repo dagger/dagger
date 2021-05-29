@@ -12,6 +12,7 @@ package op
 	#Copy |
 	#Load |
 	#Subdir |
+	#Workdir |
 	#WriteFile |
 	#Mkdir |
 	#DockerBuild) & {do: string}

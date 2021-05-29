@@ -213,6 +213,8 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (
 		return p.Local(ctx, op, st)
 	case "load":
 		return p.Load(ctx, op, st)
+	case "workdir":
+		return p.Workdir(ctx, op, st)
 	case "subdir":
 		return p.Subdir(ctx, op, st)
 	case "docker-build":
@@ -230,6 +232,14 @@ func (p *Pipeline) vertexNamef(format string, a ...interface{}) string {
 	prefix := fmt.Sprintf("@%s@", p.name)
 	name := fmt.Sprintf(format, a...)
 	return prefix + " " + name
+}
+
+func (p *Pipeline) Workdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	path, err := op.Lookup("path").String()
+	if err != nil {
+		return st, err
+	}
+	return st.Dir(path), nil
 }
 
 func (p *Pipeline) Subdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {

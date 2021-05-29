@@ -1,0 +1,35 @@
+name: docs
+inputs:
+    awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:/KR+mkBb51etyZqiQnl4kxIl4vw=,iv:lFBuaqK9MVr5fYGMM8bN/XyZ9/oUInDWvzhYuK8Yj20=,tag:sHwcSTJ1lKzIDRYzr4Z/yg==,type:str]
+    awsConfig.region:
+        text: us-east-1
+    awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:0bHcnNwbKR2F+PKB/Xzs06zsvJHENPZHEcx9SUN3Sn2/fzf0fA2G2w==,iv:A306R2ldjigteL6c0jkvOxZbHtxhlobP2FuPknuf+N4=,tag:CvDqdrej34Kbh8Y7zG5O8Q==,type:str]
+    repository:
+        dir:
+            path: .
+            exclude:
+                - '**/node_modules'
+                - cmd/dagger/dagger
+                - cmd/dagger/dagger-debug
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBaZVVuYThsYk9YcWhYb0g4
+            TDhZQ21YN0FCRExKV2tqbVVUNTg5MWRUVUJzCndjc28yVUZEK3ZoQzVDQkk4emZQ
+            WGx2bUxSZlBENXlibzQ1MVkvc2I2MVkKLS0tIFJKS0ZENFhuVmdUM2h1a2xrK01a
+            ejRKQXNFZzBTbUxpc05acnkxQ2U2UkEKX1byNj64xOiRGAJ9lwh55d/mlasI3H6H
+            b+o3HbXSbV0G0UwQxEOisntR6o27ry/l12ai/sOQ4f9MXm6FRw2XTg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-05-29T02:37:17Z"
+    mac: ENC[AES256_GCM,data:mXlkcR6U0sQwXdk4mYMKmA6/tcZWVtQt76RVfYOj3uE89XgIUQhk5qts/fp8DMpOB90KZtUJB2Im2+ppqdhtKQO2xcp0Cj6WN1omYRdGbSAMBMPtIbbAdzMcZwvCScRvfDn1ecCSeHikTpDlvUImmoOJLH4ItvLq7JK3oUgPvUs=,iv:ckI70eAguY4p8eTI2W5Iws1zYaqkZuHcNWwjGBjbVYk=,tag:/hoRjWxK/5oxbmia4TgcKA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
