@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -15,12 +14,35 @@ import (
 )
 
 func Path() (string, error) {
-	h, err := homedir.Dir()
+	keysFile, err := homedir.Expand("~/.config/dagger/keys.txt")
 	if err != nil {
 		return "", err
 	}
 
-	return path.Join(h, ".dagger", "keys.txt"), nil
+	// if the keys file doesn't exist, attempt a migration
+	if _, err := os.Stat(keysFile); errors.Is(err, os.ErrNotExist) {
+		migrateKeys(keysFile)
+	}
+
+	return keysFile, nil
+}
+
+// migrateKeys attempts a migration from `~/.dagger/keys.txt` to `~/.config/dagger/keys.txt`
+func migrateKeys(keysFile string) error {
+	oldKeysFile, err := homedir.Expand("~/.dagger/keys.txt")
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(oldKeysFile); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(keysFile), 0700); err != nil {
+		return err
+	}
+
+	return os.Rename(oldKeysFile, keysFile)
 }
 
 func Default(ctx context.Context) (string, error) {
@@ -49,7 +71,7 @@ func Generate(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("internal error: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(keysFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(keysFile), 0700); err != nil {
 		return "", err
 	}
 	f, err := os.OpenFile(keysFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
