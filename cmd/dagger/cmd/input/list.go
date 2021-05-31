@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"text/tabwriter"
 
 	"go.dagger.io/dagger/client"
@@ -75,10 +74,10 @@ var listCmd = &cobra.Command{
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n",
 					inp.Path(),
-					getType(inp),
+					common.ValueType(inp),
 					valStr,
 					isUserSet(st, inp),
-					getDocString(inp),
+					common.ValueDocString(inp),
 				)
 			}
 
@@ -101,44 +100,6 @@ func isUserSet(env *state.State, val *compiler.Value) bool {
 	}
 
 	return false
-}
-
-func getType(val *compiler.Value) string {
-	if val.HasAttr("artifact") {
-		return "dagger.#Artifact"
-	}
-	if val.HasAttr("secret") {
-		return "dagger.#Secret"
-	}
-	return val.Cue().IncompleteKind().String()
-}
-
-func getDocString(val *compiler.Value) string {
-	docs := []string{}
-	for _, c := range val.Cue().Doc() {
-		docs = append(docs, strings.TrimSpace(c.Text()))
-	}
-	doc := strings.Join(docs, " ")
-
-	lines := strings.Split(doc, "\n")
-
-	// Strip out FIXME, TODO, and INTERNAL comments
-	docs = []string{}
-	for _, line := range lines {
-		if strings.HasPrefix(line, "FIXME: ") ||
-			strings.HasPrefix(line, "TODO: ") ||
-			strings.HasPrefix(line, "INTERNAL: ") {
-			continue
-		}
-		if len(line) == 0 {
-			continue
-		}
-		docs = append(docs, line)
-	}
-	if len(docs) == 0 {
-		return "-"
-	}
-	return strings.Join(docs, " ")
 }
 
 func init() {
