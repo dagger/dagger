@@ -7,7 +7,7 @@ package main
 	strDef: *"yolo" | string @dagger(input)
 
 	// test url description
-	url: "http://this.is.a.test/" @dagger(output)
+	url:  "http://this.is.a.test/" @dagger(output)
 	url2: url
 }
 
@@ -15,5 +15,5 @@ cfgInline: {
 	#A
 }
 
-cfg: #A
+cfg:  #A
 cfg2: cfg
