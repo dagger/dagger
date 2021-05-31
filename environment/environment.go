@@ -2,6 +2,7 @@ package environment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -321,4 +322,26 @@ func (e *Environment) ScanInputs(ctx context.Context, mergeUserInputs bool) ([]*
 	}
 
 	return scanInputs(ctx, src), nil
+}
+
+func (e *Environment) ScanOutputs(ctx context.Context) ([]*compiler.Value, error) {
+	if e.state.Computed == "" {
+		return nil, errors.New("cannot query environment outputs: please run `dagger up` first")
+	}
+
+	src, err := e.prepare(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	computed, err := compiler.DecodeJSON("", []byte(e.state.Computed))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := src.FillPath(cue.MakePath(), computed); err != nil {
+		return nil, err
+	}
+
+	return scanOutputs(ctx, src), nil
 }
