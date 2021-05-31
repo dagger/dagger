@@ -87,7 +87,7 @@ func ListOutputs(ctx context.Context, st *state.State, all bool) {
 	})
 
 	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to query environment")
+		lg.Warn().Err(err).Msg("failed to query environment")
 	}
 }
 
