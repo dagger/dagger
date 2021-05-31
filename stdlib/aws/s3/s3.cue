@@ -76,7 +76,7 @@ import (
 							opts="--content-type $CONTENT_TYPE"
 						fi
 						aws s3 $op $opts /source "$TARGET"
-						echo "$TARGET" \
+						echo -n "$TARGET" \
 							| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
 							> /url
 						"""#,
