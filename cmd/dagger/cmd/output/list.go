@@ -12,7 +12,9 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/state"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -35,54 +37,58 @@ var listCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
-		lg = lg.With().
-			Str("environment", st.Name).
-			Logger()
-
-		c, err := client.New(ctx, "", false)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
-		}
-
-		_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
-			outputs, err := env.ScanOutputs(ctx)
-			if err != nil {
-				return err
-			}
-
-			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Output\tType\tValue\tDescription")
-
-			for _, out := range outputs {
-				valStr := "-"
-
-				if out.IsConcreteR() == nil {
-					valStr, err = out.Cue().String()
-					if err != nil {
-						return err
-					}
-				} else if !viper.GetBool("all") {
-					continue
-				}
-
-				valStr = strings.ReplaceAll(valStr, "\n", "\\n")
-
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-					out.Path(),
-					common.ValueType(out),
-					valStr,
-					common.ValueDocString(out),
-				)
-			}
-
-			w.Flush()
-			return nil
-		})
-
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to query environment")
-		}
+		ListOutputs(ctx, st, viper.GetBool("all"))
 	},
+}
+
+func ListOutputs(ctx context.Context, st *state.State, all bool) {
+	lg := log.Ctx(ctx).With().
+		Str("environment", st.Name).
+		Logger()
+
+	c, err := client.New(ctx, "", false)
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to create client")
+	}
+
+	_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		outputs, err := env.ScanOutputs(ctx)
+		if err != nil {
+			return err
+		}
+
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "Output\tType\tValue\tDescription")
+
+		for _, out := range outputs {
+			valStr := "-"
+
+			if out.IsConcreteR() == nil {
+				valStr, err = out.Cue().String()
+				if err != nil {
+					return err
+				}
+			} else if !all {
+				continue
+			}
+
+			valStr = strings.ReplaceAll(valStr, "\n", "\\n")
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+				out.Path(),
+				common.ValueType(out),
+				valStr,
+				common.ValueDocString(out),
+			)
+		}
+
+		w.Flush()
+		return nil
+	})
+
+	if err != nil {
+		lg.Fatal().Err(err).Msg("failed to query environment")
+	}
 }
 
 func init() {
