@@ -326,7 +326,7 @@ func (e *Environment) ScanInputs(ctx context.Context, mergeUserInputs bool) ([]*
 
 func (e *Environment) ScanOutputs(ctx context.Context) ([]*compiler.Value, error) {
 	if e.state.Computed == "" {
-		return nil, errors.New("cannot query environment outputs: please run `dagger up` first")
+		return nil, errors.New("environment has been computed yet")
 	}
 
 	src, err := e.prepare(ctx)

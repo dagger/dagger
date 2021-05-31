@@ -46,6 +46,10 @@ func ListOutputs(ctx context.Context, st *state.State, all bool) {
 		Str("environment", st.Name).
 		Logger()
 
+	if st.Computed == "" {
+		lg.Fatal().Msg("cannot list environment outputs: please run `dagger up` first")
+	}
+
 	c, err := client.New(ctx, "", false)
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
@@ -87,7 +91,7 @@ func ListOutputs(ctx context.Context, st *state.State, all bool) {
 	})
 
 	if err != nil {
-		lg.Warn().Err(err).Msg("failed to query environment")
+		lg.Fatal().Err(err).Msg("failed to query environment")
 	}
 }
 
