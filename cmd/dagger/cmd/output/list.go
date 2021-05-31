@@ -54,10 +54,15 @@ var listCmd = &cobra.Command{
 			fmt.Fprintln(w, "Output\tType\tValue\tDescription")
 
 			for _, out := range outputs {
-				isConcrete := (out.IsConcreteR() == nil)
 				valStr := "-"
-				if isConcrete {
-					valStr, _ = out.Cue().String()
+
+				if out.IsConcreteR() == nil {
+					valStr, err = out.Cue().String()
+					if err != nil {
+						return err
+					}
+				} else if !viper.GetBool("all") {
+					continue
 				}
 
 				valStr = strings.ReplaceAll(valStr, "\n", "\\n")
@@ -78,4 +83,12 @@ var listCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to query environment")
 		}
 	},
+}
+
+func init() {
+	listCmd.Flags().BoolP("all", "a", false, "List all outputs (include non-concrete)")
+
+	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
+		panic(err)
+	}
 }
