@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"go.dagger.io/dagger/client"
@@ -64,6 +65,8 @@ var listCmd = &cobra.Command{
 				if hasDefault {
 					valStr = fmt.Sprintf("%s (default)", valStr)
 				}
+
+				valStr = strings.ReplaceAll(valStr, "\n", "\\n")
 
 				if !viper.GetBool("all") {
 					// skip input that is not overridable
