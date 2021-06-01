@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -100,15 +101,21 @@ func EnvironmentUp(ctx context.Context, state *state.State, noCache bool) *envir
 	return result
 }
 
-// ValueType returns the String representation of the cue value
-func ValueType(val *compiler.Value) string {
+// FormatValue returns the String representation of the cue value
+func FormatValue(val *compiler.Value) string {
 	if val.HasAttr("artifact") {
 		return "dagger.#Artifact"
 	}
 	if val.HasAttr("secret") {
 		return "dagger.#Secret"
 	}
-	return val.Cue().IncompleteKind().String()
+	if val.IsConcreteR() != nil {
+		return val.Cue().IncompleteKind().String()
+	}
+	// value representation in Cue
+	valStr := fmt.Sprintf("%v", val.Cue())
+	// escape \n
+	return strings.ReplaceAll(valStr, "\n", "\\n")
 }
 
 // ValueDocString returns the value doc from the comment lines

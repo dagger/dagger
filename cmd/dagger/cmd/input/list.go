@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"text/tabwriter"
 
 	"go.dagger.io/dagger/client"
@@ -53,20 +52,20 @@ var listCmd = &cobra.Command{
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Input\tType\tValue\tSet by user\tDescription")
+			fmt.Fprintln(w, "Input\tValue\tSet by user\tDescription")
 
 			for _, inp := range inputs {
 				isConcrete := (inp.IsConcreteR() == nil)
 				_, hasDefault := inp.Default()
-				valStr := "-"
-				if isConcrete {
-					valStr, _ = inp.Cue().String()
-				}
-				if hasDefault {
-					valStr = fmt.Sprintf("%s (default)", valStr)
-				}
+				// valStr := "-"
+				// if isConcrete {
+				// 	valStr, _ = inp.Cue().String()
+				// }
+				// if hasDefault {
+				// 	valStr = fmt.Sprintf("%s (default)", valStr)
+				// }
 
-				valStr = strings.ReplaceAll(valStr, "\n", "\\n")
+				// valStr = strings.ReplaceAll(valStr, "\n", "\\n")
 
 				if !viper.GetBool("all") {
 					// skip input that is not overridable
@@ -75,10 +74,9 @@ var listCmd = &cobra.Command{
 					}
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n",
+				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n",
 					inp.Path(),
-					common.ValueType(inp),
-					valStr,
+					common.FormatValue(inp),
 					isUserSet(st, inp),
 					common.ValueDocString(inp),
 				)
