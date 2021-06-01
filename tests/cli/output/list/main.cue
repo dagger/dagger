@@ -13,7 +13,7 @@ import (
 	// test url description
 	url:  "http://this.is.a.test/" @dagger(output)
 	url2: url
-	foo: int | *42 @dagger(output)
+	foo:  int | *42 @dagger(output)
 
 	bar: dagger.#Artifact @dagger(output)
 }

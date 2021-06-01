@@ -296,28 +296,28 @@ setup() {
     outAll="$("$DAGGER" input list --all -e "list")"
 
     #note: this is the recommended way to use pipes with bats
-    run bash -c "echo \"$out\" | grep awsConfig.accessKey | grep '#Secret' | grep false"
+    run bash -c "echo \"$out\" | grep awsConfig.accessKey | grep 'dagger.#Secret' | grep 'AWS access key'"
     assert_success
 
-    run bash -c "echo \"$out\" | grep cfgInline.source | grep '#Artifact' | grep false | grep 'source dir'"
+    run bash -c "echo \"$out\" | grep cfgInline.source | grep 'dagger.#Artifact' | grep false | grep 'source dir'"
     assert_success
 
     run bash -c "echo \"$outAll\" | grep cfg2"
     assert_failure
 
-    run bash -c "echo \"$out\" | grep cfgInline.strDef | grep string | grep 'yolo (default)' | grep false"
+    run bash -c "echo \"$out\" | grep cfgInline.strDef | grep '*yolo | string' | grep false"
     assert_success
 
     run bash -c "echo \"$out\" | grep cfg.num"
     assert_failure
 
-    run bash -c "echo \"$outAll\" | grep cfg.num | grep int"
+    run bash -c "echo \"$outAll\" | grep cfg.num | grep 21 | grep -v int"
     assert_success
 
     run bash -c "echo \"$out\" | grep cfg.strSet"
     assert_failure
 
-    run bash -c "echo \"$outAll\" | grep cfg.strSet | grep string | grep pipo"
+    run bash -c "echo \"$outAll\" | grep cfg.strSet | grep pipo"
     assert_success
 }
 
