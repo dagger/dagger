@@ -6,14 +6,14 @@ import (
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-	region: *"us-east-1" | string
+	region: *"us-east-1" | string @dagger(input)
 }
 
 // URL of the website to monitor
-website: string | *"https://www.google.com"
+website: string | *"https://www.google.com" @dagger(input)
 
 // Email address to notify of monitoring alerts
-email: string
+email: string @dagger(input)
 
 // The monitoring service running on AWS Cloudwatch
 monitor: #HTTPMonitor & {

@@ -9,40 +9,46 @@ import (
 // Backend configuration
 backend: {
 	// Source code to build this container
-	source: git.#Repository | dagger.#Artifact
+	source: git.#Repository | dagger.#Artifact @dagger(input)
 
 	// Container environment variables
-	environment: [string]: string
+	environment: {
+		[string]: string @dagger(input)
+	}
 
 	// Public hostname (need to match the master domain configures on the loadbalancer)
-	hostname: string
+	hostname: string @dagger(input)
 
 	// Container configuration
 	container: {
 		// Desired number of running containers
-		desiredCount: *1 | int
+		desiredCount: *1 | int @dagger(input)
 		// Time to wait for the HTTP timeout to complete
-		healthCheckTimeout: *10 | int
+		healthCheckTimeout: *10 | int @dagger(input)
 		// HTTP Path to perform the healthcheck request (HTTP Get)
-		healthCheckPath: *"/" | string
+		healthCheckPath: *"/" | string @dagger(input)
 		// Number of times the health check needs to fail before recycling the container
-		healthCheckUnhealthyThreshold: *2 | int
+		healthCheckUnhealthyThreshold: *2 | int @dagger(input)
 		// Port used by the process inside the container
-		port: *80 | int
+		port: *80 | int @dagger(input)
 		// Memory to allocate
-		memory: *1024 | int
+		memory: *1024 | int @dagger(input)
 		// Override the default container command
-		command: [...string]
+		command: [...string] @dagger(input)
 		// Custom dockerfile path
-		dockerfilePath: *"" | string
+		dockerfilePath: *"" | string @dagger(input)
 		// docker build args
-		dockerBuildArgs: [string]: string
+		dockerBuildArgs: {
+			[string]: string @dagger(input)
+		}
 	}
 
 	// Init container runs only once when the main container starts
 	initContainer: {
-		command: [...string]
-		environment: [string]: string
+		command: [...string] @dagger(input)
+		environment: {
+			[string]: string @dagger(input)
+		}
 	}
 }
 
