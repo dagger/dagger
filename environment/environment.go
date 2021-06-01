@@ -2,7 +2,6 @@ package environment
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -325,22 +324,20 @@ func (e *Environment) ScanInputs(ctx context.Context, mergeUserInputs bool) ([]*
 }
 
 func (e *Environment) ScanOutputs(ctx context.Context) ([]*compiler.Value, error) {
-	if e.state.Computed == "" {
-		return nil, errors.New("environment has been computed yet")
-	}
-
 	src, err := e.prepare(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	computed, err := compiler.DecodeJSON("", []byte(e.state.Computed))
-	if err != nil {
-		return nil, err
-	}
+	if e.state.Computed != "" {
+		computed, err := compiler.DecodeJSON("", []byte(e.state.Computed))
+		if err != nil {
+			return nil, err
+		}
 
-	if err := src.FillPath(cue.MakePath(), computed); err != nil {
-		return nil, err
+		if err := src.FillPath(cue.MakePath(), computed); err != nil {
+			return nil, err
+		}
 	}
 
 	return scanOutputs(ctx, src), nil
