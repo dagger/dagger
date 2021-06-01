@@ -43,6 +43,10 @@ var computeCmd = &cobra.Command{
 
 		for _, input := range viper.GetStringSlice("input-string") {
 			parts := strings.SplitN(input, "=", 2)
+			if len(parts) != 2 {
+				lg.Fatal().Msgf("failed to parse input: input-string")
+			}
+
 			k, v := parts[0], parts[1]
 			err := st.SetInput(k, state.TextInput(v))
 			if err != nil {
@@ -56,6 +60,10 @@ var computeCmd = &cobra.Command{
 
 		for _, input := range viper.GetStringSlice("input-dir") {
 			parts := strings.SplitN(input, "=", 2)
+			if len(parts) != 2 {
+				lg.Fatal().Msgf("failed to parse input: input-dir")
+			}
+
 			k, v := parts[0], parts[1]
 			err := st.SetInput(k, state.DirInput(v, []string{}, []string{}))
 			if err != nil {
@@ -69,6 +77,10 @@ var computeCmd = &cobra.Command{
 
 		for _, input := range viper.GetStringSlice("input-git") {
 			parts := strings.SplitN(input, "=", 2)
+			if len(parts) != 2 {
+				lg.Fatal().Msgf("failed to parse input: input-git")
+			}
+
 			k, v := parts[0], parts[1]
 			err := st.SetInput(k, state.GitInput(v, "", ""))
 			if err != nil {
