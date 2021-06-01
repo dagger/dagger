@@ -81,7 +81,7 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) (*enviro
 		// Create a background context so that logging will not be cancelled
 		// with the main context.
 		dispCtx := lg.WithContext(context.Background())
-		return c.logSolveStatus(dispCtx, events)
+		return c.logSolveStatus(dispCtx, state, events)
 	})
 
 	// Spawn build function
@@ -181,7 +181,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 	return nil
 }
 
-func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) error {
+func (c *Client) logSolveStatus(ctx context.Context, st *state.State, ch chan *bk.SolveStatus) error {
 	parseName := func(v *bk.Vertex) (string, string) {
 		// Pattern: `@name@ message`. Minimal length is len("@X@ ")
 		if len(v.Name) < 2 || !strings.HasPrefix(v.Name, "@") {
@@ -197,6 +197,18 @@ func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) er
 		return component, v.Name[prefixEndPos+3 : len(v.Name)]
 	}
 
+	// Just like sprintf, but redacts secrets automatically
+	secureSprintf := func(format string, a ...interface{}) string {
+		s := fmt.Sprintf(format, a...)
+		for _, i := range st.Inputs {
+			if i.Secret == nil {
+				continue
+			}
+			s = strings.ReplaceAll(s, i.Secret.PlainText(), "***")
+		}
+		return s
+	}
+
 	return progressui.PrintSolveStatus(ctx, ch,
 		func(v *bk.Vertex, index int) {
 			component, name := parseName(v)
@@ -208,10 +220,10 @@ func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) er
 
 			lg.
 				Debug().
-				Msg(fmt.Sprintf("#%d %s\n", index, name))
+				Msg(secureSprintf("#%d %s\n", index, name))
 			lg.
 				Debug().
-				Msg(fmt.Sprintf("#%d %s\n", index, v.Digest))
+				Msg(secureSprintf("#%d %s\n", index, v.Digest))
 		},
 		func(v *bk.Vertex, format string, a ...interface{}) {
 			component, _ := parseName(v)
@@ -221,9 +233,10 @@ func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) er
 				Str("component", component).
 				Logger()
 
+			msg := secureSprintf(format, a...)
 			lg.
 				Debug().
-				Msg(fmt.Sprintf(format, a...))
+				Msg(msg)
 		},
 		func(v *bk.Vertex, stream int, partial bool, format string, a ...interface{}) {
 			component, _ := parseName(v)
@@ -233,15 +246,16 @@ func (c *Client) logSolveStatus(ctx context.Context, ch chan *bk.SolveStatus) er
 				Str("component", component).
 				Logger()
 
+			msg := secureSprintf(format, a...)
 			switch stream {
 			case 1:
 				lg.
 					Info().
-					Msg(fmt.Sprintf(format, a...))
+					Msg(msg)
 			case 2:
 				lg.
 					Error().
-					Msg(fmt.Sprintf(format, a...))
+					Msg(msg)
 			}
 		},
 	)
