@@ -131,6 +131,9 @@ func Decrypt(_ context.Context, encrypted []byte) ([]byte, error) {
 	}
 	key, err := tree.Metadata.GetDataKey()
 	if err != nil {
+		if userErr, ok := err.(sops.UserError); ok {
+			err = fmt.Errorf(userErr.UserError())
+		}
 		return nil, err
 	}
 
