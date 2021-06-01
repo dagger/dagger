@@ -326,13 +326,7 @@ setup() {
 
     dagger_new_with_plan list "$TESTDIR"/cli/output/list
 
-    run "$DAGGER" output list -e "list"
-    assert_failure
-
-    "$DAGGER" up -e "list"
-
     out="$("$DAGGER" output list -e "list")"
-    outAll="$("$DAGGER" output list --all -e "list")"
 
     run bash -c "echo \"$out\" | grep cfgInline.url | grep 'http://this.is.a.test/' | grep 'test url description'"
     assert_success
@@ -343,12 +337,12 @@ setup() {
     run bash -c "echo \"$out\" | grep cfg2.url | grep 'http://this.is.a.test/' | grep 'test url description'"
     assert_success
 
-    run bash -c "echo \"$out\" | grep cfg.str"
-    assert_failure
-
-    run bash -c "echo \"$outAll\" | grep cfg.str"
+    run bash -c "echo \"$out\" | grep cfg.foo | grep '*42 | int'"
     assert_success
 
-    run bash -c "echo \"$outAll\" | grep cfg2.url"
+    run bash -c "echo \"$out\" | grep cfg2.bar | grep 'dagger.#Artifact'"
+    assert_success
+
+    run bash -c "echo \"$out\" | grep cfg2.str | grep 'string'"
     assert_success
 }
