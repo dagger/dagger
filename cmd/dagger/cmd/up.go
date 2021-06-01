@@ -48,12 +48,7 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to update environment")
 		}
 
-		if !term.IsTerminal(int(os.Stdout.Fd())) {
-			lg.Debug().Msg("not a tty, output list disabled")
-			return
-		}
-
-		output.ListOutputs(ctx, st, false)
+		output.ListOutputs(ctx, st, term.IsTerminal(int(os.Stdout.Fd())))
 	},
 }
 

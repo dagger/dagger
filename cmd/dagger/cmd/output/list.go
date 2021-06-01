@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"text/tabwriter"
 
 	"go.dagger.io/dagger/client"
@@ -37,18 +36,14 @@ var listCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
-		ListOutputs(ctx, st, viper.GetBool("all"))
+		ListOutputs(ctx, st, true)
 	},
 }
 
-func ListOutputs(ctx context.Context, st *state.State, all bool) {
+func ListOutputs(ctx context.Context, st *state.State, isTTY bool) {
 	lg := log.Ctx(ctx).With().
 		Str("environment", st.Name).
 		Logger()
-
-	if st.Computed == "" {
-		lg.Fatal().Msg("cannot list environment outputs: please run `dagger up` first")
-	}
 
 	c, err := client.New(ctx, "", false)
 	if err != nil {
@@ -61,27 +56,22 @@ func ListOutputs(ctx context.Context, st *state.State, all bool) {
 			return err
 		}
 
+		if !isTTY {
+			for _, out := range outputs {
+				lg.Info().Str("name", out.Path().String()).
+					Str("value", fmt.Sprintf("%v", out.Cue())).
+					Msg("output")
+			}
+			return nil
+		}
+
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "Output\tType\tValue\tDescription")
+		fmt.Fprintln(w, "Output\tValue\tDescription")
 
 		for _, out := range outputs {
-			valStr := "-"
-
-			if out.IsConcreteR() == nil {
-				valStr, err = out.Cue().String()
-				if err != nil {
-					return err
-				}
-			} else if !all {
-				continue
-			}
-
-			valStr = strings.ReplaceAll(valStr, "\n", "\\n")
-
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\n",
 				out.Path(),
-				common.ValueType(out),
-				valStr,
+				common.FormatValue(out),
 				common.ValueDocString(out),
 			)
 		}
@@ -92,13 +82,5 @@ func ListOutputs(ctx context.Context, st *state.State, all bool) {
 
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to query environment")
-	}
-}
-
-func init() {
-	listCmd.Flags().BoolP("all", "a", false, "List all outputs (include non-concrete)")
-
-	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
-		panic(err)
 	}
 }
