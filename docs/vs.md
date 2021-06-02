@@ -1,3 +1,9 @@
+---
+sidebar_position: 3
+slug: /vs
+sidebar_label: Dagger vs. Other software
+---
+
 # Dagger vs. Other Software
 
 ## Dagger vs. PaaS (Heroku, Firebase, etc.)
