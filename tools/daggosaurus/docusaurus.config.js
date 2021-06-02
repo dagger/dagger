@@ -25,6 +25,7 @@ module.exports = {
       logo: {
         alt: 'My Site Logo',
         src: 'img/dagger-logo.png',
+        srcDark: 'img/dagger_logo_dark.png',
       },
     },
   },

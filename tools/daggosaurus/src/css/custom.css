@@ -97,3 +97,7 @@ p {
 .table-of-contents__link--active {
   font-weight: bold;
 }
+html[data-theme="dark"] .table-of-contents__link--active,
+html[data-theme="dark"] .table-of-contents__link:hover {
+  color: var(--ifm-color-primary-light);
+}
