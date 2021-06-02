@@ -52,7 +52,9 @@ import (
 
 	outputs: #up: [
 		op.#Load & {
-			from: aws.#CLI
+			from: aws.#CLI & {
+				"config": config
+			}
 		},
 		op.#Mkdir & {
 			path: "/src"
@@ -74,13 +76,6 @@ import (
 				"/entrypoint.sh",
 			]
 			env: {
-				AWS_CONFIG_FILE:       "/cache/aws/config"
-				AWS_ACCESS_KEY_ID:     config.accessKey
-				AWS_SECRET_ACCESS_KEY: config.secretKey
-				AWS_DEFAULT_REGION:    config.region
-				AWS_REGION:            config.region
-				AWS_DEFAULT_OUTPUT:    "json"
-				AWS_PAGER:             ""
 				if neverUpdate {
 					NEVER_UPDATE: "true"
 				}
@@ -89,7 +84,6 @@ import (
 				ON_FAILURE: onFailure
 			}
 			dir: "/src"
-			mount: "/cache/aws": "cache"
 		},
 		op.#Export & {
 			source: "/outputs.json"
