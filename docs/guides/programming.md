@@ -76,7 +76,9 @@ For more inspiration, see these examples:
 - [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
 - [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
 
-5\. Extend your plan with relay definitions from [Dagger Universe](#), an encyclopedia of cue packages curated by the Dagger community.
+5\. Extend your plan with relay definitions from [Dagger
+Universe](https://github.com/dagger/dagger/tree/main/stdlib), an encyclopedia of
+cue packages curated by the Dagger community.
 
 6\. If you can't find the relay you need in the Universe, you can simply create your own.
 
@@ -147,13 +149,16 @@ _Relays_ are the basic components of a _plan_. Each relay is a node in the graph
 performing the task assigned to that node. For example one relay fetches source code; another runs a build;
 another uploads a container image; etc.
 
-Relays are standalone software components: they are defined in [Cue](https://cuelang.org), but can
-execute code in any language using the [Dagger pipeline API](#).
+Relays are standalone software components: they are defined in [Cue](https://cuelang.org/), but can
+execute code in any language using the [Dagger pipeline
+API](https://github.com/dagger/dagger/blob/main/stdlib/dagger/op/op.cue).
 
 A relay is made of 3 parts:
 
 - Inputs: data received from the user, or upstream relays
-- A processing pipeline: code executed against each new input, using the [pipeline API](#)
+- A processing pipeline: code executed against each new input, using the
+  [pipeline
+  API](https://github.com/dagger/dagger/blob/main/stdlib/dagger/op/op.cue)
 - Outputs: data produced by the processing pipeline
 
 Relays run in parallel, with their inputs and outputs interconnected into a special kind of graph,
