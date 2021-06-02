@@ -1,11 +1,5 @@
 name: docs
 inputs:
-    awsConfig.accessKey:
-        secret: ENC[AES256_GCM,data:/KR+mkBb51etyZqiQnl4kxIl4vw=,iv:lFBuaqK9MVr5fYGMM8bN/XyZ9/oUInDWvzhYuK8Yj20=,tag:sHwcSTJ1lKzIDRYzr4Z/yg==,type:str]
-    awsConfig.region:
-        text: us-east-1
-    awsConfig.secretKey:
-        secret: ENC[AES256_GCM,data:0bHcnNwbKR2F+PKB/Xzs06zsvJHENPZHEcx9SUN3Sn2/fzf0fA2G2w==,iv:A306R2ldjigteL6c0jkvOxZbHtxhlobP2FuPknuf+N4=,tag:CvDqdrej34Kbh8Y7zG5O8Q==,type:str]
     repository:
         dir:
             path: .
@@ -13,6 +7,10 @@ inputs:
                 - '**/node_modules'
                 - cmd/dagger/dagger
                 - cmd/dagger/dagger-debug
+    site.account.name:
+        text: blocklayer
+    site.account.token:
+        secret: ENC[AES256_GCM,data:jPJ8N6cAmtYnQh2SyhM9bQGfkhz777S4fyPDm2YhujwgXH6EogN2Uyw6Ew==,iv:gDchoJYLdQ8IPxrUUIsQ9s2f12JOhh7p573DwOIV2zE=,tag:okatHyjVGPGNOt+aw4iUHg==,type:str]
 sops:
     kms: []
     gcp_kms: []
@@ -28,8 +26,8 @@ sops:
             ejRKQXNFZzBTbUxpc05acnkxQ2U2UkEKX1byNj64xOiRGAJ9lwh55d/mlasI3H6H
             b+o3HbXSbV0G0UwQxEOisntR6o27ry/l12ai/sOQ4f9MXm6FRw2XTg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-05-29T02:37:17Z"
-    mac: ENC[AES256_GCM,data:mXlkcR6U0sQwXdk4mYMKmA6/tcZWVtQt76RVfYOj3uE89XgIUQhk5qts/fp8DMpOB90KZtUJB2Im2+ppqdhtKQO2xcp0Cj6WN1omYRdGbSAMBMPtIbbAdzMcZwvCScRvfDn1ecCSeHikTpDlvUImmoOJLH4ItvLq7JK3oUgPvUs=,iv:ckI70eAguY4p8eTI2W5Iws1zYaqkZuHcNWwjGBjbVYk=,tag:/hoRjWxK/5oxbmia4TgcKA==,type:str]
+    lastmodified: "2021-06-02T22:14:46Z"
+    mac: ENC[AES256_GCM,data:x/Up/GCLTwIWSbyxvy3S79j4gbKRRYnDguvgPJFAii2PS6rjSU7KHtwM9WbUqQtd+NDbe1eWjdmAC4jPwVsa9OY7s+heR3597OpTh0pHcOgTrc4fTVN9IVHwehlg4hJU00iL1oiiHfeCD5dMUGeIRyqRqoAyMJrPdC9IDwjnp6E=,iv:IUbrkPQqLC/wnfKZMnOK9jKSc+xDXpeJwKLXuioifyE=,tag:2l+FhV3k5WvhQyvvf37Hjw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
