@@ -320,7 +320,7 @@ func (e *Environment) ScanInputs(ctx context.Context, mergeUserInputs bool) ([]*
 		}
 	}
 
-	return scanInputs(ctx, src), nil
+	return ScanInputs(ctx, src), nil
 }
 
 func (e *Environment) ScanOutputs(ctx context.Context) ([]*compiler.Value, error) {
@@ -340,5 +340,5 @@ func (e *Environment) ScanOutputs(ctx context.Context) ([]*compiler.Value, error
 		}
 	}
 
-	return scanOutputs(ctx, src), nil
+	return ScanOutputs(ctx, src), nil
 }

@@ -46,6 +46,7 @@ func init() {
 		input.Cmd,
 		output.Cmd,
 		versionCmd,
+		docCmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
