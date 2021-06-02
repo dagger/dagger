@@ -15,7 +15,7 @@ repo: git.#Repository & {
 // Host the application with Netlify
 www: netlify.#Site & {
 	// Site name can be overridden
-	name: string | *"dagger-examples-react"
+	name: string | *"dagger-examples-react" @dagger(input)
 
 	// Deploy the output of yarn build
 	// (Netlify build feature is not used, to avoid extra cost).

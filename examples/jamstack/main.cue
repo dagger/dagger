@@ -1,7 +1,7 @@
 package main
 
 // Name of the application
-name: string & =~"[a-z0-9-]+"
+name: string & =~"[a-z0-9-]+" @dagger(input)
 
 // Inject db info in the container environment
 backend: environment: {
@@ -17,6 +17,6 @@ backend: environment: {
 frontend: environment: APP_URL_API: url.backendURL
 
 url: {
-	frontendURL: frontend.site.url
-	backendURL:  "https://\(backend.hostname)/"
+	frontendURL: frontend.site.url              @dagger(output)
+	backendURL:  "https://\(backend.hostname)/" @dagger(output)
 }

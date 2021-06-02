@@ -66,3 +66,23 @@ func scanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 
 	return inputs
 }
+
+func scanOutputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
+	lg := log.Ctx(ctx)
+	inputs := []*compiler.Value{}
+
+	value.Walk(
+		func(val *compiler.Value) bool {
+			if !val.HasAttr("output") {
+				return true
+			}
+
+			lg.Debug().Str("value.Path", val.Path().String()).Msg("found output")
+			inputs = append(inputs, val)
+
+			return true
+		}, nil,
+	)
+
+	return inputs
+}

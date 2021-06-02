@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"text/tabwriter"
 
 	"go.dagger.io/dagger/client"
@@ -53,18 +52,20 @@ var listCmd = &cobra.Command{
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "Input\tType\tValue\tSet by user\tDescription")
+			fmt.Fprintln(w, "Input\tValue\tSet by user\tDescription")
 
 			for _, inp := range inputs {
 				isConcrete := (inp.IsConcreteR() == nil)
 				_, hasDefault := inp.Default()
-				valStr := "-"
-				if isConcrete {
-					valStr, _ = inp.Cue().String()
-				}
-				if hasDefault {
-					valStr = fmt.Sprintf("%s (default)", valStr)
-				}
+				// valStr := "-"
+				// if isConcrete {
+				// 	valStr, _ = inp.Cue().String()
+				// }
+				// if hasDefault {
+				// 	valStr = fmt.Sprintf("%s (default)", valStr)
+				// }
+
+				// valStr = strings.ReplaceAll(valStr, "\n", "\\n")
 
 				if !viper.GetBool("all") {
 					// skip input that is not overridable
@@ -73,12 +74,11 @@ var listCmd = &cobra.Command{
 					}
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n",
+				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n",
 					inp.Path(),
-					getType(inp),
-					valStr,
+					common.FormatValue(inp),
 					isUserSet(st, inp),
-					getDocString(inp),
+					common.ValueDocString(inp),
 				)
 			}
 
@@ -101,44 +101,6 @@ func isUserSet(env *state.State, val *compiler.Value) bool {
 	}
 
 	return false
-}
-
-func getType(val *compiler.Value) string {
-	if val.HasAttr("artifact") {
-		return "dagger.#Artifact"
-	}
-	if val.HasAttr("secret") {
-		return "dagger.#Secret"
-	}
-	return val.Cue().IncompleteKind().String()
-}
-
-func getDocString(val *compiler.Value) string {
-	docs := []string{}
-	for _, c := range val.Cue().Doc() {
-		docs = append(docs, strings.TrimSpace(c.Text()))
-	}
-	doc := strings.Join(docs, " ")
-
-	lines := strings.Split(doc, "\n")
-
-	// Strip out FIXME, TODO, and INTERNAL comments
-	docs = []string{}
-	for _, line := range lines {
-		if strings.HasPrefix(line, "FIXME: ") ||
-			strings.HasPrefix(line, "TODO: ") ||
-			strings.HasPrefix(line, "INTERNAL: ") {
-			continue
-		}
-		if len(line) == 0 {
-			continue
-		}
-		docs = append(docs, line)
-	}
-	if len(docs) == 0 {
-		return "-"
-	}
-	return strings.Join(docs, " ")
 }
 
 func init() {

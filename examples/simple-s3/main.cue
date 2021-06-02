@@ -16,7 +16,9 @@ bucket: *"dagger-io-examples" | string @dagger(input)
 
 // Source code to deploy
 source: dagger.#Artifact @dagger(input)
-url:    "\(deploy.url)index.html"
+
+// Deployed URL
+url: "\(deploy.url)index.html" @dagger(output)
 
 deploy: s3.#Put & {
 	always:      true

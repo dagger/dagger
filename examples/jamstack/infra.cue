@@ -10,26 +10,26 @@ infra: {
 	awsConfig: aws.#Config
 
 	// VPC Id
-	vpcId: string
+	vpcId: string @dagger(input)
 
 	// ECR Image repository
-	ecrRepository: string
+	ecrRepository: string @dagger(input)
 
 	// ECS cluster name
-	ecsClusterName: string
+	ecsClusterName: string @dagger(input)
 
 	// Execution Role ARN used for all tasks running on the cluster
-	ecsTaskRoleArn?: string
+	ecsTaskRoleArn?: string @dagger(input)
 
 	// ELB listener ARN
-	elbListenerArn: string
+	elbListenerArn: string @dagger(input)
 
 	// Secret ARN for the admin password of the RDS Instance
-	rdsAdminSecretArn: string
+	rdsAdminSecretArn: string @dagger(input)
 
 	// ARN of the RDS Instance
-	rdsInstanceArn: string
+	rdsInstanceArn: string @dagger(input)
 
 	// Netlify credentials
-	netlifyAccount: netlify.#Account
+	netlifyAccount: netlify.#Account @dagger(input)
 }

@@ -9,24 +9,30 @@ import (
 
 frontend: {
 	// Source code to build the app
-	source: git.#Repository | dagger.#Artifact
+	source: git.#Repository | dagger.#Artifact @dagger(input)
 
-	writeEnvFile?: string
+	writeEnvFile?: string @dagger(input)
 
 	// Yarn Build
 	yarn: {
 		// Run this yarn script
-		script: string | *"build"
+		script: string | *"build" @dagger(input)
 
 		// Read build output from this directory
 		// (path must be relative to working directory).
-		buildDir: string | *"build"
+		buildDir: string | *"build" @dagger(input)
 	}
 
 	// Build environment variables
-	environment: [string]: string
-	environment: NODE_ENV: string | *"production"
-	environment: APP_URL:  "https://\(name).netlify.app/"
+	environment: {
+		[string]: string @dagger(input)
+	}
+	environment: {
+		NODE_ENV: string | *"production" @dagger(input)
+	}
+	environment: {
+		APP_URL: "https://\(name).netlify.app/" @dagger(input)
+	}
 }
 
 frontend: {
