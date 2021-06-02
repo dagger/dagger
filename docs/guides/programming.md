@@ -25,7 +25,7 @@ Cue extends JSON with powerful features:
 To get started with Cue, we recommend the following resources:
 
 - [Cuetorials](https://cuetorials.com)
-- [Cue playground](https://cuelang.org/play/)
+- [Cue playground](https://cuelang.org/play)
 
 ## Writing your first plan
 
