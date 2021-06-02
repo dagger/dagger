@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -13,10 +13,10 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/stdlib"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -39,19 +39,19 @@ var docCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
-		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
 
 		format := viper.GetString("output")
 		if format != textFormat && format != markdownFormat {
 			lg.Fatal().Msg("output must be either `txt` or `md`")
 		}
 
-		val, err := loadCode(args[0])
+		packageName := args[0]
+
+		val, err := loadCode(packageName)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("cannot compile code")
 		}
-		PrintDoc(ctx, val, format)
+		PrintDoc(ctx, packageName, val, format)
 	},
 }
 
@@ -123,22 +123,70 @@ func terminalTrim(msg string) string {
 	return msg
 }
 
-func loadCode(path string) (*compiler.Value, error) {
-	src, err := ioutil.ReadFile(path)
+func loadCode(packageName string) (*compiler.Value, error) {
+	sources := map[string]fs.FS{
+		stdlib.Path: stdlib.FS,
+	}
+
+	src, err := compiler.Build(sources, packageName)
 	if err != nil {
 		return nil, err
 	}
 
-	val, err := compiler.Compile("", string(src))
-	if err != nil {
-		return nil, err
-	}
-
-	return val, nil
+	return src, nil
 }
 
-func PrintDoc(ctx context.Context, val *compiler.Value, format string) {
+func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, format string) {
 	lg := log.Ctx(ctx)
+
+	fields, err := val.Fields(cue.Definitions(true))
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot get fields")
+	}
+
+	// Print title
+	switch format {
+	case textFormat:
+		fmt.Printf("Package:\t%s\n", packageName)
+	case markdownFormat:
+		importPath := strings.Split(packageName, "/")
+		switch {
+		case len(importPath) == 2:
+			fmt.Printf("## %s\n", importPath[1])
+		case len(importPath) > 2:
+			fmt.Printf("### %s\n", strings.Join(importPath[2:], "/"))
+		default:
+			fmt.Printf("## %s\n", packageName)
+		}
+	}
+
+	for _, field := range fields {
+		if !field.Selector.IsDefinition() {
+			continue
+		}
+
+		name := field.Label()
+		v := field.Value
+		if v.Cue().IncompleteKind() != cue.StructKind {
+			continue
+		}
+
+		switch format {
+		case textFormat:
+			comment := extractComment(v.Cue())
+			if comment != "" {
+				comment = fmt.Sprintf(": %s", comment)
+			}
+			fmt.Printf("\n=> %s%s\n", name, comment)
+		case markdownFormat:
+			comment := extractComment(v.Cue())
+			if comment != "" {
+				comment = fmt.Sprintf("\n\n%s", comment)
+			}
+			fmt.Printf("\n#### %s%s\n\n", name, mdEscape(comment))
+			fmt.Printf("##### Fields\n\n")
+		}
+	}
 
 	environment.ScanOutputs(ctx, val)
 }

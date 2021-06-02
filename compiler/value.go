@@ -76,8 +76,8 @@ func (f Field) Label() string {
 
 // Proxy function to the underlying cue.Value
 // Field ordering is guaranteed to be stable.
-func (v *Value) Fields() ([]Field, error) {
-	it, err := v.val.Fields()
+func (v *Value) Fields(opts ...cue.Option) ([]Field, error) {
+	it, err := v.val.Fields(opts...)
 	if err != nil {
 		return nil, err
 	}
