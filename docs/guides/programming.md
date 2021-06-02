@@ -76,7 +76,7 @@ For more inspiration, see these examples:
 - [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
 - [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
 
-5\. Extend your plan with relay definitions from [Dagger Universe](../stdlib), an encyclopedia of cue packages curated by the Dagger community.
+5\. Extend your plan with relay definitions from [Dagger Universe](#), an encyclopedia of cue packages curated by the Dagger community.
 
 6\. If you can't find the relay you need in the Universe, you can simply create your own.
 
@@ -148,12 +148,12 @@ performing the task assigned to that node. For example one relay fetches source 
 another uploads a container image; etc.
 
 Relays are standalone software components: they are defined in [Cue](https://cuelang.org), but can
-execute code in any language using the [Dagger pipeline API](FIXME).
+execute code in any language using the [Dagger pipeline API](#).
 
 A relay is made of 3 parts:
 
 - Inputs: data received from the user, or upstream relays
-- A processing pipeline: code executed against each new input, using the [pipeline API](FIXME)
+- A processing pipeline: code executed against each new input, using the [pipeline API](#)
 - Outputs: data produced by the processing pipeline
 
 Relays run in parallel, with their inputs and outputs interconnected into a special kind of graph,
