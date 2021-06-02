@@ -18,6 +18,6 @@ docs: yarn.#Package & {
 
 // Deploy the docs website
 site: netlify.#Site & {
-	name: string | *"docs-dagger-io" @dagger(input)
+	name:     string | *"docs-dagger-io" @dagger(input)
 	contents: docs.build
 }
