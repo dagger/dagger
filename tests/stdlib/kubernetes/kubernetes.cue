@@ -34,9 +34,9 @@ TestKubeApply: {
 
 	// Apply deployment
 	apply: kubernetes.#Apply & {
-		kubeconfig:   config.contents
-		namespace:    "dagger-test"
-		sourceInline: yaml.Marshal(kubeSrc)
+		kubeconfig: config.contents
+		namespace:  "dagger-test"
+		manifest:   yaml.Marshal(kubeSrc)
 	}
 
 	// Verify deployment

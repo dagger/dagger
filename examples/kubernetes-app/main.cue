@@ -37,9 +37,9 @@ cluster: eks.#KubeConfig & {
 
 // Example of a simple `kubectl apply` using a simple config
 kubeApply: kubernetes.#Apply & {
-	sourceInline: yaml.Marshal(kubeSrc)
-	namespace:    "test"
-	kubeconfig:   cluster.kubeconfig
+	manifest:   yaml.Marshal(kubeSrc)
+	namespace:  "test"
+	kubeconfig: cluster.kubeconfig
 }
 
 // Example of a `helm install` using a local chart
