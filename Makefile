@@ -49,3 +49,8 @@ integration: dagger-debug
 .PHONY: install
 install: dagger
 	go install ./cmd/dagger
+
+.PHONY: docs
+docs:
+	yarn --cwd "./tools/daggosaurus" install
+	yarn --cwd "./tools/daggosaurus" start
