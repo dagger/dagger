@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/ast"
 	cueformat "cuelang.org/go/cue/format"
 )
 
@@ -269,4 +270,12 @@ func (v *Value) Dereference() *Value {
 func (v *Value) Default() (*Value, bool) {
 	val, hasDef := v.val.Default()
 	return v.cc.Wrap(val), hasDef
+}
+
+func (v *Value) Doc() []*ast.CommentGroup {
+	return v.Cue().Doc()
+}
+
+func (v *Value) IncompleteKindString() string {
+	return v.Cue().IncompleteKind().String()
 }

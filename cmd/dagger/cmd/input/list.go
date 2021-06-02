@@ -57,15 +57,6 @@ var listCmd = &cobra.Command{
 			for _, inp := range inputs {
 				isConcrete := (inp.IsConcreteR() == nil)
 				_, hasDefault := inp.Default()
-				// valStr := "-"
-				// if isConcrete {
-				// 	valStr, _ = inp.Cue().String()
-				// }
-				// if hasDefault {
-				// 	valStr = fmt.Sprintf("%s (default)", valStr)
-				// }
-
-				// valStr = strings.ReplaceAll(valStr, "\n", "\\n")
 
 				if !viper.GetBool("all") {
 					// skip input that is not overridable

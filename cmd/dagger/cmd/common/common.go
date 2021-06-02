@@ -110,7 +110,7 @@ func FormatValue(val *compiler.Value) string {
 		return "dagger.#Secret"
 	}
 	if val.IsConcreteR() != nil {
-		return val.Cue().IncompleteKind().String()
+		return val.IncompleteKindString()
 	}
 	// value representation in Cue
 	valStr := fmt.Sprintf("%v", val.Cue())
@@ -121,7 +121,7 @@ func FormatValue(val *compiler.Value) string {
 // ValueDocString returns the value doc from the comment lines
 func ValueDocString(val *compiler.Value) string {
 	docs := []string{}
-	for _, c := range val.Cue().Doc() {
+	for _, c := range val.Doc() {
 		docs = append(docs, strings.TrimSpace(c.Text()))
 	}
 	doc := strings.Join(docs, " ")
