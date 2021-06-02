@@ -1,0 +1,103 @@
+/* stylelint-disable docusaurus/copyright-header */
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #0e2b3d;
+  --ifm-color-primary-dark: #131226;
+  --ifm-color-primary-darker: rgb(31, 165, 136);
+  --ifm-color-primary-darkest: rgb(26, 136, 112);
+  --ifm-color-primary-light: #fffef3;
+  --ifm-color-primary-lighter: rgb(102, 212, 189);
+  --ifm-color-primary-lightest: rgb(146, 224, 208);
+  --ifm-code-font-size: 95%;
+  --ifm-navbar-height: 5rem;
+  --ifm-background-color: var(--ifm-color-primary-light);
+  --ifm-navbar-background-color: transparent;
+  --ifm-menu-color-active: var(--ifm-color-primary-dark);
+  --ifm-font-family-base: "Karla", sans-serif;
+  /* --ifm-font-family-monospace: "Karla", sans-serif; */
+  --ifm-h2-font-size: 2rem;
+  --ifm-menu-color-background-active: var(--ifm-color-primary);
+  --ifm-menu-color-active: var(--ifm-color-primary-light);
+  --ifm-leading-desktop: 2;
+}
+
+html[data-theme="dark"] {
+  --ifm-background-color: var(--ifm-color-primary-dark);
+  --ifm-navbar-background-color: transparent;
+  --ifm-menu-color-active: var(--ifm-color-primary-light);
+  --ifm-menu-color-active: var(--ifm-color-primary-light);
+  --ifm-link-color: var(--ifm-color-primary-light);
+}
+
+#__docusaurus {
+  background-color: var(--ifm-color-primary-light);
+}
+
+html[data-theme="dark"] #__docusaurus {
+  background: linear-gradient(
+    180deg,
+    var(--ifm-color-primary-dark),
+    var(--ifm-color-primary)
+  );
+}
+
+.docusaurus-highlight-code-line {
+  background-color: rgb(72, 77, 91);
+  display: block;
+  margin: 0 calc(-1 * var(--ifm-pre-padding));
+  padding: 0 var(--ifm-pre-padding);
+}
+
+.navbar__brand {
+  height: var(--ifm-navbar-height);
+}
+
+.navbar {
+  max-width: var(--ifm-container-width-xl);
+  align-self: center;
+  box-shadow: none;
+}
+
+.main-wrapper {
+  max-width: var(--ifm-container-width-xl);
+  align-self: center;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Poppins", sans-serif;
+}
+
+h2 {
+  font-weight: 700;
+  line-height: 32px;
+}
+
+.markdown > h2 {
+  --ifm-h2-font-size: 1.5rem;
+}
+
+p {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.table-of-contents {
+  font-size: 1rem;
+}
+
+.table-of-contents__link--active {
+  font-weight: bold;
+}
+html[data-theme="dark"] .table-of-contents__link--active,
+html[data-theme="dark"] .table-of-contents__link:hover {
+  color: var(--ifm-color-primary-light);
+}

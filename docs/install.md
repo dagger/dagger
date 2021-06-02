@@ -1,3 +1,8 @@
+---
+sidebar_position: 2
+slug: /install
+---
+
 # Install Dagger
 
 ## Option 1: Use Homebrew (Mac OS only)
