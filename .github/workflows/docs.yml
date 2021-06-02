@@ -2,8 +2,6 @@ name: Docs
 
 on:
   push:
-    branches:
-      - main
     tags:
       - v*
     paths:
@@ -15,75 +13,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.DOCS_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: "us-east-1"
-
     steps:
-      - name: Set Version
-        id: vars
-        run: |
-          tag=${GITHUB_REF#refs/*/}
-          [ "$tag" = "main" ] && echo ::set-output name=tag::devel || echo ::set-output name=tag::$tag
-
-      # fetch-depth: '0' enables listing all tags for version selector
       - uses: actions/checkout@v2
         with:
           fetch-depth: "0"
-
-      #################################################################
-      #              BUILD SITE
-      #################################################################
-
-      # Install Node
-      - uses: actions/setup-node@v2
+      - uses: dagger/dagger-action@v1
         with:
-          node-version: "14"
-      - run: yarn --cwd ./tools/gendocs
-      - name: Build Site
-        run: yarn --cwd ./tools/gendocs build --prefix-paths
-        env:
-          VERSION: ${{steps.vars.outputs.tag}}
-
-      #################################################################
-      #              DEPLOY TO S3
-      #################################################################
-
-      # deploy the site in the right foder ( tag or devel)
-      - name: S3 Sync
-        uses: ItsKarma/aws-cli@v1.70.0
-        with:
-          args: s3 sync --delete ./tools/gendocs/public/ s3://docs.dagger.io/${{steps.vars.outputs.tag}}/
-
-      # list All Tags in json file for version selector
-      # upload to /tags.json
-      - name: Create tags.json
-        run: echo "[" {\"tag\"':' \"$(git tag -l "v*" | tr '\n' '|' | sed -e 's/|/"}, {\"tag\"':' "/g')devel\"} "]" > tags.json
-      - name: Copy tags.json
-        uses: ItsKarma/aws-cli@v1.70.0
-        with:
-          args: s3 cp ./tags.json s3://docs.dagger.io/
-
-      # landing alway on latest tag
-      # use S3 Rediret objet
-      # upload to /docs/index.html
-      - name: Create index.html
-        run: |
-          cat <<EOF > index.html
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta http-equiv="refresh" content="0; url=/${{steps.vars.outputs.tag}}">
-            </head>
-            <body>
-              Nothing to see here; <a href="/${{steps.vars.outputs.tag}}">see the
-              latest version of the docs</a>.
-            </body>
-          </html>
-          EOF
-      - name: Copy index.html
-        if: ${{ steps.vars.outputs.tag != 'devel' }}
-        uses: ItsKarma/aws-cli@v1.70.0
-        with:
-          args: s3 cp --cache-control max-age=0 ./index.html s3://docs.dagger.io/
+          age-key: ${{ secrets.DAGGER_AGE_KEY }}
+          args: up -e docs

@@ -1,0 +1,33 @@
+name: docs
+inputs:
+    repository:
+        dir:
+            path: .
+            exclude:
+                - '**/node_modules'
+                - cmd/dagger/dagger
+                - cmd/dagger/dagger-debug
+    site.account.name:
+        text: blocklayer
+    site.account.token:
+        secret: ENC[AES256_GCM,data:jPJ8N6cAmtYnQh2SyhM9bQGfkhz777S4fyPDm2YhujwgXH6EogN2Uyw6Ew==,iv:gDchoJYLdQ8IPxrUUIsQ9s2f12JOhh7p573DwOIV2zE=,tag:okatHyjVGPGNOt+aw4iUHg==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBaZVVuYThsYk9YcWhYb0g4
+            TDhZQ21YN0FCRExKV2tqbVVUNTg5MWRUVUJzCndjc28yVUZEK3ZoQzVDQkk4emZQ
+            WGx2bUxSZlBENXlibzQ1MVkvc2I2MVkKLS0tIFJKS0ZENFhuVmdUM2h1a2xrK01a
+            ejRKQXNFZzBTbUxpc05acnkxQ2U2UkEKX1byNj64xOiRGAJ9lwh55d/mlasI3H6H
+            b+o3HbXSbV0G0UwQxEOisntR6o27ry/l12ai/sOQ4f9MXm6FRw2XTg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-02T22:14:46Z"
+    mac: ENC[AES256_GCM,data:x/Up/GCLTwIWSbyxvy3S79j4gbKRRYnDguvgPJFAii2PS6rjSU7KHtwM9WbUqQtd+NDbe1eWjdmAC4jPwVsa9OY7s+heR3597OpTh0pHcOgTrc4fTVN9IVHwehlg4hJU00iL1oiiHfeCD5dMUGeIRyqRqoAyMJrPdC9IDwjnp6E=,iv:IUbrkPQqLC/wnfKZMnOK9jKSc+xDXpeJwKLXuioifyE=,tag:2l+FhV3k5WvhQyvvf37Hjw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

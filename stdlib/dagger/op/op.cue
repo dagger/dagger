@@ -40,6 +40,11 @@ package op
 	dir: string
 }
 
+#Workdir: {
+	do:   "workdir"
+	path: string
+}
+
 #Exec: {
 	do: "exec"
 	args: [...string]
