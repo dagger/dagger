@@ -47,22 +47,23 @@ import (
 #Apply: {
 
 	// Kubernetes config to deploy
-	source: dagger.#Artifact @dagger(input)
+	source?: dagger.#Artifact @dagger(input)
 
-	// Kubernetes config to deploy inlined in a string
-	sourceInline?: string @dagger(input)
+	// Kubernetes manifest to deploy inlined in a string
+	manifest?: string @dagger(input)
 
 	// Kubernetes Namespace to deploy to
-	namespace: string @dagger(input)
+	namespace: *"default" | string @dagger(input)
 
 	// Version of kubectl client
 	version: *"v1.19.9" | string @dagger(input)
 
 	// Kube config file
-	kubeconfig: dagger.#Secret @dagger(input)
+	// FIXME: should be `dagger.#Secret`
+	kubeconfig: string @dagger(input)
 
 	#code: #"""
-		kubectl create namespace "$KUBE_NAMESPACE" || true
+		kubectl create namespace "$KUBE_NAMESPACE"  > /dev/null 2>&1 || true
 		kubectl --namespace "$KUBE_NAMESPACE" apply -R -f /source
 		"""#
 
@@ -79,10 +80,10 @@ import (
 			content: kubeconfig
 			mode:    0o600
 		},
-		if sourceInline != _|_ {
+		if manifest != _|_ {
 			op.#WriteFile & {
 				dest:    "/source"
-				content: sourceInline
+				content: manifest
 			}
 		},
 		op.#Exec & {
@@ -99,7 +100,7 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
-			if sourceInline == _|_ {
+			if manifest == _|_ {
 				mount: "/source": from: source
 			}
 		},
