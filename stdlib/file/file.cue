@@ -1,3 +1,4 @@
+// DEPRECATED: see dagger.io/os
 package file
 
 import (
