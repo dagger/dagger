@@ -5,8 +5,7 @@ import (
 	"dagger.io/dagger"
 )
 
-// Run with --input-file key=$HOME/.ssh/<your private server key>
-key: dagger.#Artifact
+key: dagger.#Secret @dagger(input)
 
 TestRun: run: docker.#Run & {
 	host:  "143.198.64.230"
