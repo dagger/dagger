@@ -32,6 +32,15 @@ module.exports = {
       apiKey: 'cd4551565ea091140ab8f6c968ea670f',
       indexName: 'docs_dagger'
     },
+    colorMode: {
+      // "light" | "dark"
+      defaultMode: 'light',
+
+      switchConfig: {
+        darkIcon: "img/Icon_Night-mode.svg",
+        lightIcon: 'img/Icon_Day-mode.svg',
+      },
+    },
   },
   presets: [
     [
