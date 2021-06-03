@@ -23,10 +23,14 @@ module.exports = {
     },
     navbar: {
       logo: {
-        alt: 'My Site Logo',
+        alt: 'Dagger Logo',
         src: 'img/dagger-logo.png',
         srcDark: 'img/dagger_logo_dark.png',
       },
+    },
+    algolia: {
+      apiKey: 'cd4551565ea091140ab8f6c968ea670f',
+      indexName: 'docs_dagger'
     },
   },
   presets: [

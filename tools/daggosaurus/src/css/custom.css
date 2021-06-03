@@ -17,7 +17,7 @@
   --ifm-code-font-size: 95%;
   --ifm-navbar-height: 5rem;
   --ifm-background-color: var(--ifm-color-primary-light);
-  --ifm-navbar-background-color: transparent;
+  --ifm-navbar-background-color: var(--ifm-color-primary-light);
   --ifm-menu-color-active: var(--ifm-color-primary-dark);
   --ifm-font-family-base: "Karla", sans-serif;
   /* --ifm-font-family-monospace: "Karla", sans-serif; */
