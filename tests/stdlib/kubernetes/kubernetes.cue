@@ -3,19 +3,12 @@ package kubernetes
 import (
 	"encoding/yaml"
 	"dagger.io/dagger"
-	"dagger.io/file"
 	"dagger.io/kubernetes"
 )
 
 // We assume that a kinD cluster is running locally
 // To deploy a local KinD cluster, follow this link : https://kind.sigs.k8s.io/docs/user/quick-start/
-kubeconfig: dagger.#Artifact
-
-// Retrive kubeconfig
-config: file.#Read & {
-	filename: "config"
-	from:     kubeconfig
-}
+kubeconfig: dagger.#Secret @dagger(input)
 
 TestKubeApply: {
 	// Pod spec
@@ -34,9 +27,9 @@ TestKubeApply: {
 
 	// Apply deployment
 	apply: kubernetes.#Apply & {
-		kubeconfig: config.contents
-		namespace:  "dagger-test"
-		manifest:   yaml.Marshal(kubeSrc)
+		"kubeconfig": kubeconfig
+		namespace:    "dagger-test"
+		manifest:     yaml.Marshal(kubeSrc)
 	}
 
 	// Verify deployment
