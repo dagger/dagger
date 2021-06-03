@@ -23,9 +23,22 @@ module.exports = {
     },
     navbar: {
       logo: {
-        alt: 'My Site Logo',
+        alt: 'Dagger Logo',
         src: 'img/dagger-logo.png',
         srcDark: 'img/dagger_logo_dark.png',
+      },
+    },
+    algolia: {
+      apiKey: '66c9f1f7e6ba6617ec4e65194788bacd',
+      indexName: 'docs_dagger'
+    },
+    colorMode: {
+      // "light" | "dark"
+      defaultMode: 'light',
+
+      switchConfig: {
+        darkIcon: "img/Icon_Night-mode.svg",
+        lightIcon: 'img/Icon_Day-mode.svg',
       },
     },
   },
