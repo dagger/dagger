@@ -52,13 +52,13 @@ import (
 	port: *22 | int @dagger(input)
 
 	// Ssh private key
-	key: dagger.#Artifact @dagger(input)
+	key: dagger.#Secret @dagger(input)
 
 	// User fingerprint
 	fingerprint?: string @dagger(input)
 
 	// Ssh passphrase
-	passphrase?: string @dagger(input)
+	passphrase?: dagger.#Secret @dagger(input)
 
 	// Image reference (e.g: nginx:alpine)
 	ref: string @dagger(input)
@@ -114,22 +114,8 @@ import (
 	#up: [
 		op.#Load & {from: #Client},
 
-		op.#WriteFile & {
-			content: key
-			dest:    "/key"
-			mode:    0o400
-		},
-
 		if registry != _|_ {
 			op.#DockerLogin & {registry}
-		},
-
-		if passphrase != _|_ {
-			op.#WriteFile & {
-				content: passphrase
-				dest:    "/passphrase"
-				mode:    0o400
-			}
 		},
 
 		if passphrase != _|_ {
@@ -170,6 +156,12 @@ import (
 				}
 				if fingerprint != _|_ {
 					FINGERPRINT: fingerprint
+				}
+			}
+			mount: {
+				"/key": secret: key
+				if passphrase != _|_ {
+					"/passphrase": secret: passphrase
 				}
 			}
 		},

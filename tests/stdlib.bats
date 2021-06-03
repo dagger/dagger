@@ -77,21 +77,17 @@ setup() {
 }
 
 @test "stdlib: docker: run" {
-    skip_unless_secrets_available "$TESTDIR"/stdlib/docker/run/key.yaml
-
     # Simple run
-    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/key.yaml "$TESTDIR"/stdlib/docker/run/simple/
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/simple/
     assert_success
 
-    # Handle key with passphrase
-    skip_unless_secrets_available "$TESTDIR"/stdlib/docker/run/protected-key.yaml
+    # Protected ssh key
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/passphrase/
+    assert_success
 
-    # Fail if invalid password
-    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/protected-key.yaml "$TESTDIR"/stdlib/docker/run/wrrong-passphrase/
+    # Protected ssh key with wrong passphrase
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/wrong-passphrase/
     assert_failure
-
-    run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/run/protected-key.yaml "$TESTDIR"/stdlib/docker/run/passphrase/
-    assert_success
 }
 
 @test "stdlib: terraform" {
