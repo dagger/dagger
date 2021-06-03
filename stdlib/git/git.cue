@@ -9,16 +9,23 @@ import (
 // A git repository
 #Repository: {
 
-	remote: string       @dagger(input)
-	ref:    string       @dagger(input)
-	subdir: string | *"" @dagger(input)
+	// Git remote.
+	// Example: "https://github.com/dagger/dagger")
+	remote: string @dagger(input)
+
+	// Git ref: can be a commit, tag or branch.
+	// Example: "main"
+	ref: string @dagger(input)
+
+	// (optional) Subdirectory
+	subdir: string | *null @dagger(input)
 
 	#up: [
 		op.#FetchGit & {
 			"remote": remote
 			"ref":    ref
 		},
-		if subdir != "" {
+		if subdir != null {
 			op.#Subdir & {
 				dir: subdir
 			}
