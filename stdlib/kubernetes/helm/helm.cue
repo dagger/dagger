@@ -14,7 +14,7 @@ import (
 	name: string @dagger(input)
 
 	// Helm chart to install from source
-	chartSource: dagger.#Artifact @dagger(input)
+	chartSource?: dagger.#Artifact @dagger(input)
 
 	// Helm chart to install from repository
 	chart?: string @dagger(input)
@@ -84,11 +84,6 @@ import (
 			dest:    "/entrypoint.sh"
 			content: #code
 		},
-		op.#WriteFile & {
-			dest:    "/kubeconfig"
-			content: kubeconfig
-			mode:    0o600
-		},
 		if chart != _|_ {
 			op.#WriteFile & {
 				dest:    "/helm/chart"
@@ -126,6 +121,7 @@ import (
 				if chartSource != _|_ && chart == _|_ {
 					"/helm/chart": from: chartSource
 				}
+				"/kubeconfig": secret: kubeconfig
 			}
 		},
 	]

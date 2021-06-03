@@ -2,28 +2,21 @@ package helm
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/file"
 	"dagger.io/kubernetes/helm"
 )
 
 // We assume that a kinD cluster is running locally
 // To deploy a local KinD cluster, follow this link : https://kind.sigs.k8s.io/docs/user/quick-start/
-kubeconfig: dagger.#Artifact
-
-// Retrive kubeconfig
-config: file.#Read & {
-	filename: "config"
-	from:     kubeconfig
-}
+kubeconfig: dagger.#Secret @dagger(input)
 
 // Deploy user local chart
 TestHelmSimpleChart: {
 	// Deploy chart
 	deploy: helm.#Chart & {
-		name:        "dagger-test-helm-simple-chart-\(random)"
-		namespace:   "dagger-test"
-		kubeconfig:  config.contents
-		chartSource: dagger.#Artifact
+		name:         "dagger-test-helm-simple-chart-\(random)"
+		namespace:    "dagger-test"
+		"kubeconfig": kubeconfig
+		chartSource:  dagger.#Artifact
 	}
 
 	// Verify deployment
@@ -37,10 +30,10 @@ TestHelmSimpleChart: {
 TestHelmRepoChart: {
 	// Deploy chart
 	deploy: helm.#Chart & {
-		name:       "dagger-test-helm-repository-\(random)"
-		namespace:  "dagger-test"
-		kubeconfig: config.contents
-		chart:      "redis"
+		name:         "dagger-test-helm-repository-\(random)"
+		namespace:    "dagger-test"
+		"kubeconfig": kubeconfig
+		chart:        "redis"
 	}
 
 	// Verify deployment

@@ -27,7 +27,14 @@ setup() {
 @test "stdlib: kubernetes" {
     skip_unless_local_kube
 
-    "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes --input-dir kubeconfig=~/.kube
+    "$DAGGER" init
+    dagger_new_with_plan kubernetes "$TESTDIR"/stdlib/kubernetes/
+
+    run "$DAGGER" input -e "kubernetes" secret kubeconfig -f ~/.kube/config
+    assert_success
+
+    run "$DAGGER" up -e "kubernetes"
+    assert_success
 }
 
 @test "stdlib: kustomize" {
@@ -37,7 +44,18 @@ setup() {
 @test "stdlib: helm" {
     skip_unless_local_kube
 
-    "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes/helm --input-dir kubeconfig=~/.kube --input-dir TestHelmSimpleChart.deploy.chartSource="$TESTDIR"/stdlib/kubernetes/helm/testdata/mychart
+    "$DAGGER" init
+    dagger_new_with_plan helm "$TESTDIR"/stdlib/kubernetes/helm
+
+    run "$DAGGER" input -e "helm" secret kubeconfig -f ~/.kube/config
+    assert_success
+
+    cp -R "$TESTDIR"/stdlib/kubernetes/helm/testdata/mychart "$DAGGER_WORKSPACE"/testdata
+    run "$DAGGER" input -e "helm" dir TestHelmSimpleChart.deploy.chartSource "$DAGGER_WORKSPACE"/testdata
+    assert_success
+
+    run "$DAGGER" up -e "helm"
+    assert_success
 }
 
 @test "stdlib: aws: s3" {
