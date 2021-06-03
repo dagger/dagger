@@ -29,7 +29,7 @@ module.exports = {
       },
     },
     algolia: {
-      apiKey: 'cd4551565ea091140ab8f6c968ea670f',
+      apiKey: '66c9f1f7e6ba6617ec4e65194788bacd',
       indexName: 'docs_dagger'
     },
     colorMode: {
