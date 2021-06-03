@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"regexp"
 	"strings"
 	"text/tabwriter"
 	"unicode/utf8"
 
 	"cuelang.org/go/cue"
-	"cuelang.org/go/cue/format"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -67,21 +65,6 @@ func init() {
 	}
 }
 
-func extractSpec(v cue.Value) string {
-	node := v.Source()
-	if node == nil {
-		return fmt.Sprintf("%v", v)
-	}
-	src, err := format.Node(node)
-	if err != nil {
-		panic(err)
-	}
-	space := regexp.MustCompile(`[\s\n]+`)
-	return strings.TrimSpace(
-		space.ReplaceAllString(string(src), " "),
-	)
-}
-
 func mdEscape(s string) string {
 	escape := []string{"|", "<", ">"}
 	for _, c := range escape {
@@ -123,6 +106,33 @@ func loadCode(packageName string) (*compiler.Value, error) {
 	return src, nil
 }
 
+// printValuesText (text) formats an array of Values on stdout
+func printValuesText(libName string, values []*compiler.Value) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, len(textPadding), ' ', 0)
+	fmt.Printf("\n%sInputs:\n", textPadding)
+	for _, i := range values {
+		docStr := terminalTrim(common.ValueDocString(i))
+		fmt.Fprintf(w, "\t\t%s\t%s\t%s\n",
+			formatLabel(libName, i), common.FormatValue(i), docStr)
+	}
+	w.Flush()
+}
+
+// printValuesMarkdown (markdown) formats an array of Values on stdout
+func printValuesMarkdown(libName string, values []*compiler.Value) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, len(textPadding), ' ', 0)
+	fmt.Fprintf(w, "| Name\t| Type\t| Description    \t|\n")
+	fmt.Fprintf(w, "| -------------\t|:-------------:\t|:-------------:\t|\n")
+	for _, i := range values {
+		fmt.Fprintf(w, "|*%s*\t|``%s``\t|%s\t|\n",
+			formatLabel(libName, i),
+			mdEscape(common.FormatValue(i)),
+			mdEscape(common.ValueDocString(i)))
+	}
+	fmt.Fprintln(w)
+	w.Flush()
+}
+
 func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, format string) {
 	lg := log.Ctx(ctx)
 
@@ -131,55 +141,45 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 		lg.Fatal().Err(err).Msg("cannot get fields")
 	}
 
-	comment := common.ValueDocString(val)
-
 	// Print title
 	switch format {
 	case textFormat:
 		fmt.Printf("Package %s\n", packageName)
-		if comment != "" {
-			fmt.Printf("\n%s\n", comment)
-		}
+		fmt.Printf("\n%s\n\n", common.ValueDocString(val))
 	case markdownFormat:
-		importPath := strings.Split(packageName, "/")
-		switch {
-		case len(importPath) == 2:
-			fmt.Printf("## %s\n", importPath[1])
-		case len(importPath) > 2:
-			fmt.Printf("### %s\n", strings.Join(importPath[2:], "/"))
-		default:
-			fmt.Printf("## %s\n", packageName)
+		fmt.Printf("## Package %s\n", mdEscape(packageName))
+		comment := common.ValueDocString(val)
+		if comment == "-" {
+			fmt.Println()
+			break
 		}
-		if comment != "" {
-			fmt.Printf("\n%s\n", comment)
-		}
+		fmt.Printf("\n%s\n\n", mdEscape(comment))
 	}
 
+	// Package Fields
 	for _, field := range fields {
 		if !field.Selector.IsDefinition() {
+			// not a definition, skipping
 			continue
 		}
 
 		name := field.Label()
 		v := field.Value
 		if v.Cue().IncompleteKind() != cue.StructKind {
+			// not a struct, skipping
 			continue
 		}
 
-		// Package name + comment
+		// Package Name + Comment
 		comment := common.ValueDocString(v)
 		switch format {
 		case textFormat:
-			fmt.Printf("\n%s\n\n%s%s\n", name, textPadding, comment)
+			fmt.Printf("%s\n\n%s%s\n", name, textPadding, comment)
 		case markdownFormat:
-			if comment != "" {
-				comment = fmt.Sprintf("\n\n%s", comment)
-			}
-			fmt.Printf("\n#### %s%s\n\n", name, mdEscape(comment))
-			fmt.Printf("##### Fields\n\n")
+			fmt.Printf("### %s\n\n%s\n\n", name, mdEscape(comment))
 		}
 
-		// Package inputs
+		// Inputs
 		inp := environment.ScanInputs(ctx, v)
 		switch format {
 		case textFormat:
@@ -187,19 +187,17 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 				fmt.Printf("\n%sInputs: none\n", textPadding)
 				break
 			}
-			w := tabwriter.NewWriter(os.Stdout, 0, 4, len(textPadding), ' ', 0)
-			fmt.Printf("\n%sInputs:\n", textPadding)
-			for _, i := range inp {
-				docStr := terminalTrim(common.ValueDocString(i))
-				fmt.Fprintf(w, "\t\t%s\t%s\t%s\n",
-					formatLabel(name, i), common.FormatValue(i), docStr)
-			}
-			w.Flush()
+			printValuesText(name, inp)
 		case markdownFormat:
-			// todo
+			fmt.Printf("#### %s Inputs\n\n", mdEscape(name))
+			if len(inp) == 0 {
+				fmt.Printf("_No input._\n\n")
+				break
+			}
+			printValuesMarkdown(name, inp)
 		}
 
-		// Package outputs
+		// Outputs
 		out := environment.ScanOutputs(ctx, v)
 		switch format {
 		case textFormat:
@@ -207,16 +205,14 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 				fmt.Printf("\n%sOutputs: none\n", textPadding)
 				break
 			}
-			w := tabwriter.NewWriter(os.Stdout, 0, 4, len(textPadding), ' ', 0)
-			fmt.Printf("\n%sOutputs:\n", textPadding)
-			for _, o := range out {
-				docStr := terminalTrim(common.ValueDocString(o))
-				fmt.Fprintf(w, "\t\t%s\t%s\t%s\n",
-					formatLabel(name, o), common.FormatValue(o), docStr)
-			}
-			w.Flush()
+			printValuesText(name, out)
 		case markdownFormat:
-			// todo
+			fmt.Printf("#### %s Outputs\n\n", mdEscape(name))
+			if len(out) == 0 {
+				fmt.Printf("_No output._\n\n")
+				break
+			}
+			printValuesMarkdown(name, out)
 		}
 	}
 
