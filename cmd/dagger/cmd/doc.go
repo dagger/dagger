@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -24,8 +25,30 @@ import (
 const (
 	textFormat     = "txt"
 	markdownFormat = "md"
+	jsonFormat     = "json"
 	textPadding    = "    "
 )
+
+// types used for json generation
+
+type ValueJSON struct {
+	Name        string
+	Type        string
+	Description string
+}
+
+type FieldJSON struct {
+	Name        string
+	Description string
+	Inputs      []ValueJSON
+	Outputs     []ValueJSON
+}
+
+type PackageJSON struct {
+	Name        string
+	Description string
+	Fields      []FieldJSON
+}
 
 var docCmd = &cobra.Command{
 	Use:   "doc [PACKAGE | PATH]",
@@ -43,8 +66,10 @@ var docCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		format := viper.GetString("output")
-		if format != textFormat && format != markdownFormat {
-			lg.Fatal().Msg("output must be either `txt` or `md`")
+		if format != textFormat &&
+			format != markdownFormat &&
+			format != jsonFormat {
+			lg.Fatal().Msg("output must be either `txt`, `md` or `json`")
 		}
 
 		packageName := args[0]
@@ -133,6 +158,21 @@ func printValuesMarkdown(libName string, values []*compiler.Value) {
 	w.Flush()
 }
 
+// printValuesJson fills a struct for json output
+func valuesToJSON(libName string, values []*compiler.Value) []ValueJSON {
+	val := []ValueJSON{}
+
+	for _, i := range values {
+		v := ValueJSON{}
+		v.Name = formatLabel(libName, i)
+		v.Type = common.FormatValue(i)
+		v.Description = common.ValueDocString(i)
+		val = append(val, v)
+	}
+
+	return val
+}
+
 func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, format string) {
 	lg := log.Ctx(ctx)
 
@@ -141,11 +181,12 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 		lg.Fatal().Err(err).Msg("cannot get fields")
 	}
 
-	// Print title
+	packageJSON := &PackageJSON{}
+	// Package Name + Description
 	switch format {
 	case textFormat:
 		fmt.Printf("Package %s\n", packageName)
-		fmt.Printf("\n%s\n\n", common.ValueDocString(val))
+		fmt.Printf("\n%s\n", common.ValueDocString(val))
 	case markdownFormat:
 		fmt.Printf("## Package %s\n", mdEscape(packageName))
 		comment := common.ValueDocString(val)
@@ -154,10 +195,18 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 			break
 		}
 		fmt.Printf("\n%s\n\n", mdEscape(comment))
+	case jsonFormat:
+		packageJSON.Name = packageName
+		comment := common.ValueDocString(val)
+		if comment != "" {
+			packageJSON.Description = comment
+		}
 	}
 
 	// Package Fields
 	for _, field := range fields {
+		fieldJSON := FieldJSON{}
+
 		if !field.Selector.IsDefinition() {
 			// not a definition, skipping
 			continue
@@ -170,13 +219,22 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 			continue
 		}
 
-		// Package Name + Comment
+		// Field Name + Description
 		comment := common.ValueDocString(v)
 		switch format {
 		case textFormat:
-			fmt.Printf("%s\n\n%s%s\n", name, textPadding, comment)
+			fmt.Printf("\n%s\n\n%s%s\n", name, textPadding, comment)
 		case markdownFormat:
-			fmt.Printf("### %s\n\n%s\n\n", name, mdEscape(comment))
+			fmt.Printf("### %s\n\n", name)
+			if comment != "-" {
+				fmt.Printf("%s\n\n", mdEscape(comment))
+			}
+		case jsonFormat:
+			fieldJSON.Name = name
+			comment := common.ValueDocString(val)
+			if comment != "" {
+				fieldJSON.Description = comment
+			}
 		}
 
 		// Inputs
@@ -195,6 +253,8 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 				break
 			}
 			printValuesMarkdown(name, inp)
+		case jsonFormat:
+			fieldJSON.Inputs = valuesToJSON(name, inp)
 		}
 
 		// Outputs
@@ -213,7 +273,17 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 				break
 			}
 			printValuesMarkdown(name, out)
+		case jsonFormat:
+			fieldJSON.Outputs = valuesToJSON(name, out)
+			packageJSON.Fields = append(packageJSON.Fields, fieldJSON)
 		}
 	}
 
+	if format == jsonFormat {
+		data, err := json.MarshalIndent(packageJSON, "", "    ")
+		if err != nil {
+			lg.Fatal().Err(err).Msg("json marshal")
+		}
+		fmt.Printf("%s\n", data)
+	}
 }
