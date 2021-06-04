@@ -3,13 +3,23 @@
 This example illustrates how to use `dagger` to build, push and deploy Docker
 images to Kubernetes.
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 ## Prerequisites
 
-### Setup a local Kubernetes cluster
+For this tutorial, you will need a Kubernetes cluster.
 
-While dagger supports GKE and EKS, for the purpose of this example, we'll be
-using [kind](https://kind.sigs.k8s.io/) to install a local Kubernetes cluster
-in addition to a local container registry, no cloud account required.
+<Tabs
+  defaultValue="kind"
+  groupId="provider"
+  values={[
+    {label: 'kind', value: 'kind'},
+    {label: 'GKE', value: 'gke'},
+    {label: 'EKS', value: 'eks'},
+  ]}>
+
+  <TabItem value="kind">
 
 1\. Install kind
 
@@ -47,6 +57,21 @@ EOF
 docker network connect kind registry
 ```
 
+  </TabItem>
+
+  <TabItem value="gke">
+
+TODO
+
+  </TabItem>
+
+  <TabItem value="eks">
+
+TODO
+
+  </TabItem>
+</Tabs>
+
 ## Initialize a Dagger Workspace and Environment
 
 ```shell
@@ -56,13 +81,6 @@ dagger new default
 ```
 
 ## Create a basic plan
-
-<!-- `.dagger/env/default/plan`
-
-- `manifest.cue`:
-- `deploy.cue`:
-
-[Stateless Application](https://kubernetes.io/docs/tasks/run-application/run-stateless-application-deployment/) -->
 
 Create a file named `.dagger/env/default/plan/manifest.cue` and add the
 following configuration to it.
@@ -101,6 +119,17 @@ used to create a _nginx_ deployment.
 
 Next, create `.dagger/env/default/plan/main.cue`.
 
+<Tabs
+  defaultValue="kind"
+  groupId="provider"
+  values={[
+    {label: 'kind', value: 'kind'},
+    {label: 'GKE', value: 'gke'},
+    {label: 'EKS', value: 'eks'},
+  ]}>
+
+  <TabItem value="kind">
+
 ```cue title=".dagger/env/default/plan/main.cue"
 package main
 
@@ -123,6 +152,65 @@ deploy: kubernetes.#Apply & {
 }
 ```
 
+  </TabItem>
+
+  <TabItem value="gke">
+
+```cue title=".dagger/env/default/plan/main.cue"
+package main
+
+import (
+  "dagger.io/kubernetes"
+  "dagger.io/gcp/gke"
+)
+
+// gkeConfig used for deployment
+gkeConfig: gke.#KubeConfig @dagger(input)
+
+kubeconfig: gkeConfig.kubeconfig
+
+// deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
+// Kubernetes cluster.
+deploy: kubernetes.#Apply & {
+  // reference the `kubeconfig` input above
+  "kubeconfig": kubeconfig
+
+  // reference to the manifest defined in `manifest.cue`
+  "manifest": manifest
+}
+```
+
+  </TabItem>
+
+  <TabItem value="eks">
+
+```cue title=".dagger/env/default/plan/main.cue"
+package main
+
+import (
+  "dagger.io/kubernetes"
+  "dagger.io/aws/eks"
+)
+
+// eksConfig used for deployment
+eksConfig: eks.#KubeConfig @dagger(input)
+
+kubeconfig: eksConfig.kubeconfig
+
+// deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
+// Kubernetes cluster.
+deploy: kubernetes.#Apply & {
+  // reference the `kubeconfig` input above
+  "kubeconfig": kubeconfig
+
+  // reference to the manifest defined in `manifest.cue`
+  "manifest": manifest
+}
+```
+
+  </TabItem>
+</Tabs>
+
 This defines:
 
 - `kubeconfig` a _string_ **input**: kubernetes configuration (`~/.kube/config`)
@@ -142,6 +230,38 @@ $ dagger up
 
 You can inspect the list of inputs (both required and optional) using `dagger input list`:
 
+<!--
+<Tabs
+  defaultValue="kind"
+  groupId="provider"
+  values={[
+    {label: 'kind', value: 'kind'},
+    {label: 'GKE', value: 'gke'},
+    {label: 'EKS', value: 'eks'},
+  ]}>
+
+  <TabItem value="kind">
+  </TabItem>
+
+  <TabItem value="gke">
+  </TabItem>
+
+  <TabItem value="eks">
+  </TabItem>
+</Tabs>
+-->
+
+<Tabs
+  defaultValue="kind"
+  groupId="provider"
+  values={[
+    {label: 'kind', value: 'kind'},
+    {label: 'GKE', value: 'gke'},
+    {label: 'EKS', value: 'eks'},
+  ]}>
+
+  <TabItem value="kind">
+
 ```shell
 $ dagger input list
 Input             Type              Description
@@ -149,12 +269,79 @@ kubeconfig        string            ~/.kube/config file used for deployment
 deploy.namespace  string            Kubernetes Namespace to deploy to
 ```
 
-Let's provide the missing input:
+  </TabItem>
+
+  <TabItem value="gke">
+
+```shell
+$ dagger input list
+Input                        Type              Description
+deploy.namespace             string            Kubernetes Namespace to deploy to
+gkeConfig.config.region      string            GCP region
+gkeConfig.config.project     string            GCP project
+gkeConfig.config.serviceKey  dagger.#Secret    GCP service key
+gkeConfig.clusterName        string            GKE cluster name
+```
+
+  </TabItem>
+
+  <TabItem value="eks">
+
+```shell
+$ dagger input list
+Input                       Type              Description
+deploy.namespace            string            Kubernetes Namespace to deploy to
+eksConfig.config.region     string            AWS region
+eksConfig.config.accessKey  dagger.#Secret    AWS access key
+eksConfig.config.secretKey  dagger.#Secret    AWS secret key
+eksConfig.clusterName       string            EKS cluster name
+```
+
+  </TabItem>
+</Tabs>
+
+Let's provide the missing inputs:
+
+<Tabs
+  defaultValue="kind"
+  groupId="provider"
+  values={[
+    {label: 'kind', value: 'kind'},
+    {label: 'GKE', value: 'gke'},
+    {label: 'EKS', value: 'eks'},
+  ]}>
+
+  <TabItem value="kind">
 
 ```shell
 # we'll use the ~/.kube/config created by `kind`
 dagger input text kubeconfig -f ~/.kube/config
 ```
+
+  </TabItem>
+
+  <TabItem value="gke">
+
+```shell
+dagger input text gkeConfig.config.project <PROJECT>
+dagger input text gkeConfig.config.region <REGION>
+dagger input text gkeConfig.clusterName <GKE CLUSTER NAME>
+dagger input secret gkeConfig.config.serviceKey -f <PATH TO THE SERVICEKEY.json>
+```
+
+  </TabItem>
+
+  <TabItem value="eks">
+
+```shell
+dagger input text eksConfig.config.region <REGION>
+dagger input text eksConfig.clusterName <EKS CLUSTER NAME>
+dagger input secret eksConfig.config.accessKey <ACCESS KEY>
+dagger input secret eksConfig.config.secretKey <SECRET KEY>
+```
+
+  </TabItem>
+</Tabs>
 
 ### Deploying
 
