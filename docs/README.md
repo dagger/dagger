@@ -2,7 +2,6 @@
 sidebar_position: 1
 slug: /
 sidebar_label: Introduction
-hide_table_of_contents: true
 ---
 
 # Dagger
