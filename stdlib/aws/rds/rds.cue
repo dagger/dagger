@@ -41,27 +41,27 @@ import (
 					"-eo",
 					"pipefail",
 					#"""
-                        echo "dbType: $DB_TYPE"
-                        
-                        sql="CREATE DATABASE \`"$NAME" \`"
-                        if [ "$DB_TYPE" = postgres ]; then
-                        	sql="CREATE DATABASE \""$NAME"\""
-                        fi
-                        
-                        echo "$NAME" >> /db_created
-                        
-                        aws rds-data execute-statement \
-                        	--resource-arn "$DB_ARN" \
-                        	--secret-arn "$SECRET_ARN" \
-                        	--sql "$sql" \
-                        	--database "$DB_TYPE" \
-                        	--no-include-result-metadata \
-                        |& tee /tmp/out
-                        exit_code=${PIPESTATUS[0]}
-                        if [ $exit_code -ne 0 ]; then
-                        	grep -q "database exists\|already exists" /tmp/out || exit $exit_code
-                        fi
-                        """#,
+						echo "dbType: $DB_TYPE"
+						
+						sql="CREATE DATABASE \`"$NAME" \`"
+						if [ "$DB_TYPE" = postgres ]; then
+							sql="CREATE DATABASE \""$NAME"\""
+						fi
+						
+						echo "$NAME" >> /db_created
+						
+						aws rds-data execute-statement \
+							--resource-arn "$DB_ARN" \
+							--secret-arn "$SECRET_ARN" \
+							--sql "$sql" \
+							--database "$DB_TYPE" \
+							--no-include-result-metadata \
+						|& tee /tmp/out
+						exit_code=${PIPESTATUS[0]}
+						if [ $exit_code -ne 0 ]; then
+							grep -q "database exists\|already exists" /tmp/out || exit $exit_code
+						fi
+						"""#,
 				]
 				env: {
 					NAME:       name
@@ -119,53 +119,53 @@ import (
 					"-eo",
 					"pipefail",
 					#"""
-                        echo "dbType: $DB_TYPE"
-                        
-                        sql="CREATE USER '"$USERNAME"'@'%' IDENTIFIED BY '"$PASSWORD"'"
-                        if [ "$DB_TYPE" = postgres ]; then
-                        	sql="CREATE USER \""$USERNAME"\" WITH PASSWORD '"$PASSWORD"'"
-                        fi
-                        
-                        echo "$USERNAME" >> /username
-                        
-                        aws rds-data execute-statement \
-                        	--resource-arn "$DB_ARN" \
-                        	--secret-arn "$SECRET_ARN" \
-                        	--sql "$sql" \
-                        	--database "$DB_TYPE" \
-                        	--no-include-result-metadata \
-                        |& tee tmp/out
-                        exit_code=${PIPESTATUS[0]}
-                        if [ $exit_code -ne 0 ]; then
-                        	grep -q "Operation CREATE USER failed for\|ERROR" tmp/out || exit $exit_code
-                        fi
-                        
-                        sql="SET PASSWORD FOR '"$USERNAME"'@'%' = PASSWORD('"$PASSWORD"')"
-                        if [ "$DB_TYPE" = postgres ]; then
-                        	sql="ALTER ROLE \""$USERNAME"\" WITH PASSWORD '"$PASSWORD"'"
-                        fi
-                        
-                        aws rds-data execute-statement \
-                        	--resource-arn "$DB_ARN" \
-                        	--secret-arn "$SECRET_ARN" \
-                        	--sql "$sql" \
-                        	--database "$DB_TYPE" \
-                        	--no-include-result-metadata
-                        
-                        sql="GRANT ALL ON \`"$GRAND_DATABASE"\`.* to '"$USERNAME"'@'%'"
-                        if [ "$DB_TYPE" = postgres ]; then
-                        	sql="GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \""$USERNAME"\"; GRANT ALL PRIVILEGES ON DATABASE \""$GRAND_DATABASE"\" to \""$USERNAME"\"; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO \""$USERNAME"\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO \""$USERNAME"\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO \""$USERNAME"\"; GRANT USAGE ON SCHEMA public TO \""$USERNAME"\";"
-                        fi
-                        
-                        if [ -s "$GRAND_DATABASE ]; then
-                        	aws rds-data execute-statement \
-                        		--resource-arn "$DB_ARN" \
-                        		--secret-arn "$SECRET_ARN" \
-                        		--sql "$sql" \
-                        		--database "$DB_TYPE" \
-                        		--no-include-result-metadata
-                        fi
-                        """#,
+						echo "dbType: $DB_TYPE"
+						
+						sql="CREATE USER '"$USERNAME"'@'%' IDENTIFIED BY '"$PASSWORD"'"
+						if [ "$DB_TYPE" = postgres ]; then
+							sql="CREATE USER \""$USERNAME"\" WITH PASSWORD '"$PASSWORD"'"
+						fi
+						
+						echo "$USERNAME" >> /username
+						
+						aws rds-data execute-statement \
+							--resource-arn "$DB_ARN" \
+							--secret-arn "$SECRET_ARN" \
+							--sql "$sql" \
+							--database "$DB_TYPE" \
+							--no-include-result-metadata \
+						|& tee tmp/out
+						exit_code=${PIPESTATUS[0]}
+						if [ $exit_code -ne 0 ]; then
+							grep -q "Operation CREATE USER failed for\|ERROR" tmp/out || exit $exit_code
+						fi
+						
+						sql="SET PASSWORD FOR '"$USERNAME"'@'%' = PASSWORD('"$PASSWORD"')"
+						if [ "$DB_TYPE" = postgres ]; then
+							sql="ALTER ROLE \""$USERNAME"\" WITH PASSWORD '"$PASSWORD"'"
+						fi
+						
+						aws rds-data execute-statement \
+							--resource-arn "$DB_ARN" \
+							--secret-arn "$SECRET_ARN" \
+							--sql "$sql" \
+							--database "$DB_TYPE" \
+							--no-include-result-metadata
+						
+						sql="GRANT ALL ON \`"$GRAND_DATABASE"\`.* to '"$USERNAME"'@'%'"
+						if [ "$DB_TYPE" = postgres ]; then
+							sql="GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \""$USERNAME"\"; GRANT ALL PRIVILEGES ON DATABASE \""$GRAND_DATABASE"\" to \""$USERNAME"\"; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO \""$USERNAME"\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO \""$USERNAME"\"; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO \""$USERNAME"\"; GRANT USAGE ON SCHEMA public TO \""$USERNAME"\";"
+						fi
+						
+						if [ -s "$GRAND_DATABASE ]; then
+							aws rds-data execute-statement \
+								--resource-arn "$DB_ARN" \
+								--secret-arn "$SECRET_ARN" \
+								--sql "$sql" \
+								--database "$DB_TYPE" \
+								--no-include-result-metadata
+						fi
+						"""#,
 				]
 				env: {
 					USERNAME:       username
@@ -222,11 +222,11 @@ import (
 					"-eo",
 					"pipefail",
 					#"""
-                        data=$(aws rds describe-db-clusters --filters "Name=db-cluster-id,Values=$DB_URN" )
-                        echo "$data" | jq -r '.DBClusters[].Endpoint' > /tmp/out
-                        echo "$data" | jq -r '.DBClusters[].Port' >> /tmp/out
-                        cat /tmp/out | jq -sR 'split("\n") | {hostname: .[0], port: (.[1] | tonumber)}' > /out
-                        """#,
+						data=$(aws rds describe-db-clusters --filters "Name=db-cluster-id,Values=$DB_URN" )
+						echo "$data" | jq -r '.DBClusters[].Endpoint' > /tmp/out
+						echo "$data" | jq -r '.DBClusters[].Port' >> /tmp/out
+						cat /tmp/out | jq -sR 'split("\n") | {hostname: .[0], port: (.[1] | tonumber)}' > /out
+						"""#,
 				]
 				env: DB_ARN: dbArn
 			},
