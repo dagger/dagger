@@ -12,8 +12,8 @@ repository: dagger.#Artifact @dagger(input)
 // Build the docs website
 docs: yarn.#Package & {
 	source:   repository
-	cwd:      "tools/daggosaurus/"
-	buildDir: "tools/daggosaurus/build"
+	cwd:      "website/"
+	buildDir: "website/build"
 }
 
 // Deploy the docs website

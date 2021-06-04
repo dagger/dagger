@@ -52,5 +52,5 @@ install: dagger
 
 .PHONY: docs
 docs:
-	yarn --cwd "./tools/daggosaurus" install
-	yarn --cwd "./tools/daggosaurus" start
+	yarn --cwd "./website" install
+	yarn --cwd "./website" start
