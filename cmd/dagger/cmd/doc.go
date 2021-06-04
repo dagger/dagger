@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
+	"path"
 	"strings"
 	"text/tabwriter"
 	"unicode/utf8"
@@ -53,7 +55,7 @@ type PackageJSON struct {
 var docCmd = &cobra.Command{
 	Use:   "doc [PACKAGE | PATH]",
 	Short: "document a package",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -65,11 +67,24 @@ var docCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		format := viper.GetString("output")
+		format := viper.GetString("format")
 		if format != textFormat &&
 			format != markdownFormat &&
 			format != jsonFormat {
-			lg.Fatal().Msg("output must be either `txt`, `md` or `json`")
+			lg.Fatal().Msg("format must be either `txt`, `md` or `json`")
+		}
+
+		output := viper.GetString("output")
+		if output != "" {
+			if len(args) > 0 {
+				lg.Warn().Str("packageName", args[0]).Msg("arg is ignored when --output is set")
+			}
+			walkStdlib(ctx, output, format)
+			return
+		}
+
+		if len(args) < 1 {
+			lg.Fatal().Msg("need to specify package name in command argument")
 		}
 
 		packageName := args[0]
@@ -78,12 +93,13 @@ var docCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("cannot compile code")
 		}
-		PrintDoc(ctx, packageName, val, format)
+		PrintDoc(ctx, os.Stdout, packageName, val, format)
 	},
 }
 
 func init() {
-	docCmd.Flags().StringP("output", "o", textFormat, "Output format (txt|md)")
+	docCmd.Flags().StringP("format", "f", textFormat, "Output format (txt|md)")
+	docCmd.Flags().StringP("output", "o", "", "Output directory")
 
 	if err := viper.BindPFlags(docCmd.Flags()); err != nil {
 		panic(err)
@@ -132,9 +148,9 @@ func loadCode(packageName string) (*compiler.Value, error) {
 }
 
 // printValuesText (text) formats an array of Values on stdout
-func printValuesText(libName string, values []*compiler.Value) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, len(textPadding), ' ', 0)
-	fmt.Printf("\n%sInputs:\n", textPadding)
+func printValuesText(iw io.Writer, libName string, values []*compiler.Value) {
+	fmt.Fprintf(iw, "\n%sInputs:\n", textPadding)
+	w := tabwriter.NewWriter(iw, 0, 4, len(textPadding), ' ', 0)
 	for _, i := range values {
 		docStr := terminalTrim(common.ValueDocString(i))
 		fmt.Fprintf(w, "\t\t%s\t%s\t%s\n",
@@ -144,8 +160,8 @@ func printValuesText(libName string, values []*compiler.Value) {
 }
 
 // printValuesMarkdown (markdown) formats an array of Values on stdout
-func printValuesMarkdown(libName string, values []*compiler.Value) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, len(textPadding), ' ', 0)
+func printValuesMarkdown(iw io.Writer, libName string, values []*compiler.Value) {
+	w := tabwriter.NewWriter(iw, 0, 4, len(textPadding), ' ', 0)
 	fmt.Fprintf(w, "| Name\t| Type\t| Description    \t|\n")
 	fmt.Fprintf(w, "| -------------\t|:-------------:\t|:-------------:\t|\n")
 	for _, i := range values {
@@ -173,7 +189,7 @@ func valuesToJSON(libName string, values []*compiler.Value) []ValueJSON {
 	return val
 }
 
-func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, format string) {
+func PrintDoc(ctx context.Context, w io.Writer, packageName string, val *compiler.Value, format string) {
 	lg := log.Ctx(ctx)
 
 	fields, err := val.Fields(cue.Definitions(true))
@@ -185,20 +201,20 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 	// Package Name + Description
 	switch format {
 	case textFormat:
-		fmt.Printf("Package %s\n", packageName)
-		fmt.Printf("\n%s\n", common.ValueDocString(val))
+		fmt.Fprintf(w, "Package %s\n", packageName)
+		fmt.Fprintf(w, "\n%s\n", common.ValueDocString(val))
 	case markdownFormat:
-		fmt.Printf("## Package %s\n", mdEscape(packageName))
+		fmt.Fprintf(w, "## Package %s\n", mdEscape(packageName))
 		comment := common.ValueDocString(val)
 		if comment == "-" {
 			fmt.Println()
 			break
 		}
-		fmt.Printf("\n%s\n\n", mdEscape(comment))
+		fmt.Fprintf(w, "\n%s\n\n", mdEscape(comment))
 	case jsonFormat:
 		packageJSON.Name = packageName
 		comment := common.ValueDocString(val)
-		if comment != "" {
+		if comment != "-" {
 			packageJSON.Description = comment
 		}
 	}
@@ -223,16 +239,16 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 		comment := common.ValueDocString(v)
 		switch format {
 		case textFormat:
-			fmt.Printf("\n%s\n\n%s%s\n", name, textPadding, comment)
+			fmt.Fprintf(w, "\n%s\n\n%s%s\n", name, textPadding, comment)
 		case markdownFormat:
-			fmt.Printf("### %s\n\n", name)
+			fmt.Fprintf(w, "### %s\n\n", name)
 			if comment != "-" {
-				fmt.Printf("%s\n\n", mdEscape(comment))
+				fmt.Fprintf(w, "%s\n\n", mdEscape(comment))
 			}
 		case jsonFormat:
 			fieldJSON.Name = name
 			comment := common.ValueDocString(val)
-			if comment != "" {
+			if comment != "-" {
 				fieldJSON.Description = comment
 			}
 		}
@@ -242,17 +258,17 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 		switch format {
 		case textFormat:
 			if len(inp) == 0 {
-				fmt.Printf("\n%sInputs: none\n", textPadding)
+				fmt.Fprintf(w, "\n%sInputs: none\n", textPadding)
 				break
 			}
-			printValuesText(name, inp)
+			printValuesText(w, name, inp)
 		case markdownFormat:
-			fmt.Printf("#### %s Inputs\n\n", mdEscape(name))
+			fmt.Fprintf(w, "#### %s Inputs\n\n", mdEscape(name))
 			if len(inp) == 0 {
-				fmt.Printf("_No input._\n\n")
+				fmt.Fprintf(w, "_No input._\n\n")
 				break
 			}
-			printValuesMarkdown(name, inp)
+			printValuesMarkdown(w, name, inp)
 		case jsonFormat:
 			fieldJSON.Inputs = valuesToJSON(name, inp)
 		}
@@ -262,17 +278,17 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 		switch format {
 		case textFormat:
 			if len(out) == 0 {
-				fmt.Printf("\n%sOutputs: none\n", textPadding)
+				fmt.Fprintf(w, "\n%sOutputs: none\n", textPadding)
 				break
 			}
-			printValuesText(name, out)
+			printValuesText(w, name, out)
 		case markdownFormat:
-			fmt.Printf("#### %s Outputs\n\n", mdEscape(name))
+			fmt.Fprintf(w, "#### %s Outputs\n\n", mdEscape(name))
 			if len(out) == 0 {
-				fmt.Printf("_No output._\n\n")
+				fmt.Fprintf(w, "_No output._\n\n")
 				break
 			}
-			printValuesMarkdown(name, out)
+			printValuesMarkdown(w, name, out)
 		case jsonFormat:
 			fieldJSON.Outputs = valuesToJSON(name, out)
 			packageJSON.Fields = append(packageJSON.Fields, fieldJSON)
@@ -284,6 +300,52 @@ func PrintDoc(ctx context.Context, packageName string, val *compiler.Value, form
 		if err != nil {
 			lg.Fatal().Err(err).Msg("json marshal")
 		}
-		fmt.Printf("%s\n", data)
+		fmt.Fprintf(w, "%s\n", data)
+	}
+}
+
+// walkStdlib generate whole docs from stdlib walk
+func walkStdlib(ctx context.Context, output, format string) {
+	lg := log.Ctx(ctx)
+
+	lg.Info().Str("output", output).Msg("generating stdlib")
+	err := fs.WalkDir(stdlib.FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == "." || !d.IsDir() {
+			return nil
+		}
+
+		filename := fmt.Sprintf("%s.%s", p, format)
+		filepath := path.Join(output, filename)
+
+		if err := os.MkdirAll(path.Dir(filepath), 0755); err != nil {
+			return err
+		}
+
+		f, err := os.Create(filepath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		pkg := fmt.Sprintf("dagger.io/%s", p)
+		lg.Info().Str("package", pkg).Str("format", format).Msg("generating doc")
+		val, err := loadCode(fmt.Sprintf("dagger.io/%s", p))
+		if err != nil {
+			if strings.Contains(err.Error(), "no CUE files") {
+				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+				return nil
+			}
+			return err
+		}
+
+		PrintDoc(ctx, f, p, val, format)
+		return nil
+	})
+
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
 	}
 }
