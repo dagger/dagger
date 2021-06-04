@@ -30,6 +30,7 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	go.mozilla.org/sops/v3 v3.7.1
 	go.uber.org/atomic v1.7.0 // indirect
+	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 	golang.org/x/net v0.0.0-20210331212208-0fccb6fa2b5c // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1

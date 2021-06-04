@@ -42,7 +42,7 @@ func isReference(val cue.Value) bool {
 	return isRef(val)
 }
 
-func scanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
+func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 	lg := log.Ctx(ctx)
 	inputs := []*compiler.Value{}
 
@@ -67,7 +67,7 @@ func scanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 	return inputs
 }
 
-func scanOutputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
+func ScanOutputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 	lg := log.Ctx(ctx)
 	inputs := []*compiler.Value{}
 
