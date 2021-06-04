@@ -9,8 +9,8 @@ import { useThemeConfig } from '@docusaurus/theme-common';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import clsx from 'clsx';
 import styles from './styles.module.css';
-import DarkIcon from "../../../static/img/Icon_Night-mode.svg"
-import LightIcon from "../../../static/img/Icon_Day-mode.svg"
+import DarkIcon from "./Icon_Night-mode.svg"
+import LightIcon from "./Icon_Day-mode.svg"
 
 const Dark = ({ icon, style }) => (
   <span className={clsx(styles.toggle, styles.dark)} style={style}>

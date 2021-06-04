@@ -19,7 +19,7 @@ module.exports = {
   themeConfig: {
     sidebarCollapsible: false,
     prism: {
-      theme: require("prism-react-renderer/themes/vsDark"),
+      theme: require("prism-react-renderer/themes/okaidia"),
     },
     navbar: {
       logo: {
@@ -52,10 +52,13 @@ module.exports = {
           routeBasePath: "/",
         },
         theme: {
-          customCss: require.resolve("./src/css/custom.css"),
+          customCss: require.resolve("./src/css/custom.scss"),
         },
       },
     ],
   ],
-  plugins: [path.resolve(__dirname, "./custom_plugins")],
+  plugins: [
+    'docusaurus-plugin-sass',
+    path.resolve(__dirname, "./custom_plugins")
+  ],
 };
