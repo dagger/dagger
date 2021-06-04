@@ -47,6 +47,7 @@ module.exports = {
       "@docusaurus/preset-classic",
       {
         docs: {
+          path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/blob/main",
           routeBasePath: "/",
@@ -57,8 +58,5 @@ module.exports = {
       },
     ],
   ],
-  plugins: [
-    'docusaurus-plugin-sass',
-    path.resolve(__dirname, "./custom_plugins")
-  ],
+  plugins: ["docusaurus-plugin-sass"],
 };
