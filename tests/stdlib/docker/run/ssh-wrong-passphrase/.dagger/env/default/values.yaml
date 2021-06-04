@@ -1,0 +1,30 @@
+name: default
+inputs:
+    testConfig,passphrase:
+        secret: ENC[AES256_GCM,data:ukRUZqFisp4n,iv:jtYyTQjr/Clm9zmIhlYXnNwCzxf0CRSkSRKIrCz1lMo=,tag:7tvyL9Jb5AGuZnOv2VomsQ==,type:str]
+    testConfig.host:
+        text: 143.198.64.230
+    testConfig.key:
+        secret: ENC[AES256_GCM,data:LFULtfbYoKG0RU0J087XiY6Z+0KmMMa37xhlnjXHQZG7VhOJKRAGqK8X8A8Ir/dRDZVPrI1TzhVQV9bCIxRwp7T48XJHhybfNci4veQUfsCUywFfy1UxgkxfrdIIj2mTdHjS8tlV2z+mlKOplEPla9qa3aG967rzn+vkx+6JTCCDtU7lHLPiS9qA+T5Y//SmDiNXObXkCYXTcAyq06YLMMMT1mn/j2LlAVqMz+squetsGjcwOgbbOMD4PS6927neG4ZAG7S/1HDZwTM//De3ACMtiWo7p95qMt50H+WMYlEc0OFd7gqFSgtfmseknOhfM6dqDoCYzu/Vbr+J0shvaxu2xQKJm40HLSwMQY7UekNmfnfBFV7ChaJ2v5EmcUqYNAWj3ffS/WDMZXgrhCxaOkSExP+pN2D6aBMNp7SMfua1yDVLy4R5VqPmGMiAA3x5RWSJg7WoooKOxZlnVxSSIWyAUdXAgA0/VruBf7sXi60Ky9sAeBBX0q0mcQq/RxVkneXZPJH4s6fVyKfk5ZPHNz2Cn4jb5cZp8ZTzsEoarCp5guHP3mBpv0J0SB0fL5eceZ+IIeHLWRgIm1darptGfdZFtcBJwYBaHb0BuojkgzM=,iv:S079SlDrEOJhy1/2s2YMieKFNkztyQlSsWrRKNEzuF8=,tag:grOBgrq8j8TBOE/15MbCIA==,type:str]
+    testConfig.user:
+        text: daggerci
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDWjNjVWhSUnNuS2xaWFR2
+            Tm12UFg3elE0MUhILzJ0TkppQzR1VzZiUUMwClBwbncrR2VYVmxlZ09OUk1qV2tE
+            dURUZG1QVGZLdWM5WFlIQkF2UFB1YkUKLS0tIGFkN1VCajdkcHJRUk1YODBaWDFF
+            cm02K1NEenRnL25zc3RtaXd6SlA0UXcKFq38uYqZWvSlTOaisnhnQ+Mhbcv+ZifE
+            Mdxhq5w+Cdj+XhwbZ8UnnRInckD3UKovxAHV3kTSdXf54/QKn5TLVw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-05T00:31:18Z"
+    mac: ENC[AES256_GCM,data:EMJ5H+DsZdJCak7tYMNyKDS93qe7O6xKRlJ6GH6Y7/Y5RExUicPrvbE9Xu+zFCQkE82httrKMOwGrt6Z3yyAHMRQvuImRjKUao2UXXaRIoh2sPM2n2VyXQX9tu6BFtCC4VscaIGS0eLNesZXeqcue1ECP+VpRhPN8/s/cZrWPnc=,iv:WqyeW8IqZjZPi8jNzCg81O8ZMgXudZavHBjFrUEt9bs=,tag:bV1zDyFNl5M2FD1v0ZlEpw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

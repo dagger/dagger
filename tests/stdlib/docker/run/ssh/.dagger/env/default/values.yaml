@@ -1,0 +1,28 @@
+name: default
+inputs:
+    testConfig.host:
+        text: 143.198.64.230
+    testConfig.key:
+        secret: ENC[AES256_GCM,data:j5gDMbjy4UpUDlQmf1DM5isBq9eZRxf8D34nilpslhMYLVW7pwqWBIRawz2wZ6mDeOGLzauxIzNTXNUGD9/dFfUb3re2UsFUnhq+P309U2M8K4DCiW/fAMCDVBplIv61/Kw/1fs86HV4Zoj4tht0sUzmqZ6/KkphUjyOGqc/UszNuzJG1EkDNlnSlZWHi1mKzrfmU+Yjs09eukIl+YCHGUvy2XZ5WS1c8sciPxcG0VFL0jMkLO/M0lOqyPgzsO9H0YN0dLG39Yz8uZtk8nrclM+iqWTCOsHwHG908NL3TW9LBBzMxwVHXUE7mPurO3Jxp+2cL5ZVOtMeWEykDCsgA5WatGf3xDr0ne8IfzKj+wIEKVfInfEAmisFSpDpJ+TCY9BeVcBDgqvtgEaUAw3nWHJOZwtjh2zOnL6GM/jP5t44Hsb1OveyKoO+NYQZC0b6LswpwVmwlq2dNSYshvVI28EswjqBcnZwbc07iu1YT2C4RakLVyZZ7xrKU1KDjvehCUIGCoBcxUb1h7k0IpzHDWA57+SyokiuFLI0,iv:UjRRsca4c3XjXFMMf9CIlPqtlw9SIwUEMgQbjZqJYAg=,tag:foFh41+vnduu30+s2Q85DQ==,type:str]
+    testConfig.user:
+        text: root
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBpamtuNHB6NjY5L3VNT3hl
+            TGlmVFFoZURJR1RmZEFvSGUyVFRaSWNnSUMwClJiaDVGZWJoeDBMY21jZTVlREdS
+            aWg0SjNWN3BrTXRneXJyZy80K1JRSFUKLS0tIFEwKzdkVkNPT2VHTmtiOEdDQlZa
+            cnh2eHU5TzFjVkNvTzUyczFBL0pwTDQK60+wrLmTaD3Ws5ZAXdqBkMjaVP7Iz69k
+            UrkqkMbaUlvvSKK7dB5MuTGEEN6A1viAGal9ZjDHlSobkNPuE24QEA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-05T00:29:38Z"
+    mac: ENC[AES256_GCM,data:lH3Zp9nPB+rsozAbtzaN2Nt6Vd2yd9NbCaYltn7u5RNa33I4MtIkixRUTuFK9qeWH0dQ0+2ysJluSDwzra4k+9fjgCpbiOKdfC0xEukoxExXmq+uwsBBpB3RTzcYBSo8SlhmT4NAyP2abP5y50x0c8vBiVZp9WPfJZBeR9p0NsU=,iv:M3ohijr5Jv8fKdvh/T25to/s+EmmVXD8vGDfKeo6czs=,tag:t8Bht/+C7L9Peytd2iDoGg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

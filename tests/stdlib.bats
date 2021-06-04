@@ -95,16 +95,20 @@ setup() {
 }
 
 @test "stdlib: docker: run" {
-    # Simple run
-    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/simple/
+    # Local run
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/local/
     assert_success
 
-    # Protected ssh key
-    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/passphrase/
+    # SSH key
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/ssh/
     assert_success
 
-    # Protected ssh key with wrong passphrase
-    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/wrong-passphrase/
+    # SSH passphrase
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/ssh-passphrase/
+    assert_success
+
+    # Wrong passphrase
+    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/ssh-wrong-passphrase/
     assert_failure
 }
 
