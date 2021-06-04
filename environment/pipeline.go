@@ -468,6 +468,11 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 				llb.Scratch(),
 				llb.Tmpfs(),
 			), nil
+		case "docker.sock":
+			return llb.AddSSHSocket(
+				llb.SSHID(solver.DockerSocketID),
+				llb.SSHSocketTarget(dest),
+			), nil
 		default:
 			return nil, fmt.Errorf("invalid mount source: %q", s)
 		}

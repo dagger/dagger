@@ -52,7 +52,7 @@ package op
 	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"} | {secret: _}
+	mount: [string]: "tmpfs" | "cache" | "docker.sock" | {from: _, path: string | *"/"} | {secret: _}
 	// Map of hostnames to ip
 	hosts?: [string]: string
 	// User to exec with (if left empty, will default to the set user in the image)
