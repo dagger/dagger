@@ -19,7 +19,7 @@ module.exports = {
   themeConfig: {
     sidebarCollapsible: false,
     prism: {
-      defaultLanguage: "go",
+      theme: require("prism-react-renderer/themes/vsDark"),
     },
     navbar: {
       logo: {
