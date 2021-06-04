@@ -43,8 +43,8 @@ import (
 	]
 }
 
-// Apply a Kubernetes configuration
-#Apply: {
+// Apply Kubernetes resources
+#Resources: {
 
 	// Kubernetes config to deploy
 	source?: dagger.#Artifact @dagger(input)
