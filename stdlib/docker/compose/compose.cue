@@ -72,6 +72,7 @@ import (
 	#up: [
 		op.#Load & {from: #Client},
 
+		// Login to registries
 		for registry in registries {
 			op.#DockerLogin & {registry}
 		},

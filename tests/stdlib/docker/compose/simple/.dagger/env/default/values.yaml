@@ -1,0 +1,24 @@
+name: default
+inputs:
+    TestCompose.up.ssh.key:
+        secret: ENC[AES256_GCM,data:ixiwG8s0jeEQ2hy6kQmOOYjwTAAaLB9hz0ih8az0mvqPV0HZSWQwOg3OPVgBW9Slk3MZjv6RYc8n2YoanHWZm2WxsA/neSFI7XG/IH/xhLDtxX+wmqrjP4To1KGZ4R4QgVdpA/bhCxXDt9a9lqJSMGGh2mOklRs+vMDhV6kkXbc/dX1ki7JSH754QME3HRdQn6Q7VYDg2ro3Ry/IrOA9uzqNUdAK7GW4ADe3Lez3HPg3jS2vvccHURRfSGnBBbtLa7kgpQdtrAhZuZP6h+6XOJZDZ+/aZSar+nY/CFey+2JnBSAMzZ2MvNy9uoW/NwalT5uN+U/skqdhfVMWVkExb5Pnhpfr44pLBt8uvBwOzZ97XUgI/rgWkmi3efY33A9/vL2ac3HVZSok7XMz8TbwOZM9JU3u3nHx6VS//Mp6c0qXYSrHNlJJeBpF61HGX/rqpYoZC86Sj2AwzuYVsbUwVGwGI9FytJVyp/zCrQaRte0coM1Huy5UKX7KotMIFyQdjtDmsOo5dfjkmxWC+4AB5nwgu+wYz6qUKV7C,iv:T7hpMnKdGirSirC9V/xitgFwhHsuYc9XuHXc7NqX8Eg=,tag:w1jORINS1hyDpOJskHOQ7Q==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAvcFgyV0NXUCthU1B4NE5I
+            RWRXREZuS3FtbEd3a0p2SHZmNW9QOGpxWG5JClgzamp0SUlkY0E1SytKK2pXb2ts
+            YzZpZWxWR0lua1g0V3U5Nlk1Y1hIWWsKLS0tIC9MVTZCdDNFUmtnR2RjekZnbnUv
+            M1czbGlnRmdmaVQxK1h2eGhqSXpJcTQKWl4r3FLuqFkX13ivmsIAsRxoXGGyeu9f
+            CfkCQ9jc7N6YH4MtEFO33VNJNc+xQDXKzRDVjo0vCxxk12iebi5o3w==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-05T16:01:39Z"
+    mac: ENC[AES256_GCM,data:CuzfQP5Wg4AJHI83onmg2SYC9U8a/KezVORQH0DLr9BaYRMX/qpxv0+DEqLlWADmaCNcA2NF43FmwcaKybn5SBc4i2GoVfouwIxzfPSvfu3cCH/uyjFVZ4Me0IP6vnd3EGLbZDQgJFV6bBTYSJS6OqVypmFPr6pyaAd1RO5KqfA=,iv:MY3Vdx9BqPC+HIY8Qc4ldu0sjM2rlxy4GEEzIKXyUCk=,tag:jCgDpsf3WZQC3Rlngd1uVg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
