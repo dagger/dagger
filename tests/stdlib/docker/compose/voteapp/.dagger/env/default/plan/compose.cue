@@ -18,18 +18,18 @@ TestCompose: {
 		}
 	}
 
-	verifyApp: #VerifyCompose & {
-		ssh:  up.ssh
-		port: 5000
-	}
+	//verifyApp: #VerifyCompose & {
+	// ssh:  up.ssh
+	// port: 5000
+	//}
 
-	verifyResult: #VerifyCompose & {
-		ssh:  up.ssh
-		port: 5001
-	}
+	//verifyResult: #VerifyCompose & {
+	// ssh:  up.ssh
+	// port: 5001
+	//}
 
 	cleanup: #CleanupCompose & {
 		context: up
-		ssh:     verifyResult.ssh
+		ssh:     up.ssh
 	}
 }

@@ -56,7 +56,7 @@ import (
 				ssh -i /key -o "UserKnownHostsFile "$HOME"/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p "$REMOTE_PORT" "$REMOTE_USERNAME"@"$REMOTE_HOSTNAME" /bin/true > /dev/null 2>&1
 			fi
 			
-			ssh -i /key -p "$REMOTE_PORT" "$REMOTE_USERNAME"@"$REMOTE_HOSTNAME" curl localhost:"$CONTAINER_PORT"/ping > result.txt
+			sleep 2 ; ssh -i /key -p "$REMOTE_PORT" "$REMOTE_USERNAME"@"$REMOTE_HOSTNAME" curl -L localhost:"$CONTAINER_PORT"/ping > result.txt
 			grep -q "pong" result.txt
 		"""#
 

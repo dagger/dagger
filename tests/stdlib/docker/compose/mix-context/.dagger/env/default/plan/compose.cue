@@ -27,13 +27,13 @@ TestCompose: {
 			"""#
 	}
 
-	verify: #VerifyCompose & {
-		ssh:  up.ssh
-		port: 7000
-	}
+	//verify: #VerifyCompose & {
+	// ssh:  up.ssh
+	// port: 7000
+	//}
 
 	cleanup: #CleanupCompose & {
 		context: up
-		ssh:     verify.ssh
+		ssh:     up.ssh
 	}
 }

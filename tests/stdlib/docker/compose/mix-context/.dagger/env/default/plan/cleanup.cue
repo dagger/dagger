@@ -33,11 +33,13 @@ import (
 
 	#code: #"""
 				# Export host
-				export DOCKER_HOST="ssh://$DOCKER_USERNAME@$DOCKER_HOSTNAME:$DOCKER_PORT"
+				export DOCKER_HOST="unix://$(pwd)/docker.sock"
 
 				# Start ssh agent
 				eval $(ssh-agent) > /dev/null
 				ssh-add /key > /dev/null
+
+				ssh -i /key -o "StreamLocalBindUnlink=yes" -fNT -L "$(pwd)"/docker.sock:/var/run/docker.sock -p "$DOCKER_PORT" "$DOCKER_USERNAME"@"$DOCKER_HOSTNAME" || true
 
 				# Down
 				cd /context
@@ -66,10 +68,17 @@ import (
 				DOCKER_HOSTNAME: ssh.host
 				DOCKER_USERNAME: ssh.user
 				DOCKER_PORT:     strconv.FormatInt(ssh.port, 10)
+				if ssh.keyPassphrase != _|_ {
+					SSH_ASKPASS: "/get_passphrase"
+					DISPLAY:     "1"
+				}
 			}
 			mount: {
 				if ssh.key != _|_ {
 					"/key": secret: ssh.key
+				}
+				if ssh.keyPassphrase != _|_ {
+					"/passphrase": secret: ssh.keyPassphrase
 				}
 			}
 		},

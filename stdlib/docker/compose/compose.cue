@@ -40,7 +40,6 @@ import (
 
 	#code: #"""
 			if [ -n "$DOCKER_HOSTNAME" ]; then
-				export DOCKER_HOST="ssh://$DOCKER_USERNAME@$DOCKER_HOSTNAME:$DOCKER_PORT"
 				# Start ssh-agent
 				eval $(ssh-agent) > /dev/null
 				# Add key
@@ -62,7 +61,13 @@ import (
 					# Add host to known hosts
 					ssh -i /key -o "UserKnownHostsFile "$HOME"/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p "$DOCKER_PORT" "$DOCKER_USERNAME"@"$DOCKER_HOSTNAME" /bin/true > /dev/null 2>&1
 				fi
+				ssh -i /key -fNT -o "StreamLocalBindUnlink=yes" -L "$(pwd)"/docker.sock:/var/run/docker.sock -p "$DOCKER_PORT" "$DOCKER_USERNAME"@"$DOCKER_HOSTNAME"
+				export DOCKER_HOST="unix://$(pwd)/docker.sock"
 			fi
+
+			# Extend session duration
+			echo "Host *\nServerAliveInterval 240" >> "$HOME"/.ssh/config
+			chmod 600 "$HOME"/.ssh/config
 
 			cd /context
 			docker-compose build
@@ -125,9 +130,10 @@ import (
 			]
 			env: {
 				if ssh != _|_ {
-					DOCKER_HOSTNAME: ssh.host
-					DOCKER_USERNAME: ssh.user
-					DOCKER_PORT:     strconv.FormatInt(ssh.port, 10)
+					COMPOSE_HTTP_TIMEOUT: strconv.FormatInt(200, 10)
+					DOCKER_HOSTNAME:      ssh.host
+					DOCKER_USERNAME:      ssh.user
+					DOCKER_PORT:          strconv.FormatInt(ssh.port, 10)
 					if ssh.keyPassphrase != _|_ {
 						SSH_ASKPASS: "/get_passphrase"
 						DISPLAY:     "1"
