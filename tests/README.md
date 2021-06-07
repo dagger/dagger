@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-```
+```shell
 # Install dependancies
 yarn install
 
