@@ -19,8 +19,8 @@ don't have to learn a new workflow every time their deployment system changes.
 ## Learn More
 
 * [Dagger vs. Other Software](docs/vs.md)
-* [Dagger Programming Guide](docs/programming.md)
-* [Dagger Operator Manual](docs/operator.md)
+* [Dagger Programming Guide](docs/guides/programming.md)
+* [Dagger Operator Manual](docs/guides/operator.md)
 
 ## Download and Install
 
