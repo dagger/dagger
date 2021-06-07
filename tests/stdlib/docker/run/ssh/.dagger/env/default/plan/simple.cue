@@ -5,7 +5,7 @@ import (
 	"dagger.io/dagger"
 )
 
-testConfig: {
+TestConfig: {
 	host: string         @dagger(input)
 	user: string         @dagger(input)
 	key:  dagger.#Secret @dagger(input)
@@ -21,9 +21,9 @@ TestSSH: {
 		ref:  "hello-world"
 
 		ssh: {
-			host: testConfig.host
-			user: testConfig.user
-			key:  testConfig.key
+			host: TestConfig.host
+			user: TestConfig.user
+			key:  TestConfig.key
 		}
 	}
 }

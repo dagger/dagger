@@ -1,12 +1,12 @@
 name: default
 inputs:
-    testConfig.host:
+    TestConfig.host:
         text: 143.198.64.230
-    testConfig.key:
-        secret: ENC[AES256_GCM,data:TwRbVzpg2UZzS08ww1EOjY0opSFVFtUVnC0Rh4lUnNcCYneDCm4cgW/+7vuYbuS+Ebc+mhdyb0Tp9aU1ZX2QHLed0VGbjuqT+dARHsHtljN890mOd/0oorKHoYh57pFN+67J8qAkUURgwVT4XFQwXd0/EZrccBrfSC/3P90v9EzGH65fn18Esg63+EDONssa4Gp2ylHOirIXf+KQIG1VIC6Fm2P8AbmMfPp+OpzgfubT0FL6vLeqc5se2jkxVXcibH8d5E+HL3m6t3T5ffxKk1UZZZJygMnZp8b6q0trh/msWHl8iJeq35L05/2avrKS+nPFfqzfBZWJ2kLRuX5o1JmIQHadwfX2GwX11RLNB1Ddfbuws18vXEXfo/tO4NFIjJYRwzDmp5+M8iM56Fpk5sh+sXeEmkm5dyBUbNI60LOEncAEvN0wKVs1GStg2vMOgWrR+ouQNUNNPBnGkgnHTF1ZxtkBvnWlCLB0Hnzx+aOkzZggrTef/n2gRjFf2qW5RH6VCMV2mrTR9WF2qB2cgQQMkbiseCQVBuPexZ+Kaq3oea6jd9YP1wVdLrZH+yoecn2FNgG4KA4S1wgFqgBFQN7CprxEktaxM+CGiIfuIEU=,iv:Tw7F1cuYRrao7T1fT9TvURB9bVMXmhoAulEO3ruDU8w=,tag:RpbUyOrAOjqEgG6+630tUg==,type:str]
-    testConfig.passphrase:
-        secret: ENC[AES256_GCM,data:74PlEJExk1A=,iv:9Y+Ioq9yKTWNdVjbbTpp5rKty02G+vNg90YIuZ1YWTM=,tag:kS6o5fFpxy3ZzlpxDHowFw==,type:str]
-    testConfig.user:
+    TestConfig.key:
+        secret: ENC[AES256_GCM,data:iSpHfMuEYSmLagYZieJSMPvVhNBYjirZRennHJUOgVv4tkQa7wDyXUgSKqEhNxaL8w5ETPJwQ3vQRpXX4B/bZrtogwkGkFIhHLqsQvaRaTzIUtGarIB1ePgfgAhfXPxQwvxdmspsltdJTb3m3sg6aHOf17U2Czxhm4TfYOl+La2z1MCTFCq/d6QVOVJDtxwqyNQma/gDYG6wrbQC8KAu6+8VomuaIg9K6q8GU87oKT6eXoTMMj1DAkjKI9psihP6+GRefepZCHv2uOZHIHCrosnFzbJA7Ui9plFH9SCj29svjD4Dt7lZdoWUNPVKfnKZvXE6DfQQU42PB55EKF1ygRQTuGu89KZK5bPZKXMwVD8bV2rcvQAElmigEzuZQEdWdimOtAHBWsDmybIqHZmoq31Y1PHvrGlV5/413lkh53XJT98dLcMeBHZvxZY9HoWcYOvec+oxrwpbABrGXDEpPC7U5Z/LQ18vPj5BWkKuvhmWdGh+SeAKp19kDHlYJLRuBQvDDzpniMAfhcKr1C5VE6vqusoQ9BtXGfOy0ypGJKXq6NSywXxeeD/D0AwvMJIVvpdsQCzLLd9eiwHcY8VbUHub4AIjYLz51in9wJWtM3g=,iv:FnbOqwiJLLrgyOdOJnt5ap+MSleQtb+h4kzZYH5FCnE=,tag:g1Y0O9zUxeHin8gjGcyO+g==,type:str]
+    TestConfig.passphrase:
+        secret: ENC[AES256_GCM,data:C56QpBGR1zc=,iv:TE+Emj96cxno141uaAhQ4xp71ecBA8DmHR6WUZn+Q0Q=,tag:ZarNOVhA2agB0UbToFbtfw==,type:str]
+    TestConfig.user:
         text: daggerci
 sops:
     kms: []
@@ -23,8 +23,8 @@ sops:
             ZXAwa1h2aEhGRGpwVTJzKy9EZGhQb0kKSYnRAiRh7b2LViajHk46ct94PVLHDajC
             oaUPwzy4bIMI9UXGobkstC5ObmY3ba+jcPRy6c9moniL+iigZ8YglA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-05T00:30:44Z"
-    mac: ENC[AES256_GCM,data:t+m0L6QrA1bcp329M3N/GdRqQBQIdop5dOqKhO3ALc/hAtAhaYUw15rqpwahOO87WHWhlF/yg1ZlI9fZzV3NlA5iykMkZfEqWJRitpRbmlyekNNGHcRkko2FJSuQwWvoV89z9eFlPn/EKx2jKiffuOUjOHAHn1QeIBdWwXDGVHc=,iv:GcYlGO+A4tqm507WoLiJeJHYNjYpnzjlHwQwb8YjBUw=,tag:H4/KvdPPKKbp0VfX4nJLUw==,type:str]
+    lastmodified: "2021-06-07T21:46:15Z"
+    mac: ENC[AES256_GCM,data:d+ZtEtXXoemDIuKPR1cVKjLHi4iKyfVz3hwwbvsCiAEqcbjVk19KMZIaxIM+LOL3Jm4O4Ud7Q+JKSLm1FBmUqrb+Q+hiYw67TPGZ7oS0nwUlJ5+JK/PMxWaYGCs4AdJ7wQjHguXX9Nx7td7oH4T47j+UpEKZluLrt8gZNwi8Qyo=,iv:qaTD/Q+cA+dVSsBcClkbWeNJo/3d+OumwKMLxFyQJAw=,tag:dcZ9RE+JUh04N8gMPdK3ZQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
