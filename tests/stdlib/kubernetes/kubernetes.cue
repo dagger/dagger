@@ -11,11 +11,13 @@ import (
 kubeconfig: dagger.#Secret @dagger(input)
 
 TestKubeApply: {
+	random: #Random & {}
+
 	// Pod spec
 	kubeSrc: {
 		apiVersion: "v1"
 		kind:       "Pod"
-		metadata: name: "kube-test-\(random)"
+		metadata: name: "kube-test-\(random.out)"
 		spec: {
 			restartPolicy: "Never"
 			containers: [{

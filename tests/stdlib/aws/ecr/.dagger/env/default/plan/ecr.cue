@@ -11,8 +11,10 @@ TestConfig: awsConfig: aws.#Config & {
 }
 
 TestECR: {
+	random: #Random & {}
+
 	repository: "125635003186.dkr.ecr.\(TestConfig.awsConfig.region).amazonaws.com/dagger-ci"
-	tag:        "test-ecr-\(random)"
+	tag:        "test-ecr-\(random.out)"
 
 	creds: ecr.#Credentials & {
 		config: TestConfig.awsConfig
@@ -25,7 +27,7 @@ TestECR: {
 			op.#DockerBuild & {
 				dockerfile: """
 				FROM alpine
-				RUN echo \(random) > /test
+				RUN echo \(random.out) > /test
 				"""
 			},
 
@@ -61,7 +63,7 @@ TestECR: {
 		op.#Exec & {
 			always: true
 			args: [
-				"sh", "-c", "test $(cat test) = \(random)",
+				"sh", "-c", "test $(cat test) = \(random.out)",
 			]
 		},
 	]
@@ -76,7 +78,7 @@ TestECR: {
 		op.#DockerBuild & {
 			dockerfile: #"""
 				FROM \#(push.ref)
-				RUN test $(cat test) = \#(random)
+				RUN test $(cat test) = \#(random.out)
 			"""#
 		},
 	]

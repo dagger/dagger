@@ -9,8 +9,10 @@ import (
 TestConfig: gcpConfig: gcp.#Config
 
 TestGCR: {
+	random: #Random & {}
+
 	repository: "gcr.io/dagger-ci/test"
-	tag:        "test-gcr-\(random)"
+	tag:        "test-gcr-\(random.out)"
 
 	creds: gcr.#Credentials & {
 		config: TestConfig.gcpConfig
@@ -23,7 +25,7 @@ TestGCR: {
 			op.#DockerBuild & {
 				dockerfile: """
 				FROM alpine
-				RUN echo \(random) > /test
+				RUN echo \(random.out) > /test
 				"""
 			},
 
@@ -59,7 +61,7 @@ TestGCR: {
 		op.#Exec & {
 			always: true
 			args: [
-				"sh", "-c", "test $(cat test) = \(random)",
+				"sh", "-c", "test $(cat test) = \(random.out)",
 			]
 		},
 	]
@@ -74,7 +76,7 @@ TestGCR: {
 		op.#DockerBuild & {
 			dockerfile: #"""
 				FROM \#(push.ref)
-				RUN test $(cat test) = \#(random)
+				RUN test $(cat test) = \#(random.out)
 			"""#
 		},
 	]
