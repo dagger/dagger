@@ -13,7 +13,7 @@ slug: /programming
 
 It will create a `.dagger` directory in your current directory with an empty `env` directory inside it:
 
-```
+```bash
 .dagger/
 └── env
 ```
@@ -22,7 +22,7 @@ It will create a `.dagger` directory in your current directory with an empty `en
 
 `dagger new staging`
 
-```
+```bash
 .dagger/
 └── env
     └── staging
@@ -33,7 +33,7 @@ It will create a `.dagger` directory in your current directory with an empty `en
 
 3\. Create a new file [Cue](#programming-in-cue) config file in `.dagger/env/staging/plan`, and open it with any text editor or IDE:
 
-```
+```bash
 .dagger/
 └── env
     └── staging
@@ -128,8 +128,8 @@ To get started with Cue, we recommend the following resources:
 - [Cuetorials](https://cuetorials.com)
 - [Cue playground](https://cuelang.org/play)
 
-
 ## Concepts
+
 ### Overview
 
 1. A developer writes a _plan_ specifying how to deliver their application. Plans are written in the [Cue](https://cuelang.org) data language.
