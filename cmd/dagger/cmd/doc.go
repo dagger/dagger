@@ -149,7 +149,6 @@ func loadCode(packageName string) (*compiler.Value, error) {
 
 // printValuesText (text) formats an array of Values on stdout
 func printValuesText(iw io.Writer, libName string, values []*compiler.Value) {
-	fmt.Fprintf(iw, "\n%sInputs:\n", textPadding)
 	w := tabwriter.NewWriter(iw, 0, 4, len(textPadding), ' ', 0)
 	for _, i := range values {
 		docStr := terminalTrim(common.ValueDocString(i))
@@ -261,6 +260,7 @@ func PrintDoc(ctx context.Context, w io.Writer, packageName string, val *compile
 				fmt.Fprintf(w, "\n%sInputs: none\n", textPadding)
 				break
 			}
+			fmt.Fprintf(w, "\n%sInputs:\n", textPadding)
 			printValuesText(w, name, inp)
 		case markdownFormat:
 			fmt.Fprintf(w, "#### %s Inputs\n\n", mdEscape(name))
@@ -281,6 +281,7 @@ func PrintDoc(ctx context.Context, w io.Writer, packageName string, val *compile
 				fmt.Fprintf(w, "\n%sOutputs: none\n", textPadding)
 				break
 			}
+			fmt.Fprintf(w, "\n%sOutputs:\n", textPadding)
 			printValuesText(w, name, out)
 		case markdownFormat:
 			fmt.Fprintf(w, "#### %s Outputs\n\n", mdEscape(name))

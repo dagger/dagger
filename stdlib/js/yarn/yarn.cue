@@ -17,16 +17,16 @@ import (
 
 	// Extra alpine packages to install
 	package: {
-		[string]: true | false | string @dagger(input)
-	}
+		[string]: true | false | string
+	} @dagger(input)
 
 	// working directory to use
 	cwd: *"." | string @dagger(input)
 
 	// Environment variables
 	env: {
-		[string]: string @dagger(input)
-	}
+		[string]: string
+	} @dagger(input)
 
 	// Write the contents of `environment` to this file,
 	// in the "envfile" format.

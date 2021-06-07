@@ -112,6 +112,10 @@ func FormatValue(val *compiler.Value) string {
 	if val.IsConcreteR() != nil {
 		return val.IncompleteKindString()
 	}
+	if val.IncompleteKindString() == "struct" {
+		return "struct"
+	}
+
 	// value representation in Cue
 	valStr := fmt.Sprintf("%v", val.Cue())
 	// escape \n
