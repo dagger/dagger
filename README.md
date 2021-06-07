@@ -10,7 +10,7 @@ to any infrastructure, in just a few lines of code.
 The Dagger platform adapts to your application, not the other way around.
 Thanks to its ecosystem of reusable packages and flexible scripting system,
 Dagger can be dropped into any software project without requiring changes to
-its architecture or workflow. Think of it as your "devops superglu".
+its architecture or workflow. Think of it as your "devops superglue".
 
 No matter how your deployment works under the hood, you can manage it with the
 same Dagger user interface. This makes developers more productive, because they
