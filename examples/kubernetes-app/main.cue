@@ -36,7 +36,7 @@ cluster: eks.#KubeConfig & {
 }
 
 // Example of a simple `kubectl apply` using a simple config
-kubeApply: kubernetes.#Apply & {
+kubeApply: kubernetes.#Resources & {
 	manifest:   yaml.Marshal(kubeSrc)
 	namespace:  "test"
 	kubeconfig: cluster.kubeconfig
