@@ -5,45 +5,45 @@ slug: /programming
 
 # Dagger Programming Guide
 
-## Overview
+## Writing your first Dagger plan
 
-1. A developer writes a _plan_ specifying how to deliver their application. Plans are written in the [Cue](https://cuelang.org) data language.
-2. Dagger executes plans in isolated _environments_. Each environment has its own configuration and state.
+1\. Initialize a Dagger workspace anywhere in your git repository:
 
-## Programming in Cue
+`dagger init`
 
-[Cue](https://cuelang.org) is a next-generation data language by Marcel van Lohuizen and the spiritual successor
-of GCL, the language used to configure all of Google's infrastructure.
+It will create a `.dagger` directory in your current directory with an empty `env` directory inside it:
 
-Cue extends JSON with powerful features:
+```
+.dagger/
+└── env
+```
 
-- Composition: layering, templating, references
-- Correctness: types, schemas
-- Developer experience: comments, packages, first-class tooling, builtin functions
-- And mucn more.
+2\. Create a new environment, for example `staging`:
 
-To get started with Cue, we recommend the following resources:
+`dagger new staging`
 
-- [Cuetorials](https://cuetorials.com)
-- [Cue playground](https://cuelang.org/play)
+```
+.dagger/
+└── env
+    └── staging
+        ├── plan
+        └── values.yaml
 
-## Writing your first plan
+```
 
-To create a Dagger plan:
+3\. Create a new file [Cue](#programming-in-cue) config file in `.dagger/env/staging/plan`, and open it with any text editor or IDE:
 
-1\. Initialize a Dagger workspace anywhere in your git repository.
+```
+.dagger/
+└── env
+    └── staging
+        ├── plan
+        │   └── staging.cue
+        └── values.yaml
 
-`dagger init`.
+```
 
-2\. Create a new environment.
-
-For example: `dagger new staging`.
-
-3\. Create a new file with the _.cue_ extension in `.dagger/env/staging/plan`, and open it with any text editor or IDE.
-
-For example: `.dagger/env/staging/plan/staging.cue`.
-
-4\. Describe each relay in your plan as a field in the cue configuration.
+4\. Describe each [relay](#relays) in your plan as a field in the Cue configuration:
 
 For example:
 
@@ -78,7 +78,7 @@ For more inspiration, see these examples:
 
 5\. Extend your plan with relay definitions from [Dagger
 Universe](https://github.com/dagger/dagger/tree/main/stdlib), an encyclopedia of
-cue packages curated by the Dagger community.
+Cue packages curated by the Dagger community.
 
 6\. If you can't find the relay you need in the Universe, you can simply create your own.
 
@@ -111,7 +111,29 @@ american: #Greeting & {
 }
 ```
 
+## Programming in Cue
+
+[Cue](https://cuelang.org) is a next-generation data language by Marcel van Lohuizen and the spiritual successor
+of GCL, the language used to configure all of Google's infrastructure.
+
+Cue extends JSON with powerful features:
+
+- Composition: layering, templating, references
+- Correctness: types, schemas
+- Developer experience: comments, packages, first-class tooling, builtin functions
+- And much more.
+
+To get started with Cue, we recommend the following resources:
+
+- [Cuetorials](https://cuetorials.com)
+- [Cue playground](https://cuelang.org/play)
+
+
 ## Concepts
+### Overview
+
+1. A developer writes a _plan_ specifying how to deliver their application. Plans are written in the [Cue](https://cuelang.org) data language.
+2. Dagger executes plans in isolated _environments_. Each environment has its own configuration and state.
 
 ### Plans
 
@@ -201,7 +223,7 @@ A relay is typically contained in a [cue definition](https://cuetorials.com/over
 For example a relay for a git repository might be defined as `#Repository`.
 
 The processing pipeline is a crucial feature of Dagger. It uses the [LLB](https://github.com/moby/buildkit)
-executable format pioneered by the Buildkit project. It allows Dagger components to run
+executable format pioneered by the BuildKit project. It allows Dagger components to run
 sophisticated pipelines to ingest produce artifacts such as source code, binaries, database exports, etc.
 Best of all, LLB pipelines can securely build and run any docker container, effectively making Dagger
 scriptable in any language.
