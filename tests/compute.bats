@@ -107,6 +107,7 @@ setup() {
 }
 
 @test "compute: docker socket" {
+    skip "docker socket support disabled"
     run "$DAGGER" compute  "$TESTDIR"/compute/dockersocket
 }
 
