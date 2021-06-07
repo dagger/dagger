@@ -6,18 +6,19 @@ sidebar_label: ecr
 
 ## #Credentials
 
-Credentials retriever for ECR
+Convert AWS credentials to Docker Registry credentials for ECR
 
 ### #Credentials Inputs
 
-| Name                 | Type                | Description        |
-| -------------        |:-------------:      |:-------------:     |
-|*config.region*       | `string`            |AWS region          |
-|*config.accessKey*    | `dagger.#Secret`    |AWS access key      |
-|*config.secretKey*    | `dagger.#Secret`    |AWS secret key      |
+| Name                           | Type                | Description        |
+| -------------                  |:-------------:      |:-------------:     |
+|*config.region*                 | `string`            |AWS region          |
+|*config.accessKey*              | `dagger.#Secret`    |AWS access key      |
+|*config.secretKey*              | `dagger.#Secret`    |AWS secret key      |
+|*ctr.image.config.region*       | `string`            |AWS region          |
+|*ctr.image.config.accessKey*    | `dagger.#Secret`    |AWS access key      |
+|*ctr.image.config.secretKey*    | `dagger.#Secret`    |AWS secret key      |
 
 ### #Credentials Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*secret*          | `string`          |-                   |
+_No output._

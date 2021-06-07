@@ -1,52 +1,30 @@
 package ecr
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
 	"dagger.io/aws"
+	"dagger.io/os"
 )
 
-// Credentials retriever for ECR
+// Convert AWS credentials to Docker Registry credentials for ECR
 #Credentials: {
 	// AWS Config
 	config: aws.#Config
 
-	out: dagger.#Secret
-
 	// ECR credentials
 	username: "AWS"
 
-	secret: {
-		@dagger(output)
-		string
-
-		#up: [
-			op.#Load & {
-				from: aws.#CLI & {
-					"config": config
-				}
-			},
-
-			op.#Exec & {
-				always: true
-
-				args: [
-					"/bin/bash",
-					"--noprofile",
-					"--norc",
-					"-eo",
-					"pipefail",
-					"-c",
-					#"""
-						aws ecr get-login-password > /out
-						"""#,
-				]
-			},
-
-			op.#Export & {
-				source: "/out"
-				format: "string"
-			},
-		]
+	ctr: os.#Container & {
+		image: aws.#CLI & {
+			"config": config
+		}
+		always:  true
+		command: "aws ecr get-login-password > /out"
 	}
+
+	secret: {
+		os.#File & {
+			from: ctr
+			path: "/out"
+		}
+	}.read.data
 }
