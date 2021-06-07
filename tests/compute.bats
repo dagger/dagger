@@ -65,11 +65,11 @@ setup() {
     run "$DAGGER" compute --input-string 'in=foobar' "$TESTDIR"/compute/input/default
     assert_success
     assert_line '{"in":"foobar","test":"received: foobar"}'
-    
+
     run "$DAGGER" compute --input-string=foobar "$TESTDIR"/compute/input/default
     assert_failure
     assert_output --partial 'failed to parse input: input-string'
-    
+
     run "$DAGGER" compute --input-dir=foobar "$TESTDIR"/compute/input/default
     assert_failure
     assert_output --partial 'failed to parse input: input-dir'
@@ -104,6 +104,11 @@ setup() {
     run "$DAGGER" query mySecret.id -f text
     assert_success
     assert_output "secret=mySecret"
+}
+
+@test "compute: docker socket" {
+    skip "docker socket support disabled"
+    run "$DAGGER" compute  "$TESTDIR"/compute/dockersocket
 }
 
 @test "compute: exclude" {

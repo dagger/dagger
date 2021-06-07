@@ -114,7 +114,11 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
-		Session:   []session.Attachable{auth, secrets},
+		Session: []session.Attachable{
+			auth,
+			secrets,
+			solver.NewDockerSocketProvider(),
+		},
 	}
 
 	// Call buildkit solver

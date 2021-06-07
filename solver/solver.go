@@ -157,7 +157,11 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 
 	opts := bk.SolveOpt{
 		Exports: []bk.ExportEntry{output},
-		Session: []session.Attachable{s.opts.Auth, s.opts.Secrets},
+		Session: []session.Attachable{
+			s.opts.Auth,
+			s.opts.Secrets,
+			NewDockerSocketProvider(),
+		},
 	}
 
 	ch := make(chan *bk.SolveStatus)
