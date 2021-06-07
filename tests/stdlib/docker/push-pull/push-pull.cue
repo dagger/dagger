@@ -15,7 +15,9 @@ registry: {
 }
 
 TestPushAndPull: {
-	ref: "daggerio/ci-test:\(random)"
+	random: #Random & {}
+
+	ref: "daggerio/ci-test:\(random.out)"
 
 	// Create image
 	image: docker.#ImageFromDockerfile & {

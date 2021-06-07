@@ -1,21 +1,33 @@
 package helm
 
 import (
+	"strconv"
+
 	"dagger.io/alpine"
 	"dagger.io/dagger/op"
 )
 
-// Generate a random number
-random: {
-	string
-	#up: [
-		op.#Load & {from: alpine.#Image},
-		op.#Exec & {
-			always: true
-			args: ["sh", "-c", "cat /dev/urandom | tr -dc 'a-z' | fold -w 10 | head -n 1 | tr -d '\n' > /rand"]
-		},
-		op.#Export & {
-			source: "/rand"
-		},
-	]
+#Random: {
+	size: *12 | number
+
+	out: {
+		string
+
+		#up: [
+			op.#Load & {from: alpine.#Image},
+
+			op.#Exec & {
+				always: true
+				args: ["sh", "-c", #"""
+					tr -cd '[:alpha:]' < /dev/urandom | fold -w "$SIZE" | head -n 1 | tr '[A-Z]' '[a-z]' | tr -d '\n' > /rand
+					"""#,
+				]
+				env: SIZE: strconv.FormatInt(size, 10)
+			},
+
+			op.#Export & {
+				source: "/rand"
+			},
+		]
+	}
 }

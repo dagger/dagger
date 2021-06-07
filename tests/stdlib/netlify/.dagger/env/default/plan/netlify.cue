@@ -7,10 +7,12 @@ import (
 )
 
 TestNetlify: {
+	random: #Random & {}
+
 	// Generate a website containing the random number
 	html: #up: [
 		op.#WriteFile & {
-			content: random
+			content: random.out
 			dest:    "index.html"
 		},
 	]
@@ -38,7 +40,7 @@ TestNetlify: {
 				"pipefail",
 				"-c",
 				#"""
-        test "$(curl \#(deploy.deployUrl))" = "\#(random)"
+        test "$(curl \#(deploy.deployUrl))" = "\#(random.out)"
         """#,
 			]
 		},

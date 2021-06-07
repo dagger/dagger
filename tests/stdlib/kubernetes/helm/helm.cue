@@ -11,9 +11,11 @@ kubeconfig: dagger.#Secret @dagger(input)
 
 // Deploy user local chart
 TestHelmSimpleChart: {
+	random: #Random & {}
+
 	// Deploy chart
 	deploy: helm.#Chart & {
-		name:         "dagger-test-helm-simple-chart-\(random)"
+		name:         "dagger-test-helm-simple-chart-\(random.out)"
 		namespace:    "dagger-test"
 		"kubeconfig": kubeconfig
 		chartSource:  dagger.#Artifact
@@ -28,9 +30,11 @@ TestHelmSimpleChart: {
 
 // Deploy remote chart
 TestHelmRepoChart: {
+	random: #Random & {}
+
 	// Deploy chart
 	deploy: helm.#Chart & {
-		name:         "dagger-test-helm-repository-\(random)"
+		name:         "dagger-test-helm-repository-\(random.out)"
 		namespace:    "dagger-test"
 		"kubeconfig": kubeconfig
 		chart:        "redis"
