@@ -45,7 +45,7 @@ import (
 
 #Run: {
 	// Connect to a remote SSH server
-	ssh?: {
+	ssh: {
 		// ssh host
 		host: string @dagger(input)
 
@@ -172,9 +172,6 @@ import (
 				}
 			}
 			mount: {
-				if ssh == _|_ {
-					"/var/run/docker.sock": "docker.sock"
-				}
 				if ssh.key != _|_ {
 					"/key": secret: ssh.key
 				}
