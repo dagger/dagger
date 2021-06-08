@@ -19,8 +19,8 @@ import (
 	// Helm chart to install from repository
 	chart?: string @dagger(input)
 
-	// Helm chart repository (defaults to stable)
-	repository: *"https://charts.helm.sh/stable" | string @dagger(input)
+	// Helm chart repository
+	repository?: string @dagger(input)
 
 	// Helm values (either a YAML string or a Cue structure)
 	values?: string @dagger(input)
@@ -110,7 +110,9 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 
-				HELM_REPO:    repository
+				if repository != _|_ {
+					HELM_REPO: repository
+				}
 				HELM_NAME:    name
 				HELM_ACTION:  action
 				HELM_TIMEOUT: timeout

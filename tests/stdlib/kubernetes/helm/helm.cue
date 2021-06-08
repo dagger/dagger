@@ -42,6 +42,7 @@ TestHelmRepoChart: {
 		name:         "dagger-test-helm-repository-\(suffix.out)"
 		namespace:    "dagger-test"
 		"kubeconfig": kubeconfig
+		repository:   "https://charts.bitnami.com/bitnami"
 		chart:        "redis"
 	}
 
