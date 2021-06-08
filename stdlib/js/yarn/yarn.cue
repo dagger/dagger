@@ -64,9 +64,10 @@ import (
 			mv "$YARN_BUILD_DIRECTORY" /build
 			"""
 		"env": env & {
-			YARN_BUILD_SCRIPT:    script
-			YARN_ARGS:            strings.Join(args, "\n")
-			YARN_CACHE_FOLDER:    "/cache/yarn"
+			YARN_BUILD_SCRIPT: script
+			YARN_ARGS:         strings.Join(args, "\n")
+			// FIXME: cache disabled temporarily (see gh issue #495)
+			// YARN_CACHE_FOLDER:    "/cache/yarn"
 			YARN_CWD:             cwd
 			YARN_BUILD_DIRECTORY: buildDir
 			if writeEnvFile != "" {
@@ -76,6 +77,7 @@ import (
 		}
 		dir: "/src"
 		mount: "/src": from: source
-		cache: "/cache/yarn": true
+		// FIXME: cache disabled temporarily (see gh issue #495)
+		// cache: "/cache/yarn": true
 	}
 }
