@@ -3,6 +3,7 @@ package main
 import (
 	"dagger.io/docker"
 	"dagger.io/dagger"
+	"dagger.io/random"
 )
 
 TestConfig: {
@@ -13,10 +14,12 @@ TestConfig: {
 }
 
 TestRun: {
-	random: #Random & {}
+	suffix: random.#String & {
+		seed: ""
+	}
 
 	run: docker.#Run & {
-		name: "daggerci-test-simple-\(random.out)"
+		name: "daggerci-test-simple-\(suffix.out)"
 		ref:  "hello-world"
 
 		ssh: {
