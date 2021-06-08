@@ -39,3 +39,10 @@ skip_unless_local_kube() {
         skip "local kubernetes cluster not available"
     fi
 }
+
+skip_unless_localstack_available() {
+    local url="$1"
+    
+    (curl -s -o  /dev/null "$url" && echo "localStack available") \
+    || skip "localStack not available"
+}

@@ -24,6 +24,8 @@ import (
 			},
 
 			op.#Exec & {
+				always: true
+				env: ENDPOINT_URL: config.endpointURL
 				args: [
 					"/bin/bash",
 					"--noprofile",
@@ -32,7 +34,12 @@ import (
 					"pipefail",
 					"-c",
 					#"""
-					aws s3 ls --recursive \#(target) > /contents
+					sleep 2
+					if [ -n "$ENDPOINT_URL" ]; then
+						aws s3 --endpoint-url="$ENDPOINT_URL" ls --recursive \#(target) > /contents
+					else
+						aws s3 ls --recursive \#(target) > /contents
+					fi
 					"""#,
 				]
 			},

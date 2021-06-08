@@ -14,6 +14,8 @@ import (
 	accessKey: dagger.#Secret @dagger(input)
 	// AWS secret key
 	secretKey: dagger.#Secret @dagger(input)
+	// AWS endpoint key
+	endpointURL: string | *"" @dagger(input)
 }
 
 // Re-usable aws-cli component
@@ -32,6 +34,7 @@ import (
 			}
 		},
 		op.#Exec & {
+			env: ENDPOINT_URL: config.endpointURL
 			args: [
 				"/bin/bash",
 				"--noprofile",
@@ -40,6 +43,7 @@ import (
 				"pipefail",
 				"-c",
 				#"""
+					[ -n "$ENDPOINT_URL" ] && alias aws="aws --endpoint-url='$ENDPOINT_URL'"
 					aws configure set aws_access_key_id "$(cat /run/secrets/access_key)"
 					aws configure set aws_secret_access_key "$(cat /run/secrets/secret_key)"
 

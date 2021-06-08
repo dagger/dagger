@@ -7,7 +7,8 @@ import (
 )
 
 TestConfig: awsConfig: aws.#Config & {
-	region: "us-east-2"
+	region:      "us-east-2"
+	endpointURL: string @dagger(input)
 }
 
 bucket: "dagger-ci"
@@ -15,26 +16,30 @@ bucket: "dagger-ci"
 content: "A simple test sentence"
 
 TestS3UploadFile: {
+	randomFileName: random
+
 	deploy: s3.#Put & {
 		config:       TestConfig.awsConfig
 		sourceInline: content
-		target:       "s3://\(bucket)/test.txt"
+		target:       "s3://\(bucket)/\(randomFileName).txt"
 	}
 
 	verify: #VerifyS3 & {
 		config: TestConfig.awsConfig
 		target: deploy.target
-		file:   "test.txt"
+		file:   "\(randomFileName).txt"
 	}
 }
 
 TestDirectory: dagger.#Artifact
 
 TestS3UploadDir: {
+	randomDirName: random
+
 	deploy: s3.#Put & {
 		config: TestConfig.awsConfig
 		source: TestDirectory
-		target: "s3://\(bucket)/"
+		target: "s3://\(bucket)/\(randomDirName)/"
 	}
 
 	verifyFile: #VerifyS3 & {

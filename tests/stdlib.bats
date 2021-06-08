@@ -62,6 +62,17 @@ setup() {
     "$DAGGER" up -w "$TESTDIR"/stdlib/aws/s3
 }
 
+@test "stdlib: aws: s3 localstack" {
+    local localstackURL="http://localhost:4566/"
+
+    skip_unless_localstack_available "$localstackURL"
+
+    "$DAGGER" -w "$TESTDIR"/stdlib/aws/s3 input text TestConfig.awsConfig.endpointURL "$localstackURL"
+    "$DAGGER" -w "$TESTDIR"/stdlib/aws/s3 input secret TestConfig.awsConfig.accessKey "test"
+    "$DAGGER" -w "$TESTDIR"/stdlib/aws/s3 input secret TestConfig.awsConfig.secretKey "test"
+    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/s3
+}
+
 @test "stdlib: aws: eks" {
     "$DAGGER" up -w "$TESTDIR"/stdlib/aws/eks
 }

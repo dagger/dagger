@@ -53,6 +53,7 @@ import (
 				env: {
 					TARGET:       target
 					CONTENT_TYPE: contentType
+					ENDPOINT_URL: config.endpointURL
 				}
 
 				if sourceInline == _|_ {
@@ -75,10 +76,17 @@ import (
 						if [ -n "$CONTENT_TYPE" ]; then
 							opts="--content-type $CONTENT_TYPE"
 						fi
-						aws s3 $op $opts /source "$TARGET"
-						echo -n "$TARGET" \
-							| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
-							> /url
+						if [ -n "$ENDPOINT_URL" ]; then
+							aws s3 --endpoint-url="$ENDPOINT_URL" $op $opts /source "$TARGET"
+							echo -n "$TARGET" \
+								| sed -E 's=^s3://([^/]*)/='$ENDPOINT_URL'/\1/=' \
+								> /url
+						else
+							aws s3 $op $opts /source "$TARGET"
+							echo -n "$TARGET" \
+								| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
+								> /url
+						fi
 						"""#,
 				]
 			},
