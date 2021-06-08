@@ -1,4 +1,4 @@
-package testing
+package main
 
 import (
 	"dagger.io/dagger/op"

@@ -1,4 +1,4 @@
-package helm
+package main
 
 import (
 	"dagger.io/dagger"

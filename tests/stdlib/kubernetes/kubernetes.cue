@@ -1,4 +1,4 @@
-package kubernetes
+package main
 
 import (
 	"encoding/yaml"

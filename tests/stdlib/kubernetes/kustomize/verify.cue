@@ -1,4 +1,4 @@
-package kustomize
+package main
 
 import (
 	"dagger.io/dagger/op"

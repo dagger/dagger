@@ -1,4 +1,4 @@
-package gcr
+package main
 
 import (
 	"dagger.io/gcp"

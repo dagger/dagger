@@ -1,4 +1,4 @@
-package netlify
+package main
 
 import (
 	"dagger.io/dagger/op"

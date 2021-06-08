@@ -1,4 +1,4 @@
-package ecr
+package main
 
 import (
 	"dagger.io/aws"

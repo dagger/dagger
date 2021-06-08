@@ -1,4 +1,4 @@
-package kustomize
+package main
 
 import (
 	"encoding/yaml"

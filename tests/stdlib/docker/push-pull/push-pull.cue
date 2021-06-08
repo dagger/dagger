@@ -1,4 +1,4 @@
-package docker
+package main
 
 import (
 	"dagger.io/dagger"
