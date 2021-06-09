@@ -75,6 +75,7 @@ For more inspiration, see these examples:
 - [Provision a Kubernetes cluster on AWS](https://github.com/dagger/dagger/blob/main/examples/README.md#provision-a-kubernetes-cluster-on-aws)
 - [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
 - [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
+- [Deploy an application to GCP Cloud Run](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-gcp-cloud-run)
 
 5\. Extend your plan with relay definitions from [Dagger
 Universe](https://github.com/dagger/dagger/tree/main/stdlib), an encyclopedia of

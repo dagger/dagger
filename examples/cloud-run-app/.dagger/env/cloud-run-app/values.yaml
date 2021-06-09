@@ -1,0 +1,30 @@
+name: cloud-run-app
+inputs:
+    gcpConfig.project:
+        text: dagger-ci
+    gcpConfig.serviceKey:
+        secret: ENC[AES256_GCM,data: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,iv:XBNEXLnpNnuUAyaEWuobkPeeBGYPIrEiqrqIS/r0Lu0=,tag:Ft6wBjWDFYKBNm52Dn1vxQ==,type:str]
+    region:
+        text: us-west2
+    serviceName:
+        text: cloudrun-test3
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1j6nrevprudhes65akfpl7sl65pktl4wj272gh7xl82ul3aaugppq6zxujg
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxWWdlTDFWK0VNQTNoUExS
+            Y20yNVZTT0hxNi91d3JvTUZ3UFNuRStUQTNvCnVEOVlTUjhvNU5MejdldWt0eWxR
+            UnZ4T0lUd3dsSURaNzRXWGVKQWllWTgKLS0tIHV0QkFWTDk2RE9hK2EyNm9GRVll
+            dmE4QXJmK255RHNIVzJjNjFwRCtCMzQKaAfgT/Q7uU4urlcgtz25Pbwx/p4iyEX/
+            YpZaWQuVR2J9jtEh86oYZYGLxO5SAvqO5v20tfxXdVzZQkw0/QVPhQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-10T06:06:28Z"
+    mac: ENC[AES256_GCM,data:qlX0EtuyHMNhMoVtR0xwD6kM2i+Jbq6NC6oQwZkEb4Pe8yy1cXKtHOvzDQAmMOL/vyE82fRtTmvfc85gA8vgw320TzXDcqxkpbVlML/5O7lDvOBwePvwajwG5JOlBXl+UJWMrH5nYfRPas1B4RSV7lksqXf/+a2+O0b2NN0UWDM=,iv:GqffDMMcLDefh6HU8fmaXlOk4xkjhq0sP5jkWAsiZKo=,tag:ttbyp8H7ZviPebmga9oJ7g==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
