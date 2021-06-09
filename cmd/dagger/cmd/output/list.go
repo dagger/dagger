@@ -72,7 +72,7 @@ func ListOutputs(ctx context.Context, st *state.State, isTTY bool) {
 			fmt.Fprintf(w, "%s\t%s\t%s\n",
 				out.Path(),
 				common.FormatValue(out),
-				common.ValueDocString(out),
+				common.ValueDocOneLine(out),
 			)
 		}
 

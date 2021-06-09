@@ -1,5 +1,4 @@
 // Yarn is a package manager for Javascript applications
-// https://yarnpkg.com
 package yarn
 
 import (

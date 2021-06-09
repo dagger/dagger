@@ -10,7 +10,7 @@ import (
 #Repository: {
 
 	// Git remote.
-	// Example: "https://github.com/dagger/dagger")
+	// Example: `"https://github.com/dagger/dagger"`
 	remote: string @dagger(input)
 
 	// Git ref: can be a commit, tag or branch.

@@ -69,7 +69,7 @@ var listCmd = &cobra.Command{
 					inp.Path(),
 					common.FormatValue(inp),
 					isUserSet(st, inp),
-					common.ValueDocString(inp),
+					common.ValueDocOneLine(inp),
 				)
 			}
 
