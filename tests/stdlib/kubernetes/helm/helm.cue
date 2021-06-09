@@ -1,8 +1,9 @@
-package helm
+package main
 
 import (
 	"dagger.io/dagger"
 	"dagger.io/kubernetes/helm"
+	"dagger.io/random"
 )
 
 // We assume that a kinD cluster is running locally
@@ -11,11 +12,13 @@ kubeconfig: dagger.#Secret @dagger(input)
 
 // Deploy user local chart
 TestHelmSimpleChart: {
-	random: #Random & {}
+	suffix: random.#String & {
+		seed: "simple"
+	}
 
 	// Deploy chart
 	deploy: helm.#Chart & {
-		name:         "dagger-test-helm-simple-chart-\(random.out)"
+		name:         "dagger-test-helm-simple-chart-\(suffix.out)"
 		namespace:    "dagger-test"
 		"kubeconfig": kubeconfig
 		chartSource:  dagger.#Artifact
@@ -30,13 +33,16 @@ TestHelmSimpleChart: {
 
 // Deploy remote chart
 TestHelmRepoChart: {
-	random: #Random & {}
+	suffix: random.#String & {
+		seed: "repo"
+	}
 
 	// Deploy chart
 	deploy: helm.#Chart & {
-		name:         "dagger-test-helm-repository-\(random.out)"
+		name:         "dagger-test-helm-repository-\(suffix.out)"
 		namespace:    "dagger-test"
 		"kubeconfig": kubeconfig
+		repository:   "https://charts.bitnami.com/bitnami"
 		chart:        "redis"
 	}
 

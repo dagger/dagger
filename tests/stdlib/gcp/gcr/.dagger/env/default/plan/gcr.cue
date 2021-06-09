@@ -1,18 +1,21 @@
-package gcr
+package main
 
 import (
 	"dagger.io/gcp"
 	"dagger.io/gcp/gcr"
 	"dagger.io/dagger/op"
+	"dagger.io/random"
 )
 
 TestConfig: gcpConfig: gcp.#Config
 
 TestGCR: {
-	random: #Random & {}
+	suffix: random.#String & {
+		seed: ""
+	}
 
 	repository: "gcr.io/dagger-ci/test"
-	tag:        "test-gcr-\(random.out)"
+	tag:        "test-gcr-\(suffix.out)"
 
 	creds: gcr.#Credentials & {
 		config: TestConfig.gcpConfig
@@ -25,7 +28,7 @@ TestGCR: {
 			op.#DockerBuild & {
 				dockerfile: """
 				FROM alpine
-				RUN echo \(random.out) > /test
+				RUN echo \(suffix.out) > /test
 				"""
 			},
 
@@ -61,7 +64,7 @@ TestGCR: {
 		op.#Exec & {
 			always: true
 			args: [
-				"sh", "-c", "test $(cat test) = \(random.out)",
+				"sh", "-c", "test $(cat test) = \(suffix.out)",
 			]
 		},
 	]
@@ -76,7 +79,7 @@ TestGCR: {
 		op.#DockerBuild & {
 			dockerfile: #"""
 				FROM \#(push.ref)
-				RUN test $(cat test) = \#(random.out)
+				RUN test $(cat test) = \#(suffix.out)
 			"""#
 		},
 	]

@@ -2,8 +2,10 @@ package helm
 
 #code: #"""
 	# Add the repository
-	helm repo add repository "${HELM_REPO}"
-	helm repo update
+	if [ -n "$HELM_REPO" ]; then
+		helm repo add repository "${HELM_REPO}"
+		helm repo update
+	fi
 
 	# If the chart is a file, then it's the chart name
 	# If it's a directly, then it's the contents of the cart

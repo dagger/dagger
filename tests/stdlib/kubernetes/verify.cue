@@ -1,4 +1,4 @@
-package kubernetes
+package main
 
 import (
 	"dagger.io/dagger/op"

@@ -1,10 +1,11 @@
-package docker
+package main
 
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 	"dagger.io/docker"
+	"dagger.io/random"
 )
 
 source: dagger.#Artifact
@@ -15,9 +16,11 @@ registry: {
 }
 
 TestPushAndPull: {
-	random: #Random & {}
+	tag: random.#String & {
+		seed: ""
+	}
 
-	ref: "daggerio/ci-test:\(random.out)"
+	ref: "daggerio/ci-test:\(tag.out)"
 
 	// Create image
 	image: docker.#ImageFromDockerfile & {

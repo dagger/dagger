@@ -1,18 +1,21 @@
-package netlify
+package main
 
 import (
 	"dagger.io/dagger/op"
 	"dagger.io/alpine"
 	"dagger.io/netlify"
+	"dagger.io/random"
 )
 
 TestNetlify: {
-	random: #Random & {}
+	data: random.#String & {
+		seed: ""
+	}
 
 	// Generate a website containing the random number
 	html: #up: [
 		op.#WriteFile & {
-			content: random.out
+			content: data.out
 			dest:    "index.html"
 		},
 	]
@@ -40,7 +43,7 @@ TestNetlify: {
 				"pipefail",
 				"-c",
 				#"""
-        test "$(curl \#(deploy.deployUrl))" = "\#(random.out)"
+        test "$(curl \#(deploy.deployUrl))" = "\#(data.out)"
         """#,
 			]
 		},

@@ -1,8 +1,9 @@
-package testing
+package main
 
 import (
 	"dagger.io/dagger/op"
 	"dagger.io/alpine"
+	"dagger.io/random"
 )
 
 registry: {
@@ -11,15 +12,19 @@ registry: {
 }
 
 TestPushContainer: {
+	tag: random.#String & {
+		seed: "push-container"
+	}
+
 	// Push an image with a random tag
 	push: {
-		ref: "daggerio/ci-test:\(random)"
+		ref: "daggerio/ci-test:\(tag.out)"
 		#up: [
 			op.#DockerLogin & {
 				registry
 			},
 			op.#WriteFile & {
-				content: random
+				content: tag.out
 				dest:    "/rand"
 			},
 			op.#PushContainer & {
@@ -41,7 +46,7 @@ TestPushContainer: {
 		op.#Exec & {
 			args: [
 				"sh", "-c", #"""
-                test "$(cat /src/rand)" = "\#(random)"
+                test "$(cat /src/rand)" = "\#(tag.out)"
                 """#,
 			]
 			mount: "/src": from: pull
@@ -51,14 +56,18 @@ TestPushContainer: {
 
 // Ensures image metadata is preserved in a push
 TestPushContainerMetadata: {
+	tag: random.#String & {
+		seed: "container-metadata"
+	}
+
 	// `docker build` using an `ENV` and push the image
 	push: {
-		ref: "daggerio/ci-test:\(random)-dockerbuild"
+		ref: "daggerio/ci-test:\(tag.out)-dockerbuild"
 		#up: [
 			op.#DockerBuild & {
 				dockerfile: #"""
 					FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
-					ENV CHECK \#(random)
+					ENV CHECK \#(tag.out)
 					"""#
 			},
 			op.#PushContainer & {
@@ -76,7 +85,7 @@ TestPushContainerMetadata: {
 			args: [
 				"sh", "-c", #"""
                 env
-                test "$CHECK" = "\#(random)"
+                test "$CHECK" = "\#(tag.out)"
                 """#,
 			]
 		},
@@ -85,7 +94,7 @@ TestPushContainerMetadata: {
 	// Do a FetchContainer followed by a PushContainer, make sure
 	// the ENV is preserved
 	pullPush: {
-		ref: "daggerio/ci-test:\(random)-pullpush"
+		ref: "daggerio/ci-test:\(tag.out)-pullpush"
 
 		#up: [
 			op.#FetchContainer & {
@@ -104,7 +113,7 @@ TestPushContainerMetadata: {
 		op.#Exec & {
 			args: [
 				"sh", "-c", #"""
-                test "$CHECK" = "\#(random)"
+                test "$CHECK" = "\#(tag.out)"
                 """#,
 			]
 		},

@@ -1,9 +1,10 @@
-package kubernetes
+package main
 
 import (
 	"encoding/yaml"
 	"dagger.io/dagger"
 	"dagger.io/kubernetes"
+	"dagger.io/random"
 )
 
 // We assume that a kinD cluster is running locally
@@ -11,13 +12,15 @@ import (
 kubeconfig: dagger.#Secret @dagger(input)
 
 TestKubeApply: {
-	random: #Random & {}
+	suffix: random.#String & {
+		seed: ""
+	}
 
 	// Pod spec
 	kubeSrc: {
 		apiVersion: "v1"
 		kind:       "Pod"
-		metadata: name: "kube-test-\(random.out)"
+		metadata: name: "kube-test-\(suffix.out)"
 		spec: {
 			restartPolicy: "Never"
 			containers: [{
