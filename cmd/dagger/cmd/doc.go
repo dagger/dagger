@@ -327,12 +327,6 @@ func walkStdlib(ctx context.Context, output, format string) {
 			return err
 		}
 
-		f, err := os.Create(filepath)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
 		pkg := fmt.Sprintf("dagger.io/%s", p)
 		lg.Info().Str("package", pkg).Str("format", format).Msg("generating doc")
 		val, err := loadCode(pkg)
@@ -343,6 +337,12 @@ func walkStdlib(ctx context.Context, output, format string) {
 			}
 			return err
 		}
+
+		f, err := os.Create(filepath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
 
 		PrintDoc(ctx, f, pkg, val, format)
 		return nil
