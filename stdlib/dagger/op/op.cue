@@ -3,11 +3,9 @@ package op
 
 // One operation in a pipeline
 //
-// #Op does not current enforce the op spec at full resolution, to avoid
-// triggering performance issues. See
-// https://github.com/dagger/dagger/issues/445
-//
-// To enforce the full #Op spec (see op_fullop.cue), run with "-t fullop"
+// FIXME: #Op does not current enforce the op spec at full resolution, to avoid
+// FIXME: triggering performance issues. See https://github.com/dagger/dagger/issues/445
+// FIXME: To enforce the full #Op spec (see op_fullop.cue), run with "-t fullop"
 #Op: {
 	do: string
 	...

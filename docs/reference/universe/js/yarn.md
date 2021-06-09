@@ -5,7 +5,6 @@ sidebar_label: yarn
 # dagger.io/js/yarn
 
 Yarn is a package manager for Javascript applications
-https://yarnpkg.com
 
 ## #Package
 

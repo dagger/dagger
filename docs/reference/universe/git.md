@@ -26,11 +26,11 @@ A git repository
 
 ### #Repository Inputs
 
-| Name             | Type                 | Description                                                |
-| -------------    |:-------------:       |:-------------:                                             |
-|*remote*          | `string`             |Git remote. Example: "https://github.com/dagger/dagger"     |
-|*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"    |
-|*subdir*          | `*null \| string`    |(optional) Subdirectory                                     |
+| Name             | Type                 | Description                                                 |
+| -------------    |:-------------:       |:-------------:                                              |
+|*remote*          | `string`             |Git remote. Example: `"https://github.com/dagger/dagger"`    |
+|*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"     |
+|*subdir*          | `*null \| string`    |(optional) Subdirectory                                      |
 
 ### #Repository Outputs
 
