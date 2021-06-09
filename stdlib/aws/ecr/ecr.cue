@@ -28,5 +28,5 @@ import (
 				from: ctr
 				path: "/out"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 }
