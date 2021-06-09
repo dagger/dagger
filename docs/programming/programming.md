@@ -3,7 +3,7 @@ sidebar_position: 1
 slug: /programming
 ---
 
-# Dagger Programming Guide
+# Programming
 
 ## Writing your first Dagger plan
 
