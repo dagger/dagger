@@ -3,7 +3,7 @@ common_setup() {
     load 'node_modules/bats-assert/load'
 
     # Dagger Binary
-    DAGGER="${DAGGER_BINARY:-$(which dagger)}"
+    DAGGER="${DAGGER_BINARY:-$(command -v dagger)}"
     export DAGGER
 
     # Set the workspace to the universe directory (so tests can run from anywhere)
