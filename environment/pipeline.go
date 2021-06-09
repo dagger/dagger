@@ -456,11 +456,16 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		case "cache":
 			return llb.AddMount(
 				dest,
-				llb.Scratch(),
-				llb.AsPersistentCacheDir(
-					p.canonicalPath(mnt),
-					llb.CacheMountShared,
+				llb.Scratch().File(
+					llb.Mkdir("/cache", fs.FileMode(0755)),
+					llb.WithCustomName(p.vertexNamef("Mkdir /cache (cache mount %s)", dest)),
 				),
+				// FIXME: disabled persistent cache mount (gh issue #495)
+				// llb.Scratch(),
+				// llb.AsPersistentCacheDir(
+				// 	p.canonicalPath(mnt),
+				// 	llb.CacheMountShared,
+				// ),
 			), nil
 		case "tmpfs":
 			return llb.AddMount(
