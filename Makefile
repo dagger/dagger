@@ -28,6 +28,7 @@ cuelint: cuefmt
 .PHONY: shellcheck
 shellcheck:
 	shellcheck ./tests/*.bats ./tests/*.bash
+	shellcheck ./universe/*.bats ./universe/*.bash
 
 .PHONY: lint
 lint: shellcheck cuelint golint check-buildkit-version docslint
