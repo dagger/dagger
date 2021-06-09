@@ -30,7 +30,7 @@ shellcheck:
 	shellcheck ./tests/*.bats ./tests/*.bash
 
 .PHONY: lint
-lint: shellcheck cuelint golint check-buildkit-version
+lint: shellcheck cuelint golint check-buildkit-version universelint
 
 .PHONY: check-buildkit-version
 check-buildkit-version:
@@ -49,6 +49,14 @@ integration: dagger-debug
 .PHONY: install
 install: dagger
 	go install ./cmd/dagger
+
+.PHONY: universe
+universe: dagger
+	./cmd/dagger/dagger doc --output ./docs/reference/universe --format md
+
+.PHONY: universelint
+universelint: universe
+	@test -z "$$(git status -s . | grep -e "^ M"  | grep docs/reference/universe | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: docs
 docs:
