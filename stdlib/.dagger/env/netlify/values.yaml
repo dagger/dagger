@@ -1,0 +1,26 @@
+name: netlify
+inputs:
+    TestNetlify.deploy.account.name:
+        text: blocklayer
+    TestNetlify.deploy.account.token:
+        secret: ENC[AES256_GCM,data:oWKi8eqTUEs+YClokLKeAKsEj3qae4yQTn/67u6ga4Ptcq4+MyYS/6wAUg==,iv:Xfw+L/4p7vO+jb/EVyYOvsIZ9KxZbi30ms2Ckg4E8cE=,tag:G4EBBer04D6FHFP9e+feTw==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBwWHFLRUtscWVma0lQM3Qv
+            M2czUFJhSEpnczdJTWhadnJHOWowaXd1dWtJCmk3aU15NDJYcmtUOE5pZ0lIQzRu
+            dTYvRFdsM0ZoUjFWSG91UnZRVWdvZjgKLS0tIENhK2VWNHByY3hYNUVmWDRmOUFM
+            SEdUK2RsaUxuVWg2aXUwdVJ0eUtrWWMKWkQDBuL5e4QDx5Wy6+fHiD+J4fp7QdMm
+            lsqgmxRvJMWgEvm1U+hDAo/Pkn8PFUFJf0KxEvkdF4qGuguQePgzFQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-09T18:53:39Z"
+    mac: ENC[AES256_GCM,data:m2TA71YjNpiGlBH1nEKcbKDCOBS8x8ia2d+g43+f+LprnhAqav2GlgYaU5XU4n/M6SGtxE9NskfaOZ6z8tcBH01UvFatRX2jvpiVdcUuy/ULyb5ygK1D0g4Ok60nxD+Wp1JIbbIktevv6C4jGA0+TC6g8JjSinD5yXx9uzSDrKY=,iv:081twRYPy26JoGZL0TlknF7ktcG5eNzIPtvNK6Mzt2E=,tag:npnDVRON2N6LlWCsf1vAxA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
