@@ -34,7 +34,7 @@ _No output._
 
 ## os.#File
 
-Built-in file implementation, using buildkit
+Built-in file implementation, using buildkit A single file
 
 ### os.#File Inputs
 

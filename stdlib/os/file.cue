@@ -7,30 +7,36 @@ import (
 )
 
 // Built-in file implementation, using buildkit
+// A single file
 #File: {
-	from: dagger.#Artifact
+	from: dagger.#Artifact | *[op.#Mkdir & {dir: "/", path: "/"}]
 	path: string
 
-	read: {
-		// FIXME: support different data schemas for different formats
-		format: "string"
-		data: {
-			string
-			#up: [
-				op.#Load & {"from":   from},
-				op.#Export & {source: path, "format": format},
-			]
-		}
+	// Optionally write data to the file
+	write: *null | {
+		data: string
+		// FIXME: append
+		// FIXME: create + mode
 	}
 
-	write: *null | {
-		// FIXME: support encoding in different formats
-		data: string
+	// The contents of the file
+	// If a write operation is specified, it is applied first.
+	contents: {
+		string
+
 		#up: [
-			op.#Load & {"from": from},
-			op.#WriteFile & {
-				dest:     path
-				contents: data
+			op.#Load & {
+				"from": from
+			},
+			if write != null {
+				op.#WriteFile & {
+					dest:    path
+					content: write.data
+				}
+			},
+			op.#Export & {
+				source: path
+				format: "string"
 			},
 		]
 	}

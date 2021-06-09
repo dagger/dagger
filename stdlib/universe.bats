@@ -4,6 +4,11 @@ setup() {
     common_setup
 }
 
+
+@test "os" {
+    dagger -e os up
+}
+
 @test "go" {
     dagger -e go up
 }

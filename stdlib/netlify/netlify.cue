@@ -40,7 +40,7 @@ import (
 				from: ctr
 				path: "/netlify/url"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 
 	// Unique Deploy URL
 	deployUrl: {
@@ -48,7 +48,7 @@ import (
 				from: ctr
 				path: "/netlify/deployUrl"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 
 	// Logs URL for this deployment
 	logsUrl: {
@@ -56,7 +56,7 @@ import (
 				from: ctr
 				path: "/netlify/logsUrl"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 
 	ctr: os.#Container & {
 		image: alpine.#Image & {
