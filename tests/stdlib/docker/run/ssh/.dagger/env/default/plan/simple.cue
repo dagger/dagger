@@ -18,7 +18,7 @@ TestSSH: {
 	}
 
 	run: docker.#Run & {
-		name: "daggerci-test-simple-\(suffix.out)"
+		name: "daggerci-test-ssh-\(suffix.out)"
 		ref:  "hello-world"
 
 		ssh: {
