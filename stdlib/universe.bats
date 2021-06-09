@@ -1,10 +1,7 @@
-
 setup() {
-    load 'node_modules/bats-assert/load'
-}
+    load 'helpers'
 
-function dagger() {
-	"${DAGGER_BINARY:-$(which dagger)}" "$@"
+    common_setup
 }
 
 @test "netlify" {
@@ -12,34 +9,34 @@ function dagger() {
 }
 
 @test "aws: ecr" {
-	dagger -e aws-ecr up
+    dagger -e aws-ecr up
 }
 
 @test "aws: s3" {
-	dagger -e aws-s3 up
+    dagger -e aws-s3 up
 }
 
 @test "docker run: local" {
-	dagger -e docker-run-local up
+    dagger -e docker-run-local up
 }
 
 @test "docker run: ssh" {
-	dagger -e docker-run-ssh up
+    dagger -e docker-run-ssh up
 }
 
 @test "docker run: ssh with passphrase" {
-	dagger -e docker-run-ssh-passphrase up
+    dagger -e docker-run-ssh-passphrase up
 }
 
 @test "docker run: ssh with wrong passphrase" {
-	run dagger -e docker-run-ssh-wrong-passphrase up
-	assert_failure
+    run dagger -e docker-run-ssh-wrong-passphrase up
+    assert_failure
 }
 
 @test "google cloud: gcr" {
-	dagger -e google-gcr up
+    dagger -e google-gcr up
 }
 
 @test "google cloud: gke" {
-	dagger -e google-gke up
+    dagger -e google-gke up
 }
