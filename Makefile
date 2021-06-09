@@ -30,7 +30,7 @@ shellcheck:
 	shellcheck ./tests/*.bats ./tests/*.bash
 
 .PHONY: lint
-lint: shellcheck cuelint golint check-buildkit-version universelint
+lint: shellcheck cuelint golint check-buildkit-version docslint
 
 .PHONY: check-buildkit-version
 check-buildkit-version:
@@ -50,15 +50,15 @@ integration: dagger-debug
 install: dagger
 	go install ./cmd/dagger
 
-.PHONY: universe
-universe: dagger
+.PHONY: docs
+docs: dagger
 	./cmd/dagger/dagger doc --output ./docs/reference/universe --format md
 
-.PHONY: universelint
-universelint: universe
+.PHONY: docslint
+docslint: docs
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep docs/reference/universe | cut -d ' ' -f3 | tee /dev/stderr)"
 
-.PHONY: docs
-docs:
+.PHONY: web
+web:
 	yarn --cwd "./website" install
 	yarn --cwd "./website" start

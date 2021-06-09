@@ -38,7 +38,7 @@ jobs:
 
       - name: Lint
         run: |
-          make shellcheck cuelint check-buildkit-version universelint
+          make shellcheck cuelint check-buildkit-version docslint
 
       - name: Markdown Lint
         uses: nosborn/github-action-markdown-cli@v1.1.1
