@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"unicode/utf8"
@@ -107,7 +108,7 @@ func init() {
 }
 
 func mdEscape(s string) string {
-	escape := []string{"<", ">"}
+	escape := []string{"|", "<", ">"}
 	for _, c := range escape {
 		s = strings.ReplaceAll(s, c, `\`+c)
 	}
@@ -164,7 +165,7 @@ func printValuesMarkdown(iw io.Writer, libName string, values []*compiler.Value)
 	fmt.Fprintf(w, "| Name\t| Type\t| Description    \t|\n")
 	fmt.Fprintf(w, "| -------------\t|:-------------:\t|:-------------:\t|\n")
 	for _, i := range values {
-		fmt.Fprintf(w, "|*%s*\t|``%s``\t|%s\t|\n",
+		fmt.Fprintf(w, "|*%s*\t| `%s`\t|%s\t|\n",
 			formatLabel(libName, i),
 			mdEscape(common.FormatValue(i)),
 			mdEscape(common.ValueDocOneLine(i)))
@@ -202,7 +203,10 @@ func PrintDoc(ctx context.Context, w io.Writer, packageName string, val *compile
 		fmt.Fprintf(w, "Package %s\n", packageName)
 		fmt.Fprintf(w, "\n%s\n", common.ValueDocFull(val))
 	case markdownFormat:
-		fmt.Fprintf(w, "# Package %s\n", mdEscape(packageName))
+		fmt.Fprintf(w, "---\nsidebar_label: %s\n---\n\n",
+			filepath.Base(packageName),
+		)
+		fmt.Fprintf(w, "# %s\n", mdEscape(packageName))
 		comment := common.ValueDocFull(val)
 		if comment == "-" {
 			break
@@ -331,7 +335,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 
 		pkg := fmt.Sprintf("dagger.io/%s", p)
 		lg.Info().Str("package", pkg).Str("format", format).Msg("generating doc")
-		val, err := loadCode(fmt.Sprintf("dagger.io/%s", p))
+		val, err := loadCode(pkg)
 		if err != nil {
 			if strings.Contains(err.Error(), "no CUE files") {
 				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
@@ -340,7 +344,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 			return err
 		}
 
-		PrintDoc(ctx, f, p, val, format)
+		PrintDoc(ctx, f, pkg, val, format)
 		return nil
 	})
 
