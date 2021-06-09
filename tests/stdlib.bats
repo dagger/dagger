@@ -20,10 +20,6 @@ setup() {
     "$DAGGER" compute "$TESTDIR"/stdlib/file
 }
 
-@test "stdlib: netlify" {
-    "$DAGGER" up -w "$TESTDIR"/stdlib/netlify/
-}
-
 @test "stdlib: kubernetes" {
     skip_unless_local_kube
 
@@ -59,26 +55,6 @@ setup() {
     assert_success
 }
 
-@test "stdlib: aws: s3" {
-    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/s3
-}
-
-@test "stdlib: aws: eks" {
-    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/eks
-}
-
-@test "stdlib: aws: ecr" {
-    "$DAGGER" up -w "$TESTDIR"/stdlib/aws/ecr
-}
-
-@test "stdlib: gcp: gke" {
-    "$DAGGER" up -w "$TESTDIR"/stdlib/gcp/gke
-}
-
-@test "stdlib: gcp: gcr" {
-    "$DAGGER" up -w "$TESTDIR"/stdlib/gcp/gcr
-}
-
 @test "stdlib: docker: build" {
     "$DAGGER" compute "$TESTDIR"/stdlib/docker/build/ --input-dir source="$TESTDIR"/stdlib/docker/build
 }
@@ -93,25 +69,6 @@ setup() {
     # check that they succeed with the credentials
     run "$DAGGER" compute --input-yaml "$TESTDIR"/stdlib/docker/push-pull/inputs.yaml --input-dir source="$TESTDIR"/stdlib/docker/push-pull/testdata "$TESTDIR"/stdlib/docker/push-pull/
     assert_success
-}
-
-@test "stdlib: docker: run" {
-    # FIXME: local run disabled
-    # Local run
-    # run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/local/
-    # assert_success
-
-    # SSH key
-    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/ssh/
-    assert_success
-
-    # SSH passphrase
-    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/ssh-passphrase/
-    assert_success
-
-    # Wrong passphrase
-    run "$DAGGER" up -w "$TESTDIR"/stdlib/docker/run/ssh-wrong-passphrase/
-    assert_failure
 }
 
 @test "stdlib: terraform" {
