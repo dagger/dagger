@@ -122,8 +122,21 @@ func FormatValue(val *compiler.Value) string {
 	return strings.ReplaceAll(valStr, "\n", "\\n")
 }
 
-// ValueDocString returns the value doc from the comment lines
-func ValueDocString(val *compiler.Value) string {
+// ValueDocFull returns the full doc of the value
+func ValueDocFull(val *compiler.Value) string {
+	docs := []string{}
+	for _, c := range val.Doc() {
+		docs = append(docs, c.Text())
+	}
+	doc := strings.TrimSpace(strings.Join(docs, "\n"))
+	if len(doc) == 0 {
+		return "-"
+	}
+	return doc
+}
+
+// ValueDocOneLine returns the value doc as a single line
+func ValueDocOneLine(val *compiler.Value) string {
 	docs := []string{}
 	for _, c := range val.Doc() {
 		docs = append(docs, strings.TrimSpace(c.Text()))
