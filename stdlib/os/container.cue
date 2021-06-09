@@ -113,10 +113,10 @@ import (
 						"\(dest)": o
 						// FIXME: support source path
 					}
-					for dest in cache {
+					for dest, _ in cache {
 						"\(dest)": "cache"
 					}
-					for dest in tmpfs {
+					for dest, _ in tmpfs {
 						"\(dest)": "tmpfs"
 					}
 				}
