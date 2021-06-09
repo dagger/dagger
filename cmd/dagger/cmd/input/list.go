@@ -44,6 +44,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
+		defer c.Close()
 
 		_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			inputs, err := env.ScanInputs(ctx, false)

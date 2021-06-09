@@ -63,6 +63,10 @@ func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 	}, nil
 }
 
+func (c *Client) Close() error {
+	return c.c.Close()
+}
+
 type DoFunc func(context.Context, *environment.Environment, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value

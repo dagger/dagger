@@ -49,6 +49,7 @@ func ListOutputs(ctx context.Context, st *state.State, isTTY bool) {
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}
+	defer c.Close()
 
 	_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 		outputs, err := env.ScanOutputs(ctx)

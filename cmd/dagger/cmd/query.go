@@ -46,6 +46,7 @@ var queryCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
 		}
+		defer c.Close()
 
 		environment, err := c.Do(ctx, state, nil)
 		if err != nil {

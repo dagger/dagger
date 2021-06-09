@@ -84,13 +84,9 @@ func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *s
 }
 
 // Re-compute an environment (equivalent to `dagger up`).
-func EnvironmentUp(ctx context.Context, state *state.State, noCache bool) *environment.Environment {
+func EnvironmentUp(ctx context.Context, c *client.Client, state *state.State) *environment.Environment {
 	lg := log.Ctx(ctx)
 
-	c, err := client.New(ctx, "", noCache)
-	if err != nil {
-		lg.Fatal().Err(err).Msg("unable to create client")
-	}
 	result, err := c.Do(ctx, state, func(ctx context.Context, environment *environment.Environment, s solver.Solver) error {
 		log.Ctx(ctx).Debug().Msg("bringing environment up")
 		return environment.Up(ctx, s)
