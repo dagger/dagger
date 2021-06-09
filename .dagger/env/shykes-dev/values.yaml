@@ -1,0 +1,21 @@
+name: shykes-dev
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWb3cxU2VOMEZCN0U3UFE0
+            VXBKY0lNMnBIaVZpRWhEcU1vZUt2aW5USEZVCkoyajhMa2NSL002WkZCcHNvQlV3
+            RCtkeWE1TTUwM0VLb2k5aEMyY1IwWWMKLS0tIDY0Q2JoRGNwaHArVjROclhwTWNC
+            ZEx0UFV6VDMzbHVtOFEwUk9MU2JkcXMKIRzbVl/e4ubdJOtA/QaEAkAaEERbCpDd
+            9CPGeWJGMC3zYGL8JAAr82gwlDBzhPd959G+fNivzVWN982Ht95HaA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-09T13:35:59Z"
+    mac: ENC[AES256_GCM,data:YtJElDk7eJx0hzxRE38EMhh2m9LXBS72O8gAg8a7w4C72vshI97RgcfWF7SfG2L2kKYPzHBVxhLJye8bD4eX0WKT42a5zPVh50vHpqdx1Fgcm5qfj4ko9mZQMQfhOxDV/3qVMcc14VXg9Wv+TxOW6N/rCqN3k6mUbSg4eioPZa0=,iv:dt3BeDS7b7f/QayJquH+DExlK6t8aegoCSdQJMHUx+0=,tag:UCB3lB2iX8KcieP/WMmdGQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
