@@ -64,6 +64,7 @@ var editCmd = &cobra.Command{
 		if err := yaml.Unmarshal(data, &newState); err != nil {
 			lg.Fatal().Err(err).Msg("failed to decode file")
 		}
+		st.Name = newState.Name
 		st.Inputs = newState.Inputs
 		if err := workspace.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Msg("failed to save state")
