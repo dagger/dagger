@@ -4,10 +4,6 @@ setup() {
     common_setup
 }
 
-@test "stdlib: yarn" {
-    "$DAGGER" compute "$TESTDIR"/stdlib/js/yarn --input-dir TestData="$TESTDIR"/stdlib/js/yarn/testdata
-}
-
 @test "stdlib: go" {
     "$DAGGER" compute "$TESTDIR"/stdlib/go --input-dir TestData="$TESTDIR"/stdlib/go/testdata
 }

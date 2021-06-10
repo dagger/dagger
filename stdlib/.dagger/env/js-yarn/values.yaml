@@ -1,0 +1,25 @@
+name: js-yarn
+inputs:
+    TestData:
+        dir:
+            path: ./js/yarn/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPSmNvdnFQKzd3QUJZU0ZM
+            cEJHUEpvK3NieEF1SVlWWkxWRHJncFEvc1RjCklDWURWcE1sYm9ES2FtZVNpRGlJ
+            NkJmRHFOYkJ0UHhSbWhsOWZiTjAyeUkKLS0tIDJlWU9hS05SWnZESi9HN1BkZkRN
+            S2JsNXRkbWVERHM0WWk0bXBJSXJIK1kK9R3gMDcbeKRRlt0HHM+w2kcs+sGfASmE
+            0YhxbFF2qQPFwHHR7aPmM+L1ML8cXOrxOOyWmmWhXNgtURCJ9/SO3A==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-10T10:36:57Z"
+    mac: ENC[AES256_GCM,data:5fm+j9FWlB1fWEMsru5GUkhnYMuh+nvBx8ts4YsExpZpvnb6kD9o0OFqiX5ND5/Bk8Gzh/FrgHBcPI57HeSX4otoKbujk69UxiZJzy0AdtOkxABWVGSAk5KD4whi6A8nIl2GTfs87CUSQmaYpKUyasIhAj57FS17epBvmnK2AxM=,iv:Sc6CVkKwGuQR5yqNVBuFV+Bgqg9r1Mjbfqs6uJnR184=,tag:HK/D4kKb/0TZs1MwUEA3Kg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
