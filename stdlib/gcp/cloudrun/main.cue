@@ -13,9 +13,6 @@ import (
 	// service name
 	serviceName: string @dagger(input)
 
-	// region to which deploy the service
-	region: *"us-west2" | string @dagger(input)
-
 	// GCR image ref
 	image: string @dagger(input)
 
@@ -44,7 +41,7 @@ import (
 			env: {
 				SERVICE_NAME: serviceName
 				PLATFORM:     platform
-				REGION:       region
+				REGION:       config.region
 				IMAGE:        image
 			}
 		},
