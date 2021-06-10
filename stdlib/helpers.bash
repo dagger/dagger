@@ -3,8 +3,9 @@ common_setup() {
     load 'node_modules/bats-assert/load'
 
     # Dagger Binary
-    DAGGER="${DAGGER_BINARY:-$(command -v dagger)}"
-    export DAGGER
+    # FIXME: `command -v` must be wrapped in a sub-bash,
+    #   otherwise infinite recursion when DAGGER_BINARY is not set.
+    export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
 
     # Set the workspace to the universe directory (so tests can run from anywhere)
     UNIVERSE="$( cd "$( dirname "$BATS_TEST_FILENAME" )" >/dev/null 2>&1 && pwd )"
