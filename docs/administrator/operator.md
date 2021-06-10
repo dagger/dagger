@@ -1,7 +1,3 @@
----
-sidebar_position: 2
----
-
 # Dagger Operator Manual
 
 ## Custom buildkit setup
