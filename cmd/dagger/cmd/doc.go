@@ -317,19 +317,14 @@ func walkStdlib(ctx context.Context, output, format string) {
 	lg := log.Ctx(ctx)
 
 	lg.Info().Str("output", output).Msg("generating stdlib")
+
+	packages := map[string]*Package{}
 	err := fs.WalkDir(stdlib.FS, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if p == "." || !d.IsDir() {
 			return nil
-		}
-
-		filename := fmt.Sprintf("%s.%s", p, format)
-		filepath := path.Join(output, filename)
-
-		if err := os.MkdirAll(path.Dir(filepath), 0755); err != nil {
-			return err
 		}
 
 		pkgName := fmt.Sprintf("dagger.io/%s", p)
@@ -343,18 +338,43 @@ func walkStdlib(ctx context.Context, output, format string) {
 			return err
 		}
 
-		f, err := os.Create(filepath)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
 		pkg := Parse(ctx, pkgName, val)
-		fmt.Fprintf(f, "%s", pkg.Format(format))
+		packages[p] = pkg
 		return nil
 	})
 
 	if err != nil {
 		lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
+	}
+
+	hasSubPackages := func(name string) bool {
+		for p := range packages {
+			if strings.HasPrefix(p, name+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	for p, pkg := range packages {
+		filename := fmt.Sprintf("%s.%s", p, format)
+		// If this package has sub-packages (e.g. `aws`), create
+		// `aws/README.md` instead of `aws.md`.
+		if hasSubPackages(p) {
+			filename = fmt.Sprintf("%s/README.%s", p, format)
+		}
+		filepath := path.Join(output, filename)
+
+		if err := os.MkdirAll(path.Dir(filepath), 0755); err != nil {
+			lg.Fatal().Err(err).Msg("cannot create directory")
+		}
+
+		f, err := os.Create(filepath)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("cannot create file")
+		}
+		defer f.Close()
+
+		fmt.Fprintf(f, "%s", pkg.Format(format))
 	}
 }
