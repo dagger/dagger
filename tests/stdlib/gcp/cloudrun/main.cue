@@ -5,11 +5,12 @@ import (
 	"dagger.io/gcp/cloudrun"
 )
 
-TestConfig: gcpConfig: gcp.#Config
+TestConfig: gcpConfig: gcp.#Config & {
+	region: "us-west2"
+}
 
 TestCloudRun: deploy: cloudrun.#Deploy & {
-	config:      TestConfig.gcpConfig
 	serviceName: "cloudrun-test"
-	region:      "us-west2"
+	config:      TestConfig.gcpConfig
 	image:       "gcr.io/dagger-ci/cloudrun-test:latest"
 }
