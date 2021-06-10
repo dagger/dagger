@@ -3,239 +3,259 @@ sidebar_position: 1
 slug: /programming
 ---
 
-# Programming
+# Dagger 102: learn to program Dagger
 
-## Writing your first Dagger plan
+## Overview
 
-1\. Initialize a Dagger workspace anywhere in your git repository:
+In this guide you will create your first Dagger environment from scratch,
+and use it to deploy a React application to 2 locations in parallel:
+a dedicated [Amazon S3](https://wikipedia.org/wiki/Amazon_S3) bucket, and a
+[Netlify](https://en.wikipedia.org/wiki/Netlify) site.
 
-`dagger init`
+### Anatomy of a Dagger environment
 
-It will create a `.dagger` directory in your current directory with an empty `env` directory inside it:
+A Dagger environment contains all the code and data necessary to delivery a particular application in a particular way.
+For example the same application might be delivered to a production and staging environment, each with their own
+configuration.
 
-```bash
-.dagger/
-└── env
-```
+An environment is made of 3 parts:
 
-2\. Create a new environment, for example `staging`:
+* A *plan*, authored by the environment's *developer*, using the [Cue](https://cuelang.org) language. [Learn more about plans](FIXME)
 
-`dagger new staging`
+* *Inputs*, supplied by the environment's *user* via the `dagger input` command, and written to a special file. Inputs may be configuration values, artifacts, or encrypted secrets. [Learn more about inputs](FIXME)
 
-```bash
-.dagger/
-└── env
-    └── staging
-        ├── plan
-        └── values.yaml
+* *Outputs*, computed by the Dagger engine via the `dagger up` command, and recorded to a special directory. [Learn more about outputs](FIXME)
 
-```
+We will first develop our environment's *plan*, then configure its initial inputs, then finally run it to verify that it works.
 
-3\. Create a new file [Cue](#programming-in-cue) config file in `.dagger/env/staging/plan`, and open it with any text editor or IDE:
+## Developing your plan
 
-```bash
-.dagger/
-└── env
-    └── staging
-        ├── plan
-        │   └── staging.cue
-        └── values.yaml
-
-```
-
-4\. Describe each [relay](#relays) in your plan as a field in the Cue configuration:
-
-For example:
-
-```cue
-package main
-
-import (
-    "dagger.io/docker"
-    "dagger.io/git"
-)
-
-// Relay for fetching a git repository
-repo: git.#Repository & {
-    remote: "https://github.com/dagger/dagger"
-    ref: "main"
-}
-
-// Relay for building a docker image
-ctr: docker.#Build & {
-    source: repo
-}
-```
-
-For more inspiration, see these examples:
-
-- [Deploy a static page to S3](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-static-page-to-s3)
-- [Deploy a simple React application](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-simple-react-application)
-- [Deploy a complete JAMstack app](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-a-complete-jamstack-app)
-- [Provision a Kubernetes cluster on AWS](https://github.com/dagger/dagger/blob/main/examples/README.md#provision-a-kubernetes-cluster-on-aws)
-- [Add HTTP monitoring to your application](https://github.com/dagger/dagger/blob/main/examples/README.md#add-http-monitoring-to-your-application)
-- [Deploy an application to your Kubernetes cluster](https://github.com/dagger/dagger/blob/main/examples/README.md#deploy-an-application-to-your-kubernetes-cluster)
-
-5\. Extend your plan with relay definitions from [Dagger
-Universe](https://github.com/dagger/dagger/tree/main/stdlib), an encyclopedia of
-Cue packages curated by the Dagger community.
-
-6\. If you can't find the relay you need in the Universe, you can simply create your own.
-
-For example:
-
-```cue
-import (
-    "strings"
-)
-
-// Create a relay definition which generates a greeting message
-#Greeting: {
-    salutation: string | *"hello"
-    name: string | *"world"
-    message: "\(strings.ToTitle(salutation)), \(name)!"
-}
-```
-
-You may then create any number of relays from the same definition:
-
-```cue
-french: #Greeting & {
-    salutation: "bonjour"
-    name: "monde"
-}
-
-american: #Greeting & {
-    salutation: "hi"
-    name: "y'all"
-}
-```
-
-## Programming in Cue
-
-[Cue](https://cuelang.org) is a next-generation data language by Marcel van Lohuizen and the spiritual successor
-of GCL, the language used to configure all of Google's infrastructure.
-
-Cue extends JSON with powerful features:
-
-- Composition: layering, templating, references
-- Correctness: types, schemas
-- Developer experience: comments, packages, first-class tooling, builtin functions
-- And much more.
-
-To get started with Cue, we recommend the following resources:
-
-- [Cuetorials](https://cuetorials.com)
-- [Cue playground](https://cuelang.org/play)
-
-## Concepts
-
-### Overview
-
-1. A developer writes a _plan_ specifying how to deliver their application. Plans are written in the [Cue](https://cuelang.org) data language.
-2. Dagger executes plans in isolated _environments_. Each environment has its own configuration and state.
-
-### Plans
+### Anatomy of a plan
 
 A _plan_ specifies, in code, how to deliver a particular application in a particular way.
+It is your environment's source code.
 
-It lays out the application's supply chain as a graph of interconnected nodes:
+Unlike regular imperative programs which specify a sequence of instructions to execute,
+a Dagger plan is _declarative_: it lays out your application's supply chain as a graph
+of interconnected nodes.
 
-- Development tools: source control, CI, build systems, testing systems
-- Hosting infrastructure: compute, storage, networking, databases, CDN..
-- Software dependencies: operating systems, languages, libraries, frameworks, etc.
+Each node in the graph represents a component of the supply chain, for example:
 
-The graph models the flow of code and data through the supply chain:
+* Development tools: source control, CI, build systems, testing systems
+* Hosting infrastructure: compute, storage, networking, databases, CDN..
+* Software dependencies: operating systems, languages, libraries, frameworks, etc.
 
-- source code flows from a git repository to a build system;
-- system dependencies are combined in a docker image, then uploaded to a registry;
-- configuration files are generated then sent to a compute cluster or load balancer;
-- etc.
+Each link in the graph represents a flow of data between nodes. For example:
 
-Dagger plans are written in [Cue](https://cuelang.org), a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google.
+* source code flows from a git repository to a build system;
+* system dependencies are combined in a docker image, then uploaded to a registry;
+* configuration files are generated then sent to a compute cluster or load balancer;
+* etc.
 
-### Environments
+### Introduction to Cue development
 
-An _environment_ is a live implementation of a _plan_, with its own user inputs and state.
-The same plan can be executed in multiple environments, for example to differentiate production from staging.
+Dagger delivery plans are developed in [Cue](https://cuelang.org).
+Cue is a powerful declarative language by the creator of GQL, the language used to deploy all applications at Google. It is a superset of JSON, with additional features to make declarative, data-driven programming as pleasant and productive as regular imperative programming.
 
-An environment can be updated with `dagger up`. When updating an environment, Dagger determines which inputs have
-changed since the last update, and runs them through the corresponding pipelines to produce new outputs.
+If you are new to Cue development, don't worry: this tutorial will walk you through the basic
+steps to get started, and give you resources to learn more.
 
-For example, if an application has a new version of its frontend source code available, but no changes to
-the frontend, it will build, test and deploy the new frontend, without changing the backend.
+In technical terms, our plan is a [Cue Package](https://cuelang.org/docs/concepts/packages/#packages). In this tutorial we will develop a new Cue package from scratch for our plan; but you can use any Cue package as a plan.
 
-### Relays
+### Install Cue
 
-_Relays_ are the basic components of a _plan_. Each relay is a node in the graph defined by the plan,
-performing the task assigned to that node. For example one relay fetches source code; another runs a build;
-another uploads a container image; etc.
+Although not strictly necessary, for an optimal development experience we recommend
+installing a recent version of [Cue](https://github.com/cuelang/cue/releases/).
 
-Relays are standalone software components: they are defined in [Cue](https://cuelang.org/), but can
-execute code in any language using the [Dagger pipeline
-API](https://github.com/dagger/dagger/blob/main/stdlib/dagger/op/op.cue).
+### (optional) Prepare Cue learning resources
 
-A relay is made of 3 parts:
+If you are new to Cue, we recommend keeping the following resources in browser tabs:
 
-- Inputs: data received from the user, or upstream relays
-- A processing pipeline: code executed against each new input, using the
-  [pipeline
-  API](https://github.com/dagger/dagger/blob/main/stdlib/dagger/op/op.cue)
-- Outputs: data produced by the processing pipeline
+* The unofficial but excellent [Cuetorials](https://cuetorials.com/overview/foundations/) in a browser tab, to look up Cue concepts as they appear.
 
-Relays run in parallel, with their inputs and outputs interconnected into a special kind of graph,
-called a _DAG_. When a relay receives a new input, it runs it through the processing pipeline,
-and produces new outputs, which are propagated to downstream relays as inputs, and so on.
+* The official [Cue interactive sandbox](https://cuelang.org/play) for easy experimentation.
 
-### Using third-party relays
+### Setup example app
 
-Cue includes a complete package system. This makes it easy to create a complex plan in very few
-lines of codes, simply by importing relays from third-party packages.
+You will need a local copy of the [Dagger examples repository](https://github.com/dagger/examples).
 
-For example, to create a plan involving Github, Heroku and Amazon RDS, one might import the three
-corresponding packages:
+```bash
+git clone https://github.com/dagger/examples
+```
+
+Make sure that all commands are run from the `voteapp` directory:
+
+```bash
+cd examples/voteapp
+```
+
+### Initialize a Cue module
+
+Developing for Dagger takes place in a [https://cuelang.org/docs/concepts/packages/#modules](Cue module).
+If you are familiar with Go, Cue modules are directly inspired by Go modules.
+Otherwise, don't worry: a Cue module is simply a directory with one or more Cue packages in it. A Cue module has a `cue.mod` directory at its root.
+
+In this guide we will use the same directory as the root of the Dagger workspace and the root of the Cue module; but you can create your Cue module anywhere inside the Dagger workspace.
+
+```bash
+cue mod init
+```
+
+### Organize your package
+
+Now we start developing our Cue package at the root of our Cue module.
+
+In this guide we will split our package in multiple files, one per component.
+But you can organize your package any way you want: the Cue evaluator simply merges together
+all files from the same package, as long as they are in the same directory and start with the same
+`package` clause. It is common for a Cue package to have only one file.
+See the [Cue documentation](https://cuelang.org/docs/concepts/packages/#files-belonging-to-a-package) for more details.
+
+We will call our package `multibucket` because it sounds badass and vaguely explains what it does.
+But you can call your packages anything you want.
+
+Let's layout the structure of our package by creating all the files in advance:
+
+```bash
+pkg=multibucket; touch $pkg-source.cue $pkg-yarn.cue $pkg-netlify.cue
+```
+
+### Component 1: app source code
+
+The first component of our plan is the source code of our React application.
+
+In Dagger terms, this component has 2 important properties:
+
+1. It is an [artifact](FIXME): something that can be represented as a directory.
+2. It is an [input](FIXME): something that is provided by the end user.
+
+Let's write the corresponding Cue code to `multibucket-source.cue`:
 
 ```cue
+package multibucket
+
 import (
-    "dagger.io/github"
-    "dagger.io/heroku"
-    "dagger.io/amazon/rds"
+    "dagger.io/dagger"
 )
 
-repo: github.#Repository & {
-    // Github configuration values
-}
+// Source code of the sample application
+src: dagger.#Artifact @dagger(input)
+```
 
-backend: heroku.#App & {
-    // Heroku configuration values
-}
+This defines a component at the key `src`, of type `dagger.#Artifact`, annotated as an user input.
 
-db: rds.#Database & {
-    // RDS configuration values
+### Component 2: yarn package
+
+The second component of our plan is the Yarn package built from the source code.
+
+Let's write it to `multibucket-yarn.cue`:
+
+```cue
+package multibucket
+
+import (
+    "dagger.io/js/yarn"
+)
+
+// Build the source code using Yarn
+app: yarn.#Package & {
+    source: src
 }
 ```
 
-### Creating a new relay
+Let's break it down:
 
-Sometimes there is no third-party relay available for a particular task in your workflow; or it may exist but need to be customized.
+* `package multibucket`: this file is part of the multibucket package
+* `import ( "dagger.io/js/yarn" )`: import a package from the [Dagger Universe](https://github.com/dagger/dagger/tree/main/stdlib).
+* `app: yarn.#Package`: apply the `#Package` definition at the key `app`
+* `&`: also merge the following values at the same key...
+* `{ source: src }`: set the key `app.source` to the value of `src`. This connects our 2 components, forming the first link in our DAG.
 
-A relay is typically contained in a [cue definition](https://cuetorials.com/overview/foundations/#definitions), with the definition name describing its function.
-For example a relay for a git repository might be defined as `#Repository`.
+### Component 3: dedicated S3 bucket
 
-The processing pipeline is a crucial feature of Dagger. It uses the [LLB](https://github.com/moby/buildkit)
-executable format pioneered by the BuildKit project. It allows Dagger components to run
-sophisticated pipelines to ingest produce artifacts such as source code, binaries, database exports, etc.
-Best of all, LLB pipelines can securely build and run any docker container, effectively making Dagger
-scriptable in any language.
+*FIXME*: this section is not yet available, because the [Amazon S3 package](https://github.com/dagger/dagger/tree/main/stdlib/aws/s3) does [not yet support bucket creation](https://github.com/dagger/dagger/issues/623). We welcome external contributions :)
 
-### Docker compatibility
+### Component 4: deploy to Netlify
 
-Thanks to its native support of LLB, Dagger offers native compatibility with Docker.
+The third component of our plan is the Netlify site to which the app will be deployed.
 
-This makes it very easy to extend an existing Docker-based workflow, including:
+Let's write it to `multibucket-netlify.cue`:
 
-- Reusing Dockerfiles and docker-compose files without modification
-- Wrapping other deployment tools in a Dagger relay by running them inside a container
-- Robust multi-arch and multi-OS support, including Arm and Windows.
-- Integration with existing Docker engines and registries
-- Integration with Docker for Mac and Docker for Windows on developer machines
+```cue
+package multibucket
+
+import (
+    "dagger.io/netlify"
+)
+
+// Netlify site
+site: "netlify": netlify.#Site & {
+    contents: app.build
+}
+```
+
+This is very similar to the previous component:
+
+* We use the same package name as the other files
+* We import another package from the [Dagger Universe](https://github.com/dagger/dagger/tree/main/stdlib).
+* `site: "netlify": site.#Netlify`: apply the `#Site` definition at the key `site.netlify`. Note the use of quotes to protect the key from name conflict.
+* `&`: also merge the following values at the same key...
+* `{ contents: app.build }`: set the key `site.netlify.contents` to the value of `app.build`. This connects our components 2 and 3, forming the second link in our DAG.
+
+### Exploring a package documentation
+
+But wait: how did we know what fields were available in `yarn.#Package` and `netlify.#Site`?
+Answer: thanks to the `dagger doc` command, which prints the documentation of any package from [Dagger Universe](https://github.com/dagger/dagger/tree/main/stdlib).
+
+```bash
+dagger doc dagger.io/netlify
+dagger doc dagger.io/js/yarn
+```
+
+You can also browse the [API reference](/api/FIXME) section of the documentation.
+
+## Setup the environment
+
+### Create a new environment
+
+Now that your Cue package is ready, let's create an environment to run it,
+
+```bash
+dagger new 'multibucket'
+```
+
+### Load the plan into the environment
+
+Now let's configure the new environment to use our package as its plan:
+
+```bash
+cp multibucket-*.cue .dagger/env/multibucket/plan/
+```
+
+Note: you need to copy the files from your package into the environment's plan directory, as shown above. This means that, if you make more changes to your package, you will need to copy the new version into the plan directory, or it will not be used. If you prefer, you can also edit the cue files directly in the plan directory, but we don't recommend it. In the future, we will probably add the ability to reference your package to make the manual copy unnecessary.
+
+### Configure user inputs
+
+[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+
+### Deploy
+
+[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+
+### Using the environment
+
+[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+
+## Share your environment
+
+### Introduction to gitops
+
+[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+
+### Review changes
+
+[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+
+### Commit changes
+
+[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
