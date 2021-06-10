@@ -1,0 +1,21 @@
+name: alpine
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB0Ky9vQU16Vms0OUpOaVBk
+            K3J5R1RqREwvTEdYenVJaEl0VDB2aXJ0QTBrCnM2QnhUa0hXS0tGUjRvMnlveUZT
+            UitUU2lwUHBGUXVmbms1R2srdW1iSGMKLS0tIFExMzh6WlowVUNzRDR2Rkx0MXh0
+            N0JOK1FwdzkrcGR5V0xhUDdNOFNvYk0KetOvulxA0Hilyhv+eWBqYO3GXNvm38Y1
+            9Pa7HYazNyi0qMcZpecWlp4QsOoL876dj1rE62cYHT2hkt2J2ijAUw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-10T10:08:37Z"
+    mac: ENC[AES256_GCM,data:P5OXSf1S6FkPHYxRqeQ0U3AAk72HhbX76ox5QKRtyB4hkKDPq1qAbeGZxTt1qh/bc71KCXbraGCcoE6koiwYTsmgH5boZ9uDKwXDoY4lUekgo5W0PC7LU9H0BuL2CY0MM5p+5kT+BmWJh45fknUOv2t1ATiQCf8YqiAB/5LqMuU=,iv:W8QZrhOCjuFDkxjePjrzvQF2Cv4GZpaLgk5ZwxIrxik=,tag:CRwP6SHfebSGhgtUbXJEMA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

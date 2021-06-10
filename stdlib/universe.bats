@@ -4,6 +4,10 @@ setup() {
     common_setup
 }
 
+@test "alpine" {
+    dagger -e alpine up
+}
+
 @test "netlify" {
     dagger -e netlify up
 }
