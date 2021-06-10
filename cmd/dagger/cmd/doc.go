@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -32,25 +31,217 @@ const (
 	textPadding    = "    "
 )
 
-// types used for json generation
-
-type ValueJSON struct {
+type Value struct {
 	Name        string
 	Type        string
 	Description string
 }
 
-type FieldJSON struct {
+type Field struct {
 	Name        string
 	Description string
-	Inputs      []ValueJSON
-	Outputs     []ValueJSON
+	Inputs      []Value
+	Outputs     []Value
 }
 
-type PackageJSON struct {
+type Package struct {
 	Name        string
 	Description string
-	Fields      []FieldJSON
+	Fields      []Field
+}
+
+func Parse(ctx context.Context, packageName string, val *compiler.Value) *Package {
+	lg := log.Ctx(ctx)
+
+	parseValues := func(field string, values []*compiler.Value) []Value {
+		val := []Value{}
+
+		for _, i := range values {
+			v := Value{}
+			v.Name = strings.TrimPrefix(
+				i.Path().String(),
+				field+".",
+			)
+			v.Type = common.FormatValue(i)
+			v.Description = common.ValueDocOneLine(i)
+			val = append(val, v)
+		}
+
+		return val
+	}
+
+	fields, err := val.Fields(cue.Definitions(true))
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot get fields")
+	}
+
+	pkg := &Package{}
+	// Package Name + Description
+	pkg.Name = packageName
+	pkg.Description = common.ValueDocFull(val)
+
+	// Package Fields
+	for _, f := range fields {
+		field := Field{}
+
+		if !f.Selector.IsDefinition() {
+			// not a definition, skipping
+			continue
+		}
+
+		name := f.Label()
+		v := f.Value
+		if v.Cue().IncompleteKind() != cue.StructKind {
+			// not a struct, skipping
+			continue
+		}
+
+		// Field Name + Description
+		field.Name = name
+		field.Description = common.ValueDocOneLine(v)
+
+		// Inputs
+		inp := environment.ScanInputs(ctx, v)
+		field.Inputs = parseValues(field.Name, inp)
+
+		// Outputs
+		out := environment.ScanOutputs(ctx, v)
+		field.Outputs = parseValues(field.Name, out)
+
+		pkg.Fields = append(pkg.Fields, field)
+	}
+
+	return pkg
+}
+
+func (p *Package) Format(f string) string {
+	switch f {
+	case textFormat:
+		return p.Text()
+	case jsonFormat:
+		return p.JSON()
+	case markdownFormat:
+		return p.Markdown()
+	default:
+		panic(f)
+	}
+}
+
+func (p *Package) JSON() string {
+	data, err := json.MarshalIndent(p, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s\n", data)
+}
+
+func (p *Package) Text() string {
+	w := &strings.Builder{}
+	fmt.Fprintf(w, "Package %s\n", p.Name)
+	fmt.Fprintf(w, "\n%s\n", p.Description)
+
+	printValuesText := func(values []Value) {
+		tw := tabwriter.NewWriter(w, 0, 4, len(textPadding), ' ', 0)
+		for _, i := range values {
+			fmt.Fprintf(tw, "\t\t%s\t%s\t%s\n",
+				i.Name, i.Type, terminalTrim(i.Description))
+		}
+		tw.Flush()
+	}
+
+	// Package Fields
+	for _, field := range p.Fields {
+		fmt.Fprintf(w, "\n%s\n\n%s%s\n", field.Name, textPadding, field.Description)
+		if len(field.Inputs) == 0 {
+			fmt.Fprintf(w, "\n%sInputs: none\n", textPadding)
+		} else {
+			fmt.Fprintf(w, "\n%sInputs:\n", textPadding)
+			printValuesText(field.Inputs)
+		}
+
+		if len(field.Outputs) == 0 {
+			fmt.Fprintf(w, "\n%sOutputs: none\n", textPadding)
+		} else {
+			fmt.Fprintf(w, "\n%sOutputs:\n", textPadding)
+			printValuesText(field.Outputs)
+		}
+	}
+
+	return w.String()
+}
+
+func terminalTrim(msg string) string {
+	// If we're not running on a terminal, return the whole string
+	size, _, err := term.GetSize(1)
+	if err != nil {
+		return msg
+	}
+
+	// Otherwise, trim to fit half the terminal
+	size /= 2
+	for utf8.RuneCountInString(msg) > size {
+		msg = msg[0:len(msg)-4] + "…"
+	}
+	return msg
+}
+
+func (p *Package) Markdown() string {
+	w := &strings.Builder{}
+
+	fmt.Fprintf(w, "---\nsidebar_label: %s\n---\n\n",
+		filepath.Base(p.Name),
+	)
+
+	fmt.Fprintf(w, "# %s\n", mdEscape(p.Name))
+	if p.Description != "-" {
+		fmt.Fprintf(w, "\n%s\n", mdEscape(p.Description))
+	}
+
+	printValuesMarkdown := func(values []Value) {
+		tw := tabwriter.NewWriter(w, 0, 4, len(textPadding), ' ', 0)
+		fmt.Fprintf(tw, "| Name\t| Type\t| Description    \t|\n")
+		fmt.Fprintf(tw, "| -------------\t|:-------------:\t|:-------------:\t|\n")
+		for _, i := range values {
+			fmt.Fprintf(tw, "|*%s*\t| `%s`\t|%s\t|\n",
+				i.Name,
+				mdEscape(i.Type),
+				mdEscape(i.Description),
+			)
+		}
+		tw.Flush()
+	}
+
+	// Package Fields
+	for _, field := range p.Fields {
+		fmt.Fprintf(w, "\n## %s\n\n", field.Name)
+		if field.Description != "-" {
+			fmt.Fprintf(w, "%s\n\n", mdEscape(field.Description))
+		}
+
+		fmt.Fprintf(w, "### %s Inputs\n\n", mdEscape(field.Name))
+		if len(field.Inputs) == 0 {
+			fmt.Fprintf(w, "_No input._\n")
+		} else {
+			printValuesMarkdown(field.Inputs)
+		}
+
+		fmt.Fprintf(w, "\n### %s Outputs\n\n", mdEscape(field.Name))
+		if len(field.Outputs) == 0 {
+			fmt.Fprintf(w, "_No output._\n")
+		} else {
+			printValuesMarkdown(field.Outputs)
+		}
+	}
+
+	return w.String()
+}
+
+func mdEscape(s string) string {
+	escape := []string{"|", "<", ">"}
+	for _, c := range escape {
+		s = strings.ReplaceAll(s, c, `\`+c)
+	}
+	return s
 }
 
 var docCmd = &cobra.Command{
@@ -94,7 +285,8 @@ var docCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("cannot compile code")
 		}
-		PrintDoc(ctx, os.Stdout, packageName, val, format)
+		p := Parse(ctx, packageName, val)
+		fmt.Printf("%s", p.Format(format))
 	},
 }
 
@@ -105,34 +297,6 @@ func init() {
 	if err := viper.BindPFlags(docCmd.Flags()); err != nil {
 		panic(err)
 	}
-}
-
-func mdEscape(s string) string {
-	escape := []string{"|", "<", ">"}
-	for _, c := range escape {
-		s = strings.ReplaceAll(s, c, `\`+c)
-	}
-	return s
-}
-
-func terminalTrim(msg string) string {
-	// If we're not running on a terminal, return the whole string
-	size, _, err := term.GetSize(1)
-	if err != nil {
-		return msg
-	}
-
-	// Otherwise, trim to fit half the terminal
-	size /= 2
-	for utf8.RuneCountInString(msg) > size {
-		msg = msg[0:len(msg)-4] + "…"
-	}
-	return msg
-}
-
-func formatLabel(name string, val *compiler.Value) string {
-	label := val.Path().String()
-	return strings.TrimPrefix(label, name+".")
 }
 
 func loadCode(packageName string) (*compiler.Value, error) {
@@ -146,165 +310,6 @@ func loadCode(packageName string) (*compiler.Value, error) {
 	}
 
 	return src, nil
-}
-
-// printValuesText (text) formats an array of Values on stdout
-func printValuesText(iw io.Writer, libName string, values []*compiler.Value) {
-	w := tabwriter.NewWriter(iw, 0, 4, len(textPadding), ' ', 0)
-	for _, i := range values {
-		docStr := terminalTrim(common.ValueDocOneLine(i))
-		fmt.Fprintf(w, "\t\t%s\t%s\t%s\n",
-			formatLabel(libName, i), common.FormatValue(i), docStr)
-	}
-	w.Flush()
-}
-
-// printValuesMarkdown (markdown) formats an array of Values on stdout
-func printValuesMarkdown(iw io.Writer, libName string, values []*compiler.Value) {
-	w := tabwriter.NewWriter(iw, 0, 4, len(textPadding), ' ', 0)
-	fmt.Fprintf(w, "| Name\t| Type\t| Description    \t|\n")
-	fmt.Fprintf(w, "| -------------\t|:-------------:\t|:-------------:\t|\n")
-	for _, i := range values {
-		fmt.Fprintf(w, "|*%s*\t| `%s`\t|%s\t|\n",
-			formatLabel(libName, i),
-			mdEscape(common.FormatValue(i)),
-			mdEscape(common.ValueDocOneLine(i)))
-	}
-	w.Flush()
-}
-
-// printValuesJson fills a struct for json output
-func valuesToJSON(libName string, values []*compiler.Value) []ValueJSON {
-	val := []ValueJSON{}
-
-	for _, i := range values {
-		v := ValueJSON{}
-		v.Name = formatLabel(libName, i)
-		v.Type = common.FormatValue(i)
-		v.Description = common.ValueDocOneLine(i)
-		val = append(val, v)
-	}
-
-	return val
-}
-
-func PrintDoc(ctx context.Context, w io.Writer, packageName string, val *compiler.Value, format string) {
-	lg := log.Ctx(ctx)
-
-	fields, err := val.Fields(cue.Definitions(true))
-	if err != nil {
-		lg.Fatal().Err(err).Msg("cannot get fields")
-	}
-
-	packageJSON := &PackageJSON{}
-	// Package Name + Description
-	switch format {
-	case textFormat:
-		fmt.Fprintf(w, "Package %s\n", packageName)
-		fmt.Fprintf(w, "\n%s\n", common.ValueDocFull(val))
-	case markdownFormat:
-		fmt.Fprintf(w, "---\nsidebar_label: %s\n---\n\n",
-			filepath.Base(packageName),
-		)
-		fmt.Fprintf(w, "# %s\n", mdEscape(packageName))
-		comment := common.ValueDocFull(val)
-		if comment == "-" {
-			break
-		}
-		fmt.Fprintf(w, "\n%s\n", mdEscape(comment))
-	case jsonFormat:
-		packageJSON.Name = packageName
-		comment := common.ValueDocFull(val)
-		if comment != "-" {
-			packageJSON.Description = comment
-		}
-	}
-
-	// Package Fields
-	for _, field := range fields {
-		fieldJSON := FieldJSON{}
-
-		if !field.Selector.IsDefinition() {
-			// not a definition, skipping
-			continue
-		}
-
-		name := field.Label()
-		v := field.Value
-		if v.Cue().IncompleteKind() != cue.StructKind {
-			// not a struct, skipping
-			continue
-		}
-
-		// Field Name + Description
-		comment := common.ValueDocOneLine(v)
-		switch format {
-		case textFormat:
-			fmt.Fprintf(w, "\n%s\n\n%s%s\n", name, textPadding, comment)
-		case markdownFormat:
-			fmt.Fprintf(w, "\n## %s\n\n", name)
-			if comment != "-" {
-				fmt.Fprintf(w, "%s\n\n", mdEscape(comment))
-			}
-		case jsonFormat:
-			fieldJSON.Name = name
-			comment := common.ValueDocOneLine(val)
-			if comment != "-" {
-				fieldJSON.Description = comment
-			}
-		}
-
-		// Inputs
-		inp := environment.ScanInputs(ctx, v)
-		switch format {
-		case textFormat:
-			if len(inp) == 0 {
-				fmt.Fprintf(w, "\n%sInputs: none\n", textPadding)
-				break
-			}
-			fmt.Fprintf(w, "\n%sInputs:\n", textPadding)
-			printValuesText(w, name, inp)
-		case markdownFormat:
-			fmt.Fprintf(w, "### %s Inputs\n\n", mdEscape(name))
-			if len(inp) == 0 {
-				fmt.Fprintf(w, "_No input._\n")
-				break
-			}
-			printValuesMarkdown(w, name, inp)
-		case jsonFormat:
-			fieldJSON.Inputs = valuesToJSON(name, inp)
-		}
-
-		// Outputs
-		out := environment.ScanOutputs(ctx, v)
-		switch format {
-		case textFormat:
-			if len(out) == 0 {
-				fmt.Fprintf(w, "\n%sOutputs: none\n", textPadding)
-				break
-			}
-			fmt.Fprintf(w, "\n%sOutputs:\n", textPadding)
-			printValuesText(w, name, out)
-		case markdownFormat:
-			fmt.Fprintf(w, "\n### %s Outputs\n\n", mdEscape(name))
-			if len(out) == 0 {
-				fmt.Fprintf(w, "_No output._\n")
-				break
-			}
-			printValuesMarkdown(w, name, out)
-		case jsonFormat:
-			fieldJSON.Outputs = valuesToJSON(name, out)
-			packageJSON.Fields = append(packageJSON.Fields, fieldJSON)
-		}
-	}
-
-	if format == jsonFormat {
-		data, err := json.MarshalIndent(packageJSON, "", "    ")
-		if err != nil {
-			lg.Fatal().Err(err).Msg("json marshal")
-		}
-		fmt.Fprintf(w, "%s\n", data)
-	}
 }
 
 // walkStdlib generate whole docs from stdlib walk
@@ -327,9 +332,9 @@ func walkStdlib(ctx context.Context, output, format string) {
 			return err
 		}
 
-		pkg := fmt.Sprintf("dagger.io/%s", p)
-		lg.Info().Str("package", pkg).Str("format", format).Msg("generating doc")
-		val, err := loadCode(pkg)
+		pkgName := fmt.Sprintf("dagger.io/%s", p)
+		lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
+		val, err := loadCode(pkgName)
 		if err != nil {
 			if strings.Contains(err.Error(), "no CUE files") {
 				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
@@ -344,7 +349,8 @@ func walkStdlib(ctx context.Context, output, format string) {
 		}
 		defer f.Close()
 
-		PrintDoc(ctx, f, pkg, val, format)
+		pkg := Parse(ctx, pkgName, val)
+		fmt.Fprintf(f, "%s", pkg.Format(format))
 		return nil
 	})
 
