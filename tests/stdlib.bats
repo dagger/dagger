@@ -4,14 +4,20 @@ setup() {
     common_setup
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: go" {
     "$DAGGER" compute "$TESTDIR"/stdlib/go --input-dir TestData="$TESTDIR"/stdlib/go/testdata
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: file" {
     "$DAGGER" compute "$TESTDIR"/stdlib/file
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: kubernetes" {
     skip_unless_local_kube
 
@@ -25,10 +31,14 @@ setup() {
     assert_success
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: kustomize" {
     "$DAGGER" compute "$TESTDIR"/stdlib/kubernetes/kustomize --input-dir TestKustomize.kustom.source="$TESTDIR"/stdlib/kubernetes/kustomize/testdata
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: helm" {
     skip "helm is broken"
     skip_unless_local_kube
@@ -47,14 +57,20 @@ setup() {
     assert_success
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: docker: build" {
     "$DAGGER" compute "$TESTDIR"/stdlib/docker/build/ --input-dir source="$TESTDIR"/stdlib/docker/build
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: docker: dockerfile" {
     "$DAGGER" compute "$TESTDIR"/stdlib/docker/dockerfile/ --input-dir source="$TESTDIR"/stdlib/docker/dockerfile/testdata
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: docker: push-and-pull" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/docker/push-pull/inputs.yaml
 
@@ -63,6 +79,8 @@ setup() {
     assert_success
 }
 
+# FIXME: move to universe/universe.bats
+# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: terraform" {
     skip_unless_secrets_available "$TESTDIR"/stdlib/terraform/s3/inputs.yaml
 
