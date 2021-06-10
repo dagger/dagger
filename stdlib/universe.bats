@@ -4,6 +4,10 @@ setup() {
     common_setup
 }
 
+@test "js/yarn" {
+    dagger -e js-yarn up
+}
+
 @test "alpine" {
     dagger -e alpine up
 }
