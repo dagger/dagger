@@ -41,20 +41,26 @@ import (
 	// Mount content from other artifacts
 	mount: {
 		[string]: {
-				from: dagger.#Artifact
+			from: dagger.#Artifact
 		} | {
 			secret: dagger.#Secret
 		} @dagger(input)
 	}
 
 	// Mount persistent cache directories
-	cache: [string]: true @dagger(input)
+	cache: {
+		[string]: true @dagger(input)
+	}
 
 	// Mount temporary directories
-	tmpfs: [string]: true @dagger(input)
+	tmpfs: {
+		[string]: true @dagger(input)
+	}
 
 	// Additional packages to install
-	package: [string]: true | false | string @dagger(input)
+	package: {
+		[string]: true | false | string @dagger(input)
+	}
 
 	// Setup docker client and then execute the user command
 	#code: #"""

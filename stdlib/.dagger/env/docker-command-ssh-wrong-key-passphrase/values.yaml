@@ -1,0 +1,30 @@
+name: docker-command-ssh-wrong-key-passphrase
+inputs:
+    TestConfig.host:
+        text: 143.198.64.230
+    TestConfig.key:
+        secret: ENC[AES256_GCM,data:dbIEUHadOTOdPrmMAgyLGMdIY+FuyWZvv4mRyjr+BbLZavl7/fH6abiQFpPY0x3960iqPB+wEM6wG+VPDivHTj1QRVMGPIV8ZGrfeR/mfeDuaKXDttkWgRN8vyHOZ+oKnI22913tvK59gNbJX8fR0wPfqOCEWbzy+bRBh/bVH//CMwCoSU+v2rZwAqOnGyXCyeGbp+wo5xMufv+Dosgb4uhFk1CPQJfKfBJVMf1EJS0e9/P8GS5UUjevR9eeRnCJ7kdHu26b3lwAHhPWv72O/yuOIKItrgMkSuHz2H2BFdgt5xq/h/SfrONMwymg8+oEiuS3n1C8ZBv8I4RE5XF6GX/xWb9dZJLctbi6oBELtvKXhswnB0PWSK1OXMgrJ5yYFeBPpaBptRBxl0AJhOG92K6xM9O0cRxAT+vtz0zvJ7gIQDZtngcTTS+IMN6Kgmx4daW5x14FbRJRGKKqU+PHeUW2XpN70IwkWXZfLs445O9w8teayPUu3KePZJo8eLkVpWJIyVUnrk/5VIREV8EYZzRFUwTtwYSTefGycPfjz2L01xQR0fn55DxJpcLpCLqjGRhWHQE6Wn4j6aXyzbOXHMIYgw+Rx1egjszdKzgCWaA=,iv:CZyN1UCE0nI2/ch5O7kerfYBbCgoJX+dPvh5dRO3cxc=,tag:hwBmnOdC8Na0dwyUCU3QDw==,type:str]
+    TestConfig.keyPassphrase:
+        secret: ENC[AES256_GCM,data:LM8qBQ1uZHVA,iv:z4MOKWy9owo69oy8Z4Gmd7fT7uXMR/Sp2qgM38wjWM4=,tag:WwZt3WtlROY3+j2LG8M39w==,type:str]
+    TestConfig.user:
+        text: daggerci
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2U0w2S2luTlJNbGhnd3FY
+            dmp4K2t6ZWR1Q1dYNCsvRWhZRkl4UWFoVEhRCmZHUHNBVW5LZEl1ckpGQmJlZEVP
+            LzEweFZrbWZoMDhBbGQ3eXdrbGtoNzAKLS0tIEhoWXZidi9yejFjaTlCOGo4Q1Bl
+            R2tNU2JJWHFQTmhnUDd6eE13UUhQazgK+OQ50Q3+S5Fn2Y132ZeDrgUKWPcAk+et
+            q8ppfZiPOtH4p6MwboSuh/vaTAAsxks7ctnqnU1pY+EHfnp8bHYHgQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-10T15:09:45Z"
+    mac: ENC[AES256_GCM,data:axraLjtO6zs1Zo2UVcrxJqLHlQea1pBcGCwCxIp43vw+L07haNtuqf0lJ5SL9XfB/yGjYtykP+Ld1evbgnUT4nqxRuHkN2NgHshmrytdptnOKCuTqE4sYWRt5Nny2linXmsqAYS9HAw8htw0DOjFUDruIAITjVLb8/sSgvS7wb4=,iv:Ahqguwy+9gmIzUMxDLzf9JuNybst+cMabfDciL5ZeJ4=,tag:EggVqFtbqLjMyHhrmqY1Ug==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
