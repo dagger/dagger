@@ -139,46 +139,46 @@ function DocPage(props) {
   );
 
   // CUSTOM DOCPAGE
-  const [isUserAuthorized, setIsUserAuthorized] = useState()
-  const [isLoading, setIsLoading] = useState(true)
-  const [redirectState, setRedirectState] = useState()
-  const authQuery = qs.parse(location.search);
-  const [userAccessToken, setUserAccessToken] = useState((() => {
-    if (typeof window !== "undefined") return window.localStorage.getItem('user-github-key')
-  })())
+  if (typeof window !== "undefined" && window?.location?.hostname !== "localhost") {
+    const [isUserAuthorized, setIsUserAuthorized] = useState()
+    const [isLoading, setIsLoading] = useState(true)
+    const [redirectState, setRedirectState] = useState()
+    const authQuery = qs.parse(location.search);
+    const [userAccessToken, setUserAccessToken] = useState((() => {
+      if (typeof window !== "undefined") return window.localStorage.getItem('user-github-key')
+    })())
 
-  useEffect(async () => {
-    if (userAccessToken) {
-      const user = await getUser(userAccessToken)
-      setIsUserAuthorized(user)
-    } else {
-      if (!isEmpty(authQuery)) { //callback after successful auth with github)
-        const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
-        if (isUserCollaborator?.status === 200) {
-          setUserAccessToken(isUserCollaborator.access_token)
-          if (typeof window !== "undefined") window.localStorage.setItem('user-github-key', isUserCollaborator.access_token);
-        } else {
-          setIsUserAuthorized({ status: 401 })
+    useEffect(async () => {
+      if (userAccessToken) {
+        const user = await getUser(userAccessToken)
+        setIsUserAuthorized(user)
+      } else {
+        if (!isEmpty(authQuery)) { //callback after successful auth with github)
+          const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
+          if (isUserCollaborator?.status === 200) {
+            setUserAccessToken(isUserCollaborator.access_token)
+            if (typeof window !== "undefined") window.localStorage.setItem('user-github-key', isUserCollaborator.access_token);
+          } else {
+            setIsUserAuthorized({ status: 401 })
+          }
         }
       }
+      setIsLoading(false)
+    }, [userAccessToken])
+
+
+    if (isLoading) return <Spinner />
+
+    if ((isUserAuthorized?.status && isUserAuthorized?.status === 401)) {
+      return <DocPageRedirect />
     }
-    setIsLoading(false)
-  }, [userAccessToken])
 
-
-  if (isLoading) return <Spinner />
-
-  if ((isUserAuthorized?.status && isUserAuthorized?.status === 401)) {
-    return <DocPageRedirect />
+    if (!isUserAuthorized) {
+      return (
+        <DocPageAuthentication />
+      )
+    }
   }
-
-  if (!isUserAuthorized) {
-    return (
-      <DocPageAuthentication />
-    )
-  }
-
-
   // END CUSTOM DOCPAGE
 
   if (!currentDocRoute) {
