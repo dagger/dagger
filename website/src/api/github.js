@@ -10,8 +10,8 @@ async function getAccessToken(code) {
         const getAccessToken = await AxiosInstance.get('https://github.com/login/oauth/access_token', {
             params: {
                 code,
-                client_id: process.env.REACT_APP_CLIENT_ID,
-                client_secret: process.env.REACT_APP_CLIENT_SECRET,
+                client_id: 'cd8f9be2562bfc8d6cfc',
+                client_secret: '2509358055095d52dfd7331d072f378e7f16940f',
             },
             validateStatus: function (status) {
                 return status < 500; // Resolve only if the status code is less than 500
