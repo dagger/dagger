@@ -102,6 +102,6 @@ The plan defines one or several `outputs`. They can show useful information at t
 dagger output list
 ```
 
-## What's next?
+## What's next
 
 At this point, you have deployed your first application using dagger and learned some dagger commands. You are now ready to [learn more about how to program dagger](/programming).
