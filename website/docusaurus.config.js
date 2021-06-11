@@ -12,8 +12,6 @@ module.exports = {
   organizationName: "Dagger",
   projectName: "Dagger",
   stylesheets: [
-    "https://fonts.gstatic.com",
-    "https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap",
     "https://fonts.googleapis.com/css2?family=Karla&family=Poppins:wght@700&display=swap",
   ],
   themeConfig: {
@@ -58,5 +56,8 @@ module.exports = {
       },
     ],
   ],
-  plugins: ["docusaurus-plugin-sass"],
+  plugins: [
+    "docusaurus-plugin-sass",
+    "docusaurus2-dotenv"
+  ],
 };
