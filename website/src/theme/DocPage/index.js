@@ -24,7 +24,8 @@ import isEmpty from 'lodash/isEmpty';
 import { checkUserCollaboratorStatus, getUser } from '../../api/github'
 import { GithubLoginButton } from 'react-social-login-buttons';
 import Spinner from '../../components/Spinner';
-import DocAuthentication from '../../components/DocAuthentication';
+import DocPageAuthentication from '../../components/DocPageAuthentication';
+import DocPageRedirect from '../../components/DocPageRedirect';
 
 function DocPageContent({ currentDocRoute, versionMetadata, children }) {
   const { siteConfig, isClient } = useDocusaurusContext();
@@ -168,12 +169,12 @@ function DocPage(props) {
   if (isLoading) return <Spinner />
 
   if ((isUserAuthorized?.status && isUserAuthorized?.status === 401)) {
-    return <p>Redirection vers dagger.io...</p>
+    return <DocPageRedirect />
   }
 
   if (!isUserAuthorized) {
     return (
-      <DocAuthentication />
+      <DocPageAuthentication />
     )
   }
 

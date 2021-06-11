@@ -1,6 +1,6 @@
 import React from "react";
 import { GithubLoginButton } from 'react-social-login-buttons';
-import style from './DocAuthentication.module.css'
+import style from './DocPageAuthentication.module.css'
 
 export default function DocAuthentication() {
     return (
