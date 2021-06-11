@@ -29,29 +29,20 @@ setup() {
 }
 
 @test "docker command: ssh" {
-  dagger -e docker-command-ssh up
+    dagger -e docker-command-ssh up
 }
 
 @test "docker command: ssh with key passphrase" {
-  dagger -e docker-command-ssh-key-passphrase up
+    dagger -e docker-command-ssh-key-passphrase up
 }
 
 @test "docker command: ssh with wrong key passphrase" {
-  run dagger -e docker-command-ssh-wrong-key-passphrase up
-  assert_failure
+    run dagger -e docker-command-ssh-wrong-key-passphrase up
+    assert_failure
 }
 
 @test "docker run: ssh" {
     dagger -e docker-run-ssh up
-}
-
-@test "docker run: ssh with passphrase" {
-    dagger -e docker-run-ssh-passphrase up
-}
-
-@test "docker run: ssh with wrong passphrase" {
-    run dagger -e docker-run-ssh-wrong-passphrase up
-    assert_failure
 }
 
 @test "google cloud: gcr" {

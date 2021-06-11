@@ -14,7 +14,7 @@ TestConfig: {
 
 TestSSH: client: docker.#Command & {
 	command: #"""
-			docker $CMD
+			docker version
 		"""#
 	ssh: {
 		host:          TestConfig.host
@@ -22,5 +22,4 @@ TestSSH: client: docker.#Command & {
 		key:           TestConfig.key
 		keyPassphrase: TestConfig.keyPassphrase
 	}
-	env: CMD: "version"
 }
