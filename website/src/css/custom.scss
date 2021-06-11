@@ -173,7 +173,7 @@ html[data-theme="dark"] .table-of-contents__link {
 // tabs
 
 /* codeBlock */
-div[class^="codeBlock"] {
+div[class^="codeBlockContainer"] {
   border-radius: var(--ifm-code-border-radius);
   background-color: var(--ifm-color-primary-dark) !important;
   margin-bottom: 2.5rem;
@@ -226,17 +226,25 @@ button[class^="copyButton"] {
 .menu__link {
   border-radius: 0;
 
-  &:focus {
-    background-color: var(--ifm-color-primary-dark);
-    color: var(--ifm-color-primary-light);
-  }
+  &:focus,
   &:active {
-    background-color: var(--ifm-color-primary);
+    background-color: var(--ifm-color-primary-dark);
     color: var(--ifm-color-primary-light);
   }
 
   &--active.menu__link--sublist {
     color: var(--ifm-color-primary-dark);
+    &:active,
+    &:focus {
+      background-color: var(--ifm-color-primary-light);
+    }
+    html[data-theme="dark"] & {
+      color: var(--ifm-color-primary-light);
+    }
+    html[data-theme="dark"] &:active,
+    html[data-theme="dark"] &:focus {
+      color: var(--ifm-color-primary-dark);
+    }
   }
 
   html[data-theme="dark"] & {
