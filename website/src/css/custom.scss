@@ -33,8 +33,8 @@
   --ifm-code-font-size: 100%;
   --ifm-code-border-radius: 2rem;
   --ifm-code-color: var(--ifm-color-primary-light);
-  --ifm-code-padding-vertical: 0.125rem;
-  --ifm-code-padding-horizontal: 0.3rem;
+  --ifm-code-padding-vertical: 0.1rem;
+  --ifm-code-padding-horizontal: 0.2rem;
   --ifm-h2-font-size: 2rem;
   --ifm-menu-color-background-active: var(--ifm-color-primary);
   --ifm-menu-color-active: var(--ifm-color-primary-light);
@@ -46,6 +46,7 @@
   --ifm-link-hover-color: var(--ifm-color-primary);
   --ifm-pre-padding: 2rem;
   --ifm-pagination-nav-border-radius: 0;
+  --doc-sidebar-width: 250px;
 }
 
 html[data-theme="dark"] {
@@ -111,25 +112,28 @@ a[class*="menuLinkExternal"]:after {
 }
 
 .navbar {
-  max-width: 1620px;
+  max-width: 1366px;
   align-self: center;
   box-shadow: none;
 }
 
 // sidebar
-
-div[class^="docSidebarContainer"] {
-  width: 250px;
-  margin-right: 3rem;
-
-  div[class^="sidebar"] {
+@media (min-width: 997px) {
+  div[class^="docSidebarContainer"] {
     width: 250px;
+    margin-right: 3rem;
+
+    div[class^="sidebar"] {
+      width: 250px;
+    }
   }
 }
 
 /* main */
 .main-wrapper {
+  max-width: 1366px;
   align-self: center;
+  width: 100%;
 }
 
 main[class^="docMainContainer"] {
@@ -231,6 +235,10 @@ button[class^="copyButton"] {
     color: var(--ifm-color-primary-light);
   }
 
+  &--active.menu__link--sublist {
+    color: var(--ifm-color-primary-dark);
+  }
+
   html[data-theme="dark"] & {
     color: var(--ifm-color-primary-light);
   }
@@ -273,6 +281,10 @@ button[class^="copyButton"] {
 /* pagination */
 .pagination-nav__label svg {
   vertical-align: middle;
+
+  html[data-theme="dark"] & path {
+    fill: var(--ifm-color-primary-light);
+  }
 }
 
 /* admonition */
