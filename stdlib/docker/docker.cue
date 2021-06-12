@@ -29,7 +29,7 @@ import (
 	]
 }
 
-// Push a docker image to remote registry
+// Push a docker image to a remote registry
 #Push: {
 	// Remote name (example: "index.docker.io/alpine:latest")
 	name: string @dagger(input)
@@ -40,13 +40,13 @@ import (
 	// Image registry
 	registry: {
 		// Remote registry
-		target:   string | *"https://index.docker.io/v1/" @dagger(input)
+		target: string | *"https://index.docker.io/v1/" @dagger(input)
 
 		// Username
-		username: string                                  @dagger(input)
+		username: string @dagger(input)
 
 		// Password or secret
-		secret:   string | bytes                          @dagger(input)
+		secret: string | bytes @dagger(input)
 	}
 
 	push: #up: [
@@ -64,38 +64,36 @@ import (
 		op.#Subdir & {dir:        "/dagger"},
 	]
 
-	out: {
-		// Image ref
-		ref: string @dagger(output)
+	// Image ref
+	ref: string @dagger(output)
 
-		// Image digest
-		digest: string @dagger(output)
+	// Image digest
+	digest: string @dagger(output)
 
-		#up: [
-			op.#Load & {from: alpine.#Image & {
-				package: {
-					bash: true
-					jq:   true
-				}
-			}},
+	#up: [
+		op.#Load & {from: alpine.#Image & {
+			package: {
+				bash: true
+				jq:   true
+			}
+		}},
 
-			op.#Exec & {
-				always: true
-				args: ["/bin/bash", "-c", #"""
-						jq --arg key0 'ref' --arg value0 $(cat /dagger/image_ref) 			\
-							 --arg key1 'digest' --arg value1 $(cat /dagger/image_digest) \
-							 '. | .[$key0]=$value0 | .[$key1]=$value1 '<<< '{}' > /out
-					"""#,
-				]
-				mount: "/dagger": from: push
-			},
+		op.#Exec & {
+			always: true
+			args: ["/bin/bash", "-c", #"""
+					jq --arg key0 'ref' --arg value0 $(cat /dagger/image_ref) 			\
+						 --arg key1 'digest' --arg value1 $(cat /dagger/image_digest) \
+						 '. | .[$key0]=$value0 | .[$key1]=$value1 '<<< '{}' > /out
+				"""#,
+			]
+			mount: "/dagger": from: push
+		},
 
-			op.#Export & {
-				source: "/out"
-				format: "json"
-			},
-		]
-	}
+		op.#Export & {
+			source: "/out"
+			format: "json"
+		},
+	]
 }
 
 #Run: {

@@ -70,7 +70,7 @@ _No output._
 
 ## docker.#Push
 
-Push a docker image to remote registry
+Push a docker image to a remote registry
 
 ### docker.#Push Inputs
 
@@ -86,8 +86,8 @@ Push a docker image to remote registry
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
-|*out.ref*         | `string`          |Image ref           |
-|*out.digest*      | `string`          |Image digest        |
+|*ref*             | `string`          |Image ref           |
+|*digest*          | `string`          |Image digest        |
 
 ## docker.#Run
 

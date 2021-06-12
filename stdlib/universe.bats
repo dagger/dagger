@@ -67,7 +67,7 @@ setup() {
   dagger -e docker-push up
 
   # Get image reference
-  dagger -e docker-pull input text ref "$(dagger -e docker-push query -c TestPush.push.out.ref | tr -d '\n' | tr -d '\"')"
+  dagger -e docker-pull input text ref "$(dagger -e docker-push query -c TestPush.push.ref | tr -d '\n' | tr -d '\"')"
 
   # Pull image
   dagger -e docker-pull up
@@ -75,7 +75,7 @@ setup() {
 
 @test "docker push and pull: invalid credential" {
   # Push image (SHOULD FAIL)
-  run docker -e docker-push-invalid-creds up
+  run dagger -e docker-push-invalid-creds up
   assert_failure
 }
 
