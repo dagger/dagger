@@ -3,6 +3,7 @@ package docker
 
 import (
 	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger/op"
 )
 
@@ -28,18 +29,73 @@ import (
 	]
 }
 
-// Push a docker image
+// Push a docker image to remote registry
 #Push: {
-	// Remote ref (example: "index.docker.io/alpine:latest")
-	ref: string @dagger(input)
+	// Remote name (example: "index.docker.io/alpine:latest")
+	name: string @dagger(input)
 
-	// Image
+	// Image source
 	source: dagger.#Artifact @dagger(input)
 
-	#up: [
-		op.#Load & {from:           source},
-		op.#PushContainer & {"ref": ref},
+	// Image registry
+	registry: {
+		// Remote registry
+		target:   string | *"https://index.docker.io/v1/" @dagger(input)
+
+		// Username
+		username: string                                  @dagger(input)
+
+		// Password or secret
+		secret:   string | bytes                          @dagger(input)
+	}
+
+	push: #up: [
+		op.#Load & {from: source},
+
+		if registry != _|_ {
+			op.#DockerLogin & {
+				target:   registry.target
+				username: registry.username
+				secret:   registry.secret
+			}
+		},
+
+		op.#PushContainer & {ref: name},
+		op.#Subdir & {dir:        "/dagger"},
 	]
+
+	out: {
+		// Image ref
+		ref: string @dagger(output)
+
+		// Image digest
+		digest: string @dagger(output)
+
+		#up: [
+			op.#Load & {from: alpine.#Image & {
+				package: {
+					bash: true
+					jq:   true
+				}
+			}},
+
+			op.#Exec & {
+				always: true
+				args: ["/bin/bash", "-c", #"""
+						jq --arg key0 'ref' --arg value0 $(cat /dagger/image_ref) 			\
+							 --arg key1 'digest' --arg value1 $(cat /dagger/image_digest) \
+							 '. | .[$key0]=$value0 | .[$key1]=$value1 '<<< '{}' > /out
+					"""#,
+				]
+				mount: "/dagger": from: push
+			},
+
+			op.#Export & {
+				source: "/out"
+				format: "json"
+			},
+		]
+	}
 }
 
 #Run: {

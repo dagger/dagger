@@ -1,0 +1,26 @@
+name: docker-push-invalid-creds
+inputs:
+    TestRegistry.secret:
+        text: ENC[AES256_GCM,data:QOkT,iv:MUV92Llmt8pskd1AUjnvpQ+B3Ws1wLKIuzy7SVhHRME=,tag:StNvPnmz89GcLb1Cro3O9g==,type:str]
+    TestRegistry.username:
+        text: john
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3MC9DZGU1Tm5Ta2ttNUph
+            ZGxZaGxLMklRRWVaVmtzdEdqbnlkYmIvK2hNClVKd2RCak1GYXlvZWQxaHlzQUNw
+            Y2czeEdXZnQxT2dVQ01GY0NTcGNkMnMKLS0tIGwwa0xXVEZQUVUzdUpOQUJFTUxy
+            ZzZNNk1xb0F4cWVQRjh4aUJSUzExd2cKl0Ka0Qcc2KNOQjl3Bhnb1sGuJCZ6iDs4
+            Hz2EldaxWJHZxuS18uNC38NxufG02ULJqJb2QC4cOzPrTeeKVE6Qlg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-12T15:03:49Z"
+    mac: ENC[AES256_GCM,data:o2fTjTnDgSX4f2jSjs1LSKJ7eTrTmFV44gyZdYCdYnb6eyXpFuT4Bru8ERuJlTvUSc3wx4js14BlxS3T0tX0aBV39ScBlzQOC4Ulyvh4KOKEH9uUl7YmGrFlNH4yQ7DYoezxCqwxlLZGavDaSXUszvKWlcdMsTm3L/4LkfHQzWk=,iv:E1gyYQ0+02bIQguvN0w+wp8RS6uyT17tXp18e5riXmg=,tag:Azjz4ZivYmjC/7eMc6SfSQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
