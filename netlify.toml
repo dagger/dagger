@@ -16,3 +16,18 @@
   # Do not build the site if there's no site-related changes since the last
   # deploy.
   ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF . ../docs/ ../netlify.toml"
+
+[[redirects]]
+from = "/github-proxy/*"
+to = "https://github.com/:splat"
+status = 200
+
+[[redirects]]
+from = "/github-api-proxy/*"
+to = "https://api.github.com/:splat"
+status = 200
+
+[[redirects]]
+from = "/docs-access/*"
+to = "https://j20f3pfq11.execute-api.us-east-1.amazonaws.com/Prod/u/:splat"
+status = 200
