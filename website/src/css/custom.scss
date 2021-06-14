@@ -175,7 +175,6 @@ html[data-theme="dark"] .table-of-contents__link {
 /* codeBlock */
 div[class^="codeBlockContainer"] {
   border-radius: var(--ifm-code-border-radius);
-  background-color: var(--ifm-color-primary-dark) !important;
   margin-bottom: 2.5rem;
 
   div[class^="codeBlockTitle"] {
@@ -185,6 +184,7 @@ div[class^="codeBlockContainer"] {
 }
 
 div[class^="codeBlockLines"] {
+  background-color: var(--ifm-color-primary-dark) !important;
   margin-bottom: 0;
   .token-line {
     color: var(--ifm-color-primary-light) !important;
@@ -232,21 +232,6 @@ button[class^="copyButton"] {
     color: var(--ifm-color-primary-light);
   }
 
-  &--active.menu__link--sublist {
-    color: var(--ifm-color-primary-dark);
-    &:active,
-    &:focus {
-      background-color: var(--ifm-color-primary-light);
-    }
-    html[data-theme="dark"] & {
-      color: var(--ifm-color-primary-light);
-    }
-    html[data-theme="dark"] &:active,
-    html[data-theme="dark"] &:focus {
-      color: var(--ifm-color-primary-dark);
-    }
-  }
-
   html[data-theme="dark"] & {
     color: var(--ifm-color-primary-light);
   }
@@ -270,6 +255,27 @@ button[class^="copyButton"] {
   html[data-theme="dark"] &:active {
     background-color: var(--ifm-color-primary-light);
     color: var(--ifm-color-primary-dark);
+  }
+
+  &.menu__link--sublist {
+    color: var(--ifm-color-primary-dark);
+    &:active,
+    &:focus {
+      background-color: var(--ifm-color-primary-light);
+    }
+    html[data-theme="dark"] & {
+      color: var(--ifm-color-primary-light);
+    }
+    html[data-theme="dark"] &:active,
+    html[data-theme="dark"] &:focus,
+    html[data-theme="dark"] &:hover {
+      color: var(--ifm-color-primary-dark);
+    }
+    html[data-theme="dark"] &:active:after,
+    html[data-theme="dark"] &:focus:after,
+    html[data-theme="dark"] &:hover:after {
+      filter: none;
+    }
   }
 }
 
