@@ -6,7 +6,7 @@ export default function DocAuthentication() {
     return (
         <div className={style.container}>
             <h1 className={style.h1}>Welcome on Dagger documentation</h1>
-            <p>Please Sign in to Github in order to get access to the doc</p>
+            <p>Please Sign In to Github to get access to the doc</p>
             <GithubLoginButton className={style.btn__github} onClick={() => window.location.href = `//github.com/login/oauth/authorize?client_id=cd8f9be2562bfc8d6cfc&scope=user&allow_signup=false`} />
         </div>
     )
