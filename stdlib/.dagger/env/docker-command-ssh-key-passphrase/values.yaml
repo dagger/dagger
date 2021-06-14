@@ -1,0 +1,30 @@
+name: docker-command-ssh-key-passphrase
+inputs:
+    TestConfig.host:
+        text: 143.198.64.230
+    TestConfig.key:
+        secret: ENC[AES256_GCM,data:pXfs6sc+ObCWZC5wHTcOX3PJYh1KLIPeq+CggNIg2LZhUDQdFgUbzn/8Jo6mX2XMhcB3fkg4hzZ1WihnThL+2x6P23gnta6YYqBVhvnC1enmh28XfqGEmDnYjD7eM6ZK41a1Q6VxQ/SfJPL/01KmE0mlB+CAGxJ4BL314p2g05l3Sxnf4cfPU3s4MC+ZJNgumj5LcogMSh6pqP1EJBDgXcL7Eh7lVq5ua38oXXXJc5aq0O9HlN65ZRuwVjmkCLbP34Z2+91XDaKBUBkmzRjuaI20MZfJn+d0gx3cAiYoDxdhjsAa83T2q50CXw9j/HEiSSPRRfNxTcJajLvTnUWJ1Hm2j3D1ptmRikjntwqeDK8BObunvQOebxx3Iqc+iAi32oKF+nSLyBu/CbGagg/TylvZxW2Y1+ZzCz9oSUkTsyHWXV9QCvjV9oiawxiteTEu/ODXmiCNU1tOlyIYT/6dAGFV2M+oaKWwEQ0gDdOO3y7Yf5Om3y6fLbTI2QKy3c0ZZdr/LRIEdMyt4OWn7ivvP4axXiZUkQjDUq+umgXV+lfdOKn+/sQ4wpkeZNe/udSHMs3rV+zEwN33zaLh7bfoUGnBxpXEs8aAU7/8zX/Jz3s=,iv:HkRMWpV/KlEdVdS7rhZXHuF40mks6KPYW4VzB7CvWuw=,tag:K58zcFb+4TgOKUn+4q/8CA==,type:str]
+    TestConfig.keyPassphrase:
+        secret: ENC[AES256_GCM,data:sD67l42Fqx8=,iv:PADCLxwy/eIwDLC0k2NUJYOTTrgFvra0EIKr0HvZpZg=,tag:ei88VxuqVBvz9ZLNhighQg==,type:str]
+    TestConfig.user:
+        text: daggerci
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBnYUJSamRXak9ob2p4OGll
+            NW9FczZBeVZRR25tQkUxWExrSVFTOUgrN25rCi9PWVY1dk4rSUN2Y3FIMmVkM01Q
+            cWdhQWxDY2JwOGUyOWpFYzR3aWM5NUUKLS0tIE0wUmt0b3hSQkVGM1RDOUxxUDJF
+            cW1kbGZveVlkQkJDL2xYbmFRNjZEK0UKrSrOB/RL5lki54j4GUCE2G3CCO/8jpMU
+            jfYkl7Yowb7kK3kKSNWORhB4ne3MEeGRZpJC8cvH7zjGvt/YYeU14A==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-10T10:28:49Z"
+    mac: ENC[AES256_GCM,data:EWeThEa/5eP0GQNJF7RC1mniejmnn0XNyoipkuiGdEaWcauuVUnHWzV58J/F82NQeiYr8JsFkDrz1rju4yynV51gAAf2kupE6DJDOjmh9O1O9SCMjP7iEvDwW2Tznjq6oXO8r3qVEf86vmIDnhnCINbrOKCPI/j83BtfwC0w1mw=,iv:KX0yZFUSJgZGkZ7jFBueySt2c6T4/r9/5PIK0Dyw2LU=,tag:ZCt1ZbL0mDREQZ9mQ2PR6Q==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

@@ -18,15 +18,17 @@ Build a Docker image from source, using included Dockerfile
 
 _No output._
 
-## #Client
+## #Command
 
-A container image to run the Docker client
+A container image that can run any docker command
 
-### #Client Inputs
+### #Command Inputs
 
-_No input._
+| Name             | Type              | Description          |
+| -------------    |:-------------:    |:-------------:       |
+|*command*         | `string`          |Command to execute    |
 
-### #Client Outputs
+### #Command Outputs
 
 _No output._
 
@@ -78,13 +80,19 @@ _No output._
 
 ### #Run Inputs
 
-| Name             | Type                | Description                           |
-| -------------    |:-------------:      |:-------------:                        |
-|*ssh.host*        | `string`            |ssh host                               |
-|*ssh.user*        | `string`            |ssh user                               |
-|*ssh.port*        | `*22 \| int`        |ssh port                               |
-|*ssh.key*         | `dagger.#Secret`    |private key                            |
-|*ref*             | `string`            |Image reference (e.g: nginx:alpine)    |
+| Name                  | Type                | Description                           |
+| -------------         |:-------------:      |:-------------:                        |
+|*ssh.host*             | `string`            |ssh host                               |
+|*ssh.user*             | `string`            |ssh user                               |
+|*ssh.port*             | `*22 \| int`        |ssh port                               |
+|*ssh.key*              | `dagger.#Secret`    |private key                            |
+|*ref*                  | `string`            |Image reference (e.g: nginx:alpine)    |
+|*run.ssh.host*         | `string`            |ssh host                               |
+|*run.ssh.user*         | `string`            |ssh user                               |
+|*run.ssh.port*         | `*22 \| int`        |ssh port                               |
+|*run.ssh.key*          | `dagger.#Secret`    |private key                            |
+|*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
+|*run.env.IMAGE_REF*    | `string`            |-                                      |
 
 ### #Run Outputs
 
