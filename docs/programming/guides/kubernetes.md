@@ -1,6 +1,6 @@
 # Kubernetes
 
-This tutorial illustrates how to use `dagger` to build, push and deploy Docker
+This tutorial illustrates how to use dagger to build, push and deploy Docker
 images to Kubernetes.
 
 import Tabs from '@theme/Tabs';
@@ -11,13 +11,13 @@ import TabItem from '@theme/TabItem';
 For this tutorial, you will need a Kubernetes cluster.
 
 <Tabs
-  defaultValue="kind"
-  groupId="provider"
-  values={[
-    {label: 'kind', value: 'kind'},
-    {label: 'GKE', value: 'gke'},
-    {label: 'EKS', value: 'eks'},
-  ]}>
+defaultValue="kind"
+groupId="provider"
+values={[
+{label: 'kind', value: 'kind'},
+{label: 'GKE', value: 'gke'},
+{label: 'EKS', value: 'eks'},
+]}>
 
   <TabItem value="kind">
 
@@ -63,15 +63,13 @@ docker network connect kind registry
 
   <TabItem value="gke">
 
-This tutorial can be run against a [GCP GKE](https://cloud.google.com/kubernetes-engine) cluster and [GCR](https://cloud.google.com/container-registry
-)
+This tutorial can be run against a [GCP GKE](https://cloud.google.com/kubernetes-engine) cluster and [GCR](https://cloud.google.com/container-registry)
 
   </TabItem>
 
   <TabItem value="eks">
 
-This tutorial can be run against a [AWS EKS](https://aws.amazon.com/eks/
-) cluster and [ECR](https://aws.amazon.com/ecr/)
+This tutorial can be run against a [AWS EKS](https://aws.amazon.com/eks/) cluster and [ECR](https://aws.amazon.com/ecr/)
 
   </TabItem>
 </Tabs>
@@ -124,13 +122,13 @@ used to create a _nginx_ deployment.
 Next, create `.dagger/env/default/plan/main.cue`.
 
 <Tabs
-  defaultValue="kind"
-  groupId="provider"
-  values={[
-    {label: 'kind', value: 'kind'},
-    {label: 'GKE', value: 'gke'},
-    {label: 'EKS', value: 'eks'},
-  ]}>
+defaultValue="kind"
+groupId="provider"
+values={[
+{label: 'kind', value: 'kind'},
+{label: 'GKE', value: 'gke'},
+{label: 'EKS', value: 'eks'},
+]}>
 
   <TabItem value="kind">
 
@@ -138,12 +136,13 @@ Next, create `.dagger/env/default/plan/main.cue`.
 package main
 
 import (
+  "dagger.io/dagger"
   "dagger.io/kubernetes"
 )
 
 // input: ~/.kube/config file used for deployment
-// set with `dagger input text kubeconfig -f ~/.kube/config`
-kubeconfig: string @dagger(input)
+// set with `dagger input secret kubeconfig -f ~/.kube/config`
+kubeconfig: dagger.#Secret @dagger(input)
 
 // deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
 // Kubernetes cluster.
@@ -256,13 +255,13 @@ You can inspect the list of inputs (both required and optional) using `dagger in
 -->
 
 <Tabs
-  defaultValue="kind"
-  groupId="provider"
-  values={[
-    {label: 'kind', value: 'kind'},
-    {label: 'GKE', value: 'gke'},
-    {label: 'EKS', value: 'eks'},
-  ]}>
+defaultValue="kind"
+groupId="provider"
+values={[
+{label: 'kind', value: 'kind'},
+{label: 'GKE', value: 'gke'},
+{label: 'EKS', value: 'eks'},
+]}>
 
   <TabItem value="kind">
 
@@ -307,13 +306,13 @@ eksConfig.clusterName       string            EKS cluster name
 Let's provide the missing inputs:
 
 <Tabs
-  defaultValue="kind"
-  groupId="provider"
-  values={[
-    {label: 'kind', value: 'kind'},
-    {label: 'GKE', value: 'gke'},
-    {label: 'EKS', value: 'eks'},
-  ]}>
+defaultValue="kind"
+groupId="provider"
+values={[
+{label: 'kind', value: 'kind'},
+{label: 'GKE', value: 'gke'},
+{label: 'EKS', value: 'eks'},
+]}>
 
   <TabItem value="kind">
 
@@ -527,6 +526,7 @@ package main
 import (
   "encoding/yaml"
 
+  "dagger.io/dagger"
   "dagger.io/docker"
 )
 
