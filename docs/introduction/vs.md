@@ -1,7 +1,6 @@
 ---
 sidebar_position: 2
 slug: /vs
-sidebar_label: Dagger vs. Other software
 ---
 
 # Dagger vs. Other Software

@@ -1,8 +1,3 @@
----
-sidebar_position: 3
-slug: /programming/cloudformation
----
-
 # Infra provisioning
 
 ## Integrating with AWS Cloudformation
@@ -40,7 +35,7 @@ cd ./.dagger/env/s3-provisioning/plan/ #Personal preference to directly work ins
 
 3. Create `main.cue` file with its corresponding `main` package
 
-```bash 
+```bash
 touch main.cue
 
 -- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
@@ -59,8 +54,8 @@ The idea here is to follow best practices in [<u>S3 buckets</u>](https://docs.aw
 
 The [<u>template</u>](https://docs.aws.amazon.com/fr_fr/AWSCloudFormation/latest/UserGuide/quickref-s3.html#scenario-s3-bucket-website) has far more outputs than necessary, as we just want to retrieve the bucket name:
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 <Tabs
   defaultValue="nv"
@@ -125,78 +120,75 @@ import TabItem from '@theme/TabItem';
 
 ```json
 {
-    "AWSTemplateFormatVersion": "2010-09-09",
-    "Resources": {
-        "S3Bucket": {
-            "Type": "AWS::S3::Bucket",
-            "Properties": {
-                "AccessControl": "PublicRead",
-                "WebsiteConfiguration": {
-                    "IndexDocument": "index.html",
-                    "ErrorDocument": "error.html"
-                }
-            },
-            "DeletionPolicy": "Retain"
-        },
-        "BucketPolicy": {
-            "Type": "AWS::S3::BucketPolicy",
-            "Properties": {
-                "PolicyDocument": {
-                    "Id": "MyPolicy",
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Sid": "PublicReadForGetBucketObjects",
-                            "Effect": "Allow",
-                            "Principal": "*",
-                            "Action": "s3:GetObject",
-                            "Resource": {
-                                "Fn::Join": [
-                                    "",
-                                    [
-                                        "arn:aws:s3:::",
-                                        {
-                                            "Ref": "S3Bucket"
-                                        },
-                                        "/*"
-                                    ]
-                                ]
-                            }
-                        }
-                    ]
-                },
-                "Bucket": {
-                    "Ref": "S3Bucket"
-                }
-            }
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "S3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "AccessControl": "PublicRead",
+        "WebsiteConfiguration": {
+          "IndexDocument": "index.html",
+          "ErrorDocument": "error.html"
         }
+      },
+      "DeletionPolicy": "Retain"
     },
-    "Outputs": {
-        "Name": {
-            "Value": {
-                "Fn::GetAtt": [
-                    "S3Bucket",
-        		    "Arn"
+    "BucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Id": "MyPolicy",
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "PublicReadForGetBucketObjects",
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": "s3:GetObject",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:s3:::",
+                    {
+                      "Ref": "S3Bucket"
+                    },
+                    "/*"
+                  ]
                 ]
-            },
-            "Description": "Name S3 Bucket"
+              }
+            }
+          ]
+        },
+        "Bucket": {
+          "Ref": "S3Bucket"
         }
+      }
     }
+  },
+  "Outputs": {
+    "Name": {
+      "Value": {
+        "Fn::GetAtt": ["S3Bucket", "Arn"]
+      },
+      "Description": "Name S3 Bucket"
+    }
+  }
 }
 ```
 
 </TabItem>
 </Tabs>
 
-2. Some *"Pro tips"*
+2. Some _"Pro tips"_
 
 Double-checks at the template level can be done with manual uploads on Cloudformation's web interface or by executing the below command locally:
 
 ```bash
 aws cloudformation validate-template  --template-body file://template.json
 ```
-> PS: The *"Full Base Template"* tab contains the base template used for the following parts of the guide
 
+> PS: The _"Full Base Template"_ tab contains the base template used for the following parts of the guide
 
 ### JSON / YAML to Cue conversion
 
@@ -320,7 +312,9 @@ data: """
 </Tabs>
 
 ###### 2. Retrieve the Unmarshalled JSON
+
 Then, still in the same folder, query the `point` value to retrieve the Unmarshalled result of `data`:
+
 <Tabs
   defaultValue="sc"
   values={[
@@ -418,40 +412,39 @@ This Cue version of the JSON template is going to be integrated inside our provi
 
 With the Cloudformation template now finished, tested and converted in Cue. We can now enter the last part of our guide: piping everything together inside our personal plan.
 
-Before continuing, don't forget to reset your `main.cue` plan to it's *Setup* form:
+Before continuing, don't forget to reset your `main.cue` plan to it's _Setup_ form:
 
 ```cue
 -- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
 package main
 ```
 
-
 ### Cloudformation relay
 
 As our plan relies on [<u>Cloudformation's relay</u>](https://dagger.io/aws/cloudformation), let's dissect the expected inputs by gradually incorporating them in our plan.
 
-| Name                 | Type                                         | Description                                                            |
-| -------------        |:-------------:                               |:-------------:                                                         |
-|*config.region*       | `string`                                     |AWS region                                                              |
-|*config.accessKey*    | `dagger.#Secret`                             |AWS access key                                                          |
-|*config.secretKey*    | `dagger.#Secret`                             |AWS secret key                                                          |
-|*source*              | `string`                                     |Source is the Cloudformation template (JSON/YAML string)                |
-|*stackName*           | `string`                                     |Stackname is the cloudformation stack                                   |
-|*onFailure*           | `*"DO_NOTHING" \| "ROLLBACK" \| "DELETE"`    |Behavior when failure to create/update the Stack                        |
-|*timeout*             | `*10 \| \>=0 & int`                          |Timeout for waiting for the stack to be created/updated (in minutes)    |
-|*neverUpdate*         | `*false \| bool`                             |Never update the stack if already exists                                |
+| Name               |                   Type                    |                             Description                              |
+| ------------------ | :---------------------------------------: | :------------------------------------------------------------------: |
+| _config.region_    |                 `string`                  |                              AWS region                              |
+| _config.accessKey_ |             `dagger.#Secret`              |                            AWS access key                            |
+| _config.secretKey_ |             `dagger.#Secret`              |                            AWS secret key                            |
+| _source_           |                 `string`                  |       Source is the Cloudformation template (JSON/YAML string)       |
+| _stackName_        |                 `string`                  |                Stackname is the cloudformation stack                 |
+| _onFailure_        | `*"DO_NOTHING" \| "ROLLBACK" \| "DELETE"` |           Behavior when failure to create/update the Stack           |
+| _timeout_          |            `*10 \| \>=0 & int`            | Timeout for waiting for the stack to be created/updated (in minutes) |
+| _neverUpdate_      |             `*false \| bool`              |               Never update the stack if already exists               |
 
 1. General insights
 
 As seen before in the documentation, values starting with `*` are default values. However, as a plan developer, we may face the need to add default values to inputs from relays that don't have one : Cue gives you this flexibility (cf. `config` value detailed below).
 
->WARNING: All inputs without a default option have to be filled for a proper execution of the relay. In our case:
+> WARNING: All inputs without a default option have to be filled for a proper execution of the relay. In our case:
 >
->* *config.region* 
->* *config.accessKey*
->* *config.secretKey*
->* *source*
->* *stackName* 
+> - _config.region_
+> - _config.accessKey_
+> - _config.secretKey_
+> - _source_
+> - _stackName_
 
 2. The config value
 
@@ -515,7 +508,7 @@ awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named 
 </TabItem>
 </Tabs>
 
-*Pro tips: In order to check wether it worked or not, these two commands might help*
+_Pro tips: In order to check wether it worked or not, these two commands might help_
 
 <Tabs
   defaultValue="fc"
@@ -670,7 +663,7 @@ cfnStack: cloudformation.#Stack & { // Assign an aws.#Cloudformation definition 
 
     stackName: cfnStackName // We assign to the `stackName` the `cfnStackName` declared below.
     // `stackName` expects a string type. However, as a plan developer, we wanted to give the developer a choice : either a default random value, or an input
-    // The default random value *"stack-\(suffix.out)" uses the random.#String relay to generate a random value. We append it's result inside `"\(append_happening_here)"` 
+    // The default random value *"stack-\(suffix.out)" uses the random.#String relay to generate a random value. We append it's result inside `"\(append_happening_here)"`
 
 	onFailure: "DO_NOTHING" // As cited in the Cloudformation relay, the `onFailure` key defines Cloudformation's stack behavior on failure
 
@@ -897,4 +890,3 @@ The name of the provisioned S3 instance lies in the `cfnStack.outputs.Name` outp
 PS: This plan could be further extended with the AWS S3 example : it could not only provision an infrastructure but also easily deploy on it.
 
 PS1: As it could make a nice first exercise for you, this won't be detailed here. However, we're interested in your imagination : let us know your implementations :-)
-
