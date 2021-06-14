@@ -21,7 +21,7 @@ function bindApiCall({ url, config, errorMessage }) {
 
 async function getAccessToken(code) {
     const accessToken = await bindApiCall({
-        url: 'https://github.com/login/oauth/access_token',
+        url: '/github-proxy/login/oauth/access_token',
         config: {
             params: {
                 code,
@@ -37,7 +37,7 @@ async function getAccessToken(code) {
 
 export async function getUser(access_token) {
     const user = await bindApiCall({
-        url: 'https://api.github.com/user',
+        url: '/github-api-proxy/user',
         config: {
             headers: { Authorization: `token ${access_token}` },
         },
@@ -57,7 +57,7 @@ export async function checkUserCollaboratorStatus(code) {
     const { login } = await getUser(access_token)
 
     const isUserCollaborator = await bindApiCall({
-        url: `https://docs-access.dagger.io/u/${login}`,
+        url: `/docs-access/${login}`,
         errorMessage: 'error checkUserCollaboratorStatus'
     })
 
