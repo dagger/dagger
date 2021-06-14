@@ -153,14 +153,14 @@ function DocPage(props) {
         const user = await getUser(userAccessToken)
         setIsUserAuthorized(user)
       } else {
-        if (!isEmpty(authQuery)) { //callback after successful auth with github)
+        if (!isEmpty(authQuery)) { //callback after successful auth with github
           const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
-          if (isUserCollaborator?.status === 200) {
+          if (isUserCollaborator?.isAllowed) {
             setUserAccessToken(isUserCollaborator.access_token)
             if (typeof window !== "undefined") window.localStorage.setItem('user-github-key', isUserCollaborator.access_token);
-          } else {
-            setIsUserAuthorized({ status: 401 })
           }
+
+          setIsUserAuthorized(isUserCollaborator?.isAllowed)
         }
       }
       setIsLoading(false)
@@ -169,11 +169,11 @@ function DocPage(props) {
 
     if (isLoading) return <Spinner />
 
-    if ((isUserAuthorized?.status && isUserAuthorized?.status === 401)) {
+    if (isUserAuthorized === false) {
       return <DocPageRedirect />
     }
 
-    if (!isUserAuthorized) {
+    if (typeof isUserAuthorized == 'undefined' || isUserAuthorized?.status === 401) {
       return (
         <DocPageAuthentication />
       )
