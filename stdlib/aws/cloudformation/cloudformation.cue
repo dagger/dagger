@@ -27,7 +27,7 @@ import (
 	// Behavior when failure to create/update the Stack
 	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE" @dagger(input)
 
-	// Timeout for waiting for the stack to be created/updated (in minutes)
+	// Maximum waiting time until stack creation/update (in minutes)
 	timeout: *10 | uint @dagger(input)
 
 	// Never update the stack if already exists
