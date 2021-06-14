@@ -25,8 +25,8 @@ async function getAccessToken(code) {
         config: {
             params: {
                 code,
-                client_id: 'cd8f9be2562bfc8d6cfc',
-                client_secret: '2509358055095d52dfd7331d072f378e7f16940f',
+                client_id: process.env.REACT_APP_CLIENT_ID,
+                client_secret: process.env.REACT_APP_CLIENT_SECRET,
             },
             errorMessage: 'error getAccessToken'
         }

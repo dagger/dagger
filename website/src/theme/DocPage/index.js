@@ -139,7 +139,7 @@ function DocPage(props) {
   );
 
   // CUSTOM DOCPAGE
-  if (typeof window !== "undefined" && window?.location?.hostname !== "localhost") {
+  if (typeof window === "undefined" || (typeof window !== "undefined" && window?.location?.hostname !== "localhost")) {
     const [isUserAuthorized, setIsUserAuthorized] = useState()
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
