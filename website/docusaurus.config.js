@@ -27,8 +27,8 @@ module.exports = {
       },
     },
     algolia: {
-      apiKey: "66c9f1f7e6ba6617ec4e65194788bacd",
-      indexName: "docs_dagger",
+      apiKey: "b2324f1ac8932ab80916382521473115",
+      indexName: "daggosaurus",
     },
     colorMode: {
       // "light" | "dark"

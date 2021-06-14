@@ -139,7 +139,9 @@ function DocPage(props) {
   );
 
   // CUSTOM DOCPAGE
-  if (typeof window === "undefined" || (typeof window !== "undefined" && window?.location?.hostname !== "localhost")) {
+  // Do not use Github authentication when in local env or Netlify deploy preview
+  if (typeof window === "undefined" ||
+    (typeof window !== "undefined" && (window?.location?.hostname !== "localhost" || window.location.hostname.includes('deploy-preview')))) {
     const [isUserAuthorized, setIsUserAuthorized] = useState()
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
