@@ -41,10 +41,10 @@ jobs:
           make shellcheck cuelint check-buildkit-version docslint
 
       - name: Markdown Lint
-        uses: nosborn/github-action-markdown-cli@v1.1.1
+        uses: avto-dev/markdown-lint@v1
         with:
-          files: ./docs README.md
-          config_file: ".markdownlint.yaml"
+          config: ".markdownlint.yaml"
+          args: ./docs README.md
 
   test:
     name: Test
