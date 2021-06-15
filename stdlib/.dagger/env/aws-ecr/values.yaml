@@ -1,3 +1,5 @@
+plan:
+    module: .dagger/env/aws-ecr/plan
 name: aws-ecr
 inputs:
     TestConfig.awsConfig.accessKey:
@@ -19,8 +21,8 @@ sops:
             aXlvVWJVSGNTSkVyYmpZbi9nUVJZdmMK6csXZ2RMxFw5DB+Hb2TyhyoZT8c2/z7Y
             Lc9Pe8gb8aUq5Ha+wCybYvY6JWEM5A9XYJKbE7f4borTfGKS72d6pw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-09T18:52:22Z"
-    mac: ENC[AES256_GCM,data:p0lsZ+NEE5lvUef2uMIWlkoHOx+ur6YKwPdR8vI5vrjp+zRRGPQXfeOtfbScmMvOJj6OM1v1Gitlq+UVPWekOiuPaIoG1lWdNCZoq8+5Jf9sCFFUK0Fl8C2dAUIp6/84odwHhMB/jWR58rsqdvM4VilFMM6xnSENvXZn7fxzOng=,iv:jP2OXQYAYmb+rOpclUPpPX3phwSmpNJF3x1xDZdZOCI=,tag:/ZMA7kCCF9cRPSsh8u8iqw==,type:str]
+    lastmodified: "2021-06-15T16:26:04Z"
+    mac: ENC[AES256_GCM,data:OjiRs9wN04IGRKDF7ibgerSnAEkPxQjKQ20ZN6X5cCwppVitwFnTPI9J/HiHQ7XaJSr6oaoELUywzCHa17cQNnz9o4NyDc947h9Tsu90fl2S9ChdSZ+dAP85+T3NWm1fbXPLdFw4EgePfTf6F7/Cktx/UVEFkkeggQoj7/cugRQ=,iv:vFQTDgqbEzIrVwNOKKi4M5DAEVGR3NFwWV9PwyT1Bck=,tag:Anjj7Zbt8oxpAI7RD1GZag==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
