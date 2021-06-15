@@ -84,3 +84,19 @@ Guidelines:
   change the last commit (amend) instead of creating a new commit.
 - Format: Use the imperative mood in the subject line: "If applied, this commit
   will _your subject line here_"
+
+
+## FAQ
+
+### How to run the markdown linter locally
+
+First install `markdownlint-cli`:
+
+* On Mac OS: `brew install markdownlint-cli`
+* On other systems, with yarn installed: `yarn global add markdownlint-cli`
+
+Then from the repository root:
+
+```
+markdownlint -c .markdownlint.yaml docs/**/*.md
+```
