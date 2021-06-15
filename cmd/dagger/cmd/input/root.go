@@ -20,7 +20,6 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.AddCommand(
-		editCmd,
 		dirCmd,
 		gitCmd,
 		containerCmd,
