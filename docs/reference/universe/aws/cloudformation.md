@@ -4,6 +4,8 @@ sidebar_label: cloudformation
 
 # dagger.io/aws/cloudformation
 
+AWS Cloud Formation
+
 ## #Stack
 
 AWS CloudFormation Stack

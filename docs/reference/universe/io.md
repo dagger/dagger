@@ -4,6 +4,8 @@ sidebar_label: io
 
 # dagger.io/io
 
+IO operations
+
 ## #Dir
 
 Standard interface for directory operations in cue
@@ -30,6 +32,8 @@ _No output._
 
 ## #ReadWriter
 
+Standard ReadWriter interface
+
 ### #ReadWriter Inputs
 
 _No input._
@@ -40,6 +44,8 @@ _No output._
 
 ## #Reader
 
+Standard Reader interface
+
 ### #Reader Inputs
 
 _No input._
@@ -49,6 +55,8 @@ _No input._
 _No output._
 
 ## #Writer
+
+Standard Writer interface
 
 ### #Writer Inputs
 

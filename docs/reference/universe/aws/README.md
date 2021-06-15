@@ -4,6 +4,8 @@ sidebar_label: aws
 
 # dagger.io/aws
 
+AWS base package
+
 ## #CLI
 
 Re-usable aws-cli component
@@ -22,7 +24,7 @@ _No output._
 
 ## #Config
 
-Base AWS Config
+AWS Config shared by all AWS packages
 
 ### #Config Inputs
 

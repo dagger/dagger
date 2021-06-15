@@ -4,6 +4,8 @@ sidebar_label: docker
 
 # dagger.io/docker
 
+Docker container operations
+
 ## #Build
 
 Build a Docker image from source, using included Dockerfile
@@ -38,10 +40,10 @@ Build a Docker image from the provided Dockerfile contents
 
 ### #ImageFromDockerfile Inputs
 
-| Name             | Type                  | Description        |
-| -------------    |:-------------:        |:-------------:     |
-|*dockerfile*      | `string`              |-                   |
-|*context*         | `dagger.#Artifact`    |-                   |
+| Name             | Type                  | Description                     |
+| -------------    |:-------------:        |:-------------:                  |
+|*dockerfile*      | `string`              |Dockerfile passed as a string    |
+|*context*         | `dagger.#Artifact`    |Build context                    |
 
 ### #ImageFromDockerfile Outputs
 

@@ -4,7 +4,11 @@ sidebar_label: kubernetes
 
 # dagger.io/kubernetes
 
+Kubernetes client operations
+
 ## #Kubectl
+
+Kubectl client
 
 ### #Kubectl Inputs
 

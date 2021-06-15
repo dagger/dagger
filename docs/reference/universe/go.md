@@ -4,7 +4,11 @@ sidebar_label: go
 
 # dagger.io/go
 
+Go build operations
+
 ## #Build
+
+Go application builder
 
 ### #Build Inputs
 
@@ -33,7 +37,7 @@ A standalone go environment
 | Name             | Type                                | Description                                             |
 | -------------    |:-------------:                      |:-------------:                                          |
 |*version*         | `*"1.16" \| string`                 |Go version to use                                        |
-|*source*          | `dagger.#Artifact`                  |-                                                        |
+|*source*          | `dagger.#Artifact`                  |Source code                                              |
 |*image.from*      | `"docker.io/golang:1.16-alpine"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
 
 ### #Container Outputs
@@ -41,6 +45,8 @@ A standalone go environment
 _No output._
 
 ## #Go
+
+Re-usable component for the Go compiler
 
 ### #Go Inputs
 

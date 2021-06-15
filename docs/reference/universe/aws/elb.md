@@ -4,9 +4,11 @@ sidebar_label: elb
 
 # dagger.io/aws/elb
 
+AWS Elastic Load Balancer (ELBv2)
+
 ## #RandomRulePriority
 
-Returns a non-taken rule priority (randomized)
+Returns an unused rule priority (randomized in available range)
 
 ### #RandomRulePriority Inputs
 

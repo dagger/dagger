@@ -4,6 +4,8 @@ sidebar_label: gcr
 
 # dagger.io/gcp/gcr
 
+Google Container Registry
+
 ## #Credentials
 
 Credentials retriever for GCR

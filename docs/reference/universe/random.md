@@ -4,16 +4,7 @@ sidebar_label: random
 
 # dagger.io/random
 
-Random generation utilities.
-
-Example:
-
-```cue
-str: random.#String & {
-  seed: "str"
-  length: 10
-}
-```
+Random generation utilities
 
 ## #String
 
