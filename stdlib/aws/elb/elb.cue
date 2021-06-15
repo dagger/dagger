@@ -8,6 +8,7 @@ import (
 
 // Returns an unused rule priority (randomized in available range)
 #RandomRulePriority: {
+
 	// AWS Config
 	config: aws.#Config
 

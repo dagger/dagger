@@ -9,7 +9,7 @@ database: {
 	let slug = name
 	dbType: "mysql" | "postgresql" @dagger(input)
 
-	db: rds.#CreateDB & {
+	db: rds.#Database & {
 		config:    infra.awsConfig
 		name:      slug
 		dbArn:     infra.rdsInstanceArn
@@ -17,7 +17,7 @@ database: {
 		secretArn: infra.rdsAdminSecretArn
 	}
 
-	user: rds.#CreateUser & {
+	user: rds.#User & {
 		config:    infra.awsConfig
 		dbArn:     infra.rdsInstanceArn
 		"dbType":  dbType

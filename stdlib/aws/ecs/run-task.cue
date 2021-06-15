@@ -5,8 +5,8 @@ import (
 	"dagger.io/aws"
 )
 
-// RunTask implements ecs run-task for running a single container on ECS
-#RunTask: {
+// Task implements ecs run-task for running a single container on ECS
+#Task: {
 
 	// AWS Config
 	config: aws.#Config

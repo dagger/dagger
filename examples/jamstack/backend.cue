@@ -8,13 +8,14 @@ import (
 
 // Backend configuration
 backend: {
+
 	// Source code to build this container
 	source: git.#Repository | dagger.#Artifact @dagger(input)
 
 	// Container environment variables
 	environment: {
-		[string]: string @dagger(input)
-	}
+		[string]: string
+	} @dagger(input)
 
 	// Public hostname (need to match the master domain configures on the loadbalancer)
 	hostname: string @dagger(input)
@@ -39,16 +40,16 @@ backend: {
 		dockerfilePath: *"" | string @dagger(input)
 		// docker build args
 		dockerBuildArgs: {
-			[string]: string @dagger(input)
-		}
+			[string]: string
+		} @dagger(input)
 	}
 
 	// Init container runs only once when the main container starts
 	initContainer: {
 		command: [...string] @dagger(input)
 		environment: {
-			[string]: string @dagger(input)
-		}
+			[string]: string
+		} @dagger(input)
 	}
 }
 

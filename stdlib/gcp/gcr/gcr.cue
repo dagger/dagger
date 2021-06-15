@@ -11,8 +11,10 @@ import (
 	// GCP Config
 	config: gcp.#Config
 
-	// GCR credentials
-	username: "oauth2accesstoken"
+	// GCR registry username
+	username: "oauth2accesstoken" @dagger(output)
+
+	// GCR registry secret
 	secret: {
 		string
 

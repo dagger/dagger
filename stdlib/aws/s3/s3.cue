@@ -94,6 +94,7 @@ import (
 
 // S3 Bucket sync
 #Sync: {
+
 	// AWS Config
 	config: aws.#Config
 
@@ -103,8 +104,7 @@ import (
 	// Target S3 URL (eg. s3://<bucket-name>/<path>/<sub-path>)
 	target: string @dagger(input)
 
-	// Files that exist in the destination but not  in  the
-	// source are deleted during sync.
+	// Delete files that already exist on remote destination
 	delete: *false | bool @dagger(input)
 
 	// Object content type

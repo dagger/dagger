@@ -6,13 +6,13 @@ import (
 	"dagger.io/os"
 )
 
-// Convert AWS credentials to Docker Registry credentials for ECR
+// Convert ECR credentials to Docker Login format
 #Credentials: {
 	// AWS Config
 	config: aws.#Config
 
-	// ECR credentials
-	username: "AWS"
+	// ECR registry
+	username: "AWS" @dagger(output)
 
 	ctr: os.#Container & {
 		image: aws.#CLI & {
@@ -22,10 +22,11 @@ import (
 		command: "aws ecr get-login-password > /out"
 	}
 
+	// ECR registry secret
 	secret: {
 		os.#File & {
 			from: ctr
 			path: "/out"
 		}
-	}.read.data
+	}.read.data @dagger(output)
 }

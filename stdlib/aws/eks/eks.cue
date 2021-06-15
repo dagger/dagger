@@ -19,7 +19,6 @@ import (
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
-		@dagger(output)
 		string
 
 		#up: [
@@ -58,5 +57,5 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} @dagger(output)
 }
