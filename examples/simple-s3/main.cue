@@ -20,7 +20,7 @@ source: dagger.#Artifact @dagger(input)
 // Deployed URL
 url: "\(deploy.url)index.html" @dagger(output)
 
-deploy: s3.#Put & {
+deploy: s3.#Object & {
 	always:      true
 	config:      awsConfig
 	"source":    source
