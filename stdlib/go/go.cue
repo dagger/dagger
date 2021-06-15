@@ -16,7 +16,7 @@ import (
 	version: *"1.16" | string @dagger(input)
 
 	// Source code
-	source:  dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact @dagger(input)
 
 	os.#Container & {
 		env: CGO_ENABLED: "0"

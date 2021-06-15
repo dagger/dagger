@@ -104,10 +104,10 @@ import (
 // FIXME: incorporate into #Build
 #ImageFromDockerfile: {
 	// Dockerfile passed as a string
-	dockerfile: string           @dagger(input)
+	dockerfile: string @dagger(input)
 
 	// Build context
-	context:    dagger.#Artifact @dagger(input)
+	context: dagger.#Artifact @dagger(input)
 
 	#up: [
 		op.#DockerBuild & {
