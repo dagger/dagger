@@ -1,4 +1,4 @@
-package input
+package cmd
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 
 var editCmd = &cobra.Command{
 	Use:   "edit",
-	Short: "Interactively edit the inputs of an environment",
+	Short: "Interactively edit an environment",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
