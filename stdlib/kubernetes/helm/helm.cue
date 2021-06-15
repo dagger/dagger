@@ -1,3 +1,4 @@
+// Helm package manager
 package helm
 
 import (
@@ -10,6 +11,7 @@ import (
 
 // Install a Helm chart
 #Chart: {
+
 	// Helm deployment name
 	name: string @dagger(input)
 
