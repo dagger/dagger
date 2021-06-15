@@ -1,5 +1,9 @@
 name: docs
 inputs:
+    docs.env.REACT_APP_CLIENT_ID:
+        text: 1a6d02cb59199eb205ef
+    docs.env.REACT_APP_CLIENT_SECRET:
+        text: 47a1a67abc8d3fe9edb829a6c7775fbad47f47bb
     repository:
         dir:
             path: .
@@ -26,8 +30,8 @@ sops:
             ejRKQXNFZzBTbUxpc05acnkxQ2U2UkEKX1byNj64xOiRGAJ9lwh55d/mlasI3H6H
             b+o3HbXSbV0G0UwQxEOisntR6o27ry/l12ai/sOQ4f9MXm6FRw2XTg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-02T22:14:46Z"
-    mac: ENC[AES256_GCM,data:x/Up/GCLTwIWSbyxvy3S79j4gbKRRYnDguvgPJFAii2PS6rjSU7KHtwM9WbUqQtd+NDbe1eWjdmAC4jPwVsa9OY7s+heR3597OpTh0pHcOgTrc4fTVN9IVHwehlg4hJU00iL1oiiHfeCD5dMUGeIRyqRqoAyMJrPdC9IDwjnp6E=,iv:IUbrkPQqLC/wnfKZMnOK9jKSc+xDXpeJwKLXuioifyE=,tag:2l+FhV3k5WvhQyvvf37Hjw==,type:str]
+    lastmodified: "2021-06-15T07:57:28Z"
+    mac: ENC[AES256_GCM,data:PPeh8uZ4i8kRqgoDMLBlHMy3jFs0jQxJKdkeA3LTqbBKZ9EEEt9K4ASmZVbTUv5iumcoxaXc2u6ty0gDPaLjqnYPLMOzR962+5ipp96l1fzA7vvNpdNlUPweTo6WgQUBf/J4eOPBlm3O2pPi7Os+IlvnvM92ZL6Y9K3oOZqlnwU=,iv:Mz8jz3lBOEVqlqKEaqa5ujecr4B/IIaeW34Kx3cEwwE=,tag:feixK5kYE61WeEzJcXjRoA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
