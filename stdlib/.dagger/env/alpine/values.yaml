@@ -1,3 +1,5 @@
+plan:
+    module: .dagger/env/alpine/plan
 name: alpine
 sops:
     kms: []
@@ -14,8 +16,8 @@ sops:
             N0JOK1FwdzkrcGR5V0xhUDdNOFNvYk0KetOvulxA0Hilyhv+eWBqYO3GXNvm38Y1
             9Pa7HYazNyi0qMcZpecWlp4QsOoL876dj1rE62cYHT2hkt2J2ijAUw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-10T10:08:37Z"
-    mac: ENC[AES256_GCM,data:P5OXSf1S6FkPHYxRqeQ0U3AAk72HhbX76ox5QKRtyB4hkKDPq1qAbeGZxTt1qh/bc71KCXbraGCcoE6koiwYTsmgH5boZ9uDKwXDoY4lUekgo5W0PC7LU9H0BuL2CY0MM5p+5kT+BmWJh45fknUOv2t1ATiQCf8YqiAB/5LqMuU=,iv:W8QZrhOCjuFDkxjePjrzvQF2Cv4GZpaLgk5ZwxIrxik=,tag:CRwP6SHfebSGhgtUbXJEMA==,type:str]
+    lastmodified: "2021-06-15T16:25:52Z"
+    mac: ENC[AES256_GCM,data:wk0mr4hUjg7ipIBE1Aph55inRgrXyO1K3jL1hj6N2oY10t6OyeL5IzZbS3aVBYZZh7QfEGkD0uVTqTJXgj5YorvJ2ZYo2RUV8uyUzUemI5jjytUHhKLV26Xz6R6fGHTFOoHYffZH7YhpX3lrc210eQCxHq8WDONeOqbRmwQT4Lw=,iv:HXQUdMlZvi1oEPQIrVuEk0qg1fGAhifPKRa3Fl4oGJM=,tag:gPSbqGPkNmavb6Zf4P2tWA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -1,3 +1,5 @@
+plan:
+    module: .dagger/env/netlify/plan
 name: netlify
 inputs:
     TestNetlify.deploy.account.name:
@@ -19,8 +21,8 @@ sops:
             SEdUK2RsaUxuVWg2aXUwdVJ0eUtrWWMKWkQDBuL5e4QDx5Wy6+fHiD+J4fp7QdMm
             lsqgmxRvJMWgEvm1U+hDAo/Pkn8PFUFJf0KxEvkdF4qGuguQePgzFQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-09T18:53:39Z"
-    mac: ENC[AES256_GCM,data:m2TA71YjNpiGlBH1nEKcbKDCOBS8x8ia2d+g43+f+LprnhAqav2GlgYaU5XU4n/M6SGtxE9NskfaOZ6z8tcBH01UvFatRX2jvpiVdcUuy/ULyb5ygK1D0g4Ok60nxD+Wp1JIbbIktevv6C4jGA0+TC6g8JjSinD5yXx9uzSDrKY=,iv:081twRYPy26JoGZL0TlknF7ktcG5eNzIPtvNK6Mzt2E=,tag:npnDVRON2N6LlWCsf1vAxA==,type:str]
+    lastmodified: "2021-06-15T16:26:12Z"
+    mac: ENC[AES256_GCM,data:q9xRCwgpgyiVvF3r2mec7vuF3+wwFepWUb9YpGrOLiFfoqsJngap3kn5vIe+Idk5KsdPKLI13vd8So3Fz1tXy5JTSxljp/IvAr5JQGDpKyo4HRYtgstdJnXVtZf8Hg+V9LC+bZVIY07pXeyDLvk6LEBUo7ANexakr/o6bKGyAG0=,iv:NXtvo0HgElQoD3AI97qrf0M08T+9Cn+5gztUMwR6w/M=,tag:CGDqTu/U/snU2AcjSpA25A==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -1,3 +1,5 @@
+plan:
+    module: .dagger/env/google-gke/plan
 name: google-gke
 inputs:
     TestConfig.gcpConfig.project:
@@ -21,8 +23,8 @@ sops:
             ZXd6Qmd1YUtxMnVTVkYybWgrV3pVK2MKowMeOZU3j3BxERT0DwhQYCGUDBK6gCdo
             WByubiBATdsb7h7ytCC4HutWppynK4MpU+Ya9NP83AZuXo+Wa2u6aQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-09T18:53:49Z"
-    mac: ENC[AES256_GCM,data:hKBqKd8ZoEPiU9+B3Ccjs0ionnPJYaJIKwtJnoQjE1YqxrpHFICyoHre80/PeEO3tXCZuyw0BpA3hICTua4o+VfawKUf3jjWJNog7HtTmUHFl4YZd0r3FoqjCiTF/Bf617DGTn6HozjpQbn3zS6JFGTa2vleZi9islyzxtqmjw8=,iv:b0BKP3UZ1hUSJvMKBpXhKR3lOj5sieTAy7QQzrkCSOU=,tag:so+0De5l6Quqp4f9Le+aPA==,type:str]
+    lastmodified: "2021-06-15T16:26:28Z"
+    mac: ENC[AES256_GCM,data:mCi/vNSrtuLP+hBssCP6D5DI9wFSajN7EeFxfKnbqMGRgHRGjbbA0ty1RtJCwlTLYHmLWRxNclkLtCD+tJXQ84YnE/jocPjUK2Z3lR/La/7imy32QM1hfpg14pT4A7lkIizwKfcV+HXgRTE8rQ8eZM+KnuQJXwa1Qds2G33sTpM=,iv:xqDuKP7vBHug+o1lffkJ5YNzh/YPjCGmHCb0U7lgijo=,tag:6ln/mKsYB4Zu6l3YtZ59RA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
