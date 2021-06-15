@@ -5,9 +5,8 @@ setup() {
 }
 
 @test "example: react" {
-    cp -R "$TESTDIR"/examples/react/.dagger "$DAGGER_WORKSPACE"/.dagger
-    mkdir "$DAGGER_WORKSPACE"/.dagger/env/default/plan
-    cp -R "$TESTDIR"/../examples/react/*.cue "$DAGGER_WORKSPACE"/.dagger/env/default/plan
+    DAGGER_WORKSPACE="$TESTDIR"/../examples/react
+    export DAGGER_WORKSPACE
 
     "$DAGGER" up
 
