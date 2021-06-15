@@ -8,6 +8,8 @@ import (
 )
 
 // S3 Bucket upload (file or directory)
+// FIXME: rename #Put to use a noun
+// FIXME: deprecate in favor of #Sync
 #Put: {
 
 	// AWS Config
@@ -93,6 +95,7 @@ import (
 }
 
 // S3 Bucket sync
+// FIXME: rename #Sync to use a noun
 #Sync: {
 
 	// AWS Config

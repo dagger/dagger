@@ -4,6 +4,8 @@ sidebar_label: helm
 
 # dagger.io/kubernetes/helm
 
+Helm package manager
+
 ## #Chart
 
 Install a Helm chart

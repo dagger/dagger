@@ -4,7 +4,7 @@ sidebar_label: cloudformation
 
 # dagger.io/aws/cloudformation
 
-AWS Cloud Formation
+AWS CloudFormation
 
 ## #Stack
 
@@ -19,10 +19,13 @@ AWS CloudFormation Stack
 |*config.secretKey*    | `dagger.#Secret`                             |AWS secret key                                                   |
 |*source*              | `string`                                     |Source is the Cloudformation template (JSON/YAML string)         |
 |*stackName*           | `string`                                     |Stackname is the cloudformation stack                            |
+|*parameters*          | `struct`                                     |Stack parameters                                                 |
 |*onFailure*           | `*"DO_NOTHING" \| "ROLLBACK" \| "DELETE"`    |Behavior when failure to create/update the Stack                 |
 |*timeout*             | `*10 \| \>=0 & int`                          |Maximum waiting time until stack creation/update (in minutes)    |
-|*neverUpdate*         | `*false \| bool`                             |Never update the stack if already exists                         |
+|*neverUpdate*         | `*false \| true`                             |Never update the stack if already exists                         |
 
 ### #Stack Outputs
 
-_No output._
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*outputs*         | `struct`          |-                   |
