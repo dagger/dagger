@@ -1,3 +1,4 @@
+// Docker container operations
 package docker
 
 import (
@@ -102,7 +103,10 @@ import (
 // Build a Docker image from the provided Dockerfile contents
 // FIXME: incorporate into #Build
 #ImageFromDockerfile: {
+	// Dockerfile passed as a string
 	dockerfile: string           @dagger(input)
+
+	// Build context
 	context:    dagger.#Artifact @dagger(input)
 
 	#up: [

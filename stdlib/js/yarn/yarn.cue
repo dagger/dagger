@@ -9,7 +9,7 @@ import (
 	"dagger.io/os"
 )
 
-// A Yarn package.
+// A Yarn package
 #Package: {
 	// Application source code
 	source: dagger.#Artifact @dagger(input)
@@ -28,11 +28,11 @@ import (
 	} @dagger(input)
 
 	// Write the contents of `environment` to this file,
-	// in the "envfile" format.
+	// in the "envfile" format
 	writeEnvFile: string | *"" @dagger(input)
 
 	// Read build output from this directory
-	// (path must be relative to working directory).
+	// (path must be relative to working directory)
 	buildDir: string | *"build" @dagger(input)
 
 	// Run this yarn script
@@ -41,6 +41,7 @@ import (
 	// Optional arguments for the script
 	args: [...string] | *[] @dagger(input)
 
+	// Build output directory
 	build: os.#Dir & {
 		from: ctr
 		path: "/build"

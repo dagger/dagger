@@ -1,16 +1,4 @@
-// Random generation utilities.
-//
-// Example:
-//
-// ```cue
-// str: random.#String & {
-//   seed: "str"
-//   length: 10
-// }
-// ```
-//
-//
-//
+// Random generation utilities
 package random
 
 import (

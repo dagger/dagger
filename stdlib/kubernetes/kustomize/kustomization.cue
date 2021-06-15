@@ -1,3 +1,4 @@
+// Kustomize config management
 package kustomize
 
 import (

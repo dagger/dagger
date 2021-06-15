@@ -1,3 +1,4 @@
+// Git operations
 package git
 
 import (
@@ -35,7 +36,11 @@ import (
 
 // Get the name of the current checked out branch or tag
 #CurrentBranch: {
+
+	// Git repository
 	repository: dagger.#Artifact @dagger(input)
+
+	// Git branch name
 	name: {
 		string
 		@dagger(output)
@@ -74,7 +79,11 @@ import (
 
 // List tags of a repository
 #Tags: {
+
+	// Git repository
 	repository: dagger.#Artifact @dagger(input)
+
+	// Repository tags
 	tags: {
 		[...string]
 		@dagger(output)
