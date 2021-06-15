@@ -22,8 +22,8 @@ No matter how your deployment works under the hood, you can manage it with the s
 This makes developers more productive, because they don't have to learn a new workflow every time their deployment
 system changes.
 
-## Alpha disclaimer
+## Dagger is alpha software
 
-Dagger is _alpha-quality software_. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still
-willing to try it, thank you! We appreciate your help and encourage you to ask
-questions and report issues.
+Warning! Dagger is _alpha-quality software_. It has many bugs, the user interface is minimal, and it may change in incompatible ways at any time. If you are still
+willing to try it, thank you! We appreciate your help and encourage you to [ask
+questions](https://github.com/dagger/dagger/discussions) and [report issues](https://github.com/dagger/dagger/issues).
