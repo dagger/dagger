@@ -20,11 +20,11 @@ common_setup() {
 dagger_new_with_plan() {
     local name="$1"
     local sourcePlan="$2"
-    local targetPlan="$DAGGER_WORKSPACE"/.dagger/env/"$name"/plan
+    local targetPlan="$DAGGER_WORKSPACE"/"$name"
 
-    "$DAGGER" new "$name"
-    rmdir "$targetPlan"
     ln -s "$sourcePlan" "$targetPlan"
+    "$DAGGER" new "$name" --module "$targetPlan"
+
 }
 
 skip_unless_secrets_available() {
