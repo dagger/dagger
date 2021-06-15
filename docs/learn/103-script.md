@@ -1,5 +1,5 @@
 ---
-slug: /learn/102-script
+slug: /learn/103-script
 ---
 
 # Dagger 103: integrate custom shell scripts
