@@ -1,8 +1,12 @@
-# Infra provisioning
+---
+slug: /learn/108-cloudformation
+---
 
-## Integrating with AWS Cloudformation
+# Dagger 108: provision infrastructure on AWS
 
-After deploying the app on a bucket provisioned from the web interface, let's see how Dagger can be leveraged to extend our deployment pipeline using Cloudformation's relay.
+In this guide you will learn how to automatically [provision infrastructure](https://dzone.com/articles/infrastructure-provisioning-–) on AWS, by integrating [Amazon Cloudformation](https://aws.amazon.com/cloudformation/) in your Dagger environment.
+
+We will start with something simple: provisioning a new bucket on [Amazon S3](https://en.wikipedia.org/wiki/Amazon_S3). But Cloudformation can provision almost any AWS resource; and Dagger can integrate with the full Cloudformation API.
 
 ## Prerequisites
 
