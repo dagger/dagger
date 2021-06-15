@@ -38,6 +38,52 @@ setup() {
     assert_failure
 }
 
+# create different environments from the same module
+@test "dagger new: modules" {
+    "$DAGGER" init
+
+    ln -s "$TESTDIR"/cli/input/simple "$DAGGER_WORKSPACE"/plan
+
+    "$DAGGER" new "a" --module "$DAGGER_WORKSPACE"/plan
+    "$DAGGER" new "b" --module "$DAGGER_WORKSPACE"/plan
+
+    "$DAGGER" input -e "a" text "input" "a"
+    "$DAGGER" input -e "b" text "input" "b"
+
+    "$DAGGER" up -e "a"
+    "$DAGGER" up -e "b"
+
+    run "$DAGGER" query -l error -e "a" input -f text
+    assert_success
+    assert_output "a"
+
+    run "$DAGGER" query -l error -e "b" input -f text
+    assert_success
+    assert_output "b"
+}
+
+# create different environments from the same module,
+# using different packages.
+@test "dagger new: packages" {
+    "$DAGGER" init
+
+    ln -s "$TESTDIR"/cli/packages "$DAGGER_WORKSPACE"/plan
+
+    "$DAGGER" new "a" --module "$DAGGER_WORKSPACE"/plan --package dagger.io/test/a
+    "$DAGGER" new "b" --module "$DAGGER_WORKSPACE"/plan --package dagger.io/test/b
+
+    "$DAGGER" up -e "a"
+    "$DAGGER" up -e "b"
+
+    run "$DAGGER" query -l error -e "a" exp -f text
+    assert_success
+    assert_output "a"
+
+    run "$DAGGER" query -l error -e "b" exp -f text
+    assert_success
+    assert_output "b"
+}
+
 @test "dagger query" {
     "$DAGGER" init
 

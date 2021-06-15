@@ -116,11 +116,14 @@ func (w *Workspace) List(ctx context.Context) ([]*State, error) {
 		}
 		st, err := w.Get(ctx, f.Name())
 		if err != nil {
-			log.
-				Ctx(ctx).
-				Err(err).
-				Str("name", f.Name()).
-				Msg("failed to load environment")
+			// If the environment doesn't exist (e.g. no values.yaml, skip silently)
+			if !errors.Is(err, ErrNotExist) {
+				log.
+					Ctx(ctx).
+					Err(err).
+					Str("name", f.Name()).
+					Msg("failed to load environment")
+			}
 			continue
 		}
 		environments = append(environments, st)
@@ -143,6 +146,9 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 
 	manifest, err := os.ReadFile(path.Join(envPath, manifestFile))
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotExist
+		}
 		return nil, err
 	}
 	manifest, err = keychain.Decrypt(ctx, manifest)
@@ -155,7 +161,19 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 		return nil, err
 	}
 	st.Path = envPath
-	st.Plan = path.Join(envPath, planDir)
+	// Backward compat: if no plan module has been provided,
+	// use `.dagger/env/<name>/plan`
+	if st.Plan.Module == "" {
+		planPath := path.Join(envPath, planDir)
+		if _, err := os.Stat(planPath); err != nil {
+			return nil, fmt.Errorf("missing plan information for %q", name)
+		}
+		planRelPath, err := filepath.Rel(w.Path, planPath)
+		if err != nil {
+			return nil, err
+		}
+		st.Plan.Module = planRelPath
+	}
 	st.Workspace = w.Path
 
 	computed, err := os.ReadFile(path.Join(envPath, stateDir, computedFile))
@@ -211,7 +229,7 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-func (w *Workspace) Create(ctx context.Context, name string) (*State, error) {
+func (w *Workspace) Create(ctx context.Context, name, module, pkg string) (*State, error) {
 	envPath, err := filepath.Abs(w.envPath(name))
 	if err != nil {
 		return nil, err
@@ -225,22 +243,33 @@ func (w *Workspace) Create(ctx context.Context, name string) (*State, error) {
 		return nil, err
 	}
 
-	// Plan directory
-	if err := os.Mkdir(path.Join(envPath, planDir), 0755); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, ErrExist
-		}
-		return nil, err
-	}
-
 	manifestPath := path.Join(envPath, manifestFile)
+
+	// Backward compat: if no plan module has been provided,
+	// use `.dagger/env/<name>/plan`
+	if module == "" {
+		planPath := path.Join(envPath, planDir)
+		if err := os.Mkdir(planPath, 0755); err != nil {
+			return nil, err
+		}
+
+		planRelPath, err := filepath.Rel(w.Path, planPath)
+		if err != nil {
+			return nil, err
+		}
+		module = planRelPath
+	}
 
 	st := &State{
 		Path:      envPath,
 		Workspace: w.Path,
-		Plan:      path.Join(envPath, planDir),
-		Name:      name,
+		Plan: Plan{
+			Module:  module,
+			Package: pkg,
+		},
+		Name: name,
 	}
+
 	data, err := yaml.Marshal(st)
 	if err != nil {
 		return nil, err

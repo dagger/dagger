@@ -8,8 +8,8 @@ type State struct {
 	// Workspace path
 	Workspace string `yaml:"-"`
 
-	// Plan path
-	Plan string `yaml:"-"`
+	// Plan
+	Plan Plan `yaml:"plan"`
 
 	// Human-friendly environment name.
 	// A environment may have more than one name.
@@ -23,10 +23,15 @@ type State struct {
 	Computed string `yaml:"-"`
 }
 
+type Plan struct {
+	Module  string `yaml:"module,omitempty"`
+	Package string `yaml:"package,omitempty"`
+}
+
 // Cue module containing the environment plan
 // The input's top-level artifact is used as a module directory.
-func (s *State) PlanSource() Input {
-	return DirInput(s.Plan, []string{"*.cue", "cue.mod"}, []string{})
+func (p *Plan) Source() Input {
+	return DirInput(p.Module, []string{}, []string{})
 }
 
 func (s *State) SetInput(key string, value Input) error {

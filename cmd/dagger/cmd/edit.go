@@ -65,6 +65,7 @@ var editCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to decode file")
 		}
 		st.Name = newState.Name
+		st.Plan = newState.Plan
 		st.Inputs = newState.Inputs
 		if err := workspace.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Msg("failed to save state")
