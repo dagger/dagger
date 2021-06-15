@@ -1,3 +1,4 @@
+// AWS Simple Storage Service
 package s3
 
 import (
@@ -6,7 +7,7 @@ import (
 	"dagger.io/aws"
 )
 
-// S3 file or Directory upload
+// S3 Bucket upload (file or directory)
 #Put: {
 
 	// AWS Config
@@ -91,7 +92,7 @@ import (
 	}
 }
 
-// S3 Sync
+// S3 Bucket sync
 #Sync: {
 	// AWS Config
 	config: aws.#Config

@@ -4,6 +4,8 @@ sidebar_label: git
 
 # dagger.io/git
 
+Git operations
+
 ## #CurrentBranch
 
 Get the name of the current checked out branch or tag
@@ -12,13 +14,13 @@ Get the name of the current checked out branch or tag
 
 | Name             | Type                  | Description        |
 | -------------    |:-------------:        |:-------------:     |
-|*repository*      | `dagger.#Artifact`    |-                   |
+|*repository*      | `dagger.#Artifact`    |Git repository      |
 
 ### #CurrentBranch Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
-|*name*            | `string`          |-                   |
+|*name*            | `string`          |Git branch name     |
 
 ## #Repository
 
@@ -44,10 +46,10 @@ List tags of a repository
 
 | Name             | Type                  | Description        |
 | -------------    |:-------------:        |:-------------:     |
-|*repository*      | `dagger.#Artifact`    |-                   |
+|*repository*      | `dagger.#Artifact`    |Git repository      |
 
 ### #Tags Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
-|*tags*            | `[]`              |-                   |
+|*tags*            | `[]`              |Repository tags     |

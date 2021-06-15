@@ -4,6 +4,8 @@ sidebar_label: kustomize
 
 # dagger.io/kubernetes/kustomize
 
+Kustomize config management
+
 ## #Kustomization
 
 ### #Kustomization Inputs

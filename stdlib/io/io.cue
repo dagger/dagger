@@ -1,3 +1,4 @@
+// IO operations
 package io
 
 // Standard interface for directory operations in cue
@@ -13,8 +14,10 @@ package io
 	...
 }
 
+// Standard ReadWriter interface
 #ReadWriter: #Reader & #Writer
 
+// Standard Reader interface
 #Reader: {
 	read: {
 		// FIXME: support different data schemas for different formats
@@ -26,6 +29,7 @@ package io
 	...
 }
 
+// Standard Writer interface
 #Writer: {
 	write: *null | {
 		// FIXME: support writing in multiple formats

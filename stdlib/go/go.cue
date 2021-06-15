@@ -1,3 +1,4 @@
+// Go build operations
 package go
 
 import (
@@ -10,9 +11,12 @@ import (
 
 // A standalone go environment
 #Container: {
+
 	// Go version to use
 	version: *"1.16" | string @dagger(input)
-	source:  dagger.#Artifact @dagger(input)
+
+	// Source code
+	source: dagger.#Artifact @dagger(input)
 
 	os.#Container & {
 		env: CGO_ENABLED: "0"
@@ -36,6 +40,7 @@ import (
 	}
 }
 
+// Re-usable component for the Go compiler
 #Go: {
 	// Go version to use
 	version: *"1.16" | string @dagger(input)
@@ -70,6 +75,7 @@ import (
 	]
 }
 
+// Go application builder
 #Build: {
 	// Go version to use
 	version: *#Go.version | string @dagger(input)
@@ -95,6 +101,7 @@ import (
 	// Specify the targeted binary name
 	output: string @dagger(output)
 
+	// Environment variables
 	env: {
 		[string]: string @dagger(input)
 	}

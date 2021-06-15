@@ -1,10 +1,11 @@
+// AWS Elastic Container Service (ECS)
 package ecs
 
 import (
 	"dagger.io/aws"
 )
 
-// RunTask implement ecs run-task
+// RunTask implements ecs run-task for running a single container on ECS
 #RunTask: {
 
 	// AWS Config

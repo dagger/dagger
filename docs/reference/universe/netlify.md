@@ -4,9 +4,11 @@ sidebar_label: netlify
 
 # dagger.io/netlify
 
+Netlify client operations
+
 ## #Account
 
-A Netlify account
+Netlify account credentials
 
 ### #Account Inputs
 
@@ -21,7 +23,7 @@ _No output._
 
 ## #Site
 
-A Netlify site
+Netlify site
 
 ### #Site Inputs
 

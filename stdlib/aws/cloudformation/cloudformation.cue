@@ -1,3 +1,4 @@
+// AWS Cloud Formation
 package cloudformation
 
 import (

@@ -1,3 +1,4 @@
+// AWS Relational Database Service (RDS)
 package rds
 
 import (
@@ -6,6 +7,7 @@ import (
 	"dagger.io/aws"
 )
 
+// Creates a new Database on an existing RDS Instance
 #CreateDB: {
 	// AWS Config
 	config: aws.#Config
@@ -19,6 +21,7 @@ import (
 	// ARN of the database secret (for connecting via rds api)
 	secretArn: string @dagger(input)
 
+	// Database type MySQL or PostgreSQL (Aurora Serverless only)
 	dbType: "mysql" | "postgres" @dagger(input)
 
 	// Name of the DB created
@@ -79,6 +82,7 @@ import (
 	}
 }
 
+// Creates a new user credentials on an existing RDS Instance
 #CreateUser: {
 	// AWS Config
 	config: aws.#Config
@@ -95,8 +99,10 @@ import (
 	// ARN of the database secret (for connecting via rds api)
 	secretArn: string @dagger(input)
 
+	// Name of the database to grants access to
 	grantDatabase: string | *"" @dagger(input)
 
+	// Database type MySQL or PostgreSQL (Aurora Serverless only)
 	dbType: "mysql" | "postgres" @dagger(input)
 
 	// Outputed username
@@ -185,6 +191,7 @@ import (
 	}
 }
 
+// Fetches information on an existing RDS Instance
 #Instance: {
 	// AWS Config
 	config: aws.#Config

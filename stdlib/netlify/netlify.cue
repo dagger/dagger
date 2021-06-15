@@ -1,3 +1,4 @@
+// Netlify client operations
 package netlify
 
 import (
@@ -6,7 +7,7 @@ import (
 	"dagger.io/os"
 )
 
-// A Netlify account
+// Netlify account credentials
 #Account: {
 	// Use this Netlify account name
 	// (also referred to as "team" in the Netlify docs)
@@ -16,7 +17,7 @@ import (
 	token: dagger.#Secret @dagger(input)
 }
 
-// A Netlify site
+// Netlify site
 #Site: {
 	// Netlify account this site is attached to
 	account: #Account

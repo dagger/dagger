@@ -1,3 +1,4 @@
+// AWS Elastic Load Balancer (ELBv2)
 package elb
 
 import (
@@ -5,7 +6,7 @@ import (
 	"dagger.io/aws"
 )
 
-// Returns a non-taken rule priority (randomized)
+// Returns an unused rule priority (randomized in available range)
 #RandomRulePriority: {
 	// AWS Config
 	config: aws.#Config

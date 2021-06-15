@@ -4,6 +4,8 @@ sidebar_label: eks
 
 # dagger.io/aws/eks
 
+AWS Elastic Kubernetes Service (EKS)
+
 ## #KubeConfig
 
 KubeConfig config outputs a valid kube-auth-config for kubectl client

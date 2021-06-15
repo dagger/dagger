@@ -1,3 +1,4 @@
+// AWS base package
 package aws
 
 import (
@@ -6,7 +7,7 @@ import (
 	"dagger.io/alpine"
 )
 
-// Base AWS Config
+// AWS Config shared by all AWS packages
 #Config: {
 	// AWS region
 	region: string @dagger(input)

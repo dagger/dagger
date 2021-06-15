@@ -1,3 +1,4 @@
+// Kubernetes client operations
 package kubernetes
 
 import (
@@ -6,8 +7,10 @@ import (
 	"dagger.io/alpine"
 )
 
+// Kubectl client
 #Kubectl: {
 
+	// Kubectl version
 	version: *"v1.19.9" | string
 
 	#code: #"""

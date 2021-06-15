@@ -1,3 +1,4 @@
+// Terraform operations
 package terraform
 
 import (
@@ -7,15 +8,20 @@ import (
 	"dagger.io/dagger/op"
 )
 
+// Terraform configuration
 #Configuration: {
+
+	// Terraform version
 	version: string | *"latest" @dagger(input)
 
+	// Source configuration
 	source: dagger.#Artifact @dagger(input)
 
 	tfvars?: {
 		...
 	}
 
+	// Environment variables
 	env: {
 		[string]: string @dagger(input)
 	}

@@ -4,6 +4,8 @@ sidebar_label: ecr
 
 # dagger.io/aws/ecr
 
+Amazon Elastic Container Registry (ECR)
+
 ## #Credentials
 
 Convert AWS credentials to Docker Registry credentials for ECR
