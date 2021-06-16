@@ -1,0 +1,21 @@
+name: git
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRVm9VbnZLQzl0LzBjYUkw
+            cXBwTlJWeXpCellCenJFcEFBejVGREpIaVdZCkV1U3BMK1BUOStvUThUd09DVUNK
+            OXJ4Yjl4WEtSMHlpeG5TVUNwQU5iMXcKLS0tIE1HS0U0YWxYS3V5UXFmUUxTVGlk
+            TmhJNisyamw3d244aGVJSEVFVUVLZGsKvd+nowA0CLXQbdvyI4J0lBjs9vdISWlo
+            gGvR49uul3Z8raVWXFUzsyQ8xTvYNg0ovynFG2KdagSKr1DlhKMBEQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-15T14:34:51Z"
+    mac: ENC[AES256_GCM,data:phQpRQlHv9c3VRcqZ7OkSfW4a9oPnTD2ucsB8TJatgzLrbP1+erj9x2jrPex0T2MExIFFzNynSAiWwueLYqCzUvuG2DfIokvM9erNfdpbIBTtJeWO9+hVIkzoQ6xeKg1wLb0q3U7Cbbe6GBFA3oabPN2kyzGbgS2LO2Ou77NMLk=,iv:sS0MRNEGBWos6XNAQEYK2UmaK9g0rd+Nx1xBNeh6w+M=,tag:DIcqzBvChde/C7T/yAhn+w==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
