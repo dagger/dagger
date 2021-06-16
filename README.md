@@ -5,7 +5,7 @@ Dagger is a programmable deployment system.
 Using Dagger, software builders can automate the deployment of any application
 to any infrastructure, in just a few lines of code.
 
-![image](https://user-images.githubusercontent.com/29565/112705398-d0222980-8e5b-11eb-98b9-32c117a3d606.jpeg)
+![Dagger_Website_Ship](https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png)
 
 The Dagger platform adapts to your application, not the other way around.
 Thanks to its ecosystem of reusable packages and flexible scripting system,
@@ -16,25 +16,13 @@ No matter how your deployment works under the hood, you can manage it with the
 same Dagger user interface. This makes developers more productive, because they
 don't have to learn a new workflow every time their deployment system changes.
 
-## Learn More
+## Getting Started & Documentation
 
-* [Dagger vs. Other Software](docs/vs.md)
-* [Dagger Programming Guide](docs/guides/programming.md)
-* [Dagger Operator Manual](docs/guides/operator.md)
-
-## Download and Install
-
-* [Install Dagger from source](docs/install.md)
-* Binary distributions [*coming soon*]
-
-## Community
-
-Join the [Dagger community chatroom](https://discord.gg/Rmffpmc) on Discord.
-We welcome beginners and experts alike!
+[Dagger Documentation Website](https://docs.dagger.io/)
 
 ## Alpha disclaimer
 
-Dagger is *alpha-quality software*. It has many bugs, the user interface is
+Dagger is _alpha-quality software_. It has many bugs, the user interface is
 minimal, and it may change in incompatible ways at any time. If you are still
 willing to try it, thank you! We appreciate your help and encourage you to ask
 questions and report issues.
