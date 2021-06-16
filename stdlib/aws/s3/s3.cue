@@ -20,7 +20,7 @@ import (
 	target: string @dagger(input)
 
 	// Delete files that already exist on remote destination
-	delete: *false | false @dagger(input)
+	delete: *false | true @dagger(input)
 
 	// Object content type
 	contentType: string | *"" @dagger(input)

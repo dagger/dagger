@@ -18,6 +18,7 @@ TestDirectory: dagger.#Artifact
 
 TestS3Object: {
 	deploy: s3.#Object & {
+		always: true
 		config: TestConfig.awsConfig
 		source: TestDirectory
 		target: "s3://\(bucket)/"
