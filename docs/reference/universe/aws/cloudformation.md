@@ -6,11 +6,15 @@ sidebar_label: cloudformation
 
 AWS CloudFormation
 
-## #Stack
+```cue
+import "dagger.io/aws/cloudformation"
+```
+
+## cloudformation.#Stack
 
 AWS CloudFormation Stack
 
-### #Stack Inputs
+### cloudformation.#Stack Inputs
 
 | Name                 | Type                                         | Description                                                     |
 | -------------        |:-------------:                               |:-------------:                                                  |
@@ -24,7 +28,7 @@ AWS CloudFormation Stack
 |*timeout*             | `*10 \| \>=0 & int`                          |Maximum waiting time until stack creation/update (in minutes)    |
 |*neverUpdate*         | `*false \| true`                             |Never update the stack if already exists                         |
 
-### #Stack Outputs
+### cloudformation.#Stack Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |

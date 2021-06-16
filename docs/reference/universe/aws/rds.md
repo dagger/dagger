@@ -6,11 +6,15 @@ sidebar_label: rds
 
 AWS Relational Database Service (RDS)
 
-## #Database
+```cue
+import "dagger.io/aws/rds"
+```
+
+## rds.#Database
 
 Creates a new Database on an existing RDS Instance
 
-### #Database Inputs
+### rds.#Database Inputs
 
 | Name                 | Type                | Description                                                  |
 | -------------        |:-------------:      |:-------------:                                               |
@@ -22,17 +26,17 @@ Creates a new Database on an existing RDS Instance
 |*secretArn*           | `string`            |ARN of the database secret (for connecting via rds api)       |
 |*dbType*              | `string`            |Database type MySQL or PostgreSQL (Aurora Serverless only)    |
 
-### #Database Outputs
+### rds.#Database Outputs
 
 | Name             | Type              | Description              |
 | -------------    |:-------------:    |:-------------:           |
 |*out*             | `string`          |Name of the DB created    |
 
-## #Instance
+## rds.#Instance
 
 Fetches information on an existing RDS Instance
 
-### #Instance Inputs
+### rds.#Instance Inputs
 
 | Name                 | Type                | Description                    |
 | -------------        |:-------------:      |:-------------:                 |
@@ -41,7 +45,7 @@ Fetches information on an existing RDS Instance
 |*config.secretKey*    | `dagger.#Secret`    |AWS secret key                  |
 |*dbArn*               | `string`            |ARN of the database instance    |
 
-### #Instance Outputs
+### rds.#Instance Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
@@ -49,11 +53,11 @@ Fetches information on an existing RDS Instance
 |*port*            | `_\|_`            |DB port             |
 |*info*            | `_\|_`            |-                   |
 
-## #User
+## rds.#User
 
 Creates a new user credentials on an existing RDS Instance
 
-### #User Inputs
+### rds.#User Inputs
 
 | Name                 | Type                | Description                                                  |
 | -------------        |:-------------:      |:-------------:                                               |
@@ -67,7 +71,7 @@ Creates a new user credentials on an existing RDS Instance
 |*grantDatabase*       | `*"" \| string`     |Name of the database to grants access to                      |
 |*dbType*              | `string`            |Database type MySQL or PostgreSQL (Aurora Serverless only)    |
 
-### #User Outputs
+### rds.#User Outputs
 
 | Name             | Type              | Description         |
 | -------------    |:-------------:    |:-------------:      |

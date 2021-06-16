@@ -6,62 +6,66 @@ sidebar_label: io
 
 IO operations
 
-## #Dir
+```cue
+import "dagger.io/io"
+```
+
+## io.#Dir
 
 Standard interface for directory operations in cue
 
-### #Dir Inputs
+### io.#Dir Inputs
 
 _No input._
 
-### #Dir Outputs
+### io.#Dir Outputs
 
 _No output._
 
-## #File
+## io.#File
 
 Standard interface for file operations in cue
 
-### #File Inputs
+### io.#File Inputs
 
 _No input._
 
-### #File Outputs
+### io.#File Outputs
 
 _No output._
 
-## #ReadWriter
+## io.#ReadWriter
 
 Standard ReadWriter interface
 
-### #ReadWriter Inputs
+### io.#ReadWriter Inputs
 
 _No input._
 
-### #ReadWriter Outputs
+### io.#ReadWriter Outputs
 
 _No output._
 
-## #Reader
+## io.#Reader
 
 Standard Reader interface
 
-### #Reader Inputs
+### io.#Reader Inputs
 
 _No input._
 
-### #Reader Outputs
+### io.#Reader Outputs
 
 _No output._
 
-## #Writer
+## io.#Writer
 
 Standard Writer interface
 
-### #Writer Inputs
+### io.#Writer Inputs
 
 _No input._
 
-### #Writer Outputs
+### io.#Writer Outputs
 
 _No output._

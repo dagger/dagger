@@ -4,14 +4,18 @@ sidebar_label: dagger
 
 # dagger.io/dagger
 
-## #Secret
+```cue
+import "dagger.io/dagger"
+```
+
+## dagger.#Secret
 
 Secret value
 
-### #Secret Inputs
+### dagger.#Secret Inputs
 
 _No input._
 
-### #Secret Outputs
+### dagger.#Secret Outputs
 
 _No output._

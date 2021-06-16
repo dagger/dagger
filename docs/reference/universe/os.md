@@ -4,46 +4,50 @@ sidebar_label: os
 
 # dagger.io/os
 
-## #Container
+```cue
+import "dagger.io/os"
+```
+
+## os.#Container
 
 Built-in container implementation, using buildkit
 
-### #Container Inputs
+### os.#Container Inputs
 
 _No input._
 
-### #Container Outputs
+### os.#Container Outputs
 
 _No output._
 
-## #Dir
+## os.#Dir
 
-### #Dir Inputs
+### os.#Dir Inputs
 
 _No input._
 
-### #Dir Outputs
+### os.#Dir Outputs
 
 _No output._
 
-## #File
+## os.#File
 
 Built-in file implementation, using buildkit
 
-### #File Inputs
+### os.#File Inputs
 
 _No input._
 
-### #File Outputs
+### os.#File Outputs
 
 _No output._
 
-## #ReadDir
+## os.#ReadDir
 
-### #ReadDir Inputs
+### os.#ReadDir Inputs
 
 _No input._
 
-### #ReadDir Outputs
+### os.#ReadDir Outputs
 
 _No output._

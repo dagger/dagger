@@ -6,81 +6,85 @@ sidebar_label: docker
 
 Docker container operations
 
-## #Build
+```cue
+import "dagger.io/docker"
+```
+
+## docker.#Build
 
 Build a Docker image from source, using included Dockerfile
 
-### #Build Inputs
+### docker.#Build Inputs
 
 | Name             | Type                  | Description        |
 | -------------    |:-------------:        |:-------------:     |
 |*source*          | `dagger.#Artifact`    |-                   |
 
-### #Build Outputs
+### docker.#Build Outputs
 
 _No output._
 
-## #Command
+## docker.#Command
 
 A container image that can run any docker command
 
-### #Command Inputs
+### docker.#Command Inputs
 
 | Name             | Type              | Description          |
 | -------------    |:-------------:    |:-------------:       |
 |*command*         | `string`          |Command to execute    |
 
-### #Command Outputs
+### docker.#Command Outputs
 
 _No output._
 
-## #ImageFromDockerfile
+## docker.#ImageFromDockerfile
 
 Build a Docker image from the provided Dockerfile contents
 
-### #ImageFromDockerfile Inputs
+### docker.#ImageFromDockerfile Inputs
 
 | Name             | Type                  | Description                     |
 | -------------    |:-------------:        |:-------------:                  |
 |*dockerfile*      | `string`              |Dockerfile passed as a string    |
 |*context*         | `dagger.#Artifact`    |Build context                    |
 
-### #ImageFromDockerfile Outputs
+### docker.#ImageFromDockerfile Outputs
 
 _No output._
 
-## #Pull
+## docker.#Pull
 
 Pull a docker container
 
-### #Pull Inputs
+### docker.#Pull Inputs
 
 | Name             | Type              | Description                                             |
 | -------------    |:-------------:    |:-------------:                                          |
 |*from*            | `string`          |Remote ref (example: "index.docker.io/alpine:latest")    |
 
-### #Pull Outputs
+### docker.#Pull Outputs
 
 _No output._
 
-## #Push
+## docker.#Push
 
 Push a docker image
 
-### #Push Inputs
+### docker.#Push Inputs
 
 | Name             | Type                  | Description                                             |
 | -------------    |:-------------:        |:-------------:                                          |
 |*ref*             | `string`              |Remote ref (example: "index.docker.io/alpine:latest")    |
 |*source*          | `dagger.#Artifact`    |Image                                                    |
 
-### #Push Outputs
+### docker.#Push Outputs
 
 _No output._
 
-## #Run
+## docker.#Run
 
-### #Run Inputs
+### docker.#Run Inputs
 
 | Name                  | Type                | Description                           |
 | -------------         |:-------------:      |:-------------:                        |
@@ -96,6 +100,6 @@ _No output._
 |*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
 |*run.env.IMAGE_REF*    | `string`            |-                                      |
 
-### #Run Outputs
+### docker.#Run Outputs
 
 _No output._

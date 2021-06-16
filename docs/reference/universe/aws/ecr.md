@@ -6,11 +6,15 @@ sidebar_label: ecr
 
 Amazon Elastic Container Registry (ECR)
 
-## #Credentials
+```cue
+import "dagger.io/aws/ecr"
+```
+
+## ecr.#Credentials
 
 Convert ECR credentials to Docker Login format
 
-### #Credentials Inputs
+### ecr.#Credentials Inputs
 
 | Name                           | Type                | Description        |
 | -------------                  |:-------------:      |:-------------:     |
@@ -21,7 +25,7 @@ Convert ECR credentials to Docker Login format
 |*ctr.image.config.accessKey*    | `dagger.#Secret`    |AWS access key      |
 |*ctr.image.config.secretKey*    | `dagger.#Secret`    |AWS secret key      |
 
-### #Credentials Outputs
+### ecr.#Credentials Outputs
 
 | Name             | Type              | Description           |
 | -------------    |:-------------:    |:-------------:        |

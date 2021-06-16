@@ -6,14 +6,18 @@ sidebar_label: alpine
 
 Base package for Alpine Linux
 
-## #Image
+```cue
+import "dagger.io/alpine"
+```
+
+## alpine.#Image
 
 Base image for Alpine Linux
 
-### #Image Inputs
+### alpine.#Image Inputs
 
 _No input._
 
-### #Image Outputs
+### alpine.#Image Outputs
 
 _No output._

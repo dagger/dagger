@@ -6,11 +6,15 @@ sidebar_label: go
 
 Go build operations
 
-## #Build
+```cue
+import "dagger.io/go"
+```
+
+## go.#Build
 
 Go application builder
 
-### #Build Inputs
+### go.#Build Inputs
 
 | Name             | Type                    | Description                      |
 | -------------    |:-------------:          |:-------------:                   |
@@ -22,17 +26,17 @@ Go application builder
 |*tags*            | `*"" \| string`         |Build tags to use for building    |
 |*ldflags*         | `*"" \| string`         |LDFLAGS to use for linking        |
 
-### #Build Outputs
+### go.#Build Outputs
 
 | Name             | Type              | Description                        |
 | -------------    |:-------------:    |:-------------:                     |
 |*output*          | `string`          |Specify the targeted binary name    |
 
-## #Container
+## go.#Container
 
 A standalone go environment
 
-### #Container Inputs
+### go.#Container Inputs
 
 | Name             | Type                                | Description                                             |
 | -------------    |:-------------:                      |:-------------:                                          |
@@ -40,15 +44,15 @@ A standalone go environment
 |*source*          | `dagger.#Artifact`                  |Source code                                              |
 |*image.from*      | `"docker.io/golang:1.16-alpine"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
 
-### #Container Outputs
+### go.#Container Outputs
 
 _No output._
 
-## #Go
+## go.#Go
 
 Re-usable component for the Go compiler
 
-### #Go Inputs
+### go.#Go Inputs
 
 | Name             | Type                   | Description                  |
 | -------------    |:-------------:         |:-------------:               |
@@ -56,13 +60,13 @@ Re-usable component for the Go compiler
 |*args*            | `[]`                   |Arguments to the Go binary    |
 |*source*          | `dagger.#Artifact`     |Source Directory to build     |
 
-### #Go Outputs
+### go.#Go Outputs
 
 _No output._
 
-## #Test
+## go.#Test
 
-### #Test Inputs
+### go.#Test Inputs
 
 | Name             | Type                                | Description                  |
 | -------------    |:-------------:                      |:-------------:               |
@@ -71,6 +75,6 @@ _No output._
 |*packages*        | `*"." \| string`                    |Packages to test              |
 |*args*            | `["test", "-v", *"." \| string]`    |Arguments to the Go binary    |
 
-### #Test Outputs
+### go.#Test Outputs
 
 _No output._

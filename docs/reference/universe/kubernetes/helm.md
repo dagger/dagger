@@ -6,11 +6,15 @@ sidebar_label: helm
 
 Helm package manager
 
-## #Chart
+```cue
+import "dagger.io/kubernetes/helm"
+```
+
+## helm.#Chart
 
 Install a Helm chart
 
-### #Chart Inputs
+### helm.#Chart Inputs
 
 | Name               | Type                                               | Description                                                                                                                                                                                                                   |
 | -------------      |:-------------:                                     |:-------------:                                                                                                                                                                                                                |
@@ -24,6 +28,6 @@ Install a Helm chart
 |*version*           | `*"3.5.2" \| string`                               |Helm version                                                                                                                                                                                                                   |
 |*kubectlVersion*    | `*"v1.19.9" \| string`                             |Kubectl version                                                                                                                                                                                                                |
 
-### #Chart Outputs
+### helm.#Chart Outputs
 
 _No output._

@@ -6,11 +6,15 @@ sidebar_label: gcr
 
 Google Container Registry
 
-## #Credentials
+```cue
+import "dagger.io/gcp/gcr"
+```
+
+## gcr.#Credentials
 
 Credentials retriever for GCR
 
-### #Credentials Inputs
+### gcr.#Credentials Inputs
 
 | Name                  | Type                | Description        |
 | -------------         |:-------------:      |:-------------:     |
@@ -18,7 +22,7 @@ Credentials retriever for GCR
 |*config.project*       | `string`            |GCP project         |
 |*config.serviceKey*    | `dagger.#Secret`    |GCP service key     |
 
-### #Credentials Outputs
+### gcr.#Credentials Outputs
 
 | Name             | Type                     | Description             |
 | -------------    |:-------------:           |:-------------:          |

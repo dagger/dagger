@@ -6,11 +6,15 @@ sidebar_label: gcp
 
 Google Cloud Platform
 
-## #Config
+```cue
+import "dagger.io/gcp"
+```
+
+## gcp.#Config
 
 Base Google Cloud Config
 
-### #Config Inputs
+### gcp.#Config Inputs
 
 | Name             | Type                | Description        |
 | -------------    |:-------------:      |:-------------:     |
@@ -18,15 +22,15 @@ Base Google Cloud Config
 |*project*         | `string`            |GCP project         |
 |*serviceKey*      | `dagger.#Secret`    |GCP service key     |
 
-### #Config Outputs
+### gcp.#Config Outputs
 
 _No output._
 
-## #GCloud
+## gcp.#GCloud
 
 Re-usable gcloud component
 
-### #GCloud Inputs
+### gcp.#GCloud Inputs
 
 | Name                  | Type                | Description        |
 | -------------         |:-------------:      |:-------------:     |
@@ -34,6 +38,6 @@ Re-usable gcloud component
 |*config.project*       | `string`            |GCP project         |
 |*config.serviceKey*    | `dagger.#Secret`    |GCP service key     |
 
-### #GCloud Outputs
+### gcp.#GCloud Outputs
 
 _No output._

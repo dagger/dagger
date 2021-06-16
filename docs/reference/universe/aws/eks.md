@@ -6,11 +6,15 @@ sidebar_label: eks
 
 AWS Elastic Kubernetes Service (EKS)
 
-## #KubeConfig
+```cue
+import "dagger.io/aws/eks"
+```
+
+## eks.#KubeConfig
 
 KubeConfig config outputs a valid kube-auth-config for kubectl client
 
-### #KubeConfig Inputs
+### eks.#KubeConfig Inputs
 
 | Name                 | Type                      | Description        |
 | -------------        |:-------------:            |:-------------:     |
@@ -20,7 +24,7 @@ KubeConfig config outputs a valid kube-auth-config for kubectl client
 |*clusterName*         | `string`                  |EKS cluster name    |
 |*version*             | `*"v1.19.9" \| string`    |Kubectl version     |
 
-### #KubeConfig Outputs
+### eks.#KubeConfig Outputs
 
 | Name             | Type              | Description                                           |
 | -------------    |:-------------:    |:-------------:                                        |

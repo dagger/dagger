@@ -6,11 +6,15 @@ sidebar_label: aws
 
 AWS base package
 
-## #CLI
+```cue
+import "dagger.io/aws"
+```
+
+## aws.#CLI
 
 Re-usable aws-cli component
 
-### #CLI Inputs
+### aws.#CLI Inputs
 
 | Name                 | Type                | Description        |
 | -------------        |:-------------:      |:-------------:     |
@@ -18,15 +22,15 @@ Re-usable aws-cli component
 |*config.accessKey*    | `dagger.#Secret`    |AWS access key      |
 |*config.secretKey*    | `dagger.#Secret`    |AWS secret key      |
 
-### #CLI Outputs
+### aws.#CLI Outputs
 
 _No output._
 
-## #Config
+## aws.#Config
 
 AWS Config shared by all AWS packages
 
-### #Config Inputs
+### aws.#Config Inputs
 
 | Name             | Type                | Description        |
 | -------------    |:-------------:      |:-------------:     |
@@ -34,6 +38,6 @@ AWS Config shared by all AWS packages
 |*accessKey*       | `dagger.#Secret`    |AWS access key      |
 |*secretKey*       | `dagger.#Secret`    |AWS secret key      |
 
-### #Config Outputs
+### aws.#Config Outputs
 
 _No output._

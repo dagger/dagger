@@ -6,156 +6,160 @@ sidebar_label: op
 
 op: low-level operations for Dagger processing pipelines
 
-## #Copy
+```cue
+import "dagger.io/dagger/op"
+```
 
-### #Copy Inputs
+## op.#Copy
 
-_No input._
-
-### #Copy Outputs
-
-_No output._
-
-## #DockerBuild
-
-### #DockerBuild Inputs
+### op.#Copy Inputs
 
 _No input._
 
-### #DockerBuild Outputs
+### op.#Copy Outputs
 
 _No output._
 
-## #DockerLogin
+## op.#DockerBuild
 
-### #DockerLogin Inputs
+### op.#DockerBuild Inputs
 
 _No input._
 
-### #DockerLogin Outputs
+### op.#DockerBuild Outputs
 
 _No output._
 
-## #Exec
+## op.#DockerLogin
 
-### #Exec Inputs
+### op.#DockerLogin Inputs
 
 _No input._
 
-### #Exec Outputs
+### op.#DockerLogin Outputs
 
 _No output._
 
-## #Export
+## op.#Exec
+
+### op.#Exec Inputs
+
+_No input._
+
+### op.#Exec Outputs
+
+_No output._
+
+## op.#Export
 
 Export a value from fs state to cue
 
-### #Export Inputs
+### op.#Export Inputs
 
 _No input._
 
-### #Export Outputs
+### op.#Export Outputs
 
 _No output._
 
-## #FetchContainer
+## op.#FetchContainer
 
-### #FetchContainer Inputs
+### op.#FetchContainer Inputs
 
 _No input._
 
-### #FetchContainer Outputs
+### op.#FetchContainer Outputs
 
 _No output._
 
-## #FetchGit
+## op.#FetchGit
 
-### #FetchGit Inputs
+### op.#FetchGit Inputs
 
 _No input._
 
-### #FetchGit Outputs
+### op.#FetchGit Outputs
 
 _No output._
 
-## #Load
+## op.#Load
 
-### #Load Inputs
+### op.#Load Inputs
 
 _No input._
 
-### #Load Outputs
+### op.#Load Outputs
 
 _No output._
 
-## #Local
+## op.#Local
 
-### #Local Inputs
+### op.#Local Inputs
 
 _No input._
 
-### #Local Outputs
+### op.#Local Outputs
 
 _No output._
 
-## #Mkdir
+## op.#Mkdir
 
-### #Mkdir Inputs
+### op.#Mkdir Inputs
 
 _No input._
 
-### #Mkdir Outputs
+### op.#Mkdir Outputs
 
 _No output._
 
-## #Op
+## op.#Op
 
 One operation in a pipeline
 
-### #Op Inputs
+### op.#Op Inputs
 
 _No input._
 
-### #Op Outputs
+### op.#Op Outputs
 
 _No output._
 
-## #PushContainer
+## op.#PushContainer
 
-### #PushContainer Inputs
+### op.#PushContainer Inputs
 
 _No input._
 
-### #PushContainer Outputs
+### op.#PushContainer Outputs
 
 _No output._
 
-## #Subdir
+## op.#Subdir
 
-### #Subdir Inputs
+### op.#Subdir Inputs
 
 _No input._
 
-### #Subdir Outputs
+### op.#Subdir Outputs
 
 _No output._
 
-## #Workdir
+## op.#Workdir
 
-### #Workdir Inputs
+### op.#Workdir Inputs
 
 _No input._
 
-### #Workdir Outputs
+### op.#Workdir Outputs
 
 _No output._
 
-## #WriteFile
+## op.#WriteFile
 
-### #WriteFile Inputs
+### op.#WriteFile Inputs
 
 _No input._
 
-### #WriteFile Outputs
+### op.#WriteFile Outputs
 
 _No output._

@@ -6,11 +6,15 @@ sidebar_label: yarn
 
 Yarn is a package manager for Javascript applications
 
-## #Package
+```cue
+import "dagger.io/js/yarn"
+```
+
+## yarn.#Package
 
 A Yarn package
 
-### #Package Inputs
+### yarn.#Package Inputs
 
 | Name             | Type                    | Description                                                                          |
 | -------------    |:-------------:          |:-------------:                                                                       |
@@ -23,7 +27,7 @@ A Yarn package
 |*script*          | `*"build" \| string`    |Run this yarn script                                                                  |
 |*args*            | `*[] \| []`             |Optional arguments for the script                                                     |
 
-### #Package Outputs
+### yarn.#Package Outputs
 
 | Name             | Type              | Description              |
 | -------------    |:-------------:    |:-------------:           |

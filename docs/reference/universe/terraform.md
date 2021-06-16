@@ -6,18 +6,22 @@ sidebar_label: terraform
 
 Terraform operations
 
-## #Configuration
+```cue
+import "dagger.io/terraform"
+```
+
+## terraform.#Configuration
 
 Terraform configuration
 
-### #Configuration Inputs
+### terraform.#Configuration Inputs
 
 | Name             | Type                     | Description            |
 | -------------    |:-------------:           |:-------------:         |
 |*version*         | `*"latest" \| string`    |Terraform version       |
 |*source*          | `dagger.#Artifact`       |Source configuration    |
 
-### #Configuration Outputs
+### terraform.#Configuration Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |

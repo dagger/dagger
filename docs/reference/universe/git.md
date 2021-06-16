@@ -6,27 +6,31 @@ sidebar_label: git
 
 Git operations
 
-## #CurrentBranch
+```cue
+import "dagger.io/git"
+```
+
+## git.#CurrentBranch
 
 Get the name of the current checked out branch or tag
 
-### #CurrentBranch Inputs
+### git.#CurrentBranch Inputs
 
 | Name             | Type                  | Description        |
 | -------------    |:-------------:        |:-------------:     |
 |*repository*      | `dagger.#Artifact`    |Git repository      |
 
-### #CurrentBranch Outputs
+### git.#CurrentBranch Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
 |*name*            | `string`          |Git branch name     |
 
-## #Repository
+## git.#Repository
 
 A git repository
 
-### #Repository Inputs
+### git.#Repository Inputs
 
 | Name             | Type                 | Description                                                 |
 | -------------    |:-------------:       |:-------------:                                              |
@@ -34,21 +38,21 @@ A git repository
 |*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"     |
 |*subdir*          | `*null \| string`    |(optional) Subdirectory                                      |
 
-### #Repository Outputs
+### git.#Repository Outputs
 
 _No output._
 
-## #Tags
+## git.#Tags
 
 List tags of a repository
 
-### #Tags Inputs
+### git.#Tags Inputs
 
 | Name             | Type                  | Description        |
 | -------------    |:-------------:        |:-------------:     |
 |*repository*      | `dagger.#Artifact`    |Git repository      |
 
-### #Tags Outputs
+### git.#Tags Outputs
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |

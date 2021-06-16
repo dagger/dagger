@@ -6,18 +6,22 @@ sidebar_label: random
 
 Random generation utilities
 
-## #String
+```cue
+import "dagger.io/random"
+```
+
+## random.#String
 
 Generate a random string
 
-### #String Inputs
+### random.#String Inputs
 
 | Name             | Type               | Description                                                                                                                       |
 | -------------    |:-------------:     |:-------------:                                                                                                                    |
 |*seed*            | `string`           |Seed of the random string to generate. When using the same `seed`, the same random string will be generated because of caching.    |
 |*length*          | `*12 \| number`    |length of the string                                                                                                               |
 
-### #String Outputs
+### random.#String Outputs
 
 | Name             | Type              | Description               |
 | -------------    |:-------------:    |:-------------:            |

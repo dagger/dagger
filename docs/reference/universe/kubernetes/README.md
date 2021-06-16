@@ -6,23 +6,27 @@ sidebar_label: kubernetes
 
 Kubernetes client operations
 
-## #Kubectl
+```cue
+import "dagger.io/kubernetes"
+```
+
+## kubernetes.#Kubectl
 
 Kubectl client
 
-### #Kubectl Inputs
+### kubernetes.#Kubectl Inputs
 
 _No input._
 
-### #Kubectl Outputs
+### kubernetes.#Kubectl Outputs
 
 _No output._
 
-## #Resources
+## kubernetes.#Resources
 
 Apply Kubernetes resources
 
-### #Resources Inputs
+### kubernetes.#Resources Inputs
 
 | Name             | Type                      | Description                         |
 | -------------    |:-------------:            |:-------------:                      |
@@ -30,6 +34,6 @@ Apply Kubernetes resources
 |*version*         | `*"v1.19.9" \| string`    |Version of kubectl client            |
 |*kubeconfig*      | `dagger.#Secret`          |Kube config file                     |
 
-### #Resources Outputs
+### kubernetes.#Resources Outputs
 
 _No output._

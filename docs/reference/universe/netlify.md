@@ -6,26 +6,30 @@ sidebar_label: netlify
 
 Netlify client operations
 
-## #Account
+```cue
+import "dagger.io/netlify"
+```
+
+## netlify.#Account
 
 Netlify account credentials
 
-### #Account Inputs
+### netlify.#Account Inputs
 
 | Name             | Type                | Description                                                                      |
 | -------------    |:-------------:      |:-------------:                                                                   |
 |*name*            | `*"" \| string`     |Use this Netlify account name (also referred to as "team" in the Netlify docs)    |
 |*token*           | `dagger.#Secret`    |Netlify authentication token                                                      |
 
-### #Account Outputs
+### netlify.#Account Outputs
 
 _No output._
 
-## #Site
+## netlify.#Site
 
 Netlify site
 
-### #Site Inputs
+### netlify.#Site Inputs
 
 | Name              | Type                  | Description                                                                      |
 | -------------     |:-------------:        |:-------------:                                                                   |
@@ -35,7 +39,7 @@ Netlify site
 |*name*             | `string`              |Deploy to this Netlify site                                                       |
 |*create*           | `*true \| bool`       |Create the Netlify site if it doesn't exist?                                      |
 
-### #Site Outputs
+### netlify.#Site Outputs
 
 | Name             | Type              | Description                    |
 | -------------    |:-------------:    |:-------------:                 |

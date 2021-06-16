@@ -6,23 +6,27 @@ sidebar_label: kustomize
 
 Kustomize config management
 
-## #Kustomization
+```cue
+import "dagger.io/kubernetes/kustomize"
+```
 
-### #Kustomization Inputs
+## kustomize.#Kustomization
+
+### kustomize.#Kustomization Inputs
 
 | Name             | Type                     | Description                |
 | -------------    |:-------------:           |:-------------:             |
 |*version*         | `*"v3.8.7" \| string`    |Kustomize binary version    |
 
-### #Kustomization Outputs
+### kustomize.#Kustomization Outputs
 
 _No output._
 
-## #Kustomize
+## kustomize.#Kustomize
 
 Apply a Kubernetes Kustomize folder
 
-### #Kustomize Inputs
+### kustomize.#Kustomize Inputs
 
 | Name              | Type                     | Description                   |
 | -------------     |:-------------:           |:-------------:                |
@@ -30,6 +34,6 @@ Apply a Kubernetes Kustomize folder
 |*kustomization*    | `string`                 |Optional Kustomization file    |
 |*version*          | `*"v3.8.7" \| string`    |Kustomize binary version       |
 
-### #Kustomize Outputs
+### kustomize.#Kustomize Outputs
 
 _No output._

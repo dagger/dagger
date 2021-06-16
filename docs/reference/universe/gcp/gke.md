@@ -6,11 +6,15 @@ sidebar_label: gke
 
 Google Kubernetes Engine
 
-## #KubeConfig
+```cue
+import "dagger.io/gcp/gke"
+```
+
+## gke.#KubeConfig
 
 KubeConfig config outputs a valid kube-auth-config for kubectl client
 
-### #KubeConfig Inputs
+### gke.#KubeConfig Inputs
 
 | Name                  | Type                      | Description        |
 | -------------         |:-------------:            |:-------------:     |
@@ -20,7 +24,7 @@ KubeConfig config outputs a valid kube-auth-config for kubectl client
 |*clusterName*          | `string`                  |GKE cluster name    |
 |*version*              | `*"v1.19.9" \| string`    |Kubectl version     |
 
-### #KubeConfig Outputs
+### gke.#KubeConfig Outputs
 
 | Name             | Type              | Description                                           |
 | -------------    |:-------------:    |:-------------:                                        |

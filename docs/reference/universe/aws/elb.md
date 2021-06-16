@@ -6,11 +6,15 @@ sidebar_label: elb
 
 AWS Elastic Load Balancer (ELBv2)
 
-## #RandomRulePriority
+```cue
+import "dagger.io/aws/elb"
+```
+
+## elb.#RandomRulePriority
 
 Returns an unused rule priority (randomized in available range)
 
-### #RandomRulePriority Inputs
+### elb.#RandomRulePriority Inputs
 
 | Name                 | Type                | Description        |
 | -------------        |:-------------:      |:-------------:     |
@@ -19,7 +23,7 @@ Returns an unused rule priority (randomized in available range)
 |*config.secretKey*    | `dagger.#Secret`    |AWS secret key      |
 |*listenerArn*         | `string`            |ListenerArn         |
 
-### #RandomRulePriority Outputs
+### elb.#RandomRulePriority Outputs
 
 | Name             | Type              | Description         |
 | -------------    |:-------------:    |:-------------:      |
