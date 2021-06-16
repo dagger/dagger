@@ -23,7 +23,7 @@ values={[
 {label: 'EKS', value: 'eks'},
 ]}>
 
-  <TabItem value="kind">
+<TabItem value="kind">
 
 [Kind](https://kind.sigs.k8s.io/docs/user/quick-start) is a tool for running local Kubernetes clusters using Docker.
 
@@ -80,19 +80,43 @@ This tutorial can be run against a [AWS EKS](https://aws.amazon.com/eks/) cluste
 
 ## Initialize a Dagger Workspace and Environment
 
+### (optional) Setup example app
+
+You will need the local copy of the [Dagger examples repository](https://github.com/dagger/examples) used in previous guides
+
 ```shell
-mkdir dagger-kubernetes && cd dagger-kubernetes
-dagger init
-dagger new default
+git clone https://github.com/dagger/examples
+```
+
+Make sure that all commands are run from the todoapp directory:
+
+```shell
+cd examples/todoapp
+```
+
+### (optional) Initialize a Cue module
+
+In this guide we will use the same directory as the root of the Dagger workspace and the root of the Cue module; but you can create your Cue module anywhere inside the Dagger workspace.
+
+```shell
+cue mod init
+```
+
+### Organize your package
+
+Let's create a new directory for our Cue package:
+
+```shell
+mkdir kube
 ```
 
 ## Create a basic plan
 
-Create a file named `.dagger/env/default/plan/manifest.cue` and add the
+Create a file named `manifest.cue` and add the
 following configuration to it.
 
-```cue title=".dagger/env/default/plan/manifest.cue"
-package main
+```cue title="todoapp/kube/manifest.cue"
+package kube
 
 // inlined kubernetes manifest as a string
 manifest: """
@@ -123,7 +147,7 @@ manifest: """
 This will define a `manifest` variable containing the inlined Kubernetes YAML
 used to create a _nginx_ deployment.
 
-Next, create `.dagger/env/default/plan/main.cue`.
+Next, create `source.cue`.
 
 <Tabs
 defaultValue="kind"
@@ -136,8 +160,8 @@ values={[
 
   <TabItem value="kind">
 
-```cue title=".dagger/env/default/plan/main.cue"
-package main
+```cue title="todoapp/kube/source.cue"
+package kube
 
 import (
   "dagger.io/dagger"
@@ -163,8 +187,8 @@ deploy: kubernetes.#Resources & {
 
   <TabItem value="gke">
 
-```cue title=".dagger/env/default/plan/main.cue"
-package main
+```cue title="todoapp/kube/source.cue"
+package kube
 
 import (
   "dagger.io/kubernetes"
@@ -191,8 +215,8 @@ deploy: kubernetes.#Resources & {
 
   <TabItem value="eks">
 
-```cue title=".dagger/env/default/plan/main.cue"
-package main
+```cue title="todoapp/kube/source.cue"
+package kube
 
 import (
   "dagger.io/kubernetes"
@@ -224,6 +248,26 @@ This defines:
   used for `kubectl`
 - `deploy`: Deployment step using the package `dagger.io/kubernetes`. It takes
   the `manifest` defined earlier and deploys it to the Kubernetes cluster specified in `kubeconfig`.
+
+### Setup the environment
+
+#### Create a new environment
+
+Now that your Cue package is ready, let's create an environment to run it:
+
+```shell
+dagger new 'kube'
+```
+
+#### Load the plan into the environment
+
+Now let's configure the new environment to use our package as its plan:
+
+```shell
+cp kube/*.cue .dagger/env/kube/plan/
+```
+
+Note: you need to copy the files from your package into the environment, as shown above. If you make more changes to your package, you will need to copy the new version, or it will not be used. In the future, we will add the ability to reference your Cue package directory, making this manual copy unnecessary.
 
 ### Configure the environment
 
@@ -379,8 +423,8 @@ For a more advanced example, see the
 First, let's replace `manifest.cue` with the following configuration. This is a
 straightforward one-to-one conversion from YAML to CUE, only the syntax has changed.
 
-```cue title=".dagger/env/default/plan/manifest.cue"
-package main
+```cue title="todoapp/kube/manifest.cue"
+package kube
 
 import (
   "encoding/yaml"
@@ -415,6 +459,12 @@ manifest: yaml.Marshal(nginx)
 We're using the built-in `yaml.Marshal` function to convert CUE back to YAML so
 Kubernetes still receives the same manifest.
 
+You need to copy the changes to the plan in order for Dagger to reference them
+
+```shell
+cp kube/*.cue .dagger/env/kube/plan/
+```
+
 You can inspect the configuration using `dagger query` to verify it produces the
 same manifest:
 
@@ -428,10 +478,10 @@ kind: Deployment
 Now that the manifest is defined in CUE, we can take advantage of the language
 to remove a lot of boilerplate and repetition.
 
-Let's define a re-usable `#Deployment` definition in `.dagger/env/default/plan/deployment.cue"`:
+Let's define a re-usable `#Deployment` definition in `todoapp/kube/deployment.cue"`:
 
-```cue title=".dagger/env/default/plan/deployment.cue"
-package main
+```cue title="todoapp/kube/deployment.cue"
+package kube
 
 // Deployment template containing all the common boilerplate shared by
 // deployments of this application.
@@ -478,7 +528,7 @@ package main
 
 `manifest.cue` can be rewritten as follows:
 
-```cue title=".dagger/env/default/plan/manifest.cue"
+```cue title="todoapp/kube/manifest.cue"
 import (
   "encoding/yaml"
 )
@@ -489,6 +539,12 @@ nginx: #Deployment & {
 }
 
 manifest: yaml.Marshal(nginx.manifest)
+```
+
+Update the plan
+
+```shell
+cp kube/*.cue .dagger/env/kube/plan/
 ```
 
 Let's make sure it yields the same result:
@@ -524,8 +580,8 @@ The following configuration will:
 - Use `dagger.io/docker` to build and push the image
 - Use the registry image reference (`push.ref`) as the image for the deployment.
 
-```cue title=".dagger/env/default/plan/manifest.cue"
-package main
+```cue title="todoapp/kube/manifest.cue"
+package kube
 
 import (
   "encoding/yaml"
@@ -563,6 +619,12 @@ app: #Deployment & {
 }
 
 manifest: yaml.Marshal(app.manifest)
+```
+
+Update the plan
+
+```shell
+cp kube/*.cue .dagger/env/kube/plan/
 ```
 
 ### Connect the Inputs
