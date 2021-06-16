@@ -232,9 +232,22 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 type CreateOpts struct {
 	Module  string
 	Package string
+	Key     string
 }
 
 func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*State, error) {
+	key, err := keychain.Default(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Key != "" {
+		// make sure the key exists
+		if _, err := keychain.Get(ctx, opts.Key); err != nil {
+			return nil, err
+		}
+		key = opts.Key
+	}
+
 	envPath, err := filepath.Abs(w.envPath(name))
 	if err != nil {
 		return nil, err
@@ -277,10 +290,6 @@ func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*
 	}
 
 	data, err := yaml.Marshal(st)
-	if err != nil {
-		return nil, err
-	}
-	key, err := keychain.Default(ctx)
 	if err != nil {
 		return nil, err
 	}

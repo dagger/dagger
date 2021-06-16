@@ -107,7 +107,7 @@ func List(ctx context.Context) ([]*age.X25519Identity, error) {
 
 	keys := make([]*age.X25519Identity, 0, len(ids))
 	for _, id := range ids {
-		key, ok := ids[0].(*age.X25519Identity)
+		key, ok := id.(*age.X25519Identity)
 		if !ok {
 			return nil, fmt.Errorf("internal error: unexpected identity type: %T", id)
 		}
@@ -115,4 +115,18 @@ func List(ctx context.Context) ([]*age.X25519Identity, error) {
 	}
 
 	return keys, nil
+}
+
+func Get(ctx context.Context, publicKey string) (*age.X25519Identity, error) {
+	keys, err := List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range keys {
+		fmt.Println(k.Recipient().String())
+		if k.Recipient().String() == publicKey {
+			return k, nil
+		}
+	}
+	return nil, fmt.Errorf("key %q not found", publicKey)
 }

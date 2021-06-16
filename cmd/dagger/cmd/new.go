@@ -59,6 +59,7 @@ var newCmd = &cobra.Command{
 		ws, err := workspace.Create(ctx, name, state.CreateOpts{
 			Module:  module,
 			Package: viper.GetString("package"),
+			Key:     viper.GetString("key"),
 		})
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create environment")
@@ -70,6 +71,7 @@ var newCmd = &cobra.Command{
 }
 
 func init() {
+	newCmd.Flags().String("key", "", "encryption key to use for secrets")
 	newCmd.Flags().StringP("module", "m", "", "references the local path of the cue module to use as a plan, relative to the workspace root")
 	newCmd.Flags().StringP("package", "p", "", "references the name of the Cue package within the module to use as a plan. Default: defer to cue loader")
 	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
