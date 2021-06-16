@@ -26,16 +26,16 @@ export DOCKER_HOST=tcp://my-remote-docker-host:2376
 ## OpenTracing Support
 
 Both Dagger and buildkit support opentracing. To capture traces to
-[Jaeger](https://github.com/jaegertracing/jaeger), ), set the `JAEGER_TRACE` environment variable to the collection address.
+[Jaeger](https://github.com/jaegertracing/jaeger), set the `JAEGER_TRACE` environment variable to the collection address.
 
 A `docker-compose` file is available to help bootstrap the tracing environment:
 
 ```shell
-docker-compose -f ./tracing.compose.yaml up -d
+docker-compose -f ./dagger-main/tracing.compose.yaml up -d
 export JAEGER_TRACE=localhost:6831
 export BUILDKIT_HOST=docker-container://dagger-buildkitd-jaeger
 
-dagger compute ...
+dagger up
 ```
 
 You can then go to [http://localhost:16686/](http://localhost:16686/) in your browser to see the traces.
