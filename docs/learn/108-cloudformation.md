@@ -20,28 +20,46 @@ The provisioning strategy detailed below follows S3 best practices. In order to 
 
 When developing a plan based on relays, the first thing to consider is to read their universe reference: it summarizes the expected inputs and their corresponding formats. [<u>Here</u>](https://dagger.io/aws/cloudformation) is the Cloudformation one.
 
-### Setup
+## Initialize a Dagger Workspace and Environment
 
-1.Initialize a new folder and a new workspace
+### (optional) Setup example app
 
-```shell
-mkdir infra-provisioning
-cd ./infra-provisioning
-dagger init
-```
-
-2.Create a new environment and create a `main.cue` file
+You will need the local copy of the [Dagger examples repository](https://github.com/dagger/examples) used in previous guides
 
 ```shell
-dagger new s3-provisioning
-cd ./.dagger/env/s3-provisioning/plan/ #Personal preference to directly work inside the plan
-touch main.cue
+git clone https://github.com/dagger/examples
 ```
 
-3.Create corresponding `main` package
+Make sure that all commands are run from the todoapp directory:
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```shell
+cd examples/todoapp
+```
+
+### (optional) Initialize a Cue module
+
+In this guide we will use the same directory as the root of the Dagger workspace and the root of the Cue module; but you can create your Cue module anywhere inside the Dagger workspace.
+
+```shell
+cue mod init
+```
+
+### Organize your package
+
+Let's create a new directory for our Cue package:
+
+```shell
+mkdir cloudformation
+```
+
+### Setup the environment
+
+#### Create a new environment
+
+Now that your Cue package is ready, let's create an environment to run it:
+
+```shell
+dagger new 'cloudformation'
 ```
 
 ## Cloudformation
@@ -196,9 +214,9 @@ aws cloudformation validate-template  --template-body file://template.json
 
 Once you'll get used to Cue, you might directly write Cloudformation templates in this language. As most of the current examples are either written in JSON or in YAML, let's see how to lazily convert them in Cue (optional but recommended).
 
-#### 1. Modify main.cue
+#### 1. Create convert.cue
 
-We will temporarly modify `main.cue` to process the conversion
+We will create a `convert.cue` to process the conversion
 
 <Tabs
   defaultValue="sv"
@@ -210,8 +228,8 @@ We will temporarly modify `main.cue` to process the conversion
 }>
 <TabItem value="sv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/convert.cue"
+package cloudformation
 import "encoding/json"
 
 point: json.Unmarshal(data)
@@ -223,12 +241,9 @@ data: #"""
 </TabItem>
 <TabItem value="fv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
-
-import (
-  "encoding/json"
-)
+```cue title="todoapp/cloudformation/convert.cue"
+package cloudformation
+import "encoding/json"
 
 point: json.Unmarshal(data)
 data: #"""
@@ -297,8 +312,8 @@ data: #"""
 </TabItem>
 <TabItem value="yv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/convert.cue"
+package cloudformation
 import "encoding/yaml"
 
 point: yaml.Unmarshal(data)
@@ -309,6 +324,12 @@ data: """
 
 </TabItem>
 </Tabs>
+
+You need to copy the changes to the plan in order for Dagger to reference them
+
+```shell
+cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+```
 
 #### 2. Retrieve the Unmarshalled JSON
 
@@ -409,10 +430,11 @@ This Cue version of the JSON template is going to be integrated inside our provi
 
 With the Cloudformation template now finished, tested and converted in Cue. We can now enter the last part of our guide: piping everything together inside our personal plan.
 
-Before continuing, don't forget to reset your `main.cue` plan to it's _Setup_ form:
+Before continuing, don't forget to delete your `convert.cue` plan:
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```shell
+rm todoapp/cloudformation/convert.cue
+rm .dagger/env/cloudformation/plan/convert.cue
 ```
 
 ### Cloudformation relay
@@ -432,7 +454,7 @@ As our plan relies on [<u>Cloudformation's relay</u>](https://dagger.io/aws/clou
 
 1.General insights
 
-As seen before in the documentation, values starting with `*` are default values. However, as a plan developer, we may face the need to add default values to inputs from relays that don't have one : Cue gives you this flexibility (cf. `config` value detailed below).
+As seen before in the documentation, values starting with `*` are default values. However, as a plan developer, we may face the need to add default values to inputs from relays that don't have one : Cue gives you this flexibility.
 
 > WARNING: All inputs without a default option have to be filled for a proper execution of the relay. In our case:
 >
@@ -446,7 +468,7 @@ As seen before in the documentation, values starting with `*` are default values
 
 The config values are all part of the `aws` relay. Regarding this package, as you can see above, none of the 3 required inputs contain default options.
 
-For the sake of the exercise, let's say that our company's policy is to mainly deploy on the `us-east-2` region. Having this value set as a default option could be a smart and efficient decision for our dev teams. Let's see how to implement it:
+Let's implement the first step : use the `aws.#Config` relay and request the user it's first input, the region to deploy in.
 
 <Tabs
   defaultValue="av"
@@ -458,15 +480,15 @@ For the sake of the exercise, let's say that our company's policy is to mainly d
 }>
 <TabItem value="bv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 ```
 
 </TabItem>
 <TabItem value="av">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 
 import (
   "dagger.io/aws"
@@ -474,15 +496,15 @@ import (
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-  region: *"us-east-2" | string @dagger(input)
+  region: string @dagger(input)
 }
 ```
 
 </TabItem>
 <TabItem value="dv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 
 import (
   "dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
@@ -492,7 +514,7 @@ import (
 awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named `awsConfig`
     // awsConfig will be a directly requestable key : `dagger query awsConfig`
     // awsConfig sets the region to either an input, or a default string: "us-east-2"
-  region: *"us-east-2" | string @dagger(input)
+  region: string @dagger(input)
     // As we declare an aws.#Config, Dagger/Cue will automatically know that some others values inside this definition
     // are inputs, especially secrets (AccessKey, secretKey). Due to the confidential nature of secrets, we won't declare default values to them
 }
@@ -500,6 +522,12 @@ awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named 
 
 </TabItem>
 </Tabs>
+
+Update the plan
+
+```shell
+cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+```
 
 Pro tips: In order to check wether it worked or not, these two commands might help
 
@@ -517,7 +545,7 @@ Pro tips: In order to check wether it worked or not, these two commands might he
 dagger input list # List required input in our personal plan
 # Output:
 # Input                Value                  Set by user  Description
-# awsConfig.region     *"us-east-2" | string  false        AWS region
+# awsConfig.region     string                 false        AWS region
 # awsConfig.accessKey  dagger.#Secret         false        AWS access key
 # awsConfig.secretKey  dagger.#Secret         false        AWS secret key
 ```
@@ -568,8 +596,8 @@ Now that we have the `config` definition properly configured, we can now import 
 }>
 <TabItem value="bv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 
 import (
   "dagger.io/aws"
@@ -577,15 +605,15 @@ import (
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-  region: *"us-east-2" | string @dagger(input)
+  region: string @dagger(input)
 }
 ```
 
 </TabItem>
 <TabItem value="av">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 
 import (
   "dagger.io/aws"
@@ -595,7 +623,7 @@ import (
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-  region: *"us-east-2" | string @dagger(input)
+  region: string @dagger(input)
 }
 
 
@@ -623,8 +651,8 @@ cfnStack: cloudformation.#Stack & {
 </TabItem>
 <TabItem value="dv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 
 import (
   "dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
@@ -636,7 +664,7 @@ import (
 awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named `awsConfig`
     // awsConfig will be a directly requestable key : `dagger query awsConfig`
     // awsConfig sets the region to either an input, or a default string: "us-east-2"
-  region: *"us-east-2" | string @dagger(input)
+  region: string @dagger(input)
     // As we declare an aws.#Config, Dagger/Cue will automatically know that some others values inside this definition
     // are inputs, especially secrets (AccessKey, secretKey). Due to the confidential nature of secrets, we won't declare default values to them
 }
@@ -673,8 +701,8 @@ cfnStackName: *"stack-\(suffix.out)"  | string @dagger(input) // Has to be uniqu
 </TabItem>
 <TabItem value="fv">
 
-```cue title=".dagger/env/s3-provisioning/plan/main.cue"
-package main
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
 
 import (
   "encoding/json"
@@ -686,7 +714,7 @@ import (
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-  region: *"us-east-2" | string @dagger(input)
+  region: string @dagger(input)
 }
 
 // Create a random suffix
@@ -789,7 +817,7 @@ dagger input secret awsConfig.secretKey yourSecretKey
 
 dagger input list
 # Input                 Value                  Set by user  Description
-# awsConfig.region      *"us-east-2" | string  false        AWS region
+# awsConfig.region      string                 false        AWS region
 # awsConfig.accessKey   dagger.#Secret         true         AWS access key <-- Specified
 # awsConfig.secretKey   dagger.#Secret         true         AWS secret key <-- Specified
 # suffix.length         *12 | number           false        length of the string
@@ -827,7 +855,7 @@ dagger input secret awsConfig.secretKey yourSecretKey
 
 dagger input list
 # Input                 Value                  Set by user  Description
-# awsConfig.region      *"us-east-2" | string  false        AWS region
+# awsConfig.region      string                 false        AWS region
 # awsConfig.accessKey   dagger.#Secret         true         AWS access key <-- Specified
 # awsConfig.secretKey   dagger.#Secret         true         AWS secret key <-- Specified
 # suffix.length         *12 | number           false        length of the string
