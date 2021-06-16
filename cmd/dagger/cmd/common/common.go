@@ -3,6 +3,8 @@ package common
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -99,6 +101,40 @@ func EnvironmentUp(ctx context.Context, state *state.State, noCache bool) *envir
 		lg.Fatal().Err(err).Msg("failed to up environment")
 	}
 	return result
+}
+
+// ReadInput returns the input as is, reads from a file or reads from stdin
+// depending on flags.
+func ReadInput(ctx context.Context, source string) string {
+	lg := log.Ctx(ctx)
+
+	if !viper.GetBool("file") {
+		return source
+	}
+
+	if source == "-" {
+		// stdin source
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			lg.
+				Fatal().
+				Err(err).
+				Msg("failed to read input from stdin")
+		}
+		return string(data)
+	}
+
+	// file source
+	data, err := os.ReadFile(source)
+	if err != nil {
+		lg.
+			Fatal().
+			Err(err).
+			Str("path", source).
+			Msg("failed to read input from file")
+	}
+
+	return string(data)
 }
 
 // FormatValue returns the String representation of the cue value

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/state"
 	"golang.org/x/term"
@@ -38,7 +39,7 @@ var secretCmd = &cobra.Command{
 			secret = string(data)
 		} else {
 			// value specified: read it
-			secret = readInput(ctx, args[1])
+			secret = common.ReadInput(ctx, args[1])
 		}
 
 		updateEnvironmentInput(

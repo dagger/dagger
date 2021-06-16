@@ -49,7 +49,11 @@ func Default(ctx context.Context) (string, error) {
 	keys, err := List(ctx)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Generate(ctx)
+			k, err := Generate(ctx)
+			if err != nil {
+				return "", err
+			}
+			return k.Recipient().String(), nil
 		}
 		return "", err
 	}
@@ -60,34 +64,58 @@ func Default(ctx context.Context) (string, error) {
 	return keys[0].Recipient().String(), nil
 }
 
-func Generate(ctx context.Context) (string, error) {
+func addToKeychain(k *age.X25519Identity) error {
 	keysFile, err := Path()
 	if err != nil {
-		return "", err
-	}
-
-	k, err := age.GenerateX25519Identity()
-	if err != nil {
-		return "", fmt.Errorf("internal error: %v", err)
+		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(keysFile), 0700); err != nil {
-		return "", err
+		return err
 	}
-	f, err := os.OpenFile(keysFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+
+	firstKey := true
+	if _, err := os.Stat(keysFile); err == nil {
+		firstKey = false
+	}
+
+	f, err := os.OpenFile(keysFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
-		return "", fmt.Errorf("failed to open keys file %q: %v", keysFile, err)
+		return fmt.Errorf("failed to open keys file %q: %v", keysFile, err)
 	}
 	defer f.Close()
+	if !firstKey {
+		fmt.Fprintf(f, "\n")
+	}
 	fmt.Fprintf(f, "# created: %s\n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(f, "# public key: %s\n", k.Recipient())
 	fmt.Fprintf(f, "%s\n", k)
 
-	pubkey := k.Recipient().String()
+	return nil
+}
 
-	log.Ctx(ctx).Debug().Str("publicKey", pubkey).Msg("generating keypair")
+func Generate(ctx context.Context) (*age.X25519Identity, error) {
+	k, err := age.GenerateX25519Identity()
+	if err != nil {
+		return nil, fmt.Errorf("internal error: %v", err)
+	}
+	log.Ctx(ctx).Debug().Str("publicKey", k.Recipient().String()).Msg("generating keypair")
 
-	return pubkey, nil
+	return k, addToKeychain(k)
+}
+
+func Import(ctx context.Context, privateKey string) (*age.X25519Identity, error) {
+	// Ensure there is a `Default` key before importing a new key.
+	if _, err := Default(ctx); err != nil {
+		return nil, err
+	}
+
+	k, err := age.ParseX25519Identity(privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return k, addToKeychain(k)
 }
 
 func List(ctx context.Context) ([]*age.X25519Identity, error) {
@@ -123,7 +151,6 @@ func Get(ctx context.Context, publicKey string) (*age.X25519Identity, error) {
 		return nil, err
 	}
 	for _, k := range keys {
-		fmt.Println(k.Recipient().String())
 		if k.Recipient().String() == publicKey {
 			return k, nil
 		}

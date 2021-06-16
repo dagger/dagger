@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/input"
+	"go.dagger.io/dagger/cmd/dagger/cmd/key"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 )
@@ -45,6 +46,7 @@ func init() {
 		loginCmd,
 		logoutCmd,
 		input.Cmd,
+		key.Cmd,
 		output.Cmd,
 		versionCmd,
 		docCmd,

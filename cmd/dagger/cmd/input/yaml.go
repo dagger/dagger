@@ -3,6 +3,7 @@ package input
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/state"
 )
@@ -25,7 +26,7 @@ var yamlCmd = &cobra.Command{
 		updateEnvironmentInput(
 			ctx,
 			args[0],
-			state.YAMLInput(readInput(ctx, args[1])),
+			state.YAMLInput(common.ReadInput(ctx, args[1])),
 		)
 	},
 }
