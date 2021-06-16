@@ -46,6 +46,7 @@ type Field struct {
 
 type Package struct {
 	Name        string
+	ShortName   string
 	Description string
 	Fields      []Field
 }
@@ -78,6 +79,8 @@ func Parse(ctx context.Context, packageName string, val *compiler.Value) *Packag
 	pkg := &Package{}
 	// Package Name + Description
 	pkg.Name = packageName
+	parts := strings.Split(packageName, "/")
+	pkg.ShortName = parts[len(parts)-1:][0]
 	pkg.Description = common.ValueDocFull(val)
 
 	// Package Fields
@@ -140,6 +143,8 @@ func (p *Package) Text() string {
 	fmt.Fprintf(w, "Package %s\n", p.Name)
 	fmt.Fprintf(w, "\n%s\n", p.Description)
 
+	fmt.Fprintf(w, "\nimport %q\n", p.Name)
+
 	printValuesText := func(values []Value) {
 		tw := tabwriter.NewWriter(w, 0, 4, len(textPadding), ' ', 0)
 		for _, i := range values {
@@ -151,7 +156,7 @@ func (p *Package) Text() string {
 
 	// Package Fields
 	for _, field := range p.Fields {
-		fmt.Fprintf(w, "\n%s\n\n%s%s\n", field.Name, textPadding, field.Description)
+		fmt.Fprintf(w, "\n%s.%s\n\n%s%s\n", p.ShortName, field.Name, textPadding, field.Description)
 		if len(field.Inputs) == 0 {
 			fmt.Fprintf(w, "\n%sInputs: none\n", textPadding)
 		} else {
@@ -197,6 +202,8 @@ func (p *Package) Markdown() string {
 		fmt.Fprintf(w, "\n%s\n", mdEscape(p.Description))
 	}
 
+	fmt.Fprintf(w, "\n```cue\nimport %q\n```\n", p.Name)
+
 	printValuesMarkdown := func(values []Value) {
 		tw := tabwriter.NewWriter(w, 0, 4, len(textPadding), ' ', 0)
 		fmt.Fprintf(tw, "| Name\t| Type\t| Description    \t|\n")
@@ -213,19 +220,21 @@ func (p *Package) Markdown() string {
 
 	// Package Fields
 	for _, field := range p.Fields {
-		fmt.Fprintf(w, "\n## %s\n\n", field.Name)
+		fieldLabel := fmt.Sprintf("%s.%s", p.ShortName, field.Name)
+
+		fmt.Fprintf(w, "\n## %s\n\n", fieldLabel)
 		if field.Description != "-" {
 			fmt.Fprintf(w, "%s\n\n", mdEscape(field.Description))
 		}
 
-		fmt.Fprintf(w, "### %s Inputs\n\n", mdEscape(field.Name))
+		fmt.Fprintf(w, "### %s Inputs\n\n", mdEscape(fieldLabel))
 		if len(field.Inputs) == 0 {
 			fmt.Fprintf(w, "_No input._\n")
 		} else {
 			printValuesMarkdown(field.Inputs)
 		}
 
-		fmt.Fprintf(w, "\n### %s Outputs\n\n", mdEscape(field.Name))
+		fmt.Fprintf(w, "\n### %s Outputs\n\n", mdEscape(fieldLabel))
 		if len(field.Outputs) == 0 {
 			fmt.Fprintf(w, "_No output._\n")
 		} else {
