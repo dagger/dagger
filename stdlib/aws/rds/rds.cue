@@ -8,7 +8,8 @@ import (
 )
 
 // Creates a new Database on an existing RDS Instance
-#CreateDB: {
+#Database: {
+
 	// AWS Config
 	config: aws.#Config
 
@@ -83,7 +84,8 @@ import (
 }
 
 // Creates a new user credentials on an existing RDS Instance
-#CreateUser: {
+#User: {
+
 	// AWS Config
 	config: aws.#Config
 
@@ -107,7 +109,6 @@ import (
 
 	// Outputed username
 	out: {
-		@dagger(output)
 		string
 
 		#up: [
@@ -188,11 +189,12 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} @dagger(output)
 }
 
 // Fetches information on an existing RDS Instance
 #Instance: {
+
 	// AWS Config
 	config: aws.#Config
 

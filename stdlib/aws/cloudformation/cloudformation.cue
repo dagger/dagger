@@ -1,4 +1,4 @@
-// AWS Cloud Formation
+// AWS CloudFormation
 package cloudformation
 
 import (
@@ -23,7 +23,7 @@ import (
 	// Stack parameters
 	parameters: {
 		...
-	}
+	} @dagger(input)
 
 	// Behavior when failure to create/update the Stack
 	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE" @dagger(input)
@@ -32,7 +32,7 @@ import (
 	timeout: *10 | uint @dagger(input)
 
 	// Never update the stack if already exists
-	neverUpdate: *false | bool @dagger(input)
+	neverUpdate: *false | true @dagger(input)
 
 	#files: {
 		"/entrypoint.sh":     #Code
@@ -48,8 +48,8 @@ import (
 	}
 
 	outputs: {
-		[string]: string @dagger(output)
-	}
+		[string]: string
+	} @dagger(output)
 
 	outputs: #up: [
 		op.#Load & {

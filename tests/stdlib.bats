@@ -12,12 +12,6 @@ setup() {
 
 # FIXME: move to universe/universe.bats
 # Assigned to: <ADD YOUR NAME HERE>
-@test "stdlib: file" {
-    "$DAGGER" compute "$TESTDIR"/stdlib/file
-}
-
-# FIXME: move to universe/universe.bats
-# Assigned to: <ADD YOUR NAME HERE>
 @test "stdlib: kubernetes" {
     skip_unless_local_kube
 

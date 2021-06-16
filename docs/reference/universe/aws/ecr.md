@@ -8,7 +8,7 @@ Amazon Elastic Container Registry (ECR)
 
 ## #Credentials
 
-Convert AWS credentials to Docker Registry credentials for ECR
+Convert ECR credentials to Docker Login format
 
 ### #Credentials Inputs
 
@@ -23,4 +23,7 @@ Convert AWS credentials to Docker Registry credentials for ECR
 
 ### #Credentials Outputs
 
-_No output._
+| Name             | Type              | Description           |
+| -------------    |:-------------:    |:-------------:        |
+|*username*        | `"AWS"`           |ECR registry           |
+|*secret*          | `string`          |ECR registry secret    |
