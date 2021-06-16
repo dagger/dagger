@@ -11,7 +11,7 @@ Dagger is a programmable deployment system.
 Using Dagger, software builders can automate the deployment of any application to any infrastructure,
 in just a few lines of code.
 
-![image](https://user-images.githubusercontent.com/29565/112705398-d0222980-8e5b-11eb-98b9-32c117a3d606.jpeg)
+![Dagger_Website_Ship](https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png)
 
 The Dagger platform adapts to your application, not the other way around.
 Thanks to its ecosystem of reusable packages and flexible scripting system, Dagger can be dropped
