@@ -16,6 +16,10 @@ setup() {
     dagger -e netlify up
 }
 
+@test "git" {
+    dagger -e git up
+}
+
 @test "aws: ecr" {
     dagger -e aws-ecr up
 }

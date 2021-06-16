@@ -9,7 +9,6 @@ import (
 
 // A git repository
 #Repository: {
-
 	// Git remote.
 	// Example: `"https://github.com/dagger/dagger"`
 	remote: string @dagger(input)
@@ -36,14 +35,12 @@ import (
 
 // Get the name of the current checked out branch or tag
 #CurrentBranch: {
-
 	// Git repository
 	repository: dagger.#Artifact @dagger(input)
 
 	// Git branch name
 	name: {
 		string
-		@dagger(output)
 
 		#up: [
 			op.#Load & {
@@ -74,19 +71,17 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} @dagger(output)
 }
 
 // List tags of a repository
 #Tags: {
-
 	// Git repository
 	repository: dagger.#Artifact @dagger(input)
 
 	// Repository tags
 	tags: {
 		[...string]
-		@dagger(output)
 
 		#up: [
 			op.#Load & {
@@ -118,5 +113,5 @@ import (
 				format: "json"
 			},
 		]
-	}
+	} @dagger(output)
 }
