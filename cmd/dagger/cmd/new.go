@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/state"
 )
 
 var newCmd = &cobra.Command{
@@ -55,7 +56,10 @@ var newCmd = &cobra.Command{
 			module = p
 		}
 
-		ws, err := workspace.Create(ctx, name, module, viper.GetString("package"))
+		ws, err := workspace.Create(ctx, name, state.CreateOpts{
+			Module:  module,
+			Package: viper.GetString("package"),
+		})
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
