@@ -46,7 +46,7 @@ docker run -d -p 5000:5000 --name registry registry:2
 
 3\. Create a cluster with the local registry enabled in containerd
 
-```bash
+```shell
 cat <<EOF | kind create cluster --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4

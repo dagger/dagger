@@ -22,27 +22,25 @@ When developing a plan based on relays, the first thing to consider is to read t
 
 ### Setup
 
-1. Initialize a new folder and a new workspace
+1.Initialize a new folder and a new workspace
 
-```bash
+```shell
 mkdir infra-provisioning
 cd ./infra-provisioning
 dagger init
 ```
 
-2. Create a new environment
+2.Create a new environment and create a `main.cue` file
 
-```bash
+```shell
 dagger new s3-provisioning
 cd ./.dagger/env/s3-provisioning/plan/ #Personal preference to directly work inside the plan
+touch main.cue
 ```
 
-3. Create `main.cue` file with its corresponding `main` package
+3.Create corresponding `main` package
 
-```bash
-touch main.cue
-
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 ```
 
@@ -54,7 +52,7 @@ Now that a plan has been set, let's implement the Cloudformation template and co
 
 The idea here is to follow best practices in [<u>S3 buckets</u>](https://docs.aws.amazon.com/AmazonS3/latest/userguide/HostingWebsiteOnS3Setup.html) provisioning. Thanksfully, the AWS documentation contains a working [<u>Cloudformation template</u>](https://docs.aws.amazon.com/fr_fr/AWSCloudFormation/latest/UserGuide/quickref-s3.html#scenario-s3-bucket-website) that fits 95% of our needs.
 
-1. Tweaking the template: removing some of the ouputs
+1.Tweaking the template: removing some of the ouputs
 
 The [<u>template</u>](https://docs.aws.amazon.com/fr_fr/AWSCloudFormation/latest/UserGuide/quickref-s3.html#scenario-s3-bucket-website) has far more outputs than necessary, as we just want to retrieve the bucket name:
 
@@ -184,11 +182,11 @@ import TabItem from "@theme/TabItem";
 </TabItem>
 </Tabs>
 
-2. Some _"Pro tips"_
+2.Some _"Pro tips"_
 
 Double-checks at the template level can be done with manual uploads on Cloudformation's web interface or by executing the below command locally:
 
-```bash
+```shell
 aws cloudformation validate-template  --template-body file://template.json
 ```
 
@@ -198,7 +196,7 @@ aws cloudformation validate-template  --template-body file://template.json
 
 Once you'll get used to Cue, you might directly write Cloudformation templates in this language. As most of the current examples are either written in JSON or in YAML, let's see how to lazily convert them in Cue (optional but recommended).
 
-###### 1. Modify main.cue
+#### 1. Modify main.cue
 
 We will temporarly modify `main.cue` to process the conversion
 
@@ -212,8 +210,7 @@ We will temporarly modify `main.cue` to process the conversion
 }>
 <TabItem value="sv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 import "encoding/json"
 
@@ -226,12 +223,11 @@ data: #"""
 </TabItem>
 <TabItem value="fv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"encoding/json"
+  "encoding/json"
 )
 
 point: json.Unmarshal(data)
@@ -288,7 +284,7 @@ data: #"""
             "Value": {
                 "Fn::GetAtt": [
                     "S3Bucket",
-        		    "Arn"
+                "Arn"
                 ]
             },
             "Description": "Name S3 Bucket"
@@ -301,8 +297,7 @@ data: #"""
 </TabItem>
 <TabItem value="yv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 import "encoding/yaml"
 
@@ -315,7 +310,7 @@ data: """
 </TabItem>
 </Tabs>
 
-###### 2. Retrieve the Unmarshalled JSON
+#### 2. Retrieve the Unmarshalled JSON
 
 Then, still in the same folder, query the `point` value to retrieve the Unmarshalled result of `data`:
 
@@ -328,8 +323,7 @@ Then, still in the same folder, query the `point` value to retrieve the Unmarsha
 }>
 <TabItem value="fo">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger query point
 # Output:
 # {
@@ -396,8 +390,7 @@ dagger query point
 </TabItem>
 <TabItem value="sc">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger query point
 # Output:
 # {
@@ -408,7 +401,7 @@ dagger query point
 </TabItem>
 </Tabs>
 
-###### 3. Store the output
+#### 3. Store the output
 
 This Cue version of the JSON template is going to be integrated inside our provisioning plan. Save the output for the next steps of the guide.
 
@@ -418,8 +411,7 @@ With the Cloudformation template now finished, tested and converted in Cue. We c
 
 Before continuing, don't forget to reset your `main.cue` plan to it's _Setup_ form:
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 ```
 
@@ -438,7 +430,7 @@ As our plan relies on [<u>Cloudformation's relay</u>](https://dagger.io/aws/clou
 | _timeout_          |            `*10 \| \>=0 & int`            | Timeout for waiting for the stack to be created/updated (in minutes) |
 | _neverUpdate_      |             `*false \| bool`              |               Never update the stack if already exists               |
 
-1. General insights
+1.General insights
 
 As seen before in the documentation, values starting with `*` are default values. However, as a plan developer, we may face the need to add default values to inputs from relays that don't have one : Cue gives you this flexibility (cf. `config` value detailed below).
 
@@ -450,7 +442,7 @@ As seen before in the documentation, values starting with `*` are default values
 > - _source_
 > - _stackName_
 
-2. The config value
+2.The config value
 
 The config values are all part of the `aws` relay. Regarding this package, as you can see above, none of the 3 required inputs contain default options.
 
@@ -466,44 +458,41 @@ For the sake of the exercise, let's say that our company's policy is to mainly d
 }>
 <TabItem value="bv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 ```
 
 </TabItem>
 <TabItem value="av">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"dagger.io/aws"
+  "dagger.io/aws"
 )
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-	region: *"us-east-2" | string @dagger(input)
+  region: *"us-east-2" | string @dagger(input)
 }
 ```
 
 </TabItem>
 <TabItem value="dv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
+  "dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
 )
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named `awsConfig`
     // awsConfig will be a directly requestable key : `dagger query awsConfig`
     // awsConfig sets the region to either an input, or a default string: "us-east-2"
-	region: *"us-east-2" | string @dagger(input)
+  region: *"us-east-2" | string @dagger(input)
     // As we declare an aws.#Config, Dagger/Cue will automatically know that some others values inside this definition
     // are inputs, especially secrets (AccessKey, secretKey). Due to the confidential nature of secrets, we won't declare default values to them
 }
@@ -512,7 +501,7 @@ awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named 
 </TabItem>
 </Tabs>
 
-_Pro tips: In order to check wether it worked or not, these two commands might help_
+Pro tips: In order to check wether it worked or not, these two commands might help
 
 <Tabs
   defaultValue="fc"
@@ -524,8 +513,7 @@ _Pro tips: In order to check wether it worked or not, these two commands might h
 }>
 <TabItem value="fc">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger input list # List required input in our personal plan
 # Output:
 # Input                Value                  Set by user  Description
@@ -537,8 +525,7 @@ dagger input list # List required input in our personal plan
 </TabItem>
 <TabItem value="sc">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger query # Query values / inspect default values (Very useful in case of conflict)
 # Output:
 # {
@@ -551,8 +538,7 @@ dagger query # Query values / inspect default values (Very useful in case of con
 </TabItem>
 <TabItem value="fe">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger up # Try to run the plan. As expected, we encounter a failure
 # Output:
 # 9:07PM ERR system | required input is missing    input=awsConfig.accessKey
@@ -567,7 +553,7 @@ Inside the `firstCommand` tab, we see that the `awsConfig.region` key has a defa
 
 Furthemore, in the `Failed execution` tab, the execution of the `dagger up` command fails because of the unspecified secret inputs.
 
-3. Integrating Cloudformation relay
+3.Integrating Cloudformation relay
 
 Now that we have the `config` definition properly configured, we can now import the Cloudformation one, and properly fill it :
 
@@ -582,42 +568,40 @@ Now that we have the `config` definition properly configured, we can now import 
 }>
 <TabItem value="bv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"dagger.io/aws"
+  "dagger.io/aws"
 )
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-	region: *"us-east-2" | string @dagger(input)
+  region: *"us-east-2" | string @dagger(input)
 }
 ```
 
 </TabItem>
 <TabItem value="av">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"dagger.io/aws"
+  "dagger.io/aws"
     "dagger.io/random"
     "dagger.io/aws/cloudformation"
 )
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-	region: *"us-east-2" | string @dagger(input)
+  region: *"us-east-2" | string @dagger(input)
 }
 
 
 // Create a random suffix
 suffix: random.#String & {
-	seed: ""
+  seed: ""
 }
 
 // Request the cloudformation stackname as an input, or generated a default one with a random suffix to keep uniqueness
@@ -625,10 +609,10 @@ cfnStackName: *"stack-\(suffix.out)"  | string @dagger(input) // Has to be uniqu
 
 // AWS Cloudformation stdlib
 cfnStack: cloudformation.#Stack & {
-	config:    awsConfig
-	stackName: cfnStackName
-	onFailure: "DO_NOTHING"
-	source:    json.Marshal(#cfnTemplate)
+  config:    awsConfig
+  stackName: cfnStackName
+  onFailure: "DO_NOTHING"
+  source:    json.Marshal(#cfnTemplate)
 }
 
 #cfnTemplate: {
@@ -639,12 +623,11 @@ cfnStack: cloudformation.#Stack & {
 </TabItem>
 <TabItem value="dv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
+  "dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
     "dagger.io/random" // <-- Import Random relay to instanciate random.#String
     "dagger.io/aws/cloudformation" // <-- Import Cloudformation relay to instanciate aws.#Cloudformation
 )
@@ -653,7 +636,7 @@ import (
 awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named `awsConfig`
     // awsConfig will be a directly requestable key : `dagger query awsConfig`
     // awsConfig sets the region to either an input, or a default string: "us-east-2"
-	region: *"us-east-2" | string @dagger(input)
+  region: *"us-east-2" | string @dagger(input)
     // As we declare an aws.#Config, Dagger/Cue will automatically know that some others values inside this definition
     // are inputs, especially secrets (AccessKey, secretKey). Due to the confidential nature of secrets, we won't declare default values to them
 }
@@ -662,21 +645,21 @@ awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named 
 cfnStack: cloudformation.#Stack & { // Assign an aws.#Cloudformation definition to a field named `cfnStack`
     // This definition is the stdlib package to use in order to deploy AWS instances programmatically
 
-	config:    awsConfig // As seen in the relay doc, 3 config fields have to be provided : `config.region`, `config.accessKey` and `config.secretKey`
+  config:    awsConfig // As seen in the relay doc, 3 config fields have to be provided : `config.region`, `config.accessKey` and `config.secretKey`
     // As their names contain a `.`, it means that the value `config` expects 3 fields `region`, `accessKey` and `secretKey`, included in a `aws.#Config` parent definition
 
     stackName: cfnStackName // We assign to the `stackName` the `cfnStackName` declared below.
     // `stackName` expects a string type. However, as a plan developer, we wanted to give the developer a choice : either a default random value, or an input
     // The default random value *"stack-\(suffix.out)" uses the random.#String relay to generate a random value. We append it's result inside `"\(append_happening_here)"`
 
-	onFailure: "DO_NOTHING" // As cited in the Cloudformation relay, the `onFailure` key defines Cloudformation's stack behavior on failure
+  onFailure: "DO_NOTHING" // As cited in the Cloudformation relay, the `onFailure` key defines Cloudformation's stack behavior on failure
 
-	source:    json.Marshal(#cfnTemplate) // source expects a JSON artifact. Here we remarshall the template decaled in Cue
+  source:    json.Marshal(#cfnTemplate) // source expects a JSON artifact. Here we remarshall the template decaled in Cue
 }
 
 // Create a random suffix (cf. random relay)
 suffix: random.#String & { // Assign a #random definition to a field named `suffix`
-	seed: "" // Set seed to empty string, to generate a new random string every time
+  seed: "" // Set seed to empty string, to generate a new random string every time
 } // Output -> suffix.out is a random string
 
 // Request the cloudformation stackname as an input, or generated a default one with a random suffix to keep uniqueness
@@ -690,26 +673,25 @@ cfnStackName: *"stack-\(suffix.out)"  | string @dagger(input) // Has to be uniqu
 </TabItem>
 <TabItem value="fv">
 
-```cue
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/main.cue --
+```cue title=".dagger/env/s3-provisioning/plan/main.cue"
 package main
 
 import (
-	"encoding/json"
+  "encoding/json"
 
-	"dagger.io/aws"
+  "dagger.io/aws"
     "dagger.io/random"
-	"dagger.io/aws/cloudformation"
+  "dagger.io/aws/cloudformation"
 )
 
 // AWS account: credentials and region
 awsConfig: aws.#Config & {
-	region: *"us-east-2" | string @dagger(input)
+  region: *"us-east-2" | string @dagger(input)
 }
 
 // Create a random suffix
 suffix: random.#String & {
-	seed: ""
+  seed: ""
 }
 
 // Query the Cloudformation stackname, or create one with a random suffix to keep unicity
@@ -717,10 +699,10 @@ cfnStackName: *"stack-\(suffix.out)" | string @dagger(input)
 
 // AWS Cloudformation stdlib
 cfnStack: cloudformation.#Stack & {
-	config:    awsConfig
-	stackName: cfnStackName
-	onFailure: "DO_NOTHING"
-	source:    json.Marshal(#cfnTemplate)
+  config:    awsConfig
+  stackName: cfnStackName
+  onFailure: "DO_NOTHING"
+  source:    json.Marshal(#cfnTemplate)
 }
 
 #cfnTemplate: {
@@ -800,14 +782,11 @@ Finally ! We now have a working template ready to be used to provision S3 infras
 }>
 <TabItem value="nd">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger input secret awsConfig.accessKey yourAccessKey
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger input secret awsConfig.secretKey yourSecretKey
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger input list
 # Input                 Value                  Set by user  Description
 # awsConfig.region      *"us-east-2" | string  false        AWS region
@@ -819,7 +798,6 @@ dagger input list
 
 # All the other inputs have default values, we're good to go !
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger up
 # Output:
 #2:22PM INF suffix.out | computing
@@ -833,7 +811,6 @@ dagger up
 #2:22PM INF cfnStack.outputs | #15 2.948 }
 #2:22PM INF cfnStack.outputs | completed    duration=35s
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger output list
 # Output                 Value                                                    Description
 # suffix.out             "emktqcfwksng"                                           generated random string
@@ -843,14 +820,11 @@ dagger output list
 </TabItem>
 <TabItem value="dd">
 
-```bash
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
+```shell
 dagger input secret awsConfig.accessKey yourAccessKey
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger input secret awsConfig.secretKey yourSecretKey
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger input list
 # Input                 Value                  Set by user  Description
 # awsConfig.region      *"us-east-2" | string  false        AWS region
@@ -874,7 +848,6 @@ dagger up -l debug
 # suffix.out             "abnyiemsoqbm"                                           generated random string
 # cfnStack.outputs.Name  "arn:aws:s3:::stack-abnyiemsoqbm-s3bucket-9eiowjs1jab4"  -
 
--- ~/infra-provisioning/.dagger/env/s3-provisioning/plan/ --
 dagger output list
 # Output                 Value                                                    Description
 # suffix.out             "abnyiemsoqbm"                                           generated random string
