@@ -7,7 +7,7 @@ import (
 	"dagger.io/dagger/op"
 )
 
-TestData: dagger.#Artifact
+TestData: dagger.#Artifact @dagger(input)
 
 TestGoBuild: {
 	build: go.#Build & {
