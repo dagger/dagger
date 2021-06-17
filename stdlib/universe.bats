@@ -70,6 +70,18 @@ setup() {
     assert_failure
 }
 
+@test "docker compose: simple" {
+    dagger -e docker-compose-simple up
+}
+
+@test "docker compose: directory" {
+    dagger -e docker-compose-directory up
+}
+
+@test "docker compose: mix-context" {
+    dagger -e docker-compose-mix-context up
+}
+
 @test "docker run: ssh" {
     dagger -e docker-run-ssh up
 }

@@ -1,0 +1,22 @@
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "A simple api",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node index.ts",
+    "test": "test"
+  },
+  "author": "Tom Chauveau",
+  "license": "ISC",
+  "devDependencies": {
+    "ts-node": "^8.9.1",
+    "typescript": "^3.8.3"
+  },
+  "dependencies": {
+    "@types/express": "^4.17.6",
+    "env-var": "^6.1.1",
+    "express": "^4.17.1"
+  }
+}
