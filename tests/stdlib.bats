@@ -18,7 +18,7 @@ setup() {
     "$DAGGER" init
     dagger_new_with_plan kubernetes "$TESTDIR"/stdlib/kubernetes/
 
-    run "$DAGGER" input -e "kubernetes" secret kubeconfig -f ~/.kube/config
+    run "$DAGGER" input -e "kubernetes" text kubeconfig -f ~/.kube/config
     assert_success
 
     run "$DAGGER" up -e "kubernetes"
@@ -40,7 +40,7 @@ setup() {
     "$DAGGER" init
     dagger_new_with_plan helm "$TESTDIR"/stdlib/kubernetes/helm
 
-    run "$DAGGER" input -e "helm" secret kubeconfig -f ~/.kube/config
+    run "$DAGGER" input -e "helm" text kubeconfig -f ~/.kube/config
     assert_success
 
     cp -R "$TESTDIR"/stdlib/kubernetes/helm/testdata/mychart "$DAGGER_WORKSPACE"/testdata

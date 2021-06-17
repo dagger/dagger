@@ -2,14 +2,13 @@ package main
 
 import (
 	"encoding/yaml"
-	"dagger.io/dagger"
 	"dagger.io/kubernetes"
 	"dagger.io/random"
 )
 
 // We assume that a kinD cluster is running locally
 // To deploy a local KinD cluster, follow this link : https://kind.sigs.k8s.io/docs/user/quick-start/
-kubeconfig: dagger.#Secret @dagger(input)
+kubeconfig: string @dagger(input)
 
 TestKubeApply: {
 	suffix: random.#String & {

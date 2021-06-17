@@ -28,6 +28,12 @@ import (
 		},
 
 		op.#WriteFile & {
+			dest:    "/kubeconfig"
+			content: kubeconfig
+			mode:    0o600
+		},
+
+		op.#WriteFile & {
 			dest:    "/getPods.sh"
 			content: #GetPods
 		},
@@ -47,7 +53,6 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
-			mount: "/kubeconfig": secret: kubeconfig
 		},
 
 		op.#WriteFile & {
@@ -69,7 +74,6 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
-			mount: "/kubeconfig": secret: kubeconfig
 		},
 	]
 }
