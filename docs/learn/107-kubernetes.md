@@ -164,13 +164,12 @@ values={[
 package kube
 
 import (
-  "dagger.io/dagger"
   "dagger.io/kubernetes"
 )
 
 // input: ~/.kube/config file used for deployment
-// set with `dagger input secret kubeconfig -f ~/.kube/config`
-kubeconfig: dagger.#Secret @dagger(input)
+// set with `dagger input text kubeconfig -f ~/.kube/config`
+kubeconfig: string @dagger(input)
 
 // deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
 // Kubernetes cluster.
@@ -444,9 +443,9 @@ nginx: {
       metadata: labels: app: "nginx"
       spec: containers: [{
         "name":  "nginx"
-        "image": image
+        "image": "nginx:1.14.2"
         ports: [{
-          containerPort: port
+          containerPort: "80"
         }]
       }]
     }
@@ -529,6 +528,8 @@ package kube
 `manifest.cue` can be rewritten as follows:
 
 ```cue title="todoapp/kube/manifest.cue"
+package kube
+
 import (
   "encoding/yaml"
 )
