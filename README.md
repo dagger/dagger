@@ -2,27 +2,17 @@
 
 Dagger is a programmable deployment system.
 
-Using Dagger, software builders can automate the deployment of any application
-to any infrastructure, in just a few lines of code.
+Using Dagger, software builders can automate the deployment of any application to any infrastructure, in just a few lines of code.
 
-![Dagger_Website_Ship](https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png)
+<img src="https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png" width="400" />
 
-The Dagger platform adapts to your application, not the other way around.
-Thanks to its ecosystem of reusable packages and flexible scripting system,
-Dagger can be dropped into any software project without requiring changes to
-its architecture or workflow. Think of it as your "devops superglue".
+## Getting Started
 
-No matter how your deployment works under the hood, you can manage it with the
-same Dagger user interface. This makes developers more productive, because they
-don't have to learn a new workflow every time their deployment system changes.
+[Documentation website](https://docs.dagger.io/)
 
-## Getting Started & Documentation
+## Useful links
 
-[Dagger Documentation Website](https://docs.dagger.io/)
-
-## Alpha disclaimer
-
-Dagger is _alpha-quality software_. It has many bugs, the user interface is
-minimal, and it may change in incompatible ways at any time. If you are still
-willing to try it, thank you! We appreciate your help and encourage you to ask
-questions and report issues.
+- [Join the Dagger community on Discord](https://discord.gg/Rmffpmc)
+- [Install from a binary release](https://docs.dagger.io/install)
+- [Build from source](https://docs.dagger.io/install#option-4-install-from-source)
+- [How to contribute](CONTRIBUTING.md)
