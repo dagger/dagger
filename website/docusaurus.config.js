@@ -39,6 +39,10 @@ module.exports = {
         lightIcon: "img/Icon_Day-mode.svg",
       },
     },
+    gtag: {
+      trackingID: 'G-RDXG80F635',
+      anonymizeIP: true,
+    },
   },
   presets: [
     [

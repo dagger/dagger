@@ -9,6 +9,14 @@
 
 /* You can override the default Infima variables here. */
 :root {
+  --ifm-background-color: var(--ifm-color-primary-light);
+
+  --ifm-code-background: var(--ifm-color-primary-dark);
+  --ifm-code-font-size: 100%;
+  --ifm-code-border-radius: 2rem;
+  --ifm-code-color: var(--ifm-color-primary-light);
+  --ifm-code-padding-vertical: 0;
+  --ifm-code-padding-horizontal: 0.2rem;
   --ifm-color-primary: #0e2b3d;
   --ifm-color-primary-dark: #131226;
   --ifm-color-primary-darker: rgb(31, 165, 136);
@@ -21,43 +29,39 @@
   --ifm-color-info: #40b9bc;
   --ifm-color-warning: #ef7b1a;
   --ifm-color-danger: #be1d43;
-  --ifm-navbar-height: 5rem;
-  --ifm-background-color: var(--ifm-color-primary-light);
-  --ifm-navbar-background-color: var(--ifm-color-primary-light);
+  --ifm-font-color-base: var(--ifm-color-primary-dark);
+  --ifm-font-family-base: "Karla", sans-serif;
+  --ifm-font-family-monospace: "Courier new", sans-serif;
+  --ifm-h2-font-size: 2rem;
+  --ifm-leading-desktop: 1;
+  --ifm-link-color: var(--ifm-color-primary-dark);
+  --ifm-link-hover-color: var(--ifm-color-primary);
   --ifm-menu-color: var(--ifm-color-primary-dark);
   --ifm-menu-color-active: var(--ifm-color-primary-dark);
   --ifm-menu-color-background-hover: #fdf9d7;
-  --ifm-font-family-base: "Karla", sans-serif;
-  --ifm-font-family-monospace: "Courier new", sans-serif;
-  --ifm-code-background: var(--ifm-color-primary);
-  --ifm-code-font-size: 100%;
-  --ifm-code-border-radius: 2rem;
-  --ifm-code-color: var(--ifm-color-primary-light);
-  --ifm-code-padding-vertical: 0;
-  --ifm-code-padding-horizontal: 0.2rem;
-  --ifm-h2-font-size: 2rem;
-  --ifm-menu-color-background-active: var(--ifm-color-primary);
-  --ifm-menu-color-active: var(--ifm-color-primary-light);
-  --ifm-leading-desktop: 1;
+  --ifm-menu-color-background-active: #fdf9d7;
+  --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M3.318 9.128a24.776 24.776 0 004.224-3.993.842.842 0 011.32.026c1.227 1.618 2.107 3.387 3.831 4.556.889.6-.159 1.9-1.044 1.3A14.369 14.369 0 018.14 7a30.457 30.457 0 01-3.829 3.463c-.845.671-1.834-.67-.993-1.335z" fill="%23131226" /></svg>');
+  --ifm-navbar-height: 6rem;
+  --ifm-navbar-background-color: var(--ifm-color-primary-light);
+  --ifm-pagination-nav-border-radius: 0;
+  --ifm-pre-padding: 2rem;
+  --doc-sidebar-width: 250px;
   --ifm-toc-border-color: transparent;
   --ifm-toc-link-color: var(--ifm-color-primary-dark);
-  --ifm-font-color-base: var(--ifm-color-primary-dark);
-  --ifm-link-color: var(--ifm-color-primary-dark);
-  --ifm-link-hover-color: var(--ifm-color-primary);
-  --ifm-pre-padding: 2rem;
-  --ifm-pagination-nav-border-radius: 0;
-  --doc-sidebar-width: 250px;
 }
 
 html[data-theme="dark"] {
   --ifm-background-color: var(--ifm-color-primary-dark);
   --ifm-navbar-background-color: transparent;
   --ifm-menu-color-active: var(--ifm-color-primary-light);
+  --ifm-menu-color-background-active: var(--ifm-color-primary);
   --ifm-link-color: var(--ifm-color-primary-light);
   --ifm-link-hover-color: var(--ifm-color-primary-light);
   --ifm-toc-link-color: var(--ifm-color-primary-light);
   --ifm-pagination-nav-color-hover: var(--ifm-color-primary-light);
   --ifm-tabs-color-active: var(--ifm-color-primary-light);
+  --ifm-table-stripe-background: #2e526a;
+  --ifm-code-background: var(--ifm-color-primary-dark);
 }
 
 /* global */
@@ -73,8 +77,44 @@ h2 {
   line-height: 32px;
 }
 
-.markdown > h2 {
-  --ifm-h2-font-size: 1.5rem;
+code {
+  margin: 0 1px;
+}
+
+.markdown {
+  & > h2 {
+    --ifm-h2-font-size: 1.5rem;
+    --ifm-h2-vertical-rhythm-top: 3;
+  }
+
+  & > h3 {
+    --ifm-h3-font-size: 1.1875rem;
+    --ifm-h3-vertical-rhythm-top: 3;
+  }
+
+  a {
+    font-weight: bold;
+    text-decoration: underline;
+    color: var(--ifm-color-primary-dark);
+
+    html[data-theme="dark"] & {
+      color: var(--ifm-color-primary-light);
+    }
+
+    &:hover {
+      color: var(--ifm-color-primary);
+      html[data-theme="dark"] & {
+        color: #fefad8;
+      }
+    }
+
+    &:active {
+      color: var(--ifm-color-info);
+      html[data-theme="dark"] & {
+        color: var(--ifm-color-info);
+      }
+    }
+  }
 }
 
 p {
@@ -85,17 +125,27 @@ p {
 
 a[class*="menuLinkExternal"]:after {
   background: url("/img/Dagger_Icons_External-link.svg") no-repeat;
+  position: absolute;
+  right: var(--ifm-menu-link-padding-horizontal);
+  top: var(--ifm-menu-link-padding-vertical);
+}
+
+h1[class^="docTitle"] {
+  margin-bottom: 3rem;
+}
+
+.edit-this-page {
+  font-weight: bold;
+  display: flex;
+  align-items: center;
 }
 
 #__docusaurus {
   background-color: var(--ifm-color-primary-light);
+  padding-bottom: 3rem;
 
   html[data-theme="dark"] & {
-    background: linear-gradient(
-      180deg,
-      var(--ifm-color-primary-dark),
-      var(--ifm-color-primary)
-    );
+    background: #0d0c1b;
   }
 }
 
@@ -108,7 +158,7 @@ a[class*="menuLinkExternal"]:after {
 
 /* navbar */
 .navbar__brand {
-  height: var(--ifm-navbar-height);
+  height: 5rem;
 }
 
 .navbar {
@@ -150,7 +200,7 @@ main[class^="docMainContainer"] {
     box-shadow: 0px 4px 16px 4px #13122610;
     border-radius: 2rem;
     margin-top: 1rem;
-    color: #fffef6;
+    color: var(--ifm-color-primary-light);
   }
 }
 
@@ -178,6 +228,8 @@ div[class^="codeBlockContainer"] {
   margin-bottom: 2.5rem;
 
   div[class^="codeBlockTitle"] {
+    background-color: var(--ifm-color-primary-dark) !important;
+    font-family: var(--ifm-font-family-monospace);
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
   }
@@ -203,18 +255,28 @@ button[class^="copyButton"] {
 
 /* hash-link */
 .hash-link {
-  color: #40b8bb;
-
-  &:hover {
-    color: #175761;
+  svg path + path {
+    fill: #40b8bb;
   }
 
-  &:focus {
-    color: var(--ifm-color-primary-dark);
+  &:hover svg path + path {
+    fill: #175761;
+  }
+
+  &:focus svg path + path {
+    fill: var(--ifm-color-primary-dark);
   }
 }
 
 /* menu */
+.menu {
+  scrollbar-color: #f0efe7 transparent;
+}
+
+html[data-theme="dark"] .menu {
+  scrollbar-color: #3d6581 transparent;
+}
+
 .menu__list {
   padding-top: 3.5rem;
 
@@ -232,49 +294,41 @@ button[class^="copyButton"] {
     color: var(--ifm-color-primary-light);
   }
 
-  html[data-theme="dark"] & {
-    color: var(--ifm-color-primary-light);
-  }
-
-  html[data-theme="dark"] &:hover {
-    color: var(--ifm-color-primary-dark);
-  }
-
-  html[data-theme="dark"] &--active:hover {
-    color: var(--ifm-color-primary-light);
-  }
-
-  html[data-theme="dark"] &:not([href]) {
-    color: var(--ifm-color-primary-light);
-  }
-
+  html[data-theme="dark"] &,
+  html[data-theme="dark"] &:not([href]),
   html[data-theme="dark"] &:focus {
     color: var(--ifm-color-primary-light);
   }
 
+  html[data-theme="dark"] &:hover {
+    background-color: var(--ifm-color-primary);
+  }
+
   html[data-theme="dark"] &:active {
-    background-color: var(--ifm-color-primary-light);
-    color: var(--ifm-color-primary-dark);
+    background-color: var(--ifm-color-primary);
+    color: var(--ifm-color-primary-light);
   }
 
   &.menu__link--sublist {
     color: var(--ifm-color-primary-dark);
+
     &:active,
     &:focus {
       background-color: var(--ifm-color-primary-light);
     }
+
+    &:hover {
+      background-color: #fdf9d7;
+    }
+
     html[data-theme="dark"] & {
       color: var(--ifm-color-primary-light);
     }
     html[data-theme="dark"] &:active,
     html[data-theme="dark"] &:focus,
     html[data-theme="dark"] &:hover {
-      color: var(--ifm-color-primary-dark);
-    }
-    html[data-theme="dark"] &:active:after,
-    html[data-theme="dark"] &:focus:after,
-    html[data-theme="dark"] &:hover:after {
-      filter: none;
+      color: var(--ifm-color-primary-light);
+      background-color: var(--ifm-color-primary);
     }
   }
 }
@@ -305,6 +359,12 @@ button[class^="copyButton"] {
 
 div[class*="admonition-"] .admonition-icon svg {
   display: none;
+}
+
+img[alt="github-contribute"] {
+  display: block;
+  margin: auto;
+  width: 180px;
 }
 
 @mixin admonitionIcon($args...) {
