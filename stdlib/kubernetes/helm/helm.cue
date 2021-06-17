@@ -47,7 +47,7 @@ import (
 	atomic: *true | bool @dagger(input)
 
 	// Kube config file
-	kubeconfig: dagger.#Secret @dagger(input)
+	kubeconfig: string @dagger(input)
 
 	// Helm version
 	version: *"3.5.2" | string @dagger(input)
@@ -85,6 +85,11 @@ import (
 		op.#WriteFile & {
 			dest:    "/entrypoint.sh"
 			content: #code
+		},
+		op.#WriteFile & {
+			dest:    "/kubeconfig"
+			content: kubeconfig
+			mode:    0o600
 		},
 		if chart != _|_ {
 			op.#WriteFile & {
@@ -125,7 +130,6 @@ import (
 				if chartSource != _|_ && chart == _|_ {
 					"/helm/chart": from: chartSource
 				}
-				"/kubeconfig": secret: kubeconfig
 			}
 		},
 	]

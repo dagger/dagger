@@ -26,6 +26,12 @@ import (
 			content: #getHelmPods
 		},
 
+		op.#WriteFile & {
+			dest:    "/kubeconfig"
+			content: kubeconfig
+			mode:    0o600
+		},
+
 		op.#Exec & {
 			always: true
 			args: [
@@ -40,7 +46,6 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 			}
-			mount: "/kubeconfig": secret: kubeconfig
 		},
 	]
 }

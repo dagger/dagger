@@ -62,7 +62,7 @@ import (
 	version: *"v1.19.9" | string @dagger(input)
 
 	// Kube config file
-	kubeconfig: dagger.#Secret @dagger(input)
+	kubeconfig: string @dagger(input)
 
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE"  > /dev/null 2>&1 || true
@@ -77,7 +77,11 @@ import (
 			dest:    "/entrypoint.sh"
 			content: #code
 		},
-
+		op.#WriteFile & {
+			dest:    "/kubeconfig"
+			content: kubeconfig
+			mode:    0o600
+		},
 		if manifest != _|_ {
 			op.#WriteFile & {
 				dest:    "/source"
@@ -101,7 +105,6 @@ import (
 			if manifest == _|_ {
 				mount: "/source": from: source
 			}
-			mount: "/kubeconfig": secret: kubeconfig
 		},
 	]
 }

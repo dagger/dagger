@@ -32,7 +32,7 @@ Apply Kubernetes resources
 | -------------    |:-------------:            |:-------------:                      |
 |*namespace*       | `*"default" \| string`    |Kubernetes Namespace to deploy to    |
 |*version*         | `*"v1.19.9" \| string`    |Version of kubectl client            |
-|*kubeconfig*      | `dagger.#Secret`          |Kube config file                     |
+|*kubeconfig*      | `string`                  |Kube config file                     |
 
 ### kubernetes.#Resources Outputs
 
