@@ -14,43 +14,65 @@ import (
 )
 
 func Path() (string, error) {
-	keysFile, err := homedir.Expand("~/.config/dagger/keys.txt")
+	return homedir.Expand("~/.config/dagger/keys.txt")
+}
+
+func EnsureDefaultKey(ctx context.Context) error {
+	keysFile, err := Path()
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	// if the keys file doesn't exist, attempt a migration
-	if _, err := os.Stat(keysFile); errors.Is(err, os.ErrNotExist) {
-		migrateKeys(keysFile)
+	// If the keys file already exists, there's nothing to do.
+	_, err = os.Stat(keysFile)
+	if err == nil {
+		return nil
 	}
 
-	return keysFile, nil
+	// If we got a different error than not existent, abort
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	// Attempt a migration from the old keys file
+	migrated, err := migrateKeys(ctx, keysFile)
+	if err != nil {
+		return err
+	}
+
+	// If we migrated a previous identity, stop here.
+	if migrated {
+		return nil
+	}
+
+	// Otherwise, generate a new key
+	log.Ctx(ctx).Debug().Msg("generating default key pair")
+	_, err = Generate(ctx)
+	return err
 }
 
 // migrateKeys attempts a migration from `~/.dagger/keys.txt` to `~/.config/dagger/keys.txt`
-func migrateKeys(keysFile string) error {
+func migrateKeys(ctx context.Context, keysFile string) (bool, error) {
 	oldKeysFile, err := homedir.Expand("~/.dagger/keys.txt")
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if _, err := os.Stat(oldKeysFile); err != nil {
-		return err
+		return false, nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(keysFile), 0700); err != nil {
-		return err
+		return false, err
 	}
 
-	return os.Rename(oldKeysFile, keysFile)
+	log.Ctx(ctx).Info().Msg("migrating keychain")
+	return true, os.Rename(oldKeysFile, keysFile)
 }
 
 func Default(ctx context.Context) (string, error) {
 	keys, err := List(ctx)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return Generate(ctx)
-		}
 		return "", err
 	}
 	if len(keys) == 0 {
@@ -85,7 +107,7 @@ func Generate(ctx context.Context) (string, error) {
 
 	pubkey := k.Recipient().String()
 
-	log.Ctx(ctx).Debug().Str("publicKey", pubkey).Msg("generating keypair")
+	log.Ctx(ctx).Debug().Str("publicKey", pubkey).Msg("keypair generated")
 
 	return pubkey, nil
 }
@@ -98,7 +120,7 @@ func List(ctx context.Context) ([]*age.X25519Identity, error) {
 
 	f, err := os.Open(keysFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open keys file file %q: %w", keysFile, err)
+		return nil, fmt.Errorf("failed to open keys file %q: %w", keysFile, err)
 	}
 	ids, err := age.ParseIdentities(f)
 	if err != nil {
@@ -107,7 +129,7 @@ func List(ctx context.Context) ([]*age.X25519Identity, error) {
 
 	keys := make([]*age.X25519Identity, 0, len(ids))
 	for _, id := range ids {
-		key, ok := ids[0].(*age.X25519Identity)
+		key, ok := id.(*age.X25519Identity)
 		if !ok {
 			return nil, fmt.Errorf("internal error: unexpected identity type: %T", id)
 		}
