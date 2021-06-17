@@ -66,7 +66,6 @@ module.exports = {
       "docusaurus2-dotenv", {
         systemvars: true,
       },
-    ],
-    "@docusaurus/plugin-google-gtag"
+    ]
   ],
 };
