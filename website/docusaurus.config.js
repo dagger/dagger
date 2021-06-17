@@ -39,6 +39,10 @@ module.exports = {
         lightIcon: "img/Icon_Day-mode.svg",
       },
     },
+    gtag: {
+      trackingID: 'G-RDXG80F635',
+      anonymizeIP: true,
+    },
   },
   presets: [
     [
@@ -62,6 +66,7 @@ module.exports = {
       "docusaurus2-dotenv", {
         systemvars: true,
       },
-    ]
+    ],
+    "@docusaurus/plugin-google-gtag"
   ],
 };

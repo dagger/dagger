@@ -6,12 +6,12 @@
  */
 import React from 'react';
 import Link from '@docusaurus/Link';
-import Translate, {translate} from '@docusaurus/Translate';
+import Translate, { translate } from '@docusaurus/Translate';
 import DocPaginatorPrev from "./Dagger_Icons_Arrow-previous.svg"
 import DocPaginatorNext from "./Dagger_Icons_Arrow-next.svg"
 
 function DocPaginator(props) {
-  const {metadata} = props;
+  const { metadata } = props;
   return (
     <nav
       className="pagination-nav"
@@ -33,7 +33,7 @@ function DocPaginator(props) {
               </Translate>
             </div>
             <div className="pagination-nav__label">
-              <DocPaginatorPrev height={23}/>{metadata.previous.title}
+              <DocPaginatorPrev height={23} style={{ marginRight: '0.5rem' }} />{metadata.previous.title}
             </div>
           </Link>
         )}
@@ -49,7 +49,7 @@ function DocPaginator(props) {
               </Translate>
             </div>
             <div className="pagination-nav__label">
-              {metadata.next.title}<DocPaginatorNext height={23}/>
+              {metadata.next.title}<DocPaginatorNext height={23} style={{ marginLeft: '0.5rem' }} />
             </div>
           </Link>
         )}
