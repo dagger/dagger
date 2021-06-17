@@ -8,11 +8,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dagger.io/dagger/keychain"
 	"gopkg.in/yaml.v3"
 )
 
 func TestWorkspace(t *testing.T) {
 	ctx := context.TODO()
+
+	keychain.EnsureDefaultKey(ctx)
 
 	root, err := os.MkdirTemp(os.TempDir(), "dagger-*")
 	require.NoError(t, err)
@@ -59,6 +62,8 @@ func TestWorkspace(t *testing.T) {
 
 func TestEncryption(t *testing.T) {
 	ctx := context.TODO()
+
+	keychain.EnsureDefaultKey(ctx)
 
 	readManifest := func(st *State) *State {
 		data, err := os.ReadFile(path.Join(st.Path, manifestFile))

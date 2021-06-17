@@ -12,6 +12,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/cmd/input"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/keychain"
 )
 
 var rootCmd = &cobra.Command{
@@ -25,8 +26,16 @@ func init() {
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Specify a workspace (defaults to current git repository)")
 
-	rootCmd.PersistentPreRun = func(*cobra.Command, []string) {
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		lg := logger.New()
+		ctx := lg.WithContext(cmd.Context())
+
 		go checkVersion()
+
+		err := keychain.EnsureDefaultKey(ctx)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to generate default key")
+		}
 	}
 	rootCmd.PersistentPostRun = func(*cobra.Command, []string) {
 		warnVersion()
