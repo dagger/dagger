@@ -27,6 +27,11 @@ dagger_new_with_plan() {
 
 }
 
+# dagger helper to execute the right binary
+dagger() {
+    "${DAGGER}" "$@"
+}
+
 skip_unless_secrets_available() {
     local inputFile="$1"
     sops exec-file "$inputFile" echo  > /dev/null 2>&1 || skip "$inputFile cannot be decrypted"
