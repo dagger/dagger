@@ -21,7 +21,7 @@ import { ThemeClassNames, docVersionSearchTag } from '@docusaurus/theme-common';
 import { Redirect } from "react-router";
 import qs from 'querystringify';
 import isEmpty from 'lodash/isEmpty';
-import { checkUserCollaboratorStatus, getUser } from '../../api/github'
+import { checkUserCollaboratorStatus } from '../../api/github'
 import { GithubLoginButton } from 'react-social-login-buttons';
 import Spinner from '../../components/Spinner';
 import DocPageAuthentication from '../../components/DocPageAuthentication';
@@ -139,34 +139,31 @@ function DocPage(props) {
   );
 
   // CUSTOM DOCPAGE
-  // Do not use Github authentication when in local env or Netlify deploy preview
-  if (typeof window === "undefined" ||
-    (typeof window !== "undefined" && window?.location?.hostname !== "localhost" && !window.location.hostname.includes('deploy'))) {
+  if (!!process.env.REACT_APP_OAUTH_ENABLE) {
     const [isUserAuthorized, setIsUserAuthorized] = useState()
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
     const authQuery = qs.parse(location.search);
-    const [userAccessToken, setUserAccessToken] = useState((() => {
-      if (typeof window !== "undefined") return window.localStorage.getItem('user-github-key')
+    const [userAccessStatus, setUserAccessStatus] = useState((() => {
+      if (typeof window !== "undefined") return window.localStorage.getItem('user-github-isAllowed')
     })())
 
     useEffect(async () => {
-      if (userAccessToken) {
-        const user = await getUser(userAccessToken)
-        setIsUserAuthorized(user)
+      if (userAccessStatus) {
+        setIsUserAuthorized(userAccessStatus)
       } else {
         if (!isEmpty(authQuery)) { //callback after successful auth with github
           const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
           if (isUserCollaborator?.isAllowed) {
-            setUserAccessToken(isUserCollaborator.access_token)
-            if (typeof window !== "undefined") window.localStorage.setItem('user-github-key', isUserCollaborator.access_token);
+            setUserAccessStatus(isUserCollaborator?.isAllowed)
+            if (typeof window !== "undefined") window.localStorage.setItem('user-github-isAllowed', isUserCollaborator?.isAllowed);
           }
 
           setIsUserAuthorized(isUserCollaborator?.isAllowed)
         }
       }
       setIsLoading(false)
-    }, [userAccessToken])
+    }, [userAccessStatus])
 
 
     if (isLoading) return <Spinner />

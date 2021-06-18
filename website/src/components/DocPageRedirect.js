@@ -6,7 +6,7 @@ export default function DocPageRedirect() {
     const [counter, setCounter] = useState(10)
 
     useEffect(() => {
-        setTimeout(() => window.location.href = "https://dagger.io", 10000)
+        setTimeout(() => window.location.href = process.env.REACT_APP_DAGGER_SITE_URI, 10000)
         setInterval(() => setCounter((prevState) => prevState - 1), 1000)
     }, [])
 
@@ -18,7 +18,7 @@ export default function DocPageRedirect() {
                     <p>It seems you don't have the permission to see Dagger's documentation. But don't worry you can request an Eary Access :). You'll be redirect to Dagger website in {counter} seconds </p>
                     <p>See you soon !</p>
                     <br />
-                    <small><strong>If nothing happen, <a href="https://dagger.io">click here</a> to go to Dagger website</strong></small>
+                    <small><strong>If nothing happen, <a href={process.env.REACT_APP_DAGGER_SITE_URI}>click here</a> to go to Dagger website</strong></small>
                 </div>
                 <div className="col col--4">
                     <img src="/img/dagger-astronaute.png" alt="" />

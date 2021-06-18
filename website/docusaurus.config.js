@@ -65,6 +65,7 @@ module.exports = {
     [
       "docusaurus2-dotenv", {
         systemvars: true,
+        expand: true,
       },
     ]
   ],
