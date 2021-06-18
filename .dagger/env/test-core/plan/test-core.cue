@@ -4,8 +4,12 @@ import (
 	"dagger.io/dagger"
 )
 
-name: string | *"world" @dagger(input)
+name: dagger.#Input & {
+	string | *"world"
+}
+
 message: "Hello, \(name)!" @dagger(output)
 
-dir: dagger.#Artifact @dagger(input)
+dir: dagger.#Input & dagger.#Artifact
+
 samedir: dir @dagger(output)
