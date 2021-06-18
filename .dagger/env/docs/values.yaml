@@ -1,3 +1,5 @@
+plan:
+    module: .dagger/env/docs/plan
 name: docs
 inputs:
     docs.env.REACT_APP_CLIENT_ID:
@@ -30,8 +32,8 @@ sops:
             ejRKQXNFZzBTbUxpc05acnkxQ2U2UkEKX1byNj64xOiRGAJ9lwh55d/mlasI3H6H
             b+o3HbXSbV0G0UwQxEOisntR6o27ry/l12ai/sOQ4f9MXm6FRw2XTg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-15T07:57:28Z"
-    mac: ENC[AES256_GCM,data:PPeh8uZ4i8kRqgoDMLBlHMy3jFs0jQxJKdkeA3LTqbBKZ9EEEt9K4ASmZVbTUv5iumcoxaXc2u6ty0gDPaLjqnYPLMOzR962+5ipp96l1fzA7vvNpdNlUPweTo6WgQUBf/J4eOPBlm3O2pPi7Os+IlvnvM92ZL6Y9K3oOZqlnwU=,iv:Mz8jz3lBOEVqlqKEaqa5ujecr4B/IIaeW34Kx3cEwwE=,tag:feixK5kYE61WeEzJcXjRoA==,type:str]
+    lastmodified: "2021-06-18T14:46:35Z"
+    mac: ENC[AES256_GCM,data:RX4rZSP2sMqSGfbSkpK1rAqLcpYHv99jUvhGpQvM9Sjxki4LskxQP51BuZj7eVD0u0uqBMObatyZvofTybld6tlrgQeddIS4SINRJNsC+P7dzaiOEePZX/oCCMIQCnO8+OLO7z6DNdy1IMxhuCZWeGHDJt1ritLds3ACAjtFrGo=,iv:AI8tdLTFnFV919ypY0RKVaDNfwEN6b5hZuH4DvlhdAk=,tag:izIPuozRiYpQ50hi4yLyCw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
