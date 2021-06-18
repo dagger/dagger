@@ -40,8 +40,8 @@ import (
 			},
 
 			op.#Exec & {
-				if always != _|_ {
-					"always": always
+				if always {
+					always: true
 				}
 				env: {
 					TARGET:           target
