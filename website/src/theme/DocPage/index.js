@@ -139,7 +139,7 @@ function DocPage(props) {
   );
 
   // CUSTOM DOCPAGE
-  if (!!process.env.REACT_APP_OAUTH_ENABLE) {
+  if (process.env.REACT_APP_OAUTH_ENABLE == 'true') {
     const [isUserAuthorized, setIsUserAuthorized] = useState()
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
