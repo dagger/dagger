@@ -1,7 +1,7 @@
 [build]
   base = "website/"
   publish = "build/"
-  command = "yarn build"
+  command = "yarn build:withoutAuth"
 
 [context.production]
   # Do not build the site if there's no site-related changes since the last

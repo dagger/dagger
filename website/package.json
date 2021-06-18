@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
-    "start": "docusaurus start",
-    "build": "docusaurus build",
+    "start": "OAUTH_ENABLE=false docusaurus start",
+    "start:withAuth": "OAUTH_ENABLE=true docusaurus start",
+    "build": "OAUTH_ENABLE=true docusaurus build",
+    "build:withoutAuth": "OAUTH_ENABLE=false docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",

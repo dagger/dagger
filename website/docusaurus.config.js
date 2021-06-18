@@ -6,7 +6,7 @@ module.exports = {
   tagline: "Dagger is a programmable deployment system",
   url: "https://docs.dagger.io",
   baseUrl: "/",
-  onBrokenLinks: "throw",
+  onBrokenLinks: "warn",
   onBrokenMarkdownLinks: "warn",
   favicon: "img/favicon.png",
   organizationName: "Dagger",
@@ -65,6 +65,7 @@ module.exports = {
     [
       "docusaurus2-dotenv", {
         systemvars: true,
+        expand: true,
       },
     ]
   ],
