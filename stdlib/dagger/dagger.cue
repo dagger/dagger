@@ -19,3 +19,9 @@ import (
 
 	id: string
 }
+
+#Input: {
+	@dagger(input)
+	_
+	...
+}
