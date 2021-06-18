@@ -41,7 +41,7 @@ import (
 
 			op.#Exec & {
 				if always {
-					always: true
+					"always": true
 				}
 				env: {
 					TARGET:           target
