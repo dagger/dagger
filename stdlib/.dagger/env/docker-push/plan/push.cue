@@ -55,7 +55,7 @@ TestPush: {
 	push: docker.#Push & {
 		"name": name
 		source: image
-		registry: {
+		auth: {
 			username: TestRegistry.username
 			"secret": secret.out
 		}

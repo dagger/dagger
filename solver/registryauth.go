@@ -63,7 +63,9 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 }
 
 func parseAuthHost(host string) (*url.URL, error) {
-	if host == "registry-1.docker.io" {
+	isDockerHub := !(strings.Contains(host, "amazonaws.com") || strings.Contains(host, "gcr.io") || strings.Contains(host, "microsoft.com"))
+
+	if host == "registry-1.docker.io" || isDockerHub {
 		host = "https://index.docker.io/v1/"
 	}
 

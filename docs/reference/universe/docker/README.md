@@ -74,13 +74,12 @@ Push a docker image to a remote registry
 
 ### docker.#Push Inputs
 
-| Name                  | Type                                          | Description                                              |
-| -------------         |:-------------:                                |:-------------:                                           |
-|*name*                 | `string`                                      |Remote name (example: "index.docker.io/alpine:latest")    |
-|*source*               | `dagger.#Artifact`                            |Image source                                              |
-|*registry.target*      | `*"https://index.docker.io/v1/" \| string`    |Remote registry                                           |
-|*registry.username*    | `string`                                      |Username                                                  |
-|*registry.secret*      | `(string\|bytes)`                             |Password or secret                                        |
+| Name              | Type                  | Description                                              |
+| -------------     |:-------------:        |:-------------:                                           |
+|*name*             | `string`              |Remote name (example: "index.docker.io/alpine:latest")    |
+|*source*           | `dagger.#Artifact`    |Image source                                              |
+|*auth.username*    | `string`              |Username                                                  |
+|*auth.secret*      | `string`              |Password or secret                                        |
 
 ### docker.#Push Outputs
 

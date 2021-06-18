@@ -1,3 +1,5 @@
+plan:
+    module: .dagger/env/docker-push/plan
 name: docker-push
 inputs:
     TestRegistry.secret:
@@ -19,8 +21,8 @@ sops:
             UjFJYTc1UUUzSFVkZjQ2blRsSGpVdVEKOanMR3+WlAgoDfqTUW7WPW1ytT3NdkTX
             4Rqo49QmnuKFJ9tKoBFQOqgIo8E/lpcOkeIUiy5e/35FvsZ/KFk/pg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-12T13:31:57Z"
-    mac: ENC[AES256_GCM,data:TrLGfqDj3lvZKroaPtlDuR0Ki+yoFDYFqIhW+g7iasVOzvDaqHepX8X/aLiHX+XHdTqGH6ehfu1k1BSaz6xKqqdIai9NIyokgIKXR1F5mRgK/aDhc6x/YvX3dSl79/4zBBblDpYNFhCarQMxeTSFP9GfW+e0+T/z10fHHlQub8o=,iv:Pab2qkZTqP/6j4LV0B97SACQm/UZPMkeahGjZLJ2fFg=,tag:r4IW1WRipuC/MdtwEzzEpA==,type:str]
+    lastmodified: "2021-06-18T19:34:53Z"
+    mac: ENC[AES256_GCM,data:2LqpZGLCgN4d72hZMSs9uuIy0Eh69eP9JfhCcCvnIUg8kXcr5/mThST3Xum1LHJsAwfXIxPQPuz2ZzlcWksgYczNalU+ibTVk6N3nLi4ynrbV5QXaoS2MUmJHx6Y4VsjKHg13DQOysqcCa3+vY3WKxZ/WLgkI0rVOwZMELQBfXo=,iv:LeVFP37Y0rpLJa3IpbHD0N1ZARH139dz434c+uLv+Yo=,tag:yjlfzzcvvFzmVnvBX+8aAg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -37,31 +37,29 @@ import (
 	// Image source
 	source: dagger.#Artifact @dagger(input)
 
-	// Image registry
-	registry: {
-		// Remote registry
-		target: string | *"https://index.docker.io/v1/" @dagger(input)
-
+	// Registry auth
+	auth: {
 		// Username
 		username: string @dagger(input)
 
 		// Password or secret
-		secret: string | bytes @dagger(input)
+		secret: string @dagger(input)
 	}
 
 	push: #up: [
 		op.#Load & {from: source},
 
-		if registry != _|_ {
+		if auth != _|_ {
 			op.#DockerLogin & {
-				target:   registry.target
-				username: registry.username
-				secret:   registry.secret
+				target:   name
+				username: auth.username
+				secret:   auth.secret
 			}
 		},
 
 		op.#PushContainer & {ref: name},
-		op.#Subdir & {dir:        "/dagger"},
+
+		op.#Subdir & {dir: "/dagger"},
 	]
 
 	// Image ref
