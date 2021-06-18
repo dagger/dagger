@@ -1,0 +1,27 @@
+plan:
+    module: .dagger/env/kubernetes-helm/plan
+name: kubernetes-helm
+inputs:
+    TestChartSource:
+        dir:
+            path: ./kubernetes/helm/testdata/mychart
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBud1hMc0dTZTlIQ3lZVEQ5
+            WjA2UlAvTm15ZEgycXlKKzhjTmU0Ui9xZHcwCkRxclFUTUE0aXRvaElkc3diV2Ix
+            N2VZZVIzS2t3cVl3UmtXOC9PY1VObzAKLS0tIG9ydkFzak1SaUo2NGxET3ZiNklZ
+            VHlGUExaMzcwM0pOM2VDY280UWZXSzQKAm7ZV1agxbla3Yrc7vrwJosSjQtWhdac
+            ZFyQ6Gi+9H7qHZM89yVjAaIg1lwr68HcjYgDzpvvhJO9YPfzwoLyHw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-18T15:42:52Z"
+    mac: ENC[AES256_GCM,data:SzHFZpgiv+h1vRjq0GP+4nzj9az6pAwQwstxYz10yBGPQXnZv/VtJm071oouiK7pgD4i7cTvTKgIOaX9K74PiWSiTjWI5F9sGHvt9ZoGyU08OHM6zwGMDiYygBN2+5dd5jBvT4Xy6efa0IOMxSqhp69+VoJRWesAFsN6IfDcIEY=,iv:Af2WeB2eVk5hnWFWaQij7hz2wjXgNWDJTWDm13iKNvA=,tag:uvR1ruMc69ZhDJRtYCFQBw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

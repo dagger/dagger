@@ -1,0 +1,30 @@
+plan:
+    module: .dagger/env/docker-build/plan
+name: docker-build
+inputs:
+    TestSourceBuild:
+        dir:
+            path: ./docker/testdata/build
+    TestSourceImageFromDockerfile:
+        dir:
+            path: ./docker/testdata/dockerfile
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0TXlFYWNvUldMdlRtWkEz
+            SlBEYUY1Q0thbFdSZGpaT00xQ2Jkc1J2WkdJClBXUGVTamdmZU1KNUdjam9HN0Zl
+            RjRQbVRHVjR6S3RCWlJLaElaM2ZWVG8KLS0tIDJJejFkQkxYeDdHcWdPS0p0QmJ0
+            Mm5vT1dHbFViK2ZIakNnVkZTd2lhUHMK63jJsJVLJMbQE2NkAB8qv8JnPHpvcNes
+            z17EJgl0lCLqeNHtfrTfSiIP4wq8gNLK4avCKK+WGDOIMsXPzK6RNw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-17T20:14:11Z"
+    mac: ENC[AES256_GCM,data:hlc0Bnfeoor/WKMbQRgTalkxngL0YXTwHAys/moXZ4ZMGd2lt+j4l4EkKSjb3QrJfPllCeqroohLKtN+lP4K9fSCMcfYzic2DTEP68rPwufmrgxys1snOHHgIEfqogL8p55fJdXn91x+WHhPNkbWaaH0WcboYsy0zemUIkjb+xc=,iv:8oUeR1dfT4lrVWyJpGPPFa/jlPgWA/ld3UM9Cw2znxk=,tag:59RyiXwzJ5j+c5faxs9U3w==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

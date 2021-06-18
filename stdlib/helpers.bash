@@ -46,3 +46,14 @@ copy_to_sandbox() {
 
     cp -a "$source" "$target"
 }
+
+# Check if there is a local kubernetes cluster.
+#
+# This is need to do kubernetes test in the CI.
+skip_unless_local_kube() {
+    if [ -f ~/.kube/config ] && grep -q "user: kind-kind" ~/.kube/config &> /dev/null && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
+        echo "Kubernetes available"
+    else
+        skip "local kubernetes cluster not available"
+    fi
+}
