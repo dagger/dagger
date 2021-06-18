@@ -21,7 +21,7 @@ function bindApiCall({ url, config, errorMessage }) {
 
 async function getAccessToken(code) {
     const accessToken = await bindApiCall({
-        url: `${process.env.REACT_APP_API_PROXY_ENABLE ? '/github-proxy' : 'https://github.com' }/login/oauth/access_token`,
+        url: `${process.env.REACT_APP_API_PROXY_ENABLE == 'true' ? '/github-proxy' : 'https://github.com'}/login/oauth/access_token`,
         config: {
             params: {
                 code,
@@ -37,7 +37,7 @@ async function getAccessToken(code) {
 
 export async function getUser(access_token) {
     const user = await bindApiCall({
-        url: `${process.env.REACT_APP_API_PROXY_ENABLE ? '/github-api-proxy' : 'https://api.github.com'}/user`,
+        url: `${process.env.REACT_APP_API_PROXY_ENABLE == 'true' ? '/github-api-proxy' : 'https://api.github.com'}/user`,
         config: {
             headers: { Authorization: `token ${access_token}` },
         },
@@ -49,7 +49,6 @@ export async function getUser(access_token) {
         error: user.data?.error_description,
         status: user.status
     }
-
 }
 
 export async function checkUserCollaboratorStatus(code) {
@@ -57,11 +56,11 @@ export async function checkUserCollaboratorStatus(code) {
     const { login } = await getUser(access_token)
 
     const isUserCollaborator = await bindApiCall({
-        url: `${process.env.REACT_APP_API_PROXY_ENABLE ? '/docs-access' : 'https://j20f3pfq11.execute-api.us-east-1.amazonaws.com/Prod/u'}/${login}`,
+        url: `${process.env.REACT_APP_API_PROXY_ENABLE == 'true' ? '/docs-access' : 'https://j20f3pfq11.execute-api.us-east-1.amazonaws.com/Prod/u'}/${login}`,
         errorMessage: 'error checkUserCollaboratorStatus'
     })
 
     return {
-        isAllowed: isUserCollaborator.data
+        userPermission: isUserCollaborator.data
     }
 }

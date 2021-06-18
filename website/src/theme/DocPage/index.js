@@ -139,8 +139,7 @@ function DocPage(props) {
   );
 
   // CUSTOM DOCPAGE
-  if (process.env.REACT_APP_OAUTH_ENABLE == 'true') {
-    const [isUserAuthorized, setIsUserAuthorized] = useState()
+  if (process.env.OAUTH_ENABLE == 'true') {
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
     const authQuery = qs.parse(location.search);
@@ -149,17 +148,11 @@ function DocPage(props) {
     })())
 
     useEffect(async () => {
-      if (userAccessStatus) {
-        setIsUserAuthorized(userAccessStatus)
-      } else {
-        if (!isEmpty(authQuery)) { //callback after successful auth with github
-          const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
-          if (isUserCollaborator?.isAllowed) {
-            setUserAccessStatus(isUserCollaborator?.isAllowed)
-            if (typeof window !== "undefined") window.localStorage.setItem('user-github-isAllowed', isUserCollaborator?.isAllowed);
-          }
-
-          setIsUserAuthorized(isUserCollaborator?.isAllowed)
+      if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
+        const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
+        setUserAccessStatus(isUserCollaborator?.userPermission)
+        if (isUserCollaborator?.userPermission) {
+          if (typeof window !== "undefined") window.localStorage.setItem('user-github-isAllowed', isUserCollaborator?.userPermission);
         }
       }
       setIsLoading(false)
@@ -168,11 +161,11 @@ function DocPage(props) {
 
     if (isLoading) return <Spinner />
 
-    if (isUserAuthorized === false) {
+    if (userAccessStatus === false) {
       return <DocPageRedirect />
     }
 
-    if (typeof isUserAuthorized == 'undefined' || isUserAuthorized?.status === 401) {
+    if (userAccessStatus === null) {
       return (
         <DocPageAuthentication />
       )
