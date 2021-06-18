@@ -39,7 +39,7 @@ TestHelmRepoChart: {
 		seed: "repo"
 	}
 
-	// Deploy chart
+	// Deploy remote chart
 	deploy: helm.#Chart & {
 		name:       "dagger-test-repository-\(suffix.out)"
 		namespace:  "dagger-test"

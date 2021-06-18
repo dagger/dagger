@@ -39,12 +39,24 @@ dagger() {
 # copy_to_sandbox myenv
 # dagger input secret -w "$DAGGER_SANDBOX" -e myenv "temporary change"
 # dagger up -w "$DAGGER_SANDBOX" -e myenv
+#
+# To use testdata directory in tests, add the package name as second flag
+# Usage:
+# copy_to_sandbox myenv mypackage
 copy_to_sandbox() {
     local name="$1"
     local source="$DAGGER_WORKSPACE"/.dagger/env/"$name"
     local target="$DAGGER_SANDBOX"/.dagger/env/"$name"
 
     cp -a "$source" "$target"
+
+    if [ -d "$2" ]; then
+      local package="$2"
+      local source_package="$DAGGER_WORKSPACE"/"$package"
+      local target_package="$DAGGER_SANDBOX"/
+
+      cp -a "$source_package" "$target_package"
+    fi
 }
 
 # Check if there is a local kubernetes cluster.
