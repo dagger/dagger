@@ -116,6 +116,9 @@ import (
 	// Container name
 	name?: string @dagger(input)
 
+	// Build and directly run the source
+	source?: dagger.#Artifact @dagger(input)
+
 	// Image registry
 	registry?: {
 		target:   string
@@ -131,6 +134,10 @@ import (
 			OPTS="$OPTS --name $CONTAINER_NAME"
 		fi
 
+		if [ -d /source ]; then
+			docker build -t "$IMAGE_REF" /source
+		fi
+
 		docker container run -d $OPTS "$IMAGE_REF"
 		"""#
 
@@ -142,6 +149,9 @@ import (
 			if name != _|_ {
 				CONTAINER_NAME: name
 			}
+		}
+		if source != _|_ {
+			mount: "/source": from: source
 		}
 	}
 }

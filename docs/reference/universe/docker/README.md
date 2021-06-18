@@ -101,7 +101,7 @@ Push a docker image to a remote registry
 |*run.ssh.user*         | `string`            |ssh user                               |
 |*run.ssh.port*         | `*22 \| int`        |ssh port                               |
 |*run.ssh.key*          | `dagger.#Secret`    |private key                            |
-|*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
+|*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    if [ -d /source ]; then\n    \tdocker build -t "$IMAGE_REF" /source\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
 |*run.env.IMAGE_REF*    | `string`            |-                                      |
 |*run.registries*       | `[]`                |Image registries                       |
 
