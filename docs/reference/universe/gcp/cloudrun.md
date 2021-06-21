@@ -4,11 +4,15 @@ sidebar_label: cloudrun
 
 # dagger.io/gcp/cloudrun
 
-## #Deploy
+```cue
+import "dagger.io/gcp/cloudrun"
+```
+
+## cloudrun.#Deploy
 
 Deploy deploys a Cloud Run service based on provided GCR image
 
-### #Deploy Inputs
+### cloudrun.#Deploy Inputs
 
 | Name                  | Type                      | Description          |
 | -------------         |:-------------:            |:-------------:       |
@@ -19,6 +23,6 @@ Deploy deploys a Cloud Run service based on provided GCR image
 |*image*                | `string`                  |GCR image ref         |
 |*platform*             | `*"managed" \| string`    |Cloud Run platform    |
 
-### #Deploy Outputs
+### cloudrun.#Deploy Outputs
 
 _No output._
