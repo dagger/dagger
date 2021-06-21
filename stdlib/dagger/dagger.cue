@@ -25,3 +25,9 @@ import (
 	_
 	...
 }
+
+#Output: {
+	@dagger(output)
+	_
+	...
+}
