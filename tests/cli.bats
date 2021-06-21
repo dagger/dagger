@@ -308,6 +308,20 @@ setup() {
 }'
 }
 
+@test "dagger input dir: ignore .dagger" {
+    "$DAGGER" init
+
+    dagger_new_with_plan input "$TESTDIR"/cli/input/ignore
+
+    run [ -d "$TESTDIR"/cli/input/ignore/testdata/.dagger ]
+    assert_success
+
+    cp -R "$TESTDIR"/cli/input/ignore/testdata/ "$DAGGER_WORKSPACE"/testdata
+    "$DAGGER" input -e "input" dir "source" "$DAGGER_WORKSPACE"/testdata
+    "$DAGGER" up -e "input"
+    assert_success
+}
+
 @test "dagger input git" {
     "$DAGGER" init
 
