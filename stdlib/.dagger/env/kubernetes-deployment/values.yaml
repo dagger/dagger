@@ -1,0 +1,23 @@
+plan:
+    module: .dagger/env/kubernetes-deployment/plan
+name: kubernetes-deployment
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIQ2hZZ3ZRVzRseXZyVW1h
+            L01WYkNrTzdHSEN5WTlyQzVDTm9FbzRENzFFCjdrcVhKa1ZwaGNyYmo3ditDR1hC
+            cStzcmVjUXY3V3FUZElRNUIzQlQzL0UKLS0tIHlmWTlUdFVOczM0TTF5RHFTUXps
+            SVVkOUtuWTJneE45em5iQ3JvbnIwWlkKgdJC5IzvVDxbWSfU41Xg/UGPxuVBSOGY
+            eqenr07uWppNaHuLuo9A+znQa2RQ0L2clcB2d+ka+6z5tQyHOfx1nA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-18T15:41:02Z"
+    mac: ENC[AES256_GCM,data:R3DuHLEyfehKe1nCWHdKB9jyOs5TXI+r2BmQDMiwI8v0xfZdOZWfwGw3NAFGDZHbaLNTajQkzviDsMhaXg5bxvmK7P8PiJOOmnm/LnDRfnJirGRGpWA7bmsHH/QZL1lb75+cwUrwRZflkKoPy2bQyoC5Rze6/oNhPIUTCwQWaMo=,iv:73ZjXAcazCND3JhC94TjUOlcMbwfTz8YDFP1BPo8yUw=,tag:wUVcfyjtf4KzpU0jDrxleQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

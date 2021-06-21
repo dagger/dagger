@@ -6,7 +6,30 @@ import (
 	"dagger.io/docker"
 )
 
-source: dagger.#Artifact
+TestSourceBuild: dagger.#Artifact @dagger(input)
+
+TestBuild: {
+	image: docker.#Build & {
+		source: TestSourceBuild
+	}
+
+	verify: #up: [
+		op.#Load & {
+			from: image
+		},
+
+		op.#Exec & {
+			always: true
+			args: [
+				"sh", "-c", """
+						grep -q "test" /test.txt
+					""",
+			]
+		},
+	]
+}
+
+TestSourceImageFromDockerfile: dagger.#Artifact @dagger(input)
 
 TestImageFromDockerfile: {
 	image: docker.#ImageFromDockerfile & {
@@ -14,7 +37,7 @@ TestImageFromDockerfile: {
 				FROM alpine
 				COPY test.txt /test.txt
 			"""
-		context: source
+		context: TestSourceImageFromDockerfile
 	}
 
 	verify: #up: [

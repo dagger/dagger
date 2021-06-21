@@ -29,7 +29,7 @@ import (
 
 		op.#WriteFile & {
 			dest:    "/kubeconfig"
-			content: kubeconfig
+			content: TestKubeconfig
 			mode:    0o600
 		},
 

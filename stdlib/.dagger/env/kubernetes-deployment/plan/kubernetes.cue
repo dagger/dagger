@@ -8,7 +8,7 @@ import (
 
 // We assume that a kinD cluster is running locally
 // To deploy a local KinD cluster, follow this link : https://kind.sigs.k8s.io/docs/user/quick-start/
-kubeconfig: string @dagger(input)
+TestKubeconfig: string @dagger(input)
 
 TestKubeApply: {
 	suffix: random.#String & {
@@ -31,9 +31,9 @@ TestKubeApply: {
 
 	// Apply deployment
 	apply: kubernetes.#Resources & {
-		"kubeconfig": kubeconfig
-		namespace:    "dagger-test"
-		manifest:     yaml.Marshal(kubeSrc)
+		kubeconfig: TestKubeconfig
+		namespace:  "dagger-test"
+		manifest:   yaml.Marshal(kubeSrc)
 	}
 
 	// Verify deployment
