@@ -4,9 +4,9 @@ slug: /learn/108-cloudformation
 
 # Dagger 108: provision infrastructure on AWS
 
-In this guide you will learn how to automatically [provision infrastructure](https://dzone.com/articles/infrastructure-provisioning-–) on AWS, by integrating [Amazon Cloudformation](https://aws.amazon.com/cloudformation/) in your Dagger environment.
+In this guide, you will learn how to automatically [provision infrastructure](https://dzone.com/articles/infrastructure-provisioning-–) on AWS by integrating [Amazon Cloudformation](https://aws.amazon.com/cloudformation/) in your Dagger environment.
 
-We will start with something simple: provisioning a new bucket on [Amazon S3](https://en.wikipedia.org/wiki/Amazon_S3). But Cloudformation can provision almost any AWS resource; and Dagger can integrate with the full Cloudformation API.
+We will start with something simple: provisioning a new bucket on [Amazon S3](https://en.wikipedia.org/wiki/Amazon_S3). But Cloudformation can provision almost any AWS resource, and Dagger can integrate with the full Cloudformation API.
 
 ## Prerequisites
 
@@ -14,11 +14,11 @@ We will start with something simple: provisioning a new bucket on [Amazon S3](ht
 
 #### Guidelines
 
-The provisioning strategy detailed below follows S3 best practices. In order to remain agnostic of your current AWS level, it deeply relies on S3 and Cloudformation documentation.
+The provisioning strategy detailed below follows S3 best practices. However, to remain agnostic of your current AWS level, it profoundly relies on S3 and Cloudformation documentation.
 
 #### Relays
 
-When developing a plan based on relays, the first thing to consider is to read their universe reference: it summarizes the expected inputs and their corresponding formats. [<u>Here</u>](https://dagger.io/aws/cloudformation) is the Cloudformation one.
+The first thing to consider when developing a plan based on relays is to read their universe reference: it summarizes the expected inputs and their corresponding formats. [Here](/reference/universe/aws/cloudformation) is the Cloudformation one.
 
 ## Initialize a Dagger Workspace and Environment
 
@@ -30,7 +30,7 @@ You will need the local copy of the [Dagger examples repository](https://github.
 git clone https://github.com/dagger/examples
 ```
 
-Make sure that all commands are run from the todoapp directory:
+Make sure to run all commands from the todoapp directory:
 
 ```shell
 cd examples/todoapp
@@ -38,7 +38,7 @@ cd examples/todoapp
 
 ### (optional) Initialize a Cue module
 
-In this guide we will use the same directory as the root of the Dagger workspace and the root of the Cue module; but you can create your Cue module anywhere inside the Dagger workspace.
+This guide will use the same directory as the root of the Dagger workspace and the root of the Cue module, but you can create your Cue module anywhere inside the Dagger workspace.
 
 ```shell
 cue mod init
@@ -52,178 +52,332 @@ Let's create a new directory for our Cue package:
 mkdir cloudformation
 ```
 
-### Setup the environment
+## Create a basic plan
 
-#### Create a new environment
+Let's implement the Cloudformation template and convert it to a Cue definition for further flexibility.
 
-Now that your Cue package is ready, let's create an environment to run it:
+### Setup the template and the environment
+
+#### Setup the template
+
+The idea here is to follow best practices in [S3 buckets](https://docs.aws.amazon.com/AmazonS3/latest/userguide/HostingWebsiteOnS3Setup.html) provisioning. Thankfully, the AWS documentation contains a working [Cloudformation template](https://docs.aws.amazon.com/fr_fr/AWSCloudFormation/latest/UserGuide/quickref-s3.html#scenario-s3-bucket-website) that fits 95% of our needs.
+
+##### 1. Tweaking the template: output bucket name only
+
+Create a file named `template.cue` and add the following configuration to it.
+
+```cue title="todoapp/cloudformation/template.cue"
+package cloudformation
+
+// inlined s3 cloudformation template as a string
+template: """
+  {
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Resources": {
+      "S3Bucket": {
+        "Type": "AWS::S3::Bucket",
+        "Properties": {
+          "AccessControl": "PublicRead",
+          "WebsiteConfiguration": {
+            "IndexDocument": "index.html",
+            "ErrorDocument": "error.html"
+          }
+        },
+        "DeletionPolicy": "Retain"
+      },
+      "BucketPolicy": {
+        "Type": "AWS::S3::BucketPolicy",
+        "Properties": {
+          "PolicyDocument": {
+            "Id": "MyPolicy",
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "PublicReadForGetBucketObjects",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": "s3:GetObject",
+                "Resource": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "S3Bucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              }
+            ]
+          },
+          "Bucket": {
+            "Ref": "S3Bucket"
+          }
+        }
+      }
+    },
+    "Outputs": {
+      "Name": {
+        "Value": {
+          "Fn::GetAtt": ["S3Bucket", "Arn"]
+        },
+        "Description": "Name S3 Bucket"
+      }
+    }
+  }
+"""
+```
+
+##### 2. Cloudformation relay
+
+As our plan relies on [Cloudformation's relay](/reference/universe/aws/cloudformation), let's dissect the expected inputs by gradually incorporating them into our plan.
+
+```shell
+dagger doc dagger.io/aws/cloudformation
+# Inputs:
+#     config.region       string                                   AWS region
+#     config.accessKey    dagger.#Secret                           AWS access key
+#     config.secretKey    dagger.#Secret                           AWS secret key
+#     source              string                                   Source is the Cloudformation template (JSON/YAML…
+#     stackName           string                                   Stackname is the cloudformation stack
+#     parameters          struct                                   Stack parameters
+#     onFailure           *"DO_NOTHING" | "ROLLBACK" | "DELETE"    Behavior when failure to create/update the Stack
+#     timeout             *10 | >=0 & int                          Maximum waiting time until stack creation/update…
+#     neverUpdate         *false | true                            Never update the stack if already exists
+```
+
+###### 1. General insights
+
+As seen above in the documentation, values starting with `*` are default values. However, as a plan developer, we may need to add default values to inputs from relays without one: Cue gives you this flexibility.
+
+###### 2. The config value
+
+The config values are all part of the `aws` relay. Regarding this package, as you can see above, five of the required inputs miss default options (`parameters` field is optional):
+
+> - _config.region_
+> - _config.accessKey_
+> - _config.secretKey_
+> - _source_
+> - _stackName_
+
+Let's implement the first step, use the `aws.#Config` relay, and request its first inputs: the region to deploy and the AWS credentials.
+
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
+
+import (
+  "dagger.io/aws"
+)
+
+// AWS account: credentials and region
+awsConfig: aws.#Config
+```
+
+This defines:
+
+- `awsConfig`: AWS CLI Configuration step using the package `dagger.io/aws`. It takes three user inputs: a `region`, an `accessKey`, and a `secretKey`
+
+#### Setup the environment
+
+##### 1. Create a new environment
+
+Now that the Cue package is ready, let's create an environment to run it:
 
 ```shell
 dagger new 'cloudformation'
 ```
 
-## Cloudformation
+##### 2. Load the plan into the environment
 
-Now that a plan has been set, let's implement the Cloudformation template and convert it to a Cue definition for further flexibility.
+Now let's configure the new environment to use our package as its plan:
 
-### Template creation
+```shell
+cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+```
 
-The idea here is to follow best practices in [<u>S3 buckets</u>](https://docs.aws.amazon.com/AmazonS3/latest/userguide/HostingWebsiteOnS3Setup.html) provisioning. Thanksfully, the AWS documentation contains a working [<u>Cloudformation template</u>](https://docs.aws.amazon.com/fr_fr/AWSCloudFormation/latest/UserGuide/quickref-s3.html#scenario-s3-bucket-website) that fits 95% of our needs.
+##### 3. Check plan
 
-1.Tweaking the template: removing some of the ouputs
+_Pro tips_: To check whether it worked or not, these three commands might help
 
-The [<u>template</u>](https://docs.aws.amazon.com/fr_fr/AWSCloudFormation/latest/UserGuide/quickref-s3.html#scenario-s3-bucket-website) has far more outputs than necessary, as we just want to retrieve the bucket name:
+```shell
+dagger input list # List our personal plan's inputs
+# Input                Value                  Set by user  Description
+# awsConfig.region     string                 false        AWS region
+# awsConfig.accessKey  dagger.#Secret         false        AWS access key
+# awsConfig.secretKey  dagger.#Secret         false        AWS secret key
 
-import Tabs from "@theme/Tabs";
-import TabItem from "@theme/TabItem";
+dagger query # Query values / inspect default values (Instrumental in case of conflict)
+# {}
 
+dagger up # Try to run the plan. As expected, we encounter a failure because some user inputs haven't been set
+# 4:11PM ERR system | required input is missing    input=awsConfig.region
+# 4:11PM ERR system | required input is missing    input=awsConfig.accessKey
+# 4:11PM ERR system | required input is missing    input=awsConfig.secretKey
+# 4:11PM FTL system | some required inputs are not set, please re-run with `--force` if you think it's a mistake    missing=0s
+```
+
+#### Finish template setup
+
+Now that we have the `config` definition properly configured, let's modify the Cloudformation one:
+
+```cue title="todoapp/cloudformation/source.cue"
+package cloudformation
+
+import (
+  "dagger.io/aws"
+  "dagger.io/dagger"
+  "dagger.io/random"
+  "dagger.io/aws/cloudformation"
+)
+
+// AWS account: credentials and region
+awsConfig: aws.#Config
+
+// Create a random suffix
+suffix: random.#String & {
+  seed: ""
+}
+
+// Query the Cloudformation stackname, or create one with a random suffix to keep unicity
+cfnStackName: *"stack-\(suffix.out)" | string & dagger.#Input
+
+// AWS Cloudformation stdlib
+cfnStack: cloudformation.#Stack & {
+  config:    awsConfig
+  stackName: cfnStackName
+  source:    template
+}
+```
+
+This defines:
+
+- `suffix`: random suffix leveraging the `random` relay. It doesn't have a seed because we don't care about predictability
+- `cfnStackName`: Name of the stack, either a default value `stack-suffix` or user input
+- `cfnStack`: Cloudformation relay with `AWS config`, `stackName` and `JSON template` as inputs
+
+You need to copy the changes to the plan for Dagger to reference them
+
+```shell
+cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+```
+
+### Configure the environment
+
+Before bringing up the deployment, we need to provide the `cfnStack` inputs declared in the configuration. Otherwise, Dagger will complain about missing inputs.
+
+```shell
+dagger up
+# 3:34PM ERR system | required input is missing    input=awsConfig.region
+# 3:34PM ERR system | required input is missing    input=awsConfig.accessKey
+# 3:34PM ERR system | required input is missing    input=awsConfig.secretKey
+# 3:34PM FTL system | some required inputs are not set, please re-run with `--force` if you think it's a mistake    missing=0s
+```
+
+You can inspect the list of inputs (both required and optional) using dagger input list:
+
+```shell
+dagger input list
+# Input                 Value                                  Set by user  Description
+# awsConfig.region      string                                 false        AWS region
+# awsConfig.accessKey   dagger.#Secret                         false        AWS access key
+# awsConfig.secretKey   dagger.#Secret                         false        AWS secret key
+# suffix.length         *12 | number                           false        length of the string
+# cfnStack.onFailure    *"DO_NOTHING" | "ROLLBACK" | "DELETE"  false        Behavior when failure to create/update the Stack
+# cfnStack.timeout      *10 | >=0 & int                        false        Maximum waiting time until stack creation/update (in minutes)
+# cfnStack.neverUpdate  *false | true                          false        Never update the stack if already exists
+```
+
+Let's provide the missing inputs:
+
+```shell
+dagger input text awsConfig.region us-east-2
+dagger input secret awsConfig.accessKey yourAccessKey
+dagger input secret awsConfig.secretKey yourSecretKey
+```
+
+### Deploying
+
+Finally ! We now have a working template ready to be used to provision S3 infrastructures. Let's deploy it:
 <Tabs
-  defaultValue="nv"
+  defaultValue="nd"
   values={[
-    { label: 'Past Output', value: 'pv', },
-    { label: 'New Output', value: 'nv', },
-    { label: 'Full Base Template', value: 'ft', },
+    { label: 'Normal deploy', value: 'nd', },
+    { label: 'Debug deploy', value: 'dd', },
   ]
 }>
-<TabItem value="pv">
+<TabItem value="nd">
 
-```json
-"Outputs": {
-    "WebsiteURL": {
-        "Value": {
-            "Fn::GetAtt": [
-                "S3Bucket",
-                "WebsiteURL"
-            ]
-        },
-        "Description": "URL for website hosted on S3"
-    },
-    "S3BucketSecureURL": {
-        "Value": {
-            "Fn::Join": [
-                "",
-                [
-                    "https://",
-                    {
-                        "Fn::GetAtt": [
-                            "S3Bucket",
-                            "DomainName"
-                        ]
-                    }
-                ]
-            ]
-        },
-        "Description": "Name of S3 bucket to hold website content"
-    }
-}
+```shell
+dagger up
+#2:22PM INF suffix.out | computing
+#2:22PM INF suffix.out | completed    duration=200ms
+#2:22PM INF cfnStack.outputs | computing
+#2:22PM INF cfnStack.outputs | #15 1.304 {
+#2:22PM INF cfnStack.outputs | #15 1.304     "Parameters": []
+#2:22PM INF cfnStack.outputs | #15 1.304 }
+#2:22PM INF cfnStack.outputs | #15 2.948 {
+#2:22PM INF cfnStack.outputs | #15 2.948     "StackId": "arn:aws:cloudformation:us-east-2:817126022176:stack/stack-emktqcfwksng/207d29a0-cd0b-11eb-aafd-0a6bae5481b4"
+#2:22PM INF cfnStack.outputs | #15 2.948 }
+#2:22PM INF cfnStack.outputs | completed    duration=35s
+
+dagger output list
+# Output                 Value                                                    Description
+# suffix.out             "emktqcfwksng"                                           generated random string
+# cfnStack.outputs.Name  "arn:aws:s3:::stack-emktqcfwksng-s3bucket-9eiowjs1jab4"  -
 ```
 
 </TabItem>
-<TabItem value="nv">
+<TabItem value="dd">
 
-```json
-"Outputs": {
-    "Name": {
-        "Value": {
-            "Fn::GetAtt": [
-                "S3Bucket",
-                "Arn"
-            ]
-        },
-        "Description": "Name S3 Bucket"
-    }
-}
-```
+```shell
+dagger up -l debug
+#Output:
+# 3:50PM DBG system | detected buildkit version    version=v0.8.3
+# 3:50PM DBG system | spawning buildkit job    localdirs={
+#     "/tmp/infra-provisioning/.dagger/env/infra/plan": "/tmp/infra-provisioning/.dagger/env/infra/plan"
+# } attrs=null
+# 3:50PM DBG system | loading configuration
+# ... Lots of logs ... :-D
+# Output                 Value                                                    Description
+# suffix.out             "abnyiemsoqbm"                                           generated random string
+# cfnStack.outputs.Name  "arn:aws:s3:::stack-abnyiemsoqbm-s3bucket-9eiowjs1jab4"  -
 
-</TabItem>
-<TabItem value="ft">
-
-```json
-{
-  "AWSTemplateFormatVersion": "2010-09-09",
-  "Resources": {
-    "S3Bucket": {
-      "Type": "AWS::S3::Bucket",
-      "Properties": {
-        "AccessControl": "PublicRead",
-        "WebsiteConfiguration": {
-          "IndexDocument": "index.html",
-          "ErrorDocument": "error.html"
-        }
-      },
-      "DeletionPolicy": "Retain"
-    },
-    "BucketPolicy": {
-      "Type": "AWS::S3::BucketPolicy",
-      "Properties": {
-        "PolicyDocument": {
-          "Id": "MyPolicy",
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Sid": "PublicReadForGetBucketObjects",
-              "Effect": "Allow",
-              "Principal": "*",
-              "Action": "s3:GetObject",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:aws:s3:::",
-                    {
-                      "Ref": "S3Bucket"
-                    },
-                    "/*"
-                  ]
-                ]
-              }
-            }
-          ]
-        },
-        "Bucket": {
-          "Ref": "S3Bucket"
-        }
-      }
-    }
-  },
-  "Outputs": {
-    "Name": {
-      "Value": {
-        "Fn::GetAtt": ["S3Bucket", "Arn"]
-      },
-      "Description": "Name S3 Bucket"
-    }
-  }
-}
+dagger output list
+# Output                 Value                                                    Description
+# suffix.out             "abnyiemsoqbm"                                           generated random string
+# cfnStack.outputs.Name  "arn:aws:s3:::stack-abnyiemsoqbm-s3bucket-9eiowjs1jab4"  -
 ```
 
 </TabItem>
 </Tabs>
 
-2.Some _"Pro tips"_
+The deployment went well!
 
-Double-checks at the template level can be done with manual uploads on Cloudformation's web interface or by executing the below command locally:
+In case of a failure, the `Debug deploy` tab shows the command to get more information.
+The name of the provisioned S3 instance lies in the `cfnStack.outputs.Name` output key, without `arn:aws:s3:::`
 
-```shell
-aws cloudformation validate-template  --template-body file://template.json
-```
+> With this provisioning infrastructure, your dev team will easily be able to instantiate aws infrastructures: all they need to know is `dagger input list` and `dagger up,` isn't that awesome? :-D
 
-> PS: The _"Full Base Template"_ tab contains the base template used for the following parts of the guide
+## Cue Cloudformation template
 
-### JSON / YAML to Cue conversion
+This section will convert the inlined JSON template to CUE to take advantage of the language features.
 
-Once you'll get used to Cue, you might directly write Cloudformation templates in this language. As most of the current examples are either written in JSON or in YAML, let's see how to lazily convert them in Cue (optional but recommended).
+To do so quickly, we will first transform the template from JSON format to Cue format, then optimize it to leverage Cue's forces.
 
-#### 1. Create convert.cue
+### 1. Create convert.cue
 
-We will create a `convert.cue` to process the conversion
+We will create a new `convert.cue` file to process the conversion
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 <Tabs
   defaultValue="sv"
   values={[
     { label: 'JSON Generic Code', value: 'sv', },
     { label: 'YAML Generic Code', value: 'yv', },
-    { label: 'JSON Full example', value: 'fv', },
   ]
 }>
 <TabItem value="sv">
@@ -232,81 +386,7 @@ We will create a `convert.cue` to process the conversion
 package cloudformation
 import "encoding/json"
 
-point: json.Unmarshal(data)
-data: #"""
-// Paste above final JSON template here
-"""#
-```
-
-</TabItem>
-<TabItem value="fv">
-
-```cue title="todoapp/cloudformation/convert.cue"
-package cloudformation
-import "encoding/json"
-
-point: json.Unmarshal(data)
-data: #"""
-{
-    "AWSTemplateFormatVersion": "2010-09-09",
-    "Resources": {
-        "S3Bucket": {
-            "Type": "AWS::S3::Bucket",
-            "Properties": {
-                "AccessControl": "PublicRead",
-                "WebsiteConfiguration": {
-                    "IndexDocument": "index.html",
-                    "ErrorDocument": "error.html"
-                }
-            },
-            "DeletionPolicy": "Retain"
-        },
-        "BucketPolicy": {
-            "Type": "AWS::S3::BucketPolicy",
-            "Properties": {
-                "PolicyDocument": {
-                    "Id": "MyPolicy",
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Sid": "PublicReadForGetBucketObjects",
-                            "Effect": "Allow",
-                            "Principal": "*",
-                            "Action": "s3:GetObject",
-                            "Resource": {
-                                "Fn::Join": [
-                                    "",
-                                    [
-                                        "arn:aws:s3:::",
-                                        {
-                                            "Ref": "S3Bucket"
-                                        },
-                                        "/*"
-                                    ]
-                                ]
-                            }
-                        }
-                    ]
-                },
-                "Bucket": {
-                    "Ref": "S3Bucket"
-                }
-            }
-        }
-    },
-    "Outputs": {
-        "Name": {
-            "Value": {
-                "Fn::GetAtt": [
-                    "S3Bucket",
-                "Arn"
-                ]
-            },
-            "Description": "Name S3 Bucket"
-        }
-    }
-}
-"""#
+s3Template: json.Unmarshal(template)
 ```
 
 </TabItem>
@@ -316,37 +396,29 @@ data: #"""
 package cloudformation
 import "encoding/yaml"
 
-point: yaml.Unmarshal(data)
-data: """
-// Paste YAML here
-"""
+s3Template: yaml.Unmarshal(template)
 ```
 
 </TabItem>
 </Tabs>
 
-You need to copy the changes to the plan in order for Dagger to reference them
+This defines:
+
+- `s3Template`: contains the unmarshalled template.
+
+You need to empty the plan and copy the `convert.cue` file to the plan for Dagger to reference it
 
 ```shell
-cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+rm .dagger/env/cloudformation/plan/*
+cp cloudformation/template.cue cloudformation/convert.cue .dagger/env/cloudformation/plan/
 ```
 
-#### 2. Retrieve the Unmarshalled JSON
+### 2. Retrieve the Unmarshalled JSON
 
-Then, still in the same folder, query the `point` value to retrieve the Unmarshalled result of `data`:
-
-<Tabs
-  defaultValue="sc"
-  values={[
-    { label: 'Short Command', value: 'sc', },
-    { label: 'Full Base Output', value: 'fo', },
-  ]
-}>
-<TabItem value="fo">
+Then, still in the same folder, query the `s3Template` value to retrieve the Unmarshalled result of `s3`:
 
 ```shell
-dagger query point
-# Output:
+dagger query s3Template > cloudformation/template.cue
 # {
 #   "AWSTemplateFormatVersion": "2010-09-09",
 #   "Outputs": {
@@ -356,384 +428,28 @@ dagger query point
 #         "Fn::GetAtt": [
 #           "S3Bucket",
 #           "Arn"
-#         ]
-#       }
-#     }
-#   },
-#   "Resources": {
-#     "BucketPolicy": {
-#       "Properties": {
-#         "Bucket": {
-#           "Ref": "S3Bucket"
-#         },
-#         "PolicyDocument": {
-#           "Id": "MyPolicy",
-#           "Statement": [
-#             {
-#               "Action": "s3:GetObject",
-#               "Effect": "Allow",
-#               "Principal": "*",
-#               "Resource": {
-#                 "Fn::Join": [
-#                   "",
-#                   [
-#                     "arn:aws:s3:::",
-#                     {
-#                       "Ref": "S3Bucket"
-#                     },
-#                     "/*"
-#                   ]
-#                 ]
-#               },
-#               "Sid": "PublicReadForGetBucketObjects"
-#             }
-#           ],
-#           "Version": "2012-10-17"
-#         }
-#       },
-#       "Type": "AWS::S3::BucketPolicy"
-#     },
-#     "S3Bucket": {
-#       "DeletionPolicy": "Retain",
-#       "Properties": {
-#         "AccessControl": "PublicRead",
-#         "WebsiteConfiguration": {
-#           "ErrorDocument": "error.html",
-#           "IndexDocument": "index.html"
-#         }
-#       },
-#       "Type": "AWS::S3::Bucket"
-#     }
-#   }
-# }
+#           ...
 ```
 
-</TabItem>
-<TabItem value="sc">
+The commented output above is the cue version of the JSON Template
+
+### 3. Remove convert.cue
 
 ```shell
-dagger query point
-# Output:
-# {
-    #Prints value stored in point key
-# }
+rm cloudformation/convert.cue .dagger/env/cloudformation/plan/convert.cue
 ```
 
-</TabItem>
-</Tabs>
+### 4. Store the output
 
-#### 3. Store the output
+Open `cloudformation/template.cue` and append below elements to this exported Cue definition of the JSON:
 
-This Cue version of the JSON template is going to be integrated inside our provisioning plan. Save the output for the next steps of the guide.
-
-## Personal plan
-
-With the Cloudformation template now finished, tested and converted in Cue. We can now enter the last part of our guide: piping everything together inside our personal plan.
-
-Before continuing, don't forget to delete your `convert.cue` plan:
-
-```shell
-rm todoapp/cloudformation/convert.cue
-rm .dagger/env/cloudformation/plan/convert.cue
-```
-
-### Cloudformation relay
-
-As our plan relies on [<u>Cloudformation's relay</u>](https://dagger.io/aws/cloudformation), let's dissect the expected inputs by gradually incorporating them in our plan.
-
-| Name               |                   Type                    |                             Description                              |
-| ------------------ | :---------------------------------------: | :------------------------------------------------------------------: |
-| _config.region_    |                 `string`                  |                              AWS region                              |
-| _config.accessKey_ |             `dagger.#Secret`              |                            AWS access key                            |
-| _config.secretKey_ |             `dagger.#Secret`              |                            AWS secret key                            |
-| _source_           |                 `string`                  |       Source is the Cloudformation template (JSON/YAML string)       |
-| _stackName_        |                 `string`                  |                Stackname is the cloudformation stack                 |
-| _onFailure_        | `*"DO_NOTHING" \| "ROLLBACK" \| "DELETE"` |           Behavior when failure to create/update the Stack           |
-| _timeout_          |            `*10 \| \>=0 & int`            | Timeout for waiting for the stack to be created/updated (in minutes) |
-| _neverUpdate_      |             `*false \| bool`              |               Never update the stack if already exists               |
-
-1.General insights
-
-As seen before in the documentation, values starting with `*` are default values. However, as a plan developer, we may face the need to add default values to inputs from relays that don't have one : Cue gives you this flexibility.
-
-> WARNING: All inputs without a default option have to be filled for a proper execution of the relay. In our case:
->
-> - _config.region_
-> - _config.accessKey_
-> - _config.secretKey_
-> - _source_
-> - _stackName_
-
-2.The config value
-
-The config values are all part of the `aws` relay. Regarding this package, as you can see above, none of the 3 required inputs contain default options.
-
-Let's implement the first step : use the `aws.#Config` relay and request the user it's first input, the region to deploy in.
-
-<Tabs
-  defaultValue="av"
-  values={[
-    { label: 'Before', value: 'bv', },
-    { label: 'After', value: 'av', },
-    { label: 'Details', value: 'dv', },
-  ]
-}>
-<TabItem value="bv">
-
-```cue title="todoapp/cloudformation/source.cue"
+```cue title="todoapp/cloudformation/template.cue"
+// Add this line, to make it part to the cloudformation template
 package cloudformation
-```
+import "encoding/json"
 
-</TabItem>
-<TabItem value="av">
-
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "dagger.io/aws"
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config & {
-  region: string @dagger(input)
-}
-```
-
-</TabItem>
-<TabItem value="dv">
-
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named `awsConfig`
-    // awsConfig will be a directly requestable key : `dagger query awsConfig`
-    // awsConfig sets the region to either an input, or a default string: "us-east-2"
-  region: string @dagger(input)
-    // As we declare an aws.#Config, Dagger/Cue will automatically know that some others values inside this definition
-    // are inputs, especially secrets (AccessKey, secretKey). Due to the confidential nature of secrets, we won't declare default values to them
-}
-```
-
-</TabItem>
-</Tabs>
-
-Update the plan
-
-```shell
-cp cloudformation/*.cue .dagger/env/cloudformation/plan/
-```
-
-Pro tips: In order to check wether it worked or not, these two commands might help
-
-<Tabs
-  defaultValue="fc"
-  values={[
-    { label: 'First command', value: 'fc', },
-    { label: 'Second command', value: 'sc', },
-    { label: 'Failed execution', value: 'fe', },
-  ]
-}>
-<TabItem value="fc">
-
-```shell
-dagger input list # List required input in our personal plan
-# Output:
-# Input                Value                  Set by user  Description
-# awsConfig.region     string                 false        AWS region
-# awsConfig.accessKey  dagger.#Secret         false        AWS access key
-# awsConfig.secretKey  dagger.#Secret         false        AWS secret key
-```
-
-</TabItem>
-<TabItem value="sc">
-
-```shell
-dagger query # Query values / inspect default values (Very useful in case of conflict)
-# Output:
-# {
-#   "awsConfig": {
-#     "region": "us-east-2"
-#   }
-# }
-```
-
-</TabItem>
-<TabItem value="fe">
-
-```shell
-dagger up # Try to run the plan. As expected, we encounter a failure
-# Output:
-# 9:07PM ERR system | required input is missing    input=awsConfig.accessKey
-# 9:07PM ERR system | required input is missing    input=awsConfig.secretKey
-# 9:07PM FTL system | some required inputs are not set, please re-run with `--force` if you think it's a mistake    missing=0s
-```
-
-</TabItem>
-</Tabs>
-
-Inside the `firstCommand` tab, we see that the `awsConfig.region` key has a default value set. It wasn't the case when we just imported the base relay.
-
-Furthemore, in the `Failed execution` tab, the execution of the `dagger up` command fails because of the unspecified secret inputs.
-
-3.Integrating Cloudformation relay
-
-Now that we have the `config` definition properly configured, we can now import the Cloudformation one, and properly fill it :
-
-<Tabs
-  defaultValue="av"
-  values={[
-    { label: 'Before', value: 'bv', },
-    { label: 'After', value: 'av', },
-    { label: 'Details', value: 'dv', },
-    { label: 'Full Base version', value: 'fv', },
-  ]
-}>
-<TabItem value="bv">
-
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "dagger.io/aws"
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config & {
-  region: string @dagger(input)
-}
-```
-
-</TabItem>
-<TabItem value="av">
-
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "dagger.io/aws"
-    "dagger.io/random"
-    "dagger.io/aws/cloudformation"
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config & {
-  region: string @dagger(input)
-}
-
-
-// Create a random suffix
-suffix: random.#String & {
-  seed: ""
-}
-
-// Request the cloudformation stackname as an input, or generated a default one with a random suffix to keep uniqueness
-cfnStackName: *"stack-\(suffix.out)"  | string @dagger(input) // Has to be unique
-
-// AWS Cloudformation stdlib
-cfnStack: cloudformation.#Stack & {
-  config:    awsConfig
-  stackName: cfnStackName
-  onFailure: "DO_NOTHING"
-  source:    json.Marshal(#cfnTemplate)
-}
-
-#cfnTemplate: {
-    // Paste Cue Cloudformation template here
-}
-```
-
-</TabItem>
-<TabItem value="dv">
-
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "dagger.io/aws" // <-- Import AWS relay to instanciate aws.#Config
-    "dagger.io/random" // <-- Import Random relay to instanciate random.#String
-    "dagger.io/aws/cloudformation" // <-- Import Cloudformation relay to instanciate aws.#Cloudformation
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config & { // Assign an aws.#Config definition to a field named `awsConfig`
-    // awsConfig will be a directly requestable key : `dagger query awsConfig`
-    // awsConfig sets the region to either an input, or a default string: "us-east-2"
-  region: string @dagger(input)
-    // As we declare an aws.#Config, Dagger/Cue will automatically know that some others values inside this definition
-    // are inputs, especially secrets (AccessKey, secretKey). Due to the confidential nature of secrets, we won't declare default values to them
-}
-
-// AWS Cloudformation stdlib
-cfnStack: cloudformation.#Stack & { // Assign an aws.#Cloudformation definition to a field named `cfnStack`
-    // This definition is the stdlib package to use in order to deploy AWS instances programmatically
-
-  config:    awsConfig // As seen in the relay doc, 3 config fields have to be provided : `config.region`, `config.accessKey` and `config.secretKey`
-    // As their names contain a `.`, it means that the value `config` expects 3 fields `region`, `accessKey` and `secretKey`, included in a `aws.#Config` parent definition
-
-    stackName: cfnStackName // We assign to the `stackName` the `cfnStackName` declared below.
-    // `stackName` expects a string type. However, as a plan developer, we wanted to give the developer a choice : either a default random value, or an input
-    // The default random value *"stack-\(suffix.out)" uses the random.#String relay to generate a random value. We append it's result inside `"\(append_happening_here)"`
-
-  onFailure: "DO_NOTHING" // As cited in the Cloudformation relay, the `onFailure` key defines Cloudformation's stack behavior on failure
-
-  source:    json.Marshal(#cfnTemplate) // source expects a JSON artifact. Here we remarshall the template decaled in Cue
-}
-
-// Create a random suffix (cf. random relay)
-suffix: random.#String & { // Assign a #random definition to a field named `suffix`
-  seed: "" // Set seed to empty string, to generate a new random string every time
-} // Output -> suffix.out is a random string
-
-// Request the cloudformation stackname as an input, or generated a default one with a random suffix to keep uniqueness
-cfnStackName: *"stack-\(suffix.out)"  | string @dagger(input) // Has to be unique
-
-#cfnTemplate: {
-    // Paste Cue Cloudformation template here
-}
-```
-
-</TabItem>
-<TabItem value="fv">
-
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "encoding/json"
-
-  "dagger.io/aws"
-    "dagger.io/random"
-  "dagger.io/aws/cloudformation"
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config & {
-  region: string @dagger(input)
-}
-
-// Create a random suffix
-suffix: random.#String & {
-  seed: ""
-}
-
-// Query the Cloudformation stackname, or create one with a random suffix to keep unicity
-cfnStackName: *"stack-\(suffix.out)" | string @dagger(input)
-
-// AWS Cloudformation stdlib
-cfnStack: cloudformation.#Stack & {
-  config:    awsConfig
-  stackName: cfnStackName
-  onFailure: "DO_NOTHING"
-  source:    json.Marshal(#cfnTemplate)
-}
-
-#cfnTemplate: {
+// Wrap exported Cue in previous point inside the `s3` value
+s3: {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Outputs": {
     "Name": {
@@ -792,42 +508,166 @@ cfnStack: cloudformation.#Stack & {
     }
   }
 }
+
+// Template contains the marshalled value of the s3 template
+template: json.Marshal(s3)
 ```
 
-</TabItem>
-</Tabs>
+We're using the built-in `json.Marshal` function to convert CUE back to JSON, so Cloudformation still receives the same template.
 
-### Deploy
-
-Finally ! We now have a working template ready to be used to provision S3 infrastructures. Let's add the missing inputs (aws credentials) and let's deploy it :
-
-<Tabs
-  defaultValue="nd"
-  values={[
-    { label: 'Normal deploy', value: 'nd', },
-    { label: 'Debug deploy', value: 'dd', },
-  ]
-}>
-<TabItem value="nd">
+You need to copy the changes to the plan for Dagger to reference them
 
 ```shell
-dagger input secret awsConfig.accessKey yourAccessKey
+cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+```
 
-dagger input secret awsConfig.secretKey yourSecretKey
+You can inspect the configuration using `dagger query` to verify it produces the same manifest:
 
-dagger input list
-# Input                 Value                  Set by user  Description
-# awsConfig.region      string                 false        AWS region
-# awsConfig.accessKey   dagger.#Secret         true         AWS access key <-- Specified
-# awsConfig.secretKey   dagger.#Secret         true         AWS secret key <-- Specified
-# suffix.length         *12 | number           false        length of the string
-# cfnStack.timeout      *10 | >=0 & int        false        Timeout for waiting for the stack to be created/updated (in minutes)
-# cfnStack.neverUpdate  *false | bool          false        Never update the stack if already exists
+```shell
+dagger query template -f text
+```
 
-# All the other inputs have default values, we're good to go !
+Now that the template is defined in CUE, we can use the language to add more flexibility to our template.
 
+Let's define a re-usable `#Deployment` definition in `todoapp/cloudformation/deployment.cue`:
+
+```cue title="todoapp/cloudformation/deployment.cue"
+package cloudformation
+
+#Deployment: {
+
+  // Bucket's output description
+  description: string
+
+  // index file
+  indexDocument: *"index.html" | string
+
+  // error file
+  errorDocument: *"error.html" | string
+
+  // Bucket policy version
+  version: *"2012-10-17" | string
+
+  // Retain as default deletion policy. Delete is also accepted but requires the s3 bucket to be empty
+  deletionPolicy: *"Retain" | "Delete"
+
+  // Canned access control list (ACL) that grants predefined permissions to the bucket
+  accessControl: *"PublicRead" | "Private" | "PublicReadWrite" | "AuthenticatedRead" | "LogDeliveryWrite" | "BucketOwnerRead" | "BucketOwnerFullControl" | "AwsExecRead"
+
+  // Modified copy of s3 value in `todoapp/cloudformation/template.cue`
+  template: {
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Outputs": {
+      "Name": {
+        "Description": description,
+        "Value": {
+          "Fn::GetAtt": [
+            "S3Bucket",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "Resources": {
+      "BucketPolicy": {
+        "Properties": {
+          "Bucket": {
+            "Ref": "S3Bucket"
+          },
+          "PolicyDocument": {
+            "Id": "MyPolicy",
+            "Statement": [
+              {
+                "Action": "s3:GetObject",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Resource": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "S3Bucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                "Sid": "PublicReadForGetBucketObjects"
+              }
+            ],
+            "Version": version
+          }
+        },
+        "Type": "AWS::S3::BucketPolicy"
+      },
+      "S3Bucket": {
+        "DeletionPolicy": deletionPolicy,
+        "Properties": {
+          "AccessControl": "PublicRead",
+          "WebsiteConfiguration": {
+            "ErrorDocument": errorDocument,
+            "IndexDocument": indexDocument
+          }
+        },
+        "Type": "AWS::S3::Bucket"
+      }
+    }
+  }
+}
+```
+
+`template.cue` can be rewritten as follows:
+
+```cue title="todoapp/cloudformation/template.cue"
+package cloudformation
+import "encoding/json"
+
+s3: #Deployment & {
+  description: "Name S3 Bucket"
+}
+
+// Template contains the marshalled value of the s3 template
+template: json.Marshal(s3.template)
+```
+
+Verify template
+
+Double-checks at the template level can be done with manual uploads on Cloudformation's web interface or by executing the below command locally:
+
+```shell
+tmpfile=$(mktemp ./tmp.XXXXXX) && dagger query template -f text > "$tmpfile" && aws cloudformation validate-template  --template-body file://"$tmpfile" ; rm "$tmpfile"
+```
+
+Update the plan
+
+```shell
+cp cloudformation/*.cue .dagger/env/cloudformation/plan/
+```
+
+Let's make sure it yields the same result:
+
+```shell
+dagger query template -f text
+# {
+#   "description": "Name S3 Bucket",
+#   "indexDocument": "index.html",
+#   "errorDocument": "error.html",
+#   "version": "2012-10-17",
+#   "deletionPolicy": "Retain",
+#   "accessControl": "PublicRead",
+#   "template": {
+#     "AWSTemplateFormatVersion": "2010-09-09",
+#     "Outputs": {
+#       "Name": {
+#         "Description": "Name S3 Bucket",
+#         "Value": {
+```
+
+And we can now deploy it:
+
+```shell
 dagger up
-# Output:
 #2:22PM INF suffix.out | computing
 #2:22PM INF suffix.out | completed    duration=200ms
 #2:22PM INF cfnStack.outputs | computing
@@ -838,60 +678,19 @@ dagger up
 #2:22PM INF cfnStack.outputs | #15 2.948     "StackId": "arn:aws:cloudformation:us-east-2:817126022176:stack/stack-emktqcfwksng/207d29a0-cd0b-11eb-aafd-0a6bae5481b4"
 #2:22PM INF cfnStack.outputs | #15 2.948 }
 #2:22PM INF cfnStack.outputs | completed    duration=35s
-
-dagger output list
-# Output                 Value                                                    Description
-# suffix.out             "emktqcfwksng"                                           generated random string
-# cfnStack.outputs.Name  "arn:aws:s3:::stack-emktqcfwksng-s3bucket-9eiowjs1jab4"  -
 ```
 
-</TabItem>
-<TabItem value="dd">
+Name of the deployed bucket:
 
 ```shell
-dagger input secret awsConfig.accessKey yourAccessKey
-
-dagger input secret awsConfig.secretKey yourSecretKey
-
-dagger input list
-# Input                 Value                  Set by user  Description
-# awsConfig.region      string                 false        AWS region
-# awsConfig.accessKey   dagger.#Secret         true         AWS access key <-- Specified
-# awsConfig.secretKey   dagger.#Secret         true         AWS secret key <-- Specified
-# suffix.length         *12 | number           false        length of the string
-# cfnStack.timeout      *10 | >=0 & int        false        Timeout for waiting for the stack to be created/updated (in minutes)
-# cfnStack.neverUpdate  *false | bool          false        Never update the stack if already exists
-
-# All the other inputs have default values, we're good to go !
-
-dagger up -l debug
-#Output:
-# 3:50PM DBG system | detected buildkit version    version=v0.8.3
-# 3:50PM DBG system | spawning buildkit job    localdirs={
-#     "/tmp/infra-provisioning/.dagger/env/infra/plan": "/tmp/infra-provisioning/.dagger/env/infra/plan"
-# } attrs=null
-# 3:50PM DBG system | loading configuration
-# ... Lots of logs ... :-D
-# Output                 Value                                                    Description
-# suffix.out             "abnyiemsoqbm"                                           generated random string
-# cfnStack.outputs.Name  "arn:aws:s3:::stack-abnyiemsoqbm-s3bucket-9eiowjs1jab4"  -
-
 dagger output list
 # Output                 Value                                                    Description
-# suffix.out             "abnyiemsoqbm"                                           generated random string
-# cfnStack.outputs.Name  "arn:aws:s3:::stack-abnyiemsoqbm-s3bucket-9eiowjs1jab4"  -
+# suffix.out             "ucwcecwwshdl"                                           generated random string
+# cfnStack.outputs.Name  "arn:aws:s3:::stack-ucwcecwwshdl-s3bucket-gaqmj8rzsl08"  -
 ```
 
-</TabItem>
-</Tabs>
-
-> The deployment went well !
-
-In case of a failure, the `Debug deploy` tab shows the command to use in order to get more informations.
 The name of the provisioned S3 instance lies in the `cfnStack.outputs.Name` output key, without `arn:aws:s3:::`
 
-> With this provisioning infrastructure, your dev team will easily be able to instanciate aws infrastructures : all they need to know is `dagger input list` and `dagger up`, isn't that awesome ? :-D
+PS: This plan could be further extended with the AWS S3 example. It could provide infrastructure and quickly deploy it.
 
-PS: This plan could be further extended with the AWS S3 example : it could not only provision an infrastructure but also easily deploy on it.
-
-PS1: As it could make a nice first exercise for you, this won't be detailed here. However, we're interested in your imagination : let us know your implementations :-)
+PS1: As it could be an excellent first exercise for you, this won't be detailed here. However, we're interested in your imagination: let us know your implementations :-)

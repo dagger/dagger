@@ -30,6 +30,4 @@ AWS CloudFormation Stack
 
 ### cloudformation.#Stack Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*outputs*         | `struct`          |-                   |
+_No output._

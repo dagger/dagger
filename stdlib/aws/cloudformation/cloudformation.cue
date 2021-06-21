@@ -48,8 +48,8 @@ import (
 	}
 
 	outputs: {
-		[string]: string
-	} @dagger(output)
+		[string]: string @dagger(output)
+	}
 
 	outputs: #up: [
 		op.#Load & {
