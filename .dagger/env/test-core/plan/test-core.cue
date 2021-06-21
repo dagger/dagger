@@ -8,8 +8,8 @@ name: dagger.#Input & {
 	string | *"world"
 }
 
-message: "Hello, \(name)!" @dagger(output)
+message: dagger.#Output & "Hello, \(name)!"
 
 dir: dagger.#Input & dagger.#Artifact
 
-samedir: dir @dagger(output)
+samedir: dagger.#Output & dir
