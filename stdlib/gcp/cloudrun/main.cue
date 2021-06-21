@@ -5,13 +5,13 @@ import (
 	"dagger.io/gcp"
 )
 
-// Deploy deploys a Cloud Run service based on provided GCR image 
-#Deploy: {
+// Service deploys a Cloud Run service based on provided GCR image 
+#Service: {
 	// GCP Config
 	config: gcp.#Config
 
 	// service name
-	serviceName: string @dagger(input)
+	name: string @dagger(input)
 
 	// GCR image ref
 	image: string @dagger(input)
@@ -39,7 +39,7 @@ import (
 					"""#,
 			]
 			env: {
-				SERVICE_NAME: serviceName
+				SERVICE_NAME: name
 				PLATFORM:     platform
 				REGION:       config.region
 				IMAGE:        image

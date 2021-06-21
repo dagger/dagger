@@ -9,8 +9,8 @@ TestConfig: gcpConfig: gcp.#Config & {
 	region: "us-west2"
 }
 
-TestCloudRun: deploy: cloudrun.#Deploy & {
-	config:      TestConfig.gcpConfig
-	serviceName: "cloudrun-test"
-	image:       "gcr.io/dagger-ci/cloudrun-test:latest"
+TestCloudRun: deploy: cloudrun.#Service & {
+	config: TestConfig.gcpConfig
+	name:   "cloudrun-test"
+	image:  "gcr.io/dagger-ci/cloudrun-test:latest"
 }
