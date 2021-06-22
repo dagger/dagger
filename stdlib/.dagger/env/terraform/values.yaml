@@ -1,0 +1,31 @@
+plan:
+    module: .dagger/env/terraform/plan
+name: terraform
+inputs:
+    TestConfig.awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:V/p84nLbgjrytefnsfItiY71ikQ=,iv:i1x3UYP+sctwY9LrRp/rfeJ8/JPWOfiiJSG0NWUiXW0=,tag:IynKh1fQEhExmmR3qGx/zQ==,type:str]
+    TestConfig.awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:cBYaVhbeV9D6acJWNU7uL8AsEtpnY0wHM8td9ZAJ9ebGB+BY4iBZLQ==,iv:SDkRKQQKBSz/cRQlW65sIjF0PhHhhKkGUEgZe9CV7Ek=,tag:OCUQmgjP2p57YoLts9Dh4w==,type:str]
+    TestData:
+        dir:
+            path: ./terraform/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBkOTJpQWJWY3dnM2hDdXZG
+            bVJEN0dNUzQ0VGhneWtHVG1hUHA5ZjdhdHdvClR0ZVpKb1RYRnc3dy9wSjVuSHBn
+            c2RMbzE0Y2EzN2FVak9CMk9CK0hOTFkKLS0tIG9Fdi9xWWc0TU5WY1ZsVUdZM2lw
+            cC9LSiswbFRKaTNXUGNIWVZVbGJqV1UK3/wsgPwR5P2fzs80wcz1dM/8sbBWMR+B
+            dmhP99OQisIgcwGATy0nh726pYKtosDpSLIJkLZDAUq9qRKm9bch1w==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-18T16:01:11Z"
+    mac: ENC[AES256_GCM,data:XznDGqfZkC6vsv696qWVxbBCUgsyU/zPZg0NCULCXAfO08Hsteb0c93Y8DA3CV8flQW3cgn5XLugNnQADJ6luTXHbqIVMVMUSe1q41Kxl7exr/dn0robqaRm5MnloG823s9X3sAOcPzyTSxy1YVZfYaYbG23w9IeNmVTyaUttkU=,iv:kEQs7+bx+7j2v5b6Bx0r+ZVtp7rj/8mgX4oRUP7cruc=,tag:oQEfCPO/0V11rmkc0yaz3Q==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

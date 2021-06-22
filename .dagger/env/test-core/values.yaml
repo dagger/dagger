@@ -1,0 +1,27 @@
+plan:
+    module: .dagger/env/test-core/plan
+name: test-core
+inputs:
+    dir:
+        dir:
+            path: ./tests
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhOW1rUy9vNFBDaXRDUHJu
+            ZVZYM1FucVorRDdUcmRaYmg3eTlTNzhhYWdjCndWZWxhZnhCZG4xZU9JQ1VyMXdR
+            OHY0TS81bk9FL2JuUEhuTmcxa29ORGcKLS0tIGxJUzNrZmRBNHZGRFY2Z01QK2JP
+            MlM1Ukdqbi9SQ0pqTi9FZ3MxN2E2QmsKHwd7P6KHPVdynOoto1jf3G4+5+vf87wU
+            HX1KD7Od5wRdBwn7r3OS8mdvuNIYpJDUb5YDrfjQypt020ohLocNiA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-17T14:07:53Z"
+    mac: ENC[AES256_GCM,data:afYut7wdvsJQgxlBg6NEV6DWk8vPi81mZgQAuWb4oe4WJeI1T9cYdtjOHPlmIpjqb86VQHJ29YTzektei2+k+VBawQxcsvefK7X1QboJTfMKLfsiug4qzNWjc7JZDvTb6dsDFM1U96gjSoAIVwdLMnucbu3681Fd7qSQgqNS61Q=,iv:ZQDHzXp0RJcUI4RtOVjdepV8zTa2kIHQhAltLkudDck=,tag:AnSFi1mKrEuXSqE4R+g7dw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

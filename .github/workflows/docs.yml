@@ -14,10 +14,4 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: "0"
-      - uses: dagger/dagger-action@v1
-        with:
-          age-key: ${{ secrets.DAGGER_AGE_KEY }}
-          args: up -e docs
+      - run: curl -X POST "https://api.netlify.com/build_hooks/${{ secrets.DOCS_NETLIFY_BUILD_HOOK }}"

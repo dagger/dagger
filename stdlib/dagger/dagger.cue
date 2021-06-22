@@ -19,3 +19,15 @@ import (
 
 	id: string
 }
+
+#Input: {
+	@dagger(input)
+	_
+	...
+}
+
+#Output: {
+	@dagger(output)
+	_
+	...
+}

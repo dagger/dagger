@@ -329,8 +329,10 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 	if err != nil {
 		return st, err
 	}
+
+	// Excludes .dagger directory by default
+	excludePatterns := []string{"**/.dagger/"}
 	if len(excludes) > 0 {
-		excludePatterns := []string{}
 		for _, i := range excludes {
 			pattern, err := i.String()
 			if err != nil {
@@ -338,13 +340,23 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 			}
 			excludePatterns = append(excludePatterns, pattern)
 		}
-
-		opts = append(opts, llb.ExcludePatterns(excludePatterns))
 	}
+	opts = append(opts, llb.ExcludePatterns(excludePatterns))
 
-	return llb.Local(
-		dir,
-		opts...,
+	// FIXME: Remove the `Copy` and use `Local` directly.
+	//
+	// Copy'ing is a costly operation which should be unnecessary.
+	// However, using llb.Local directly breaks caching sometimes for unknown reasons.
+	return st.File(
+		llb.Copy(
+			llb.Local(
+				dir,
+				opts...,
+			),
+			"/",
+			"/",
+		),
+		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
 	), nil
 }
 

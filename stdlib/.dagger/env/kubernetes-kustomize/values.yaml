@@ -1,0 +1,27 @@
+plan:
+    module: .dagger/env/kubernetes-kustomize/plan
+name: kubernetes-kustomize
+inputs:
+    TestKustomize.testdata:
+        dir:
+            path: ./kubernetes/kustomize/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTL2Jyczk3QXZiUVkyd3cw
+            TlYzQ2NyR2ZGZnhSRmowSGRmbFBodFRPc2dnCnJpYjdCdUpEUE10d3I4clh1eDVV
+            MmVqbmxiNmRvSUNqZEY3clZnci9pRkkKLS0tIGVLSVFwTy9TSElFUkdjOVlWb3Yy
+            OFllMEh3cVJZZnFxbW4xS1RtcFQzcFUKo/1WcYp4nPBXba8wQBe3DMt6pYQJGoSu
+            ja5BiCffN5wOoW9WT0j8Clx21w7BXcl46+T5GYpXDQDcqf6nCv1kYQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-17T20:48:00Z"
+    mac: ENC[AES256_GCM,data:SCWiSiDccPkZApOcc8RsYP7WPZUqUyYVB0UgivLhIsNSY5q3kCdenPLTUp2zLOcwaWzTPGmj++QtZjoNobcIhdVt1aJ9uXLLKRUXaRGIO3Jmhg3wj7kSPNjbDLZEB6uyA9h3edQGVVivNlNGpo91tg35QcFPPSG7UiowFnsD0zM=,iv:44hkujM/ZWjtYHau8BFMdOIeBj5jF/WnW4OOK7oSw1Y=,tag:mtJdUR+sA0tjIyAWDpXQlA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
