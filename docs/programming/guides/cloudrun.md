@@ -12,32 +12,31 @@ How to run:
 
 1. Initialize a new workspace
 
-```sh
-cd ./cloud-run-app
-dagger init
-```
+   ```sh
+   cd ./cloud-run-app
+   dagger init
+   ```
 
 2. Create a new environment
 
-```sh
-dagger new cloud-run-app
-cp *.cue ./.dagger/env/cloud-run-app/plan/
-```
+   ```sh
+   dagger new cloud-run-app
+   cp *.cue ./.dagger/env/cloud-run-app/plan/
+   ```
 
 3. Configure the Cloud Run service
 
-```sh
-dagger input text serviceName MY_APP_NAME
-dagger input text region MY_GCP_REGION
-dagger input text image MY_GCR_IMAGE_NAME
+   ```sh
+   dagger input text serviceName MY_APP_NAME
+   dagger input text region MY_GCP_REGION
+   dagger input text image MY_GCR_IMAGE_NAME
 
-dagger input text gcpConfig.project MY_GCP_PROJECT
-dagger input secret gcpConfig.serviceKey -f MY_GCP_SERVICE_KEY_FILE
-
-```
+   dagger input text gcpConfig.project MY_GCP_PROJECT
+   dagger input secret gcpConfig.serviceKey -f MY_GCP_SERVICE_KEY_FILE
+   ```
 
 4. Deploy!
 
-```sh
-dagger up
-```
+   ```sh
+   dagger up
+   ```
