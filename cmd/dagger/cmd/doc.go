@@ -365,6 +365,14 @@ func walkStdlib(ctx context.Context, output, format string) {
 		return false
 	}
 
+	// Create main index
+	index, err := os.Create(path.Join(output, "README.md"))
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot generate stdlib doc index")
+	}
+	defer index.Close()
+	fmt.Fprintf(index, "# Index\n\n")
+
 	for p, pkg := range packages {
 		filename := fmt.Sprintf("%s.%s", p, format)
 		// If this package has sub-packages (e.g. `aws`), create
@@ -384,6 +392,8 @@ func walkStdlib(ctx context.Context, output, format string) {
 		}
 		defer f.Close()
 
+		// FIXME: sort packages by name
+		fmt.Fprintf(index, "- [%s](./%s)\n", p, filename)
 		fmt.Fprintf(f, "%s", pkg.Format(format))
 	}
 }
