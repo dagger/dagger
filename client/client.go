@@ -251,16 +251,9 @@ func (c *Client) logSolveStatus(ctx context.Context, st *state.State, ch chan *b
 				Logger()
 
 			msg := secureSprintf(format, a...)
-			switch stream {
-			case 1:
-				lg.
-					Info().
-					Msg(msg)
-			case 2:
-				lg.
-					Error().
-					Msg(msg)
-			}
+			lg.
+				Info().
+				Msg(msg)
 		},
 	)
 }
