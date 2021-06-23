@@ -1,0 +1,28 @@
+plan:
+    module: .dagger/env/os-container/plan
+name: os-container
+inputs:
+    SimpleSecret.cleartext:
+        text: hello, world!
+    SimpleSecret.encrypted:
+        secret: ENC[AES256_GCM,data:Ps0VwEr1g2VJAkuyvA==,iv:LWWhr6wjWhpiv46VIehkVK0p8gwd8S1atmiFYqWcdLI=,tag:lridOOyvkUlSa6n+e6rMPw==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB5SU9NUTRWWTBvZzRWZkNT
+            Tk5TWFBFcHBWMldNSXA4KzU3TlVwTU9pdEZJCkFXNWpMMmZOZGs3WTYxZ3hDZVpv
+            L3lYNVh3Ti9UQXZzaTNWRU9IdGh4UncKLS0tIDFxbE1ZTmlUNElWWmRIN2hSRjk4
+            azJIU2lIVlF4N1VxT2tVWDBPU2RsOEkKqkfxeT/mnnDxdvv/vhXMj2Zl8ogaAHa6
+            xbBUOaCZ8stwj4Zz4/iKdrPspQQKo7/QuxxAcFUfyuK3fULqJHPXPQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-23T10:38:38Z"
+    mac: ENC[AES256_GCM,data:tI4WNOV4Ck6mLS0inz8SpVWhReofeB1WHExTwhusFYuEFWfKqvJ5Hau1ErLhPla0JURNf2taUgRAcZC4m6ex7CjGhj5/qjtMndWrz6Vf2/6CZkFPiFUd2a19kRoiEU6Mh/3NFUPIJK04lVMvW76glxxxCkqq7bnTovPXOkumdu4=,iv:ov7MKd/4FegjBUTv2hGb1D6VjhuKK3npHXhWUFZVmns=,tag:KvESE0C2xPmuRlQ05OKO5g==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
