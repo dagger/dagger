@@ -3,9 +3,9 @@ package docker
 import (
 	"strconv"
 
-	"dagger.io/alpine"
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 )
 
 // A container image that can run any docker command

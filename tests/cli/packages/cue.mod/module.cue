@@ -1,1 +1,1 @@
-module: "dagger.io/test"
+module: "alpha.dagger.io/test"

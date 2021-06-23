@@ -2,12 +2,12 @@
 sidebar_label: git
 ---
 
-# dagger.io/git
+# alpha.dagger.io/git
 
 Git operations
 
 ```cue
-import "dagger.io/git"
+import "alpha.dagger.io/git"
 ```
 
 ## git.#CurrentBranch

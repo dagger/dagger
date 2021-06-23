@@ -69,8 +69,8 @@ setup() {
 
     ln -s "$TESTDIR"/cli/packages "$DAGGER_WORKSPACE"/plan
 
-    "$DAGGER" new "a" --module "$DAGGER_WORKSPACE"/plan --package dagger.io/test/a
-    "$DAGGER" new "b" --module "$DAGGER_WORKSPACE"/plan --package dagger.io/test/b
+    "$DAGGER" new "a" --module "$DAGGER_WORKSPACE"/plan --package alpha.dagger.io/test/a
+    "$DAGGER" new "b" --module "$DAGGER_WORKSPACE"/plan --package alpha.dagger.io/test/b
 
     "$DAGGER" up -e "a"
     "$DAGGER" up -e "b"

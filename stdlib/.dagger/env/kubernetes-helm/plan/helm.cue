@@ -1,9 +1,9 @@
 package main
 
 import (
-	"dagger.io/kubernetes/helm"
-	"dagger.io/random"
-	"dagger.io/dagger"
+	"alpha.dagger.io/kubernetes/helm"
+	"alpha.dagger.io/random"
+	"alpha.dagger.io/dagger"
 )
 
 // We assume that a kinD cluster is running locally

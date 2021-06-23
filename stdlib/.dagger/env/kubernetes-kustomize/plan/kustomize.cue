@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/yaml"
-	"dagger.io/dagger"
-	"dagger.io/kubernetes/kustomize"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/kubernetes/kustomize"
 )
 
 TestKustomize: {

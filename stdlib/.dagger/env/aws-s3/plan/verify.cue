@@ -1,9 +1,9 @@
 package s3
 
 import (
-	"dagger.io/aws"
-	"dagger.io/alpine"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/aws"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
 )
 
 #List: {

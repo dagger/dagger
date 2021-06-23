@@ -2,12 +2,12 @@
 sidebar_label: alpine
 ---
 
-# dagger.io/alpine
+# alpha.dagger.io/alpine
 
 Base package for Alpine Linux
 
 ```cue
-import "dagger.io/alpine"
+import "alpha.dagger.io/alpine"
 ```
 
 ## alpine.#Image

@@ -1,10 +1,10 @@
 package react
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/js/yarn"
-	"dagger.io/alpine"
-	"dagger.io/os"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/js/yarn"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/os"
 )
 
 TestData: dagger.#Artifact

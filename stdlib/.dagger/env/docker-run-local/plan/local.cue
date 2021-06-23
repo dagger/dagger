@@ -1,8 +1,8 @@
 package main
 
 import (
-	"dagger.io/docker"
-	"dagger.io/random"
+	"alpha.dagger.io/docker"
+	"alpha.dagger.io/random"
 )
 
 suffix: random.#String & {

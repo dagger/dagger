@@ -4,6 +4,10 @@ setup() {
     common_setup
 }
 
+@test "cue-sanity-check" {
+    dagger -e sanity-check up
+}
+
 
 @test "os" {
     dagger -e os up

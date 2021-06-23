@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/yaml"
-	"dagger.io/kubernetes"
-	"dagger.io/random"
+	"alpha.dagger.io/kubernetes"
+	"alpha.dagger.io/random"
 )
 
 // We assume that a kinD cluster is running locally

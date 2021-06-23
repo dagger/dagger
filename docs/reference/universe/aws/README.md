@@ -2,12 +2,12 @@
 sidebar_label: aws
 ---
 
-# dagger.io/aws
+# alpha.dagger.io/aws
 
 AWS base package
 
 ```cue
-import "dagger.io/aws"
+import "alpha.dagger.io/aws"
 ```
 
 ## aws.#CLI

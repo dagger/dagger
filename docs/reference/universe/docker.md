@@ -2,12 +2,12 @@
 sidebar_label: docker
 ---
 
-# dagger.io/docker
+# alpha.dagger.io/docker
 
 Docker container operations
 
 ```cue
-import "dagger.io/docker"
+import "alpha.dagger.io/docker"
 ```
 
 ## docker.#Build

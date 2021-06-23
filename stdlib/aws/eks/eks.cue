@@ -2,8 +2,8 @@
 package eks
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/aws"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/aws"
 )
 
 // KubeConfig config outputs a valid kube-auth-config for kubectl client

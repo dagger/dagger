@@ -3,10 +3,10 @@ package git
 import (
 	"strings"
 
-	"dagger.io/git"
-	"dagger.io/alpine"
-	"dagger.io/os"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/git"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/os"
+	"alpha.dagger.io/dagger/op"
 )
 
 repo: git.#Repository & {

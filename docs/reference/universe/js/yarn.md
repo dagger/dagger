@@ -2,12 +2,12 @@
 sidebar_label: yarn
 ---
 
-# dagger.io/js/yarn
+# alpha.dagger.io/js/yarn
 
 Yarn is a package manager for Javascript applications
 
 ```cue
-import "dagger.io/js/yarn"
+import "alpha.dagger.io/js/yarn"
 ```
 
 ## yarn.#Package

@@ -1,10 +1,10 @@
 package gke
 
 import (
-	"dagger.io/gcp"
-	"dagger.io/gcp/gke"
-	"dagger.io/kubernetes"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/gcp"
+	"alpha.dagger.io/gcp/gke"
+	"alpha.dagger.io/kubernetes"
+	"alpha.dagger.io/dagger/op"
 )
 
 TestConfig: gcpConfig: gcp.#Config

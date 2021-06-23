@@ -1,9 +1,9 @@
 package s3
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/aws"
-	"dagger.io/aws/s3"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/aws"
+	"alpha.dagger.io/aws/s3"
 )
 
 TestConfig: awsConfig: aws.#Config & {

@@ -2,8 +2,8 @@
 package os
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 )
 
 // Built-in file implementation, using buildkit

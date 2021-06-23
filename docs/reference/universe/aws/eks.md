@@ -2,12 +2,12 @@
 sidebar_label: eks
 ---
 
-# dagger.io/aws/eks
+# alpha.dagger.io/aws/eks
 
 AWS Elastic Kubernetes Service (EKS)
 
 ```cue
-import "dagger.io/aws/eks"
+import "alpha.dagger.io/aws/eks"
 ```
 
 ## eks.#KubeConfig

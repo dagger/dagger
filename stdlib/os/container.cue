@@ -3,10 +3,10 @@ package os
 import (
 	"strings"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 
-	"dagger.io/alpine"
+	"alpha.dagger.io/alpine"
 )
 
 // Default image for basic use cases

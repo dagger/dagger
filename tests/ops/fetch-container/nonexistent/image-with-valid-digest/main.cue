@@ -1,6 +1,6 @@
 package testing
 
-import "dagger.io/dagger/op"
+import "alpha.dagger.io/dagger/op"
 
 // XXX WATCHOUT
 // Once buildkit has pulled that digest, it will stay cached and happily succeed WHATEVER the image name then is

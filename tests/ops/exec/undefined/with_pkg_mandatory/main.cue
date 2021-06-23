@@ -1,8 +1,8 @@
 package testing
 
 import (
-	"dagger.io/nonoptional"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/nonoptional"
+	"alpha.dagger.io/dagger/op"
 )
 
 #up: [

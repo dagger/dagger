@@ -1,8 +1,8 @@
 package main
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/kubernetes"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/kubernetes"
 )
 
 #VerifyHelm: {
