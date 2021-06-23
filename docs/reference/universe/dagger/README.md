@@ -4,6 +4,8 @@ sidebar_label: dagger
 
 # dagger.io/dagger
 
+Dagger core types
+
 ```cue
 import "dagger.io/dagger"
 ```

@@ -1,28 +1,28 @@
 # Index
 
-- [alpine](./alpine.md)
-- [aws](./aws/README.md)
-- [aws/cloudformation](./aws/cloudformation.md)
-- [aws/ecr](./aws/ecr.md)
-- [aws/ecs](./aws/ecs.md)
-- [aws/eks](./aws/eks.md)
-- [aws/elb](./aws/elb.md)
-- [aws/rds](./aws/rds.md)
-- [aws/s3](./aws/s3.md)
-- [dagger](./dagger/README.md)
-- [dagger/op](./dagger/op.md)
-- [docker](./docker.md)
-- [gcp](./gcp/README.md)
-- [gcp/gcr](./gcp/gcr.md)
-- [gcp/gke](./gcp/gke.md)
-- [git](./git.md)
-- [go](./go.md)
-- [io](./io.md)
-- [js/yarn](./js/yarn.md)
-- [kubernetes](./kubernetes/README.md)
-- [kubernetes/helm](./kubernetes/helm.md)
-- [kubernetes/kustomize](./kubernetes/kustomize.md)
-- [netlify](./netlify.md)
-- [os](./os.md)
-- [random](./random.md)
-- [terraform](./terraform.md)
+- [alpine](./alpine.md) - Base package for Alpine Linux
+- [aws](./aws/README.md) - AWS base package
+- [aws/cloudformation](./aws/cloudformation.md) - AWS CloudFormation
+- [aws/ecr](./aws/ecr.md) - Amazon Elastic Container Registry (ECR)
+- [aws/ecs](./aws/ecs.md) - AWS Elastic Container Service (ECS)
+- [aws/eks](./aws/eks.md) - AWS Elastic Kubernetes Service (EKS)
+- [aws/elb](./aws/elb.md) - AWS Elastic Load Balancer (ELBv2)
+- [aws/rds](./aws/rds.md) - AWS Relational Database Service (RDS)
+- [aws/s3](./aws/s3.md) - AWS Simple Storage Service
+- [dagger](./dagger/README.md) - Dagger core types
+- [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
+- [docker](./docker.md) - Docker container operations
+- [gcp](./gcp/README.md) - Google Cloud Platform
+- [gcp/gcr](./gcp/gcr.md) - Google Container Registry
+- [gcp/gke](./gcp/gke.md) - Google Kubernetes Engine
+- [git](./git.md) - Git operations
+- [go](./go.md) - Go build operations
+- [io](./io.md) - IO operations
+- [js/yarn](./js/yarn.md) - Yarn is a package manager for Javascript applications
+- [kubernetes](./kubernetes/README.md) - Kubernetes client operations
+- [kubernetes/helm](./kubernetes/helm.md) - Helm package manager
+- [kubernetes/kustomize](./kubernetes/kustomize.md) - Kustomize config management
+- [netlify](./netlify.md) - Netlify client operations
+- [os](./os.md) - OS operations
+- [random](./random.md) - Random generation utilities
+- [terraform](./terraform.md) - Terraform operations

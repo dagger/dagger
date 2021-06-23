@@ -4,6 +4,8 @@ sidebar_label: os
 
 # dagger.io/os
 
+OS operations
+
 ```cue
 import "dagger.io/os"
 ```

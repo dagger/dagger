@@ -407,6 +407,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 	// Generate index from sorted list of packages
 	sort.Strings(indexKeys)
 	for _, p := range indexKeys {
-		fmt.Fprintf(index, "- [%s](./%s)\n", p, getFileName(p))
+		description := mdEscape(packages[p].Description)
+		fmt.Fprintf(index, "- [%s](./%s) - %s\n", p, getFileName(p), description)
 	}
 }
