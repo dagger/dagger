@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"unicode/utf8"
@@ -365,13 +366,28 @@ func walkStdlib(ctx context.Context, output, format string) {
 		return false
 	}
 
-	for p, pkg := range packages {
+	// get filename from a package name
+	getFileName := func(p string) string {
 		filename := fmt.Sprintf("%s.%s", p, format)
 		// If this package has sub-packages (e.g. `aws`), create
 		// `aws/README.md` instead of `aws.md`.
 		if hasSubPackages(p) {
 			filename = fmt.Sprintf("%s/README.%s", p, format)
 		}
+		return filename
+	}
+
+	// Create main index
+	index, err := os.Create(path.Join(output, "README.md"))
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot generate stdlib doc index")
+	}
+	defer index.Close()
+	fmt.Fprintf(index, "# Index\n\n")
+	indexKeys := []string{}
+
+	for p, pkg := range packages {
+		filename := getFileName(p)
 		filepath := path.Join(output, filename)
 
 		if err := os.MkdirAll(path.Dir(filepath), 0755); err != nil {
@@ -384,6 +400,14 @@ func walkStdlib(ctx context.Context, output, format string) {
 		}
 		defer f.Close()
 
+		indexKeys = append(indexKeys, p)
 		fmt.Fprintf(f, "%s", pkg.Format(format))
+	}
+
+	// Generate index from sorted list of packages
+	sort.Strings(indexKeys)
+	for _, p := range indexKeys {
+		description := mdEscape(packages[p].Description)
+		fmt.Fprintf(index, "- [%s](./%s) - %s\n", p, getFileName(p), description)
 	}
 }
