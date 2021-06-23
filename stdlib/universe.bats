@@ -29,6 +29,10 @@ setup() {
     dagger -e git up
 }
 
+@test "os.#Container" {
+    dagger -e os-container up
+}
+
 @test "aws: ecr" {
     dagger -e aws-ecr up
 }
