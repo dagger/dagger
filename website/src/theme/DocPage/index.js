@@ -41,6 +41,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
 
     setHiddenSidebarContainer(!hiddenSidebarContainer);
   }, [hiddenSidebar]);
+
   return (
     <Layout
       key={isClient}
@@ -144,15 +145,15 @@ function DocPage(props) {
     const [redirectState, setRedirectState] = useState()
     const authQuery = qs.parse(location.search);
     const [userAccessStatus, setUserAccessStatus] = useState((() => {
-      if (typeof window !== "undefined") return window.localStorage.getItem('user-github-isAllowed')
+      if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
     })())
 
     useEffect(async () => {
       if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
-        const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
-        setUserAccessStatus(isUserCollaborator?.userPermission)
-        if (isUserCollaborator?.userPermission) {
-          if (typeof window !== "undefined") window.localStorage.setItem('user-github-isAllowed', isUserCollaborator?.userPermission);
+        const user = await checkUserCollaboratorStatus(authQuery.code);
+        if (user?.permission) {
+          setUserAccessStatus(user?.permission)
+          if (typeof window !== "undefined") window.localStorage.setItem('user', JSON.stringify(user));
         }
       }
       setIsLoading(false)
@@ -161,7 +162,7 @@ function DocPage(props) {
 
     if (isLoading) return <Spinner />
 
-    if (userAccessStatus === false) {
+    if (userAccessStatus?.permission === false) {
       return <DocPageRedirect />
     }
 
@@ -170,6 +171,16 @@ function DocPage(props) {
         <DocPageAuthentication />
       )
     }
+
+    // TODO: DISABLE FOR LOCALHOST ENV
+    import('amplitude-js').then(amplitude => {
+      if (userAccessStatus?.login) {
+        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login, {
+          apiEndpoint: `${window.location.hostname}/t`
+        });
+        amplitude.getInstance().logEvent('page view', window.location.pathname);
+      }
+    })
   }
   // END CUSTOM DOCPAGE
 
