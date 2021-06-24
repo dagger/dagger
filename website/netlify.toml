@@ -39,6 +39,11 @@ to = "https://j20f3pfq11.execute-api.us-east-1.amazonaws.com/Prod/u/:splat"
 status = 200
 
 [[redirects]]
+from = "/t"
+to = "https://api.amplitude.com"
+status = 200
+
+[[redirects]]
 from = "/reference"
 to = "/reference/universe/alpine"
 status = 302
