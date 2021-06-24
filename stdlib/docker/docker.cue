@@ -3,7 +3,6 @@ package docker
 
 import (
 	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger/op"
 )
 
@@ -63,35 +62,30 @@ import (
 	]
 
 	// Image ref
-	ref: string @dagger(output)
+	ref: {
+		string
+
+		#up: [
+			op.#Load & {from: push},
+
+			op.#Export & {
+				source: "/image_ref"
+			},
+		]
+	} @dagger(output)
 
 	// Image digest
-	digest: string @dagger(output)
+	digest: {
+		string
 
-	#up: [
-		op.#Load & {from: alpine.#Image & {
-			package: {
-				bash: true
-				jq:   true
-			}
-		}},
+		#up: [
+			op.#Load & {from: push},
 
-		op.#Exec & {
-			always: true
-			args: ["/bin/bash", "-c", #"""
-					jq --arg key0 'ref' --arg value0 $(cat /dagger/image_ref) 			\
-						 --arg key1 'digest' --arg value1 $(cat /dagger/image_digest) \
-						 '. | .[$key0]=$value0 | .[$key1]=$value1 '<<< '{}' > /out
-				"""#,
-			]
-			mount: "/dagger": from: push
-		},
-
-		op.#Export & {
-			source: "/out"
-			format: "json"
-		},
-	]
+			op.#Export & {
+				source: "/image_digest"
+			},
+		]
+	} @dagger(output)
 }
 
 #Run: {

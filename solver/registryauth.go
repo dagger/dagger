@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/docker/distribution/reference"
 	bkauth "github.com/moby/buildkit/session/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -63,9 +64,15 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 }
 
 func parseAuthHost(host string) (*url.URL, error) {
-	isDockerHub := !(strings.Contains(host, "amazonaws.com") || strings.Contains(host, "gcr.io") || strings.Contains(host, "microsoft.com"))
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") && strings.Contains(host, "/") {
+		ref, err := reference.ParseNormalizedNamed(host)
+		if err != nil {
+			return nil, err
+		}
+		host = ref.String()
+	}
 
-	if host == "registry-1.docker.io" || isDockerHub {
+	if strings.Contains(host, "docker.io") {
 		host = "https://index.docker.io/v1/"
 	}
 
