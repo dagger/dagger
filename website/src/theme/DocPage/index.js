@@ -175,10 +175,10 @@ function DocPage(props) {
     // TODO: DISABLE FOR LOCALHOST ENV
     import('amplitude-js').then(amplitude => {
       if (userAccessStatus?.login) {
-        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login, {
+        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
           apiEndpoint: `${window.location.hostname}/t`
         });
-        amplitude.getInstance().logEvent('page view', window.location.pathname);
+        amplitude.getInstance().logEvent('Docs View', { "path": window.location.pathname });
       }
     })
   }
