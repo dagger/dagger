@@ -1,5 +1,6 @@
 plan:
-    module: .dagger/env/aws-eks/plan
+    module: ./aws/eks
+    package: ./tests
 name: aws-eks
 inputs:
     TestConfig.awsConfig.accessKey:
@@ -21,8 +22,8 @@ sops:
             M3U4UFV5REQzYko3QjlXVE02Z0J4WUkK8uHC67Mutls4drXbCi8AwuFqbRXeb69P
             ZnOFZEB4NoayoOojr1mY9ssDTywHF4KwR4E9ZmJ3V3hlEAgMkqfvSA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-17T18:46:34Z"
-    mac: ENC[AES256_GCM,data:B+WtEMOKXy8AT/YTUaKZ9aA8fQRt2pJp3IaABpj0oYI1vCG953MnDCIxj0j2bTQN5gyaFPF8UQ1o/pRJzCKhm26wbCByUrVdHxHTwoJ7arDqQGwcNKYAuQjLtMG7gsl0BqjCg0oKO5YEa24BqHVf1dEo9AcXd6LBwqvxVjmd98g=,iv:aWxj1Oq6wmUYuWnGOc2zIpzOYJVyXV9qSzBgF+iGsHI=,tag:Bx1A8UxghYq97wEdUxbmdg==,type:str]
+    lastmodified: "2021-06-24T15:24:06Z"
+    mac: ENC[AES256_GCM,data:zRB7rhRuH95k2IxAbpf8FBfn0tiXKG4xEOv/M7qHxvexNhZWcBp1GnGnMI53CkzCMtTZcsdzquJJhQct2oyqXGbD9XNk9njC/hamtPVeXXtvDm2FTK8eHbb70tqIFCwspFXvfFMoNWCIZ5+CZTggTIOExnvAqsQ6QAN+FV3o25o=,iv:aghslE9r7hx1zmm2j/XznCyOJEoIs8CgUr5Wy/kuki0=,tag:6e701Vdjg+hnJElvZFnX7Q==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

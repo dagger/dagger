@@ -1,10 +1,11 @@
 plan:
-    module: .dagger/env/go/plan
+    module: ./go
+    package: ./tests
 name: go
 inputs:
     TestData:
         dir:
-            path: ./go/testdata
+            path: ./go/tests/testdata
 sops:
     kms: []
     gcp_kms: []
@@ -20,8 +21,8 @@ sops:
             R0o3dlptazJPTmp3OFo5RDcxOVg1VVkK1lLu/wrPvgzXa8Ym3qdvcuYCj8csbtOG
             T4HjRvA0EEF8jmFEuqS8Y/N0vQiezoZR7JU9PbjOoD1B5bLHtJcryQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-17T13:10:32Z"
-    mac: ENC[AES256_GCM,data:oD5rZ0k3KHxQ21eeDP0CQRdSYWBNfrgynNB3xrT3ntSTCsLkRuFH1G5NBnV3Hpvd5B5l5qQuuUDlQLY4nB8mbJJKr/TwYIRMELDDMqpitTfkddjm+UeUrRyTP/YStVnR+g6nv8NcDdHcg4eF2lXl6Q7JKNlsMAGndgb5920QNcY=,iv:vx84/Tp727FpbpXcp2Dm9MXz1OPnnVIICgcofjPjiHI=,tag:8+lCqBKc535mYMmVV2k1wQ==,type:str]
+    lastmodified: "2021-06-24T16:19:27Z"
+    mac: ENC[AES256_GCM,data:3dJTQZFlzj4sJkIB99zHMgH7MsTcHiGKwT5GykEzjzq4OH8KOkKyFx0uVrvw4ePYhHMjAcTKcJFWRD+ebrRusKF5yZ19Si7IleCSh4y/IzRE0fWfzCDCYSN2MVwreE9Q10UeL/vBw51cK/k7kCF2DNGkIr5et5wO9R3eStuHfDE=,iv:QJlR6fIRD0AfWneMhCY6HpXpVSFt6431dJuWzXplfB4=,tag:h43ENEs/oVkd/ZtSfgmlmg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
