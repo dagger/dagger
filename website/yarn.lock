@@ -3408,10 +3408,10 @@ dns-txt@^2.0.2:
   dependencies:
     buffer-indexof "^1.0.0"
 
-docusaurus-plugin-sass@^0.2.0:
-  version "0.2.0"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-sass/-/docusaurus-plugin-sass-0.2.0.tgz#9582a0e66a65b0a8886fe55f1fa42d1576de37d8"
-  integrity sha512-aH7OpvjY9BplN9bcfrDhPlkHYuMvlf0USoeDjBNoEC3AIn8CwKtpN1YfxXU+M5nGz/ummeTxyEAFY0VzchJW6w==
+docusaurus-plugin-sass@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-sass/-/docusaurus-plugin-sass-0.2.1.tgz#673c6b6ac00b581e8fb0baab22f2b3766735aafc"
+  integrity sha512-cRugbRWnKLjFPQTo1k2cyn/AANYkXAPHv+DaLs7bkOfOofEgTSrMdpNidt3oZ0ltQcjUUbvmSRRjH9R1ifdRMA==
   dependencies:
     sass-loader "^10.1.1"
 
