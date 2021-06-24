@@ -17,6 +17,12 @@
   ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF . ../docs/"
   command = "yarn build:withoutAuth"
 
+[context.docs-analytics]
+  # Do not build the site if there's no site-related changes since the last
+  # deploy.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF . ../docs/"
+  command = "yarn build"
+
 [[redirects]]
 from = "/github-proxy/*"
 to = "https://github.com/:splat"
