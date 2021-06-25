@@ -148,17 +148,16 @@ function DocPage(props) {
       if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
     })())
 
-
     useEffect(async () => {
       if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
         const user = await checkUserCollaboratorStatus(authQuery.code);
         if (user?.permission) {
-          setUserAccessStatus(user?.permission)
+          setUserAccessStatus(user)
           if (typeof window !== "undefined") window.localStorage.setItem('user', JSON.stringify(user));
         }
       }
       setIsLoading(false)
-    }, [userAccessStatus])
+    }, [])
 
     useEffect(() => {
       import('amplitude-js').then(amplitude => {
@@ -166,10 +165,10 @@ function DocPage(props) {
           var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
             apiEndpoint: `${window.location.hostname}/t`
           });
-          amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": window.location.pathname });
+          amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
         }
       })
-    }, [(typeof window !== "undefined" && window.location.pathname)])
+    }, [location.pathname, userAccessStatus])
 
     if (isLoading) return <Spinner />
 
