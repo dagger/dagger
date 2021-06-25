@@ -78,7 +78,7 @@ setup() {
     skip_unless_local_kube
 
     # Copy deployment to sandbox
-    copy_to_sandbox kubernetes-deployment
+    copy_to_sandbox kubernetes-deployment kubernetes
 
     # Set kubeconfig
     dagger -w "$DAGGER_SANDBOX" -e kubernetes-deployment input text TestKubeconfig -f "$HOME"/.kube/config
