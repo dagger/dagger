@@ -33,6 +33,7 @@ A container image that can run any docker command
 | Name             | Type              | Description          |
 | -------------    |:-------------:    |:-------------:       |
 |*command*         | `string`          |Command to execute    |
+|*registries*      | `[]`              |Image registries      |
 
 ### docker.#Command Outputs
 
@@ -99,6 +100,7 @@ _No output._
 |*run.ssh.key*          | `dagger.#Secret`    |private key                            |
 |*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
 |*run.env.IMAGE_REF*    | `string`            |-                                      |
+|*run.registries*       | `[]`                |Image registries                       |
 
 ### docker.#Run Outputs
 

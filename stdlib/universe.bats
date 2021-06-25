@@ -70,6 +70,10 @@ setup() {
     assert_failure
 }
 
+@test "docker compose" {
+    dagger -e docker-compose up
+}
+
 @test "docker run: ssh" {
     dagger -e docker-run-ssh up
 }
