@@ -2,10 +2,10 @@
 sidebar_label: compose
 ---
 
-# dagger.io/docker/compose
+# alpha.dagger.io/docker/compose
 
 ```cue
-import "dagger.io/docker/compose"
+import "alpha.dagger.io/docker/compose"
 ```
 
 ## compose.#Client

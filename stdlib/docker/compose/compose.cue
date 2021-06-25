@@ -2,8 +2,8 @@ package compose
 
 import (
 	"strconv"
-	"dagger.io/dagger"
-	"dagger.io/docker"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/docker"
 )
 
 #Up: {

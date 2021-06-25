@@ -1,9 +1,9 @@
 package compose
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/docker"
-	"dagger.io/docker/compose"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/docker"
+	"alpha.dagger.io/docker/compose"
 )
 
 repo: dagger.#Artifact @dagger(input)

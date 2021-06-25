@@ -1,7 +1,7 @@
 package compose
 
 import (
-	"dagger.io/alpine"
+	"alpha.dagger.io/alpine"
 )
 
 // A container image to run the docker-compose client

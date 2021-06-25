@@ -11,7 +11,8 @@
 - [aws/s3](./aws/s3.md) - AWS Simple Storage Service
 - [dagger](./dagger/README.md) - Dagger core types
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
-- [docker](./docker.md) - Docker container operations
+- [docker](./docker/README.md) - Docker container operations
+- [docker/compose](./docker/compose.md) - -
 - [gcp](./gcp/README.md) - Google Cloud Platform
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry
 - [gcp/gke](./gcp/gke.md) - Google Kubernetes Engine

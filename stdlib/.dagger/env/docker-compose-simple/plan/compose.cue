@@ -1,8 +1,8 @@
 package compose
 
 import (
-	"dagger.io/docker"
-	"dagger.io/docker/compose"
+	"alpha.dagger.io/docker"
+	"alpha.dagger.io/docker/compose"
 )
 
 TestCompose: {
