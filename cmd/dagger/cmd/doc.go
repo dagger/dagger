@@ -333,7 +333,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 		if err != nil {
 			return err
 		}
-		if p == "." || !d.IsDir() {
+		if p == "." || !d.IsDir() || d.Name() == "cue.mod" {
 			return nil
 		}
 
