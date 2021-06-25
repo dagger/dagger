@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"dagger.io/dagger"
+	"alpha.dagger.io/dagger"
 )
 
 TestConfig: {

@@ -2,7 +2,7 @@ package kustomize
 
 import (
 	"encoding/yaml"
-	"dagger.io/dagger"
+	"alpha.dagger.io/dagger"
 )
 
 TestKustomize: {

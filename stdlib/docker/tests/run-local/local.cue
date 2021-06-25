@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"dagger.io/random"
+	"alpha.dagger.io/random"
 )
 
 suffix: random.#String & {

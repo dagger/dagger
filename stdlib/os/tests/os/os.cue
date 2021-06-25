@@ -1,7 +1,7 @@
 package os
 
 import (
-	"dagger.io/alpine"
+	"alpha.dagger.io/alpine"
 )
 
 // Write a file to an empty dir

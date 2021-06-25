@@ -1,7 +1,7 @@
 package kubernetes
 
 import (
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger/op"
 )
 
 #VerifyApply: {

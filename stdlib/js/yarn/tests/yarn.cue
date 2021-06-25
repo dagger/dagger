@@ -1,9 +1,9 @@
 package yarn
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/alpine"
-	"dagger.io/os"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/os"
 )
 
 TestData: dagger.#Artifact

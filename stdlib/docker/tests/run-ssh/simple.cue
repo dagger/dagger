@@ -1,8 +1,8 @@
 package docker
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/random"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/random"
 )
 
 TestConfig: {

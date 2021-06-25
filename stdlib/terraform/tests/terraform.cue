@@ -1,9 +1,9 @@
 package terraform
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
-	"dagger.io/alpine"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
 )
 
 TestData: dagger.#Artifact @dagger(input)

@@ -1,9 +1,9 @@
 package eks
 
 import (
-	"dagger.io/aws"
-	"dagger.io/kubernetes"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/aws"
+	"alpha.dagger.io/kubernetes"
+	"alpha.dagger.io/dagger/op"
 )
 
 TestConfig: awsConfig: aws.#Config & {

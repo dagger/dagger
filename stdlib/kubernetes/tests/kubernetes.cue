@@ -2,7 +2,7 @@ package kubernetes
 
 import (
 	"encoding/yaml"
-	"dagger.io/random"
+	"alpha.dagger.io/random"
 )
 
 // We assume that a kinD cluster is running locally

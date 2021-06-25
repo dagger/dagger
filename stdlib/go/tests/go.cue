@@ -1,9 +1,9 @@
 package go
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/alpine"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
 )
 
 TestData: dagger.#Artifact @dagger(input)

@@ -1,8 +1,8 @@
 package docker
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 )
 
 TestSourceBuild: dagger.#Artifact @dagger(input)

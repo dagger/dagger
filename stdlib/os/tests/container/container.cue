@@ -1,7 +1,7 @@
 package os
 
 import (
-	"dagger.io/dagger"
+	"alpha.dagger.io/dagger"
 )
 
 // Test secret mount

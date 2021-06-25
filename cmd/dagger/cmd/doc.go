@@ -338,7 +338,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 		}
 
 		// Ignore tests directories
-		if strings.Contains(p, "tests") {
+		if d.Name() == "tests" {
 			return nil
 		}
 
