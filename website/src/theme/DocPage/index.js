@@ -169,7 +169,7 @@ function DocPage(props) {
           amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": window.location.pathname });
         }
       })
-    }, [window.location.pathname])
+    }, [(typeof window !== "undefined" && window.location.pathname)])
 
     if (isLoading) return <Spinner />
 
