@@ -164,7 +164,7 @@ values={[
 package kube
 
 import (
-  "dagger.io/kubernetes"
+  "alpha.dagger.io/kubernetes"
 )
 
 // input: ~/.kube/config file used for deployment
@@ -190,8 +190,8 @@ deploy: kubernetes.#Resources & {
 package kube
 
 import (
-  "dagger.io/kubernetes"
-  "dagger.io/gcp/gke"
+  "alpha.dagger.io/kubernetes"
+  "alpha.dagger.io/gcp/gke"
 )
 
 // gkeConfig used for deployment
@@ -218,8 +218,8 @@ deploy: kubernetes.#Resources & {
 package kube
 
 import (
-  "dagger.io/kubernetes"
-  "dagger.io/aws/eks"
+  "alpha.dagger.io/kubernetes"
+  "alpha.dagger.io/aws/eks"
 )
 
 // eksConfig used for deployment
@@ -587,8 +587,8 @@ package kube
 import (
   "encoding/yaml"
 
-  "dagger.io/dagger"
-  "dagger.io/docker"
+  "alpha.dagger.io/dagger"
+  "alpha.dagger.io/docker"
 )
 
 // input: source code repository, must contain a Dockerfile

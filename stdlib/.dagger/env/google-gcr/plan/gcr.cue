@@ -1,10 +1,10 @@
 package main
 
 import (
-	"dagger.io/gcp"
-	"dagger.io/gcp/gcr"
-	"dagger.io/dagger/op"
-	"dagger.io/random"
+	"alpha.dagger.io/gcp"
+	"alpha.dagger.io/gcp/gcr"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/random"
 )
 
 TestConfig: gcpConfig: gcp.#Config

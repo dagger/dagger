@@ -2,8 +2,8 @@
 package gcr
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/gcp"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/gcp"
 )
 
 // Credentials retriever for GCR

@@ -4,8 +4,8 @@ package random
 import (
 	"strconv"
 
-	"dagger.io/alpine"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
 )
 
 // Generate a random string

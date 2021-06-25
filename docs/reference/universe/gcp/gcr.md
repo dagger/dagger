@@ -2,12 +2,12 @@
 sidebar_label: gcr
 ---
 
-# dagger.io/gcp/gcr
+# alpha.dagger.io/gcp/gcr
 
 Google Container Registry
 
 ```cue
-import "dagger.io/gcp/gcr"
+import "alpha.dagger.io/gcp/gcr"
 ```
 
 ## gcr.#Credentials

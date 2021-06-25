@@ -2,12 +2,12 @@
 sidebar_label: ecr
 ---
 
-# dagger.io/aws/ecr
+# alpha.dagger.io/aws/ecr
 
 Amazon Elastic Container Registry (ECR)
 
 ```cue
-import "dagger.io/aws/ecr"
+import "alpha.dagger.io/aws/ecr"
 ```
 
 ## ecr.#Credentials

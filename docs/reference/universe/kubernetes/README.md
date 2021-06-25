@@ -2,12 +2,12 @@
 sidebar_label: kubernetes
 ---
 
-# dagger.io/kubernetes
+# alpha.dagger.io/kubernetes
 
 Kubernetes client operations
 
 ```cue
-import "dagger.io/kubernetes"
+import "alpha.dagger.io/kubernetes"
 ```
 
 ## kubernetes.#Kubectl

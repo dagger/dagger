@@ -2,12 +2,12 @@
 sidebar_label: rds
 ---
 
-# dagger.io/aws/rds
+# alpha.dagger.io/aws/rds
 
 AWS Relational Database Service (RDS)
 
 ```cue
-import "dagger.io/aws/rds"
+import "alpha.dagger.io/aws/rds"
 ```
 
 ## rds.#Database

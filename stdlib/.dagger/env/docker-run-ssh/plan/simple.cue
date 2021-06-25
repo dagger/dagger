@@ -1,9 +1,9 @@
 package main
 
 import (
-	"dagger.io/docker"
-	"dagger.io/dagger"
-	"dagger.io/random"
+	"alpha.dagger.io/docker"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/random"
 )
 
 TestConfig: {

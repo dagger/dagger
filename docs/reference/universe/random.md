@@ -2,12 +2,12 @@
 sidebar_label: random
 ---
 
-# dagger.io/random
+# alpha.dagger.io/random
 
 Random generation utilities
 
 ```cue
-import "dagger.io/random"
+import "alpha.dagger.io/random"
 ```
 
 ## random.#String

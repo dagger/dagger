@@ -2,9 +2,9 @@
 package s3
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
-	"dagger.io/aws"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/aws"
 )
 
 // S3 Bucket object(s) sync

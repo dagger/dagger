@@ -2,12 +2,12 @@
 sidebar_label: terraform
 ---
 
-# dagger.io/terraform
+# alpha.dagger.io/terraform
 
 Terraform operations
 
 ```cue
-import "dagger.io/terraform"
+import "alpha.dagger.io/terraform"
 ```
 
 ## terraform.#Configuration

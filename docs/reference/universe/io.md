@@ -2,12 +2,12 @@
 sidebar_label: io
 ---
 
-# dagger.io/io
+# alpha.dagger.io/io
 
 IO operations
 
 ```cue
-import "dagger.io/io"
+import "alpha.dagger.io/io"
 ```
 
 ## io.#Dir

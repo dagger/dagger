@@ -1,10 +1,10 @@
 package main
 
 import (
-	"dagger.io/aws"
-	"dagger.io/aws/ecr"
-	"dagger.io/dagger/op"
-	"dagger.io/random"
+	"alpha.dagger.io/aws"
+	"alpha.dagger.io/aws/ecr"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/random"
 )
 
 TestConfig: awsConfig: aws.#Config & {

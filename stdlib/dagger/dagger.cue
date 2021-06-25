@@ -2,7 +2,7 @@
 package dagger
 
 import (
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger/op"
 )
 
 // An artifact such as source code checkout, container image, binary archive...

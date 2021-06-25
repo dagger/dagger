@@ -2,7 +2,7 @@
 package ecs
 
 import (
-	"dagger.io/aws"
+	"alpha.dagger.io/aws"
 )
 
 // Task implements ecs run-task for running a single container on ECS

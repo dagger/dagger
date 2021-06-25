@@ -168,7 +168,7 @@ Let's implement the first step, use the `aws.#Config` relay, and request its fir
 package cloudformation
 
 import (
-  "dagger.io/aws"
+  "alpha.dagger.io/aws"
 )
 
 // AWS account: credentials and region
@@ -226,10 +226,10 @@ Now that we have the `config` definition properly configured, let's modify the C
 package cloudformation
 
 import (
-  "dagger.io/aws"
-  "dagger.io/dagger"
-  "dagger.io/random"
-  "dagger.io/aws/cloudformation"
+  "alpha.dagger.io/aws"
+  "alpha.dagger.io/dagger"
+  "alpha.dagger.io/random"
+  "alpha.dagger.io/aws/cloudformation"
 )
 
 // AWS account: credentials and region

@@ -2,9 +2,9 @@
 package kustomize
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/dagger"
-	"dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/alpine"
 )
 
 #Kustomization: {
