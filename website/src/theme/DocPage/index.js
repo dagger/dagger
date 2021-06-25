@@ -148,6 +148,7 @@ function DocPage(props) {
       if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
     })())
 
+
     useEffect(async () => {
       if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
         const user = await checkUserCollaboratorStatus(authQuery.code);
@@ -159,6 +160,16 @@ function DocPage(props) {
       setIsLoading(false)
     }, [userAccessStatus])
 
+    useEffect(() => {
+      import('amplitude-js').then(amplitude => {
+        if (userAccessStatus?.login) {
+          var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
+            apiEndpoint: `${window.location.hostname}/t`
+          });
+          amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": window.location.pathname });
+        }
+      })
+    }, [window.location.pathname])
 
     if (isLoading) return <Spinner />
 
@@ -171,16 +182,6 @@ function DocPage(props) {
         <DocPageAuthentication />
       )
     }
-
-    // TODO: DISABLE FOR LOCALHOST ENV
-    import('amplitude-js').then(amplitude => {
-      if (userAccessStatus?.login) {
-        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
-          apiEndpoint: `${window.location.hostname}/t`
-        });
-        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": window.location.pathname });
-      }
-    })
   }
   // END CUSTOM DOCPAGE
 
