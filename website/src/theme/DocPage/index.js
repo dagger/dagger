@@ -178,7 +178,7 @@ function DocPage(props) {
         var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
           apiEndpoint: `${window.location.hostname}/t`
         });
-        amplitude.getInstance().logEvent('Docs View', { "hostname": window.location.hostname, "path": window.location.pathname });
+        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": window.location.pathname });
       }
     })
   }
