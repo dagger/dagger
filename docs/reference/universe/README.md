@@ -12,7 +12,7 @@
 - [dagger](./dagger/README.md) - Dagger core types
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
 - [docker](./docker/README.md) - Docker container operations
-- [docker/compose](./docker/compose.md) - -
+- [docker/compose](./docker/compose.md) - Docker-compose operations
 - [gcp](./gcp/README.md) - Google Cloud Platform
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry
 - [gcp/gke](./gcp/gke.md) - Google Kubernetes Engine

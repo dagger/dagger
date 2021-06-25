@@ -1,3 +1,4 @@
+// Docker-compose operations
 package compose
 
 import (
@@ -6,7 +7,7 @@ import (
 	"alpha.dagger.io/docker"
 )
 
-#Up: {
+#App: {
 	ssh?: {
 		// ssh host
 		host: string @dagger(input)
