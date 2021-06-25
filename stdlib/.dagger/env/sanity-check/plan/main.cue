@@ -13,12 +13,12 @@ err: ""
 universe: dagger.#Input & dagger.#Artifact
 
 ctr: #CueCLI & {
-	vendor: "alpha.dagger.io": universe
+	ctx: universe
 	command: """
 		(
 		find . -name '*.cue' -print0 | xargs -0iX dirname X | sort -u | {
-
 			while read -r dir; do
+				[ "$(basename $dir)" = "cue.mod" ] && continue
 				echo "--- $dir"
 				cue eval "$dir" >/dev/null
 			done
@@ -39,6 +39,7 @@ err: (os.#File & {
 
 #CueCLI: {
 	command: string
+	ctx:     dagger.#Artifact
 	vendor: [name=string]: dagger.#Artifact
 
 	ctr: os.#Container & {
@@ -58,6 +59,7 @@ err: (os.#File & {
 				rm -fr ./*
 				""",
 		]
+		mount: "/ctx": from: ctx
 		for name, dir in vendor {
 			mount: "/ctx/cue.mod/pkg/\(name)": from: dir
 		}
