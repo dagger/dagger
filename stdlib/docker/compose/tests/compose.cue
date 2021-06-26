@@ -14,6 +14,8 @@ TestSSH: {
 }
 
 TestCompose: {
+	name: "compose_test"
+
 	up: #App & {
 		ssh: {
 			key:  TestSSH.key
@@ -21,22 +23,26 @@ TestCompose: {
 			user: TestSSH.user
 		}
 		source: repo
+		"name": name
 	}
 
 	verify: docker.#Command & {
-		ssh: up.run.ssh
+		ssh:     up.run.ssh
 		command: #"""
-				docker container ls | grep "api" | grep "Up"
+				docker container ls | grep "\#(name)_api" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
 		context: up.run
+		"name":  name
 		ssh:     verify.ssh
 	}
 }
 
 TestInlineCompose: {
+	name: "inline_test"
+
 	up: #App & {
 		ssh: {
 			key:  TestSSH.key
@@ -44,6 +50,7 @@ TestInlineCompose: {
 			user: TestSSH.user
 		}
 		source: repo
+		"name": name
 		composeFile: #"""
 			version: "3"
 
@@ -54,22 +61,19 @@ TestInlineCompose: {
 			      PORT: 7000
 			    ports:
 			    - 7000:7000
-
-			networks:
-			  default:
-			    name: mix-context
 			"""#
 	}
 
 	verify: docker.#Command & {
-		ssh: up.run.ssh
+		ssh:     up.run.ssh
 		command: #"""
-				docker container ls | grep "api-mix" | grep "Up"
+				docker container ls | grep "\#(name)_api-mix" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
 		context: up.run
+		"name":  name
 		ssh:     verify.ssh
 	}
 }

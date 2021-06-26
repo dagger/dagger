@@ -32,6 +32,9 @@ import (
 	source?:      dagger.#Artifact @dagger(input)
 	composeFile?: string           @dagger(input)
 
+	// App name (use as COMPOSE_PROJECT_NAME)
+	name: *"source" | string @dagger(input)
+
 	// Image registries
 	registries: [...{
 		target?:  string
@@ -74,6 +77,7 @@ import (
 		}
 		env: {
 			COMPOSE_HTTP_TIMEOUT: strconv.FormatInt(200, 10)
+			COMPOSE_PROJECT_NAME: name
 			if source != _|_ {
 				SOURCE_DIR: "source"
 			}

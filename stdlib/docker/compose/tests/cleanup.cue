@@ -11,6 +11,9 @@ import (
 	// docker-compose up context
 	context: dagger.#Artifact
 
+	// App name (use as COMPOSE_PROJECT_NAME)
+	name: *"source" | string
+
 	ssh: {
 		// ssh host
 		host: string @dagger(input)
@@ -68,9 +71,10 @@ import (
 				"/entrypoint.sh",
 			]
 			env: {
-				DOCKER_HOSTNAME: ssh.host
-				DOCKER_USERNAME: ssh.user
-				DOCKER_PORT:     strconv.FormatInt(ssh.port, 10)
+				DOCKER_HOSTNAME:      ssh.host
+				DOCKER_USERNAME:      ssh.user
+				DOCKER_PORT:          strconv.FormatInt(ssh.port, 10)
+				COMPOSE_PROJECT_NAME: name
 				if ssh.keyPassphrase != _|_ {
 					SSH_ASKPASS: "/get_passphrase"
 					DISPLAY:     "1"
