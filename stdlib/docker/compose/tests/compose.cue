@@ -3,6 +3,7 @@ package compose
 import (
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/docker"
+	"alpha.dagger.io/random"
 )
 
 repo: dagger.#Artifact @dagger(input)
@@ -14,7 +15,9 @@ TestSSH: {
 }
 
 TestCompose: {
-	name: "compose_test"
+	suffix: random.#String & {seed: "cmp"}
+
+	name: "compose_test_\(suffix.out)"
 
 	up: #App & {
 		ssh: {
@@ -41,7 +44,9 @@ TestCompose: {
 }
 
 TestInlineCompose: {
-	name: "inline_test"
+	suffix: random.#String & {seed: "cmp-inline"}
+
+	name: "inline_test_\(suffix.out)"
 
 	up: #App & {
 		ssh: {
