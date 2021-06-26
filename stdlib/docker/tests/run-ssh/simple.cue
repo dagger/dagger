@@ -34,7 +34,7 @@ TestRunArtifact: {
 		seed: "run artifact"
 	}
 
-	run: docker.#Run & {
+	run: #Run & {
 		name:   "daggerci-test-ssh-\(suffix.out)"
 		ref:    "my-app"
 		source: TestArtifact
