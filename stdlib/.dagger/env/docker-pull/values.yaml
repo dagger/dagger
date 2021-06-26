@@ -1,5 +1,6 @@
 plan:
-    module: .dagger/env/docker-pull/plan
+    module: ./docker
+    package: ./tests/pull
 name: docker-pull
 inputs:
     ref:
@@ -19,8 +20,8 @@ sops:
             SG1raUVNTzZIWDltV1pOS3hySHlJeWcKg3blmstOGcxtPww513+mAEA0MWOXwNAT
             5ngRvG6MraW3g9dhIuUYOwjuJyz1Z07/DBEocSxnjSyw45ZCkM1/9Q==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T09:36:46Z"
-    mac: ENC[AES256_GCM,data:ncBmzJ8Tl1HkI5KUHTQowZVbrczoub1JBWLzK0FD6A2wh5vLVa/KHzcW1N6kXlzNMN7GDSAD8LAiPsW5uQoMDz4uFkrAMtdfXNsZ5jP7dZJawAh1J4PjDhc5vnKLJq7Ps/u1dsECiZWt1tk+R3KH7xGahZXXKCHfib8k3OEkiqQ=,iv:zjeA3oZ9JBE+bOO66R2xmJup7a9bBvDYUhrQg1H9kE0=,tag:Wjdsw5rbPfgQdMXaDAwAAQ==,type:str]
+    lastmodified: "2021-06-26T14:52:40Z"
+    mac: ENC[AES256_GCM,data:IVEK6NFWEmNv8kRay2wVNhrsXVazVinIYRDLy7DTvaiWXyQYun//joK3QIoKz3dqi9rXeuTd95B13RxVQWKy/8cpmryg4QCwAaCj8erb5FHMRfn5/mAAV3NL5oAoOpKF4lZByrfdrXTJKppGWwYOFy8X693kK3FUzoUpIW2OqXg=,iv:qinwsUefQ7M+0OCTISPdQ9q//xsPitmHeCpdF00BJoo=,tag:reHZ5j0nz9fjAEFpR7IGGQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

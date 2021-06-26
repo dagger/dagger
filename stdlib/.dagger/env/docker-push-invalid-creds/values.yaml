@@ -1,9 +1,12 @@
+plan:
+    module: ./docker
+    package: ./tests/push-invalid-creds
 name: docker-push-invalid-creds
 inputs:
     TestRegistry.secret:
-        text: ENC[AES256_GCM,data:QOkT,iv:MUV92Llmt8pskd1AUjnvpQ+B3Ws1wLKIuzy7SVhHRME=,tag:StNvPnmz89GcLb1Cro3O9g==,type:str]
+        text: ENC[AES256_GCM,data:PckymCtA/Q==,iv:to7XhUUcZrWDga7uT4C067BRzHEzmTPDUNAEb2TpS/I=,tag:jUTk8uGd185hmIvi/IHpww==,type:str]
     TestRegistry.username:
-        text: john
+        text: invalid
 sops:
     kms: []
     gcp_kms: []
@@ -13,14 +16,14 @@ sops:
         - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3MC9DZGU1Tm5Ta2ttNUph
-            ZGxZaGxLMklRRWVaVmtzdEdqbnlkYmIvK2hNClVKd2RCak1GYXlvZWQxaHlzQUNw
-            Y2czeEdXZnQxT2dVQ01GY0NTcGNkMnMKLS0tIGwwa0xXVEZQUVUzdUpOQUJFTUxy
-            ZzZNNk1xb0F4cWVQRjh4aUJSUzExd2cKl0Ka0Qcc2KNOQjl3Bhnb1sGuJCZ6iDs4
-            Hz2EldaxWJHZxuS18uNC38NxufG02ULJqJb2QC4cOzPrTeeKVE6Qlg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4czBwNGtSdGZqdEZ5WDlM
+            SHVYOU5zdFl4L2ptZk5rSHgwek1aaDNicENFCkJ4OUIweU5OZTVKalpTSkhYaGxB
+            RUpHZmVvU3g3Y2tBZnRUcHh0TE52M1EKLS0tIHI1VUt1aUR0a0tDNHJVTHY4eEt1
+            VC8wSTZvUE5UaDg2WE1CaGMzR3M1TEkK9v83AVI4lvFgjKCg8UmQrcxarlESWTfV
+            2cDdWgoH7ZqgXo5jFv2tn8qQWHKl8eTTeYUWn8GoNVPKrCroax2fiQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-12T15:03:49Z"
-    mac: ENC[AES256_GCM,data:o2fTjTnDgSX4f2jSjs1LSKJ7eTrTmFV44gyZdYCdYnb6eyXpFuT4Bru8ERuJlTvUSc3wx4js14BlxS3T0tX0aBV39ScBlzQOC4Ulyvh4KOKEH9uUl7YmGrFlNH4yQ7DYoezxCqwxlLZGavDaSXUszvKWlcdMsTm3L/4LkfHQzWk=,iv:E1gyYQ0+02bIQguvN0w+wp8RS6uyT17tXp18e5riXmg=,tag:Azjz4ZivYmjC/7eMc6SfSQ==,type:str]
+    lastmodified: "2021-06-26T15:00:53Z"
+    mac: ENC[AES256_GCM,data:ptE3WydZDuethnN5Qh26uAfndRbT+RKz2mktH4s2KyRNeDKgiBfwOVS1xoTxz+nkFoms0Cxac3iaVwZLpZXniQUbOAYY1fzfmyL32bfAUdNFs7P6K0thwSy8r8LJ38GvxHzZW289YVFTGSaJWCapbrcGzl6B7Aj5RcQ+Hhu32K8=,iv:PA2R7Q8y8F//RGnHpOCmxp8jWKXlAZ3Yfo0xbtPfx2E=,tag:EmxBTb9WVrDdOmgDHEDYfg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

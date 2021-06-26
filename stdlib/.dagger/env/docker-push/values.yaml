@@ -1,5 +1,6 @@
 plan:
-    module: .dagger/env/docker-push/plan
+    module: ./docker
+    package: ./tests/push
 name: docker-push
 inputs:
     TestRegistry.secret:
@@ -21,8 +22,8 @@ sops:
             UjFJYTc1UUUzSFVkZjQ2blRsSGpVdVEKOanMR3+WlAgoDfqTUW7WPW1ytT3NdkTX
             4Rqo49QmnuKFJ9tKoBFQOqgIo8E/lpcOkeIUiy5e/35FvsZ/KFk/pg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-18T19:34:53Z"
-    mac: ENC[AES256_GCM,data:2LqpZGLCgN4d72hZMSs9uuIy0Eh69eP9JfhCcCvnIUg8kXcr5/mThST3Xum1LHJsAwfXIxPQPuz2ZzlcWksgYczNalU+ibTVk6N3nLi4ynrbV5QXaoS2MUmJHx6Y4VsjKHg13DQOysqcCa3+vY3WKxZ/WLgkI0rVOwZMELQBfXo=,iv:LeVFP37Y0rpLJa3IpbHD0N1ZARH139dz434c+uLv+Yo=,tag:yjlfzzcvvFzmVnvBX+8aAg==,type:str]
+    lastmodified: "2021-06-26T14:53:13Z"
+    mac: ENC[AES256_GCM,data:kxzdmyQwRIVP9D+w9LzRDIZOxDUqpSaGeD/GqaVxnQivEUjVFK5ePAcYV1fzjU4eeO3chIrP8NpvpIKZ1LztQddsPdTj72Yffgc5yq8/dGa3njiM8p9oa5hnZNoxLtyVPgRoNy3ZUZ6YSN9nqCFWW0DCjeSoiDlPX+1Vj/S6PeM=,iv:DhX4N6idS3VBaqau6k9yH+li34hOd3jqBsJJQu/P3Jw=,tag:X+taa7XgRmovR0JkhGpi7g==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

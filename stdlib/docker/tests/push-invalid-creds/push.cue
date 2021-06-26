@@ -1,8 +1,7 @@
 package docker
 
 import (
-	"dagger.io/docker"
-	"dagger.io/random"
+	"alpha.dagger.io/random"
 )
 
 TestRegistry: {
@@ -15,7 +14,7 @@ TestPush: {
 
 	name: "daggerio/ci-test:\(tag.out)"
 
-	image: docker.#ImageFromDockerfile & {
+	image: #ImageFromDockerfile & {
 		dockerfile: """
 				FROM alpine
 				RUN echo "test" > /test.txt
@@ -23,10 +22,10 @@ TestPush: {
 		context: ""
 	}
 
-	push: docker.#Push & {
+	push: #Push & {
 		"name": name
 		source: image
-		registry: {
+		auth: {
 			username: TestRegistry.username
 			secret:   TestRegistry.secret
 		}

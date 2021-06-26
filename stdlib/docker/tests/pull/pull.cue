@@ -1,15 +1,14 @@
 package docker
 
 import (
-	"dagger.io/docker"
-	"dagger.io/dagger/op"
-	"dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
 )
 
 ref: string @dagger(input)
 
 TestPull: {
-	pull: docker.#Pull & {from: ref}
+	pull: #Pull & {from: ref}
 
 	check: #up: [
 		op.#Load & {from: alpine.#Image},
