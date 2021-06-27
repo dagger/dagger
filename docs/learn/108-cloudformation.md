@@ -135,7 +135,7 @@ template: """
 As our plan relies on [Cloudformation's relay](/reference/universe/aws/cloudformation), let's dissect the expected inputs by gradually incorporating them into our plan.
 
 ```shell
-dagger doc dagger.io/aws/cloudformation
+dagger doc alpha.dagger.io/aws/cloudformation
 # Inputs:
 #     config.region       string                                   AWS region
 #     config.accessKey    dagger.#Secret                           AWS access key
@@ -177,7 +177,7 @@ awsConfig: aws.#Config
 
 This defines:
 
-- `awsConfig`: AWS CLI Configuration step using the package `dagger.io/aws`. It takes three user inputs: a `region`, an `accessKey`, and a `secretKey`
+- `awsConfig`: AWS CLI Configuration step using the package `alpha.dagger.io/aws`. It takes three user inputs: a `region`, an `accessKey`, and a `secretKey`
 
 #### Setup the environment
 
