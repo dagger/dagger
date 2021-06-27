@@ -171,7 +171,7 @@ import (
 // set with `dagger input text kubeconfig -f ~/.kube/config`
 kubeconfig: string @dagger(input)
 
-// deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
+// deploy uses the `alpha.dagger.io/kubernetes` package to apply a manifest to a
 // Kubernetes cluster.
 deploy: kubernetes.#Resources & {
   // reference the `kubeconfig` input above
@@ -199,7 +199,7 @@ gkeConfig: gke.#KubeConfig @dagger(input)
 
 kubeconfig: gkeConfig.kubeconfig
 
-// deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
+// deploy uses the `alpha.dagger.io/kubernetes` package to apply a manifest to a
 // Kubernetes cluster.
 deploy: kubernetes.#Resources & {
   // reference the `kubeconfig` input above
@@ -227,7 +227,7 @@ eksConfig: eks.#KubeConfig @dagger(input)
 
 kubeconfig: eksConfig.kubeconfig
 
-// deploy uses the `dagger.io/kubernetes` package to apply a manifest to a
+// deploy uses the `alpha.dagger.io/kubernetes` package to apply a manifest to a
 // Kubernetes cluster.
 deploy: kubernetes.#Resources & {
   // reference the `kubeconfig` input above
@@ -245,7 +245,7 @@ This defines:
 
 - `kubeconfig` a _string_ **input**: kubernetes configuration (`~/.kube/config`)
   used for `kubectl`
-- `deploy`: Deployment step using the package `dagger.io/kubernetes`. It takes
+- `deploy`: Deployment step using the package `alpha.dagger.io/kubernetes`. It takes
   the `manifest` defined earlier and deploys it to the Kubernetes cluster specified in `kubeconfig`.
 
 ### Setup the environment
@@ -578,7 +578,7 @@ The following configuration will:
 - Declare a `repository` input as a `dagger.#Artifact`. This will be mapped to
   the source code directory.
 - Declare a `registry` input. This is the address used for docker push
-- Use `dagger.io/docker` to build and push the image
+- Use `alpha.dagger.io/docker` to build and push the image
 - Use the registry image reference (`push.ref`) as the image for the deployment.
 
 ```cue title="todoapp/kube/manifest.cue"
