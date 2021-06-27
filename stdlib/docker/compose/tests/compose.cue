@@ -3,6 +3,7 @@ package compose
 import (
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/docker"
+	"alpha.dagger.io/random"
 )
 
 repo: dagger.#Artifact @dagger(input)
@@ -14,6 +15,10 @@ TestSSH: {
 }
 
 TestCompose: {
+	suffix: random.#String & {seed: "cmp"}
+
+	name: "compose_test_\(suffix.out)"
+
 	up: #App & {
 		ssh: {
 			key:  TestSSH.key
@@ -21,22 +26,28 @@ TestCompose: {
 			user: TestSSH.user
 		}
 		source: repo
+		"name": name
 	}
 
 	verify: docker.#Command & {
-		ssh: up.run.ssh
+		ssh:     up.run.ssh
 		command: #"""
-				docker container ls | grep "api" | grep "Up"
+				docker container ls | grep "\#(name)_api" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
 		context: up.run
+		"name":  name
 		ssh:     verify.ssh
 	}
 }
 
 TestInlineCompose: {
+	suffix: random.#String & {seed: "cmp-inline"}
+
+	name: "inline_test_\(suffix.out)"
+
 	up: #App & {
 		ssh: {
 			key:  TestSSH.key
@@ -44,6 +55,7 @@ TestInlineCompose: {
 			user: TestSSH.user
 		}
 		source: repo
+		"name": name
 		composeFile: #"""
 			version: "3"
 
@@ -54,22 +66,19 @@ TestInlineCompose: {
 			      PORT: 7000
 			    ports:
 			    - 7000:7000
-
-			networks:
-			  default:
-			    name: mix-context
 			"""#
 	}
 
 	verify: docker.#Command & {
-		ssh: up.run.ssh
+		ssh:     up.run.ssh
 		command: #"""
-				docker container ls | grep "api-mix" | grep "Up"
+				docker container ls | grep "\#(name)_api-mix" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
 		context: up.run
+		"name":  name
 		ssh:     verify.ssh
 	}
 }
