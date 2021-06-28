@@ -151,8 +151,8 @@ function DocPage(props) {
     useEffect(async () => {
       if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
         const user = await checkUserCollaboratorStatus(authQuery.code);
+        setUserAccessStatus(user)
         if (user?.permission) {
-          setUserAccessStatus(user)
           if (typeof window !== "undefined") window.localStorage.setItem('user', JSON.stringify(user));
         }
       }
