@@ -14,7 +14,20 @@ import './styles.css';
 import styles from './styles.module.css';
 import AnchorIcon from "./anchor.svg"
 
-const Heading = (Tag) =>
+export const MainHeading = function MainHeading({...props}) {
+  return (
+    <header>
+      <h1
+        {...props}
+        id={undefined} // h1 headings do not need an id because they don't appear in the TOC
+        className={styles.h1Heading}>
+        {props.children}
+      </h1>
+    </header>
+  );
+};
+
+const createAnchorHeading = (Tag) =>
   function TargetComponent({id, ...props}) {
     const {
       navbar: {hideOnScroll},
@@ -48,5 +61,9 @@ const Heading = (Tag) =>
       </Tag>
     );
   };
+
+const Heading = (headingType) => {
+  return headingType === 'h1' ? MainHeading : createAnchorHeading(headingType);
+};
 
 export default Heading;

@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { MDXProvider } from '@mdx-js/react';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import renderRoutes from '@docusaurus/renderRoutes';
@@ -18,20 +18,39 @@ import { translate } from '@docusaurus/Translate';
 import clsx from 'clsx';
 import styles from './styles.module.css';
 import { ThemeClassNames, docVersionSearchTag } from '@docusaurus/theme-common';
-import { Redirect } from "react-router";
-import qs from 'querystringify';
-import isEmpty from 'lodash/isEmpty';
-import { checkUserCollaboratorStatus } from '../../api/github'
-import { GithubLoginButton } from 'react-social-login-buttons';
-import Spinner from '../../components/Spinner';
-import DocPageAuthentication from '../../components/DocPageAuthentication';
-import DocPageRedirect from '../../components/DocPageRedirect';
+import DocPageCustom from '../../components/DocPageCustom'
+
+function getSidebar({ versionMetadata, currentDocRoute }) {
+  function addTrailingSlash(str) {
+    return str.endsWith('/') ? str : `${str}/`;
+  }
+
+  function removeTrailingSlash(str) {
+    return str.endsWith('/') ? str.slice(0, -1) : str;
+  }
+
+  const { permalinkToSidebar, docsSidebars } = versionMetadata; // With/without trailingSlash, we should always be able to get the appropriate sidebar
+  // note: docs plugin permalinks currently never have trailing slashes
+  // trailingSlash is handled globally at the framework level, not plugin level
+
+  const sidebarName =
+    permalinkToSidebar[currentDocRoute.path] ||
+    permalinkToSidebar[addTrailingSlash(currentDocRoute.path)] ||
+    permalinkToSidebar[removeTrailingSlash(currentDocRoute.path)];
+  const sidebar = docsSidebars[sidebarName];
+  return {
+    sidebar,
+    sidebarName,
+  };
+}
 
 function DocPageContent({ currentDocRoute, versionMetadata, children }) {
   const { siteConfig, isClient } = useDocusaurusContext();
-  const { pluginId, permalinkToSidebar, docsSidebars, version } = versionMetadata;
-  const sidebarName = permalinkToSidebar[currentDocRoute.path];
-  const sidebar = docsSidebars[sidebarName];
+  const { pluginId, version } = versionMetadata;
+  const { sidebarName, sidebar } = getSidebar({
+    versionMetadata,
+    currentDocRoute,
+  });
   const [hiddenSidebarContainer, setHiddenSidebarContainer] = useState(false);
   const [hiddenSidebar, setHiddenSidebar] = useState(false);
   const toggleSidebar = useCallback(() => {
@@ -41,7 +60,6 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
 
     setHiddenSidebarContainer(!hiddenSidebarContainer);
   }, [hiddenSidebar]);
-
   return (
     <Layout
       key={isClient}
@@ -53,7 +71,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
       }}>
       <div className={styles.docPage}>
         {sidebar && (
-          <div
+          <aside
             className={clsx(styles.docSidebarContainer, {
               [styles.docSidebarContainerHidden]: hiddenSidebarContainer,
             })}
@@ -67,8 +85,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
               if (hiddenSidebarContainer) {
                 setHiddenSidebar(true);
               }
-            }}
-            role="complementary">
+            }}>
             <DocSidebar
               key={
                 // Reset sidebar state on sidebar changes
@@ -106,7 +123,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
                 <IconArrow className={styles.expandSidebarButtonIcon} />
               </div>
             )}
-          </div>
+          </aside>
         )}
         <main
           className={clsx(styles.docMainContainer, {
@@ -115,7 +132,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
           })}>
           <div
             className={clsx(
-              'container padding-vert--lg',
+              'container padding-top--md padding-bottom--lg',
               styles.docItemWrapper,
               {
                 [styles.docItemWrapperEnhanced]: hiddenSidebarContainer,
@@ -139,50 +156,15 @@ function DocPage(props) {
     matchPath(location.pathname, docRoute),
   );
 
-  // CUSTOM DOCPAGE
-  if (process.env.OAUTH_ENABLE == 'true') {
-    const [isLoading, setIsLoading] = useState(true)
-    const [redirectState, setRedirectState] = useState()
-    const authQuery = qs.parse(location.search);
-    const [userAccessStatus, setUserAccessStatus] = useState((() => {
-      if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
-    })())
+  // DocPage Swizzle
+  const [userAccessStatus, setUserAccessStatus] = useState((() => {
+    if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
+  })())
 
-    useEffect(async () => {
-      if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
-        const user = await checkUserCollaboratorStatus(authQuery.code);
-        if (user?.permission) {
-          setUserAccessStatus(user?.permission)
-          if (typeof window !== "undefined") window.localStorage.setItem('user', JSON.stringify(user));
-        }
-      }
-      setIsLoading(false)
-    }, [userAccessStatus])
-
-
-    if (isLoading) return <Spinner />
-
-    if (userAccessStatus?.permission === false) {
-      return <DocPageRedirect />
-    }
-
-    if (userAccessStatus === null) {
-      return (
-        <DocPageAuthentication />
-      )
-    }
-
-    // TODO: DISABLE FOR LOCALHOST ENV
-    import('amplitude-js').then(amplitude => {
-      if (userAccessStatus?.login) {
-        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
-          apiEndpoint: `${window.location.hostname}/t`
-        });
-        amplitude.getInstance().logEvent('Docs View', { "hostname": window.location.hostname, "path": window.location.pathname });
-      }
-    })
+  if (process.env.OAUTH_ENABLE == 'true' && userAccessStatus?.permission !== true) {
+    return <DocPageCustom location={location} userAccessStatus={userAccessStatus} setUserAccessStatus={setUserAccessStatus} />
   }
-  // END CUSTOM DOCPAGE
+  // End DocPageSwizzle
 
   if (!currentDocRoute) {
     return <NotFound {...props} />;
@@ -192,7 +174,9 @@ function DocPage(props) {
     <DocPageContent
       currentDocRoute={currentDocRoute}
       versionMetadata={versionMetadata}>
-      {renderRoutes(docRoutes)}
+      {renderRoutes(docRoutes, {
+        versionMetadata,
+      })}
     </DocPageContent>
   );
 }
