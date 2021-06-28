@@ -22,6 +22,8 @@ var loginCmd = &cobra.Command{
 
 		panic("not implemented")
 	},
+	// Remove hidden flag once command has been implemented
+	Hidden: true,
 }
 
 func init() {

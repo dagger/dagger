@@ -19,6 +19,8 @@ var downCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		panic("not implemented")
 	},
+	// Remove hidden flag once command has been implemented
+	Hidden: true,
 }
 
 func init() {
