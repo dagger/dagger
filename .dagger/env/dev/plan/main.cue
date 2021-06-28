@@ -2,9 +2,9 @@
 package main
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/os"
-	"dagger.io/go"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/os"
+	"alpha.dagger.io/go"
 )
 
 // Dagger source code

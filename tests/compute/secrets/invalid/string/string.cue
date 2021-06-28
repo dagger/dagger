@@ -1,8 +1,8 @@
 package testing
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
 )
 
 mySecret: dagger.#Secret

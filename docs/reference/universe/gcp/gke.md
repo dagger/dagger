@@ -2,12 +2,12 @@
 sidebar_label: gke
 ---
 
-# dagger.io/gcp/gke
+# alpha.dagger.io/gcp/gke
 
 Google Kubernetes Engine
 
 ```cue
-import "dagger.io/gcp/gke"
+import "alpha.dagger.io/gcp/gke"
 ```
 
 ## gke.#KubeConfig

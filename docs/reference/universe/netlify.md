@@ -2,12 +2,12 @@
 sidebar_label: netlify
 ---
 
-# dagger.io/netlify
+# alpha.dagger.io/netlify
 
 Netlify client operations
 
 ```cue
-import "dagger.io/netlify"
+import "alpha.dagger.io/netlify"
 ```
 
 ## netlify.#Account

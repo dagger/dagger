@@ -1,6 +1,6 @@
 package a
 
-import "dagger.io/dagger/op"
+import "alpha.dagger.io/dagger/op"
 
 exp: {
 	string

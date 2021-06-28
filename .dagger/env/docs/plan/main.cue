@@ -1,9 +1,9 @@
 package main
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/js/yarn"
-	"dagger.io/netlify"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/js/yarn"
+	"alpha.dagger.io/netlify"
 )
 
 // dagger repository

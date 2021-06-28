@@ -2,12 +2,12 @@
 sidebar_label: go
 ---
 
-# dagger.io/go
+# alpha.dagger.io/go
 
 Go build operations
 
 ```cue
-import "dagger.io/go"
+import "alpha.dagger.io/go"
 ```
 
 ## go.#Build

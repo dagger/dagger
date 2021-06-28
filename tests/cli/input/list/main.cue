@@ -1,8 +1,8 @@
 package main
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/aws"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/aws"
 )
 
 awsConfig: aws.#Config & {

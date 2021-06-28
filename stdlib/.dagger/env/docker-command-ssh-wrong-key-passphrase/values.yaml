@@ -1,3 +1,6 @@
+plan:
+    module: ./docker
+    package: ./tests/command-ssh-wrong-key-passphrase
 name: docker-command-ssh-wrong-key-passphrase
 inputs:
     TestConfig.host:
@@ -23,8 +26,8 @@ sops:
             R2tNU2JJWHFQTmhnUDd6eE13UUhQazgK+OQ50Q3+S5Fn2Y132ZeDrgUKWPcAk+et
             q8ppfZiPOtH4p6MwboSuh/vaTAAsxks7ctnqnU1pY+EHfnp8bHYHgQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-11T16:09:47Z"
-    mac: ENC[AES256_GCM,data:RTbDkgxWqVa4kgJPXny9u9hfwF1NG3g9L/6P2P44KE97yNdoxuAkuU1hs6DiATl4hgeck7p56gWLeUTeGAi+llMDqOodmSQEtD/XZvvdmyh4J+09+jg9QRwSL54xNR4Q83YBWy5PZm+hyYQdVl9H3omMCrdO78ydYXPSdDnRk3I=,iv:crEuUK+jQ6QBrf/Dxouu9+I3VXdZazKnHJ1g5JZLD0E=,tag:ymExWezKBTowuH4pugiQ/g==,type:str]
+    lastmodified: "2021-06-24T15:55:39Z"
+    mac: ENC[AES256_GCM,data:iE8xzhQ5/nBkzsASZ4R/yK85lb89/TUpLGL+5kfxNlWx6gQmLpzcRAuMObV5Xebv0nd+znLKcmDA35Qj5j66FsaGpk5Lym7c6/W7PT9dt/gfAvjTydHPgkJ8L/EMiSd06cQXq4jMB9/OAzZmPsosRAsmrijvy/tuDXAZM0IjazI=,iv:JfJ3UJsNhRsTz/3npxZ/Hy1HtAsczeVm8F7E0KvLwAE=,tag:fmf+1RVzTtijApc77LnSrQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

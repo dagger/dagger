@@ -2,8 +2,8 @@
 package gke
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/gcp"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/gcp"
 )
 
 // KubeConfig config outputs a valid kube-auth-config for kubectl client

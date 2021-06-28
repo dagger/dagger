@@ -2,12 +2,12 @@
 sidebar_label: os
 ---
 
-# dagger.io/os
+# alpha.dagger.io/os
 
 OS operations
 
 ```cue
-import "dagger.io/os"
+import "alpha.dagger.io/os"
 ```
 
 ## os.#Container

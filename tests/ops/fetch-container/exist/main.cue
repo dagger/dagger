@@ -1,6 +1,6 @@
 package testing
 
-import "dagger.io/dagger/op"
+import "alpha.dagger.io/dagger/op"
 
 TestBusybox1: #up: [
 	op.#FetchContainer & {

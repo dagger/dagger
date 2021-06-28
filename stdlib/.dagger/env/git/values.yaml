@@ -1,5 +1,6 @@
 plan:
-    module: .dagger/env/git/plan
+    module: ./git
+    package: ./tests
 name: git
 sops:
     kms: []
@@ -16,8 +17,8 @@ sops:
             TmhJNisyamw3d244aGVJSEVFVUVLZGsKvd+nowA0CLXQbdvyI4J0lBjs9vdISWlo
             gGvR49uul3Z8raVWXFUzsyQ8xTvYNg0ovynFG2KdagSKr1DlhKMBEQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-18T16:23:23Z"
-    mac: ENC[AES256_GCM,data:AdTUEx0RIrJU6aZZNn9iIrl0eM2eParknCVIQL7k1arLRfYH4WyMf9lUa03+Qy83r4miNh4a9kFpNWyodbOR/j7OiLgAxWGXc08XAnIU51F2H7b55cSW9yNJj5kfos2e1pS356MoSaswg4fH8EYVUNgWC6mdBcXzC1m7uiqTS0E=,iv:mK9sjOCd7ePWR4xe5qNwmPuIyNR1nE3Ql65cF15SovI=,tag:DPUTnGTF+Ve+A7ShACNrnQ==,type:str]
+    lastmodified: "2021-06-24T16:14:47Z"
+    mac: ENC[AES256_GCM,data:3UHY8Jg+qnbaqTmqzdbmV08zXIFQ8141KMT4Zl3ud5d7PABqQnVAPaL3b7/UvnNo6+ssjnlMVUbKG6duZpqw3scWyrGfUgWfGM6VASoy+LCyquuPuOVzImBeZw19FZsUVzqr79NnzL353KRCz+fM68ZGryZpsyXsl+t6wgd1gpM=,iv:EosxY4VFRGLeIDJ9dNehFK2yey+dKnggbWwRwuORWtI=,tag:R5cvDSq/9GkhhF1fz3e5aQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -2,7 +2,7 @@
 package gcp
 
 import (
-	"dagger.io/dagger"
+	"alpha.dagger.io/dagger"
 )
 
 // Base Google Cloud Config

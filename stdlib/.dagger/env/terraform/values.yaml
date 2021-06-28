@@ -1,5 +1,6 @@
 plan:
-    module: .dagger/env/terraform/plan
+    module: ./terraform
+    package: ./tests
 name: terraform
 inputs:
     TestConfig.awsConfig.accessKey:
@@ -8,7 +9,7 @@ inputs:
         secret: ENC[AES256_GCM,data:cBYaVhbeV9D6acJWNU7uL8AsEtpnY0wHM8td9ZAJ9ebGB+BY4iBZLQ==,iv:SDkRKQQKBSz/cRQlW65sIjF0PhHhhKkGUEgZe9CV7Ek=,tag:OCUQmgjP2p57YoLts9Dh4w==,type:str]
     TestData:
         dir:
-            path: ./terraform/testdata
+            path: ./terraform/tests/testdata
 sops:
     kms: []
     gcp_kms: []
@@ -24,8 +25,8 @@ sops:
             cC9LSiswbFRKaTNXUGNIWVZVbGJqV1UK3/wsgPwR5P2fzs80wcz1dM/8sbBWMR+B
             dmhP99OQisIgcwGATy0nh726pYKtosDpSLIJkLZDAUq9qRKm9bch1w==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-18T16:01:11Z"
-    mac: ENC[AES256_GCM,data:XznDGqfZkC6vsv696qWVxbBCUgsyU/zPZg0NCULCXAfO08Hsteb0c93Y8DA3CV8flQW3cgn5XLugNnQADJ6luTXHbqIVMVMUSe1q41Kxl7exr/dn0robqaRm5MnloG823s9X3sAOcPzyTSxy1YVZfYaYbG23w9IeNmVTyaUttkU=,iv:kEQs7+bx+7j2v5b6Bx0r+ZVtp7rj/8mgX4oRUP7cruc=,tag:oQEfCPO/0V11rmkc0yaz3Q==,type:str]
+    lastmodified: "2021-06-24T18:37:04Z"
+    mac: ENC[AES256_GCM,data:yKkQ3Vf3O3881P5+i9CFLKHIB9gWPonutIsVihhH+m852T4lNB7tZMpwvDqG8+tsjnGakpaYrTmt2f1SegJrSQYN6nr3kGCagx3GEwcz5m9MtzlPeMfI8kqEJW99Bmv5JiABQpro5FK+S7uyAO9WEN17tMaqYh+BhNaOarcEjyo=,iv:uendThnoUOGzLsdycG069OQ4U0jtHz2kQCXPP3A3dQU=,tag:7LhJruk/cgOCLnMA7BhWCQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

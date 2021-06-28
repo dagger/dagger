@@ -1,8 +1,8 @@
 package testing
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 )
 
 // Set to `--input-dir=./tests/dockerbuild/testdata`

@@ -333,11 +333,16 @@ func walkStdlib(ctx context.Context, output, format string) {
 		if err != nil {
 			return err
 		}
-		if p == "." || !d.IsDir() {
+		if p == "." || !d.IsDir() || d.Name() == "cue.mod" {
 			return nil
 		}
 
-		pkgName := fmt.Sprintf("dagger.io/%s", p)
+		// Ignore tests directories
+		if d.Name() == "tests" {
+			return nil
+		}
+
+		pkgName := fmt.Sprintf("alpha.dagger.io/%s", p)
 		lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
 		val, err := loadCode(pkgName)
 		if err != nil {

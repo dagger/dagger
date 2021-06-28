@@ -1,0 +1,27 @@
+plan:
+    module: .dagger/env/sanity-check/plan
+name: sanity-check
+inputs:
+    universe:
+        dir:
+            path: .
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtMjhYeVhscGxYWVg1RHZ2
+            bjlWcnFuQ1hvVGVvZGRDYUlpeWpYYUZnWW5nCndObmdoSkpZZXI4MytwNUtsMkwr
+            ZkY4a01iN1dSL05KaGExSk0rWFpjNzQKLS0tIGF0eVRXalloUERaU2lhZ2gwcG1G
+            RE1BR1ZvSlpRWnpZVERFQlB5ckhPYk0KMm8XjFKgcjWaXh9F542NXyv9dBZQdZJC
+            rn5YittfEOwRkrlqBCVwPtU+nhE5oDxnt9a0n8JMUgvB0Nnd6tgP+A==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-24T15:27:51Z"
+    mac: ENC[AES256_GCM,data:SDJPXr1NjGSOcHMLmKrzJ9XkFjfXOg7g5pdgXS3fQ4sSALVBqhHSfHJnH2m4NVSJPyOd35ia2/BivTWTGw1oguovLSfSvlptPUDqbwsXQoB2NEFcAJ6eJeDyz8Bx98OrBliyJaVOVYzF4y5dWwW2BGuevW097PbY/Sv3p6x8fyY=,iv:IftNBSOvEn3nGRQlD47At8pvundsXdk68yz+cWct/tU=,tag:XUPxsP39xSjPgvIZNBV09w==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

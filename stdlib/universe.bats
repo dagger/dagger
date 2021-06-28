@@ -4,6 +4,10 @@ setup() {
     common_setup
 }
 
+@test "cue-sanity-check" {
+    dagger -e sanity-check up
+}
+
 
 @test "os" {
     dagger -e os up
@@ -66,6 +70,10 @@ setup() {
     assert_failure
 }
 
+@test "docker compose" {
+    dagger -e docker-compose up
+}
+
 @test "docker run: ssh" {
     dagger -e docker-run-ssh up
 }
@@ -74,7 +82,7 @@ setup() {
     skip_unless_local_kube
 
     # Copy deployment to sandbox
-    copy_to_sandbox kubernetes-deployment
+    copy_to_sandbox kubernetes-deployment kubernetes
 
     # Set kubeconfig
     dagger -w "$DAGGER_SANDBOX" -e kubernetes-deployment input text TestKubeconfig -f "$HOME"/.kube/config

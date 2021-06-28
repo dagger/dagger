@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger/op"
 )
 
 TestMountCache: {

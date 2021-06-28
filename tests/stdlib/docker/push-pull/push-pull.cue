@@ -1,11 +1,11 @@
 package main
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
-	"dagger.io/alpine"
-	"dagger.io/docker"
-	"dagger.io/random"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/docker"
+	"alpha.dagger.io/random"
 )
 
 source: dagger.#Artifact

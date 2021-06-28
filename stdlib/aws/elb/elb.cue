@@ -2,8 +2,8 @@
 package elb
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/aws"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/aws"
 )
 
 // Returns an unused rule priority (randomized in available range)

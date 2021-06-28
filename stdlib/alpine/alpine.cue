@@ -2,7 +2,7 @@
 package alpine
 
 import (
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger/op"
 )
 
 // Default Alpine version

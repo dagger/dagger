@@ -1,8 +1,8 @@
 package main
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/docker"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/docker"
 )
 
 TestDockerSocket: #up: [
