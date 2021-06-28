@@ -26,7 +26,7 @@ module.exports = {
         {
           type: 'link',
           label: 'Discord',
-          href: 'https://discord.gg/Rmffpmc'
+          href: 'https://discord.gg/ufnyBtc8uY'
         },
       ],
     },
