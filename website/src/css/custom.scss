@@ -10,7 +10,6 @@
 /* You can override the default Infima variables here. */
 :root {
   --ifm-background-color: var(--ifm-color-primary-light);
-
   --ifm-code-background: var(--ifm-color-primary-dark);
   --ifm-code-font-size: 100%;
   --ifm-code-border-radius: 2rem;
@@ -19,7 +18,7 @@
   --ifm-code-padding-horizontal: 0.2rem;
   --ifm-color-primary: #0e2b3d;
   --ifm-color-primary-dark: #131226;
-  --ifm-color-primary-darker: rgb(31, 165, 136);
+  --ifm-color-primary-darker: #0d0c1b;
   --ifm-color-primary-darkest: rgb(26, 136, 112);
   --ifm-color-primary-light: #fffef6;
   --ifm-color-primary-lighter: rgb(102, 212, 189);
@@ -39,7 +38,7 @@
   --ifm-menu-color: var(--ifm-color-primary-dark);
   --ifm-menu-color-active: var(--ifm-color-primary-dark);
   --ifm-menu-color-background-hover: #fdf9d7;
-  --ifm-menu-color-background-active: #fdf9d7;
+  --ifm-menu-color-background-active: var(--ifm-menu-color-background-hover);
   --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M3.318 9.128a24.776 24.776 0 004.224-3.993.842.842 0 011.32.026c1.227 1.618 2.107 3.387 3.831 4.556.889.6-.159 1.9-1.044 1.3A14.369 14.369 0 018.14 7a30.457 30.457 0 01-3.829 3.463c-.845.671-1.834-.67-.993-1.335z" fill="%23131226" /></svg>');
   --ifm-navbar-height: 6rem;
   --ifm-navbar-background-color: var(--ifm-color-primary-light);
@@ -52,7 +51,7 @@
 
 html[data-theme="dark"] {
   --ifm-background-color: var(--ifm-color-primary-dark);
-  --ifm-navbar-background-color: transparent;
+  --ifm-navbar-background-color: var(--ifm-color-primary-darker);
   --ifm-menu-color-active: var(--ifm-color-primary-light);
   --ifm-menu-color-background-active: var(--ifm-color-primary);
   --ifm-link-color: var(--ifm-color-primary-light);
@@ -63,13 +62,14 @@ html[data-theme="dark"] {
   --ifm-table-stripe-background: #2e526a;
   --ifm-code-background: var(--ifm-color-primary-dark);
   --ifm-heading-color: var(--ifm-color-primary-light);
+  --ifm-blockquote-color: var(--ifm-menu-color-background-hover);
+  --ifm-color-emphasis-300: var(--ifm-menu-color-background-hover);
 }
 
 /* global */
 
 h1,
-h2,
-h3 {
+h2 {
   font-family: "Poppins", sans-serif;
 }
 
@@ -86,12 +86,16 @@ code {
 .markdown {
   & > h2 {
     --ifm-h2-font-size: 1.5rem;
-    --ifm-h2-vertical-rhythm-top: 3;
+    --ifm-h2-vertical-rhythm-top: 4;
   }
 
   & > h3 {
     --ifm-h3-font-size: 1.1875rem;
     --ifm-h3-vertical-rhythm-top: 3;
+  }
+
+  & > h2 + h3 {
+    --ifm-h3-vertical-rhythm-top: 2;
   }
 
   a {
@@ -130,9 +134,11 @@ a[class*="menuLinkExternal"]:after {
   position: absolute;
   right: var(--ifm-menu-link-padding-horizontal);
   top: var(--ifm-menu-link-padding-vertical);
+  height: 1.25rem;
+  width: 1.25rem;
 }
 
-h1[class^="docTitle"] {
+h1[class^="h1Heading"] {
   margin-bottom: 3rem;
 }
 
@@ -141,6 +147,10 @@ h1[class^="docTitle"] {
   display: flex;
   align-items: center;
   margin: 2rem 0 5rem;
+
+  html[data-theme="dark"] & svg path {
+    fill: var(--ifm-color-primary-light);
+  }
 }
 
 #__docusaurus {
@@ -148,7 +158,7 @@ h1[class^="docTitle"] {
   padding-bottom: 3rem;
 
   html[data-theme="dark"] & {
-    background: #0d0c1b;
+    background: var(--ifm-color-primary-darker);
   }
 }
 
@@ -232,6 +242,7 @@ div[class^="codeBlockContainer"] {
 
   div[class^="codeBlockTitle"] {
     background-color: var(--ifm-color-primary-dark) !important;
+    border-bottom: 1px solid #606770;
     font-family: var(--ifm-font-family-monospace);
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
@@ -244,6 +255,7 @@ div[class^="codeBlockContainer"] {
 
 code[class^="codeBlockLines"] {
   background-color: var(--ifm-color-primary-dark) !important;
+  border-radius: 0;
   margin: 0;
   .token-line {
     color: var(--ifm-color-primary-light) !important;
@@ -301,19 +313,29 @@ html[data-theme="dark"] .menu {
     color: var(--ifm-color-primary-light);
   }
 
+  &--active:not(.menu__link--sublist) {
+    background-color: var(--ifm-color-primary);
+    color: var(--ifm-color-primary-light);
+
+    html[data-theme="dark"] & {
+      background-color: var(--ifm-menu-color-background-hover);
+      color: var(--ifm-color-primary);
+    }
+  }
+
   html[data-theme="dark"] &,
   html[data-theme="dark"] &:not([href]),
   html[data-theme="dark"] &:focus {
     color: var(--ifm-color-primary-light);
   }
 
-  html[data-theme="dark"] &:hover {
+  html[data-theme="dark"] &:not(.menu__link--active):hover {
     background-color: var(--ifm-color-primary);
   }
 
-  html[data-theme="dark"] &:active {
-    background-color: var(--ifm-color-primary);
-    color: var(--ifm-color-primary-light);
+  html[data-theme="dark"] &:not(.menu__link--active):active {
+    background-color: var(--ifm-color-primary-light);
+    color: var(--ifm-color-primary);
   }
 
   &.menu__link--sublist {
@@ -325,7 +347,7 @@ html[data-theme="dark"] .menu {
     }
 
     &:hover {
-      background-color: #fdf9d7;
+      background-color: var(--ifm-menu-color-background-hover);
     }
 
     html[data-theme="dark"] & {
@@ -346,10 +368,16 @@ html[data-theme="dark"] .menu {
     display: none;
   }
   &:before {
-    content: url("/img/Dagger_Icons_Search.svg");
+    content: "";
+    background-color: black;
+    mask: url("/img/Dagger_Icons_Search.svg");
     display: block;
     width: 20px;
     height: 20px;
+
+    html[data-theme="dark"] & {
+      background-color: var(--ifm-color-primary-light);
+    }
   }
 }
 
@@ -370,7 +398,6 @@ div[class*="admonition-"] .admonition-icon svg {
 
 img[alt="github-contribute"] {
   display: block;
-  margin: auto;
   width: 180px;
 }
 
@@ -384,7 +411,7 @@ img[alt="github-contribute"] {
     .admonition-#{$name} .admonition-icon::before {
       mask: url($path);
       content: "";
-      background-color: $bgColor;
+      background-color: var(--ifm-color-primary-dark);
       display: block;
       width: 22px;
       height: 22px;
