@@ -35,9 +35,11 @@ TestRegistry: {
 }
 
 TestPush: {
+	// Generate a random string
+	// Seed is used to force buildkit execution and not simply use a previous generated string.
 	tag: random.#String & {seed: "docker push"}
 
-	name: "daggerio/ci-test:\(tag.out)"
+	target: "daggerio/ci-test:\(tag.out)"
 
 	secret: #TestGetSecret & {
 		secret: TestRegistry.secret
@@ -52,8 +54,8 @@ TestPush: {
 	}
 
 	push: #Push & {
-		"name": name
-		source: image
+		"target": target
+		source:   image
 		auth: {
 			username: TestRegistry.username
 			"secret": secret.out

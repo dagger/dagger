@@ -30,8 +30,8 @@ import (
 
 // Push a docker image to a remote registry
 #Push: {
-	// Remote name (example: "index.docker.io/alpine:latest")
-	name: string @dagger(input)
+	// Remote target (example: "index.docker.io/alpine:latest")
+	target: string @dagger(input)
 
 	// Image source
 	source: dagger.#Artifact @dagger(input)
@@ -50,13 +50,13 @@ import (
 
 		if auth != _|_ {
 			op.#DockerLogin & {
-				target:   name
+				"target": target
 				username: auth.username
 				secret:   auth.secret
 			}
 		},
 
-		op.#PushContainer & {ref: name},
+		op.#PushContainer & {ref: target},
 
 		op.#Subdir & {dir: "/dagger"},
 	]
