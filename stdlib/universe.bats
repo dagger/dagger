@@ -21,6 +21,10 @@ setup() {
     dagger -e js-yarn up
 }
 
+@test "java/maven" {
+    dagger -e java-maven up
+}
+
 @test "alpine" {
     dagger -e alpine up
 }

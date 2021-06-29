@@ -1,0 +1,28 @@
+plan:
+    module: ./java/maven
+    package: ./tests
+name: java-maven
+inputs:
+    TestData:
+        dir:
+            path: ./java/maven/tests/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1frg88gugx9ynthc66rcld7k5frtcddjehz4aw5k0wmntkd9pgsxs2vj5xe
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4dWpSS2djbldQTzZQQ3kz
+            VUt2OU9zaVpCZHREa2plRDJsNFRaeVNOWmdVCnVqOVFZR2pJNXB4bThSUjBYTDZy
+            WWIzaWp3UTk2d0ErSFAzcHNYK3FRQ2cKLS0tIDhZWjVZZGFvbHVzN2FmTno3QzFx
+            WWV2Zjhra3AyenBKTVBoV3lNYVVTVWMKZQWIThYlZBEJKn62tGl7g3GkK4UqEfLF
+            NsY3h5vkK0ScE4DctWS4uSdL8tgfy40W/TyZpjRd2uHnSJkpbf/Amg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-28T07:24:04Z"
+    mac: ENC[AES256_GCM,data:c70mmWYksMLoDf0Ok+fXz0QYot/x4UTptsrAfgaMJ8Zba50OuvDhashvSfngtmzoXV0wYH0OK7uk0+JwIPV/6dC+6/qOw66Zpt1AF6fZ6FjayNXsdwuyzrG+ykYNS5PmlNm+U54CmGkCG/NdJ33dC1sfEzX6giL5cgSsjXA7FJw=,iv:sEFBzWFvjmR7czlAeNyKpB7uXgL6TBi+9t67Bn5xL/0=,tag:cGBLLp0BOQHZerbdvF/y0g==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
