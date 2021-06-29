@@ -19,6 +19,7 @@
 - [git](./git.md) - Git operations
 - [go](./go.md) - Go build operations
 - [io](./io.md) - IO operations
+- [java/maven](./java/maven.md) - Maven is a build automation tool for Java
 - [js/yarn](./js/yarn.md) - Yarn is a package manager for Javascript applications
 - [kubernetes](./kubernetes/README.md) - Kubernetes client operations
 - [kubernetes/helm](./kubernetes/helm.md) - Helm package manager
