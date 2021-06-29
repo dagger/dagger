@@ -64,6 +64,6 @@ import (
 			MAVEN_GOALS:  strings.Join(goals, "\n")
 		}
 		dir: "/"
-		mount: "/": from: source
+		copy: "/": from: source
 	}
 }
