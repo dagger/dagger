@@ -33,6 +33,10 @@ package netlify
 	        exit 1
 	    fi
 	fi
+
+	netlify link --id "$site_id"
+	netlify build
+
 	netlify deploy \
 	    --dir="$(pwd)" \
 	    --site="$site_id" \
@@ -48,5 +52,4 @@ package netlify
 	printf "$url" > /netlify/url
 	printf "$deployUrl" > /netlify/deployUrl
 	printf "$logsUrl" > /netlify/logsUrl
-
 	"""#

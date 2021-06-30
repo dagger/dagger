@@ -68,7 +68,7 @@ import (
 			}
 		}
 		setup: [
-			"yarn global add netlify-cli@2.47.0",
+			"yarn global add netlify-cli@3.38.10",
 		]
 		// set in netlify.sh.cue
 		// FIXME: use embedding once cue supports it
