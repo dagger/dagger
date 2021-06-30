@@ -22,7 +22,7 @@ TestNetlify: {
 	// Deploy to netlify
 	deploy: #Site & {
 		contents: html
-		name:     "dagger-test-\(data.out)"
+		name:     "dagger-test"
 	}
 
 	// Check if the deployed site has the random marker
