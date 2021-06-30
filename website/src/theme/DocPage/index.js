@@ -26,6 +26,7 @@ import { GithubLoginButton } from 'react-social-login-buttons';
 import Spinner from '../../components/Spinner';
 import DocPageAuthentication from '../../components/DocPageAuthentication';
 import DocPageRedirect from '../../components/DocPageRedirect';
+import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
 
 function DocPageContent({ currentDocRoute, versionMetadata, children }) {
   const { siteConfig, isClient } = useDocusaurusContext();
@@ -138,9 +139,10 @@ function DocPage(props) {
   const currentDocRoute = docRoutes.find((docRoute) =>
     matchPath(location.pathname, docRoute),
   );
+  const userAgent = ExecutionEnvironment.canUseDOM ? navigator.userAgent : null;
 
   // CUSTOM DOCPAGE
-  if (process.env.OAUTH_ENABLE == 'true') {
+  if (process.env.OAUTH_ENABLE == 'true' && userAgent !== 'Algolia DocSearch Crawler') {
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
     const authQuery = qs.parse(location.search);
