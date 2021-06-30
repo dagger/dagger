@@ -1,0 +1,32 @@
+plan:
+    module: .dagger/env/google-gcs/plan
+    package: ./tests
+name: google-gcs
+inputs:
+    TestConfig.gcpConfig.project:
+        text: dagger-ci
+    TestConfig.gcpConfig.region:
+        text: us-west2-a
+    TestDirectory:
+        dir:
+            path: ./gcp/gcs/tests/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1anekvutsz37ev3vceyg33p7lffulg7twfxmm5mtzeyc3yn336quqq3hq4q
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2MHRnNWlzN1haMENFRWhT
+            MUlUcXNvYU1DUXJzaU9jcS9TemRlZVF0LzNnCjdIVmpYM1lKQVNPRitxbXEyQzg2
+            Si9qZkJZV3B4a2ZZOVE1ODFaa3NQWVUKLS0tIFRqTk5pVERHckEyYnM0NG9CelJV
+            dm45WXJ4NmxOUHAxeThESTBPdXg4c3cKmUZaIzSFHjwaoS+VqJBg1O9PQGNwhI9d
+            9hvBy/BA0XaT5yIDjevjLP9vCAFDYl20G5Am2q939B8colWtic1Qug==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-29T23:52:31Z"
+    mac: ENC[AES256_GCM,data:mza0dLYMFGKgMV04YXtzix6QDtGR1PKPp8VQToOIAvBCqbLK8ti8TUs93t1wXl2Hn18StcUkw5SuFxSE+opn51Q/4TbfN726mnigAzWAd6nKbKLGvj4l1Bb/gDE39ENm7IxqoewMYBh1gufnqgKbGUrHFHK4ZOad7XsbF7UH0Pc=,iv:LBu0PAD6knb0SyVokjtF8daiDhQg3WTpCR1rRVIH5qY=,tag:tMpHIjr9pocxi7UIqsGvqg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
