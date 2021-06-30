@@ -1,14 +1,12 @@
-param (
-    [Parameter(Mandatory)] $PersonalToken  
-)
+# param (
+#     [Parameter(Mandatory)] $PersonalToken  
+# )
 Clear-Host
 @"
 
 ---------------------------------------------------------------------------------
 Author: Alessandro Festa
-Usage: To run using your GH personal developer token simply use the flag as below
-./install.ps1 -PersonalToken 1234567891213
-Dagger executable will be save under the folder "dagger" in your home folder.
+Dagger Installation Utility  for Windows users
 ---------------------------------------------------------------------------------
 
 "@
@@ -17,11 +15,14 @@ Dagger executable will be save under the folder "dagger" in your home folder.
 $name="dagger"
 $base="https://dagger-io.s3.amazonaws.com"
 function http_download {
-    Clear-Host
     $version=Get_Version
-    $version= $version -replace '[""]'
-    $url = $base + "/" + $name + "/releases/" + $version.substring(1) + "/dagger_" + $version + "_windows_amd64.zip"
-    $fileName="dagger_" + $version + "_windows_amd64"
+    $version=$version -replace '[""]'
+    $version=$version -replace '\n'
+    $fileName="dagger_v" + $version + "_windows_amd64"
+    Clear-Host
+    $url = $base + "/" + $name + "/releases/" + $version + "/" + $fileName + ".zip"
+    write-host $url
+    Pause
     
 
     Invoke-WebRequest -Uri $url -OutFile $env:temp/$fileName.zip -ErrorAction Stop
@@ -52,13 +53,8 @@ Please add dagger.exe to your PATH in order to use it
 
 }
 
-function Get_Version {
-
-    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-    $headers.Add("Authorization", "token $PersonalToken")
-    $headers.Add("Accept", "application/vnd.github.VERSION.raw")
-    
-    $response = Invoke-RestMethod 'https://api.github.com/repos/dagger/dagger/releases/latest' -Method 'GET' -Headers $headers -Body $body -ErrorAction SilentlyContinue -ErrorVariable DownloadError
+function Get_Version { 
+    $response = Invoke-RestMethod 'http://releases.dagger.io/dagger/latest_version' -Method 'GET'  -Body $body -ErrorAction SilentlyContinue -ErrorVariable DownloadError
     If ($DownloadError)
     {
     Clear-Host
@@ -74,8 +70,7 @@ run the script and if it still fail please open an issue on the Dagger repo.
 "@
 exit
     }
-    
-    return $response.tag_name| ConvertTo-Json
+    return $response
     
 }
 

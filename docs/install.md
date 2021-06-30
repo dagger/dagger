@@ -37,16 +37,10 @@ sudo mv ./bin/dagger /usr/local/bin
 
 ## Option 2 (Windows): Run a shell script
 
-Since Dagger repository is currently private, we have to use a workaround
-to be able to run the script and match the latest release.
-This workaround will be removed once the repo will become public.
-To generate a personal access token on GitHub follow the guidelines  at [Create a personal access token](https://docs.github.com/en/github/authenticating-to-github/keeping-your-account-and-data-secure/creating-a-personal-access-token)
-
 From a terminal, run the following command:
 
 ```shell
-$personalToken= <INSERT YOUR PERSONAL TOKEN>
-curl https://releases.dagger.io/dagger/install.ps1 -OutFile install.ps1 ; ./install.ps1 -PersonalToken $personalToken; rm install.ps1
+curl https://releases.dagger.io/dagger/install.ps1 -OutFile install.ps1 ; ./install.ps1; rm install.ps1
 ```
 
 We try to move the dagger binary under `C:\Windows\System32` but
