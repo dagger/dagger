@@ -64,17 +64,17 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 }
 
 func parseAuthHost(host string) (*url.URL, error) {
-	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") && strings.Contains(host, "/") {
-		ref, err := reference.ParseNormalizedNamed(host)
-		if err != nil {
-			return nil, err
-		}
-		host = ref.String()
-	}
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
 
-	if strings.Contains(host, "docker.io") {
-		host = "https://index.docker.io/v1/"
+	// Retrieve only the registry
+	host = strings.SplitN(host, "/", 2)[0]
+
+	ref, err := reference.ParseNormalizedNamed(host)
+	if err != nil {
+		return nil, err
 	}
+	host = ref.String()
 
 	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 		host = "https://" + host
