@@ -121,9 +121,9 @@ setup() {
     dagger -e google-gcr up
 }
 
-# @test "google cloud: gcs" {
-#     dagger -e google-gcs up
-# }
+@test "google cloud: gcs" {
+    dagger -e google-gcs up
+}
 
 @test "google cloud: gke" {
     dagger -e google-gke up

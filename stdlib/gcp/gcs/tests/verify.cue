@@ -18,7 +18,7 @@ import (
 
 		#up: [
 			op.#Load & {
-				from: #GCloud & {
+				from: gcp.#GCloud & {
 					"config": config
 				}
 			},
