@@ -11,7 +11,10 @@ import (
 	config: gcp.#Config
 
 	// Target GCP URL (e.g. gs://<bucket-name>/<path>/<sub-path>)
-	target?: string
+	target: string
+
+	// URL: dummy URL, used to force a dependency
+	url: string
 
 	contents: {
 		string
@@ -35,6 +38,7 @@ import (
 					gsutil ls -r \#(target) > /contents
 					"""#,
 				]
+				env: URL: url
 			},
 
 			op.#Export & {
@@ -49,10 +53,12 @@ import (
 	file:   string
 	config: gcp.#Config
 	target: string
+	url:    string
 
 	lists: #List & {
 		"config": config
 		"target": target
+		"url":    url
 	}
 
 	test: #up: [
