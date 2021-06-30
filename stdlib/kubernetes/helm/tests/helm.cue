@@ -14,12 +14,13 @@ TestChartSource: dagger.#Artifact @dagger(input)
 // Deploy user local chart
 TestHelmSimpleChart: {
 	suffix: random.#String & {
-		seed: "simple"
+		seed:   "simple"
+		length: 5
 	}
 
 	// Deploy chart
 	deploy: #Chart & {
-		name:        "dagger-test-inline-chart-\(suffix.out)"
+		name:        "dagger-test-inline-\(suffix.out)"
 		namespace:   "dagger-test"
 		kubeconfig:  TestKubeconfig
 		chartSource: TestChartSource
@@ -35,7 +36,8 @@ TestHelmSimpleChart: {
 // Deploy remote chart
 TestHelmRepoChart: {
 	suffix: random.#String & {
-		seed: "repo"
+		seed:   "repo"
+		length: 5
 	}
 
 	// Deploy remote chart
