@@ -11,7 +11,10 @@ import (
 	config: aws.#Config
 
 	// Target S3 URL (e.g. s3://<bucket-name>/<path>/<sub-path>)
-	target?: string
+	target: string
+
+	// URL: dummy URL, used to force a dependency
+	url: string
 
 	contents: {
 		string
@@ -35,6 +38,7 @@ import (
 					aws s3 ls --recursive \#(target) > /contents
 					"""#,
 				]
+				env: URL: url
 			},
 
 			op.#Export & {
@@ -49,10 +53,12 @@ import (
 	file:   string
 	config: aws.#Config
 	target: string
+	url:    string
 
 	lists: #List & {
 		"config": config
 		"target": target
+		"url":    url
 	}
 
 	test: #up: [
