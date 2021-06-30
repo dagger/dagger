@@ -15,6 +15,8 @@ TestSSH: {
 }
 
 TestCompose: {
+	// Generate a random string.
+	// Seed is used to force buildkit execution and not simply use a previous generated string.
 	suffix: random.#String & {seed: "cmp"}
 
 	name: "compose_test_\(suffix.out)"
@@ -44,6 +46,8 @@ TestCompose: {
 }
 
 TestInlineCompose: {
+	// Generate a random string.
+	// Seed is used to force buildkit execution and not simply use a previous generated string.
 	suffix: random.#String & {seed: "cmp-inline"}
 
 	name: "inline_test_\(suffix.out)"
@@ -65,7 +69,7 @@ TestInlineCompose: {
 			    environment:
 			      PORT: 7000
 			    ports:
-			    - 7000:7000
+			    - 7000
 			"""#
 	}
 
