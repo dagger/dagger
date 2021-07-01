@@ -229,14 +229,13 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-type CreateOpts struct {
-	Module  string
-	Package string
-}
-
-func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*State, error) {
+func (w *Workspace) Create(ctx context.Context, name string, plan Plan) (*State, error) {
 	envPath, err := filepath.Abs(w.envPath(name))
 	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(plan.Module); err != nil {
 		return nil, err
 	}
 
@@ -250,30 +249,11 @@ func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*
 
 	manifestPath := path.Join(envPath, manifestFile)
 
-	// Backward compat: if no plan module has been provided,
-	// use `.dagger/env/<name>/plan`
-	module := opts.Module
-	if module == "" {
-		planPath := path.Join(envPath, planDir)
-		if err := os.Mkdir(planPath, 0755); err != nil {
-			return nil, err
-		}
-
-		planRelPath, err := filepath.Rel(w.Path, planPath)
-		if err != nil {
-			return nil, err
-		}
-		module = planRelPath
-	}
-
 	st := &State{
 		Path:      envPath,
 		Workspace: w.Path,
-		Plan: Plan{
-			Module:  module,
-			Package: opts.Package,
-		},
-		Name: name,
+		Plan:      plan,
+		Name:      name,
 	}
 
 	data, err := yaml.Marshal(st)

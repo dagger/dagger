@@ -37,26 +37,27 @@ var newCmd = &cobra.Command{
 		name := args[0]
 
 		module := viper.GetString("module")
-		if module != "" {
-			p, err := filepath.Abs(module)
-			if err != nil {
-				lg.Fatal().Err(err).Str("path", module).Msg("unable to resolve path")
-			}
-
-			if !strings.HasPrefix(p, workspace.Path) {
-				lg.Fatal().Err(err).Str("path", module).Msg("module is outside the workspace")
-			}
-			p, err = filepath.Rel(workspace.Path, p)
-			if err != nil {
-				lg.Fatal().Err(err).Str("path", module).Msg("unable to resolve path")
-			}
-			if !strings.HasPrefix(p, ".") {
-				p = "./" + p
-			}
-			module = p
+		if module == "" {
+			lg.Fatal().Msg("missing --module")
+		}
+		p, err := filepath.Abs(module)
+		if err != nil {
+			lg.Fatal().Err(err).Str("path", module).Msg("unable to resolve path")
 		}
 
-		ws, err := workspace.Create(ctx, name, state.CreateOpts{
+		if !strings.HasPrefix(p, workspace.Path) {
+			lg.Fatal().Err(err).Str("path", module).Msg("module is outside the workspace")
+		}
+		p, err = filepath.Rel(workspace.Path, p)
+		if err != nil {
+			lg.Fatal().Err(err).Str("path", module).Msg("unable to resolve path")
+		}
+		if !strings.HasPrefix(p, ".") {
+			p = "./" + p
+		}
+		module = p
+
+		ws, err := workspace.Create(ctx, name, state.Plan{
 			Module:  module,
 			Package: viper.GetString("package"),
 		})
@@ -70,7 +71,7 @@ var newCmd = &cobra.Command{
 }
 
 func init() {
-	newCmd.Flags().StringP("module", "m", "", "references the local path of the cue module to use as a plan, relative to the workspace root")
+	newCmd.Flags().StringP("module", "m", ".", "references the local path of the cue module to use as a plan, relative to the workspace root")
 	newCmd.Flags().StringP("package", "p", "", "references the name of the Cue package within the module to use as a plan. Default: defer to cue loader")
 	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
 		panic(err)

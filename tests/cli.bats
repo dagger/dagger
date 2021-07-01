@@ -27,7 +27,7 @@ setup() {
     assert_success
     refute_output
 
-    run "$DAGGER" new "test"
+    run "$DAGGER" new "test" --module "$DAGGER_WORKSPACE"
     assert_success
 
     run "$DAGGER" list
