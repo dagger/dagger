@@ -1,8 +1,8 @@
 package cloudrun
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/gcp"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/gcp"
 )
 
 // Service deploys a Cloud Run service based on provided GCR image 

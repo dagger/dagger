@@ -2,10 +2,10 @@
 sidebar_label: cloudrun
 ---
 
-# dagger.io/gcp/cloudrun
+# alpha.dagger.io/gcp/cloudrun
 
 ```cue
-import "dagger.io/gcp/cloudrun"
+import "alpha.dagger.io/gcp/cloudrun"
 ```
 
 ## cloudrun.#Service

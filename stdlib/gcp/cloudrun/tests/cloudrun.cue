@@ -1,8 +1,8 @@
 package cloudrun
 
 import (
-	"dagger.io/gcp"
-	"dagger.io/gcp/cloudrun"
+	"alpha.dagger.io/gcp"
+	"alpha.dagger.io/gcp/cloudrun"
 )
 
 TestConfig: gcpConfig: gcp.#Config
