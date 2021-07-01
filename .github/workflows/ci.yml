@@ -76,9 +76,6 @@ jobs:
         with:
           go-version: 1.16
 
-      - name: Setup Kind Kubernetes Cluster
-        uses: helm/kind-action@v1.2.0
-
       - name: Install Dependencies
         run: |
           # SOPS
@@ -92,20 +89,33 @@ jobs:
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Integration test
         run: |
-          make integration
+          make core-integration
 
-      - name: Publish Test Report
-        uses: mikepenz/action-junit-report@v2
-        if: always()
+  universe:
+    name: Universe
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v1
         with:
-          report_paths: "tests/*.xml"
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          check_name: "Report"
+          go-version: 1.16
+
+      - name: Setup Kind Kubernetes Cluster
+        uses: helm/kind-action@v1.2.0
+
+      - name: Import Dagger private key
+        env:
+          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
+        run: |
+          mkdir -p ~/.config/dagger
+          echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
+
+      - name: Universe Test
+        run: |
+          make universe-test
