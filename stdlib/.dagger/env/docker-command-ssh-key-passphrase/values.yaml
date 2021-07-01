@@ -1,7 +1,6 @@
 plan:
     module: ./docker
     package: ./tests/command-ssh-key-passphrase
-name: docker-command-ssh-key-passphrase
 inputs:
     TestConfig.host:
         text: 143.198.64.230
@@ -26,8 +25,8 @@ sops:
             cW1kbGZveVlkQkJDL2xYbmFRNjZEK0UKrSrOB/RL5lki54j4GUCE2G3CCO/8jpMU
             jfYkl7Yowb7kK3kKSNWORhB4ne3MEeGRZpJC8cvH7zjGvt/YYeU14A==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T15:57:03Z"
-    mac: ENC[AES256_GCM,data:YqGUjsf7fG8lMv791l5Td9a2oTbg1DVvZt4Dt1q7+L5opaAxhKoDwSimR7WsYuJJxEqkMoyB4X+7+SNzoAarMWqg20sFjUut6wMgi0iUOhym9OX76UYlC5AvsJ6zbIalgKktiece+3j9vwcqB7rR1ArwddbflRvxkw5VSpVXqj4=,iv:ch01NpT3K14dHrEZ3yigH8S3QlvpAK5Myjhh2P1CRpE=,tag:DjjxGwrGIeMeOaaVJx7DMA==,type:str]
+    lastmodified: "2021-07-01T16:39:08Z"
+    mac: ENC[AES256_GCM,data:wZtBlQC4fG4F5RIaV3yvHkh7c28cQYg0j9+WMS/hPjAmPIdaBYVha9j7uY+OT5S70WFHX/yHztvtrvf0yffw14x/NxsmDmro/XKkBtX4vuwMYwD0NfiA4jDdJFhvNurQqsYH9vR3Nl0Ho8A+qndmz+IeSCO33auAMZ0sGZHYsYg=,iv:lZwdu33rDrpYfIT/AOpgKxQoZxL2h8DZwNSPHIQxOzs=,tag:TMw+6kpz/UcFK4xKsNHUZw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -1,7 +1,6 @@
 plan:
     module: ./kubernetes/kustomize
     package: ./tests
-name: kubernetes-kustomize
 inputs:
     TestKustomize.testdata:
         dir:
@@ -21,8 +20,8 @@ sops:
             OFllMEh3cVJZZnFxbW4xS1RtcFQzcFUKo/1WcYp4nPBXba8wQBe3DMt6pYQJGoSu
             ja5BiCffN5wOoW9WT0j8Clx21w7BXcl46+T5GYpXDQDcqf6nCv1kYQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T18:16:21Z"
-    mac: ENC[AES256_GCM,data:eq7Eev6taZJnkl2SoqihKo9tfAMA3IOnLO9tBoppUeg1LSLe6vZ8QmN7s1Z0gyWNWttnNTdMOvTQTI2PGrayQpLRGzryChcQsuCL7hnij6bQf16IcGn9jbq7NVQ1EreS8iPZYuyYlR5Z9kSARtfAKFALim8ccF+BmR9+X7yBfZ4=,iv:7kovyOERH0dx0NONhmUwOUI39nK5N1rT9o+gi9ol3f4=,tag:6HrkHbiCwrgO7hukxtsXVA==,type:str]
+    lastmodified: "2021-07-01T16:39:23Z"
+    mac: ENC[AES256_GCM,data:4r+fRhR9R8UWEF6BQcovnEmEz9Zlehpaih2McNOMiQdkN1jhi84VDn8brs7KpvXJZiJejm+MZllF5UkTPv2HhhV9JMVb0u26C4xpKhGotyudif/3oiK+OBweMoEB6TMzHfZ/l6GGRnqnWc4JygF7Qf2GXiTPQl6Ra6OdOo9qs0g=,iv:9l9UoXWg12dR3aL4MsqjaHIE3suCcAK//k9ronoFqMI=,tag:WHcxrOWonLL2sBBNF8V9Xw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

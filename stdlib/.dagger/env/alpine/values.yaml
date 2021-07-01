@@ -1,7 +1,6 @@
 plan:
     module: ./alpine
     package: ./tests
-name: alpine
 sops:
     kms: []
     gcp_kms: []
@@ -17,8 +16,8 @@ sops:
             N0JOK1FwdzkrcGR5V0xhUDdNOFNvYk0KetOvulxA0Hilyhv+eWBqYO3GXNvm38Y1
             9Pa7HYazNyi0qMcZpecWlp4QsOoL876dj1rE62cYHT2hkt2J2ijAUw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T15:12:38Z"
-    mac: ENC[AES256_GCM,data:nDngshXQgLAIMAllALoPFQk2HbtnapzDud4LXqZLmHVUZP2LaAES9dGRbWwYc4iLVB1M+Gryk/FdI5/eafsvhSAytGXr6A6CEsrweHc4XPKfyxGS40LVZkxa0ntKUNQDZhlu+NTX333h8NEh99Xx3b7tfg+BtU9fvjnpv7zilW4=,iv:l5A2Bfvb4iT/IER0b2SMV42+7h9+YOIsMuMGG9jhq6E=,tag:v5yE3hZvs5Y5fK9JKaKUSQ==,type:str]
+    lastmodified: "2021-07-01T16:37:28Z"
+    mac: ENC[AES256_GCM,data:5du0I7VsWIb/2jHxdrJ6hKQ2oplkjHl1HhXGa90FOzQKyUf6Li2lOMrO5xKVuCQFFrr3NH+45eIYmGOMokSorluvPZ8I+R96t4NOPwm0A7fDIi/zRYU6CwwNdE5j81HnCunS7rraHVKou1jOrM4dLLFX6m4m5lYuVS4sP5CpfAA=,iv:Kpr5V0UTdhi5j1Ws9mh3CP4TsSyZdHgUF69PbkZISQk=,tag:CT991+qc0LRlthR3DPjSPA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

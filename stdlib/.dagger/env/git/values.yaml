@@ -1,7 +1,6 @@
 plan:
     module: ./git
     package: ./tests
-name: git
 sops:
     kms: []
     gcp_kms: []
@@ -17,8 +16,8 @@ sops:
             TmhJNisyamw3d244aGVJSEVFVUVLZGsKvd+nowA0CLXQbdvyI4J0lBjs9vdISWlo
             gGvR49uul3Z8raVWXFUzsyQ8xTvYNg0ovynFG2KdagSKr1DlhKMBEQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T16:14:47Z"
-    mac: ENC[AES256_GCM,data:3UHY8Jg+qnbaqTmqzdbmV08zXIFQ8141KMT4Zl3ud5d7PABqQnVAPaL3b7/UvnNo6+ssjnlMVUbKG6duZpqw3scWyrGfUgWfGM6VASoy+LCyquuPuOVzImBeZw19FZsUVzqr79NnzL353KRCz+fM68ZGryZpsyXsl+t6wgd1gpM=,iv:EosxY4VFRGLeIDJ9dNehFK2yey+dKnggbWwRwuORWtI=,tag:R5cvDSq/9GkhhF1fz3e5aQ==,type:str]
+    lastmodified: "2021-07-01T16:37:46Z"
+    mac: ENC[AES256_GCM,data:1rp1KlNUeo6HlvZZx+nBSuQQddHC56/72Fe3esc3H8eu/HjIXXAuSBGTJBvhO7qA3q90zv82rQ+ZY1T2TXvocnj/R85ltRNsQEqpGOro89sdUbqM9rzS99/6FtIJYzAF6s2nHZMGN5FtxGFScE2NgJGIEWieyYtGLNCQUSVcRWM=,iv:vQrpjZg+ha6EZdfycU/mv+V7QJEtWFUCdu2L8n+vwNI=,tag:AAGbDKwdvkPEyzxKVRUhZg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

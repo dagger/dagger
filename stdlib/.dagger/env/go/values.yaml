@@ -1,7 +1,6 @@
 plan:
     module: ./go
     package: ./tests
-name: go
 inputs:
     TestData:
         dir:
@@ -21,8 +20,8 @@ sops:
             R0o3dlptazJPTmp3OFo5RDcxOVg1VVkK1lLu/wrPvgzXa8Ym3qdvcuYCj8csbtOG
             T4HjRvA0EEF8jmFEuqS8Y/N0vQiezoZR7JU9PbjOoD1B5bLHtJcryQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T16:19:27Z"
-    mac: ENC[AES256_GCM,data:3dJTQZFlzj4sJkIB99zHMgH7MsTcHiGKwT5GykEzjzq4OH8KOkKyFx0uVrvw4ePYhHMjAcTKcJFWRD+ebrRusKF5yZ19Si7IleCSh4y/IzRE0fWfzCDCYSN2MVwreE9Q10UeL/vBw51cK/k7kCF2DNGkIr5et5wO9R3eStuHfDE=,iv:QJlR6fIRD0AfWneMhCY6HpXpVSFt6431dJuWzXplfB4=,tag:h43ENEs/oVkd/ZtSfgmlmg==,type:str]
+    lastmodified: "2021-07-01T16:37:24Z"
+    mac: ENC[AES256_GCM,data:dJZVNk9QH7gc7hRny7cxWUXp5b2qpaExwSOkbFD4UNAz5bwiyLA4SZg/8bGGO0vlMVwQz1soXgdxxvtBXkwBL0PvVQrrYL1EjdtElYW0pXhXWDXRLgpKvqrlzXIXpqFg8fEI0JQO1tg4MUHIxdhzYm7AySgPUPZebUKWVO6x158=,iv:WfSQ/0zs4CNpQL2vNzaIk4dHsiRJyg21AWWpYXznzns=,tag:6757aNNrNJQNEboptcrwRQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

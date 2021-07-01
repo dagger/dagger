@@ -1,7 +1,6 @@
 plan:
     module: ./java/maven
     package: ./tests
-name: java-maven
 inputs:
     TestData:
         dir:
@@ -21,8 +20,8 @@ sops:
             UjFhYnZNdUxBNEtzWkVvMUoweUFnREEKbs/IGlNmDk8e3ibJSoIcE95txghXwsso
             DL281EMf0V+ARsJY2CiehZsZB+xX7y+YfyQyoWx0xMN7bCgPu2snGg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-29T16:06:47Z"
-    mac: ENC[AES256_GCM,data:DudrYOLr/ymf10B4UzjRfe1+n/hw7KCSSIbzAGcc3kmN/KplkCPYi3n5HCX1XkMOB1mQp9QD+UOQGL5CYPtqnZZKu62JNfbeSqU26BKU97aqL0F2+lPqaYsjSeCAbgUs9O/30A7QErlJiXuzTYC1WcTjpTr0RTeNoHmWKsqZ5ug=,iv:7e1XmOfxyKIOguzDxqQ75nFnV3GZ1vpvz5S5P1O+4Xo=,tag:f6Vb8e721uLyvLfCwE/JEg==,type:str]
+    lastmodified: "2021-07-01T16:38:41Z"
+    mac: ENC[AES256_GCM,data:FMURWwT+ab+kOSYRXugdpo65d8NG9VN45Z2RlduPeBr5sqQvSPjreXZ8ghF1Wdg1hSbuyBsSyMWsUafsCxjCjAelVMI/uZlri4AFcRqe1/1qu1zbxmf5YDpLH5zXIhN38WNGZd36/e5a/qOWDToWL7eLXOZ2ksFkxCkCyBQNpX0=,iv:msiMffCBCGeGq/SMRkXPjY5BfjOGJblETEi0OCILLg4=,tag:MJTXi9yQ6A7m98hiPWJKvg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

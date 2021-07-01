@@ -2,6 +2,9 @@ package state
 
 // Contents of an environment serialized to a file
 type State struct {
+	// Environment name.
+	Name string `yaml:"-"`
+
 	// State path
 	Path string `yaml:"-"`
 
@@ -10,11 +13,6 @@ type State struct {
 
 	// Plan
 	Plan Plan `yaml:"plan"`
-
-	// Human-friendly environment name.
-	// A environment may have more than one name.
-	// FIXME: store multiple names?
-	Name string `yaml:"name,omitempty"`
 
 	// User Inputs
 	Inputs map[string]Input `yaml:"inputs,omitempty"`

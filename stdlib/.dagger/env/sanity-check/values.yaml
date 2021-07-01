@@ -1,6 +1,5 @@
 plan:
     module: .dagger/env/sanity-check/plan
-name: sanity-check
 inputs:
     universe:
         dir:
@@ -20,8 +19,8 @@ sops:
             RE1BR1ZvSlpRWnpZVERFQlB5ckhPYk0KMm8XjFKgcjWaXh9F542NXyv9dBZQdZJC
             rn5YittfEOwRkrlqBCVwPtU+nhE5oDxnt9a0n8JMUgvB0Nnd6tgP+A==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T15:27:51Z"
-    mac: ENC[AES256_GCM,data:SDJPXr1NjGSOcHMLmKrzJ9XkFjfXOg7g5pdgXS3fQ4sSALVBqhHSfHJnH2m4NVSJPyOd35ia2/BivTWTGw1oguovLSfSvlptPUDqbwsXQoB2NEFcAJ6eJeDyz8Bx98OrBliyJaVOVYzF4y5dWwW2BGuevW097PbY/Sv3p6x8fyY=,iv:IftNBSOvEn3nGRQlD47At8pvundsXdk68yz+cWct/tU=,tag:XUPxsP39xSjPgvIZNBV09w==,type:str]
+    lastmodified: "2021-07-01T16:37:59Z"
+    mac: ENC[AES256_GCM,data:oM763HAMBrm7xH9BjkzGuwqmn3Q8ssdpZj6Ci8bQl6LnSbEYI/e54umxfO7Nnpar1tCGy78W882BbhOmBbdWJ+ovNcNobTmM8A0uKgoPDKQEylPdbyG4eBQLcw/8XqfoRfPqKcrz91TIg16TVfqp5qeYBLWIzE+7FLGESYo1xTg=,iv:G4xg2a6PZUMW9SMHGyu4i7dSty1jKHuMvJkncZMiD1E=,tag:/vsbKAKzl8beJEpXNlPjwg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

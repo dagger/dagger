@@ -160,6 +160,7 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 	if err := yaml.Unmarshal(manifest, &st); err != nil {
 		return nil, err
 	}
+	st.Name = name
 	st.Path = envPath
 	// Backward compat: if no plan module has been provided,
 	// use `.dagger/env/<name>/plan`

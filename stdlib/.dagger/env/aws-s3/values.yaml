@@ -1,7 +1,6 @@
 plan:
     module: ./aws/s3/
     package: ./tests
-name: aws-s3
 inputs:
     TestConfig.awsConfig.accessKey:
         secret: ENC[AES256_GCM,data:iu6LfQNgGZUVnHVeMRYPrcBtlZk=,iv:U5PLxDKXwJnUDdk1ayFGvvJfWdVqh1PK5ujb20YYPP0=,tag:QyqIJRiR6nE16ZDV0CP7Pw==,type:str]
@@ -25,8 +24,8 @@ sops:
             aXlvVWJVSGNTSkVyYmpZbi9nUVJZdmMK6csXZ2RMxFw5DB+Hb2TyhyoZT8c2/z7Y
             Lc9Pe8gb8aUq5Ha+wCybYvY6JWEM5A9XYJKbE7f4borTfGKS72d6pw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T15:29:49Z"
-    mac: ENC[AES256_GCM,data:tv+8xGY5Q2TkrO9qLxgtvUzfQG50ugCWGZZ7qIyYu2MB4Am88SVUG95GX/zHt5BGRMZQ/FJRnog7SiprC91wAgCjWR+kykhKeE7lygpVZpJTN0TD72a1X1vQKU7729KxPlu266q47Zc/w1N2tfx3krkQth2AjF12hokdZh93hhc=,iv:BPY2WVnKvxo2MYi58TW/gYPnfnFsOPIupSB7Hlh3y78=,tag:wBtD7PALUBAvO5OUGPuSbg==,type:str]
+    lastmodified: "2021-07-01T16:38:23Z"
+    mac: ENC[AES256_GCM,data:d4ZtcLkkhvdhPNX+2mU7FDQDvO1/IMXpHxoJkAzegfabNWk3IjDSljP1YnS6/+5WH6ejaI6BNCkTbijbeOR3D3a4zvUnXhRxkI8B/b1Wdz+5DhbAvt6t2OZO97xtlOKT+4KKM0vuEpsfOsufp/0GiwsAQC8oIADBSZkZZBt1HpM=,iv:2BFyvxR1Gd+m8UtB5/wBCVEVH2xBJNi1r199pNtHR9g=,tag:KD/dD7HJ9YWh+Tam7RDCng==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

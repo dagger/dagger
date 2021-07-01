@@ -1,7 +1,6 @@
 plan:
     module: ./docker
     package: ./tests/build
-name: docker-build
 inputs:
     TestSourceBuild:
         dir:
@@ -24,8 +23,8 @@ sops:
             Mm5vT1dHbFViK2ZIakNnVkZTd2lhUHMK63jJsJVLJMbQE2NkAB8qv8JnPHpvcNes
             z17EJgl0lCLqeNHtfrTfSiIP4wq8gNLK4avCKK+WGDOIMsXPzK6RNw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T15:44:20Z"
-    mac: ENC[AES256_GCM,data:zJsFrUaGd2Germ5nzov/0nDFBgtEL8W1Q9iYg3jQmOQhE6n91r4XipKHMuySbznHPqrZPPDeMabJXzMKlvqhAaWXOBAz9FRxSPlKH/UgdeNr9/YyMj25tqF4oycUAZUm6FZ6YCsEVsj7QIZnKKGR1oivE1Qe2gW9brpBzzu9JSU=,iv:ORQlfXm7+NjNA0tKtVVQMvvflS8p4mxZGk7bmzAiOfc=,tag:IKoqSXxl0zuQAcFW7RF1lA==,type:str]
+    lastmodified: "2021-07-01T16:38:56Z"
+    mac: ENC[AES256_GCM,data:31OtjxfEKdVjC13D1k1LDDsDbf1/OQcTyL51+78B3RYtdTQlnM65Hvax0C1XmfVHQ3BDQQhmBrJRaw1AT/QgmxtB1U17v5BceNs+ZUenuSGrVwbMozrHx0kgNbrRyP+jo2EifsCbvSBFDCaimA6Ts1t+NTwpfX/YwQ9cq3+ll6s=,iv:LB0VwXltpOOKPRA3iKjQNx9ZQhzB2kP2bFNPGBCky4k=,tag:FXHDfV50UAYn04I11zSyiA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

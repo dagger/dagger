@@ -1,7 +1,6 @@
 plan:
     module: ./os
     package: ./tests/container
-name: os-container
 inputs:
     SimpleSecret.cleartext:
         text: hello, world!
@@ -22,8 +21,8 @@ sops:
             azJIU2lIVlF4N1VxT2tVWDBPU2RsOEkKqkfxeT/mnnDxdvv/vhXMj2Zl8ogaAHa6
             xbBUOaCZ8stwj4Zz4/iKdrPspQQKo7/QuxxAcFUfyuK3fULqJHPXPQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T18:33:56Z"
-    mac: ENC[AES256_GCM,data:0uCRRnDFpow8TTkSZFM5Jn8GZp6C1muLrnHvBUb5/rQ54x+G5lbgqS+rOfgFUgU1/qvKVevO0m96jfo4ZetNLnPscvK8p1oSUGBtk6iQ61tLeIQQFJR82gO2mzqVj0g0KYYeX+1QPglePimYuFy6lRGpqGEPNyxjlhq/EGhHOgU=,iv:7Lrph3Cum9H+2UuAIwCHh/wkVft2fadZ+a2F4aoCZLk=,tag:6Q60ujt3o+mvVErih2dLzg==,type:str]
+    lastmodified: "2021-07-01T16:37:54Z"
+    mac: ENC[AES256_GCM,data:vXrCGyQnaD/RxSPZu3tgU/JeFXsYRNWxgltaRTpm1bcrxBAkrwbFq6OFfv/ol0UiOCvUixpthqM2TPfyFoxWA2pePorzyd0GRmUkUCc+bZXfRQavCORW8ipbQvTe7am2A4pQYHNFzbzo2NNaCyqX+ZyV2ujqCnE37h6lGz2K4/M=,iv:DWAIYb7+hLBrfFt02Zq3mlPqHlLklrokmQzaE2chbc4=,tag:QUSoyi5LPJrfy3S8vZdDRw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
