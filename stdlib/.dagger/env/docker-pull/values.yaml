@@ -1,0 +1,27 @@
+plan:
+    module: ./docker
+    package: ./tests/pull
+name: docker-pull
+inputs:
+    ref:
+        text: docker.io/daggerio/ci-test:xtyzsocvpici@sha256:35fc94d52b4fa53c2caa38ff11e13182e6f88c651eb0846728d1007d931f0d3c
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0WFI2ZGFUOWgvNkdlZ3Na
+            dEE5dTlVQi8vUVJqcHUxWE9GSmdnNmZLMHhRCm1sbFlJbEw1ZVFSVXU4MCtkT09l
+            dVR1WE5XUkVpSXA3aXN5TzZLaWJRNnMKLS0tIDZINGpzODdXVUdKVVpFMjFUbUFO
+            SG1raUVNTzZIWDltV1pOS3hySHlJeWcKg3blmstOGcxtPww513+mAEA0MWOXwNAT
+            5ngRvG6MraW3g9dhIuUYOwjuJyz1Z07/DBEocSxnjSyw45ZCkM1/9Q==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-26T14:52:40Z"
+    mac: ENC[AES256_GCM,data:IVEK6NFWEmNv8kRay2wVNhrsXVazVinIYRDLy7DTvaiWXyQYun//joK3QIoKz3dqi9rXeuTd95B13RxVQWKy/8cpmryg4QCwAaCj8erb5FHMRfn5/mAAV3NL5oAoOpKF4lZByrfdrXTJKppGWwYOFy8X693kK3FUzoUpIW2OqXg=,iv:qinwsUefQ7M+0OCTISPdQ9q//xsPitmHeCpdF00BJoo=,tag:reHZ5j0nz9fjAEFpR7IGGQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

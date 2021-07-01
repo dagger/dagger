@@ -59,7 +59,7 @@ package op
 
 #DockerLogin: {
 	do:       "docker-login"
-	target:   string | *"https://index.docker.io/v1/"
+	target:   string
 	username: string
 	// FIXME: should be a #Secret (circular import)
 	secret: string | bytes

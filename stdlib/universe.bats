@@ -62,6 +62,29 @@ setup() {
     dagger -e docker-build up
 }
 
+@test "docker push and pull" {
+  skip "An occasional data race condition happen in the CI. Must be fix before execute that test"
+  # Push image
+  dagger -e docker-push up
+
+  # Get image reference
+  dagger -e docker-pull input text ref "$(dagger -e docker-push query -c TestPush.push.ref | tr -d '\n' | tr -d '\"')"
+
+  # Pull image
+  dagger -e docker-pull up
+}
+
+@test "docker push: multi registry" {
+ skip "An occasional data race condition happen in the CI. Must be fix before execute that test"
+ run dagger -e docker-push-multi-registry up
+}
+
+@test "docker push: invalid credential" {
+  # Push image (SHOULD FAIL)
+  run dagger -e docker-push-invalid-creds up
+  assert_failure
+}
+
 @test "docker command: ssh" {
     dagger -e docker-command-ssh up
 }

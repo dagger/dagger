@@ -1,0 +1,29 @@
+plan:
+    module: ./docker
+    package: ./tests/push
+name: docker-push
+inputs:
+    TestRegistry.secret:
+        secret: ENC[AES256_GCM,data:ooc+0IjYtX9tkM7q1i4Ws6CorZsWtGQzHbjGx+j892iTZC7Q,iv:asdJzuRAHBRhD/FlkEd1VvX1tIz/qupBL7sMQWxZL5E=,tag:yuTyDx7hZeC+cmHx6tspmQ==,type:str]
+    TestRegistry.username:
+        text: daggertest
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBrcnpRZ203QzhtKzc3bzF4
+            Y002V0JUUnNZMks2VS83SjBOdVZid1dxbTJjCmc5VGtvM3lOejEvQ3VMZ1ZyZElZ
+            Skd3ZWxRMHdQRHdtZFBYUFMweDFlL28KLS0tIHhHeUh4a2gvb2w3UTEyNFZaK0dS
+            UjFJYTc1UUUzSFVkZjQ2blRsSGpVdVEKOanMR3+WlAgoDfqTUW7WPW1ytT3NdkTX
+            4Rqo49QmnuKFJ9tKoBFQOqgIo8E/lpcOkeIUiy5e/35FvsZ/KFk/pg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-26T14:53:13Z"
+    mac: ENC[AES256_GCM,data:kxzdmyQwRIVP9D+w9LzRDIZOxDUqpSaGeD/GqaVxnQivEUjVFK5ePAcYV1fzjU4eeO3chIrP8NpvpIKZ1LztQddsPdTj72Yffgc5yq8/dGa3njiM8p9oa5hnZNoxLtyVPgRoNy3ZUZ6YSN9nqCFWW0DCjeSoiDlPX+1Vj/S6PeM=,iv:DhX4N6idS3VBaqau6k9yH+li34hOd3jqBsJJQu/P3Jw=,tag:X+taa7XgRmovR0JkhGpi7g==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
