@@ -80,6 +80,7 @@ h2 {
 
 code {
   margin: 0 1px;
+  color: var(--ifm-code-color);
 }
 
 .markdown {
@@ -139,6 +140,7 @@ h1[class^="docTitle"] {
   font-weight: bold;
   display: flex;
   align-items: center;
+  margin: 2rem 0 5rem;
 }
 
 #__docusaurus {
@@ -170,7 +172,7 @@ h1[class^="docTitle"] {
 
 // sidebar
 @media (min-width: 997px) {
-  div[class^="docSidebarContainer"] {
+  aside[class^="docSidebarContainer"] {
     width: 250px;
     margin-right: 3rem;
 
@@ -234,11 +236,15 @@ div[class^="codeBlockContainer"] {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
   }
+
+  pre {
+    border-radius: var(--ifm-global-radius);
+  }
 }
 
-div[class^="codeBlockLines"] {
+code[class^="codeBlockLines"] {
   background-color: var(--ifm-color-primary-dark) !important;
-  margin-bottom: 0;
+  margin: 0;
   .token-line {
     color: var(--ifm-color-primary-light) !important;
   }
