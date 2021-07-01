@@ -63,6 +63,7 @@ setup() {
 }
 
 @test "docker push and pull" {
+  skip "An occasional data race condition happen in the CI. Must be fix before execute that test"
   # Push image
   dagger -e docker-push up
 
@@ -74,7 +75,8 @@ setup() {
 }
 
 @test "docker push: multi registry" {
-  run dagger -e docker-push-multi-registry up
+ skip "An occasional data race condition happen in the CI. Must be fix before execute that test"
+ run dagger -e docker-push-multi-registry up
 }
 
 @test "docker push: invalid credential" {
