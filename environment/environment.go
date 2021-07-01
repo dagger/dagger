@@ -12,7 +12,6 @@ import (
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
-	"go.dagger.io/dagger/stdlib"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -82,6 +81,18 @@ func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
+	// FIXME: universe vendoring
+	// This is already done on `dagger init` and shouldn't be done here too.
+	// However:
+	// 1) As of right now, there's no way to update universe through the
+	// CLI, so we are lazily updating on `dagger up` using the embedded `universe`
+	// 2) For backward compatibility: if the workspace was `dagger
+	// init`-ed before we added support for vendoring universe, it might not
+	// contain a `cue.mod`.
+	if err := e.state.VendorUniverse(ctx); err != nil {
+		return err
+	}
+
 	planSource, err := e.state.Source().Compile("", e.state)
 	if err != nil {
 		return err
@@ -95,8 +106,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 
 	// Build a Cue config by overlaying the source with the stdlib
 	sources := map[string]fs.FS{
-		stdlib.Path: stdlib.FS,
-		"/":         p.FS(),
+		"/": p.FS(),
 	}
 	args := []string{}
 	if pkg := e.state.Plan.Package; pkg != "" {
