@@ -37,7 +37,7 @@ import (
 	source: dagger.#Artifact @dagger(input)
 
 	// Registry auth
-	auth: {
+	auth?: {
 		// Username
 		username: string @dagger(input)
 
