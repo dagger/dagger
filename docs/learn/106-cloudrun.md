@@ -1,3 +1,15 @@
+---
+slug: /learn/106-cloudrun
+---
+
+# Dagger 106: deploy to CloudRun
+
+This tutorial illustrates how to use dagger to push and deploy Docker
+images to CloudRun.
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Deploy an application to GCP Cloud Run
 
 This example shows how to deploy an application to GCP Cloud Run. Read the deployment [plan](https://github.com/dagger/dagger/tree/main/examples/cloud-run-app)
@@ -40,3 +52,4 @@ How to run:
    ```sh
    dagger up
    ```
+
