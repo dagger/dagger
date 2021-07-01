@@ -129,13 +129,23 @@ p {
   line-height: 24px;
 }
 
-a[class*="menuLinkExternal"]:after {
-  background: url("/img/Dagger_Icons_External-link.svg") no-repeat;
-  position: absolute;
-  right: var(--ifm-menu-link-padding-horizontal);
-  top: var(--ifm-menu-link-padding-vertical);
-  height: 1.25rem;
-  width: 1.25rem;
+a[target="_blank"]:not(.edit-this-page) {
+  svg {
+    display: none;
+  }
+ &:after {
+    background: var(--ifm-color-primary-darker);
+    mask: url("/img/Dagger_Icons_External-link.svg") no-repeat;
+    position: absolute;
+    content:'';
+    right: var(--ifm-menu-link-padding-horizontal);
+    top: var(--ifm-menu-link-padding-vertical);
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+  html[data-theme="dark"] &:after {
+    background: var(--ifm-color-primary-light);
+  }
 }
 
 h1[class^="h1Heading"] {
