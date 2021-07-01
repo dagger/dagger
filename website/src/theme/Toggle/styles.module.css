@@ -103,3 +103,9 @@
 :global(.react-toggle--checked .react-toggle-thumb) {
   left: 31px;
 }
+
+:global(.icon_day_svg__mode),
+:global(.icon_night_svg__mode) {
+  height: 26px;
+  width: 26px;
+}
