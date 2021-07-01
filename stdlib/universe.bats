@@ -73,7 +73,11 @@ setup() {
   dagger -e docker-pull up
 }
 
-@test "docker push and pull: invalid credential" {
+@test "docker push: multi registry" {
+  run dagger -e docker-push-multi-registry up
+}
+
+@test "docker push: invalid credential" {
   # Push image (SHOULD FAIL)
   run dagger -e docker-push-invalid-creds up
   assert_failure
