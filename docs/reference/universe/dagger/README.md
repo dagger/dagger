@@ -2,10 +2,12 @@
 sidebar_label: dagger
 ---
 
-# dagger.io/dagger
+# alpha.dagger.io/dagger
+
+Dagger core types
 
 ```cue
-import "dagger.io/dagger"
+import "alpha.dagger.io/dagger"
 ```
 
 ## dagger.#Secret

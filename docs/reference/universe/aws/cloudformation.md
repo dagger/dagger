@@ -2,12 +2,12 @@
 sidebar_label: cloudformation
 ---
 
-# dagger.io/aws/cloudformation
+# alpha.dagger.io/aws/cloudformation
 
 AWS CloudFormation
 
 ```cue
-import "dagger.io/aws/cloudformation"
+import "alpha.dagger.io/aws/cloudformation"
 ```
 
 ## cloudformation.#Stack
@@ -30,6 +30,4 @@ AWS CloudFormation Stack
 
 ### cloudformation.#Stack Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*outputs*         | `struct`          |-                   |
+_No output._

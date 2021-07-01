@@ -2,10 +2,12 @@
 sidebar_label: os
 ---
 
-# dagger.io/os
+# alpha.dagger.io/os
+
+OS operations
 
 ```cue
-import "dagger.io/os"
+import "alpha.dagger.io/os"
 ```
 
 ## os.#Container
@@ -32,7 +34,7 @@ _No output._
 
 ## os.#File
 
-Built-in file implementation, using buildkit
+Built-in file implementation, using buildkit A single file
 
 ### os.#File Inputs
 

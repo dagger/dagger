@@ -2,8 +2,8 @@
 package ecr
 
 import (
-	"dagger.io/aws"
-	"dagger.io/os"
+	"alpha.dagger.io/aws"
+	"alpha.dagger.io/os"
 )
 
 // Convert ECR credentials to Docker Login format
@@ -28,5 +28,5 @@ import (
 				from: ctr
 				path: "/out"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 }

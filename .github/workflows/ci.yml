@@ -77,7 +77,7 @@ jobs:
           go-version: 1.16
 
       - name: Setup Kind Kubernetes Cluster
-        uses: engineerd/setup-kind@v0.5.0
+        uses: helm/kind-action@v1.2.0
 
       - name: Install Dependencies
         run: |

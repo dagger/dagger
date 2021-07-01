@@ -2,12 +2,12 @@
 sidebar_label: op
 ---
 
-# dagger.io/dagger/op
+# alpha.dagger.io/dagger/op
 
 op: low-level operations for Dagger processing pipelines
 
 ```cue
-import "dagger.io/dagger/op"
+import "alpha.dagger.io/dagger/op"
 ```
 
 ## op.#Copy

@@ -2,11 +2,11 @@
 package go
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
-	"dagger.io/docker"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/docker"
 
-	"dagger.io/os"
+	"alpha.dagger.io/os"
 )
 
 // A standalone go environment

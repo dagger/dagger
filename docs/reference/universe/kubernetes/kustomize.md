@@ -2,12 +2,12 @@
 sidebar_label: kustomize
 ---
 
-# dagger.io/kubernetes/kustomize
+# alpha.dagger.io/kubernetes/kustomize
 
 Kustomize config management
 
 ```cue
-import "dagger.io/kubernetes/kustomize"
+import "alpha.dagger.io/kubernetes/kustomize"
 ```
 
 ## kustomize.#Kustomization

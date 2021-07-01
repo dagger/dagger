@@ -2,9 +2,9 @@
 package netlify
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/alpine"
-	"dagger.io/os"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/os"
 )
 
 // Netlify account credentials
@@ -40,7 +40,7 @@ import (
 				from: ctr
 				path: "/netlify/url"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 
 	// Unique Deploy URL
 	deployUrl: {
@@ -48,7 +48,7 @@ import (
 				from: ctr
 				path: "/netlify/deployUrl"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 
 	// Logs URL for this deployment
 	logsUrl: {
@@ -56,7 +56,7 @@ import (
 				from: ctr
 				path: "/netlify/logsUrl"
 			}
-	}.read.data @dagger(output)
+	}.contents @dagger(output)
 
 	ctr: os.#Container & {
 		image: alpine.#Image & {
@@ -68,7 +68,7 @@ import (
 			}
 		}
 		setup: [
-			"yarn global add netlify-cli@2.47.0",
+			"yarn global add netlify-cli@3.38.10",
 		]
 		// set in netlify.sh.cue
 		// FIXME: use embedding once cue supports it
@@ -84,7 +84,7 @@ import (
 			NETLIFY_ACCOUNT: account.name
 		}
 		dir: "/src"
-		mount: "/src": from:                 contents
-		mount: "/run/secrets/token": secret: account.token
+		mount: "/src": from: contents
+		secret: "/run/secrets/token": account.token
 	}
 }

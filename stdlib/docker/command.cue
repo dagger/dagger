@@ -3,9 +3,9 @@ package docker
 import (
 	"strconv"
 
-	"dagger.io/alpine"
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 )
 
 // A container image that can run any docker command
@@ -62,6 +62,19 @@ import (
 		[string]: true | false | string @dagger(input)
 	}
 
+	// Image registries
+	registries: [...{
+		target?:  string
+		username: string
+		secret:   dagger.#Secret
+	}] @dagger(input)
+
+	// Copy contents from other artifacts
+	copy: [string]: from: dagger.#Artifact
+
+	// Write file in the container
+	files: [string]: string
+
 	// Setup docker client and then execute the user command
 	#code: #"""
 		# Setup ssh
@@ -103,11 +116,40 @@ import (
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
-				package: {
+				"package": {
+					package
 					bash:             true
 					"openssh-client": true
 					"docker-cli":     true
 				}
+			}
+		},
+
+		for registry in registries {
+			op.#Exec & {
+				args: ["/bin/bash", "-c", #"""
+						echo "$TARGER_HOST" | docker login --username "$DOCKER_USERNAME" --password-stdin "$(cat /password)" 
+					"""#,
+				]
+				env: {
+					TARGET_HOST:     registry.target
+					DOCKER_USERNAME: registry.username
+				}
+				mount: "/password": secret: registry.password
+			}
+		},
+
+		for dest, content in files {
+			op.#WriteFile & {
+				"content": content
+				"dest":    dest
+			}
+		},
+
+		for dest, src in copy {
+			op.#Copy & {
+				from:   src.from
+				"dest": dest
 			}
 		},
 
@@ -137,7 +179,7 @@ import (
 		op.#Exec & {
 			always: true
 			args: [
-				"/bin/sh",
+				"/bin/bash",
 				"--noprofile",
 				"--norc",
 				"-eo",
@@ -146,7 +188,6 @@ import (
 			]
 			"env": {
 				env
-
 				if ssh != _|_ {
 					DOCKER_HOSTNAME: ssh.host
 					DOCKER_USERNAME: ssh.user
@@ -161,6 +202,9 @@ import (
 				}
 			}
 			"mount": {
+				if ssh == _|_ {
+					"/var/run/docker.sock": from: "docker.sock"
+				}
 				if ssh != _|_ {
 					if ssh.key != _|_ {
 						"/key": secret: ssh.key

@@ -4,8 +4,8 @@ package cloudformation
 import (
 	"encoding/json"
 
-	"dagger.io/dagger/op"
-	"dagger.io/aws"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/aws"
 )
 
 // AWS CloudFormation Stack
@@ -48,8 +48,8 @@ import (
 	}
 
 	outputs: {
-		[string]: string
-	} @dagger(output)
+		[string]: string @dagger(output)
+	}
 
 	outputs: #up: [
 		op.#Load & {

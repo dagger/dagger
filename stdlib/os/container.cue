@@ -3,10 +3,10 @@ package os
 import (
 	"strings"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 
-	"dagger.io/alpine"
+	"alpha.dagger.io/alpine"
 )
 
 // Default image for basic use cases
@@ -48,13 +48,13 @@ import (
 
 	// Mount contents from other artifacts.
 	// Mount is active when executing `command`, but not `setup`.
-
 	mount: [string]: {
 		from: dagger.#Artifact
 		// FIXME: support source path
-	} | {
-		secret: dagger.#Secret
 	}
+
+	// Safely mount secrets (in cleartext) as non-persistent files
+	secret: [string]: dagger.#Secret
 
 	// Mount persistent cache directories
 	cache: [string]: true
@@ -112,6 +112,9 @@ import (
 					for dest, o in mount {
 						"\(dest)": o
 						// FIXME: support source path
+					}
+					for dest, s in secret {
+						"\(dest)": secret: s
 					}
 					for dest, _ in cache {
 						"\(dest)": "cache"

@@ -26,6 +26,7 @@ import { GithubLoginButton } from 'react-social-login-buttons';
 import Spinner from '../../components/Spinner';
 import DocPageAuthentication from '../../components/DocPageAuthentication';
 import DocPageRedirect from '../../components/DocPageRedirect';
+import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
 
 function DocPageContent({ currentDocRoute, versionMetadata, children }) {
   const { siteConfig, isClient } = useDocusaurusContext();
@@ -41,6 +42,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
 
     setHiddenSidebarContainer(!hiddenSidebarContainer);
   }, [hiddenSidebar]);
+
   return (
     <Layout
       key={isClient}
@@ -137,31 +139,42 @@ function DocPage(props) {
   const currentDocRoute = docRoutes.find((docRoute) =>
     matchPath(location.pathname, docRoute),
   );
+  const userAgent = ExecutionEnvironment.canUseDOM ? navigator.userAgent : null;
 
   // CUSTOM DOCPAGE
-  if (process.env.OAUTH_ENABLE == 'true') {
+  if (process.env.OAUTH_ENABLE == 'true' && userAgent !== 'Algolia DocSearch Crawler') {
     const [isLoading, setIsLoading] = useState(true)
     const [redirectState, setRedirectState] = useState()
     const authQuery = qs.parse(location.search);
     const [userAccessStatus, setUserAccessStatus] = useState((() => {
-      if (typeof window !== "undefined") return window.localStorage.getItem('user-github-isAllowed')
+      if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
     })())
 
     useEffect(async () => {
       if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
-        const isUserCollaborator = await checkUserCollaboratorStatus(authQuery.code);
-        setUserAccessStatus(isUserCollaborator?.userPermission)
-        if (isUserCollaborator?.userPermission) {
-          if (typeof window !== "undefined") window.localStorage.setItem('user-github-isAllowed', isUserCollaborator?.userPermission);
+        const user = await checkUserCollaboratorStatus(authQuery.code);
+        setUserAccessStatus(user)
+        if (user?.permission) {
+          if (typeof window !== "undefined") window.localStorage.setItem('user', JSON.stringify(user));
         }
       }
       setIsLoading(false)
-    }, [userAccessStatus])
+    }, [])
 
+    useEffect(() => {
+      import('amplitude-js').then(amplitude => {
+        if (userAccessStatus?.login) {
+          var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
+            apiEndpoint: `${window.location.hostname}/t`
+          });
+          amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
+        }
+      })
+    }, [location.pathname, userAccessStatus])
 
     if (isLoading) return <Spinner />
 
-    if (userAccessStatus === false) {
+    if (userAccessStatus?.permission === false) {
       return <DocPageRedirect />
     }
 

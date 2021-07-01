@@ -1,9 +1,9 @@
 package main
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/alpine"
-	"dagger.io/random"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/random"
 )
 
 registry: {

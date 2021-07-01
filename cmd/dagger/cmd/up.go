@@ -54,7 +54,7 @@ var upCmd = &cobra.Command{
 
 func checkInputs(ctx context.Context, st *state.State) {
 	lg := log.Ctx(ctx)
-	warnOnly := viper.GetBool("force") || !term.IsTerminal(int(os.Stdout.Fd()))
+	warnOnly := viper.GetBool("force")
 
 	// FIXME: find a way to merge this with the EnvironmentUp client to avoid
 	// creating the client + solver twice

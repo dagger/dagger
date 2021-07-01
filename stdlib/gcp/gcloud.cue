@@ -1,8 +1,8 @@
 package gcp
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/alpine"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/alpine"
 )
 
 // Re-usable gcloud component
@@ -28,6 +28,7 @@ import (
 				#"""
                 curl -sfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-\#(version)-linux-x86_64.tar.gz | tar -C /usr/local -zx
                 ln -s /usr/local/google-cloud-sdk/bin/gcloud /usr/local/bin
+                ln -s /usr/local/google-cloud-sdk/bin/gsutil /usr/local/bin
                 """#,
 			]
 		},

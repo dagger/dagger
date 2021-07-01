@@ -2,12 +2,12 @@
 sidebar_label: gcp
 ---
 
-# dagger.io/gcp
+# alpha.dagger.io/gcp
 
 Google Cloud Platform
 
 ```cue
-import "dagger.io/gcp"
+import "alpha.dagger.io/gcp"
 ```
 
 ## gcp.#Config

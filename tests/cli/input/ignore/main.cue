@@ -1,8 +1,8 @@
 package testing
 
 import (
-	"dagger.io/dagger/op"
-	"dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
 )
 
 source: dagger.#Artifact

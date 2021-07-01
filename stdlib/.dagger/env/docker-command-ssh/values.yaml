@@ -1,5 +1,6 @@
 plan:
-    module: .dagger/env/docker-command-ssh/plan
+    module: ./docker
+    package: ./tests/command-ssh
 name: docker-command-ssh
 inputs:
     TestConfig.host:
@@ -23,8 +24,8 @@ sops:
             UEpoZy9HZUlHOVV3M05OSkZQS1l6aXcK3NfBITvd6la6nkcIzqH69xfv9RR0Jm7x
             vU5FvGROK3Z0ZR8NNXAtNH6VQQ21TDD2MOXWOVvjnIAAOVNEyc1amA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-15T16:26:12Z"
-    mac: ENC[AES256_GCM,data:61Y9VaYoL4kUrxqhS5BVU1g6b4y7vJnuLsoRZF3ltdM7EojZq4bSiKoQHm4AxFL9exoM6ze6NqgqJBaMXQ7erOvX85/SFceCmksWz92n+HJxOfeqbVkY72c7ULVbf9hUs/YJaz7b5kelN6sFFVedY/iUf2JEGg4NSjL53jearNs=,iv:TVMMLWE7A5x1JrvXZxaCrHc5rxdtS/RdGqu7gwGkPS0=,tag:m2JfKTc9A9m0LblO5r1vjA==,type:str]
+    lastmodified: "2021-06-24T15:50:11Z"
+    mac: ENC[AES256_GCM,data:smCRgqcXPpgI909GOomUGrPfj5b0cNfha3CTicV7uzj675tTNqEVJTpgZiOWNUv3pQ535nhGuF4WRESZj+TuNabCWj0sMMU1EGvxUXuaV/TSXo3JtdFeU8tpn549UtcHez71sjKHiCTfGDdESPsAsYDLkkMBZkb9UE409on1Ypk=,iv:odHs0ukQTqfWb9ARFHpAh1qTZ/AZMLMQ6ZtVOged97k=,tag:sev1dRKD/7ZBgJamRCHqhQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

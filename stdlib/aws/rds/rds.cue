@@ -2,9 +2,9 @@
 package rds
 
 import (
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger/op"
 	"encoding/json"
-	"dagger.io/aws"
+	"alpha.dagger.io/aws"
 )
 
 // Creates a new Database on an existing RDS Instance

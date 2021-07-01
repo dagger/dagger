@@ -10,6 +10,6 @@ var (
 	//go:embed **/*.cue **/*/*.cue
 	FS embed.FS
 
-	PackageName = "dagger.io"
+	PackageName = "alpha.dagger.io"
 	Path        = path.Join("cue.mod", "pkg", PackageName)
 )

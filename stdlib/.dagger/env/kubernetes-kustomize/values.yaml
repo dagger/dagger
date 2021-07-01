@@ -1,10 +1,11 @@
 plan:
-    module: .dagger/env/kubernetes-kustomize/plan
+    module: ./kubernetes/kustomize
+    package: ./tests
 name: kubernetes-kustomize
 inputs:
     TestKustomize.testdata:
         dir:
-            path: ./kubernetes/kustomize/testdata
+            path: ./kubernetes/kustomize/tests/testdata
 sops:
     kms: []
     gcp_kms: []
@@ -20,8 +21,8 @@ sops:
             OFllMEh3cVJZZnFxbW4xS1RtcFQzcFUKo/1WcYp4nPBXba8wQBe3DMt6pYQJGoSu
             ja5BiCffN5wOoW9WT0j8Clx21w7BXcl46+T5GYpXDQDcqf6nCv1kYQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-17T20:48:00Z"
-    mac: ENC[AES256_GCM,data:SCWiSiDccPkZApOcc8RsYP7WPZUqUyYVB0UgivLhIsNSY5q3kCdenPLTUp2zLOcwaWzTPGmj++QtZjoNobcIhdVt1aJ9uXLLKRUXaRGIO3Jmhg3wj7kSPNjbDLZEB6uyA9h3edQGVVivNlNGpo91tg35QcFPPSG7UiowFnsD0zM=,iv:44hkujM/ZWjtYHau8BFMdOIeBj5jF/WnW4OOK7oSw1Y=,tag:mtJdUR+sA0tjIyAWDpXQlA==,type:str]
+    lastmodified: "2021-06-24T18:16:21Z"
+    mac: ENC[AES256_GCM,data:eq7Eev6taZJnkl2SoqihKo9tfAMA3IOnLO9tBoppUeg1LSLe6vZ8QmN7s1Z0gyWNWttnNTdMOvTQTI2PGrayQpLRGzryChcQsuCL7hnij6bQf16IcGn9jbq7NVQ1EreS8iPZYuyYlR5Z9kSARtfAKFALim8ccF+BmR9+X7yBfZ4=,iv:7kovyOERH0dx0NONhmUwOUI39nK5N1rT9o+gi9ol3f4=,tag:6HrkHbiCwrgO7hukxtsXVA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

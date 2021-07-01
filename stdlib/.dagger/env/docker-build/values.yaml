@@ -1,13 +1,14 @@
 plan:
-    module: .dagger/env/docker-build/plan
+    module: ./docker
+    package: ./tests/build
 name: docker-build
 inputs:
     TestSourceBuild:
         dir:
-            path: ./docker/testdata/build
+            path: ./docker/tests/build/testdata/build
     TestSourceImageFromDockerfile:
         dir:
-            path: ./docker/testdata/dockerfile
+            path: ./docker/tests/build/testdata/dockerfile
 sops:
     kms: []
     gcp_kms: []
@@ -23,8 +24,8 @@ sops:
             Mm5vT1dHbFViK2ZIakNnVkZTd2lhUHMK63jJsJVLJMbQE2NkAB8qv8JnPHpvcNes
             z17EJgl0lCLqeNHtfrTfSiIP4wq8gNLK4avCKK+WGDOIMsXPzK6RNw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-17T20:14:11Z"
-    mac: ENC[AES256_GCM,data:hlc0Bnfeoor/WKMbQRgTalkxngL0YXTwHAys/moXZ4ZMGd2lt+j4l4EkKSjb3QrJfPllCeqroohLKtN+lP4K9fSCMcfYzic2DTEP68rPwufmrgxys1snOHHgIEfqogL8p55fJdXn91x+WHhPNkbWaaH0WcboYsy0zemUIkjb+xc=,iv:8oUeR1dfT4lrVWyJpGPPFa/jlPgWA/ld3UM9Cw2znxk=,tag:59RyiXwzJ5j+c5faxs9U3w==,type:str]
+    lastmodified: "2021-06-24T15:44:20Z"
+    mac: ENC[AES256_GCM,data:zJsFrUaGd2Germ5nzov/0nDFBgtEL8W1Q9iYg3jQmOQhE6n91r4XipKHMuySbznHPqrZPPDeMabJXzMKlvqhAaWXOBAz9FRxSPlKH/UgdeNr9/YyMj25tqF4oycUAZUm6FZ6YCsEVsj7QIZnKKGR1oivE1Qe2gW9brpBzzu9JSU=,iv:ORQlfXm7+NjNA0tKtVVQMvvflS8p4mxZGk7bmzAiOfc=,tag:IKoqSXxl0zuQAcFW7RF1lA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -61,6 +61,7 @@ export async function checkUserCollaboratorStatus(code) {
     })
 
     return {
-        userPermission: isUserCollaborator.data
+        permission: isUserCollaborator.data,
+        login
     }
 }

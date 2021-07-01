@@ -1,0 +1,34 @@
+plan:
+    module: ./docker/compose
+    package: ./tests
+name: docker-compose
+inputs:
+    TestSSH.host:
+        text: 143.198.64.230
+    TestSSH.key:
+        secret: ENC[AES256_GCM,data:8heZn3UqcB0aV9XAn9uLx9gBcTqbmfNX7voBpYCNCGaX1nustSzKhbR29dxAoETIdfSFPetX2s4cCYbPTqFc6KTyRvfdmI8tXvb5+lin/CkdQJy7cR+RiynLEfbs32EPQilaph+kyGyGBAWAme49g8U2om/QObxCSes+Zn8ihfv7lBkLEj8hen2OC7YwIqjs9V8ozNCJ0zsk+NIk5LkryXdWTaYvgGHOmO/NuWz411L/pF1HieOV1L4Fe6E5hsUun0kVny8GxXQSbVCKle9A9TxD2bs+IBVNAUZVTsrjZYyTjYlNNgTaOqPASS5VDrOtR8csrGJ6GyGxtGrtRdhaoXYQA1zfA7uMfSMNlCwk3VB70P60s0U9tKr3HnRFX6rQdKcUwR2a1zbJ8UmHPy9apsM+tc+m/CAb8dkdu6UyiwvBK+kyPDyBVz4rwyhmtiB7cjw9vXYWX3hbZcE0e3RR4Upqw5NkIIlLfNH7T1fPDmVmIlXQk0wKIZJ//dwdJZyrraA+RRtG5b3PECSojIN3x57LnHdIXfp5drHK,iv:xqGFk9QgC6YwqFODSLRwShf+SMyY4PmtfWt5neHwfSY=,tag:vVZtGty5ehLvYzd8H0+Xsw==,type:str]
+    TestSSH.user:
+        text: root
+    repo:
+        dir:
+            path: ./docker/compose/tests/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBMSmROdEtUblF3REhwS3hC
+            bU9ObTE0aWQzdGJzRlB5WjA0UG5nZFFJTEJjClljQWFYYWNQaFozZGRMcWxyT3p3
+            Y0ZVUlZISUNlVkxVSVBqY0RRaGxPN3cKLS0tIGhsUTFCK2ljaWZFekVQMlRSRmtD
+            bEY3N3ZLTFpUNzZVWVBOK3VNRk9hWlUKd9db3j7FqFW4t7TxFyzudKDPTVqr66v2
+            KqedhRYCjF4ZozN0H++xQPH24RBRnwc6Uq0Vm38UYv1ozDN2L/l5DA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-06-25T13:17:45Z"
+    mac: ENC[AES256_GCM,data:RclYzWUgBU06881KztfHdaeBtHLOiQZ5xNp0taaxS152rUxyXCXEAFlOu/yqE3RvEoorUp473wDwFUa9DudHidY88YNdfdk5AUuZdsOXW4bRMFPF4eiFugqZJNPepaW1YBDUMeH7XQBN1jyEkFOvzyk2KKQhoUshWyrU5QDR2kc=,iv:MjhUSjzVm6nV2PnSNi346GxkirmF3yAti3Jmb94gLGg=,tag:t4fHAYh60//PlkwUPQh2uA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

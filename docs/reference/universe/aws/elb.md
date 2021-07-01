@@ -2,12 +2,12 @@
 sidebar_label: elb
 ---
 
-# dagger.io/aws/elb
+# alpha.dagger.io/aws/elb
 
 AWS Elastic Load Balancer (ELBv2)
 
 ```cue
-import "dagger.io/aws/elb"
+import "alpha.dagger.io/aws/elb"
 ```
 
 ## elb.#RandomRulePriority

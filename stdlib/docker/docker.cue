@@ -2,8 +2,8 @@
 package docker
 
 import (
-	"dagger.io/dagger"
-	"dagger.io/dagger/op"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 )
 
 // Build a Docker image from source, using included Dockerfile

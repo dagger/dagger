@@ -2,12 +2,12 @@
 sidebar_label: helm
 ---
 
-# dagger.io/kubernetes/helm
+# alpha.dagger.io/kubernetes/helm
 
 Helm package manager
 
 ```cue
-import "dagger.io/kubernetes/helm"
+import "alpha.dagger.io/kubernetes/helm"
 ```
 
 ## helm.#Chart

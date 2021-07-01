@@ -107,7 +107,8 @@ package op
 }
 
 #WriteFile: {
-	do:      "write-file"
+	do: "write-file"
+	// FIXME: "contents" to follow english convention
 	content: string | bytes
 	dest:    string
 	mode:    int | *0o644
