@@ -21,7 +21,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/rs/zerolog v1.23.0
-	github.com/spf13/cobra v1.1.3
+	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/tonistiigi/fsutil v0.0.0-20201103201449-0834f99b7b85
