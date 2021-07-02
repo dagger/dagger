@@ -22,17 +22,6 @@ function DocPageCustom({ location, userAccessStatus, setUserAccessStatus }) {
     setIsLoading(false)
   }, [])
 
-  useEffect(() => {
-    import('amplitude-js').then(amplitude => {
-      if (userAccessStatus?.login) {
-        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
-          apiEndpoint: `${window.location.hostname}/t`
-        });
-        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
-      }
-    })
-  }, [location.pathname, userAccessStatus])
-
   if (isLoading) return <Spinner />
 
   if (userAccessStatus?.permission === false) {
