@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { MDXProvider } from '@mdx-js/react';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import renderRoutes from '@docusaurus/renderRoutes';
@@ -162,6 +162,17 @@ function DocPage(props) {
   const [userAccessStatus, setUserAccessStatus] = useState((() => {
     if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
   })())
+
+  useEffect(() => {
+    import('amplitude-js').then(amplitude => {
+      if (userAccessStatus?.login) {
+        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
+          apiEndpoint: `${window.location.hostname}/t`
+        });
+        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
+      }
+    })
+  }, [location.pathname, userAccessStatus])
 
   if (process.env.OAUTH_ENABLE == 'true' && userAccessStatus?.permission !== true && userAgent !== 'Algolia DocSearch Crawler') {
     return <DocPageCustom location={location} userAccessStatus={userAccessStatus} setUserAccessStatus={setUserAccessStatus} />
