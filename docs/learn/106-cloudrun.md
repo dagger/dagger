@@ -19,7 +19,7 @@ You will need the local copy of the [Dagger examples repository](https://github.
 git clone https://github.com/dagger/examples
 ```
 
-Make sure that all commands are being ran from the todoapp directory:
+Make sure that all commands are being run from the todoapp directory:
 
 ```shell
 cd examples/todoapp
@@ -27,7 +27,7 @@ cd examples/todoapp
 
 ### (optional) Initialize a Cue module
 
-In this guide we will use the same directory as the root of the Dagger workspace and the root of the Cue module; but you can create your Cue module anywhere inside the Dagger workspace.
+This guide will use the same directory as the root of the Dagger workspace and the root of the Cue module, but you can create your Cue module anywhere inside the Dagger workspace.
 
 ```shell
 cue mod init
@@ -38,12 +38,12 @@ cue mod init
 Let's create a new directory for our Cue package:
 
 ```shell
-mkdir cue.mod/gcpcloudrun
+mkdir gcpcloudrun
 ```
 
 ### Create a basic plan
 
-```cue title="todoapp/cue.mod/gcpcloudrun/source.cue"
+```cue title="todoapp/gcpcloudrun/source.cue"
 package gcpcloudrun
 
 import (
@@ -92,7 +92,7 @@ deploy: cloudrun.#Service & {
 Now that your Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'gcpcloudrun' -m cue.mod/gcpcloudrun
+dagger new 'gcpcloudrun' -m gcpcloudrun
 ```
 
 ### Configure user inputs
@@ -108,7 +108,7 @@ dagger input secret gcpConfig.serviceKey -f ./gcp-sa-key.json -e gcpcloudrun
 
 ## Deploy
 
-Now that everything is properly set, let's deploy on Cloud Run:
+Now that everything is set correctly, let's deploy on Cloud Run:
 
 ```shell
 dagger up -e gcpcloudrun
