@@ -27,7 +27,7 @@ setup() {
     assert_success
     refute_output
 
-    run "$DAGGER" new "test" --module "$DAGGER_WORKSPACE"
+    run "$DAGGER" new "test"
     assert_success
 
     run "$DAGGER" list
@@ -42,10 +42,10 @@ setup() {
 @test "dagger new: modules" {
     "$DAGGER" init
 
-    ln -s "$TESTDIR"/cli/input/simple "$DAGGER_WORKSPACE"/plan
+    cp -a "$TESTDIR"/cli/input/simple/* "$DAGGER_WORKSPACE"
 
-    "$DAGGER" new "a" --module "$DAGGER_WORKSPACE"/plan
-    "$DAGGER" new "b" --module "$DAGGER_WORKSPACE"/plan
+    "$DAGGER" new "a"
+    "$DAGGER" new "b"
 
     "$DAGGER" input -e "a" text "input" "a"
     "$DAGGER" input -e "b" text "input" "b"
@@ -60,6 +60,9 @@ setup() {
     run "$DAGGER" query -l error -e "b" input -f text
     assert_success
     assert_output "b"
+
+    # run ls -la "$DAGGER_WORKSPACE"
+    # assert_failure
 }
 
 # create different environments from the same module,
@@ -67,10 +70,10 @@ setup() {
 @test "dagger new: packages" {
     "$DAGGER" init
 
-    ln -s "$TESTDIR"/cli/packages "$DAGGER_WORKSPACE"/plan
+    cp -a "$TESTDIR"/cli/packages/* "$DAGGER_WORKSPACE"
 
-    "$DAGGER" new "a" --module "$DAGGER_WORKSPACE"/plan --package alpha.dagger.io/test/a
-    "$DAGGER" new "b" --module "$DAGGER_WORKSPACE"/plan --package alpha.dagger.io/test/b
+    "$DAGGER" new "a" --package alpha.dagger.io/test/a
+    "$DAGGER" new "b" --package alpha.dagger.io/test/b
 
     "$DAGGER" up -e "a"
     "$DAGGER" up -e "b"

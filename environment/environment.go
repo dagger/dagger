@@ -82,7 +82,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
 	defer span.Finish()
 
-	planSource, err := e.state.Plan.Source().Compile("", e.state)
+	planSource, err := e.state.Source().Compile("", e.state)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (e *Environment) LocalDirs() map[string]string {
 	}
 
 	// 2. Scan the plan
-	plan, err := e.state.Plan.Source().Compile("", e.state)
+	plan, err := e.state.Source().Compile("", e.state)
 	if err != nil {
 		panic(err)
 	}
