@@ -10,7 +10,7 @@ import (
 
 // A container image that can run any docker command
 #Command: {
-	ssh?: {
+	sshConfig?: {
 		// ssh host
 		host: string @dagger(input)
 
@@ -153,7 +153,7 @@ import (
 			}
 		},
 
-		if ssh.keyPassphrase != _|_ {
+		if sshConfig.keyPassphrase != _|_ {
 			op.#WriteFile & {
 				content: #"""
 					#!/bin/bash
@@ -188,29 +188,29 @@ import (
 			]
 			"env": {
 				env
-				if ssh != _|_ {
-					DOCKER_HOSTNAME: ssh.host
-					DOCKER_USERNAME: ssh.user
-					DOCKER_PORT:     strconv.FormatInt(ssh.port, 10)
-					if ssh.keyPassphrase != _|_ {
+				if sshConfig != _|_ {
+					DOCKER_HOSTNAME: sshConfig.host
+					DOCKER_USERNAME: sshConfig.user
+					DOCKER_PORT:     strconv.FormatInt(sshConfig.port, 10)
+					if sshConfig.keyPassphrase != _|_ {
 						SSH_ASKPASS: "/get_keyPassphrase"
 						DISPLAY:     "1"
 					}
-					if ssh.fingerprint != _|_ {
-						FINGERPRINT: ssh.fingerprint
+					if sshConfig.fingerprint != _|_ {
+						FINGERPRINT: sshConfig.fingerprint
 					}
 				}
 			}
 			"mount": {
-				if ssh == _|_ {
+				if sshConfig == _|_ {
 					"/var/run/docker.sock": from: "docker.sock"
 				}
-				if ssh != _|_ {
-					if ssh.key != _|_ {
-						"/key": secret: ssh.key
+				if sshConfig != _|_ {
+					if sshConfig.key != _|_ {
+						"/key": secret: sshConfig.key
 					}
-					if ssh.keyPassphrase != _|_ {
-						"/keyPassphrase": secret: ssh.keyPassphrase
+					if sshConfig.keyPassphrase != _|_ {
+						"/keyPassphrase": secret: sshConfig.keyPassphrase
 					}
 				}
 				for dest, o in mount {

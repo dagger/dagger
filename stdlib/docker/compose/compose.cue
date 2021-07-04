@@ -3,12 +3,14 @@ package compose
 
 import (
 	"strconv"
+
 	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/ssh"
 	"alpha.dagger.io/docker"
 )
 
 #App: {
-	ssh?: {
+	sshConfig?: {
 		// ssh host
 		host: string @dagger(input)
 
@@ -34,6 +36,12 @@ import (
 
 	// App name (use as COMPOSE_PROJECT_NAME)
 	name: *"source" | string @dagger(input)
+
+	// Volumes used by compose file
+	volumes: {[string]: dagger.#Artifact & dagger.#Input} | *null
+
+	// Secrets volumes used by compose file
+	secrets: {[string]: dagger.#Secret & dagger.#Input} | *null
 
 	// Image registries
 	registries: [...{
@@ -64,9 +72,20 @@ import (
 		docker-compose up -d
 		"""#
 
+	// FIXME Create a dependency on files to do docker-compose up
+	// after uploading files.
+	// It's actually not possible because `files` isn't in `run` scope
+	if volumes != null || secrets != null {
+		files: ssh.#Files & {
+			"sshConfig": sshConfig
+			files:       volumes
+			"secrets":   secrets
+		}
+	}
+
 	run: docker.#Command & {
-		"ssh":   ssh
-		command: #code
+		"sshConfig": sshConfig
+		command:     #code
 		package: "docker-compose": true
 		"registries": registries
 		if source != _|_ {

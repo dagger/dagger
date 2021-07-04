@@ -22,7 +22,7 @@ TestCompose: {
 	name: "compose_test_\(suffix.out)"
 
 	up: #App & {
-		ssh: {
+		sshConfig: {
 			key:  TestSSH.key
 			host: TestSSH.host
 			user: TestSSH.user
@@ -32,16 +32,16 @@ TestCompose: {
 	}
 
 	verify: docker.#Command & {
-		ssh:     up.run.ssh
-		command: #"""
-				docker container ls | grep "\#(name)_api" | grep "Up"
-			"""#
+		sshConfig: up.run.sshConfig
+		command:   #"""
+	   docker container ls | grep "\#(name)_api" | grep "Up"
+	  """#
 	}
 
 	cleanup: #CleanupCompose & {
-		context: up.run
-		"name":  name
-		ssh:     verify.ssh
+		context:   up.run
+		"name":    name
+		sshConfig: verify.sshConfig
 	}
 }
 
@@ -53,7 +53,7 @@ TestInlineCompose: {
 	name: "inline_test_\(suffix.out)"
 
 	up: #App & {
-		ssh: {
+		sshConfig: {
 			key:  TestSSH.key
 			host: TestSSH.host
 			user: TestSSH.user
@@ -74,15 +74,60 @@ TestInlineCompose: {
 	}
 
 	verify: docker.#Command & {
-		ssh:     up.run.ssh
-		command: #"""
+		sshConfig: up.run.sshConfig
+		command:   #"""
 				docker container ls | grep "\#(name)_api-mix" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
-		context: up.run
-		"name":  name
-		ssh:     verify.ssh
+		context:   up.run
+		"name":    name
+		sshConfig: verify.sshConfig
+	}
+}
+
+TestComposeVolume: {
+	// Generate a random string.
+	// Seed is used to force buildkit execution and not simply use a previous generated string.
+	suffix: random.#String & {seed: "cmp-inline"}
+
+	name: "mount_test_\(suffix.out)"
+
+	artifact: dagger.#Artifact & dagger.#Input
+
+	up: #App & {
+		sshConfig: {
+			key:  TestSSH.key
+			host: TestSSH.host
+			user: TestSSH.user
+		}
+		"name": name
+		composeFile: #"""
+			  version: "3"
+
+			  services:
+			    nginx:
+			      image: nginx:latest
+			      volumes:
+			      - $HOME/data:/usr/share/nginx/html
+			      - $HOME/data:/foo
+			      ports:
+			      - 80
+			"""#
+		volumes: "/root/data": from: artifact
+	}
+
+	verify: docker.#Command & {
+		sshConfig: up.run.sshConfig
+		command:   #"""
+					docker container ls | grep "\#(name)_nginx" | grep "Up"
+				"""#
+	}
+
+	cleanup: #CleanupCompose & {
+		context:   up.run
+		"name":    name
+		sshConfig: verify.sshConfig
 	}
 }

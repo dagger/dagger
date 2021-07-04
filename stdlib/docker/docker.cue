@@ -90,7 +90,7 @@ import (
 
 #Run: {
 	// Connect to a remote SSH server
-	ssh: {
+	sshConfig: {
 		// ssh host
 		host: string @dagger(input)
 
@@ -135,7 +135,7 @@ import (
 		"""#
 
 	run: #Command & {
-		"ssh":   ssh
+		"sshConfig":   sshConfig
 		command: #command
 		env: {
 			IMAGE_REF: ref

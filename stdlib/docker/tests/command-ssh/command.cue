@@ -14,7 +14,7 @@ TestSSH: client: #Command & {
 	command: #"""
 			docker $CMD
 		"""#
-	ssh: {
+	sshConfig: {
 		host: TestConfig.host
 		user: TestConfig.user
 		key:  TestConfig.key

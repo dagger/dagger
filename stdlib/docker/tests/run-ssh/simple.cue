@@ -20,7 +20,7 @@ TestSSH: {
 		name: "daggerci-test-ssh-\(suffix.out)"
 		ref:  "hello-world"
 
-		ssh: {
+		sshConfig: {
 			host: TestConfig.host
 			user: TestConfig.user
 			key:  TestConfig.key

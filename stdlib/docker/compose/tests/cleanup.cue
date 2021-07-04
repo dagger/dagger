@@ -14,7 +14,7 @@ import (
 	// App name (use as COMPOSE_PROJECT_NAME)
 	name: *"source" | string
 
-	ssh: {
+	sshConfig: {
 		// ssh host
 		host: string @dagger(input)
 
@@ -71,21 +71,21 @@ import (
 				"/entrypoint.sh",
 			]
 			env: {
-				DOCKER_HOSTNAME:      ssh.host
-				DOCKER_USERNAME:      ssh.user
-				DOCKER_PORT:          strconv.FormatInt(ssh.port, 10)
+				DOCKER_HOSTNAME:      sshConfig.host
+				DOCKER_USERNAME:      sshConfig.user
+				DOCKER_PORT:          strconv.FormatInt(sshConfig.port, 10)
 				COMPOSE_PROJECT_NAME: name
-				if ssh.keyPassphrase != _|_ {
+				if sshConfig.keyPassphrase != _|_ {
 					SSH_ASKPASS: "/get_passphrase"
 					DISPLAY:     "1"
 				}
 			}
 			mount: {
-				if ssh.key != _|_ {
-					"/key": secret: ssh.key
+				if sshConfig.key != _|_ {
+					"/key": secret: sshConfig.key
 				}
-				if ssh.keyPassphrase != _|_ {
-					"/passphrase": secret: ssh.keyPassphrase
+				if sshConfig.keyPassphrase != _|_ {
+					"/passphrase": secret: sshConfig.keyPassphrase
 				}
 			}
 		},
