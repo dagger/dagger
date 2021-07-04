@@ -156,6 +156,10 @@ setup() {
     dagger -e google-cloudrun up
 }
 
+@test "ssh: files" {
+    dagger -e ssh-files up
+}
+
 @test "terraform" {
     # it must fail because of a missing var
     run dagger -e terraform up

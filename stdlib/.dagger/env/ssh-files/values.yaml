@@ -1,0 +1,36 @@
+plan:
+    module: ./ssh/
+    package: ./tests
+name: ssh-files
+inputs:
+    TestArtifact:
+        dir:
+            path: ./ssh/tests/testdata
+    TestConfig.host:
+        text: 143.198.64.230
+    TestConfig.key:
+        secret: ENC[AES256_GCM,data:B6RnbhcevRLuJTFTEyif5KLx7nTH/4vsCzW3auotL9EHt4ehzvx8H8EowOfvdfVx9hc/UjkZSoj0JBWvsfcUtTCFV8WvZxhwG9VR3qi6MRDgnZozp+vQIKzX6P5NUIfoJftjRnQeG0V+HcJ5i3UigTIIx9mUSDwwki3Up8k5GenGc3eHV0yIJO5cjPPET9nMlPmSFRXxmHn4pizo1QC27L7v+Y0a20Xt3BbicxNMaGUsp5JtnciG3ZoQLAOZDsF6aY0DgzO6Dzlfne8GShxkviStG/moTbC1UQBmYuooGLCpp2+shX7eOY00wO6eKJkABiqzj8O9R/KiQfrS4CJetYgb7bq+SRW+3Bw86TzbfcTLiiofY3CUdp/a1E2zRTKbMG/ljajmsxsx7PWY7xQRUWOFJ3j0XP1c0OeWoojnWQc/j/KsjEcYLKDEKJP3aqvgBpTSw0axJR1SG1j27TLJBJFdRdHr7ummonUoE2t2fg2wrtzV19YcoA6SZK2FXzfnxaYg5BVkIqz6ej2iiwMuexx/Z8GNPsvyn3tH,iv:OyTx09CYzGGKpXnds+CEr2Vk1m9ISTGpFPocs7A7Tuc=,tag:P6ngsMN2KZxkWDlUCSUCLg==,type:str]
+    TestConfig.user:
+        text: daggerci
+    TestSecret:
+        secret: ENC[AES256_GCM,data:79A2m1xd,iv:Lg81iMY/8JqIgbvsIJ9hyZXCvpNsJGDIf47CSQP+5HI=,tag:Z/5u+UuoevK8Hx29a1Flqw==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSArRXhXalorc0toVkhjaEJt
+            MU1mbkFKWHJSWXFDUFFzU2g5M1EweXZYU1dnCjF6WUVmY1VYSnN5Nnp3VkEzNC9Z
+            OVo4UGxXRGxMaEZkTjhXeGVYdHJhOFEKLS0tIGdLNm5aVlYrREVlZ0FoZnBWekZE
+            V1ZVNlRyWkhLMnN1c3JoTXozVEpsQmMKlad0OlZ2REIzsDQ/nQv8f7MIBqOVQpgh
+            1YT5t5pWRqK1F8z08mC6xgr9iU/3M7N0cOeqzIvkPFg9zWnx+yS6YQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-04T22:39:29Z"
+    mac: ENC[AES256_GCM,data:xWH1Z47oEkjFHEguQtNFln0zrkiG1xFTdwE0lAB73iRhVLwmPMb5zicUykCwhIm2jTVb4adA1NVdJt/Cz8abJq9kMn40BmObn7g27ntDGq83L53XqZ8/T6o62AiMzO2zMkyqS3b0T6eWqVvM2dIM79kfBj3H3o6Rwx0CO3zb5FQ=,iv:zROgBcnFNwQNqjexVgVLmM62tr03I0xrrXYs49xsgBA=,tag:6kU2C+cNmvD3eJg6EOK2pw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
