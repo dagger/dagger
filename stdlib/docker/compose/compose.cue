@@ -62,8 +62,9 @@ import (
 
 		# Move compose
 		if [ -d "$SOURCE_DIR" ]; then
-			if [ -f docker-compose.yaml ]; then
-				cp docker-compose.yaml "$SOURCE_DIR"/docker-compose.yaml
+			if [ -f docker-compose.yml ]; then
+				rm "$SOURCE_DIR"
+				cp docker-compose.yml "$SOURCE_DIR"/docker-compose.yml
 			fi
 			cd "$SOURCE_DIR"
 		fi
@@ -92,7 +93,7 @@ import (
 			copy: "/source": from: source
 		}
 		if composeFile != _|_ {
-			files: "/docker-compose.yaml": composeFile
+			files: "/docker-compose.yml": composeFile
 		}
 		env: {
 			COMPOSE_HTTP_TIMEOUT: strconv.FormatInt(200, 10)
