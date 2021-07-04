@@ -135,8 +135,8 @@ import (
 		"""#
 
 	run: #Command & {
-		"sshConfig":   sshConfig
-		command: #command
+		"sshConfig": sshConfig
+		command:     #command
 		env: {
 			IMAGE_REF: ref
 			if name != _|_ {

@@ -28,7 +28,7 @@ TestFiles: {
 			user: TestConfig.user
 			key:  TestConfig.key
 		}
-		files: "\(dataPath)":     TestArtifact
+		files: "\(dataPath)":                TestArtifact
 		secrets: "\(secretPath)/secret.txt": TestSecret
 	}
 

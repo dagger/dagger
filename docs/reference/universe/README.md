@@ -29,4 +29,5 @@
 - [netlify](./netlify.md) - Netlify client operations
 - [os](./os.md) - OS operations
 - [random](./random.md) - Random generation utilities
+- [ssh](./ssh.md) - -
 - [terraform](./terraform.md) - Terraform operations
