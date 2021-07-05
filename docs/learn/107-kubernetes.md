@@ -147,7 +147,7 @@ kubectl get service
 # todoapp-service   NodePort    10.96.225.114   <none>        80:32658/TCP   11m 
 ```
 
-Next step is to transpose it in Cue. Before continuing, clean everything:
+The next step is to transpose it in Cue. Before continuing, clean everything:
 
 ```shell
 kubectl delete -f k8s/ 
@@ -191,7 +191,7 @@ values={[
 
 The above `config.cue` defines:
 
-- `kubeconfig` a generic value created to embbed this string `kubeconfig` value
+- `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
 ```cue title="todoapp/cue.mod/kube/config.cue"
 package main
@@ -364,7 +364,7 @@ values={[
 # we'll use the "$HOME"/.kube/config created by `kind`
 dagger input text kubeconfig -f "$HOME"/.kube/config -e kube
 
-# Add as artifact the k8s folder
+# Add as an artifact the k8s folder
 dagger input dir manifest ./k8s -e kube
 ```
 
@@ -373,7 +373,7 @@ dagger input dir manifest ./k8s -e kube
   <TabItem value="gke">
 
 ```shell
-# Add as artifact the k8s folder
+# Add as an artifact the k8s folder
 dagger input dir manifest ./k8s -e kube
 
 # Add Google credentials
@@ -390,7 +390,7 @@ dagger input text gkeConfig.clusterName <GKE CLUSTER NAME> -e kube
   <TabItem value="eks">
 
 ```shell
-# Add as artifact the k8s folder
+# Add as an artifact the k8s folder
 dagger input dir manifest ./k8s -e kube
 
 # Add Amazon credentials
@@ -448,15 +448,15 @@ values={[
 
   <TabItem value="kind">
 
-Let's see how to deploy locally an image and push it to the local cluster
+Let's see how to deploy an image locally and push it to the local cluster
 
 `kube/todoapp.cue` faces these changes:
 
-- `suffix`, a random string for unique tag name
-- `repository`, source code of the app to build. Needs to have a Dockerfile
+- `suffix`, a random string for a unique tag name
+- `repository`, source code of the app to build. It needs to have a Dockerfile
 - `registry`, URI of the registry to push to
 - `image`, build of the image
-- `remoteImage`, push image to registry
+- `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
 ```cue title="todoapp/kube/todoapp.cue"
@@ -532,13 +532,10 @@ todoApp: {
 Let's see how to leverage [GCR](https://github.com/dagger/dagger/tree/main/stdlib/gcp/gcr)
 and [GKE](https://github.com/dagger/dagger/tree/main/stdlib/gcp/gke) packages.
 
-The two files have to be edited in order to do so.
+The two files have to be edited to do so.
 
-`kube/config.cue` configuration has following changes:
+`kube/config.cue` configuration has following change:
 
-<!-- TODO Should I remove this ? -->
-
-- removal of generic `kubeconfig` value as abstraction is not optimal for present use case
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to GCR
 
 ```cue title="todoapp/cue.mod/kube/config.cue"
@@ -571,11 +568,11 @@ gcrCreds: gcr.#Credentials & {
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
 
-- `suffix`, a random string for unique tag name
-- `repository`, source code of the app to build. Needs to have a Dockerfile
+- `suffix`, a random string for a unique tag name
+- `repository`, source code of the app to build. It needs to have a Dockerfile
 - `registry`, URI of the registry to push to
 - `image`, build of the image
-- `remoteImage`, push image to registry
+- `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
 ```cue title="todoapp/kube/todoapp.cue"
@@ -654,13 +651,10 @@ todoApp: {
 Let's see how to leverage [ECR](https://github.com/dagger/dagger/tree/main/stdlib/aws/ecr)
 and [EKS](https://github.com/dagger/dagger/tree/main/stdlib/aws/eks) packages.
 
-The two files have to be edited in order to do so.
+The two files have to be edited to do so.
 
-`kube/config.cue` configuration has following changes:
+`kube/config.cue` configuration has following change:
 
-<!-- TODO Should I remove this ? -->
-
-- removal of generic `kubeconfig` value as abstraction is not optimal for present use case
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to ECR
 
 ```cue title="todoapp/kube/config.cue"
@@ -693,11 +687,11 @@ ecrCreds: ecr.#Credentials & {
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
 
-- `suffix`, a random string for unique tag name
-- `repository`, source code of the app to build. Needs to have a Dockerfile
+- `suffix`, a random string for a unique tag name
+- `repository`, source code of the app to build. It needs to have a Dockerfile
 - `registry`, URI of the registry to push to
 - `image`, build of the image
-- `remoteImage`, push image to registry
+- `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
 ```cue title="todoapp/kube/todoapp.cue"
@@ -785,7 +779,7 @@ values={[
 Next, we'll provide the two new inputs, `repository` and `registry`.
 
 ```shell
-# A name after `localhost:5000/` is required to avoid error on push to local registry
+# A name after `localhost:5000/` is required to avoid error on push to the local registry
 dagger input text registry "localhost:5000/kind" -e kube
 
 # Add todoapp (current folder) to repository value
@@ -862,7 +856,7 @@ of the language features.
 
 ### Convert Kubernetes objects to CUE
 
-First, let's create re-usable definitions for the `deployment` and the `service` in order to remove a lot of boilerplate
+First, let's create re-usable definitions for the `deployment` and the `service` to remove a lot of boilerplate
 and repetition.
 
 Let's define a re-usable `#Deployment` definition in `kube/deployment.cue`.
@@ -873,7 +867,7 @@ package main
 // Deployment template containing all the common boilerplate shared by
 // deployments of this application.
 #Deployment: {
-  // Name of the deployment. This will be used to automatically label resources
+  // Name of the deployment. This will be used to label resources automatically
   // and generate selectors.
   name: string
 
@@ -921,7 +915,7 @@ package main
 // Service template containing all the common boilerplate shared by
 // services of this application.
 #Service: {
-  // Name of the service. This will be used to automatically label resources
+  // Name of the service. This will be used to label resources automatically
   // and generate selector.
   name: string
 
@@ -956,10 +950,10 @@ package main
 
 ### Generate Kubernetes manifest
 
-Now that you got generic definition for your kubernetes objects. You can use them to get back your yaml definition
-without having boilerplate or repetition.
+Now that you have generic definitions for your Kubernetes objects. You can use them to get back your YAML definition
+without having boilerplate nor repetition.
 
-Create a new definition named `#AppManifest` that will take care of generating the yaml in `kube/manifest.cue`.
+Create a new definition named `#AppManifest` that will generate the YAML in `kube/manifest.cue`.
 
 ```cue title="todoapp/cue.mod/kube/manifest.cue"
 package main
@@ -999,11 +993,10 @@ You can now remove the `manifest` input in `kube/todoapp.cue` and instead use th
 
 `kube/todoapp.cue` configuration has following changes:
 
-- removal of unused import `encoding/yaml` and `kustomize` package.
+- removal of unused imported `encoding/yaml` and `kustomize` packages.
 - removal of `manifest` input that is doesn't need anymore.
 - removal of `kustomization` to replace it with `#AppManifest` definition.
-- Update `kubeSrc` to use `manifest` field instead of `source` because we don't send kubernetes manifest
-  of `dagger.#Artifact` type anymore.
+- Update `kubeSrc` to use `manifest` field instead of `source` because we don't send Kubernetes manifest of `dagger.#Artifact` type anymore.
 
 <Tabs defaultValue="kind"
 groupId="provider"
@@ -1174,7 +1167,7 @@ todoApp: {
 
 ### Remove unused input
 
-Now that we manage our kubernetes manifest in CUE, we don't need `manifest` anymore.
+Now that we manage our Kubernetes manifest in CUE, we don't need `manifest` anymore.
 
 ```shell
 # Remove `manifest` input
@@ -1197,7 +1190,7 @@ dagger up -e kube
 # todoApp.remoteImage.digest  "sha256:cb8d91518b076a3fe15a33f7c171290dfbad50283ad976f3f5b93e9f33cefag7"                                          Image digest
 ```
 
-Let's verify if the deployment worked:
+Let's verify that the deployment worked:
 
 ```shell
 kubectl get deployments
