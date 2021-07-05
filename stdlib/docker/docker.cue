@@ -28,18 +28,64 @@ import (
 	]
 }
 
-// Push a docker image
+// Push a docker image to a remote registry
 #Push: {
-	// Remote ref (example: "index.docker.io/alpine:latest")
-	ref: string @dagger(input)
+	// Remote target (example: "index.docker.io/alpine:latest")
+	target: string @dagger(input)
 
-	// Image
+	// Image source
 	source: dagger.#Artifact @dagger(input)
 
-	#up: [
-		op.#Load & {from:           source},
-		op.#PushContainer & {"ref": ref},
+	// Registry auth
+	auth?: {
+		// Username
+		username: string @dagger(input)
+
+		// Password or secret
+		secret: string @dagger(input)
+	}
+
+	push: #up: [
+		op.#Load & {from: source},
+
+		if auth != _|_ {
+			op.#DockerLogin & {
+				"target": target
+				username: auth.username
+				secret:   auth.secret
+			}
+		},
+
+		op.#PushContainer & {ref: target},
+
+		op.#Subdir & {dir: "/dagger"},
 	]
+
+	// Image ref
+	ref: {
+		string
+
+		#up: [
+			op.#Load & {from: push},
+
+			op.#Export & {
+				source: "/image_ref"
+			},
+		]
+	} @dagger(output)
+
+	// Image digest
+	digest: {
+		string
+
+		#up: [
+			op.#Load & {from: push},
+
+			op.#Export & {
+				source: "/image_digest"
+			},
+		]
+	} @dagger(output)
 }
 
 #Run: {

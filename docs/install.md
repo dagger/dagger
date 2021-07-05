@@ -35,6 +35,17 @@ You can then install it globally on your system:
 sudo mv ./bin/dagger /usr/local/bin
 ```
 
+## Option 2 (Windows): Run a shell script
+
+From a terminal, run the following command:
+
+```shell
+curl https://releases.dagger.io/dagger/install.ps1 -OutFile install.ps1 ; ./install.ps1; rm install.ps1
+```
+
+We try to move the dagger binary under `C:\Windows\System32` but
+in case use missing the necessary permission we'll save everything under `<your home folder>/dagger`
+
 ## Option 3: Download a binary release
 
 Open your web browser to [the latest release](https://github.com/dagger/dagger/releases/latest).

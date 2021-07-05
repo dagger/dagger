@@ -2,10 +2,10 @@ package solver
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"sync"
 
+	"github.com/docker/distribution/reference"
 	bkauth "github.com/moby/buildkit/session/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -40,9 +40,9 @@ func (a *RegistryAuthProvider) Register(server *grpc.Server) {
 }
 
 func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.CredentialsRequest) (*bkauth.CredentialsResponse, error) {
-	reqURL, err := parseAuthHost(req.Host)
-	if err != nil {
-		return nil, err
+	host := req.Host
+	if host == "registry-1.docker.io" {
+		host = "docker.io"
 	}
 
 	a.m.RLock()
@@ -54,7 +54,7 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 			return nil, err
 		}
 
-		if u.Host == reqURL.Host {
+		if u == host {
 			return auth, nil
 		}
 	}
@@ -62,15 +62,16 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 	return &bkauth.CredentialsResponse{}, nil
 }
 
-func parseAuthHost(host string) (*url.URL, error) {
-	if host == "registry-1.docker.io" {
-		host = "https://index.docker.io/v1/"
-	}
+func parseAuthHost(host string) (string, error) {
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
 
-	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-		host = "https://" + host
+	ref, err := reference.ParseNormalizedNamed(host)
+
+	if err != nil {
+		return "", err
 	}
-	return url.Parse(host)
+	return reference.Domain(ref), nil
 }
 
 func (a *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (rr *bkauth.FetchTokenResponse, err error) {

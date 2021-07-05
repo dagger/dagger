@@ -1,0 +1,35 @@
+plan:
+    module: ./docker
+    package: ./tests/push-multi-registry
+name: docker-push-multi-registry
+inputs:
+    TestRemoteAWS.awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:Vg+RRHYV5p0twlKtq0zGzokTsXY=,iv:XXEjaZBmS7A+KBZQ/0ZJ4WLH3M5dthg0lq86BhHOt2U=,tag:q6QSQkH9Jz/e4FGlBNllug==,type:str]
+    TestRemoteAWS.awsConfig.region:
+        text: us-east-2
+    TestRemoteAWS.awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:uk5BBJhmc8RadT1FSIsnW+/Rvs8c+kIhshBia+DX+UEWiuPV+RwXfw==,iv:DzXcvUcy3amU7wCA6XFgPvGUAU+dxPZQMHKM94d9PlY=,tag:QDDs4kg6cFPLLGRM6sHzfg==,type:str]
+    TestRemoteDocker.dockerConfig.secret:
+        secret: ENC[AES256_GCM,data:bxlKdGBSd2Rxf0Kmw8+QO1h0308rGYPqzUO17Eg4RUh2WQjd,iv:vNZww3t8yBrcmmddJghtJWfkz3G9j2CPGyx9B3e/WK8=,tag:qlUl2dkREcGZxdKeAzPjzQ==,type:str]
+    TestRemoteDocker.dockerConfig.username:
+        text: daggertest
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBnc1JZMUpTUnFZNVI3RHh3
+            a0RtTDNIQ2xjaHJlM0tNbndta1NlMjc2a2dFCkQzV0FpMFBHZUdZb0RMYW1DUGN2
+            TlZVQ2dhdWt3OEN5LzZEYXR4QkFSTTAKLS0tIFdaS0Z0dG85QXNNTnpXZ0dFUGpY
+            Yy81dlJ5cDhCL1VCc0szSE9Dbjh0TUEK+xcj1bHhJr0MR+2QLL0Y+at0/SFXcutx
+            VpUkCykV3eBV6P9I51+3NeJ/ZMmJ43N2geFFJNeacmn8uQKNxpgGGw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-01T13:15:01Z"
+    mac: ENC[AES256_GCM,data:vpU0XJA/H/ra4BIuReWJAOLvFW4s+xHDAxxSYoU1WkdX68EUb1jbuhEqyDqlhQRn6lf3qSt9kbnbiiw39/mrdBFnwDg5DLjOPT17G/rBiSp9p+1e4mN8hGNp79uen+dDQX7f4NSxZ4nroMVtEuIuBrbFaZUMYVaBYEHjGuw2hgc=,iv:/nW7lpopSsqTwoaPgiHrabtl8aOZtJEezkwBDqi15Tg=,tag:uw3Hj+/t3Y5U0wpK7g+tJg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

@@ -21,6 +21,7 @@ TestPushContainer: {
 		ref: "daggerio/ci-test:\(tag.out)"
 		#up: [
 			op.#DockerLogin & {
+				target: ref
 				registry
 			},
 			op.#WriteFile & {

@@ -70,18 +70,21 @@ _No output._
 
 ## docker.#Push
 
-Push a docker image
+Push a docker image to a remote registry
 
 ### docker.#Push Inputs
 
-| Name             | Type                  | Description                                             |
-| -------------    |:-------------:        |:-------------:                                          |
-|*ref*             | `string`              |Remote ref (example: "index.docker.io/alpine:latest")    |
-|*source*          | `dagger.#Artifact`    |Image                                                    |
+| Name             | Type                  | Description                                                |
+| -------------    |:-------------:        |:-------------:                                             |
+|*target*          | `string`              |Remote target (example: "index.docker.io/alpine:latest")    |
+|*source*          | `dagger.#Artifact`    |Image source                                                |
 
 ### docker.#Push Outputs
 
-_No output._
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*ref*             | `string`          |Image ref           |
+|*digest*          | `string`          |Image digest        |
 
 ## docker.#Run
 
