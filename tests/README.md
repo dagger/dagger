@@ -3,7 +3,7 @@
 ## TL;DR
 
 ```shell
-# Install dependancies
+# Install dependencies
 yarn install
 
 # Install gnu parallel if needed

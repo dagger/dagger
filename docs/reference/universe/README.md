@@ -14,6 +14,7 @@
 - [docker](./docker/README.md) - Docker container operations
 - [docker/compose](./docker/compose.md) - Docker-compose operations
 - [gcp](./gcp/README.md) - Google Cloud Platform
+- [gcp/cloudrun](./gcp/cloudrun.md) - -
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry
 - [gcp/gcs](./gcp/gcs.md) - Google Cloud Storage
 - [gcp/gke](./gcp/gke.md) - Google Kubernetes Engine

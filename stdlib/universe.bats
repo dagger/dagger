@@ -152,6 +152,10 @@ setup() {
     dagger -e google-gke up
 }
 
+@test "google cloud: cloudrun" {
+    dagger -e google-cloudrun up
+}
+
 @test "terraform" {
     # it must fail because of a missing var
     run dagger -e terraform up
