@@ -2,54 +2,114 @@
 slug: /learn/106-cloudrun
 ---
 
-# Dagger 106: deploy to CloudRun
+# Dagger 106: deploy to Cloud Run
 
-This tutorial illustrates how to use dagger to push and deploy Docker
-images to CloudRun.
+This tutorial illustrates how to use Dagger to build, push and deploy Docker images to Cloud Run.
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Deploy an application to GCP Cloud Run
+## Initialize a Dagger Workspace and Environment
 
-This example shows how to deploy an application to GCP Cloud Run. Read the deployment [plan](https://github.com/dagger/dagger/tree/main/examples/cloud-run-app)
+### (optional) Setup example app
 
-NOTE: this example requires an EKS cluster to allow authentication with your AWS credentials; but can easily be adapter to deploy to any Kubernetes cluster.
+You will need the local copy of the [Dagger examples repository](https://github.com/dagger/examples) used in previous guides
 
-Components:
+```shell
+git clone https://github.com/dagger/examples
+```
 
-- [Cloud Run](https://cloud.google.com/run)
+Make sure that all commands are being ran from the todoapp directory:
 
-How to run:
+```shell
+cd examples/todoapp
+```
 
-1. Initialize a new workspace
+### (optional) Initialize a Cue module
 
-   ```sh
-   cd ./cloud-run-app
-   dagger init
-   ```
+In this guide we will use the same directory as the root of the Dagger workspace and the root of the Cue module; but you can create your Cue module anywhere inside the Dagger workspace.
 
-2. Create a new environment
+```shell
+cue mod init
+```
 
-   ```sh
-   dagger new cloud-run-app
-   cp *.cue ./.dagger/env/cloud-run-app/plan/
-   ```
+### Organize your package
 
-3. Configure the Cloud Run service
+Let's create a new directory for our Cue package:
 
-   ```sh
-   dagger input text serviceName MY_APP_NAME
-   dagger input text region MY_GCP_REGION
-   dagger input text image MY_GCR_IMAGE_NAME
+```shell
+mkdir cue.mod/gcpcloudrun
+```
 
-   dagger input text gcpConfig.project MY_GCP_PROJECT
-   dagger input secret gcpConfig.serviceKey -f MY_GCP_SERVICE_KEY_FILE
-   ```
+### Create a basic plan
 
-4. Deploy!
+```cue title="todoapp/cue.mod/gcpcloudrun/source.cue"
+package gcpcloudrun
 
-   ```sh
-   dagger up
-   ```
+import (
+    "alpha.dagger.io/dagger"
+    "alpha.dagger.io/docker"
+    "alpha.dagger.io/gcp"
+    "alpha.dagger.io/gcp/cloudrun"
+    "alpha.dagger.io/gcp/gcr"
+)
 
+// Source code of the sample application
+src: dagger.#Artifact & dagger.#Input
+
+// GCR full image name
+imageRef: string & dagger.#Input
+
+image: docker.#Build & {
+	source: src
+}
+
+gcpConfig: gcp.#Config
+
+creds: gcr.#Credentials & {
+	config: gcpConfig
+}
+
+push: docker.#Push & {
+	target: imageRef
+	source: image
+	auth: {
+		username: creds.username
+		secret: creds.secret
+	}
+}
+
+deploy: cloudrun.#Service & {
+	config: gcpConfig
+	image:  push.ref
+}
+```
+
+## Set up the environment
+
+### Create a new environment
+
+Now that your Cue package is ready, let's create an environment to run it:
+
+```shell
+dagger new 'gcpcloudrun' -m cue.mod/gcpcloudrun
+```
+
+### Configure user inputs
+
+```shell
+dagger input dir src . -e gcpcloudrun
+dagger input text deploy.name todoapp -e gcpcloudrun
+dagger input text imageRef gcr.io/<your-project>/todoapp -e gcpcloudrun
+dagger input text gcpConfig.region us-west2 -e gcpcloudrun
+dagger input text gcpConfig.project <your-project> -e gcpcloudrun
+dagger input secret gcpConfig.serviceKey -f ./gcp-sa-key.json -e gcpcloudrun
+```
+
+## Deploy
+
+Now that everything is properly set, let's deploy on Cloud Run:
+
+```shell
+dagger up -e gcpcloudrun
+```

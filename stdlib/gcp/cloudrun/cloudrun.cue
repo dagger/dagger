@@ -10,7 +10,7 @@ import (
 	// GCP Config
 	config: gcp.#Config
 
-	// service name
+	// Cloud Run service name
 	name: string @dagger(input)
 
 	// GCR image ref
@@ -18,6 +18,9 @@ import (
 
 	// Cloud Run platform
 	platform: *"managed" | string @dagger(input)
+
+	// Cloud Run service exposed port
+	port: *"80" | string @dagger(input)
 
 	#up: [
 		op.#Load & {
@@ -35,7 +38,7 @@ import (
 				"pipefail",
 				"-c",
 				#"""
-					gcloud run deploy "$SERVICE_NAME" --image "$IMAGE" --region "$REGION" --platform "$PLATFORM" --allow-unauthenticated
+					gcloud run deploy "$SERVICE_NAME" --image "$IMAGE" --region "$REGION" --port "$PORT" --platform "$PLATFORM" --allow-unauthenticated
 					"""#,
 			]
 			env: {
@@ -43,6 +46,7 @@ import (
 				PLATFORM:     platform
 				REGION:       config.region
 				IMAGE:        image
+				PORT:         port
 			}
 		},
 	]

@@ -9,6 +9,6 @@ TestConfig: gcpConfig: gcp.#Config
 
 TestCloudRun: deploy: cloudrun.#Service & {
 	config: TestConfig.gcpConfig
-	name:   "cloudrun-test"
-	image:  "gcr.io/dagger-ci/cloudrun-test:latest"
+	name:   "todoapp"
+	image:  "gcr.io/dagger-ci/todoapp:latest"
 }
