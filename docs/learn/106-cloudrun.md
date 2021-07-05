@@ -61,27 +61,27 @@ src: dagger.#Artifact & dagger.#Input
 imageRef: string & dagger.#Input
 
 image: docker.#Build & {
-	source: src
+    source: src
 }
 
 gcpConfig: gcp.#Config
 
 creds: gcr.#Credentials & {
-	config: gcpConfig
+    config: gcpConfig
 }
 
 push: docker.#Push & {
-	target: imageRef
-	source: image
-	auth: {
-		username: creds.username
-		secret: creds.secret
-	}
+    target: imageRef
+    source: image
+    auth: {
+        username: creds.username
+        secret: creds.secret
+    }
 }
 
 deploy: cloudrun.#Service & {
-	config: gcpConfig
-	image:  push.ref
+    config: gcpConfig
+    image:  push.ref
 }
 ```
 
