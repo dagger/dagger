@@ -27,7 +27,7 @@
     "file-loader": "^6.2.0",
     "react": "^17.0.1",
     "react-dom": "^17.0.1",
-    "react-social-login-buttons": "^3.4.0",
+    "react-social-login-buttons": "^3.5.0",
     "sass": "^1.35.1",
     "url-loader": "^4.1.1"
   },
