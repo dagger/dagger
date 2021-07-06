@@ -1,0 +1,29 @@
+plan:
+    module: ./102
+    package: ./test
+name: "102"
+inputs:
+    site.netlify.account.token:
+        secret: ENC[AES256_GCM,data:xqpa7N6mh/WSyflF2qdZG2Tu5LyV07fkQ/ol0B8mnlqIaut57xbHEDze2A==,iv:5ohEHkBtQWYYuST0Pj14x6cEhUYUgL9fB0JLlbGR1u4=,tag:b4PYonvQ7/pfH0t5FyuDLw==,type:str]
+    site.netlify.name:
+        text: dagger-test-doc-102
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBMQTlPUUNFa2xWdTBkalAx
+            VzlKL01rc09reFNKZEd2amVMOG9uNlFDbWdFCkJTSlplNlNmMFJmYmk0UGxTR3h5
+            dUQwSkpiSlZPWStabzVIZCtxUTJwWE0KLS0tIGswZThVLy9YeWxXVjZWNTJJa213
+            TEY5UTEyd3ROV2kvN2ptSVhjeVpvUm8KEoEjSSEaSCOF40od/C1qMywe113I7Bid
+            Njb0sg3RdLg4MN2cbtb9MFuCkIVWxWgCG9aTzP6YLf902Zf8qf4Smg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-06T16:25:13Z"
+    mac: ENC[AES256_GCM,data:YKE3zXbDJ5jfMuGx5XYUENXG7qJLg9OF3jF/KzFgRu00jtzEe42JGFuMQIcwF8tTmbkVVVAhMAn74RUg8SNx47rIXytYcnbBWxWG842TXUSE4ZeBeft6FO8j9gwCdPeaGtcglPWOZFCo7XY+GXrQ/PEen15evHNn665jR710BDA=,iv:oUnhzMVLRpDFqK8gh4O8+SYmbOvOb+jbnFy92Bc5O9o=,tag:WtpbZiM/dPAxPrBLjPm/uw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

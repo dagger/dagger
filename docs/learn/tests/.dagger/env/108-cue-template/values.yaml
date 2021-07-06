@@ -1,0 +1,24 @@
+plan:
+    module: ./108/cue-template
+    package: ./test
+name: 108-cue-template
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXUEZmeUlDMis1dWhwaG9z
+            RXI4N1I0R3p2bWQ1WlFueWlIOURWN0FVWGdRCjNIb2p3MHF2WnJUdHRwVTdTb1c4
+            UkVBMzJESkJOZDk4RUpOMnBQVld4MmsKLS0tIFRmOGtXWUc2cUVTUVVZdHlRNkZl
+            WXcxd1pxODNLeHphRFRNcGdNQURzajQKT17k+/13hTlmJhcFf+uxR09VDC+6X6Fj
+            2I9BXuvWBG9FN9rmLHzI8THAiMMv59krIzObseYlyXSlOw6XI+LKDQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-07T08:46:57Z"
+    mac: ENC[AES256_GCM,data:fAvP9ZS1DMIi096lxSKIeFgwMpCbHOpq6sEK4S1nBdxrT2ESK+bgo9z9PmAuVxmw4rDvnNX7csb7wY4/hxiS3dzeMk1WHI4DrNfsbYzZZ8V7bc/JJ6X5yacxhodPRrC0Xmo11RFpfOXsNqoChuHV/tuWq9tw1Url7iHxreJ4a54=,iv:4VTyMkcAOJlI08MFX09JUz5xDzxZGU+nCKyQdRGYqJc=,tag:9kjrJuEZGVZOQEE9/IPboQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

@@ -1,4 +1,5 @@
 const path = require("path");
+const remarkCodeImport = require('remark-code-import');
 
 /** @type {import('@docusaurus/types').DocusaurusConfig} */
 module.exports = {
@@ -53,6 +54,7 @@ module.exports = {
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/blob/main",
           routeBasePath: "/",
+          remarkPlugins: [remarkCodeImport],
         },
         theme: {
           customCss: require.resolve("./src/css/custom.scss"),
