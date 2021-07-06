@@ -9,7 +9,7 @@ TestKustomize: {
 	testdata: dagger.#Artifact
 
 	// Run Kustomize
-	kustom: #Kustomize & {
+	manifest: #Kustomize & {
 		source:        testdata
 		kustomization: yaml.Marshal({
 			resources: ["deployment.yaml", "pod.yaml"]
@@ -25,7 +25,7 @@ TestKustomize: {
 	}
 
 	// Verify kustomization generation
-	verify: #VerifyKustomize & {
-		source: kustom
+	test: #VerifyKustomize & {
+		source: manifest
 	}
 }

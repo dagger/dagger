@@ -21,7 +21,7 @@ TestCompose: {
 
 	name: "compose_test_\(suffix.out)"
 
-	up: #App & {
+	app: #App & {
 		ssh: {
 			key:  TestSSH.key
 			host: TestSSH.host
@@ -31,17 +31,17 @@ TestCompose: {
 		"name": name
 	}
 
-	verify: docker.#Command & {
-		ssh:     up.run.ssh
+	test: docker.#Command & {
+		ssh:     app.deployment.ssh
 		command: #"""
 				docker container ls | grep "\#(name)_api" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
-		context: up.run
+		context: app.deployment
 		"name":  name
-		ssh:     verify.ssh
+		ssh:     test.ssh
 	}
 }
 
@@ -52,7 +52,7 @@ TestInlineCompose: {
 
 	name: "inline_test_\(suffix.out)"
 
-	up: #App & {
+	app: #App & {
 		ssh: {
 			key:  TestSSH.key
 			host: TestSSH.host
@@ -73,16 +73,16 @@ TestInlineCompose: {
 			"""#
 	}
 
-	verify: docker.#Command & {
-		ssh:     up.run.ssh
+	test: docker.#Command & {
+		ssh:     app.deployment.ssh
 		command: #"""
 				docker container ls | grep "\#(name)_api-mix" | grep "Up"
 			"""#
 	}
 
 	cleanup: #CleanupCompose & {
-		context: up.run
+		context: app.deployment
 		"name":  name
-		ssh:     verify.ssh
+		ssh:     test.ssh
 	}
 }

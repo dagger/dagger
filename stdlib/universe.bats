@@ -68,7 +68,7 @@ setup() {
   dagger -e docker-push up
 
   # Get image reference
-  dagger -e docker-pull input text ref "$(dagger -e docker-push query -c TestPush.push.ref | tr -d '\n' | tr -d '\"')"
+  dagger -e docker-pull input text ref "$(dagger -e docker-push query -c TestPush.remoteImage.ref | tr -d '\n' | tr -d '\"')"
 
   # Pull image
   dagger -e docker-pull up

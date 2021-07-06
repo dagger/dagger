@@ -8,11 +8,11 @@ import (
 TestSourceBuild: dagger.#Artifact @dagger(input)
 
 TestBuild: {
-	image: #Build & {
+	image: #Image & {
 		source: TestSourceBuild
 	}
 
-	verify: #up: [
+	test: #up: [
 		op.#Load & {
 			from: image
 		},
@@ -39,7 +39,7 @@ TestImageFromDockerfile: {
 		context: TestSourceImageFromDockerfile
 	}
 
-	verify: #up: [
+	test: #up: [
 		op.#Load & {
 			from: image
 		},

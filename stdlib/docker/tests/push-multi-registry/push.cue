@@ -38,7 +38,7 @@ TestRemoteAWS: {
 
 	target: "125635003186.dkr.ecr.\(awsConfig.region).amazonaws.com/dagger-ci:test-ecr-\(TestResources.suffix.out)"
 
-	remoteImg: #Push & {
+	remoteImage: #RemoteImage & {
 		"target": target
 		source:   TestResources.image
 		auth: {
@@ -82,7 +82,7 @@ TestRemoteDocker: {
 
 	target: "daggerio/ci-test:test-docker-\(TestResources.suffix.out)"
 
-	remoteImg: #Push & {
+	remoteImage: #RemoteImage & {
 		"target": target
 		source:   TestResources.image
 		auth: {

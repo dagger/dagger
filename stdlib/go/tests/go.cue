@@ -9,7 +9,7 @@ import (
 TestData: dagger.#Artifact @dagger(input)
 
 TestGoBuild: {
-	build: #Build & {
+	build: #App & {
 		source: TestData
 		output: "/bin/testbin"
 	}

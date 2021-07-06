@@ -8,9 +8,9 @@ import (
 ref: string @dagger(input)
 
 TestPull: {
-	pull: #Pull & {from: ref}
+	container: #RemoteContainer & {from: ref}
 
-	check: #up: [
+	test: #up: [
 		op.#Load & {from: alpine.#Image},
 		op.#Exec & {
 			always: true
@@ -19,7 +19,7 @@ TestPull: {
 					 grep -q "test" /src/test.txt
 					""",
 			]
-			mount: "/src": from: pull
+			mount: "/src": from: container
 		},
 	]
 }

@@ -7,7 +7,7 @@ import (
 )
 
 // Build a Docker image from source, using included Dockerfile
-#Build: {
+#Image: {
 	source: dagger.#Artifact @dagger(input)
 
 	#up: [
@@ -19,7 +19,7 @@ import (
 }
 
 // Pull a docker container
-#Pull: {
+#RemoteContainer: {
 	// Remote ref (example: "index.docker.io/alpine:latest")
 	from: string @dagger(input)
 
@@ -29,7 +29,7 @@ import (
 }
 
 // Push a docker image to a remote registry
-#Push: {
+#RemoteImage: {
 	// Remote target (example: "index.docker.io/alpine:latest")
 	target: string @dagger(input)
 
@@ -45,7 +45,7 @@ import (
 		secret: string @dagger(input)
 	}
 
-	push: #up: [
+	remoteImage: #up: [
 		op.#Load & {from: source},
 
 		if auth != _|_ {
@@ -66,7 +66,7 @@ import (
 		string
 
 		#up: [
-			op.#Load & {from: push},
+			op.#Load & {from: remoteImage},
 
 			op.#Export & {
 				source: "/image_ref"
@@ -79,7 +79,7 @@ import (
 		string
 
 		#up: [
-			op.#Load & {from: push},
+			op.#Load & {from: remoteImage},
 
 			op.#Export & {
 				source: "/image_digest"
@@ -88,7 +88,7 @@ import (
 	} @dagger(output)
 }
 
-#Run: {
+#Container: {
 	// Connect to a remote SSH server
 	ssh: {
 		// ssh host
@@ -134,7 +134,7 @@ import (
 		docker container run -d $OPTS "$IMAGE_REF"
 		"""#
 
-	run: #Command & {
+	#Command & {
 		"ssh":   ssh
 		command: #command
 		env: {

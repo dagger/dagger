@@ -16,7 +16,7 @@ TestSSH: {
 		seed: ""
 	}
 
-	run: #Run & {
+	run: #Container & {
 		name: "daggerci-test-ssh-\(suffix.out)"
 		ref:  "hello-world"
 

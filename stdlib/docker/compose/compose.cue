@@ -64,7 +64,7 @@ import (
 		docker-compose up -d
 		"""#
 
-	run: docker.#Command & {
+	deployment: docker.#Command & {
 		"ssh":   ssh
 		command: #code
 		package: "docker-compose": true

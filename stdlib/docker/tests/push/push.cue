@@ -53,7 +53,7 @@ TestPush: {
 		context: ""
 	}
 
-	push: #Push & {
+	remoteImage: #RemoteImage & {
 		"target": target
 		source:   image
 		auth: {

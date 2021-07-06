@@ -10,11 +10,11 @@ Go build operations
 import "alpha.dagger.io/go"
 ```
 
-## go.#Build
+## go.#App
 
 Go application builder
 
-### go.#Build Inputs
+### go.#App Inputs
 
 | Name             | Type                    | Description                      |
 | -------------    |:-------------:          |:-------------:                   |
@@ -26,7 +26,7 @@ Go application builder
 |*tags*            | `*"" \| string`         |Build tags to use for building    |
 |*ldflags*         | `*"" \| string`         |LDFLAGS to use for linking        |
 
-### go.#Build Outputs
+### go.#App Outputs
 
 | Name             | Type              | Description                        |
 | -------------    |:-------------:    |:-------------:                     |
@@ -38,11 +38,10 @@ A standalone go environment
 
 ### go.#Container Inputs
 
-| Name             | Type                                | Description                                             |
-| -------------    |:-------------:                      |:-------------:                                          |
-|*version*         | `*"1.16" \| string`                 |Go version to use                                        |
-|*source*          | `dagger.#Artifact`                  |Source code                                              |
-|*image.from*      | `"docker.io/golang:1.16-alpine"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
+| Name             | Type                   | Description         |
+| -------------    |:-------------:         |:-------------:      |
+|*version*         | `*"1.16" \| string`    |Go version to use    |
+|*source*          | `dagger.#Artifact`     |Source code          |
 
 ### go.#Container Outputs
 

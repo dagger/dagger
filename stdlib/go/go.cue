@@ -76,7 +76,7 @@ import (
 }
 
 // Go application builder
-#Build: {
+#App: {
 	// Go version to use
 	version: *#Go.version | string @dagger(input)
 

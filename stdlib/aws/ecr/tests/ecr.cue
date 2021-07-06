@@ -22,7 +22,7 @@ TestECR: {
 		config: TestConfig.awsConfig
 	}
 
-	push: {
+	remoteImage: {
 		ref: "\(repository):\(tag)"
 
 		#up: [
@@ -45,21 +45,21 @@ TestECR: {
 		]
 	}
 
-	pull: #up: [
+	image: #up: [
 		op.#DockerLogin & {
-			target:   push.ref
+			target:   remoteImage.ref
 			username: creds.username
 			secret:   creds.secret
 		},
 
 		op.#FetchContainer & {
-			ref: push.ref
+			ref: remoteImage.ref
 		},
 	]
 
-	verify: #up: [
+	test: #up: [
 		op.#Load & {
-			from: pull
+			from: image
 		},
 
 		op.#Exec & {
@@ -70,16 +70,16 @@ TestECR: {
 		},
 	]
 
-	verifyBuild: #up: [
+	testBuild: #up: [
 		op.#DockerLogin & {
-			target:   push.ref
+			target:   remoteImage.ref
 			username: creds.username
 			secret:   creds.secret
 		},
 
 		op.#DockerBuild & {
 			dockerfile: #"""
-				FROM \#(push.ref)
+				FROM \#(remoteImage.ref)
 				RUN test $(cat test) = \#(suffix.out)
 			"""#
 		},

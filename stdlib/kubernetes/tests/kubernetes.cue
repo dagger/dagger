@@ -29,15 +29,15 @@ TestKubeApply: {
 	}
 
 	// Apply deployment
-	apply: #Resources & {
+	resources: #Resources & {
 		kubeconfig: TestKubeconfig
 		namespace:  "dagger-test"
 		manifest:   yaml.Marshal(kubeSrc)
 	}
 
 	// Verify deployment
-	verify: #VerifyApply & {
+	test: #VerifyApply & {
 		podname:   kubeSrc.metadata.name
-		namespace: apply.namespace
+		namespace: resources.namespace
 	}
 }

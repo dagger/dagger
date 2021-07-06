@@ -19,7 +19,7 @@ TestHelmSimpleChart: {
 	}
 
 	// Deploy chart
-	deploy: #Chart & {
+	deployment: #Chart & {
 		name:        "dagger-test-inline-\(suffix.out)"
 		namespace:   "dagger-test"
 		kubeconfig:  TestKubeconfig
@@ -27,9 +27,9 @@ TestHelmSimpleChart: {
 	}
 
 	// Verify deployment
-	verify: #VerifyHelm & {
-		chartName: deploy.name
-		namespace: deploy.namespace
+	test: #VerifyHelm & {
+		chartName: deployment.name
+		namespace: deployment.namespace
 	}
 }
 
@@ -41,7 +41,7 @@ TestHelmRepoChart: {
 	}
 
 	// Deploy remote chart
-	deploy: #Chart & {
+	deployment: #Chart & {
 		name:       "dagger-test-repository-\(suffix.out)"
 		namespace:  "dagger-test"
 		kubeconfig: TestKubeconfig
@@ -51,7 +51,7 @@ TestHelmRepoChart: {
 
 	// Verify deployment
 	verify: #VerifyHelm & {
-		chartName: deploy.name
-		namespace: deploy.namespace
+		chartName: deployment.name
+		namespace: deployment.namespace
 	}
 }
