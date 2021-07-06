@@ -19,6 +19,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
@@ -209,6 +210,8 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (
 		return p.PushContainer(ctx, op, st)
 	case "fetch-git":
 		return p.FetchGit(ctx, op, st)
+	case "fetch-http":
+		return p.FetchHTTP(ctx, op, st)
 	case "local":
 		return p.Local(ctx, op, st)
 	case "load":
@@ -814,6 +817,55 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 		remote,
 		ref,
 		gitOpts...,
+	), nil
+}
+
+func (p *Pipeline) FetchHTTP(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	link, err := op.Lookup("url").String()
+	if err != nil {
+		return st, err
+	}
+
+	linkRedacted := link
+	if u, err := url.Parse(link); err == nil {
+		linkRedacted = u.Redacted()
+	}
+
+	httpOpts := []llb.HTTPOption{}
+	var opts struct {
+		Checksum string
+		Filename string
+		Mode     int64
+		UID      int
+		GID      int
+	}
+
+	if err := op.Decode(&opts); err != nil {
+		return st, err
+	}
+
+	if opts.Checksum != "" {
+		dgst, err := digest.Parse(opts.Checksum)
+		if err != nil {
+			return st, err
+		}
+		httpOpts = append(httpOpts, llb.Checksum(dgst))
+	}
+	if opts.Filename != "" {
+		httpOpts = append(httpOpts, llb.Filename(opts.Filename))
+	}
+	if opts.Mode != 0 {
+		httpOpts = append(httpOpts, llb.Chmod(fs.FileMode(opts.Mode)))
+	}
+	if opts.UID != 0 && opts.GID != 0 {
+		httpOpts = append(httpOpts, llb.Chown(opts.UID, opts.GID))
+	}
+
+	httpOpts = append(httpOpts, llb.WithCustomName(p.vertexNamef("FetchHTTP %s", linkRedacted)))
+
+	return llb.HTTP(
+		link,
+		httpOpts...,
 	), nil
 }
 

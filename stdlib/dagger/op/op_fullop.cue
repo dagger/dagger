@@ -7,6 +7,7 @@ package op
 	#FetchContainer |
 	#PushContainer |
 	#FetchGit |
+	#FetchHTTP |
 	#Exec |
 	#Local |
 	#Copy |
