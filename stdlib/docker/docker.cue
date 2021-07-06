@@ -114,10 +114,16 @@ import (
 	ref: string @dagger(input)
 
 	// Container name
-	name?: string @dagger(input)
+	name: string | *null @dagger(input)
 
 	// Build and directly run the source
-	source?: dagger.#Artifact @dagger(input)
+	build: {
+		// Source directory
+		source: dagger.#Artifact @dagger(input)
+
+		// Path to dockerfile
+		path: *"Dockerfile" | string @dagger(input)
+	} | *null
 
 	// Image registry
 	registry?: {
@@ -126,34 +132,49 @@ import (
 		secret:   dagger.#Secret
 	} @dagger(input)
 
-	#command: #"""
-		# Run detach container
-		OPTS=""
+	container: #Command & {
+		"ssh": ssh
+		command: #"""
+			# Run detach container
+			OPTS=""
 
-		if [ ! -z "$CONTAINER_NAME" ]; then
-			OPTS="$OPTS --name $CONTAINER_NAME"
-		fi
+			if [ ! -z "$CONTAINER_NAME" ]; then
+				OPTS="$OPTS --name $CONTAINER_NAME"
+			fi
 
-		if [ -d /source ]; then
-			docker build -t "$IMAGE_REF" /source
-		fi
+			if [ -d /source ]; then
+				docker build -t "$IMAGE_REF" -f "/source/$DOCKERFILE_PATH"  /source
+			fi
 
-		docker container run -d $OPTS "$IMAGE_REF"
-		"""#
-
-	run: #Command & {
-		"ssh":   ssh
-		command: #command
+			mkdir -p /outputs
+			docker container run -d $OPTS "$IMAGE_REF" | tr -d "\n" > /outputs/container_id
+			"""#
 		env: {
 			IMAGE_REF: ref
-			if name != _|_ {
+			if name != null {
 				CONTAINER_NAME: name
+				if build != null {
+					DOCKERFILE_PATH: build.path
+				}
 			}
 		}
-		if source != _|_ {
-			mount: "/source": from: source
+		if build != null {
+			mount: "/source": from: build.source
 		}
 	}
+
+	// Running container id
+	id: {
+		string
+
+		#up: [
+			op.#Load & {from: container},
+
+			op.#Export & {
+				source: "/outputs/container_id"
+			},
+		]
+	} @dagger(output)
 }
 
 // Build a Docker image from the provided Dockerfile contents

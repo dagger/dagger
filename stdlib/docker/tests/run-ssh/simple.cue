@@ -16,7 +16,7 @@ TestSSH: {
 		seed: "run ssh"
 	}
 
-	run: #Run & {
+	app: #Run & {
 		name: "daggerci-test-ssh-\(suffix.out)"
 		ref:  "hello-world"
 		ssh: {
@@ -34,10 +34,10 @@ TestRunArtifact: {
 		seed: "run artifact"
 	}
 
-	run: #Run & {
-		name:   "daggerci-test-ssh-\(suffix.out)"
-		ref:    "my-app"
-		source: TestArtifact
+	app: #Run & {
+		name: "daggerci-test-ssh-\(suffix.out)"
+		ref:  "my-app"
+		build: source: TestArtifact
 		ssh: {
 			host: TestConfig.host
 			user: TestConfig.user

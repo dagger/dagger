@@ -90,21 +90,24 @@ Push a docker image to a remote registry
 
 ### docker.#Run Inputs
 
-| Name                  | Type                | Description                           |
-| -------------         |:-------------:      |:-------------:                        |
-|*ssh.host*             | `string`            |ssh host                               |
-|*ssh.user*             | `string`            |ssh user                               |
-|*ssh.port*             | `*22 \| int`        |ssh port                               |
-|*ssh.key*              | `dagger.#Secret`    |private key                            |
-|*ref*                  | `string`            |Image reference (e.g: nginx:alpine)    |
-|*run.ssh.host*         | `string`            |ssh host                               |
-|*run.ssh.user*         | `string`            |ssh user                               |
-|*run.ssh.port*         | `*22 \| int`        |ssh port                               |
-|*run.ssh.key*          | `dagger.#Secret`    |private key                            |
-|*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    if [ -d /source ]; then\n    \tdocker build -t "$IMAGE_REF" /source\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
-|*run.env.IMAGE_REF*    | `string`            |-                                      |
-|*run.registries*       | `[]`                |Image registries                       |
+| Name                        | Type                 | Description                           |
+| -------------               |:-------------:       |:-------------:                        |
+|*ssh.host*                   | `string`             |ssh host                               |
+|*ssh.user*                   | `string`             |ssh user                               |
+|*ssh.port*                   | `*22 \| int`         |ssh port                               |
+|*ssh.key*                    | `dagger.#Secret`     |private key                            |
+|*ref*                        | `string`             |Image reference (e.g: nginx:alpine)    |
+|*name*                       | `*null \| string`    |Container name                         |
+|*container.ssh.host*         | `string`             |ssh host                               |
+|*container.ssh.user*         | `string`             |ssh user                               |
+|*container.ssh.port*         | `*22 \| int`         |ssh port                               |
+|*container.ssh.key*          | `dagger.#Secret`     |private key                            |
+|*container.command*          | `"""\n               # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    if [ -d /source ]; then\n    \tdocker build -t "$IMAGE_REF" -f "/source/$DOCKERFILE_PATH"  /source\n    fi\n    \n    mkdir -p /outputs\n    docker container run -d $OPTS "$IMAGE_REF" \| tr -d "\\n" \> /outputs/container_id\n    """`    |Command to execute    |
+|*container.env.IMAGE_REF*    | `string`             |-                                      |
+|*container.registries*       | `[]`                 |Image registries                       |
 
 ### docker.#Run Outputs
 
-_No output._
+| Name             | Type              | Description            |
+| -------------    |:-------------:    |:-------------:         |
+|*id*              | `string`          |Running container id    |
