@@ -14,5 +14,4 @@ src: git.#Repository & {
 	remote:     "https://github.com/dagger/examples"
 	ref:        "main"
 	subdir:     "todoapp"
-	keepGitDir: true
 }
