@@ -49,7 +49,7 @@ cue mod init
 Let's create a new directory for our Cue package:
 
 ```shell
-mkdir cue.mod/cloudformation
+mkdir cloudformation
 ```
 
 ## Create a basic plan
@@ -66,7 +66,7 @@ The idea here is to follow best practices in [S3 buckets](https://docs.aws.amazo
 
 Create a file named `template.cue` and add the following configuration to it.
 
-```cue title="todoapp/cue.mod/cloudformation/template.cue"
+```cue title="todoapp/cloudformation/template.cue"
 package cloudformation
 
 // inlined s3 cloudformation template as a string
@@ -164,7 +164,7 @@ The config values are all part of the `aws` relay. Regarding this package, as yo
 
 Let's implement the first step, use the `aws.#Config` relay, and request its first inputs: the region to deploy and the AWS credentials.
 
-```cue title="todoapp/cue.mod/cloudformation/source.cue"
+```cue title="todoapp/cloudformation/source.cue"
 package cloudformation
 
 import (
@@ -186,7 +186,7 @@ This defines:
 Now that the Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'cloudformation' -m cue.mod/cloudformation
+dagger new 'cloudformation' -m cloudformation
 ```
 
 ##### 2. Check plan
@@ -214,7 +214,7 @@ dagger up -e cloudformation # Try to run the plan. As expected, we encounter a f
 
 Now that we have the `config` definition properly configured, let's modify the Cloudformation one:
 
-```cue title="todoapp/cue.mod/cloudformation/source.cue"
+```cue title="todoapp/cloudformation/source.cue"
 package cloudformation
 
 import (
@@ -368,7 +368,7 @@ import TabItem from "@theme/TabItem";
 }>
 <TabItem value="sv">
 
-```cue title="todoapp/cue.mod/cloudformation/convert.cue"
+```cue title="todoapp/cloudformation/convert.cue"
 package cloudformation
 import "encoding/json"
 
@@ -378,7 +378,7 @@ s3Template: json.Unmarshal(template)
 </TabItem>
 <TabItem value="yv">
 
-```cue title="todoapp/cue.mod/cloudformation/convert.cue"
+```cue title="todoapp/cloudformation/convert.cue"
 package cloudformation
 import "encoding/yaml"
 
@@ -395,7 +395,7 @@ This defines:
 You need to empty the plan and copy the `convert.cue` file to the plan for Dagger to reference it
 
 ```shell
-rm cue.mod/cloudformation/source.cue
+rm cloudformation/source.cue
 ```
 
 ### 2. Retrieve the Unmarshalled JSON
@@ -421,14 +421,14 @@ The commented output above is the cue version of the JSON Template, copy it
 ### 3. Remove convert.cue
 
 ```shell
-rm cue.mod/cloudformation/convert.cue
+rm cloudformation/convert.cue
 ```
 
 ### 4. Store the output
 
 Open `cloudformation/template.cue` and append below elements with copied Cue definition of the JSON:
 
-```cue title="todoapp/cue.mod/cloudformation/template.cue"
+```cue title="todoapp/cloudformation/template.cue"
 // Add this line, to make it part to the cloudformation template
 package cloudformation
 import "encoding/json"
@@ -510,7 +510,7 @@ Now that the template is defined in CUE, we can use the language to add more fle
 
 Let's define a re-usable `#Deployment` definition in `todoapp/cloudformation/deployment.cue`:
 
-```cue title="todoapp/cue.mod/cloudformation/deployment.cue"
+```cue title="todoapp/cloudformation/deployment.cue"
 package cloudformation
 
 #Deployment: {
@@ -598,7 +598,7 @@ package cloudformation
 
 `template.cue` can be rewritten as follows:
 
-```cue title="todoapp/cue.mod/cloudformation/template.cue"
+```cue title="todoapp/cloudformation/template.cue"
 package cloudformation
 import "encoding/json"
 
