@@ -1,0 +1,27 @@
+plan:
+    module: ./107-kind
+    package: ./cue-kube-manifest/test
+name: 107-kind-cue-kube-manifest
+inputs:
+    registry:
+        text: localhost:5000/kind
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQU3RQOUtIdVNrekRrdWhr
+            U2F4UzNvdjdmQ3RuQjBYdVpqUlhXRWV3MHpnCmhpYTZVVmlUbVBlSTZDek5vakc0
+            ZktScEcrbitzYUVNQWhPT1dMTkphNUEKLS0tIFk3WHl2REdkTmxQRjAxK2RDVUhR
+            b3JGRkNGalBvZW14cWwwd3ZlWDh6aTAKsWl7HKtXR8RKJU25DHLETU+Tjmc9WgR5
+            vJsNz3ZkSuCEdjIE4upaSc/va03l28f7SxB+EGHHahakJNMt1qFrXA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-08T10:06:16Z"
+    mac: ENC[AES256_GCM,data:+BiQJdPTIX7QDjoAzcOd/wJ+RX9+cFv79FvazhJjAU/C54yfUYsEY2rHFMF7hhSnSsXjYI7NfZ9EfefmXY41WL+pTZ8Onui/in/0udUgfpPqSSUIRFOwReX8ZldbQoocXKEOdW6JADRXbL3HTUX4ABXH3RVVWORBy+1nAiHnbrc=,iv:Tuc7Z0mMyiqwbwVIritEEhqcrERrb0taeFXafsjpIjs=,tag:92dgbM7KNCr8Zbc7cT4VqQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

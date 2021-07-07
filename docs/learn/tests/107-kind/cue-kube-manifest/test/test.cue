@@ -6,12 +6,6 @@ import (
 	"alpha.dagger.io/dagger/op"
 )
 
-manifest: git.#Repository & {
-	remote: "https://github.com/dagger/examples.git"
-	ref:    "main"
-	subdir: "todoapp/k8s"
-}
-
 repository: git.#Repository & {
 	remote: "https://github.com/dagger/examples.git"
 	ref:    "main"
@@ -43,11 +37,15 @@ clean: #up: [
 		from: test
 	},
 
+	op.#WriteFile & {
+		content: todoApp.kubeSrc.manifest
+		dest:    "/resources"
+	},
+
 	// Clean deployment
 	op.#Exec & {
 		always: true
 		args: ["/bin/bash", "-c", "kubectl delete -f /resources"]
 		env: KUBECONFIG: "/kubeconfig"
-		mount: "/resources": from: todoApp.kubeSrc.source
 	},
 ]

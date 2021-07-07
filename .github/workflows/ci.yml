@@ -163,3 +163,7 @@ jobs:
         run: |
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
+
+      - name: Documentation Test
+        run: |
+          make doc-test

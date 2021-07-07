@@ -63,7 +63,7 @@ copy_to_sandbox() {
 #
 # This is need to do kubernetes test in the CI.
 skip_unless_local_kube() {
-    if [ -f ~/.kube/config ] && grep -q "user: kind-kind" ~/.kube/config &> /dev/null && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
+    if [ -f ~/.kube/config ] && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
         echo "Kubernetes available"
     else
         skip "local kubernetes cluster not available"
