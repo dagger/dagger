@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   lint:
@@ -119,3 +119,47 @@ jobs:
       - name: Universe Test
         run: |
           make universe-test
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: Run local registry
+        run: |
+          docker run -d -p 5000:5000 --name registry registry:2
+
+      - name: Write kind echo
+        run: |
+          echo 'kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          containerdConfigPatches:
+          - |-
+            [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+              endpoint = ["http://registry:5000"]' > ./kind-config.yaml
+          cat ./kind-config.yaml
+
+
+      - name: Setup Kind Kubernetes Cluster
+        uses: helm/kind-action@v1.2.0
+        with:
+          config: "./kind-config.yaml"
+
+      - name: Connect registry to cluster
+        run: |
+          docker network connect kind registry
+
+      - name: Import Dagger private key
+        env:
+          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
+        run: |
+          mkdir -p ~/.config/dagger
+          echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
