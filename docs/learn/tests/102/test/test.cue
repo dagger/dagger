@@ -9,9 +9,9 @@ import (
 // Collect website from git repo
 // Override source.cue Input
 src: git.#Repository & {
-	remote:     "https://github.com/dagger/examples"
-	ref:        "main"
-	subdir:     "todoapp"
+	remote: "https://github.com/dagger/examples"
+	ref:    "main"
+	subdir: "todoapp"
 }
 
 TestNetlify: {

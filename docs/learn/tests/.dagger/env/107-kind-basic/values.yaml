@@ -1,0 +1,24 @@
+plan:
+    module: ./107-kind
+    package: ./basic/test
+name: 107-kind-basic
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBpSFdpZXBXaUJHUXFwWWNl
+            RmV2VFNiQWtodkRMeVFUSlVNTzVlcEllMlJZClY1WkVOUGRwNCt6R3dxcU5JanJ1
+            a25ma2dTNTgydTQxa0ZpU1dBL3h5aFUKLS0tIE9EOEZ0S1RNVHhqU3d4NUtIaG1M
+            SG9XUTE1QXpCTU5kUHFZMW5MZUFpejAKd4YyWVUahijJaPdqNsy08Bi5uI6bDww7
+            RaIjQO5+uNeoWPKc0BWinpSuF8alM6nwk2tyEPPKRKeePHOCrl+nbQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-07T13:09:31Z"
+    mac: ENC[AES256_GCM,data:Qr6uYYfoLtwha0sQGanPQpGSNVzH0/ob7oDVbTW0biYucnTZ/v90Neud3wCwfDyY3b6rkAD9MP47Jbm7kxu26WHXW5EZJJOXzo3X+t91Yjfc/u9cTPhAzO+NSzVeYn7Ta8jTNQfP7ijCQyDe5WHL7Ygavsnu7tNo5wB9k316XTE=,iv:2h0spqca4ZXYQr3UW5knavKZ/6JIYX3fZktAxOm2kkE=,tag:+iqlXBoiz+fd0D2hDUHijQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

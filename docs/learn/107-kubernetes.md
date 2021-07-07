@@ -159,23 +159,7 @@ kubectl delete -f k8s/
 
 Create a file named `todoapp.cue` and add the following configuration to it.
 
-```cue title="todoapp/kube/todoapp.cue"
-package main  
-  
-import (  
- "alpha.dagger.io/dagger"  
- "alpha.dagger.io/kubernetes"
-)  
-
-// input: kubernetes objects directory to deploy to
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input  
-
-// Deploy the manifest to a kubernetes cluster
-todoApp: kubernetes.#Resources & {  
- "kubeconfig": kubeconfig
- source: manifest  
-}
+```cue file=tests/107-kind/basic/todoapp.cue title="todoapp/cue.mod/kube/todoapp.cue"
 ```
 
 This defines a `todoApp` variable containing the Kubernetes objects used to create a todoapp deployment. It also
@@ -193,15 +177,7 @@ The above `config.cue` defines:
 
 - `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (  
- "alpha.dagger.io/dagger"
-)  
-
-// set with `dagger input text kubeconfig -f "$HOME"/.kube/config -e kube`
-kubeconfig: string & dagger.#Input
+```cue file=tests/107-kind/config.cue title="todoapp/cue.mod/kube/config.cue"
 ```
 
   </TabItem>
