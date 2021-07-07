@@ -111,7 +111,7 @@ cue mod init
 Let's create a new directory for our Cue package:
 
 ```shell
-mkdir cue.mod/kube
+mkdir kube
 ```
 
 ### Deploy using Kubectl
@@ -159,7 +159,7 @@ kubectl delete -f k8s/
 
 Create a file named `todoapp.cue` and add the following configuration to it.
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main  
   
 import (  
@@ -193,7 +193,7 @@ The above `config.cue` defines:
 
 - `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
 
 import (  
@@ -215,7 +215,7 @@ The below `config.cue` defines:
 - `gkeConfig`: transform a `gcpConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/gcp/gke`
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
   
 import (  
@@ -247,7 +247,7 @@ The below `config.cue` defines:
 - `eksConfig`, transform a `awsConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/aws/eks`
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
   
 import (  
@@ -279,7 +279,7 @@ eksConfig: eks.#KubeConfig & {
 Now that your Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'kube' -m cue.mod/kube
+dagger new 'kube' -m kube
 ```
 
 ### Configure the environment
@@ -452,7 +452,6 @@ Let's see how to deploy an image locally and push it to the local cluster
 
 `kube/todoapp.cue` faces these changes:
 
-- `suffix`, a random string for a unique tag name
 - `repository`, source code of the app to build. It needs to have a Dockerfile
 - `registry`, URI of the registry to push to
 - `image`, build of the image
@@ -466,16 +465,10 @@ import (
   "encoding/yaml"
 
   "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
   "alpha.dagger.io/docker"
   "alpha.dagger.io/kubernetes"
   "alpha.dagger.io/kubernetes/kustomize"
 )
-
-// Randrom string for tag
-suffix: random.#String & {
-  seed: ""
-}
 
 // input: source code repository, must contain a Dockerfile
 // set with `dagger input dir repository . -e kube`
@@ -483,7 +476,7 @@ repository: dagger.#Artifact & dagger.#Input
 
 // Registry to push images to
 registry: string & dagger.#Input
-tag:      "test-kind-\(suffix.out)"
+tag:      "test-kind"
 
 // input: kubernetes objects directory to deploy to
 // set with `dagger input dir manifest ./k8s -e kube`
@@ -538,7 +531,7 @@ The two files have to be edited to do so.
 
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to GCR
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
   
 import (  
@@ -568,7 +561,6 @@ gcrCreds: gcr.#Credentials & {
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
 
-- `suffix`, a random string for a unique tag name
 - `repository`, source code of the app to build. It needs to have a Dockerfile
 - `registry`, URI of the registry to push to
 - `image`, build of the image
@@ -582,16 +574,10 @@ import (
   "encoding/yaml"
 
   "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
   "alpha.dagger.io/docker"
   "alpha.dagger.io/kubernetes"
   "alpha.dagger.io/kubernetes/kustomize"
 )
-
-// Randrom string for tag
-suffix: random.#String & {
-  seed: ""
-}
 
 // input: source code repository, must contain a Dockerfile
 // set with `dagger input dir repository . -e kube`
@@ -599,7 +585,7 @@ repository: dagger.#Artifact & dagger.#Input
 
 // GCR registry to push images to
 registry: string & dagger.#Input
-tag:      "test-gcr-\(suffix.out)"
+tag:      "test-gcr"
 
 // source of Kube config file. 
 // set with `dagger input dir manifest ./k8s -e kube`
@@ -687,7 +673,6 @@ ecrCreds: ecr.#Credentials & {
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
 
-- `suffix`, a random string for a unique tag name
 - `repository`, source code of the app to build. It needs to have a Dockerfile
 - `registry`, URI of the registry to push to
 - `image`, build of the image
@@ -701,16 +686,10 @@ import (
   "encoding/yaml"
 
   "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
   "alpha.dagger.io/docker"
   "alpha.dagger.io/kubernetes"
   "alpha.dagger.io/kubernetes/kustomize"
 )
-
-// Randrom string for tag
-suffix: random.#String & {
-  seed: ""
-}
 
 // input: source code repository, must contain a Dockerfile
 // set with `dagger input dir repository . -e kube`
@@ -718,7 +697,7 @@ repository: dagger.#Artifact & dagger.#Input
 
 // ECR registry to push images to
 registry: string & dagger.#Input
-tag:      "test-ecr-\(suffix.out)"
+tag:      "test-ecr"
 
 // source of Kube config file. 
 // set with `dagger input dir manifest ./k8s -e kube`
@@ -819,15 +798,13 @@ dagger input dir repository . -e kube
 
 ```shell
 dagger up -e kube
-# 4:09AM INF suffix.out | computing
 # 4:09AM INF manifest | computing
 # 4:09AM INF repository | computing
 # ...
 # 4:09AM INF todoApp.kubeSrc | #37 0.858 service/todoapp-service created
 # 4:09AM INF todoApp.kubeSrc | #37 0.879 deployment.apps/todoapp created
 # Output                      Value                                                                                                              Description
-# suffix.out                  "azkestizysbx"                                                                                                     generated random string
-# todoApp.remoteImage.ref     "localhost:5000/kind:test-kind-azkestizysbx@sha256:cb8d92518b876a3fe15a23f7c071290dfbad50283ad976f3f5b93e9f20cefee6"  Image ref
+# todoApp.remoteImage.ref     "localhost:5000/kind:test-kind@sha256:cb8d92518b876a3fe15a23f7c071290dfbad50283ad976f3f5b93e9f20cefee6"            Image ref
 # todoApp.remoteImage.digest  "sha256:cb8d92518b876a3fe15a23f7c071290dfbad50283ad976f3f5b93e9f20cefee6"                                          Image digest
 ```
 
@@ -861,7 +838,7 @@ and repetition.
 
 Let's define a re-usable `#Deployment` definition in `kube/deployment.cue`.
 
-```cue title="todoapp/cue.mod/kube/deployment.cue"
+```cue title="todoapp/kube/deployment.cue"
 package main
 
 // Deployment template containing all the common boilerplate shared by
@@ -909,7 +886,7 @@ package main
 
 Indeed, let's also define a re-usable `#Service` definition in `kube/service.cue`.
 
-```cue title="todoapp/cue.mod/kube/service.cue"
+```cue title="todoapp/kube/service.cue"
 package main
 
 // Service template containing all the common boilerplate shared by
@@ -955,7 +932,7 @@ without having boilerplate nor repetition.
 
 Create a new definition named `#AppManifest` that will generate the YAML in `kube/manifest.cue`.
 
-```cue title="todoapp/cue.mod/kube/manifest.cue"
+```cue title="todoapp/kube/manifest.cue"
 package main
 
 import (
@@ -1006,20 +983,14 @@ values={[
 
   <TabItem value="kind">
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main
 
 import (
   "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
   "alpha.dagger.io/docker"
   "alpha.dagger.io/kubernetes"
 )
-
-// Randrom string for tag
-suffix: random.#String & {
-  seed: ""
-}
 
 // input: source code repository, must contain a Dockerfile
 // set with `dagger input dir repository . -e kube`
@@ -1027,7 +998,7 @@ repository: dagger.#Artifact & dagger.#Input
 
 // Registry to push images to
 registry: string & dagger.#Input
-tag:      "test-kind-\(suffix.out)"
+tag:      "test-kind"
 
 // Todoapp deployment pipeline
 todoApp: {
@@ -1059,20 +1030,14 @@ todoApp: {
   </TabItem>
   <TabItem value="gke">
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main
 
 import (
   "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
   "alpha.dagger.io/docker"
   "alpha.dagger.io/kubernetes"
 )
-
-// Randrom string for tag
-suffix: random.#String & {
-  seed: ""
-}
 
 // input: source code repository, must contain a Dockerfile
 // set with `dagger input dir repository . -e kube`
@@ -1080,7 +1045,7 @@ repository: dagger.#Artifact & dagger.#Input
 
 // GCR registry to push images to
 registry: string & dagger.#Input
-tag:      "test-gcr-\(suffix.out)"
+tag:      "test-gcr"
 
 // Todoapp deployment pipeline
 todoApp: {
@@ -1112,20 +1077,14 @@ todoApp: {
   </TabItem>
   <TabItem value="eks">
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main
 
 import (
   "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
   "alpha.dagger.io/docker"
   "alpha.dagger.io/kubernetes"
 )
-
-// Randrom string for tag
-suffix: random.#String & {
-  seed: ""
-}
 
 // input: source code repository, must contain a Dockerfile
 // set with `dagger input dir repository . -e kube`
@@ -1133,7 +1092,7 @@ repository: dagger.#Artifact & dagger.#Input
 
 // ECR registry to push images to
 registry: string & dagger.#Input
-tag:      "test-ecr-\(suffix.out)"
+tag:      "test-ecr"
 
 // Todoapp deployment pipeline
 todoApp: {
@@ -1178,15 +1137,13 @@ dagger input unset manifest -e kube
 
 ```shell
 dagger up -e kube
-# 4:09AM INF suffix.out | computing
 # 4:09AM INF manifest | computing
 # 4:09AM INF repository | computing
 # ...
 # 4:09AM INF todoApp.kubeSrc | #37 0.858 service/todoapp-service created
 # 4:09AM INF todoApp.kubeSrc | #37 0.879 deployment.apps/todoapp created
 # Output                      Value                                                                                                              Description
-# suffix.out                  "abdkektizesxb"                                                                                                     generated random string
-# todoApp.remoteImage.ref     "localhost:5000/kind:test-kind-abdkektizesxb@sha256:cb8d91518b076a3fe15a33f7c171290dfbad50283ad976f3f5b93e9f33cefag7"  Image ref
+# todoApp.remoteImage.ref     "localhost:5000/kind:test-kind@sha256:cb8d91518b076a3fe15a33f7c171290dfbad50283ad976f3f5b93e9f33cefag7"            Image ref
 # todoApp.remoteImage.digest  "sha256:cb8d91518b076a3fe15a33f7c171290dfbad50283ad976f3f5b93e9f33cefag7"                                          Image digest
 ```
 
