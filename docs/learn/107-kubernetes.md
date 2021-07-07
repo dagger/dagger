@@ -111,7 +111,7 @@ cue mod init
 Let's create a new directory for our Cue package:
 
 ```shell
-mkdir cue.mod/kube
+mkdir kube
 ```
 
 ### Deploy using Kubectl
@@ -159,7 +159,7 @@ kubectl delete -f k8s/
 
 Create a file named `todoapp.cue` and add the following configuration to it.
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main  
   
 import (  
@@ -193,7 +193,7 @@ The above `config.cue` defines:
 
 - `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
 
 import (  
@@ -215,7 +215,7 @@ The below `config.cue` defines:
 - `gkeConfig`: transform a `gcpConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/gcp/gke`
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
   
 import (  
@@ -247,7 +247,7 @@ The below `config.cue` defines:
 - `eksConfig`, transform a `awsConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/aws/eks`
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
   
 import (  
@@ -279,7 +279,7 @@ eksConfig: eks.#KubeConfig & {
 Now that your Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'kube' -m cue.mod/kube
+dagger new 'kube' -m kube
 ```
 
 ### Configure the environment
@@ -531,7 +531,7 @@ The two files have to be edited to do so.
 
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to GCR
 
-```cue title="todoapp/cue.mod/kube/config.cue"
+```cue title="todoapp/kube/config.cue"
 package main
   
 import (  
@@ -838,7 +838,7 @@ and repetition.
 
 Let's define a re-usable `#Deployment` definition in `kube/deployment.cue`.
 
-```cue title="todoapp/cue.mod/kube/deployment.cue"
+```cue title="todoapp/kube/deployment.cue"
 package main
 
 // Deployment template containing all the common boilerplate shared by
@@ -886,7 +886,7 @@ package main
 
 Indeed, let's also define a re-usable `#Service` definition in `kube/service.cue`.
 
-```cue title="todoapp/cue.mod/kube/service.cue"
+```cue title="todoapp/kube/service.cue"
 package main
 
 // Service template containing all the common boilerplate shared by
@@ -932,7 +932,7 @@ without having boilerplate nor repetition.
 
 Create a new definition named `#AppManifest` that will generate the YAML in `kube/manifest.cue`.
 
-```cue title="todoapp/cue.mod/kube/manifest.cue"
+```cue title="todoapp/kube/manifest.cue"
 package main
 
 import (
@@ -983,7 +983,7 @@ values={[
 
   <TabItem value="kind">
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main
 
 import (
@@ -1030,7 +1030,7 @@ todoApp: {
   </TabItem>
   <TabItem value="gke">
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main
 
 import (
@@ -1077,7 +1077,7 @@ todoApp: {
   </TabItem>
   <TabItem value="eks">
 
-```cue title="todoapp/cue.mod/kube/todoapp.cue"
+```cue title="todoapp/kube/todoapp.cue"
 package main
 
 import (
