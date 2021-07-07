@@ -30,7 +30,9 @@ func TestWorkspace(t *testing.T) {
 	require.Equal(t, root, workspace.Path)
 
 	// Create
-	st, err := workspace.Create(ctx, "test", CreateOpts{})
+	st, err := workspace.Create(ctx, "test", Plan{
+		Module: ".",
+	})
 	require.NoError(t, err)
 	require.Equal(t, "test", st.Name)
 
@@ -78,7 +80,9 @@ func TestEncryption(t *testing.T) {
 	workspace, err := Init(ctx, root)
 	require.NoError(t, err)
 
-	_, err = workspace.Create(ctx, "test", CreateOpts{})
+	_, err = workspace.Create(ctx, "test", Plan{
+		Module: ".",
+	})
 	require.NoError(t, err)
 
 	// Set a plaintext input, make sure it is not encrypted

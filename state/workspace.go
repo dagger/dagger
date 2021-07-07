@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
@@ -161,18 +162,16 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 		return nil, err
 	}
 	st.Path = envPath
-	// Backward compat: if no plan module has been provided,
-	// use `.dagger/env/<name>/plan`
+	// FIXME: Backward compat: Support for old-style `.dagger/env/<name>/plan`
 	if st.Plan.Module == "" {
 		planPath := path.Join(envPath, planDir)
-		if _, err := os.Stat(planPath); err != nil {
-			return nil, fmt.Errorf("missing plan information for %q", name)
+		if _, err := os.Stat(planPath); err == nil {
+			planRelPath, err := filepath.Rel(w.Path, planPath)
+			if err != nil {
+				return nil, err
+			}
+			st.Plan.Module = planRelPath
 		}
-		planRelPath, err := filepath.Rel(w.Path, planPath)
-		if err != nil {
-			return nil, err
-		}
-		st.Plan.Module = planRelPath
 	}
 	st.Workspace = w.Path
 
@@ -229,12 +228,16 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-type CreateOpts struct {
-	Module  string
-	Package string
-}
+func (w *Workspace) Create(ctx context.Context, name string, plan Plan) (*State, error) {
+	if _, err := w.Get(ctx, name); err == nil {
+		return nil, ErrExist
+	}
 
-func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*State, error) {
+	pkg, err := w.cleanPackageName(ctx, plan.Package)
+	if err != nil {
+		return nil, err
+	}
+
 	envPath, err := filepath.Abs(w.envPath(name))
 	if err != nil {
 		return nil, err
@@ -242,36 +245,16 @@ func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*
 
 	// Environment directory
 	if err := os.MkdirAll(envPath, 0755); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, ErrExist
-		}
 		return nil, err
 	}
 
 	manifestPath := path.Join(envPath, manifestFile)
 
-	// Backward compat: if no plan module has been provided,
-	// use `.dagger/env/<name>/plan`
-	module := opts.Module
-	if module == "" {
-		planPath := path.Join(envPath, planDir)
-		if err := os.Mkdir(planPath, 0755); err != nil {
-			return nil, err
-		}
-
-		planRelPath, err := filepath.Rel(w.Path, planPath)
-		if err != nil {
-			return nil, err
-		}
-		module = planRelPath
-	}
-
 	st := &State{
 		Path:      envPath,
 		Workspace: w.Path,
 		Plan: Plan{
-			Module:  module,
-			Package: opts.Package,
+			Package: pkg,
 		},
 		Name: name,
 	}
@@ -304,6 +287,51 @@ func (w *Workspace) Create(ctx context.Context, name string, opts CreateOpts) (*
 	return st, nil
 }
 
-func (w *Workspace) DaggerDir() string {
-	return path.Join(w.Path, daggerDir)
+func (w *Workspace) cleanPackageName(ctx context.Context, pkg string) (string, error) {
+	lg := log.
+		Ctx(ctx).
+		With().
+		Str("package", pkg).
+		Logger()
+
+	if pkg == "" {
+		return pkg, nil
+	}
+
+	// If the package is not a path, then it must be a domain (e.g. foo.bar/mypackage)
+	if _, err := os.Stat(pkg); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		// Make sure the domain is in the correct form
+		if !strings.Contains(pkg, ".") || !strings.Contains(pkg, "/") {
+			return "", fmt.Errorf("invalid package %q", pkg)
+		}
+
+		return pkg, nil
+	}
+
+	p, err := filepath.Abs(pkg)
+	if err != nil {
+		lg.Error().Err(err).Msg("unable to resolve path")
+		return "", err
+	}
+
+	if !strings.HasPrefix(p, w.Path) {
+		lg.Fatal().Err(err).Msg("package is outside the workspace")
+		return "", err
+	}
+
+	p, err = filepath.Rel(w.Path, p)
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to resolve path")
+		return "", err
+	}
+
+	if !strings.HasPrefix(p, ".") {
+		p = "./" + p
+	}
+
+	return p, nil
 }

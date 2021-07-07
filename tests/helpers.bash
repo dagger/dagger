@@ -20,11 +20,10 @@ common_setup() {
 dagger_new_with_plan() {
     local name="$1"
     local sourcePlan="$2"
-    local targetPlan="$DAGGER_WORKSPACE"/"$name"
 
-    ln -s "$sourcePlan" "$targetPlan"
-    "$DAGGER" new "$name" --module "$targetPlan"
+    cp -a "$sourcePlan"/* "$DAGGER_WORKSPACE"
 
+    "$DAGGER" new "$name"
 }
 
 # dagger helper to execute the right binary

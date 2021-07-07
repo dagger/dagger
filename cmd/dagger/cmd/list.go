@@ -3,11 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"path"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -48,13 +48,11 @@ var listCmd = &cobra.Command{
 }
 
 func formatPath(p string) string {
-	usr, err := user.Current()
+	dir, err := homedir.Dir()
 	if err != nil {
 		// Ignore error
 		return p
 	}
-
-	dir := usr.HomeDir
 
 	if strings.HasPrefix(p, dir) {
 		return path.Join("~", p[len(dir):])
