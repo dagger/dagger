@@ -1,5 +1,10 @@
 package state
 
+import (
+	"context"
+	"path"
+)
+
 // Contents of an environment serialized to a file
 type State struct {
 	// State path
@@ -28,9 +33,24 @@ func (s *State) Source() Input {
 	w := s.Workspace
 	// FIXME: backward compatibility
 	if mod := s.Plan.Module; mod != "" {
-		w = mod
+		w = path.Join(w, mod)
 	}
 	return DirInput(w, []string{}, []string{})
+}
+
+// VendorUniverse vendors the latest (built-in) version of the universe into the
+// environment's `cue.mod`.
+// FIXME: This has nothing to do in `State` and should be tied to a `Workspace`.
+// However, since environments could point to different modules before, we have
+// to handle vendoring on a per environment basis.
+func (s *State) VendorUniverse(ctx context.Context) error {
+	w := s.Workspace
+	// FIXME: backward compatibility
+	if mod := s.Plan.Module; mod != "" {
+		w = path.Join(w, mod)
+	}
+
+	return vendorUniverse(ctx, w)
 }
 
 type Plan struct {

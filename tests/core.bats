@@ -15,30 +15,34 @@ setup() {
 # at the beginning of each new-style test.
 
 @test "core: inputs & outputs" {
-   # Use native Dagger environment here
-   unset DAGGER_WORKSPACE
+    dagger init
 
-   # List available inputs
-   run dagger -e test-core input list
-   assert_success
-   assert_output --partial 'name'
-   assert_output --partial 'dir'
+    dagger_new_with_plan test-core "$TESTDIR"/core/inputs-outputs
 
-   # Set text input
-   dagger -e test-core input text name Bob
-   run dagger -e test-core up
-   assert_success
-   assert_output --partial 'Hello, Bob!'
+    # List available inputs
+    run dagger -e test-core input list
+    assert_success
+    assert_output --partial 'name'
+    assert_output --partial 'dir'
 
-   run dagger -e test-core output list
-   assert_success
-   assert_output --partial 'message  "Hello, Bob!"'
+    # Set dir input
+    dagger -e test-core input dir dir "$DAGGER_WORKSPACE"
 
-   # Unset text input
-   dagger -e test-core input unset name
-   run dagger -e test-core up
-   assert_success
-   assert_output --partial 'Hello, world!'
+    # Set text input
+    dagger -e test-core input text name Bob
+    run dagger -e test-core up
+    assert_success
+    assert_output --partial 'Hello, Bob!'
+
+    run dagger -e test-core output list
+    assert_success
+    assert_output --partial 'message  "Hello, Bob!"'
+
+    # Unset text input
+    dagger -e test-core input unset name
+    run dagger -e test-core up
+    assert_success
+    assert_output --partial 'Hello, world!'
 }
 
 

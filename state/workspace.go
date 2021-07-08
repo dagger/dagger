@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
+	"go.dagger.io/dagger/stdlib"
 	"gopkg.in/yaml.v3"
 )
 
@@ -51,6 +52,11 @@ func Init(ctx context.Context, dir string) (*Workspace, error) {
 	if err := os.Mkdir(path.Join(daggerRoot, envDir), 0755); err != nil {
 		return nil, err
 	}
+
+	if err := vendorUniverse(ctx, root); err != nil {
+		return nil, err
+	}
+
 	return &Workspace{
 		Path: root,
 	}, nil
@@ -334,4 +340,64 @@ func (w *Workspace) cleanPackageName(ctx context.Context, pkg string) (string, e
 	}
 
 	return p, nil
+}
+
+func cueModInit(ctx context.Context, p string) error {
+	lg := log.Ctx(ctx)
+
+	mod := path.Join(p, "cue.mod")
+	if err := os.Mkdir(mod, 0755); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+
+	modFile := path.Join(mod, "module.cue")
+	if _, err := os.Stat(modFile); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+
+		lg.Debug().Str("mod", p).Msg("initializing cue.mod")
+
+		if err := os.WriteFile(modFile, []byte("module: \"\"\n"), 0600); err != nil {
+			return err
+		}
+	}
+
+	if err := os.Mkdir(path.Join(mod, "usr"), 0755); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+	if err := os.Mkdir(path.Join(mod, "pkg"), 0755); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func vendorUniverse(ctx context.Context, p string) error {
+	// ensure cue module is initialized
+	if err := cueModInit(ctx, p); err != nil {
+		return err
+	}
+
+	// add universe to `.gitignore`
+	if err := os.WriteFile(
+		path.Join(p, "cue.mod", "pkg", ".gitignore"),
+		[]byte(fmt.Sprintf("# dagger universe\n%s\n", stdlib.PackageName)),
+		0600,
+	); err != nil {
+		return err
+	}
+
+	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
+	if err := stdlib.Vendor(ctx, p); err != nil {
+		return err
+	}
+
+	return nil
 }
