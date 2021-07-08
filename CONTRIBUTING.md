@@ -16,7 +16,7 @@ git clone https://github.com/dagger/dagger.git
 
 ### 2) Forking
 
-- Click on the *Fork* button on GitHub
+- Click on the _Fork_ button on GitHub
 - Add your fork as a remote
 
 ```sh
@@ -55,12 +55,13 @@ git push -f -u fork mybranch  # <-- update the pull request
 Contributions to this project must be accompanied by a Developer Certificate of
 Origin (DCO).
 
-All commit messages must contain the Signed-off-by line with an email address that
-matches the commit author. When commiting, use the `--signoff` flag:
+All commit messages must contain the Signed-off-by line with an email address that matches the commit author. When commiting, use the `--signoff` flag:
 
 ```sh
 git commit -s
 ```
+
+The Signed-off-by line must match the **author's real name**, otherwise the PR will be rejected.
 
 ### Commit Messages
 
@@ -70,14 +71,13 @@ Guidelines:
 
 - Group Commits: Each commit should represent a meaningful change (e.g. implement
   feature X, fix bug Y, ...).
-- For instance, a PR should not look like *1) Add Feature X 2) Fix Typo
-  3) Changes to features X 5) Bugfix for feature X 6) Fix Linter 7) ...*
+- For instance, a PR should not look like _1) Add Feature X 2) Fix Typo 3) Changes to features X 5) Bugfix for feature X 6) Fix Linter 7) ..._
 - Instead, these commits should be squashed together into a single "Add Feature"
   commit.
 - Each commit should work on its own: it must compile, pass the linter and so on.
 - This makes life much easier when using `git log`, `git blame`, `git bisect`, etc.
 - For instance, when doing a `git blame` on a file to figure out why a change
-  was introduced, it's pretty meaningless to see a *Fix linter* commit message.
+  was introduced, it's pretty meaningless to see a _Fix linter_ commit message.
   "Add Feature X" is much more meaningful.
 - Use `git rebase -i main` to group commits together and rewrite their commit message
 - To add changes to the previous commit, use `git commit --amend -s`. This will
@@ -85,15 +85,14 @@ Guidelines:
 - Format: Use the imperative mood in the subject line: "If applied, this commit
   will _your subject line here_"
 
-
 ## FAQ
 
 ### How to run the markdown linter locally
 
 First install `markdownlint-cli`:
 
-* On Mac OS: `brew install markdownlint-cli`
-* On other systems, with yarn installed: `yarn global add markdownlint-cli`
+- On Mac OS: `brew install markdownlint-cli`
+- On other systems, with yarn installed: `yarn global add markdownlint-cli`
 
 Then from the repository root:
 
