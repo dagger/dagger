@@ -1,6 +1,5 @@
 plan:
-    module: ./gcp/cloudrun/
-    package: ./tests
+    package: ./gcp/cloudrun/tests
 name: google-cloudrun
 inputs:
     TestConfig.gcpConfig.project:
@@ -24,8 +23,8 @@ sops:
             MS9KVmtwczR3R3luU3pzaExXdEVMck0KBDEHK2xu5xnaIuX3vxJV5kUVJvtdWXbs
             UU1xOdXor67vnppQuydXjmS4KHj9sUuv7ZieJdb6ncnuNxClizlWYA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-01T07:05:02Z"
-    mac: ENC[AES256_GCM,data:JToQ5grcEkfvUPxMKTdSW2lx3B6oRJdOwduQA7/F+7GJweaAcsxc7LjMRCvEv2uoeUcWS7et/T3Nei9tk59lEPNjqLhHjF+Mc1lBJFZN2BXZiOhX58TEr+klfnmxAsLOiWFFubnlQxSoVv/GiiE9KCE7/sYo4Fs9siIhps4T+bM=,iv:YxLqCwJWGYkBtzC6XcAsuRGfszhYc0D50PyAbiLuXn4=,tag:ZXaPOH75+BSJWL0DOxsecw==,type:str]
+    lastmodified: "2021-07-08T09:54:52Z"
+    mac: ENC[AES256_GCM,data:1PBjo1rCAAwV5kAyPKlShj0EdTdKk12vzY+iUS1Q6unU8pnz5ZyTmOFWsjyK04ebXUiH2depYv5TJzldJSwHRhwG7cEa7TFvKPp9N0vlof9VF9/zmQORmxaoPwndIQljdap8oQylJ7BW2FNTb8AK4mouPxEmqZ1NkAaP924Y4ek=,iv:4nL1hsl2WegABKiSfIu0cFUzumRPrnbPOlBk9TkRK/M=,tag:jjho2ug9TkAR2xuuMBHFdQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

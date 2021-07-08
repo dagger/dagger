@@ -1,6 +1,5 @@
 plan:
-    module: ./docker
-    package: ./tests/push-multi-registry
+    package: ./docker/tests/push-multi-registry
 name: docker-push-multi-registry
 inputs:
     TestRemoteAWS.awsConfig.accessKey:
@@ -28,8 +27,8 @@ sops:
             Yy81dlJ5cDhCL1VCc0szSE9Dbjh0TUEK+xcj1bHhJr0MR+2QLL0Y+at0/SFXcutx
             VpUkCykV3eBV6P9I51+3NeJ/ZMmJ43N2geFFJNeacmn8uQKNxpgGGw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-01T13:15:01Z"
-    mac: ENC[AES256_GCM,data:vpU0XJA/H/ra4BIuReWJAOLvFW4s+xHDAxxSYoU1WkdX68EUb1jbuhEqyDqlhQRn6lf3qSt9kbnbiiw39/mrdBFnwDg5DLjOPT17G/rBiSp9p+1e4mN8hGNp79uen+dDQX7f4NSxZ4nroMVtEuIuBrbFaZUMYVaBYEHjGuw2hgc=,iv:/nW7lpopSsqTwoaPgiHrabtl8aOZtJEezkwBDqi15Tg=,tag:uw3Hj+/t3Y5U0wpK7g+tJg==,type:str]
+    lastmodified: "2021-07-08T09:54:01Z"
+    mac: ENC[AES256_GCM,data:xgxY211azbFSosH2c+ogQgAh7gH/fNZdzkQ8S8JdC1a5nSHsI3KL/GI+KDRkpg4ZW7oycEgQVUKv0Cr9c6n+aRPqfWncCKN3R6DtyptBowDeHnYeXqvtao/OpkOncpiNk3VUVUiXpPRpzE3alS9jYwk/UYk8bMVCnp9XnxpXKhQ=,iv:ZFoAL4nbdIOBaBsM959T5jyaL+5ZKMxA14swIkU6b+4=,tag:veXaxVF1ChoPhEj3Tfj9cA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

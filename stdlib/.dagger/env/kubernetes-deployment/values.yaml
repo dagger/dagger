@@ -1,6 +1,5 @@
 plan:
-    module: ./kubernetes
-    package: ./tests
+    package: ./kubernetes/tests
 name: kubernetes-deployment
 inputs:
     TestKubeconfig:
@@ -39,8 +38,8 @@ sops:
             SVVkOUtuWTJneE45em5iQ3JvbnIwWlkKgdJC5IzvVDxbWSfU41Xg/UGPxuVBSOGY
             eqenr07uWppNaHuLuo9A+znQa2RQ0L2clcB2d+ka+6z5tQyHOfx1nA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T18:18:53Z"
-    mac: ENC[AES256_GCM,data:S2uG/YGGfCxJ1ClEouwEhFa1Huzk//NFQoZM4SCDp0uK73FVxt1+Hi0rfKl7DrGPqw+HJghlamyAwPGZSi9lFBWO6ASti2kfc2FmhQ9pgY+VOiOE7jd7ajw9wWUILpN19GBiwIpO8JN/nqRX9QYLdigUgKa6IVrBwVwjRRKvmmM=,iv:SpSe+nwvtSHogwwNaMbikDzMKDHbla0BqnsZn42nMTQ=,tag:vxn0bHdbMwfZVLx9cSfB4Q==,type:str]
+    lastmodified: "2021-07-08T09:55:54Z"
+    mac: ENC[AES256_GCM,data:pxSS4ozN3opL/vP9ZTPamN7F1XftVRpUotfLyrv4r1DsGuoXuJXSjmg975/319VnA/yTa3jlhASrSRXgeQu0CTKj+mvTXrATdsoK6GR3kob2jReIYJh6Xk6nZtNA76aWkviHBlF4soNtb9M/jUcu5iHTk+LYQ97YX+D+0Ees6Fo=,iv:KASRIq/hg8hj9uVvbZTBdcGHdVgA8IfG5/OaVB2DnJI=,tag:pXzN1cor3GOaJ6DeJ8Pfrw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
