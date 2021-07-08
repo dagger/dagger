@@ -1,6 +1,5 @@
 plan:
-    module: ./docker
-    package: ./tests/push-invalid-creds
+    package: ./docker/tests/push-invalid-creds
 name: docker-push-invalid-creds
 inputs:
     TestRegistry.secret:
@@ -22,8 +21,8 @@ sops:
             VC8wSTZvUE5UaDg2WE1CaGMzR3M1TEkK9v83AVI4lvFgjKCg8UmQrcxarlESWTfV
             2cDdWgoH7ZqgXo5jFv2tn8qQWHKl8eTTeYUWn8GoNVPKrCroax2fiQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-26T15:00:53Z"
-    mac: ENC[AES256_GCM,data:ptE3WydZDuethnN5Qh26uAfndRbT+RKz2mktH4s2KyRNeDKgiBfwOVS1xoTxz+nkFoms0Cxac3iaVwZLpZXniQUbOAYY1fzfmyL32bfAUdNFs7P6K0thwSy8r8LJ38GvxHzZW289YVFTGSaJWCapbrcGzl6B7Aj5RcQ+Hhu32K8=,iv:PA2R7Q8y8F//RGnHpOCmxp8jWKXlAZ3Yfo0xbtPfx2E=,tag:EmxBTb9WVrDdOmgDHEDYfg==,type:str]
+    lastmodified: "2021-07-08T09:53:54Z"
+    mac: ENC[AES256_GCM,data:hnVsqFM81iSA/VFPbwqtqw3jOB7H2+67VuXmKfU5fEf15D5WGLZi17HCfRJQ+Db8d0S8ICwFlzqemq+99GB0wf0QVGeOBfrLZ+/AW6Yhd7klhZZxtngXos0lcZreBWduiLkctS2lbx0aiRDBUrsKFcJmu0O9JbMkwC7Hj+nncBk=,iv:2PDO6MTSszlVwmEkAI5lI9cBoJW8JdL3Q+i+sQgtFAk=,tag:nW2OLjAhSot7VyolrXbV5Q==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

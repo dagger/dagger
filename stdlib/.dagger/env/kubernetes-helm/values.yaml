@@ -1,6 +1,5 @@
 plan:
-    module: ./kubernetes/helm
-    package: ./tests
+    package: ./kubernetes/helm/tests
 name: kubernetes-helm
 inputs:
     TestChartSource:
@@ -42,8 +41,8 @@ sops:
             VHlGUExaMzcwM0pOM2VDY280UWZXSzQKAm7ZV1agxbla3Yrc7vrwJosSjQtWhdac
             ZFyQ6Gi+9H7qHZM89yVjAaIg1lwr68HcjYgDzpvvhJO9YPfzwoLyHw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T18:19:00Z"
-    mac: ENC[AES256_GCM,data:YOoJzBwg1qxodJ8BZNwUWB5K5GlN+YKkKVjdc0rlG4SS+XhypsdSTwNCZLxXhT9NeGSeqlECNF6OIIBAomDHyv1PVnbbM65Q6gmNWrdXmWbJqUB1wEOg46NY/DxjmkC2miX6WIOz9zZSDNWKITYyLVVRwR9F1Pgh16x2q2x+MAo=,iv:KF4tAnVZXUm8+J5VKfpPIn3ZzdyyCYZfxyDoFyCb8dM=,tag:5UIN4Vb40+RwDcRjIptSkg==,type:str]
+    lastmodified: "2021-07-08T09:56:04Z"
+    mac: ENC[AES256_GCM,data:MuWGfoZbSuIgUjCOnFAVFyApcPn+rPyKtWAjuAt+04qsYZP3oGlYsUBWlKVTtlCqx1EmSccgMjL1HUaXg4kO/SltUd/qhAZsjRuTzr84lIXyAqLQ7ScgXYX/z/fNCn4CbZHcpJg6C0dzRDWykxSBttYrmcNyGs7ynaOF0tGPkHA=,iv:+YiBGrCkT/nMcARgWb3B0NSqNZIhf0V5tEXzBiTC+YE=,tag:ssB5Ee9GSsr/0vOIRb1wLw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

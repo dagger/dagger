@@ -1,6 +1,5 @@
 plan:
-    module: ./docker/compose
-    package: ./tests
+    package: ./docker/compose/tests
 name: docker-compose
 inputs:
     TestSSH.host:
@@ -27,8 +26,8 @@ sops:
             bEY3N3ZLTFpUNzZVWVBOK3VNRk9hWlUKd9db3j7FqFW4t7TxFyzudKDPTVqr66v2
             KqedhRYCjF4ZozN0H++xQPH24RBRnwc6Uq0Vm38UYv1ozDN2L/l5DA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-25T13:17:45Z"
-    mac: ENC[AES256_GCM,data:RclYzWUgBU06881KztfHdaeBtHLOiQZ5xNp0taaxS152rUxyXCXEAFlOu/yqE3RvEoorUp473wDwFUa9DudHidY88YNdfdk5AUuZdsOXW4bRMFPF4eiFugqZJNPepaW1YBDUMeH7XQBN1jyEkFOvzyk2KKQhoUshWyrU5QDR2kc=,iv:MjhUSjzVm6nV2PnSNi346GxkirmF3yAti3Jmb94gLGg=,tag:t4fHAYh60//PlkwUPQh2uA==,type:str]
+    lastmodified: "2021-07-08T10:08:56Z"
+    mac: ENC[AES256_GCM,data:UBPicypRIVOPVTYU3W1Erw18k0xuAAYkPUSFP+4VSHwYo1vfcUjCQdJwUv8cQdJSPkdx428s7Hq7jRK7yLc3tidzxsI/ad8bIobIIX62bTGVfVl7PRQ53XuO1Ggg7oZpwijx8l8Cl4WgVjivI4bV9RISrgATFzoEjH1w94s94aA=,iv:KgdsHR6VKeSwSQ+yjm3rLKTzN2BfCaJpHYZO3uMYOqU=,tag:cU6o3+uTelHcHeR0mqpvrw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
