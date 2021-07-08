@@ -1,3 +1,6 @@
+## Doc commands are being extracted from this file and helpers.
+## Indentation is important, please append at the end
+
 common_setup() {
     load 'node_modules/bats-support/load'
     load 'node_modules/bats-assert/load'
@@ -29,6 +32,21 @@ common_setup() {
 # dagger helper to execute the right binary
 dagger() {
     "${DAGGER}" "$@"
+}
+
+# dagger helper to run doc examples in clean environment
+setup_example_sandbox() {
+    # Tell Dagger not to use DAGGER WORKSPACE env var
+    unset DAGGER_WORKSPACE
+
+    export CODEBLOC_SRC="$(pwd)"
+    local tmpdir=$(mktemp -d)
+    cd $tmpdir
+    git clone https://github.com/dagger/examples
+    if [ "$1" = "doc" ]; then
+        cd examples/todoapp
+        cue mod init
+    fi
 }
 
 # copy an environment from the current workspace to the sandbox.

@@ -26,30 +26,30 @@ The first thing to consider when developing a plan based on relays is to read th
 
 You will need the local copy of the [Dagger examples repository](https://github.com/dagger/examples) used in previous guides
 
-```shell
-git clone https://github.com/dagger/examples
+<!-- git clone https://github.com/dagger/examples -->
+```shell file=./tests/helpers.bash#L45
 ```
 
 Make sure to run all commands from the todoapp directory:
 
-```shell
-cd examples/todoapp
+<!-- cd examples/todoapp -->
+```shell file=./tests/helpers.bash#L47
 ```
 
 ### (optional) Initialize a Cue module
 
 This guide will use the same directory as the root of the Dagger workspace and the root of the Cue module, but you can create your Cue module anywhere inside the Dagger workspace.
 
-```shell
-cue mod init
+<!-- cue mod init -->
+```shell file=./tests/helpers.bash#L48
 ```
 
 ### Organize your package
 
 Let's create a new directory for our Cue package:
 
-```shell
-mkdir cloudformation
+<!-- mkdir cloudformation -->
+```shell file=./tests/doc.bats#L84
 ```
 
 ## Create a basic plan
@@ -66,68 +66,7 @@ The idea here is to follow best practices in [S3 buckets](https://docs.aws.amazo
 
 Create a file named `template.cue` and add the following configuration to it.
 
-```cue title="todoapp/cloudformation/template.cue"
-package cloudformation
-
-// inlined s3 cloudformation template as a string
-template: """
-  {
-    "AWSTemplateFormatVersion": "2010-09-09",
-    "Resources": {
-      "S3Bucket": {
-        "Type": "AWS::S3::Bucket",
-        "Properties": {
-          "AccessControl": "PublicRead",
-          "WebsiteConfiguration": {
-            "IndexDocument": "index.html",
-            "ErrorDocument": "error.html"
-          }
-        },
-        "DeletionPolicy": "Retain"
-      },
-      "BucketPolicy": {
-        "Type": "AWS::S3::BucketPolicy",
-        "Properties": {
-          "PolicyDocument": {
-            "Id": "MyPolicy",
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Sid": "PublicReadForGetBucketObjects",
-                "Effect": "Allow",
-                "Principal": "*",
-                "Action": "s3:GetObject",
-                "Resource": {
-                  "Fn::Join": [
-                    "",
-                    [
-                      "arn:aws:s3:::",
-                      {
-                        "Ref": "S3Bucket"
-                      },
-                      "/*"
-                    ]
-                  ]
-                }
-              }
-            ]
-          },
-          "Bucket": {
-            "Ref": "S3Bucket"
-          }
-        }
-      }
-    },
-    "Outputs": {
-      "Name": {
-        "Value": {
-          "Fn::GetAtt": ["S3Bucket", "Arn"]
-        },
-        "Description": "Name S3 Bucket"
-      }
-    }
-  }
-"""
+```cue file=./tests/cloudformation/template.cue title="todoapp/cloudformation/template.cue"
 ```
 
 ##### 2. Cloudformation relay
@@ -164,15 +103,7 @@ The config values are all part of the `aws` relay. Regarding this package, as yo
 
 Let's implement the first step, use the `aws.#Config` relay, and request its first inputs: the region to deploy and the AWS credentials.
 
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "alpha.dagger.io/aws"
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config
+```cue file=./tests/cloudformation/source-begin.cue title="todoapp/cloudformation/source.cue"
 ```
 
 This defines:
@@ -185,8 +116,8 @@ This defines:
 
 Now that the Cue package is ready, let's create an environment to run it:
 
-```shell
-dagger new 'cloudformation' -m cloudformation
+<!-- dagger new 'cloudformation' -p cloudformation -->
+```shell file=./tests/doc.bats#L92
 ```
 
 ##### 2. Check plan
@@ -214,33 +145,7 @@ dagger up -e cloudformation # Try to run the plan. As expected, we encounter a f
 
 Now that we have the `config` definition properly configured, let's modify the Cloudformation one:
 
-```cue title="todoapp/cloudformation/source.cue"
-package cloudformation
-
-import (
-  "alpha.dagger.io/aws"
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/random"
-  "alpha.dagger.io/aws/cloudformation"
-)
-
-// AWS account: credentials and region
-awsConfig: aws.#Config
-
-// Create a random suffix
-suffix: random.#String & {
-  seed: ""
-}
-
-// Query the Cloudformation stackname, or create one with a random suffix to keep unicity
-cfnStackName: *"stack-\(suffix.out)" | string & dagger.#Input
-
-// AWS Cloudformation stdlib
-cfnStack: cloudformation.#Stack & {
-  config:    awsConfig
-  stackName: cfnStackName
-  source:    template
-}
+```cue file=./tests/cloudformation/source-end.cue title="todoapp/cloudformation/source.cue"
 ```
 
 This defines:
@@ -359,43 +264,16 @@ We will create a new `convert.cue` file to process the conversion
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-<Tabs
-  defaultValue="sv"
-  values={[
-    { label: 'JSON Generic Code', value: 'sv', },
-    { label: 'YAML Generic Code', value: 'yv', },
-  ]
-}>
-<TabItem value="sv">
-
-```cue title="todoapp/cloudformation/convert.cue"
-package cloudformation
-import "encoding/json"
-
-s3Template: json.Unmarshal(template)
+```cue file=./tests/cloudformation/template/convert.cue title="todoapp/cloudformation/convert.cue"
 ```
-
-</TabItem>
-<TabItem value="yv">
-
-```cue title="todoapp/cloudformation/convert.cue"
-package cloudformation
-import "encoding/yaml"
-
-s3Template: yaml.Unmarshal(template)
-```
-
-</TabItem>
-</Tabs>
 
 This defines:
 
 - `s3Template`: contains the unmarshalled template.
 
-You need to empty the plan and copy the `convert.cue` file to the plan for Dagger to reference it
+You need to empty the plan apart the `convert.cue` file
 
-```shell
-rm cloudformation/source.cue
+```shell file=./tests/doc.bats#L114
 ```
 
 ### 2. Retrieve the Unmarshalled JSON
@@ -420,194 +298,33 @@ The commented output above is the cue version of the JSON Template, copy it
 
 ### 3. Remove convert.cue
 
-```shell
-rm cloudformation/convert.cue
+```shell file=./tests/doc.bats#L120
 ```
 
 ### 4. Store the output
 
 Open `cloudformation/template.cue` and append below elements with copied Cue definition of the JSON:
 
-```cue title="todoapp/cloudformation/template.cue"
-// Add this line, to make it part to the cloudformation template
-package cloudformation
-import "encoding/json"
-
-// Wrap exported Cue in previous point inside the `s3` value
-s3: {
-  "AWSTemplateFormatVersion": "2010-09-09",
-  "Outputs": {
-    "Name": {
-      "Description": "Name S3 Bucket",
-      "Value": {
-        "Fn::GetAtt": [
-          "S3Bucket",
-          "Arn"
-        ]
-      }
-    }
-  },
-  "Resources": {
-    "BucketPolicy": {
-      "Properties": {
-        "Bucket": {
-          "Ref": "S3Bucket"
-        },
-        "PolicyDocument": {
-          "Id": "MyPolicy",
-          "Statement": [
-            {
-              "Action": "s3:GetObject",
-              "Effect": "Allow",
-              "Principal": "*",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:aws:s3:::",
-                    {
-                      "Ref": "S3Bucket"
-                    },
-                    "/*"
-                  ]
-                ]
-              },
-              "Sid": "PublicReadForGetBucketObjects"
-            }
-          ],
-          "Version": "2012-10-17"
-        }
-      },
-      "Type": "AWS::S3::BucketPolicy"
-    },
-    "S3Bucket": {
-      "DeletionPolicy": "Retain",
-      "Properties": {
-        "AccessControl": "PublicRead",
-        "WebsiteConfiguration": {
-          "ErrorDocument": "error.html",
-          "IndexDocument": "index.html"
-        }
-      },
-      "Type": "AWS::S3::Bucket"
-    }
-  }
-}
-
-// Template contains the marshalled value of the s3 template
-template: json.Marshal(s3)
+```cue file=./tests/cloudformation/template/template-begin.cue title="todoapp/cloudformation/template.cue"
 ```
 
 We're using the built-in `json.Marshal` function to convert CUE back to JSON, so Cloudformation still receives the same template.
 
 You can inspect the configuration using `dagger query -e cloudformation` to verify it produces the same manifest:
 
-```shell
-dagger query template -f text -e cloudformation
+```shell file=./tests/doc.bats#L124
 ```
 
 Now that the template is defined in CUE, we can use the language to add more flexibility to our template.
 
 Let's define a re-usable `#Deployment` definition in `todoapp/cloudformation/deployment.cue`:
 
-```cue title="todoapp/cloudformation/deployment.cue"
-package cloudformation
-
-#Deployment: {
-
-  // Bucket's output description
-  description: string
-
-  // index file
-  indexDocument: *"index.html" | string
-
-  // error file
-  errorDocument: *"error.html" | string
-
-  // Bucket policy version
-  version: *"2012-10-17" | string
-
-  // Retain as default deletion policy. Delete is also accepted but requires the s3 bucket to be empty
-  deletionPolicy: *"Retain" | "Delete"
-
-  // Canned access control list (ACL) that grants predefined permissions to the bucket
-  accessControl: *"PublicRead" | "Private" | "PublicReadWrite" | "AuthenticatedRead" | "LogDeliveryWrite" | "BucketOwnerRead" | "BucketOwnerFullControl" | "AwsExecRead"
-
-  // Modified copy of s3 value in `todoapp/cloudformation/template.cue`
-  template: {
-    "AWSTemplateFormatVersion": "2010-09-09",
-    "Outputs": {
-      "Name": {
-        "Description": description,
-        "Value": {
-          "Fn::GetAtt": [
-            "S3Bucket",
-            "Arn"
-          ]
-        }
-      }
-    },
-    "Resources": {
-      "BucketPolicy": {
-        "Properties": {
-          "Bucket": {
-            "Ref": "S3Bucket"
-          },
-          "PolicyDocument": {
-            "Id": "MyPolicy",
-            "Statement": [
-              {
-                "Action": "s3:GetObject",
-                "Effect": "Allow",
-                "Principal": "*",
-                "Resource": {
-                  "Fn::Join": [
-                    "",
-                    [
-                      "arn:aws:s3:::",
-                      {
-                        "Ref": "S3Bucket"
-                      },
-                      "/*"
-                    ]
-                  ]
-                },
-                "Sid": "PublicReadForGetBucketObjects"
-              }
-            ],
-            "Version": version
-          }
-        },
-        "Type": "AWS::S3::BucketPolicy"
-      },
-      "S3Bucket": {
-        "DeletionPolicy": deletionPolicy,
-        "Properties": {
-          "AccessControl": "PublicRead",
-          "WebsiteConfiguration": {
-            "ErrorDocument": errorDocument,
-            "IndexDocument": indexDocument
-          }
-        },
-        "Type": "AWS::S3::Bucket"
-      }
-    }
-  }
-}
+```cue file=./tests/cloudformation/template/deployment.cue title="todoapp/cloudformation/deployment.cue"
 ```
 
 `template.cue` can be rewritten as follows:
 
-```cue title="todoapp/cloudformation/template.cue"
-package cloudformation
-import "encoding/json"
-
-s3: #Deployment & {
-  description: "Name S3 Bucket"
-}
-
-// Template contains the marshalled value of the s3 template
-template: json.Marshal(s3.template)
+```cue file=./tests/cloudformation/template/template-end.cue title="todoapp/cloudformation/template.cue"
 ```
 
 Verify template
@@ -635,6 +352,11 @@ dagger query template -f text -e cloudformation
 #       "Name": {
 #         "Description": "Name S3 Bucket",
 #         "Value": {
+```
+
+Reimplement `source.cue`:
+
+```cue file=./tests/cloudformation/source-end.cue title="todoapp/cloudformation/source.cue"
 ```
 
 And we can now deploy it:

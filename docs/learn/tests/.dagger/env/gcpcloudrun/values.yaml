@@ -1,7 +1,6 @@
 plan:
-    module: ./106
-    package: ./test
-name: "106"
+    package: ./gcpcloudrun
+name: gcpcloudrun
 inputs:
     deploy.name:
         text: test-cloudrun-doc
@@ -28,8 +27,8 @@ sops:
             ejJ5Z1RSamY2YlhSOW11a05vUEFvQlEKF8wf5gsCeSnKyjtyZVQsvSSqWtTSiDnp
             7j5sUPHPoFWHX7liZcXBIfyPEtqiS9Ap7zV4sNtO0iuwRzWtQnafhw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-07T08:04:10Z"
-    mac: ENC[AES256_GCM,data:rnRDlrGMm4MdWXkjACceT4vCWXUdVBEIgw/+plIfWEgPvMjMRBPa6JJyo/F0vPKySSdXZ4YtQWKhPLwrOWo7ccijIZq7BUm3F2kWCagEA1dmLdBgQoCVzKffoBCN1us/7DWtsHuQWMkKQXlPSYlX3f8C3vI0TPziPZ/wAYnUkRk=,iv:lBI9UbEmqrv7Yc60eGsTERXpY90JAtQpPP5bjoFYpdo=,tag:fzZONCjyFntH/QTLW/umIA==,type:str]
+    lastmodified: "2021-07-08T14:46:51Z"
+    mac: ENC[AES256_GCM,data:zCcp4AD+ffi90dPBQv7wUUuA8h4piV+qzL9Cjny9bcFx4oKbXZoXhOZccbXWyT2K3JB1+2B12tMJr0/KnDulfISyeB12knCKLVclIMcyx+m7RwOC/BgbpSAYYndxmOxbzW3RaCW9IYj3t1bqSvs80h/urA11WIzKzA8YD0Rckv8=,iv:FhbDO7y6wMjwR5pXJwa6LROwOIfwJwaRASyCv6sqekU=,tag:Pa54CcS43uFOtx3BRs5QVw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

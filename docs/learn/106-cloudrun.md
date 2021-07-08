@@ -15,35 +15,35 @@ import TabItem from '@theme/TabItem';
 
 You will need the local copy of the [Dagger examples repository](https://github.com/dagger/examples) used in previous guides
 
-```shell
-git clone https://github.com/dagger/examples
+<!-- git clone https://github.com/dagger/examples -->
+```shell file=./tests/helpers.bash#L45
 ```
 
 Make sure that all commands are being run from the todoapp directory:
 
-```shell
-cd examples/todoapp
+<!-- cd examples/todoapp -->
+```shell file=./tests/helpers.bash#L47
 ```
 
 ### (optional) Initialize a Cue module
 
 This guide will use the same directory as the root of the Dagger workspace and the root of the Cue module, but you can create your Cue module anywhere inside the Dagger workspace.
 
-```shell
-cue mod init
+<!-- cue mod init -->
+```shell file=./tests/helpers.bash#L48
 ```
 
 ### Organize your package
 
 Let's create a new directory for our Cue package:
 
-```shell
-mkdir gcpcloudrun
+<!-- mkdir gcpcloudrun -->
+```shell file=./tests/doc.bats#L63
 ```
 
 ### Create a basic plan
 
-```cue file=./tests/106/source.cue title="todoapp/cue.mod/gcpcloudrun/source.cue"
+```cue file=./tests/gcpcloudrun/source.cue title="todoapp/cue.mod/gcpcloudrun/source.cue"
 ```
 
 ## Set up the environment
@@ -52,8 +52,8 @@ mkdir gcpcloudrun
 
 Now that your Cue package is ready, let's create an environment to run it:
 
-```shell
-dagger new 'gcpcloudrun' -m gcpcloudrun
+<!-- dagger new 'gcpcloudrun' -p gcpcloudrun -->
+```shell file=./tests/doc.bats#L67
 ```
 
 ### Configure user inputs

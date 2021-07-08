@@ -56,7 +56,7 @@ universe-test: dagger-debug
 .PHONY: doc-test
 doc-test: dagger-debug
 	yarn --cwd "./docs/learn/tests" install
-	DAGGER_BINARY="../../../cmd/dagger/dagger-debug" yarn --cwd "./docs/learn/tests" test
+	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./docs/learn/tests" test
 
 .PHONY: install
 install: dagger
