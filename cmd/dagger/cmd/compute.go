@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
@@ -163,7 +164,11 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		environment := common.EnvironmentUp(ctx, st, viper.GetBool("no-cache"))
+		cl, err := client.New(ctx, "", false)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("unable to create client")
+		}
+		environment := common.EnvironmentUp(ctx, cl, st, viper.GetBool("no-cache"))
 
 		v := compiler.NewValue()
 		if err := v.FillPath(cue.MakePath(), environment.Plan()); err != nil {
