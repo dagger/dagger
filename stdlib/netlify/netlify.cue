@@ -22,17 +22,59 @@ import (
 	// Netlify account this site is attached to
 	account: #Account
 
-	// Contents of the application to deploy
-	contents: dagger.#Artifact @dagger(input)
+	// Application context. The directory where the application contents reside.
+	context: dagger.#Artifact @dagger(input)
+
+	// Application source to build
+	contents: string @dagger(input)
 
 	// Deploy to this Netlify site
 	name: string @dagger(input)
 
+	// Create the Netlify site if it doesn't exist?
+	create: bool | *true @dagger(input)
+
 	// Host the site at this address
 	customDomain?: string @dagger(input)
 
-	// Create the Netlify site if it doesn't exist?
-	create: bool | *true @dagger(input)
+	ctr: os.#Container & {
+		image: alpine.#Image & {
+			package: {
+				bash: "=~5.1"
+				jq:   "=~1.6"
+				curl: true
+				yarn: "=~1.22"
+			}
+		}
+		setup: [
+			"yarn global add netlify-cli@4.1.18",
+		]
+		// set in netlify.sh.cue
+		// FIXME: use embedding once cue supports it
+		command: _
+		env: {
+			NETLIFY_SITE_NAME: name
+			NETLIFY_ACCOUNT:   account.name
+
+			OAUTH_ENABLE:                   "true"
+			REACT_APP_OAUTH_SCOPE:          "user:email"
+			REACT_APP_GITHUB_AUTHORIZE_URI: "https://github.com/login/oauth/authorize?client_id=${REACT_APP_CLIENT_ID}&scope=${REACT_APP_OAUTH_SCOPE}&allow_signup=false"
+			REACT_APP_DAGGER_SITE_URI:      "https://dagger.io"
+			REACT_APP_API_PROXY_ENABLE:     "true"
+
+			if (create) {
+				NETLIFY_SITE_CREATE: "1"
+			}
+
+			if customDomain != _|_ {
+				NETLIFY_DOMAIN: customDomain
+			}
+		}
+
+		dir: "/src/\(contents)"
+		mount: "/src": from: context
+		secret: "/run/secrets/token": account.token
+	}
 
 	// Website url
 	url: {
@@ -57,34 +99,4 @@ import (
 				path: "/netlify/logsUrl"
 			}
 	}.contents @dagger(output)
-
-	ctr: os.#Container & {
-		image: alpine.#Image & {
-			package: {
-				bash: "=~5.1"
-				jq:   "=~1.6"
-				curl: true
-				yarn: "=~1.22"
-			}
-		}
-		setup: [
-			"yarn global add netlify-cli@3.38.10",
-		]
-		// set in netlify.sh.cue
-		// FIXME: use embedding once cue supports it
-		command: _
-		env: {
-			NETLIFY_SITE_NAME: name
-			if (create) {
-				NETLIFY_SITE_CREATE: "1"
-			}
-			if customDomain != _|_ {
-				NETLIFY_DOMAIN: customDomain
-			}
-			NETLIFY_ACCOUNT: account.name
-		}
-		dir: "/src"
-		mount: "/src": from: contents
-		secret: "/run/secrets/token": account.token
-	}
 }

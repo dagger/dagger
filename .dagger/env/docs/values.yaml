@@ -1,22 +1,18 @@
 plan:
-    module: .dagger/env/docs/plan
+    module: ./cue.mod/pkg/docs
 name: docs
 inputs:
-    docs.env.REACT_APP_CLIENT_ID:
-        text: 1a6d02cb59199eb205ef
-    docs.env.REACT_APP_CLIENT_SECRET:
-        text: 47a1a67abc8d3fe9edb829a6c7775fbad47f47bb
-    repository:
-        dir:
-            path: .
-            exclude:
-                - '**/node_modules'
-                - cmd/dagger/dagger
-                - cmd/dagger/dagger-debug
     site.account.name:
         text: blocklayer
-    site.account.token:
-        secret: ENC[AES256_GCM,data:jPJ8N6cAmtYnQh2SyhM9bQGfkhz777S4fyPDm2YhujwgXH6EogN2Uyw6Ew==,iv:gDchoJYLdQ8IPxrUUIsQ9s2f12JOhh7p573DwOIV2zE=,tag:okatHyjVGPGNOt+aw4iUHg==,type:str]
+    site.contents:
+        text: website
+    site.context:
+        dir:
+            path: .
+    site.ctr.env.REACT_APP_CLIENT_ID:
+        text: 1a6d02cb59199eb205ef
+    site.ctr.env.REACT_APP_CLIENT_SECRET:
+        text: 47a1a67abc8d3fe9edb829a6c7775fbad47f47bb
 sops:
     kms: []
     gcp_kms: []
@@ -26,14 +22,14 @@ sops:
         - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBaZVVuYThsYk9YcWhYb0g4
-            TDhZQ21YN0FCRExKV2tqbVVUNTg5MWRUVUJzCndjc28yVUZEK3ZoQzVDQkk4emZQ
-            WGx2bUxSZlBENXlibzQ1MVkvc2I2MVkKLS0tIFJKS0ZENFhuVmdUM2h1a2xrK01a
-            ejRKQXNFZzBTbUxpc05acnkxQ2U2UkEKX1byNj64xOiRGAJ9lwh55d/mlasI3H6H
-            b+o3HbXSbV0G0UwQxEOisntR6o27ry/l12ai/sOQ4f9MXm6FRw2XTg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBqMFIveTBWeENsOHFxY1N0
+            TjJEd2JOa1dNQys4OHFzN2pndzFzcHdMSlRRCmd6V3luVzB1SVE1USs5RXhQQ1lB
+            QVhlYzJrTkN2RDVncDdGY1lIa1Z1K3MKLS0tIHBJdEdZU1d1a0ZWSkhkYmNIYzB3
+            S1VicnFBeU9Hd1Fudk1heGNrcEhoOGsKReB7BuSLaalmxNo6J0kn+6F23Z47iDZ/
+            l7IUu+5+N2vrap3hj5cLha/xZECVM+Jcfebih2eCSHHKW1Hw1gO81Q==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-18T14:46:35Z"
-    mac: ENC[AES256_GCM,data:RX4rZSP2sMqSGfbSkpK1rAqLcpYHv99jUvhGpQvM9Sjxki4LskxQP51BuZj7eVD0u0uqBMObatyZvofTybld6tlrgQeddIS4SINRJNsC+P7dzaiOEePZX/oCCMIQCnO8+OLO7z6DNdy1IMxhuCZWeGHDJt1ritLds3ACAjtFrGo=,iv:AI8tdLTFnFV919ypY0RKVaDNfwEN6b5hZuH4DvlhdAk=,tag:izIPuozRiYpQ50hi4yLyCw==,type:str]
+    lastmodified: "2021-07-11T12:54:18Z"
+    mac: ENC[AES256_GCM,data:dHerZi2UoMctmW/H2qbRgK8CMBLZ+E+P8mPDBqxlto8UCWwf1rwF/oLAkfFSO4GQG7b7+K85veL3/Wy9LcSgYWLNJ0AfnKx3i1EiTdHMIDedV+CZ41XPFScmToi0YUupWzDlkCRuxZoAw8nG5VyZfzZHy3lTH4SIFPBeLQmmLEw=,iv:TLFf58Eq4MRdAzInUhnYa5fpIR9pPuH3ZlHcghiZPF0=,tag:IERpwH5aBvK2tOVZtQ6jnw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
