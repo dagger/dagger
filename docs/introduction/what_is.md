@@ -4,23 +4,39 @@ slug: /
 sidebar_label: What is Dagger?
 ---
 
-# Dagger
+# What is Dagger?
 
-Dagger is a programmable deployment system.
+Dagger integrates your existing build, CI, infrastructure management and deployment tools into a streamlined delivery platform, also known as "PaaS".
 
-Using Dagger, software builders can automate the deployment of any application to any infrastructure,
-in just a few lines of code.
+What if you didn't have to choose between the slick deployment experience of Heroku, and the ability to customize every aspect of your stack? Using Dagger, you get the best of both worlds: a programmable backend that can orchestrate even the most complex delivery logic; and a simple, standardized frontend that every developer can use without being a devops expert.
 
 ![Dagger_Website_Ship](https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png)
 
-The Dagger platform adapts to your application, not the other way around.
-Thanks to its ecosystem of reusable packages and flexible scripting system, Dagger can be dropped
-into any software project without requiring changes to its architecture or workflow.
-Think of it as your "devops superglue".
+## Programmable backend
 
-No matter how your deployment works under the hood, you can manage it with the same Dagger user interface.
+Under the hood, Dagger is not just customizable but fully programmable, so as your application grows and evolves, your delivery logic can evolve along with it.
+
+Key features:
+
+* Configure your integrations declaratively, with the revolutionary [CUE](https://cuelang.org) language.
+* Trivially load and integrate any JSON and YAML configurations, with schema validation, templating, and more
+* A growing catalog of ready-to-use integrations: Kubernetes, Terraform, AWS Cloudformation, Google Cloud Run, Docker Compose, Netlify, Yarn, Maven, and more
+* First-class composition: compose the nodes in your graph just like you would functions in regular code - with all the benefits of a declarative language.
+* Develop your own integrations in minutes, with a powerful pipeline API powered by [https://github.com/moby/buildkit]. Run containers, fetch data sources, generate artifacts on-demand, securely load secrets, and more.
+* Built-in support for encrypted secrets.
+* Built-in support for just-in-time artifacts.
+* Gitops-ready.
+
+## Simple, standardized frontend
+
+No matter how custom your delivery backend, developers can ignore the complexity and deploy with one simple command:
+
+```shell
+dagger up
+```
+
 This makes developers more productive, because they don't have to learn a new workflow every time their deployment
-system changes.
+system changes. It also frees the delivery team to make more ambitious and rapid changes, without fearing that they will slow down or break delivery.
 
 ## Dagger is alpha software
 

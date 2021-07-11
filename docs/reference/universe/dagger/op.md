@@ -82,6 +82,16 @@ _No input._
 
 _No output._
 
+## op.#FetchHTTP
+
+### op.#FetchHTTP Inputs
+
+_No input._
+
+### op.#FetchHTTP Outputs
+
+_No output._
+
 ## op.#Load
 
 ### op.#Load Inputs

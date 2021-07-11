@@ -1,6 +1,5 @@
 plan:
-    module: ./gcp/gke
-    package: ./tests
+    package: ./gcp/gke/tests
 name: google-gke
 inputs:
     TestConfig.gcpConfig.project:
@@ -24,8 +23,8 @@ sops:
             ZXd6Qmd1YUtxMnVTVkYybWgrV3pVK2MKowMeOZU3j3BxERT0DwhQYCGUDBK6gCdo
             WByubiBATdsb7h7ytCC4HutWppynK4MpU+Ya9NP83AZuXo+Wa2u6aQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T16:23:14Z"
-    mac: ENC[AES256_GCM,data:xUwP0iRtKFl159PD5u8byQbxMyPHYuQvGQLuplUJMZs/OMSd+YWiWoJRhup4j9/sZbq4Ob6uHr37HMmwbNgieiGX6qabS90Je/1UiufCOWwfVswnT+iUMHyudnS0r+Gh81vwl2eP3xLr6Odm2FbFh8kwF3Yw+NNi3wgei+yZIjU=,iv:tNI8ti2zAem+dcWVdciPLqdpJ6SDIK3CoeQUchlWE58=,tag:MgTShPwKT565cJV2BJLi2g==,type:str]
+    lastmodified: "2021-07-08T09:55:26Z"
+    mac: ENC[AES256_GCM,data:WgQWkQEEuuH80dTI39hxMYzXGahhCPz5TidDgJvYnxWKKOphB23wrF56K56iXiNkdrPM7lQe6iwhK94FJCYuLGv180nrLO9Z7FnK0KuT+kwqBN+SvWbx8+Wrf55qE9mrMHZjsOlVADUcKRmdSLJB/02tLBQgtrwdGY13vlzC1+g=,iv:I2ro64HiZjipA8K1XHHGudtMmzPAVZLhXSg6MOA06mM=,tag:YYDje4ThW+zDEnASOXu/nA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

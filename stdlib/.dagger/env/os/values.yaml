@@ -1,6 +1,5 @@
 plan:
-    module: ./os
-    package: ./tests/os
+    package: ./os/tests/os
 name: os
 sops:
     kms: []
@@ -17,8 +16,8 @@ sops:
             STlrbFNHZGFRUVQ1S1RIaGVyWktNV0kKo9AFURi/BKI+JuGYVuOrsw3eJU3s66Im
             FCc5YCzrsjX+Y26Su+XW81fTWkcC910e/g+tlZbEFWKZYa8qu1VkqA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T18:33:15Z"
-    mac: ENC[AES256_GCM,data:8/GzJKtH7GONYbtBDqaSj5HdK8csmwoE7fNx2tRAwUs1uYCaZT4n1NBFuxDj/iFtVKB/St2Ba4thEE6+99azLnmMoC1Ss/1v9ZPfINzZuEZBFf3+ufVNSdI49c8DOeRfPNieupPdmPwHFBUN1nPpaK3bYmgr8CaVkdY3+iq4hX8=,iv:lIMOnbJr1gBoCdlbRWTOg2jA57fhZLu970k5QqV+1Yk=,tag:IziUm3K+8IdBJ5XYoeHhjg==,type:str]
+    lastmodified: "2021-07-08T09:56:27Z"
+    mac: ENC[AES256_GCM,data:a69jnTQsVKzWB+52XfoCldJUev6YqJTpdVFBhgbx4WXW9x3YNwRQy4fguiNqiXo/BmiVoHQrPEQsUUHkmsB8r/pOVzq0SlsRRqLLnkJRTdoRSzP8BnOvMxk9Am2g8Y0a7smXAgmkbDzVLLBOZXyGROb1geTrGxeCFgF9AjGLJrM=,iv:5cUq11KBRxrWapdpvC1VqMQ0otyGZbHuU/C/FsIM0+o=,tag:QD4KCFnGxw6eH/fmSoByYQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

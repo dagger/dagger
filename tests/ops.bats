@@ -113,6 +113,14 @@ setup() {
     # assert_failure
 }
 
+@test "op.#FetchHTTP" {
+    run "$DAGGER" compute "$TESTDIR"/ops/fetch-http/exist
+    assert_success
+
+    run "$DAGGER" compute "$TESTDIR"/ops/fetch-http/nonexistent
+    assert_failure
+}
+
 @test "op.#Exec" {
     run "$DAGGER" compute "$TESTDIR"/ops/exec/invalid
     assert_failure

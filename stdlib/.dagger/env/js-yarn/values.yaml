@@ -1,6 +1,5 @@
 plan:
-    module: ./js/yarn
-    package: ./tests
+    package: ./js/yarn/tests
 name: js-yarn
 inputs:
     TestData:
@@ -21,8 +20,8 @@ sops:
             S2JsNXRkbWVERHM0WWk0bXBJSXJIK1kK9R3gMDcbeKRRlt0HHM+w2kcs+sGfASmE
             0YhxbFF2qQPFwHHR7aPmM+L1ML8cXOrxOOyWmmWhXNgtURCJ9/SO3A==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T16:32:39Z"
-    mac: ENC[AES256_GCM,data:jAgt/buOF8cUAT0bQJ3icGI8qR8cOg0ZQqZFuut1VhggLGZTr92Z7XZcChfBdpfPIE98fVuoemTdddEBWKp9g/LjXHyoK4kJxtgTLiH0CGkynVIE01bQUTCQBwaE3KHoRTYuu8xWFw5RpqEgCvlpZnvCGwwMG08NR+hSJJ5j7oY=,iv:+fkJT11KX3xD8OL7NXj+Rs1nuXK8J1AnfF6ZWGGtTTY=,tag:o9xcgR/nLt7hxvMeH1saoQ==,type:str]
+    lastmodified: "2021-07-08T09:55:45Z"
+    mac: ENC[AES256_GCM,data:qVdlcliugnYIPCAe36scgfaXy3QJhIpPampNK1d4E47njhoOooM5YzpI57sIRlC0qYh+Y9osaux3+zjMgws09rIEdyuBkBoQ/M+0D5D9fz8hZLEbfGr1hhuBfI95kfKGnip8h7K/tiZAneHuDmPqd5Pjc+3CeCT8TFMTjet2tIU=,iv:OnSghkK2Kgki8DjAuSy8ubjVQqnt8kbf9Xz5cJxvpZc=,tag:wl2izqxIxNiidKBlC1dqmA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

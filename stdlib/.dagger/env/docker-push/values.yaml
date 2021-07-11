@@ -1,6 +1,5 @@
 plan:
-    module: ./docker
-    package: ./tests/push
+    package: ./docker/tests/push
 name: docker-push
 inputs:
     TestRegistry.secret:
@@ -22,8 +21,8 @@ sops:
             UjFJYTc1UUUzSFVkZjQ2blRsSGpVdVEKOanMR3+WlAgoDfqTUW7WPW1ytT3NdkTX
             4Rqo49QmnuKFJ9tKoBFQOqgIo8E/lpcOkeIUiy5e/35FvsZ/KFk/pg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-26T14:53:13Z"
-    mac: ENC[AES256_GCM,data:kxzdmyQwRIVP9D+w9LzRDIZOxDUqpSaGeD/GqaVxnQivEUjVFK5ePAcYV1fzjU4eeO3chIrP8NpvpIKZ1LztQddsPdTj72Yffgc5yq8/dGa3njiM8p9oa5hnZNoxLtyVPgRoNy3ZUZ6YSN9nqCFWW0DCjeSoiDlPX+1Vj/S6PeM=,iv:DhX4N6idS3VBaqau6k9yH+li34hOd3jqBsJJQu/P3Jw=,tag:X+taa7XgRmovR0JkhGpi7g==,type:str]
+    lastmodified: "2021-07-08T09:53:44Z"
+    mac: ENC[AES256_GCM,data:WGLgBuMtbCVeUGmj8ImZw5IG4H7d33rAcZdaN42jTI+O6Mb9F1qpaF4jFT52KFFTeImMjWP7QKDWhyn6aAWnZfHukMooV7QCxo91PTAQPuA26T/H32bDy04rorax2bUAdw4dJa/5Gl2H2A/TP/cWSwimD5O56k70NKZ+2A7/DxM=,iv:g/BcUDplaxiglPAF9s+5/Z5Eq97OyizpN4ulkqPtJ44=,tag:+5YH6P84dw3ApQd4vQEEWw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

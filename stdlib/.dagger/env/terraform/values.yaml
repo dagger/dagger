@@ -1,6 +1,5 @@
 plan:
-    module: ./terraform
-    package: ./tests
+    package: ./terraform/tests
 name: terraform
 inputs:
     TestConfig.awsConfig.accessKey:
@@ -25,8 +24,8 @@ sops:
             cC9LSiswbFRKaTNXUGNIWVZVbGJqV1UK3/wsgPwR5P2fzs80wcz1dM/8sbBWMR+B
             dmhP99OQisIgcwGATy0nh726pYKtosDpSLIJkLZDAUq9qRKm9bch1w==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T18:37:04Z"
-    mac: ENC[AES256_GCM,data:yKkQ3Vf3O3881P5+i9CFLKHIB9gWPonutIsVihhH+m852T4lNB7tZMpwvDqG8+tsjnGakpaYrTmt2f1SegJrSQYN6nr3kGCagx3GEwcz5m9MtzlPeMfI8kqEJW99Bmv5JiABQpro5FK+S7uyAO9WEN17tMaqYh+BhNaOarcEjyo=,iv:uendThnoUOGzLsdycG069OQ4U0jtHz2kQCXPP3A3dQU=,tag:7LhJruk/cgOCLnMA7BhWCQ==,type:str]
+    lastmodified: "2021-07-08T09:56:55Z"
+    mac: ENC[AES256_GCM,data:dj/ZP/H8mKH5lZaRpEWeWLMihGBVVVNTHMQ+vpYIsCSh0TZy8fy0MHsGnIrJCrBFfHMpaAG5pzvrkqUwAqGTX4UpUJXHCT5HMHbUQdIZB/Yril/d9Pto29bhSr9xKXecMbc4j/cwaypS1ScCIAdAc3Wq+kBSTYFyZiy5ekvyLsM=,iv:EjvQEBW4ovKnLdIwHCcXgVbUU/O5gglw8Igr8WBzw/k=,tag:yad/G2bXpiUzUhZMsMbb+Q==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

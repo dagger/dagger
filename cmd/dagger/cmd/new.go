@@ -1,10 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"path/filepath"
-	"strings"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -36,41 +32,16 @@ var newCmd = &cobra.Command{
 		}
 		name := args[0]
 
-		module := viper.GetString("module")
-		if module != "" {
-			p, err := filepath.Abs(module)
-			if err != nil {
-				lg.Fatal().Err(err).Str("path", module).Msg("unable to resolve path")
-			}
-
-			if !strings.HasPrefix(p, workspace.Path) {
-				lg.Fatal().Err(err).Str("path", module).Msg("module is outside the workspace")
-			}
-			p, err = filepath.Rel(workspace.Path, p)
-			if err != nil {
-				lg.Fatal().Err(err).Str("path", module).Msg("unable to resolve path")
-			}
-			if !strings.HasPrefix(p, ".") {
-				p = "./" + p
-			}
-			module = p
-		}
-
-		ws, err := workspace.Create(ctx, name, state.CreateOpts{
-			Module:  module,
+		_, err := workspace.Create(ctx, name, state.Plan{
 			Package: viper.GetString("package"),
 		})
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
-
-		lg.Info().Str("name", name).Msg("created new empty environment")
-		lg.Info().Str("name", name).Msg(fmt.Sprintf("to add code to the plan, copy or create cue files under: %s", ws.Plan.Module))
 	},
 }
 
 func init() {
-	newCmd.Flags().StringP("module", "m", "", "references the local path of the cue module to use as a plan, relative to the workspace root")
 	newCmd.Flags().StringP("package", "p", "", "references the name of the Cue package within the module to use as a plan. Default: defer to cue loader")
 	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
 		panic(err)

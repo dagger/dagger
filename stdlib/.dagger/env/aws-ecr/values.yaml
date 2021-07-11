@@ -1,6 +1,5 @@
 plan:
-    module: ./aws/ecr
-    package: ./tests
+    package: ./aws/ecr/tests
 name: aws-ecr
 inputs:
     TestConfig.awsConfig.accessKey:
@@ -22,8 +21,8 @@ sops:
             aXlvVWJVSGNTSkVyYmpZbi9nUVJZdmMK6csXZ2RMxFw5DB+Hb2TyhyoZT8c2/z7Y
             Lc9Pe8gb8aUq5Ha+wCybYvY6JWEM5A9XYJKbE7f4borTfGKS72d6pw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-06-24T15:15:54Z"
-    mac: ENC[AES256_GCM,data:gH9/NLLJEEX+dYKmHS44aa9ENtN6dUJHcMgpdygPZVnqYYku7UF7ZZYF9FFw6VittsDUaTXPKsA4oXHXBxPws8uFOJ6t3B/WQAXCoSXe/3t7Z99RlaetZEWzAmfecGG1AcQnihwr7ymO6uuZ36s9q+LS1wZ81LG70gCqLR5c+kQ=,iv:kXnb23lkKVnyn3ewfvJhStGEGvT/OUNv5rSzfyV2kJc=,tag:q9IjsV9Yi4J7LS5wLQtx/A==,type:str]
+    lastmodified: "2021-07-08T09:52:26Z"
+    mac: ENC[AES256_GCM,data:8huUFIaTMhJVBzVH2SNmKQE60f9ZMIWXD5eJ7iA86GkKDsn4m57QKiyg7u2PvVeXCdnNYaMu7nK/mZ2ABoTj9wXHV/eul4P2m2Bgw7aM4fcWhcSyBCqBmVCGWEM5GyN/A5oIbLFRu/4/rC6pjo7wcMDXU6MiAinThb1oZ9/jVRI=,iv:yA7UvU8fH52WNhKy5WjzqE/9HHLlfTby5yLA4a1whBU=,tag:zckHlnQcYpwrJ6D6G55jAg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

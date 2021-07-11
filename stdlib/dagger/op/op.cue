@@ -85,6 +85,16 @@ package op
 	authHeaderSecret?: string | bytes
 }
 
+#FetchHTTP: {
+	do:        "fetch-http"
+	url:       string
+	checksum?: string
+	filename?: string
+	mode?:     int | *0o644
+	uid?:      int
+	gid?:      int
+}
+
 #Copy: {
 	do:   "copy"
 	from: _
