@@ -26,7 +26,10 @@ import (
 	context: dagger.#Artifact @dagger(input)
 
 	// Application source to build
-	contents: string @dagger(input)
+	contents: string | "." @dagger(input)
+
+	// Build the application from source?
+	build: bool | *false @dagger(input)
 
 	// Deploy to this Netlify site
 	name: string @dagger(input)
@@ -56,11 +59,9 @@ import (
 			NETLIFY_SITE_NAME: name
 			NETLIFY_ACCOUNT:   account.name
 
-			OAUTH_ENABLE:                   "true"
-			REACT_APP_OAUTH_SCOPE:          "user:email"
-			REACT_APP_GITHUB_AUTHORIZE_URI: "https://github.com/login/oauth/authorize?client_id=${REACT_APP_CLIENT_ID}&scope=${REACT_APP_OAUTH_SCOPE}&allow_signup=false"
-			REACT_APP_DAGGER_SITE_URI:      "https://dagger.io"
-			REACT_APP_API_PROXY_ENABLE:     "true"
+			if (build) {
+				NETLIFY_BUILD: "1"
+			}
 
 			if (create) {
 				NETLIFY_SITE_CREATE: "1"
