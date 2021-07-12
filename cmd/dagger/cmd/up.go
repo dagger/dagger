@@ -38,10 +38,7 @@ var upCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
-		cl, err := client.New(ctx, "", false)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
-		}
+		cl := common.NewClient(ctx)
 
 		// check that all inputs are set
 		checkInputs(ctx, cl, st)

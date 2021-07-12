@@ -159,3 +159,15 @@ func ValueDocOneLine(val *compiler.Value) string {
 	}
 	return strings.Join(docs, " ")
 }
+
+// NewClient creates a new client
+func NewClient(ctx context.Context) *client.Client {
+	lg := log.Ctx(ctx)
+
+	cl, err := client.New(ctx, "", false)
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to create client")
+	}
+
+	return cl
+}

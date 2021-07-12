@@ -3,6 +3,7 @@ package input
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/state"
 )
@@ -24,6 +25,7 @@ var textCmd = &cobra.Command{
 
 		updateEnvironmentInput(
 			ctx,
+			common.NewClient(ctx),
 			args[0],
 			state.TextInput(readInput(ctx, args[1])),
 		)
