@@ -38,10 +38,12 @@ var upCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
-		// check that all inputs are set
-		checkInputs(ctx, st)
+		cl := common.NewClient(ctx)
 
-		result := common.EnvironmentUp(ctx, st, viper.GetBool("no-cache"))
+		// check that all inputs are set
+		checkInputs(ctx, cl, st)
+
+		result := common.EnvironmentUp(ctx, cl, st, viper.GetBool("no-cache"))
 
 		st.Computed = result.Computed().JSON().PrettyString()
 		if err := workspace.Save(ctx, st); err != nil {
@@ -52,19 +54,12 @@ var upCmd = &cobra.Command{
 	},
 }
 
-func checkInputs(ctx context.Context, st *state.State) {
+func checkInputs(ctx context.Context, cl *client.Client, st *state.State) {
 	lg := log.Ctx(ctx)
 	warnOnly := viper.GetBool("force")
 
-	// FIXME: find a way to merge this with the EnvironmentUp client to avoid
-	// creating the client + solver twice
-	c, err := client.New(ctx, "", false)
-	if err != nil {
-		lg.Fatal().Err(err).Msg("unable to create client")
-	}
-
 	notConcreteInputs := []*compiler.Value{}
-	_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+	_, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 		inputs, err := env.ScanInputs(ctx, true)
 		if err != nil {
 			return err
