@@ -1,9 +1,8 @@
-name: Docs
+name: Docs Staging
 
 on:
   push:
-    tags:
-      - v*
+    branches: [main]
     paths:
       - "docs/**"
 
@@ -21,4 +20,4 @@ jobs:
         uses: dagger/dagger-action@v1
         with:
           age-key: ${{ secrets.DAGGER_AGE_KEY }}
-          args: up -e docs
+          args: up -e docs-staging
