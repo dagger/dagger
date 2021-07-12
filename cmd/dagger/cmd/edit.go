@@ -9,6 +9,8 @@ import (
 
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 
 	"github.com/google/shlex"
@@ -67,6 +69,21 @@ var editCmd = &cobra.Command{
 		st.Name = newState.Name
 		st.Plan = newState.Plan
 		st.Inputs = newState.Inputs
+
+		cl := common.NewClient(ctx)
+		_, err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			// check for cue errors by scanning all the inputs
+			_, err := env.ScanInputs(ctx, true)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+
+		if err != nil {
+			lg.Fatal().Err(err).Str("environment", st.Name).Msg("invalid input")
+		}
+
 		if err := workspace.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Msg("failed to save state")
 		}
