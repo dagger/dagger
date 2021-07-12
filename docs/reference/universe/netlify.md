@@ -36,7 +36,7 @@ Netlify site
 |*account.name*     | `*"" \| string`       |Use this Netlify account name (also referred to as "team" in the Netlify docs)    |
 |*account.token*    | `dagger.#Secret`      |Netlify authentication token                                                      |
 |*context*          | `dagger.#Artifact`    |Application context. The directory where the application contents reside.         |
-|*contents*         | `string`              |Application source to build                                                       |
+|*contents*         | `*"." \| string`      |Application source to build                                                       |
 |*build*            | `*false \| bool`      |Build the application from source?                                                |
 |*name*             | `string`              |Deploy to this Netlify site                                                       |
 |*create*           | `*true \| bool`       |Create the Netlify site if it doesn't exist?                                      |
