@@ -28,8 +28,8 @@ import (
 	// Application source to build
 	contents: string | *"." @dagger(input)
 
-	// Build the application from source?
-	build: bool | *false @dagger(input)
+	// Which folder to publish
+	deployDir: string | *"." @dagger(input)
 
 	// Deploy to this Netlify site
 	name: string @dagger(input)
@@ -56,12 +56,9 @@ import (
 		// FIXME: use embedding once cue supports it
 		command: _
 		env: {
-			NETLIFY_SITE_NAME: name
-			NETLIFY_ACCOUNT:   account.name
-
-			if (build) {
-				NETLIFY_BUILD: "1"
-			}
+			NETLIFY_SITE_NAME:  name
+			NETLIFY_ACCOUNT:    account.name
+			NETLIFY_DEPLOY_DIR: deployDir
 
 			if (create) {
 				NETLIFY_SITE_CREATE: "1"

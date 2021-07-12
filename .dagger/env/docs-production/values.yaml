@@ -7,8 +7,6 @@ inputs:
         text: blocklayer
     site.account.token:
         secret: ENC[AES256_GCM,data:rpGxm0CMV7YqBw==,iv:Q8Y8ypoY+4AojbbysqiOz2D5JTlD4rm2V12VfNRa9zI=,tag:Ewuk2gYuTVnMypDYj/LNWQ==,type:str]
-    site.build:
-        text: "true"
     site.contents:
         text: website
     site.context:
@@ -28,6 +26,8 @@ inputs:
         text: https://github.com/login/oauth/authorize?client_id=${REACT_APP_CLIENT_ID}&scope=${REACT_APP_OAUTH_SCOPE}&allow_signup=false
     site.ctr.env.REACT_APP_OAUTH_SCOPE:
         text: user:email
+    site.deployDir:
+        text: build
 sops:
     kms: []
     gcp_kms: []
@@ -43,8 +43,8 @@ sops:
             WU9HZEhXYlh0c05wdGkyODBLTHR2bkUKtnu1CnaxwaoZtAiRQniloda7hR0ejz75
             q4ny+6yvgaZHs3m1+Slk9LXX5zQNbFWbgiDBLqPk/hGg2za+DvwHHw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-12T08:57:26Z"
-    mac: ENC[AES256_GCM,data:gTHacZneTCYSNkEjx7ag4TZ3DUpBmWrFOiYBSVxo5ktzMDeURPikk3EQY762xB6DdFjaDg5KDkmb93B8vGtfegJu4Bp40A9eaRP+9LGZo9Avou4QYm8Pm/O1pKCU9AbQpSGbxSxTO1n2VtVR2caE+bLSe36gcma2tjbP8oohayc=,iv:aJga91BJpMYuHbOhUVCHZoMP1J9aOlVaFxyDVj66z0A=,tag:GRT7hI3GVHuFSCH6GDWL/w==,type:str]
+    lastmodified: "2021-07-12T10:30:48Z"
+    mac: ENC[AES256_GCM,data:rpbZfni8evZxD+ElW4sL43yFLMQ75h4NgnhfV8iuUUAbqNHY+F5vUuSq5OJ6uflMSJ6nHDZqvQaK0geMa1cj8GKDH8XixMumK1ZDE4oVbgEiPiP0adSOLcBsfZoHIx7SGi48zr6/WvLZUCFWdauBLhkPztx4y/cGqNHHANqYgJQ=,iv:OpGpRAdK5gLM0eynDpMDjgskrf+WnQU3epoKBxLTA3U=,tag:iIxvhb0YEfPxsnIqJgGh9w==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

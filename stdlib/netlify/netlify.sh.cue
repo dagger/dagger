@@ -36,23 +36,13 @@ package netlify
 	fi
 
 	netlify link --id "$site_id"
+	netlify build
 
-	if [ -z "$NETLIFY_BUILD" ]; then
-		netlify deploy \
-			--dir=$(pwd) \
-			--site="$site_id" \
-			--prod \
-		| tee /tmp/stdout
-	else
-		netlify build
-
-		netlify deploy \
-			--dir=build \
-			--site="$site_id" \
-			--prod \
-		| tee /tmp/stdout
-	fi
-
+	netlify deploy \
+		--dir="$NETLIFY_DEPLOY_DIR" \
+		--site="$site_id" \
+		--prod \
+	| tee /tmp/stdout
 
 	url=$(</tmp/stdout sed -n -e 's/^Website URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
 	deployUrl=$(</tmp/stdout sed -n -e 's/^Unique Deploy URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
