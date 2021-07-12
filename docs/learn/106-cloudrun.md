@@ -92,7 +92,7 @@ deploy: cloudrun.#Service & {
 Now that your Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'gcpcloudrun' -m gcpcloudrun
+dagger new 'gcpcloudrun' -p ./gcpcloudrun
 ```
 
 ### Configure user inputs
