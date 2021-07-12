@@ -161,10 +161,10 @@ func ValueDocOneLine(val *compiler.Value) string {
 }
 
 // NewClient creates a new client
-func NewClient(ctx context.Context) *client.Client {
+func NewClient(ctx context.Context, noCache bool) *client.Client {
 	lg := log.Ctx(ctx)
 
-	cl, err := client.New(ctx, "", false)
+	cl, err := client.New(ctx, "", noCache)
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}

@@ -23,7 +23,7 @@ var containerCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		updateEnvironmentInput(ctx, common.NewClient(ctx), args[0], state.DockerInput(args[1]))
+		updateEnvironmentInput(ctx, common.NewClient(ctx, false), args[0], state.DockerInput(args[1]))
 	},
 }
 
