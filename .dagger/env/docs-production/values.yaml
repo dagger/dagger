@@ -1,0 +1,38 @@
+plan:
+    module: .
+    package: docs
+name: docs-production
+inputs:
+    site.account.name:
+        text: blocklayer
+    site.account.token:
+        secret: ENC[AES256_GCM,data:rpGxm0CMV7YqBw==,iv:Q8Y8ypoY+4AojbbysqiOz2D5JTlD4rm2V12VfNRa9zI=,tag:Ewuk2gYuTVnMypDYj/LNWQ==,type:str]
+    site.contents:
+        text: website
+    site.context:
+        dir:
+            path: .
+    site.ctr.env.REACT_APP_CLIENT_ID:
+        text: 1a6d02cb59199eb205ef
+    site.ctr.env.REACT_APP_CLIENT_SECRET:
+        text: 47a1a67abc8d3fe9edb829a6c7775fbad47f47bb
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGSTBsWWNxcHdKVUhKUUpG
+            eHp2eFJLQnVIL21tNjA2NmxYZnI0RUc5a0RBCjgzS1gyeXI4RjBJY24wdCtFRklu
+            K2ZJMTJrMHoxcDJOS1Q1SUt4d2hsOHMKLS0tIFpQblY1Nys3L28xZStrTHQvM2VH
+            WU9HZEhXYlh0c05wdGkyODBLTHR2bkUKtnu1CnaxwaoZtAiRQniloda7hR0ejz75
+            q4ny+6yvgaZHs3m1+Slk9LXX5zQNbFWbgiDBLqPk/hGg2za+DvwHHw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-12T07:45:07Z"
+    mac: ENC[AES256_GCM,data:HiXQxqkAGv6KXHiWnbGK2pJq06hC7ihG9XCBvd0StrV35F3s3dIYqcDw9TlpFitac1u3121OATPiy0/5Quc8mAR9uhLpkK0QS3/aKAvFv+fTZlAMD8R8eT29uDxJhIYbENnh52daMgE/8Sd6g0rUJin/QLwyYBeV1Zb5Nn2FFqM=,iv:DEq3CYKydbsvtt7QOdy74UeVe0shtSnD5Prbkmwtl3k=,tag:aSAwylhTUfJY6tKWDJE9IQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
