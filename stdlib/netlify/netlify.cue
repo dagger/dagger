@@ -26,7 +26,7 @@ import (
 	context: dagger.#Artifact @dagger(input)
 
 	// Application source to build
-	contents: string | "." @dagger(input)
+	contents: string | *"." @dagger(input)
 
 	// Build the application from source?
 	build: bool | *false @dagger(input)

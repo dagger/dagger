@@ -7,6 +7,8 @@ inputs:
         text: blocklayer
     site.account.token:
         secret: ENC[AES256_GCM,data:Cy5tzINCEINLUA==,iv:R9i7r0p1t+hCNpO/lOBZNpP2ivvFZx/amkTucegs8PA=,tag:GMJJeC6U39BO+L36UOl47g==,type:str]
+    site.build:
+        text: "true"
     site.contents:
         text: website
     site.context:
@@ -41,8 +43,8 @@ sops:
             T0xyS2JzTlNFYk9iaGN3WnpUOEJEWGMKCm2/pP+gsNrZ+nw07lvbjH+ULiScVrKa
             /4A2DP2hlIXzqAGeeC3XUaIRGKEDAq2RgRkE17wTjC+/b0ROkeIXMg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-12T08:01:30Z"
-    mac: ENC[AES256_GCM,data:Pnqpf7hxdHDasuFvxtpIYgkYZksVxDiqB0INqyf+xO+AVigQwjMO+jAwQVDSvayroQ3kE2PXn8XNlqypfdo11+dSoysLcLAl9Nu40zyQkcL5wIGETIvXgBbLmi81eE19ZuMrV2t3e8bu/UrnEVdvAYp8/Sc9pRkq33B95Sjqjao=,iv:/GzXT9wiQd9kq3jKbSYyX9dSTqrPpyU8OPtesIAmTFw=,tag:2QClXtCJKBunjK4r2nlm3Q==,type:str]
+    lastmodified: "2021-07-12T08:57:34Z"
+    mac: ENC[AES256_GCM,data:OXiEdAODuhe7BC4yBWAyq7hS5YSuVf9GujW8D7FjaESfNo/UbO7TkfejU6H4qVkZ4r0G9F0T1SaTzUq5DpUGzPMucDt35v6cjt9BSGTNvYAKmn4J7JeiuphQRDj6J7GBOXNiAJF3FWdpd0v4l9hMx450fGTMhWZBvM+VeSY6pi8=,iv:/APFRmXKPh4ekKHelgmWGcHPitGGOilXOsp6fSq82FY=,tag:nyKIAIOUAz30UK6pLMtnTA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
