@@ -12,10 +12,20 @@ inputs:
     site.context:
         dir:
             path: .
+    site.ctr.env.OAUTH_ENABLE:
+        text: "true"
+    site.ctr.env.REACT_APP_API_PROXY_ENABLE:
+        text: "true"
     site.ctr.env.REACT_APP_CLIENT_ID:
         text: 1a6d02cb59199eb205ef
     site.ctr.env.REACT_APP_CLIENT_SECRET:
         text: 47a1a67abc8d3fe9edb829a6c7775fbad47f47bb
+    site.ctr.env.REACT_APP_DAGGER_SITE_URI:
+        text: https://dagger.io
+    site.ctr.env.REACT_APP_GITHUB_AUTHORIZE_URI:
+        text: https://github.com/login/oauth/authorize?client_id=${REACT_APP_CLIENT_ID}&scope=${REACT_APP_OAUTH_SCOPE}&allow_signup=false
+    site.ctr.env.REACT_APP_OAUTH_SCOPE:
+        text: user:email
 sops:
     kms: []
     gcp_kms: []
@@ -31,8 +41,8 @@ sops:
             WU9HZEhXYlh0c05wdGkyODBLTHR2bkUKtnu1CnaxwaoZtAiRQniloda7hR0ejz75
             q4ny+6yvgaZHs3m1+Slk9LXX5zQNbFWbgiDBLqPk/hGg2za+DvwHHw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-12T07:45:07Z"
-    mac: ENC[AES256_GCM,data:HiXQxqkAGv6KXHiWnbGK2pJq06hC7ihG9XCBvd0StrV35F3s3dIYqcDw9TlpFitac1u3121OATPiy0/5Quc8mAR9uhLpkK0QS3/aKAvFv+fTZlAMD8R8eT29uDxJhIYbENnh52daMgE/8Sd6g0rUJin/QLwyYBeV1Zb5Nn2FFqM=,iv:DEq3CYKydbsvtt7QOdy74UeVe0shtSnD5Prbkmwtl3k=,tag:aSAwylhTUfJY6tKWDJE9IQ==,type:str]
+    lastmodified: "2021-07-12T08:01:33Z"
+    mac: ENC[AES256_GCM,data:ktG3lhb2n+TbZrGDxXeeVfH4/CXKIIwpmGI69AOM1pJxm8NuZUY/DP+F8v2EMDKqyp5bdpX8cuD2/8oVP6eUMtc/5AtC/AtXXU3F/JMQc41Jd+m1vX4BzB8surXisN8+Yn+E5x4V+cLik66M6aLkDnFNmHUMe9aDU+AXw+uxahg=,iv:UlpLFy8BngcSnvWS6BU5seFcEk+gGRQFWWxhpZtRWgs=,tag:2msYOPjEwiuiLoRoSeJtMQ==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
