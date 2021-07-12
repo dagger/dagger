@@ -43,7 +43,7 @@ var dirCmd = &cobra.Command{
 			p = "./" + p
 		}
 
-		updateEnvironmentInput(ctx, common.NewClient(ctx), args[0],
+		updateEnvironmentInput(ctx, common.NewClient(ctx, false), args[0],
 			state.DirInput(
 				p,
 				viper.GetStringSlice("include"),

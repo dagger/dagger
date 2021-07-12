@@ -44,7 +44,7 @@ var secretCmd = &cobra.Command{
 
 		updateEnvironmentInput(
 			ctx,
-			common.NewClient(ctx),
+			common.NewClient(ctx, false),
 			args[0],
 			state.SecretInput(secret),
 		)

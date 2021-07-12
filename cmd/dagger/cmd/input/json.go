@@ -25,7 +25,7 @@ var jsonCmd = &cobra.Command{
 
 		updateEnvironmentInput(
 			ctx,
-			common.NewClient(ctx),
+			common.NewClient(ctx, false),
 			args[0],
 			state.JSONInput(readInput(ctx, args[1])),
 		)

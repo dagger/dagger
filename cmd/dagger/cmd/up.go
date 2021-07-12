@@ -38,7 +38,7 @@ var upCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
-		cl := common.NewClient(ctx)
+		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
 
 		// check that all inputs are set
 		checkInputs(ctx, cl, st)

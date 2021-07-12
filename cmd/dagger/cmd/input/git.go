@@ -33,7 +33,7 @@ var gitCmd = &cobra.Command{
 			subDir = args[3]
 		}
 
-		updateEnvironmentInput(ctx, common.NewClient(ctx), args[0], state.GitInput(args[1], ref, subDir))
+		updateEnvironmentInput(ctx, common.NewClient(ctx, false), args[0], state.GitInput(args[1], ref, subDir))
 	},
 }
 
