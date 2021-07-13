@@ -13,9 +13,10 @@ import (
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	otlog "github.com/opentracing/opentracing-go/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -78,8 +79,9 @@ func (e *Environment) Computed() *compiler.Value {
 
 // LoadPlan loads the plan
 func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.LoadPlan")
-	defer span.Finish()
+	tr := otel.Tracer("environment")
+	ctx, span := tr.Start(ctx, "environment.LoadPlan")
+	defer span.End()
 
 	// FIXME: universe vendoring
 	// This is already done on `dagger init` and shouldn't be done here too.
@@ -177,8 +179,9 @@ func (e *Environment) LocalDirs() map[string]string {
 
 // prepare initializes the Environment with inputs and plan code
 func (e *Environment) prepare(ctx context.Context) (*compiler.Value, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "environment.Prepare")
-	defer span.Finish()
+	tr := otel.Tracer("environment")
+	_, span := tr.Start(ctx, "environment.Prepare")
+	defer span.End()
 
 	// Reset the computed values
 	e.computed = compiler.NewValue()
@@ -196,8 +199,9 @@ func (e *Environment) prepare(ctx context.Context) (*compiler.Value, error) {
 
 // Up missing values in environment configuration, and write them to state.
 func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "environment.Up")
-	defer span.Finish()
+	tr := otel.Tracer("environment")
+	ctx, span := tr.Start(ctx, "environment.Up")
+	defer span.End()
 
 	// Set user inputs and plan code
 	src, err := e.prepare(ctx)
@@ -250,10 +254,10 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 			Str("component", t.Path().String()).
 			Logger()
 		ctx = lg.WithContext(ctx)
-		span, ctx := opentracing.StartSpanFromContext(ctx,
-			fmt.Sprintf("compute: %s", t.Path().String()),
-		)
-		defer span.Finish()
+
+		tr := otel.Tracer("environment")
+		ctx, span := tr.Start(ctx, fmt.Sprintf("compute: %s", t.Path().String()))
+		defer span.End()
 
 		start := time.Now()
 		lg.
@@ -269,8 +273,10 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 		p := NewPipeline(v, s)
 		err := p.Run(ctx)
 		if err != nil {
-			span.LogFields(otlog.String("error", err.Error()))
-			ext.Error.Set(span, true)
+			// Record the error
+			span.AddEvent("command", trace.WithAttributes(
+				attribute.String("error", err.Error()),
+			))
 
 			// FIXME: this should use errdefs.IsCanceled(err)
 			if strings.Contains(err.Error(), "context canceled") {
