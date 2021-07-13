@@ -22,7 +22,7 @@ Key features:
 * Trivially load and integrate any JSON and YAML configurations, with schema validation, templating, and more
 * A growing catalog of ready-to-use integrations: Kubernetes, Terraform, AWS Cloudformation, Google Cloud Run, Docker Compose, Netlify, Yarn, Maven, and more
 * First-class composition: compose the nodes in your graph just like you would functions in regular code - with all the benefits of a declarative language.
-* Develop your own integrations in minutes, with a powerful pipeline API powered by [https://github.com/moby/buildkit]. Run containers, fetch data sources, generate artifacts on-demand, securely load secrets, and more.
+* Develop your own integrations in minutes, with a powerful pipeline API powered by [https://github.com/moby/buildkit](Buildkit). Run containers, fetch data sources, generate artifacts on-demand, securely load secrets, and more.
 * Built-in support for encrypted secrets.
 * Built-in support for just-in-time artifacts.
 * Gitops-ready.

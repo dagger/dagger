@@ -137,6 +137,14 @@ setup() {
 
     dagger_new_with_plan input "$TESTDIR"/cli/input/simple
 
+    # wrong input type
+    run "$DAGGER" input -e "input" secret "input" "my input"
+    assert_failure
+
+    # invalid input
+    run "$DAGGER" input -e "input" secret "input.notexist" "my input"
+    assert_failure
+
     # simple input
     "$DAGGER" input -e "input" text "input" "my input"
     "$DAGGER" up -e "input"

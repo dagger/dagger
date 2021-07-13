@@ -279,7 +279,7 @@ eksConfig: eks.#KubeConfig & {
 Now that your Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'kube' -m kube
+dagger new 'kube' -p kube
 ```
 
 ### Configure the environment
@@ -625,7 +625,7 @@ todoApp: {
 
   // Value created for generic reference of `kubeconfig` in `todoapp.cue`
   kubeSrc: kubernetes.#Resources & {
-    kubeconfig: kubeconfig
+    "kubeconfig": kubeconfig
     source:     kustomization
   }
 }
@@ -736,7 +736,7 @@ todoApp: {
 
   // Value created for generic reference of `kubeconfig` in `todoapp.cue`
   kubeSrc: kubernetes.#Resources & {
-    kubeconfig: kubeconfig
+    "kubeconfig": kubeconfig
     source:     kustomization
   }
 }
@@ -1058,11 +1058,15 @@ todoApp: {
   remoteImage: docker.#Push & {
     target: "\(registry):\(tag)"
     source: image
+    auth: {
+      username: gcrCreds.username
+      secret:   gcrCreds.secret
+    }
   }
 
   // Generate deployment manifest
   deployment: #AppManifest & {
-    name:  "todoApp"
+    name:  "todoapp"
     image: remoteImage.ref
   }
 
@@ -1105,11 +1109,15 @@ todoApp: {
   remoteImage: docker.#Push & {
     target: "\(registry):\(tag)"
     source: image
+    auth: {
+      username: ecrCreds.username
+      secret:   ecrCreds.secret
+    }
   }
 
   // Generate deployment manifest
   deployment: #AppManifest & {
-    name:  "todoApp"
+    name:  "todoapp"
     image: remoteImage.ref
   }
 

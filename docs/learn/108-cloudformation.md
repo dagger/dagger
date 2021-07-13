@@ -186,7 +186,7 @@ This defines:
 Now that the Cue package is ready, let's create an environment to run it:
 
 ```shell
-dagger new 'cloudformation' -m cloudformation
+dagger new 'cloudformation' -p ./cloudformation
 ```
 
 ##### 2. Check plan
@@ -395,7 +395,7 @@ This defines:
 You need to empty the plan and copy the `convert.cue` file to the plan for Dagger to reference it
 
 ```shell
-rm cloudformation/source.cue
+mv cloudformation/source.cue ~/tmp/
 ```
 
 ### 2. Retrieve the Unmarshalled JSON
@@ -531,7 +531,7 @@ package cloudformation
   deletionPolicy: *"Retain" | "Delete"
 
   // Canned access control list (ACL) that grants predefined permissions to the bucket
-  accessControl: *"PublicRead" | "Private" | "PublicReadWrite" | "AuthenticatedRead" | "LogDeliveryWrite" | "BucketOwnerRead" | "BucketOwnerFullControl" | "AwsExecRead"
+  accessControl: *"PublicRead" | "Private" | "PublicReadWrite" | "AuthenticatedRead" | "LogDeliveryWrite" | "BucketOwnerRead" | "BucketOwnerFullControl" | "AwsExecRead"
 
   // Modified copy of s3 value in `todoapp/cloudformation/template.cue`
   template: {
@@ -635,6 +635,12 @@ dagger query template -f text -e cloudformation
 #       "Name": {
 #         "Description": "Name S3 Bucket",
 #         "Value": {
+```
+
+You need to move back the `source.cue` for Dagger to instanciate a bucket:
+
+```shell
+mv ~/tmp/source.cue cloudformation/source.cue
 ```
 
 And we can now deploy it:
