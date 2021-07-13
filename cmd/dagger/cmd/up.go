@@ -5,14 +5,12 @@ import (
 	"os"
 
 	"cuelang.org/go/cue"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/state"
 	"golang.org/x/term"
 
 	"github.com/rs/zerolog/log"
@@ -40,10 +38,16 @@ var upCmd = &cobra.Command{
 
 		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
 
-		// check that all inputs are set
-		checkInputs(ctx, cl, st)
+		result, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			// check that all inputs are set
+			checkInputs(ctx, env)
 
-		result := common.EnvironmentUp(ctx, cl, st, viper.GetBool("no-cache"))
+			return env.Up(ctx, s)
+		})
+
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to up environment")
+		}
 
 		st.Computed = result.Computed().JSON().PrettyString()
 		if err := workspace.Save(ctx, st); err != nil {
@@ -54,28 +58,20 @@ var upCmd = &cobra.Command{
 	},
 }
 
-func checkInputs(ctx context.Context, cl *client.Client, st *state.State) {
+func checkInputs(ctx context.Context, env *environment.Environment) {
 	lg := log.Ctx(ctx)
 	warnOnly := viper.GetBool("force")
 
 	notConcreteInputs := []*compiler.Value{}
-	_, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
-		inputs, err := env.ScanInputs(ctx, true)
-		if err != nil {
-			return err
-		}
-
-		for _, i := range inputs {
-			if i.IsConcreteR(cue.Optional(true)) != nil {
-				notConcreteInputs = append(notConcreteInputs, i)
-			}
-		}
-
-		return nil
-	})
-
+	inputs, err := env.ScanInputs(ctx, true)
 	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to query environment")
+		lg.Fatal().Err(err).Msg("failed to scan inputs")
+	}
+
+	for _, i := range inputs {
+		if i.IsConcreteR(cue.Optional(true)) != nil {
+			notConcreteInputs = append(notConcreteInputs, i)
+		}
 	}
 
 	for _, i := range notConcreteInputs {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,10 +9,11 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 	"go.mozilla.org/sops/v3"
 	"go.mozilla.org/sops/v3/decrypt"
@@ -164,11 +166,18 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		cl, err := client.New(ctx, "", false)
+		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
+
+		environment, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			// check that all inputs are set
+			checkInputs(ctx, env)
+
+			return env.Up(ctx, s)
+		})
+
 		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
+			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-		environment := common.EnvironmentUp(ctx, cl, st, viper.GetBool("no-cache"))
 
 		v := compiler.NewValue()
 		if err := v.FillPath(cue.MakePath(), environment.Plan()); err != nil {
