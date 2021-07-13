@@ -1,16 +1,16 @@
+// Azure base package
 package azure
 
 import (
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
-	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/os"
 )
 
+//Azure Config shared by all Azure packages
 #Config: {
-	// AZURE region
-	region: string @dagger(input)
 	// AZURE tenant id
-	tenantId: string @dagger(input)
+	tenantId: dagger.#Secret @dagger(input)
 	// AZURE subscription id
 	subscriptionId: dagger.#Secret @dagger(input)
 	// AZURE app id for the service principal used
@@ -19,47 +19,29 @@ import (
 	password: dagger.#Secret @dagger(input)
 }
 
+// Azure Cli to be used by all Azure packages
 #CLI: {
 	config: #Config
-	package: [string]: string | bool
 
-	#up: [
-		op.#Load & {
-			from: alpine.#Image & {
-				"package": package
-				"package": bash:          "=~5.1"
-				"package": jq:            "=~1.6"
-				"package": python3:       "=~3.8"
-				"package": "python3-dev": true
-				"package": "py3-pip":     true
-				"package": openssl:       true
-				"package": gcc:           true
-				"package": make:          true
-				"package": "openssl-dev": true
-				"package": "libffi-dev":  true
-				"package": "musl-dev":    true
-			}
-		},
+	// Container image
+	ctr: os.#Container & {
+		image: #up: [op.#FetchContainer & {
+			ref: "mcr.microsoft.com/azure-cli"
+		}]
 
-		op.#Exec & {
-			args: [
-				"sh", "-c",
-				#"""
-					 pip install azure-cli==2.26.0
-					"""#,
-			]
-		},
+		// Path of the shell to execute
+		shell: path: "/bin/bash"
 
-		op.#Exec & {
-			args: ["az", "login", "--service-principal", "-u", "$(cat /run/secrets/appId)", "-p", "$(cat /run/secrets/password)", "-t", config.tenantId]
-			mount: "/run/secrets/appId": secret:    config.appId
-			mount: "/run/secrets/password": secret: config.password
-		},
+		command: """
+			az login --service-principal -u "$(cat /run/secrets/appId)" -p "$(cat /run/secrets/password)" -t "$(cat /run/secrets/tenantId)"
+			az account set -s "$(cat /run/secrets/subscriptionId)"
+			"""
 
-		op.#Exec & {
-			args: ["az", "account", "set", "-s", "$(cat /run/secrets/subscriptionId)"]
-			mount: "/run/secrets/subscriptionId": secret: config.subscriptionId
-		},
-	]
-
+		secret: {
+			"/run/secrets/appId":          config.appId
+			"/run/secrets/password":       config.password
+			"/run/secrets/tenantId":       config.tenantId
+			"/run/secrets/subscriptionId": config.subscriptionId
+		}
+	}
 }

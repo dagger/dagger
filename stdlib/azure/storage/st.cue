@@ -5,6 +5,7 @@ import (
 	"alpha.dagger.io/azure"
 )
 
+// Create a storage account
 #StorageAccount: {
 	// Azure Config
 	config: azure.#Config
@@ -53,5 +54,5 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} @dagger(output)
 }

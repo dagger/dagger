@@ -5,7 +5,9 @@ import (
 	"alpha.dagger.io/azure"
 )
 
+// Create a new resource group.
 #ResourceGroup: {
+
 	// Azure Config
 	config: azure.#Config
 
