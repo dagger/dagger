@@ -43,7 +43,7 @@ func updateEnvironmentInput(ctx context.Context, cl *client.Client, target strin
 
 	st.SetInput(target, input)
 
-	_, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+	err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 		// the inputs are set, check for cue errors by scanning all the inputs
 		_, err := env.ScanInputs(ctx, true)
 		if err != nil {

@@ -168,29 +168,32 @@ var computeCmd = &cobra.Command{
 
 		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
 
-		environment, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check that all inputs are set
 			checkInputs(ctx, env)
 
-			return env.Up(ctx, s)
+			if err := env.Up(ctx, s); err != nil {
+				return err
+			}
+
+			v := compiler.NewValue()
+			if err := v.FillPath(cue.MakePath(), env.Plan()); err != nil {
+				return err
+			}
+			if err := v.FillPath(cue.MakePath(), env.Input()); err != nil {
+				return err
+			}
+			if err := v.FillPath(cue.MakePath(), env.Computed()); err != nil {
+				return err
+			}
+
+			fmt.Println(v.JSON())
+			return nil
 		})
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-
-		v := compiler.NewValue()
-		if err := v.FillPath(cue.MakePath(), environment.Plan()); err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge")
-		}
-		if err := v.FillPath(cue.MakePath(), environment.Input()); err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge")
-		}
-		if err := v.FillPath(cue.MakePath(), environment.Computed()); err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge")
-		}
-
-		fmt.Println(v.JSON())
 	},
 }
 

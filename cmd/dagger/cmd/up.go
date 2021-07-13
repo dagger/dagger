@@ -38,34 +38,39 @@ var upCmd = &cobra.Command{
 
 		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
 
-		result, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check that all inputs are set
-			checkInputs(ctx, env)
+			if err := checkInputs(ctx, env); err != nil {
+				return err
+			}
 
-			return env.Up(ctx, s)
+			if err := env.Up(ctx, s); err != nil {
+				return err
+			}
+
+			st.Computed = env.Computed().JSON().PrettyString()
+			if err := workspace.Save(ctx, st); err != nil {
+				return err
+			}
+
+			return output.ListOutputs(ctx, env, term.IsTerminal(int(os.Stdout.Fd())))
 		})
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-
-		st.Computed = result.Computed().JSON().PrettyString()
-		if err := workspace.Save(ctx, st); err != nil {
-			lg.Fatal().Err(err).Msg("failed to update environment")
-		}
-
-		output.ListOutputs(ctx, st, term.IsTerminal(int(os.Stdout.Fd())))
 	},
 }
 
-func checkInputs(ctx context.Context, env *environment.Environment) {
+func checkInputs(ctx context.Context, env *environment.Environment) error {
 	lg := log.Ctx(ctx)
 	warnOnly := viper.GetBool("force")
 
 	notConcreteInputs := []*compiler.Value{}
 	inputs, err := env.ScanInputs(ctx, true)
 	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to scan inputs")
+		lg.Error().Err(err).Msg("failed to scan inputs")
+		return err
 	}
 
 	for _, i := range inputs {
@@ -83,8 +88,10 @@ func checkInputs(ctx context.Context, env *environment.Environment) {
 	}
 
 	if !warnOnly && len(notConcreteInputs) > 0 {
-		lg.Fatal().Int("missing", len(notConcreteInputs)).Msg("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
+		lg.Error().Int("missing", len(notConcreteInputs)).Msg("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
 	}
+
+	return nil
 }
 
 func init() {

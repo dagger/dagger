@@ -6,12 +6,10 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/state"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -36,51 +34,48 @@ var listCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
-		ListOutputs(ctx, st, true)
+		cl := common.NewClient(ctx, false)
+		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			return ListOutputs(ctx, env, true)
+		})
+
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to scan outputs")
+		}
 	},
 }
 
-func ListOutputs(ctx context.Context, st *state.State, isTTY bool) {
+func ListOutputs(ctx context.Context, env *environment.Environment, isTTY bool) error {
 	lg := log.Ctx(ctx).With().
-		Str("environment", st.Name).
+		Str("environment", env.Name()).
 		Logger()
 
-	c, err := client.New(ctx, "", false)
+	outputs, err := env.ScanOutputs(ctx)
 	if err != nil {
-		lg.Fatal().Err(err).Msg("unable to create client")
+		lg.Error().Err(err).Msg("failed to scan outputs")
+		return err
 	}
 
-	_, err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
-		outputs, err := env.ScanOutputs(ctx)
-		if err != nil {
-			return err
-		}
-
-		if !isTTY {
-			for _, out := range outputs {
-				lg.Info().Str("name", out.Path().String()).
-					Str("value", fmt.Sprintf("%v", out.Cue())).
-					Msg("output")
-			}
-			return nil
-		}
-
-		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "Output\tValue\tDescription")
-
+	if !isTTY {
 		for _, out := range outputs {
-			fmt.Fprintf(w, "%s\t%s\t%s\n",
-				out.Path(),
-				common.FormatValue(out),
-				common.ValueDocOneLine(out),
-			)
+			lg.Info().Str("name", out.Path().String()).
+				Str("value", fmt.Sprintf("%v", out.Cue())).
+				Msg("output")
 		}
-
-		w.Flush()
 		return nil
-	})
-
-	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to query environment")
 	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "Output\tValue\tDescription")
+
+	for _, out := range outputs {
+		fmt.Fprintf(w, "%s\t%s\t%s\n",
+			out.Path(),
+			common.FormatValue(out),
+			common.ValueDocOneLine(out),
+		)
+	}
+
+	w.Flush()
+	return nil
 }
