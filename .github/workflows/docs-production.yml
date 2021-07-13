@@ -1,0 +1,25 @@
+name: Docs Production
+
+on:
+  push:
+    tags:
+      - v*
+    paths:
+      - "docs/**"
+      - "website/**"
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Dagger
+        uses: dagger/dagger-action@v1
+        with:
+          age-key: ${{ secrets.DAGGER_AGE_KEY }}
+          args: up -e docs-production

@@ -1,0 +1,31 @@
+plan:
+    package: ./website/plan
+name: docs-production
+inputs:
+    site.account.name:
+        text: blocklayer
+    site.contents:
+        dir:
+            path: .
+    site.name:
+        text: docs.dagger.io
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBJdzhaWGN4TW9nOVhXa0s0
+            dXVJMkFhaGJyV2dmQ1pBR1NacXVpSGk1WWl3CmZGYU91dU1hOTc5ckNXT2JUbmJN
+            OGQwNGM4Q3NyRzQwS0xBTWR6TGZoczgKLS0tIG5kSmd5aHQzQ04va0JQd29wVjU2
+            VHZxTVJ2bGhwdjlpK2RUaDRMZ0Z0VXMK2p//GZ0auVOgeYiU6tY0We+g2CcQIygL
+            fA6KxM0CPiMXxodetrzYSML5vFYGeraJ05bsAh390wVcvVvvDrwwvw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-13T09:16:10Z"
+    mac: ENC[AES256_GCM,data:X7oEaebg4BH2koI9pap49tB0ovyFDmPPm00SCazu77bLw9vIJMG6Qd02IqQ1e3XXOplDCcxwah4pCT1lF3rxIqyqirQgxjAsWFUcjryTixCAGW51/6ad8MUxd4ndZVn6Cqzst0IeLEGEwS4LVp0RgvB0mgpaTQ665Su0p+9qRB8=,iv:N5JH+iTZJtXDbTupS9lU3KD8w52/fTFNoh0IOECcuYg=,tag:kb74qZWboi5rflN5Id/IbQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
