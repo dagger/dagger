@@ -23,13 +23,7 @@ import (
 	account: #Account
 
 	// Application context. The directory where the application contents reside.
-	context: dagger.#Artifact @dagger(input)
-
-	// Application source to build
-	contents: string | *"." @dagger(input)
-
-	// Which folder to publish
-	deployDir: string | *"." @dagger(input)
+	contents: dagger.#Artifact @dagger(input)
 
 	// Deploy to this Netlify site
 	name: string @dagger(input)
@@ -69,8 +63,8 @@ import (
 			}
 		}
 
-		dir: "/src/\(contents)"
-		mount: "/src": from: context
+		dir: "/src"
+		mount: "/src": from: contents
 		secret: "/run/secrets/token": account.token
 	}
 

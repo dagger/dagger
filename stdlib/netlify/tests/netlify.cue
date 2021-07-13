@@ -21,7 +21,7 @@ TestNetlify: {
 
 	// Deploy to netlify
 	deploy: #Site & {
-		context: html
+		contents: html
 		name:    "dagger-test"
 	}
 
