@@ -56,7 +56,7 @@ brews:
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
-    url_template: "https://dagger-io.s3.amazonaws.com/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    url_template: "https://dl.dagger.io/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
