@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"cuelang.org/go/cue"
@@ -88,7 +89,7 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 	}
 
 	if !warnOnly && len(notConcreteInputs) > 0 {
-		lg.Error().Int("missing", len(notConcreteInputs)).Msg("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
+		return errors.New("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
 	}
 
 	return nil
