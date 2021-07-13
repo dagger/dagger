@@ -39,7 +39,7 @@ package netlify
 	netlify build
 
 	netlify deploy \
-		--dir="$NETLIFY_DEPLOY_DIR" \
+		--dir="$(pwd)" \
 		--site="$site_id" \
 		--prod \
 	| tee /tmp/stdout
