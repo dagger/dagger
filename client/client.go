@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/rs/zerolog/log"
 
 	// Cue
@@ -50,9 +50,12 @@ func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 		host = h
 	}
 	opts := []bk.ClientOpt{}
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		opts = append(opts, bk.WithTracer(span.Tracer()))
-	}
+
+	// FIXME: uncomment when next version of buildkit will be released
+	// if span := trace.SpanFromContext(ctx); span != nil {
+	// 	opts = append(opts, bk.WithTracerProvider(span.TracerProvider()))
+	// }
+
 	c, err := bk.New(ctx, host, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
@@ -152,8 +155,10 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		// Export environment to a cue directory
 		// FIXME: this should be elsewhere
 		lg.Debug().Msg("exporting environment")
-		span, _ := opentracing.StartSpanFromContext(ctx, "Environment.Export")
-		defer span.Finish()
+
+		tr := otel.Tracer("client")
+		_, span := tr.Start(ctx, "environment.Export")
+		defer span.End()
 
 		computed := env.Computed().JSON().PrettyString()
 		st := llb.

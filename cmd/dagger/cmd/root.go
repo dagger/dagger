@@ -5,14 +5,16 @@ import (
 	"strings"
 
 	"github.com/moby/buildkit/util/appcontext"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/input"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/keychain"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var rootCmd = &cobra.Command{
@@ -74,17 +76,21 @@ func Execute() {
 		// default logger. Therefore, we can't store the logger into the context.
 		lg     = logger.New()
 		closer = logger.InitTracing()
-		span   opentracing.Span
+		span   trace.Span
 	)
 
 	if len(os.Args) > 1 {
-		span, ctx = opentracing.StartSpanFromContext(ctx, os.Args[1])
-		span.LogFields(otlog.String("command", strings.Join(os.Args, " ")))
+		tr := otel.Tracer("cmd")
+		ctx, span = tr.Start(ctx, os.Args[1])
+		// Record the action
+		span.AddEvent("command", trace.WithAttributes(
+			attribute.String("args", strings.Join(os.Args, " ")),
+		))
 	}
 
 	defer func() {
 		if span != nil {
-			span.Finish()
+			span.End()
 		}
 		closer.Close()
 	}()
