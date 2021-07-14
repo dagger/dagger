@@ -13,10 +13,10 @@ import TabItem from '@theme/TabItem';
 
 We assume that you've finished our 106-cloudrun tutorial as this one continues right after.
 
-## Setup new Github repo 
+## Setup new Github repo
 
-Push existing `examples/todoapp` directory to your new Github repo (public or private). It should contain all the code 
-from `https://github.com/dagger/examples/tree/main/todoapp`, `gcpcloudrun` and `.dagger/env/gcpcloudrun/` directory. 
+Push existing `examples/todoapp` directory to your new Github repo (public or private). It should contain all the code
+from `https://github.com/dagger/examples/tree/main/todoapp`, `gcpcloudrun` and `.dagger/env/gcpcloudrun/` directory.
 
 ### Add Github Actions Secret
 
