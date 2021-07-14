@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,10 +9,11 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 	"go.mozilla.org/sops/v3"
 	"go.mozilla.org/sops/v3/decrypt"
@@ -164,24 +166,34 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		cl, err := client.New(ctx, "", false)
+		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
+
+		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			// check that all inputs are set
+			checkInputs(ctx, env)
+
+			if err := env.Up(ctx, s); err != nil {
+				return err
+			}
+
+			v := compiler.NewValue()
+			if err := v.FillPath(cue.MakePath(), env.Plan()); err != nil {
+				return err
+			}
+			if err := v.FillPath(cue.MakePath(), env.Input()); err != nil {
+				return err
+			}
+			if err := v.FillPath(cue.MakePath(), env.Computed()); err != nil {
+				return err
+			}
+
+			fmt.Println(v.JSON())
+			return nil
+		})
+
 		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
+			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-		environment := common.EnvironmentUp(ctx, cl, st, viper.GetBool("no-cache"))
-
-		v := compiler.NewValue()
-		if err := v.FillPath(cue.MakePath(), environment.Plan()); err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge")
-		}
-		if err := v.FillPath(cue.MakePath(), environment.Input()); err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge")
-		}
-		if err := v.FillPath(cue.MakePath(), environment.Computed()); err != nil {
-			lg.Fatal().Err(err).Msg("failed to merge")
-		}
-
-		fmt.Println(v.JSON())
 	},
 }
 

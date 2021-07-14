@@ -69,13 +69,13 @@ func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 type DoFunc func(context.Context, *environment.Environment, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) (*environment.Environment, error) {
+func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
 	environment, err := environment.New(state)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Spawn print function
@@ -92,7 +92,7 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) (*enviro
 		return c.buildfn(gctx, state, environment, fn, events)
 	})
 
-	return environment, eg.Wait()
+	return eg.Wait()
 }
 
 func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {

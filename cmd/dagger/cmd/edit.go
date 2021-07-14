@@ -71,7 +71,7 @@ var editCmd = &cobra.Command{
 		st.Inputs = newState.Inputs
 
 		cl := common.NewClient(ctx, false)
-		_, err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check for cue errors by scanning all the inputs
 			_, err := env.ScanInputs(ctx, true)
 			if err != nil {
