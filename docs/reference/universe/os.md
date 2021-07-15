@@ -53,3 +53,18 @@ _No input._
 ### os.#ReadDir Outputs
 
 _No output._
+
+## os.#Zip
+
+Zip an artifact
+
+### os.#Zip Inputs
+
+| Name             | Type                          | Description        |
+| -------------    |:-------------:                |:-------------:     |
+|*source*          | `dagger.#Artifact`            |Artifact to zip     |
+|*name*            | `*"archive.zip" \| string`    |Zip name            |
+
+### os.#Zip Outputs
+
+_No output._
