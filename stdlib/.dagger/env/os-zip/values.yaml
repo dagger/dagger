@@ -1,0 +1,23 @@
+plan:
+    package: ./os/tests/zip
+name: os-zip
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXSmsrcVUyODRxd2h4WGpt
+            VENseXdUNEcyV1BaMHB3TExXRENqdjZ0U0dzCkpQTWJqdGIydXAwdEFHaXltcXlu
+            cGxzbzd4aHowR2ZNbU5oNmVrcnJKZUkKLS0tIGRVYjBSNDI4dnRFbndhZHdVaXNZ
+            OTRHUEJNcFUxcm9HUGJvWTZLc2QxV0kKSkoj3I4/p9hsqJu1SkrjMP8WM8NW8cf3
+            2DBWMzjXf4tJgy6nulz6tGTC6zyy9C249pJ0VeZNh2PdjaHU1/T0/g==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-07-15T12:52:45Z"
+    mac: ENC[AES256_GCM,data:jvqtzWyJ+GI+33y/Vb00hUSFe0iXLhbo6pCyoTtfO3EOtEO7DNUW7Dwf3EGo5h1/Lz913C8nZVdL0RUTDAck6TV5Xm3ATa8TkTA7uqd8jtRcYPIYz6xU3lbDBnn2igJs8IkTD836QxYvdjQGnEsMkafI/H2ynROSFqLXgQXhhb0=,iv:XQ7SNd1Fcb3FGmQhL9kzmMn6+kF0QAnz/mSYZ+lYiT0=,tag:mDw/QHYsHmmv8ppqh+QGzw==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

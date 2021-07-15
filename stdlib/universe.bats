@@ -13,6 +13,14 @@ setup() {
     dagger -e os up
 }
 
+@test "os.#Container" {
+    dagger -e os-container up
+}
+
+@test "os.#Zip" {
+  dagger -e os-zip up
+}
+
 @test "go" {
     dagger -e go up
 }
@@ -35,10 +43,6 @@ setup() {
 
 @test "git" {
     dagger -e git up
-}
-
-@test "os.#Container" {
-    dagger -e os-container up
 }
 
 @test "aws: ecr" {
