@@ -1,13 +1,6 @@
----
-slug: /learn/109-github-actions
----
-
 # Dagger 109: integrate with Github Actions
 
 This tutorial illustrates how to use Github Actions and Dagger to build, push and deploy Docker images to Cloud Run.
-
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
 ## Prerequisites
 
