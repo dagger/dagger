@@ -52,11 +52,11 @@ touch cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
 package gcpcloudrun
 
 import (
-	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/docker"
-	"alpha.dagger.io/gcp"
-	"alpha.dagger.io/gcp/cloudrun"
-	"alpha.dagger.io/gcp/gcr"
+  "alpha.dagger.io/dagger"
+  "alpha.dagger.io/docker"
+  "alpha.dagger.io/gcp"
+  "alpha.dagger.io/gcp/cloudrun"
+  "alpha.dagger.io/gcp/gcr"
 )
 
 #Run: {
@@ -104,7 +104,7 @@ cat > test/source.cue << EOF
 package test
 
 import (
-	"github.com/tjovicic/gcpcloudrun"
+  "github.com/tjovicic/gcpcloudrun"
 )
 
 run: gcpcloudrun.#Run
