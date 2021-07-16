@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-slug: /install
+slug: /1001/install/
 ---
 
 # Install Dagger

@@ -1,4 +1,8 @@
-# Dagger 109: integrate with Github Actions
+---
+slug: /1009/github-actions/
+---
+
+# Integrate Dagger with Github Actions
 
 This tutorial illustrates how to use Github Actions and Dagger to build, push and deploy Docker images to Cloud Run.
 

@@ -1,8 +1,8 @@
 ---
-slug: /learn/102-dev
+slug: /1004/dev-first-env/
 ---
 
-# Dagger 102: create your first environment
+# Create your first Dagger environment
 
 ## Overview
 
