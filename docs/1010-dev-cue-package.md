@@ -1,4 +1,8 @@
-# Dagger 109: creating packages
+---
+slug: /1010/dev-cue-package/
+---
+
+# Develop a new CUE package for Dagger
 
 This tutorial illustrates how to create new packages, manually distribute them among your applications and contribute to
 the Dagger stdlib packages.
