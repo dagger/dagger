@@ -35,45 +35,82 @@ That will create 2 directories: `.dagger` and `cue.mod` where our package will r
 ### Writing the package
 
 Now that you've initialized your workspace it's time to write a simple package. Package name usually starts with a
-domain name (as in Go) followed with a descriptive name. In this example we will use my Github domain name and call our
-package `echo` because it will print a single line to stdout.
+domain name (as in Go) followed with a descriptive name. In this example we reuse the Cloud Run example and create a
+package from it.
 
 ```shell
-mkdir -p cue.mod/pkg/github.com/tjovicic/echo
+mkdir -p cue.mod/pkg/github.com/tjovicic/gcpcloudrun
 ```
 
-Let's write the package logic. It will spin up an alpine container and print out `Hello` to stdout:
+Let's write the package logic. It is basically what we've seen in the 106-cloudrun example:
 
 ```shell
-touch cue.mod/pkg/github.com/tjovicic/echo/source.cue
+touch cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
 ```
 
-```cue title="cue.mod/pkg/github.com/tjovicic/echo/source.cue"
-package echo
+```cue title="cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue"
+package gcpcloudrun
 
 import (
-  "alpha.dagger.io/alpine"
-  "alpha.dagger.io/os"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/docker"
+	"alpha.dagger.io/gcp"
+	"alpha.dagger.io/gcp/cloudrun"
+	"alpha.dagger.io/gcp/gcr"
 )
 
-ctr: os.#Container & {
-  image: alpine.#Image & {
-    package: {
-      bash: "=~5.1"
-    }
+#Run: {
+  // Source code of the sample application
+  src: dagger.#Artifact & dagger.#Input
+
+  // GCR full image name
+  imageRef: string & dagger.#Input
+
+  image: docker.#Build & {
+      source: src
   }
 
-  command: "echo Hello"
+  gcpConfig: gcp.#Config
+
+  creds: gcr.#Credentials & {
+      config: gcpConfig
+  }
+
+  push: docker.#Push & {
+      target: imageRef
+      source: image
+      auth: {
+          username: creds.username
+          secret: creds.secret
+      }
+  }
+
+  deploy: cloudrun.#Service & {
+      config: gcpConfig
+      image:  push.ref
+  }
 }
 ```
 
 ### Running the package
 
-Now that you've successfully created a package, let's run it in a new environment. Create a new environment using the
-new `echo` package.
+Now that you've successfully created a package, let's run it in a new environment. Create a new test package using
+our reusable `gcpcloudrun`:
 
 ```shell
-dagger new staging -p github.com/tjovicic/echo
+mkdir test
+
+cat > test/source.cue << EOF
+package test
+
+import (
+	"github.com/tjovicic/gcpcloudrun"
+)
+
+run: gcpcloudrun.#Run
+EOF
+
+dagger new staging -p ./test
 ```
 
 Run it:
@@ -82,26 +119,16 @@ Run it:
 dagger up -e staging
 ```
 
-At the end of the output you should see `Hello` printed out:
+You should see a familiar output:
 
 ```shell
-11:09AM INF system | starting buildkit    version=v0.8.3
-WARN[0003] commandConn.CloseWrite: commandconn: failed to wait: signal: terminated 
-WARN[0003] commandConn.CloseRead: commandconn: failed to wait: signal: terminated 
-WARN[0003] commandConn.CloseWrite: commandconn: failed to wait: signal: terminated 
-11:09AM INF ctr | computing
-11:09AM INF ctr.#up[0].from | #5 0.080 fetch https://dl-cdn.alpinelinux.org/alpine/v3.13/main/x86_64/APKINDEX.tar.gz
-11:09AM INF ctr.#up[0].from | #5 0.612 fetch https://dl-cdn.alpinelinux.org/alpine/v3.13/community/x86_64/APKINDEX.tar.gz
-11:09AM INF ctr.#up[0].from | #5 1.094 (1/4) Installing ncurses-terminfo-base (6.2_p20210109-r0)
-11:09AM INF ctr.#up[0].from | #5 1.149 (2/4) Installing ncurses-libs (6.2_p20210109-r0)
-11:09AM INF ctr.#up[0].from | #5 1.273 (3/4) Installing readline (8.1.0-r0)
-11:09AM INF ctr.#up[0].from | #5 1.361 (4/4) Installing bash (5.1.0-r0)
-11:09AM INF ctr.#up[0].from | #5 1.534 Executing bash-5.1.0-r0.post-install
-11:09AM INF ctr.#up[0].from | #5 1.541 Executing busybox-1.32.1-r6.trigger
-11:09AM INF ctr.#up[0].from | #5 1.554 OK: 8 MiB in 18 packages
-11:09AM INF ctr | #6 0.110 Hello
-11:09AM INF ctr | completed    duration=5.4s
-Output  Value  Description
+9:32AM ERR system | required input is missing    input=run.src
+9:32AM ERR system | required input is missing    input=run.imageRef
+9:32AM ERR system | required input is missing    input=run.gcpConfig.region
+9:32AM ERR system | required input is missing    input=run.gcpConfig.project
+9:32AM ERR system | required input is missing    input=run.gcpConfig.serviceKey
+9:32AM ERR system | required input is missing    input=run.deploy.name
+9:32AM FTL system | some required inputs are not set, please re-run with `--force` if you think it's a mistake    missing=0s
 ```
 
 ## Manually distributing packages
@@ -110,8 +137,8 @@ You've probably guessed this package isn't tied to just your workspace. You can 
 of different workspaces and use it as we've showed above.
 
 ```shell
-mkdir -p /my-new-workspace/cue.mod/pkg/github.com/tjovicic/echo 
-cp ./cue.mod/pkg/github.com/tjovicic/echo/source.cue /my-new-workspace/cue.mod/pkg/github.com/tjovicic/echo
+mkdir -p /my-new-workspace/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+cp ./cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue /new-workspace/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
 ```
 
 ## Contributing to Dagger stdlib
