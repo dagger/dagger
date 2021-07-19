@@ -1,13 +1,15 @@
+GIT_REVISION := $(shell git rev-parse --short HEAD)
+
 .PHONY: all
 all: dagger
 
 .PHONY: dagger
 dagger:
-	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
+	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w -X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
 
 .PHONY: dagger-debug
 dagger-debug:
-	go build -race -o ./cmd/dagger/dagger-debug ./cmd/dagger/
+	go build -race -o ./cmd/dagger/dagger-debug -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
 
 .PHONY: test
 test:

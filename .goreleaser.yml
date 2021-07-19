@@ -5,14 +5,14 @@ before:
     - go mod download
 
 builds:
-  -
-    env:
+  - env:
       - CGO_ENABLED=0
     main: ./cmd/dagger
     binary: dagger
     ldflags:
       - -s -w
-      - -X go.dagger.io/dagger/cmd/dagger/cmd.version={{.Version}}
+      - -X go.dagger.io/dagger/version.Version={{.Version}}
+      - -X go.dagger.io/dagger/version.Revision={{.ShortCommit}}
     goos:
       - linux
       - windows
@@ -22,8 +22,7 @@ builds:
       - arm64
 
 archives:
-  -
-    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+  - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
     replacements:
     files:
       - LICENSE
@@ -33,7 +32,7 @@ archives:
         format: zip
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 
 snapshot:
   name_template: "{{ .Tag }}-next"
@@ -42,15 +41,14 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^doc:'
-      - '^test:'
-      - '^tests:'
-      - '^Merge pull request'
+      - "^docs:"
+      - "^doc:"
+      - "^test:"
+      - "^tests:"
+      - "^Merge pull request"
 
 brews:
-  -
-    tap:
+  - tap:
       owner: dagger
       name: homebrew-tap
     commit_author:
@@ -63,15 +61,13 @@ brews:
       system "#{bin}/dagger version"
 
 blobs:
-  -
-    provider: s3
+  - provider: s3
     region: us-east-1
     bucket: dagger-io
     folder: "dagger/releases/{{ .Version }}"
 
 publishers:
-  -
-    name: publish-version
+  - name: publish-version
     cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
     env:
       - PATH={{ .Env.PATH }}

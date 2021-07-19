@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -16,19 +14,16 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/version"
 	"golang.org/x/term"
 )
 
 const (
-	defaultVersion = "devel"
-	versionFile    = "~/.config/dagger/version-check"
-	versionURL     = "https://releases.dagger.io/dagger/latest_version"
+	versionFile = "~/.config/dagger/version-check"
+	versionURL  = "https://releases.dagger.io/dagger/latest_version"
 )
 
-// set by goreleaser or other builder using
-// -ldflags='-X go.dagger.io/dagger/cmd/dagger/cmd.version=<version>'
 var (
-	version        = defaultVersion
 	versionMessage = ""
 )
 
@@ -40,12 +35,9 @@ var versionCmd = &cobra.Command{
 	PersistentPostRun: func(*cobra.Command, []string) {},
 	Args:              cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if bi, ok := debug.ReadBuildInfo(); ok && version == defaultVersion {
-			// No specific version provided via version
-			version = bi.Main.Version
-		}
-		fmt.Printf("dagger version %v %s/%s\n",
-			version,
+		fmt.Printf("dagger %s (%s) %s/%s\n",
+			version.Version,
+			version.Revision,
 			runtime.GOOS, runtime.GOARCH,
 		)
 
@@ -99,18 +91,6 @@ func isCheckOutdated(path string) bool {
 	return !time.Now().Before(nextCheck)
 }
 
-func getCurrentVersion() (*goVersion.Version, error) {
-	if version != defaultVersion {
-		return goVersion.NewVersion(version)
-	}
-
-	if build, ok := debug.ReadBuildInfo(); ok {
-		// Also return error if version == (devel)
-		return goVersion.NewVersion(build.Main.Version)
-	}
-	return nil, errors.New("could not read dagger version")
-}
-
 func getLatestVersion(currentVersion *goVersion.Version) (*goVersion.Version, error) {
 	req, err := http.NewRequest("GET", versionURL, nil)
 	if err != nil {
@@ -139,7 +119,7 @@ func getLatestVersion(currentVersion *goVersion.Version) (*goVersion.Version, er
 // Compare the binary version with the latest version online
 // Return the latest version if current is outdated
 func isVersionLatest() (string, error) {
-	currentVersion, err := getCurrentVersion()
+	currentVersion, err := goVersion.NewVersion(version.Version)
 	if err != nil {
 		return "", err
 	}
@@ -156,7 +136,7 @@ func isVersionLatest() (string, error) {
 }
 
 func checkVersion() {
-	if version == defaultVersion {
+	if version.Version == version.DevelopmentVersion {
 		// running devel version
 		return
 	}
