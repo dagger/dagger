@@ -1,7 +1,6 @@
 ---
 sidebar_position: 1
-slug: /
-sidebar_label: What is Dagger?
+slug: /1000/what-is/
 ---
 
 # What is Dagger?
