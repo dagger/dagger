@@ -5,29 +5,22 @@ go 1.16
 require (
 	cuelang.org/go v0.4.0
 	filippo.io/age v1.0.0-rc.3
-	github.com/Azure/azure-sdk-for-go v42.3.0+incompatible // indirect
-	github.com/Azure/go-autorest/autorest/azure/auth v0.4.2 // indirect
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.2
-	github.com/containerd/containerd v1.5.3 // indirect
 	github.com/docker/distribution v2.7.1+incompatible
-	github.com/docker/libnetwork v0.8.0-dev.2.0.20200917202933-d0951081b35f // indirect
 	github.com/emicklei/proto v1.9.0 // indirect
-	github.com/fatih/color v1.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.3.0
-	github.com/hashicorp/go-retryablehttp v0.6.6 // indirect
 	github.com/hashicorp/go-version v1.3.0
 	github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/moby/buildkit v0.9.0-rc1
+	github.com/moby/buildkit v0.9.0
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/rs/zerolog v1.23.0
-	github.com/smartystreets/assertions v1.0.0 // indirect
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
