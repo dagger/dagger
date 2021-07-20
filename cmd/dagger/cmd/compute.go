@@ -38,6 +38,8 @@ var computeCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
+		doneCh := common.TrackCommand(ctx, cmd)
+
 		st := &state.State{
 			Name: "FIXME",
 			Path: args[0],
@@ -190,6 +192,8 @@ var computeCmd = &cobra.Command{
 			fmt.Println(v.JSON())
 			return nil
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")

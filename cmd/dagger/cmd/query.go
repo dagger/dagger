@@ -30,8 +30,6 @@ var queryCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		cueOpts := parseQueryFlags()
-
 		workspace := common.CurrentWorkspace(ctx)
 		state := common.CurrentEnvironmentState(ctx, workspace)
 
@@ -39,10 +37,13 @@ var queryCmd = &cobra.Command{
 			Str("environment", state.Name).
 			Logger()
 
+		cueOpts := parseQueryFlags()
 		cuePath := cue.MakePath()
 		if len(args) > 0 {
 			cuePath = cue.ParsePath(args[0])
 		}
+
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, state)
 
 		cl := common.NewClient(ctx, false)
 		cueVal := compiler.NewValue()
@@ -61,6 +62,8 @@ var queryCmd = &cobra.Command{
 			}
 			return nil
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to query environment")

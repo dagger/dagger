@@ -40,6 +40,8 @@ var listCmd = &cobra.Command{
 			Str("environment", st.Name).
 			Logger()
 
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+
 		c, err := client.New(ctx, "", false)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create client")
@@ -76,6 +78,8 @@ var listCmd = &cobra.Command{
 			w.Flush()
 			return nil
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to query environment")
