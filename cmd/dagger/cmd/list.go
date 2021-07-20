@@ -30,6 +30,8 @@ var listCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		workspace := common.CurrentWorkspace(ctx)
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, nil)
+
 		environments, err := workspace.List(ctx)
 		if err != nil {
 			lg.
@@ -44,6 +46,8 @@ var listCmd = &cobra.Command{
 			line := fmt.Sprintf("%s\t%s\t", e.Name, formatPath(e.Path))
 			fmt.Fprintln(w, line)
 		}
+
+		<-doneCh
 	},
 }
 

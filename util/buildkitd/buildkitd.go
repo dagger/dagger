@@ -109,6 +109,7 @@ func startBuildkit(ctx context.Context) error {
 		Logger()
 
 	lg.Debug().Msg("pulling buildkit image")
+	// #nosec
 	cmd := exec.CommandContext(ctx,
 		"docker",
 		"pull",
@@ -128,6 +129,7 @@ func startBuildkit(ctx context.Context) error {
 	// in order for containers to be able to reach localhost.
 	// This is required for things such as kubectl being able to
 	// reach a KinD/minikube cluster locally
+	// #nosec
 	cmd = exec.CommandContext(ctx,
 		"docker",
 		"run",

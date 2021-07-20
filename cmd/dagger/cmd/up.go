@@ -37,6 +37,12 @@ var upCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
+		lg = lg.With().
+			Str("environment", st.Name).
+			Logger()
+
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+
 		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
 
 		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
@@ -56,6 +62,8 @@ var upCmd = &cobra.Command{
 
 			return output.ListOutputs(ctx, env, term.IsTerminal(int(os.Stdout.Fd())))
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")

@@ -34,10 +34,18 @@ var listCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
+		lg = lg.With().
+			Str("environment", st.Name).
+			Logger()
+
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+
 		cl := common.NewClient(ctx, false)
 		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			return ListOutputs(ctx, env, true)
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to scan outputs")

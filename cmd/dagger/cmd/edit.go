@@ -37,6 +37,12 @@ var editCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
+		lg = lg.With().
+			Str("environment", st.Name).
+			Logger()
+
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+
 		data, err := yaml.Marshal(st)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to marshal state")
@@ -79,6 +85,8 @@ var editCmd = &cobra.Command{
 			}
 			return nil
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Str("environment", st.Name).Msg("invalid input")
