@@ -1,1 +1,0 @@
-../1008-aws-cloudformation.md
