@@ -2,7 +2,6 @@ package resourcegroup
 
 import (
 	"alpha.dagger.io/azure"
-	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/random"
 )
 
