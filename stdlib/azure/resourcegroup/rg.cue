@@ -37,7 +37,7 @@ import (
 					"-c",
 					#"""
 							az group create -l "$AZURE_DEFAULTS_LOCATION" -n "$AZURE_DEFAULTS_GROUP"
-							az group show --query "id" > /resourceGroupId
+							az group show -n "$AZURE_DEFAULTS_GROUP" --query "id" > /resourceGroupId
 						"""#,
 				]
 				env: {
