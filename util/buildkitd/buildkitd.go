@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -14,13 +15,32 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var (
+	// vendoredVersion is filled in by init()
+	vendoredVersion string
+)
+
 const (
 	image         = "moby/buildkit"
-	version       = "v0.9.0-rc1"
-	imageVersion  = image + ":" + version
 	containerName = "dagger-buildkitd"
 	volumeName    = "dagger-buildkitd"
 )
+
+func init() {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		panic("unable to retrieve build info")
+	}
+	for _, d := range bi.Deps {
+		if d.Path == "github.com/moby/buildkit" {
+			vendoredVersion = d.Version
+			break
+		}
+	}
+	if vendoredVersion == "" {
+		panic("failed to solve vendored buildkit version")
+	}
+}
 
 func Start(ctx context.Context) (string, error) {
 	lg := log.Ctx(ctx)
@@ -40,11 +60,11 @@ func Start(ctx context.Context) (string, error) {
 		lg.Debug().Str("version", currentVersion).Msg("detected buildkit version")
 	}
 
-	if currentVersion != version {
+	if currentVersion != vendoredVersion {
 		if currentVersion != "" {
 			lg.
 				Info().
-				Str("version", version).
+				Str("version", vendoredVersion).
 				Msg("upgrading buildkit")
 			if err := remvoveBuildkit(ctx); err != nil {
 				return "", err
@@ -52,7 +72,7 @@ func Start(ctx context.Context) (string, error) {
 		} else {
 			lg.
 				Info().
-				Str("version", version).
+				Str("version", vendoredVersion).
 				Msg("starting buildkit")
 		}
 		if err := startBuildkit(ctx); err != nil {
@@ -85,14 +105,15 @@ func startBuildkit(ctx context.Context) error {
 	lg := log.
 		Ctx(ctx).
 		With().
-		Str("version", version).
+		Str("version", vendoredVersion).
 		Logger()
 
 	lg.Debug().Msg("pulling buildkit image")
+	// #nosec
 	cmd := exec.CommandContext(ctx,
 		"docker",
 		"pull",
-		imageVersion,
+		image+":"+vendoredVersion,
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -108,6 +129,7 @@ func startBuildkit(ctx context.Context) error {
 	// in order for containers to be able to reach localhost.
 	// This is required for things such as kubectl being able to
 	// reach a KinD/minikube cluster locally
+	// #nosec
 	cmd = exec.CommandContext(ctx,
 		"docker",
 		"run",
@@ -117,7 +139,7 @@ func startBuildkit(ctx context.Context) error {
 		"-v", volumeName+":/var/lib/buildkit",
 		"--name", containerName,
 		"--privileged",
-		imageVersion,
+		image+":"+vendoredVersion,
 	)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
@@ -145,10 +167,10 @@ func waitBuildkit(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	// Try to connect every 100ms up to 50 times (5 seconds total)
+	// Try to connect every 100ms up to 100 times (10 seconds total)
 	const (
 		retryPeriod   = 100 * time.Millisecond
-		retryAttempts = 50
+		retryAttempts = 100
 	)
 
 	for retry := 0; retry < retryAttempts; retry++ {

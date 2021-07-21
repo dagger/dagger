@@ -2,17 +2,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"cuelang.org/go/cue"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/state"
 	"golang.org/x/term"
 
 	"github.com/rs/zerolog/log"
@@ -38,44 +37,55 @@ var upCmd = &cobra.Command{
 		workspace := common.CurrentWorkspace(ctx)
 		st := common.CurrentEnvironmentState(ctx, workspace)
 
+		lg = lg.With().
+			Str("environment", st.Name).
+			Logger()
+
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+
 		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
 
-		// check that all inputs are set
-		checkInputs(ctx, cl, st)
+		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			// check that all inputs are set
+			if err := checkInputs(ctx, env); err != nil {
+				return err
+			}
 
-		result := common.EnvironmentUp(ctx, cl, st, viper.GetBool("no-cache"))
+			if err := env.Up(ctx, s); err != nil {
+				return err
+			}
 
-		st.Computed = result.Computed().JSON().PrettyString()
-		if err := workspace.Save(ctx, st); err != nil {
-			lg.Fatal().Err(err).Msg("failed to update environment")
+			st.Computed = env.Computed().JSON().PrettyString()
+			if err := workspace.Save(ctx, st); err != nil {
+				return err
+			}
+
+			return output.ListOutputs(ctx, env, term.IsTerminal(int(os.Stdout.Fd())))
+		})
+
+		<-doneCh
+
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-
-		output.ListOutputs(ctx, st, term.IsTerminal(int(os.Stdout.Fd())))
 	},
 }
 
-func checkInputs(ctx context.Context, cl *client.Client, st *state.State) {
+func checkInputs(ctx context.Context, env *environment.Environment) error {
 	lg := log.Ctx(ctx)
 	warnOnly := viper.GetBool("force")
 
 	notConcreteInputs := []*compiler.Value{}
-	_, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
-		inputs, err := env.ScanInputs(ctx, true)
-		if err != nil {
-			return err
-		}
-
-		for _, i := range inputs {
-			if i.IsConcreteR(cue.Optional(true)) != nil {
-				notConcreteInputs = append(notConcreteInputs, i)
-			}
-		}
-
-		return nil
-	})
-
+	inputs, err := env.ScanInputs(ctx, true)
 	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to query environment")
+		lg.Error().Err(err).Msg("failed to scan inputs")
+		return err
+	}
+
+	for _, i := range inputs {
+		if i.IsConcreteR(cue.Optional(true)) != nil {
+			notConcreteInputs = append(notConcreteInputs, i)
+		}
 	}
 
 	for _, i := range notConcreteInputs {
@@ -87,8 +97,10 @@ func checkInputs(ctx context.Context, cl *client.Client, st *state.State) {
 	}
 
 	if !warnOnly && len(notConcreteInputs) > 0 {
-		lg.Fatal().Int("missing", len(notConcreteInputs)).Msg("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
+		return errors.New("some required inputs are not set, please re-run with `--force` if you think it's a mistake")
 	}
+
+	return nil
 }
 
 func init() {

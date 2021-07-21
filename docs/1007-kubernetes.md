@@ -1,8 +1,8 @@
 ---
-slug: /learn/107-kubernetes
+slug: /1007/kubernetes/
 ---
 
-# Dagger 107: deploy to Kubernetes
+# Deploy to Kubernetes with Dagger
 
 This tutorial illustrates how to use Dagger to build, push and deploy Docker images to Kubernetes.
 

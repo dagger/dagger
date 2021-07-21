@@ -18,6 +18,14 @@
   command = "yarn build:withoutAuth"
 
 [[redirects]]
+  # Embargoes compliance. DO NOT REMOVE
+  conditions = {Country = ["CU", "IR", "KP", "SY", "UA"]}
+  from = "/*"
+  to = "/restricted"
+  status = 302
+  force = true
+
+[[redirects]]
 from = "/github-proxy/*"
 to = "https://github.com/:splat"
 status = 200

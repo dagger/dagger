@@ -1,13 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"cuelang.org/go/cue"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/solver"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -28,8 +30,6 @@ var queryCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		cueOpts := parseQueryFlags()
-
 		workspace := common.CurrentWorkspace(ctx)
 		state := common.CurrentEnvironmentState(ctx, workspace)
 
@@ -37,33 +37,36 @@ var queryCmd = &cobra.Command{
 			Str("environment", state.Name).
 			Logger()
 
+		cueOpts := parseQueryFlags()
 		cuePath := cue.MakePath()
 		if len(args) > 0 {
 			cuePath = cue.ParsePath(args[0])
 		}
 
-		c, err := client.New(ctx, "", false)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
-		}
+		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, state)
 
-		environment, err := c.Do(ctx, state, nil)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to query environment")
-		}
-
+		cl := common.NewClient(ctx, false)
 		cueVal := compiler.NewValue()
 
-		if !viper.GetBool("no-plan") {
-			if err := cueVal.FillPath(cue.MakePath(), environment.Plan()); err != nil {
-				lg.Fatal().Err(err).Msg("failed to merge plan")
+		err := cl.Do(ctx, state, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+			if !viper.GetBool("no-plan") {
+				if err := cueVal.FillPath(cue.MakePath(), env.Plan()); err != nil {
+					return err
+				}
 			}
-		}
 
-		if !viper.GetBool("no-input") {
-			if err := cueVal.FillPath(cue.MakePath(), environment.Input()); err != nil {
-				lg.Fatal().Err(err).Msg("failed to merge plan with output")
+			if !viper.GetBool("no-input") {
+				if err := cueVal.FillPath(cue.MakePath(), env.Input()); err != nil {
+					return err
+				}
 			}
+			return nil
+		})
+
+		<-doneCh
+
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to query environment")
 		}
 
 		if !viper.GetBool("no-computed") && state.Computed != "" {

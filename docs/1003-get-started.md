@@ -1,8 +1,8 @@
 ---
-slug: /learn/101-basics
+slug: /1003/get-started/
 ---
 
-# Dagger 101: basic usage
+# Get started with Dagger
 
 In this guide, you will learn the basics of Dagger by interacting with a pre-configured environment.
 Then you will move on to creating your environment from scratch.

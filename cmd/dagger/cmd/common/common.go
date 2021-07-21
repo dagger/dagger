@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
-	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 )
 
@@ -81,20 +79,6 @@ func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *s
 	}
 
 	return environments[0]
-}
-
-// Re-compute an environment (equivalent to `dagger up`).
-func EnvironmentUp(ctx context.Context, cl *client.Client, state *state.State, noCache bool) *environment.Environment {
-	lg := log.Ctx(ctx)
-
-	result, err := cl.Do(ctx, state, func(ctx context.Context, environment *environment.Environment, s solver.Solver) error {
-		log.Ctx(ctx).Debug().Msg("bringing environment up")
-		return environment.Up(ctx, s)
-	})
-	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to up environment")
-	}
-	return result
 }
 
 // FormatValue returns the String representation of the cue value

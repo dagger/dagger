@@ -32,12 +32,15 @@ var newCmd = &cobra.Command{
 		}
 		name := args[0]
 
-		_, err := workspace.Create(ctx, name, state.Plan{
+		st, err := workspace.Create(ctx, name, state.Plan{
 			Package: viper.GetString("package"),
 		})
+
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
+
+		<-common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
 	},
 }
 
