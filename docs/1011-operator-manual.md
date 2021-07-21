@@ -1,3 +1,7 @@
+---
+slug: /1011/operator-manual/
+---
+
 # Dagger Operator Manual
 
 ## Custom buildkit setup

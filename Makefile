@@ -1,13 +1,15 @@
+GIT_REVISION := $(shell git rev-parse --short HEAD)
+
 .PHONY: all
 all: dagger
 
 .PHONY: dagger
 dagger:
-	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
+	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w -X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
 
 .PHONY: dagger-debug
 dagger-debug:
-	go build -race -o ./cmd/dagger/dagger-debug ./cmd/dagger/
+	go build -race -o ./cmd/dagger/dagger-debug -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
 
 .PHONY: test
 test:
@@ -31,14 +33,7 @@ shellcheck:
 	shellcheck ./universe/*.bats ./universe/*.bash
 
 .PHONY: lint
-lint: shellcheck cuelint golint check-buildkit-version docslint
-
-.PHONY: check-buildkit-version
-check-buildkit-version:
-	@test \
-		"$(shell grep buildkit ./go.mod | cut -d' ' -f2)" = \
-		"$(shell grep ' = "v' ./util/buildkitd/buildkitd.go | sed -E 's/^.*version.*=.*\"(v.*)\"/\1/' )" \
-		|| { echo buildkit version mismatch go.mod != util/buildkitd/buildkitd.go ; exit 1; }
+lint: shellcheck cuelint golint docslint
 
 .PHONY: integration
 integration: core-integration universe-test

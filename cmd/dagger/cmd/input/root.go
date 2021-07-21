@@ -8,11 +8,11 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
+	"go.dagger.io/dagger/telemetry"
 )
 
 // Cmd exposes the top-level command
@@ -35,15 +35,26 @@ func init() {
 	)
 }
 
-func updateEnvironmentInput(ctx context.Context, cl *client.Client, target string, input state.Input) {
-	lg := log.Ctx(ctx)
+func updateEnvironmentInput(ctx context.Context, cmd *cobra.Command, target string, input state.Input) {
+	lg := *log.Ctx(ctx)
 
 	workspace := common.CurrentWorkspace(ctx)
 	st := common.CurrentEnvironmentState(ctx, workspace)
 
+	lg = lg.With().
+		Str("environment", st.Name).
+		Logger()
+
+	doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st, &telemetry.Property{
+		Name:  "input_target",
+		Value: target,
+	})
+
+	cl := common.NewClient(ctx, false)
+
 	st.SetInput(target, input)
 
-	_, err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+	err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 		// the inputs are set, check for cue errors by scanning all the inputs
 		_, err := env.ScanInputs(ctx, true)
 		if err != nil {
@@ -52,12 +63,14 @@ func updateEnvironmentInput(ctx context.Context, cl *client.Client, target strin
 		return nil
 	})
 
+	<-doneCh
+
 	if err != nil {
-		lg.Fatal().Err(err).Str("environment", st.Name).Msg("invalid input")
+		lg.Fatal().Err(err).Msg("invalid input")
 	}
 
 	if err := workspace.Save(ctx, st); err != nil {
-		lg.Fatal().Err(err).Str("environment", st.Name).Msg("cannot update environment")
+		lg.Fatal().Err(err).Msg("cannot update environment")
 	}
 }
 

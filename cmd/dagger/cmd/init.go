@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/state"
 )
@@ -36,10 +37,13 @@ var initCmd = &cobra.Command{
 			dir = cwd
 		}
 
-		_, err := state.Init(ctx, dir)
+		workspace, err := state.Init(ctx, dir)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize workspace")
 		}
+
+		<-common.TrackWorkspaceCommand(ctx, cmd, workspace, nil)
+
 	},
 }
 

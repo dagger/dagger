@@ -1,8 +1,8 @@
 ---
-slug: /learn/106-cloudrun
+slug: /1006/google-cloud-run/
 ---
 
-# Dagger 106: deploy to Cloud Run
+# Deploy to Google Cloud Run with Dagger
 
 This tutorial illustrates how to use Dagger to build, push and deploy Docker images to Cloud Run.
 
