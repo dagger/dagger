@@ -1,1 +1,0 @@
-../1005-custom-script.md

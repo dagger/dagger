@@ -1,1 +1,0 @@
-../1006-google-cloud-run.md

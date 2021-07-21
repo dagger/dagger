@@ -1,1 +1,0 @@
-../1003-get-started.md
