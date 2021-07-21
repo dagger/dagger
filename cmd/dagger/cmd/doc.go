@@ -269,6 +269,8 @@ var docCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
+		doneCh := common.TrackCommand(ctx, cmd)
+
 		format := viper.GetString("format")
 		if format != textFormat &&
 			format != markdownFormat &&
@@ -297,6 +299,8 @@ var docCmd = &cobra.Command{
 		}
 		p := Parse(ctx, packageName, val)
 		fmt.Printf("%s", p.Format(format))
+
+		<-doneCh
 	},
 }
 

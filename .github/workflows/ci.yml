@@ -38,7 +38,7 @@ jobs:
 
       - name: Lint
         run: |
-          make shellcheck cuelint check-buildkit-version docslint
+          make shellcheck cuelint docslint
 
       - name: Markdown Lint
         uses: avto-dev/markdown-lint@v1
