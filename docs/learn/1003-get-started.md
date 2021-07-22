@@ -121,4 +121,4 @@ dagger output list
 
 ## What's next?
 
-At this point, you have deployed your first application using Dagger and learned some dagger commands. You are now ready to [learn more about how to program Dagger](/learn/102-dev).
+At this point, you have deployed your first application using Dagger and learned some dagger commands. You are now ready to [learn more about how to program Dagger](./1004-first-env.md).
