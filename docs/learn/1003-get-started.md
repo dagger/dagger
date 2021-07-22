@@ -18,7 +18,7 @@ how to share access to your infrastructure in the same way that we share access 
 
 ### Install Dagger
 
-First, make sure [you have installed Dagger on your local machine](/install).
+First, make sure [you have installed Dagger on your local machine](/1001/install).
 
 ### Setup example app
 
