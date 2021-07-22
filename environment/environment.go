@@ -17,11 +17,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/moby/buildkit/client/llb"
 	"github.com/rs/zerolog/log"
 )
 
 type Environment struct {
 	state *state.State
+
+	context llb.State
 
 	// Layer 1: plan configuration
 	plan *compiler.Value
@@ -100,7 +103,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 		return err
 	}
 
-	p := NewPipeline(planSource, s).WithCustomName("[internal] source")
+	p := NewPipeline(planSource, llb.Scratch(), s).WithCustomName("[internal] source")
 	// execute updater script
 	if err := p.Run(ctx); err != nil {
 		return err
@@ -119,6 +122,7 @@ func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
 		return fmt.Errorf("plan config: %w", compiler.Err(err))
 	}
 	e.plan = plan
+	e.context = p.State()
 
 	return nil
 }
@@ -213,7 +217,7 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		src.Cue(),
-		newTaskFunc(newPipelineRunner(e.computed, s)),
+		newTaskFunc(newPipelineRunner(e.computed, e.context, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -245,7 +249,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.RunnerFunc {
+func newPipelineRunner(computed *compiler.Value, context llb.State, s solver.Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -270,7 +274,7 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value())
-		p := NewPipeline(v, s)
+		p := NewPipeline(v, context, s)
 		err := p.Run(ctx)
 		if err != nil {
 			// Record the error

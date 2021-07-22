@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"cuelang.org/go/cue"
@@ -29,20 +30,24 @@ import (
 
 // An execution pipeline
 type Pipeline struct {
-	code     *compiler.Value
-	name     string
-	s        solver.Solver
+	code    *compiler.Value
+	name    string
+	context llb.State
+	s       solver.Solver
+
 	state    llb.State
 	result   bkgw.Reference
 	image    dockerfile2llb.Image
 	computed *compiler.Value
 }
 
-func NewPipeline(code *compiler.Value, s solver.Solver) *Pipeline {
+func NewPipeline(code *compiler.Value, context llb.State, s solver.Solver) *Pipeline {
 	return &Pipeline{
-		code:     code,
-		name:     code.Path().String(),
-		s:        s,
+		code:    code,
+		name:    code.Path().String(),
+		context: context,
+		s:       s,
+
 		state:    llb.Scratch(),
 		computed: compiler.NewValue(),
 	}
@@ -81,6 +86,9 @@ func isComponent(v *compiler.Value) bool {
 }
 
 func ops(code *compiler.Value) ([]*compiler.Value, error) {
+	if c, err := code.String(); err == nil && c == "context" {
+		return []*compiler.Value{code}, nil
+	}
 	ops := []*compiler.Value{}
 	// 1. attachment array
 	if isComponent(code) {
@@ -183,6 +191,10 @@ func (p *Pipeline) Run(ctx context.Context) error {
 }
 
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	if c, err := op.String(); err == nil && c == "context" {
+		return p.ContextOp(ctx, op, st)
+	}
+
 	do, err := op.Lookup("do").String()
 	if err != nil {
 		return st, err
@@ -237,6 +249,32 @@ func (p *Pipeline) vertexNamef(format string, a ...interface{}) string {
 	return prefix + " " + name
 }
 
+func (p *Pipeline) ContextOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	pos := op.Cue().Pos()
+	if !pos.IsValid() {
+		return st, fmt.Errorf("unable to determine context directory")
+	}
+
+	contextPath := filepath.Dir(pos.Filename())
+
+	// FIXME: strip the module path (/config) from the path
+	contextPath = strings.TrimPrefix(contextPath, "/config")
+
+	return st.File(
+		llb.Copy(
+			p.context,
+			contextPath,
+			"/",
+			&llb.CopyInfo{
+				CopyDirContentsOnly: true,
+				CreateDestPath:      true,
+				AllowWildcard:       true,
+			},
+		),
+		llb.WithCustomName(p.vertexNamef("Context %s", contextPath)),
+	), nil
+}
+
 func (p *Pipeline) Workdir(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	path, err := op.Lookup("path").String()
 	if err != nil {
@@ -277,7 +315,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s)
+	from := NewPipeline(op.Lookup("from"), p.context, p.s)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -512,7 +550,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 	}
 
 	// eg. mount: "/foo": { from: www.source }
-	from := NewPipeline(mnt.Lookup("from"), p.s)
+	from := NewPipeline(mnt.Lookup("from"), p.context, p.s)
 	if err := from.Run(ctx); err != nil {
 		return nil, err
 	}
@@ -639,7 +677,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s)
+	from := NewPipeline(op.Lookup("from"), p.context, p.s)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -887,7 +925,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if dockerContext.Exists() {
-		from := NewPipeline(op.Lookup("context"), p.s)
+		from := NewPipeline(op.Lookup("context"), p.context, p.s)
 		if err := from.Run(ctx); err != nil {
 			return st, err
 		}

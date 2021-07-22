@@ -8,11 +8,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed **/*.cue **/*/*.cue
+	//go:embed *
 	FS embed.FS
 
 	PackageName = "alpha.dagger.io"
@@ -35,7 +36,7 @@ func Vendor(ctx context.Context, mod string) error {
 			return nil
 		}
 
-		if filepath.Ext(entry.Name()) != ".cue" {
+		if strings.HasPrefix(p, ".dagger") || strings.HasPrefix(p, "node_modules") || strings.HasPrefix(p, "cue.mod") {
 			return nil
 		}
 
@@ -50,6 +51,9 @@ func Vendor(ctx context.Context, mod string) error {
 			return err
 		}
 
-		return os.WriteFile(overlayPath, contents, 0600)
+		// FIXME: giant hack. permissions don't seem to be preserved by
+		// go:embed so we set 0700 to make sure we don't lose bits.
+		// #nosec
+		return os.WriteFile(overlayPath, contents, 0700)
 	})
 }

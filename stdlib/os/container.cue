@@ -44,7 +44,10 @@ import (
 	always: true | *false
 
 	// Copy contents from other artifacts
-	copy: [string]: from: dagger.#Artifact
+	copy: [string]: {
+		from: dagger.#Artifact
+		src:  string | *"/"
+	}
 
 	// Mount contents from other artifacts.
 	// Mount is active when executing `command`, but not `setup`.
@@ -90,9 +93,11 @@ import (
 			op.#Copy & {
 				"dest": dest
 				from:   o.from
+				src:    o.src
 				// FIXME: support source path
 			}
 		},
+
 		// Execute setup commands, without volumes
 		for cmd in setup {
 			op.#Exec & {

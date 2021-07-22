@@ -70,9 +70,15 @@ import (
 		setup: [
 			"yarn global add netlify-cli@3.38.10",
 		]
-		// set in netlify.sh.cue
-		// FIXME: use embedding once cue supports it
-		command: _
+
+		copy: "/code/netlify.sh": {
+			from: "context"
+			src:  "./netlify.sh"
+		}
+
+		always:  true
+		command: "/code/netlify.sh"
+
 		env: {
 			NETLIFY_SITE_NAME: name
 			if (create) {
