@@ -33,11 +33,18 @@ import (
 
 // A dagger client
 type Client struct {
-	c       *bk.Client
-	noCache bool
+	c   *bk.Client
+	cfg Config
 }
 
-func New(ctx context.Context, host string, noCache bool) (*Client, error) {
+type Config struct {
+	NoCache bool
+
+	CacheExports []bk.CacheOptionsEntry
+	CacheImports []bk.CacheOptionsEntry
+}
+
+func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
@@ -61,8 +68,8 @@ func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 	return &Client{
-		c:       c,
-		noCache: noCache,
+		c:   c,
+		cfg: cfg,
 	}, nil
 }
 
@@ -122,6 +129,8 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			secrets,
 			solver.NewDockerSocketProvider(),
 		},
+		CacheExports: c.cfg.CacheExports,
+		CacheImports: c.cfg.CacheImports,
 	}
 
 	// Call buildkit solver
@@ -137,7 +146,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			Events:  ch,
 			Auth:    auth,
 			Secrets: secrets,
-			NoCache: c.noCache,
+			NoCache: c.cfg.NoCache,
 		})
 
 		lg.Debug().Msg("loading configuration")
