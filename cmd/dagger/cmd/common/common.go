@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/docker/buildx/util/buildflags"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/client"
@@ -145,10 +146,23 @@ func ValueDocOneLine(val *compiler.Value) string {
 }
 
 // NewClient creates a new client
-func NewClient(ctx context.Context, noCache bool) *client.Client {
+func NewClient(ctx context.Context) *client.Client {
 	lg := log.Ctx(ctx)
 
-	cl, err := client.New(ctx, "", noCache)
+	cacheExports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-to"))
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to parse --export-cache options")
+	}
+	cacheImports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-fron"))
+	if err != nil {
+		lg.Fatal().Err(err).Msg("unable to parse --import-cache options")
+	}
+
+	cl, err := client.New(ctx, "", client.Config{
+		CacheExports: cacheExports,
+		CacheImports: cacheImports,
+		NoCache:      viper.GetBool("no-cache"),
+	})
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}

@@ -50,7 +50,7 @@ func updateEnvironmentInput(ctx context.Context, cmd *cobra.Command, target stri
 		Value: target,
 	})
 
-	cl := common.NewClient(ctx, false)
+	cl := common.NewClient(ctx)
 
 	st.SetInput(target, input)
 

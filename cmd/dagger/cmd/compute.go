@@ -168,7 +168,7 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
+		cl := common.NewClient(ctx)
 
 		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check that all inputs are set
@@ -208,7 +208,6 @@ func init() {
 	computeCmd.Flags().StringSlice("input-git", []string{}, "TARGET=REMOTE#REF")
 	computeCmd.Flags().String("input-json", "", "JSON")
 	computeCmd.Flags().String("input-yaml", "", "YAML")
-	computeCmd.Flags().Bool("no-cache", false, "disable cache")
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)
