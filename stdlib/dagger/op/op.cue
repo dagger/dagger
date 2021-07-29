@@ -50,7 +50,13 @@ package op
 	// `true` means also ignoring the mount cache volumes
 	always?: true | *false
 	dir:     string | *"/"
-	mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"} | {secret: _}
+	// HACK: FIXME later [Performance related]
+	// mount: [string]: "tmpfs" | "cache" | {from: _, path: string | *"/"} | {secret: _}
+	// https://github.com/dagger/dagger/issues/856
+	mount: [string]: {
+		_
+		...
+	}
 	// Map of hostnames to ip
 	hosts?: [string]: string
 	// User to exec with (if left empty, will default to the set user in the image)
