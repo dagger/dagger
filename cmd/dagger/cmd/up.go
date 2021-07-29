@@ -43,7 +43,7 @@ var upCmd = &cobra.Command{
 
 		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
 
-		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
+		cl := common.NewClient(ctx)
 
 		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check that all inputs are set
@@ -104,7 +104,6 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 }
 
 func init() {
-	upCmd.Flags().Bool("no-cache", false, "Disable all run cache")
 	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
 
 	if err := viper.BindPFlags(upCmd.Flags()); err != nil {

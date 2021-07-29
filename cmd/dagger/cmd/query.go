@@ -45,7 +45,7 @@ var queryCmd = &cobra.Command{
 
 		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, state)
 
-		cl := common.NewClient(ctx, false)
+		cl := common.NewClient(ctx)
 		cueVal := compiler.NewValue()
 
 		err := cl.Do(ctx, state, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {

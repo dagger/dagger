@@ -85,6 +85,18 @@ Guidelines:
 - Format: Use the imperative mood in the subject line: "If applied, this commit
   will _your subject line here_"
 
+## Docs
+
+### Use relative links to markdown files
+
+Link to markdown files (`[link](../foo.md)`) instead of relative URLs
+(`[link](/foo)`).
+
+The docs compiler will replace file links with relative URLs automatically.
+
+This is to avoid broken links. If a file gets renamed, the compiler will
+catch broken links and throw an error. Relative URLs get broken unnoticed.
+
 ## FAQ
 
 ### How to run the markdown linter locally
@@ -96,6 +108,6 @@ First install `markdownlint-cli`:
 
 Then from the repository root:
 
-```
+```console
 markdownlint -c .markdownlint.yaml docs/**/*.md
 ```
