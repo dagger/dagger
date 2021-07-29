@@ -22,7 +22,7 @@ Dagger works by integrating all your tools and infrastructure into a unified gra
 Each node in your DAG represents an integration: for example a source repository, build script, artifact registry or deployment API. Each connection represents a flow of data between integrations: for example from source to build; from build to registry; etc.
 
 What makes Dagger special is how much of your existing stack it can integrate in the DAG (probably all of it); how much
-of your existing data flows it can manage (probably all of them); and composable your DAG is (as much as regular software).
+of your existing data flows it can manage (probably all of them); and how composable your DAG is (as much as regular software).
 
 ### Integrations
 
