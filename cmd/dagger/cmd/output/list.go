@@ -40,7 +40,7 @@ var listCmd = &cobra.Command{
 
 		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
 
-		cl := common.NewClient(ctx, false)
+		cl := common.NewClient(ctx)
 		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			return ListOutputs(ctx, env, true)
 		})

@@ -25,6 +25,13 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().String("log-format", "", "Log format (json, pretty). Defaults to json if the terminal is not a tty")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
+
+	rootCmd.PersistentFlags().Bool("no-cache", false, "Disable caching")
+	rootCmd.PersistentFlags().StringArray("cache-to", []string{},
+		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
+	rootCmd.PersistentFlags().StringArray("cache-from", []string{},
+		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
+
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Specify a workspace (defaults to current git repository)")
 
