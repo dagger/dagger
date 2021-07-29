@@ -29,7 +29,7 @@ git remote add fork git@github.com:MYFORK/dagger.git
 # create a branch
 git checkout -b mybranch
 
-# make chances to your branch, use `git commit -s`, ...
+# make changes to your branch, use `git commit -s`, ...
 # ...
 
 # push the branch to your own fork
@@ -71,9 +71,8 @@ Guidelines:
 
 - Group Commits: Each commit should represent a meaningful change (e.g. implement
   feature X, fix bug Y, ...).
-- For instance, a PR should not look like _1) Add Feature X 2) Fix Typo 3) Changes to features X 5) Bugfix for feature X 6) Fix Linter 7) ..._
-- Instead, these commits should be squashed together into a single "Add Feature"
-  commit.
+- For instance, a PR should not look like _1) Add Feature X 2) Fix Typo 3) Changes to features X 5) Bugfix for feature X 6) Fix Linter 7) ..._<br>
+  Instead, these commits should be squashed together into a single "Add Feature" commit.
 - Each commit should work on its own: it must compile, pass the linter and so on.
 - This makes life much easier when using `git log`, `git blame`, `git bisect`, etc.
 - For instance, when doing a `git blame` on a file to figure out why a change
