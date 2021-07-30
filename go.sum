@@ -289,7 +289,7 @@ github.com/cockroachdb/apd/v2 v2.0.1 h1:y1Rh3tEU89D+7Tgbw+lp52T6p/GJLpDmNvr10UWq
 github.com/cockroachdb/apd/v2 v2.0.1/go.mod h1:DDxRlzC2lo3/vSlmSoS7JkqbbrARPuFOGr0B9pvN3Gw=
 github.com/cockroachdb/datadriven v0.0.0-20190809214429-80d97fb3cbaa/go.mod h1:zn76sxSg3SzpJ0PPJaLDCu+Bu0Lg3sKTORVIj19EIF8=
 github.com/codahale/hdrhistogram v0.0.0-20160425231609-f8ad88b59a58/go.mod h1:sE/e/2PUdi/liOCUjSTXgM1o87ZssimdTWN964YiIeI=
-github.com/compose-spec/compose-go v0.0.0-20210706130854-69459d4976b5/go.mod h1:5V65rPnTvvQagtoMxTneJ2QicLq6ZRQQ7fOgPN226fo=
+github.com/compose-spec/compose-go v0.0.0-20210729195839-de56f4f0cb3c/go.mod h1:5V65rPnTvvQagtoMxTneJ2QicLq6ZRQQ7fOgPN226fo=
 github.com/containerd/aufs v0.0.0-20200908144142-dab0cbea06f4/go.mod h1:nukgQABAEopAHvB6j7cnP5zJ+/3aVcE7hCYqvIwAHyE=
 github.com/containerd/aufs v0.0.0-20201003224125-76a6863f2989/go.mod h1:AkGGQs9NM2vtYHaUen+NljV0/baGCAPELGm2q9ZXpWU=
 github.com/containerd/aufs v0.0.0-20210316121734-20793ff83c97/go.mod h1:kL5kd6KM5TzQjR79jljyi4olc1Vrx6XBlcyj3gNv2PU=
@@ -328,8 +328,9 @@ github.com/containerd/containerd v1.5.0-beta.4/go.mod h1:GmdgZd2zA2GYIBZ0w09Zvgq
 github.com/containerd/containerd v1.5.0-rc.0/go.mod h1:V/IXoMqNGgBlabz3tHD2TWDoTJseu1FGOKuoA4nNb2s=
 github.com/containerd/containerd v1.5.1/go.mod h1:0DOxVqwDy2iZvrZp2JUx/E+hS0UNTVn7dJnIOwtYR4g=
 github.com/containerd/containerd v1.5.2/go.mod h1:0DOxVqwDy2iZvrZp2JUx/E+hS0UNTVn7dJnIOwtYR4g=
-github.com/containerd/containerd v1.5.3 h1:mfKOepNDIJ3EiBTEyHFpEqB6YSOSkGcjPDIu7cD+YzY=
 github.com/containerd/containerd v1.5.3/go.mod h1:sx18RgvW6ABJ4iYUw7Q5x7bgFOAB9B6G7+yO0XBc4zw=
+github.com/containerd/containerd v1.5.4 h1:uPF0og3ByFzDnaStfiQj3fVGTEtaSNyU+bW7GR/nqGA=
+github.com/containerd/containerd v1.5.4/go.mod h1:sx18RgvW6ABJ4iYUw7Q5x7bgFOAB9B6G7+yO0XBc4zw=
 github.com/containerd/continuity v0.0.0-20190426062206-aaeac12a7ffc/go.mod h1:GL3xCUCBDV3CZiTSEKksMWbLE66hEyuu9qyDOOqM47Y=
 github.com/containerd/continuity v0.0.0-20190815185530-f2a389ac0a02/go.mod h1:GL3xCUCBDV3CZiTSEKksMWbLE66hEyuu9qyDOOqM47Y=
 github.com/containerd/continuity v0.0.0-20191127005431-f65d91d395eb/go.mod h1:GL3xCUCBDV3CZiTSEKksMWbLE66hEyuu9qyDOOqM47Y=
@@ -432,8 +433,8 @@ github.com/dimchansky/utfbom v1.1.0 h1:FcM3g+nofKgUteL8dm/UpdRXNC9KmADgTpLKsu0TR
 github.com/dimchansky/utfbom v1.1.0/go.mod h1:rO41eb7gLfo8SF1jd9F8HplJm1Fewwi4mQvIirEdv+8=
 github.com/distribution/distribution/v3 v3.0.0-20210316161203-a01c71e2477e/go.mod h1:xpWTC2KnJMiDLkoawhsPQcXjvwATEBcbq0xevG2YR9M=
 github.com/dnaeon/go-vcr v1.0.1/go.mod h1:aBB1+wY4s93YsC3HHjMBMrwTj2R9FHDzUr9KyGc8n1E=
-github.com/docker/buildx v0.6.0 h1:UuJvtuK8SQX/7Y9i1fJR3Jq6kXBSFcSJtudlALu9iV8=
-github.com/docker/buildx v0.6.0/go.mod h1:ue0mOStExTp8vSb1wrvbpL9VoL0e66EK9etSCCIhuFM=
+github.com/docker/buildx v0.6.1 h1:NMWmVT2rs4/MZ1+l56LpCzkjRtPiLQy2LwHY6lS19AU=
+github.com/docker/buildx v0.6.1/go.mod h1:7gkFFXWFWo+vfXMNijFRBO0KwEDITP10TUWty5ZJNz0=
 github.com/docker/cli v0.0.0-20190925022749-754388324470/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/cli v0.0.0-20191017083524-a8ff7f821017/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/cli v20.10.0-beta1.0.20201029214301-1d20b15adc38+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
