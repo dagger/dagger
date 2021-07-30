@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"os"
 	"strings"
 
@@ -59,6 +60,7 @@ func init() {
 		output.Cmd,
 		versionCmd,
 		docCmd,
+		mod.Cmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {

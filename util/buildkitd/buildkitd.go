@@ -29,21 +29,23 @@ const (
 func init() {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
-		panic("unable to retrieve build info")
+		return
 	}
+
 	for _, d := range bi.Deps {
 		if d.Path == "github.com/moby/buildkit" {
 			vendoredVersion = d.Version
 			break
 		}
 	}
-	if vendoredVersion == "" {
-		panic("failed to solve vendored buildkit version")
-	}
 }
 
 func Start(ctx context.Context) (string, error) {
 	lg := log.Ctx(ctx)
+
+	if vendoredVersion == "" {
+		return "", fmt.Errorf("vendored version is empty")
+	}
 
 	// Attempt to detect the current buildkit version
 	currentVersion, err := getBuildkitVersion(ctx)
@@ -66,7 +68,7 @@ func Start(ctx context.Context) (string, error) {
 				Info().
 				Str("version", vendoredVersion).
 				Msg("upgrading buildkit")
-			if err := remvoveBuildkit(ctx); err != nil {
+			if err := removeBuildkit(ctx); err != nil {
 				return "", err
 			}
 		} else {
@@ -183,7 +185,7 @@ func waitBuildkit(ctx context.Context) error {
 	return errors.New("buildkit failed to respond")
 }
 
-func remvoveBuildkit(ctx context.Context) error {
+func removeBuildkit(ctx context.Context) error {
 	lg := log.
 		Ctx(ctx)
 
