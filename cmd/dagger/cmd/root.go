@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"os"
 	"strings"
 
@@ -9,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/input"
+	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/keychain"

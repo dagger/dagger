@@ -18,7 +18,7 @@ type repo struct {
 
 func clone(require *require, dir string) (*repo, error) {
 	r, err := git.PlainClone(dir, false, &git.CloneOptions{
-		URL: require.cloneUrl(),
+		URL: require.cloneURL(),
 	})
 	if err != nil {
 		return nil, err

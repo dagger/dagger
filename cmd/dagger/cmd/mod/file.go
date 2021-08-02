@@ -45,7 +45,7 @@ type require struct {
 	version string
 }
 
-func (r *require) cloneUrl() string {
+func (r *require) cloneURL() string {
 	return fmt.Sprintf("%s%s", r.prefix, r.repo)
 }
 
@@ -122,10 +122,7 @@ func parseArgument(arg string) (*require, error) {
 		return nil, err
 	}
 
-	repoPath, version, err := parseGithubRepoVersion(suffix)
-	if err != nil {
-		return nil, err
-	}
+	repoPath, version := parseGithubRepoVersion(suffix)
 
 	return &require{
 		prefix:  "https://",
@@ -151,17 +148,17 @@ func parseGithubRepoName(arg string) (string, string, error) {
 	return repoMatches[1], repoMatches[2], nil
 }
 
-func parseGithubRepoVersion(repoSuffix string) (string, string, error) {
+func parseGithubRepoVersion(repoSuffix string) (string, string) {
 	if repoSuffix == "" {
-		return "", "", nil
+		return "", ""
 	}
 
 	i := strings.LastIndexAny(repoSuffix, "@:")
 	if i == -1 {
-		return repoSuffix, "", nil
+		return repoSuffix, ""
 	}
 
-	return repoSuffix[:i], repoSuffix[i+1:], nil
+	return repoSuffix[:i], repoSuffix[i+1:]
 }
 
 func readModFile() (*file, error) {
@@ -179,7 +176,7 @@ func readModFile() (*file, error) {
 }
 
 func writeModFile(f *file) error {
-	return ioutil.WriteFile("./cue.mod/module.cue", f.contents().Bytes(), 0644)
+	return ioutil.WriteFile("./cue.mod/module.cue", f.contents().Bytes(), 0600)
 }
 
 func move(r *require, sourceRepoPath, destBasePath string) error {
