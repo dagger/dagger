@@ -19,7 +19,10 @@ import (
 #Container: {
 
 	// Container image
-	image: dagger.#Artifact | *#DefaultImage
+	// image: dagger.#Artifact | *#DefaultImage
+	// CUE PERFORMANCE HACK
+	// FIXME LATER: https://github.com/dagger/dagger/issues/856
+	image?: dagger.#Artifact
 	//     {
 	//      // Optionally fetch a remote image
 	//      // eg. "index.docker.io/alpine"
@@ -84,7 +87,17 @@ import (
 	env: PATH: string | *strings.Join([ for p, v in shell.search if v {p}], ":")
 
 	#up: [
-		op.#Load & {from: image},
+		// op.#Load & {from: image},
+		// CUE PERFORMANCE HACK
+		// FIXME LATER: https://github.com/dagger/dagger/issues/856
+		op.#Load & {
+			if image != _|_ {
+				from: image
+			}
+			if image == _|_ {
+				from: #DefaultImage
+			}
+		},
 		// Copy volumes with type=copy
 		for dest, o in copy {
 			op.#Copy & {
