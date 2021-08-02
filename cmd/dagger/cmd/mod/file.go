@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+const FilePath = "./cue.mod/dagger.mod.cue"
+
 // A file is the parsed, interpreted form of a cue.mod file.
 type file struct {
 	module  string
@@ -162,7 +164,7 @@ func parseGithubRepoVersion(repoSuffix string) (string, string) {
 }
 
 func readModFile() (*file, error) {
-	f, err := os.Open("./cue.mod/module.cue")
+	f, err := os.Open(FilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +178,7 @@ func readModFile() (*file, error) {
 }
 
 func writeModFile(f *file) error {
-	return ioutil.WriteFile("./cue.mod/module.cue", f.contents().Bytes(), 0600)
+	return ioutil.WriteFile(FilePath, f.contents().Bytes(), 0600)
 }
 
 func move(r *require, sourceRepoPath, destBasePath string) error {

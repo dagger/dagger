@@ -17,7 +17,7 @@ func TestClone(t *testing.T) {
 				prefix:  "https://",
 				repo:    "github.com/tjovicic/gcpcloudrun-cue",
 				path:    "",
-				version: "5839b7b432b8b0c",
+				version: "d530f2ea2099",
 			},
 		},
 		{
@@ -35,7 +35,7 @@ func TestClone(t *testing.T) {
 				prefix:  "https://",
 				repo:    "github.com/tjovicic/gcpcloudrun-cue",
 				path:    "",
-				version: "v0.1",
+				version: "v0.3",
 			},
 		},
 	}
