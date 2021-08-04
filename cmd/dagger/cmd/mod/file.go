@@ -66,6 +66,10 @@ func read(f io.Reader) (*file, error) {
 		return nil, err
 	}
 
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("mod file is empty")
+	}
+
 	var module string
 	if split := strings.Split(lines[0], " "); len(split) > 1 {
 		module = strings.Trim(split[1], "\"")

@@ -66,7 +66,7 @@ func TestListTags(t *testing.T) {
 
 	r, err := clone(&require{
 		prefix:  "https://",
-		repo:    "github.com/cuelang/cue",
+		repo:    "github.com/tjovicic/gcpcloudrun-cue",
 		path:    "",
 		version: "",
 	}, tmpDir)
