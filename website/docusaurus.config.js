@@ -25,6 +25,23 @@ module.exports = {
         src: "img/dagger-logo.png",
         srcDark: "img/dagger_logo_dark.png",
       },
+      items: [
+        {
+          label: "Github",
+          href: "https://github.com/dagger/dagger",
+          position: "right",
+        },
+        {
+          label: "Discord",
+          href: "https://discord.gg/ufnyBtc8uY",
+          position: "right",
+        },
+        {
+          label: "Schedule a Demo",
+          href: "https://calendly.com/dagger-io/meet-the-dagger-team",
+          position: "right",
+        },
+      ],
     },
     algolia: {
       apiKey: "b2324f1ac8932ab80916382521473115",
@@ -40,7 +57,7 @@ module.exports = {
       },
     },
     gtag: {
-      trackingID: 'G-RDXG80F635',
+      trackingID: "G-RDXG80F635",
       anonymizeIP: true,
     },
   },
@@ -63,10 +80,11 @@ module.exports = {
   plugins: [
     "docusaurus-plugin-sass",
     [
-      "docusaurus2-dotenv", {
+      "docusaurus2-dotenv",
+      {
         systemvars: true,
         expand: true,
       },
-    ]
+    ],
   ],
 };
