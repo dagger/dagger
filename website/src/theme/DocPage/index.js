@@ -170,6 +170,10 @@ function DocPage(props) {
           apiEndpoint: `${window.location.hostname}/t`
         });
         amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
+
+        if (window?.hj) {
+          window.hj("identify", userAccessStatus?.login.toLowerCase(), {});
+        }
       }
     })
   }, [location.pathname, userAccessStatus])
