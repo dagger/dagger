@@ -30,6 +30,9 @@ module.exports = {
       apiKey: "b2324f1ac8932ab80916382521473115",
       indexName: "daggosaurus",
     },
+    hotjar: {
+      siteId: "2541514",
+    },
     colorMode: {
       // "light" | "dark"
       defaultMode: "light",
@@ -40,7 +43,7 @@ module.exports = {
       },
     },
     gtag: {
-      trackingID: 'G-RDXG80F635',
+      trackingID: "G-RDXG80F635",
       anonymizeIP: true,
     },
   },
@@ -63,10 +66,12 @@ module.exports = {
   plugins: [
     "docusaurus-plugin-sass",
     [
-      "docusaurus2-dotenv", {
+      "docusaurus2-dotenv",
+      {
         systemvars: true,
         expand: true,
       },
-    ]
+    ],
+    path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
   ],
 };
