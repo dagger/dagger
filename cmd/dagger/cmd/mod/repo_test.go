@@ -14,28 +14,28 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving shorter hash version",
 			require: require{
-				prefix:  "https://",
-				repo:    "github.com/tjovicic/gcpcloudrun-cue",
-				path:    "",
-				version: "d530f2ea2099",
+				prefix:    "https://",
+				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
+				clonePath: "",
+				version:   "d530f2ea2099",
 			},
 		},
 		{
 			name: "resolving branch name",
 			require: require{
-				prefix:  "https://",
-				repo:    "github.com/tjovicic/gcpcloudrun-cue",
-				path:    "",
-				version: "main",
+				prefix:    "https://",
+				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
+				clonePath: "",
+				version:   "main",
 			},
 		},
 		{
 			name: "resolving tag",
 			require: require{
-				prefix:  "https://",
-				repo:    "github.com/tjovicic/gcpcloudrun-cue",
-				path:    "",
-				version: "v0.3",
+				prefix:    "https://",
+				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
+				clonePath: "",
+				version:   "v0.3",
 			},
 		},
 	}
@@ -65,10 +65,10 @@ func TestListTags(t *testing.T) {
 	defer os.Remove(tmpDir)
 
 	r, err := clone(&require{
-		prefix:  "https://",
-		repo:    "github.com/tjovicic/gcpcloudrun-cue",
-		path:    "",
-		version: "",
+		prefix:    "https://",
+		cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
+		clonePath: "",
+		version:   "",
 	}, tmpDir)
 	if err != nil {
 		t.Error(err)

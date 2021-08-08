@@ -40,8 +40,8 @@ func clone(require *require, dir string) (*repo, error) {
 		return nil, err
 	}
 
-	if _, err := os.Stat(path.Join(dir, require.path, FilePath)); err != nil {
-		return nil, fmt.Errorf("repo does not contain %s", FilePath)
+	if _, err := os.Stat(path.Join(dir, require.clonePath, filePath)); err != nil {
+		return nil, fmt.Errorf("repo does not contain %s", filePath)
 	}
 
 	return rr, nil
