@@ -60,7 +60,7 @@ var getCmd = &cobra.Command{
 
 		// download packages
 		for _, p := range packages {
-			if err := processRequire(p, modFile); err != nil {
+			if err := processRequire(workspace.Path, p, modFile); err != nil {
 				lg.Error().Err(err).Msg("error processing package")
 			}
 		}
@@ -74,8 +74,8 @@ var getCmd = &cobra.Command{
 	},
 }
 
-func processRequire(req *require, modFile *file) error {
-	tmpPath := path.Join(tmpBasePath, req.repo)
+func processRequire(workspacePath string, req *require, modFile *file) error {
+	tmpPath := path.Join(workspacePath, tmpBasePath, req.repo)
 	if err := os.MkdirAll(tmpPath, 0755); err != nil {
 		return fmt.Errorf("error creating tmp dir for cloning package")
 	}
@@ -87,10 +87,11 @@ func processRequire(req *require, modFile *file) error {
 	}
 
 	existing := modFile.search(req)
+	destPath := path.Join(workspacePath, destBasePath)
 
 	// requirement is new, so we should move the files and add it to the module.cue
 	if existing == nil {
-		if err := move(req, tmpPath, destBasePath); err != nil {
+		if err := move(req, tmpPath, destPath); err != nil {
 			return err
 		}
 		modFile.require = append(modFile.require, req)
@@ -114,7 +115,7 @@ func processRequire(req *require, modFile *file) error {
 		return err
 	}
 
-	return replace(req, tmpPath, destBasePath)
+	return replace(req, tmpPath, destPath)
 }
 
 func compareVersions(reqV1, reqV2 string) (int, error) {
