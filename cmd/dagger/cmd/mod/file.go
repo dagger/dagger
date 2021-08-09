@@ -42,10 +42,7 @@ func read(f io.Reader) (*file, error) {
 		return nil, err
 	}
 
-	lines, err := nonEmptyLines(b)
-	if err != nil {
-		return nil, err
-	}
+	lines := nonEmptyLines(b)
 
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("mod file is empty, missing module name")
@@ -77,7 +74,7 @@ func read(f io.Reader) (*file, error) {
 
 var spaceRgx = regexp.MustCompile(`\s+`)
 
-func nonEmptyLines(b []byte) ([]string, error) {
+func nonEmptyLines(b []byte) []string {
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
 	split := strings.Split(s, "\n")
 
@@ -93,7 +90,7 @@ func nonEmptyLines(b []byte) ([]string, error) {
 		lines = append(lines, trimmed)
 	}
 
-	return lines, nil
+	return lines
 }
 
 func writeModFile(workspacePath string, f *file) error {

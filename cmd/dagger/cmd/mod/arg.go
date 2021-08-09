@@ -8,11 +8,12 @@ import (
 )
 
 func parseArgument(arg string) (*require, error) {
-	if strings.HasPrefix(arg, "github.com") {
+	switch {
+	case strings.HasPrefix(arg, "github.com"):
 		return parseGithubRepoName(arg)
-	} else if strings.HasPrefix(arg, "alpha.dagger.io") {
+	case strings.HasPrefix(arg, "alpha.dagger.io"):
 		return parseDaggerRepoName(arg)
-	} else {
+	default:
 		return nil, fmt.Errorf("repo name does not match suported providers")
 	}
 }
