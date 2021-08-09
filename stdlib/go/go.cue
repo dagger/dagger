@@ -34,9 +34,6 @@ import (
 		let cachePath = "/root/.cache/gocache"
 		cache: "\(cachePath)": true
 		env: GOMODCACHE:       cachePath
-
-		// Add go to search path (FIXME: should be inherited from image metadata)
-		shell: search: "/usr/local/go/bin": true
 	}
 }
 

@@ -512,6 +512,10 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 	}
 
 	// eg. mount: "/foo": { from: www.source }
+	if !mnt.Lookup("from").Exists() {
+		return nil, fmt.Errorf("invalid mount: should have %s structure",
+			"{from: _, path: string | *\"/\"}")
+	}
 	from := NewPipeline(mnt.Lookup("from"), p.s)
 	if err := from.Run(ctx); err != nil {
 		return nil, err

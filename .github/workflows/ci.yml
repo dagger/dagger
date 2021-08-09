@@ -89,13 +89,7 @@ jobs:
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
 
-      - name: Expose GitHub Runtime
-        uses: crazy-max/ghaction-github-runtime@v1
-
       - name: Integration test
-        env:
-          DAGGER_CACHE_TO: "type=gha,scope=integration"
-          DAGGER_CACHE_FROM: "type=gha,scope=integration"
         run: |
           env
           make core-integration
@@ -123,12 +117,6 @@ jobs:
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
 
-      - name: Expose GitHub Runtime
-        uses: crazy-max/ghaction-github-runtime@v1
-
       - name: Universe Test
-        env:
-          DAGGER_CACHE_TO: "type=gha,scope=universe"
-          DAGGER_CACHE_FROM: "type=gha,scope=universe"
         run: |
           make universe-test
