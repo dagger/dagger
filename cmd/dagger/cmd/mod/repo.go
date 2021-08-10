@@ -5,6 +5,9 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
+
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -16,10 +19,22 @@ type repo struct {
 	contents  *git.Repository
 }
 
-func clone(require *require, dir string) (*repo, error) {
-	r, err := git.PlainClone(dir, false, &git.CloneOptions{
-		URL: require.cloneURL(),
-	})
+func clone(require *require, dir string, privateKeyFile, privateKeyPassword string) (*repo, error) {
+	o := git.CloneOptions{
+		URL: fmt.Sprintf("https://%s", require.cloneRepo),
+	}
+
+	if privateKeyFile != "" {
+		publicKeys, err := ssh.NewPublicKeysFromFile("git", privateKeyFile, privateKeyPassword)
+		if err != nil {
+			return nil, err
+		}
+
+		o.Auth = publicKeys
+		o.URL = fmt.Sprintf("git@%s", strings.Replace(require.cloneRepo, "/", ":", 1))
+	}
+
+	r, err := git.PlainClone(dir, false, &o)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +112,6 @@ func (r *repo) latestTag() (string, error) {
 		versions[i] = v
 	}
 
-	// After this, the versions are properly sorted
 	sort.Sort(version.Collection(versions))
 
 	return versions[len(versions)-1].Original(), nil

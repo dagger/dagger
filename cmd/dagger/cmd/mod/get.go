@@ -81,7 +81,9 @@ func processRequire(workspacePath string, req *require, modFile *file) error {
 	}
 	defer os.RemoveAll(tmpPath)
 
-	r, err := clone(req, tmpPath)
+	privateKeyFile := viper.GetString("private-key-file")
+	privateKeyPassword := viper.GetString("private-key-password")
+	r, err := clone(req, tmpPath, privateKeyFile, privateKeyPassword)
 	if err != nil {
 		return fmt.Errorf("error downloading package %s: %w", req, err)
 	}
@@ -136,6 +138,9 @@ func compareVersions(reqV1, reqV2 string) (int, error) {
 }
 
 func init() {
+	getCmd.Flags().String("private-key-file", "~/.ssh/id_rsa", "Private ssh key")
+	getCmd.Flags().String("private-key-password", "", "Private ssh key password")
+
 	if err := viper.BindPFlags(getCmd.Flags()); err != nil {
 		panic(err)
 	}

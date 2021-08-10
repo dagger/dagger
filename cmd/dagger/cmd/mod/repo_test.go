@@ -14,7 +14,6 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving shorter hash version",
 			require: require{
-				prefix:    "https://",
 				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
 				clonePath: "",
 				version:   "d530f2ea2099",
@@ -23,7 +22,6 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving branch name",
 			require: require{
-				prefix:    "https://",
 				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
 				clonePath: "",
 				version:   "main",
@@ -32,10 +30,19 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving tag",
 			require: require{
-				prefix:    "https://",
 				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
 				clonePath: "",
 				version:   "v0.3",
+			},
+		},
+		{
+			name: "alpha.dagger.io",
+			require: require{
+				cloneRepo: "github.com/dagger/dagger",
+				clonePath: "",
+				version:   "",
+
+				repo: "alpha.dagger.io",
 			},
 		},
 	}
@@ -49,7 +56,7 @@ func TestClone(t *testing.T) {
 
 			defer os.Remove(tmpDir)
 
-			_, err = clone(&c.require, tmpDir)
+			_, err = clone(&c.require, tmpDir, "", "")
 			if err != nil {
 				t.Error(err)
 			}
@@ -65,11 +72,10 @@ func TestListTags(t *testing.T) {
 	defer os.Remove(tmpDir)
 
 	r, err := clone(&require{
-		prefix:    "https://",
 		cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
 		clonePath: "",
 		version:   "",
-	}, tmpDir)
+	}, tmpDir, "", "")
 	if err != nil {
 		t.Error(err)
 	}

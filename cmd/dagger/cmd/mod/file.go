@@ -118,17 +118,12 @@ func (f *file) search(r *require) *require {
 }
 
 type require struct {
-	prefix  string
 	repo    string
 	path    string
 	version string
 
 	cloneRepo string
 	clonePath string
-}
-
-func (r *require) cloneURL() string {
-	return fmt.Sprintf("%s%s", r.prefix, r.cloneRepo)
 }
 
 func (r *require) fullPath() string {

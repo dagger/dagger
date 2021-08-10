@@ -32,13 +32,11 @@ func TestReadFile(t *testing.T) {
 				module: "alpha.dagger.io",
 				require: []*require{
 					{
-						prefix:  "https://",
 						repo:    "github.com/tjovicic/test",
 						path:    "",
 						version: "xyz",
 					},
 					{
-						prefix:  "https://",
 						repo:    "github.com/bla/bla",
 						path:    "",
 						version: "abc",

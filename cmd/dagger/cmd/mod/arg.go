@@ -28,7 +28,6 @@ func parseGithubRepoName(arg string) (*require, error) {
 	}
 
 	return &require{
-		prefix:  "https://",
 		repo:    repoMatches[1],
 		path:    repoMatches[2],
 		version: repoMatches[3],
@@ -48,7 +47,6 @@ func parseDaggerRepoName(arg string) (*require, error) {
 	}
 
 	return &require{
-		prefix:  "https://",
 		repo:    "alpha.dagger.io",
 		path:    repoMatches[1],
 		version: repoMatches[2],
