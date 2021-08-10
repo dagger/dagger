@@ -27,8 +27,8 @@ module.exports = {
       },
     },
     algolia: {
-      apiKey: "b2324f1ac8932ab80916382521473115",
-      indexName: "daggosaurus",
+      apiKey: "d2ccc43b51a4b3b1a66b4b4c70ae6069",
+      indexName: "Dagger_docs",
     },
     hotjar: {
       siteId: "2541514",
