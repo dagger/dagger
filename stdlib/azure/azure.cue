@@ -4,7 +4,6 @@ package azure
 import (
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
-	"alpha.dagger.io/os"
 )
 
 //Azure Config shared by all Azure packages
@@ -21,27 +20,25 @@ import (
 
 // Azure Cli to be used by all Azure packages
 #CLI: {
+	// Azure Config
 	config: #Config
 
-	// Container image
-	ctr: os.#Container & {
-		image: #up: [op.#FetchContainer & {
+	#up: [
+		op.#FetchContainer & {
 			ref: "mcr.microsoft.com/azure-cli"
-		}]
+		},
 
-		// Path of the shell to execute
-		shell: path: "/bin/bash"
-
-		command: """
-			az login --service-principal -u "$(cat /run/secrets/appId)" -p "$(cat /run/secrets/password)" -t "$(cat /run/secrets/tenantId)"
-			az account set -s "$(cat /run/secrets/subscriptionId)"
-			"""
-
-		secret: {
-			"/run/secrets/appId":          config.appId
-			"/run/secrets/password":       config.password
-			"/run/secrets/tenantId":       config.tenantId
-			"/run/secrets/subscriptionId": config.subscriptionId
-		}
-	}
+		op.#Exec & {
+			args: ["sh", "-c",
+				#"""
+					az login --service-principal -u "$(cat /run/secrets/appId)" -p "$(cat /run/secrets/password)" -t "$(cat /run/secrets/tenantId)"
+					az account set -s "$(cat /run/secrets/subscriptionId)"
+					"""#,
+			]
+			mount: "/run/secrets/appId": secret:          config.appId
+			mount: "/run/secrets/password": secret:       config.password
+			mount: "/run/secrets/tenantId": secret:       config.tenantId
+			mount: "/run/secrets/subscriptionId": secret: config.subscriptionId
+		},
+	]
 }

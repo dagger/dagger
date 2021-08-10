@@ -2,19 +2,16 @@ package resourcegroup
 
 import (
 	"alpha.dagger.io/azure"
-	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/azure/resourcegroup"
 	"alpha.dagger.io/random"
 )
 
-TestConfig: azConfig: azure.#Config & {
-	region: "eastus2"
+suffix: random.#String & {
+	seed: "azrg"
 }
 
-TestResourceGroupConfig: #ResourceGroup & {
-	suffix: random.#String & {
-		seed: "azrg"
-	}
-	config:     TestConfig.azConfig
+rg: resourcegroup.#ResourceGroup & {
+	config:     azure.#Config
 	rgName:     "rg-test-\(suffix.out)"
 	rgLocation: "eastus2"
 }

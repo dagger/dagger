@@ -1,13 +1,12 @@
 package resourcegroup
 
 import (
-	"alpha.dagger.io/dagger/op"
+	"alpha.dagger.io/os"
 	"alpha.dagger.io/azure"
 )
 
-// Create a new resource group.
+// Create a resource group
 #ResourceGroup: {
-
 	// Azure Config
 	config: azure.#Config
 
@@ -17,39 +16,27 @@ import (
 	// ResourceGroup location
 	rgLocation: string @dagger(input)
 
+	// Container image
+	ctr: os.#Container & {
+		image: azure.#CLI & {
+			"config": config
+		}
+		// Path of the shell to execute
+		shell: path: "/bin/bash"
+
+		always: true
+
+		command: """
+			az group create -l "\(rgLocation)" -n "\(rgName)"
+			az group show -n "\(rgName)" --query "id" -o json | jq -r . | tr -d "\n" > /resourceGroupId
+			"""
+	}
+
+	// Resource Id
 	id: {
-		string
-
-		#up: [
-			op.#Load & {
-				from: azure.#CLI & {
-					"config": config
-				}
-			},
-
-			op.#Exec & {
-				args: [
-					"/bin/bash",
-					"--noprofile",
-					"--norc",
-					"-eo",
-					"pipefail",
-					"-c",
-					#"""
-							az group create -l "$AZURE_DEFAULTS_LOCATION" -n "$AZURE_DEFAULTS_GROUP"
-							az group show --query "id" > /resourceGroupId
-						"""#,
-				]
-				env: {
-					AZURE_DEFAULTS_LOCATION: rgLocation
-					AZURE_DEFAULTS_GROUP:    rgName
-				}
-			},
-
-			op.#Export & {
-				source: "/resourceGroupId"
-				format: "string"
-			},
-		]
-	} @dagger(output)
+		os.#File & {
+				from: ctr
+				path: "/resourceGroupId"
+			}
+	}.contents @dagger(output)
 }
