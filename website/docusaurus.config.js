@@ -27,7 +27,7 @@ module.exports = {
       },
     },
     algolia: {
-      apiKey: "d2ccc43b51a4b3b1a66b4b4c70ae6069",
+      apiKey: "559dcddb4378b889baa48352394616ec",
       indexName: "Dagger_docs",
       appId: 'XSSC1LRN4S',
     },
