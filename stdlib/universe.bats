@@ -184,3 +184,7 @@ setup() {
     run dagger -w "$DAGGER_SANDBOX" -e terraform input unset TestTerraform.apply.tfvars.input
     assert_success
 }
+
+# @test "azure-resourcegroup" {
+#     dagger -e azure-resourcegroup up
+# }
