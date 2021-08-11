@@ -16,12 +16,13 @@ Azure Cli to be used by all Azure packages
 
 ### azure.#CLI Inputs
 
-| Name                      | Type                | Description                                     |
-| -------------             |:-------------:      |:-------------:                                  |
-|*config.tenantId*          | `dagger.#Secret`    |AZURE tenant id                                  |
-|*config.subscriptionId*    | `dagger.#Secret`    |AZURE subscription id                            |
-|*config.appId*             | `dagger.#Secret`    |AZURE app id for the service principal used      |
-|*config.password*          | `dagger.#Secret`    |AZURE password for the service principal used    |
+| Name                      | Type                               | Description                                             |
+| -------------             |:-------------:                     |:-------------:                                          |
+|*config.tenantId*          | `dagger.#Secret`                   |AZURE tenant id                                          |
+|*config.subscriptionId*    | `dagger.#Secret`                   |AZURE subscription id                                    |
+|*config.appId*             | `dagger.#Secret`                   |AZURE app id for the service principal used              |
+|*config.password*          | `dagger.#Secret`                   |AZURE password for the service principal used            |
+|*image.from*               | `"mcr.microsoft.com/azure-cli"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
 
 ### azure.#CLI Outputs
 

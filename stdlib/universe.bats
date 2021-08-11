@@ -185,6 +185,7 @@ setup() {
     assert_success
 }
 
-# @test "azure-resourcegroup" {
-#     dagger -e azure-resourcegroup up
-# }
+@test "azure-resourcegroup" {
+    skip "Azure CI infra not implemented yet - manually tested and working"
+    #dagger -e azure-resourcegroup up
+}

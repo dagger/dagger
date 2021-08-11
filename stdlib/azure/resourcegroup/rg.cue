@@ -1,8 +1,8 @@
 package resourcegroup
 
 import (
-	"alpha.dagger.io/os"
 	"alpha.dagger.io/azure"
+	"alpha.dagger.io/os"
 )
 
 // Create a resource group
@@ -21,9 +21,6 @@ import (
 		image: azure.#CLI & {
 			"config": config
 		}
-		// Path of the shell to execute
-		shell: path: "/bin/bash"
-
 		always: true
 
 		command: """
