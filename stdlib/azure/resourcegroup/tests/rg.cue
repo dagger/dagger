@@ -6,12 +6,12 @@ import (
 	"alpha.dagger.io/random"
 )
 
-suffix: random.#String & {
+TestSuffix: random.#String & {
 	seed: "azrg"
 }
 
-rg: resourcegroup.#ResourceGroup & {
+TestRG: resourcegroup.#ResourceGroup & {
 	config:     azure.#Config
-	rgName:     "rg-test-\(suffix.out)"
+	rgName:     "rg-test-\(TestSuffix.out)"
 	rgLocation: "eastus2"
 }
