@@ -33,7 +33,7 @@ import (
 			"""
 
 		env: {
-			AZURE_DEFAULTS_GROUP: rgName
+			AZURE_DEFAULTS_GROUP:    rgName
 			AZURE_DEFAULTS_LOCATION: rgLocation
 		}
 	}
@@ -41,8 +41,8 @@ import (
 	// Resource Id
 	id: ({
 		os.#File & {
-				from: ctr
-				path: "/resourceGroupId"
-			}
+			from: ctr
+			path: "/resourceGroupId"
+		}
 	}).contents
 }

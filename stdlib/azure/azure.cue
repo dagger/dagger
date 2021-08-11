@@ -35,14 +35,14 @@ let defaultVersion = "2.27.1@sha256:1e117183100c9fce099ebdc189d73e506e7b02d2b73d
 		image: docker.#Pull & {
 			from: "mcr.microsoft.com/azure-cli:\(version)"
 		}
-		
+
 		always: true
 
 		command: """
 			az login --service-principal -u "$(cat /run/secrets/appId)" -p "$(cat /run/secrets/password)" -t "$(cat /run/secrets/tenantId)"
 			az account set -s "$(cat /run/secrets/subscriptionId)"
 			"""
-		
+
 		secret: {
 			"/run/secrets/appId":          config.appId
 			"/run/secrets/password":       config.password
