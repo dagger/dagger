@@ -27,3 +27,35 @@ setup() {
     run curl $url
     assert_output --partial "My Todo app"
 }
+
+@test "doc-1004-first-env" {
+    setup_example_sandbox "doc"
+
+    # Follow tutorial
+    mkdir multibucket
+    cp $CODEBLOC_SRC/multibucket/source.cue multibucket
+    cp $CODEBLOC_SRC/multibucket/yarn.cue multibucket
+    cp $CODEBLOC_SRC/multibucket/netlify.cue multibucket
+
+    dagger doc alpha.dagger.io/netlify
+    dagger doc alpha.dagger.io/js/yarn
+
+    # Initialize new env
+    dagger new 'multibucket' -p ./multibucket
+
+    # Check inputs
+    dagger input list -e multibucket
+
+    # Copy corresponding env
+    cp -r $CODEBLOC_SRC/.dagger/env/multibucket .dagger/env/
+    # Add missing src input
+    dagger -e multibucket input dir src . 
+
+    # Run test
+    dagger -e multibucket up
+    url=$(dagger -e multibucket query -f text site.netlify.deployUrl)
+
+    # Check output :
+    run curl $url
+    assert_output --partial "./static/css/main.9149988f.chunk.css"
+}

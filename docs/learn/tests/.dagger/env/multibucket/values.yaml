@@ -1,0 +1,28 @@
+plan:
+    package: ./multibucket
+name: multibucket
+inputs:
+    site.netlify.account.token:
+        secret: ENC[AES256_GCM,data:e5cILcdqbaFdz6ZMM4sNYrChQS+VSMJTZA9cJ0kPvNEDlQj2n7ldlBeO9A==,iv:4SlRRlXyJ8/9ewAPXJ9KdhdVo4FrvVeRwSip2FfMTIM=,tag:JdxkVTR6SOLgzHUWtoSjyw==,type:str]
+    site.netlify.name:
+        text: dagger-test-doc-102
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBOVFI4NU40NXF1Um4vR1No
+            MTByOC9HVWJYUCtzYUc4WGh2UG1EQnJCSm5FCnFrZ1BaMEZJLzBIRUVTUUdhWWRv
+            N2xRYTR4NlhwclBYME9ZZ3JQejJoUFkKLS0tIDEwa0dXbVhzRWMrMFc3U0FtaEdr
+            RERQRVp2VjR3K0VwQlZRWEJrQUNpNkUK78CsKmOJp1kKUcytprs0SKLLuo0YDucp
+            oLuxQQd0X3/8x2c/YfJ3R15e1EQDC73HjSXDbhlgOScR9bxGVqn36A==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-08-12T23:19:07Z"
+    mac: ENC[AES256_GCM,data:9jc3lwlbsJ6CdiSBF4ALNiv/zD7Rv5ZodftuEQpZuJVEpjJCKSq3C7LNyJKxV7fTg/tZ+RDx/q+x0xN9reRRrmvUCsbmLRL2h20rrfsVj3npCSkRiQFcmoHd6ULjf/kbkgUanLt8YmncDzJqNTQfafCxTo1RY3+U2WH/QSIIebQ=,iv:dcXQsq5de6LElOoqvGfs7nmHELkoTs0jddeY3vf4fJg=,tag:j0Eeu5NrNyhBYUzMwarj+w==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
