@@ -45,10 +45,16 @@ func clone(require *require, dir string, privateKeyFile, privateKeyPassword stri
 	}
 
 	if require.version == "" {
-		require.version, err = rr.latestTag()
+		latestTag, err := rr.latestTag()
 		if err != nil {
 			return nil, err
 		}
+
+		if latestTag == "" {
+			return nil, fmt.Errorf("no git tags found in the repo")
+		}
+
+		require.version = latestTag
 	}
 
 	if err := rr.checkout(require.version); err != nil {
@@ -113,6 +119,10 @@ func (r *repo) latestTag() (string, error) {
 	}
 
 	sort.Sort(version.Collection(versions))
+
+	if len(versions) == 0 {
+		return "", nil
+	}
 
 	return versions[len(versions)-1].Original(), nil
 }

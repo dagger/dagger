@@ -8,8 +8,10 @@ import (
 
 func TestClone(t *testing.T) {
 	cases := []struct {
-		name    string
-		require require
+		name               string
+		require            require
+		privateKeyFile     string
+		privateKeyPassword string
 	}{
 		{
 			name: "resolving shorter hash version",
@@ -36,14 +38,14 @@ func TestClone(t *testing.T) {
 			},
 		},
 		{
-			name: "alpha.dagger.io",
+			name: "Dagger private test repo",
 			require: require{
-				cloneRepo: "github.com/dagger/dagger",
+				cloneRepo: "github.com/dagger/test",
 				clonePath: "",
-				version:   "",
-
-				repo: "alpha.dagger.io",
+				version:   "v0.2",
 			},
+			privateKeyFile:     "./test-ssh-keys/id_ed25519_test",
+			privateKeyPassword: "",
 		},
 	}
 
@@ -56,7 +58,7 @@ func TestClone(t *testing.T) {
 
 			defer os.Remove(tmpDir)
 
-			_, err = clone(&c.require, tmpDir, "", "")
+			_, err = clone(&c.require, tmpDir, c.privateKeyFile, c.privateKeyPassword)
 			if err != nil {
 				t.Error(err)
 			}

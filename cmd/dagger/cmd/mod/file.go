@@ -22,7 +22,7 @@ type file struct {
 	require []*require
 }
 
-func readModFile(workspacePath string) (*file, error) {
+func readPath(workspacePath string) (*file, error) {
 	f, err := os.Open(path.Join(workspacePath, filePath))
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func nonEmptyLines(b []byte) []string {
 	return lines
 }
 
-func writeModFile(workspacePath string, f *file) error {
+func (f *file) write(workspacePath string) error {
 	return ioutil.WriteFile(path.Join(workspacePath, filePath), f.contents().Bytes(), 0600)
 }
 
