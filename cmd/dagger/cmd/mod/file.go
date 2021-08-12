@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/spf13/viper"
 )
 
 const filePath = "./cue.mod/dagger.mod.cue"
@@ -20,6 +22,8 @@ const tmpBasePath = "./cue.mod/tmp"
 type file struct {
 	module  string
 	require []*require
+
+	workspacePath string
 }
 
 func readPath(workspacePath string) (*file, error) {
@@ -32,6 +36,8 @@ func readPath(workspacePath string) (*file, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	modFile.workspacePath = workspacePath
 
 	return modFile, nil
 }
@@ -93,8 +99,75 @@ func nonEmptyLines(b []byte) []string {
 	return lines
 }
 
-func (f *file) write(workspacePath string) error {
-	return ioutil.WriteFile(path.Join(workspacePath, filePath), f.contents().Bytes(), 0600)
+func (f *file) processRequire(req *require, upgrade bool) (bool, error) {
+	var isNew bool
+
+	tmpPath := path.Join(f.workspacePath, tmpBasePath, req.repo)
+	if err := os.MkdirAll(tmpPath, 0755); err != nil {
+		return false, fmt.Errorf("error creating tmp dir for cloning package")
+	}
+	defer os.RemoveAll(tmpPath)
+
+	// clone the repo
+	privateKeyFile := viper.GetString("private-key-file")
+	privateKeyPassword := viper.GetString("private-key-password")
+	r, err := clone(req, tmpPath, privateKeyFile, privateKeyPassword)
+	if err != nil {
+		return isNew, fmt.Errorf("error downloading package %s: %w", req, err)
+	}
+
+	existing := f.search(req)
+	destPath := path.Join(f.workspacePath, destBasePath)
+
+	// requirement is new, so we should move the files and add it to the mod file
+	if existing == nil {
+		if err := move(req, tmpPath, destPath); err != nil {
+			return isNew, err
+		}
+		f.require = append(f.require, req)
+		isNew = true
+		return isNew, nil
+	}
+
+	if upgrade {
+		latestTag, err := r.latestTag()
+		if err != nil {
+			return isNew, err
+		}
+
+		if latestTag == "" {
+			return isNew, fmt.Errorf("repo does not have a tag")
+		}
+
+		req.version = latestTag
+	}
+
+	c, err := compareVersions(existing.version, req.version)
+	if err != nil {
+		return isNew, err
+	}
+
+	// the existing requirement is newer so we skip installation
+	if c > 0 {
+		return isNew, nil
+	}
+
+	// the new requirement is newer so we checkout the cloned repo to that tag, change the version in the existing
+	// requirement and replace the code in the /pkg folder
+	existing.version = req.version
+	if err = r.checkout(req.version); err != nil {
+		return isNew, err
+	}
+	if err = replace(req, tmpPath, destPath); err != nil {
+		return isNew, err
+	}
+	isNew = true
+
+	return isNew, nil
+}
+
+func (f *file) write() error {
+	return ioutil.WriteFile(path.Join(f.workspacePath, filePath), f.contents().Bytes(), 0600)
 }
 
 func (f *file) contents() *bytes.Buffer {
