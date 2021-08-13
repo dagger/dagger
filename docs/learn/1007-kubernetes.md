@@ -752,96 +752,17 @@ of the language features.
 
 ### Convert Kubernetes objects to CUE
 
-First, let's create re-usable definitions for the `deployment` and the `service` to remove a lot of boilerplate
-and repetition.
+First, let's create re-usable definitions for the `deployment` and the `service` to remove a lot of boilerplate and
+repetition.
 
 Let's define a re-usable `#Deployment` definition in `kube/deployment.cue`.
 
-```cue title="todoapp/kube/deployment.cue"
-package main
-
-// Deployment template containing all the common boilerplate shared by
-// deployments of this application.
-#Deployment: {
-  // Name of the deployment. This will be used to label resources automatically
-  // and generate selectors.
-  name: string
-
-  // Container image.
-  image: string
-
-  // 80 is the default port.
-  port: *80 | int
-
-  // 1 is the default, but we allow any number.
-  replicas: *1 | int
-
-  // Deployment manifest. Uses the name, image, port and replicas above to
-  // generate the resource manifest.
-  manifest: {
-    apiVersion: "apps/v1"
-    kind:       "Deployment"
-    metadata: {
-      "name": name
-      labels: app: name
-    }
-    spec: {
-      "replicas": replicas
-      selector: matchLabels: app: name
-      template: {
-        metadata: labels: app: name
-        spec: containers: [{
-          "name":  name
-          "image": image
-          ports: [{
-            containerPort: port
-          }]
-        }]
-      }
-    }
-  }
-}
+```cue file=tests/kube-kind/cue-manifest/deployment.cue title="todoapp/kube/deployment.cue"
 ```
 
 Indeed, let's also define a re-usable `#Service` definition in `kube/service.cue`.
 
-```cue title="todoapp/kube/service.cue"
-package main
-
-// Service template containing all the common boilerplate shared by
-// services of this application.
-#Service: {
-  // Name of the service. This will be used to label resources automatically
-  // and generate selector.
-  name: string
-
-  // NodePort is the default service type.
-  type: *"NodePort" | "LoadBalancer" | "ClusterIP" | "ExternalName"
-
-  // Ports where the service should listen
-  ports: [string]: number
-
-  // Service manifest. Uses the name, type and ports above to
-  // generate the resource manifest.
-  manifest: {
-    apiVersion: "v1"
-    kind:       "Service"
-    metadata: {
-      "name": "\(name)-service"
-      labels: app: name
-    }
-    spec: {
-      "type": type
-        "ports": [
-          for k, v in ports {
-            "name": k
-            port:   v
-          },
-        ]
-        selector: app: name
-    }
-  }
-}
+```cue file=tests/kube-kind/cue-manifest/service.cue title="todoapp/kube/service.cue"
 ```
 
 ### Generate Kubernetes manifest
@@ -851,36 +772,7 @@ without having boilerplate nor repetition.
 
 Create a new definition named `#AppManifest` that will generate the YAML in `kube/manifest.cue`.
 
-```cue title="todoapp/kube/manifest.cue"
-package main
-
-import (
-  "encoding/yaml"
-)
-
-// Define and generate kubernetes deployment to deploy to kubernetes cluster
-#AppManifest: {
-  // Name of the application
-  name: string
-
-  // Image to deploy to
-  image: string
-
-  // Define a kubernetes deployment object
-  deployment: #Deployment & {
-    "name": name
-    "image": image
-  }
-
-  // Define a kubernetes service object
-  service: #Service & {
-    "name": name
-    ports: "http": deployment.port
-  }
-
-  // Merge definitions and convert them back from CUE to YAML
-  manifest: yaml.MarshalStream([deployment.manifest, service.manifest])
-}
+```cue file=tests/kube-kind/cue-manifest/manifest.cue title="todoapp/kube/manifest.cue"
 ```
 
 ### Update manifest
@@ -892,7 +784,8 @@ You can now remove the `manifest` input in `kube/todoapp.cue` and instead use th
 - removal of unused imported `encoding/yaml` and `kustomize` packages.
 - removal of `manifest` input that is doesn't need anymore.
 - removal of `kustomization` to replace it with `#AppManifest` definition.
-- Update `kubeSrc` to use `manifest` field instead of `source` because we don't send Kubernetes manifest of `dagger.#Artifact` type anymore.
+- Update `kubeSrc` to use `manifest` field instead of `source` because we don't send Kubernetes manifest
+  of `dagger.#Artifact` type anymore.
 
 <Tabs defaultValue="kind"
 groupId="provider"
@@ -902,48 +795,7 @@ values={[
 
   <TabItem value="kind">
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// Registry to push images to
-registry: string & dagger.#Input
-tag:      "test-kind"
-
-// Todoapp deployment pipeline
-todoApp: {
-  // Build the image from repositoru artifact
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push image to registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-  }
-
-  // Generate deployment manifest
-  deployment: #AppManifest & {
-    name:  "todoapp"
-    image: remoteImage.ref
-  }
-
-  // Deploy the customized manifest to a kubernetes cluster
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    manifest:     deployment.manifest
-  }
-}
+```cue file=tests/kube-kind/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
