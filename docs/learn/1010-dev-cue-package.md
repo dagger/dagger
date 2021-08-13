@@ -4,10 +4,9 @@ slug: /1010/dev-cue-package/
 
 # Develop a new CUE package for Dagger
 
-This tutorial illustrates how to create new packages, manually distribute them among your applications and contribute to
-the Dagger stdlib packages.
+This tutorial illustrates how to create new packages, manually distribute them among your applications and contribute to the Dagger stdlib packages.
 
-## Creating your own package
+## Creating your package
 
 ### Initializing workspace
 
@@ -24,7 +23,7 @@ As described in the previous tutorials, initialize your Dagger workspace:
 dagger init
 ```
 
-That will create 2 directories: `.dagger` and `cue.mod` where our package will reside:
+That will create two directories: `.dagger` and `cue.mod`, where our package will reside:
 
 ```shell
 .
@@ -38,8 +37,8 @@ That will create 2 directories: `.dagger` and `cue.mod` where our package will r
 
 ### Writing the package
 
-Now that you've initialized your workspace it's time to write a simple package. Package name usually starts with a
-domain name (as in Go) followed with a descriptive name. In this example we reuse the Cloud Run example and create a
+Now that you've initialized your workspace, it's time to write a simple package. Package name usually starts with a
+domain name (as in Go) followed by a descriptive name. In this example, we reuse the Cloud Run example and create a
 package from it.
 
 ```shell
@@ -52,69 +51,15 @@ Let's write the package logic. It is basically what we've seen in the 106-cloudr
 touch cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
 ```
 
-```cue title="cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue"
-package gcpcloudrun
-
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/gcp"
-  "alpha.dagger.io/gcp/cloudrun"
-  "alpha.dagger.io/gcp/gcr"
-)
-
-#Run: {
-  // Source code of the sample application
-  src: dagger.#Artifact & dagger.#Input
-
-  // GCR full image name
-  imageRef: string & dagger.#Input
-
-  image: docker.#Build & {
-      source: src
-  }
-
-  gcpConfig: gcp.#Config
-
-  creds: gcr.#Credentials & {
-      config: gcpConfig
-  }
-
-  push: docker.#Push & {
-      target: imageRef
-      source: image
-      auth: {
-          username: creds.username
-          secret: creds.secret
-      }
-  }
-
-  deploy: cloudrun.#Service & {
-      config: gcpConfig
-      image:  push.ref
-  }
-}
+```cue file=./tests/dev-cue-package/source.cue title="cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue"
 ```
 
 ### Running the package
 
-Now that you've successfully created a package, let's run it in a new environment. Create a new test package using
+Now that you've successfully created a package let's run it in a new environment. Create a new test package using
 our reusable `gcpcloudrun`:
 
-```shell
-mkdir test
-
-cat > test/source.cue << EOF
-package test
-
-import (
-  "github.com/tjovicic/gcpcloudrun"
-)
-
-run: gcpcloudrun.#Run
-EOF
-
-dagger new staging -p ./test
+```cue file=./tests/dev-cue-package/script.sh#L3-L16
 ```
 
 Run it:
@@ -138,7 +83,7 @@ You should see a familiar output:
 ## Manually distributing packages
 
 You've probably guessed this package isn't tied to just your workspace. You can easily copy/paste it into any number
-of different workspaces and use it as we've showed above.
+of different workspaces and use it as we've shown above.
 
 ```shell
 mkdir -p /my-new-workspace/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
@@ -147,7 +92,7 @@ cp ./cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue /new-workspace/cue.m
 
 ## Contributing to Dagger stdlib
 
-Our [stdlib](https://github.com/dagger/dagger/tree/main/stdlib) has many useful packages that you can use.
+Our [stdlib](https://github.com/dagger/dagger/tree/main/stdlib) has many valuable packages that you can use.
 You've probably seen it when you've initialized your workspace:
 
 ```shell
@@ -160,6 +105,5 @@ You've probably seen it when you've initialized your workspace:
 │   └── usr
 ```
 
-We are still a small community and are constantly looking for new contributors that will work with us improve this
-amazing project. If you feel like we are missing a package or want to improve an existing one, please start with our
+We are still a small community and are constantly looking for new contributors that will work with us to improve this fantastic project. If you feel like we are missing a package or want to improve an existing one, please start with our
 [contributing docs](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md) and open a PR.

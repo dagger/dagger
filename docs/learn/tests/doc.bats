@@ -142,3 +142,22 @@ setup() {
     dagger -e cloudformation input text stackRemoval.stackName $stackName
     dagger -e cloudformation up
 }
+
+@test "doc-1010-dev-cue-package" {
+    setup_example_sandbox ""
+
+    # Initializing workspace
+    mkdir workspace
+    cd workspace
+
+    # Writing the package
+    dagger init
+    mkdir -p cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+    cp $CODEBLOC_SRC/dev-cue-package/source.cue cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
+    cp $CODEBLOC_SRC/dev-cue-package/script.sh .
+
+    chmod +x script.sh
+    ./script.sh
+    run dagger up -e staging
+    assert_output --partial "environment=staging input=run.gcpConfig.serviceKey"
+}
