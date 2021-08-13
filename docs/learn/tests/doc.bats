@@ -78,3 +78,70 @@ setup() {
     run dagger -e gcpcloudrun up
     assert_success
 }
+
+@test "doc-1008-aws-cloudformation" {
+    setup_example_sandbox "doc"
+
+    ### Create a basic plan
+    ## Construct
+    mkdir cloudformation
+    cp $CODEBLOC_SRC/cloudformation/template.cue cloudformation
+
+    # Cloudformation relay
+    dagger doc alpha.dagger.io/aws/cloudformation
+    cp $CODEBLOC_SRC/cloudformation/source-begin.cue cloudformation/source.cue
+
+    # Initialize new env
+    dagger new 'cloudformation' -p cloudformation
+
+    # Finish template setup
+    cp $CODEBLOC_SRC/cloudformation/source-end.cue cloudformation/source.cue
+    # Copy corresponding env
+    cp -r $CODEBLOC_SRC/.dagger/env/cloudformation .dagger/env/
+
+    # Run test
+    dagger -e cloudformation up
+    stackName=$(dagger -e cloudformation query cfnStackName -f text)
+
+    ## Cleanup
+    # Place back empty source
+    cp $CODEBLOC_SRC/cloudformation/source-begin.cue cloudformation/source.cue
+    cp $CODEBLOC_SRC/cloudformation/deletion.cue cloudformation/deletion.cue
+    # Prepare and run cloudformation cleanup
+    dagger -e cloudformation input text stackRemoval.stackName $stackName
+    dagger -e cloudformation up
+
+    ### Template part
+    ## Create convert.cue
+    cp $CODEBLOC_SRC/cloudformation/template/convert.cue cloudformation/convert.cue
+    rm cloudformation/source.cue cloudformation/deletion.cue
+
+    ## Retrieve Unmarshalled JSON
+    dagger query -e cloudformation s3Template
+
+    ## Remove convert.cue
+    rm cloudformation/convert.cue
+    ## Store the output
+    cp $CODEBLOC_SRC/cloudformation/template/template-begin.cue cloudformation/template.cue
+    # Inspect conf
+    dagger query -e cloudformation template -f text
+
+    cp $CODEBLOC_SRC/cloudformation/template/deployment.cue cloudformation/deployment.cue
+    cp $CODEBLOC_SRC/cloudformation/template/template-end.cue cloudformation/template.cue
+    cp $CODEBLOC_SRC/cloudformation/source-end.cue cloudformation/source.cue
+
+    # Deploy again
+    dagger -e cloudformation query template -f text
+    dagger -e cloudformation up
+    dagger -e cloudformation output list
+
+    ## Cleanup again
+    stackName=$(dagger -e cloudformation query cfnStackName -f text)
+    rm -rf cloudformation/*
+    # Place back empty source
+    cp $CODEBLOC_SRC/cloudformation/source-begin.cue cloudformation/source.cue
+    cp $CODEBLOC_SRC/cloudformation/deletion.cue cloudformation/deletion.cue
+    # Prepare and run cloudformation cleanup
+    dagger -e cloudformation input text stackRemoval.stackName $stackName
+    dagger -e cloudformation up
+}
