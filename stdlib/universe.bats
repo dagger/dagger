@@ -184,3 +184,8 @@ setup() {
     run dagger -w "$DAGGER_SANDBOX" -e terraform input unset TestTerraform.apply.tfvars.input
     assert_success
 }
+
+@test "azure-resourcegroup" {
+    skip "Azure CI infra not implemented yet - manually tested and working"
+    #dagger -e azure-resourcegroup up
+}
