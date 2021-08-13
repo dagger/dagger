@@ -43,9 +43,6 @@ setup() {
     # Initialize new env
     dagger new 'multibucket' -p ./multibucket
 
-    # Check inputs
-    dagger input list -e multibucket
-
     # Copy corresponding env
     cp -r $CODEBLOC_SRC/.dagger/env/multibucket .dagger/env/
     # Add missing src input

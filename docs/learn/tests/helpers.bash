@@ -42,8 +42,8 @@ setup_example_sandbox() {
     export CODEBLOC_SRC="$(pwd)"
     local tmpdir=$(mktemp -d)
     cd $tmpdir
-    git clone https://github.com/dagger/examples
     if [ "$1" = "doc" ]; then
+        git clone https://github.com/dagger/examples
         cd examples/todoapp
         cue mod init
     fi
