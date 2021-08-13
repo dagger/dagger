@@ -59,3 +59,22 @@ setup() {
     run curl $url
     assert_output --partial "./static/css/main.9149988f.chunk.css"
 }
+
+@test "doc-1006-google-cloud-run" {
+    setup_example_sandbox "doc"
+
+    mkdir gcpcloudrun
+    cp $CODEBLOC_SRC/gcpcloudrun/source.cue gcpcloudrun
+
+    # Initialize new env
+    dagger new 'gcpcloudrun' -p gcpcloudrun
+
+    # Copy corresponding env
+    cp -r $CODEBLOC_SRC/.dagger/env/gcpcloudrun .dagger/env/
+    # Add missing src input
+    dagger -e gcpcloudrun input dir src .
+
+    # Run test
+    run dagger -e gcpcloudrun up
+    assert_success
+}
