@@ -1,0 +1,26 @@
+plan:
+    package: ./argocd/tests
+name: argocd
+inputs:
+    TestConfig.argocdConfig.token:
+        secret: ENC[AES256_GCM,data:/iN8Xv5Gsr3E6NphR6+SyVLI2vvyWKED3b28,iv:ZZYKy3L5n4izaw/UM+2TaEFMlXCuBgewqY8LxS3ckuo=,tag:OeBGkvNSyO1wXHld6e0oVQ==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1ajcyrzr7xlhfpge6pd0zruqpggp4624hhrkslxytyvjgks5rzsrs8y95av
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGcGVyeENBZWl6VmZ5NEVo
+            QTB4QjlXeS8wRnpXOFIvU294M25ieUVZR0RjCjFMbkRQdlRqYjJZNDNubVZ3d0d6
+            TjNUaVJOVzBkM0pBUUswdVZLMTV1R3MKLS0tIHUzMEpjempnemsvY0dFVnZ0cThh
+            NFRwMyt0NUR5b1ViTlRxcnNHUTR0UXMKqpP24y8fPz5/tkx0YBGC7huylg1xIv2Q
+            MAjqMAk6tjZMX1va9VTTu2aaWwlZCBX6WE23gaIYuVCpbqGyp1B/WQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-08-13T19:52:35Z"
+    mac: ENC[AES256_GCM,data:gjNL1Tkf96MSABBuvr6itPh5HjfESefMF2yPyqluR73BvcIIC1zimYmy2laAVjPzxN9JmqCmZJ9v1iQ99BKB8WJ40sHlztl1f7gCcnwiBYWuV+8YfvMYhdyZrmWNlhhIt8hHMcloNR2/DnH8hIJZVjF1dNmSyIqnMv6bM5oaQhA=,iv:ZzpW6bzbzvbrH/PKLhBFRk+D70opxdl2AnvXXium204=,tag:gMAw8d2Qg2upptV0xXeQ9w==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

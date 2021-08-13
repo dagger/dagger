@@ -1,6 +1,8 @@
 # Index
 
 - [alpine](./alpine.md) - Base package for Alpine Linux
+- [argocd](./argocd/README.md) - ArgoCD client operations
+- [argocd/app](./argocd/app.md) - ArgoCD applications
 - [aws](./aws/README.md) - AWS base package
 - [aws/cloudformation](./aws/cloudformation.md) - AWS CloudFormation
 - [aws/ecr](./aws/ecr.md) - Amazon Elastic Container Registry (ECR)
