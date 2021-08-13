@@ -36,7 +36,7 @@ shellcheck:
 lint: shellcheck cuelint golint docslint
 
 .PHONY: integration
-integration: core-integration universe-test
+integration: core-integration universe-test doc-test
 
 .PHONY: core-integration
 core-integration: dagger-debug
