@@ -90,7 +90,22 @@ setup() {
   dagger -w "$DAGGER_SANDBOX" -e kube-kind-basic up
 
   # Check deployment
-  kubectl get deployment
+  kubectl describe deployment todoapp | grep 'True'
+
+  # Clean
+  kubectl delete deployments --all
+
+   #################### DEPLOYMENT ####################
+   copy_to_sandbox kube-kind-deployment kube-kind
+
+  # Add kubeconfig
+  dagger -w "$DAGGER_SANDBOX" -e kube-kind-deployment input text kubeconfig -f "$HOME"/.kube/config
+
+  # Up deployment
+  dagger -w "$DAGGER_SANDBOX" -e kube-kind-deployment up
+
+  # Check deployment
+  kubectl describe deployment todoapp | grep 'True'
 
   # Clean
   kubectl delete deployments --all
