@@ -414,32 +414,7 @@ The two files have to be edited to do so.
 
 - definition of a new `gcrCreds` value that contains ecr credentials for remote image push to GCR
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/gcp"
- "alpha.dagger.io/gcp/gcr"
- "alpha.dagger.io/gcp/gke"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: gkeConfig.kubeconfig
-
-// gcpConfig used for Google connection
-gcpConfig: gcp.#Config
-
-// gkeConfig used for deployment
-gkeConfig: gke.#KubeConfig & {
- // config field references `gkeConfig` value to set in once
- config: gcpConfig
-}
-
-// gcrCreds used for remote image push
-gcrCreds: gcr.#Credentials & {
- // config field references `gcpConfig` value to set in once
-  config: gcpConfig
-}
+```cue file=tests/kube-gcp/deployment/config.cue title="todoapp/kube/config.cue"
 ```
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
@@ -450,68 +425,7 @@ gcrCreds: gcr.#Credentials & {
 - `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "encoding/yaml"
-
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-  "alpha.dagger.io/kubernetes/kustomize"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// GCR registry to push images to
-registry: string & dagger.#Input
-tag:      "test-gcr"
-
-// source of Kube config file.
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input
-
-// Declarative name
-todoApp: {
-  // Build an image from the project repository
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push the image to a remote registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-    auth: {
-      username: gcrCreds.username
-      secret:   gcrCreds.secret
-    }
-  }
-
-  // Update the image of the deployment to the deployed image
-  kustomization: kustomize.#Kustomize & {
-    source:        manifest
-
-    // Convert CUE to YAML.
-    kustomization: yaml.Marshal({
-      resources: ["deployment.yaml", "service.yaml"]
-
-      images: [{
-        name:    "public.ecr.aws/j7f8d3t2/todoapp"
-        newName: remoteImage.ref
-      }]
-    })
-  }
-
-  // Value created for generic reference of `kubeconfig` in `todoapp.cue`
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    source:     kustomization
-  }
-}
+```cue file=tests/kube-gcp/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
