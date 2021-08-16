@@ -76,7 +76,7 @@ setup() {
 }
 
 @test "docker run: local" {
-    skip "Not implemented yet + missing inputs leading to failure"  
+    skip "Not implemented yet + missing inputs leading to failure"
     # dagger -e docker-run-local up
 }
 
@@ -217,6 +217,6 @@ setup() {
 
 
 @test "argocd" {
-    skip "ArgoCD CI secrets not yet generated"
+    skip "ArgoCD CI secrets not yet generated - Infra not implemented yet"
     #dagger -e argocd up
 }
