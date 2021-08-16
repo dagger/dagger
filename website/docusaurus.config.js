@@ -16,6 +16,7 @@ module.exports = {
   ],
   themeConfig: {
     sidebarCollapsible: true,
+    sidebarCollapsed: false,
     prism: {
       theme: require("prism-react-renderer/themes/okaidia"),
     },
@@ -23,8 +24,33 @@ module.exports = {
       logo: {
         alt: "Dagger Logo",
         src: "img/dagger-logo.png",
-        srcDark: "img/dagger_logo_dark.png",
       },
+      items: [
+        {
+          type: "search",
+          position: "right",
+        },
+        {
+          position: "right",
+          label: "Discord",
+          href: "https://discord.gg/ufnyBtc8uY",
+          className: "header-discord-link",
+          "aria-label": "Discord community",
+        },
+        {
+          position: "right",
+          label: "Github",
+          href: "https://github.com/dagger/dagger",
+          className: "header-github-link hide-target-icon",
+          "aria-label": "GitHub repository",
+        },
+        {
+          position: "right",
+          label: "Schedule a demo",
+          href: "https://calendly.com/dagger-io/meet-the-dagger-team",
+          className: "button",
+        },
+      ],
     },
     algolia: {
       apiKey: "b2324f1ac8932ab80916382521473115",
