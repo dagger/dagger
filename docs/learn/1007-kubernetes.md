@@ -223,25 +223,7 @@ The below `config.cue` defines:
 - `eksConfig`, transform a `awsConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/aws/eks`
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/aws"
- "alpha.dagger.io/aws/eks"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: eksConfig.kubeconfig
-
-// awsConfig for Amazon connection
-awsConfig: aws.#Config
-
-// eksConfig used for deployment
-eksConfig: eks.#KubeConfig & {
- // config field references `gkeConfig` value to set in once
- config: awsConfig
-}
+```cue file=tests/kube-aws/basic/config.cue title="todoapp/kube/config.cue"
 ```
 
   </TabItem>
@@ -448,7 +430,7 @@ The two files have to be edited to do so.
 
 `kube/config.cue` configuration has following change:
 
-- definition of a new `ecrCreds` value that contains ecr credentials for remote image push to GCR
+- definition of a new `gcrCreds` value that contains ecr credentials for remote image push to GCR
 
 ```cue title="todoapp/kube/config.cue"
 package main
@@ -562,32 +544,7 @@ The two files have to be edited to do so.
 
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to ECR
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/aws"
- "alpha.dagger.io/aws/eks"
- "alpha.dagger.io/aws/ecr"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: eksConfig.kubeconfig
-
-// awsConfig for Amazon connection
-awsConfig: aws.#Config
-
-// eksConfig used for deployment
-eksConfig: eks.#KubeConfig & {
- // config field references `awsConfig` value to set in once
- config: awsConfig
-}
-
-// ecrCreds used for remote image push
-ecrCreds: ecr.#Credentials & {
- // config field references `awsConfig` value to set in once
-  config: awsConfig
-}
+```cue file=tests/kube-aws/deployment/config.cue title="todoapp/kube/config.cue"
 ```
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
@@ -598,67 +555,7 @@ ecrCreds: ecr.#Credentials & {
 - `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "encoding/yaml"
-
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-  "alpha.dagger.io/kubernetes/kustomize"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// ECR registry to push images to
-registry: string & dagger.#Input
-tag:      "test-ecr"
-
-// source of Kube config file.
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input
-
-todoApp: {
-  // Build an image from the project repository
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push the image to a remote registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-    auth: {
-      username: ecrCreds.username
-      secret:   ecrCreds.secret
-    }
-  }
-
-  // Update the image of the deployment to the deployed image
-  kustomization: kustomize.#Kustomize & {
-    source:        manifest
-
-    // Convert CUE to YAML.
-    kustomization: yaml.Marshal({
-      resources: ["deployment.yaml", "service.yaml"]
-
-      images: [{
-        name:    "public.ecr.aws/j7f8d3t2/todoapp"
-        newName: remoteImage.ref
-      }]
-    })
-  }
-
-  // Value created for generic reference of `kubeconfig` in `todoapp.cue`
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    source:     kustomization
-  }
-}
+```cue file=tests/kube-aws/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>

@@ -80,7 +80,7 @@ setup() {
   skip_unless_local_kube
 
   #################### BASIC ####################
-  # Copy deployment to sendbox
+  # Copy deployment to sandbox
   copy_to_sandbox kube-kind-basic kube-kind
 
   # Add kubeconfig
@@ -94,8 +94,10 @@ setup() {
 
   # Clean
   kubectl delete deployments --all
+  kubectl delete services --all
 
   #################### DEPLOYMENT ####################
+  # Copy deployment to sandbox
   copy_to_sandbox kube-kind-deployment kube-kind
 
   # Add kubeconfig
@@ -109,8 +111,10 @@ setup() {
 
   # Clean
   kubectl delete deployments --all
+  kubectl delete services --all
 
   #################### CUE MANIFEST ####################
+  # Copy deployment to sandbox
   copy_to_sandbox kube-kind-cue-manifest kube-kind
 
   # Add kubeconfig
@@ -124,6 +128,24 @@ setup() {
 
   # Clean
   kubectl delete deployments --all
+  kubectl delete services --all
+}
+
+@test "doc-1007-kube-aws" {
+  #################### BASIC ####################
+  # Copy deployment to sandbox
+  copy_to_sandbox kube-aws-basic kube-aws
+
+  # Up deployment
+  dagger -w "$DAGGER_SANDBOX" -e kube-aws-basic up
+
+  #################### DEPLOYMENT ####################
+   # Copy deployment to sandbox
+  copy_to_sandbox kube-aws-deployment kube-aws
+
+  # Up deployment
+  dagger -w "$DAGGER_SANDBOX" -e kube-aws-deployment up
+  #################### CUE MANIFEST ####################
 }
 
 @test "doc-1008-aws-cloudformation" {
