@@ -191,25 +191,7 @@ The below `config.cue` defines:
 - `gkeConfig`: transform a `gcpConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/gcp/gke`
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/gcp"
- "alpha.dagger.io/gcp/gke"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: gkeConfig.kubeconfig
-
-// gcpConfig used for Google connection
-gcpConfig: gcp.#Config
-
-// gkeConfig used for deployment
-gkeConfig: gke.#KubeConfig & {
- // config field references `gkeConfig` value to set in once
- config: gcpConfig
-}
+```cue file=tests/kube-gcp/basic/config.cue title="todoapp/kube/config.cue"
 ```
 
   </TabItem>
