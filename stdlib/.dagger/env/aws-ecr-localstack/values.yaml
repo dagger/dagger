@@ -1,0 +1,30 @@
+plan:
+    package: ./aws/ecr/tests
+name: aws-ecr-localstack
+inputs:
+    TestConfig.awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:t/iOlA==,iv:oLhubqSKZqn5lVPFn8On//LPj1deAFPXKVTyBKdVODQ=,tag:PORmrxDIf/MHbFDrdxnlTQ==,type:str]
+    TestConfig.awsConfig.localMode:
+        text: "true"
+    TestConfig.awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:2HYF9w==,iv:f/a9dy4HLJOtKdn8G+zKTboXU1YhzXBEKT1WSvrsCvk=,tag:RKQO+Pg3wg23LIMAnyXhMA==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKeEk5MS9nVmFoOVNNOHdE
+            WnZCTXBWbW9LL1NJYndCYjhIM2JsNXNEUmxJCkUya0dlZjZ0dGRIM1pVdzg5eWFH
+            MVpiaE9PclNudGdUZm5FcytuVDZGTDAKLS0tIEQxWDdteHgzS3JkdmtNTVpxMUh1
+            aXlvVWJVSGNTSkVyYmpZbi9nUVJZdmMK6csXZ2RMxFw5DB+Hb2TyhyoZT8c2/z7Y
+            Lc9Pe8gb8aUq5Ha+wCybYvY6JWEM5A9XYJKbE7f4borTfGKS72d6pw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-08-16T20:52:50Z"
+    mac: ENC[AES256_GCM,data:31GBJoqzJOt2q29ql9xTGvhg6XaMupZliAEx2XXD19CvJuAlPdkkbdOP1quEDjHqeBfWUZlTTnqqm2HdSjJ9MgS7aSpgIwb65g/KMez/13QKqlicKaOT55uuyPmWh9+p0rSBCWTHo1vcZldXEuQ9eohwgkV1xHGU3tV+IsmlfrM=,iv:ISdTPiT3rUpZrmMoMBDYmQEB5Q6Tg5fx8leAS3B2kBU=,tag:z/4/2MS6CSlEC++9kCKn5Q==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

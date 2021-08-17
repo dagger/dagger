@@ -11,11 +11,19 @@ TestConfig: awsConfig: aws.#Config & {
 }
 
 TestECR: {
+	localMode: TestConfig.awsConfig.localMode
+
 	suffix: random.#String & {
 		seed: ""
 	}
 
-	repository: "125635003186.dkr.ecr.\(TestConfig.awsConfig.region).amazonaws.com/dagger-ci"
+	repository: string 
+	if localMode == null {
+		repository: "125635003186.dkr.ecr.\(TestConfig.awsConfig.region).amazonaws.com/dagger-ci"
+	}
+	if localMode != null {
+		repository: "localhost:4514/dagger-ci"
+	}
 	tag:        "test-ecr-\(suffix.out)"
 
 	creds: #Credentials & {
