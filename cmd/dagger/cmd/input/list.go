@@ -62,6 +62,13 @@ var listCmd = &cobra.Command{
 					}
 				}
 
+				if !viper.GetBool("show-optional") && !viper.GetBool("all") {
+					// skip input if there is already a default value
+					if hasDefault {
+						continue
+					}
+				}
+
 				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n",
 					inp.Path(),
 					common.FormatValue(inp),
@@ -95,6 +102,7 @@ func isUserSet(env *state.State, val *compiler.Value) bool {
 
 func init() {
 	listCmd.Flags().BoolP("all", "a", false, "List all inputs (include non-overridable)")
+	listCmd.Flags().Bool("show-optional", false, "List optional inputs (those with default values)")
 
 	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
 		panic(err)
