@@ -189,3 +189,8 @@ setup() {
     skip "Azure CI infra not implemented yet - manually tested and working"
     #dagger -e azure-resourcegroup up
 }
+
+@test "azure-storage" {
+    skip "Azure CI infra not implemented yet - manually tested and working"
+    #dagger -e azure-storage up
+}
