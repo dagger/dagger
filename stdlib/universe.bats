@@ -45,8 +45,20 @@ setup() {
     dagger -e aws-ecr up
 }
 
+@test "aws: ecr/localstack" {
+    skip_unless_local_localstack
+
+    dagger -e aws-ecr-localstack up
+}
+
 @test "aws: s3" {
     dagger -e aws-s3 up
+}
+
+@test "aws: s3/localstack" {
+    skip_unless_local_localstack
+
+    dagger -e aws-s3-localstack up
 }
 
 @test "aws: eks" {
