@@ -139,11 +139,20 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		Interface("attrs", opts.FrontendAttrs).
 		Msg("spawning buildkit job")
 
+	solverCh := make(chan *bk.SolveStatus)
+	defer close(solverCh)
+	go func() {
+		for e := range solverCh {
+			fmt.Println("J'envoie un event depuis pushContainer")
+			ch <- e
+		}
+	}()
+
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		s := solver.New(solver.Opts{
 			Control: c.c,
 			Gateway: gw,
-			Events:  ch,
+			Events:  solverCh,
 			Auth:    auth,
 			Secrets: secrets,
 			NoCache: c.cfg.NoCache,
