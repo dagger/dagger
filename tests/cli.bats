@@ -336,12 +336,15 @@ setup() {
 @test "dagger input git" {
     "$DAGGER" init
 
-    dagger_new_with_plan input "$TESTDIR"/cli/input/artifact
+    ## Test simple input git
+    dagger_new_with_plan "input-simple-git" "$TESTDIR"/cli/input/artifact
 
     # input git
-    "$DAGGER" input -e "input" git "source" https://github.com/samalba/dagger-test-simple.git
-    "$DAGGER" up -e "input"
-    run "$DAGGER" -l error query -e "input"
+    "$DAGGER" -e "input-simple-git" input list
+    "$DAGGER" -e "input-simple-git" input git source "https://github.com/samalba/dagger-test-simple"
+    "$DAGGER" -e "input-simple-git" input list
+    "$DAGGER" -e "input-simple-git" up --no-cache
+    run "$DAGGER" -l error query -e "input-simple-git"
     assert_output '{
   "bar": "testgit\n",
   "foo": "bar",
@@ -349,12 +352,21 @@ setup() {
 }'
 
     # unset input git
-    "$DAGGER" input -e "input" unset "source"
-    "$DAGGER" up -e "input"
-    run "$DAGGER" -l error query -e "input"
+    "$DAGGER" input -e "input-simple-git" unset "source"
+    "$DAGGER" up -e "input-simple-git"
+    run "$DAGGER" -l error query -e "input-simple-git"
     assert_output '{
   "foo": "bar"
 }'
+
+    ## Test input git with subdir
+    dagger_new_with_plan "input-subdir-git" "$TESTDIR"/cli/input/git
+
+    # input git
+    "$DAGGER" -e "input-subdir-git" input git TestRepo "https://github.com/dagger/examples" "main" "todoapp"
+
+    # Assert success (test is directly in the cue file)
+    "$DAGGER" -e "input-subdir-git" up
 }
 
 @test "dagger input list" {

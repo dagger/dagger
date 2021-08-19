@@ -139,10 +139,16 @@ func (git gitInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 		ref = git.Ref
 	}
 
+	dir := ""
+	if git.Dir != "" {
+		dir = fmt.Sprintf(`,{do:"subdir", dir:"%s"}`, git.Dir)
+	}
+
 	return compiler.Compile("", fmt.Sprintf(
-		`#up: [{do:"fetch-git", remote:"%s", ref:"%s"}]`,
+		`#up: [{do:"fetch-git", remote:"%s", ref:"%s"}%s]`,
 		git.Remote,
 		ref,
+		dir,
 	))
 }
 
