@@ -21,6 +21,7 @@ AWS CloudFormation Stack
 |*config.region*       | `string`                                     |AWS region                                                       |
 |*config.accessKey*    | `dagger.#Secret`                             |AWS access key                                                   |
 |*config.secretKey*    | `dagger.#Secret`                             |AWS secret key                                                   |
+|*config.localMode*    | `*null \| string`                            |AWS localstack mode                                              |
 |*source*              | `string`                                     |Source is the Cloudformation template (JSON/YAML string)         |
 |*stackName*           | `string`                                     |Stackname is the cloudformation stack                            |
 |*parameters*          | `struct`                                     |Stack parameters                                                 |

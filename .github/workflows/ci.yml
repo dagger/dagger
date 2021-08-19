@@ -100,13 +100,14 @@ jobs:
     timeout-minutes: 30
     services:
       localstack:
-        image: localstack/localstack:latest
+        image: localstack/localstack:0.12.16
         env:
           SERVICES: s3, ecr
           LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
         ports:
           - 4566:4566
           - 4571:4571
+          - 4510:4510
         options: >-
           --health-cmd "curl -f http://localhost:4566/health"
           --health-start-period 5s
@@ -137,7 +138,7 @@ jobs:
         env:
             AWS_ACCESS_KEY_ID: test
             AWS_SECRET_ACCESS_KEY: test
-            AWS_DEFAULT_REGION: eu-east-2
+            AWS_DEFAULT_REGION: us-east-2
         run: |
           aws --endpoint-url=http://localhost:4566 s3 mb s3://dagger-ci
           aws --endpoint-url=http://localhost:4566 ecr create-repository --repository-name dagger-ci

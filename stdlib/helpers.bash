@@ -58,9 +58,9 @@ copy_to_sandbox() {
       cp -a "$source_package" "$target_package"
     fi
 }
-# Check if there is a local kubernetes cluster.
+# Check if there is a localstack instance.
 #
-# This is need to do kubernetes test in the CI.
+# This is needed to do docs test in the CI.
 skip_unless_local_localstack() {
     if   [ "$(curl -s http://localhost:4566)" = '{"status": "running"}' ]; then
         echo "Localstack available"
