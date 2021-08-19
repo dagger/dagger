@@ -98,6 +98,22 @@ jobs:
     name: Universe
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      localstack:
+        image: localstack/localstack:latest
+        env:
+          SERVICES: s3, ecr
+          LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
+        ports:
+          - 4566:4566
+          - 4571:4571
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/health"
+          --health-start-period 5s
+          --health-timeout 5s
+          --health-interval 5s
+          --health-retries 10 
+
     steps:
       - name: Check out
         uses: actions/checkout@v2
@@ -116,7 +132,16 @@ jobs:
         run: |
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
-
+       
+      - name: Provision Localstack AWS resources
+        env:
+            AWS_ACCESS_KEY_ID: test
+            AWS_SECRET_ACCESS_KEY: test
+            AWS_DEFAULT_REGION: eu-east-2
+        run: |
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://dagger-ci
+          aws --endpoint-url=http://localhost:4566 ecr create-repository --repository-name dagger-ci
+      
       - name: Universe Test
         run: |
           make universe-test
