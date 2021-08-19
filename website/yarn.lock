@@ -6982,10 +6982,10 @@ react-side-effect@^2.1.0:
   resolved "https://registry.yarnpkg.com/react-side-effect/-/react-side-effect-2.1.1.tgz#66c5701c3e7560ab4822a4ee2742dee215d72eb3"
   integrity sha512-2FoTQzRNTncBVtnzxFOk2mCpcfxQpenBMbk5kSVBg5UcPqV9fRbgY2zhb7GTWWOlpFmAxhClBDlIq8Rsubz1yQ==
 
-react-social-login-buttons@^3.5.0:
-  version "3.5.0"
-  resolved "https://registry.yarnpkg.com/react-social-login-buttons/-/react-social-login-buttons-3.5.0.tgz#079b3aebcd5d92ccfdcd38fe80d2c56a7fa765c3"
-  integrity sha512-4oDkEpY3M8h3+MkqYq6xpfzvumnVE4DDars0xNCLJNZ7MikT+YN/IaZRFXCM0vV250iPrHpk+b6juw1HXOmWsw==
+react-social-login-buttons@^3.5.1:
+  version "3.5.1"
+  resolved "https://registry.yarnpkg.com/react-social-login-buttons/-/react-social-login-buttons-3.5.1.tgz#10c08885fb0c5280e2ca74d49734ac1f66ab8765"
+  integrity sha512-3TjHYARN9cOfEEl6uQeeB1oMV/dJ2lyxqK98Y+HuvP0E9Q0HJoFvNps6h6EYKE6Yw6LMllUeR5264tSqalM/ww==
 
 react-textarea-autosize@^8.3.2:
   version "8.3.2"
