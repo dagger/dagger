@@ -20,7 +20,7 @@ setup() {
     dagger_new_with_plan test-core "$TESTDIR"/core/inputs-outputs
 
     # List available inputs
-    run dagger -e test-core input list
+    run dagger -e test-core input list --show-optional
     assert_success
     assert_output --partial 'name'
     assert_output --partial 'dir'
