@@ -189,6 +189,22 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      localstack:
+        image: localstack/localstack:0.12.16
+        env:
+          SERVICES: s3, cloudformation
+          LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
+        ports:
+          - 4566:4566
+          - 4571:4571
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/health"
+          --health-start-period 5s
+          --health-timeout 5s
+          --health-interval 5s
+          --health-retries 10 
+
     steps:
       - name: Check out
         uses: actions/checkout@v2

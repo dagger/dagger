@@ -163,6 +163,7 @@ setup() {
 }
 
 @test "doc-1008-aws-cloudformation" {
+  skip_unless_local_localstack
   setup_example_sandbox "doc"
 
   ### Create a basic plan
@@ -236,7 +237,7 @@ setup() {
   mkdir workspace
   cd workspace
 
-  # Writing the package
+  # Writing package
   dagger init
   mkdir -p cue.mod/pkg/github.com/tjovicic/gcpcloudrun
   cp $CODEBLOC_SRC/dev-cue-package/source.cue cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue

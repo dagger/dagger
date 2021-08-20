@@ -3,11 +3,13 @@ plan:
 name: cloudformation
 inputs:
     awsConfig.accessKey:
-        secret: ENC[AES256_GCM,data:MJSSjaXpMawrpM5trPQzZR2Cg/M=,iv:D8Ff3Uy8hpzFPKg+okFkVM5DRam9Dyk31GjIizklvP0=,tag:J/7/+xjHdy94mYTQmB0sUw==,type:str]
+        secret: ENC[AES256_GCM,data:HaGzSQ==,iv:FzsuSq7ZKttWs0WDC0q+vT/hxUx+WcQ4iy7vnV+Q8Dg=,tag:Oy9Xxq+4LMVkXkF/3ZjjsA==,type:str]
+    awsConfig.localMode:
+        text: "true"
     awsConfig.region:
         text: us-east-2
     awsConfig.secretKey:
-        secret: ENC[AES256_GCM,data:BnBc29SIbLj3DDWwpem7mcLQSPoP6a/opqIYxLZyQPdSJojL/Jy9jA==,iv:nK3mj7jOgJdAwcO2i5OYj1FxHsYnoodyXMih9eqLnOQ=,tag:1zaXCkwL8d8ilyxCGzPN6Q==,type:str]
+        secret: ENC[AES256_GCM,data:aHDXVQ==,iv:ZEA4JLLedUvITocXE5G4Ar6pDNilyvgdvEYsMy/LVIk=,tag:BALivFcV0xBQD//qvo0aUw==,type:str]
     cfnStack.onFailure:
         text: DELETE
 sops:
@@ -25,8 +27,8 @@ sops:
             Lzd0bU1qMXF0dzIzTG05cmlzZURxUncKp2wNXD/HKXgGv16pM/yvaYfWL5lsQyWo
             CDsT4rHHMZ21XtS9W+7oL9IqMMmDUQf6RZgDgoqLVmTjdBeA8yB2yg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-08-13T02:12:09Z"
-    mac: ENC[AES256_GCM,data:tZ35vWWlepyQOuKtzO1pau51YQZZ+Lg2LKK9PlSJvJZYzp+QaUVMCsoTAkZXgMH12C9ced6Jo1pfV9kQjxG1/g+5JmjgClFCWCMTIRa8Z9iI3hGu35SjxG4KVRlmeZsjstEW+78JBOekBUWYzkX0vAlKq44qLLug3FDc+sxFetQ=,iv:yB85C7b5X4y/koB3zN3ktUoYrYdB7N07FvJigwjxao0=,tag:3PSTd39bLyPRa4uZzHycjg==,type:str]
+    lastmodified: "2021-08-20T13:10:08Z"
+    mac: ENC[AES256_GCM,data:UIhYTG5ofk04dPLOaYiryOt/JC+8/ousZlGpotAAenHOYVo0FChYKywofquOVlpqdC0a/wT6eEz59ofpxDuzV/8/Qh/5MumHqfJUYtQezQYVhreLpWdLsHTn99Ndqjzhj+on9ODumqsAOM+PgVEKRTxSHtTOZB8i4gfO77hg5nk=,iv:E11iRe9z+PxHCy9qtnEYVv+uXVxn1CfAqIgGspd5ObM=,tag:PzORtWy+xVwXof5nbHrDDw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
