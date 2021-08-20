@@ -243,8 +243,14 @@ setup() {
   cp $CODEBLOC_SRC/dev-cue-package/source.cue cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
   cp $CODEBLOC_SRC/dev-cue-package/script.sh .
 
+  # We remove the last line of the script, as bats cannot expand dagger
+  # to dagger() bats helper func inside bash files
+  sed '$d' < script.sh > tmpFile ; mv tmpFile script.sh
+
   chmod +x script.sh
   ./script.sh
+  # Command removed from script.sh above
+  dagger new staging -p ./test
   run dagger up -e staging
-  assert_output --partial "environment=staging input=run.gcpConfig.serviceKey"
+  assert_output --partial "input=run.gcpConfig.serviceKey"
 }
