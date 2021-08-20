@@ -6,7 +6,7 @@ require (
 	cuelang.org/go v0.4.0
 	filippo.io/age v1.0.0-rc.3
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
-	github.com/containerd/console v1.0.2
+	github.com/containerd/console v1.0.3
 	github.com/docker/buildx v0.6.1
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
