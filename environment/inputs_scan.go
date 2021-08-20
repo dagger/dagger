@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"cuelang.org/go/cue"
-	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 )
 
@@ -43,13 +42,11 @@ func isReference(val cue.Value) bool {
 }
 
 func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
-	lg := log.Ctx(ctx)
 	inputs := []*compiler.Value{}
 
 	value.Walk(
 		func(val *compiler.Value) bool {
 			if isReference(val.Cue()) {
-				lg.Debug().Str("value.Path", val.Path().String()).Msg("found reference, stop walk")
 				return false
 			}
 
@@ -57,7 +54,6 @@ func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 				return true
 			}
 
-			lg.Debug().Str("value.Path", val.Path().String()).Msg("found input")
 			inputs = append(inputs, val)
 
 			return true
@@ -68,7 +64,6 @@ func ScanInputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 }
 
 func ScanOutputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
-	lg := log.Ctx(ctx)
 	inputs := []*compiler.Value{}
 
 	value.Walk(
@@ -77,7 +72,6 @@ func ScanOutputs(ctx context.Context, value *compiler.Value) []*compiler.Value {
 				return true
 			}
 
-			lg.Debug().Str("value.Path", val.Path().String()).Msg("found output")
 			inputs = append(inputs, val)
 
 			return true

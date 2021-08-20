@@ -12,19 +12,16 @@ import (
 )
 
 // Build a cue configuration tree from the files in fs.
-func Build(sources map[string]fs.FS, args ...string) (*Value, error) {
+func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error) {
 	c := DefaultCompiler
 
 	buildConfig := &cueload.Config{
-		// The CUE overlay needs to be prefixed by a non-conflicting path with the
-		// local filesystem, otherwise Cue will merge the Overlay with whatever Cue
-		// files it finds locally.
-		Dir:     "/config",
+		Dir:     src,
 		Overlay: map[string]cueload.Source{},
 	}
 
 	// Map the source files into the overlay
-	for mnt, f := range sources {
+	for mnt, f := range overlays {
 		f := f
 		mnt := mnt
 		err := fs.WalkDir(f, ".", func(p string, entry fs.DirEntry, err error) error {

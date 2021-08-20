@@ -1,15 +1,12 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
-	"go.dagger.io/dagger/solver"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -45,28 +42,27 @@ var queryCmd = &cobra.Command{
 
 		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, state)
 
-		cl := common.NewClient(ctx)
 		cueVal := compiler.NewValue()
 
-		err := cl.Do(ctx, state, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
-			if !viper.GetBool("no-plan") {
-				if err := cueVal.FillPath(cue.MakePath(), env.Plan()); err != nil {
-					return err
-				}
+		if !viper.GetBool("no-plan") {
+			plan, err := state.CompilePlan(ctx)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to compile plan")
+			}
+			if err := cueVal.FillPath(cue.MakePath(), plan); err != nil {
+				lg.Fatal().Err(err).Msg("failed to compile plan")
+			}
+		}
+
+		if !viper.GetBool("no-input") {
+			inputs, err := state.CompileInputs()
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to compile inputs")
 			}
 
-			if !viper.GetBool("no-input") {
-				if err := cueVal.FillPath(cue.MakePath(), env.Input()); err != nil {
-					return err
-				}
+			if err := cueVal.FillPath(cue.MakePath(), inputs); err != nil {
+				lg.Fatal().Err(err).Msg("failed to compile inputs")
 			}
-			return nil
-		})
-
-		<-doneCh
-
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to query environment")
 		}
 
 		if !viper.GetBool("no-computed") && state.Computed != "" {
@@ -78,6 +74,8 @@ var queryCmd = &cobra.Command{
 				lg.Fatal().Err(err).Msg("failed to merge plan with computed")
 			}
 		}
+
+		<-doneCh
 
 		cueVal = cueVal.LookupPath(cuePath)
 
@@ -98,7 +96,7 @@ var queryCmd = &cobra.Command{
 		case "json":
 			fmt.Println(cueVal.JSON().PrettyString())
 		case "yaml":
-			lg.Fatal().Err(err).Msg("yaml format not yet implemented")
+			lg.Fatal().Msg("yaml format not yet implemented")
 		case "text":
 			out, err := cueVal.String()
 			if err != nil {

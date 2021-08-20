@@ -177,11 +177,6 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			NoCache: c.cfg.NoCache,
 		})
 
-		lg.Debug().Msg("loading configuration")
-		if err := env.LoadPlan(ctx, s); err != nil {
-			return nil, err
-		}
-
 		// Compute output overlay
 		if fn != nil {
 			if err := fn(ctx, env, s); err != nil {
