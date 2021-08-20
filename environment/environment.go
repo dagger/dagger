@@ -3,7 +3,6 @@ package environment
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"strings"
 	"time"
 
@@ -29,33 +28,38 @@ type Environment struct {
 	// Layer 2: user inputs
 	input *compiler.Value
 
+	// plan + inputs
+	src *compiler.Value
+
 	// Layer 3: computed values
 	computed *compiler.Value
 }
 
 func New(st *state.State) (*Environment, error) {
+	var err error
+
 	e := &Environment{
 		state: st,
-
-		plan:     compiler.NewValue(),
-		input:    compiler.NewValue(),
-		computed: compiler.NewValue(),
 	}
 
-	// Prepare inputs
-	for key, input := range st.Inputs {
-		v, err := input.Compile(key, st)
-		if err != nil {
-			return nil, err
-		}
-		if key == "" {
-			err = e.input.FillPath(cue.MakePath(), v)
-		} else {
-			err = e.input.FillPath(cue.ParsePath(key), v)
-		}
-		if err != nil {
-			return nil, err
-		}
+	e.plan, err = st.CompilePlan(context.TODO())
+	if err != nil {
+		return nil, err
+	}
+
+	e.input, err = st.CompileInputs()
+	if err != nil {
+		return nil, err
+	}
+
+	e.computed = compiler.NewValue()
+
+	e.src = compiler.NewValue()
+	if err := e.src.FillPath(cue.MakePath(), e.plan); err != nil {
+		return nil, err
+	}
+	if err := e.src.FillPath(cue.MakePath(), e.input); err != nil {
+		return nil, err
 	}
 
 	return e, nil
@@ -65,62 +69,8 @@ func (e *Environment) Name() string {
 	return e.state.Name
 }
 
-func (e *Environment) Plan() *compiler.Value {
-	return e.plan
-}
-
-func (e *Environment) Input() *compiler.Value {
-	return e.input
-}
-
 func (e *Environment) Computed() *compiler.Value {
 	return e.computed
-}
-
-// LoadPlan loads the plan
-func (e *Environment) LoadPlan(ctx context.Context, s solver.Solver) error {
-	tr := otel.Tracer("environment")
-	ctx, span := tr.Start(ctx, "environment.LoadPlan")
-	defer span.End()
-
-	// FIXME: universe vendoring
-	// This is already done on `dagger init` and shouldn't be done here too.
-	// However:
-	// 1) As of right now, there's no way to update universe through the
-	// CLI, so we are lazily updating on `dagger up` using the embedded `universe`
-	// 2) For backward compatibility: if the workspace was `dagger
-	// init`-ed before we added support for vendoring universe, it might not
-	// contain a `cue.mod`.
-	if err := e.state.VendorUniverse(ctx); err != nil {
-		return err
-	}
-
-	planSource, err := e.state.Source().Compile("", e.state)
-	if err != nil {
-		return err
-	}
-
-	p := NewPipeline(planSource, s).WithCustomName("[internal] source")
-	// execute updater script
-	if err := p.Run(ctx); err != nil {
-		return err
-	}
-
-	// Build a Cue config by overlaying the source with the stdlib
-	sources := map[string]fs.FS{
-		"/": p.FS(),
-	}
-	args := []string{}
-	if pkg := e.state.Plan.Package; pkg != "" {
-		args = append(args, pkg)
-	}
-	plan, err := compiler.Build(sources, args...)
-	if err != nil {
-		return fmt.Errorf("plan config: %w", compiler.Err(err))
-	}
-	e.plan = plan
-
-	return nil
 }
 
 // Scan all scripts in the environment for references to local directories (do:"local"),
@@ -168,33 +118,7 @@ func (e *Environment) LocalDirs() map[string]string {
 		localdirs(v.Lookup("#up"))
 	}
 
-	// 2. Scan the plan
-	plan, err := e.state.Source().Compile("", e.state)
-	if err != nil {
-		panic(err)
-	}
-	localdirs(plan)
 	return dirs
-}
-
-// prepare initializes the Environment with inputs and plan code
-func (e *Environment) prepare(ctx context.Context) (*compiler.Value, error) {
-	tr := otel.Tracer("environment")
-	_, span := tr.Start(ctx, "environment.Prepare")
-	defer span.End()
-
-	// Reset the computed values
-	e.computed = compiler.NewValue()
-
-	src := compiler.NewValue()
-	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
-		return nil, err
-	}
-	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
-		return nil, err
-	}
-
-	return src, nil
 }
 
 // Up missing values in environment configuration, and write them to state.
@@ -203,23 +127,24 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	ctx, span := tr.Start(ctx, "environment.Up")
 	defer span.End()
 
-	// Set user inputs and plan code
-	src, err := e.prepare(ctx)
-	if err != nil {
-		return err
-	}
-
 	// Orchestrate execution with cueflow
 	flow := cueflow.New(
 		&cueflow.Config{},
-		src.Cue(),
+		e.src.Cue(),
 		newTaskFunc(newPipelineRunner(e.computed, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
 	}
 
-	return nil
+	// FIXME: canceling the context makes flow return `nil`
+	// Check explicitly if the context is canceled.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
 }
 
 type DownOpts struct{}
@@ -328,20 +253,18 @@ func (e *Environment) ScanInputs(ctx context.Context, mergeUserInputs bool) ([]*
 	src := e.plan
 
 	if mergeUserInputs {
-		// Set user inputs and plan code
-		var err error
-		src, err = e.prepare(ctx)
-		if err != nil {
-			return nil, err
-		}
+		src = e.src
 	}
 
 	return ScanInputs(ctx, src), nil
 }
 
 func (e *Environment) ScanOutputs(ctx context.Context) ([]*compiler.Value, error) {
-	src, err := e.prepare(ctx)
-	if err != nil {
+	src := compiler.NewValue()
+	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
+		return nil, err
+	}
+	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
 		return nil, err
 	}
 
