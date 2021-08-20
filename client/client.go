@@ -104,8 +104,14 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 }
 
 func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
+	wg := sync.WaitGroup{}
+
 	// Close output channel
-	defer close(ch)
+	defer func() {
+		// Wait until all the events are caught
+		wg.Wait()
+		close(ch)
+	}()
 
 	lg := log.Ctx(ctx)
 
@@ -143,7 +149,6 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		Interface("attrs", opts.FrontendAttrs).
 		Msg("spawning buildkit job")
 
-	wg := sync.WaitGroup{}
 	// Catch output from events
 	catchOutput := func(inCh chan *bk.SolveStatus) {
 		for e := range inCh {
@@ -220,8 +225,6 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			Msg("exporter response")
 	}
 
-	// Wait until all the events are caught
-	wg.Wait()
 	return nil
 }
 
