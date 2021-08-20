@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -103,6 +104,9 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 }
 
 func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
+	// Close output channel
+	defer close(ch)
+
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -139,20 +143,35 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		Interface("attrs", opts.FrontendAttrs).
 		Msg("spawning buildkit job")
 
-	solverCh := make(chan *bk.SolveStatus)
-	defer close(solverCh)
-	go func() {
-		for e := range solverCh {
-			fmt.Println("J'envoie un event depuis pushContainer")
+	wg := sync.WaitGroup{}
+	// Catch output from events
+	catchOutput := func(inCh chan *bk.SolveStatus) {
+		for e := range inCh {
 			ch <- e
 		}
-	}()
+		wg.Done()
+	}
+
+	// Catch solver's events
+	// Closed manually
+	eventsCh := make(chan *bk.SolveStatus)
+	wg.Add(1)
+	go catchOutput(eventsCh)
+
+	// Catch build events
+	// Closed by buildkit
+	buildCh := make(chan *bk.SolveStatus)
+	wg.Add(1)
+	go catchOutput(buildCh)
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		// Close events channel
+		defer close(eventsCh)
+
 		s := solver.New(solver.Opts{
 			Control: c.c,
 			Gateway: gw,
-			Events:  solverCh,
+			Events:  eventsCh,
 			Auth:    auth,
 			Secrets: secrets,
 			NoCache: c.cfg.NoCache,
@@ -193,7 +212,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		res := bkgw.NewResult()
 		res.SetRef(ref)
 		return res, nil
-	}, ch)
+	}, buildCh)
 	if err != nil {
 		return solver.CleanError(err)
 	}
@@ -205,6 +224,9 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			Str("value", v).
 			Msg("exporter response")
 	}
+
+	// Wait until all the events are caught
+	wg.Wait()
 	return nil
 }
 
