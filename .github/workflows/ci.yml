@@ -121,7 +121,7 @@ jobs:
         run: |
           make universe-test
 
-  cypress-run:
+  website:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
