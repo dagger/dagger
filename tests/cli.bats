@@ -132,6 +132,43 @@ setup() {
 }'
 }
 
+@test "dagger input env" {
+  "$DAGGER" init
+
+  dagger_new_with_plan input "$TESTDIR"/cli/input/simple
+
+  # Simple input
+  export SIMPLE_INPUT=bar
+  "$DAGGER" -e "input" input env "input" SIMPLE_INPUT
+  "$DAGGER" -e "input" up
+     run "$DAGGER" -l error query -e "input" input
+    assert_success
+    assert_output "\"$SIMPLE_INPUT\""
+
+  # unset simple input
+  "$DAGGER" input -e "input" unset "input"
+  "$DAGGER" up -e "input"
+  run "$DAGGER" -l error query -e "input" input
+  assert_success
+  assert_output 'null'
+
+  # nested input
+  "$DAGGER" input -e "input" env "nested.input" SIMPLE_INPUT
+  "$DAGGER" up -e "input"
+  run "$DAGGER" -l error query -e "input" nested
+  assert_success
+  assert_output "{
+  \"input\": \"$SIMPLE_INPUT\"
+}"
+
+  # unset nested input
+  "$DAGGER" input -e "input" unset "nested.input"
+  "$DAGGER" up -e "input"
+  run "$DAGGER" -l error query -e "input" nested
+  assert_success
+  assert_output 'null'
+}
+
 @test "dagger input text" {
     "$DAGGER" init
 
