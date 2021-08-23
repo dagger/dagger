@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,7 @@ type Input struct {
 	YAML   *yamlInput   `yaml:"yaml,omitempty"`
 	File   *fileInput   `yaml:"file,omitempty"`
 	Bool   *boolInput   `yaml:"bool,omitempty"`
+	Env    *envInput    `yaml:"env,omitempty"`
 }
 
 func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
@@ -58,6 +60,8 @@ func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
 		return i.File.Compile(key, state)
 	case i.Bool != nil:
 		return i.Bool.Compile(key, state)
+	case i.Env != nil:
+		return i.Env.Compile(key, state)
 	default:
 		return nil, fmt.Errorf("input has not been set")
 	}
@@ -275,4 +279,22 @@ func (i fileInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 		return nil, err
 	}
 	return value, nil
+}
+
+type envInput string
+
+// An input value stored as environment
+func EnvInput(data string) Input {
+	i := envInput(data)
+	return Input{
+		Env: &i,
+	}
+}
+
+func (i envInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+	value, ok := os.LookupEnv(string(i))
+	if !ok {
+		return nil, fmt.Errorf("%q is not set in the environment", i)
+	}
+	return compiler.Compile("", fmt.Sprintf("%q", value))
 }
