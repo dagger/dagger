@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -23,12 +24,14 @@ type Solver struct {
 }
 
 type Opts struct {
-	Control *bk.Client
-	Gateway bkgw.Client
-	Events  chan *bk.SolveStatus
-	Auth    *RegistryAuthProvider
-	Secrets session.Attachable
-	NoCache bool
+	Control    *bk.Client
+	Gateway    bkgw.Client
+	Events     chan *bk.SolveStatus
+	EventsWg   *sync.WaitGroup
+	CloseEvent chan *bk.SolveStatus
+	Auth       *RegistryAuthProvider
+	Secrets    session.Attachable
+	NoCache    bool
 }
 
 func New(opts Opts) Solver {
@@ -169,9 +172,22 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 	// Forward this build session events to the main events channel, for logging
 	// purposes.
 	go func() {
-		for event := range ch {
-			s.opts.Events <- event
+		select {
+		case <-s.opts.CloseEvent:
+			return
+		default:
+			for event := range ch {
+				s.opts.Events <- event
+			}
 		}
+	}()
+
+	// Add task to events
+	s.opts.EventsWg.Add(1)
+
+	// Resolve event
+	defer func() {
+		s.opts.EventsWg.Done()
 	}()
 
 	return s.opts.Control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {

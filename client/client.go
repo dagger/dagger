@@ -170,16 +170,25 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 	go catchOutput(buildCh)
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		eventsWg := sync.WaitGroup{}
+		closeCh := make(chan *bk.SolveStatus)
+
 		// Close events channel
-		defer close(eventsCh)
+		defer func() {
+			close(closeCh)
+			eventsWg.Wait()
+			close(eventsCh)
+		}()
 
 		s := solver.New(solver.Opts{
-			Control: c.c,
-			Gateway: gw,
-			Events:  eventsCh,
-			Auth:    auth,
-			Secrets: secrets,
-			NoCache: c.cfg.NoCache,
+			Control:    c.c,
+			Gateway:    gw,
+			Events:     eventsCh,
+			EventsWg:   &eventsWg,
+			CloseEvent: closeCh,
+			Auth:       auth,
+			Secrets:    secrets,
+			NoCache:    c.cfg.NoCache,
 		})
 
 		// Compute output overlay
