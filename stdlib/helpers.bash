@@ -1,3 +1,20 @@
+# Instead of setup, this just runs once
+setup_file() {
+    # Cleanup local Localstack instances
+    if [ "$(curl -s http://localhost:4566)" = '{"status": "running"}' ] && \
+        [ "$GITHUB_ACTIONS" != "true" ]; then
+        echo "Cleanup local LOCALSTACK"
+        
+        # S3 buckets cleanup
+        aws --endpoint-url=http://localhost:4566 s3 rm s3://dagger-ci 2>/dev/null || true
+        aws --endpoint-url=http://localhost:4566 s3 mb s3://dagger-ci 2>/dev/null || true
+        
+        # ECR repositories cleanup
+        aws --endpoint-url=http://localhost:4566 ecr delete-repository --repository-name dagger-ci 2>/dev/null || true
+        aws --endpoint-url=http://localhost:4566 ecr create-repository --repository-name dagger-ci 2>/dev/null || true
+    fi
+}
+
 common_setup() {
     load 'node_modules/bats-support/load'
     load 'node_modules/bats-assert/load'
@@ -62,7 +79,7 @@ copy_to_sandbox() {
 #
 # This is needed to do docs test in the CI.
 skip_unless_local_localstack() {
-    if   [ "$(curl -s http://localhost:4566)" = '{"status": "running"}' ]; then
+    if [ "$(curl -s http://localhost:4566)" = '{"status": "running"}' ]; then
         echo "Localstack available"
     else
         skip "Localstack not available"
