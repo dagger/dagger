@@ -51,7 +51,7 @@ func read(f io.Reader) (*file, error) {
 	lines := nonEmptyLines(b)
 
 	if len(lines) == 0 {
-		return nil, fmt.Errorf("mod file is empty, missing module name")
+		return nil, fmt.Errorf("cue.mod/dagger.mod.cue file is empty, missing module name")
 	}
 
 	var module string
