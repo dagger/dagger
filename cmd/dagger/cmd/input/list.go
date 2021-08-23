@@ -6,7 +6,6 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
@@ -42,12 +41,8 @@ var listCmd = &cobra.Command{
 
 		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
 
-		c, err := client.New(ctx, "", false)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("unable to create client")
-		}
-
-		err = c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		c := common.NewClient(ctx)
+		err := c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			inputs, err := env.ScanInputs(ctx, false)
 			if err != nil {
 				return err
@@ -63,6 +58,13 @@ var listCmd = &cobra.Command{
 				if !viper.GetBool("all") {
 					// skip input that is not overridable
 					if !hasDefault && isConcrete {
+						continue
+					}
+				}
+
+				if !viper.GetBool("show-optional") && !viper.GetBool("all") {
+					// skip input if there is already a default value
+					if hasDefault {
 						continue
 					}
 				}
@@ -100,6 +102,7 @@ func isUserSet(env *state.State, val *compiler.Value) bool {
 
 func init() {
 	listCmd.Flags().BoolP("all", "a", false, "List all inputs (include non-overridable)")
+	listCmd.Flags().Bool("show-optional", false, "List optional inputs (those with default values)")
 
 	if err := viper.BindPFlags(listCmd.Flags()); err != nil {
 		panic(err)

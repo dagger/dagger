@@ -59,10 +59,6 @@ var versionCmd = &cobra.Command{
 func init() {
 	versionCmd.Flags().Bool("check", false, "check if dagger is up to date")
 
-	versionCmd.InheritedFlags().MarkHidden("environment")
-	versionCmd.InheritedFlags().MarkHidden("log-level")
-	versionCmd.InheritedFlags().MarkHidden("log-format")
-
 	if err := viper.BindPFlags(versionCmd.Flags()); err != nil {
 		panic(err)
 	}

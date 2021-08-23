@@ -318,7 +318,7 @@ func loadCode(packageName string) (*compiler.Value, error) {
 		stdlib.Path: stdlib.FS,
 	}
 
-	src, err := compiler.Build(sources, packageName)
+	src, err := compiler.Build("/config", sources, packageName)
 	if err != nil {
 		return nil, err
 	}

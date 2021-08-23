@@ -129,15 +129,15 @@ p {
   line-height: 24px;
 }
 
-a[target="_blank"]:not(.edit-this-page) {
+a.menu__link[target="_blank"] {
   svg {
     display: none;
   }
- &:after {
+  &:after {
     background: var(--ifm-color-primary-darker);
     mask: url("/img/Dagger_Icons_External-link.svg") no-repeat;
     position: absolute;
-    content:'';
+    content: "";
     right: var(--ifm-menu-link-padding-horizontal);
     top: var(--ifm-menu-link-padding-vertical);
     height: 1.25rem;

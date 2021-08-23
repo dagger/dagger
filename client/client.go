@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -33,11 +34,18 @@ import (
 
 // Client is a dagger client
 type Client struct {
-	c       *bk.Client
-	noCache bool
+	c   *bk.Client
+	cfg Config
 }
 
-func New(ctx context.Context, host string, noCache bool) (*Client, error) {
+type Config struct {
+	NoCache bool
+
+	CacheExports []bk.CacheOptionsEntry
+	CacheImports []bk.CacheOptionsEntry
+}
+
+func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
@@ -61,8 +69,8 @@ func New(ctx context.Context, host string, noCache bool) (*Client, error) {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 	return &Client{
-		c:       c,
-		noCache: noCache,
+		c:   c,
+		cfg: cfg,
 	}, nil
 }
 
@@ -96,6 +104,15 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 }
 
 func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
+	wg := sync.WaitGroup{}
+
+	// Close output channel
+	defer func() {
+		// Wait until all the events are caught
+		wg.Wait()
+		close(ch)
+	}()
+
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
@@ -122,6 +139,8 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			secrets,
 			solver.NewDockerSocketProvider(),
 		},
+		CacheExports: c.cfg.CacheExports,
+		CacheImports: c.cfg.CacheImports,
 	}
 
 	// Call buildkit solver
@@ -130,20 +149,38 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		Interface("attrs", opts.FrontendAttrs).
 		Msg("spawning buildkit job")
 
+	// Catch output from events
+	catchOutput := func(inCh chan *bk.SolveStatus) {
+		for e := range inCh {
+			ch <- e
+		}
+		wg.Done()
+	}
+
+	// Catch solver's events
+	// Closed manually
+	eventsCh := make(chan *bk.SolveStatus)
+	wg.Add(1)
+	go catchOutput(eventsCh)
+
+	// Catch build events
+	// Closed by buildkit
+	buildCh := make(chan *bk.SolveStatus)
+	wg.Add(1)
+	go catchOutput(buildCh)
+
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		// Close events channel
+		defer close(eventsCh)
+
 		s := solver.New(solver.Opts{
 			Control: c.c,
 			Gateway: gw,
-			Events:  ch,
+			Events:  eventsCh,
 			Auth:    auth,
 			Secrets: secrets,
-			NoCache: c.noCache,
+			NoCache: c.cfg.NoCache,
 		})
-
-		lg.Debug().Msg("loading configuration")
-		if err := env.LoadPlan(ctx, s); err != nil {
-			return nil, err
-		}
 
 		// Compute output overlay
 		if fn != nil {
@@ -175,7 +212,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 		res := bkgw.NewResult()
 		res.SetRef(ref)
 		return res, nil
-	}, ch)
+	}, buildCh)
 	if err != nil {
 		return solver.CleanError(err)
 	}
@@ -187,6 +224,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 			Str("value", v).
 			Msg("exporter response")
 	}
+
 	return nil
 }
 

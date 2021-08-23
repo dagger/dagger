@@ -11,19 +11,25 @@ import (
 #Repository: {
 	// Git remote.
 	// Example: `"https://github.com/dagger/dagger"`
-	remote: string @dagger(input)
+	remote: string & dagger.#Input
 
 	// Git ref: can be a commit, tag or branch.
 	// Example: "main"
-	ref: string @dagger(input)
+	ref: string & dagger.#Input
 
 	// (optional) Subdirectory
-	subdir: string | *null @dagger(input)
+	subdir: *null | string & dagger.#Input
+
+	// (optional) Keep .git directory
+	keepGitDir: *false | bool
 
 	#up: [
 		op.#FetchGit & {
 			"remote": remote
 			"ref":    ref
+			if (keepGitDir) {
+				keepGitDir: true
+			}
 		},
 		if subdir != null {
 			op.#Subdir & {

@@ -91,6 +91,7 @@ jobs:
 
       - name: Integration test
         run: |
+          env
           make core-integration
 
   universe:

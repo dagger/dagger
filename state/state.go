@@ -3,6 +3,9 @@ package state
 import (
 	"context"
 	"path"
+
+	"cuelang.org/go/cue"
+	"go.dagger.io/dagger/compiler"
 )
 
 // Contents of an environment serialized to a file
@@ -29,13 +32,53 @@ type State struct {
 }
 
 // Cue module containing the environment plan
-func (s *State) Source() Input {
+func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
 	w := s.Workspace
 	// FIXME: backward compatibility
 	if mod := s.Plan.Module; mod != "" {
 		w = path.Join(w, mod)
 	}
-	return DirInput(w, []string{}, []string{})
+
+	// FIXME: universe vendoring
+	// This is already done on `dagger init` and shouldn't be done here too.
+	// However:
+	// 1) As of right now, there's no way to update universe through the
+	// CLI, so we are lazily updating on `dagger up` using the embedded `universe`
+	// 2) For backward compatibility: if the workspace was `dagger
+	// init`-ed before we added support for vendoring universe, it might not
+	// contain a `cue.mod`.
+	if err := vendorUniverse(ctx, w); err != nil {
+		return nil, err
+	}
+
+	args := []string{}
+	if pkg := s.Plan.Package; pkg != "" {
+		args = append(args, pkg)
+	}
+
+	return compiler.Build(w, nil, args...)
+}
+
+func (s *State) CompileInputs() (*compiler.Value, error) {
+	v := compiler.NewValue()
+
+	// Prepare inputs
+	for key, input := range s.Inputs {
+		i, err := input.Compile(key, s)
+		if err != nil {
+			return nil, err
+		}
+		if key == "" {
+			err = v.FillPath(cue.MakePath(), i)
+		} else {
+			err = v.FillPath(cue.ParsePath(key), i)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return v, nil
 }
 
 // VendorUniverse vendors the latest (built-in) version of the universe into the

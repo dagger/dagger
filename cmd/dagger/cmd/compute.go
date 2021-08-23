@@ -168,9 +168,27 @@ var computeCmd = &cobra.Command{
 			}
 		}
 
-		cl := common.NewClient(ctx, viper.GetBool("no-cache"))
+		cl := common.NewClient(ctx)
 
-		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		v := compiler.NewValue()
+		plan, err := st.CompilePlan(ctx)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to compile plan")
+		}
+		if err := v.FillPath(cue.MakePath(), plan); err != nil {
+			lg.Fatal().Err(err).Msg("failed to compile plan")
+		}
+
+		inputs, err := st.CompileInputs()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to compile inputs")
+		}
+
+		if err := v.FillPath(cue.MakePath(), inputs); err != nil {
+			lg.Fatal().Err(err).Msg("failed to compile inputs")
+		}
+
+		err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check that all inputs are set
 			checkInputs(ctx, env)
 
@@ -178,13 +196,6 @@ var computeCmd = &cobra.Command{
 				return err
 			}
 
-			v := compiler.NewValue()
-			if err := v.FillPath(cue.MakePath(), env.Plan()); err != nil {
-				return err
-			}
-			if err := v.FillPath(cue.MakePath(), env.Input()); err != nil {
-				return err
-			}
 			if err := v.FillPath(cue.MakePath(), env.Computed()); err != nil {
 				return err
 			}
@@ -208,7 +219,6 @@ func init() {
 	computeCmd.Flags().StringSlice("input-git", []string{}, "TARGET=REMOTE#REF")
 	computeCmd.Flags().String("input-json", "", "JSON")
 	computeCmd.Flags().String("input-yaml", "", "YAML")
-	computeCmd.Flags().Bool("no-cache", false, "disable cache")
 
 	if err := viper.BindPFlags(computeCmd.Flags()); err != nil {
 		panic(err)

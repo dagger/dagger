@@ -9,6 +9,9 @@
 - [aws/elb](./aws/elb.md) - AWS Elastic Load Balancer (ELBv2)
 - [aws/rds](./aws/rds.md) - AWS Relational Database Service (RDS)
 - [aws/s3](./aws/s3.md) - AWS Simple Storage Service
+- [azure](./azure/README.md) - Azure base package
+- [azure/resourcegroup](./azure/resourcegroup.md) - -
+- [azure/storage](./azure/storage.md) - -
 - [dagger](./dagger/README.md) - Dagger core types
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
 - [docker](./docker/README.md) - Docker container operations

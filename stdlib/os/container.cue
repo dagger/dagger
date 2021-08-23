@@ -1,8 +1,6 @@
 package os
 
 import (
-	"strings"
-
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 
@@ -68,20 +66,7 @@ import (
 		path: string | *"/bin/sh"
 		// Arguments to pass to the shell prior to the command
 		args: [...string] | *["-c"]
-		// Map of directories to search for commands
-		// In POSIX shells this is used to generate the $PATH
-		// environment variable.
-		search: [string]: bool
-		search: {
-			"/sbin":           true
-			"/bin":            true
-			"/usr/sbin":       true
-			"/usr/bin":        true
-			"/usr/local/sbin": true
-			"/usr/local/bin":  true
-		}
 	}
-	env: PATH: string | *strings.Join([ for p, v in shell.search if v {p}], ":")
 
 	#up: [
 		op.#Load & {from: image},

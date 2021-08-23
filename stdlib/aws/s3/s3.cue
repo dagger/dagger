@@ -28,6 +28,9 @@ import (
 	// Always write the object to S3
 	always: *true | false @dagger(input)
 
+	// Upload method
+	uploadMethod: *"cp" | "sync"
+
 	// URL of the uploaded S3 object
 	url: {
 		string
@@ -49,6 +52,7 @@ import (
 					if delete {
 						OPT_DELETE: "1"
 					}
+					UPLOAD_METHOD: uploadMethod
 				}
 
 				mount: "/source": from: source
@@ -62,12 +66,22 @@ import (
 					"-c",
 					#"""
 						opts=()
-						if [ -d /source ]; then
-							op=sync
-						fi
+						case "$UPLOAD_METHOD" in
+							sync)
+								[ -n "$OPT_DELETE" ] && opts+="--delete"
+								opts+="--exact-timestamps"
+								;;
+							cp)
+								opts+="--recursive"
+								;;
+							*)
+								echo "not supported command"
+								exit 1
+								;;
+						esac
 						[ -n "$OPT_CONTENT_TYPE" ] && opts+="--content-type $OPT_CONTENT_TYPE"
 						[ -n "$OPT_DELETE" ] && opts+="--delete"
-						aws s3 sync ${opts[@]} /source "$TARGET"
+						aws s3 "$UPLOAD_METHOD" ${opts[@]} /source "$TARGET"
 						echo -n "$TARGET" \
 							| sed -E 's=^s3://([^/]*)/=https://\1.s3.amazonaws.com/=' \
 							> /url

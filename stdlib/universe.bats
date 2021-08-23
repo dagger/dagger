@@ -63,7 +63,6 @@ setup() {
 }
 
 @test "docker push and pull" {
-  skip "An occasional data race condition happen in the CI. Must be fix before execute that test"
   # Push image
   dagger -e docker-push up
 
@@ -75,7 +74,6 @@ setup() {
 }
 
 @test "docker push: multi registry" {
- skip "An occasional data race condition happen in the CI. Must be fix before execute that test"
  run dagger -e docker-push-multi-registry up
 }
 
@@ -183,4 +181,14 @@ setup() {
     # Unset input
     run dagger -w "$DAGGER_SANDBOX" -e terraform input unset TestTerraform.apply.tfvars.input
     assert_success
+}
+
+@test "azure-resourcegroup" {
+    skip "Azure CI infra not implemented yet - manually tested and working"
+    #dagger -e azure-resourcegroup up
+}
+
+@test "azure-storage" {
+    skip "Azure CI infra not implemented yet - manually tested and working"
+    #dagger -e azure-storage up
 }

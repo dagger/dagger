@@ -336,12 +336,15 @@ setup() {
 @test "dagger input git" {
     "$DAGGER" init
 
-    dagger_new_with_plan input "$TESTDIR"/cli/input/artifact
+    ## Test simple input git
+    dagger_new_with_plan "input-simple-git" "$TESTDIR"/cli/input/artifact
 
     # input git
-    "$DAGGER" input -e "input" git "source" https://github.com/samalba/dagger-test-simple.git
-    "$DAGGER" up -e "input"
-    run "$DAGGER" -l error query -e "input"
+    "$DAGGER" -e "input-simple-git" input list
+    "$DAGGER" -e "input-simple-git" input git source "https://github.com/samalba/dagger-test-simple"
+    "$DAGGER" -e "input-simple-git" input list
+    "$DAGGER" -e "input-simple-git" up --no-cache
+    run "$DAGGER" -l error query -e "input-simple-git"
     assert_output '{
   "bar": "testgit\n",
   "foo": "bar",
@@ -349,12 +352,21 @@ setup() {
 }'
 
     # unset input git
-    "$DAGGER" input -e "input" unset "source"
-    "$DAGGER" up -e "input"
-    run "$DAGGER" -l error query -e "input"
+    "$DAGGER" input -e "input-simple-git" unset "source"
+    "$DAGGER" up -e "input-simple-git"
+    run "$DAGGER" -l error query -e "input-simple-git"
     assert_output '{
   "foo": "bar"
 }'
+
+    ## Test input git with subdir
+    dagger_new_with_plan "input-subdir-git" "$TESTDIR"/cli/input/git
+
+    # input git
+    "$DAGGER" -e "input-subdir-git" input git TestRepo "https://github.com/dagger/examples" "main" "todoapp"
+
+    # Assert success (test is directly in the cue file)
+    "$DAGGER" -e "input-subdir-git" up
 }
 
 @test "dagger input list" {
@@ -364,28 +376,41 @@ setup() {
     "$DAGGER" input text cfg.str "foobar" -e "list"
 
     out="$("$DAGGER" input list -e "list")"
+    outOpt="$("$DAGGER" input list --show-optional -e "list")"
     outAll="$("$DAGGER" input list --all -e "list")"
 
     #note: this is the recommended way to use pipes with bats
-    run bash -c "echo \"$out\" | grep awsConfig.accessKey | grep 'dagger.#Secret' | grep 'AWS access key'"
+    run bash -c "echo \"$out\" | grep awsConfig.accessKey | grep 'dagger.#Secret' | grep false | grep 'AWS access key'"
     assert_success
 
     run bash -c "echo \"$out\" | grep cfgInline.source | grep 'dagger.#Artifact' | grep false | grep 'source dir'"
+    assert_success
+
+    run bash -c "echo \"$outOpt\" | grep awsConfig.accessKey | grep 'dagger.#Secret' | grep 'AWS access key'"
+    assert_success
+
+    run bash -c "echo \"$outOpt\" | grep cfgInline.source | grep 'dagger.#Artifact' | grep false | grep 'source dir'"
     assert_success
 
     run bash -c "echo \"$outAll\" | grep cfg2"
     assert_failure
 
     run bash -c "echo \"$out\" | grep cfgInline.strDef | grep '*yolo | string' | grep false"
+    assert_failure
+
+    run bash -c "echo \"$outOpt\" | grep cfgInline.strDef | grep '*yolo | string' | grep false"
     assert_success
 
     run bash -c "echo \"$out\" | grep cfg.num"
     assert_failure
 
+    run bash -c "echo \"$outOpt\" | grep cfg.num"
+    assert_failure
+
     run bash -c "echo \"$outAll\" | grep cfg.num | grep 21 | grep -v int"
     assert_success
 
-    run bash -c "echo \"$out\" | grep cfg.strSet"
+    run bash -c "echo \"$outOpt\" | grep cfg.strSet"
     assert_failure
 
     run bash -c "echo \"$outAll\" | grep cfg.strSet | grep pipo"
