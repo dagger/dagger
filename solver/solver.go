@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -19,7 +20,9 @@ import (
 )
 
 type Solver struct {
-	opts Opts
+	opts     Opts
+	eventsWg *sync.WaitGroup
+	closeCh  chan *bk.SolveStatus
 }
 
 type Opts struct {
@@ -33,7 +36,9 @@ type Opts struct {
 
 func New(opts Opts) Solver {
 	return Solver{
-		opts: opts,
+		eventsWg: &sync.WaitGroup{},
+		closeCh:  make(chan *bk.SolveStatus),
+		opts:     opts,
 	}
 }
 
@@ -58,6 +63,12 @@ func invalidateCache(def *llb.Definition) error {
 
 func (s Solver) NoCache() bool {
 	return s.opts.NoCache
+}
+
+func (s Solver) Stop() {
+	close(s.closeCh)
+	s.eventsWg.Wait()
+	close(s.opts.Events)
 }
 
 func (s Solver) AddCredentials(target, username, secret string) {
@@ -145,11 +156,30 @@ func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error)
 	return res.SingleRef()
 }
 
+// Forward events from solver to the main events channel
+// It creates a task in the solver waiting group to be
+// sure that everything will be forward to the main channel
+func (s Solver) forwardEvents(ch chan *bk.SolveStatus) {
+	s.eventsWg.Add(1)
+	defer s.eventsWg.Done()
+
+	for event := range ch {
+		s.opts.Events <- event
+	}
+}
+
 // Export will export `st` to `output`
 // FIXME: this is currently impleneted as a hack, starting a new Build session
 // within buildkit from the Control API. Ideally the Gateway API should allow to
 // Export directly.
 func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry) (*bk.SolveResponse, error) {
+	// Check close event channel and return if we're already done with the main pipeline
+	select {
+	case <-s.closeCh:
+		return nil, context.Canceled
+	default:
+	}
+
 	def, err := s.Marshal(ctx, st)
 	if err != nil {
 		return nil, err
@@ -168,11 +198,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 
 	// Forward this build session events to the main events channel, for logging
 	// purposes.
-	go func() {
-		for event := range ch {
-			s.opts.Events <- event
-		}
-	}()
+	go s.forwardEvents(ch)
 
 	return s.opts.Control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		res, err := c.Solve(ctx, bkgw.SolveRequest{
