@@ -158,8 +158,8 @@ func (f *file) processRequire(req *require, upgrade bool) (bool, error) {
 		return isNew, err
 	}
 
-	// the existing requirement is newer so we skip installation
-	if c > 0 {
+	// the existing requirement is newer or equal so we skip installation
+	if c >= 0 {
 		return isNew, nil
 	}
 

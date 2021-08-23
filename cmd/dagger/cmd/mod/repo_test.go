@@ -16,25 +16,25 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving shorter hash version",
 			require: require{
-				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
-				clonePath: "",
-				version:   "d530f2ea2099",
+				cloneRepo: "github.com/tjovicic/dagger-modules",
+				clonePath: "gcpcloudrun",
+				version:   "f4a5110b86a43871",
 			},
 		},
 		{
 			name: "resolving branch name",
 			require: require{
-				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
-				clonePath: "",
+				cloneRepo: "github.com/tjovicic/dagger-modules",
+				clonePath: "gcpcloudrun",
 				version:   "main",
 			},
 		},
 		{
 			name: "resolving tag",
 			require: require{
-				cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
-				clonePath: "",
-				version:   "v0.3",
+				cloneRepo: "github.com/tjovicic/dagger-modules",
+				clonePath: "gcpcloudrun",
+				version:   "v0.1",
 			},
 		},
 		{
@@ -74,12 +74,12 @@ func TestListTags(t *testing.T) {
 	defer os.Remove(tmpDir)
 
 	r, err := clone(&require{
-		cloneRepo: "github.com/tjovicic/gcpcloudrun-cue",
-		clonePath: "",
+		cloneRepo: "github.com/tjovicic/dagger-modules",
+		clonePath: "gcpcloudrun",
 		version:   "",
 	}, tmpDir, "", "")
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	tags, err := r.listTags()
