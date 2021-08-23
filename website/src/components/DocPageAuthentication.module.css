@@ -10,4 +10,9 @@
 
 .btn__github {
   width: 240px !important;
+  border-radius: 0 !important;
+}
+
+.btn__github > div {
+  display: inline-flex !important;
 }

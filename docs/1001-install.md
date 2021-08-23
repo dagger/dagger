@@ -16,7 +16,8 @@ brew install dagger/tap/dagger
 If dagger is already installed, you can upgrade it using this command:
 
 ```shell
-brew update; brew upgrade dagger
+brew update
+brew upgrade dagger
 ```
 
 ## Option 2: Run a shell script
