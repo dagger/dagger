@@ -133,11 +133,11 @@ a[target="_blank"]:not(.edit-this-page) {
   svg {
     display: none;
   }
- &:after {
+  &:after {
     background: var(--ifm-color-primary-darker);
     mask: url("/img/Dagger_Icons_External-link.svg") no-repeat;
     position: absolute;
-    content:'';
+    content: "";
     right: var(--ifm-menu-link-padding-horizontal);
     top: var(--ifm-menu-link-padding-vertical);
     height: 1.25rem;
@@ -185,7 +185,7 @@ h1[class^="h1Heading"] {
   font-size: 1rem;
   font-style: normal;
   font-weight: 700;
-  line-height: 24px;
+  line-height: 1;
   letter-spacing: 0em;
   text-align: left;
   padding: 1rem;
@@ -268,7 +268,7 @@ main[class^="docMainContainer"] {
   padding: 2rem;
 
   html[data-theme="dark"] & {
-    background: var(--ifm-color-primary);
+    background: var(--ifm-color-primary-dark);
     color: var(--ifm-color-primary-light);
   }
 
@@ -354,7 +354,7 @@ button[class^="copyButton"] {
 
   & > ul > li:nth-child(1) > a:nth-child(1) {
     padding-top: 2rem;
-    border: 0;
+    border-top: 0;
   }
 
   & > ul > li > a:nth-child(1) {
@@ -367,6 +367,10 @@ button[class^="copyButton"] {
       background-color: var(--ifm-color-primary);
       border-color: #65627b;
     }
+  }
+
+  & > ul > li + li > a:nth-child(1) {
+    border-top: 0;
   }
 }
 
@@ -391,11 +395,19 @@ button[class^="copyButton"] {
 
   & + .menu__list & {
     padding-left: 2rem;
+    width: calc(100% - 1rem);
 
     &:hover,
     &.active {
       background-color: var(--ifm-color-primary-dark);
       color: var(--ifm-color-primary-light);
+      font-weight: bold;
+    }
+
+    html[data-theme="dark"] &:hover,
+    html[data-theme="dark"] &.active {
+      background-color: var(--ifm-color-secondary);
+      color: var(--ifm-color-primary-dark);
     }
 
     &.menu__link--sublist:hover::after {
@@ -431,6 +443,7 @@ button[class^="copyButton"] {
 
   &.menu__link--sublist {
     color: var(--ifm-color-primary-dark);
+    padding-right: 2rem;
 
     &:hover {
       background-color: var(--ifm-color-primary-light);
@@ -474,6 +487,9 @@ button[class^="copyButton"] {
   }
   @media (min-width: 1160px) {
     width: 350px;
+  }
+  html[data-theme="dark"] & {
+    background-color: white;
   }
 }
 
