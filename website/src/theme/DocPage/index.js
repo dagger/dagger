@@ -13,15 +13,15 @@ import DocSidebar from '@theme/DocSidebar';
 import MDXComponents from '@theme/MDXComponents';
 import NotFound from '@theme/NotFound';
 import IconArrow from '@theme/IconArrow';
-import { matchPath } from '@docusaurus/router';
-import { translate } from '@docusaurus/Translate';
+import {matchPath} from '@docusaurus/router';
+import {translate} from '@docusaurus/Translate';
 import clsx from 'clsx';
 import styles from './styles.module.css';
-import { ThemeClassNames, docVersionSearchTag } from '@docusaurus/theme-common';
-import DocPageCustom from '../../components/DocPageCustom'
+import {ThemeClassNames, docVersionSearchTag} from '@docusaurus/theme-common';
+import DocPageCustom from '../../components/DocPageCustom';
 import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
 
-function getSidebar({ versionMetadata, currentDocRoute }) {
+function getSidebar({versionMetadata, currentDocRoute}) {
   function addTrailingSlash(str) {
     return str.endsWith('/') ? str : `${str}/`;
   }
@@ -30,7 +30,7 @@ function getSidebar({ versionMetadata, currentDocRoute }) {
     return str.endsWith('/') ? str.slice(0, -1) : str;
   }
 
-  const { permalinkToSidebar, docsSidebars } = versionMetadata; // With/without trailingSlash, we should always be able to get the appropriate sidebar
+  const {permalinkToSidebar, docsSidebars} = versionMetadata; // With/without trailingSlash, we should always be able to get the appropriate sidebar
   // note: docs plugin permalinks currently never have trailing slashes
   // trailingSlash is handled globally at the framework level, not plugin level
 
@@ -45,10 +45,10 @@ function getSidebar({ versionMetadata, currentDocRoute }) {
   };
 }
 
-function DocPageContent({ currentDocRoute, versionMetadata, children }) {
-  const { siteConfig, isClient } = useDocusaurusContext();
-  const { pluginId, version } = versionMetadata;
-  const { sidebarName, sidebar } = getSidebar({
+function DocPageContent({currentDocRoute, versionMetadata, children}) {
+  const {siteConfig, isClient} = useDocusaurusContext();
+  const {pluginId, version} = versionMetadata;
+  const {sidebarName, sidebar} = getSidebar({
     versionMetadata,
     currentDocRoute,
   });
@@ -149,7 +149,7 @@ function DocPageContent({ currentDocRoute, versionMetadata, children }) {
 
 function DocPage(props) {
   const {
-    route: { routes: docRoutes },
+    route: {routes: docRoutes},
     versionMetadata,
     location,
   } = props;
@@ -159,9 +159,12 @@ function DocPage(props) {
   const userAgent = ExecutionEnvironment.canUseDOM ? navigator.userAgent : null;
 
   // DocPage Swizzle
-  const [userAccessStatus, setUserAccessStatus] = useState((() => {
-    if (typeof window !== "undefined") return JSON.parse(window.localStorage.getItem('user'))
-  })())
+  const [userAccessStatus, setUserAccessStatus] = useState(
+    (() => {
+      if (typeof window !== 'undefined')
+        return JSON.parse(window.localStorage.getItem('user'));
+    })(),
+  );
 
   useEffect(() => {
     import('amplitude-js').then(amplitude => {
@@ -191,9 +194,11 @@ function DocPage(props) {
     <DocPageContent
       currentDocRoute={currentDocRoute}
       versionMetadata={versionMetadata}>
-      {renderRoutes(docRoutes, {
-        versionMetadata,
-      })}
+      <div data-cy="cy-doc-content">
+        {renderRoutes(docRoutes, {
+          versionMetadata,
+        })}
+      </div>
     </DocPageContent>
   );
 }
