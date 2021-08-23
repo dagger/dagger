@@ -2,8 +2,10 @@ package mod
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -27,9 +29,18 @@ type file struct {
 }
 
 func readPath(workspacePath string) (*file, error) {
-	f, err := os.Open(path.Join(workspacePath, filePath))
+	p := path.Join(workspacePath, filePath)
+
+	f, err := os.Open(p)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+
+		// dagger.mod.cue doesn't exist, let's create an empty file
+		if f, err = os.Create(p); err != nil {
+			return nil, err
+		}
 	}
 
 	modFile, err := read(f)
