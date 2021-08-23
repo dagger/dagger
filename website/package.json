@@ -47,7 +47,7 @@
   },
   "devDependencies": {
     "concurrently": "^6.2.0",
-    "cypress": "^7.6.0",
+    "cypress": "^7.7.0",
     "cypress-localstorage-commands": "^1.4.5",
     "start-server-and-test": "^1.12.5"
   }
