@@ -369,6 +369,35 @@ setup() {
     "$DAGGER" -e "input-subdir-git" up
 }
 
+@test "dagger input bool" {
+    "$DAGGER" init
+
+    ## Test simple input git
+    dagger_new_with_plan "input-simple-bool" "$TESTDIR"/cli/input/bool
+
+    # input git
+    "$DAGGER" -e "input-simple-bool" input list --show-optional
+    run "$DAGGER" -e "input-simple-bool" query first
+    assert_output 'false'
+    run "$DAGGER" -e "input-simple-bool" query second
+    assert_output '{}'
+
+    "$DAGGER" -e "input-simple-bool" input bool first true
+    run "$DAGGER" -e "input-simple-bool" query first
+    assert_output 'true'
+    run "$DAGGER" -e "input-simple-bool" query second
+    assert_output 'true'
+
+    "$DAGGER" -e "input-simple-bool" input bool first false
+    run "$DAGGER" -e "input-simple-bool" query first
+    assert_output 'false'
+    run "$DAGGER" -e "input-simple-bool" query second
+    assert_output '{}'
+
+    run "$DAGGER" -e "input-simple-bool" input bool first Anything
+    assert_failure
+}
+
 @test "dagger input list" {
     "$DAGGER" init
 
