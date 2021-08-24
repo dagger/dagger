@@ -35,6 +35,7 @@ type Input struct {
 	JSON   *jsonInput   `yaml:"json,omitempty"`
 	YAML   *yamlInput   `yaml:"yaml,omitempty"`
 	File   *fileInput   `yaml:"file,omitempty"`
+	Bool   *boolInput   `yaml:"bool,omitempty"`
 }
 
 func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
@@ -55,6 +56,8 @@ func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
 		return i.YAML.Compile(key, state)
 	case i.File != nil:
 		return i.File.Compile(key, state)
+	case i.Bool != nil:
+		return i.Bool.Compile(key, state)
 	default:
 		return nil, fmt.Errorf("input has not been set")
 	}
@@ -199,6 +202,27 @@ func (i secretInput) Compile(key string, _ *State) (*compiler.Value, error) {
 
 func (i secretInput) PlainText() string {
 	return string(i)
+}
+
+// An input value encoded as Bool
+func BoolInput(data string) Input {
+	i := boolInput(data)
+	return Input{
+		Bool: &i,
+	}
+}
+
+type boolInput string
+
+func (i boolInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+	s := map[boolInput]struct{}{
+		"true":  {},
+		"false": {},
+	}
+	if _, ok := s[i]; ok {
+		return compiler.DecodeJSON("", []byte(i))
+	}
+	return nil, fmt.Errorf("%q is not a valid boolean: <true|false>", i)
 }
 
 // An input value encoded as JSON

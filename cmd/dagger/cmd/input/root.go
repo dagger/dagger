@@ -31,6 +31,7 @@ func init() {
 		jsonCmd,
 		yamlCmd,
 		listCmd,
+		boolCmd,
 		unsetCmd,
 	)
 }
