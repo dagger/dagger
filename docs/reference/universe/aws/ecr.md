@@ -16,14 +16,16 @@ Convert ECR credentials to Docker Login format
 
 ### ecr.#Credentials Inputs
 
-| Name                           | Type                | Description        |
-| -------------                  |:-------------:      |:-------------:     |
-|*config.region*                 | `string`            |AWS region          |
-|*config.accessKey*              | `dagger.#Secret`    |AWS access key      |
-|*config.secretKey*              | `dagger.#Secret`    |AWS secret key      |
-|*ctr.image.config.region*       | `string`            |AWS region          |
-|*ctr.image.config.accessKey*    | `dagger.#Secret`    |AWS access key      |
-|*ctr.image.config.secretKey*    | `dagger.#Secret`    |AWS secret key      |
+| Name                           | Type                 | Description           |
+| -------------                  |:-------------:       |:-------------:        |
+|*config.region*                 | `string`             |AWS region             |
+|*config.accessKey*              | `dagger.#Secret`     |AWS access key         |
+|*config.secretKey*              | `dagger.#Secret`     |AWS secret key         |
+|*config.localMode*              | `*null \| string`    |AWS localstack mode    |
+|*ctr.image.config.region*       | `string`             |AWS region             |
+|*ctr.image.config.accessKey*    | `dagger.#Secret`     |AWS access key         |
+|*ctr.image.config.secretKey*    | `dagger.#Secret`     |AWS secret key         |
+|*ctr.image.config.localMode*    | `*null \| string`    |AWS localstack mode    |
 
 ### ecr.#Credentials Outputs
 
