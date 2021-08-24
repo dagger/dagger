@@ -18,7 +18,7 @@ func TestClone(t *testing.T) {
 			require: require{
 				cloneRepo: "github.com/tjovicic/dagger-modules",
 				clonePath: "gcpcloudrun",
-				version:   "f4a5110b86a43871",
+				version:   "26a1d46d1b3c",
 			},
 		},
 		{
@@ -34,7 +34,7 @@ func TestClone(t *testing.T) {
 			require: require{
 				cloneRepo: "github.com/tjovicic/dagger-modules",
 				clonePath: "gcpcloudrun",
-				version:   "v0.1",
+				version:   "v0.3",
 			},
 		},
 		{
@@ -42,7 +42,7 @@ func TestClone(t *testing.T) {
 			require: require{
 				cloneRepo: "github.com/dagger/test",
 				clonePath: "",
-				version:   "v0.2",
+				version:   "main",
 			},
 			privateKeyFile:     "./test-ssh-keys/id_ed25519_test",
 			privateKeyPassword: "",

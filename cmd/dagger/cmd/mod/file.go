@@ -60,7 +60,7 @@ func read(f io.Reader) (*file, error) {
 
 	lines := nonEmptyLines(b)
 
-	var requires []*require
+	requires := make([]*require, 0, len(lines))
 	for _, line := range lines {
 		split := strings.Split(line, " ")
 		r, err := parseArgument(split[0])
