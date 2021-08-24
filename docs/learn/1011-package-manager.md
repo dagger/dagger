@@ -52,13 +52,13 @@ import (
 run: gcpcloudrun.#Run
 ```
 
-To install it just run 
+To install it just run
 
 ```shell
 dagger mod get github.com/tjovicic/dagger-modules/gcpcloudrun@v0.1
 ```
 
-It should pull the `v0.1` version from Github, leave a copy in `cue.mod/pkg` and reflect the change in 
+It should pull the `v0.1` version from Github, leave a copy in `cue.mod/pkg` and reflect the change in
 `cue.mod/dagger.mod.cue` file:
 
 ```shell
@@ -71,9 +71,7 @@ cue.mod/pkg/github.com/
             └── source.cue
 ```
 
-```cue title="./cue.mod/dagger.mod.cue"
-module: main
-
+```cue title="./cue.mod/dagger.mod"
 github.com/tjovicic/dagger-modules/gcpcloudrun v0.1
 ```
 
@@ -115,8 +113,6 @@ You should see similar output:
 
 And `cue.mod/dagger.mod.cue` should reflect the new version:
 
-```cue title="./cue.mod/dagger.mod.cue"
-module: main
-
+```cue title="./cue.mod/dagger.mod"
 github.com/tjovicic/dagger-modules/gcpcloudrun v0.2
 ```

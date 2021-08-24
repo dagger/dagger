@@ -16,13 +16,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-const filePath = "./cue.mod/dagger.mod.cue"
+const filePath = "./cue.mod/dagger.mod"
 const destBasePath = "./cue.mod/pkg"
 const tmpBasePath = "./cue.mod/tmp"
 
 // A file is the parsed, interpreted form of a cue.mod file.
 type file struct {
-	module  string
 	require []*require
 
 	workspacePath string
@@ -61,18 +60,9 @@ func read(f io.Reader) (*file, error) {
 
 	lines := nonEmptyLines(b)
 
-	if len(lines) == 0 {
-		return nil, fmt.Errorf("cue.mod/dagger.mod.cue file is empty, missing module name")
-	}
-
-	var module string
-	if split := strings.Split(lines[0], " "); len(split) > 1 {
-		module = strings.Trim(split[1], "\"")
-	}
-
 	var requires []*require
-	for i := 1; i < len(lines); i++ {
-		split := strings.Split(lines[i], " ")
+	for _, line := range lines {
+		split := strings.Split(line, " ")
 		r, err := parseArgument(split[0])
 		if err != nil {
 			return nil, err
@@ -84,7 +74,6 @@ func read(f io.Reader) (*file, error) {
 	}
 
 	return &file{
-		module:  module,
 		require: requires,
 	}, nil
 }
@@ -184,7 +173,6 @@ func (f *file) write() error {
 func (f *file) contents() *bytes.Buffer {
 	var b bytes.Buffer
 
-	b.WriteString(fmt.Sprintf("module: %s\n\n", f.module))
 	for _, r := range f.require {
 		b.WriteString(fmt.Sprintf("%s %s\n", r.fullPath(), r.version))
 	}
