@@ -1,4 +1,25 @@
 @use "sass:meta";
+$tablet-width: 996px;
+$desktop-width: 997px;
+$desktop-xl-width: 1160px;
+
+@mixin tablet {
+  @media (max-width: #{$tablet-width}) {
+    @content;
+  }
+}
+
+@mixin desktop {
+  @media (min-width: #{$desktop-width}) {
+    @content;
+  }
+}
+
+@mixin desktopWide {
+  @media (min-width: #{$desktop-xl-width}) {
+    @content;
+  }
+}
 
 /* stylelint-disable docusaurus/copyright-header */
 /**
@@ -52,6 +73,7 @@
 html[data-theme="dark"] {
   --ifm-background-color: var(--ifm-color-primary-dark);
   --ifm-navbar-background-color: var(--ifm-color-primary-darker);
+  --ifm-menu-color: var(--ifm-color-primary-light);
   --ifm-menu-color-active: var(--ifm-color-primary-light);
   --ifm-menu-color-background-active: var(--ifm-color-primary);
   --ifm-link-color: var(--ifm-color-primary-light);
@@ -205,7 +227,10 @@ h1[class^="h1Heading"] {
 
 /* navbar */
 .navbar__brand {
-  height: 4rem;
+  height: 3rem;
+  @include desktop {
+    height: 4rem;
+  }
 }
 
 .navbar {
@@ -220,34 +245,47 @@ h1[class^="h1Heading"] {
   padding: 1rem;
 }
 
+.navbar__logo {
+  @include tablet {
+    height: auto;
+  }
+}
+
 .react-toggle {
   margin: 0 0.75rem;
 }
 
 .header-discord-link,
 .header-github-link {
-  width: 48px;
   height: 48px;
   padding: 0;
-  span {
-    display: none;
+
+  @include desktop {
+    width: 48px;
+    span {
+      display: none;
+    }
   }
 }
 
 .header-github-link {
-  background: url("/img/github-icon.svg");
+  background: url("/img/github-icon.svg") no-repeat;
 }
 
 .header-discord-link {
-  background: url("/img/discord-icon.svg");
+  background: url("/img/discord-icon.svg") no-repeat;
 }
 
 .navbar .button svg {
   display: none;
 }
 
+.navbar__toggle {
+  filter: brightness(19);
+}
+
 /* sidebar */
-@media (min-width: 997px) {
+@include desktop {
   aside[class^="docSidebarContainer"] {
     width: 340px;
 
@@ -352,9 +390,11 @@ button[class^="copyButton"] {
 .menu {
   padding: 0 !important;
 
-  & > ul > li:nth-child(1) > a:nth-child(1) {
-    padding-top: 2rem;
-    border-top: 0;
+  @include desktop {
+    & > ul > li:nth-child(1) > a:nth-child(1) {
+      padding-top: 2rem;
+      border-top: 0;
+    }
   }
 
   & > ul > li > a:nth-child(1) {
@@ -393,6 +433,16 @@ button[class^="copyButton"] {
   border-radius: 0;
   padding: 1rem;
 
+  @include tablet {
+    display: flex;
+    justify-content: center;
+    font-family: "Poppins", sans-serif;
+    font-size: 1rem;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1;
+  }
+
   & + .menu__list & {
     padding-left: 2rem;
     width: calc(100% - 1rem);
@@ -401,62 +451,64 @@ button[class^="copyButton"] {
     &.active {
       background-color: var(--ifm-color-primary-dark);
       color: var(--ifm-color-primary-light);
+    }
+
+    &.active {
       font-weight: bold;
     }
 
-    html[data-theme="dark"] &:hover,
-    html[data-theme="dark"] &.active {
-      background-color: var(--ifm-color-secondary);
-      color: var(--ifm-color-primary-dark);
+    &:focus,
+    &:active {
+      background-color: var(--ifm-color-primary-dark);
+      color: var(--ifm-color-primary-light);
     }
 
-    &.menu__link--sublist:hover::after {
-      filter: invert(100%) sepia(94%) saturate(17%) hue-rotate(223deg)
-        brightness(104%) contrast(98%);
+    &--active:not(.menu__link--sublist) {
+      background-color: var(--ifm-color-primary);
+      color: var(--ifm-color-primary-light);
+
+      html[data-theme="dark"] & {
+        background-color: var(--ifm-menu-color-background-hover);
+        color: var(--ifm-color-primary);
+      }
     }
-  }
 
-  &--active:not(.menu__link--sublist) {
-    background-color: var(--ifm-color-primary);
-    color: var(--ifm-color-primary-light);
+    html[data-theme="dark"] &,
+    html[data-theme="dark"] &:not([href]),
+    html[data-theme="dark"] &:focus {
+      color: var(--ifm-color-primary-light);
+    }
 
-    html[data-theme="dark"] & {
-      background-color: var(--ifm-menu-color-background-hover);
+    html[data-theme="dark"] &:not(.menu__link--active):hover {
+      background-color: var(--ifm-color-primary);
+    }
+
+    html[data-theme="dark"] &:not(.menu__link--active):active {
+      background-color: var(--ifm-color-primary-light);
       color: var(--ifm-color-primary);
     }
-  }
 
-  html[data-theme="dark"] &,
-  html[data-theme="dark"] &:not([href]),
-  html[data-theme="dark"] &:focus {
-    color: var(--ifm-color-primary-light);
-  }
+    &.menu__link--sublist {
+      color: var(--ifm-color-primary-dark);
 
-  html[data-theme="dark"] &:not(.menu__link--active):hover {
-    background-color: var(--ifm-color-primary);
-  }
+      &:active,
+      &:focus {
+        background-color: var(--ifm-color-primary-light);
+      }
 
-  html[data-theme="dark"] &:not(.menu__link--active):active {
-    background-color: var(--ifm-color-primary-light);
-    color: var(--ifm-color-primary);
-  }
+      &:hover {
+        background-color: var(--ifm-menu-color-background-hover);
+      }
 
-  &.menu__link--sublist {
-    color: var(--ifm-color-primary-dark);
-    padding-right: 2rem;
-
-    &:hover {
-      background-color: var(--ifm-color-primary-light);
-    }
-
-    html[data-theme="dark"] & {
-      color: var(--ifm-color-primary-light);
-    }
-    html[data-theme="dark"] &:active,
-    html[data-theme="dark"] &:focus,
-    html[data-theme="dark"] &:hover {
-      color: var(--ifm-color-primary-light);
-      background-color: var(--ifm-color-primary);
+      html[data-theme="dark"] & {
+        color: var(--ifm-color-primary-light);
+      }
+      html[data-theme="dark"] &:active,
+      html[data-theme="dark"] &:focus,
+      html[data-theme="dark"] &:hover {
+        color: var(--ifm-color-primary-light);
+        background-color: var(--ifm-color-primary);
+      }
     }
   }
 }
@@ -473,10 +525,19 @@ button[class^="copyButton"] {
     display: block;
     width: 20px;
     height: 20px;
+  }
+}
 
-    html[data-theme="dark"] & {
-      background-color: var(--ifm-color-primary-light);
-    }
+.DocSearch-Button {
+  margin-right: 2rem !important;
+  @include desktop {
+    width: 200px;
+  }
+  @include desktopWide {
+    width: 350px;
+  }
+  html[data-theme="dark"] & {
+    background-color: white;
   }
 }
 
