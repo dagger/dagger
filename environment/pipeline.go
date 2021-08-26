@@ -816,15 +816,15 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 		gitOpts = append(gitOpts, llb.KeepGitDir())
 	}
 	// Secret
-	if authTokenSecret := op.Lookup("authTokenSecret"); authTokenSecret.Exists() {
-		id, err := getSecretID(authTokenSecret)
+	if authToken := op.Lookup("authToken"); authToken.Exists() {
+		id, err := getSecretID(authToken)
 		if err != nil {
 			return st, err
 		}
 		gitOpts = append(gitOpts, llb.AuthTokenSecret(id))
 	}
-	if authHeaderSecret := op.Lookup("authHeaderSecret"); authHeaderSecret.Exists() {
-		id, err := getSecretID(authHeaderSecret)
+	if authHeader := op.Lookup("authHeader"); authHeader.Exists() {
+		id, err := getSecretID(authHeader)
 		if err != nil {
 			return st, err
 		}

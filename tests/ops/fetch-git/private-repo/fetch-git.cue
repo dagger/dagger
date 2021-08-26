@@ -10,9 +10,9 @@ import (
 TestPAT: dagger.#Input & {dagger.#Secret}
 
 TestRepo: #up: [op.#FetchGit & {
-	remote:          "https://github.com/dagger/dagger.git"
-	ref:             "main"
-	authTokenSecret: TestPAT
+	remote:    "https://github.com/dagger/dagger.git"
+	ref:       "main"
+	authToken: TestPAT
 }]
 
 TestContent: os.#Container & {

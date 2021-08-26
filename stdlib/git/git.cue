@@ -11,17 +11,23 @@ import (
 #Repository: {
 	// Git remote.
 	// Example: `"https://github.com/dagger/dagger"`
-	remote: string & dagger.#Input
+	remote: dagger.#Input & {string}
 
 	// Git ref: can be a commit, tag or branch.
 	// Example: "main"
-	ref: string & dagger.#Input
+	ref: dagger.#Input & {string}
 
 	// (optional) Subdirectory
-	subdir: *null | string & dagger.#Input
+	subdir: dagger.#Input & {*null | string}
 
 	// (optional) Keep .git directory
 	keepGitDir: *false | bool
+
+	// (optional) Add Personal Access Token
+	authToken: dagger.#Input & {*null | dagger.#Secret}
+
+	// (optional) Add OAuth Token
+	authHeader: dagger.#Input & {*null | dagger.#Secret}
 
 	#up: [
 		op.#FetchGit & {
@@ -29,6 +35,12 @@ import (
 			"ref":    ref
 			if (keepGitDir) {
 				keepGitDir: true
+			}
+			if (authToken != null) {
+				"authToken": authToken
+			}
+			if (authHeader != null) {
+				"authHeader": authHeader
 			}
 		},
 		if subdir != null {

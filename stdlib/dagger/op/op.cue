@@ -87,8 +87,8 @@ package op
 	ref:         string
 	keepGitDir?: bool
 	// FIXME: the two options are currently ignored until we support buildkit secrets
-	authTokenSecret?:  _ @dagger(secret)
-	authHeaderSecret?: _ @dagger(secret)
+	authToken?:  _ @dagger(secret)
+	authHeader?: _ @dagger(secret)
 }
 
 #FetchHTTP: {
