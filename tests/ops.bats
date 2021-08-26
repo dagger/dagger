@@ -108,6 +108,10 @@ setup() {
     run "$DAGGER" compute "$TESTDIR"/ops/fetch-git/gitdir
     assert_success
 
+    dagger_new_with_env "$TESTDIR"/ops/fetch-git/private-repo
+    run "$DAGGER" up -e op-fetch-git
+    assert_success
+
     # FIXME: distinguish missing inputs from incorrect config
     # run "$DAGGER" compute "$TESTDIR"/ops/fetch-git/invalid
     # assert_failure

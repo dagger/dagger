@@ -8,11 +8,6 @@ setup() {
     dagger -e sanity-check up
 }
 
-@test "op-fetch-git" {
-  # This test should be in `tests/ops.bats` but dagger compute doesn't handle `dagger.#Secret`
-  dagger -e op-fetch-git up
-}
-
 @test "os" {
     dagger -e os up
 }

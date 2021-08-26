@@ -26,6 +26,13 @@ dagger_new_with_plan() {
     "$DAGGER" new "$name"
 }
 
+dagger_new_with_env() {
+    local sourcePlan="$1"
+    
+    "$DAGGER" init -w "$DAGGER_WORKSPACE"
+    rsync -av "$sourcePlan"/ "$DAGGER_WORKSPACE"
+}
+
 # dagger helper to execute the right binary
 dagger() {
     "${DAGGER}" "$@"
