@@ -1296,10 +1296,10 @@
     webpack-merge "^5.8.0"
     webpackbar "^5.0.0-3"
 
-"@docusaurus/core@2.0.0-beta.4":
-  version "2.0.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@docusaurus/core/-/core-2.0.0-beta.4.tgz#b41c5064c8737405cfceb1a373c9c5aa3410fd95"
-  integrity sha512-ITa976MPFl9KbYchMOWCCX6SU6EFDSdGeGOHtpaNcrJ9e9Sj7o77fKmMH/ciShwz1g8brTm3VxZ0FwleU8lTig==
+"@docusaurus/core@2.0.0-beta.5":
+  version "2.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@docusaurus/core/-/core-2.0.0-beta.5.tgz#a8ccb489d75f777de59fdb698f93de9263928594"
+  integrity sha512-LERPgERVmui0Fb/aIEsd0/1O8VMWW2+vokoPJFHsCswNkk+63C+Ko6luu2z1QoXhbUGAVEJKTb4Z2NAZ5eSF5Q==
   dependencies:
     "@babel/core" "^7.12.16"
     "@babel/generator" "^7.12.15"
@@ -1311,12 +1311,12 @@
     "@babel/runtime" "^7.12.5"
     "@babel/runtime-corejs3" "^7.12.13"
     "@babel/traverse" "^7.12.13"
-    "@docusaurus/cssnano-preset" "2.0.0-beta.4"
+    "@docusaurus/cssnano-preset" "2.0.0-beta.5"
     "@docusaurus/react-loadable" "5.5.0"
-    "@docusaurus/types" "2.0.0-beta.4"
-    "@docusaurus/utils" "2.0.0-beta.4"
-    "@docusaurus/utils-common" "2.0.0-beta.4"
-    "@docusaurus/utils-validation" "2.0.0-beta.4"
+    "@docusaurus/types" "2.0.0-beta.5"
+    "@docusaurus/utils" "2.0.0-beta.5"
+    "@docusaurus/utils-common" "2.0.0-beta.5"
+    "@docusaurus/utils-validation" "2.0.0-beta.5"
     "@slorber/static-site-generator-webpack-plugin" "^4.0.0"
     "@svgr/webpack" "^5.5.0"
     autoprefixer "^10.2.5"
@@ -1325,7 +1325,7 @@
     boxen "^5.0.1"
     chalk "^4.1.1"
     chokidar "^3.5.1"
-    clean-css "^5.1.2"
+    clean-css "^5.1.5"
     commander "^5.1.0"
     copy-webpack-plugin "^9.0.0"
     core-js "^3.9.1"
@@ -1362,6 +1362,7 @@
     react-router "^5.2.0"
     react-router-config "^5.1.1"
     react-router-dom "^5.2.0"
+    remark-admonitions "^1.2.1"
     resolve-pathname "^3.0.0"
     rtl-detect "^1.0.3"
     semver "^7.3.4"
@@ -1389,10 +1390,10 @@
     postcss "^8.2.15"
     postcss-sort-media-queries "^3.10.11"
 
-"@docusaurus/cssnano-preset@2.0.0-beta.4":
-  version "2.0.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@docusaurus/cssnano-preset/-/cssnano-preset-2.0.0-beta.4.tgz#a40c0bee39143a531ca4dde05bb3a84bec416668"
-  integrity sha512-KsmFEob0ElffnFFbz93wcYH4IncU4LDnKBerdomU0Wdg/vXTLo3Q7no8df9yjbcBXVRaSX+/tNFapY9Iu/4Cew==
+"@docusaurus/cssnano-preset@2.0.0-beta.5":
+  version "2.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@docusaurus/cssnano-preset/-/cssnano-preset-2.0.0-beta.5.tgz#9f0e89662ac470cadf78bb1c90ad746ad5f6d5b3"
+  integrity sha512-qbGj3X5jcAuA/Nr6EKGRFUGYnMXAuuBg0PyJpKGXLi9/wuIGGuuO/FED2L3f9AONWXZmZuwtKQGXeGtVN8sKEg==
   dependencies:
     cssnano-preset-advanced "^5.1.1"
     postcss "^8.2.15"
@@ -1619,10 +1620,10 @@
     webpack "^5.40.0"
     webpack-merge "^5.8.0"
 
-"@docusaurus/types@2.0.0-beta.4":
-  version "2.0.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@docusaurus/types/-/types-2.0.0-beta.4.tgz#9eef0a88b008ebd65bb9870b7ff0050de0e620c4"
-  integrity sha512-2aMCliUCBYhZO8UiiPIKpRu2KECtqt0nRu44EbN6rj1STf695AIOhJC1Zo5TiuW2WbiljSbkJTgG3XdBZ3FUBw==
+"@docusaurus/types@2.0.0-beta.5":
+  version "2.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@docusaurus/types/-/types-2.0.0-beta.5.tgz#668ddfaa7f23d74522a58aac99d62436b555fbc6"
+  integrity sha512-WtwR5O67cTK6wo9KnSxqBpgC26M6Z90PgX5Gun/Re8Ix+GVEqIzzev9C/2P2Da2TW0sgSkjWNr1tHaNxNMPLkQ==
   dependencies:
     commander "^5.1.0"
     joi "^17.4.0"
@@ -1638,12 +1639,12 @@
     "@docusaurus/types" "2.0.0-beta.2"
     tslib "^2.2.0"
 
-"@docusaurus/utils-common@2.0.0-beta.4":
-  version "2.0.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@docusaurus/utils-common/-/utils-common-2.0.0-beta.4.tgz#eb2e5876f5f79d037fa7e1867177658661b9c1c2"
-  integrity sha512-QaKs96/95ztKgZqHMUS/vNl+GzZ/6vKVEPjBXWt7Fdhg2soT1Iu4cShnibEO5HaVlwSfnJbVmDLVm8phQRdr0A==
+"@docusaurus/utils-common@2.0.0-beta.5":
+  version "2.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@docusaurus/utils-common/-/utils-common-2.0.0-beta.5.tgz#afadd9426372292e0b6d28778613410e3fd58aa4"
+  integrity sha512-LUHEfZ9QGwBCpmGfLiPz5ENipxicsBlzIu+jUuB6I+ljX4Cd2OFkjDVmL0kjHR80sh0KJzNizpjsVj3l3jN9RA==
   dependencies:
-    "@docusaurus/types" "2.0.0-beta.4"
+    "@docusaurus/types" "2.0.0-beta.5"
     tslib "^2.2.0"
 
 "@docusaurus/utils-validation@2.0.0-beta.2":
@@ -1656,12 +1657,12 @@
     joi "^17.4.0"
     tslib "^2.1.0"
 
-"@docusaurus/utils-validation@2.0.0-beta.4":
-  version "2.0.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@docusaurus/utils-validation/-/utils-validation-2.0.0-beta.4.tgz#417ff389d61aab4c6544f169e31bb86573b518df"
-  integrity sha512-t1sxSeyVU02NkcFhPvE7eQFA0CFUst68hTnie6ZS3ToY3nlzdbYRPOAZY5MPr3zRMwum6yFAXgqVA+5fnR0OGg==
+"@docusaurus/utils-validation@2.0.0-beta.5":
+  version "2.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@docusaurus/utils-validation/-/utils-validation-2.0.0-beta.5.tgz#fe7efefdb518bc19fb6cb9c79492bd84cfc4a59a"
+  integrity sha512-VWj1BRYejcGewWP3BKSm3a5dVzQWA9w9MDQUCylR2NxywOxonoUPo9nz5g9bN+C3rwuelfA5u3MORu2q2+rbLw==
   dependencies:
-    "@docusaurus/utils" "2.0.0-beta.4"
+    "@docusaurus/utils" "2.0.0-beta.5"
     chalk "^4.1.1"
     joi "^17.4.0"
     tslib "^2.1.0"
@@ -1681,12 +1682,12 @@
     resolve-pathname "^3.0.0"
     tslib "^2.2.0"
 
-"@docusaurus/utils@2.0.0-beta.4":
-  version "2.0.0-beta.4"
-  resolved "https://registry.yarnpkg.com/@docusaurus/utils/-/utils-2.0.0-beta.4.tgz#6e572371b0a59360b49102d014579f5364f1d8da"
-  integrity sha512-6nI3ETBp0ZSt5yp5Fc5nthQjR1MmLgl2rXC3hcscrSUZx0QvzJFzTiRgD9EAIJtR/i2JkUK18eaFiBjMBoXEbQ==
+"@docusaurus/utils@2.0.0-beta.5":
+  version "2.0.0-beta.5"
+  resolved "https://registry.yarnpkg.com/@docusaurus/utils/-/utils-2.0.0-beta.5.tgz#68859f070ca6bf7875f4a4121e314269211a876b"
+  integrity sha512-hIzuARFMqXqljTdbF19bYRw+fqqK2gHlzepeC9uJfLLaGmirPFDPjr+BN9oiajBhNx2CgvJVl/66lEx4hrd7uQ==
   dependencies:
-    "@docusaurus/types" "2.0.0-beta.4"
+    "@docusaurus/types" "2.0.0-beta.5"
     "@types/github-slugger" "^1.3.0"
     chalk "^4.1.1"
     escape-string-regexp "^4.0.0"
@@ -2984,10 +2985,10 @@ clean-css@^4.2.3:
   dependencies:
     source-map "~0.6.0"
 
-clean-css@^5.1.2:
-  version "5.1.2"
-  resolved "https://registry.yarnpkg.com/clean-css/-/clean-css-5.1.2.tgz#6ea0da7286b4ddc2469a1b776e2461a5007eed54"
-  integrity sha512-QcaGg9OuMo+0Ds933yLOY+gHPWbxhxqF0HDexmToPf8pczvmvZGYzd+QqWp9/mkucAOKViI+dSFOqoZIvXbeBw==
+clean-css@^5.1.2, clean-css@^5.1.5:
+  version "5.1.5"
+  resolved "https://registry.yarnpkg.com/clean-css/-/clean-css-5.1.5.tgz#3b0af240dcfc9a3779a08c2332df3ebd4474f232"
+  integrity sha512-9dr/cU/LjMpU57PXlSvDkVRh0rPxJBXiBtD0+SgYt8ahTCsXtfKjCkNYgIoTC6mBg8CFr5EKhW3DKCaGMUbUfQ==
   dependencies:
     source-map "~0.6.0"
 
