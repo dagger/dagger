@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/input"
+	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/keychain"
@@ -66,6 +67,7 @@ func init() {
 		output.Cmd,
 		versionCmd,
 		docCmd,
+		mod.Cmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {

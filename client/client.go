@@ -32,7 +32,7 @@ import (
 	"go.dagger.io/dagger/state"
 )
 
-// A dagger client
+// Client is a dagger client
 type Client struct {
 	c   *bk.Client
 	cfg Config
