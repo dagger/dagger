@@ -29,6 +29,7 @@ import (
 
 // An execution pipeline
 type Pipeline struct {
+	root     *compiler.Value
 	code     *compiler.Value
 	name     string
 	s        solver.Solver
@@ -38,8 +39,9 @@ type Pipeline struct {
 	computed *compiler.Value
 }
 
-func NewPipeline(code *compiler.Value, s solver.Solver) *Pipeline {
+func NewPipeline(root, code *compiler.Value, s solver.Solver) *Pipeline {
 	return &Pipeline{
+		root:     root,
 		code:     code,
 		name:     code.Path().String(),
 		s:        s,
@@ -277,7 +279,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s)
+	from := NewPipeline(p.root, op.Lookup("from"), p.s)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -471,16 +473,11 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		case "cache":
 			return llb.AddMount(
 				dest,
-				llb.Scratch().File(
-					llb.Mkdir("/cache", fs.FileMode(0755)),
-					llb.WithCustomName(p.vertexNamef("Mkdir /cache (cache mount %s)", dest)),
+				llb.Scratch(),
+				llb.AsPersistentCacheDir(
+					p.canonicalPath(mnt),
+					llb.CacheMountShared,
 				),
-				// FIXME: disabled persistent cache mount (gh issue #495)
-				// llb.Scratch(),
-				// llb.AsPersistentCacheDir(
-				// 	p.canonicalPath(mnt),
-				// 	llb.CacheMountShared,
-				// ),
 			), nil
 		case "tmpfs":
 			return llb.AddMount(
@@ -510,7 +507,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		return nil, fmt.Errorf("invalid mount: should have %s structure",
 			"{from: _, path: string | *\"/\"}")
 	}
-	from := NewPipeline(mnt.Lookup("from"), p.s)
+	from := NewPipeline(p.root, mnt.Lookup("from"), p.s)
 	if err := from.Run(ctx); err != nil {
 		return nil, err
 	}
@@ -527,31 +524,35 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 	return llb.AddMount(dest, from.State(), mo...), nil
 }
 
-// canonicalPath returns the canonical path of `v`
-// If the pipeline is a reference to another pipeline, `canonicalPath()` will
-// return the path of the reference of `v`.
-// FIXME: this doesn't work with references of references.
-func (p *Pipeline) canonicalPath(v *compiler.Value) string {
-	// value path
-	vPath := v.Path().Selectors()
-
-	// pipeline path
-	pipelinePath := p.code.Path().Selectors()
-
-	// check if the pipeline is a reference
-	_, ref := p.code.ReferencePath()
-	if len(ref.Selectors()) == 0 {
-		return v.Path().String()
+// Resolve cue references recursively
+func resolveReference(val cue.Value) cue.Path {
+	v := cue.Dereference(val)
+	if v.Path().String() == val.Path().String() {
+		return v.Path()
 	}
-	canonicalPipelinePath := ref.Selectors()
 
-	// replace the pipeline path with the canonical pipeline path
-	// 1. strip the pipeline path from the value path
-	vPath = vPath[len(pipelinePath):]
-	// 2. inject the canonical pipeline path
-	vPath = append(canonicalPipelinePath, vPath...)
+	return resolveReference(v)
+}
 
-	return cue.MakePath(vPath...).String()
+// Returns the canonical path of v
+// rebuilds the path recursively by walking the selectors from the tree's root
+func (p *Pipeline) canonicalPath(v *compiler.Value) string {
+	ref := resolveReference(v.Cue())
+
+	path := []cue.Selector{}
+	for _, selector := range ref.Selectors() {
+		val := p.root.LookupPath(cue.MakePath(append(path, selector)...))
+		ref := resolveReference(val.Cue())
+
+		sels := ref.Selectors()
+		if len(sels) == 0 {
+			break
+		}
+
+		path = append(path, sels[len(sels)-1])
+	}
+
+	return cue.MakePath(path...).String()
 }
 
 func (p *Pipeline) Export(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -637,7 +638,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s)
+	from := NewPipeline(p.root, op.Lookup("from"), p.s)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -907,7 +908,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if dockerContext.Exists() {
-		from := NewPipeline(op.Lookup("context"), p.s)
+		from := NewPipeline(p.root, op.Lookup("context"), p.s)
 		if err := from.Run(ctx); err != nil {
 			return st, err
 		}

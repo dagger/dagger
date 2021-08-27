@@ -131,7 +131,7 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		e.src.Cue(),
-		newTaskFunc(newPipelineRunner(e.computed, s)),
+		newTaskFunc(newPipelineRunner(e.src, e.computed, s)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -170,7 +170,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.RunnerFunc {
+func newPipelineRunner(src, computed *compiler.Value, s solver.Solver) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -195,7 +195,7 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value())
-		p := NewPipeline(v, s)
+		p := NewPipeline(src, v, s)
 		err := p.Run(ctx)
 		if err != nil {
 			// Record the error
