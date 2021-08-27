@@ -541,7 +541,10 @@ func (p *Pipeline) canonicalPath(v *compiler.Value) string {
 
 	path := []cue.Selector{}
 	for _, selector := range ref.Selectors() {
-		val := p.root.LookupPath(cue.MakePath(append(path, selector)...))
+		tmpPath := append([]cue.Selector{}, path...)
+		tmpPath = append(tmpPath, selector)
+
+		val := p.root.LookupPath(cue.MakePath(tmpPath...))
 		ref := resolveReference(val.Cue())
 
 		sels := ref.Selectors()
