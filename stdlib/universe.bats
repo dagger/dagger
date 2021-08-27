@@ -8,7 +8,6 @@ setup() {
     dagger -e sanity-check up
 }
 
-
 @test "os" {
     dagger -e os up
 }

@@ -3,8 +3,9 @@ package git
 import (
 	"strings"
 
-	"alpha.dagger.io/git"
 	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/git"
 	"alpha.dagger.io/os"
 )
 
@@ -72,5 +73,27 @@ TestCurrentTags: os.#Container & {
 	env: TAGS: strings.Join([ for k, v in tagsList.tags {"\(k)=\(v)"}], "\n")
 	command: """
 		[ $TAGS = "0=master" ]
+		"""
+}
+
+// Test fetching a private repo
+TestPAT: dagger.#Input & {dagger.#Secret}
+
+privateRepo: git.#Repository & {
+	remote:     "https://github.com/dagger/dagger.git"
+	ref:        "main"
+	keepGitDir: true
+	authToken:  TestPAT
+}
+
+TestPrivateRepository: os.#Container & {
+	image: alpine.#Image & {
+		package: bash: "=5.1.0-r0"
+		package: git:  true
+	}
+	mount: "/repo1": from: privateRepo
+	dir: "/repo1"
+	command: """
+		[ -d .git ]
 		"""
 }

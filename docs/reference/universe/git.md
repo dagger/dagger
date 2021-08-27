@@ -37,6 +37,8 @@ A git repository
 |*remote*          | `string`             |Git remote. Example: `"https://github.com/dagger/dagger"`    |
 |*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"     |
 |*subdir*          | `*null \| string`    |(optional) Subdirectory                                      |
+|*authToken*       | `dagger.#Secret`     |(optional) Add Personal Access Token                         |
+|*authHeader*      | `dagger.#Secret`     |(optional) Add OAuth Token                                   |
 
 ### git.#Repository Outputs
 

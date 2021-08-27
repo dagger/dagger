@@ -494,17 +494,11 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 	}
 	// eg. mount: "/foo": secret: mysecret
 	if secret := mnt.Lookup("secret"); secret.Exists() {
-		if !secret.HasAttr("secret") {
-			return nil, fmt.Errorf("invalid secret %q: not a secret", secret.Path().String())
-		}
-		idValue := secret.Lookup("id")
-		if !idValue.Exists() {
-			return nil, fmt.Errorf("invalid secret %q: no id field", secret.Path().String())
-		}
-		id, err := idValue.String()
+		id, err := getSecretID(secret)
 		if err != nil {
-			return nil, fmt.Errorf("invalid secret id: %w", err)
+			return nil, err
 		}
+
 		return llb.AddSecret(dest,
 			llb.SecretID(id),
 			llb.SecretFileOpt(0, 0, 0400), // uid, gid, mask)
@@ -779,6 +773,21 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 	return st, err
 }
 
+func getSecretID(secretField *compiler.Value) (string, error) {
+	if !secretField.HasAttr("secret") {
+		return "", fmt.Errorf("invalid secret %q: not a secret", secretField.Path().String())
+	}
+	idValue := secretField.Lookup("id")
+	if !idValue.Exists() {
+		return "", fmt.Errorf("invalid secret %q: no id field", secretField.Path().String())
+	}
+	id, err := idValue.String()
+	if err != nil {
+		return "", fmt.Errorf("invalid secret id: %w", err)
+	}
+	return id, nil
+}
+
 func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	remote, err := op.Lookup("remote").String()
 	if err != nil {
@@ -796,9 +805,7 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 
 	gitOpts := []llb.GitOption{}
 	var opts struct {
-		AuthTokenSecret  string
-		AuthHeaderSecret string
-		KeepGitDir       bool
+		KeepGitDir bool
 	}
 
 	if err := op.Decode(&opts); err != nil {
@@ -808,11 +815,20 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 	if opts.KeepGitDir {
 		gitOpts = append(gitOpts, llb.KeepGitDir())
 	}
-	if opts.AuthTokenSecret != "" {
-		gitOpts = append(gitOpts, llb.AuthTokenSecret(opts.AuthTokenSecret))
+	// Secret
+	if authToken := op.Lookup("authToken"); authToken.Exists() {
+		id, err := getSecretID(authToken)
+		if err != nil {
+			return st, err
+		}
+		gitOpts = append(gitOpts, llb.AuthTokenSecret(id))
 	}
-	if opts.AuthHeaderSecret != "" {
-		gitOpts = append(gitOpts, llb.AuthTokenSecret(opts.AuthHeaderSecret))
+	if authHeader := op.Lookup("authHeader"); authHeader.Exists() {
+		id, err := getSecretID(authHeader)
+		if err != nil {
+			return st, err
+		}
+		gitOpts = append(gitOpts, llb.AuthHeaderSecret(id))
 	}
 
 	gitOpts = append(gitOpts, llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remoteRedacted, ref)))
