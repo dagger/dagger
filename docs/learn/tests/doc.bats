@@ -160,6 +160,19 @@ setup() {
 
   # Up deployment
   dagger -w "$DAGGER_SANDBOX" -e kube-gcp-basic up
+
+  #################### DEPLOYMENT ####################
+  # Copy deployment to sandbox
+  copy_to_sandbox kube-gcp-deployment kube-gcp
+
+  # Up deployment
+  dagger -w "$DAGGER_SANDBOX" -e kube-gcp-deployment up
+  #################### CUE MANIFEST ####################
+  # Copy deployment to sandbox
+  copy_to_sandbox kube-gcp-cue-manifest kube-gcp
+
+  # Up deployment
+  dagger -w "$DAGGER_SANDBOX" -e kube-gcp-cue-manifest up
 }
 
 @test "doc-1008-aws-cloudformation" {
