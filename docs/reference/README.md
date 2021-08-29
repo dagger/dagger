@@ -21,6 +21,7 @@
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry
 - [gcp/gcs](./gcp/gcs.md) - Google Cloud Storage
 - [gcp/gke](./gcp/gke.md) - Google Kubernetes Engine
+- [gcp/secretmanager](./gcp/secretmanager.md) - Google Cloud Secret Manager
 - [git](./git.md) - Git operations
 - [go](./go.md) - Go build operations
 - [io](./io.md) - IO operations
