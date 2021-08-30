@@ -58,6 +58,7 @@ copy_to_sandbox() {
       cp -a "$source_package" "$target_package"
     fi
 }
+
 # Check if there is a localstack instance.
 #
 # This is needed to do docs test in the CI.
