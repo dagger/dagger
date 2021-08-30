@@ -7,97 +7,10 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: 1.16
-
-      - name: Install Dependencies
-        run: |
-          # Cue
-          export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2)"
-          export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
-          echo "Installing cue version $CUE_VERSION"
-          curl -L https://github.com/cuelang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
-
-      - name: Go Lint
-        uses: golangci/golangci-lint-action@v2
-        with:
-          version: v1.39
-          skip-go-installation: true
-          args: --timeout=3m
-
-      - name: Lint
-        run: |
-          make shellcheck cuelint docslint
-
-      - name: Markdown Lint
-        uses: avto-dev/markdown-lint@v1
-        with:
-          config: ".markdownlint.yaml"
-          args: ./docs README.md
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check out
-        uses: actions/checkout@v2
-
-      - name: Set up Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: 1.16
-
-      - name: Test
-        run: |
-          make test
-
-  integration:
-    name: Integration
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check out
-        uses: actions/checkout@v2
-
-      - name: Set up Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: 1.16
-
-      - name: Install Dependencies
-        run: |
-          # SOPS
-          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
-          sudo chmod +x /usr/local/bin/sops
-
-      - name: Import Dagger private key
-        env:
-          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
-        run: |
-          mkdir -p ~/.config/dagger
-          echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
-
-      - name: Integration test
-        run: |
-          env
-          make core-integration
-
   universe:
     name: Universe
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 5
     services:
       localstack:
         image: localstack/localstack:0.12.16
@@ -146,34 +59,3 @@ jobs:
       - name: Universe Test
         run: |
           make universe-test
-
-  website:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Cypress run
-        uses: cypress-io/github-action@v2
-        env:
-          REACT_APP_CLIENT_ID: 123
-          REACT_APP_CLIENT_SECRET: 123
-          REACT_APP_DAGGER_SITE_URI: https://dagger.io
-          REACT_APP_API_PROXY_ENABLE: false
-          REACT_APP_AMPLITUDE_ID: 123
-        with:
-          config: chromeWebSecurity=false
-          start: |
-            yarn start
-            yarn start:withAuth
-          working-directory: ./website
-      - uses: actions/upload-artifact@v1
-        if: failure()
-        with:
-          name: cypress-screenshots
-          path: website/cypress/screenshots
-      # Test run video was always captured, so this action uses "always()" condition
-      - uses: actions/upload-artifact@v1
-        if: always()
-        with:
-          name: cypress-videos
-          path: website/cypress/videos
