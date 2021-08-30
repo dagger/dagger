@@ -179,7 +179,7 @@ todoApp: kubernetes.#Resources & {
 ```
 
 This defines a `todoApp` variable containing the Kubernetes objects used to create a todoapp deployment. It also
-references a `kubeconfig` value defined above:
+references a `kubeconfig` value defined below:
 
 <Tabs defaultValue="kind"
 groupId="provider"
@@ -189,7 +189,7 @@ values={[
 
   <TabItem value="kind">
 
-The above `config.cue` defines:
+The following `config.cue` defines:
 
 - `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
