@@ -119,7 +119,7 @@ mkdir kube
 Kubernetes objects are located inside the `k8s` folder:
 
 ```shell
-tree k8s
+ls -l k8s
 # k8s
 # ├── deployment.yaml
 # └── service.yaml
@@ -144,13 +144,13 @@ kubectl get deployments
 
 kubectl get service
 # NAME              TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
-# todoapp-service   NodePort    10.96.225.114   <none>        80:32658/TCP   11m 
+# todoapp-service   NodePort    10.96.225.114   <none>        80:32658/TCP   11m
 ```
 
 The next step is to transpose it in Cue. Before continuing, clean everything:
 
 ```shell
-kubectl delete -f k8s/ 
+kubectl delete -f k8s/
 # deployment.apps "todoapp" deleted
 # service "todoapp-service" deleted
 ```
@@ -160,21 +160,21 @@ kubectl delete -f k8s/
 Create a file named `todoapp.cue` and add the following configuration to it.
 
 ```cue title="todoapp/kube/todoapp.cue"
-package main  
-  
-import (  
- "alpha.dagger.io/dagger"  
+package main
+
+import (
+ "alpha.dagger.io/dagger"
  "alpha.dagger.io/kubernetes"
-)  
+)
 
 // input: kubernetes objects directory to deploy to
 // set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input  
+manifest: dagger.#Artifact & dagger.#Input
 
 // Deploy the manifest to a kubernetes cluster
-todoApp: kubernetes.#Resources & {  
+todoApp: kubernetes.#Resources & {
  "kubeconfig": kubeconfig
- source: manifest  
+ source: manifest
 }
 ```
 
@@ -196,9 +196,9 @@ The above `config.cue` defines:
 ```cue title="todoapp/kube/config.cue"
 package main
 
-import (  
+import (
  "alpha.dagger.io/dagger"
-)  
+)
 
 // set with `dagger input text kubeconfig -f "$HOME"/.kube/config -e kube`
 kubeconfig: string & dagger.#Input
@@ -217,22 +217,22 @@ The below `config.cue` defines:
 
 ```cue title="todoapp/kube/config.cue"
 package main
-  
-import (  
- "alpha.dagger.io/gcp"  
+
+import (
+ "alpha.dagger.io/gcp"
  "alpha.dagger.io/gcp/gke"
-)  
-  
+)
+
 // Value created for generic reference of `kubeconfig` in `todoapp.cue`
 kubeconfig: gkeConfig.kubeconfig
 
 // gcpConfig used for Google connection
-gcpConfig: gcp.#Config 
+gcpConfig: gcp.#Config
 
-// gkeConfig used for deployment  
-gkeConfig: gke.#KubeConfig & {  
+// gkeConfig used for deployment
+gkeConfig: gke.#KubeConfig & {
  // config field references `gkeConfig` value to set in once
- config: gcpConfig  
+ config: gcpConfig
 }
 ```
 
@@ -249,22 +249,22 @@ The below `config.cue` defines:
 
 ```cue title="todoapp/kube/config.cue"
 package main
-  
-import (  
- "alpha.dagger.io/aws"  
+
+import (
+ "alpha.dagger.io/aws"
  "alpha.dagger.io/aws/eks"
-)  
+)
 
 // Value created for generic reference of `kubeconfig` in `todoapp.cue`
 kubeconfig: eksConfig.kubeconfig
-  
-// awsConfig for Amazon connection  
-awsConfig: aws.#Config  
 
-// eksConfig used for deployment  
-eksConfig: eks.#KubeConfig & {  
+// awsConfig for Amazon connection
+awsConfig: aws.#Config
+
+// eksConfig used for deployment
+eksConfig: eks.#KubeConfig & {
  // config field references `gkeConfig` value to set in once
- config: awsConfig  
+ config: awsConfig
 }
 ```
 
@@ -428,7 +428,7 @@ kubectl get deployments
 Before continuing, cleanup deployment:
 
 ```shell
-kubectl delete -f k8s/ 
+kubectl delete -f k8s/
 # deployment.apps "todoapp" deleted
 # service "todoapp-service" deleted
 ```
@@ -498,7 +498,7 @@ todoApp: {
   // Update the image from manifest to use the deployed one
   kustomization: kustomize.#Kustomize & {
     source:        manifest
-    
+
     // Convert CUE to YAML.
     kustomization: yaml.Marshal({
       resources: ["deployment.yaml", "service.yaml"]
@@ -510,7 +510,7 @@ todoApp: {
     })
   }
 
-  // Deploy the customized manifest to a kubernetes cluster 
+  // Deploy the customized manifest to a kubernetes cluster
   kubeSrc: kubernetes.#Resources & {
     "kubeconfig": kubeconfig
     source:     kustomization
@@ -533,10 +533,10 @@ The two files have to be edited to do so.
 
 ```cue title="todoapp/kube/config.cue"
 package main
-  
-import (  
- "alpha.dagger.io/gcp"  
- "alpha.dagger.io/gcp/gcr"  
+
+import (
+ "alpha.dagger.io/gcp"
+ "alpha.dagger.io/gcp/gcr"
  "alpha.dagger.io/gcp/gke"
 )
 
@@ -544,12 +544,12 @@ import (
 kubeconfig: gkeConfig.kubeconfig
 
 // gcpConfig used for Google connection
-gcpConfig: gcp.#Config 
+gcpConfig: gcp.#Config
 
-// gkeConfig used for deployment  
-gkeConfig: gke.#KubeConfig & {  
+// gkeConfig used for deployment
+gkeConfig: gke.#KubeConfig & {
  // config field references `gkeConfig` value to set in once
- config: gcpConfig  
+ config: gcpConfig
 }
 
 // gcrCreds used for remote image push
@@ -587,7 +587,7 @@ repository: dagger.#Artifact & dagger.#Input
 registry: string & dagger.#Input
 tag:      "test-gcr"
 
-// source of Kube config file. 
+// source of Kube config file.
 // set with `dagger input dir manifest ./k8s -e kube`
 manifest: dagger.#Artifact & dagger.#Input
 
@@ -611,7 +611,7 @@ todoApp: {
   // Update the image of the deployment to the deployed image
   kustomization: kustomize.#Kustomize & {
     source:        manifest
-    
+
     // Convert CUE to YAML.
     kustomization: yaml.Marshal({
       resources: ["deployment.yaml", "service.yaml"]
@@ -699,7 +699,7 @@ repository: dagger.#Artifact & dagger.#Input
 registry: string & dagger.#Input
 tag:      "test-ecr"
 
-// source of Kube config file. 
+// source of Kube config file.
 // set with `dagger input dir manifest ./k8s -e kube`
 manifest: dagger.#Artifact & dagger.#Input
 
@@ -722,7 +722,7 @@ todoApp: {
   // Update the image of the deployment to the deployed image
   kustomization: kustomize.#Kustomize & {
     source:        manifest
-    
+
     // Convert CUE to YAML.
     kustomization: yaml.Marshal({
       resources: ["deployment.yaml", "service.yaml"]
@@ -819,7 +819,7 @@ kubectl get deployments
 Before continuing, cleanup deployment:
 
 ```shell
-kubectl delete -f k8s/ 
+kubectl delete -f k8s/
 # deployment.apps "todoapp" deleted
 # service "todoapp-service" deleted
 ```
@@ -958,7 +958,7 @@ import (
     "name": name
     ports: "http": deployment.port
   }
-    
+
   // Merge definitions and convert them back from CUE to YAML
   manifest: yaml.MarshalStream([deployment.manifest, service.manifest])
 }
@@ -1019,7 +1019,7 @@ todoApp: {
     image: remoteImage.ref
   }
 
-  // Deploy the customized manifest to a kubernetes cluster 
+  // Deploy the customized manifest to a kubernetes cluster
   kubeSrc: kubernetes.#Resources & {
     "kubeconfig": kubeconfig
     manifest:     deployment.manifest
@@ -1070,7 +1070,7 @@ todoApp: {
     image: remoteImage.ref
   }
 
-  // Deploy the customized manifest to a kubernetes cluster 
+  // Deploy the customized manifest to a kubernetes cluster
   kubeSrc: kubernetes.#Resources & {
     "kubeconfig": kubeconfig
     manifest:     deployment.manifest
@@ -1121,7 +1121,7 @@ todoApp: {
     image: remoteImage.ref
   }
 
-  // Deploy the customized manifest to a kubernetes cluster 
+  // Deploy the customized manifest to a kubernetes cluster
   kubeSrc: kubernetes.#Resources & {
     "kubeconfig": kubeconfig
     manifest:     deployment.manifest
