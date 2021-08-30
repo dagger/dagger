@@ -48,7 +48,7 @@ setup() {
     skip "disabled because of inifinit loop"
     # skip_unless_local_localstack
 
-    # dagger -e aws-ecr-localstack up
+    dagger -e aws-ecr-localstack up
 }
 
 @test "aws: s3" {
@@ -59,7 +59,7 @@ setup() {
     skip "disabled because of inifinit loop"
     # skip_unless_local_localstack
 
-    # dagger -e aws-s3-localstack up
+    dagger -e aws-s3-localstack up
 }
 
 @test "aws: eks" {
