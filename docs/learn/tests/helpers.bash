@@ -34,20 +34,14 @@ dagger() {
     "${DAGGER}" "$@"
 }
 
-# dagger helper to run doc examples in clean environment
+# Setup sandbox for dagger example
+# It clones the example repository and update Sandbox to
 setup_example_sandbox() {
-    # Tell Dagger not to use DAGGER WORKSPACE env var
-    unset DAGGER_WORKSPACE
+  git -C "$DAGGER_SANDBOX" clone https://github.com/dagger/examples
 
-    export CODEBLOC_SRC="$(pwd)"
-    local tmpdir=$(mktemp -d)
-    cd $tmpdir
-    if [ "$1" = "doc" ]; then
-        git clone https://github.com/dagger/examples
-        cd examples/todoapp
-        cue mod init
-    fi
+  export DAGGER_SANDBOX="$DAGGER_SANDBOX"/examples/todoapp
 }
+
 
 # copy an environment from the current workspace to the sandbox.
 #

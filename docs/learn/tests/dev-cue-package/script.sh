@@ -1,6 +1,6 @@
 #!/bin/bash
 
-mkdir test
+mkdir -p test
 
 cat > test/source.cue << EOF
 package test
