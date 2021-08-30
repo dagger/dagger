@@ -97,7 +97,7 @@ jobs:
   universe:
     name: Universe
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 12
     services:
       localstack:
         image: localstack/localstack:0.12.16
