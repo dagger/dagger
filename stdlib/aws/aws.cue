@@ -16,7 +16,7 @@ import (
 	// AWS secret key
 	secretKey: dagger.#Input & {dagger.#Secret}
 	// AWS localstack mode
-	localMode: dagger.#Input & {string | *null}
+	localMode: dagger.#Input & {*false | bool}
 }
 
 // Re-usable aws-cli component
@@ -32,7 +32,7 @@ import (
 				"package": jq:        "=~1.6"
 				"package": curl:      true
 				"package": "aws-cli": "=~1.18"
-				if config.localMode != null {
+				if config.localMode != false {
 					package: "py3-pip": true
 				}
 			}
@@ -45,7 +45,7 @@ import (
 				"-eo",
 				"pipefail",
 				"-c",
-				if config.localMode == null {
+				if config.localMode == false {
 					#"""
 						aws configure set aws_access_key_id "$(cat /run/secrets/access_key)"
 						aws configure set aws_secret_access_key "$(cat /run/secrets/secret_key)"
@@ -55,7 +55,7 @@ import (
 						aws configure set default.output "json"
 						"""#
 				},
-				if config.localMode != null {
+				if config.localMode != false {
 					#"""
 						# Download awscli v3 and override aws
 						pip install awscli-local[v2]

@@ -21,7 +21,7 @@ KubeConfig config outputs a valid kube-auth-config for kubectl client
 |*config.region*       | `string`                  |AWS region             |
 |*config.accessKey*    | `dagger.#Secret`          |AWS access key         |
 |*config.secretKey*    | `dagger.#Secret`          |AWS secret key         |
-|*config.localMode*    | `*null \| string`         |AWS localstack mode    |
+|*config.localMode*    | `*false \| bool`          |AWS localstack mode    |
 |*clusterName*         | `string`                  |EKS cluster name       |
 |*version*             | `*"v1.19.9" \| string`    |Kubectl version        |
 

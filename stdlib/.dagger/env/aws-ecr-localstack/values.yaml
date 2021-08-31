@@ -5,7 +5,7 @@ inputs:
     TestConfig.awsConfig.accessKey:
         secret: ENC[AES256_GCM,data:t/iOlA==,iv:oLhubqSKZqn5lVPFn8On//LPj1deAFPXKVTyBKdVODQ=,tag:PORmrxDIf/MHbFDrdxnlTQ==,type:str]
     TestConfig.awsConfig.localMode:
-        text: "true"
+        bool: "true"
     TestConfig.awsConfig.secretKey:
         secret: ENC[AES256_GCM,data:2HYF9w==,iv:f/a9dy4HLJOtKdn8G+zKTboXU1YhzXBEKT1WSvrsCvk=,tag:RKQO+Pg3wg23LIMAnyXhMA==,type:str]
 sops:
@@ -23,8 +23,8 @@ sops:
             aXlvVWJVSGNTSkVyYmpZbi9nUVJZdmMK6csXZ2RMxFw5DB+Hb2TyhyoZT8c2/z7Y
             Lc9Pe8gb8aUq5Ha+wCybYvY6JWEM5A9XYJKbE7f4borTfGKS72d6pw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-08-16T20:52:50Z"
-    mac: ENC[AES256_GCM,data:31GBJoqzJOt2q29ql9xTGvhg6XaMupZliAEx2XXD19CvJuAlPdkkbdOP1quEDjHqeBfWUZlTTnqqm2HdSjJ9MgS7aSpgIwb65g/KMez/13QKqlicKaOT55uuyPmWh9+p0rSBCWTHo1vcZldXEuQ9eohwgkV1xHGU3tV+IsmlfrM=,iv:ISdTPiT3rUpZrmMoMBDYmQEB5Q6Tg5fx8leAS3B2kBU=,tag:z/4/2MS6CSlEC++9kCKn5Q==,type:str]
+    lastmodified: "2021-08-31T15:04:51Z"
+    mac: ENC[AES256_GCM,data:o/B2ZTd1ldSVkIbluXnHJ5clZ0oYVYVvmltxLw9k7OyFl9WBVBOslwrxYyrvgkKpLQIpFArh3VtMbizoTrzFWzoXMqdkLYza0IhaZekRn50NyaqOks/qAUJh0Cas6qA87nOyVw3J9Ldc1HR0lgjFLpIsPZYgVGs5BgQZ5Pg/X40=,iv:w6XNLkF2h/6JjCLFioyWImvRHiN6ILDimrxcboMRh94=,tag:k3BbcVeI9qj0NoEdQiLstg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
