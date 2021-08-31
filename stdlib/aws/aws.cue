@@ -58,7 +58,7 @@ import (
 				if config.localMode != null {
 					#"""
 						# Download awscli v3 and override aws
-						pip install awscli-local[v2]
+						pip install awscli-local==0.14
 						mv /usr/bin/awslocal /usr/bin/aws
 
 						# Configure
