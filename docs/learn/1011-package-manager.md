@@ -39,7 +39,7 @@ That will create 2 directories: `.dagger` and `cue.mod` where our package will r
 
 ### Install
 
-In our example we will use `gcpcloudrun` module from [github](https://github.com/dagger/packages/blob/main/gcpcloudrun/source.cue)
+In our example we will use `gcpcloudrun` package from [github](https://github.com/dagger/packages/blob/main/gcpcloudrun/source.cue)
 Let's first add it to our `source.cue` file:
 
 ```cue title="./source.cue"
@@ -115,4 +115,14 @@ And `cue.mod/dagger.mod.cue` should reflect the new version:
 
 ```cue title="./cue.mod/dagger.mod"
 github.com/dagger/packages/gcpcloudrun v0.2
+```
+
+## Develop package locally
+
+Currently, package manager cannot add local packages so a workaround is linking the package to `cue.mod/pkg`.
+Create a directory with your domain name, usually github.com/myuser, and link your package directory.
+
+```shell
+mkdir cue.mod/pkg/<mydomain>
+ln -s <localpackage> cue.mod/pkg/<mydomain>/<mypackagename>
 ```
