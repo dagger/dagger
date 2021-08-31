@@ -26,12 +26,12 @@ type Solver struct {
 }
 
 type Opts struct {
-	Control *bk.Client
-	Gateway bkgw.Client
-	Events  chan *bk.SolveStatus
-	Auth    *RegistryAuthProvider
-	Secrets session.Attachable
-	NoCache bool
+	Control      *bk.Client
+	Gateway      bkgw.Client
+	Events       chan *bk.SolveStatus
+	Auth         *RegistryAuthProvider
+	SecretsStore SecretsStore
+	NoCache      bool
 }
 
 func New(opts Opts) Solver {
@@ -59,6 +59,10 @@ func invalidateCache(def *llb.Definition) error {
 	}
 
 	return nil
+}
+
+func (s Solver) GetOptions() Opts {
+	return s.opts
 }
 
 func (s Solver) NoCache() bool {
@@ -189,7 +193,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 		Exports: []bk.ExportEntry{output},
 		Session: []session.Attachable{
 			s.opts.Auth,
-			s.opts.Secrets,
+			s.opts.SecretsStore.Secrets,
 			NewDockerSocketProvider(),
 		},
 	}

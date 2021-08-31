@@ -68,7 +68,7 @@ package op
 	target:   string
 	username: string
 	// FIXME: should be a #Secret (circular import)
-	secret: string | bytes
+	secret: _ @dagger(secret)
 }
 
 #FetchContainer: {
