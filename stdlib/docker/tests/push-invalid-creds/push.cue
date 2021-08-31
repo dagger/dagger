@@ -1,12 +1,13 @@
 package docker
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/random"
 )
 
 TestRegistry: {
-	username: string @dagger(input)
-	secret:   string @dagger(input)
+	username: dagger.#Input & {string}
+	secret:   dagger.#Input & {dagger.#Secret}
 }
 
 TestPush: {

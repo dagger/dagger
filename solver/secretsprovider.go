@@ -23,7 +23,6 @@ func NewSecretsStoreProvider(st *state.State) SecretsStore {
 		Secrets: secretsprovider.NewSecretProvider(store),
 		Store:   store,
 	}
-
 }
 
 type inputStore struct {

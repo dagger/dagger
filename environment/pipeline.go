@@ -655,7 +655,7 @@ func (p *Pipeline) DockerLogin(ctx context.Context, op *compiler.Value, st llb.S
 	// FIXME If we could create secret directly in `cue`, we could clean up
 	//  that condition
 	// But currently it's not possible because ECR secret's is a string
-	// so we need to handle both option (string & secrets)
+	// so we need to handle both options (string & secret)
 	secretValue, err := op.Lookup("secret").String()
 	if err != nil {
 		// Retrieve secret

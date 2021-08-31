@@ -4,9 +4,7 @@ import (
 	"alpha.dagger.io/aws"
 	"alpha.dagger.io/aws/ecr"
 	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/random"
-	"alpha.dagger.io/alpine"
 )
 
 // 
@@ -48,36 +46,10 @@ TestRemoteAWS: {
 	}
 }
 
-#TestGetSecret: {
-	secret: dagger.#Artifact
-
-	out: {
-		string
-
-		#up: [
-			op.#Load & {from: alpine.#Image},
-
-			op.#Exec & {
-				always: true
-				args: ["sh", "-c", "cp /input/secret /secret"]
-				mount: "/input/secret": "secret": secret
-			},
-
-			op.#Export & {
-				source: "/secret"
-			},
-		]
-	}
-}
-
 TestRemoteDocker: {
 	dockerConfig: {
-		username: string & dagger.#Input
-		secret:   dagger.#Secret & dagger.#Input
-	}
-
-	secret: #TestGetSecret & {
-		secret: dockerConfig.secret
+		username: dagger.#Input & {string}
+		secret:   dagger.#Input & {dagger.#Secret}
 	}
 
 	target: "daggerio/ci-test:test-docker-\(TestResources.suffix.out)"
@@ -87,7 +59,7 @@ TestRemoteDocker: {
 		source:   TestResources.image
 		auth: {
 			username: dockerConfig.username
-			"secret": secret.out
+			secret:   dockerConfig.secret
 		}
 	}
 }
