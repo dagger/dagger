@@ -16,13 +16,13 @@ Returns an unused rule priority (randomized in available range)
 
 ### elb.#RandomRulePriority Inputs
 
-| Name                 | Type                 | Description           |
-| -------------        |:-------------:       |:-------------:        |
-|*config.region*       | `string`             |AWS region             |
-|*config.accessKey*    | `dagger.#Secret`     |AWS access key         |
-|*config.secretKey*    | `dagger.#Secret`     |AWS secret key         |
-|*config.localMode*    | `*null \| string`    |AWS localstack mode    |
-|*listenerArn*         | `string`             |ListenerArn            |
+| Name                 | Type                | Description           |
+| -------------        |:-------------:      |:-------------:        |
+|*config.region*       | `string`            |AWS region             |
+|*config.accessKey*    | `dagger.#Secret`    |AWS access key         |
+|*config.secretKey*    | `dagger.#Secret`    |AWS secret key         |
+|*config.localMode*    | `*false \| bool`    |AWS localstack mode    |
+|*listenerArn*         | `string`            |ListenerArn            |
 
 ### elb.#RandomRulePriority Outputs
 
