@@ -1,14 +1,15 @@
 package main
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/random"
 )
 
 registry: {
-	username: string
-	secret:   string
+	username: dagger.#Input & {string}
+	secret:   dagger.#Input & {dagger.#Secret}
 }
 
 TestPushContainer: {
