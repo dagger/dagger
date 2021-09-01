@@ -54,6 +54,12 @@ import (
 	// Safely mount secrets (in cleartext) as non-persistent files
 	secret: [string]: dagger.#Secret
 
+	// Write file in the container
+	files: [string]: {
+		content: string
+		mode:    int | *0o644
+	}
+
 	// Mount persistent cache directories
 	cache: [string]: true
 
@@ -84,6 +90,13 @@ import (
 				args:  [shell.path] + shell.args + [cmd]
 				"env": env
 				"dir": dir
+			}
+		},
+		for dest, file in files {
+			op.#WriteFile & {
+				"content": file.content
+				"mode":    file.mode
+				"dest":    dest
 			}
 		},
 		// Execute main command with volumes
