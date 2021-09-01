@@ -36,7 +36,7 @@ shellcheck:
 lint: shellcheck cuelint golint docslint
 
 .PHONY: integration
-integration: core-integration universe-test
+integration: core-integration universe-test doc-test
 
 .PHONY: core-integration
 core-integration: dagger-debug
@@ -47,6 +47,11 @@ core-integration: dagger-debug
 universe-test: dagger-debug
 	yarn --cwd "./universe" install
 	DAGGER_BINARY="../cmd/dagger/dagger-debug" yarn --cwd "./universe" test
+
+.PHONY: doc-test
+doc-test: dagger-debug
+	yarn --cwd "./docs/learn/tests" install
+	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./docs/learn/tests" test
 
 .PHONY: install
 install: dagger

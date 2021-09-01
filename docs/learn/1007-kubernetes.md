@@ -159,23 +159,7 @@ kubectl delete -f k8s/
 
 Create a file named `todoapp.cue` and add the following configuration to it.
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
- "alpha.dagger.io/dagger"
- "alpha.dagger.io/kubernetes"
-)
-
-// input: kubernetes objects directory to deploy to
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input
-
-// Deploy the manifest to a kubernetes cluster
-todoApp: kubernetes.#Resources & {
- "kubeconfig": kubeconfig
- source: manifest
-}
+```cue file=tests/kube-kind/basic/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
 This defines a `todoApp` variable containing the Kubernetes objects used to create a todoapp deployment. It also
@@ -193,15 +177,7 @@ The following `config.cue` defines:
 
 - `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/dagger"
-)
-
-// set with `dagger input text kubeconfig -f "$HOME"/.kube/config -e kube`
-kubeconfig: string & dagger.#Input
+```cue file=tests/kube-kind/config.cue title="todoapp/kube/config.cue"
 ```
 
   </TabItem>
@@ -215,25 +191,7 @@ The below `config.cue` defines:
 - `gkeConfig`: transform a `gcpConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/gcp/gke`
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/gcp"
- "alpha.dagger.io/gcp/gke"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: gkeConfig.kubeconfig
-
-// gcpConfig used for Google connection
-gcpConfig: gcp.#Config
-
-// gkeConfig used for deployment
-gkeConfig: gke.#KubeConfig & {
- // config field references `gkeConfig` value to set in once
- config: gcpConfig
-}
+```cue file=tests/kube-gcp/basic/config.cue title="todoapp/kube/config.cue"
 ```
 
   </TabItem>
@@ -247,25 +205,7 @@ The below `config.cue` defines:
 - `eksConfig`, transform a `awsConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/aws/eks`
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/aws"
- "alpha.dagger.io/aws/eks"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: eksConfig.kubeconfig
-
-// awsConfig for Amazon connection
-awsConfig: aws.#Config
-
-// eksConfig used for deployment
-eksConfig: eks.#KubeConfig & {
- // config field references `gkeConfig` value to set in once
- config: awsConfig
-}
+```cue file=tests/kube-aws/basic/config.cue title="todoapp/kube/config.cue"
 ```
 
   </TabItem>
@@ -458,64 +398,7 @@ Let's see how to deploy an image locally and push it to the local cluster
 - `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "encoding/yaml"
-
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-  "alpha.dagger.io/kubernetes/kustomize"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// Registry to push images to
-registry: string & dagger.#Input
-tag:      "test-kind"
-
-// input: kubernetes objects directory to deploy to
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input
-
-// Todoapp deployment pipeline
-todoApp: {
-  // Build the image from repositoru artifact
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push image to registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-  }
-
-  // Update the image from manifest to use the deployed one
-  kustomization: kustomize.#Kustomize & {
-    source:        manifest
-
-    // Convert CUE to YAML.
-    kustomization: yaml.Marshal({
-      resources: ["deployment.yaml", "service.yaml"]
-
-      images: [{
-        name:    "public.ecr.aws/j7f8d3t2/todoapp"
-        newName: remoteImage.ref
-      }]
-    })
-  }
-
-  // Deploy the customized manifest to a kubernetes cluster
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    source:     kustomization
-  }
-}
+```cue file=tests/kube-kind/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
@@ -529,34 +412,9 @@ The two files have to be edited to do so.
 
 `kube/config.cue` configuration has following change:
 
-- definition of a new `ecrCreds` value that contains ecr credentials for remote image push to GCR
+- definition of a new `gcrCreds` value that contains ecr credentials for remote image push to GCR
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/gcp"
- "alpha.dagger.io/gcp/gcr"
- "alpha.dagger.io/gcp/gke"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: gkeConfig.kubeconfig
-
-// gcpConfig used for Google connection
-gcpConfig: gcp.#Config
-
-// gkeConfig used for deployment
-gkeConfig: gke.#KubeConfig & {
- // config field references `gkeConfig` value to set in once
- config: gcpConfig
-}
-
-// gcrCreds used for remote image push
-gcrCreds: gcr.#Credentials & {
- // config field references `gcpConfig` value to set in once
-  config: gcpConfig
-}
+```cue file=tests/kube-gcp/deployment/config.cue title="todoapp/kube/config.cue"
 ```
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
@@ -567,68 +425,7 @@ gcrCreds: gcr.#Credentials & {
 - `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "encoding/yaml"
-
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-  "alpha.dagger.io/kubernetes/kustomize"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// GCR registry to push images to
-registry: string & dagger.#Input
-tag:      "test-gcr"
-
-// source of Kube config file.
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input
-
-// Declarative name
-todoApp: {
-  // Build an image from the project repository
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push the image to a remote registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-    auth: {
-      username: gcrCreds.username
-      secret:   gcrCreds.secret
-    }
-  }
-
-  // Update the image of the deployment to the deployed image
-  kustomization: kustomize.#Kustomize & {
-    source:        manifest
-
-    // Convert CUE to YAML.
-    kustomization: yaml.Marshal({
-      resources: ["deployment.yaml", "service.yaml"]
-
-      images: [{
-        name:    "public.ecr.aws/j7f8d3t2/todoapp"
-        newName: remoteImage.ref
-      }]
-    })
-  }
-
-  // Value created for generic reference of `kubeconfig` in `todoapp.cue`
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    source:     kustomization
-  }
-}
+```cue file=tests/kube-gcp/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
@@ -643,32 +440,7 @@ The two files have to be edited to do so.
 
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to ECR
 
-```cue title="todoapp/kube/config.cue"
-package main
-
-import (
- "alpha.dagger.io/aws"
- "alpha.dagger.io/aws/eks"
- "alpha.dagger.io/aws/ecr"
-)
-
-// Value created for generic reference of `kubeconfig` in `todoapp.cue`
-kubeconfig: eksConfig.kubeconfig
-
-// awsConfig for Amazon connection
-awsConfig: aws.#Config
-
-// eksConfig used for deployment
-eksConfig: eks.#KubeConfig & {
- // config field references `awsConfig` value to set in once
- config: awsConfig
-}
-
-// ecrCreds used for remote image push
-ecrCreds: ecr.#Credentials & {
- // config field references `awsConfig` value to set in once
-  config: awsConfig
-}
+```cue file=tests/kube-aws/deployment/config.cue title="todoapp/kube/config.cue"
 ```
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
@@ -679,67 +451,7 @@ ecrCreds: ecr.#Credentials & {
 - `remoteImage`, push an image to the registry
 - `kustomization`, apply kustomization to image
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "encoding/yaml"
-
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-  "alpha.dagger.io/kubernetes/kustomize"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// ECR registry to push images to
-registry: string & dagger.#Input
-tag:      "test-ecr"
-
-// source of Kube config file.
-// set with `dagger input dir manifest ./k8s -e kube`
-manifest: dagger.#Artifact & dagger.#Input
-
-todoApp: {
-  // Build an image from the project repository
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push the image to a remote registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-    auth: {
-      username: ecrCreds.username
-      secret:   ecrCreds.secret
-    }
-  }
-
-  // Update the image of the deployment to the deployed image
-  kustomization: kustomize.#Kustomize & {
-    source:        manifest
-
-    // Convert CUE to YAML.
-    kustomization: yaml.Marshal({
-      resources: ["deployment.yaml", "service.yaml"]
-
-      images: [{
-        name:    "public.ecr.aws/j7f8d3t2/todoapp"
-        newName: remoteImage.ref
-      }]
-    })
-  }
-
-  // Value created for generic reference of `kubeconfig` in `todoapp.cue`
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    source:     kustomization
-  }
-}
+```cue file=tests/kube-aws/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
@@ -833,96 +545,17 @@ of the language features.
 
 ### Convert Kubernetes objects to CUE
 
-First, let's create re-usable definitions for the `deployment` and the `service` to remove a lot of boilerplate
-and repetition.
+First, let's create re-usable definitions for the `deployment` and the `service` to remove a lot of boilerplate and
+repetition.
 
 Let's define a re-usable `#Deployment` definition in `kube/deployment.cue`.
 
-```cue title="todoapp/kube/deployment.cue"
-package main
-
-// Deployment template containing all the common boilerplate shared by
-// deployments of this application.
-#Deployment: {
-  // Name of the deployment. This will be used to label resources automatically
-  // and generate selectors.
-  name: string
-
-  // Container image.
-  image: string
-
-  // 80 is the default port.
-  port: *80 | int
-
-  // 1 is the default, but we allow any number.
-  replicas: *1 | int
-
-  // Deployment manifest. Uses the name, image, port and replicas above to
-  // generate the resource manifest.
-  manifest: {
-    apiVersion: "apps/v1"
-    kind:       "Deployment"
-    metadata: {
-      "name": name
-      labels: app: name
-    }
-    spec: {
-      "replicas": replicas
-      selector: matchLabels: app: name
-      template: {
-        metadata: labels: app: name
-        spec: containers: [{
-          "name":  name
-          "image": image
-          ports: [{
-            containerPort: port
-          }]
-        }]
-      }
-    }
-  }
-}
+```cue file=tests/kube-kind/cue-manifest/deployment.cue title="todoapp/kube/deployment.cue"
 ```
 
 Indeed, let's also define a re-usable `#Service` definition in `kube/service.cue`.
 
-```cue title="todoapp/kube/service.cue"
-package main
-
-// Service template containing all the common boilerplate shared by
-// services of this application.
-#Service: {
-  // Name of the service. This will be used to label resources automatically
-  // and generate selector.
-  name: string
-
-  // NodePort is the default service type.
-  type: *"NodePort" | "LoadBalancer" | "ClusterIP" | "ExternalName"
-
-  // Ports where the service should listen
-  ports: [string]: number
-
-  // Service manifest. Uses the name, type and ports above to
-  // generate the resource manifest.
-  manifest: {
-    apiVersion: "v1"
-    kind:       "Service"
-    metadata: {
-      "name": "\(name)-service"
-      labels: app: name
-    }
-    spec: {
-      "type": type
-        "ports": [
-          for k, v in ports {
-            "name": k
-            port:   v
-          },
-        ]
-        selector: app: name
-    }
-  }
-}
+```cue file=tests/kube-kind/cue-manifest/service.cue title="todoapp/kube/service.cue"
 ```
 
 ### Generate Kubernetes manifest
@@ -932,36 +565,7 @@ without having boilerplate nor repetition.
 
 Create a new definition named `#AppManifest` that will generate the YAML in `kube/manifest.cue`.
 
-```cue title="todoapp/kube/manifest.cue"
-package main
-
-import (
-  "encoding/yaml"
-)
-
-// Define and generate kubernetes deployment to deploy to kubernetes cluster
-#AppManifest: {
-  // Name of the application
-  name: string
-
-  // Image to deploy to
-  image: string
-
-  // Define a kubernetes deployment object
-  deployment: #Deployment & {
-    "name": name
-    "image": image
-  }
-
-  // Define a kubernetes service object
-  service: #Service & {
-    "name": name
-    ports: "http": deployment.port
-  }
-
-  // Merge definitions and convert them back from CUE to YAML
-  manifest: yaml.MarshalStream([deployment.manifest, service.manifest])
-}
+```cue file=tests/kube-kind/cue-manifest/manifest.cue title="todoapp/kube/manifest.cue"
 ```
 
 ### Update manifest
@@ -973,7 +577,8 @@ You can now remove the `manifest` input in `kube/todoapp.cue` and instead use th
 - removal of unused imported `encoding/yaml` and `kustomize` packages.
 - removal of `manifest` input that is doesn't need anymore.
 - removal of `kustomization` to replace it with `#AppManifest` definition.
-- Update `kubeSrc` to use `manifest` field instead of `source` because we don't send Kubernetes manifest of `dagger.#Artifact` type anymore.
+- Update `kubeSrc` to use `manifest` field instead of `source` because we don't send Kubernetes manifest
+  of `dagger.#Artifact` type anymore.
 
 <Tabs defaultValue="kind"
 groupId="provider"
@@ -983,150 +588,19 @@ values={[
 
   <TabItem value="kind">
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// Registry to push images to
-registry: string & dagger.#Input
-tag:      "test-kind"
-
-// Todoapp deployment pipeline
-todoApp: {
-  // Build the image from repositoru artifact
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push image to registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-  }
-
-  // Generate deployment manifest
-  deployment: #AppManifest & {
-    name:  "todoapp"
-    image: remoteImage.ref
-  }
-
-  // Deploy the customized manifest to a kubernetes cluster
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    manifest:     deployment.manifest
-  }
-}
+```cue file=tests/kube-kind/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
   <TabItem value="gke">
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// GCR registry to push images to
-registry: string & dagger.#Input
-tag:      "test-gcr"
-
-// Todoapp deployment pipeline
-todoApp: {
-  // Build the image from repositoru artifact
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push image to registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-    auth: {
-      username: gcrCreds.username
-      secret:   gcrCreds.secret
-    }
-  }
-
-  // Generate deployment manifest
-  deployment: #AppManifest & {
-    name:  "todoapp"
-    image: remoteImage.ref
-  }
-
-  // Deploy the customized manifest to a kubernetes cluster
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    manifest:     deployment.manifest
-  }
-}
+```cue file=tests/kube-gcp/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>
   <TabItem value="eks">
 
-```cue title="todoapp/kube/todoapp.cue"
-package main
-
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/kubernetes"
-)
-
-// input: source code repository, must contain a Dockerfile
-// set with `dagger input dir repository . -e kube`
-repository: dagger.#Artifact & dagger.#Input
-
-// ECR registry to push images to
-registry: string & dagger.#Input
-tag:      "test-ecr"
-
-// Todoapp deployment pipeline
-todoApp: {
-  // Build the image from repositoru artifact
-  image: docker.#Build & {
-    source: repository
-  }
-
-  // Push image to registry
-  remoteImage: docker.#Push & {
-    target: "\(registry):\(tag)"
-    source: image
-    auth: {
-      username: ecrCreds.username
-      secret:   ecrCreds.secret
-    }
-  }
-
-  // Generate deployment manifest
-  deployment: #AppManifest & {
-    name:  "todoapp"
-    image: remoteImage.ref
-  }
-
-  // Deploy the customized manifest to a kubernetes cluster
-  kubeSrc: kubernetes.#Resources & {
-    "kubeconfig": kubeconfig
-    manifest:     deployment.manifest
-  }
-}
+```cue file=tests/kube-aws/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
 ```
 
   </TabItem>

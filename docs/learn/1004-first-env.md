@@ -68,7 +68,7 @@ Although not strictly necessary, for an optimal development experience, we recom
 
 If you are new to Cue, we recommend keeping the following resources in browser tabs:
 
-The unofficial but excellent [Cuetorials](https://cuetorials.com/overview/foundations/) in a browser tab, to look up Cue concepts as they appear.
+- The unofficial but excellent [Cuetorials](https://cuetorials.com/overview/foundations/) in a browser tab, to look up Cue concepts as they appear.
 
 - The official [Cue interactive sandbox](https://cuelang.org/play) for easy experimentation.
 
@@ -130,15 +130,7 @@ In Dagger terms, this component has two essential properties:
 
 Let's write the corresponding Cue code to a new file in our package:
 
-```cue title="todoapp/multibucket/source.cue"
-package multibucket
-
-import (
-    "alpha.dagger.io/dagger"
-)
-
-// Source code of the sample application
-src: dagger.#Artifact & dagger.#Input
+```cue file=./tests/multibucket/source.cue title="todoapp/cue.mod/multibucket/source.cue"
 ```
 
 This code defines a component at the key `src` and specifies that it is both an artifact and an input.
@@ -147,17 +139,7 @@ This code defines a component at the key `src` and specifies that it is both an 
 
 The second component of our plan is the Yarn package built from the app source code:
 
-```cue title="todoapp/multibucket/yarn.cue"
-package multibucket
-
-import (
-    "alpha.dagger.io/js/yarn"
-)
-
-// Build the source code using Yarn
-app: yarn.#Package & {
-    source: src
-}
+```cue file=./tests/multibucket/yarn.cue title="todoapp/cue.mod/multibucket/yarn.cue"
 ```
 
 Let's break it down:
@@ -176,17 +158,7 @@ _FIXME_: this section is not yet available because the [Amazon S3 package](https
 
 The third component of our plan is the Netlify site to which the app will be deployed:
 
-```cue title="todoapp/multibucket/netlify.cue"
-package multibucket
-
-import (
-    "alpha.dagger.io/netlify"
-)
-
-// Netlify site
-site: "netlify": netlify.#Site & {
-    contents: app.build
-}
+```cue file=./tests/multibucket/netlify.cue title="todoapp/cue.mod/multibucket/netlify.cue"
 ```
 
 This component is very similar to the previous one:
