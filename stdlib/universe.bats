@@ -11,13 +11,6 @@ setup() {
     common_setup
 }
 
-# Instead of setup, this just runs once
-setup_file() {
-    load 'helpers'
-
-    cleanup_localstack    
-}
-
 @test "cue-sanity-check" {
     dagger -e sanity-check up
 }
