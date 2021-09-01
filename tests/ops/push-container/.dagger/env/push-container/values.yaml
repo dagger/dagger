@@ -1,0 +1,28 @@
+plan:
+    package: .
+name: push-container
+inputs:
+    registry.secret:
+        secret: ENC[AES256_GCM,data:kZivIXveEoh3+GayI1Tnn6zVf3e38Hlsd2V/GoeJ5bbMOiGS,iv:am3fLZE39MkfFlTXF90olpx/gkp/g1Olkf3PHDsAcKk=,tag:holrnoNR4SqJuw1lYgnUGw==,type:str]
+    registry.username:
+        text: daggertest
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyRzBHQkNGdGpuVWUzeGdl
+            WXhYeGVVeUdFbTZLYWt2enFuUmlHTC83NDBZClh1NSthd3dDdGlaQVVUY09WRmNN
+            cUVPZUY0U3kvZm8zUVZMMjNMMEZrNFEKLS0tIHZYUE8zTTUwUGJWcWtweEo2R09q
+            UVBXdTZSSHhKRGlpOGErd1ZYL0JKY3MKEcay8Bhy1Ap9Jt8gq/6bV/VnzlPSxqZk
+            bd2SuoUs7rMiabhdbApym0MmghqNrwA8xQQo4dCWnxPGDa3avKtTCg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-08-30T15:05:57Z"
+    mac: ENC[AES256_GCM,data:bfTPWrvxKB9a6bc2CPC9vE4BSd/H0JNMx1Cj8JT7KIb82Eymby/B+MEBQTDsVSaILEK6JUgH7Awl/JZAw1MwKG8K8nSAoX74311lRXXnYUNaggXgJu+V4cfdCZuofivQyymsZITMVfABmmjRoZ4zqWiJvYvqdtb42abRMU3vIpA=,iv:WvBCkZXyxYEM4HRdSiCfHdcK/olJOdq2uJpFE2R9wDU=,tag:BemiMETEs1ZmfUUrUUZTjA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

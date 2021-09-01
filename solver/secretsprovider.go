@@ -11,8 +11,22 @@ import (
 	"go.dagger.io/dagger/state"
 )
 
-func NewSecretsProvider(st *state.State) session.Attachable {
-	return secretsprovider.NewSecretProvider(&inputStore{st})
+type SecretsStore struct {
+	Secrets session.Attachable
+	store   *inputStore
+}
+
+func (s SecretsStore) GetSecret(ctx context.Context, id string) ([]byte, error) {
+	return s.store.GetSecret(ctx, id)
+}
+
+func NewSecretsStoreProvider(st *state.State) SecretsStore {
+	store := &inputStore{st}
+
+	return SecretsStore{
+		Secrets: secretsprovider.NewSecretProvider(store),
+		store:   store,
+	}
 }
 
 type inputStore struct {

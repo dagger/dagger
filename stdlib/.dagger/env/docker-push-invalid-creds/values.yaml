@@ -3,7 +3,7 @@ plan:
 name: docker-push-invalid-creds
 inputs:
     TestRegistry.secret:
-        text: ENC[AES256_GCM,data:PckymCtA/Q==,iv:to7XhUUcZrWDga7uT4C067BRzHEzmTPDUNAEb2TpS/I=,tag:jUTk8uGd185hmIvi/IHpww==,type:str]
+        secret: ENC[AES256_GCM,data:+gCg3g==,iv:TVQBLFvC1T+xNSJdmhEz+0cciIpCbo6D+twwghUU0ik=,tag:R7SoByjnyj6Aupw1/6c+8w==,type:str]
     TestRegistry.username:
         text: invalid
 sops:
@@ -21,8 +21,8 @@ sops:
             VC8wSTZvUE5UaDg2WE1CaGMzR3M1TEkK9v83AVI4lvFgjKCg8UmQrcxarlESWTfV
             2cDdWgoH7ZqgXo5jFv2tn8qQWHKl8eTTeYUWn8GoNVPKrCroax2fiQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-08T09:53:54Z"
-    mac: ENC[AES256_GCM,data:hnVsqFM81iSA/VFPbwqtqw3jOB7H2+67VuXmKfU5fEf15D5WGLZi17HCfRJQ+Db8d0S8ICwFlzqemq+99GB0wf0QVGeOBfrLZ+/AW6Yhd7klhZZxtngXos0lcZreBWduiLkctS2lbx0aiRDBUrsKFcJmu0O9JbMkwC7Hj+nncBk=,iv:2PDO6MTSszlVwmEkAI5lI9cBoJW8JdL3Q+i+sQgtFAk=,tag:nW2OLjAhSot7VyolrXbV5Q==,type:str]
+    lastmodified: "2021-08-31T10:07:27Z"
+    mac: ENC[AES256_GCM,data:sdycrW51n0tHL76DroLAUR33Fis5Hixn6dQ7LofNoIcdAj334MTWIf0jxnbzrv4Dkm/MsU90asiGwQyHI56t8mBUqrLJmd8PBE/t6S4RghCAIlM3mcHB4iHsC8Sib2URn3wKztcIuobfU8e9IvZoW4X8R/QWc1jWNmIt8VGdwfw=,iv:g7ri14SRxhsd1SSibYzDig6mZRG7LJ+R6CPDNmNOAfI=,tag:wM1DVa3LL9zFcHKAJJjugg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

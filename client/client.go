@@ -128,15 +128,15 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 	// buildkit auth provider (registry)
 	auth := solver.NewRegistryAuthProvider()
 
-	// secrets
-	secrets := solver.NewSecretsProvider(st)
+	// session (secrets & store)
+	secretsStore := solver.NewSecretsStoreProvider(st)
 
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
 		Session: []session.Attachable{
 			auth,
-			secrets,
+			secretsStore.Secrets,
 			solver.NewDockerSocketProvider(),
 		},
 		CacheExports: c.cfg.CacheExports,
@@ -171,12 +171,12 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		s := solver.New(solver.Opts{
-			Control: c.c,
-			Gateway: gw,
-			Events:  eventsCh,
-			Auth:    auth,
-			Secrets: secrets,
-			NoCache: c.cfg.NoCache,
+			Control:      c.c,
+			Gateway:      gw,
+			Events:       eventsCh,
+			Auth:         auth,
+			SecretsStore: secretsStore,
+			NoCache:      c.cfg.NoCache,
 		})
 
 		// Close events channel
