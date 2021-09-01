@@ -664,7 +664,7 @@ func (p *Pipeline) DockerLogin(ctx context.Context, op *compiler.Value, st llb.S
 			if err != nil {
 				return st, err
 			}
-			secretBytes, err := p.s.GetOptions().SecretsStore.Store.GetSecret(ctx, id)
+			secretBytes, err := p.s.GetOptions().SecretsStore.GetSecret(ctx, id)
 			if err != nil {
 				return st, err
 			}

@@ -13,7 +13,11 @@ import (
 
 type SecretsStore struct {
 	Secrets session.Attachable
-	Store   *inputStore
+	store   *inputStore
+}
+
+func (s SecretsStore) GetSecret(ctx context.Context, id string) ([]byte, error) {
+	return s.store.GetSecret(ctx, id)
 }
 
 func NewSecretsStoreProvider(st *state.State) SecretsStore {
@@ -21,7 +25,7 @@ func NewSecretsStoreProvider(st *state.State) SecretsStore {
 
 	return SecretsStore{
 		Secrets: secretsprovider.NewSecretProvider(store),
-		Store:   store,
+		store:   store,
 	}
 }
 
