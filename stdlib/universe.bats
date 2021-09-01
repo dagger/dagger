@@ -40,7 +40,11 @@ setup() {
 }
 
 @test "git" {
-    dagger -e git up
+    # Fetch repo
+    dagger -e git-repo up
+
+    # Commit & push
+    dagger -e git-commit up
 }
 
 @test "os.#Container" {

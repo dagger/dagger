@@ -1,0 +1,26 @@
+plan:
+    package: ./git/tests/commit
+name: git-commit
+inputs:
+    TestPAT:
+        secret: ENC[AES256_GCM,data:9mUzH6KRPeZTnP/gH5656f4UOCeJYaignG6JQlMY0T1hKvr5ZX3etg==,iv:gCN7M478ipl5hoCjlmzCs5RNPTLjd7hu4G7tsMjO4iQ=,tag:EkZEJMSLuAffMhmR7Y+8MQ==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBnWkIxUExFTnQ2VS9pSHVv
+            Ykd6eUl4dlRQeU9YRGtLQWhPNExZakZORG5VCkVLN3NnNlNxZ0hmQW9TRGU5WXpN
+            UmYzZE1BUWZ1WDlPWjA2dURIbDA1bGcKLS0tIHBkR3c2U3IxY2w5Z0YxOWxLRkVv
+            M3RnUDF5QlhhZUV4NHF5ZWhkcHVrNmcKUJIummOk3FX1Bert7gaMtbMpbosIf/d3
+            HBATJRng4VNmcSimSh14pDRxyW0NdIPA+oL4tidwLVbQQv/74+IGKg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-09-01T15:23:54Z"
+    mac: ENC[AES256_GCM,data:GKoX70utgBD8Xd04pVAQJcIs2yfm0jcOcUDeBdGenVljNZxbtHw8/cmCpXie0gPe85Cr6F+J0PFpx4OZhfyXuOv+Kl0ar1nklWHVwJrYeFD6n6H4NkSCME1xo2IDI4NOlYdIMo6daH2w32P+iFV50vENfEDbRdPQNM4fvFm0/Uw=,iv:1wKI7syuF99V/GKts3t4x5VCbbJJfDq7at6PFrgb88o=,tag:0aDEtxXXghcopv556S+xmQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

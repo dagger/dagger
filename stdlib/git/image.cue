@@ -5,7 +5,5 @@ import (
 )
 
 #Image: alpine.#Image & {
-	package: {
-		git: true
-	}
+	package: git: true
 }

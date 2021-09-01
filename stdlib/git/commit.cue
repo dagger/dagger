@@ -12,7 +12,7 @@ import (
 		// Repository source code
 		source: dagger.#Artifact
 
-		// Repository remote URL (e.g https://github.com/dagger/dagger.git)
+		// Repository remote URL
 		remote: dagger.#Input & {string}
 
 		// Github PAT
@@ -59,18 +59,18 @@ import (
 			"/input/content": from: content
 		}
 		env: {
-			"USER_NAME":      name
-			"USER_EMAIL":     email
-			"COMMIT_MESSAGE": message
-			"GIT_BRANCH":     repository.branch
-			"GIT_REMOTE":     repository.remote
+			USER_NAME:      name
+			USER_EMAIL:     email
+			COMMIT_MESSAGE: message
+			GIT_BRANCH:     repository.branch
+			GIT_REMOTE:     repository.remote
 			if force {
-				"OPT_FORCE": "-f"
+				OPT_FORCE: "-f"
 			}
 
 		}
 		if repository.PAT != null {
-			env: "GIT_ASKPASS": "/get_gitPAT"
+			env: GIT_ASKPASS: "/get_gitPAT"
 			files: "/get_gitPAT": {
 				content: "cat /secret/github_pat"
 				mode:    0o500

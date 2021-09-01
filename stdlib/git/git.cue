@@ -9,8 +9,7 @@ import (
 
 // A git repository
 #Repository: {
-	// Git remote.
-	// Example: `"https://github.com/dagger/dagger"`
+	// Git remote link
 	remote: dagger.#Input & {string}
 
 	// Git ref: can be a commit, tag or branch.

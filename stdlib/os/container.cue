@@ -94,9 +94,9 @@ import (
 		},
 		for dest, file in files {
 			op.#WriteFile & {
-				"content": file.content
-				"mode":    file.mode
-				"dest":    dest
+				content: file.content
+				mode:    file.mode
+				"dest":  dest
 			}
 		},
 		// Execute main command with volumes
