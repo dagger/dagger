@@ -5,7 +5,7 @@ import (
 	"alpha.dagger.io/os"
 )
 
-// Commit & push to github repository
+// Commit & push to git repository
 #Commit: {
 	// Git repository
 	repository: {
@@ -15,8 +15,8 @@ import (
 		// Repository remote URL
 		remote: dagger.#Input & {string}
 
-		// Github PAT
-		PAT: dagger.#Input & {*null | dagger.#Secret}
+		// Authentication token (PAT or password)
+		authToken: dagger.#Input & {*null | dagger.#Secret}
 
 		// Git branch
 		branch: dagger.#Input & {string}
@@ -37,7 +37,7 @@ import (
 	// Force push options
 	force: dagger.#Input & {*false | bool}
 
-	ctr: os.#Container & {
+	_ctr: os.#Container & {
 		image: #Image
 		command: #"""
 				# Move changes into repository
@@ -69,20 +69,20 @@ import (
 			}
 
 		}
-		if repository.PAT != null {
-			env: GIT_ASKPASS: "/get_gitPAT"
-			files: "/get_gitPAT": {
-				content: "cat /secret/github_pat"
+		if repository.authToken != null {
+			env: GIT_ASKPASS: "/get_authToken"
+			files: "/get_authToken": {
+				content: "cat /secrets/authToken"
 				mode:    0o500
 			}
-			secret: "/secret/github_pat": repository.PAT
+			secret: "/secrets/authToken": repository.authToken
 		}
 	}
 
 	// Commit hash
 	hash: {
 		os.#File & {
-			from: ctr
+			from: _ctr
 			path: "/commit.txt"
 		}
 	}.contents & dagger.#Output

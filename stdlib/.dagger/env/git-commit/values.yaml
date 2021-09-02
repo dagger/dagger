@@ -2,8 +2,8 @@ plan:
     package: ./git/tests/commit
 name: git-commit
 inputs:
-    TestPAT:
-        secret: ENC[AES256_GCM,data:9mUzH6KRPeZTnP/gH5656f4UOCeJYaignG6JQlMY0T1hKvr5ZX3etg==,iv:gCN7M478ipl5hoCjlmzCs5RNPTLjd7hu4G7tsMjO4iQ=,tag:EkZEJMSLuAffMhmR7Y+8MQ==,type:str]
+    TestAuthToken:
+        secret: ENC[AES256_GCM,data:OB4CfijwCnsvmvVhbV9BNlkhmuWtv1hu/nd7+E8+5tCBcXLbwOaMYQ==,iv:6+U+r/mmO07moQoitAr8Fm7bdTErJ5Ij3J21xIbEqIg=,tag:gmWLMFrVU+5l2O2pvb4Rug==,type:str]
 sops:
     kms: []
     gcp_kms: []
@@ -19,8 +19,8 @@ sops:
             M3RnUDF5QlhhZUV4NHF5ZWhkcHVrNmcKUJIummOk3FX1Bert7gaMtbMpbosIf/d3
             HBATJRng4VNmcSimSh14pDRxyW0NdIPA+oL4tidwLVbQQv/74+IGKg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-09-01T15:23:54Z"
-    mac: ENC[AES256_GCM,data:GKoX70utgBD8Xd04pVAQJcIs2yfm0jcOcUDeBdGenVljNZxbtHw8/cmCpXie0gPe85Cr6F+J0PFpx4OZhfyXuOv+Kl0ar1nklWHVwJrYeFD6n6H4NkSCME1xo2IDI4NOlYdIMo6daH2w32P+iFV50vENfEDbRdPQNM4fvFm0/Uw=,iv:1wKI7syuF99V/GKts3t4x5VCbbJJfDq7at6PFrgb88o=,tag:0aDEtxXXghcopv556S+xmQ==,type:str]
+    lastmodified: "2021-09-02T10:18:20Z"
+    mac: ENC[AES256_GCM,data:RoWci1iCDYMxmK5BIoB822G6U9bcffOGIxMkvY560N8qxjItEb/Syvboa9MOjzDUhNPwxpaUIklzra0sy3u57iRBVZPfJ8tH9WKSQYeQv0ObtBXLAOVv1o8VJQbAd0WFNzZ7K0SSP8hUKQieDRvvIOlCFlNzJs6atrY9q/GEj4o=,iv:MOWALgh400eQSateXVDKY1Xrq/HFaVN+B0yoJxD4X4o=,tag:L0Bz7tD6gUOr9LsPPA4Plw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
