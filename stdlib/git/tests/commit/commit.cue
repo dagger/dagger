@@ -3,7 +3,6 @@ package git
 import (
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/os"
 	"alpha.dagger.io/random"
 )
@@ -25,32 +24,17 @@ TestData: {
 	}
 }.out
 
-// FIXME Currently throw a structural cycle error
-//TestFile: os.#Dir & {
-// from: os.#Container & {
-//  image: alpine.#Image
-//  command: #"""
-//    mkdir -p /output
-//    echo "$MESSAGE" >> /output/test.md
-//   """#
-//  env: MESSAGE: TestData
-// }
-// path: "/output"
-//}
-
-TestFile: #up: [
-	op.#Load & {from: alpine.#Image},
-	op.#Mkdir & {
-		path: "/output"
-	},
-	op.#WriteFile & {
-		content: TestData
-		dest:    "/output/test.md"
-	},
-	op.#Subdir & {
-		dir: "/output"
-	},
-]
+TestFile: os.#Dir & {
+	from: os.#Container & {
+		image: alpine.#Image
+		command: #"""
+			mkdir -p /output
+			echo "$MESSAGE" >> /output/test.md
+			"""#
+		env: MESSAGE: TestData
+	}
+	path: "/output"
+}
 
 TestCommit: #Commit & {
 	repository: {
@@ -88,8 +72,8 @@ TestCheck: {
 		mount: "/input/repo": from: _TestRepo
 		env: {
 			EXPECTED_MESSAGE: TestData
-			// Force dependency
-			GIT_HASH: TestCommit.hash
+			// Force dependency with interpolation
+			GIT_HASH: "\(TestCommit.hash)"
 		}
 	}
 }
