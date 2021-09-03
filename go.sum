@@ -1381,8 +1381,9 @@ go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.2
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.21.0/go.mod h1:Vm5u/mtkj1OMhtao0v+BGo2LUoLCgHYXvRmj0jWITlE=
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.21.0/go.mod h1:a9cocRplhIBkUAJmak+BPDx+LVL7cTmqUPB0uBcTA4k=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.21.0/go.mod h1:JQAtechjxLEL81EjmbRwxBq/XEzGaHcsPuDHAx54hg4=
-go.opentelemetry.io/otel v1.0.0-RC1 h1:4CeoX93DNTWt8awGK9JmNXzF9j7TyOu9upscEdtcdXc=
 go.opentelemetry.io/otel v1.0.0-RC1/go.mod h1:x9tRa9HK4hSSq7jf2TKbqFbtt58/TGk0f9XiEYISI1I=
+go.opentelemetry.io/otel v1.0.0-RC3 h1:kvwiyEkiUT/JaadXzVLI/R1wDO934A7r3Bs2wEe6wqA=
+go.opentelemetry.io/otel v1.0.0-RC3/go.mod h1:Ka5j3ua8tZs4Rkq4Ex3hwgBgOchyPVq5S6P2lz//nKQ=
 go.opentelemetry.io/otel/exporters/jaeger v1.0.0-RC1 h1:tVhw2BMSAk248rhdeirOe9hlXKwGHDvVtF7P8F+H2DU=
 go.opentelemetry.io/otel/exporters/jaeger v1.0.0-RC1/go.mod h1:FXJnjGCoTQL6nQ8OpFJ0JI1DrdOvMoVx49ic0Hg4+D4=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.0-RC1 h1:GHKxjc4EDldz8ScMDpiNwX4BAub6wGFUUo5Axm2BimU=
@@ -1395,8 +1396,9 @@ go.opentelemetry.io/otel/oteltest v1.0.0-RC1 h1:G685iP3XiskCwk/z0eIabL55XUl2gk0c
 go.opentelemetry.io/otel/oteltest v1.0.0-RC1/go.mod h1:+eoIG0gdEOaPNftuy1YScLr1Gb4mL/9lpDkZ0JjMRq4=
 go.opentelemetry.io/otel/sdk v1.0.0-RC1 h1:Sy2VLOOg24bipyC29PhuMXYNJrLsxkie8hyI7kUlG9Q=
 go.opentelemetry.io/otel/sdk v1.0.0-RC1/go.mod h1:kj6yPn7Pgt5ByRuwesbaWcRLA+V7BSDg3Hf8xRvsvf8=
-go.opentelemetry.io/otel/trace v1.0.0-RC1 h1:jrjqKJZEibFrDz+umEASeU3LvdVyWKlnTh7XEfwrT58=
 go.opentelemetry.io/otel/trace v1.0.0-RC1/go.mod h1:86UHmyHWFEtWjfWPSbu0+d0Pf9Q6e1U+3ViBOc+NXAg=
+go.opentelemetry.io/otel/trace v1.0.0-RC3 h1:9F0ayEvlxv8BmNmPbU005WK7hC+7KbOazCPZjNa1yME=
+go.opentelemetry.io/otel/trace v1.0.0-RC3/go.mod h1:VUt2TUYd8S2/ZRX09ZDFZQwn2RqfMB5MzO17jBojGxo=
 go.opentelemetry.io/proto/otlp v0.7.0/go.mod h1:PqfVotwruBrMGOCsRd/89rSnXhoiJIqeYNgFYFoEGnI=
 go.opentelemetry.io/proto/otlp v0.9.0 h1:C0g6TWmQYvjKRnljRULLWUVJGy8Uvu0NEL/5frY2/t4=
 go.opentelemetry.io/proto/otlp v0.9.0/go.mod h1:1vKfU9rv61e9EVGthD1zNvUbiwPcimSsOPU9brfSHJg=
