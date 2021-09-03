@@ -10,6 +10,28 @@ Git operations
 import "alpha.dagger.io/git"
 ```
 
+## git.#Commit
+
+Commit & push to git repository
+
+### git.#Commit Inputs
+
+| Name                     | Type                | Description                              |
+| -------------            |:-------------:      |:-------------:                           |
+|*repository.remote*       | `string`            |Repository remote URL                     |
+|*repository.authToken*    | `dagger.#Secret`    |Authentication token (PAT or password)    |
+|*repository.branch*       | `string`            |Git branch                                |
+|*name*                    | `string`            |Username                                  |
+|*email*                   | `string`            |Email                                     |
+|*message*                 | `string`            |Commit message                            |
+|*force*                   | `*false \| bool`    |Force push options                        |
+
+### git.#Commit Outputs
+
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*hash*            | `string`          |Commit hash         |
+
 ## git.#CurrentBranch
 
 Get the name of the current checked out branch or tag
@@ -26,19 +48,29 @@ Get the name of the current checked out branch or tag
 | -------------    |:-------------:    |:-------------:     |
 |*name*            | `string`          |Git branch name     |
 
+## git.#Image
+
+### git.#Image Inputs
+
+_No input._
+
+### git.#Image Outputs
+
+_No output._
+
 ## git.#Repository
 
 A git repository
 
 ### git.#Repository Inputs
 
-| Name             | Type                 | Description                                                 |
-| -------------    |:-------------:       |:-------------:                                              |
-|*remote*          | `string`             |Git remote. Example: `"https://github.com/dagger/dagger"`    |
-|*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"     |
-|*subdir*          | `*null \| string`    |(optional) Subdirectory                                      |
-|*authToken*       | `dagger.#Secret`     |(optional) Add Personal Access Token                         |
-|*authHeader*      | `dagger.#Secret`     |(optional) Add OAuth Token                                   |
+| Name             | Type                 | Description                                                |
+| -------------    |:-------------:       |:-------------:                                             |
+|*remote*          | `string`             |Git remote link                                             |
+|*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"    |
+|*subdir*          | `*null \| string`    |(optional) Subdirectory                                     |
+|*authToken*       | `dagger.#Secret`     |(optional) Add Personal Access Token                        |
+|*authHeader*      | `dagger.#Secret`     |(optional) Add OAuth Token                                  |
 
 ### git.#Repository Outputs
 

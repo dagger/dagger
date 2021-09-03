@@ -5,28 +5,27 @@ import (
 
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/git"
 	"alpha.dagger.io/os"
 )
 
-repo: git.#Repository & {
+repo: #Repository & {
 	remote:     "https://github.com/blocklayerhq/acme-clothing.git"
 	ref:        "master"
 	keepGitDir: true
 }
 
-repoSubDir: git.#Repository & {
+repoSubDir: #Repository & {
 	remote:     "https://github.com/dagger/examples.git"
 	ref:        "main"
 	subdir:     "todoapp"
 	keepGitDir: true
 }
 
-branch: git.#CurrentBranch & {
+branch: #CurrentBranch & {
 	repository: repo
 }
 
-tagsList: git.#Tags & {
+tagsList: #Tags & {
 	repository: repo
 }
 
@@ -79,7 +78,7 @@ TestCurrentTags: os.#Container & {
 // Test fetching a private repo
 TestPAT: dagger.#Input & {dagger.#Secret}
 
-privateRepo: git.#Repository & {
+privateRepo: #Repository & {
 	remote:     "https://github.com/dagger/dagger.git"
 	ref:        "main"
 	keepGitDir: true
