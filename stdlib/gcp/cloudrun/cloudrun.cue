@@ -1,11 +1,13 @@
 package cloudrun
 
 import (
+	"strings"
+
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/gcp"
 )
 
-// Service deploys a Cloud Run service based on provided GCR image 
+// Service deploys a Cloud Run service based on provided GCR image
 #Service: {
 	// GCP Config
 	config: gcp.#Config
@@ -21,6 +23,10 @@ import (
 
 	// Cloud Run service exposed port
 	port: *"80" | string @dagger(input)
+
+	// Cloud Run service environment variables
+	env: [string]: string
+	_envVars: [ for key, val in env {key + "=" + val}]
 
 	#up: [
 		op.#Load & {
@@ -38,7 +44,13 @@ import (
 				"pipefail",
 				"-c",
 				#"""
-					gcloud run deploy "$SERVICE_NAME" --image "$IMAGE" --region "$REGION" --port "$PORT" --platform "$PLATFORM" --allow-unauthenticated
+					gcloud run deploy "$SERVICE_NAME" \
+						--image "$IMAGE" \
+						--region "$REGION" \
+						--port "$PORT" \
+						--platform "$PLATFORM" \
+						--allow-unauthenticated \
+						--set-env-vars "$ENV_VARS"
 					"""#,
 			]
 			env: {
@@ -47,6 +59,7 @@ import (
 				REGION:       config.region
 				IMAGE:        image
 				PORT:         port
+				ENV_VARS:     strings.Join(_envVars, ",")
 			}
 		},
 	]

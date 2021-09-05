@@ -11,4 +11,8 @@ TestCloudRun: deploy: cloudrun.#Service & {
 	config: TestConfig.gcpConfig
 	name:   "todoapp"
 	image:  "gcr.io/dagger-ci/todoapp:latest"
+	env: {
+		FOO: "foo"
+		BAR: "bar"
+	}
 }
