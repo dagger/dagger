@@ -43,7 +43,7 @@ import (
 		},
 
 		op.#Exec & {
-			args: ["gcloud", "-q", "config", "set", "compute/zone", config.region]
+			args: ["gcloud", "-q", "config", "set", "compute/region", config.region]
 		},
 	]
 }
