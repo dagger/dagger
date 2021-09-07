@@ -16,7 +16,9 @@ Kubectl client
 
 ### kubernetes.#Kubectl Inputs
 
-_No input._
+| Name             | Type                      | Description        |
+| -------------    |:-------------:            |:-------------:     |
+|*version*         | `*"v1.19.9" \| string`    |Kubectl version     |
 
 ### kubernetes.#Kubectl Outputs
 
@@ -28,11 +30,14 @@ Apply Kubernetes resources
 
 ### kubernetes.#Resources Inputs
 
-| Name             | Type                      | Description                         |
-| -------------    |:-------------:            |:-------------:                      |
-|*namespace*       | `*"default" \| string`    |Kubernetes Namespace to deploy to    |
-|*version*         | `*"v1.19.9" \| string`    |Version of kubectl client            |
-|*kubeconfig*      | `string`                  |Kube config file                     |
+| Name             | Type                      | Description                                              |
+| -------------    |:-------------:            |:-------------:                                           |
+|*source*          | `dagger.#Artifact`        |Kubernetes config to deploy                               |
+|*manifest*        | `*null \| string`         |Kubernetes manifest to deploy inlined in a string         |
+|*url*             | `*null \| string`         |Kubernetes manifest url to deploy remote configuration    |
+|*namespace*       | `*"default" \| string`    |Kubernetes Namespace to deploy to                         |
+|*version*         | `*"v1.19.9" \| string`    |Version of kubectl client                                 |
+|*kubeconfig*      | `string`                  |Kube config file                                          |
 
 ### kubernetes.#Resources Outputs
 

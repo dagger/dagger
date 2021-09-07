@@ -11,7 +11,7 @@ import (
 #Kubectl: {
 
 	// Kubectl version
-	version: *"v1.19.9" | string
+	version: dagger.#Input & {*"v1.19.9" | string}
 
 	#code: #"""
 		[ -e /usr/local/bin/kubectl ] || {
@@ -50,23 +50,35 @@ import (
 #Resources: {
 
 	// Kubernetes config to deploy
-	source?: dagger.#Artifact @dagger(input)
+	source: dagger.#Input & {*null | dagger.#Artifact}
 
 	// Kubernetes manifest to deploy inlined in a string
-	manifest?: string @dagger(input)
+	manifest: dagger.#Input & {*null | string}
+
+	// Kubernetes manifest url to deploy remote configuration
+	url: dagger.#Input & {*null | string}
 
 	// Kubernetes Namespace to deploy to
-	namespace: *"default" | string @dagger(input)
+	namespace: dagger.#Input & {*"default" | string}
 
 	// Version of kubectl client
-	version: *"v1.19.9" | string @dagger(input)
+	version: dagger.#Input & {*"v1.19.9" | string}
 
 	// Kube config file
-	kubeconfig: string @dagger(input)
+	kubeconfig: dagger.#Input & {string}
 
 	#code: #"""
 		kubectl create namespace "$KUBE_NAMESPACE"  > /dev/null 2>&1 || true
-		kubectl --namespace "$KUBE_NAMESPACE" apply -R -f /source
+
+		if [ -d /source ] || [ -f /source ]; then
+			kubectl --namespace "$KUBE_NAMESPACE" apply -R -f /source
+			exit 0
+		fi
+
+		if [ -n "$DEPLOYMENT_URL" ]; then
+			kubectl --namespace "$KUBE_NAMESPACE" apply -R -f "$DEPLOYMENT_URL"
+			exit 0
+		fi
 		"""#
 
 	#up: [
@@ -82,7 +94,7 @@ import (
 			content: kubeconfig
 			mode:    0o600
 		},
-		if manifest != _|_ {
+		if manifest != null {
 			op.#WriteFile & {
 				dest:    "/source"
 				content: manifest
@@ -101,8 +113,11 @@ import (
 			env: {
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
+				if url != null {
+					DEPLOYMENT_URL: url
+				}
 			}
-			if manifest == _|_ {
+			if manifest == null && source != null {
 				mount: "/source": from: source
 			}
 		},
