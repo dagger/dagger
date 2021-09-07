@@ -1,9 +1,10 @@
 {
   "index_name": "Dagger_docs",
-  "start_urls": ["https://docs.dagger.io/", "https://devel.docs.dagger.io/"],
+  "start_urls": [
+    "https://deploy-preview-929--devel-docs-dagger-io.netlify.app/"
+  ],
   "sitemap_urls": [
-    "https://docs.dagger.io/sitemap.xml",
-    "https://devel.docs.dagger.io/sitemap.xml"
+    "https://deploy-preview-929--devel-docs-dagger-io.netlify.app/sitemap.xml"
   ],
   "sitemap_alternate_links": true,
   "stop_urls": [],

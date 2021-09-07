@@ -23,7 +23,7 @@ describe('Visit Docs website', function() {
 
     it('log to amplitude when user visit another page', function() {
       cy.get('[data-cy=cy-doc-content]').should('exist')
-      cy.get('.menu > :nth-child(2) > :nth-child(2) > .menu__link').click()
+      cy.get('ul.menu__list:nth-child(1) > li:nth-child(2)').click()
     })
   })
 
