@@ -16,7 +16,6 @@ module.exports = {
     "https://fonts.googleapis.com/css2?family=Karla&family=Poppins:wght@700&display=swap",
   ],
   themeConfig: {
-    sidebarCollapsible: true,
     sidebarCollapsed: false,
     prism: {
       theme: require("prism-react-renderer/themes/okaidia"),

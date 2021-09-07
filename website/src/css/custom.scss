@@ -33,9 +33,8 @@ $desktop-xl-width: 1160px;
   --ifm-background-color: var(--ifm-color-primary-light);
   --ifm-code-background: var(--ifm-color-primary-dark);
   --ifm-code-font-size: 100%;
-  --ifm-code-border-radius: 2rem;
   --ifm-code-color: var(--ifm-color-primary-light);
-  --ifm-code-padding-vertical: 0;
+  --ifm-code-padding-vertical: 0.05rem;
   --ifm-code-padding-horizontal: 0.2rem;
   --ifm-color-primary: #0e2b3d;
   --ifm-color-primary-dark: #131226;
@@ -143,6 +142,16 @@ code {
       }
     }
   }
+
+  li {
+    font-size: 18px;
+  }
+
+  img {
+    max-width: 500px;
+    display: block;
+    margin: auto;
+  }
 }
 
 p {
@@ -236,6 +245,14 @@ h1[class^="h1Heading"] {
 .navbar {
   align-self: center;
   box-shadow: none;
+  width: 100%;
+}
+
+.navbar-sidebar__back {
+  background: transparent;
+  color: white;
+  padding: 1rem 0;
+  text-align: center;
 }
 
 .navbar__item {
@@ -336,7 +353,6 @@ html[data-theme="dark"] .table-of-contents__link {
 
 /* codeBlock */
 div[class^="codeBlockContainer"] {
-  border-radius: var(--ifm-code-border-radius);
   margin-bottom: 2.5rem;
 
   div[class^="codeBlockTitle"] {
@@ -466,6 +482,7 @@ button[class^="copyButton"] {
     &--active:not(.menu__link--sublist) {
       background-color: var(--ifm-color-primary);
       color: var(--ifm-color-primary-light);
+      font-weight: bold;
 
       html[data-theme="dark"] & {
         background-color: var(--ifm-menu-color-background-hover);
@@ -490,6 +507,8 @@ button[class^="copyButton"] {
 
     &.menu__link--sublist {
       color: var(--ifm-color-primary-dark);
+      padding-right: 2rem;
+      margin-bottom: 0;
 
       &:active,
       &:focus {
@@ -510,6 +529,14 @@ button[class^="copyButton"] {
         background-color: var(--ifm-color-primary);
       }
     }
+  }
+
+  &--sublist {
+    margin-bottom: 0;
+  }
+
+  &--sublist::after {
+    margin-left: auto;
   }
 }
 
