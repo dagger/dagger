@@ -36,14 +36,6 @@ Make sure to run all commands from the todoapp directory:
 cd examples/todoapp
 ```
 
-### (optional) Initialize a Cue module
-
-This guide will use the same directory as the root of the Dagger workspace and the root of the Cue module, but you can create your Cue module anywhere inside the Dagger workspace.
-
-```shell
-cue mod init
-```
-
 ### Organize your package
 
 Let's create a new directory for our Cue package:
