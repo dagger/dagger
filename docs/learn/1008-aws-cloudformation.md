@@ -18,7 +18,7 @@ The provisioning strategy detailed below follows S3 best practices. However, to 
 
 #### Relays
 
-The first thing to consider when developing a plan based on relays is to read their universe reference: it summarizes the expected inputs and their corresponding formats. [Here](../reference/universe/aws/cloudformation.md) is the Cloudformation one.
+The first thing to consider when developing a plan based on relays is to read their universe reference: it summarizes the expected inputs and their corresponding formats. [Here](../reference/aws/cloudformation.md) is the Cloudformation one.
 
 ## Initialize a Dagger Workspace and Environment
 
@@ -67,11 +67,12 @@ The idea here is to follow best practices in [S3 buckets](https://docs.aws.amazo
 Create a file named `template.cue` and add the following configuration to it.
 
 ```cue file=./tests/cloudformation/template.cue title="todoapp/cloudformation/template.cue"
+
 ```
 
 ##### 2. Cloudformation relay
 
-As our plan relies on [Cloudformation's relay](../reference/universe/aws/cloudformation.md), let's dissect the expected inputs by gradually incorporating them into our plan.
+As our plan relies on [Cloudformation's relay](../reference/aws/cloudformation.md), let's dissect the expected inputs by gradually incorporating them into our plan.
 
 ```shell
 dagger doc alpha.dagger.io/aws/cloudformation
@@ -104,6 +105,7 @@ The config values are all part of the `aws` relay. Regarding this package, as yo
 Let's implement the first step, use the `aws.#Config` relay, and request its first inputs: the region to deploy and the AWS credentials.
 
 ```cue file=./tests/cloudformation/source-begin.cue title="todoapp/cloudformation/source.cue"
+
 ```
 
 This defines:
@@ -146,6 +148,7 @@ dagger up -e cloudformation # Try to run the plan. As expected, we encounter a f
 Now that we have the `config` definition properly configured, let's modify the Cloudformation one:
 
 ```cue file=./tests/cloudformation/source-end.cue title="todoapp/cloudformation/source.cue"
+
 ```
 
 This defines:
@@ -192,11 +195,11 @@ dagger input secret awsConfig.secretKey yourSecretKey -e cloudformation
 
 Finally ! We now have a working template ready to be used to provision S3 infrastructures. Let's deploy it:
 <Tabs
-  defaultValue="nd"
-  values={[
-    { label: 'Normal deploy', value: 'nd', },
-    { label: 'Debug deploy', value: 'dd', },
-  ]
+defaultValue="nd"
+values={[
+{ label: 'Normal deploy', value: 'nd', },
+{ label: 'Debug deploy', value: 'dd', },
+]
 }>
 <TabItem value="nd">
 
@@ -265,6 +268,7 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 ```cue file=./tests/cloudformation/template/convert.cue title="todoapp/cloudformation/convert.cue"
+
 ```
 
 This defines:
@@ -308,6 +312,7 @@ rm cloudformation/convert.cue
 Open `cloudformation/template.cue` and append below elements with copied Cue definition of the JSON:
 
 ```cue file=./tests/cloudformation/template/template-begin.cue title="todoapp/cloudformation/template.cue"
+
 ```
 
 We're using the built-in `json.Marshal` function to convert CUE back to JSON, so Cloudformation still receives the same template.
@@ -323,11 +328,13 @@ Now that the template is defined in CUE, we can use the language to add more fle
 Let's define a re-usable `#Deployment` definition in `todoapp/cloudformation/deployment.cue`:
 
 ```cue file=./tests/cloudformation/template/deployment.cue title="todoapp/cloudformation/deployment.cue"
+
 ```
 
 `template.cue` can be rewritten as follows:
 
 ```cue file=./tests/cloudformation/template/template-end.cue title="todoapp/cloudformation/template.cue"
+
 ```
 
 Verify template
@@ -360,6 +367,7 @@ dagger query template -f text -e cloudformation
 Reimplement `source.cue`:
 
 ```cue file=./tests/cloudformation/source-end.cue title="todoapp/cloudformation/source.cue"
+
 ```
 
 And we can now deploy it:

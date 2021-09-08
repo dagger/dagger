@@ -59,11 +59,11 @@ install: dagger
 
 .PHONY: docs
 docs: dagger
-	./cmd/dagger/dagger doc --output ./docs/reference/universe --format md
+	./cmd/dagger/dagger doc --output ./docs/reference --format md
 
 .PHONY: docslint
 docslint: docs
-	@test -z "$$(git status -s . | grep -e "^ M"  | grep docs/reference/universe | cut -d ' ' -f3 | tee /dev/stderr)"
+	@test -z "$$(git status -s . | grep -e "^ M"  | grep docs/reference | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: web
 web:

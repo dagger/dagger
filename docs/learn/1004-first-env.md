@@ -131,6 +131,7 @@ In Dagger terms, this component has two essential properties:
 Let's write the corresponding Cue code to a new file in our package:
 
 ```cue file=./tests/multibucket/source.cue title="todoapp/cue.mod/multibucket/source.cue"
+
 ```
 
 This code defines a component at the key `src` and specifies that it is both an artifact and an input.
@@ -140,12 +141,13 @@ This code defines a component at the key `src` and specifies that it is both an 
 The second component of our plan is the Yarn package built from the app source code:
 
 ```cue file=./tests/multibucket/yarn.cue title="todoapp/cue.mod/multibucket/yarn.cue"
+
 ```
 
 Let's break it down:
 
 - `package multibucket`: this file is part of the multibucket package
-- `import ( "alpha.dagger.io/js/yarn" )`: import a package from the [Dagger Universe](../reference/universe/README.md).
+- `import ( "alpha.dagger.io/js/yarn" )`: import a package from the [Dagger Universe](../reference/README.md).
 - `app: yarn.#Package`: apply the `#Package` definition at the key `app`
 - `&`: also merge the following values at the same key...
 - `{ source: src }`: set the key `app.source` to the value of `src`. This snippet of code connects our two components, forming the first link in our DAG
@@ -159,12 +161,13 @@ _FIXME_: this section is not yet available because the [Amazon S3 package](https
 The third component of our plan is the Netlify site to which the app will be deployed:
 
 ```cue file=./tests/multibucket/netlify.cue title="todoapp/cue.mod/multibucket/netlify.cue"
+
 ```
 
 This component is very similar to the previous one:
 
 - We use the same package name as the other files
-- We import another package from the [Dagger Universe](../reference/universe/README.md).
+- We import another package from the [Dagger Universe](../reference/README.md).
 - `site: "netlify": site.#Netlify`: apply the `#Site` definition at the key `site.netlify`. Note the use of quotes to protect the key from name conflict.
 - `&`: also merge the following values at the same key...
 - `{ contents: app.build }`: set the key `site.netlify.contents` to the value of `app.build`. This line connects our components 2 and 3, forming the second link in our DAG.
@@ -172,14 +175,14 @@ This component is very similar to the previous one:
 ### Exploring a package documentation
 
 But wait: how did we know what fields were available in `yarn.#Package` and `netlify.#Site`?
-Answer: thanks to the `dagger doc` command, which prints the documentation of any package from [Dagger Universe](../reference/universe/README.md).
+Answer: thanks to the `dagger doc` command, which prints the documentation of any package from [Dagger Universe](../reference/README.md).
 
 ```shell
 dagger doc alpha.dagger.io/netlify
 dagger doc alpha.dagger.io/js/yarn
 ```
 
-You can also browse the [Dagger Universe](../reference/universe/README.md) reference in the documentation.
+You can also browse the [Dagger Universe](../reference/README.md) reference in the documentation.
 
 ## Setup the environment
 
