@@ -148,9 +148,14 @@ code {
   }
 
   img {
-    max-width: 500px;
+    max-width: 380px;
     display: block;
     margin: auto;
+    width: 100%;
+
+    @include desktopWide {
+      max-width: 500px;
+    }
   }
 }
 
@@ -374,6 +379,10 @@ code[class^="codeBlockLines"] {
   margin: 0;
   .token-line {
     color: var(--ifm-color-primary-light) !important;
+  }
+
+  html[data-theme="dark"] & {
+    background-color: var(--ifm-color-primary-darker) !important;
   }
 }
 
