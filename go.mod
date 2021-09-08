@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	cuelang.org/go v0.4.0
-	filippo.io/age v1.0.0-rc.3
+	filippo.io/age v1.0.0
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.3
 	github.com/docker/buildx v0.6.2
@@ -34,7 +34,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.0.0-RC1
 	golang.org/x/net v0.0.0-20210331212208-0fccb6fa2b5c // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
+	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	google.golang.org/grpc v1.40.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
