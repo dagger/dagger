@@ -21,7 +21,7 @@ require (
 	github.com/moby/buildkit v0.9.0
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/rs/zerolog v1.23.0
+	github.com/rs/zerolog v1.24.0
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
@@ -32,7 +32,6 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.0.0-RC1
 	go.opentelemetry.io/otel/sdk v1.0.0-RC1
 	go.opentelemetry.io/otel/trace v1.0.0-RC1
-	golang.org/x/net v0.0.0-20210331212208-0fccb6fa2b5c // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
