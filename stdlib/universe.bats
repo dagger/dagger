@@ -219,21 +219,20 @@ setup() {
   skip_unless_local_kube
 
   # Deploy argoCD infra
-  # dagger -e argocd-infra input text TestKubeconfig -f "$HOME"/.kube/config
-  #dagger -e argocd-infra up
-  # pid=$!
+  dagger -e argocd-infra input text TestKubeconfig -f "$HOME"/.kube/config
+  dagger -e argocd-infra up
 
-  curl localhost:8080
+  # Forward port
+  kubectl port-forward svc/argocd-server -n argocd 8080:443 >/dev/null 2>/dev/null &
+  pid=$!
+  sleep 3
+
+  # Run test
+  dagger -e argocd input secret TestConfig.argocdConfig.password "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)"
+  dagger -e up
+  dagger -e argocd input unset TestConfig.argocdConfig.password
 
   # Kill Pid
-  #check_pid=$(pgrep "$pid")
-  #if [ "$pid" -eq "$check_pid" ]; then
-  #  kill "$pid"
-  #fi
-  # skip "ArgoCD CI secrets not yet generated - Infra not implemented yet"
-  # dagger -e argocd input secret TestConfig.argocdConfig.token "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo)"
-  # dagger -e argocd up
+  pkill kubectl
 
-  # Kill forward
-  # >&2 echo "kill pid"
 }

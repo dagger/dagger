@@ -18,8 +18,11 @@ import (
 	// ArgoCD project
 	project: *"default" | dagger.#Input & {string}
 
-	// ArgoCD authentication token
-	token: dagger.#Secret & dagger.#Input
+	// Username
+	username: dagger.#Input & {string}
+
+	// Password
+	password: dagger.#Input & {dagger.#Secret}
 }
 
 // Re-usable CLI component
@@ -46,27 +49,17 @@ import (
 			env: VERSION: config.version
 		},
 
-		// Write config file
+		// Login to ArgoCD server
 		op.#Exec & {
-			args: ["sh", "-c",
-				#"""
-					mkdir ~/.argocd && cat > ~/.argocd/config << EOF
-					contexts:
-					- name: "$SERVER"
-					  server: "$SERVER"
-					  user: "$SERVER"
-					current-context: "$SERVER"
-					servers:
-					- grpc-web-root-path: ""
-					  server: "$SERVER"
-					users:
-					- auth-token: $(cat /run/secrets/token)
-					  name: "$SERVER"
-					EOF
-					"""#,
+			args: ["sh", "-c", #"""
+					argocd login "$ARGO_SERVER" --username "$ARGO_USERNAME" --password $(cat /run/secrets/password) --insecure
+				"""#,
 			]
-			mount: "/run/secrets/token": secret: config.token
-			env: SERVER: config.server
+			env: {
+				ARGO_SERVER:   config.server
+				ARGO_USERNAME: config.username
+			}
+			mount: "/run/secrets/password": secret: config.password
 		},
 	]
 }

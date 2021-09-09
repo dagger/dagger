@@ -4,8 +4,6 @@ name: argocd
 inputs:
     TestConfig.argocdConfig.server:
         text: localhost:8080
-    TestConfig.argocdConfig.token:
-        secret: ENC[AES256_GCM,data:TC8wCWyJ+yTkAQXBLLioVDUm4YfkMMgHEzcxyRBr/uwOErEYAWDE539dahcPclQYW/Ds7UVQIv+PMS+43zXSqIv5lde842IhOEIZwemCGnWrGy2yBC566WCYPxU16k76MzslwhJrYGDi4GF4zlIyvtVO6AbviumZqGT+wAq4/Z6KZ2CQTDWNf42ise2orGNsBTj7jqpazLO34A+Wt9USW/cJrSqU+BtAjGkoLZW65iGJ8ui8RdADxw5/A0rkdJaoN4mnSUi7yARpcmTdQBdo33385csTxxqy8oWw7OR4itUfzzWKbOprQph/EeEtxMtPAuHOB/9As/6dvIGcynwxPjw=,iv:xAb0eF1lCmNoaE9Tzfnq2uLB647DK2Cat2BZTPn272s=,tag:D2mfkvEAzVi34y7WYSg7JQ==,type:str]
 sops:
     kms: []
     gcp_kms: []
@@ -21,8 +19,8 @@ sops:
             WG5JdHlKYUlnZnZlMVNIRjczSld5ek0KF0z0UqtoGcYFFeOyMwIDAY1pyKosaOii
             IVqsMSYfj4+vz7mRd8HoXoSiSnuc7mLJek/izsdZtYUTfD/QnTC71Q==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-09-09T09:31:30Z"
-    mac: ENC[AES256_GCM,data:khUMYQdGj8qwNd7TZa2TPJIeOD9WjOn6LpNhqnZ2VZPOHWzre56MSytBS65h2bqgB5ljaYOM8qR8qc6UzSFhcNOBaAKofOYfuD1Zy6BcjNzNbJ9wvQE9qvT5o25VHsLk+fNhJt04wNdGdWjPuJNJrTTGLj82CXKCUPGyxvV72Pg=,iv:ut+MuwUELE+xu+I1G6NmqFrxu39++2pr96SHShQ5scI=,tag:5Fa6WPRo7R9UN5L7ankYzA==,type:str]
+    lastmodified: "2021-09-09T12:42:58Z"
+    mac: ENC[AES256_GCM,data:CMNfY3kBAbDOkyh1s3csD7uGToV/5TubN/0z3NaG0rVOeHzgPx//PUw7jfhBe3iTCe5m7z5jpGwbI9h6+GoANrsPX887/XYvC22JLQ7vqfOqJYOrYY9YbEJnYK+GXthQB7bqn5Yh2+yiNRVk9vHJkXyhqea9/ud32kiKhG2tE3o=,iv:eT3sjgmh4NF1sS+MSsOEZbgvAiWOwep72aM2fDenG0s=,tag:HcKVlnDpn6kQxFdlKSCALg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -25,8 +25,8 @@ import (
 	// Destination namespace
 	namespace: dagger.#Input & {*"default" | string}
 
-	_ctr: os.Container & {
-		from: #CLI & {
+	ctr: os.#Container & {
+		image: #CLI & {
 			"config": config
 		}
 		command: #"""

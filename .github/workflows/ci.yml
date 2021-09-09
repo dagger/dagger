@@ -151,17 +151,6 @@ jobs:
           aws --endpoint-url=http://localhost:4566 s3 mb s3://dagger-ci
           aws --endpoint-url=http://localhost:4566 ecr create-repository --repository-name dagger-ci
 
-      - name: Setup ArgoCD infra
-        run: |
-          make install
-          dagger -w universe -e argocd-infra input text TestKubeconfig -f "$HOME"/.kube/config
-          dagger -w universe -e dagger-infra up
-
-          # Expose Argo API
-          kubectl port-forward svc/argocd-server -n argocd 8080:443 &
-          curl localhost:8080
-        continue-on-error: true
-
       - name: Universe Test
         run: |
           make universe-test

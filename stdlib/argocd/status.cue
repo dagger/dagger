@@ -44,14 +44,12 @@ import (
 		op.#Exec & {
 			args: ["sh", "-c",
 				#"""
-					ls ~/.argocd
-					cat ~/.argocd/config
+					// FIXME JQ failed
 					argocd app get "$APPLICATION" --output json | jq '{health:.status.health.status,sync:.status.sync.status,namespace:.spec.destination.namespace,server:.spec.destination.server,urls:.status.summary.externalURLs|join(","),state:.status.operationState.message}' > /output.json
 					"""#,
 			]
 			env: {
 				APPLICATION: name
-				ARGOCD_OPTS: "--port-forward-namespace argocd"
 			}
 		},
 

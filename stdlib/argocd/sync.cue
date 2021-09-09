@@ -16,7 +16,7 @@ import (
 	// Wait the application to sync correctly
 	wait: dagger.#Input & {*false | bool}
 
-	_ctr: os.#Container & {
+	ctr: os.#Container & {
 		image: #CLI & {
 			"config": config
 		}
