@@ -27,6 +27,7 @@
     "docusaurus-plugin-sass": "^0.2.1",
     "docusaurus2-dotenv": "^1.4.0",
     "file-loader": "^6.2.0",
+    "nprogress": "^0.2.0",
     "react": "^17.0.1",
     "react-dom": "^17.0.1",
     "react-social-login-buttons": "^3.5.1",

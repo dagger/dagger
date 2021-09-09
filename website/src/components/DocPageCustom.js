@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import qs from 'querystringify';
 import isEmpty from 'lodash/isEmpty';
+import NProgress from "nprogress";
+
 import { checkUserCollaboratorStatus } from '../api/github'
-import Spinner from './Spinner';
 import DocPageAuthentication from './DocPageAuthentication';
 import DocPageRedirect from './DocPageRedirect';
 
@@ -12,6 +13,7 @@ function DocPageCustom({ location, userAccessStatus, setUserAccessStatus }) {
   const authQuery = qs.parse(location.search);
 
   useEffect(async () => {
+    NProgress.start()
     if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
       const user = await checkUserCollaboratorStatus(authQuery.code);
       setUserAccessStatus(user)
@@ -19,10 +21,11 @@ function DocPageCustom({ location, userAccessStatus, setUserAccessStatus }) {
         window.localStorage.setItem('user', JSON.stringify(user));
       }
     }
-    setIsLoading(false)
+      NProgress.done();
+      setIsLoading(false)
   }, [])
 
-  if (isLoading) return <Spinner />
+  if(isLoading) return <p>...</p>
 
   if (userAccessStatus?.permission === false) {
     return <DocPageRedirect />
