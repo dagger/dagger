@@ -1,15 +1,14 @@
-// ArgoCD applications
-package app
+package argocd
 
 import (
-	"alpha.dagger.io/argocd"
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 )
 
-// Get an application
-#Application: {
-	config: argocd.#Config
+// Get application's status
+#Status: {
+	// ArgoCD configuration
+	config: #Config
 
 	// ArgoCD application
 	name: dagger.#Input & {string}
@@ -37,7 +36,7 @@ import (
 
 	outputs: #up: [
 		op.#Load & {
-			from: argocd.#CLI & {
+			from: #CLI & {
 				"config": config
 			}
 		},
@@ -45,65 +44,20 @@ import (
 		op.#Exec & {
 			args: ["sh", "-c",
 				#"""
+					ls ~/.argocd
+					cat ~/.argocd/config
 					argocd app get "$APPLICATION" --output json | jq '{health:.status.health.status,sync:.status.sync.status,namespace:.spec.destination.namespace,server:.spec.destination.server,urls:.status.summary.externalURLs|join(","),state:.status.operationState.message}' > /output.json
 					"""#,
 			]
-			env: APPLICATION: name
+			env: {
+				APPLICATION: name
+				ARGOCD_OPTS: "--port-forward-namespace argocd"
+			}
 		},
 
 		op.#Export & {
 			source: "/output.json"
 			format: "json"
-		},
-	]
-}
-
-// Sync an application to its target state
-#Synchronization: {
-	config: argocd.#Config
-
-	// ArgoCD application
-	application: dagger.#Input & {string}
-
-	#up: [
-		op.#Load & {
-			from: argocd.#CLI & {
-				"config": config
-			}
-		},
-
-		op.#Exec & {
-			args: [
-				"sh", "-c", #"""
-					argocd app sync "$APPLICATION"
-					"""#,
-			]
-			env: APPLICATION: application
-		},
-	]
-}
-
-// Wait for an application to reach a synced and healthy state
-#SynchronizedApplication: {
-	config: argocd.#Config
-
-	// ArgoCD application
-	application: dagger.#Input & {string}
-
-	#up: [
-		op.#Load & {
-			from: argocd.#CLI & {
-				"config": config
-			}
-		},
-
-		op.#Exec & {
-			args: [
-				"sh", "-c", #"""
-					argocd app wait "$APPLICATION"
-					"""#,
-			]
-			env: APPLICATION: application
 		},
 	]
 }
