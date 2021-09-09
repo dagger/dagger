@@ -2,8 +2,10 @@ plan:
     package: ./argocd/tests
 name: argocd
 inputs:
+    TestConfig.argocdConfig.server:
+        text: localhost:8080
     TestConfig.argocdConfig.token:
-        secret: ENC[AES256_GCM,data:N7hA,iv:7gqCkackbGFXXBmTI+7eKq5OWSWttOt33vr9IwvN6wQ=,tag:yoBj8vEQv3b9lQJg2Ht51w==,type:str]
+        secret: ENC[AES256_GCM,data:TC8wCWyJ+yTkAQXBLLioVDUm4YfkMMgHEzcxyRBr/uwOErEYAWDE539dahcPclQYW/Ds7UVQIv+PMS+43zXSqIv5lde842IhOEIZwemCGnWrGy2yBC566WCYPxU16k76MzslwhJrYGDi4GF4zlIyvtVO6AbviumZqGT+wAq4/Z6KZ2CQTDWNf42ise2orGNsBTj7jqpazLO34A+Wt9USW/cJrSqU+BtAjGkoLZW65iGJ8ui8RdADxw5/A0rkdJaoN4mnSUi7yARpcmTdQBdo33385csTxxqy8oWw7OR4itUfzzWKbOprQph/EeEtxMtPAuHOB/9As/6dvIGcynwxPjw=,iv:xAb0eF1lCmNoaE9Tzfnq2uLB647DK2Cat2BZTPn272s=,tag:D2mfkvEAzVi34y7WYSg7JQ==,type:str]
 sops:
     kms: []
     gcp_kms: []
@@ -19,8 +21,8 @@ sops:
             WG5JdHlKYUlnZnZlMVNIRjczSld5ek0KF0z0UqtoGcYFFeOyMwIDAY1pyKosaOii
             IVqsMSYfj4+vz7mRd8HoXoSiSnuc7mLJek/izsdZtYUTfD/QnTC71Q==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-08-16T14:41:25Z"
-    mac: ENC[AES256_GCM,data:IGmsWqxTDcWRjAgGQbQ5s5Ip1FrTj3ncqpWpdW/HXYp2DqA1SMQ1aH3whJ9JcxlBALWzc0jI4LXuPS+wxy5zrSC/Syp6bt3hYyo7DRsPMpPozm2q26hbGFPDAEXRF5K1+ZHRQ+DnuKecQJuQVz4UNZQg1HTsebnDgZ+D9OHMaek=,iv:AFWorUNhkwxR6R7ilttnJHuWeohsgHsc6NIZPtM3nr4=,tag:kXrm1i09+bvuFAaZqFvNKA==,type:str]
+    lastmodified: "2021-09-09T09:31:30Z"
+    mac: ENC[AES256_GCM,data:khUMYQdGj8qwNd7TZa2TPJIeOD9WjOn6LpNhqnZ2VZPOHWzre56MSytBS65h2bqgB5ljaYOM8qR8qc6UzSFhcNOBaAKofOYfuD1Zy6BcjNzNbJ9wvQE9qvT5o25VHsLk+fNhJt04wNdGdWjPuJNJrTTGLj82CXKCUPGyxvV72Pg=,iv:ut+MuwUELE+xu+I1G6NmqFrxu39++2pr96SHShQ5scI=,tag:5Fa6WPRo7R9UN5L7ankYzA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

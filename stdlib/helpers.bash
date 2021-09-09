@@ -81,6 +81,17 @@ skip_unless_local_kube() {
     fi
 }
 
+# Check if there is a local endpoint.
+#
+# This is necessary to do test with endpoint.
+# Usage:
+# skip_unless_endpoint_available "localhost:8080"
+skip_unless_endpoint_available() {
+  local endpoint="$1"
+
+  curl "$endpoint"
+}
+
 # Cleanup local Localstack instances
 setup_localstack() {
     if [ "$(curl -s http://localhost:4566)" = '{"status": "running"}' ] && \
