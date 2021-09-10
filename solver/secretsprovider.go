@@ -44,6 +44,8 @@ func (s *inputStore) GetSecret(ctx context.Context, id string) ([]byte, error) {
 
 	id = strings.TrimPrefix(id, secretPrefix)
 
+	id = strings.Split(id, ";hash=")[0]
+
 	input, ok := s.st.Inputs[id]
 	if !ok {
 		return nil, secrets.ErrNotFound

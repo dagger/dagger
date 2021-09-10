@@ -1,6 +1,7 @@
 package state
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -196,8 +197,12 @@ func SecretInput(data string) Input {
 
 type secretInput string
 
-func (i secretInput) Compile(key string, _ *State) (*compiler.Value, error) {
-	return compiler.Compile("", fmt.Sprintf(`{id:%q}`, "secret="+key))
+func (i secretInput) Compile(key string, s *State) (*compiler.Value, error) {
+	hash := sha256.New()
+	hash.Write([]byte(key))
+	checksum := hash.Sum([]byte(s.Inputs[key].Secret.PlainText()))
+	secretValue := fmt.Sprintf(`{id:"secret=%s;hash=%x"}`, key, checksum)
+	return compiler.Compile("", secretValue)
 }
 
 func (i secretInput) PlainText() string {
