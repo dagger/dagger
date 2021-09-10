@@ -47,5 +47,5 @@ status = 200
 
 [[redirects]]
 from = "/reference"
-to = "/reference/universe/alpine"
+to = "/reference/alpine"
 status = 302
