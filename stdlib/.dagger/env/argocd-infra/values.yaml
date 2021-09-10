@@ -1,0 +1,23 @@
+plan:
+    package: ./argocd/tests/infra
+name: argocd-infra
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmVmEzZ3RDdjlBRXBleURr
+            cmx6YW40ZHFLMHpqa2RYWUlIdTFIZlYyZ3pnCmVieTB2MXdid1l5ZitUMkprVGFz
+            RHl4elJzdWRTYS9MaXZkU29UMG1SSmcKLS0tIHFjNHhBVVVwcGwrVWZHOXoxdGps
+            RWlubERCTjFkSStyQXdpbSttbXB1RmcKQeRMIc8QGKI8HkoBXCQzR/gaBoiYTYxy
+            vLjf1kMlX4BvmwTpmDO9Wer8a/NXEwA3zpK/kHaoXGBZln8Lf4J87A==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-09-09T10:52:18Z"
+    mac: ENC[AES256_GCM,data:B5CZFBYviKy/l8YYzg3luUdeFpRTGx5q+Q5b56SvIVvdp33TQwvU6bftiNOwUHjI3a3B2p70QNKxam+Yk7Pf9jC1nN6dR1jWh0RcicTjQOI6URN6NgS667/iCG7e94fKiVKlbgRq/P7eudnJrkhPsiqqHopmWg41g+izH+YOX2I=,iv:X6nxvaEdtnyUSEPODJLrPfuju906b9EYsye4MstBGRc=,tag:olbgC+EtQ8U8FJejQv5u/Q==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

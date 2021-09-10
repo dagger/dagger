@@ -74,11 +74,22 @@ skip_unless_local_localstack() {
 #
 # This is need to do kubernetes test in the CI.
 skip_unless_local_kube() {
-    if [ -f ~/.kube/config ] && grep -q "user: kind-kind" ~/.kube/config &> /dev/null && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
+    if [ -f ~/.kube/config ] && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
         echo "Kubernetes available"
     else
         skip "local kubernetes cluster not available"
     fi
+}
+
+# Check if there is a local endpoint.
+#
+# This is necessary to do test with endpoint.
+# Usage:
+# skip_unless_endpoint_available "localhost:8080"
+skip_unless_endpoint_available() {
+  local endpoint="$1"
+
+  curl "$endpoint"
 }
 
 # Cleanup local Localstack instances
