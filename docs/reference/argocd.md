@@ -16,17 +16,28 @@ Create an ArgoCD application
 
 ### argocd.#App Inputs
 
-| Name               | Type                                             | Description                    |
-| -------------      |:-------------:                                   |:-------------:                 |
-|*config.version*    | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
-|*config.server*     | `string`                                         |ArgoCD server                   |
-|*config.project*    | `*"default" \| string`                           |ArgoCD project                  |
-|*config.token*      | `dagger.#Secret`                                 |ArgoCD authentication token     |
-|*name*              | `string`                                         |App name                        |
-|*repo*              | `string`                                         |Repository url (git or helm)    |
-|*path*              | `string`                                         |Folder to deploy                |
-|*server*            | `*"https://kubernetes.default.svc" \| string`    |Destination server              |
-|*namespace*         | `*"default" \| string`                           |Destination namespace           |
+| Name                          | Type                                             | Description                    |
+| -------------                 |:-------------:                                   |:-------------:                 |
+|*config.version*               | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
+|*config.server*                | `string`                                         |ArgoCD server                   |
+|*config.project*               | `*"default" \| string`                           |ArgoCD project                  |
+|*config.username*              | `string`                                         |Username                        |
+|*config.password*              | `dagger.#Secret`                                 |Password                        |
+|*name*                         | `string`                                         |App name                        |
+|*repo*                         | `string`                                         |Repository url (git or helm)    |
+|*path*                         | `string`                                         |Folder to deploy                |
+|*server*                       | `*"https://kubernetes.default.svc" \| string`    |Destination server              |
+|*namespace*                    | `*"default" \| string`                           |Destination namespace           |
+|*ctr.image.config.version*     | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
+|*ctr.image.config.server*      | `string`                                         |ArgoCD server                   |
+|*ctr.image.config.project*     | `*"default" \| string`                           |ArgoCD project                  |
+|*ctr.image.config.username*    | `string`                                         |Username                        |
+|*ctr.image.config.password*    | `dagger.#Secret`                                 |Password                        |
+|*ctr.env.APP_NAME*             | `string`                                         |-                               |
+|*ctr.env.APP_REPO*             | `string`                                         |-                               |
+|*ctr.env.APP_PATH*             | `string`                                         |-                               |
+|*ctr.env.APP_SERVER*           | `*"https://kubernetes.default.svc" \| string`    |-                               |
+|*ctr.env.APP_NAMESPACE*        | `*"default" \| string`                           |-                               |
 
 ### argocd.#App Outputs
 
@@ -38,12 +49,13 @@ Re-usable CLI component
 
 ### argocd.#CLI Inputs
 
-| Name               | Type                      | Description                   |
-| -------------      |:-------------:            |:-------------:                |
-|*config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version      |
-|*config.server*     | `string`                  |ArgoCD server                  |
-|*config.project*    | `*"default" \| string`    |ArgoCD project                 |
-|*config.token*      | `dagger.#Secret`          |ArgoCD authentication token    |
+| Name                | Type                      | Description                 |
+| -------------       |:-------------:            |:-------------:              |
+|*config.version*     | `*"v2.0.5" \| string`     |ArgoCD CLI binary version    |
+|*config.server*      | `string`                  |ArgoCD server                |
+|*config.project*     | `*"default" \| string`    |ArgoCD project               |
+|*config.username*    | `string`                  |Username                     |
+|*config.password*    | `dagger.#Secret`          |Password                     |
 
 ### argocd.#CLI Outputs
 
@@ -55,12 +67,13 @@ ArgoCD configuration
 
 ### argocd.#Config Inputs
 
-| Name             | Type                      | Description                   |
-| -------------    |:-------------:            |:-------------:                |
-|*version*         | `*"v2.0.5" \| string`     |ArgoCD CLI binary version      |
-|*server*          | `string`                  |ArgoCD server                  |
-|*project*         | `*"default" \| string`    |ArgoCD project                 |
-|*token*           | `dagger.#Secret`          |ArgoCD authentication token    |
+| Name             | Type                      | Description                 |
+| -------------    |:-------------:            |:-------------:              |
+|*version*         | `*"v2.0.5" \| string`     |ArgoCD CLI binary version    |
+|*server*          | `string`                  |ArgoCD server                |
+|*project*         | `*"default" \| string`    |ArgoCD project               |
+|*username*        | `string`                  |Username                     |
+|*password*        | `dagger.#Secret`          |Password                     |
 
 ### argocd.#Config Outputs
 
@@ -72,13 +85,14 @@ Get application's status
 
 ### argocd.#Status Inputs
 
-| Name               | Type                      | Description                   |
-| -------------      |:-------------:            |:-------------:                |
-|*config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version      |
-|*config.server*     | `string`                  |ArgoCD server                  |
-|*config.project*    | `*"default" \| string`    |ArgoCD project                 |
-|*config.token*      | `dagger.#Secret`          |ArgoCD authentication token    |
-|*name*              | `string`                  |ArgoCD application             |
+| Name                | Type                      | Description                 |
+| -------------       |:-------------:            |:-------------:              |
+|*config.version*     | `*"v2.0.5" \| string`     |ArgoCD CLI binary version    |
+|*config.server*      | `string`                  |ArgoCD server                |
+|*config.project*     | `*"default" \| string`    |ArgoCD project               |
+|*config.username*    | `string`                  |Username                     |
+|*config.password*    | `dagger.#Secret`          |Password                     |
+|*name*               | `string`                  |ArgoCD application           |
 
 ### argocd.#Status Outputs
 
@@ -97,14 +111,21 @@ Sync an application to its targer state
 
 ### argocd.#Sync Inputs
 
-| Name               | Type                      | Description                              |
-| -------------      |:-------------:            |:-------------:                           |
-|*config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
-|*config.server*     | `string`                  |ArgoCD server                             |
-|*config.project*    | `*"default" \| string`    |ArgoCD project                            |
-|*config.token*      | `dagger.#Secret`          |ArgoCD authentication token               |
-|*application*       | `string`                  |ArgoCD application                        |
-|*wait*              | `*false \| bool`          |Wait the application to sync correctly    |
+| Name                          | Type                      | Description                              |
+| -------------                 |:-------------:            |:-------------:                           |
+|*config.version*               | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*config.server*                | `string`                  |ArgoCD server                             |
+|*config.project*               | `*"default" \| string`    |ArgoCD project                            |
+|*config.username*              | `string`                  |Username                                  |
+|*config.password*              | `dagger.#Secret`          |Password                                  |
+|*application*                  | `string`                  |ArgoCD application                        |
+|*wait*                         | `*false \| bool`          |Wait the application to sync correctly    |
+|*ctr.image.config.version*     | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*ctr.image.config.server*      | `string`                  |ArgoCD server                             |
+|*ctr.image.config.project*     | `*"default" \| string`    |ArgoCD project                            |
+|*ctr.image.config.username*    | `string`                  |Username                                  |
+|*ctr.image.config.password*    | `dagger.#Secret`          |Password                                  |
+|*ctr.env.APPLICATION*          | `string`                  |-                                         |
 
 ### argocd.#Sync Outputs
 

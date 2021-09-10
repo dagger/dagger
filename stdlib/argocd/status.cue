@@ -47,9 +47,7 @@ import (
 					argocd app get "$APPLICATION" --output json | jq '{health:.status.health.status,sync:.status.sync.status,namespace:.spec.destination.namespace,server:.spec.destination.server,urls:(.status.summary.externalURLs//[]|join(",")),state:.status.operationState.message}' > /output.json
 					"""#,
 			]
-			env: {
-				APPLICATION: name
-			}
+			env: APPLICATION: name
 		},
 
 		op.#Export & {
