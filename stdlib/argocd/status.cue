@@ -48,6 +48,7 @@ import (
 					"""#,
 			]
 			env: APPLICATION: name
+			always: true
 		},
 
 		op.#Export & {

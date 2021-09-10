@@ -16,7 +16,7 @@ import (
 	// Wait the application to sync correctly
 	wait: dagger.#Input & {*false | bool}
 
-	ctr: os.#Container & {
+	os.#Container & {
 		image: #CLI & {
 			"config": config
 		}
@@ -27,6 +27,7 @@ import (
 					argocd app wait "$APPLICATION"
 				fi
 			"""#
+		always: true
 		env: APPLICATION: application
 		if wait {
 			env: WAIT_FLAG: "wait"

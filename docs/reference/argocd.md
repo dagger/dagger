@@ -16,26 +16,26 @@ Create an ArgoCD application
 
 ### argocd.#App Inputs
 
-| Name                         | Type                                             | Description                    |
-| -------------                |:-------------:                                   |:-------------:                 |
-|*config.version*              | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
-|*config.server*               | `string`                                         |ArgoCD server                   |
-|*config.project*              | `*"default" \| string`                           |ArgoCD project                  |
-|*config.token*                | `dagger.#Secret`                                 |ArgoCD authentication token     |
-|*name*                        | `string`                                         |App name                        |
-|*repo*                        | `string`                                         |Repository url (git or helm)    |
-|*path*                        | `string`                                         |Folder to deploy                |
-|*server*                      | `*"https://kubernetes.default.svc" \| string`    |Destination server              |
-|*namespace*                   | `*"default" \| string`                           |Destination namespace           |
-|*ctr.image.config.version*    | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
-|*ctr.image.config.server*     | `string`                                         |ArgoCD server                   |
-|*ctr.image.config.project*    | `*"default" \| string`                           |ArgoCD project                  |
-|*ctr.image.config.token*      | `dagger.#Secret`                                 |ArgoCD authentication token     |
-|*ctr.env.APP_NAME*            | `string`                                         |-                               |
-|*ctr.env.APP_REPO*            | `string`                                         |-                               |
-|*ctr.env.APP_PATH*            | `string`                                         |-                               |
-|*ctr.env.APP_SERVER*          | `*"https://kubernetes.default.svc" \| string`    |-                               |
-|*ctr.env.APP_NAMESPACE*       | `*"default" \| string`                           |-                               |
+| Name                     | Type                                             | Description                    |
+| -------------            |:-------------:                                   |:-------------:                 |
+|*config.version*          | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
+|*config.server*           | `string`                                         |ArgoCD server                   |
+|*config.project*          | `*"default" \| string`                           |ArgoCD project                  |
+|*config.token*            | `dagger.#Secret`                                 |ArgoCD authentication token     |
+|*name*                    | `string`                                         |App name                        |
+|*repo*                    | `string`                                         |Repository url (git or helm)    |
+|*path*                    | `string`                                         |Folder to deploy                |
+|*server*                  | `*"https://kubernetes.default.svc" \| string`    |Destination server              |
+|*image.config.version*    | `*"v2.0.5" \| string`                            |ArgoCD CLI binary version       |
+|*image.config.server*     | `string`                                         |ArgoCD server                   |
+|*image.config.project*    | `*"default" \| string`                           |ArgoCD project                  |
+|*image.config.token*      | `dagger.#Secret`                                 |ArgoCD authentication token     |
+|*namespace*               | `*"default" \| string`                           |Destination namespace           |
+|*env.APP_NAME*            | `string`                                         |-                               |
+|*env.APP_REPO*            | `string`                                         |-                               |
+|*env.APP_PATH*            | `string`                                         |-                               |
+|*env.APP_SERVER*          | `*"https://kubernetes.default.svc" \| string`    |-                               |
+|*env.APP_NAMESPACE*       | `*"default" \| string`                           |-                               |
 
 ### argocd.#App Outputs
 
@@ -106,19 +106,19 @@ Sync an application to its targer state
 
 ### argocd.#Sync Inputs
 
-| Name                         | Type                      | Description                              |
-| -------------                |:-------------:            |:-------------:                           |
-|*config.version*              | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
-|*config.server*               | `string`                  |ArgoCD server                             |
-|*config.project*              | `*"default" \| string`    |ArgoCD project                            |
-|*config.token*                | `dagger.#Secret`          |ArgoCD authentication token               |
-|*application*                 | `string`                  |ArgoCD application                        |
-|*wait*                        | `*false \| bool`          |Wait the application to sync correctly    |
-|*ctr.image.config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
-|*ctr.image.config.server*     | `string`                  |ArgoCD server                             |
-|*ctr.image.config.project*    | `*"default" \| string`    |ArgoCD project                            |
-|*ctr.image.config.token*      | `dagger.#Secret`          |ArgoCD authentication token               |
-|*ctr.env.APPLICATION*         | `string`                  |-                                         |
+| Name                     | Type                      | Description                              |
+| -------------            |:-------------:            |:-------------:                           |
+|*config.version*          | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*config.server*           | `string`                  |ArgoCD server                             |
+|*config.project*          | `*"default" \| string`    |ArgoCD project                            |
+|*config.token*            | `dagger.#Secret`          |ArgoCD authentication token               |
+|*application*             | `string`                  |ArgoCD application                        |
+|*image.config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*image.config.server*     | `string`                  |ArgoCD server                             |
+|*image.config.project*    | `*"default" \| string`    |ArgoCD project                            |
+|*image.config.token*      | `dagger.#Secret`          |ArgoCD authentication token               |
+|*wait*                    | `*false \| bool`          |Wait the application to sync correctly    |
+|*env.APPLICATION*         | `string`                  |-                                         |
 
 ### argocd.#Sync Outputs
 

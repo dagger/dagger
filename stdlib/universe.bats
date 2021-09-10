@@ -222,6 +222,9 @@ setup() {
   dagger -e argocd-infra input text TestKubeconfig -f "$HOME"/.kube/config
   dagger -e argocd-infra up
 
+  # Wait for infra to be ready
+  kubectl -n argocd wait --for=condition=available deployment -l "app.kubernetes.io/part-of=argocd" --timeout=45s
+
   # Forward port
   # We need to kill subprocess to avoid infinity loop
   kubectl port-forward svc/argocd-server -n argocd 8080:443 >/dev/null 2>/dev/null &

@@ -25,7 +25,7 @@ import (
 	// Destination namespace
 	namespace: dagger.#Input & {*"default" | string}
 
-	ctr: os.#Container & {
+	os.#Container & {
 		image: #CLI & {
 			"config": config
 		}
@@ -36,6 +36,7 @@ import (
 					--dest-server "$APP_SERVER" \
 					--dest-namespace "$APP_NAMESPACE"
 			"""#
+		always: true
 		env: {
 			APP_NAME:      name
 			APP_REPO:      repo
