@@ -18,11 +18,17 @@ import (
 	// ArgoCD project
 	project: *"default" | dagger.#Input & {string}
 
-	// Username
-	username: dagger.#Input & {string}
+	// Basic authentification to login
+	basicAuth: {
+		// Username
+		username: dagger.#Input & {string}
 
-	// Password
-	password: dagger.#Input & {dagger.#Secret}
+		// Password
+		password: dagger.#Input & {dagger.#Secret}
+	} | *null
+
+	// ArgoCD authentication token
+	token: dagger.#Input & {*null | dagger.#Secret}
 }
 
 // Re-usable CLI component
@@ -49,17 +55,45 @@ import (
 			env: VERSION: config.version
 		},
 
-		// Login to ArgoCD server
-		op.#Exec & {
-			args: ["sh", "-c", #"""
-					argocd login "$ARGO_SERVER" --username "$ARGO_USERNAME" --password $(cat /run/secrets/password) --insecure
-				"""#,
-			]
-			env: {
-				ARGO_SERVER:   config.server
-				ARGO_USERNAME: config.username
+		if config.basicAuth != null && config.token == null {
+			// Login to ArgoCD server
+			op.#Exec & {
+				args: ["sh", "-c", #"""
+						argocd login "$ARGO_SERVER" --username "$ARGO_USERNAME" --password $(cat /run/secrets/password) --insecure
+					"""#,
+				]
+				env: {
+					ARGO_SERVER:   config.server
+					ARGO_USERNAME: config.basicAuth.username
+				}
+				mount: "/run/secrets/password": secret: config.basicAuth.password
 			}
-			mount: "/run/secrets/password": secret: config.password
 		},
+
+		if config.token != null && config.basicAuth == null {
+			// Write config file
+			op.#Exec & {
+				args: ["sh", "-c",
+					#"""
+						mkdir -p ~/.argocd && cat > ~/.argocd/config << EOF
+						contexts:
+						- name: "$SERVER"
+						  server: "$SERVER"
+						  user: "$SERVER"
+						current-context: "$SERVER"
+						servers:
+						- grpc-web-root-path: ""
+						  server: "$SERVER"
+						users:
+						- auth-token: $(cat /run/secrets/token)
+						  name: "$SERVER"
+						EOF
+						"""#,
+				]
+				mount: "/run/secrets/token": secret: config.token
+				env: SERVER: config.server
+			}
+		},
+
 	]
 }

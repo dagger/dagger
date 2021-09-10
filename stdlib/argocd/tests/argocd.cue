@@ -6,10 +6,12 @@ import (
 )
 
 TestConfig: argocdConfig: #Config & {
-	version:  dagger.#Input & {*"v2.0.5" | string}
-	server:   dagger.#Input & {*"dagger-example-argocd-server.tld" | string}
-	username: dagger.#Input & {*"admin" | string}
-	password: dagger.#Input & {dagger.#Secret}
+	version: dagger.#Input & {*"v2.0.5" | string}
+	server:  dagger.#Input & {*"dagger-example-argocd-server.tld" | string}
+	basicAuth: {
+		username: dagger.#Input & {*"admin" | string}
+		password: dagger.#Input & {dagger.#Secret}
+	}
 }
 
 TestClient: os.#Container & {
@@ -19,7 +21,7 @@ TestClient: os.#Container & {
 	command: #"""
 			argocd account list | grep "$ARGOCD_USERNAME"
 		"""#
-	env: ARGOCD_USERNAME: TestConfig.argocdConfig.username
+	env: ARGOCD_USERNAME: TestConfig.argocdConfig.basicAuth.username
 }
 
 TestApp: #App & {

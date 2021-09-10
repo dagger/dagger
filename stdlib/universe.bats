@@ -223,15 +223,15 @@ setup() {
   dagger -e argocd-infra up
 
   # Forward port
+  # We need to kill subprocess to avoid infinity loop
   kubectl port-forward svc/argocd-server -n argocd 8080:443 >/dev/null 2>/dev/null &
-  sleep 3
+  sleep 3 || (pkill kubectl && exit 1)
 
   # Run test
-  dagger -e argocd input secret TestConfig.argocdConfig.password "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)"
-  dagger -e up
-  dagger -e argocd input unset TestConfig.argocdConfig.password
+  dagger -e argocd input secret TestConfig.argocdConfig.basicAuth.password "$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)" || (pkill kubectl && exit 1)
+  dagger -e argocd up || (pkill kubectl && exit 1)
+  dagger -e argocd input unset TestConfig.argocdConfig.basicAuth.password || (pkill kubectl && exit 1)
 
   # Kill Pid
-  pkill kubectl
-
+  pgrep kubectl && pkill kubectl
 }
