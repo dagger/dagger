@@ -237,4 +237,9 @@ setup() {
 
   # Kill Pid
   pgrep kubectl && pkill kubectl
+
+  # Check output
+  run dagger -e argocd query TestArgoCDStatus.status.outputs.health -f json
+  assert_success
+  assert_output "\"Healthy\""
 }

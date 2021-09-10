@@ -106,20 +106,32 @@ Sync an application to its targer state
 
 ### argocd.#Sync Inputs
 
-| Name                     | Type                      | Description                              |
-| -------------            |:-------------:            |:-------------:                           |
-|*config.version*          | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
-|*config.server*           | `string`                  |ArgoCD server                             |
-|*config.project*          | `*"default" \| string`    |ArgoCD project                            |
-|*config.token*            | `dagger.#Secret`          |ArgoCD authentication token               |
-|*application*             | `string`                  |ArgoCD application                        |
-|*image.config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
-|*image.config.server*     | `string`                  |ArgoCD server                             |
-|*image.config.project*    | `*"default" \| string`    |ArgoCD project                            |
-|*image.config.token*      | `dagger.#Secret`          |ArgoCD authentication token               |
-|*wait*                    | `*false \| bool`          |Wait the application to sync correctly    |
-|*env.APPLICATION*         | `string`                  |-                                         |
+| Name                         | Type                      | Description                              |
+| -------------                |:-------------:            |:-------------:                           |
+|*config.version*              | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*config.server*               | `string`                  |ArgoCD server                             |
+|*config.project*              | `*"default" \| string`    |ArgoCD project                            |
+|*config.token*                | `dagger.#Secret`          |ArgoCD authentication token               |
+|*application*                 | `string`                  |ArgoCD application                        |
+|*wait*                        | `*false \| bool`          |Wait the application to sync correctly    |
+|*ctr.image.config.version*    | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*ctr.image.config.server*     | `string`                  |ArgoCD server                             |
+|*ctr.image.config.project*    | `*"default" \| string`    |ArgoCD project                            |
+|*ctr.image.config.token*      | `dagger.#Secret`          |ArgoCD authentication token               |
+|*ctr.env.APPLICATION*         | `string`                  |-                                         |
+|*status.config.version*       | `*"v2.0.5" \| string`     |ArgoCD CLI binary version                 |
+|*status.config.server*        | `string`                  |ArgoCD server                             |
+|*status.config.project*       | `*"default" \| string`    |ArgoCD project                            |
+|*status.config.token*         | `dagger.#Secret`          |ArgoCD authentication token               |
+|*status.name*                 | `string`                  |ArgoCD application                        |
 
 ### argocd.#Sync Outputs
 
-_No output._
+| Name                         | Type              | Description                                |
+| -------------                |:-------------:    |:-------------:                             |
+|*status.outputs.health*       | `string`          |Application health                          |
+|*status.outputs.sync*         | `string`          |Application sync state                      |
+|*status.outputs.namespace*    | `string`          |Namespace                                   |
+|*status.outputs.server*       | `string`          |Server                                      |
+|*status.outputs.urls*         | `string`          |Comma separated list of application URLs    |
+|*status.outputs.state*        | `string`          |Last operation state message                |

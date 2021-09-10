@@ -34,4 +34,5 @@ TestApp: #App & {
 TestArgoCDStatus: #Sync & {
 	config:      TestApp.config
 	application: TestApp.name
+	wait:        true
 }
