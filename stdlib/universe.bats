@@ -172,6 +172,16 @@ setup() {
   dagger -e google-gke up
 }
 
+@test "google cloud: secretmanager" {
+    run dagger -e google-secretmanager up
+    assert_success
+
+    # ensure the secret has been created
+    run dagger query -e google-secretmanager TestSecrets.secret.references.databasePassword -f text
+    assert_success
+    assert_output --regexp '^projects\/[0-9]+\/secrets\/databasePassword'
+}
+
 @test "google cloud: cloudrun" {
   dagger -e google-cloudrun up
 }
