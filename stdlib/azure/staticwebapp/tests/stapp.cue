@@ -21,6 +21,7 @@ TestRG: resourcegroup.#ResourceGroup & {
 	rgLocation: "eastus2"
 }
 
+// rgName is obtained from above TestRG
 TestSWA: staticwebapp.#StaticWebApp & {
 	config:        TestRG.config
 	rgName:        "\(strings.Split(TestRG.id, "/")[4])"
