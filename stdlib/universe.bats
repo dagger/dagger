@@ -253,3 +253,8 @@ setup() {
   assert_success
   assert_output "\"Healthy\""
 }
+
+@test "azure-stapp" {
+    skip "Azure CI infra not implemented yet - manually tested and working"
+    #dagger -e azure-stapp up
+}
