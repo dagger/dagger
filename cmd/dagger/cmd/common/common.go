@@ -97,6 +97,13 @@ func FormatValue(val *compiler.Value) string {
 		return "struct"
 	}
 
+	if valStr, e := val.String(); e == nil {
+		// value is a string
+		valStr = strings.TrimRight(valStr, "\n")
+		// escape \n
+		return strings.ReplaceAll(valStr, "\n", "\\n")
+	}
+
 	// value representation in Cue
 	valStr := fmt.Sprintf("%v", val.Cue())
 	// escape \n
