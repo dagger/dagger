@@ -10,9 +10,14 @@ import (
 #Build: {
 	source: dagger.#Input & {dagger.#Artifact}
 
+	args?: [string]: string
+
 	#up: [
 		op.#DockerBuild & {
 			context: source
+			if args != _|_ {
+				buildArg: args
+			}
 		},
 	]
 
