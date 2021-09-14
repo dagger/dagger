@@ -16,10 +16,10 @@ Terraform configuration
 
 ### terraform.#Configuration Inputs
 
-| Name             | Type                     | Description            |
-| -------------    |:-------------:           |:-------------:         |
-|*version*         | `*"latest" \| string`    |Terraform version       |
-|*source*          | `dagger.#Artifact`       |Source configuration    |
+| Name             | Type                  | Description            |
+| -------------    |:-------------:        |:-------------:         |
+|*version*         | `latest`              |Terraform version       |
+|*source*          | `dagger.#Artifact`    |Source configuration    |
 
 ### terraform.#Configuration Outputs
 

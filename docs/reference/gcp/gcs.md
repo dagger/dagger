@@ -24,7 +24,7 @@ GCS Bucket object(s) sync
 |*source*               | `dagger.#Artifact`    |Source Artifact to upload to GCS                                   |
 |*target*               | `string`              |Target GCS URL (eg. gs://\<bucket-name\>/\<path\>/\<sub-path\>)    |
 |*delete*               | `*false \| true`      |Delete files that already exist on remote destination              |
-|*contentType*          | `*"" \| string`       |Object content type                                                |
+|*contentType*          | ``                    |Object content type                                                |
 |*always*               | `*true \| false`      |Always write the object to GCS                                     |
 
 ### gcs.#Object Outputs

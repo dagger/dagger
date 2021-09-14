@@ -31,5 +31,5 @@ Convert ECR credentials to Docker Login format
 
 | Name             | Type              | Description           |
 | -------------    |:-------------:    |:-------------:        |
-|*username*        | `"AWS"`           |ECR registry           |
+|*username*        | `AWS`             |ECR registry           |
 |*secret*          | `string`          |ECR registry secret    |

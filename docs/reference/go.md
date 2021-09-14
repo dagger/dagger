@@ -16,15 +16,15 @@ Go application builder
 
 ### go.#Build Inputs
 
-| Name             | Type                    | Description                      |
-| -------------    |:-------------:          |:-------------:                   |
-|*version*         | `*"1.16" \| string`     |Go version to use                 |
-|*source*          | `dagger.#Artifact`      |Source Directory to build         |
-|*packages*        | `*"." \| string`        |Packages to build                 |
-|*arch*            | `*"amd64" \| string`    |Target architecture               |
-|*os*              | `*"linux" \| string`    |Target OS                         |
-|*tags*            | `*"" \| string`         |Build tags to use for building    |
-|*ldflags*         | `*"" \| string`         |LDFLAGS to use for linking        |
+| Name             | Type                  | Description                      |
+| -------------    |:-------------:        |:-------------:                   |
+|*version*         | `1.16`                |Go version to use                 |
+|*source*          | `dagger.#Artifact`    |Source Directory to build         |
+|*packages*        | `.`                   |Packages to build                 |
+|*arch*            | `amd64`               |Target architecture               |
+|*os*              | `linux`               |Target OS                         |
+|*tags*            | ``                    |Build tags to use for building    |
+|*ldflags*         | ``                    |LDFLAGS to use for linking        |
 
 ### go.#Build Outputs
 
@@ -38,11 +38,11 @@ A standalone go environment
 
 ### go.#Container Inputs
 
-| Name             | Type                                | Description                                             |
-| -------------    |:-------------:                      |:-------------:                                          |
-|*version*         | `*"1.16" \| string`                 |Go version to use                                        |
-|*source*          | `dagger.#Artifact`                  |Source code                                              |
-|*image.from*      | `"docker.io/golang:1.16-alpine"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
+| Name             | Type                              | Description                                             |
+| -------------    |:-------------:                    |:-------------:                                          |
+|*version*         | `1.16`                            |Go version to use                                        |
+|*source*          | `dagger.#Artifact`                |Source code                                              |
+|*image.from*      | `docker.io/golang:1.16-alpine`    |Remote ref (example: "index.docker.io/alpine:latest")    |
 
 ### go.#Container Outputs
 
@@ -54,11 +54,11 @@ Re-usable component for the Go compiler
 
 ### go.#Go Inputs
 
-| Name             | Type                   | Description                  |
-| -------------    |:-------------:         |:-------------:               |
-|*version*         | `*"1.16" \| string`    |Go version to use             |
-|*args*            | `[]`                   |Arguments to the Go binary    |
-|*source*          | `dagger.#Artifact`     |Source Directory to build     |
+| Name             | Type                  | Description                  |
+| -------------    |:-------------:        |:-------------:               |
+|*version*         | `1.16`                |Go version to use             |
+|*args*            | `[]`                  |Arguments to the Go binary    |
+|*source*          | `dagger.#Artifact`    |Source Directory to build     |
 
 ### go.#Go Outputs
 
@@ -70,9 +70,9 @@ _No output._
 
 | Name             | Type                                | Description                  |
 | -------------    |:-------------:                      |:-------------:               |
-|*version*         | `*"1.16" \| string`                 |Go version to use             |
+|*version*         | `1.16`                              |Go version to use             |
 |*source*          | `dagger.#Artifact`                  |Source Directory to build     |
-|*packages*        | `*"." \| string`                    |Packages to test              |
+|*packages*        | `.`                                 |Packages to test              |
 |*args*            | `["test", "-v", *"." \| string]`    |Arguments to the Go binary    |
 
 ### go.#Test Outputs

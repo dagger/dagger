@@ -71,7 +71,7 @@ Creates a new user credentials on an existing RDS Instance
 |*password*            | `string`            |Password                                                      |
 |*dbArn*               | `string`            |ARN of the database instance                                  |
 |*secretArn*           | `string`            |ARN of the database secret (for connecting via rds api)       |
-|*grantDatabase*       | `*"" \| string`     |Name of the database to grants access to                      |
+|*grantDatabase*       | ``                  |Name of the database to grants access to                      |
 |*dbType*              | `string`            |Database type MySQL or PostgreSQL (Aurora Serverless only)    |
 
 ### rds.#User Outputs

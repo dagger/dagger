@@ -16,14 +16,14 @@ KubeConfig config outputs a valid kube-auth-config for kubectl client
 
 ### eks.#KubeConfig Inputs
 
-| Name                 | Type                      | Description           |
-| -------------        |:-------------:            |:-------------:        |
-|*config.region*       | `string`                  |AWS region             |
-|*config.accessKey*    | `dagger.#Secret`          |AWS access key         |
-|*config.secretKey*    | `dagger.#Secret`          |AWS secret key         |
-|*config.localMode*    | `*false \| bool`          |AWS localstack mode    |
-|*clusterName*         | `string`                  |EKS cluster name       |
-|*version*             | `*"v1.19.9" \| string`    |Kubectl version        |
+| Name                 | Type                | Description           |
+| -------------        |:-------------:      |:-------------:        |
+|*config.region*       | `string`            |AWS region             |
+|*config.accessKey*    | `dagger.#Secret`    |AWS access key         |
+|*config.secretKey*    | `dagger.#Secret`    |AWS secret key         |
+|*config.localMode*    | `*false \| bool`    |AWS localstack mode    |
+|*clusterName*         | `string`            |EKS cluster name       |
+|*version*             | `v1.19.9`           |Kubectl version        |
 
 ### eks.#KubeConfig Outputs
 

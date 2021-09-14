@@ -24,7 +24,7 @@ Credentials retriever for GCR
 
 ### gcr.#Credentials Outputs
 
-| Name             | Type                     | Description             |
-| -------------    |:-------------:           |:-------------:          |
-|*username*        | `"oauth2accesstoken"`    |GCR registry username    |
-|*secret*          | `string`                 |GCR registry secret      |
+| Name             | Type                   | Description             |
+| -------------    |:-------------:         |:-------------:          |
+|*username*        | `oauth2accesstoken`    |GCR registry username    |
+|*secret*          | `string`               |GCR registry secret      |

@@ -18,7 +18,7 @@ Netlify account credentials
 
 | Name             | Type                | Description                                                                      |
 | -------------    |:-------------:      |:-------------:                                                                   |
-|*name*            | `*"" \| string`     |Use this Netlify account name (also referred to as "team" in the Netlify docs)    |
+|*name*            | ``                  |Use this Netlify account name (also referred to as "team" in the Netlify docs)    |
 |*token*           | `dagger.#Secret`    |Netlify authentication token                                                      |
 
 ### netlify.#Account Outputs
@@ -33,7 +33,7 @@ Netlify site
 
 | Name              | Type                  | Description                                                                      |
 | -------------     |:-------------:        |:-------------:                                                                   |
-|*account.name*     | `*"" \| string`       |Use this Netlify account name (also referred to as "team" in the Netlify docs)    |
+|*account.name*     | ``                    |Use this Netlify account name (also referred to as "team" in the Netlify docs)    |
 |*account.token*    | `dagger.#Secret`      |Netlify authentication token                                                      |
 |*contents*         | `dagger.#Artifact`    |Contents of the application to deploy                                             |
 |*name*             | `string`              |Deploy to this Netlify site                                                       |

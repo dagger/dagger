@@ -90,20 +90,20 @@ Push a docker image to a remote registry
 
 ### docker.#Run Inputs
 
-| Name                  | Type                | Description                           |
-| -------------         |:-------------:      |:-------------:                        |
-|*ssh.host*             | `string`            |ssh host                               |
-|*ssh.user*             | `string`            |ssh user                               |
-|*ssh.port*             | `*22 \| int`        |ssh port                               |
-|*ssh.key*              | `dagger.#Secret`    |private key                            |
-|*ref*                  | `string`            |Image reference (e.g: nginx:alpine)    |
-|*run.ssh.host*         | `string`            |ssh host                               |
-|*run.ssh.user*         | `string`            |ssh user                               |
-|*run.ssh.port*         | `*22 \| int`        |ssh port                               |
-|*run.ssh.key*          | `dagger.#Secret`    |private key                            |
-|*run.command*          | `"""\n              # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
-|*run.env.IMAGE_REF*    | `string`            |-                                      |
-|*run.registries*       | `[]`                |Image registries                       |
+| Name                  | Type                                                                         | Description                                                                             |
+| -------------         |:-------------:                                                               |:-------------:                                                                          |
+|*ssh.host*             | `string`                                                                     |ssh host                                                                                 |
+|*ssh.user*             | `string`                                                                     |ssh user                                                                                 |
+|*ssh.port*             | `*22 \| int`                                                                 |ssh port                                                                                 |
+|*ssh.key*              | `dagger.#Secret`                                                             |private key                                                                              |
+|*ref*                  | `string`                                                                     |Image reference (e.g: nginx:alpine)                                                      |
+|*run.ssh.host*         | `string`                                                                     |ssh host                                                                                 |
+|*run.ssh.user*         | `string`                                                                     |ssh user                                                                                 |
+|*run.ssh.port*         | `*22 \| int`                                                                 |ssh port                                                                                 |
+|*run.ssh.key*          | `dagger.#Secret`                                                             |private key                                                                              |
+|*run.command*          | `# Run detach container\nOPTS=""\n\nif [ ! -z "$CONTAINER_NAME" ]; then\n    OPTS="$OPTS --name $CONTAINER_NAME"\nfi\n\ndocker container run -d $OPTS "$IMAGE_REF"`    |Command to execute    |
+|*run.env.IMAGE_REF*    | `string`                                                                     |-                                                                                        |
+|*run.registries*       | `[]`                                                                         |Image registries                                                                         |
 
 ### docker.#Run Outputs
 
