@@ -1,6 +1,7 @@
 package input
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -29,6 +30,11 @@ var dirCmd = &cobra.Command{
 		p, err := filepath.Abs(args[1])
 		if err != nil {
 			lg.Fatal().Err(err).Str("path", args[1]).Msg("unable to resolve path")
+		}
+
+		// Check that directory exists
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir doesn't exists")
 		}
 
 		workspace := common.CurrentWorkspace(ctx)
