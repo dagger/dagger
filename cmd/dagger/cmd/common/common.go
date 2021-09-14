@@ -151,11 +151,11 @@ func NewClient(ctx context.Context) *client.Client {
 
 	cacheExports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-to"))
 	if err != nil {
-		lg.Fatal().Err(err).Msg("unable to parse --export-cache options")
+		lg.Fatal().Err(err).Msg("unable to parse --cache-to options")
 	}
-	cacheImports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-fron"))
+	cacheImports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-from"))
 	if err != nil {
-		lg.Fatal().Err(err).Msg("unable to parse --import-cache options")
+		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
 	}
 
 	cl, err := client.New(ctx, "", client.Config{
