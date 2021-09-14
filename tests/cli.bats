@@ -317,6 +317,10 @@ setup() {
     assert_output '{
   "foo": "bar"
 }'
+  
+  run "$DAGGER" input dir src xxx -e "input"
+  assert_failure
+  assert_output --partial "dir doesn't exists"
 }
 
 @test "dagger input dir: ignore .dagger" {
