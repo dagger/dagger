@@ -28,6 +28,34 @@ TestBuild: {
 	]
 }
 
+TestBuildWithArgs: {
+	image: #Build & {
+		dockerfile: """
+				FROM alpine
+				ARG TEST
+				ENV TEST=$TEST
+				RUN echo "$TEST" > /test.txt
+			"""
+		source: ""
+		args: TEST: "test"
+	}
+
+	verify: #up: [
+		op.#Load & {
+			from: image
+		},
+
+		op.#Exec & {
+			always: true
+			args: [
+				"sh", "-c", """
+						grep -q "test" /test.txt
+					""",
+			]
+		},
+	]
+}
+
 TestSourceImageFromDockerfile: dagger.#Artifact @dagger(input)
 
 TestImageFromDockerfile: {
