@@ -31,12 +31,12 @@ TestBuild: {
 TestSourceImageFromDockerfile: dagger.#Artifact @dagger(input)
 
 TestImageFromDockerfile: {
-	image: #ImageFromDockerfile & {
+	image: #Build & {
 		dockerfile: """
 				FROM alpine
 				COPY test.txt /test.txt
 			"""
-		context: TestSourceImageFromDockerfile
+		source: TestSourceImageFromDockerfile
 	}
 
 	verify: #up: [

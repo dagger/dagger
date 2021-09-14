@@ -6,15 +6,22 @@ import (
 	"alpha.dagger.io/dagger/op"
 )
 
-// Build a Docker image from source, using included Dockerfile
+// Build a Docker image from source
 #Build: {
+	// Build context
 	source: dagger.#Input & {dagger.#Artifact}
+
+	// Dockerfile passed as a string
+	dockerfile: dagger.#Input & {*null | string}
 
 	args?: [string]: string
 
 	#up: [
 		op.#DockerBuild & {
 			context: source
+			if dockerfile != null {
+				"dockerfile": dockerfile
+			}
 			if args != _|_ {
 				buildArg: args
 			}
@@ -149,21 +156,4 @@ import (
 			}
 		}
 	}
-}
-
-// Build a Docker image from the provided Dockerfile contents
-// FIXME: incorporate into #Build
-#ImageFromDockerfile: {
-	// Dockerfile passed as a string
-	dockerfile: dagger.#Input & {string}
-
-	// Build context
-	context: dagger.#Input & {dagger.#Artifact}
-
-	#up: [
-		op.#DockerBuild & {
-			"context":    context
-			"dockerfile": dockerfile
-		},
-	]
 }

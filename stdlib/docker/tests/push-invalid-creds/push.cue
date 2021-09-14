@@ -17,12 +17,12 @@ TestPush: {
 
 	target: "daggerio/ci-test:\(tag.out)"
 
-	image: #ImageFromDockerfile & {
+	image: #Build & {
 		dockerfile: """
 				FROM alpine
 				RUN echo "test" > /test.txt
 			"""
-		context: ""
+		source: ""
 	}
 
 	push: #Push & {
