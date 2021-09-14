@@ -16,7 +16,8 @@ Service deploys a Cloud Run service based on provided GCR image
 
 | Name                  | Type                      | Description                      |
 | -------------         |:-------------:            |:-------------:                   |
-|*config.region*        | `string`                  |GCP region                        |
+|*config.region*        | `*null \| string`         |GCP region                        |
+|*config.zone*          | `*null \| string`         |GCP zone                          |
 |*config.project*       | `string`                  |GCP project                       |
 |*config.serviceKey*    | `dagger.#Secret`          |GCP service key                   |
 |*name*                 | `string`                  |Cloud Run service name            |

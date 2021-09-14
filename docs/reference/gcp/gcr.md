@@ -16,11 +16,12 @@ Credentials retriever for GCR
 
 ### gcr.#Credentials Inputs
 
-| Name                  | Type                | Description        |
-| -------------         |:-------------:      |:-------------:     |
-|*config.region*        | `string`            |GCP region          |
-|*config.project*       | `string`            |GCP project         |
-|*config.serviceKey*    | `dagger.#Secret`    |GCP service key     |
+| Name                  | Type                 | Description        |
+| -------------         |:-------------:       |:-------------:     |
+|*config.region*        | `*null \| string`    |GCP region          |
+|*config.zone*          | `*null \| string`    |GCP zone            |
+|*config.project*       | `string`             |GCP project         |
+|*config.serviceKey*    | `dagger.#Secret`     |GCP service key     |
 
 ### gcr.#Credentials Outputs
 
