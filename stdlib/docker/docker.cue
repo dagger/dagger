@@ -14,7 +14,7 @@ import (
 	// Dockerfile passed as a string
 	dockerfile: dagger.#Input & {*null | string}
 
-	args?: [string]: string
+	args?: [string]: string | dagger.#Secret
 
 	#up: [
 		op.#DockerBuild & {

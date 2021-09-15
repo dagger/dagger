@@ -116,8 +116,11 @@ package op
 	dockerfile?:     string
 
 	platforms?: [...string]
-	buildArg?: [string]: string
-	label?: [string]:    string
+	buildArg?: {
+		// FIXME: should be `[string]: string | #Secret` (circular import)
+		[string]: string | _ @dagger(secret)
+	}
+	label?: [string]: string
 	target?: string
 	hosts?: [string]: string
 }
