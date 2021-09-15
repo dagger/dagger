@@ -47,7 +47,7 @@ module.exports = {
         {
           position: "right",
           label: "Schedule a demo",
-          href: "https://calendly.com/dagger-io/meet-the-dagger-team",
+          href: "https://savvycal.com/dagger/meet",
           className: "button",
         },
       ],
