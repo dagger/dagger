@@ -162,7 +162,7 @@ _FIXME_: this section is not yet available because the [Amazon S3 package](https
 
 The third component of our plan is the Netlify site to which the app will be deployed:
 
-```cue file=./tests/multibucket/netlify.cue title="todoapp/cue.mod/multibucket/netlify.cue"
+```cue file=./tests/multibucket/netlify.cue title="todoapp/multibucket/netlify.cue"
 
 ```
 
