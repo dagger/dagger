@@ -11,6 +11,10 @@ and use it to deploy a React application to two locations in parallel:
 a dedicated [Amazon S3](https://wikipedia.org/wiki/Amazon_S3) bucket, and a
 [Netlify](https://en.wikipedia.org/wiki/Netlify) site.
 
+You will need to understand the [CUE language](https://cuelang.org), so be sure to read [What Is Cue?](../introduction/1005-what_is_cue.md) if you haven&rsquo;t already.
+
+In technical terms, our plan is a [CUE Package](https://cuelang.org/docs/concepts/packages/#packages). This tutorial will develop a new CUE package from scratch for our plan, but you can use any Cue package as a plan.
+
 ### Anatomy of a Dagger environment
 
 A Dagger environment contains all the code and data necessary to deliver a particular application in a specific way.
@@ -47,15 +51,6 @@ Each link in the graph represents a flow of data between nodes. For example:
 - system dependencies are combined in a docker image, then uploaded to a registry
 - configuration files are generated then sent to a compute cluster or load balancer
 
-### Introduction to Cue development
-
-Dagger delivery plans are developed in Cue.
-Cue is a powerful declarative language by Marcel van Lohuizen. Marcel co-created the Borg Configuration Language (BCL), the [language used to deploy all applications at Google](https://storage.googleapis.com/pub-tools-public-publication-data/pdf/43438.pdf). It is a superset of JSON, with additional features to make declarative, data-driven programming as pleasant and productive as regular imperative programming.
-
-If you are new to Cue development, don't worry: this tutorial will walk you through the basic
-steps to get started, and give you resources to learn more.
-
-In technical terms, our plan is a [Cue Package](https://cuelang.org/docs/concepts/packages/#packages). This tutorial will develop a new Cue package from scratch for our plan, but you can use any Cue package as a plan.
 
 ## Initial setup
 
