@@ -12,13 +12,14 @@ import "alpha.dagger.io/docker"
 
 ## docker.#Build
 
-Build a Docker image from source, using included Dockerfile
+Build a Docker image from source
 
 ### docker.#Build Inputs
 
-| Name             | Type                  | Description        |
-| -------------    |:-------------:        |:-------------:     |
-|*source*          | `dagger.#Artifact`    |-                   |
+| Name             | Type                  | Description                     |
+| -------------    |:-------------:        |:-------------:                  |
+|*source*          | `dagger.#Artifact`    |Build context                    |
+|*dockerfile*      | `*null \| string`     |Dockerfile passed as a string    |
 
 ### docker.#Build Outputs
 
@@ -36,21 +37,6 @@ A container image that can run any docker command
 |*registries*      | `[]`              |Image registries      |
 
 ### docker.#Command Outputs
-
-_No output._
-
-## docker.#ImageFromDockerfile
-
-Build a Docker image from the provided Dockerfile contents
-
-### docker.#ImageFromDockerfile Inputs
-
-| Name             | Type                  | Description                     |
-| -------------    |:-------------:        |:-------------:                  |
-|*dockerfile*      | `string`              |Dockerfile passed as a string    |
-|*context*         | `dagger.#Artifact`    |Build context                    |
-
-### docker.#ImageFromDockerfile Outputs
 
 _No output._
 

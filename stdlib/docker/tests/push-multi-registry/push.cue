@@ -18,12 +18,12 @@ TestResources: {
 	// Seed is used to force buildkit execution and not simply use a previous generated string.
 	suffix: random.#String & {seed: "docker multi registry"}
 
-	image: #ImageFromDockerfile & {
+	image: #Build & {
 		dockerfile: """
 				FROM alpine
 				RUN echo "test" > /test.txt
 			"""
-		context: ""
+		source: ""
 	}
 }
 
