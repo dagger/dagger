@@ -6,7 +6,7 @@ import (
 	"alpha.dagger.io/alpine"
 )
 
-dockersocket: dagger.#Socket & dagger.#Input
+dockersocket: dagger.#Stream & dagger.#Input
 
 TestDockerSocket: #up: [
 	op.#Load & {
@@ -17,7 +17,7 @@ TestDockerSocket: #up: [
 
 	op.#Exec & {
 		always: true
-		mount: "/var/run/docker.sock": socket: dockersocket
+		mount: "/var/run/docker.sock": stream: dockersocket
 		args: ["docker", "info"]
 	},
 ]

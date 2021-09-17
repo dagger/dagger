@@ -506,15 +506,15 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		), nil
 	}
 
-	// eg. mount: "/var/run/docker.sock": socket: mysocket
-	if socket := mnt.Lookup("socket"); socket.Exists() {
-		if !socket.HasAttr("socket") {
-			return nil, fmt.Errorf("invalid socket %q: not a socket", socket.Path().String())
+	// eg. mount: "/var/run/docker.sock": stream: mystream
+	if stream := mnt.Lookup("stream"); stream.Exists() {
+		if !stream.HasAttr("stream") {
+			return nil, fmt.Errorf("invalid stream %q: not a stream", stream.Path().String())
 		}
 
-		unixValue := socket.Lookup("unix")
+		unixValue := stream.Lookup("unix")
 		if !unixValue.Exists() {
-			return nil, fmt.Errorf("invalid socket %q: not a unix socket", socket.Path().String())
+			return nil, fmt.Errorf("invalid stream %q: not a unix socket", stream.Path().String())
 		}
 
 		unix, err := unixValue.String()

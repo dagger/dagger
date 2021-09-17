@@ -14,9 +14,9 @@ import (
 	...
 }
 
-// Dagger socket. Can be mounted as a UNIX socket.
-#Socket: {
-	@dagger(socket)
+// Dagger stream. Can be mounted as a UNIX socket.
+#Stream: {
+	@dagger(stream)
 
 	unix: string
 }

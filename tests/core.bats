@@ -148,10 +148,10 @@ setup() {
     assert_output --partial "secret=mySecret;hash="
 }
 
-@test "core: socket" {
+@test "core: stream" {
     dagger init
 
-    dagger_new_with_plan test-socket "$TESTDIR"/core/socket
+    dagger_new_with_plan test-stream "$TESTDIR"/core/stream
 
     # Set dir input
     "$DAGGER" input socket dockersocket /var/run/docker.sock

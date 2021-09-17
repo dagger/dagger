@@ -22,14 +22,14 @@ _No input._
 
 _No output._
 
-## dagger.#Socket
+## dagger.#Stream
 
-Dagger socket. Can be mounted as a UNIX socket.
+Dagger stream. Can be mounted as a UNIX socket.
 
-### dagger.#Socket Inputs
+### dagger.#Stream Inputs
 
 _No input._
 
-### dagger.#Socket Outputs
+### dagger.#Stream Outputs
 
 _No output._
