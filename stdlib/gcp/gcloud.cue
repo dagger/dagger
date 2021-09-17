@@ -42,8 +42,15 @@ import (
 			args: ["gcloud", "-q", "config", "set", "project", config.project]
 		},
 
-		op.#Exec & {
-			args: ["gcloud", "-q", "config", "set", "compute/zone", config.region]
+		if config.region != null {
+			op.#Exec & {
+				args: ["gcloud", "-q", "config", "set", "compute/region", config.region]
+			}
+		},
+		if config.zone != null {
+			op.#Exec & {
+				args: ["gcloud", "-q", "config", "set", "compute/zone", config.zone]
+			}
 		},
 	]
 }

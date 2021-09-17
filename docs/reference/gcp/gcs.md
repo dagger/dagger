@@ -18,7 +18,8 @@ GCS Bucket object(s) sync
 
 | Name                  | Type                  | Description                                                       |
 | -------------         |:-------------:        |:-------------:                                                    |
-|*config.region*        | `string`              |GCP region                                                         |
+|*config.region*        | `*null \| string`     |GCP region                                                         |
+|*config.zone*          | `*null \| string`     |GCP zone                                                           |
 |*config.project*       | `string`              |GCP project                                                        |
 |*config.serviceKey*    | `dagger.#Secret`      |GCP service key                                                    |
 |*source*               | `dagger.#Artifact`    |Source Artifact to upload to GCS                                   |

@@ -169,7 +169,7 @@ setup() {
 }
 
 @test "google cloud: gke" {
-  dagger -e google-gke up
+  dagger -e google-gke up 
 }
 
 @test "google cloud: secretmanager" {
