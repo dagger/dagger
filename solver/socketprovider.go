@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/moby/buildkit/session"
@@ -13,33 +14,32 @@ import (
 )
 
 const (
-	DockerSocketID   = "docker.sock"
-	DockerSocketPath = "/var/run/docker.sock"
+	unixPrefix = "unix="
 )
 
-type DockerSocketProvider struct {
+type SocketProvider struct {
 }
 
 func NewDockerSocketProvider() session.Attachable {
-	return &DockerSocketProvider{}
+	return &SocketProvider{}
 }
 
-func (sp *DockerSocketProvider) Register(server *grpc.Server) {
+func (sp *SocketProvider) Register(server *grpc.Server) {
 	sshforward.RegisterSSHServer(server, sp)
 }
 
-func (sp *DockerSocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
+func (sp *SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
 	id := sshforward.DefaultID
 	if req.ID != "" {
 		id = req.ID
 	}
-	if id != DockerSocketID {
+	if !strings.HasPrefix(id, unixPrefix) {
 		return &sshforward.CheckAgentResponse{}, fmt.Errorf("invalid socket forward key %s", id)
 	}
 	return &sshforward.CheckAgentResponse{}, nil
 }
 
-func (sp *DockerSocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
+func (sp *SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
 	id := sshforward.DefaultID
 
 	opts, _ := metadata.FromIncomingContext(stream.Context()) // if no metadata continue with empty object
@@ -48,13 +48,15 @@ func (sp *DockerSocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentS
 		id = v[0]
 	}
 
-	if id != DockerSocketID {
+	if !strings.HasPrefix(id, unixPrefix) {
 		return fmt.Errorf("invalid socket forward key %s", id)
 	}
 
-	conn, err := net.DialTimeout("unix", DockerSocketPath, time.Second)
+	id = strings.TrimPrefix(id, unixPrefix)
+
+	conn, err := net.DialTimeout("unix", id, time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to connect to %s: %w", DockerSocketPath, err)
+		return fmt.Errorf("failed to connect to %s: %w", id, err)
 	}
 	defer conn.Close()
 

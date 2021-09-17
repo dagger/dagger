@@ -14,6 +14,13 @@ import (
 	...
 }
 
+// Dagger socket. Can be mounted as a UNIX socket.
+#Socket: {
+	@dagger(socket)
+
+	unix: string
+}
+
 // Secret value
 #Secret: {
 	@dagger(secret)

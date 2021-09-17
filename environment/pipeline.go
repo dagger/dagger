@@ -492,6 +492,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 			return nil, fmt.Errorf("invalid mount source: %q", s)
 		}
 	}
+
 	// eg. mount: "/foo": secret: mysecret
 	if secret := mnt.Lookup("secret"); secret.Exists() {
 		id, err := getSecretID(secret)
@@ -502,6 +503,28 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		return llb.AddSecret(dest,
 			llb.SecretID(id),
 			llb.SecretFileOpt(0, 0, 0400), // uid, gid, mask)
+		), nil
+	}
+
+	// eg. mount: "/var/run/docker.sock": socket: mysocket
+	if socket := mnt.Lookup("socket"); socket.Exists() {
+		if !socket.HasAttr("socket") {
+			return nil, fmt.Errorf("invalid socket %q: not a socket", socket.Path().String())
+		}
+
+		unixValue := socket.Lookup("unix")
+		if !unixValue.Exists() {
+			return nil, fmt.Errorf("invalid socket %q: not a unix socket", socket.Path().String())
+		}
+
+		unix, err := unixValue.String()
+		if err != nil {
+			return nil, fmt.Errorf("invalid unix path id: %w", err)
+		}
+
+		return llb.AddSSHSocket(
+			llb.SSHID(fmt.Sprintf("unix=%s", unix)),
+			llb.SSHSocketTarget(dest),
 		), nil
 	}
 
