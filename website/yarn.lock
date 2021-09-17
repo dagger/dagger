@@ -2120,10 +2120,10 @@ alphanum-sort@^1.0.2:
   resolved "https://registry.yarnpkg.com/alphanum-sort/-/alphanum-sort-1.0.2.tgz#97a1119649b211ad33691d9f9f486a8ec9fbe0a3"
   integrity sha1-l6ERlkmyEa0zaR2fn0hqjsn74KM=
 
-amplitude-js@^8.6.0:
-  version "8.6.0"
-  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.6.0.tgz#521bec51fe0f3dfcac929f335e249a40556cb654"
-  integrity sha512-5y9po4Dyf+92KFWzK/nyLNq/haQsA6uLDF88/i5Lp9IxdYryUtdHlA1H+0g35qHnbQLalM87qcA0SBoT5jujrQ==
+amplitude-js@^8.7.0:
+  version "8.7.0"
+  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.7.0.tgz#9c7d563bcaf8c74363a5cdf2e83918141d0d227d"
+  integrity sha512-NY5RGSjgm3VgVM/FSJR9OyzxoP6UGhjAgM3S3d6Ir+eZd1HGC5vq+RNhHWDUcFDd+gpi0U45gD9qhXcbiByPUA==
   dependencies:
     "@amplitude/ua-parser-js" "0.7.25"
     "@amplitude/utils" "^1.0.5"
