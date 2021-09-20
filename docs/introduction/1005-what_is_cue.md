@@ -10,9 +10,9 @@ CUE is a powerful configuration language created by Marcel van Lohuizen who co-c
 
 ## The Need for a Configuration Language
 
-For decades, developers, engineers, and system administrators alike have used some combination of `INI`, `ENV`, `YAML`, `XML`, and `JSON` (as well as custom formats such as those for Apache, Nginx, et al) to describe configurations, resources, operations, variables, parameters, state, etc. While these examples work fine for storing data, they are merely _data formats_, not languages, and as such they each lack the ability to execute logic and operate on data directly. 
+For decades, developers, engineers, and system administrators alike have used some combination of `INI`, `ENV`, `YAML`, `XML`, and `JSON` (as well as custom formats such as those for Apache, Nginx, et al) to describe configurations, resources, operations, variables, parameters, state, etc. While these examples work fine for storing data, they are merely _data formats_, not languages, and as such they each lack the ability to execute logic and operate on data directly.
 
-Simple&mdash;yet powerful!&mdash;things like if statements, for loops, comprehensions, and string interpolation, among others are just not possible in these formats without the use of a separate process for execution. The result is that variables or parameters must be injected, and any logic executed by a templating language (such as Jinja) or executed by a separate engine instructed by a DSL (Domain-specific Language). Often templating languages and DSLs are used in conjuction and while this technically works, the results are that we end up with code bases, or even single files, that are overly verbose, that intersperse templating languages with various DSLs (and sometimes multiple DSLs that feed ouput from one to the input of another!), that create rigid structures without enforcing schemas (not without more effort), thereby making the code challenging to reason about, difficult to maintain, brittle, and perhaps worst of all, _prone to side effects_.
+Simple&mdash;yet powerful!&mdash;things like if statements, for loops, comprehensions, and string interpolation, among others are just not possible in these formats without the use of a separate process for execution. The result is that variables or parameters must be injected, and any logic executed by a templating language (such as Jinja) or by a separate engine instructed by a DSL (Domain-specific Language). Often templating languages and DSLs are used in conjuction and while this technically works, the results are that we end up with code bases, or even single files, that are overly verbose, that intersperse templating languages with various DSLs (and sometimes multiple DSLs that feed ouput from one to the input of another!), that create rigid structures without enforcing schemas (not without more effort), thereby making the code challenging to reason about, difficult to maintain, brittle, and perhaps worst of all, _prone to side effects_.
 
 A _configuration language_ such as CUE, allows us to both _specify_ data as well as _act_ upon that data with any logic necessary to achieve the desired output. Furthermore, and perhaps most importantly, CUE allows us to not only specify data as concrete values, but also specify the _types_ those concrete values must be as well as any _constraints_ such as min and max for example. It gives us the ability to define a _schema_ but unlike doing so with say JSON Schema, CUE can both _define_ and _enforce_ the schema, whereas JSON Schema is merely a definition that requires some other process to enforce it.
 
@@ -65,15 +65,15 @@ Bob: {
   Name: "Bob Smith"
   Age: 42
 }
-
 ```
+
 Here we&rsquo;ve defined the `Name` field as a `string` and the `Age` field as an `int`. Notice how `string` and `int` _are not_ within quotes. This is what we mean when we say "types _are_ values". This will be quite familiar to anyone who has written Go or some other strongly-typed language. With these types defined CUE will now _enforce_ them, so any attempt to provide say an integer for the Name or a string for the Age will result in an error. It&rsquo;s worth noting here that the output from this example is the result of _implicit uinification_; we&rsquo;ll talk about _explicit unification_ later. [Try it in the CUE playground](https://cuelang.org/play/?id=p12E8vjFTsc#cue@export@yaml).
 
 ### Concrete Values
 
 CUE is ultimately used to export data, and is most useful when that data has been validated against a strong, well-defined schema. In order for CUE to export anything, we must provide _concrete values_ for all defined fields not marked as optional.
 
-In the previous examples we have provided concrete values: "Bob Smith" as a string, and 42 as an int. Were we to leave a required field simply defined as a type without a concrete value, CUE will return an error. 
+In the previous examples we have provided concrete values: "Bob Smith" as a string, and 42 as an int. Were we to leave a required field simply defined as a type without a concrete value, CUE will return an error.
 
 ```cue
 
@@ -86,8 +86,8 @@ Bob: {
   Name: "Bob Smith"
   //Age: is considered "incomplete" because no concrete value is defined
 }
-
 ```
+
 [Try it in the CUE playground](https://cuelang.org/play/?id=cflqGMQsbLo#cue@export@yaml) and see that CUE will complain of an _incomplete value_.
 
 ### Definitions
@@ -108,7 +108,7 @@ Bob: #Person & {
 }
 ```
 
-In this example we&rsquo;ve declared that `#Person` is a _definition_, as denoted by the `#` sign. By doing so, we have _constrained_ the Person object to a specific set of fields, each a specific type. Definitions by default are _closed_ meaning that a `#Person` cannot contain any fields not specified in the definition. You will also notice that `Age?` now contains a `?` which denotes that this field as being _optional_. 
+In this example we&rsquo;ve declared that `#Person` is a _definition_, as denoted by the `#` sign. By doing so, we have _constrained_ the Person object to a specific set of fields, each a specific type. Definitions by default are _closed_ meaning that a `#Person` cannot contain any fields not specified in the definition. You will also notice that `Age?` now contains a `?` which denotes this field as being _optional_.
 
 Definitions themselves are _not_ exported to final output. To get concrete output, we&rsquo;ve declared that the field `Bob` _is_ a `#Person`, and using the _single_ `&` (not the same as logical AND via `&&`!) we _unified_ the `#Person` definition with an object whose _concrete values satisfy the constraints_ defined by that definition.
 
@@ -150,7 +150,7 @@ Bob:
 
 ```
 
-The output here is a product of _*unifying*_ the `#Person` _definition_ with and object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _contraints_ declared by the field in the defintion.
+The output here is a product of _*unifying*_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _contraints_ declared by the field in the defintion.
 
 ### Default Values and the Nature of Inheritance
 
@@ -195,14 +195,20 @@ Bob:
 
 ```
 
-While it's possible for Bob to inherit his job from `#Engineer` which in turn inherits contraints from `#Person`, it it not possible to override that value. [Try it in the CUE playground](https://tip.cuelang.org/play/?id=96IBeFxXgfS#cue@export@yaml) and uncomment the Job field in Bob and see that CUE returns an error. 
+While it's possible for Bob to inherit his job from `#Engineer` which in turn inherits contraints from `#Person`, it it not possible to override that value. [Try it in the CUE playground](https://tip.cuelang.org/play/?id=96IBeFxXgfS#cue@export@yaml) and uncomment the Job field in Bob and see that CUE returns an error.
 
-In the above example if you needed the Bob object to have a different job, it would either need to be unified with a different type OR the `#Engineer: Job: ` field would need a looser constraint with a _default value_. Try changing the Job field to the following:
+In the above example if you needed the Bob object to have a different job, it would either need to be unified with a different type OR the `#Engineer:Job:` field would need a looser constraint with a _default value_. Try changing the Job field to the following:
 
 ```cue
 #Engineer: #Person & {
-  Job: string | *"Engineer" // can still be any string, but *defaults* to "Engineer"
+  Job: string | *"Engineer" // can still be any string, but *defaults* to "Engineer" when no concrete value is explicitly defined
 }
 ```
 
-Bob can inherit the _default value_ but is now allowed to specify a different job.
+Bob inherits the _default value_ but is now allowed to specify a different job.
+
+### Packages
+
+In the last few examples we've included an `import` statement to load the builtin `"strings"` package. If you've written Go then CUE should feel quite familiar. Not only is it [written in Go](https://pkg.go.dev/cuelang.org/go@v0.4.0/cue#pkg-overview) much of its behavior and syntax are modeled after Go as well.
+
+Packages in CUE allow us to write _modular_, _reusable_, and _composable_ code. We can define schemas that are import into various other projects.

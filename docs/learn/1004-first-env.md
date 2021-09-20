@@ -51,7 +51,6 @@ Each link in the graph represents a flow of data between nodes. For example:
 - system dependencies are combined in a docker image, then uploaded to a registry
 - configuration files are generated then sent to a compute cluster or load balancer
 
-
 ## Initial setup
 
 ### Install Cue
