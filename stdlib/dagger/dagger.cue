@@ -14,6 +14,13 @@ import (
 	...
 }
 
+// Dagger stream. Can be mounted as a UNIX socket.
+#Stream: {
+	@dagger(stream)
+
+	unix: string
+}
+
 // Secret value
 #Secret: {
 	@dagger(secret)

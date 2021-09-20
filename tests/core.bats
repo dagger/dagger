@@ -148,9 +148,15 @@ setup() {
     assert_output --partial "secret=mySecret;hash="
 }
 
-@test "compute: docker socket" {
-    skip "docker socket support disabled"
-    run "$DAGGER" compute  "$TESTDIR"/compute/dockersocket
+@test "core: stream" {
+    dagger init
+
+    dagger_new_with_plan test-stream "$TESTDIR"/core/stream
+
+    # Set dir input
+    "$DAGGER" input socket dockersocket /var/run/docker.sock
+
+    "$DAGGER" up
 }
 
 @test "compute: exclude" {

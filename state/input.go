@@ -37,6 +37,7 @@ type Input struct {
 	YAML   *yamlInput   `yaml:"yaml,omitempty"`
 	File   *fileInput   `yaml:"file,omitempty"`
 	Bool   *boolInput   `yaml:"bool,omitempty"`
+	Socket *socketInput `yaml:"socket,omitempty"`
 }
 
 func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
@@ -59,6 +60,8 @@ func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
 		return i.File.Compile(key, state)
 	case i.Bool != nil:
 		return i.Bool.Compile(key, state)
+	case i.Socket != nil:
+		return i.Socket.Compile(key, state)
 	default:
 		return nil, fmt.Errorf("input has not been set")
 	}
@@ -280,4 +283,23 @@ func (i fileInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 		return nil, err
 	}
 	return value, nil
+}
+
+// A socket input value
+func SocketInput(data string) Input {
+	i := socketInput{
+		Unix: data,
+	}
+	return Input{
+		Socket: &i,
+	}
+}
+
+type socketInput struct {
+	Unix string `json:"unix,omitempty"`
+}
+
+func (i socketInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+	socketValue := fmt.Sprintf(`{unix: %q}`, i.Unix)
+	return compiler.Compile("", socketValue)
 }
