@@ -23,7 +23,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/rs/zerolog v1.23.0
 	github.com/spf13/cobra v1.2.1
-	github.com/spf13/viper v1.8.1
+	github.com/spf13/viper v1.9.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tonistiigi/fsutil v0.0.0-20210609172227-d72af97c0eaf
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
@@ -32,7 +32,6 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.0.0-RC1
 	go.opentelemetry.io/otel/sdk v1.0.0-RC1
 	go.opentelemetry.io/otel/trace v1.0.0-RC1
-	golang.org/x/net v0.0.0-20210331212208-0fccb6fa2b5c // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
