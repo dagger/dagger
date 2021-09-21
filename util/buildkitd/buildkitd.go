@@ -71,7 +71,6 @@ func checkBuildkit(ctx context.Context) error {
 		if err := installBuildkit(ctx); err != nil {
 			return err
 		}
-
 	} else {
 		lg.
 			Debug().
