@@ -2,6 +2,7 @@
 package gcr
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/gcp"
 )
@@ -12,7 +13,7 @@ import (
 	config: gcp.#Config
 
 	// GCR registry username
-	username: "oauth2accesstoken" @dagger(output)
+	username: "oauth2accesstoken" & dagger.#Output
 
 	// GCR registry secret
 	secret: {
@@ -43,5 +44,5 @@ import (
 				source: "/token.txt"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }

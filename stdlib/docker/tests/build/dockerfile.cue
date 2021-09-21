@@ -1,84 +1,84 @@
 package docker
 
 import (
-	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/dagger/op"
+"alpha.dagger.io/dagger"
+"alpha.dagger.io/dagger/op"
 )
 
-TestSourceBuild: dagger.#Artifact @dagger(input)
+TestSourceBuild: dagger.#Artifact & dagger.#Input
 
 TestBuild: {
-	image: #Build & {
-		source: TestSourceBuild
-	}
+image: #Build & {
+source: TestSourceBuild
+}
 
-	verify: #up: [
-		op.#Load & {
-			from: image
-		},
+verify: #up: [
+op.#Load & {
+from: image
+},
 
-		op.#Exec & {
-			always: true
-			args: [
-				"sh", "-c", """
-						grep -q "test" /test.txt
-					""",
-			]
-		},
-	]
+op.#Exec & {
+always: true
+args: [
+"sh", "-c", """
+grep -q "test" /test.txt
+""",
+]
+},
+]
 }
 
 TestBuildWithArgs: {
-	image: #Build & {
-		dockerfile: """
-				FROM alpine
-				ARG TEST
-				ENV TEST=$TEST
-				RUN echo "$TEST" > /test.txt
-			"""
-		source: ""
-		args: TEST: "test"
-	}
-
-	verify: #up: [
-		op.#Load & {
-			from: image
-		},
-
-		op.#Exec & {
-			always: true
-			args: [
-				"sh", "-c", """
-						grep -q "test" /test.txt
-					""",
-			]
-		},
-	]
+image: #Build & {
+dockerfile: """
+FROM alpine
+ARG TEST
+ENV TEST=$TEST
+RUN echo "$TEST" > /test.txt
+"""
+source: ""
+args: TEST: "test"
 }
 
-TestSourceImageFromDockerfile: dagger.#Artifact @dagger(input)
+verify: #up: [
+op.#Load & {
+from: image
+},
+
+op.#Exec & {
+always: true
+args: [
+"sh", "-c", """
+grep -q "test" /test.txt
+""",
+]
+},
+]
+}
+
+TestSourceImageFromDockerfile: dagger.#Artifact & dagger.#Input
 
 TestImageFromDockerfile: {
-	image: #Build & {
-		dockerfile: """
-				FROM alpine
-				COPY test.txt /test.txt
-			"""
-		source: TestSourceImageFromDockerfile
-	}
+image: #Build & {
+dockerfile: """
+FROM alpine
+COPY test.txt /test.txt
+"""
+source: TestSourceImageFromDockerfile
+}
 
-	verify: #up: [
-		op.#Load & {
-			from: image
-		},
+verify: #up: [
+op.#Load & {
+from: image
+},
 
-		op.#Exec & {
-			always: true
-			args: [
-				"sh", "-c", """
-						grep -q "test" /test.txt
-					""",
-			]
-		},
-	]
+op.#Exec & {
+always: true
+args: [
+"sh", "-c", """
+grep -q "test" /test.txt
+""",
+]
+},
+]
 }

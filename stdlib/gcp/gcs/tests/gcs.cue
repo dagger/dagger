@@ -8,7 +8,7 @@ import (
 
 TestConfig: {
 	gcpConfig: gcp.#Config
-	bucket:    string @dagger(input)
+	bucket:    string & dagger.#Input
 }
 
 TestDirectory: dagger.#Artifact

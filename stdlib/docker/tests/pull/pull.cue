@@ -5,7 +5,7 @@ import (
 	"alpha.dagger.io/alpine"
 )
 
-ref: string @dagger(input)
+ref: string & dagger.#Input
 
 TestPull: {
 	pull: #Pull & {from: ref}

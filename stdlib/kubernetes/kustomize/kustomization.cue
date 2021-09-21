@@ -9,7 +9,7 @@ import (
 
 #Kustomization: {
 	// Kustomize binary version
-	version: *"v3.8.7" | string @dagger(input)
+	version: *"v3.8.7" | string & dagger.#Input
 
 	#code: #"""
 		[ -e /usr/local/bin/kubectl ] || {
@@ -47,13 +47,13 @@ import (
 // Apply a Kubernetes Kustomize folder
 #Kustomize: {
 	// Kubernetes source
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Optional Kustomization file
-	kustomization: string @dagger(input)
+	kustomization: string & dagger.#Input
 
 	// Kustomize binary version
-	version: *"v3.8.7" | string @dagger(input)
+	version: *"v3.8.7" | string & dagger.#Input
 
 	#code: #"""
 		cp /kustomization.yaml /source | true

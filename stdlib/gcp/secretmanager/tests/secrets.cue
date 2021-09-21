@@ -13,7 +13,7 @@ TestSecrets: {
 	secret: secretmanager.#Secrets & {
 		config: TestConfig.gcpConfig
 		secrets: {
-			databasePassword: dagger.#Secret @dagger(input)
+			databasePassword: dagger.#Secret & dagger.#Input
 		}
 	}
 

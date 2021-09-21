@@ -16,22 +16,22 @@ import (
 
 	ssh: {
 		// ssh host
-		host: string @dagger(input)
+		host: string & dagger.#Input
 
 		// ssh user
-		user: string @dagger(input)
+		user: string & dagger.#Input
 
 		// ssh port
-		port: *22 | int @dagger(input)
+		port: *22 | int & dagger.#Input
 
 		// private key
-		key: dagger.#Secret @dagger(input)
+		key: dagger.#Secret & dagger.#Input
 
 		// fingerprint
-		fingerprint?: string @dagger(input)
+		fingerprint?: string & dagger.#Input
 
 		// ssh key passphrase
-		keyPassphrase?: dagger.#Secret @dagger(input)
+		keyPassphrase?: dagger.#Secret & dagger.#Input
 	}
 
 	#code: #"""

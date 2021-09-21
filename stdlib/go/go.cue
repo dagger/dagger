@@ -13,10 +13,10 @@ import (
 #Container: {
 
 	// Go version to use
-	version: *"1.16" | string @dagger(input)
+	version: *"1.16" | string & dagger.#Input
 
 	// Source code
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	os.#Container & {
 		env: CGO_ENABLED: "0"
@@ -40,17 +40,17 @@ import (
 // Re-usable component for the Go compiler
 #Go: {
 	// Go version to use
-	version: *"1.16" | string @dagger(input)
+	version: *"1.16" | string & dagger.#Input
 
 	// Arguments to the Go binary
-	args: [...string] @dagger(input)
+	args: [...string] & dagger.#Input
 
 	// Source Directory to build
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Environment variables
 	env: {
-		[string]: string @dagger(input)
+		[string]: string & dagger.#Input
 	}
 
 	#up: [
@@ -75,32 +75,32 @@ import (
 // Go application builder
 #Build: {
 	// Go version to use
-	version: *#Go.version | string @dagger(input)
+	version: *#Go.version | string & dagger.#Input
 
 	// Source Directory to build
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Packages to build
-	packages: *"." | string @dagger(input)
+	packages: *"." | string & dagger.#Input
 
 	// Target architecture
-	arch: *"amd64" | string @dagger(input)
+	arch: *"amd64" | string & dagger.#Input
 
 	// Target OS
-	os: *"linux" | string @dagger(input)
+	os: *"linux" | string & dagger.#Input
 
 	// Build tags to use for building
-	tags: *"" | string @dagger(input)
+	tags: *"" | string & dagger.#Input
 
 	// LDFLAGS to use for linking
-	ldflags: *"" | string @dagger(input)
+	ldflags: *"" | string & dagger.#Input
 
 	// Specify the targeted binary name
-	output: string @dagger(output)
+	output: string & dagger.#Output
 
 	// Environment variables
 	env: {
-		[string]: string @dagger(input)
+		[string]: string & dagger.#Input
 	}
 
 	#up: [
@@ -119,13 +119,13 @@ import (
 
 #Test: {
 	// Go version to use
-	version: *#Go.version | string @dagger(input)
+	version: *#Go.version | string & dagger.#Input
 
 	// Source Directory to build
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Packages to test
-	packages: *"." | string @dagger(input)
+	packages: *"." | string & dagger.#Input
 
 	#Go & {
 		"version": version

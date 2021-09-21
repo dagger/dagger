@@ -10,37 +10,37 @@ import (
 #App: {
 	ssh?: {
 		// ssh host
-		host: string @dagger(input)
+		host: string & dagger.#Input
 
 		// ssh user
-		user: string @dagger(input)
+		user: string & dagger.#Input
 
 		// ssh port
-		port: *22 | int @dagger(input)
+		port: *22 | int & dagger.#Input
 
 		// private key
-		key: dagger.#Secret @dagger(input)
+		key: dagger.#Secret & dagger.#Input
 
 		// fingerprint
-		fingerprint?: string @dagger(input)
+		fingerprint?: string & dagger.#Input
 
 		// ssh key passphrase
-		keyPassphrase?: dagger.#Secret @dagger(input)
+		keyPassphrase?: dagger.#Secret & dagger.#Input
 	}
 
 	// Accept either a contaxt, a docker-compose or both together
-	source?:      dagger.#Artifact @dagger(input)
-	composeFile?: string           @dagger(input)
+	source?:      dagger.#Artifact & dagger.#Input
+	composeFile?: string           & dagger.#Input
 
 	// App name (use as COMPOSE_PROJECT_NAME)
-	name: *"source" | string @dagger(input)
+	name: *"source" | string & dagger.#Input
 
 	// Image registries
 	registries: [...{
 		target?:  string
 		username: string
 		secret:   dagger.#Secret
-	}] @dagger(input)
+	}] & dagger.#Input
 
 	#code: #"""
 		if [ -n "$DOCKER_HOSTNAME" ]; then

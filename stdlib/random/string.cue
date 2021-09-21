@@ -14,10 +14,10 @@ import (
 	// When using the same `seed`, the same random string will be generated
 	// because of caching.
 	// FIXME: this is necessary because of https://github.com/dagger/dagger/issues/591
-	seed: string @dagger(input)
+	seed: string & dagger.#Input
 
 	// length of the string
-	length: *12 | number @dagger(input)
+	length: *12 | number & dagger.#Input
 
 	// generated random string
 	out: {
@@ -57,5 +57,5 @@ import (
 				source: "/rand"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }

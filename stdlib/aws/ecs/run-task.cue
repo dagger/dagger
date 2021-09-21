@@ -2,6 +2,7 @@
 package ecs
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/aws"
 )
 
@@ -12,24 +13,24 @@ import (
 	config: aws.#Config
 
 	// ECS cluster name
-	cluster: string @dagger(input)
+	cluster: string & dagger.#Input
 
 	// Arn of the task to run
-	taskArn: string @dagger(input)
+	taskArn: string & dagger.#Input
 
 	// Environment variables of the task
 	containerEnvironment: {
-		[string]: string @dagger(input)
+		[string]: string & dagger.#Input
 	}
 
 	// Container name
-	containerName: string @dagger(input)
+	containerName: string & dagger.#Input
 
 	// Container command to give
-	containerCommand: [...string] @dagger(input)
+	containerCommand: [...string] & dagger.#Input
 
 	// Task role ARN
-	roleArn: string | *"" @dagger(input)
+	roleArn: string | *"" & dagger.#Input
 
 	containerOverrides: {
 		containerOverrides: [{

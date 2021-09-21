@@ -2,6 +2,7 @@
 package ecr
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/aws"
 	"alpha.dagger.io/os"
 )
@@ -12,7 +13,7 @@ import (
 	config: aws.#Config
 
 	// ECR registry
-	username: "AWS" @dagger(output)
+	username: "AWS" & dagger.#Output
 
 	ctr: os.#Container & {
 		image: aws.#CLI & {
@@ -28,5 +29,5 @@ import (
 				from: ctr
 				path: "/out"
 			}
-	}.contents @dagger(output)
+	}.contents & dagger.#Output
 }

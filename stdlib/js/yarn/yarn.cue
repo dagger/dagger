@@ -12,40 +12,40 @@ import (
 // A Yarn package
 #Package: {
 	// Application source code
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Extra alpine packages to install
 	package: {
 		[string]: true | false | string
-	} @dagger(input)
+	} & dagger.#Input
 
 	// working directory to use
-	cwd: *"." | string @dagger(input)
+	cwd: *"." | string & dagger.#Input
 
 	// Environment variables
 	env: {
 		[string]: string
-	} @dagger(input)
+	} & dagger.#Input
 
 	// Write the contents of `environment` to this file,
 	// in the "envfile" format
-	writeEnvFile: string | *"" @dagger(input)
+	writeEnvFile: string | *"" & dagger.#Input
 
 	// Read build output from this directory
 	// (path must be relative to working directory)
-	buildDir: string | *"build" @dagger(input)
+	buildDir: string | *"build" & dagger.#Input
 
 	// Run this yarn script
-	script: string | *"build" @dagger(input)
+	script: string | *"build" & dagger.#Input
 
 	// Optional arguments for the script
-	args: [...string] | *[] @dagger(input)
+	args: [...string] | *[] & dagger.#Input
 
 	// Build output directory
 	build: os.#Dir & {
 		from: ctr
 		path: "/build"
-	} @dagger(output)
+	} & dagger.#Output
 
 	ctr: os.#Container & {
 		image: alpine.#Image & {

@@ -7,8 +7,8 @@ import (
 // Test secret mount
 SimpleSecret: {
 	// 'encrypted' and 'cleartext' must be set from identical values
-	encrypted: dagger.#Secret @dagger(input)
-	cleartext: string         @dagger(input)
+	encrypted: dagger.#Secret & dagger.#Input
+	cleartext: string         & dagger.#Input
 
 	ctr: #Container & {
 		secret: "/secret-in": encrypted
@@ -19,7 +19,7 @@ SimpleSecret: {
 	decrypted: (#File & {
 			from: ctr
 			path: "/secret-out"
-	}).contents @dagger(output)
+	}).contents & dagger.#Output
 
 	// Assertion: decrypted value must match original cleartext
 	decrypted: cleartext

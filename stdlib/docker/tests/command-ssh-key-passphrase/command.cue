@@ -5,10 +5,10 @@ import (
 )
 
 TestConfig: {
-	host:          string         @dagger(input)
-	user:          string         @dagger(input)
-	key:           dagger.#Secret @dagger(input)
-	keyPassphrase: dagger.#Secret @dagger(input)
+	host:          string         & dagger.#Input
+	user:          string         & dagger.#Input
+	key:           dagger.#Secret & dagger.#Input
+	keyPassphrase: dagger.#Secret & dagger.#Input
 }
 
 TestSSH: client: #Command & {

@@ -2,6 +2,7 @@
 package eks
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/aws"
 )
@@ -12,10 +13,10 @@ import (
 	config: aws.#Config
 
 	// EKS cluster name
-	clusterName: string @dagger(input)
+	clusterName: string & dagger.#Input
 
 	// Kubectl version
-	version: *"v1.19.9" | string @dagger(input)
+	version: *"v1.19.9" | string & dagger.#Input
 
 	// kubeconfig is the generated kube configuration file
 	kubeconfig: {
@@ -57,5 +58,5 @@ import (
 				format: "string"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }

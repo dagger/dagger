@@ -14,19 +14,19 @@ import (
 	config: gcp.#Config
 
 	// Source Artifact to upload to GCS
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Target GCS URL (eg. gs://<bucket-name>/<path>/<sub-path>)
-	target: string @dagger(input)
+	target: string & dagger.#Input
 
 	// Delete files that already exist on remote destination
-	delete: *false | true @dagger(input)
+	delete: *false | true & dagger.#Input
 
 	// Object content type
-	contentType: string | *"" @dagger(input)
+	contentType: string | *"" & dagger.#Input
 
 	// Always write the object to GCS
-	always: *true | false @dagger(input)
+	always: *true | false & dagger.#Input
 
 	// URL of the uploaded GCS object
 	url: {
@@ -78,5 +78,5 @@ import (
 				format: "string"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }

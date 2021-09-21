@@ -7,9 +7,9 @@ import (
 
 // We assume that a kinD cluster is running locally
 // To deploy a local KinD cluster, follow this link : https://kind.sigs.k8s.io/docs/user/quick-start/
-TestKubeconfig: string @dagger(input)
+TestKubeconfig: string & dagger.#Input
 
-TestChartSource: dagger.#Artifact @dagger(input)
+TestChartSource: dagger.#Artifact & dagger.#Input
 
 // Deploy user local chart
 TestHelmSimpleChart: {

@@ -13,29 +13,29 @@ import (
 #Project: {
 
 	// Application source code
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Extra alpine packages to install
 	package: {
 		[string]: true | false | string
-	} @dagger(input)
+	} & dagger.#Input
 
 	// Environment variables
 	env: {
 		[string]: string
-	} @dagger(input)
+	} & dagger.#Input
 
-	phases: [...string] | *["package"] @dagger(input)
-	goals:  [...string] | *[]          @dagger(input)
+	phases: [...string] | *["package"] & dagger.#Input
+	goals:  [...string] | *[]          & dagger.#Input
 
 	// Optional arguments for the script
-	args: [...string] | *[] @dagger(input)
+	args: [...string] | *[] & dagger.#Input
 
 	// Build output directory
 	build: os.#Dir & {
 		from: ctr
 		path: "/build"
-	} @dagger(output)
+	} & dagger.#Output
 
 	ctr: os.#Container & {
 		image: alpine.#Image & {

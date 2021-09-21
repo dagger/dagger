@@ -12,10 +12,10 @@ import (
 #Configuration: {
 
 	// Terraform version
-	version: string | *"latest" @dagger(input)
+	version: string | *"latest" & dagger.#Input
 
 	// Source configuration
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	tfvars?: {
 		...
@@ -23,7 +23,7 @@ import (
 
 	// Environment variables
 	env: {
-		[string]: string @dagger(input)
+		[string]: string & dagger.#Input
 	}
 
 	state: #up: [

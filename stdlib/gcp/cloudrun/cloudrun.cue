@@ -3,6 +3,7 @@ package cloudrun
 import (
 	"strings"
 
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/gcp"
 )
@@ -13,16 +14,16 @@ import (
 	config: gcp.#Config
 
 	// Cloud Run service name
-	name: string @dagger(input)
+	name: string & dagger.#Input
 
 	// GCR image ref
-	image: string @dagger(input)
+	image: string & dagger.#Input
 
 	// Cloud Run platform
-	platform: *"managed" | string @dagger(input)
+	platform: *"managed" | string & dagger.#Input
 
 	// Cloud Run service exposed port
-	port: *"80" | string @dagger(input)
+	port: *"80" | string & dagger.#Input
 
 	// Cloud Run service environment variables
 	env: [string]: string

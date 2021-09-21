@@ -12,30 +12,30 @@ import (
 #Command: {
 	ssh?: {
 		// ssh host
-		host: string @dagger(input)
+		host: string & dagger.#Input
 
 		// ssh user
-		user: string @dagger(input)
+		user: string & dagger.#Input
 
 		// ssh port
-		port: *22 | int @dagger(input)
+		port: *22 | int & dagger.#Input
 
 		// private key
-		key: dagger.#Secret @dagger(input)
+		key: dagger.#Secret & dagger.#Input
 
 		// fingerprint
-		fingerprint?: string @dagger(input)
+		fingerprint?: string & dagger.#Input
 
 		// ssh key passphrase
-		keyPassphrase?: dagger.#Secret @dagger(input)
+		keyPassphrase?: dagger.#Secret & dagger.#Input
 	}
 
 	// Command to execute
-	command: string @dagger(input)
+	command: string & dagger.#Input
 
 	// Environment variables shared by all commands
 	env: {
-		[string]: string @dagger(input)
+		[string]: string & dagger.#Input
 	}
 
 	// Mount content from other artifacts
@@ -44,22 +44,22 @@ import (
 			from: dagger.#Artifact
 		} | {
 			secret: dagger.#Secret
-		} @dagger(input)
+		} & dagger.#Input
 	}
 
 	// Mount persistent cache directories
 	cache: {
-		[string]: true @dagger(input)
+		[string]: true & dagger.#Input
 	}
 
 	// Mount temporary directories
 	tmpfs: {
-		[string]: true @dagger(input)
+		[string]: true & dagger.#Input
 	}
 
 	// Additional packages to install
 	package: {
-		[string]: true | false | string @dagger(input)
+		[string]: true | false | string & dagger.#Input
 	}
 
 	// Image registries
@@ -67,7 +67,7 @@ import (
 		target?:  string
 		username: string
 		secret:   dagger.#Secret
-	}] @dagger(input)
+	}] & dagger.#Input
 
 	// Copy contents from other artifacts
 	copy: [string]: from: dagger.#Artifact

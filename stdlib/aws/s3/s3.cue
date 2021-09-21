@@ -14,19 +14,19 @@ import (
 	config: aws.#Config
 
 	// Source Artifact to upload to S3
-	source: dagger.#Artifact @dagger(input)
+	source: dagger.#Artifact & dagger.#Input
 
 	// Target S3 URL (eg. s3://<bucket-name>/<path>/<sub-path>)
-	target: string @dagger(input)
+	target: string & dagger.#Input
 
 	// Delete files that already exist on remote destination
-	delete: *false | true @dagger(input)
+	delete: *false | true & dagger.#Input
 
 	// Object content type
-	contentType: string | *"" @dagger(input)
+	contentType: string | *"" & dagger.#Input
 
 	// Always write the object to S3
-	always: *true | false @dagger(input)
+	always: *true | false & dagger.#Input
 
 	// Upload method
 	uploadMethod: *"cp" | "sync"
@@ -94,5 +94,5 @@ import (
 				format: "string"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }

@@ -53,7 +53,7 @@ import (
 // Get the name of the current checked out branch or tag
 #CurrentBranch: {
 	// Git repository
-	repository: dagger.#Artifact @dagger(input)
+	repository: dagger.#Artifact & dagger.#Input
 
 	// Git branch name
 	name: {
@@ -88,13 +88,13 @@ import (
 				format: "string"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }
 
 // List tags of a repository
 #Tags: {
 	// Git repository
-	repository: dagger.#Artifact @dagger(input)
+	repository: dagger.#Artifact & dagger.#Input
 
 	// Repository tags
 	tags: {
@@ -130,5 +130,5 @@ import (
 				format: "json"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }

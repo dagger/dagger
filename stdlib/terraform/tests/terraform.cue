@@ -6,11 +6,11 @@ import (
 	"alpha.dagger.io/alpine"
 )
 
-TestData: dagger.#Artifact @dagger(input)
+TestData: dagger.#Artifact & dagger.#Input
 
 TestConfig: awsConfig: {
-	accessKey: dagger.#Secret @dagger(input)
-	secretKey: dagger.#Secret @dagger(input)
+	accessKey: dagger.#Secret & dagger.#Input
+	secretKey: dagger.#Secret & dagger.#Input
 	region:    "us-east-2"
 }
 

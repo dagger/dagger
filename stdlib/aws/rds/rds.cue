@@ -14,20 +14,20 @@ import (
 	config: aws.#Config
 
 	// DB name
-	name: string @dagger(input)
+	name: string & dagger.#Input
 
 	// ARN of the database instance
-	dbArn: string @dagger(input)
+	dbArn: string & dagger.#Input
 
 	// ARN of the database secret (for connecting via rds api)
-	secretArn: string @dagger(input)
+	secretArn: string & dagger.#Input
 
 	// Database type MySQL or PostgreSQL (Aurora Serverless only)
-	dbType: "mysql" | "postgres" @dagger(input)
+	dbType: "mysql" | "postgres" & dagger.#Input
 
 	// Name of the DB created
 	out: {
-		@dagger(output)
+		& dagger.#Output
 		string
 
 		#up: [
@@ -90,22 +90,22 @@ import (
 	config: aws.#Config
 
 	// Username
-	username: string @dagger(input)
+	username: string & dagger.#Input
 
 	// Password
-	password: string @dagger(input)
+	password: string & dagger.#Input
 
 	// ARN of the database instance
-	dbArn: string @dagger(input)
+	dbArn: string & dagger.#Input
 
 	// ARN of the database secret (for connecting via rds api)
-	secretArn: string @dagger(input)
+	secretArn: string & dagger.#Input
 
 	// Name of the database to grants access to
-	grantDatabase: string | *"" @dagger(input)
+	grantDatabase: string | *"" & dagger.#Input
 
 	// Database type MySQL or PostgreSQL (Aurora Serverless only)
-	dbType: "mysql" | "postgres" @dagger(input)
+	dbType: "mysql" | "postgres" & dagger.#Input
 
 	// Outputed username
 	out: {
@@ -189,7 +189,7 @@ import (
 				format: "string"
 			},
 		]
-	} @dagger(output)
+	} & dagger.#Output
 }
 
 // Fetches information on an existing RDS Instance
@@ -199,20 +199,20 @@ import (
 	config: aws.#Config
 
 	// ARN of the database instance
-	dbArn: string @dagger(input)
+	dbArn: string & dagger.#Input
 
 	// DB hostname
-	hostname: info.hostname @dagger(output)
+	hostname: info.hostname & dagger.#Output
 
 	// DB port
-	port: info.port @dagger(output)
+	port: info.port & dagger.#Output
 
 	info: {
 		hostname: string
 		port:     int
 	}
 
-	info: json.Unmarshal(out) @dagger(output)
+	info: json.Unmarshal(out) & dagger.#Output
 	out: {
 		string
 

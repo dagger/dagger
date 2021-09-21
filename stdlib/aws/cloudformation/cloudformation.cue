@@ -4,6 +4,7 @@ package cloudformation
 import (
 	"encoding/json"
 
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/aws"
 )
@@ -15,24 +16,24 @@ import (
 	config: aws.#Config
 
 	// Source is the Cloudformation template (JSON/YAML string)
-	source: string @dagger(input)
+	source: string & dagger.#Input
 
 	// Stackname is the cloudformation stack
-	stackName: string @dagger(input)
+	stackName: string & dagger.#Input
 
 	// Stack parameters
 	parameters: {
 		...
-	} @dagger(input)
+	} & dagger.#Input
 
 	// Behavior when failure to create/update the Stack
-	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE" @dagger(input)
+	onFailure: *"DO_NOTHING" | "ROLLBACK" | "DELETE" & dagger.#Input
 
 	// Maximum waiting time until stack creation/update (in minutes)
-	timeout: *10 | uint @dagger(input)
+	timeout: *10 | uint & dagger.#Input
 
 	// Never update the stack if already exists
-	neverUpdate: *false | true @dagger(input)
+	neverUpdate: *false | true & dagger.#Input
 
 	#files: {
 		"/entrypoint.sh":     #Code
@@ -48,7 +49,7 @@ import (
 	}
 
 	outputs: {
-		[string]: string @dagger(output)
+		[string]: string & dagger.#Output
 	}
 
 	outputs: #up: [

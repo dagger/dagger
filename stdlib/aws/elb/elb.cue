@@ -2,6 +2,7 @@
 package elb
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/aws"
 )
@@ -13,13 +14,13 @@ import (
 	config: aws.#Config
 
 	// ListenerArn
-	listenerArn: string @dagger(input)
+	listenerArn: string & dagger.#Input
 
 	// Optional vhost for reusing priorities
-	vhost?: string @dagger(input)
+	vhost?: string & dagger.#Input
 
 	// exported priority
-	priority: out @dagger(output)
+	priority: out & dagger.#Output
 
 	out: {
 		string
