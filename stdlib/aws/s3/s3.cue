@@ -23,7 +23,7 @@ import (
 	delete: *false | true & dagger.#Input
 
 	// Object content type
-	contentType: string | *"" & dagger.#Input
+	contentType: *"" | string & dagger.#Input
 
 	// Always write the object to S3
 	always: *true | false & dagger.#Input

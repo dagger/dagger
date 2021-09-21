@@ -12,7 +12,7 @@ import (
 #Configuration: {
 
 	// Terraform version
-	version: string | *"latest" & dagger.#Input
+	version: *"latest" | string & dagger.#Input
 
 	// Source configuration
 	source: dagger.#Artifact & dagger.#Input

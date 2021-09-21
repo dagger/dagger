@@ -29,17 +29,17 @@ import (
 
 	// Write the contents of `environment` to this file,
 	// in the "envfile" format
-	writeEnvFile: string | *"" & dagger.#Input
+	writeEnvFile: *"" | string & dagger.#Input
 
 	// Read build output from this directory
 	// (path must be relative to working directory)
-	buildDir: string | *"build" & dagger.#Input
+	buildDir: *"build" | string & dagger.#Input
 
 	// Run this yarn script
-	script: string | *"build" & dagger.#Input
+	script: *"build" | string & dagger.#Input
 
 	// Optional arguments for the script
-	args: [...string] | *[] & dagger.#Input
+	args: *[] | [...string] & dagger.#Input
 
 	// Build output directory
 	build: os.#Dir & {

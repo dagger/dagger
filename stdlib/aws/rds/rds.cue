@@ -2,6 +2,7 @@
 package rds
 
 import (
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 	"encoding/json"
 	"alpha.dagger.io/aws"
@@ -27,7 +28,6 @@ import (
 
 	// Name of the DB created
 	out: {
-		& dagger.#Output
 		string
 
 		#up: [
@@ -80,7 +80,7 @@ import (
 				format: "string"
 			},
 		]
-	}
+	} & dagger.#Output
 }
 
 // Creates a new user credentials on an existing RDS Instance
@@ -102,7 +102,7 @@ import (
 	secretArn: string & dagger.#Input
 
 	// Name of the database to grants access to
-	grantDatabase: string | *"" & dagger.#Input
+	grantDatabase: *"" | string & dagger.#Input
 
 	// Database type MySQL or PostgreSQL (Aurora Serverless only)
 	dbType: "mysql" | "postgres" & dagger.#Input

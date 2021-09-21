@@ -11,7 +11,7 @@ import (
 #Account: {
 	// Use this Netlify account name
 	// (also referred to as "team" in the Netlify docs)
-	name: string | *"" & dagger.#Input
+	name: *"" | string & dagger.#Input
 
 	// Netlify authentication token
 	token: dagger.#Secret & dagger.#Input
@@ -32,7 +32,7 @@ import (
 	customDomain?: string & dagger.#Input
 
 	// Create the Netlify site if it doesn't exist?
-	create: bool | *true & dagger.#Input
+	create: *true | bool & dagger.#Input
 
 	// Website url
 	url: {

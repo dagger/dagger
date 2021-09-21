@@ -20,8 +20,8 @@ import (
 
 	// Environment variables of the task
 	containerEnvironment: {
-		[string]: string & dagger.#Input
-	}
+		[string]: string
+	} & dagger.#Input
 
 	// Container name
 	containerName: string & dagger.#Input
@@ -30,7 +30,7 @@ import (
 	containerCommand: [...string] & dagger.#Input
 
 	// Task role ARN
-	roleArn: string | *"" & dagger.#Input
+	roleArn: *"" | string & dagger.#Input
 
 	containerOverrides: {
 		containerOverrides: [{

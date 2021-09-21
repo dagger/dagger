@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"alpha.dagger.io/alpine"
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 )
 
