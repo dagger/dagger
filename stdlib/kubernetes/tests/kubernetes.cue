@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"encoding/yaml"
+	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/random"
 )
 
