@@ -38,11 +38,12 @@ A standalone go environment
 
 ### go.#Container Inputs
 
-| Name             | Type                                | Description                                             |
-| -------------    |:-------------:                      |:-------------:                                          |
-|*version*         | `*"1.16" \| string`                 |Go version to use                                        |
-|*source*          | `dagger.#Artifact`                  |Source code                                              |
-|*image.from*      | `"docker.io/golang:1.16-alpine"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
+| Name                  | Type                                | Description                                             |
+| -------------         |:-------------:                      |:-------------:                                          |
+|*version*              | `*"1.16" \| string`                 |Go version to use                                        |
+|*source*               | `dagger.#Artifact`                  |Source code                                              |
+|*image.from*           | `"docker.io/golang:1.16-alpine"`    |Remote ref (example: "index.docker.io/alpine:latest")    |
+|*mount."/src".from*    | `dagger.#Artifact`                  |-                                                        |
 
 ### go.#Container Outputs
 
@@ -74,6 +75,7 @@ _No output._
 |*source*          | `dagger.#Artifact`                  |Source Directory to build     |
 |*packages*        | `*"." \| string`                    |Packages to test              |
 |*args*            | `["test", "-v", *"." \| string]`    |Arguments to the Go binary    |
+|*args[2]*         | `*"." \| string`                    |-                             |
 
 ### go.#Test Outputs
 
