@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 	"github.com/rs/zerolog/log"
@@ -41,48 +40,72 @@ func init() {
 }
 
 func Start(ctx context.Context) (string, error) {
-	lg := log.Ctx(ctx)
-
 	if vendoredVersion == "" {
 		return "", fmt.Errorf("vendored version is empty")
 	}
 
-	// Attempt to detect the current buildkit version
-	currentVersion, err := getBuildkitVersion(ctx)
-	if err != nil {
-		// If that failed, it might either be because buildkitd is not running
-		// or because the docker CLI is out of service.
-		if err := checkDocker(ctx); err != nil {
-			return "", err
-		}
-
-		currentVersion = ""
-		lg.Debug().Msg("no buildkit daemon detected")
-	} else {
-		lg.Debug().Str("version", currentVersion).Msg("detected buildkit version")
+	if err := checkBuildkit(ctx); err != nil {
+		return "", err
 	}
 
-	if currentVersion != vendoredVersion {
-		if currentVersion != "" {
+	return fmt.Sprintf("docker-container://%s", containerName), nil
+}
+
+// ensure the buildkit is active and properly set up (e.g. connected to host and last version with moby/buildkit)
+func checkBuildkit(ctx context.Context) error {
+	lg := log.Ctx(ctx)
+
+	config, err := getBuildkitInformation(ctx)
+	if err != nil {
+		// If that failed, it might be because the docker CLI is out of service.
+		if err := checkDocker(ctx); err != nil {
+			return err
+		}
+
+		lg.Debug().Msg("no buildkit daemon detected")
+
+		if err := removeBuildkit(ctx); err != nil {
+			return err
+		}
+
+		if err := installBuildkit(ctx); err != nil {
+			return err
+		}
+	} else {
+		lg.
+			Debug().
+			Str("version", config.Version).
+			Bool("isActive", config.IsActive).
+			Bool("haveHostNetwork", config.HaveHostNetwork).
+			Msg("detected buildkit config")
+
+		if config.Version != vendoredVersion || !config.HaveHostNetwork {
 			lg.
 				Info().
 				Str("version", vendoredVersion).
+				Bool("have host network", config.HaveHostNetwork).
 				Msg("upgrading buildkit")
+
 			if err := removeBuildkit(ctx); err != nil {
-				return "", err
+				return err
 			}
-		} else {
+			if err := installBuildkit(ctx); err != nil {
+				return err
+			}
+		}
+		if !config.IsActive {
 			lg.
 				Info().
 				Str("version", vendoredVersion).
 				Msg("starting buildkit")
-		}
-		if err := startBuildkit(ctx); err != nil {
-			return "", err
+
+			if err := startBuildkit(ctx); err != nil {
+				return err
+			}
 		}
 	}
 
-	return fmt.Sprintf("docker-container://%s", containerName), nil
+	return nil
 }
 
 // ensure the docker CLI is available and properly set up (e.g. permissions to
@@ -103,7 +126,37 @@ func checkDocker(ctx context.Context) error {
 	return nil
 }
 
+// Start the buildkit daemon
 func startBuildkit(ctx context.Context) error {
+	lg := log.
+		Ctx(ctx).
+		With().
+		Str("version", vendoredVersion).
+		Logger()
+
+	lg.Debug().Msg("starting buildkit image")
+
+	cmd := exec.CommandContext(ctx,
+		"docker",
+		"start",
+		containerName,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		lg.
+			Error().
+			Err(err).
+			Bytes("output", output).
+			Msg("failed to start buildkit container")
+		return err
+	}
+
+	return waitBuildkit(ctx)
+}
+
+// Pull and run the buildkit daemon with a proper configuration
+// If the buildkit daemon is already configured, use startBuildkit
+func installBuildkit(ctx context.Context) error {
 	lg := log.
 		Ctx(ctx).
 		With().
@@ -167,6 +220,8 @@ func waitBuildkit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// FIXME Does output "failed to wait: signal: broken pipe"
 	defer c.Close()
 
 	// Try to connect every 100ms up to 100 times (10 seconds total)
@@ -206,27 +261,4 @@ func removeBuildkit(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func getBuildkitVersion(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx,
-		"docker",
-		"inspect",
-		"--format",
-		"{{.Config.Image}}",
-		containerName,
-	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-	ref, err := reference.ParseNormalizedNamed(strings.TrimSpace(string(output)))
-	if err != nil {
-		return "", err
-	}
-	tag, ok := ref.(reference.Tagged)
-	if !ok {
-		return "", fmt.Errorf("failed to parse image: %s", output)
-	}
-	return tag.Tag(), nil
 }
