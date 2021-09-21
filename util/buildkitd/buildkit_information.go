@@ -11,7 +11,7 @@ import (
 )
 
 func getBuildkitInformation(ctx context.Context) (*BuilkitInformation, error) {
-	formatString := "{{.Config.Image}};{{.State.Running}};{{ if index .NetworkSettings.Networks \"host\" }}{{ \"true\" }}{{else}}{{\"false\"}}{{end}}"
+	formatString := "{{.Config.Image}};{{.State.Running}};{{if index .NetworkSettings.Networks \"host\"}}{{\"true\"}}{{else}}{{\"false\"}}{{end}}"
 	cmd := exec.CommandContext(ctx,
 		"docker",
 		"inspect",
