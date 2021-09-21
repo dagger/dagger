@@ -8,16 +8,16 @@ This tutorial illustrates how to install and upgrade packages using Dagger packa
 
 ## Installing a package
 
-### Initializing workspace
+### Initializing project
 
-Create an empty directory for your new Dagger workspace:
+Create an empty directory for your new Dagger project:
 
 ```shell
-mkdir workspace
-cd workspace
+mkdir project
+cd project
 ```
 
-As described in the previous tutorials, initialize your Dagger workspace:
+As described in the previous tutorials, initialize your Dagger project:
 
 ```shell
 dagger init

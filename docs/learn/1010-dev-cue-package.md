@@ -8,16 +8,16 @@ This tutorial illustrates how to create new packages, manually distribute them a
 
 ## Creating your package
 
-### Initializing workspace
+### Initializing project
 
-Create an empty directory for your new Dagger workspace:
+Create an empty directory for your new Dagger project:
 
 ```shell
-mkdir workspace
-cd workspace
+mkdir project
+cd project
 ```
 
-As described in the previous tutorials, initialize your Dagger workspace:
+As described in the previous tutorials, initialize your Dagger project:
 
 ```shell
 dagger init
@@ -37,7 +37,7 @@ That will create two directories: `.dagger` and `cue.mod`, where our package wil
 
 ### Writing the package
 
-Now that you've initialized your workspace, it's time to write a simple package. Package name usually starts with a
+Now that you've initialized your project, it's time to write a simple package. Package name usually starts with a
 domain name (as in Go) followed by a descriptive name. In this example, we reuse the Cloud Run example and create a
 package from it.
 
@@ -82,18 +82,18 @@ You should see a familiar output:
 
 ## Manually distributing packages
 
-You've probably guessed this package isn't tied to just your workspace. You can easily copy/paste it into any number
-of different workspaces and use it as we've shown above.
+You've probably guessed this package isn't tied to just your project. You can easily copy/paste it into any number
+of different projects and use it as we've shown above.
 
 ```shell
-mkdir -p /my-new-workspace/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
-cp ./cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue /new-workspace/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+mkdir -p /my-new-project/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+cp ./cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue /new-project/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
 ```
 
 ## Contributing to Dagger stdlib
 
 Our [stdlib](https://github.com/dagger/dagger/tree/main/stdlib) has many valuable packages that you can use.
-You've probably seen it when you've initialized your workspace:
+You've probably seen it when you've initialized your project:
 
 ```shell
 .

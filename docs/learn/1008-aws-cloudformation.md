@@ -20,7 +20,7 @@ The provisioning strategy detailed below follows S3 best practices. However, to 
 
 The first thing to consider when developing a plan based on relays is to read their universe reference: it summarizes the expected inputs and their corresponding formats. [Here](../reference/aws/cloudformation.md) is the Cloudformation one.
 
-## Initialize a Dagger Workspace and Environment
+## Initialize a Dagger Project and Environment
 
 ### (optional) Setup example app
 

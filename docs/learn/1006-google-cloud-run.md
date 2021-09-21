@@ -9,7 +9,7 @@ This tutorial illustrates how to use Dagger to build, push and deploy Docker ima
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-## Initialize a Dagger Workspace and Environment
+## Initialize a Dagger Project and Environment
 
 ### (optional) Setup example app
 

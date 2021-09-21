@@ -89,13 +89,13 @@ Developing for Dagger takes place in a [Cue module](https://cuelang.org/docs/con
 If you are familiar with Go, Cue modules are directly inspired by Go modules.
 Otherwise, don't worry: a Cue module is simply a directory with one or more Cue packages in it. For example, a Cue module has a `cue.mod` directory at its root.
 
-This guide will use the same directory as the root of the Dagger workspace and the Cue module, but you can create your Cue module anywhere inside the Dagger workspace. In general, you won't have to worry about it at all. You will initialize a dagger workspace with the following command.
+This guide will use the same directory as the root of the Dagger project and the Cue module, but you can create your Cue module anywhere inside the Dagger project. In general, you won't have to worry about it at all. You will initialize a dagger project with the following command.
 
 ```shell
 dagger init # Optional, already present in `todoapp`
 ```
 
-> In our case, `todoapp` already contains a workspace, so this step is optional.
+> In our case, `todoapp` already contains a `.dagger` directory, so this step is optional.
 
 ### Create a Cue package
 
