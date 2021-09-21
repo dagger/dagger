@@ -8,7 +8,7 @@ import (
 SimpleSecret: {
 	// 'encrypted' and 'cleartext' must be set from identical values
 	encrypted: dagger.#Secret & dagger.#Input
-	cleartext: string         & dagger.#Input
+	cleartext: string & dagger.#Input
 
 	ctr: #Container & {
 		secret: "/secret-in": encrypted
@@ -17,8 +17,8 @@ SimpleSecret: {
 
 	// Decrypted secret
 	decrypted: (#File & {
-			from: ctr
-			path: "/secret-out"
+		from: ctr
+		path: "/secret-out"
 	}).contents & dagger.#Output
 
 	// Assertion: decrypted value must match original cleartext

@@ -29,7 +29,7 @@ import (
 	goals:  *[] | [...string] & dagger.#Input
 
 	// Optional arguments for the script
-	args:  *[] | [...string] & dagger.#Input
+	args: *[] | [...string] & dagger.#Input
 
 	// Build output directory
 	build: os.#Dir & {

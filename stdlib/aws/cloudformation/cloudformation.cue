@@ -48,9 +48,7 @@ import (
 		}
 	}
 
-	outputs: {
-		[string]: string & dagger.#Output
-	}
+	outputs: [string]: string & dagger.#Output
 
 	outputs: #up: [
 		op.#Load & {

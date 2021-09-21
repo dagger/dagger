@@ -26,8 +26,8 @@ import (
 	// ECR registry secret
 	secret: {
 		os.#File & {
-				from: ctr
-				path: "/out"
-			}
+			from: ctr
+			path: "/out"
+		}
 	}.contents & dagger.#Output
 }

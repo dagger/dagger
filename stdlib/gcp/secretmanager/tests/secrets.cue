@@ -12,9 +12,7 @@ TestConfig: gcpConfig: gcp.#Config
 TestSecrets: {
 	secret: secretmanager.#Secrets & {
 		config: TestConfig.gcpConfig
-		secrets: {
-			databasePassword: dagger.#Secret & dagger.#Input
-		}
+		secrets: databasePassword: dagger.#Secret & dagger.#Input
 	}
 
 	if len(secret.references) > 0 {

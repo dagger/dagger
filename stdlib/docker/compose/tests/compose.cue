@@ -10,8 +10,8 @@ repo: dagger.#Artifact & dagger.#Input
 
 TestSSH: {
 	key:  dagger.#Secret & dagger.#Input
-	host: string         & dagger.#Input
-	user: string         & dagger.#Input
+	host: string & dagger.#Input
+	user: string & dagger.#Input
 }
 
 TestCompose: {

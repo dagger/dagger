@@ -5,8 +5,8 @@ import (
 )
 
 TestConfig: {
-	host: string         & dagger.#Input
-	user: string         & dagger.#Input
+	host: string & dagger.#Input
+	user: string & dagger.#Input
 	key:  dagger.#Secret & dagger.#Input
 }
 

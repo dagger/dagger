@@ -30,7 +30,7 @@ import (
 
 	// Accept either a contaxt, a docker-compose or both together
 	source?:      dagger.#Artifact & dagger.#Input
-	composeFile?: string           & dagger.#Input
+	composeFile?: string & dagger.#Input
 
 	// App name (use as COMPOSE_PROJECT_NAME)
 	name: *"source" | string & dagger.#Input
