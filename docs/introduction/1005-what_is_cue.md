@@ -49,34 +49,31 @@ What you can express in JSON, you can express in CUE, but not everything in CUE 
 Bob: Name: "Bob Smith"
 ```
 
-In this example we see that in CUE we have declared a top-level key _Bob_ twice: once in a more verbose JSON style with brackets, quotes, and commas, and again with a "lite" style without the extra characters. Notice also that CUE supports _short hand_: when you are targeting a single key within an object, you don't need the curly braces, you can write it as a colon-separated path. [Try it in the CUE playground](https://cuelang.org/play/?id=qXGPCDqQdtp#cue@export@yaml), and notice the output (you can choose different formats). The top-level Bob key is declared twice, but is only output once because CUE is automatically _unifying_ the two declarations. It&rsquo;s ok to declare the same field multiple times, _so long as we provide the same value_. See [Concrete Values](#concrete-values) below.
+In this example we see that in CUE we have declared a top-level key _Bob_ twice: once in a more verbose JSON style with brackets, quotes, and commas, and again with a "lite" style without the extra characters. Notice also that CUE supports _short hand_: when you are targeting a single key within an object, you don't need the curly braces, you can write it as a colon-separated path. [Try it in the CUE playground](https://cuelang.org/play/?id=qXGPCDqQdtp#cue@export@yaml), and notice the output (you can choose different formats). The top-level Bob key is declared twice, but is only output once because CUE is automatically _unifying_ the two declarations. It&rsquo;s ok to declare the same field multiple times, _so long as we provide the same value_. See [Default Values and the Nature of Inheritance](#default-values-and-the-nature-of-inheritance) below.
 
 ### Types _are_ Values
 
-In the previous example we defined the `Name` as the string literal _"Bob Smith"_ which is a _concrete value_ (more on this later). But nothing so far _enforces a type_. Nothing prevents us from setting the `Name` field to an `int`, but if this data were to be fed to an API that expects a `string` we'd get an error. Let's define some types:
+In the previous example we defined the `Name` value as the string literal _"Bob Smith"_ and the `Age` value as the integer literal _42_, both of which are [_concrete values_](#concrete-values). Generally, the output of CUE will be used as input to some other system be it an API, a CLI tool such as `dagger`, a CICD process, etc, and those systems will likely expect that the data conform to a schema where each field has a type and potentially constrained by such functions as min, max, enums, regular expressions, and so on. With that in mind, we need to enforce _types_ and _constraints_ in order to prevent us for example from setting the `Name` value as an integer, or the `Age` value as a string
 
 ```cue
 Bob: {
-  Name: string
+  Name: string // type as the value
   Age: int
 }
 
 Bob: {
-  Name: "Bob Smith"
+  Name: "Bob Smith" // literals match the type
   Age: 42
 }
 ```
 
-Here we&rsquo;ve defined the `Name` field as a `string` and the `Age` field as an `int`. Notice how `string` and `int` _are not_ within quotes. This is what we mean when we say "types _are_ values". This will be quite familiar to anyone who has written Go or some other strongly-typed language. With these types defined CUE will now _enforce_ them, so any attempt to provide say an integer for the Name or a string for the Age will result in an error. It&rsquo;s worth noting here that the output from this example is the result of _implicit uinification_; we&rsquo;ll talk about _explicit unification_ later. [Try it in the CUE playground](https://cuelang.org/play/?id=p12E8vjFTsc#cue@export@yaml).
+Here we&rsquo;ve defined the `Name` field as a `string` and the `Age` field as an `int`. Notice how `string` and `int` _are not_ within quotes. This is what we mean when we say "types _are_ values". This will be quite familiar to anyone who has written Go or some other strongly-typed language. With these types defined, CUE will now _enforce_ them, so that any attempt to provide say an integer for the Name or a string for the Age will result in an error. It&rsquo;s worth noting here that the output from this example is the result of _implicit uinification_; we&rsquo;ll talk about _explicit unification_ later. [Try it in the CUE playground](https://cuelang.org/play/?id=7iR-sFSEajk#cue@export@yaml).
 
 ### Concrete Values
 
-CUE is ultimately used to export data, and is most useful when that data has been validated against a strong, well-defined schema. In order for CUE to export anything, we must provide _concrete values_ for all defined fields not marked as optional.
-
-In the previous examples we have provided concrete values: "Bob Smith" as a string, and 42 as an int. Were we to leave a required field simply defined as a type without a concrete value, CUE will return an error.
+CUE is ultimately used to export data, and is most useful when that data has been validated against a well-defined schema. In order for CUE to export anything, we must provide _concrete values_ for all defined fields not marked as optional. If we were to leave a required field simply defined as a type, without a concrete value, CUE will return an error.
 
 ```cue
-
 Bob: {
   Name: string
   Age: int
@@ -92,7 +89,7 @@ Bob: {
 
 ### Definitions
 
-In a real-world scenario we&rsquo;d likely need to define more than one person, and ensure that each one satisfies the schema. That's where `Definitions` come in handy.
+In a real-world scenario we&rsquo;d likely need to define more than one person, and ensure that each one satisfies the schema. That's where `definitions` come in handy.
 
 ```cue
 #Person: {
@@ -114,14 +111,16 @@ Definitions themselves are _not_ exported to final output. To get concrete outpu
 
 You can think of _definitions_ as a logical set of related _constraints_ and a _schema_ as a larger collective of contraints, not all of which need to be definitions.
 
+[Try it in the CUE playground](https://cuelang.org/play/?id=S-c7N0EZsYN#cue@export@yaml) and experiment with making fields optional via `?` with values both defined and not defined to see.
+
 ### Unification
 
 Unification is really at the core of what makes CUE what it is. If values are the fuel, unification is the engine. It is through unification that we can both define constraints and compute concrete values. Let's take a look at some examples to see this idea in action:
 
 ```cue
 import (
-  "strings"
-)
+  "strings" // import builtin package
+)           // more on packages later
 
 #Person: {
   
@@ -150,11 +149,11 @@ Bob:
 
 ```
 
-The output here is a product of _*unifying*_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _contraints_ declared by the field in the defintion.
+The output here is a product of _*unifying*_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _contraints_ declared by the field in the defintion. [Try it in the CUE playground](https://cuelang.org/play/?id=nAUx1-VlrY4#cue@export@yaml)
 
 ### Default Values and the Nature of Inheritance
 
-When unifying objects, or _structs_ as we like to call them, a form of merging happens where fields are unified recursively, but unlike for example merging JSON objects in JavaScript, differing values will _not override_ but result in an error. This is partially due to the _commutative_ nature of CUE (if order doesn't matter how would you choose one value over another?), but it is primarily due to the fact that overrides too easily result in unwanted and difficult to debug side effects. Let's take a look at another example:
+When unifying objects, or _structs_ as we like to call them, a form of merging happens where fields are unified recursively, but unlike for example merging JSON objects in JavaScript, differing values will _not override_ but result in an error. This is partially due to the [_commutative nature of CUE_](https://cuelang.org/docs/usecases/configuration/) (if order doesn't matter how would you choose one value over another?), but it is primarily due to the fact that overrides too easily result in unwanted and difficult to debug side effects. Let's take a look at another example:
 
 ```cue
 import (
@@ -176,7 +175,9 @@ import (
   Job?: string
 }
 
-
+#Engineer: #Person & {
+  Job: "Engineer" // Job is further constrained to required and exactly this value
+}
 
 
 Bob: #Engineer & {
@@ -195,9 +196,9 @@ Bob:
 
 ```
 
-While it's possible for Bob to inherit his job from `#Engineer` which in turn inherits contraints from `#Person`, it it not possible to override that value. [Try it in the CUE playground](https://tip.cuelang.org/play/?id=96IBeFxXgfS#cue@export@yaml) and uncomment the Job field in Bob and see that CUE returns an error.
+While it's possible for the Bob object to inherit the Job value from `#Engineer` which in turn inherits contraints from `#Person`, it is _not possible to override the Job value_. [Try it in the CUE playground](https://tip.cuelang.org/play/?id=_Cvwm6KeGZm#cue@export@yaml) and uncomment the Job field in Bob to see that CUE returns an error.
 
-In the above example if you needed the Bob object to have a different job, it would either need to be unified with a different type OR the `#Engineer:Job:` field would need a looser constraint with a _default value_. Try changing the Job field to the following:
+If we wanted the Bob object to have a different job, it would either need to be unified with a different type OR the `#Engineer:Job:` field would need a looser constraint with a _default value_. Try changing the Job field to the following:
 
 ```cue
 #Engineer: #Person & {
@@ -209,6 +210,6 @@ Bob inherits the _default value_ but is now allowed to specify a different job.
 
 ### Packages
 
-In the last few examples we've included an `import` statement to load the builtin `"strings"` package. If you've written Go then CUE should feel quite familiar. Not only is it [written in Go](https://pkg.go.dev/cuelang.org/go@v0.4.0/cue#pkg-overview) much of its behavior and syntax are modeled after Go as well.
+Packages in CUE allow us to write _modular_, _reusable_, and _composable_ code. We can define schemas that are imported into various other projects.
 
-Packages in CUE allow us to write _modular_, _reusable_, and _composable_ code. We can define schemas that are import into various other projects.
+In the last few examples we've included an `import` statement to load the builtin `"strings"` package. If you've written Go then CUE should feel quite familiar. Not only is it [written in Go](https://pkg.go.dev/cuelang.org/go@v0.4.0/cue#pkg-overview) much of its behavior and syntax are modeled after Go as well.
