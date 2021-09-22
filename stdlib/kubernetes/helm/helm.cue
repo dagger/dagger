@@ -22,10 +22,10 @@ import (
 	chart: dagger.#Input & {*null | string}
 
 	// Helm chart repository
-	repository: dagger.#Input & {string}
+	repository: dagger.#Input & {*null | string}
 
 	// Helm values (either a YAML string or a Cue structure)
-	values: dagger.#Input & {string}
+	values: dagger.#Input & {*null | string}
 
 	// Kubernetes Namespace to deploy to
 	namespace: dagger.#Input & {string}
@@ -95,13 +95,13 @@ import (
 			}
 		},
 
-		if chart != _|_ {
+		if chart != null {
 			op.#WriteFile & {
 				dest:    "/helm/chart"
 				content: chart
 			}
 		},
-		if (values & string) != _|_ {
+		if values != null {
 			op.#WriteFile & {
 				dest:    "/helm/values.yaml"
 				content: values
@@ -121,7 +121,7 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 
-				if repository != _|_ {
+				if repository != null {
 					HELM_REPO: repository
 				}
 				HELM_NAME:    name
@@ -131,7 +131,7 @@ import (
 				HELM_ATOMIC:  strconv.FormatBool(atomic)
 			}
 			mount: {
-				if chartSource != _|_ && chart == _|_ {
+				if chartSource != null && chart == null {
 					"/helm/chart": from: chartSource
 				}
 				if (kubeconfig & dagger.#Secret) != _|_ {

@@ -95,7 +95,7 @@ import (
 				dest:    "/kubeconfig"
 				content: kubeconfig
 				mode:    0o600
-			},
+			}
 		},
 
 		if manifest != null {
