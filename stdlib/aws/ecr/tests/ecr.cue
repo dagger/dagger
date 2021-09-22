@@ -18,10 +18,10 @@ TestECR: {
 	}
 
 	repository: string
-	if localMode == null {
+	if localMode == false {
 		repository: "125635003186.dkr.ecr.\(TestConfig.awsConfig.region).amazonaws.com/dagger-ci"
 	}
-	if localMode != null {
+	if localMode == true {
 		repository: "localhost:4510/dagger-ci"
 	}
 	tag: "test-ecr-\(suffix.out)"
