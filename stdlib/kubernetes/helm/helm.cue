@@ -13,47 +13,47 @@ import (
 #Chart: {
 
 	// Helm deployment name
-	name: string @dagger(input)
+	name: dagger.#Input & {string}
 
 	// Helm chart to install from source
-	chartSource?: dagger.#Artifact @dagger(input)
+	chartSource: *null | dagger.#Artifact
 
 	// Helm chart to install from repository
-	chart?: string @dagger(input)
+	chart: dagger.#Input & {*null | string}
 
 	// Helm chart repository
-	repository?: string @dagger(input)
+	repository: dagger.#Input & {*null | string}
 
 	// Helm values (either a YAML string or a Cue structure)
-	values?: string @dagger(input)
+	values: dagger.#Input & {*null | string}
 
 	// Kubernetes Namespace to deploy to
-	namespace: string @dagger(input)
+	namespace: dagger.#Input & {string}
 
 	// Helm action to apply
-	action: *"installOrUpgrade" | "install" | "upgrade" @dagger(input)
+	action: dagger.#Input & {*"installOrUpgrade" | "install" | "upgrade"}
 
 	// time to wait for any individual Kubernetes operation (like Jobs for hooks)
-	timeout: string | *"5m" @dagger(input)
+	timeout: dagger.#Input & {string | *"5m"}
 
 	// if set, will wait until all Pods, PVCs, Services, and minimum number of
 	// Pods of a Deployment, StatefulSet, or ReplicaSet are in a ready state
 	// before marking the release as successful.
 	// It will wait for as long as timeout
-	wait: *true | bool @dagger(input)
+	wait: dagger.#Input & {*true | bool}
 
 	// if set, installation process purges chart on fail.
 	// The wait option will be set automatically if atomic is used
-	atomic: *true | bool @dagger(input)
+	atomic: dagger.#Input & {*true | bool}
 
 	// Kube config file
-	kubeconfig: string @dagger(input)
+	kubeconfig: dagger.#Input & {string | dagger.#Secret}
 
 	// Helm version
-	version: *"3.5.2" | string @dagger(input)
+	version: dagger.#Input & {*"3.5.2" | string}
 
 	// Kubectl version
-	kubectlVersion: *"v1.19.9" | string @dagger(input)
+	kubectlVersion: dagger.#Input & {*"v1.19.9" | string}
 
 	#up: [
 		op.#Load & {
@@ -86,18 +86,22 @@ import (
 			dest:    "/entrypoint.sh"
 			content: #code
 		},
-		op.#WriteFile & {
-			dest:    "/kubeconfig"
-			content: kubeconfig
-			mode:    0o600
+
+		if (kubeconfig & string) != _|_ {
+			op.#WriteFile & {
+				dest:    "/kubeconfig"
+				content: kubeconfig
+				mode:    0o600
+			}
 		},
-		if chart != _|_ {
+
+		if chart != null {
 			op.#WriteFile & {
 				dest:    "/helm/chart"
 				content: chart
 			}
 		},
-		if (values & string) != _|_ {
+		if values != null {
 			op.#WriteFile & {
 				dest:    "/helm/values.yaml"
 				content: values
@@ -117,7 +121,7 @@ import (
 				KUBECONFIG:     "/kubeconfig"
 				KUBE_NAMESPACE: namespace
 
-				if repository != _|_ {
+				if repository != null {
 					HELM_REPO: repository
 				}
 				HELM_NAME:    name
@@ -127,8 +131,11 @@ import (
 				HELM_ATOMIC:  strconv.FormatBool(atomic)
 			}
 			mount: {
-				if chartSource != _|_ && chart == _|_ {
+				if chartSource != null && chart == null {
 					"/helm/chart": from: chartSource
+				}
+				if (kubeconfig & dagger.#Secret) != _|_ {
+					"/kubeconfig": secret: kubeconfig
 				}
 			}
 		},
