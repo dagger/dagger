@@ -51,6 +51,7 @@ $desktop-xl-width: 1160px;
   --ifm-container-width-xl: 100%;
   --ifm-font-color-base: var(--ifm-color-primary-dark);
   --ifm-font-family-base: "Karla", sans-serif;
+  --ifm-font-family-title: "Montserrat", "Arial", sans-serif;
   --ifm-font-family-monospace: "Courier new", sans-serif;
   --ifm-h2-font-size: 2rem;
   --ifm-leading-desktop: 1;
@@ -61,7 +62,7 @@ $desktop-xl-width: 1160px;
   --ifm-menu-color-background-hover: #fdf9d7;
   --ifm-menu-color-background-active: var(--ifm-menu-color-background-hover);
   --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path d="M3.318 9.128a24.776 24.776 0 004.224-3.993.842.842 0 011.32.026c1.227 1.618 2.107 3.387 3.831 4.556.889.6-.159 1.9-1.044 1.3A14.369 14.369 0 018.14 7a30.457 30.457 0 01-3.829 3.463c-.845.671-1.834-.67-.993-1.335z" fill="%23131226" /></svg>');
-  --ifm-navbar-height: 8rem;
+  --ifm-navbar-height: 7rem;
   --ifm-navbar-background-color: var(--ifm-color-primary-dark);
   --ifm-navbar-padding-vertical: 0;
   --ifm-pagination-nav-border-radius: 0;
@@ -91,8 +92,9 @@ html[data-theme="dark"] {
 /* global */
 
 h1,
-h2 {
-  font-family: "Poppins", sans-serif;
+h2,
+h3 {
+  font-family: var(--ifm-font-family-title);
 }
 
 h2 {
@@ -218,7 +220,7 @@ h1[class^="h1Heading"] {
 
 .button {
   background: var(--ifm-color-secondary);
-  font-family: "Poppins", sans-serif;
+  font-family: var(--ifm-font-family-title);
   font-size: 1rem;
   font-style: normal;
   font-weight: 700;
@@ -244,7 +246,7 @@ h1[class^="h1Heading"] {
 .navbar__brand {
   height: 3rem;
   @include desktop {
-    height: 8rem;
+    height: 7rem;
   }
 }
 
@@ -462,7 +464,7 @@ button[class^="copyButton"] {
   @include tablet {
     display: flex;
     justify-content: center;
-    font-family: "Poppins", sans-serif;
+    font-family: var(--ifm-font-family-title);
     font-size: 1rem;
     font-style: normal;
     font-weight: 700;

@@ -13,7 +13,7 @@ module.exports = {
   organizationName: "Dagger",
   projectName: "Dagger",
   stylesheets: [
-    "https://fonts.googleapis.com/css2?family=Karla&family=Poppins:wght@700&display=swap",
+    "https://fonts.googleapis.com/css2?family=Karla&family=Montserrat:wght@700&display=swap",
   ],
   themeConfig: {
     sidebarCollapsed: false,
