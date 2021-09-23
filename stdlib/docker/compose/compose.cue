@@ -28,6 +28,9 @@ import (
 		keyPassphrase?: dagger.#Secret @dagger(input)
 	}
 
+	// Mount local docker socket
+	socket?: dagger.#Stream & dagger.#Input
+
 	// Accept either a contaxt, a docker-compose or both together
 	source?:      dagger.#Artifact @dagger(input)
 	composeFile?: string           @dagger(input)
@@ -65,7 +68,13 @@ import (
 		"""#
 
 	run: docker.#Command & {
-		"ssh":   ssh
+		if ssh != _|_ {
+			"ssh": ssh
+		}
+		if socket != _|_ {
+			"socket": socket
+		}
+
 		command: #code
 		package: "docker-compose": true
 		"registries": registries

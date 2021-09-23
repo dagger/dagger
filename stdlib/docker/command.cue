@@ -57,6 +57,9 @@ import (
 		[string]: true @dagger(input)
 	}
 
+	// Mount docker socket
+	socket?: dagger.#Stream @dagger(input)
+
 	// Additional packages to install
 	package: {
 		[string]: true | false | string @dagger(input)
@@ -212,6 +215,9 @@ import (
 					if ssh.keyPassphrase != _|_ {
 						"/keyPassphrase": secret: ssh.keyPassphrase
 					}
+				}
+				if socket != _|_ {
+					"/var/run/docker.sock": stream: socket
 				}
 				for dest, o in mount {
 					"\(dest)": o

@@ -102,7 +102,7 @@ import (
 
 #Run: {
 	// Connect to a remote SSH server
-	ssh: {
+	ssh?: {
 		// ssh host
 		host: dagger.#Input & {string}
 
@@ -121,6 +121,9 @@ import (
 		// ssh key passphrase
 		keyPassphrase?: dagger.#Input & {dagger.#Secret}
 	}
+
+	// Mount local docker socket
+	socket?: dagger.#Stream & dagger.#Input
 
 	// Image reference (e.g: nginx:alpine)
 	ref: dagger.#Input & {string}
@@ -147,7 +150,13 @@ import (
 		"""#
 
 	run: #Command & {
-		"ssh":   ssh
+		if ssh != _|_ {
+			"ssh": ssh
+		}
+		if socket != _|_ {
+			"socket": socket
+		}
+
 		command: #command
 		env: {
 			IMAGE_REF: ref
