@@ -11,7 +11,7 @@ setup() {
 #  new-style tests: use 'dagger up'
 #
 # For new tests, please adopt new-style.
-# NOTE: you will need to 'unset DAGGER_WORKSPACE'
+# NOTE: you will need to 'unset DAGGER_PROJECT'
 # at the beginning of each new-style test.
 
 @test "core: inputs & outputs" {
@@ -26,7 +26,7 @@ setup() {
     assert_output --partial 'dir'
 
     # Set dir input
-    dagger -e test-core input dir dir "$DAGGER_WORKSPACE"
+    dagger -e test-core input dir dir "$DAGGER_PROJECT"
 
     # Set text input
     dagger -e test-core input text name Bob
@@ -160,5 +160,5 @@ setup() {
 }
 
 @test "compute: exclude" {
-    "$DAGGER" up -w "$TESTDIR"/compute/exclude
+    "$DAGGER" up --project "$TESTDIR"/compute/exclude
 }

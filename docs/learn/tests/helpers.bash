@@ -10,19 +10,19 @@ common_setup() {
     #   otherwise infinite recursion when DAGGER_BINARY is not set.
     export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
 
-    # Set the workspace to the universe directory (so tests can run from anywhere)
+    # Set the project to the universe directory (so tests can run from anywhere)
     UNIVERSE="$( cd "$( dirname "$BATS_TEST_FILENAME" )" >/dev/null 2>&1 && pwd )"
-    DAGGER_WORKSPACE="$UNIVERSE"
-    export DAGGER_WORKSPACE
+    DAGGER_PROJECT="$UNIVERSE"
+    export DAGGER_PROJECT
 
     # Force pretty printing for error reporting
     DAGGER_LOG_FORMAT="pretty"
     export DAGGER_LOG_FORMAT
 
-    # Sandbox workspace.
-    DAGGER_SANDBOX="$(mktemp -d -t dagger-workspace-XXXXXX)"
+    # Sandbox project.
+    DAGGER_SANDBOX="$(mktemp -d -t dagger-project-XXXXXX)"
     export DAGGER_SANDBOX
-    dagger init -w "$DAGGER_SANDBOX"
+    dagger init --project "$DAGGER_SANDBOX"
 
     # allows the use of `sops`
     SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt
@@ -43,28 +43,28 @@ setup_example_sandbox() {
 }
 
 
-# copy an environment from the current workspace to the sandbox.
+# copy an environment from the current project to the sandbox.
 #
 # this is needed if the test requires altering inputs without dirtying the
 # current environment.
 # Usage:
 # copy_to_sandbox myenv
 # dagger input secret -w "$DAGGER_SANDBOX" -e myenv "temporary change"
-# dagger up -w "$DAGGER_SANDBOX" -e myenv
+# dagger up --project "$DAGGER_SANDBOX" -e myenv
 #
 # To use testdata directory in tests, add the package name as second flag
 # Usage:
 # copy_to_sandbox myenv mypackage
 copy_to_sandbox() {
     local name="$1"
-    local source="$DAGGER_WORKSPACE"/.dagger/env/"$name"
+    local source="$DAGGER_PROJECT"/.dagger/env/"$name"
     local target="$DAGGER_SANDBOX"/.dagger/env/"$name"
 
     cp -a "$source" "$target"
 
     if [ -d "$2" ]; then
       local package="$2"
-      local source_package="$DAGGER_WORKSPACE"/"$package"
+      local source_package="$DAGGER_PROJECT"/"$package"
       local target_package="$DAGGER_SANDBOX"/
 
       cp -a "$source_package" "$target_package"

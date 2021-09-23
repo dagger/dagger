@@ -10,8 +10,8 @@ common_setup() {
     DAGGER_LOG_FORMAT="pretty"
     export DAGGER_LOG_FORMAT
 
-    DAGGER_WORKSPACE="$(mktemp -d -t dagger-workspace-XXXXXX)"
-    export DAGGER_WORKSPACE
+    DAGGER_PROJECT="$(mktemp -d -t dagger-project-XXXXXX)"
+    export DAGGER_PROJECT
 
     SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt
     export SOPS_AGE_KEY_FILE
@@ -21,7 +21,7 @@ dagger_new_with_plan() {
     local name="$1"
     local sourcePlan="$2"
 
-    cp -a "$sourcePlan"/* "$DAGGER_WORKSPACE"
+    cp -a "$sourcePlan"/* "$DAGGER_PROJECT"
 
     "$DAGGER" new "$name"
 }
@@ -29,8 +29,8 @@ dagger_new_with_plan() {
 dagger_new_with_env() {
     local sourcePlan="$1"
     
-    "$DAGGER" init -w "$DAGGER_WORKSPACE"
-    rsync -av "$sourcePlan"/ "$DAGGER_WORKSPACE"
+    "$DAGGER" init --project "$DAGGER_PROJECT"
+    rsync -av "$sourcePlan"/ "$DAGGER_PROJECT"
 }
 
 # dagger helper to execute the right binary
