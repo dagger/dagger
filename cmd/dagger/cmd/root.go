@@ -34,7 +34,7 @@ func init() {
 		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
-	rootCmd.PersistentFlags().StringP("workspace", "w", "", "Specify a workspace (defaults to current git repository)")
+	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		lg := logger.New()

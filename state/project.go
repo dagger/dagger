@@ -32,11 +32,11 @@ const (
 	computedFile = "computed.json"
 )
 
-type Workspace struct {
+type Project struct {
 	Path string
 }
 
-func Init(ctx context.Context, dir string) (*Workspace, error) {
+func Init(ctx context.Context, dir string) (*Project, error) {
 	root, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -57,12 +57,12 @@ func Init(ctx context.Context, dir string) (*Workspace, error) {
 		return nil, err
 	}
 
-	return &Workspace{
+	return &Project{
 		Path: root,
 	}, nil
 }
 
-func Open(ctx context.Context, dir string) (*Workspace, error) {
+func Open(ctx context.Context, dir string) (*Project, error) {
 	_, err := os.Stat(path.Join(dir, daggerDir))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -76,12 +76,12 @@ func Open(ctx context.Context, dir string) (*Workspace, error) {
 		return nil, err
 	}
 
-	return &Workspace{
+	return &Project{
 		Path: root,
 	}, nil
 }
 
-func Current(ctx context.Context) (*Workspace, error) {
+func Current(ctx context.Context) (*Project, error) {
 	current, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -103,11 +103,11 @@ func Current(ctx context.Context) (*Workspace, error) {
 	return nil, ErrNotInit
 }
 
-func (w *Workspace) envPath(name string) string {
+func (w *Project) envPath(name string) string {
 	return path.Join(w.Path, daggerDir, envDir, name)
 }
 
-func (w *Workspace) List(ctx context.Context) ([]*State, error) {
+func (w *Project) List(ctx context.Context) ([]*State, error) {
 	var (
 		environments = []*State{}
 		err          error
@@ -139,7 +139,7 @@ func (w *Workspace) List(ctx context.Context) ([]*State, error) {
 	return environments, nil
 }
 
-func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
+func (w *Project) Get(ctx context.Context, name string) (*State, error) {
 	envPath, err := filepath.Abs(w.envPath(name))
 	if err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 			st.Plan.Module = planRelPath
 		}
 	}
-	st.Workspace = w.Path
+	st.Project = w.Path
 
 	computed, err := os.ReadFile(path.Join(envPath, stateDir, computedFile))
 	if err == nil {
@@ -189,7 +189,7 @@ func (w *Workspace) Get(ctx context.Context, name string) (*State, error) {
 	return &st, nil
 }
 
-func (w *Workspace) Save(ctx context.Context, st *State) error {
+func (w *Project) Save(ctx context.Context, st *State) error {
 	data, err := yaml.Marshal(st)
 	if err != nil {
 		return err
@@ -234,7 +234,7 @@ func (w *Workspace) Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-func (w *Workspace) Create(ctx context.Context, name string, plan Plan) (*State, error) {
+func (w *Project) Create(ctx context.Context, name string, plan Plan) (*State, error) {
 	if _, err := w.Get(ctx, name); err == nil {
 		return nil, ErrExist
 	}
@@ -257,8 +257,8 @@ func (w *Workspace) Create(ctx context.Context, name string, plan Plan) (*State,
 	manifestPath := path.Join(envPath, manifestFile)
 
 	st := &State{
-		Path:      envPath,
-		Workspace: w.Path,
+		Path:    envPath,
+		Project: w.Path,
 		Plan: Plan{
 			Package: pkg,
 		},
@@ -293,7 +293,7 @@ func (w *Workspace) Create(ctx context.Context, name string, plan Plan) (*State,
 	return st, nil
 }
 
-func (w *Workspace) cleanPackageName(ctx context.Context, pkg string) (string, error) {
+func (w *Project) cleanPackageName(ctx context.Context, pkg string) (string, error) {
 	lg := log.
 		Ctx(ctx).
 		With().
@@ -325,7 +325,7 @@ func (w *Workspace) cleanPackageName(ctx context.Context, pkg string) (string, e
 	}
 
 	if !strings.HasPrefix(p, w.Path) {
-		lg.Fatal().Err(err).Msg("package is outside the workspace")
+		lg.Fatal().Err(err).Msg("package is outside the project")
 		return "", err
 	}
 

@@ -13,8 +13,8 @@ type State struct {
 	// State path
 	Path string `yaml:"-"`
 
-	// Workspace path
-	Workspace string `yaml:"-"`
+	// Project path
+	Project string `yaml:"-"`
 
 	// Plan
 	Plan Plan `yaml:"plan,omitempty"`
@@ -33,7 +33,7 @@ type State struct {
 
 // Cue module containing the environment plan
 func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
-	w := s.Workspace
+	w := s.Project
 	// FIXME: backward compatibility
 	if mod := s.Plan.Module; mod != "" {
 		w = path.Join(w, mod)
@@ -44,7 +44,7 @@ func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
 	// However:
 	// 1) As of right now, there's no way to update universe through the
 	// CLI, so we are lazily updating on `dagger up` using the embedded `universe`
-	// 2) For backward compatibility: if the workspace was `dagger
+	// 2) For backward compatibility: if the project was `dagger
 	// init`-ed before we added support for vendoring universe, it might not
 	// contain a `cue.mod`.
 	if err := vendorUniverse(ctx, w); err != nil {
@@ -83,11 +83,11 @@ func (s *State) CompileInputs() (*compiler.Value, error) {
 
 // VendorUniverse vendors the latest (built-in) version of the universe into the
 // environment's `cue.mod`.
-// FIXME: This has nothing to do in `State` and should be tied to a `Workspace`.
+// FIXME: This has nothing to do in `State` and should be tied to a `Project`.
 // However, since environments could point to different modules before, we have
 // to handle vendoring on a per environment basis.
 func (s *State) VendorUniverse(ctx context.Context) error {
-	w := s.Workspace
+	w := s.Project
 	// FIXME: backward compatibility
 	if mod := s.Plan.Module; mod != "" {
 		w = path.Join(w, mod)

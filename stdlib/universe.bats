@@ -132,12 +132,12 @@ setup() {
   copy_to_sandbox kubernetes-deployment kubernetes
 
   # Set kubeconfig
-  dagger -w "$DAGGER_SANDBOX" -e kubernetes-deployment input text TestKubeconfig -f "$HOME"/.kube/config
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-deployment input text TestKubeconfig -f "$HOME"/.kube/config
 
-  dagger -w "$DAGGER_SANDBOX" -e kubernetes-deployment up
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-deployment up
 
   # Unset kubeconfig
-  dagger -w "$DAGGER_SANDBOX" -e kubernetes-deployment input unset TestKubeconfig
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-deployment input unset TestKubeconfig
 }
 
 @test "kubernetes: kustomize" {
@@ -151,12 +151,12 @@ setup() {
   copy_to_sandbox kubernetes-helm kubernetes
 
   # Set kubeconfig
-  dagger -w "$DAGGER_SANDBOX" -e kubernetes-helm input text TestKubeconfig -f "$HOME"/.kube/config
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-helm input text TestKubeconfig -f "$HOME"/.kube/config
 
-  dagger -w "$DAGGER_SANDBOX" -e kubernetes-helm up
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-helm up
 
   # Unset kubeconfig
-  dagger -w "$DAGGER_SANDBOX" -e kubernetes-helm input unset TestKubeconfig
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-helm input unset TestKubeconfig
 }
 
 @test "google cloud: gcr" {
@@ -194,23 +194,23 @@ setup() {
   copy_to_sandbox terraform terraform
 
   # Add the var and try again
-  run dagger -w "$DAGGER_SANDBOX" -e terraform input text TestTerraform.apply.tfvars.input "42"
-  run dagger -w "$DAGGER_SANDBOX" -e terraform up
+  run dagger --project "$DAGGER_SANDBOX" -e terraform input text TestTerraform.apply.tfvars.input "42"
+  run dagger --project "$DAGGER_SANDBOX" -e terraform up
   assert_success
 
   # ensure the tfvar was passed correctly
-  run dagger -w "$DAGGER_SANDBOX" query -e terraform TestTerraform.apply.output.input.value -f text
+  run dagger --project "$DAGGER_SANDBOX" query -e terraform TestTerraform.apply.output.input.value -f text
   assert_success
   assert_output "42"
 
   # ensure the random value is always the same
   # this proves we're effectively using the s3 backend
-  run dagger -w "$DAGGER_SANDBOX" query -e terraform TestTerraform.apply.output.random.value -f json
+  run dagger --project "$DAGGER_SANDBOX" query -e terraform TestTerraform.apply.output.random.value -f json
   assert_success
   assert_output "36"
 
   # Unset input
-  run dagger -w "$DAGGER_SANDBOX" -e terraform input unset TestTerraform.apply.tfvars.input
+  run dagger --project "$DAGGER_SANDBOX" -e terraform input unset TestTerraform.apply.tfvars.input
   assert_success
 }
 

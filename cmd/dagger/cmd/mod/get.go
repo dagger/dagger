@@ -25,15 +25,15 @@ var getCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
-		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st, &telemetry.Property{
+		project := common.CurrentProject(ctx)
+		st := common.CurrentEnvironmentState(ctx, project)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, st, &telemetry.Property{
 			Name:  "packages",
 			Value: args,
 		})
 
 		// read mod file in the current dir
-		modFile, err := readPath(workspace.Path)
+		modFile, err := readPath(project.Path)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("error loading module file")
 		}

@@ -29,10 +29,10 @@ var listCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, nil)
+		project := common.CurrentProject(ctx)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, nil)
 
-		environments, err := workspace.List(ctx)
+		environments, err := project.List(ctx)
 		if err != nil {
 			lg.
 				Fatal().

@@ -23,7 +23,7 @@ var newCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
+		project := common.CurrentProject(ctx)
 
 		if viper.GetString("environment") != "" {
 			lg.
@@ -32,7 +32,7 @@ var newCmd = &cobra.Command{
 		}
 		name := args[0]
 
-		st, err := workspace.Create(ctx, name, state.Plan{
+		st, err := project.Create(ctx, name, state.Plan{
 			Package: viper.GetString("package"),
 		})
 
@@ -40,7 +40,7 @@ var newCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to create environment")
 		}
 
-		<-common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+		<-common.TrackProjectCommand(ctx, cmd, project, st)
 	},
 }
 

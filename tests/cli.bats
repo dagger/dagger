@@ -42,7 +42,7 @@ setup() {
 @test "dagger new: modules" {
     "$DAGGER" init
 
-    cp -a "$TESTDIR"/cli/input/simple/* "$DAGGER_WORKSPACE"
+    cp -a "$TESTDIR"/cli/input/simple/* "$DAGGER_PROJECT"
 
     "$DAGGER" new "a"
     "$DAGGER" new "b"
@@ -61,7 +61,7 @@ setup() {
     assert_success
     assert_output "b"
 
-    # run ls -la "$DAGGER_WORKSPACE"
+    # run ls -la "$DAGGER_PROJECT"
     # assert_failure
 }
 
@@ -70,7 +70,7 @@ setup() {
 @test "dagger new: packages" {
     "$DAGGER" init
 
-    cp -a "$TESTDIR"/cli/packages/* "$DAGGER_WORKSPACE"
+    cp -a "$TESTDIR"/cli/packages/* "$DAGGER_PROJECT"
 
     "$DAGGER" new "a" --package alpha.dagger.io/test/a
     "$DAGGER" new "b" --package alpha.dagger.io/test/b
@@ -293,13 +293,13 @@ setup() {
 
     dagger_new_with_plan input "$TESTDIR"/cli/input/artifact
 
-    # input dir outside the workspace
+    # input dir outside the project
     run "$DAGGER" input -e "input" dir "source" /tmp
     assert_failure
 
-    # input dir inside the workspace
-    cp -R "$TESTDIR"/cli/input/artifact/testdata/ "$DAGGER_WORKSPACE"/testdata
-    "$DAGGER" input -e "input" dir "source" "$DAGGER_WORKSPACE"/testdata
+    # input dir inside the project
+    cp -R "$TESTDIR"/cli/input/artifact/testdata/ "$DAGGER_PROJECT"/testdata
+    "$DAGGER" input -e "input" dir "source" "$DAGGER_PROJECT"/testdata
     "$DAGGER" up -e "input"
     run "$DAGGER" -l error query -e "input"
     assert_success
@@ -331,8 +331,8 @@ setup() {
     run [ -d "$TESTDIR"/cli/input/ignore/testdata/.dagger ]
     assert_success
 
-    cp -R "$TESTDIR"/cli/input/ignore/testdata/ "$DAGGER_WORKSPACE"/testdata
-    "$DAGGER" input -e "input" dir "source" "$DAGGER_WORKSPACE"/testdata
+    cp -R "$TESTDIR"/cli/input/ignore/testdata/ "$DAGGER_PROJECT"/testdata
+    "$DAGGER" input -e "input" dir "source" "$DAGGER_PROJECT"/testdata
     "$DAGGER" up -e "input"
     assert_success
 }

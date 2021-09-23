@@ -40,14 +40,14 @@ func init() {
 func updateEnvironmentInput(ctx context.Context, cmd *cobra.Command, target string, input state.Input) {
 	lg := *log.Ctx(ctx)
 
-	workspace := common.CurrentWorkspace(ctx)
-	st := common.CurrentEnvironmentState(ctx, workspace)
+	project := common.CurrentProject(ctx)
+	st := common.CurrentEnvironmentState(ctx, project)
 
 	lg = lg.With().
 		Str("environment", st.Name).
 		Logger()
 
-	doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st, &telemetry.Property{
+	doneCh := common.TrackProjectCommand(ctx, cmd, project, st, &telemetry.Property{
 		Name:  "input_target",
 		Value: target,
 	})
@@ -71,7 +71,7 @@ func updateEnvironmentInput(ctx context.Context, cmd *cobra.Command, target stri
 		lg.Fatal().Err(err).Msg("invalid input")
 	}
 
-	if err := workspace.Save(ctx, st); err != nil {
+	if err := project.Save(ctx, st); err != nil {
 		lg.Fatal().Err(err).Msg("cannot update environment")
 	}
 }
