@@ -73,6 +73,7 @@ import (
 		// set in netlify.sh.cue
 		// FIXME: use embedding once cue supports it
 		command: _
+		always:  true
 		env: {
 			NETLIFY_SITE_NAME: name
 			if (create) {
