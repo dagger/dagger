@@ -31,14 +31,14 @@ var listCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
+		project := common.CurrentProject(ctx)
+		st := common.CurrentEnvironmentState(ctx, project)
 
 		lg = lg.With().
 			Str("environment", st.Name).
 			Logger()
 
-		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
 
 		cl := common.NewClient(ctx)
 		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {

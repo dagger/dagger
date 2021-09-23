@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestWorkspace(t *testing.T) {
+func TestProject(t *testing.T) {
 	ctx := context.TODO()
 
 	keychain.EnsureDefaultKey(ctx)
@@ -25,39 +25,39 @@ func TestWorkspace(t *testing.T) {
 	require.ErrorIs(t, ErrNotInit, err)
 
 	// Init
-	workspace, err := Init(ctx, root)
+	project, err := Init(ctx, root)
 	require.NoError(t, err)
-	require.Equal(t, root, workspace.Path)
+	require.Equal(t, root, project.Path)
 
 	// Create
-	st, err := workspace.Create(ctx, "test", Plan{
+	st, err := project.Create(ctx, "test", Plan{
 		Module: ".",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "test", st.Name)
 
 	// Open
-	workspace, err = Open(ctx, root)
+	project, err = Open(ctx, root)
 	require.NoError(t, err)
-	require.Equal(t, root, workspace.Path)
+	require.Equal(t, root, project.Path)
 
 	// List
-	envs, err := workspace.List(ctx)
+	envs, err := project.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, envs, 1)
 	require.Equal(t, "test", envs[0].Name)
 
 	// Get
-	env, err := workspace.Get(ctx, "test")
+	env, err := project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.Equal(t, "test", env.Name)
 
 	// Save
 	require.NoError(t, env.SetInput("foo", TextInput("bar")))
-	require.NoError(t, workspace.Save(ctx, env))
-	workspace, err = Open(ctx, root)
+	require.NoError(t, project.Save(ctx, env))
+	project, err = Open(ctx, root)
 	require.NoError(t, err)
-	env, err = workspace.Get(ctx, "test")
+	env, err = project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.Contains(t, env.Inputs, "foo")
 }
@@ -77,28 +77,28 @@ func TestEncryption(t *testing.T) {
 
 	root, err := os.MkdirTemp(os.TempDir(), "dagger-*")
 	require.NoError(t, err)
-	workspace, err := Init(ctx, root)
+	project, err := Init(ctx, root)
 	require.NoError(t, err)
 
-	_, err = workspace.Create(ctx, "test", Plan{
+	_, err = project.Create(ctx, "test", Plan{
 		Module: ".",
 	})
 	require.NoError(t, err)
 
 	// Set a plaintext input, make sure it is not encrypted
-	st, err := workspace.Get(ctx, "test")
+	st, err := project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.NoError(t, st.SetInput("plain", TextInput("plain")))
-	require.NoError(t, workspace.Save(ctx, st))
+	require.NoError(t, project.Save(ctx, st))
 	o := readManifest(st)
 	require.Contains(t, o.Inputs, "plain")
 	require.Equal(t, "plain", string(*o.Inputs["plain"].Text))
 
 	// Set a secret input, make sure it's encrypted
-	st, err = workspace.Get(ctx, "test")
+	st, err = project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.NoError(t, st.SetInput("secret", SecretInput("secret")))
-	require.NoError(t, workspace.Save(ctx, st))
+	require.NoError(t, project.Save(ctx, st))
 	o = readManifest(st)
 	require.Contains(t, o.Inputs, "secret")
 	secretValue := string(*o.Inputs["secret"].Secret)
@@ -106,10 +106,10 @@ func TestEncryption(t *testing.T) {
 	require.True(t, strings.HasPrefix(secretValue, "ENC["))
 
 	// Change another input, make sure our secret didn't change
-	st, err = workspace.Get(ctx, "test")
+	st, err = project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.NoError(t, st.SetInput("plain", TextInput("different")))
-	require.NoError(t, workspace.Save(ctx, st))
+	require.NoError(t, project.Save(ctx, st))
 	o = readManifest(st)
 	require.Contains(t, o.Inputs, "plain")
 	require.Equal(t, "different", string(*o.Inputs["plain"].Text))

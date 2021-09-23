@@ -13,37 +13,37 @@ import (
 	"go.dagger.io/dagger/state"
 )
 
-func CurrentWorkspace(ctx context.Context) *state.Workspace {
+func CurrentProject(ctx context.Context) *state.Project {
 	lg := log.Ctx(ctx)
 
-	if workspacePath := viper.GetString("workspace"); workspacePath != "" {
-		workspace, err := state.Open(ctx, workspacePath)
+	if projectPath := viper.GetString("project"); projectPath != "" {
+		project, err := state.Open(ctx, projectPath)
 		if err != nil {
 			lg.
 				Fatal().
 				Err(err).
-				Str("path", workspacePath).
-				Msg("failed to open workspace")
+				Str("path", projectPath).
+				Msg("failed to open project")
 		}
-		return workspace
+		return project
 	}
 
-	workspace, err := state.Current(ctx)
+	project, err := state.Current(ctx)
 	if err != nil {
 		lg.
 			Fatal().
 			Err(err).
-			Msg("failed to determine current workspace")
+			Msg("failed to determine current project")
 	}
-	return workspace
+	return project
 }
 
-func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *state.State {
+func CurrentEnvironmentState(ctx context.Context, project *state.Project) *state.State {
 	lg := log.Ctx(ctx)
 
 	environmentName := viper.GetString("environment")
 	if environmentName != "" {
-		st, err := workspace.Get(ctx, environmentName)
+		st, err := project.Get(ctx, environmentName)
 		if err != nil {
 			lg.
 				Fatal().
@@ -53,7 +53,7 @@ func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *s
 		return st
 	}
 
-	environments, err := workspace.List(ctx)
+	environments, err := project.List(ctx)
 	if err != nil {
 		lg.
 			Fatal().
@@ -76,7 +76,7 @@ func CurrentEnvironmentState(ctx context.Context, workspace *state.Workspace) *s
 			Fatal().
 			Err(err).
 			Strs("environments", envNames).
-			Msg("multiple environments available in the workspace, select one with `--environment`")
+			Msg("multiple environments available in the project, select one with `--environment`")
 	}
 
 	return environments[0]

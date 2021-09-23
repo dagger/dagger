@@ -108,10 +108,10 @@ func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 
 	p := dir.Path
 	if !filepath.IsAbs(p) {
-		p = filepath.Clean(path.Join(state.Workspace, dir.Path))
+		p = filepath.Clean(path.Join(state.Project, dir.Path))
 	}
-	if !strings.HasPrefix(p, state.Workspace) {
-		return nil, fmt.Errorf("%q is outside the workspace", dir.Path)
+	if !strings.HasPrefix(p, state.Project) {
+		return nil, fmt.Errorf("%q is outside the project", dir.Path)
 	}
 
 	llb := fmt.Sprintf(

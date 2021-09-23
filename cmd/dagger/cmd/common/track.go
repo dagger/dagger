@@ -32,9 +32,9 @@ func commandName(cmd *cobra.Command) string {
 	return strings.Join(parts, " ")
 }
 
-// TrackWorkspaceCommand is like TrackCommand but includes workspace and
+// TrackProjectCommand is like TrackCommand but includes project and
 // optionally environment metadata.
-func TrackWorkspaceCommand(ctx context.Context, cmd *cobra.Command, w *state.Workspace, env *state.State, props ...*telemetry.Property) chan struct{} {
+func TrackProjectCommand(ctx context.Context, cmd *cobra.Command, w *state.Project, env *state.State, props ...*telemetry.Property) chan struct{} {
 	props = append([]*telemetry.Property{
 		{
 			// Hash the repository URL for privacy
@@ -42,8 +42,8 @@ func TrackWorkspaceCommand(ctx context.Context, cmd *cobra.Command, w *state.Wor
 			Value: hash(gitRepoURL(w.Path)),
 		},
 		{
-			// The workspace path might contain the username (e.g. /home/user/workspace), so we hash itfor privacy.
-			Name:  "workspace_path_hash",
+			// The project path might contain the username (e.g. /home/user/project), so we hash itfor privacy.
+			Name:  "project_path_hash",
 			Value: hash(w.Path),
 		},
 	}, props...)

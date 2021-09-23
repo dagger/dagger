@@ -24,11 +24,11 @@ const tmpBasePath = "./cue.mod/tmp"
 type file struct {
 	require []*require
 
-	workspacePath string
+	projectPath string
 }
 
-func readPath(workspacePath string) (*file, error) {
-	p := path.Join(workspacePath, filePath)
+func readPath(projectPath string) (*file, error) {
+	p := path.Join(projectPath, filePath)
 
 	f, err := os.Open(p)
 	if err != nil {
@@ -47,7 +47,7 @@ func readPath(workspacePath string) (*file, error) {
 		return nil, err
 	}
 
-	modFile.workspacePath = workspacePath
+	modFile.projectPath = projectPath
 
 	return modFile, nil
 }
@@ -102,7 +102,7 @@ func nonEmptyLines(b []byte) []string {
 func (f *file) processRequire(req *require, upgrade bool) (bool, error) {
 	var isNew bool
 
-	tmpPath := path.Join(f.workspacePath, tmpBasePath, req.repo)
+	tmpPath := path.Join(f.projectPath, tmpBasePath, req.repo)
 	if err := os.MkdirAll(tmpPath, 0755); err != nil {
 		return false, fmt.Errorf("error creating tmp dir for cloning package")
 	}
@@ -117,7 +117,7 @@ func (f *file) processRequire(req *require, upgrade bool) (bool, error) {
 	}
 
 	existing := f.search(req)
-	destPath := path.Join(f.workspacePath, destBasePath)
+	destPath := path.Join(f.projectPath, destBasePath)
 
 	// requirement is new, so we should move the files and add it to the mod file
 	if existing == nil {
@@ -167,7 +167,7 @@ func (f *file) processRequire(req *require, upgrade bool) (bool, error) {
 }
 
 func (f *file) write() error {
-	return ioutil.WriteFile(path.Join(f.workspacePath, filePath), f.contents().Bytes(), 0600)
+	return ioutil.WriteFile(path.Join(f.projectPath, filePath), f.contents().Bytes(), 0600)
 }
 
 func (f *file) contents() *bytes.Buffer {

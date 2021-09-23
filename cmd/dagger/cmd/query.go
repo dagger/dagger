@@ -27,8 +27,8 @@ var queryCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		state := common.CurrentEnvironmentState(ctx, workspace)
+		project := common.CurrentProject(ctx)
+		state := common.CurrentEnvironmentState(ctx, project)
 
 		lg = lg.With().
 			Str("environment", state.Name).
@@ -40,7 +40,7 @@ var queryCmd = &cobra.Command{
 			cuePath = cue.ParsePath(args[0])
 		}
 
-		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, state)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, state)
 
 		cueVal := compiler.NewValue()
 

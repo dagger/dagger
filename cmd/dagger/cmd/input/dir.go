@@ -37,11 +37,11 @@ var dirCmd = &cobra.Command{
 			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir doesn't exists")
 		}
 
-		workspace := common.CurrentWorkspace(ctx)
-		if !strings.HasPrefix(p, workspace.Path) {
-			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir is outside the workspace")
+		project := common.CurrentProject(ctx)
+		if !strings.HasPrefix(p, project.Path) {
+			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir is outside the project")
 		}
-		p, err = filepath.Rel(workspace.Path, p)
+		p, err = filepath.Rel(project.Path, p)
 		if err != nil {
 			lg.Fatal().Err(err).Str("path", args[1]).Msg("unable to resolve path")
 		}

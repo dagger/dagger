@@ -34,14 +34,14 @@ var editCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
+		project := common.CurrentProject(ctx)
+		st := common.CurrentEnvironmentState(ctx, project)
 
 		lg = lg.With().
 			Str("environment", st.Name).
 			Logger()
 
-		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
 
 		data, err := yaml.Marshal(st)
 		if err != nil {
@@ -92,7 +92,7 @@ var editCmd = &cobra.Command{
 			lg.Fatal().Err(err).Str("environment", st.Name).Msg("invalid input")
 		}
 
-		if err := workspace.Save(ctx, st); err != nil {
+		if err := project.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Msg("failed to save state")
 		}
 	},

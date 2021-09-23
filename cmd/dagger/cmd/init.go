@@ -12,7 +12,7 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize a new empty workspace",
+	Short: "Initialize a new empty project",
 	Args:  cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -25,7 +25,7 @@ var initCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		dir := viper.GetString("workspace")
+		dir := viper.GetString("project")
 		if dir == "" {
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -37,12 +37,12 @@ var initCmd = &cobra.Command{
 			dir = cwd
 		}
 
-		workspace, err := state.Init(ctx, dir)
+		project, err := state.Init(ctx, dir)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to initialize workspace")
+			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		<-common.TrackWorkspaceCommand(ctx, cmd, workspace, nil)
+		<-common.TrackProjectCommand(ctx, cmd, project, nil)
 
 	},
 }

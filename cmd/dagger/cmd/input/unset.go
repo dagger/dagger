@@ -22,11 +22,11 @@ var unsetCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
+		project := common.CurrentProject(ctx)
+		st := common.CurrentEnvironmentState(ctx, project)
 		st.RemoveInputs(args[0])
 
-		if err := workspace.Save(ctx, st); err != nil {
+		if err := project.Save(ctx, st); err != nil {
 			lg.Fatal().Err(err).Str("environment", st.Name).Msg("cannot update environment")
 		}
 		lg.Info().Str("environment", st.Name).Msg("updated environment")

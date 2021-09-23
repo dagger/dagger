@@ -34,14 +34,14 @@ var upCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		workspace := common.CurrentWorkspace(ctx)
-		st := common.CurrentEnvironmentState(ctx, workspace)
+		project := common.CurrentProject(ctx)
+		st := common.CurrentEnvironmentState(ctx, project)
 
 		lg = lg.With().
 			Str("environment", st.Name).
 			Logger()
 
-		doneCh := common.TrackWorkspaceCommand(ctx, cmd, workspace, st)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
 
 		cl := common.NewClient(ctx)
 
@@ -56,7 +56,7 @@ var upCmd = &cobra.Command{
 			}
 
 			st.Computed = env.Computed().JSON().PrettyString()
-			if err := workspace.Save(ctx, st); err != nil {
+			if err := project.Save(ctx, st); err != nil {
 				return err
 			}
 
