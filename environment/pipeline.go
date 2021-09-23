@@ -658,6 +658,25 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 	return o, err
 }
 
+// parseStringOrSecret retrieve secret as plain text or retrieve string
+func parseStringOrSecret(ctx context.Context, ss solver.SecretsStore, v *compiler.Value) (string, error) {
+	// Check if the value is a string, return as is
+	if value, err := v.String(); err == nil {
+		return value, nil
+	}
+
+	// If we get here, it's a secret
+	id, err := getSecretID(v)
+	if err != nil {
+		return "", err
+	}
+	secretBytes, err := ss.GetSecret(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return string(secretBytes), nil
+}
+
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
 	from := NewPipeline(op.Lookup("from"), p.s)
@@ -674,27 +693,13 @@ func (p *Pipeline) DockerLogin(ctx context.Context, op *compiler.Value, st llb.S
 		return st, err
 	}
 
-	// Inject secret as plain text or retrieve string
-	// FIXME If we could create secret directly in `cue`, we could clean up
-	//  that condition
+	// FIXME If we could create secret directly in `cue`, we could avoid using
+	//  that function
 	// But currently it's not possible because ECR secret's is a string
 	// so we need to handle both options (string & secret)
-	secretValue, err := op.Lookup("secret").String()
+	secretValue, err := parseStringOrSecret(ctx, p.s.GetOptions().SecretsStore, op.Lookup("secret"))
 	if err != nil {
-		// Retrieve secret
-		if secret := op.Lookup("secret"); secret.Exists() {
-			id, err := getSecretID(secret)
-			if err != nil {
-				return st, err
-			}
-			secretBytes, err := p.s.GetOptions().SecretsStore.GetSecret(ctx, id)
-			if err != nil {
-				return st, err
-			}
-			secretValue = string(secretBytes)
-		} else {
-			return st, err
-		}
+		return st, err
 	}
 
 	target, err := op.Lookup("target").String()
@@ -978,7 +983,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		}
 	}
 
-	opts, err := dockerBuildOpts(op)
+	opts, err := dockerBuildOpts(ctx, op, p.s.GetOptions().SecretsStore)
 	if err != nil {
 		return st, err
 	}
@@ -1017,7 +1022,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	return applyImageToState(p.image, st), nil
 }
 
-func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
+func dockerBuildOpts(ctx context.Context, op *compiler.Value, ss solver.SecretsStore) (map[string]string, error) {
 	opts := map[string]string{}
 
 	if dockerfilePath := op.Lookup("dockerfilePath"); dockerfilePath.Exists() {
@@ -1060,7 +1065,7 @@ func dockerBuildOpts(op *compiler.Value) (map[string]string, error) {
 			return nil, err
 		}
 		for _, buildArg := range fields {
-			v, err := buildArg.Value.String()
+			v, err := parseStringOrSecret(ctx, ss, buildArg.Value)
 			if err != nil {
 				return nil, err
 			}
