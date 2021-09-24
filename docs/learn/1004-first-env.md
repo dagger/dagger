@@ -56,7 +56,7 @@ Each link in the graph represents a flow of data between nodes. For example:
 ### Install Cue
 
 Although not strictly necessary, for an optimal development experience, we recommend
-[installing a recent version of Cue](https://github.com/cuelang/cue/releases/).
+[installing a recent version of Cue](https://github.com/cue-lang/cue/releases/).
 
 ### Prepare Cue learning resources
 
