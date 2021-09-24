@@ -80,7 +80,7 @@ a [kubeconfig](https://docs.aws.amazon.com/eks/latest/userguide/create-kubeconfi
   </TabItem>
 </Tabs>
 
-## Initialize a Dagger Workspace and Environment
+## Initialize a Dagger Project and Environment
 
 ### (optional) Setup example app
 
