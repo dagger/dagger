@@ -2,123 +2,55 @@
 slug: /1003/get-started/
 ---
 
-# Get started with Dagger
+# Get Started with Dagger
 
-In this guide, you will learn the basics of Dagger by interacting with a pre-configured environment.
-Then you will move on to creating your environment from scratch.
-
-Our pre-configured environment deploys a simple [React](https://reactjs.org/)
-application to a unique hosting environment created and managed by us, the Dagger team, for this tutorial.
-This will allow you to deploy something "real" right away without configuring your infrastructure first.
-
-In later guides, you will learn how to configure Dagger to deploy to your infrastructure. And, for advanced users,
+In this tutorial, you will learn the basics of Dagger by building a Dagger project from scratch. This simple
+project deploys a [React](https://reactjs.org/) application to your local machine via docker. In later tutorials,
+you will learn how to configure Dagger to deploy to your infrastructure. And, for advanced users,
 how to share access to your infrastructure in the same way that we share access to ours now.
 
-## Initial setup
+This tutorial does involve writing CUE, so if you haven&rsquo;t already, be sure to read [What is CUE?](../introduction/1005-what_is_cue.md)
+
+In this tutorial we will learn:
+
+- How to initialize and structure a Dagger project
+- About Dagger concepts such as
+  - the plan
+  - environments
+  - inputs and outputs
+- How to write CUE for Dagger
+- How to deploy an application using `dagger up`
+
+## Deploy an Application Locally
+
+The following instructions assume you are working locally, but could just as easily be run on a remote
+machine into which you have a shell.
 
 ### Install Dagger
 
-First, make sure [you have installed Dagger on your local machine](../1001-install.md).
+First, make sure [you have installed Dagger](../1001-install.md). You can run `dagger version` to ensure
+you have the latest installed and working. For the sake of brevity and simplicity we will create directories under
+your home directory, but feel free to replace `~/` with a path that works best for you.
 
-### Setup example app
+### Create a Dagger Project
 
-You will need a local copy of the [Dagger examples repository](https://github.com/dagger/examples).
-NOTE: you may use the same local copy across all tutorials.
+First we need a directory that will contain our `.cue` files and a `.dagger` directory which stores metadata about environments. First, create a new directory for our todoapp, then initialize the project:
 
-```shell
-git clone https://github.com/dagger/examples
+```bash
+mkdir ~/todoapp
+cd ~/todoapp
+dagger init
 ```
 
-Make sure that all commands are run from the `todoapp` directory:
+If you now run `ls -la` you will see 2 new directories:
 
-```shell
-cd examples/todoapp
-```
+- The `.dagger` directory will store metadata about _environments_, _inputs_, and _outputs_ which we will cover shortly.
+- The `cue.mod` directory stores libraries such as [dagger/universe](https://github.com/dagger/universe) which can be _imported_ into your Dagger _plan_.
 
-### Import the tutorial key
+Dagger will load all `.cue` files recursively in the current Dagger project. More directories can be added to help organize code.
 
-Dagger natively supports encrypted secrets: when a user inputs a value marked as secret
-(for example, a password, API token, or ssh key) it is automatically encrypted with that user's key,
-and no other user can access that value unless they are explicitly given access.
+> Note that Dagger, like the CUE CLI command, will only load CUE files from the `cue.mod` directory in response to `import` statements.
 
-In the interest of security, Dagger has no way _not_ to encrypt a secret value.
-But this causes a dilemma for this tutorial: how do we give unrestricted, public access to our
-(carefully sandboxed) infrastructure so that anyone can deploy to it?
+### Write a Dagger Plan
 
-To solve this dilemma, we included the private key used to encrypt the tutorial's secret inputs.
-Import the key to your Dagger installation, and you're good to go:
-
-```shell
-./import-tutorial-key.sh
-```
-
-## First deployment
-
-Now that your environment is set up, you are ready to deploy:
-
-```shell
-dagger up
-```
-
-That's it! You have just made your first deployment with Dagger.
-
-The URL of your newly deployed app should be visible towards the end of the command output.
-If you visit that URL, you should see your application live!
-
-## Code, deploy, repeat
-
-This environment is pre-configured to deploy from the `./todoapp` directory,
-so you can make any change you want to that directory, then deploy it with `dagger up`.
-You can even replace our example React code with any React application!
-
-NOTE: you don't have to commit your changes to the git repository before deploying them.
-
-## Under the hood
-
-This example showed you how to deploy and develop an application that is already configured with Dagger. Now, let's learn a few concepts to help you understand how this was put together.
-
-### The Environment
-
-An Environment holds the entire deployment configuration.
-
-You can list existing environment from the `./todoapp` directory:
-
-```shell
-dagger list
-```
-
-You should see an environment named `s3`. You can have many environments within your app. For instance, one for `staging`, one for `dev`, etc...
-
-Each environment can have a different kind of deployment code. For example, a `dev` environment can deploy locally; a `staging` environment can deploy to a remote infrastructure, and so on.
-
-### The plan
-
-The plan is the deployment code that includes the logic to deploy the local application to an AWS S3 bucket. From the `todoapp` directory, you can list the code of the plan:
-
-```shell
-ls -l ./s3
-```
-
-Any code change to the plan will be applied during the next `dagger up`.
-
-### The inputs
-
-The plan can define one or several `inputs`. Inputs may be configuration values, artifacts, or encrypted secrets provided by the user. Here is how to list the current inputs:
-
-```shell
-dagger input list
-```
-
-The inputs are persisted inside the `.dagger` directory and pushed to your git repository. That's why this example application worked out of the box.
-
-### The outputs
-
-The plan defines one or several `outputs`. They can show helpful information at the end of the deployment. That's how we read the deploy `url` at the end of the deployment. Here is the command to list all outputs:
-
-```shell
-dagger output list
-```
-
-## What's next?
-
-At this point, you have deployed your first application using Dagger and learned some dagger commands. You are now ready to [learn more about how to program Dagger](./1004-first-env.md).
+A Dagger _plan_ is written in CUE and declaratively expresses the _resources_, _dependencies_, and _logic_ to deploy an application to an environment.
