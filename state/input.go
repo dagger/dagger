@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,10 @@ func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 	}
 	if !strings.HasPrefix(p, state.Project) {
 		return nil, fmt.Errorf("%q is outside the project", dir.Path)
+	}
+	// Check that directory exists
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		return nil, fmt.Errorf("%q dir doesn't exist", dir.Path)
 	}
 
 	llb := fmt.Sprintf(

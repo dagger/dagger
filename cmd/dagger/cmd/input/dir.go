@@ -34,7 +34,7 @@ var dirCmd = &cobra.Command{
 
 		// Check that directory exists
 		if _, err := os.Stat(p); os.IsNotExist(err) {
-			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir doesn't exists")
+			lg.Fatal().Err(err).Str("path", args[1]).Msg("dir doesn't exist")
 		}
 
 		project := common.CurrentProject(ctx)
