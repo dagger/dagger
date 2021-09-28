@@ -1,0 +1,23 @@
+plan:
+    package: ./docker/tests/run-ports
+name: docker-run-ports
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBpbHY3ZzZjWWdRcVd5UUdT
+            eFI4UmhTUkd6a0lscDZ3SzVFT2NiSzFRUHhFCnRsRXorSFhjano1WTcrYjlGZElm
+            S2o1V005SlpSbHBmbjJNZ1I3VTRXVGMKLS0tIEdlMThjcmNGK3VJdXV4anNud21x
+            TS80V3BnN3BaeDFTRjNBRTAwbWRKcWcK1rH2zWxTQsbSgOs9Ys89ZCP7kVOm1wFe
+            Kv849q+QOvIy9JPYkGgV16Yr3ijFF7z/h0PCicZRI76WYV/3JnbYmg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-09-28T15:06:47Z"
+    mac: ENC[AES256_GCM,data:WF2X4RCio9x459Fv4XK/P933cS9uac3kHA2+kfaft++ndxbHOY0zmOhUvNMmzLtJNTXL7oBADWIIqIiFbaaC0pC+xGq1th+woR3LvAVQi5J0rlDTcdMDPT03KOPdOmsXFDow5jzyn8vPsC59VCys0ZmEnmnHIGufnFy2qKVV0bM=,iv:GUrSk66zhDqxx+rVM9zMDfmcaDBSOOMIeCSViS2cuLU=,tag:rgCoWe//hn8xmeRmbc5ybQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
