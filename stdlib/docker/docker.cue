@@ -173,7 +173,7 @@ import (
 			}
 
 			if ports != _|_ {
-				CONTAINER_PORTS: strings.Join(ports," -p ")
+				CONTAINER_PORTS: strings.Join(ports, " -p ")
 			}
 		}
 	}
