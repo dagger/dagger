@@ -85,7 +85,7 @@ setup() {
   until docker inspect --format "{{json .State.Status }}" $CONTAINER | grep -m 1 "running"; do sleep 1 ; done
   run curl -f -LI http://localhost:8080
   assert_output --partial '200 OK'
-  docker stop $CONTAINER && docker rm $CONTAINER
+  docker stop "$CONTAINER" && docker rm "$CONTAINER"
 }
 
 @test "docker build" {
