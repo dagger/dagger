@@ -2,6 +2,7 @@
 package docker
 
 import (
+	"strings"
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/dagger/op"
 )
@@ -138,12 +139,19 @@ import (
 		secret:   dagger.#Secret
 	} & dagger.#Input
 
+	// local ports
+	ports?: [...string]
+
 	#command: #"""
 		# Run detach container
 		OPTS=""
 
 		if [ ! -z "$CONTAINER_NAME" ]; then
 			OPTS="$OPTS --name $CONTAINER_NAME"
+		fi
+
+		if [ ! -z "$CONTAINER_PORTS" ]; then
+			OPTS="$OPTS -p $CONTAINER_PORTS"
 		fi
 
 		docker container run -d $OPTS "$IMAGE_REF"
@@ -162,6 +170,10 @@ import (
 			IMAGE_REF: ref
 			if name != _|_ {
 				CONTAINER_NAME: name
+			}
+
+			if ports != _|_ {
+				CONTAINER_PORTS: strings.Join(ports, " -p ")
 			}
 		}
 	}

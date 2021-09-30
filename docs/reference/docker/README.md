@@ -79,7 +79,7 @@ Push a docker image to a remote registry
 | Name                  | Type              | Description                           |
 | -------------         |:-------------:    |:-------------:                        |
 |*ref*                  | `string`          |Image reference (e.g: nginx:alpine)    |
-|*run.command*          | `"""\n            # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
+|*run.command*          | `"""\n            # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    if [ ! -z "$CONTAINER_PORTS" ]; then\n    \tOPTS="$OPTS -p $CONTAINER_PORTS"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
 |*run.env.IMAGE_REF*    | `string`          |-                                      |
 |*run.registries*       | `[]`              |Image registries                       |
 
