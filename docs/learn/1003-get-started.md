@@ -4,7 +4,7 @@ slug: /1003/get-started/
 
 # Get Started with Dagger
 
-In this tutorial, you will learn the basics of Dagger by building a Dagger project from scratch. This simple project deploys a [React](https://reactjs.org/) application to your local machine via docker. In later tutorials, you will learn how to configure Dagger to deploy to your infrastructure. And, for advanced users, how to share access to your infrastructure in the same way that we share access to ours now.
+In this tutorial, you will learn the basics of Dagger by building a Dagger project from scratch. This simple project deploys a [React](https://reactjs.org/) application to your local machine via Docker. In later tutorials, you will learn how to configure Dagger to deploy to your infrastructure. And, for advanced users, how to share access to your infrastructure in the same way that we share access to ours now.
 
 This tutorial does involve writing CUE, so if you haven&rsquo;t already, be sure to read [What is CUE?](../introduction/1005-what_is_cue.md)
 
@@ -47,7 +47,7 @@ drwxr-xr-x   ...     192 Sep 29 11:17 src
 -rw-r--r--   ...  465514 Sep 29 11:17 yarn.lock
 ```
 
-Now we need to initialize this directory as a Dagger _project_ (and relist directories):
+Now we need to initialize this directory as a Dagger _project_:
 
 ```bash
 dagger init
@@ -95,12 +95,15 @@ app: yarn.#Package & {
   "source": dagger.#Artifact & dagger.#Input
 }
 
-// package the staic HTML from yarn into a Docker image
+// package the static HTML from yarn into a Docker image
 image: os.#Container & {
   image: docker.#Pull & {
     from: "nginx"
   }
 
+  // app.build references our app key above
+  // which infers a dependency that Dagger
+  // uses to generate the DAG
   copy: "/usr/share/nginx/html": from: app.build
 }
 
@@ -109,12 +112,15 @@ push: docker.#Push & {
   // leave target as a string here so that 
   // different environments can push to different registries
   target: string 
+
+  // the source of our push resource
+  // is the image resource we declared above
   source: image
 }
 
 ```
 
-This file will define the resources and relationships between them that are common across all environments. For example here we are deploying to our local Docker engine in our `local` environment, but for staging or production as examples, we would deploy to some other container orchestration system such as Kubernetes somewhere out there among the various cloud providers.
+This file will define the resources and relationships between them that are common across _all environments_. For example, here we are deploying to our local Docker engine in our `local` environment, but for staging or production as examples, we would deploy the same image to some other container orchestration system such as Kubernetes hosted somewhere out there among the various cloud providers.
 
 Create the file `plans/local/local.cue` with the following content:
 
@@ -140,13 +146,13 @@ push: target: "localhost:5000/todoapp"
 
 Notice that both files have the same `package todoapp` declared on the first line. This is crucial to inform CUE that they are to be loaded and evaluated together in the same context.
 
-Our `local.cue` file now holds resources specific to our `local` environment. Also notice that we are defining a concrete value for the `target` key here. The entire `push` object is defined in both files and CUE will merge the values found among our 2 files.
+Our `local.cue` file now holds resources specific to our `local` environment. Also notice that we are defining a concrete value for the `target` key here. The entire `push` object is defined in both files and CUE will merge the values into a single struct with key:value pairs that are _complete_ with concrete values.
 
 ### Create an Environment
 
 Before we can deploy the plan, we need to define an environment which is the specific plan to execute, as well as the context from which inputs are pulled and to which state is stored.
 
-In this example we will deploy the app to our local docker engine so let&rsquo;s create a `local` environment:
+For our each environment we need to tell Dagger what CUE files to load, so let&rsquo;s create a `local` environment:
 
 ```shell
 dagger new local -p ./plans/local
@@ -161,7 +167,7 @@ local ...todoapp/.dagger/env/local
 
 ### Define Input Values per Environment
 
-Our Dagger plan includes a number of references to `dagger.#Input` which inform the Dagger engine that the concrete value should be pulled from inputs. While some things such as the registry target we saw above can be expressed purely in CUE, others such as directories, secrets, and sockets are required to be explicitly defined as _inputs_ to ensure security. If Dagger allowed such things to be stated in CUE, the entire package system could become a source of attacks.
+Our Dagger plan includes a number of references to `dagger.#Input` which inform the Dagger engine that the concrete value should be pulled from inputs. While some things such as the registry target we saw above can be expressed purely in CUE, others such as directories, secrets, and sockets are required to be explicitly defined as _inputs_ to protect against malicious code  being injected by third-party packages. If Dagger allowed such things to be stated in CUE, the entire package system could become a source of attacks.
 
 List the inputs Dagger is aware of according to our plan:
 
@@ -187,6 +193,8 @@ dagger -e local input dir app.source ./
 
 ```
 
+This defines the `todoapp.socket` as a `socket` input type, and the `app.source` input as a `dir` input type.
+
 Now let's replay the `dagger input list` command:
 
 ```bash
@@ -199,7 +207,7 @@ Notice that Dagger now reports that both inputs have been set.
 
 ### Deploy the Appplication
 
-With our plan in place, our environment set, and our inputs defined we can deploy the application:
+With our plan in place, our environment set, and our inputs defined, we can deploy the application as simply as:
 
 ```bash
 dagger up
