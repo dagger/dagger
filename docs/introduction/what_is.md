@@ -6,81 +6,34 @@ sidebar_label: What is Dagger?
 
 # What is Dagger?
 
-Dagger is a modular application delivery platform. It automates the delivery of applications to the cloud, by integrating your existing tools and infrastructure instead
-of replacing them.
+Dagger is a universal deployment engine. Write your deployment logic once, run it securely from anywhere.
 
-What if you didn't have to choose between the simplicity of Heroku and the flexibility of a custom stack?
-With Dagger, you get the best of both worlds: a programmable backend that adapts to your existing stack; and a simple frontend
-that standardizes the deployment experience.
+Key features:
+
+* Escape YAML hell. Thanks to the Cue language, writing configuration is as fun and productive as writing code.
+* A powerful declarative execution engine to automate even the most complex and custom logic
+* Static type checking so you can catch configuration errors before running that huge deployment
+* Built-in caching and parallelism for maximum scale and performance
+* An ecosystem of reusable packages to save you time and share your expertise with the community
+* Avoid CI lock-in: the same Dagger configuration can be used in any CI, or with no CI at all
+* Rapid local development: test and run everything locally, in seconds.
+* Deploy from CI or the laptop: no more duplicating your CI config in a Makefile just so you can perform a task locally.
+* Native support for encrypted secrets
+* Just-in-time artifacts: fetch, transform and produce any artifact on the fly: source repositories, container images, binaries, database exports, ML models...
+
+Using Dagger, teams with different deployment workflows can more easily collaborate and deploy each other's software,
+without being forced to change their tools.
+
+Typical use cases:
+
+* On-demand staging environments for reviewing code changes
+* Manage CICD across multiple repositories and CI runners, with one unified configuration
+* Iterate on infrastructure without disrupting development teams
+* Lock down access to the production cluster so that only authorized configurations are applied
+* Common ground between the PaaS, Kubernetes and Serverless siloes.
+* On-demand integration environments for testing complex changes spanning several teams
 
 ![Dagger_Website_Ship](https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png)
-
-## Programmable backend
-
-Dagger works by integrating all your tools and infrastructure into a unified graph - a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to be precise.
-
-Each node in your DAG represents an integration: for example a source repository, build script, artifact registry or deployment API. Each connection represents a flow of data between integrations: for example from source to build; from build to registry; etc.
-
-What makes Dagger special is how much of your existing stack it can integrate in the DAG (probably all of it); how much
-of your existing data flows it can manage (probably all of them); and how composable your DAG is (as much as regular software).
-
-### Integrations
-
-Each node in your DAG represents an integration. A crucial feature of Dagger is that it can integrate (almost) anything
-into the DAG. The more components in your stack can be modeled in your DAG, the more useful the DAG.
-
-A typical DAG may have the following integrations:
-
-* Remote data sources (http/tar, git, OCI)
-* Source control services: Git, Mercurial, SVN...
-* Command-line tools: anything that can be run in a container
-* Custom scripts: shell, python, ruby...
-* Cloud APIs: AWS, Google Cloud, Azure...
-* Infrastructure services: Kubernetes, Docker Swarm...
-* CICD systems: Gitlab Runner, Github Actions...
-
-### Data flows
-
-Each connection in your DAG represents a data flow between integrations. A crucial feature of Dagger is that it
-can orchestrate the flow of data between integrations *natively*, without requiring external infrastructure.
-
-This means integrations can be trivially connected to exchange the following types of data:
-
-* JSON-compatible values
-* Encrypted secrets: passwords, API tokens, cryptographic keys...
-* Artifacts: source repositories, container images, binaries, database exports, ML models...
-
-### Composition
-
-All Dagger integrations and data flows are configured with the revolutionary [CUE](https://cuelang.org) language.
-
-This allows for first-class composition. In other words, you can develop your DAG like you would develop any other software, including:
-
-* Publish and import reusable packages
-* Encapsulate low-level components in higher-level components, at will
-* Collaborate using industry-standard tools and workflows
-* Testing, debugging, dependency injection, etc.
-
-### Tying it all together
-
-The combination of Dagger's 3 key features - integration, data flows and composition - allows for powerful patterns to emerge:
-
-* Just-in-time artifacts. Since Dagger can receive source artifacts as input, run them through arbitrary integrations, and produce the final
-outputs, you no longer have to worry about storing and managing intermediary artifacts: Dagger's data layer does it automatically for you. Artifacts are produced on demand, when they are needed, and automatically cached for later re-use.
-
-* Gitops-ready. The state of your DAG is encoded as CUE files, and secrets are always encrypted. This you can always safely track your DAG
-in source control, and intregate it in a gitops workflow.
-
-## Simple, standardized frontend
-
-No matter how custom your delivery backend, developers can ignore the complexity and deploy with one simple command:
-
-```shell
-dagger up
-```
-
-This makes developers more productive, because they don't have to learn a new workflow every time their deployment
-system changes. It also frees the delivery team to make more ambitious and rapid changes, without fearing that they will slow down or break delivery.
 
 ## Dagger is alpha software
 
