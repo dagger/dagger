@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/containerd/console"
-	"github.com/jaguilar/vt100"
 	"github.com/moby/buildkit/client"
 	"github.com/morikuni/aec"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/units"
+	"github.com/tonistiigi/vt100"
 	"golang.org/x/time/rate"
 )
 

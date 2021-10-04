@@ -3,8 +3,6 @@ package environment
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -184,10 +182,6 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 		ctx, span := tr.Start(ctx, fmt.Sprintf("compute: %s", t.Path().String()))
 		defer span.End()
 
-		start := time.Now()
-		lg.
-			Info().
-			Msg("computing")
 		for _, dep := range t.Dependencies() {
 			lg.
 				Debug().
@@ -203,19 +197,6 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 				attribute.String("error", err.Error()),
 			))
 
-			// FIXME: this should use errdefs.IsCanceled(err)
-			if strings.Contains(err.Error(), "context canceled") {
-				lg.
-					Error().
-					Dur("duration", time.Since(start)).
-					Msg("canceled")
-				return err
-			}
-			lg.
-				Error().
-				Dur("duration", time.Since(start)).
-				Err(err).
-				Msg("failed")
 			return err
 		}
 
@@ -241,10 +222,6 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 			return err
 		}
 
-		lg.
-			Info().
-			Dur("duration", time.Since(start)).
-			Msg("completed")
 		return nil
 	})
 }

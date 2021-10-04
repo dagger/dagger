@@ -21,8 +21,8 @@ func New() zerolog.Logger {
 		Timestamp().
 		Logger()
 
-	if prettyLogs() {
-		logger = logger.Output(&Console{Out: os.Stderr})
+	if !jsonLogs() {
+		logger = logger.Output(&PlainOutput{Out: os.Stderr})
 	} else {
 		logger = logger.With().Timestamp().Caller().Logger()
 	}
@@ -35,14 +35,16 @@ func New() zerolog.Logger {
 	return logger.Level(lvl)
 }
 
-func prettyLogs() bool {
+func jsonLogs() bool {
 	switch f := viper.GetString("log-format"); f {
 	case "json":
-		return false
-	case "pretty":
 		return true
-	case "":
-		return term.IsTerminal(int(os.Stdout.Fd()))
+	case "plain":
+		return false
+	case "tty":
+		return false
+	case "auto":
+		return !term.IsTerminal(int(os.Stdout.Fd()))
 	default:
 		fmt.Fprintf(os.Stderr, "invalid --log-format %q\n", f)
 		os.Exit(1)

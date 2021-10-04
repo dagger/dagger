@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"hash/adler32"
 	"io"
+	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mitchellh/colorstring"
@@ -19,38 +19,29 @@ var colorize = colorstring.Colorize{
 	Reset:  true,
 }
 
-type Console struct {
-	Out       io.Writer
-	maxLength int
-	l         sync.Mutex
+type PlainOutput struct {
+	Out io.Writer
 }
 
-func (c *Console) Write(p []byte) (n int, err error) {
+func (c *PlainOutput) Write(p []byte) (int, error) {
 	event := map[string]interface{}{}
 	d := json.NewDecoder(bytes.NewReader(p))
 	if err := d.Decode(&event); err != nil {
-		return n, fmt.Errorf("cannot decode event: %s", err)
+		return 0, fmt.Errorf("cannot decode event: %s", err)
 	}
 
-	source := c.parseSource(event)
+	source := parseSource(event)
 
-	c.l.Lock()
-	if len(source) > c.maxLength {
-		c.maxLength = len(source)
-	}
-	c.l.Unlock()
-
-	return fmt.Fprintln(c.Out,
-		colorize.Color(fmt.Sprintf("%s %s %s%s%s",
-			c.formatTimestamp(event),
-			c.formatLevel(event),
-			c.formatSource(source),
-			c.formatMessage(event),
-			c.formatFields(event),
-		)))
+	return fmt.Fprintln(c.Out, colorize.Color(fmt.Sprintf("%s %s %s%s%s",
+		formatTimestamp(event),
+		formatLevel(event),
+		formatSource(source),
+		formatMessage(event),
+		formatFields(event),
+	)))
 }
 
-func (c *Console) formatLevel(event map[string]interface{}) string {
+func formatLevel(event map[string]interface{}) string {
 	level := zerolog.DebugLevel
 	if l, ok := event[zerolog.LevelFieldName].(string); ok {
 		level, _ = zerolog.ParseLevel(l)
@@ -76,7 +67,7 @@ func (c *Console) formatLevel(event map[string]interface{}) string {
 	}
 }
 
-func (c *Console) formatTimestamp(event map[string]interface{}) string {
+func formatTimestamp(event map[string]interface{}) string {
 	ts, ok := event[zerolog.TimestampFieldName].(string)
 	if !ok {
 		return "???"
@@ -89,7 +80,7 @@ func (c *Console) formatTimestamp(event map[string]interface{}) string {
 	return fmt.Sprintf("[dark_gray]%s[reset]", t.Format(time.Kitchen))
 }
 
-func (c *Console) formatMessage(event map[string]interface{}) string {
+func formatMessage(event map[string]interface{}) string {
 	message, ok := event[zerolog.MessageFieldName].(string)
 	if !ok {
 		return ""
@@ -125,7 +116,7 @@ func (c *Console) formatMessage(event map[string]interface{}) string {
 	}
 }
 
-func (c *Console) parseSource(event map[string]interface{}) string {
+func parseSource(event map[string]interface{}) string {
 	source := "system"
 	if task, ok := event["component"].(string); ok && task != "" {
 		source = task
@@ -133,14 +124,14 @@ func (c *Console) parseSource(event map[string]interface{}) string {
 	return source
 }
 
-func (c *Console) formatSource(source string) string {
+func formatSource(source string) string {
 	return fmt.Sprintf("[%s]%s | [reset]",
 		hashColor(source),
 		source,
 	)
 }
 
-func (c *Console) formatFields(entry map[string]interface{}) string {
+func formatFields(entry map[string]interface{}) string {
 	// these are the fields we don't want to expose, either because they're
 	// already part of the Log structure or because they're internal
 	fieldSkipList := map[string]struct{}{
@@ -149,7 +140,9 @@ func (c *Console) formatFields(entry map[string]interface{}) string {
 		zerolog.TimestampFieldName: {},
 		zerolog.ErrorFieldName:     {},
 		zerolog.CallerFieldName:    {},
+		"environment":              {},
 		"component":                {},
+		"state":                    {},
 	}
 
 	fields := []string{}
@@ -180,7 +173,10 @@ func (c *Console) formatFields(entry map[string]interface{}) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("    [dim]%s[reset]", strings.Join(fields, " "))
+	sort.SliceStable(fields, func(i, j int) bool {
+		return fields[i] < fields[j]
+	})
+	return fmt.Sprintf("    [bold]%s[reset]", strings.Join(fields, " "))
 }
 
 // hashColor returns a consistent color for a given string
@@ -195,8 +191,6 @@ func hashColor(text string) string {
 		"light_yellow",
 		"cyan",
 		"light_cyan",
-		"red",
-		"light_red",
 	}
 	h := adler32.Checksum([]byte(text))
 	return colors[int(h)%len(colors)]

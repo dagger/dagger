@@ -15,8 +15,8 @@ common_setup() {
     DAGGER_PROJECT="$UNIVERSE"
     export DAGGER_PROJECT
 
-    # Force pretty printing for error reporting
-    DAGGER_LOG_FORMAT="pretty"
+    # Force plain printing for error reporting
+    DAGGER_LOG_FORMAT="plain"
     export DAGGER_LOG_FORMAT
 
     # Sandbox project.
