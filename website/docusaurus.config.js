@@ -51,6 +51,7 @@ module.exports = {
           className: "button",
         },
       ],
+      hideOnScroll: true
     },
     algolia: {
       apiKey: "559dcddb4378b889baa48352394616ec",
