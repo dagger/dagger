@@ -29,18 +29,47 @@ import (
 	authHeader: dagger.#Input & {*null | dagger.#Secret}
 
 	#up: [
-		op.#FetchGit & {
-			"remote": remote
-			"ref":    ref
-			if (keepGitDir) {
-				keepGitDir: true
+		op.#Load & {
+			from: alpine.#Image & {
+				package: git: "=~2.30"
 			}
-			if (authToken != null) {
-				"authToken": authToken
-			}
-			if (authHeader != null) {
-				"authHeader": authHeader
-			}
+		},
+		op.#Copy & {
+			from: [
+				op.#FetchGit & {
+					"remote": remote
+					"ref":    ref
+					if (keepGitDir) {
+						keepGitDir: true
+					}
+					if (authToken != null) {
+						"authToken": authToken
+					}
+					if (authHeader != null) {
+						"authHeader": authHeader
+					}
+				},
+			]
+			dest: "/repository"
+		},
+		op.#Exec & {
+			dir: "/repository"
+			args: [
+				"/bin/sh",
+				"--noprofile",
+				"--norc",
+				"-eo",
+				"pipefail",
+				"-c",
+				#"""
+					code=$(git rev-parse --is-inside-work-tree 2>&1)
+					([ "$code" = "true" ] && git remote set-url origin "$REMOTE") || true
+					"""#,
+			]
+			env: REMOTE: remote
+		},
+		op.#Subdir & {
+			dir: "/repository"
 		},
 		if subdir != null {
 			op.#Subdir & {

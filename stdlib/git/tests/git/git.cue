@@ -96,3 +96,16 @@ TestPrivateRepository: os.#Container & {
 		[ -d .git ]
 		"""
 }
+
+TestReferenceFormat: os.#Container & {
+	image: alpine.#Image & {
+		package: bash: "=5.1.0-r0"
+		package: git:  true
+	}
+	mount: "/repo1": from: privateRepo
+	dir: "/repo1"
+	command: """
+		URL="$(git ls-remote --get-url origin)"
+		[[ "$URL" = "https://github.com/dagger/dagger.git" ]]
+		"""
+}
