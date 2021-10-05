@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 slug: /1005/what-is-cue/
 sidebar_label: What is Cue?
 ---
