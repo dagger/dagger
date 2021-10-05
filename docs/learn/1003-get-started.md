@@ -6,7 +6,7 @@ slug: /1003/get-started/
 
 In this tutorial, you will learn the basics of Dagger by building a Dagger project from scratch. This simple project deploys a [React](https://reactjs.org/) application to your local machine via Docker. In later tutorials, you will learn how to configure Dagger to deploy to remote infrastructure such as EKS and GKE.
 
-This tutorial does involve writing CUE, so if you haven&rsquo;t already, be sure to read [What is CUE?](../introduction/1005-what_is_cue.md)
+This tutorial does involve writing CUE, so if you haven&rsquo;t already, be sure to read [What is CUE?](./1005-what_is_cue.md)
 
 In this tutorial we will learn:
 

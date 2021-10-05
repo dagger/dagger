@@ -11,7 +11,7 @@ and use it to deploy a React application to two locations in parallel:
 a dedicated [Amazon S3](https://wikipedia.org/wiki/Amazon_S3) bucket, and a
 [Netlify](https://en.wikipedia.org/wiki/Netlify) site.
 
-You will need to understand the [CUE language](https://cuelang.org), so be sure to read [What Is Cue?](../introduction/1005-what_is_cue.md) if you haven&rsquo;t already.
+You will need to understand the [CUE language](https://cuelang.org), so be sure to read [What Is Cue?](./1005-what_is_cue.md) if you haven&rsquo;t already.
 
 In technical terms, our plan is a [CUE Package](https://cuelang.org/docs/concepts/packages/#packages). This tutorial will develop a new CUE package from scratch for our plan, but you can use any Cue package as a plan.
 
