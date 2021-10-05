@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   lint:
@@ -97,7 +97,13 @@ jobs:
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
 
+      - name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v1
+
       - name: Integration test
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=integration"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=integration"
         run: |
           env
           make core-integration
@@ -121,7 +127,7 @@ jobs:
           --health-start-period 5s
           --health-timeout 5s
           --health-interval 5s
-          --health-retries 10 
+          --health-retries 10
 
     steps:
       - name: Check out
@@ -151,11 +157,18 @@ jobs:
           aws --endpoint-url=http://localhost:4566 s3 mb s3://dagger-ci
           aws --endpoint-url=http://localhost:4566 ecr create-repository --repository-name dagger-ci
 
+      - name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v1
+
       - name: Universe Test
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=universe"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=universe"
         run: |
           make universe-test
 
   website:
+    name: Website
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -203,7 +216,7 @@ jobs:
           --health-start-period 5s
           --health-timeout 5s
           --health-interval 5s
-          --health-retries 10 
+          --health-retries 10
 
     steps:
       - name: Check out
@@ -252,6 +265,12 @@ jobs:
           mkdir -p ~/.config/dagger
           echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
 
+      - name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v1
+
       - name: Documentation Test
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=docs"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=docs"
         run: |
           make doc-test
