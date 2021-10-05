@@ -9,7 +9,7 @@ import (
 
 // Build the source code using Yarn
 app: yarn.#Package & {
-	"source": dagger.#Artifact & dagger.#Input
+	source: dagger.#Artifact & dagger.#Input
 }
 
 // package the static HTML from yarn into a Docker image
