@@ -80,70 +80,15 @@ We will now create the following files:
 
 Create the file `plans/todoapp.cue` with the following content:
 
-```cue
-package todoapp
-
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/os"
-  "alpha.dagger.io/docker"
-  "alpha.dagger.io/js/yarn"
-)
-
-// Build the source code using Yarn
-app: yarn.#Package & {
-  "source": dagger.#Artifact & dagger.#Input
-}
-
-// package the static HTML from yarn into a Docker image
-image: os.#Container & {
-  image: docker.#Pull & {
-    from: "nginx"
-  }
-
-  // app.build references our app key above
-  // which infers a dependency that Dagger
-  // uses to generate the DAG
-  copy: "/usr/share/nginx/html": from: app.build
-}
-
-// push the image to a registry
-push: docker.#Push & {
-  // leave target blank here so that different
-  // environments can push to different registries
-  target: string 
-
-  // the source of our push resource
-  // is the image resource we declared above
-  source: image
-}
-
+```cue file=./tests/getting-started/plans/todoapp.cue
 ```
 
 This file will define the resources and relationships between them that are common across _all environments_. For example, here we are deploying to our local Docker engine in our `local` environment, but for staging or production as examples, we would deploy the same image to some other container orchestration system such as Kubernetes hosted somewhere out there among the various cloud providers.
 
 Create the file `plans/local/local.cue` with the following content:
 
-```cue
-package todoapp
+```cue file=./tests/getting-started/plans/local/local.cue
 
-import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
-)
-
-// run our todoapp in our local Docker engine
-run: docker.#Run & {
-  ref: push.ref
-  name: "todoapp"
-  ports: ["8080:80"]
-  socket: dagger.#Stream & dagger.#Input
-}
-
-// push to our local registry
-// this concrete value satisfies the string constraint
-// we defined in the previous file
-push: target: "localhost:5000/todoapp"
 ```
 
 Notice that both files have the same `package todoapp` declared on the first line. This is crucial to inform CUE that they are to be loaded and evaluated together in the same context.
