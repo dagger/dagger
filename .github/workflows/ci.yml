@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   lint:
@@ -127,7 +127,7 @@ jobs:
           --health-start-period 5s
           --health-timeout 5s
           --health-interval 5s
-          --health-retries 10 
+          --health-retries 10
 
     steps:
       - name: Check out
@@ -215,7 +215,7 @@ jobs:
           --health-start-period 5s
           --health-timeout 5s
           --health-interval 5s
-          --health-retries 10 
+          --health-retries 10
 
     steps:
       - name: Check out
