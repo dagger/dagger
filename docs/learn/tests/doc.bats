@@ -11,21 +11,22 @@ setup() {
 @test "doc-1003-get-started" {
   setup_example_sandbox
 
-  # Set examples private key
-  "$DAGGER_SANDBOX"/import-tutorial-key.sh
+  # Follow tutorial
+  mkdir -p "$DAGGER_SANDBOX"/plans/local
+  cp "$DAGGER_PROJECT"/getting-started/plans/todoapp.cue "$DAGGER_SANDBOX"/plans/todoapp.cue
+  cp "$DAGGER_PROJECT"/getting-started/plans/local/local.cue "$DAGGER_SANDBOX"/plans/local/local.cue
+  
+  dagger --project "$DAGGER_SANDBOX" new 'local' -p "$DAGGER_SANDBOX"/plans/local
+  dagger --project "$DAGGER_SANDBOX" -e 'local' input socket run.socket /var/run/docker.sock
+  dagger --project "$DAGGER_SANDBOX" -e 'local' input dir app.source "$DAGGER_SANDBOX"
 
-  # Collect url
-  dagger --project "$DAGGER_SANDBOX" up
-  url=$(dagger --project "$DAGGER_SANDBOX" query -f text url)
+  dagger --project "$DAGGER_SANDBOX" -e 'local' up
 
-  # More commands
-  dagger --project "$DAGGER_SANDBOX" list
-  ls -l "$DAGGER_SANDBOX"/s3
-  dagger --project "$DAGGER_SANDBOX" input list
-
-  # Check output
-  run curl "$url"
-  assert_output --partial "My Todo app"
+  until docker inspect --format "{{json .State.Status }}" todoapp | grep -m 1 "running"; do sleep 1 ; done
+  run curl -f -LI http://localhost:8080
+  assert_output --partial '200 OK'
+  docker stop todoapp && docker rm todoapp
+  docker stop registry && docker rm registry
 }
 
 @test "doc-1004-first-env" {
