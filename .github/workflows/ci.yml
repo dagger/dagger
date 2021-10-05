@@ -102,8 +102,8 @@ jobs:
 
       - name: Integration test
         env:
-          DAGGER_CACHE_TO: "type=gha,scope=integration"
-          DAGGER_CACHE_FROM: "type=gha,scope=integration"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=integration"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=integration"
         run: |
           env
           make core-integration
@@ -162,12 +162,13 @@ jobs:
 
       - name: Universe Test
         env:
-          DAGGER_CACHE_TO: "type=gha,scope=universe"
-          DAGGER_CACHE_FROM: "type=gha,scope=universe"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=universe"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=universe"
         run: |
           make universe-test
 
   website:
+    name: Website
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -269,7 +270,7 @@ jobs:
 
       - name: Documentation Test
         env:
-          DAGGER_CACHE_TO: "type=gha,scope=docs"
-          DAGGER_CACHE_FROM: "type=gha,scope=docs"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=docs"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=docs"
         run: |
           make doc-test
