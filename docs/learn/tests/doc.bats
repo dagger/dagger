@@ -20,8 +20,6 @@ setup() {
   dagger --project "$DAGGER_SANDBOX" -e 'local' input socket run.socket /var/run/docker.sock
   dagger --project "$DAGGER_SANDBOX" -e 'local' input dir app.source "$DAGGER_SANDBOX"
 
-  docker run -d -p 5000:5000 --name registry registry:2
-
   dagger --project "$DAGGER_SANDBOX" -e 'local' up
 
   until docker inspect --format "{{json .State.Status }}" todoapp | grep -m 1 "running"; do sleep 1 ; done
