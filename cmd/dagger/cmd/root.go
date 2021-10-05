@@ -24,7 +24,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().String("log-format", "", "Log format (json, pretty). Defaults to json if the terminal is not a tty")
+	rootCmd.PersistentFlags().String("log-format", "auto", "Log format (auto, plain, tty, json)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
 
 	rootCmd.PersistentFlags().Bool("no-cache", false, "Disable caching")

@@ -7,7 +7,7 @@ common_setup() {
     DAGGER="${DAGGER_BINARY:-$TESTDIR/../cmd/dagger/dagger}"
     export DAGGER
 
-    DAGGER_LOG_FORMAT="pretty"
+    DAGGER_LOG_FORMAT="plain"
     export DAGGER_LOG_FORMAT
 
     DAGGER_PROJECT="$(mktemp -d -t dagger-project-XXXXXX)"
@@ -28,7 +28,7 @@ dagger_new_with_plan() {
 
 dagger_new_with_env() {
     local sourcePlan="$1"
-    
+
     "$DAGGER" init --project "$DAGGER_PROJECT"
     rsync -av "$sourcePlan"/ "$DAGGER_PROJECT"
 }

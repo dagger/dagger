@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	"cuelang.org/go/cue"
 	"github.com/docker/distribution/reference"
@@ -25,6 +26,15 @@ import (
 
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/solver"
+)
+
+type State string
+
+const (
+	StateComputing = State("computing")
+	StateCanceled  = State("canceled")
+	StateFailed    = State("failed")
+	StateCompleted = State("completed")
 )
 
 // An execution pipeline
@@ -146,6 +156,49 @@ func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
 }
 
 func (p *Pipeline) Run(ctx context.Context) error {
+	lg := log.
+		Ctx(ctx).
+		With().
+		Str("component", p.name).
+		Logger()
+
+	start := time.Now()
+
+	lg.
+		Info().
+		Str("state", string(StateComputing)).
+		Msg(string(StateComputing))
+
+	err := p.run(ctx)
+
+	if err != nil {
+		// FIXME: this should use errdefs.IsCanceled(err)
+		if strings.Contains(err.Error(), "context canceled") {
+			lg.
+				Error().
+				Dur("duration", time.Since(start)).
+				Str("state", string(StateCanceled)).
+				Msg(string(StateCanceled))
+		} else {
+			lg.
+				Error().
+				Dur("duration", time.Since(start)).
+				Err(err).
+				Str("state", string(StateFailed)).
+				Msg(string(StateFailed))
+		}
+		return err
+	}
+
+	lg.
+		Info().
+		Dur("duration", time.Since(start)).
+		Str("state", string(StateCompleted)).
+		Msg(string(StateCompleted))
+	return nil
+}
+
+func (p *Pipeline) run(ctx context.Context) error {
 	ops, err := ops(p.code)
 	if err != nil {
 		return err

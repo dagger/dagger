@@ -12,8 +12,8 @@ common_setup() {
     DAGGER_PROJECT="$UNIVERSE"
     export DAGGER_PROJECT
 
-    # Force pretty printing for error reporting
-    DAGGER_LOG_FORMAT="pretty"
+    # Force plain printing for error reporting
+    DAGGER_LOG_FORMAT="plain"
     export DAGGER_LOG_FORMAT
 
     # Sandbox project.
@@ -97,11 +97,11 @@ setup_localstack() {
     if [ "$(curl -s http://localhost:4566)" = '{"status": "running"}' ] && \
         [ "$GITHUB_ACTIONS" != "true" ]; then
         echo "Cleanup local LOCALSTACK"
-        
+
         # S3 buckets cleanup
         aws --endpoint-url=http://localhost:4566 s3 rm s3://dagger-ci || true
         aws --endpoint-url=http://localhost:4566 s3 mb s3://dagger-ci || true
-        
+
         # ECR repositories cleanup
         aws --endpoint-url=http://localhost:4566 ecr delete-repository --repository-name dagger-ci || true
         aws --endpoint-url=http://localhost:4566 ecr create-repository --repository-name dagger-ci || true

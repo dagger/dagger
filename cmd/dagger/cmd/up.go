@@ -31,7 +31,23 @@ var upCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		lg := logger.New()
+		var (
+			lg  = logger.New()
+			tty *logger.TTYOutput
+			err error
+		)
+
+		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
+			tty, err = logger.NewTTYOutput(os.Stderr)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to initialize TTY logger")
+			}
+			tty.Start()
+			defer tty.Stop()
+
+			lg = lg.Output(tty)
+		}
+
 		ctx := lg.WithContext(cmd.Context())
 
 		project := common.CurrentProject(ctx)
@@ -45,7 +61,7 @@ var upCmd = &cobra.Command{
 
 		cl := common.NewClient(ctx)
 
-		err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
 			// check that all inputs are set
 			if err := checkInputs(ctx, env); err != nil {
 				return err
@@ -60,6 +76,11 @@ var upCmd = &cobra.Command{
 				return err
 			}
 
+			// FIXME: `ListOutput` is printing to Stdout directly which messes
+			// up the TTY logger.
+			if tty != nil {
+				tty.Stop()
+			}
 			return output.ListOutputs(ctx, env, term.IsTerminal(int(os.Stdout.Fd())))
 		})
 
