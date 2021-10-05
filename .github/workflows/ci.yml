@@ -102,8 +102,8 @@ jobs:
 
       - name: Integration test
         env:
-          DAGGER_CACHE_TO: "type=gha,mode=max,scope=integration"
-          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=integration"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-integration"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-integration"
         run: |
           env
           make core-integration
@@ -162,8 +162,8 @@ jobs:
 
       - name: Universe Test
         env:
-          DAGGER_CACHE_TO: "type=gha,mode=max,scope=universe"
-          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=universe"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
         run: |
           make universe-test
 
@@ -270,7 +270,7 @@ jobs:
 
       - name: Documentation Test
         env:
-          DAGGER_CACHE_TO: "type=gha,mode=max,scope=docs"
-          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=docs"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-docs"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-docs"
         run: |
           make doc-test
