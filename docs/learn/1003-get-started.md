@@ -81,6 +81,7 @@ We will now create the following files:
 Create the file `plans/todoapp.cue` with the following content:
 
 ```cue file=./tests/getting-started/plans/todoapp.cue
+
 ```
 
 This file will define the resources and relationships between them that are common across _all environments_. For example, here we are deploying to our local Docker engine in our `local` environment, but for staging or production as examples, we would deploy the same image to some other container orchestration system such as Kubernetes hosted somewhere out there among the various cloud providers.
@@ -125,9 +126,9 @@ dagger -e local input list
 You should see the following output:
 
 ```bash
-Input       Value             Set by user  Description
-app.source  dagger.#Artifact  false        Application source code
-run.socket  struct            false        Mount local docker socket
+Input         Value             Set by user  Description
+app.source    dagger.#Artifact  false        Application source code
+dockerSocket  struct            false        Mount local docker socket
 ```
 
 Notice that `Set by user` is _false_ for both, because we have not yet provided Dagger with those values.
@@ -135,19 +136,19 @@ Notice that `Set by user` is _false_ for both, because we have not yet provided 
 Let&rsquo;s provide them now:
 
 ```shell
-dagger -e local input socket run.socket /var/run/docker.sock
+dagger -e local input socket dockerSocket /var/run/docker.sock
 dagger -e local input dir app.source ./
 
 ```
 
-This defines the `run.socket` as a `socket` input type, and the `app.source` input as a `dir` input type.
+This defines the `dockerSocket` as a `socket` input type, and the `app.source` input as a `dir` input type.
 
 Now let&rsquo;s replay the `dagger input list` command:
 
 ```bash
-Input       Value             Set by user  Description
-app.source  dagger.#Artifact  true         Application source code
-run.socket  struct            true         Mount local docker socket
+Input         Value             Set by user  Description
+app.source    dagger.#Artifact  true         Application source code
+dockerSocket  struct            true         Mount local docker socket
 ```
 
 Notice that Dagger now reports that both inputs have been set.
