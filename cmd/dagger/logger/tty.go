@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/containerd/console"
 	"github.com/morikuni/aec"
+	"github.com/tonistiigi/vt100"
 	"go.dagger.io/dagger/environment"
 )
 
@@ -187,26 +189,13 @@ func (c *TTYOutput) print() {
 	}
 	fmt.Fprint(c.cons, b.ANSI)
 
-	runningGroups := 0
-	for _, message := range c.logs.Messages {
-		group := message.Group
-		if group == nil || group.State != environment.StateComputing {
-			continue
-		}
-		runningGroups++
-	}
-
-	linesPerGroup := 5
-	if freeLines := (height - len(c.logs.Messages)); freeLines > 0 && runningGroups > 0 {
-		linesPerGroup = (freeLines - 2) / runningGroups
-	}
-
+	linesPerGroup := c.linesPerGroup(width, height)
 	lineCount := 0
 	for _, message := range c.logs.Messages {
 		if group := message.Group; group != nil {
 			lineCount += c.printGroup(group, width, linesPerGroup)
 		} else {
-			lineCount += c.printLine(message.Event, width)
+			lineCount += c.printLine(c.cons, message.Event, width)
 		}
 	}
 
@@ -220,18 +209,38 @@ func (c *TTYOutput) print() {
 	c.lineCount = lineCount
 }
 
-func (c *TTYOutput) printLine(event Event, width int) int {
+func (c *TTYOutput) linesPerGroup(width, height int) int {
+	usedLines := 0
+	for _, message := range c.logs.Messages {
+		if group := message.Group; group != nil {
+			usedLines++
+			continue
+		}
+		usedLines += c.printLine(io.Discard, message.Event, width)
+	}
+
+	runningGroups := 0
+	for _, message := range c.logs.Messages {
+		if group := message.Group; group != nil && group.State == environment.StateComputing {
+			runningGroups++
+		}
+	}
+
+	linesPerGroup := 5
+	if freeLines := (height - usedLines); freeLines > 0 && runningGroups > 0 {
+		linesPerGroup = (freeLines - 2) / runningGroups
+	}
+
+	return linesPerGroup
+}
+
+func (c *TTYOutput) printLine(w io.Writer, event Event, width int) int {
 	message := colorize.Color(fmt.Sprintf("%s %s %s%s",
 		formatTimestamp(event),
 		formatLevel(event),
 		formatMessage(event),
 		formatFields(event),
 	))
-
-	// trim
-	for utf8.RuneCountInString(message) > width {
-		message = message[0:len(message)-4] + "…"
-	}
 
 	// pad
 	if delta := width - utf8.RuneCountInString(message); delta > 0 {
@@ -240,9 +249,11 @@ func (c *TTYOutput) printLine(event Event, width int) int {
 	message += "\n"
 
 	// print
-	fmt.Fprint(c.cons, message)
+	fmt.Fprint(w, message)
 
-	return 1
+	t := vt100.NewVT100(100, width)
+	t.Write([]byte(message))
+	return t.UsedHeight()
 }
 
 func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
@@ -294,23 +305,26 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	fmt.Fprint(c.cons, out)
 	lineCount++
 
-	if group.State == environment.StateCompleted {
-		// for completed tasks, don't show any logs
-		return lineCount
-	}
-
-	events := group.Events
-
-	if group.State == environment.StateComputing {
+	printEvents := []Event{}
+	switch group.State {
+	case environment.StateComputing:
+		printEvents = group.Events
 		// for computing tasks, show only last N
-		if len(events) > maxLines {
-			events = events[len(events)-maxLines:]
+		if len(printEvents) > maxLines {
+			printEvents = printEvents[len(printEvents)-maxLines:]
 		}
+	case environment.StateCanceled:
+		// for completed tasks, don't show any logs
+		printEvents = []Event{}
+	case environment.StateFailed:
+		// for failed, show all logs
+		printEvents = group.Events
+	case environment.StateCompleted:
+		// for completed tasks, don't show any logs
+		printEvents = []Event{}
 	}
 
-	// for everything else (error, canceled), show all logs
-
-	for _, event := range events {
+	for _, event := range printEvents {
 		lineCount += c.printGroupLine(event, width)
 	}
 
