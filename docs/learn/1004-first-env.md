@@ -92,7 +92,7 @@ Otherwise, don't worry: a Cue module is simply a directory with one or more Cue 
 This guide will use the same directory as the root of the Dagger project and the Cue module, but you can create your Cue module anywhere inside the Dagger project. In general, you won't have to worry about it at all. You will initialize a dagger project with the following command.
 
 ```shell
-dagger init # Optional, already present in `todoapp`
+dagger init
 ```
 
 > In our case, `todoapp` already contains a `.dagger` directory, so this step is optional.

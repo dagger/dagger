@@ -108,7 +108,13 @@ This defines:
 
 ##### 1. Create a new environment
 
-Now that the Cue package is ready, let's create an environment to run it:
+Let's create a project:
+
+```shell
+dagger init
+```
+
+Let's create an environment to run it:
 
 ```shell
 dagger new 'cloudformation' -p ./cloudformation

@@ -170,6 +170,7 @@ push.ref               "localhost:5000/todoapp:latest@sha256:<hash>"  Image ref
 push.digest            "sha256:<hash>"                                Image digest
 run.ref                "localhost:5000/todoapp:latest@sha256:<hash>"  Image reference (e.g: nginx:alpine)
 run.run.env.IMAGE_REF  "localhost:5000/todoapp:latest@sha256:<hash>"  -
+appURL                 "http://localhost:8080/"                       Application URL
 ```
 
 Congratulations! You&rsquo;ve deployed your first Dagger plan! You can now [view the todo app](http://localhost:8080) in your browser!

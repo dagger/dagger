@@ -29,5 +29,5 @@ registry: docker.#Run & {
 // we defined in the previous file
 push: target: "localhost:5000/todoapp"
 
-// output the application URL
+// Application URL
 appURL: "http://localhost:8080/" & dagger.#Output
