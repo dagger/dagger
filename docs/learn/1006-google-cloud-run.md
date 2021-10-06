@@ -36,13 +36,20 @@ mkdir gcpcloudrun
 ### Create a basic plan
 
 ```cue file=./tests/gcpcloudrun/source.cue title="todoapp/cue.mod/gcpcloudrun/source.cue"
+
 ```
 
 ## Set up the environment
 
 ### Create a new environment
 
-Now that your Cue package is ready, let's create an environment to run it:
+Let's create a project:
+
+```shell
+dagger init
+```
+
+Let's create an environment to run it:
 
 ```shell
 dagger new 'gcpcloudrun' -p ./gcpcloudrun

@@ -17,7 +17,7 @@ setup() {
   cp "$DAGGER_PROJECT"/getting-started/plans/local/local.cue "$DAGGER_SANDBOX"/plans/local/local.cue
   
   dagger --project "$DAGGER_SANDBOX" new 'local' -p "$DAGGER_SANDBOX"/plans/local
-  dagger --project "$DAGGER_SANDBOX" -e 'local' input socket run.socket /var/run/docker.sock
+  dagger --project "$DAGGER_SANDBOX" -e 'local' input socket dockerSocket /var/run/docker.sock
   dagger --project "$DAGGER_SANDBOX" -e 'local' input dir app.source "$DAGGER_SANDBOX"
 
   dagger --project "$DAGGER_SANDBOX" -e 'local' up

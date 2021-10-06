@@ -40,6 +40,7 @@ setup_example_sandbox() {
   git -C "$DAGGER_SANDBOX" clone https://github.com/dagger/examples
 
   export DAGGER_SANDBOX="$DAGGER_SANDBOX"/examples/todoapp
+  dagger --project "$DAGGER_SANDBOX" init
 }
 
 

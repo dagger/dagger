@@ -151,6 +151,7 @@ kubectl delete -f k8s/
 Create a file named `todoapp.cue` and add the following configuration to it.
 
 ```cue file=tests/kube-kind/basic/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
 This defines a `todoApp` variable containing the Kubernetes objects used to create a todoapp deployment. It also
@@ -169,6 +170,7 @@ The following `config.cue` defines:
 - `kubeconfig` a generic value created to embed this string `kubeconfig` value
 
 ```cue file=tests/kube-kind/config.cue title="todoapp/kube/config.cue"
+
 ```
 
   </TabItem>
@@ -183,6 +185,7 @@ The below `config.cue` defines:
   using `alpha.dagger.io/gcp/gke`
 
 ```cue file=tests/kube-gcp/basic/config.cue title="todoapp/kube/config.cue"
+
 ```
 
   </TabItem>
@@ -197,6 +200,7 @@ The below `config.cue` defines:
   using `alpha.dagger.io/aws/eks`
 
 ```cue file=tests/kube-aws/basic/config.cue title="todoapp/kube/config.cue"
+
 ```
 
   </TabItem>
@@ -207,7 +211,13 @@ The below `config.cue` defines:
 
 #### Create a new environment
 
-Now that your Cue package is ready, let's create an environment to run it:
+Let's create a project:
+
+```shell
+dagger init
+```
+
+Let's create an environment to run it:
 
 ```shell
 dagger new 'kube' -p kube
@@ -390,6 +400,7 @@ Let's see how to deploy an image locally and push it to the local cluster
 - `kustomization`, apply kustomization to image
 
 ```cue file=tests/kube-kind/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
   </TabItem>
@@ -406,6 +417,7 @@ The two files have to be edited to do so.
 - definition of a new `gcrCreds` value that contains ecr credentials for remote image push to GCR
 
 ```cue file=tests/kube-gcp/deployment/config.cue title="todoapp/kube/config.cue"
+
 ```
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
@@ -417,6 +429,7 @@ The two files have to be edited to do so.
 - `kustomization`, apply kustomization to image
 
 ```cue file=tests/kube-gcp/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
   </TabItem>
@@ -432,6 +445,7 @@ The two files have to be edited to do so.
 - definition of a new `ecrCreds` value that contains ecr credentials for remote image push to ECR
 
 ```cue file=tests/kube-aws/deployment/config.cue title="todoapp/kube/config.cue"
+
 ```
 
 `kube/todoapp.cue`, on the other hand, faces these changes:
@@ -443,6 +457,7 @@ The two files have to be edited to do so.
 - `kustomization`, apply kustomization to image
 
 ```cue file=tests/kube-aws/deployment/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
   </TabItem>
@@ -542,11 +557,13 @@ repetition.
 Let's define a re-usable `#Deployment` definition in `kube/deployment.cue`.
 
 ```cue file=tests/kube-kind/cue-manifest/deployment.cue title="todoapp/kube/deployment.cue"
+
 ```
 
 Indeed, let's also define a re-usable `#Service` definition in `kube/service.cue`.
 
 ```cue file=tests/kube-kind/cue-manifest/service.cue title="todoapp/kube/service.cue"
+
 ```
 
 ### Generate Kubernetes manifest
@@ -557,6 +574,7 @@ without having boilerplate nor repetition.
 Create a new definition named `#AppManifest` that will generate the YAML in `kube/manifest.cue`.
 
 ```cue file=tests/kube-kind/cue-manifest/manifest.cue title="todoapp/kube/manifest.cue"
+
 ```
 
 ### Update manifest
@@ -580,18 +598,21 @@ values={[
   <TabItem value="kind">
 
 ```cue file=tests/kube-kind/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
   </TabItem>
   <TabItem value="gke">
 
 ```cue file=tests/kube-gcp/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
   </TabItem>
   <TabItem value="eks">
 
 ```cue file=tests/kube-aws/cue-manifest/todoapp.cue title="todoapp/kube/todoapp.cue"
+
 ```
 
   </TabItem>
