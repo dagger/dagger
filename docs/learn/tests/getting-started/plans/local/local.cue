@@ -20,14 +20,14 @@ run: docker.#Run & {
 registry: docker.#Run & {
 	ref:  "registry:2"
 	name: "registry-local"
-	ports: ["5000:5000"]
+	ports: ["5042:5000"]
 	socket: dockerSocket
 }
 
 // push to our local registry
 // this concrete value satisfies the string constraint
 // we defined in the previous file
-push: target: "localhost:5000/todoapp"
+push: target: "localhost:5042/todoapp"
 
 // Application URL
 appURL: "http://localhost:8080/" & dagger.#Output
