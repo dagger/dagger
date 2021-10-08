@@ -1,7 +1,5 @@
 ---
-sidebar_position: 1
 slug: /1005/what-is-cue/
-sidebar_label: What is Cue?
 ---
 
 # What is Cue?
@@ -123,27 +121,27 @@ import (
 )           // more on packages later
 
 #Person: {
-  
+
   // further constrain to a min and max length
-  Name: string & strings.MinRunes(3) & strings.MaxRunes(22) 
-  
-  // we don't need string because the regex handles that 
+  Name: string & strings.MinRunes(3) & strings.MaxRunes(22)
+
+  // we don't need string because the regex handles that
   Email: =~"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 
   // further constrain to realistic ages
-  Age?: int & >0 & <140 
+  Age?: int & >0 & <140
 
 }
 
 Bob: #Person & {
-  Name: "Bob Smith" 
+  Name: "Bob Smith"
   Email: "bob@smith.com"
   Age: 42
 }
 
 // output in YAML:
-Bob: 
-  Name: Bob Smith 
+Bob:
+  Name: Bob Smith
   Email: bob@smith.com
   Age: 42
 
@@ -161,15 +159,15 @@ import (
 )
 
 #Person: {
-  
+
   // further constrain to a min and max length
-  Name: string & strings.MinRunes(3) & strings.MaxRunes(22) 
-  
-  // we don't need string because the regex handles that 
+  Name: string & strings.MinRunes(3) & strings.MaxRunes(22)
+
+  // we don't need string because the regex handles that
   Email: =~"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 
   // further constrain to realistic ages
-  Age?: int & >0 & <140 
+  Age?: int & >0 & <140
 
   // Job is optional and a string
   Job?: string
@@ -181,7 +179,7 @@ import (
 
 
 Bob: #Engineer & {
-  Name: "Bob Smith" 
+  Name: "Bob Smith"
   Email: "bob@smith.com"
   Age: 42
   // Job: "Carptenter" // would result in an error
