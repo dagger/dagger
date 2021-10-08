@@ -28,7 +28,6 @@ module.exports = {
       items: [
         "learn/what_is_cue",
         "learn/get-started",
-        "learn/first-env",
         "learn/google-cloud-run",
         "learn/kubernetes",
         "learn/aws-cloudformation",
