@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 slug: /1001/install/
 ---
 
