@@ -892,6 +892,8 @@ func (p *Pipeline) SaveImage(ctx context.Context, op *compiler.Value, st llb.Sta
 		image []byte
 	)
 	go func() {
+		var err error
+
 		image, err = io.ReadAll(pipeR)
 		errCh <- err
 	}()
