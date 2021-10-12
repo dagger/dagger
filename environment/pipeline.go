@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/url"
@@ -261,6 +262,8 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (
 		return p.FetchContainer(ctx, op, st)
 	case "push-container":
 		return p.PushContainer(ctx, op, st)
+	case "save-image":
+		return p.SaveImage(ctx, op, st)
 	case "fetch-git":
 		return p.FetchGit(ctx, op, st)
 	case "fetch-http":
@@ -870,6 +873,70 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 	}
 
 	return st, err
+}
+
+func (p *Pipeline) SaveImage(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	tag, err := op.Lookup("tag").String()
+	if err != nil {
+		return st, err
+	}
+
+	dest, err := op.Lookup("dest").String()
+	if err != nil {
+		return st, err
+	}
+
+	pipeR, pipeW := io.Pipe()
+	var (
+		errCh = make(chan error)
+		image []byte
+	)
+	go func() {
+		image, err = io.ReadAll(pipeR)
+		errCh <- err
+	}()
+
+	resp, err := p.s.Export(ctx, p.State(), &p.image, bk.ExportEntry{
+		Type: bk.ExporterDocker,
+		Attrs: map[string]string{
+			"name": tag,
+		},
+		Output: func(_ map[string]string) (io.WriteCloser, error) {
+			return pipeW, nil
+		},
+	})
+
+	if err != nil {
+		return st, err
+	}
+
+	if err := <-errCh; err != nil {
+		return st, err
+	}
+
+	if digest, ok := resp.ExporterResponse["containerimage.digest"]; ok {
+		imageRef := fmt.Sprintf(
+			"%s@%s",
+			resp.ExporterResponse["image.name"],
+			digest,
+		)
+
+		st = st.File(
+			llb.Mkdir("/dagger", fs.FileMode(0755)),
+			llb.WithCustomName(p.vertexNamef("Mkdir /dagger")),
+		).File(
+			llb.Mkfile("/dagger/image_digest", fs.FileMode(0644), []byte(digest)),
+			llb.WithCustomName(p.vertexNamef("Storing image digest to /dagger/image_digest")),
+		).File(
+			llb.Mkfile("/dagger/image_ref", fs.FileMode(0644), []byte(imageRef)),
+			llb.WithCustomName(p.vertexNamef("Storing image ref to /dagger/image_ref")),
+		)
+	}
+
+	return st.File(
+		llb.Mkfile(dest, 0644, image),
+		llb.WithCustomName(p.vertexNamef("SaveImage %s", dest)),
+	), nil
 }
 
 func getSecretID(secretField *compiler.Value) (string, error) {

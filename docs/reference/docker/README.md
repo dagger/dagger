@@ -40,6 +40,26 @@ A container image that can run any docker command
 
 _No output._
 
+## docker.#Load
+
+Load a docker image into a docker engine
+
+### docker.#Load Inputs
+
+| Name                | Type                                 | Description                                          |
+| -------------       |:-------------:                       |:-------------:                                       |
+|*tag*                | `string`                             |Name and optionally a tag in the 'name:tag' format    |
+|*source*             | `dagger.#Artifact`                   |Image source                                          |
+|*load.command*       | `"docker load -i /src/image.tar"`    |Command to execute                                    |
+|*load.registries*    | `[]`                                 |Image registries                                      |
+
+### docker.#Load Outputs
+
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*ref*             | `string`          |Image ref           |
+|*digest*          | `string`          |Image digest        |
+
 ## docker.#Pull
 
 Pull a docker container

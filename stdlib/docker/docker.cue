@@ -101,6 +101,87 @@ import (
 	} & dagger.#Output
 }
 
+// Load a docker image into a docker engine
+#Load: {
+	// Connect to a remote SSH server
+	ssh?: {
+		// ssh host
+		host: dagger.#Input & {string}
+
+		// ssh user
+		user: dagger.#Input & {string}
+
+		// ssh port
+		port: dagger.#Input & {*22 | int}
+
+		// private key
+		key: dagger.#Input & {dagger.#Secret}
+
+		// fingerprint
+		fingerprint?: dagger.#Input & {string}
+
+		// ssh key passphrase
+		keyPassphrase?: dagger.#Input & {dagger.#Secret}
+	}
+
+	// Mount local docker socket
+	socket?: dagger.#Stream & dagger.#Input
+
+	// Name and optionally a tag in the 'name:tag' format
+	tag: dagger.#Input & {string}
+
+	// Image source
+	source: dagger.#Input & {dagger.#Artifact}
+
+	save: #up: [
+		op.#Load & {from: source},
+
+		op.#SaveImage & {
+			"tag": tag
+			dest:  "/image.tar"
+		},
+	]
+
+	load: #Command & {
+		if ssh != _|_ {
+			"ssh": ssh
+		}
+		if socket != _|_ {
+			"socket": socket
+		}
+
+		copy: "/src": from: save
+
+		command: "docker load -i /src/image.tar"
+	}
+
+	// Image ref
+	ref: {
+		string
+
+		#up: [
+			op.#Load & {from: save},
+
+			op.#Export & {
+				source: "/dagger/image_ref"
+			},
+		]
+	} & dagger.#Output
+
+	// Image digest
+	digest: {
+		string
+
+		#up: [
+			op.#Load & {from: save},
+
+			op.#Export & {
+				source: "/dagger/image_digest"
+			},
+		]
+	} & dagger.#Output
+}
+
 #Run: {
 	// Connect to a remote SSH server
 	ssh?: {
