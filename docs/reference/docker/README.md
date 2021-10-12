@@ -57,8 +57,7 @@ Load a docker image into a docker engine
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
-|*ref*             | `string`          |Image ref           |
-|*digest*          | `string`          |Image digest        |
+|*id*              | `string`          |Image ID            |
 
 ## docker.#Pull
 

@@ -914,22 +914,13 @@ func (p *Pipeline) SaveImage(ctx context.Context, op *compiler.Value, st llb.Sta
 		return st, err
 	}
 
-	if digest, ok := resp.ExporterResponse["containerimage.digest"]; ok {
-		imageRef := fmt.Sprintf(
-			"%s@%s",
-			resp.ExporterResponse["image.name"],
-			digest,
-		)
-
+	if id, ok := resp.ExporterResponse["containerimage.config.digest"]; ok {
 		st = st.File(
 			llb.Mkdir("/dagger", fs.FileMode(0755)),
 			llb.WithCustomName(p.vertexNamef("Mkdir /dagger")),
 		).File(
-			llb.Mkfile("/dagger/image_digest", fs.FileMode(0644), []byte(digest)),
-			llb.WithCustomName(p.vertexNamef("Storing image digest to /dagger/image_digest")),
-		).File(
-			llb.Mkfile("/dagger/image_ref", fs.FileMode(0644), []byte(imageRef)),
-			llb.WithCustomName(p.vertexNamef("Storing image ref to /dagger/image_ref")),
+			llb.Mkfile("/dagger/image_id", fs.FileMode(0644), []byte(id)),
+			llb.WithCustomName(p.vertexNamef("Storing image id to /dagger/image_id")),
 		)
 	}
 

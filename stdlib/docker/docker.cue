@@ -155,28 +155,15 @@ import (
 		command: "docker load -i /src/image.tar"
 	}
 
-	// Image ref
-	ref: {
+	// Image ID
+	id: {
 		string
 
 		#up: [
 			op.#Load & {from: save},
 
 			op.#Export & {
-				source: "/dagger/image_ref"
-			},
-		]
-	} & dagger.#Output
-
-	// Image digest
-	digest: {
-		string
-
-		#up: [
-			op.#Load & {from: save},
-
-			op.#Export & {
-				source: "/dagger/image_digest"
+				source: "/dagger/image_id"
 			},
 		]
 	} & dagger.#Output
