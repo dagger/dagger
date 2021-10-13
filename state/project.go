@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.dagger.io/dagger/mod"
-
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
 	"go.dagger.io/dagger/stdlib"
@@ -382,23 +380,25 @@ func cueModInit(ctx context.Context, parentDir string) error {
 	return nil
 }
 
-func vendorUniverse(ctx context.Context, workspace string) error {
+func vendorUniverse(ctx context.Context, p string) error {
 	// ensure cue module is initialized
-	if err := cueModInit(ctx, workspace); err != nil {
+	if err := cueModInit(ctx, p); err != nil {
 		return err
 	}
 
 	// add universe to `.gitignore`
 	if err := os.WriteFile(
-		path.Join(workspace, "cue.mod", "pkg", ".gitignore"),
+		path.Join(p, "cue.mod", "pkg", ".gitignore"),
 		[]byte(fmt.Sprintf("# dagger universe\n%s\n", stdlib.PackageName)),
 		0600,
 	); err != nil {
 		return err
 	}
 
-	log.Ctx(ctx).Debug().Str("mod", workspace).Msg("vendoring universe")
-	if err := mod.InstallStdlib(workspace); err != nil {
+	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
+	// FIXME(samalba): disabled install remote stdlib temporarily
+	// if err := mod.InstallStdlib(p); err != nil {
+	if err := stdlib.Vendor(ctx, p); err != nil {
 		return err
 	}
 
