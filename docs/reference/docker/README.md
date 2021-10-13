@@ -31,14 +31,28 @@ A container image that can run any docker command
 
 ### docker.#Command Inputs
 
-| Name             | Type              | Description          |
-| -------------    |:-------------:    |:-------------:       |
-|*command*         | `string`          |Command to execute    |
-|*registries*      | `[]`              |Image registries      |
+_No input._
 
 ### docker.#Command Outputs
 
 _No output._
+
+## docker.#Load
+
+Load a docker image into a docker engine
+
+### docker.#Load Inputs
+
+| Name             | Type                  | Description                                          |
+| -------------    |:-------------:        |:-------------:                                       |
+|*tag*             | `string`              |Name and optionally a tag in the 'name:tag' format    |
+|*source*          | `dagger.#Artifact`    |Image source                                          |
+
+### docker.#Load Outputs
+
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*id*              | `string`          |Image ID            |
 
 ## docker.#Pull
 
@@ -79,9 +93,7 @@ Push a docker image to a remote registry
 | Name                  | Type              | Description                           |
 | -------------         |:-------------:    |:-------------:                        |
 |*ref*                  | `string`          |Image reference (e.g: nginx:alpine)    |
-|*run.command*          | `"""\n            # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    if [ ! -z "$CONTAINER_PORTS" ]; then\n    \tOPTS="$OPTS -p $CONTAINER_PORTS"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
 |*run.env.IMAGE_REF*    | `string`          |-                                      |
-|*run.registries*       | `[]`              |Image registries                       |
 
 ### docker.#Run Outputs
 

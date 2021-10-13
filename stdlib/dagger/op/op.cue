@@ -81,6 +81,12 @@ package op
 	ref: string
 }
 
+#SaveImage: {
+	do:   "save-image"
+	tag:  string
+	dest: string
+}
+
 #FetchGit: {
 	do:          "fetch-git"
 	remote:      string

@@ -1,0 +1,30 @@
+plan:
+    package: ./docker/tests/load
+name: docker-load
+inputs:
+    dockersocket:
+        socket:
+            unix: /var/run/docker.sock
+    source:
+        dir:
+            path: ./docker/tests/load/testdata
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAzZCt6S3VGQkM4ZU9TamhQ
+            c2J0RDZpdzNQZUJ6V1BBdHh3M1NhTmJLeXpFCldaOVNUYVhWQW5ma3JGUk9XZWZ2
+            YjZIM0tMUGRoSk1QYTFkalA4S2N3UzAKLS0tIFhMeXMvaGM4UFllYWFCNWVUZFd5
+            U09jNHNlK094NGoyZnRlSk56T1N6K1EKJs5D3S2zPWNrGCyLWDDjq7Iif0m2JoL6
+            gqEjofnPSD7SjgfNKIpeOWcQ1sI7wmI4GGgaTpdhd431XxOn/fU44w==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-10-12T22:18:14Z"
+    mac: ENC[AES256_GCM,data:HjlY0FzB5hsg/VfyBbVTNWDCYV41lhPeyHOVrMdRWiOKJnV1aKGV1826fMXKcmgJK39kovcEXaXmVYOv3qtpDTlIMcOdoEflbDY/fhZmaDxxNq6QSkYfmadO84YWvS1FyouCPVZzRDe9tBdNyIT5cCx8CrgZ5bebh9aNem3lqRs=,iv:juMn1S06I5mZP8fWytn2eUkOvjNQepn6MAzDWvLxrWM=,tag:0BxrbK6EaoB44RgUHD+dpQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

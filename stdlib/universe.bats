@@ -126,6 +126,10 @@ setup() {
   assert_failure
 }
 
+@test "docker load" {
+  dagger -e docker-load up
+}
+
 @test "docker compose" {
   dagger -e docker-compose up
 }
@@ -177,7 +181,7 @@ setup() {
 }
 
 @test "google cloud: gke" {
-  dagger -e google-gke up 
+  dagger -e google-gke up
 }
 
 @test "google cloud: secretmanager" {
