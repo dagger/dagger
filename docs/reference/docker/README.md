@@ -31,10 +31,7 @@ A container image that can run any docker command
 
 ### docker.#Command Inputs
 
-| Name             | Type              | Description          |
-| -------------    |:-------------:    |:-------------:       |
-|*command*         | `string`          |Command to execute    |
-|*registries*      | `[]`              |Image registries      |
+_No input._
 
 ### docker.#Command Outputs
 
@@ -46,12 +43,10 @@ Load a docker image into a docker engine
 
 ### docker.#Load Inputs
 
-| Name                | Type                                 | Description                                          |
-| -------------       |:-------------:                       |:-------------:                                       |
-|*tag*                | `string`                             |Name and optionally a tag in the 'name:tag' format    |
-|*source*             | `dagger.#Artifact`                   |Image source                                          |
-|*load.command*       | `"docker load -i /src/image.tar"`    |Command to execute                                    |
-|*load.registries*    | `[]`                                 |Image registries                                      |
+| Name             | Type                  | Description                                          |
+| -------------    |:-------------:        |:-------------:                                       |
+|*tag*             | `string`              |Name and optionally a tag in the 'name:tag' format    |
+|*source*          | `dagger.#Artifact`    |Image source                                          |
 
 ### docker.#Load Outputs
 
@@ -98,9 +93,7 @@ Push a docker image to a remote registry
 | Name                  | Type              | Description                           |
 | -------------         |:-------------:    |:-------------:                        |
 |*ref*                  | `string`          |Image reference (e.g: nginx:alpine)    |
-|*run.command*          | `"""\n            # Run detach container\n                OPTS=""\n    \n    if [ ! -z "$CONTAINER_NAME" ]; then\n    \tOPTS="$OPTS --name $CONTAINER_NAME"\n    fi\n    \n    if [ ! -z "$CONTAINER_PORTS" ]; then\n    \tOPTS="$OPTS -p $CONTAINER_PORTS"\n    fi\n    \n    docker container run -d $OPTS "$IMAGE_REF"\n    """`    |Command to execute    |
 |*run.env.IMAGE_REF*    | `string`          |-                                      |
-|*run.registries*       | `[]`              |Image registries                       |
 
 ### docker.#Run Outputs
 

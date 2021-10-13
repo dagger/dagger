@@ -31,11 +31,11 @@ import (
 	}
 
 	// Command to execute
-	command: string @dagger(input)
+	command: string
 
 	// Environment variables shared by all commands
 	env: {
-		[string]: string @dagger(input)
+		[string]: string
 	}
 
 	// Mount content from other artifacts
@@ -44,17 +44,17 @@ import (
 			from: dagger.#Artifact
 		} | {
 			secret: dagger.#Secret
-		} @dagger(input)
+		}
 	}
 
 	// Mount persistent cache directories
 	cache: {
-		[string]: true @dagger(input)
+		[string]: true
 	}
 
 	// Mount temporary directories
 	tmpfs: {
-		[string]: true @dagger(input)
+		[string]: true
 	}
 
 	// Mount docker socket
@@ -62,7 +62,7 @@ import (
 
 	// Additional packages to install
 	package: {
-		[string]: true | false | string @dagger(input)
+		[string]: true | false | string
 	}
 
 	// Image registries
@@ -70,7 +70,7 @@ import (
 		target?:  string
 		username: string
 		secret:   dagger.#Secret
-	}] @dagger(input)
+	}]
 
 	// Copy contents from other artifacts
 	copy: [string]: from: dagger.#Artifact
@@ -98,7 +98,7 @@ import (
 				ssh-add /key > /dev/null
 				if [ "$?" != 0 ]; then
 					exit 1
-				fi				
+				fi
 			fi
 
 			if [[ ! -z $FINGERPRINT ]]; then
@@ -131,7 +131,7 @@ import (
 		for registry in registries {
 			op.#Exec & {
 				args: ["/bin/bash", "-c", #"""
-						echo "$TARGER_HOST" | docker login --username "$DOCKER_USERNAME" --password-stdin "$(cat /password)" 
+						echo "$TARGER_HOST" | docker login --username "$DOCKER_USERNAME" --password-stdin "$(cat /password)"
 					"""#,
 				]
 				env: {
