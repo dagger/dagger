@@ -35,8 +35,8 @@ type State struct {
 func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
 	w := s.Project
 	// FIXME: backward compatibility
-	if mod := s.Plan.Module; mod != "" {
-		w = path.Join(w, mod)
+	if planModule := s.Plan.Module; planModule != "" {
+		w = path.Join(w, planModule)
 	}
 
 	// FIXME: universe vendoring
@@ -51,7 +51,7 @@ func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
 		return nil, err
 	}
 
-	args := []string{}
+	var args []string
 	if pkg := s.Plan.Package; pkg != "" {
 		args = append(args, pkg)
 	}
@@ -79,21 +79,6 @@ func (s *State) CompileInputs() (*compiler.Value, error) {
 	}
 
 	return v, nil
-}
-
-// VendorUniverse vendors the latest (built-in) version of the universe into the
-// environment's `cue.mod`.
-// FIXME: This has nothing to do in `State` and should be tied to a `Project`.
-// However, since environments could point to different modules before, we have
-// to handle vendoring on a per environment basis.
-func (s *State) VendorUniverse(ctx context.Context) error {
-	w := s.Project
-	// FIXME: backward compatibility
-	if mod := s.Plan.Module; mod != "" {
-		w = path.Join(w, mod)
-	}
-
-	return vendorUniverse(ctx, w)
 }
 
 type Plan struct {

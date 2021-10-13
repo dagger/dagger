@@ -27,3 +27,7 @@
 tests/node_modules
 dist/
 docs/learn/tests/node_modules
+
+# Integration CI dagger.mod, dagger.sum
+dagger.mod
+dagger.sum

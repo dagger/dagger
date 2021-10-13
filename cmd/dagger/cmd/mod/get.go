@@ -1,11 +1,11 @@
 package mod
 
 import (
-	"github.com/hashicorp/go-version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/telemetry"
 )
 
@@ -32,77 +32,41 @@ var getCmd = &cobra.Command{
 			Value: args,
 		})
 
-		// read mod file in the current dir
-		modFile, err := readPath(project.Path)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("error loading module file")
-		}
+		var update = viper.GetBool("update")
 
-		// parse packages to install
-		var packages []*require
-		var upgrade bool
-
-		if len(args) == 0 {
-			lg.Info().Msg("upgrading installed packages...")
-			packages = modFile.require
-			upgrade = true
+		var processedRequires []*mod.Require
+		var err error
+		if update && len(args) == 0 {
+			lg.Info().Msg("updating all installed packages...")
+			processedRequires, err = mod.UpdateInstalled(project.Path)
+		} else if update && len(args) > 0 {
+			lg.Info().Msg("updating specified packages...")
+			processedRequires, err = mod.UpdateAll(project.Path, args)
+		} else if !update && len(args) > 0 {
+			lg.Info().Msg("installing specified packages...")
+			processedRequires, err = mod.InstallAll(project.Path, args)
 		} else {
-			for _, arg := range args {
-				p, err := parseArgument(arg)
-				if err != nil {
-					lg.Error().Err(err).Msgf("error parsing package %s", arg)
-					continue
-				}
-				packages = append(packages, p)
+			lg.Fatal().Msg("unrecognized update/install operation")
+		}
+
+		if len(processedRequires) > 0 {
+			for _, r := range processedRequires {
+				lg.Info().Msgf("installed/updated package %s", r)
 			}
 		}
 
-		// download packages
-		for _, p := range packages {
-			isNew, err := modFile.processRequire(p, upgrade)
-			if err != nil {
-				lg.Error().Err(err).Msgf("error processing package %s", p.repo)
-			}
-
-			if isNew {
-				lg.Info().Msgf("downloading %s:%v", p.repo, p.version)
-			}
-		}
-
-		// write to mod file in the current dir
-		if err = modFile.write(); err != nil {
-			lg.Error().Err(err).Msg("error writing to mod file")
+		if err != nil {
+			lg.Error().Err(err).Msg("error installing/updating packages")
 		}
 
 		<-doneCh
 	},
 }
 
-func compareVersions(reqV1, reqV2 string) (int, error) {
-	v1, err := version.NewVersion(reqV1)
-	if err != nil {
-		return 0, err
-	}
-
-	v2, err := version.NewVersion(reqV2)
-	if err != nil {
-		return 0, err
-	}
-
-	if v1.LessThan(v2) {
-		return -1, nil
-	}
-
-	if v1.Equal(v2) {
-		return 0, nil
-	}
-
-	return 1, nil
-}
-
 func init() {
 	getCmd.Flags().String("private-key-file", "", "Private ssh key")
 	getCmd.Flags().String("private-key-password", "", "Private ssh key password")
+	getCmd.Flags().BoolP("update", "u", false, "Update specified package")
 
 	if err := viper.BindPFlags(getCmd.Flags()); err != nil {
 		panic(err)

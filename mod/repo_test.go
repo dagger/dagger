@@ -9,37 +9,37 @@ import (
 func TestClone(t *testing.T) {
 	cases := []struct {
 		name               string
-		require            require
+		require            Require
 		privateKeyFile     string
 		privateKeyPassword string
 	}{
 		{
 			name: "resolving shorter hash version",
-			require: require{
-				cloneRepo: "github.com/tjovicic/dagger-modules",
-				clonePath: "gcpcloudrun",
-				version:   "26a1d46d1b3c",
+			require: Require{
+				cloneRepo: "github.com/dagger/universe",
+				clonePath: "stdlib",
+				version:   "24d7af3fc2a3e9c7cc2",
 			},
 		},
 		{
 			name: "resolving branch name",
-			require: require{
-				cloneRepo: "github.com/tjovicic/dagger-modules",
-				clonePath: "gcpcloudrun",
+			require: Require{
+				cloneRepo: "github.com/dagger/universe",
+				clonePath: "stdlib",
 				version:   "main",
 			},
 		},
 		{
 			name: "resolving tag",
-			require: require{
-				cloneRepo: "github.com/tjovicic/dagger-modules",
-				clonePath: "gcpcloudrun",
-				version:   "v0.3",
+			require: Require{
+				cloneRepo: "github.com/dagger/universe",
+				clonePath: "stdlib",
+				version:   "v0.1",
 			},
 		},
 		{
-			name: "Dagger private test repo",
-			require: require{
+			name: "dagger private repo",
+			require: Require{
 				cloneRepo: "github.com/dagger/test",
 				clonePath: "",
 				version:   "main",
@@ -73,9 +73,9 @@ func TestListTags(t *testing.T) {
 	}
 	defer os.Remove(tmpDir)
 
-	r, err := clone(&require{
-		cloneRepo: "github.com/tjovicic/dagger-modules",
-		clonePath: "gcpcloudrun",
+	r, err := clone(&Require{
+		cloneRepo: "github.com/dagger/universe",
+		clonePath: "stdlib",
 		version:   "",
 	}, tmpDir, "", "")
 	if err != nil {

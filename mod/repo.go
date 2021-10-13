@@ -3,7 +3,6 @@ package mod
 import (
 	"fmt"
 	"os"
-	"path"
 	"sort"
 	"strings"
 
@@ -15,11 +14,17 @@ import (
 )
 
 type repo struct {
-	localPath string
-	contents  *git.Repository
+	contents *git.Repository
 }
 
-func clone(require *require, dir string, privateKeyFile, privateKeyPassword string) (*repo, error) {
+func clone(require *Require, dir string, privateKeyFile, privateKeyPassword string) (*repo, error) {
+	if err := os.RemoveAll(dir); err != nil {
+		return nil, fmt.Errorf("error cleaning up tmp directory")
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("error creating tmp dir for cloning package")
+	}
+
 	o := git.CloneOptions{
 		URL: fmt.Sprintf("https://%s", require.cloneRepo),
 	}
@@ -40,8 +45,7 @@ func clone(require *require, dir string, privateKeyFile, privateKeyPassword stri
 	}
 
 	rr := &repo{
-		localPath: dir,
-		contents:  r,
+		contents: r,
 	}
 
 	if require.version == "" {
@@ -50,19 +54,11 @@ func clone(require *require, dir string, privateKeyFile, privateKeyPassword stri
 			return nil, err
 		}
 
-		if latestTag == "" {
-			return nil, fmt.Errorf("no git tags found in the repo")
-		}
-
 		require.version = latestTag
 	}
 
 	if err := rr.checkout(require.version); err != nil {
 		return nil, err
-	}
-
-	if _, err := os.Stat(path.Join(dir, require.clonePath, filePath)); err != nil {
-		return nil, fmt.Errorf("repo does not contain %s", filePath)
 	}
 
 	return rr, nil
@@ -118,11 +114,11 @@ func (r *repo) latestTag() (string, error) {
 		versions[i] = v
 	}
 
-	sort.Sort(version.Collection(versions))
-
 	if len(versions) == 0 {
-		return "", nil
+		return "", fmt.Errorf("repo doesn't have any tags")
 	}
+
+	sort.Sort(version.Collection(versions))
 
 	return versions[len(versions)-1].Original(), nil
 }
