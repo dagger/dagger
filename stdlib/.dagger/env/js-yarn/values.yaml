@@ -5,6 +5,13 @@ inputs:
     TestData:
         dir:
             path: ./js/yarn/tests/testdata
+    TestData2:
+        dir:
+            path: ./js/yarn/tests/testdata2
+    TestSecretsAndFile.pkg.secrets.secretone:
+        secret: ENC[AES256_GCM,data:xfk8,iv:EHZpLqR2CAhFE/39/c7FkQD4G83nt0sIB3svzvA2axU=,tag:Frsl2djN2uYZrv8ZWvElhw==,type:str]
+    TestSecretsAndFile.pkg.secrets.secretwo:
+        secret: ENC[AES256_GCM,data:d5Yr,iv:iMS3HQO6/7hnA0rNxHbj4yMxEyKm85/73+V7W0nDGzk=,tag:J/3RUP8x17V0fnUerlY46w==,type:str]
 sops:
     kms: []
     gcp_kms: []
@@ -20,8 +27,8 @@ sops:
             S2JsNXRkbWVERHM0WWk0bXBJSXJIK1kK9R3gMDcbeKRRlt0HHM+w2kcs+sGfASmE
             0YhxbFF2qQPFwHHR7aPmM+L1ML8cXOrxOOyWmmWhXNgtURCJ9/SO3A==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-08T09:55:45Z"
-    mac: ENC[AES256_GCM,data:qVdlcliugnYIPCAe36scgfaXy3QJhIpPampNK1d4E47njhoOooM5YzpI57sIRlC0qYh+Y9osaux3+zjMgws09rIEdyuBkBoQ/M+0D5D9fz8hZLEbfGr1hhuBfI95kfKGnip8h7K/tiZAneHuDmPqd5Pjc+3CeCT8TFMTjet2tIU=,iv:OnSghkK2Kgki8DjAuSy8ubjVQqnt8kbf9Xz5cJxvpZc=,tag:wl2izqxIxNiidKBlC1dqmA==,type:str]
+    lastmodified: "2021-10-14T00:13:29Z"
+    mac: ENC[AES256_GCM,data:jtcjDq2yzjQMF9+0CULS5w0CHQe9iZyAz/j4GsRxVpHj2N+1CucCK2TM8ydP3A0nspUsmiJlzrdZGJ/axb4SMNzc3rRxQXSEwXFuarGzhnZdUaui2Y3F36wCbFght9fACg7T/fXid9ZMYwHSA+5ZcjJZG4SZ5f0QyrzD8VKmBm0=,iv:z2eNPACf6NqJSe2TjlUAeTh9dkzHcaL5/7niknDFuEw=,tag:FuF+U1IaFEMS+imdNB4vKA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
