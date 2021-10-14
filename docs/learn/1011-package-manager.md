@@ -59,7 +59,7 @@ dagger mod get github.com/dagger/packages/gcpcloudrun@v0.1
 ```
 
 It should pull the `v0.1` version from Github, leave a copy in `cue.mod/pkg` and reflect the change in
-`cue.mod/dagger.mod.cue` file:
+`cue.mod/dagger.mod` file:
 
 ```shell
 cue.mod/pkg/github.com/
@@ -111,7 +111,7 @@ You should see similar output:
 12:25PM INF system | downloading github.com/dagger/packages:v0.2
 ```
 
-And `cue.mod/dagger.mod.cue` should reflect the new version:
+And `cue.mod/dagger.mod` should reflect the new version:
 
 ```cue title="./cue.mod/dagger.mod"
 github.com/dagger/packages/gcpcloudrun v0.2

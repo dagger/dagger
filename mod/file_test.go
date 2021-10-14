@@ -7,18 +7,23 @@ import (
 
 func TestReadFile(t *testing.T) {
 	cases := []struct {
-		name  string
-		input string
-		want  *file
+		name    string
+		modFile string
+		sumFile string
+		want    *file
 	}{
 		{
 			name: "module file with valid dependencies",
-			input: `
+			modFile: `
 				github.com/tjovicic/test xyz
 				github.com/bla/bla abc
 			`,
+			sumFile: `
+				github.com/tjovicic/test h1:hash
+				github.com/bla/bla h1:hash
+			`,
 			want: &file{
-				require: []*require{
+				requires: []*Require{
 					{
 						repo:    "github.com/tjovicic/test",
 						path:    "",
@@ -36,13 +41,13 @@ func TestReadFile(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := read(strings.NewReader(c.input))
+			got, err := read(strings.NewReader(c.modFile), strings.NewReader(c.sumFile))
 			if err != nil {
 				t.Error(err)
 			}
 
-			if len(got.require) != len(c.want.require) {
-				t.Errorf("requires length differs: want %d, got %d", len(c.want.require), len(got.require))
+			if len(got.requires) != len(c.want.requires) {
+				t.Errorf("requires length differs: want %d, got %d", len(c.want.requires), len(got.requires))
 			}
 		})
 	}

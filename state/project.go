@@ -49,6 +49,7 @@ func Init(ctx context.Context, dir string) (*Project, error) {
 		}
 		return nil, err
 	}
+
 	if err := os.Mkdir(path.Join(daggerRoot, envDir), 0755); err != nil {
 		return nil, err
 	}
@@ -342,35 +343,35 @@ func (w *Project) cleanPackageName(ctx context.Context, pkg string) (string, err
 	return p, nil
 }
 
-func cueModInit(ctx context.Context, p string) error {
+func cueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
-	mod := path.Join(p, "cue.mod")
-	if err := os.Mkdir(mod, 0755); err != nil {
+	modDir := path.Join(parentDir, "cue.mod")
+	if err := os.Mkdir(modDir, 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
 	}
 
-	modFile := path.Join(mod, "module.cue")
+	modFile := path.Join(modDir, "module.cue")
 	if _, err := os.Stat(modFile); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 
-		lg.Debug().Str("mod", p).Msg("initializing cue.mod")
+		lg.Debug().Str("mod", parentDir).Msg("initializing cue.mod")
 
 		if err := os.WriteFile(modFile, []byte("module: \"\"\n"), 0600); err != nil {
 			return err
 		}
 	}
 
-	if err := os.Mkdir(path.Join(mod, "usr"), 0755); err != nil {
+	if err := os.Mkdir(path.Join(modDir, "usr"), 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
 	}
-	if err := os.Mkdir(path.Join(mod, "pkg"), 0755); err != nil {
+	if err := os.Mkdir(path.Join(modDir, "pkg"), 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
@@ -395,6 +396,8 @@ func vendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
+	// FIXME(samalba): disabled install remote stdlib temporarily
+	// if err := mod.InstallStdlib(p); err != nil {
 	if err := stdlib.Vendor(ctx, p); err != nil {
 		return err
 	}

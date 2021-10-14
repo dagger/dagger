@@ -42,13 +42,13 @@ domain name (as in Go) followed by a descriptive name. In this example, we reuse
 package from it.
 
 ```shell
-mkdir -p cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+mkdir -p cue.mod/pkg/github.com/username/gcpcloudrun
 ```
 
 Let's write the package logic. It is basically what we've seen in the 106-cloudrun example:
 
 ```shell
-touch cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
+touch cue.mod/pkg/github.com/username/gcpcloudrun/source.cue
 ```
 
 ```cue file=./tests/dev-cue-package/source.cue title="cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue"
@@ -86,8 +86,8 @@ You've probably guessed this package isn't tied to just your project. You can ea
 of different projects and use it as we've shown above.
 
 ```shell
-mkdir -p /my-new-project/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
-cp ./cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue /new-project/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+mkdir -p /my-new-workspace/cue.mod/pkg/github.com/username/gcpcloudrun
+cp ./cue.mod/pkg/github.com/username/gcpcloudrun/source.cue /new-workspace/cue.mod/pkg/github.com/username/gcpcloudrun
 ```
 
 ## Contributing to Dagger stdlib
