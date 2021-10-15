@@ -90,7 +90,7 @@ Create the file `plans/local/local.cue` with the following content:
 
 ```
 
-Notice that both files have the same `package todoapp` declared on the first line. This is crucial to inform CUE that they are to be loaded and evaluated together in the same context. Our `local.cue` file now holds resources specific to our `local` environment. 
+Notice that both files have the same `package todoapp` declared on the first line. This is crucial to inform CUE that they are to be loaded and evaluated together in the same context. Our `local.cue` file now holds resources specific to our `local` environment.
 
 ### Create an Environment
 
@@ -162,7 +162,6 @@ Once complete you should get logs, and a final output like this:
 ```bash
 Output                 Value                                          Description
 app.build              struct                                         Build output directory
-
 appURL                 "http://localhost:8080/"                       Application URL
 ```
 
