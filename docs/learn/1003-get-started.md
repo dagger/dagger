@@ -59,8 +59,6 @@ You will now see 2 new directories:
 - The `.dagger` directory will store metadata about _environments_, _inputs_, and _outputs_ which we will cover later.
 - The `cue.mod` directory stores libraries such as [dagger/universe](https://github.com/dagger/universe) which can be _imported_ into your Dagger plan.
 
-Dagger will load all `.cue` files recursively in the current Dagger project. More directories can be added to help organize code.
-
 > Note that Dagger, like the CUE CLI command, will only load CUE files from the `cue.mod` directory in response to `import` statements.
 
 ### Write a Dagger Plan
@@ -92,9 +90,7 @@ Create the file `plans/local/local.cue` with the following content:
 
 ```
 
-Notice that both files have the same `package todoapp` declared on the first line. This is crucial to inform CUE that they are to be loaded and evaluated together in the same context.
-
-Our `local.cue` file now holds resources specific to our `local` environment. Also notice that we are defining a concrete value for the `target` key here. The entire `push` object is defined in both files and CUE will merge the values into a single struct with key:value pairs that are _complete_ with concrete values.
+Notice that both files have the same `package todoapp` declared on the first line. This is crucial to inform CUE that they are to be loaded and evaluated together in the same context. Our `local.cue` file now holds resources specific to our `local` environment. 
 
 ### Create an Environment
 
@@ -166,10 +162,7 @@ Once complete you should get logs, and a final output like this:
 ```bash
 Output                 Value                                          Description
 app.build              struct                                         Build output directory
-push.ref               "localhost:5000/todoapp:latest@sha256:<hash>"  Image ref
-push.digest            "sha256:<hash>"                                Image digest
-run.ref                "localhost:5000/todoapp:latest@sha256:<hash>"  Image reference (e.g: nginx:alpine)
-run.run.env.IMAGE_REF  "localhost:5000/todoapp:latest@sha256:<hash>"  -
+
 appURL                 "http://localhost:8080/"                       Application URL
 ```
 

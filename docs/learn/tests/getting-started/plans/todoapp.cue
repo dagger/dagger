@@ -23,14 +23,3 @@ image: os.#Container & {
 	// uses to generate the DAG
 	copy: "/usr/share/nginx/html": from: app.build
 }
-
-// push the image to a registry
-push: docker.#Push & {
-	// leave target blank here so that different
-	// environments can push to different registries
-	target: string
-
-	// the source of our push resource
-	// is the image resource we declared above
-	source: image
-}
