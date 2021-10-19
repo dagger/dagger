@@ -16,16 +16,17 @@ Convert ECR credentials to Docker Login format
 
 ### ecr.#Credentials Inputs
 
-| Name                           | Type                | Description           |
-| -------------                  |:-------------:      |:-------------:        |
-|*config.region*                 | `string`            |AWS region             |
-|*config.accessKey*              | `dagger.#Secret`    |AWS access key         |
-|*config.secretKey*              | `dagger.#Secret`    |AWS secret key         |
-|*config.localMode*              | `*false \| bool`    |AWS localstack mode    |
-|*ctr.image.config.region*       | `string`            |AWS region             |
-|*ctr.image.config.accessKey*    | `dagger.#Secret`    |AWS access key         |
-|*ctr.image.config.secretKey*    | `dagger.#Secret`    |AWS secret key         |
-|*ctr.image.config.localMode*    | `*false \| bool`    |AWS localstack mode    |
+| Name                           | Type                   | Description           |
+| -------------                  |:-------------:         |:-------------:        |
+|*config.region*                 | `string`               |AWS region             |
+|*config.accessKey*              | `dagger.#Secret`       |AWS access key         |
+|*config.secretKey*              | `dagger.#Secret`       |AWS secret key         |
+|*config.localMode*              | `*false \| bool`       |AWS localstack mode    |
+|*ctr.image.config.region*       | `string`               |AWS region             |
+|*ctr.image.config.accessKey*    | `dagger.#Secret`       |AWS access key         |
+|*ctr.image.config.secretKey*    | `dagger.#Secret`       |AWS secret key         |
+|*ctr.image.config.localMode*    | `*false \| bool`       |AWS localstack mode    |
+|*ctr.image.version*             | `*"1.18" \| string`    |-                      |
 
 ### ecr.#Credentials Outputs
 
