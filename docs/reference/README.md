@@ -36,3 +36,4 @@
 - [os](./os.md) - OS operations
 - [random](./random.md) - Random generation utilities
 - [terraform](./terraform.md) - Terraform operations
+- [trivy](./trivy.md) - -
