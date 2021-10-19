@@ -41,6 +41,9 @@ import (
 	// Optional arguments for the script
 	args: [...string] | *[] @dagger(input)
 
+	// Secret variables
+	secrets: [string]: dagger.#Secret
+
 	// Build output directory
 	build: os.#Dir & {
 		from: ctr
@@ -56,7 +59,20 @@ import (
 		}
 		shell: path: "/bin/bash"
 		command: """
+			# Create $ENVFILE_NAME file if set
 			[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
+
+			# Safely export secrets, or prepend them to $ENVFILE_NAME if set
+			shopt -s dotglob
+			for FILE in /tmp/secrets/*; do
+				val=$(echo "${FILE##*/}" | tr '[:lower:]' '[:upper:]') # Collect name
+				path=$(cat "$FILE") # Collect value
+				# Prepend
+				[ -n "$ENVFILE_NAME" ] && echo "$val=$path"$'\n'"$(cat "$ENVFILE_NAME")" > "$ENVFILE_NAME" \\
+				 || export "$val"="$path" # Or export
+			done
+
+			# Execute
 			yarn --cwd "$YARN_CWD" install --production false
 
 			opts=( $(echo $YARN_ARGS) )
@@ -73,6 +89,9 @@ import (
 				ENVFILE_NAME: writeEnvFile
 				ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
 			}
+		}
+		for name, s in secrets {
+			secret: "/tmp/secrets/\(name)": s
 		}
 		dir: "/src"
 		mount: "/src": from: source
