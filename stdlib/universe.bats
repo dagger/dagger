@@ -23,6 +23,10 @@ setup() {
   dagger -e go up
 }
 
+@test "http" {
+  dagger -e http up
+}
+
 @test "js/yarn" {
   dagger -e js-yarn up
 }
