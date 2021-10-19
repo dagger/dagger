@@ -205,9 +205,6 @@ import (
 				}
 			}
 			"mount": {
-				if ssh == _|_ {
-					"/var/run/docker.sock": from: "docker.sock"
-				}
 				if ssh != _|_ {
 					if ssh.key != _|_ {
 						"/key": secret: ssh.key
