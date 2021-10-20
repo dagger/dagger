@@ -113,7 +113,7 @@ func ops(code *compiler.Value) ([]*compiler.Value, error) {
 		if err != nil {
 			panic(err)
 		}
-		return nil, fmt.Errorf("not executable: %s", source)
+		return nil, fmt.Errorf("not executable: %s (%s)", source, code.Path().String())
 	}
 	return ops, nil
 }
