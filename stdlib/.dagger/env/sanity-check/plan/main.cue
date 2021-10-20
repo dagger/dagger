@@ -53,7 +53,7 @@ err: (os.#File & {
 			"""
 				set -e
 				cd $(mktemp -d)
-				curl -L https://github.com/cuelang/cue/releases/download/v0.4.0/cue_v0.4.0_linux_amd64.tar.gz -o cue.tgz
+				curl -L https://github.com/cue-lang/cue/releases/download/v0.4.0/cue_v0.4.0_linux_amd64.tar.gz -o cue.tgz
 				tar zxvf cue.tgz
 				cp cue /usr/local/bin/cue
 				rm -fr ./*
