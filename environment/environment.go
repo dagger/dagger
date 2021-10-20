@@ -119,8 +119,7 @@ func (e *Environment) LocalDirs() (map[string]string, error) {
 		newTaskFunc(noOpRunner),
 	)
 	for _, t := range flow.Tasks() {
-		v := compiler.Wrap(t.Value())
-		if err := localdirs(v.Lookup("#up")); err != nil {
+		if err := localdirs(compiler.Wrap(t.Value())); err != nil {
 			return nil, err
 		}
 	}
