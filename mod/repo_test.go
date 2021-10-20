@@ -14,14 +14,6 @@ func TestClone(t *testing.T) {
 		privateKeyPassword string
 	}{
 		{
-			name: "resolving shorter hash version",
-			require: Require{
-				cloneRepo: "github.com/dagger/universe",
-				clonePath: "stdlib",
-				version:   "24d7af3fc2a3e9c7cc2",
-			},
-		},
-		{
 			name: "resolving branch name",
 			require: Require{
 				cloneRepo: "github.com/dagger/universe",
@@ -34,7 +26,7 @@ func TestClone(t *testing.T) {
 			require: Require{
 				cloneRepo: "github.com/dagger/universe",
 				clonePath: "stdlib",
-				version:   "v0.1",
+				version:   "v0.1.0",
 			},
 		},
 		{
