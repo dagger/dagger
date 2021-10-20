@@ -27,22 +27,17 @@ TestExportList: {
 	[...string]
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo "--- # Shopping list
 				[milk, pumpkin pie, eggs, juice]" > /tmp/out
 				""",
 			]
-			// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
-			dir: "/"
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/out"
 			format: "yaml"
@@ -51,19 +46,16 @@ TestExportList: {
 }
 
 TestExportMap: #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do: "exec"
+	op.#Exec & {
 		args: ["sh", "-c", """
 			echo something: something > /tmp/out
 			""",
 		]
 	},
-	{
-		do: "export"
+	op.#Export & {
 		// Source path in the container
 		source: "/tmp/out"
 		format: "yaml"

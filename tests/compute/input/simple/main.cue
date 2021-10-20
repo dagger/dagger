@@ -1,25 +1,24 @@
 package testing
 
+import "alpha.dagger.io/dagger/op"
+
 X1=in: string
 
 test: {
 	string
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo -n "received: \(X1)" > /out
 				"""]
 			// XXX Blocked by https://github.com/blocklayerhq/dagger/issues/19
 			dir: "/"
 		},
-		{
-			do:     "export"
+		op.#Export & {
 			source: "/out"
 			format: "string"
 		},

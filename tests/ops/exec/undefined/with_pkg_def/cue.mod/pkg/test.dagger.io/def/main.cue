@@ -1,15 +1,14 @@
 package def
 
+import "alpha.dagger.io/dagger/op"
+
 #dang: string
 
 #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "alpine"
 	},
-	{
-		do:  "exec"
-		dir: "/"
+	op.#Exec & {
 		args: ["sh", "-c", """
 			echo success
 			"""]

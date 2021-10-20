@@ -1,25 +1,25 @@
 package testing
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"alpha.dagger.io/dagger/op"
+)
 
 A: {
 	string
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo '{"hello": "world"}' > /tmp/out
 				""",
 			]
 			dir: "/"
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/out"
 			format: "string"
@@ -33,20 +33,17 @@ B: {
 	result: string
 
 	#up: [
-		{
-			do:  "fetch-container"
+		op.#FetchContainer & {
 			ref: "alpine"
 		},
-		{
-			do: "exec"
+		op.#Exec & {
 			args: ["sh", "-c", """
 				echo "{\\"result\\": \\"unmarshalled.hello=\(unmarshalled.hello)\\"}" > /tmp/out
 				""",
 			]
 			dir: "/"
 		},
-		{
-			do: "export"
+		op.#Export & {
 			// Source path in the container
 			source: "/tmp/out"
 			format: "json"
