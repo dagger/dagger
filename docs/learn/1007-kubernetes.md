@@ -547,7 +547,7 @@ kubectl delete -f k8s/
 This section will convert Kubernetes YAML manifest from `k8s` directory to [CUE](https://cuelang.org/) to take advantage
 of the language features.
 
-> For a more advanced example, see the [official CUE Kubernetes tutorial](https://github.com/cuelang/cue/blob/v0.4.0/doc/tutorial/kubernetes/README.md)
+> For a more advanced example, see the [official CUE Kubernetes tutorial](https://github.com/cue-lang/cue/blob/v0.4.0/doc/tutorial/kubernetes/README.md)
 
 ### Convert Kubernetes objects to CUE
 
