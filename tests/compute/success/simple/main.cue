@@ -1,12 +1,12 @@
 package testing
 
+import "alpha.dagger.io/dagger/op"
+
 #up: [
-	{
-		do:  "fetch-container"
+	op.#FetchContainer & {
 		ref: "busybox"
 	},
-	{
-		do: "exec"
+	op.#Exec & {
 		args: ["true"]
 		dir: "/"
 	},

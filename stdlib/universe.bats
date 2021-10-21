@@ -144,6 +144,9 @@ setup() {
   # Copy deployment to sandbox
   copy_to_sandbox kubernetes-deployment kubernetes
 
+  # Query
+  dagger --project "$DAGGER_SANDBOX" -e kubernetes-deployment query
+
   # Set kubeconfig
   dagger --project "$DAGGER_SANDBOX" -e kubernetes-deployment input text TestKubeconfig -f "$HOME"/.kube/config
 

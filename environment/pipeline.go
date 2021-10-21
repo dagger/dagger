@@ -113,7 +113,7 @@ func ops(code *compiler.Value) ([]*compiler.Value, error) {
 		if err != nil {
 			panic(err)
 		}
-		return nil, fmt.Errorf("not executable: %s", source)
+		return nil, fmt.Errorf("not executable: %s (%s)", source, code.Path().String())
 	}
 	return ops, nil
 }
@@ -121,7 +121,9 @@ func ops(code *compiler.Value) ([]*compiler.Value, error) {
 func Analyze(fn func(*compiler.Value) error, code *compiler.Value) error {
 	ops, err := ops(code)
 	if err != nil {
-		return err
+		// Ignore CUE errors when analyzing. This might be because the value is
+		// not concrete since static analysis runs before pipelines are executed.
+		return nil
 	}
 	for _, op := range ops {
 		if err := analyzeOp(fn, op); err != nil {

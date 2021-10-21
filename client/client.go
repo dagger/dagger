@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -116,13 +115,9 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 	lg := log.Ctx(ctx)
 
 	// Scan local dirs to grant access
-	localdirs := env.LocalDirs()
-	for label, dir := range localdirs {
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			return err
-		}
-		localdirs[label] = abs
+	localdirs, err := env.LocalDirs()
+	if err != nil {
+		return err
 	}
 
 	// buildkit auth provider (registry)

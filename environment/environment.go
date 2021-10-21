@@ -3,6 +3,7 @@ package environment
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -75,10 +76,11 @@ func (e *Environment) Computed() *compiler.Value {
 // and return all referenced directory names.
 // This is used by clients to grant access to local directories when they are referenced
 // by user-specified scripts.
-func (e *Environment) LocalDirs() map[string]string {
+func (e *Environment) LocalDirs() (map[string]string, error) {
 	dirs := map[string]string{}
-	localdirs := func(code *compiler.Value) {
-		Analyze(
+
+	localdirs := func(code *compiler.Value) error {
+		return Analyze(
 			func(op *compiler.Value) error {
 				do, err := op.Lookup("do").String()
 				if err != nil {
@@ -91,7 +93,12 @@ func (e *Environment) LocalDirs() map[string]string {
 				if err != nil {
 					return err
 				}
-				dirs[dir] = dir
+				abs, err := filepath.Abs(dir)
+				if err != nil {
+					return err
+				}
+
+				dirs[dir] = abs
 				return nil
 			},
 			code,
@@ -101,10 +108,10 @@ func (e *Environment) LocalDirs() map[string]string {
 	// FIXME: use a common `flow` instance to avoid rescanning the tree.
 	src := compiler.NewValue()
 	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
-		return nil
+		return nil, err
 	}
 	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
-		return nil
+		return nil, err
 	}
 	flow := cueflow.New(
 		&cueflow.Config{},
@@ -112,11 +119,12 @@ func (e *Environment) LocalDirs() map[string]string {
 		newTaskFunc(noOpRunner),
 	)
 	for _, t := range flow.Tasks() {
-		v := compiler.Wrap(t.Value())
-		localdirs(v.Lookup("#up"))
+		if err := localdirs(compiler.Wrap(t.Value())); err != nil {
+			return nil, err
+		}
 	}
 
-	return dirs
+	return dirs, nil
 }
 
 // Up missing values in environment configuration, and write them to state.
