@@ -3,9 +3,10 @@ package trivy
 import (
 	"strconv"
 
+	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/aws"
 	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/os"
+	"alpha.dagger.io/dagger/op"
 )
 
 // Set Trivy download source
@@ -19,20 +20,20 @@ import (
 	// Docker Hub / Self hosted registry auth
 	basicAuth: {
 		// Username
-		username: dagger.#Input & {string} | *""
+		username: dagger.#Input & {string}
 
 		// Password
-		password: dagger.#Input & {dagger.#Secret} | *""
+		password: dagger.#Input & {dagger.#Secret}
 
 		// No SSL connection
-		noSSL:    *false | bool
+		noSSL: *false | bool
 	} | *null
 
 	// AWS ECR auth
 	awsAuth: aws.#Config | *null
 
 	// GCR auth (credential.json as string)
-	gcpAuth: dagger.#Input & {string} | *null
+	gcpAuth: dagger.#Input & {dagger.#Secret | *null}
 }
 
 // Re-usable CLI component
@@ -46,15 +47,15 @@ import (
 					package: bash: "=~5.1"
 					package: curl: true
 				}
-			},
-		}
+			}
+		},
 		if config.awsAuth != null {
 			op.#Load & {
 				from: aws.#CLI & {
 					"config": config
 				}
-			},
-		}
+			}
+		},
 		op.#Exec & {
 			args: ["sh", "-c",
 				#"""
@@ -90,16 +91,16 @@ import (
 						"""#,
 				]
 				env: TRIVY_USERNAME: config.basicAuth.username
-				env: TRIVY_NON_SSL: strconv.FormatBool(config.basicAuth.noSSL)
+				env: TRIVY_NON_SSL:  strconv.FormatBool(config.basicAuth.noSSL)
 				mount: "/password": secret: config.basicAuth.password
-			},
-		}
+			}
+		},
 		// config.gcpAuth case
 		if config.basicAuth == null && config.awsAuth == null && config.gcpAuth != null {
 			op.#WriteFile & {
 				dest:    "/credentials.json"
-				content: gcpAuth
-			},
+				content: config.gcpAuth
+			}
 			op.#Exec & {
 				args: ["/bin/bash", "-c",
 					#"""
@@ -116,22 +117,7 @@ import (
 						chmod +x /usr/local/bin/trivy
 						"""#,
 				]
-			},
-		}
+			}
+		},
 	]
 }
-
-
-// #Image
-// {
-// 	// Image source (AWS, GCP, Docker Hub, Self hosted)
-// 	source: string
-
-// 	// Trivy Image arguments
-// 	args: [arg=string]: string
-
-// 	ctr: os.#Container & {
-// 		command: #"""
-// 		"""#
-// 	}
-// }

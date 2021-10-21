@@ -1,0 +1,23 @@
+plan:
+    package: ./trivy/tests
+name: trivy
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2QVVmbFlHazZaeDJ6Vk5l
+            dldPbmttNWhLb1hnVjZMMGRkdk9kR3ErMENZCkJBOGN5NDFZYzRHR0N6d1NIeDMx
+            QXV0RkJydWltL092YnFNY3FGcUlYTGsKLS0tIGcxV0tYOGRNTE51K0VCNHAwcEtn
+            bHZuNEZsYnNNaHdBOFBTYmJtNC9JRncKVcqn44INSaA5TGRl/566DMu7scX9UjtV
+            3FhUcSfLFJXviw/ll3dUONXOQJTe3p9SgFCHir2qnMmJqErDDvqj/Q==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-10-21T14:00:04Z"
+    mac: ENC[AES256_GCM,data:YTCRHj9jF0JBXEmC8ljCnEweQKCdMYry2GiPoveFBuwG3aSSTLhoPbrLNA+0FJ/AEaQNwNDv8KbZ6i9phcDCmTh6LVIVryxWy5Th8kFp9CSyYyyIBU64OO57hsXtIDvWW1IXtXqd8mngjv3v57/SIsRxo1amTOlSKbjAoY61Rw8=,iv:xcDXzNYOXbEfowEAzf+wVrb0vJFTr0aTCRS23Nj0OmE=,tag:qQjpB4xs014EaEswwrOWeQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
