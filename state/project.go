@@ -240,7 +240,7 @@ func (w *Project) Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-func (w *Project) Create(ctx context.Context, name string, plan Plan) (*State, error) {
+func (w *Project) Create(ctx context.Context, name string, plan Plan, arch string) (*State, error) {
 	if _, err := w.Get(ctx, name); err == nil {
 		return nil, ErrExist
 	}
@@ -262,6 +262,10 @@ func (w *Project) Create(ctx context.Context, name string, plan Plan) (*State, e
 
 	manifestPath := path.Join(envPath, manifestFile)
 
+	if arch == "" {
+		arch = platforms.Format(platforms.DefaultSpec())
+	}
+
 	st := &State{
 		Path:    envPath,
 		Project: w.Path,
@@ -269,7 +273,7 @@ func (w *Project) Create(ctx context.Context, name string, plan Plan) (*State, e
 			Package: pkg,
 		},
 		Name:         name,
-		Architecture: platforms.DefaultString(),
+		Architecture: arch,
 	}
 
 	data, err := yaml.Marshal(st)
