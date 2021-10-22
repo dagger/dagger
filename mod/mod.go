@@ -6,14 +6,8 @@ import (
 	"github.com/gofrs/flock"
 )
 
-func InstallStdlib(workspace string) error {
-	_, err := Install(workspace, "alpha.dagger.io@v0.1")
-
-	return err
-}
-
-func Install(workspace, repoName string) (*Require, error) {
-	require, err := newRequire(repoName)
+func Install(workspace, repoName, versionConstraint string) (*Require, error) {
+	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +45,7 @@ func InstallAll(workspace string, repoNames []string) ([]*Require, error) {
 	for _, repoName := range repoNames {
 		var require *Require
 
-		if require, err = Install(workspace, repoName); err != nil {
+		if require, err = Install(workspace, repoName, ""); err != nil {
 			continue
 		}
 
@@ -61,8 +55,8 @@ func InstallAll(workspace string, repoNames []string) ([]*Require, error) {
 	return installedRequires, err
 }
 
-func Update(workspace, repoName string) (*Require, error) {
-	require, err := newRequire(repoName)
+func Update(workspace, repoName, versionConstraint string) (*Require, error) {
+	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +94,7 @@ func UpdateAll(workspace string, repoNames []string) ([]*Require, error) {
 	for _, repoName := range repoNames {
 		var require *Require
 
-		if require, err = Update(workspace, repoName); err != nil {
+		if require, err = Update(workspace, repoName, ""); err != nil {
 			continue
 		}
 

@@ -74,7 +74,7 @@ func TestListTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tags, err := r.listTags()
+	tags, err := r.listTagVersions("")
 	if err != nil {
 		t.Error(err)
 	}

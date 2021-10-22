@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
+	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/stdlib"
 	"gopkg.in/yaml.v3"
 )
@@ -24,12 +25,13 @@ var (
 )
 
 const (
-	daggerDir    = ".dagger"
-	envDir       = "env"
-	stateDir     = "state"
-	planDir      = "plan"
-	manifestFile = "values.yaml"
-	computedFile = "computed.json"
+	daggerDir                 = ".dagger"
+	envDir                    = "env"
+	stateDir                  = "state"
+	planDir                   = "plan"
+	manifestFile              = "values.yaml"
+	computedFile              = "computed.json"
+	universeVersionConstraint = ">= 0.1, < 0.2"
 )
 
 type Project struct {
@@ -396,9 +398,7 @@ func vendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
-	// FIXME(samalba): disabled install remote stdlib temporarily
-	// if err := mod.InstallStdlib(p); err != nil {
-	if err := stdlib.Vendor(ctx, p); err != nil {
+	if _, err := mod.Install(p, "alpha.dagger.io", universeVersionConstraint); err != nil {
 		return err
 	}
 

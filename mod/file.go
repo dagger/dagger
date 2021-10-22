@@ -98,7 +98,8 @@ func read(fMod, fSum io.Reader) (*file, error) {
 			return nil, fmt.Errorf("repos in mod and sum line don't match: %s and %s", modSplit[0], sumSplit[0])
 		}
 
-		require, err := newRequire(modSplit[0])
+		// FIXME: if we want to add support for version constraints in the mod file, it would be here
+		require, err := newRequire(modSplit[0], "")
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +205,7 @@ func (f *file) updateToLatest(req *Require) (*Require, error) {
 	}
 
 	// checkout the latest tag
-	latestTag, err := gitRepo.latestTag()
+	latestTag, err := gitRepo.latestTag(req.versionConstraint)
 	if err != nil {
 		return nil, err
 	}

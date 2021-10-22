@@ -49,7 +49,7 @@ func clone(require *Require, dir string, privateKeyFile, privateKeyPassword stri
 	}
 
 	if require.version == "" {
-		latestTag, err := rr.latestTag()
+		latestTag, err := rr.latestTag(require.versionConstraint)
 		if err != nil {
 			return nil, err
 		}
@@ -85,25 +85,53 @@ func (r *repo) checkout(version string) error {
 	return nil
 }
 
-func (r *repo) listTags() ([]string, error) {
+func (r *repo) listTagVersions(versionConstraint string) ([]string, error) {
+	if versionConstraint == "" {
+		versionConstraint = ">= 0"
+	}
+
+	constraint, err := version.NewConstraint(versionConstraint)
+	if err != nil {
+		return nil, err
+	}
+
 	iter, err := r.contents.Tags()
 	if err != nil {
 		return nil, err
 	}
 
 	var tags []string
-	if err := iter.ForEach(func(ref *plumbing.Reference) error {
-		tags = append(tags, ref.Name().Short())
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		tagV := ref.Name().Short()
+
+		if !strings.HasPrefix(tagV, "v") {
+			// ignore wrong formatted tags
+			return nil
+		}
+
+		v, err := version.NewVersion(tagV)
+		if err != nil {
+			// ignore invalid tag
+			return nil
+		}
+
+		if constraint.Check(v) {
+			// Add tag if it matches the version constraint
+			tags = append(tags, ref.Name().Short())
+		}
+
 		return nil
-	}); err != nil {
+	})
+
+	if err != nil {
 		return nil, err
 	}
 
 	return tags, nil
 }
 
-func (r *repo) latestTag() (string, error) {
-	versionsRaw, err := r.listTags()
+func (r *repo) latestTag(versionConstraint string) (string, error) {
+	versionsRaw, err := r.listTagVersions(versionConstraint)
 	if err != nil {
 		return "", err
 	}
@@ -115,10 +143,9 @@ func (r *repo) latestTag() (string, error) {
 	}
 
 	if len(versions) == 0 {
-		return "", fmt.Errorf("repo doesn't have any tags")
+		return "", fmt.Errorf("repo doesn't have any tags matching the required version")
 	}
 
-	sort.Sort(version.Collection(versions))
-
-	return versions[len(versions)-1].Original(), nil
+	sort.Sort(sort.Reverse(version.Collection(versions)))
+	return versions[0].Original(), nil
 }
