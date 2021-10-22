@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
-	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/stdlib"
 	"gopkg.in/yaml.v3"
 )
@@ -397,7 +396,9 @@ func vendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
-	if _, err := mod.Install(ctx, p, "alpha.dagger.io", ""); err != nil {
+	if err := stdlib.Vendor(ctx, p); err != nil {
+		// FIXME(samalba): disabled install remote stdlib temporarily
+		// if _, err := mod.Install(ctx, p, "alpha.dagger.io", ""); err != nil {
 		return err
 	}
 
