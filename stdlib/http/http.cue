@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger"
@@ -64,18 +65,23 @@ import (
 			"""#
 	}
 
+	statusCode: {
+		os.#File & {
+				from: ctr
+				path: "/status"
+			}
+	}.contents @dagger(output)
+
+	body: {
+		os.#File & {
+				from: ctr
+				path: "/response"
+			}
+	}.contents  @dagger(output)
+
+ // Force os.#File exec before Atoi
 	response: {
-		body: {
-			os.#File & {
-					from: ctr
-					path: "/response"
-				}
-		}.contents  @dagger(output)
-		statusCode: {
-			os.#File & {
-					from: ctr
-					path: "/status"
-				}
-		}.contents @dagger(output)
+		"body": body
+		"statusCode": strconv.Atoi(statusCode)
 	}
 }
