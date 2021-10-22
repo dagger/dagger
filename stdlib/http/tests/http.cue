@@ -1,9 +1,6 @@
 package http
 
 import (
-	// "encoding/json"
-	// "strconv"
-
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/os"
 )
