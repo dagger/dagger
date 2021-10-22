@@ -398,7 +398,7 @@ func vendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
-	if _, err := mod.Install(p, "alpha.dagger.io", universeVersionConstraint); err != nil {
+	if _, err := mod.Install(ctx, p, "alpha.dagger.io", universeVersionConstraint); err != nil {
 		return err
 	}
 

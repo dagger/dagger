@@ -1,12 +1,17 @@
 package mod
 
 import (
+	"context"
 	"path"
 
 	"github.com/gofrs/flock"
+	"github.com/rs/zerolog/log"
 )
 
-func Install(workspace, repoName, versionConstraint string) (*Require, error) {
+func Install(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
+	lg := log.Ctx(ctx)
+
+	lg.Info().Str("name", repoName).Msg("installing module")
 	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
@@ -38,14 +43,14 @@ func Install(workspace, repoName, versionConstraint string) (*Require, error) {
 	return require, nil
 }
 
-func InstallAll(workspace string, repoNames []string) ([]*Require, error) {
+func InstallAll(ctx context.Context, workspace string, repoNames []string) ([]*Require, error) {
 	installedRequires := make([]*Require, 0, len(repoNames))
 	var err error
 
 	for _, repoName := range repoNames {
 		var require *Require
 
-		if require, err = Install(workspace, repoName, ""); err != nil {
+		if require, err = Install(ctx, workspace, repoName, ""); err != nil {
 			continue
 		}
 
@@ -55,7 +60,10 @@ func InstallAll(workspace string, repoNames []string) ([]*Require, error) {
 	return installedRequires, err
 }
 
-func Update(workspace, repoName, versionConstraint string) (*Require, error) {
+func Update(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
+	lg := log.Ctx(ctx)
+
+	lg.Info().Str("name", repoName).Msg("updating module")
 	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
@@ -87,14 +95,14 @@ func Update(workspace, repoName, versionConstraint string) (*Require, error) {
 	return updatedRequire, nil
 }
 
-func UpdateAll(workspace string, repoNames []string) ([]*Require, error) {
+func UpdateAll(ctx context.Context, workspace string, repoNames []string) ([]*Require, error) {
 	updatedRequires := make([]*Require, 0, len(repoNames))
 	var err error
 
 	for _, repoName := range repoNames {
 		var require *Require
 
-		if require, err = Update(workspace, repoName, ""); err != nil {
+		if require, err = Update(ctx, workspace, repoName, ""); err != nil {
 			continue
 		}
 
@@ -104,7 +112,7 @@ func UpdateAll(workspace string, repoNames []string) ([]*Require, error) {
 	return updatedRequires, err
 }
 
-func UpdateInstalled(workspace string) ([]*Require, error) {
+func UpdateInstalled(ctx context.Context, workspace string) ([]*Require, error) {
 	modfile, err := readPath(workspace)
 	if err != nil {
 		return nil, err
@@ -116,7 +124,7 @@ func UpdateInstalled(workspace string) ([]*Require, error) {
 		repoNames = append(repoNames, require.String())
 	}
 
-	return UpdateAll(workspace, repoNames)
+	return UpdateAll(ctx, workspace, repoNames)
 }
 
 func Ensure(workspace string) error {
