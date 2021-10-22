@@ -2,7 +2,7 @@ package http
 
 import (
 	"encoding/json"
-	"strconv"
+	// "strconv"
 
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger"
@@ -32,6 +32,7 @@ import (
 		shell: path: "/bin/bash"
 		always: true
 
+
 		env: {
 			METHOD:  method
 			HEADERS: json.Marshal(request.header)
@@ -47,15 +48,15 @@ import (
 			    -L --fail --silent --show-error
 			    --write-out "%{http_code}"
 			    -X "$METHOD"
-			    -d "$BODY"
 			    -o /response
 			)
 
+			[ -n "$BODY" ] && curlArgs+=("-d" "'$BODY'")
+
 			headers="$(echo $HEADERS | jq -r 'to_entries | map(.key + ": " + (.value | tostring) + "\n") | add')"
 			while read h; do
-			    curlArgs+=("-H" "$h")
+			    curlArgs+=("-H" "'$h'")
 			done <<< "$headers"
-
 			if [ -e /token ]; then
 			    curlArgs+=("-H" "Authorization: bearer $(cat /token)")
 			fi
@@ -71,11 +72,11 @@ import (
 					path: "/response"
 				}
 		}.contents  @dagger(output)
-		statusCode: strconv.Atoi({
+		statusCode: {
 			os.#File & {
 					from: ctr
 					path: "/status"
 				}
-		}.contents) @dagger(output)
+		}.contents @dagger(output)
 	}
 }
