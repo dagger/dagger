@@ -159,6 +159,28 @@ setup() {
     "$DAGGER" up
 }
 
+@test "core: arch config" {
+  dagger init
+
+  # Test for amd64 architecture
+  dagger_new_with_plan test-amd "$TESTDIR"/core/arch-config "linux/amd64"
+
+  # Set arch expected value
+  "$DAGGER" -e test-amd input text targetArch "x86_64"
+
+  # Up amd
+  "$DAGGER" -e test-amd up
+
+  # Test for amd64 architecture
+  dagger_new_with_plan test-arm "$TESTDIR"/core/arch-config "linux/arm64"
+
+  # Set arch expected value
+  "$DAGGER" -e test-arm input text targetArch "aarch64"
+
+  # Up arm
+  "$DAGGER" -e test-arm up
+}
+
 @test "compute: exclude" {
     "$DAGGER" up --project "$TESTDIR"/compute/exclude
 }

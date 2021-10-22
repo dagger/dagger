@@ -20,10 +20,19 @@ common_setup() {
 dagger_new_with_plan() {
     local name="$1"
     local sourcePlan="$2"
+    local arch="$3"
 
     cp -a "$sourcePlan"/* "$DAGGER_PROJECT"
 
-    "$DAGGER" new "$name"
+    local opts=""
+    if [ -n "$arch" ];
+    then
+      opts="-a $arch"
+    fi
+
+    # Need word splitting to take in account "-a" and "$arch"
+    # shellcheck disable=SC2086
+    "$DAGGER" new "$name" ${opts}
 }
 
 dagger_new_with_env() {
