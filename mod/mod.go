@@ -3,15 +3,29 @@ package mod
 import (
 	"context"
 	"path"
+	"strings"
 
 	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	UniverseVersionConstraint = ">= 0.1.0, < 0.2"
+)
+
+func isUniverse(repoName string) bool {
+	return strings.HasPrefix(strings.ToLower(repoName), "alpha.dagger.io")
+}
+
 func Install(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
 	lg := log.Ctx(ctx)
 
-	lg.Info().Str("name", repoName).Msg("installing module")
+	if isUniverse(repoName) {
+		// override versionConstraint to lock the version of universe we vendor
+		versionConstraint = UniverseVersionConstraint
+	}
+
+	lg.Debug().Str("name", repoName).Msg("installing module")
 	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
@@ -27,7 +41,7 @@ func Install(ctx context.Context, workspace, repoName, versionConstraint string)
 		return nil, err
 	}
 
-	err = modfile.install(require)
+	err = modfile.install(ctx, require)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +77,12 @@ func InstallAll(ctx context.Context, workspace string, repoNames []string) ([]*R
 func Update(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
 	lg := log.Ctx(ctx)
 
-	lg.Info().Str("name", repoName).Msg("updating module")
+	if isUniverse(repoName) {
+		// override versionConstraint to lock the version of universe we vendor
+		versionConstraint = UniverseVersionConstraint
+	}
+
+	lg.Debug().Str("name", repoName).Msg("updating module")
 	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
@@ -79,7 +98,7 @@ func Update(ctx context.Context, workspace, repoName, versionConstraint string) 
 		return nil, err
 	}
 
-	updatedRequire, err := modfile.updateToLatest(require)
+	updatedRequire, err := modfile.updateToLatest(ctx, require)
 	if err != nil {
 		return nil, err
 	}

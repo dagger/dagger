@@ -25,13 +25,12 @@ var (
 )
 
 const (
-	daggerDir                 = ".dagger"
-	envDir                    = "env"
-	stateDir                  = "state"
-	planDir                   = "plan"
-	manifestFile              = "values.yaml"
-	computedFile              = "computed.json"
-	universeVersionConstraint = ">= 0.1, < 0.2"
+	daggerDir    = ".dagger"
+	envDir       = "env"
+	stateDir     = "state"
+	planDir      = "plan"
+	manifestFile = "values.yaml"
+	computedFile = "computed.json"
 )
 
 type Project struct {
@@ -398,7 +397,7 @@ func vendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
-	if _, err := mod.Install(ctx, p, "alpha.dagger.io", universeVersionConstraint); err != nil {
+	if _, err := mod.Install(ctx, p, "alpha.dagger.io", ""); err != nil {
 		return err
 	}
 

@@ -1,6 +1,7 @@
 package mod
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -50,7 +51,7 @@ func TestClone(t *testing.T) {
 
 			defer os.Remove(tmpDir)
 
-			_, err = clone(&c.require, tmpDir, c.privateKeyFile, c.privateKeyPassword)
+			_, err = clone(context.TODO(), &c.require, tmpDir, c.privateKeyFile, c.privateKeyPassword)
 			if err != nil {
 				t.Error(err)
 			}
@@ -65,7 +66,9 @@ func TestListTags(t *testing.T) {
 	}
 	defer os.Remove(tmpDir)
 
-	r, err := clone(&Require{
+	ctx := context.TODO()
+
+	r, err := clone(ctx, &Require{
 		cloneRepo: "github.com/dagger/universe",
 		clonePath: "stdlib",
 		version:   "",
@@ -74,7 +77,7 @@ func TestListTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tags, err := r.listTagVersions("")
+	tags, err := r.listTagVersions(ctx, "")
 	if err != nil {
 		t.Error(err)
 	}
@@ -91,7 +94,9 @@ func TestVersionConstraint(t *testing.T) {
 	}
 	defer os.Remove(tmpDir)
 
-	r, err := clone(&Require{
+	ctx := context.TODO()
+
+	r, err := clone(ctx, &Require{
 		cloneRepo: "github.com/dagger/universe",
 		clonePath: "stdlib",
 		version:   "",
@@ -100,7 +105,7 @@ func TestVersionConstraint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tagVersion, err := r.latestTag("<= 0.1.0")
+	tagVersion, err := r.latestTag(ctx, "<= 0.1.0")
 	if err != nil {
 		t.Error(err)
 	}
@@ -111,7 +116,7 @@ func TestVersionConstraint(t *testing.T) {
 	}
 
 	// Make sure an invalid constraint (version out of range) returns an error
-	_, err = r.latestTag("> 99999")
+	_, err = r.latestTag(ctx, "> 99999")
 	if err == nil {
 		t.Error("selected wrong version based on constraint")
 	}
