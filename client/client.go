@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containerd/containerd/platforms"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
@@ -80,7 +81,7 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
-	environment, err := environment.New(state)
+	env, err := environment.New(state)
 	if err != nil {
 		return err
 	}
@@ -96,7 +97,7 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 
 	// Spawn build function
 	eg.Go(func() error {
-		return c.buildfn(gctx, state, environment, fn, events)
+		return c.buildfn(gctx, state, env, fn, events)
 	})
 
 	return eg.Wait()
@@ -200,7 +201,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 				llb.WithCustomName("[internal] serializing computed values"),
 			)
 
-		ref, err := s.Solve(ctx, st)
+		ref, err := s.Solve(ctx, st, platforms.DefaultSpec())
 		if err != nil {
 			return nil, err
 		}

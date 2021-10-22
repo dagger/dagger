@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	"github.com/containerd/containerd/platforms"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
@@ -41,8 +42,9 @@ var computeCmd = &cobra.Command{
 		doneCh := common.TrackCommand(ctx, cmd)
 
 		st := &state.State{
-			Name: "FIXME",
-			Path: args[0],
+			Name:         "FIXME",
+			Architecture: platforms.Format(platforms.DefaultSpec()),
+			Path:         args[0],
 			Plan: state.Plan{
 				Module: args[0],
 			},

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cuelang.org/go/cue"
+	bkplatforms "github.com/containerd/containerd/platforms"
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -22,6 +23,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	digest "github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
@@ -44,15 +46,17 @@ type Pipeline struct {
 	name     string
 	s        solver.Solver
 	state    llb.State
+	platform specs.Platform // Architecture constraint
 	result   bkgw.Reference
 	image    dockerfile2llb.Image
 	computed *compiler.Value
 }
 
-func NewPipeline(code *compiler.Value, s solver.Solver) *Pipeline {
+func NewPipeline(code *compiler.Value, s solver.Solver, platform specs.Platform) *Pipeline {
 	return &Pipeline{
 		code:     code,
 		name:     code.Path().String(),
+		platform: platform,
 		s:        s,
 		state:    llb.Scratch(),
 		computed: compiler.NewValue(),
@@ -229,7 +233,7 @@ func (p *Pipeline) run(ctx context.Context) error {
 		// so that errors map to the correct cue path.
 		// FIXME: might as well change FS to make every operation
 		// synchronous.
-		p.result, err = p.s.Solve(ctx, p.state)
+		p.result, err = p.s.Solve(ctx, p.state, p.platform)
 		if err != nil {
 			return err
 		}
@@ -335,7 +339,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s)
+	from := NewPipeline(op.Lookup("from"), p.s, p.platform)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -591,7 +595,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		return nil, fmt.Errorf("invalid mount: should have %s structure",
 			"{from: _, path: string | *\"/\"}")
 	}
-	from := NewPipeline(mnt.Lookup("from"), p.s)
+	from := NewPipeline(mnt.Lookup("from"), p.s, p.platform)
 	if err := from.Run(ctx); err != nil {
 		return nil, err
 	}
@@ -737,7 +741,7 @@ func parseStringOrSecret(ctx context.Context, ss solver.SecretsStore, v *compile
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s)
+	from := NewPipeline(op.Lookup("from"), p.s, p.platform)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -795,7 +799,8 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 
 	// Load image metadata and convert to to LLB.
 	p.image, err = p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
-		LogName: p.vertexNamef("load metadata for %s", ref.String()),
+		LogName:  p.vertexNamef("load metadata for %s", ref.String()),
+		Platform: &p.platform,
 	})
 	if err != nil {
 		return st, err
@@ -855,18 +860,18 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 		return st, err
 	}
 
-	if digest, ok := resp.ExporterResponse["containerimage.digest"]; ok {
+	if dgst, ok := resp.ExporterResponse["containerimage.digest"]; ok {
 		imageRef := fmt.Sprintf(
 			"%s@%s",
 			resp.ExporterResponse["image.name"],
-			digest,
+			dgst,
 		)
 
 		return st.File(
 			llb.Mkdir("/dagger", fs.FileMode(0755)),
 			llb.WithCustomName(p.vertexNamef("Mkdir /dagger")),
 		).File(
-			llb.Mkfile("/dagger/image_digest", fs.FileMode(0644), []byte(digest)),
+			llb.Mkfile("/dagger/image_digest", fs.FileMode(0644), []byte(dgst)),
 			llb.WithCustomName(p.vertexNamef("Storing image digest to /dagger/image_digest")),
 		).File(
 			llb.Mkfile("/dagger/image_ref", fs.FileMode(0644), []byte(imageRef)),
@@ -1068,7 +1073,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if dockerContext.Exists() {
-		from := NewPipeline(op.Lookup("context"), p.s)
+		from := NewPipeline(op.Lookup("context"), p.s, p.platform)
 		if err := from.Run(ctx); err != nil {
 			return st, err
 		}
@@ -1105,6 +1110,11 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 
 	if p.s.NoCache() {
 		opts["no-cache"] = ""
+	}
+
+	// Set platform to configured one if no one is defined
+	if opts["platform"] == "" {
+		opts["platform"] = bkplatforms.Format(p.platform)
 	}
 
 	req := bkgw.SolveRequest{

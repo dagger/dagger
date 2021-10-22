@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
 	"go.dagger.io/dagger/stdlib"
@@ -182,6 +183,10 @@ func (w *Project) Get(ctx context.Context, name string) (*State, error) {
 	}
 	st.Project = w.Path
 
+	if st.Architecture == "" {
+		st.Architecture = platforms.DefaultString()
+	}
+
 	computed, err := os.ReadFile(path.Join(envPath, stateDir, computedFile))
 	if err == nil {
 		st.Computed = string(computed)
@@ -263,7 +268,8 @@ func (w *Project) Create(ctx context.Context, name string, plan Plan) (*State, e
 		Plan: Plan{
 			Package: pkg,
 		},
-		Name: name,
+		Name:         name,
+		Architecture: platforms.DefaultString(),
 	}
 
 	data, err := yaml.Marshal(st)

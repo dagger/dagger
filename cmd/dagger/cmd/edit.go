@@ -73,6 +73,7 @@ var editCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to decode file")
 		}
 		st.Name = newState.Name
+		st.Architecture = newState.Architecture
 		st.Plan = newState.Plan
 		st.Inputs = newState.Inputs
 
