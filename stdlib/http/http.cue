@@ -44,7 +44,7 @@ import (
 		}
 		command: #"""
 			curlArgs=(
-			    "$URL"
+			     "$URL"
 			    -L --fail --silent --show-error
 			    --write-out "%{http_code}"
 			    -X "$METHOD"
@@ -60,7 +60,6 @@ import (
 			if [ -e /token ]; then
 			    curlArgs+=("-H" "Authorization: bearer $(cat /token)")
 			fi
-
 			curl "${curlArgs[@]}" > /status
 			"""#
 	}
