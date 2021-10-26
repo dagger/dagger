@@ -15,16 +15,17 @@ type Require struct {
 	cloneRepo string
 	clonePath string
 
-	version  string
-	checksum string
+	version           string
+	versionConstraint string
+	checksum          string
 }
 
-func newRequire(repoName string) (*Require, error) {
+func newRequire(repoName, versionConstraint string) (*Require, error) {
 	switch {
 	case strings.HasPrefix(repoName, "github.com"):
-		return parseGithubRepoName(repoName)
+		return parseGithubRepoName(repoName, versionConstraint)
 	case strings.HasPrefix(repoName, "alpha.dagger.io"):
-		return parseDaggerRepoName(repoName)
+		return parseDaggerRepoName(repoName, versionConstraint)
 	default:
 		return nil, fmt.Errorf("repo name does not match suported providers")
 	}
@@ -32,7 +33,7 @@ func newRequire(repoName string) (*Require, error) {
 
 var githubRepoNameRegex = regexp.MustCompile(`(github.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
 
-func parseGithubRepoName(repoName string) (*Require, error) {
+func parseGithubRepoName(repoName, versionConstraint string) (*Require, error) {
 	repoMatches := githubRepoNameRegex.FindStringSubmatch(repoName)
 
 	if len(repoMatches) < 4 {
@@ -40,9 +41,10 @@ func parseGithubRepoName(repoName string) (*Require, error) {
 	}
 
 	return &Require{
-		repo:    repoMatches[1],
-		path:    repoMatches[2],
-		version: repoMatches[3],
+		repo:              repoMatches[1],
+		path:              repoMatches[2],
+		version:           repoMatches[3],
+		versionConstraint: versionConstraint,
 
 		cloneRepo: repoMatches[1],
 		clonePath: repoMatches[2],
@@ -51,7 +53,7 @@ func parseGithubRepoName(repoName string) (*Require, error) {
 
 var daggerRepoNameRegex = regexp.MustCompile(`alpha.dagger.io([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
 
-func parseDaggerRepoName(repoName string) (*Require, error) {
+func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 	repoMatches := daggerRepoNameRegex.FindStringSubmatch(repoName)
 
 	if len(repoMatches) < 3 {
@@ -59,9 +61,10 @@ func parseDaggerRepoName(repoName string) (*Require, error) {
 	}
 
 	return &Require{
-		repo:    "alpha.dagger.io",
-		path:    repoMatches[1],
-		version: repoMatches[2],
+		repo:              "alpha.dagger.io",
+		path:              repoMatches[1],
+		version:           repoMatches[2],
+		versionConstraint: versionConstraint,
 
 		cloneRepo: "github.com/dagger/universe",
 		clonePath: path.Join("/stdlib", repoMatches[1]),

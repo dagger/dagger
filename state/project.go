@@ -396,9 +396,9 @@ func vendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
-	// FIXME(samalba): disabled install remote stdlib temporarily
-	// if err := mod.InstallStdlib(p); err != nil {
 	if err := stdlib.Vendor(ctx, p); err != nil {
+		// FIXME(samalba): disabled install remote stdlib temporarily
+		// if _, err := mod.Install(ctx, p, "alpha.dagger.io", ""); err != nil {
 		return err
 	}
 

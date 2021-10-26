@@ -1,19 +1,32 @@
 package mod
 
 import (
+	"context"
 	"path"
+	"strings"
 
 	"github.com/gofrs/flock"
+	"github.com/rs/zerolog/log"
 )
 
-func InstallStdlib(workspace string) error {
-	_, err := Install(workspace, "alpha.dagger.io@v0.1")
+const (
+	UniverseVersionConstraint = ">= 0.1.0, < 0.2"
+)
 
-	return err
+func isUniverse(repoName string) bool {
+	return strings.HasPrefix(strings.ToLower(repoName), "alpha.dagger.io")
 }
 
-func Install(workspace, repoName string) (*Require, error) {
-	require, err := newRequire(repoName)
+func Install(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
+	lg := log.Ctx(ctx)
+
+	if isUniverse(repoName) {
+		// override versionConstraint to lock the version of universe we vendor
+		versionConstraint = UniverseVersionConstraint
+	}
+
+	lg.Debug().Str("name", repoName).Msg("installing module")
+	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +41,7 @@ func Install(workspace, repoName string) (*Require, error) {
 		return nil, err
 	}
 
-	err = modfile.install(require)
+	err = modfile.install(ctx, require)
 	if err != nil {
 		return nil, err
 	}
@@ -44,14 +57,14 @@ func Install(workspace, repoName string) (*Require, error) {
 	return require, nil
 }
 
-func InstallAll(workspace string, repoNames []string) ([]*Require, error) {
+func InstallAll(ctx context.Context, workspace string, repoNames []string) ([]*Require, error) {
 	installedRequires := make([]*Require, 0, len(repoNames))
 	var err error
 
 	for _, repoName := range repoNames {
 		var require *Require
 
-		if require, err = Install(workspace, repoName); err != nil {
+		if require, err = Install(ctx, workspace, repoName, ""); err != nil {
 			continue
 		}
 
@@ -61,8 +74,16 @@ func InstallAll(workspace string, repoNames []string) ([]*Require, error) {
 	return installedRequires, err
 }
 
-func Update(workspace, repoName string) (*Require, error) {
-	require, err := newRequire(repoName)
+func Update(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
+	lg := log.Ctx(ctx)
+
+	if isUniverse(repoName) {
+		// override versionConstraint to lock the version of universe we vendor
+		versionConstraint = UniverseVersionConstraint
+	}
+
+	lg.Debug().Str("name", repoName).Msg("updating module")
+	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +98,7 @@ func Update(workspace, repoName string) (*Require, error) {
 		return nil, err
 	}
 
-	updatedRequire, err := modfile.updateToLatest(require)
+	updatedRequire, err := modfile.updateToLatest(ctx, require)
 	if err != nil {
 		return nil, err
 	}
@@ -93,14 +114,14 @@ func Update(workspace, repoName string) (*Require, error) {
 	return updatedRequire, nil
 }
 
-func UpdateAll(workspace string, repoNames []string) ([]*Require, error) {
+func UpdateAll(ctx context.Context, workspace string, repoNames []string) ([]*Require, error) {
 	updatedRequires := make([]*Require, 0, len(repoNames))
 	var err error
 
 	for _, repoName := range repoNames {
 		var require *Require
 
-		if require, err = Update(workspace, repoName); err != nil {
+		if require, err = Update(ctx, workspace, repoName, ""); err != nil {
 			continue
 		}
 
@@ -110,7 +131,7 @@ func UpdateAll(workspace string, repoNames []string) ([]*Require, error) {
 	return updatedRequires, err
 }
 
-func UpdateInstalled(workspace string) ([]*Require, error) {
+func UpdateInstalled(ctx context.Context, workspace string) ([]*Require, error) {
 	modfile, err := readPath(workspace)
 	if err != nil {
 		return nil, err
@@ -122,7 +143,7 @@ func UpdateInstalled(workspace string) ([]*Require, error) {
 		repoNames = append(repoNames, require.String())
 	}
 
-	return UpdateAll(workspace, repoNames)
+	return UpdateAll(ctx, workspace, repoNames)
 }
 
 func Ensure(workspace string) error {

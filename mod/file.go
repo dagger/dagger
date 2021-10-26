@@ -2,6 +2,7 @@ package mod
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,11 +16,13 @@ import (
 	"github.com/spf13/viper"
 )
 
-const modFilePath = "./cue.mod/dagger.mod"
-const sumFilePath = "./cue.mod/dagger.sum"
-const lockFilePath = "./cue.mod/dagger.lock"
-const destBasePath = "./cue.mod/pkg"
-const tmpBasePath = "./cue.mod/tmp"
+const (
+	modFilePath  = "./cue.mod/dagger.mod"
+	sumFilePath  = "./cue.mod/dagger.sum"
+	lockFilePath = "./cue.mod/dagger.lock"
+	destBasePath = "./cue.mod/pkg"
+	tmpBasePath  = "./cue.mod/tmp"
+)
 
 // file is the parsed, interpreted form of dagger.mod file.
 type file struct {
@@ -98,7 +101,8 @@ func read(fMod, fSum io.Reader) (*file, error) {
 			return nil, fmt.Errorf("repos in mod and sum line don't match: %s and %s", modSplit[0], sumSplit[0])
 		}
 
-		require, err := newRequire(modSplit[0])
+		// FIXME: if we want to add support for version constraints in the mod file, it would be here
+		require, err := newRequire(modSplit[0], "")
 		if err != nil {
 			return nil, err
 		}
@@ -126,20 +130,19 @@ func nonEmptyLines(b []byte) []string {
 		}
 
 		trimmed = spaceRgx.ReplaceAllString(trimmed, " ")
-
 		lines = append(lines, trimmed)
 	}
 
 	return lines
 }
 
-func (f *file) install(req *Require) error {
+func (f *file) install(ctx context.Context, req *Require) error {
 	// cleaning up possible leftovers
 	tmpPath := path.Join(f.workspacePath, tmpBasePath, req.fullPath())
 	defer os.RemoveAll(tmpPath)
 
 	// clone to a tmp directory
-	r, err := clone(req, tmpPath, viper.GetString("private-key-file"), viper.GetString("private-key-password"))
+	r, err := clone(ctx, req, tmpPath, viper.GetString("private-key-file"), viper.GetString("private-key-password"))
 	if err != nil {
 		return fmt.Errorf("error downloading package %s: %w", req, err)
 	}
@@ -168,7 +171,7 @@ func (f *file) install(req *Require) error {
 	// checkout the cloned repo to that tag, change the version in the existing requirement and
 	// replace the code in the /pkg folder
 	existing.version = req.version
-	if err = r.checkout(req.version); err != nil {
+	if err = r.checkout(ctx, req.version); err != nil {
 		return err
 	}
 
@@ -186,7 +189,7 @@ func (f *file) install(req *Require) error {
 	return nil
 }
 
-func (f *file) updateToLatest(req *Require) (*Require, error) {
+func (f *file) updateToLatest(ctx context.Context, req *Require) (*Require, error) {
 	// check if it doesn't exist
 	existing := f.searchInstalledRequire(req)
 	if existing == nil {
@@ -198,13 +201,13 @@ func (f *file) updateToLatest(req *Require) (*Require, error) {
 	defer os.RemoveAll(tmpPath)
 
 	// clone to a tmp directory
-	gitRepo, err := clone(existing, tmpPath, viper.GetString("private-key-file"), viper.GetString("private-key-password"))
+	gitRepo, err := clone(ctx, existing, tmpPath, viper.GetString("private-key-file"), viper.GetString("private-key-password"))
 	if err != nil {
 		return nil, fmt.Errorf("error downloading package %s: %w", existing, err)
 	}
 
 	// checkout the latest tag
-	latestTag, err := gitRepo.latestTag()
+	latestTag, err := gitRepo.latestTag(ctx, req.versionConstraint)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +222,7 @@ func (f *file) updateToLatest(req *Require) (*Require, error) {
 	}
 
 	existing.version = latestTag
-	if err = gitRepo.checkout(existing.version); err != nil {
+	if err = gitRepo.checkout(ctx, existing.version); err != nil {
 		return nil, err
 	}
 

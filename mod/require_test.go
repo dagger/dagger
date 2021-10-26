@@ -98,7 +98,7 @@ func TestParseArgument(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := newRequire(c.in)
+			got, err := newRequire(c.in, "")
 			if err != nil && c.hasError {
 				return
 			}

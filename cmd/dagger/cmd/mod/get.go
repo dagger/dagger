@@ -38,13 +38,13 @@ var getCmd = &cobra.Command{
 		var err error
 		if update && len(args) == 0 {
 			lg.Info().Msg("updating all installed packages...")
-			processedRequires, err = mod.UpdateInstalled(project.Path)
+			processedRequires, err = mod.UpdateInstalled(ctx, project.Path)
 		} else if update && len(args) > 0 {
 			lg.Info().Msg("updating specified packages...")
-			processedRequires, err = mod.UpdateAll(project.Path, args)
+			processedRequires, err = mod.UpdateAll(ctx, project.Path, args)
 		} else if !update && len(args) > 0 {
 			lg.Info().Msg("installing specified packages...")
-			processedRequires, err = mod.InstallAll(project.Path, args)
+			processedRequires, err = mod.InstallAll(ctx, project.Path, args)
 		} else {
 			lg.Fatal().Msg("unrecognized update/install operation")
 		}
