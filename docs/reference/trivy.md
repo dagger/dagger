@@ -8,17 +8,40 @@ sidebar_label: trivy
 import "alpha.dagger.io/trivy"
 ```
 
+## trivy.#CLI
+
+Re-usable CLI component
+
+### trivy.#CLI Inputs
+
+_No input._
+
+### trivy.#CLI Outputs
+
+_No output._
+
 ## trivy.#Config
 
-Trivy configuration
+Trivy Configuration
 
 ### trivy.#Config Inputs
 
-| Name             | Type                | Description        |
-| -------------    |:-------------:      |:-------------:     |
-|*username*        | `dagger.#Secret`    |-                   |
-|*password*        | `dagger.#Secret`    |-                   |
+_No input._
 
 ### trivy.#Config Outputs
 
 _No output._
+
+## trivy.#Image
+
+Scan an Image
+
+### trivy.#Image Inputs
+
+_No input._
+
+### trivy.#Image Outputs
+
+| Name             | Type              | Description          |
+| -------------    |:-------------:    |:-------------:       |
+|*ref*             | `string`          |Reference analyzed    |

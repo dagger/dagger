@@ -16,13 +16,12 @@ import (
 
 	// Trivy Image arguments
 	args: [arg=string]: string
-	
 	// Enforce args best practices
 	args: {
-		"--exit-code": *"1" | string
-		"--severity": *"HIGH,CRITICAL" | string
-		"--format": *"table" | string
-		"--ignore-unfixed": *"true" | string
+		"--severity":       *"HIGH,CRITICAL" | string
+		"--exit-code":      *"1" | string
+		"--ignore-unfixed": *"" | string
+		"--format":         *"table" | string
 	}
 
 	ctr: os.#Container & {
@@ -33,6 +32,7 @@ import (
 			path: "/bin/bash"
 			args: ["--noprofile", "--norc", "-eo", "pipefail", "-c"]
 		}
+		always: true
 		command: #"""
 			trivyArgs="$(
 				echo "$ARGS" |
@@ -42,18 +42,22 @@ import (
 					add
 			')"
 
-			trivy image "$trivyArgs" "$SOURCE"
-			echo "$SOURCE" > /ref
+			# Remove suffix and prefix quotes if present
+			trivyArgs="${trivyArgs#\"}"
+			trivyArgs="${trivyArgs%\"}"
+
+			trivy image $trivyArgs "$SOURCE"
+			echo -n "$SOURCE" > /ref
 			"""#
 		env: ARGS:   json.Marshal(args)
 		env: SOURCE: source
 	}
 
-	// Export ref to create dependency (wait for the check to finish)
+	// Reference analyzed
 	ref: {
 		os.#File & {
-			from: ctr
-			path: "/ref"
-		}
+				from: ctr
+				path: "/ref"
+			}
 	}.contents @dagger(output)
 }
