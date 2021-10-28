@@ -32,7 +32,6 @@ import (
 		shell: path: "/bin/bash"
 		always: true
 
-
 		env: {
 			METHOD:  method
 			HEADERS: json.Marshal(request.header)
@@ -77,11 +76,11 @@ import (
 				from: ctr
 				path: "/response"
 			}
-	}.contents  @dagger(output)
+	}.contents @dagger(output)
 
- // Force os.#File exec before Atoi
+	// Force os.#File exec before Atoi
 	response: {
-		"body": body
+		"body":       body
 		"statusCode": strconv.Atoi(statusCode)
 	}
 }

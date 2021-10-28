@@ -16,10 +16,10 @@ _No input._
 
 ### http.#Delete Outputs
 
-| Name                    | Type              | Description        |
-| -------------           |:-------------:    |:-------------:     |
-|*response.body*          | `string`          |-                   |
-|*response.statusCode*    | `_\|_`            |-                   |
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*statusCode*      | `string`          |-                   |
+|*body*            | `string`          |-                   |
 
 ## http.#Do
 
@@ -29,10 +29,10 @@ _No input._
 
 ### http.#Do Outputs
 
-| Name                    | Type              | Description        |
-| -------------           |:-------------:    |:-------------:     |
-|*response.body*          | `string`          |-                   |
-|*response.statusCode*    | `_\|_`            |-                   |
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*statusCode*      | `string`          |-                   |
+|*body*            | `string`          |-                   |
 
 ## http.#Get
 
@@ -42,10 +42,10 @@ _No input._
 
 ### http.#Get Outputs
 
-| Name                    | Type              | Description        |
-| -------------           |:-------------:    |:-------------:     |
-|*response.body*          | `string`          |-                   |
-|*response.statusCode*    | `_\|_`            |-                   |
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*statusCode*      | `string`          |-                   |
+|*body*            | `string`          |-                   |
 
 ## http.#Post
 
@@ -55,10 +55,10 @@ _No input._
 
 ### http.#Post Outputs
 
-| Name                    | Type              | Description        |
-| -------------           |:-------------:    |:-------------:     |
-|*response.body*          | `string`          |-                   |
-|*response.statusCode*    | `_\|_`            |-                   |
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*statusCode*      | `string`          |-                   |
+|*body*            | `string`          |-                   |
 
 ## http.#Put
 
@@ -68,7 +68,7 @@ _No input._
 
 ### http.#Put Outputs
 
-| Name                    | Type              | Description        |
-| -------------           |:-------------:    |:-------------:     |
-|*response.body*          | `string`          |-                   |
-|*response.statusCode*    | `_\|_`            |-                   |
+| Name             | Type              | Description        |
+| -------------    |:-------------:    |:-------------:     |
+|*statusCode*      | `string`          |-                   |
+|*body*            | `string`          |-                   |

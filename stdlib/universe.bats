@@ -24,7 +24,7 @@ setup() {
 }
 
 @test "http" {
-  dagger -e http up
+  dagger -e http up 
 }
 
 @test "js/yarn" {
