@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
 	"go.dagger.io/dagger/stdlib"
@@ -263,7 +264,7 @@ func (w *Project) Create(ctx context.Context, name string, plan Plan, arch strin
 	manifestPath := path.Join(envPath, manifestFile)
 
 	if arch == "" {
-		arch = platforms.Format(platforms.DefaultSpec())
+		arch = platforms.Format(specs.Platform{OS: "linux", Architecture: "amd64"})
 	}
 
 	st := &State{
