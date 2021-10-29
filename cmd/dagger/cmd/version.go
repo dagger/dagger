@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -16,6 +17,8 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
+	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/version"
 	"golang.org/x/term"
@@ -46,8 +49,10 @@ var versionCmd = &cobra.Command{
 			runtime.GOOS, runtime.GOARCH,
 		)
 
-		// TODO Display universe version
-		// How can I retrieve it if it's not vendor ?
+		universeVersion, err := getUniverseCurrentVersion()
+		if err == nil {
+			fmt.Printf("universe %s\n", universeVersion.Original())
+		}
 
 		if check := viper.GetBool("check"); check {
 			versionFilePath, err := homedir.Expand(versionFile)
@@ -215,10 +220,33 @@ func getUniverseLatestVersion() (*goVersion.Version, error) {
 	return versions[0], nil
 }
 
+// Retrieve the current universe version from `cue.mod/dagger.mod`
 func getUniverseCurrentVersion() (*goVersion.Version, error) {
-	// TODO Should be replaced with the current universe version
-	// How I can fetch it
-	return goVersion.NewVersion("0.1.0")
+	project := common.CurrentProject(context.Background())
+	pathMod := path.Join(project.Path, mod.ModFilePath)
+	fileMod, err := os.Open(pathMod)
+	if err != nil {
+		return nil, err
+	}
+
+	defer fileMod.Close()
+	data, err := ioutil.ReadAll(fileMod)
+	if err != nil {
+		return nil, err
+	}
+
+	currentVersion := ""
+	modules := strings.Split(string(data), "\n")
+	for _, module := range modules {
+		if !strings.HasPrefix(module, "alpha.dagger.io") {
+			continue
+		}
+
+		// Retrieve tag
+		tag := strings.Split(module, " ")
+		currentVersion = tag[1]
+	}
+	return goVersion.NewVersion(currentVersion)
 }
 
 // Compare the universe version with the latest version online
@@ -241,8 +269,11 @@ func isUniverseVersionLatest() (string, error) {
 }
 
 func checkVersion() {
+	lg := logger.New()
+
 	if version.Version == version.DevelopmentVersion {
 		// running devel version
+		lg.Debug().Msg("ignore check version on devel version")
 		return
 	}
 
@@ -264,8 +295,10 @@ func checkVersion() {
 	}
 
 	// Check version
+	lg.Debug().Msg("check for universe latest version...")
 	universeLatestVersion, err := isUniverseVersionLatest()
 	if err != nil {
+		lg.Debug().Msg(err.Error())
 		return
 	}
 
@@ -274,8 +307,10 @@ func checkVersion() {
 	}
 
 	// Check timestamp
+	lg.Debug().Msg("check for dagger latest version...")
 	daggerLatestVersion, err := isDaggerVersionLatest()
 	if err != nil {
+		lg.Debug().Msg(err.Error())
 		return
 	}
 
