@@ -15,10 +15,10 @@ import (
 
 	goVersion "github.com/hashicorp/go-version"
 	"github.com/mitchellh/go-homedir"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
-	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/telemetry"
 	"go.dagger.io/dagger/version"
@@ -280,11 +280,11 @@ func isUniverseVersionLatest() (string, error) {
 }
 
 func checkVersion() {
-	lg := logger.New()
+	lg := log.Ctx(context.Background()).With().Logger()
 
 	if version.Version == version.DevelopmentVersion {
 		// running devel version
-		lg.Debug().Msg("ignore check version on devel version")
+		lg.Debug().Msg("version checking ignored on development version")
 		return
 	}
 
