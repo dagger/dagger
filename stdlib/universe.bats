@@ -273,3 +273,7 @@ setup() {
     skip "Azure CI infra not implemented yet - manually tested and working"
     #dagger -e azure-stapp up
 }
+
+@test "trivy" {
+  dagger -e trivy up
+}
