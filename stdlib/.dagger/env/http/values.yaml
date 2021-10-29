@@ -1,0 +1,23 @@
+plan:
+    package: ./http/tests
+name: http
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhYjNpR1NHc3V4aGxGNzQ1
+            YlZuQ0hrZHBDWGw0elJWZWU3c0U4KzVodEhzCkowME9JVlpWVEc1L2dHUE80Q29t
+            bEpKTzRwYmhyc2N2a3dhaWg4aWZVWTQKLS0tIHNPWDVaQmh6SllzK2V3QjNJSWVH
+            NHkxc1VXWHBwZFN5WFNxamdPaGZLM3MKaZra2gWvKl7+pXSihV70/mQYel9697z2
+            eBSMuRPuZSjrg3JCBLhXTdIgUYxbMgWhILLpN5UqhTBVboUlRsURQA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-10-19T11:50:42Z"
+    mac: ENC[AES256_GCM,data:iG/JWnCk8UpThscQBqd9l7R7k1Xae1ED7WbYqPQmK5GRXhb7hIZGENnjn1aARnFjlCtEob6WvutWaZe7q1P90ZCirwXVBGewAeHchHqFA0KmUORRdtjMkZjnlRLMDKYu6CeNkaVK1al+B87CPlCBKz5UMeL9gnvug0k298AxWLY=,iv:RZEtSdbkxwgq5xEucnC+qyD2RCMk1DuaShjCh5Ihe5M=,tag:swW4R7ni0zoxOrc9lrV9Ww==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
