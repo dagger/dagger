@@ -20,6 +20,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
+	"go.dagger.io/dagger/telemetry"
 	"go.dagger.io/dagger/version"
 	"golang.org/x/term"
 )
@@ -43,6 +44,14 @@ var versionCmd = &cobra.Command{
 	PersistentPostRun: func(*cobra.Command, []string) {},
 	Args:              cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		ctx := cmd.Context()
+
+		project := common.CurrentProject(ctx)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, nil, &telemetry.Property{
+			Name:  "version",
+			Value: args,
+		})
+
 		fmt.Printf("dagger %s (%s) %s/%s\n",
 			version.Version,
 			version.Revision,
@@ -69,6 +78,8 @@ var versionCmd = &cobra.Command{
 				fmt.Println("universe is up to date.")
 			}
 		}
+
+		<-doneCh
 	},
 }
 
