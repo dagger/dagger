@@ -8,6 +8,7 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"github.com/containerd/containerd/platforms"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
@@ -199,18 +200,24 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver, platform strin
 		}
 		v := compiler.Wrap(t.Value())
 
-		platform, err := platforms.Parse(platform)
-		if err != nil {
-			// Record the error
-			span.AddEvent("command", trace.WithAttributes(
-				attribute.String("error", err.Error()),
-			))
+		var pipelinePlatform specs.Platform
+		if platform == "" {
+			pipelinePlatform = specs.Platform{OS: "linux", Architecture: "amd64"}
+		} else {
+			p, err := platforms.Parse(platform)
+			if err != nil {
+				// Record the error
+				span.AddEvent("command", trace.WithAttributes(
+					attribute.String("error", err.Error()),
+				))
 
-			return err
+				return err
+			}
+			pipelinePlatform = p
 		}
 
-		p := NewPipeline(v, s, platform)
-		err = p.Run(ctx)
+		p := NewPipeline(v, s, pipelinePlatform)
+		err := p.Run(ctx)
 		if err != nil {
 			// Record the error
 			span.AddEvent("command", trace.WithAttributes(
