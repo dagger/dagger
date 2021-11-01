@@ -16,6 +16,7 @@ import (
 	"github.com/moby/buildkit/session"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 )
 
@@ -79,9 +80,9 @@ func (s Solver) AddCredentials(target, username, secret string) {
 	s.opts.Auth.AddCredentials(target, username, secret)
 }
 
-func (s Solver) Marshal(ctx context.Context, st llb.State) (*bkpb.Definition, error) {
+func (s Solver) Marshal(ctx context.Context, st llb.State, co ...llb.ConstraintsOpt) (*bkpb.Definition, error) {
 	// FIXME: do not hardcode the platform
-	def, err := st.Marshal(ctx, llb.LinuxAmd64)
+	def, err := st.Marshal(ctx, co...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,9 +127,9 @@ func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.
 }
 
 // Solve will block until the state is solved and returns a Reference.
-func (s Solver) Solve(ctx context.Context, st llb.State) (bkgw.Reference, error) {
-	// marshal llb
-	def, err := s.Marshal(ctx, st)
+// It takes a platform as argument which correspond to the architecture.
+func (s Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform) (bkgw.Reference, error) {
+	def, err := s.Marshal(ctx, st, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}

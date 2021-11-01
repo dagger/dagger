@@ -7,6 +7,7 @@ require (
 	filippo.io/age v1.0.0
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.3
+	github.com/containerd/containerd v1.5.4 // indirect
 	github.com/docker/buildx v0.6.2
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
@@ -21,6 +22,7 @@ require (
 	github.com/moby/buildkit v0.9.1
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/rs/zerolog v1.23.0
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1

@@ -32,9 +32,10 @@ func TestProject(t *testing.T) {
 	// Create
 	st, err := project.Create(ctx, "test", Plan{
 		Module: ".",
-	})
+	}, "linux/amd64")
 	require.NoError(t, err)
 	require.Equal(t, "test", st.Name)
+	require.Equal(t, "linux/amd64", st.Architecture)
 
 	// Open
 	project, err = Open(ctx, root)
@@ -51,6 +52,7 @@ func TestProject(t *testing.T) {
 	env, err := project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.Equal(t, "test", env.Name)
+	require.Equal(t, "linux/amd64", env.Architecture)
 
 	// Save
 	require.NoError(t, env.SetInput("foo", TextInput("bar")))
@@ -82,7 +84,7 @@ func TestEncryption(t *testing.T) {
 
 	_, err = project.Create(ctx, "test", Plan{
 		Module: ".",
-	})
+	}, "linux/amd64")
 	require.NoError(t, err)
 
 	// Set a plaintext input, make sure it is not encrypted

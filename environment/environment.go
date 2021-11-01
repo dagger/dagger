@@ -7,6 +7,8 @@ import (
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
+	"github.com/containerd/containerd/platforms"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
@@ -137,7 +139,7 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		e.src.Cue(),
-		newTaskFunc(newPipelineRunner(e.computed, s)),
+		newTaskFunc(newPipelineRunner(e.computed, s, e.state.Architecture)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -176,7 +178,7 @@ func noOpRunner(t *cueflow.Task) error {
 	return nil
 }
 
-func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.RunnerFunc {
+func newPipelineRunner(computed *compiler.Value, s solver.Solver, platform string) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -197,7 +199,24 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver) cueflow.Runner
 				Msg("dependency detected")
 		}
 		v := compiler.Wrap(t.Value())
-		p := NewPipeline(v, s)
+
+		var pipelinePlatform specs.Platform
+		if platform == "" {
+			pipelinePlatform = specs.Platform{OS: "linux", Architecture: "amd64"}
+		} else {
+			p, err := platforms.Parse(platform)
+			if err != nil {
+				// Record the error
+				span.AddEvent("command", trace.WithAttributes(
+					attribute.String("error", err.Error()),
+				))
+
+				return err
+			}
+			pipelinePlatform = p
+		}
+
+		p := NewPipeline(v, s, pipelinePlatform)
 		err := p.Run(ctx)
 		if err != nil {
 			// Record the error
