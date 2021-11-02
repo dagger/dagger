@@ -90,10 +90,11 @@ Push a docker image to a remote registry
 
 ### docker.#Run Inputs
 
-| Name                  | Type              | Description                           |
-| -------------         |:-------------:    |:-------------:                        |
-|*ref*                  | `string`          |Image reference (e.g: nginx:alpine)    |
-|*run.env.IMAGE_REF*    | `string`          |-                                      |
+| Name                  | Type               | Description                           |
+| -------------         |:-------------:     |:-------------:                        |
+|*ref*                  | `string`           |Image reference (e.g: nginx:alpine)    |
+|*recreate*             | `*true \| bool`    |Recreate container?                    |
+|*run.env.IMAGE_REF*    | `string`           |-                                      |
 
 ### docker.#Run Outputs
 
