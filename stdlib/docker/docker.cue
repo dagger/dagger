@@ -200,6 +200,9 @@ import (
 	// Container name
 	name?: dagger.#Input & {string}
 
+	// Recreate container?
+	recreate: dagger.#Input & {bool | *true}
+
 	// Image registry
 	registry?: {
 		target:   string
@@ -216,6 +219,16 @@ import (
 
 		if [ ! -z "$CONTAINER_NAME" ]; then
 			OPTS="$OPTS --name $CONTAINER_NAME"
+			docker inspect "$CONTAINER_NAME" >/dev/null && {
+				# Container already exists
+				if [ ! -z "$CONTAINER_RECREATE" ]; then
+					echo "Replacing container $CONTAINER_NAME"
+					docker stop "$CONTAINER_NAME"
+					docker rm "$CONTAINER_NAME"
+				else
+					echo "$CONTAINER_NAME already exists"
+				fi
+			}
 		fi
 
 		if [ ! -z "$CONTAINER_PORTS" ]; then
@@ -238,6 +251,10 @@ import (
 			IMAGE_REF: ref
 			if name != _|_ {
 				CONTAINER_NAME: name
+			}
+
+			if recreate {
+				CONTAINER_RECREATE: "true"
 			}
 
 			if ports != _|_ {
