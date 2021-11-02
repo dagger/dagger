@@ -177,7 +177,7 @@ func (s Solver) forwardEvents(ch chan *bk.SolveStatus) {
 // FIXME: this is currently impleneted as a hack, starting a new Build session
 // within buildkit from the Control API. Ideally the Gateway API should allow to
 // Export directly.
-func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry) (*bk.SolveResponse, error) {
+func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry, platform specs.Platform) (*bk.SolveResponse, error) {
 	// Check close event channel and return if we're already done with the main pipeline
 	select {
 	case <-s.closeCh:
@@ -185,7 +185,7 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 	default:
 	}
 
-	def, err := s.Marshal(ctx, st)
+	def, err := s.Marshal(ctx, st, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
