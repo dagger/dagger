@@ -227,6 +227,7 @@ import (
 					docker rm "$CONTAINER_NAME"
 				else
 					echo "$CONTAINER_NAME already exists"
+					exit 0
 				fi
 			}
 		fi
