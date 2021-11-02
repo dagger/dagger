@@ -7,7 +7,7 @@ require (
 	filippo.io/age v1.0.0
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/containerd/console v1.0.3
-	github.com/containerd/containerd v1.5.4 // indirect
+	github.com/containerd/containerd v1.5.4
 	github.com/docker/buildx v0.6.2
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
@@ -22,7 +22,7 @@ require (
 	github.com/moby/buildkit v0.9.1
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.1 // indirect
+	github.com/opencontainers/image-spec v1.0.1
 	github.com/rs/zerolog v1.23.0
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
@@ -43,7 +43,7 @@ require (
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	golang.org/x/tools v0.1.6 // indirect
-	google.golang.org/grpc v1.41.0
+	google.golang.org/grpc v1.42.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
