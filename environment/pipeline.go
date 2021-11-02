@@ -854,7 +854,7 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 			"name": ref.String(),
 			"push": "true",
 		},
-	})
+	}, p.platform)
 
 	if err != nil {
 		return st, err
@@ -913,7 +913,7 @@ func (p *Pipeline) SaveImage(ctx context.Context, op *compiler.Value, st llb.Sta
 		Output: func(_ map[string]string) (io.WriteCloser, error) {
 			return pipeW, nil
 		},
-	})
+	}, p.platform)
 
 	if err != nil {
 		return st, err
