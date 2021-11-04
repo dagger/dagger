@@ -2,11 +2,8 @@ package dagger
 
 // A deployment plan executed by `dagger up`
 #Plan: {
-	title:        string
-	description?: string
-
 	context: directories: [name=string]: {
-		#ContextDir
+		#ContextPull
 
 		path:        string
 		include?: [...string]
@@ -25,9 +22,6 @@ package dagger
 			// Read secret from an environment variable
 			envvar: string
 		}
-
-		// Can be securely mounted into actions
-		data: #Secret
 	}
 
 	context: services: [name=string]: {
