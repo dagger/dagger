@@ -12,9 +12,9 @@ package dagger
 
 // Export a value from fs state to cue
 #ReadFile: {
-	do: "readfile"
-	input: #Op
-	path: string
+	do:       "readfile"
+	input:    #Op
+	path:     string
 	contents: string
 }
 
@@ -43,14 +43,15 @@ package dagger
 }
 
 #Mount: {
-	do: "mount"
+	do:    "mount"
 	input: #Op
 
 	// Destination path
-	dest: string
+	dest:     string
 	readonly: true | *false
 
 	#BindMount | #SecretMount | #TmpfsMount | #CacheMount
+
 	// Bind mounts are "regular" mounts from one op to another
 	#BindMount: {
 		type?: "bind"
@@ -63,8 +64,8 @@ package dagger
 		type: "secret"
 		from: #Secret
 
-		uid: uint32 | *0
-		gid: uint32 | *0
+		uid:  uint32 | *0
+		gid:  uint32 | *0
 		mode: uint32 | *0x180
 	}
 	#TmpfsMount: {
@@ -91,7 +92,7 @@ package dagger
 
 // Proxy an external service into a container
 #Proxy: {
-	do: "proxy"
+	do:      "proxy"
 	service: #Service
 
 	{
@@ -111,13 +112,13 @@ package dagger
 
 // Extract a subdirectory from another node
 #Subdir: {
-	do:  "subdir"
+	do:    "subdir"
 	input: #Op
-	dir: string
+	dir:   string
 }
 
 #Exec: {
-	do: "exec"
+	do:    "exec"
 	input: #Op
 	args: [...string]
 	env?: [string]: string
@@ -132,28 +133,27 @@ package dagger
 
 // Pull from OCI container repository
 #FetchContainer: {
-	do:  "fetch-container"
-	ref: string
-	auth: #OCIAuth
+	do:       "fetch-container"
+	ref:      string
+	auth:     #OCIAuth
 	metadata: #OCIMetadata
 }
 
 // Push input to the target OCI repository
 #PushContainer: {
-	do:  "push-container"
-	input: #Op
-	ref: string
-	auth: #OCIAuth
+	do:       "push-container"
+	input:    #Op
+	ref:      string
+	auth:     #OCIAuth
 	metadata: #OCIMetadata
 }
 
-
 // Save buildkit state as an OCI image tar archive
 #SaveImage: {
-	do:   "save-image"
+	do:    "save-image"
 	input: #Op
-	tag:  string
-	dest: string
+	tag:   string
+	dest:  string
 }
 
 #FetchGit: {
@@ -176,11 +176,11 @@ package dagger
 }
 
 #Copy: {
-	do:   "copy"
+	do:    "copy"
 	input: #Op
-	from: #Op
-	src:  string | *"/"
-	dest: string | *"/"
+	from:  #Op
+	src:   string | *"/"
+	dest:  string | *"/"
 }
 
 #DockerBuild: {
@@ -200,17 +200,17 @@ package dagger
 }
 
 #WriteFile: {
-	do: "write-file"
-	input: #Op
+	do:       "write-file"
+	input:    #Op
 	contents: string | bytes
-	dest:    string
-	mode:    int | *0o644
+	dest:     string
+	mode:     int | *0o644
 }
 
 #Mkdir: {
-	do:   "mkdir"
+	do:    "mkdir"
 	input: #Op
-	dir:  *"/" | string
-	path: string
-	mode: int | *0o755
+	dir:   *"/" | string
+	path:  string
+	mode:  int | *0o755
 }
