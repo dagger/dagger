@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -82,6 +83,11 @@ func (r *Require) fullPath() string {
 func replace(r *Require, sourceRepoPath, destPath string) error {
 	// remove previous package directory
 	if err := os.RemoveAll(destPath); err != nil {
+		return err
+	}
+
+	// Make sure the destination exists
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
 
