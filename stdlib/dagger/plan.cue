@@ -15,7 +15,7 @@ package dagger
 			exclude?: [...string]
 
 			// Can be copied/mounted into actions
-			data: #LocalDir
+			data: #Directory
 		}
 
 		secrets: [name=string]: {

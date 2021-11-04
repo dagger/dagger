@@ -18,6 +18,30 @@ package dagger
 	contents: string
 }
 
+// An external secret
+#Secret: {
+	// Reserved for runtime use
+	_secretID: string
+}
+
+// An external network service
+#Service: {
+	// Reserved for runtime use
+	_serviceID: string
+}
+
+// An external directory
+// The contents are streamed via the buildkit grpc API
+#Directory: {
+	do: "stream-directory"
+
+	// Reserved for runtime use
+	_directoryID: string
+
+	include?: [...string]
+	exclude?: [...string]
+}
+
 #Mount: {
 	do: "mount"
 	input: #Op
@@ -26,7 +50,7 @@ package dagger
 	dest: string
 	readonly: true | *false
 
-	#BindMount | #SecretMount | #TmpfsMount | #CacheMount | #LocalDirMount
+	#BindMount | #SecretMount | #TmpfsMount | #CacheMount
 	// Bind mounts are "regular" mounts from one op to another
 	#BindMount: {
 		type?: "bind"
@@ -53,15 +77,22 @@ package dagger
 		type: "cache"
 		from: #CacheDir
 	}
-	#LocalDirMount: {
-		type: "localdir"
-		from: #LocalDir
-	}
+}
+
+// A (best effort) persistent cache dir
+// NOTE: buildkit can automatically create cache directories without
+//  requiring user input via the 'context' key
+#CacheDir: {
+	// Reserved for runtime use
+	_cacheDirID: string
+
+	concurrency: *"shared" | "private" | "locked"
 }
 
 // Proxy an external service into a container
 #Proxy: {
 	do: "proxy"
+	service: #Service
 
 	{
 		// Proxy service to a unix socket
