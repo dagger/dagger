@@ -37,7 +37,7 @@ package dagger
 			file: string
 		} | {
 			// Proxy to/from standard input and output of a command
-			cmd: [string, ...string] | string
+			command: [string, ...string] | string
 		}
 	}
 

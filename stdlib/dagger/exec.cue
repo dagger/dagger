@@ -8,18 +8,7 @@ package dagger
 	// Base filesystem copied before command execution. Changes are preserved.
 	fs: #FS
 
-	// Filesystem overlay mounted before command execution. Changes are discarded.
-	mount: [path=string]: #Mountable
-
-       // Command to execute
-       command: [...string] | string
-
-       // Environment variables
-       environ: [string]: string
-
-       // Working directory
-       workdir: string | *"/"
-
+	command: #Command
        // Exit code (filled after execution)
        exit: int
 
@@ -33,22 +22,14 @@ package dagger
        stderr?: #Stream
 }
 
-// Things that can be mounted as a transient filesystem layer
-#Mountable: #TempDir | #CacheDir | #Service | #Secret
 
+#Command: {
+       // Command to execute
+       args: [...string] | string
 
-// A (best effort) persistent cache dir
-#CacheDir: {
-	// Reserved for runtime use
-	_cacheDirID: string
+       // Environment variables
+       environ: [string]: string
 
-	concurrency: *"shared" | "private" | "locked"
-}
-
-// A temporary directory for command execution
-#TempDir: {
-	// Reserved for runtime use
-	_tempDirID: string
-
-	size?: int64
+       // Working directory
+       workdir: string | *"/"
 }
