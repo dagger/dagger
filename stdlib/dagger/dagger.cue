@@ -27,7 +27,12 @@ import (
 	// Exit code (filled after execution)
 	exit: int
 
-	_llb: llb2.#Exec & {
+	// Optionally produce a new container from modified filesystem
+	output?: #Container & {
+		fs: _exec
+	}
+
+	_exec: llb2.#Exec & {
 		fs: container.fs
 		mounts: [ for mnt in container.mount {mnt}]
 		"args": args
