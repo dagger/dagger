@@ -10,6 +10,8 @@ package llb2
 	_dockerPullID: _
 } | {
 	_dockerBuildID: _
+} | {
+	_writeFileID: _
 }
 
 // A stream of bytes
@@ -174,4 +176,20 @@ package llb2
 			contents: string
 		}
 	}
+}
+
+#ReadFile: {
+	_readFileID: string
+
+	input: #FS
+	path: string
+	contents: string
+}
+
+#WriteFile: {
+	_writeFileID: string
+
+	input: #FS
+	path: string
+	contents: string
 }
