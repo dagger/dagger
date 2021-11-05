@@ -1,25 +1,5 @@
 package llb2
 
-#FS: {
-	_execID: _
-	...
-} | {
-	_importID: _
-	...
-} | {
-	_gitPullID: _
-	...
-} | {
-	_dockerPullID: _
-	...
-} | {
-	_dockerBuildID: _
-	...
-} | {
-	_writeFileID: _
-	...
-}
-
 // A stream of bytes
 #Stream: {
 	_streamID: string
@@ -198,4 +178,27 @@ package llb2
 	input: #FS
 	path: string
 	contents: string
+}
+
+
+// Interfaces (only use those for embedding!)
+
+#FS: {
+	_execID: _
+	...
+} | {
+	_importID: _
+	...
+} | {
+	_gitPullID: _
+	...
+} | {
+	_dockerPullID: _
+	...
+} | {
+	_dockerBuildID: _
+	...
+} | {
+	_writeFileID: _
+	...
 }
