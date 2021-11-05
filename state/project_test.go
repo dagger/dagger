@@ -35,7 +35,7 @@ func TestProject(t *testing.T) {
 	}, "linux/amd64")
 	require.NoError(t, err)
 	require.Equal(t, "test", st.Name)
-	require.Equal(t, "linux/amd64", st.Architecture)
+	require.Equal(t, "linux/amd64", st.Platform)
 
 	// Open
 	project, err = Open(ctx, root)
@@ -52,7 +52,7 @@ func TestProject(t *testing.T) {
 	env, err := project.Get(ctx, "test")
 	require.NoError(t, err)
 	require.Equal(t, "test", env.Name)
-	require.Equal(t, "linux/amd64", env.Architecture)
+	require.Equal(t, "linux/amd64", env.Platform)
 
 	// Save
 	require.NoError(t, env.SetInput("foo", TextInput("bar")))

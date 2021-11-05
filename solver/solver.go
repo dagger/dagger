@@ -127,7 +127,7 @@ func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.
 }
 
 // Solve will block until the state is solved and returns a Reference.
-// It takes a platform as argument which correspond to the architecture.
+// It takes a platform as argument which correspond to the targeted platform.
 func (s Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform) (bkgw.Reference, error) {
 	def, err := s.Marshal(ctx, st, llb.Platform(platform))
 	if err != nil {

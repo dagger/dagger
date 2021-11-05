@@ -20,17 +20,17 @@ common_setup() {
 dagger_new_with_plan() {
     local name="$1"
     local sourcePlan="$2"
-    local arch="$3"
+    local platform="$3"
 
     cp -a "$sourcePlan"/* "$DAGGER_PROJECT"
 
     local opts=""
-    if [ -n "$arch" ];
+    if [ -n "$platform" ];
     then
-      opts="-a $arch"
+      opts="--platform $platform"
     fi
 
-    # Need word splitting to take in account "-a" and "$arch"
+    # Need word splitting to take in account "-a" and "$platform"
     # shellcheck disable=SC2086
     "$DAGGER" new "$name" ${opts}
 }

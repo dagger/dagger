@@ -43,9 +43,9 @@ var computeCmd = &cobra.Command{
 		doneCh := common.TrackCommand(ctx, cmd)
 
 		st := &state.State{
-			Name:         "FIXME",
-			Architecture: platforms.Format(specs.Platform{OS: "linux", Architecture: "amd64"}),
-			Path:         args[0],
+			Name:     "FIXME",
+			Platform: platforms.Format(specs.Platform{OS: "linux", Architecture: "amd64"}),
+			Path:     args[0],
 			Plan: state.Plan{
 				Module: args[0],
 			},

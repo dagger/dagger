@@ -46,7 +46,7 @@ type Pipeline struct {
 	name     string
 	s        solver.Solver
 	state    llb.State
-	platform specs.Platform // Architecture constraint
+	platform specs.Platform // Platform constraint
 	result   bkgw.Reference
 	image    dockerfile2llb.Image
 	computed *compiler.Value
