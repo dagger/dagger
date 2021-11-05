@@ -15,23 +15,22 @@ import (
 #Context: {
 	// Import directories
 	import: [name=string]: {
-		llb2.#Import
-
 		path: string
 		include?: [...string]
 		exclude?: [...string]
+		fs: llb2.#Import
 	}
 
 	// Export directories
 	export: [name=string]: {
-		llb2.#FS
-
+		source: llb2.#FS
 		path: string
 	}
 
 	// Securely load external secrets
 	secrets: [name=string]: {
-		llb2.#Secret
+		// Secrets can be securely mounted into action containers as a file
+		file: llb2.#Secret
 
 		{
 			// Execute a command and read secret from standard output
@@ -47,7 +46,8 @@ import (
 
 	// Consume and publish network services
 	services: [name=string]: {
-		llb2.#Service
+		// Service endpoint can be proxied to action containers as unix sockets
+		endpoint: llb2.#Service
 
 		_#Address: string & =~"^(tcp://|unix://|udp://).*"
 		{

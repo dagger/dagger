@@ -180,6 +180,15 @@ package llb2
 	contents: string
 }
 
+#Copy: {
+	_copyID: string
+
+	input: #FS
+	source: {
+		fs: #FS
+		path: string | *"/"
+	}
+}
 
 // Interfaces (only use those for embedding!)
 
@@ -201,4 +210,4 @@ package llb2
 } | {
 	_writeFileID: _
 	...
-}
+} | null
