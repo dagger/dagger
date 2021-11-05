@@ -24,8 +24,8 @@ type State struct {
 	// FIXME: store multiple names?
 	Name string `yaml:"name,omitempty"`
 
-	// Architecture execution
-	Architecture string `yaml:"architecture,omitempty"`
+	// Platform execution
+	Platform string `yaml:"platform,omitempty"`
 
 	// User Inputs
 	Inputs map[string]Input `yaml:"inputs,omitempty"`

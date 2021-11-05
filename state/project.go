@@ -235,7 +235,7 @@ func (w *Project) Save(ctx context.Context, st *State) error {
 	return nil
 }
 
-func (w *Project) Create(ctx context.Context, name string, plan Plan, arch string) (*State, error) {
+func (w *Project) Create(ctx context.Context, name string, plan Plan, platform string) (*State, error) {
 	if _, err := w.Get(ctx, name); err == nil {
 		return nil, ErrExist
 	}
@@ -263,8 +263,8 @@ func (w *Project) Create(ctx context.Context, name string, plan Plan, arch strin
 		Plan: Plan{
 			Package: pkg,
 		},
-		Name:         name,
-		Architecture: arch,
+		Name:     name,
+		Platform: platform,
 	}
 
 	data, err := yaml.Marshal(st)

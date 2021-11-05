@@ -13,13 +13,13 @@ TestFetch: #up: [
 	},
 
 	op.#Exec & {
-		args: ["/bin/sh", "-c", "echo $(uname -a) >> /arch.txt"]
+		args: ["/bin/sh", "-c", "echo $(uname -a) >> /platform.txt"]
 		always: true
 	},
 
 	op.#Exec & {
 		args: ["/bin/sh", "-c", """
-			cat /arch.txt | grep "$TARGET_ARCH"
+			cat /platform.txt | grep "$TARGET_ARCH"
 			"""]
 		env: TARGET_ARCH: targetArch
 	},
@@ -30,13 +30,13 @@ TestBuild: #up: [
 		dockerfile: """
 				FROM alpine
 				
-				RUN echo $(uname -a) > /arch.txt
+				RUN echo $(uname -a) > /platform.txt
 			"""
 	},
 
 	op.#Exec & {
 		args: ["/bin/sh", "-c", """
-			cat /arch.txt | grep "$TARGET_ARCH"
+			cat /platform.txt | grep "$TARGET_ARCH"
 			"""]
 		env: TARGET_ARCH: targetArch
 	},
@@ -49,7 +49,7 @@ TestLoad: #up: [
 
 	// Compare arch
 	op.#Exec & {
-		args: ["/bin/sh", "-c", "diff /build/arch.txt /fetch/arch.txt"]
+		args: ["/bin/sh", "-c", "diff /build/platform.txt /fetch/platform.txt"]
 		mount: {
 			"/build": from: TestBuild
 			"/fetch": from: TestFetch

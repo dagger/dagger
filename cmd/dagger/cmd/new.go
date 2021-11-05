@@ -34,7 +34,7 @@ var newCmd = &cobra.Command{
 
 		st, err := project.Create(ctx, name, state.Plan{
 			Package: viper.GetString("package"),
-		}, viper.GetString("architecture"))
+		}, viper.GetString("platform"))
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to create environment")
@@ -46,7 +46,7 @@ var newCmd = &cobra.Command{
 
 func init() {
 	newCmd.Flags().StringP("package", "p", "", "references the name of the Cue package within the module to use as a plan. Default: defer to cue loader")
-	newCmd.Flags().StringP("architecture", "a", "", "architecture of the running pipeline. Default: host architecture")
+	newCmd.Flags().String("platform", "", "platform of the running pipeline. Default: host platform")
 	if err := viper.BindPFlags(newCmd.Flags()); err != nil {
 		panic(err)
 	}

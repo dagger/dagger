@@ -139,7 +139,7 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		e.src.Cue(),
-		newTaskFunc(newPipelineRunner(e.computed, s, e.state.Architecture)),
+		newTaskFunc(newPipelineRunner(e.computed, s, e.state.Platform)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -200,6 +200,7 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver, platform strin
 		}
 		v := compiler.Wrap(t.Value())
 
+		fmt.Println(platform)
 		var pipelinePlatform specs.Platform
 		if platform == "" {
 			pipelinePlatform = specs.Platform{OS: "linux", Architecture: "amd64"}
