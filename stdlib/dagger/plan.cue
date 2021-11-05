@@ -1,20 +1,41 @@
 package dagger
 
+import (
+	"alpha.dagger.io/dagger/llb2"
+)
+
 // A deployment plan executed by `dagger up`
 #Plan: {
-	context: directories: [name=string]: {
-		#ContextPull
+	context: #Context
+	actions: {
+		...
+	}
+}
 
-		path:        string
+#Context: {
+	// Import directories
+	import: [name=string]: {
+		llb2.#Import
+
+		path: string
 		include?: [...string]
 		exclude?: [...string]
 	}
 
-	context: secrets: [name=string]: {
-		#Secret
+	// Export directories
+	export: [name=string]: {
+		llb2.#FS
+
+		path: string
+	}
+
+	// Securely load external secrets
+	secrets: [name=string]: {
+		llb2.#Secret
+
 		{
 			// Execute a command and read secret from standard output
-			cmd: [string, ...string] | string
+			command: [string, ...string] | string
 		} | {
 			// Read secret from a file
 			path: string
@@ -24,26 +45,23 @@ package dagger
 		}
 	}
 
-	context: services: [name=string]: {
-		#Service
+	// Consume and publish network services
+	services: [name=string]: {
+		llb2.#Service
+
+		_#Address: string & =~"^(tcp://|unix://|udp://).*"
 		{
 			// Listen for connections on the client, proxy to actions
-			listen: #ServiceAddress
+			listen: _#Address
 		} | {
 			// Connect to a remote endpoint, proxy to actions
-			connect: #ServiceAddress
+			connect: _#Address
 		} | {
 			// Proxy to/from the contents of a file
-			file: string
+			filepath: string
 		} | {
 			// Proxy to/from standard input and output of a command
 			command: [string, ...string] | string
 		}
 	}
-
-	actions: {
-		...
-	}
 }
-
-#ServiceAddress: string & =~"^(tcp://|unix://|udp://).*"
