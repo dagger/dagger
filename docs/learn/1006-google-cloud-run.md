@@ -35,7 +35,7 @@ mkdir gcpcloudrun
 
 ### Create a basic plan
 
-```cue file=./tests/gcpcloudrun/source.cue title="todoapp/cue.mod/gcpcloudrun/source.cue"
+```cue file=./tests/gcpcloudrun/source.cue title="todoapp/gcpcloudrun/source.cue"
 
 ```
 
