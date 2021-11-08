@@ -197,6 +197,9 @@ import (
 	// Image reference (e.g: nginx:alpine)
 	ref: dagger.#Input & {string}
 
+	// Expose URL
+	url?: dagger.#Input & {string}
+
 	// Container name
 	name?: dagger.#Input & {string}
 
@@ -236,6 +239,10 @@ import (
 			OPTS="$OPTS -p $CONTAINER_PORTS"
 		fi
 
+		if [ ! -z "$APP_URL" ]; then
+			echo -n "$APP_URL" > /app_url
+		fi
+
 		docker container run -d $OPTS "$IMAGE_REF"
 		"""#
 
@@ -250,6 +257,10 @@ import (
 		command: #command
 		env: {
 			IMAGE_REF: ref
+			if url != _|_ {
+				APP_URL: url
+			}
+
 			if name != _|_ {
 				CONTAINER_NAME: name
 			}
@@ -262,5 +273,19 @@ import (
 				CONTAINER_PORTS: strings.Join(ports, " -p ")
 			}
 		}
+	}
+	if url != _|_ {
+		// Exposed URL
+		exposedURL: {
+			string
+
+			#up: [
+				op.#Load & {from: run},
+
+				op.#Export & {
+					source: "/app_url"
+				},
+			]
+		} & dagger.#Output
 	}
 }
