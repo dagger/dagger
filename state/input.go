@@ -119,9 +119,14 @@ func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 		return nil, fmt.Errorf("%q dir doesn't exist", dir.Path)
 	}
 
+	dirPath, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+
 	llb := fmt.Sprintf(
-		`#up: [{do:"local",dir:"%s", include:%s, exclude:%s}]`,
-		p,
+		`#up: [{do:"local",dir:%s, include:%s, exclude:%s}]`,
+		dirPath,
 		includeLLB,
 		excludeLLB,
 	)
