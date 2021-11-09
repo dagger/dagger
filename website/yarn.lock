@@ -7736,10 +7736,10 @@ remark-admonitions@^1.2.1:
     unified "^8.4.2"
     unist-util-visit "^2.0.1"
 
-remark-code-import@^0.3.0:
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/remark-code-import/-/remark-code-import-0.3.0.tgz#adc5b407e98ba50ad633b696a7843268cb227430"
-  integrity sha512-OAidTyShEroWMVP/WDEeth+DtbpnfCiOA03sDK86/EH+tukTxZaKakzSM5YlU9pb38v9NAX6FztZTazXunSKjQ==
+remark-code-import@^0.4.0:
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/remark-code-import/-/remark-code-import-0.4.0.tgz#94cbfe74087c55a84e65f0a972c0977cac8fc7f6"
+  integrity sha512-3UHRIfr7+kRBGOy6Bzp4c1dl8BLCLv+saBTAgW4+lPfs56vV6yBhO038i6MJTEoyXX1zli7l8tMGIHbYANdtZg==
   dependencies:
     to-gatsby-remark-plugin "^0.1.0"
     unist-util-visit "^2.0.1"
