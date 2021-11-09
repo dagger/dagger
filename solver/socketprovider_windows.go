@@ -3,6 +3,15 @@
 
 package solver
 
+import (
+	"fmt"
+	"net"
+	"strings"
+	"time"
+
+	"github.com/Microsoft/go-winio"
+)
+
 func dialStream(id string) (net.Conn, error) {
 	if !strings.HasPrefix(id, unixPrefix) {
 		return nil, fmt.Errorf("invalid socket forward key %s", id)
