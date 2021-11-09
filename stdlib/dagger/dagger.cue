@@ -18,7 +18,13 @@ import (
 #Stream: {
 	@dagger(stream)
 
-	unix: string
+	{
+		// Unix Socket
+		unix: string
+	} | {
+		// Windows Named Pipe
+		npipe: string
+	}
 }
 
 // Secret value
