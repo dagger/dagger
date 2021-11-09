@@ -1,8 +1,11 @@
 package input
 
 import (
+	"context"
 	"os"
+	"runtime"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/logger"
@@ -24,24 +27,38 @@ var socketCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		unix := args[1]
-
-		st, err := os.Stat(unix)
-		if err != nil {
-			lg.Fatal().Err(err).Str("path", unix).Msg("invalid unix socket")
-		}
-
-		if st.Mode()&os.ModeSocket == 0 {
-			lg.Fatal().Str("path", unix).Msg("not a unix socket")
-		}
-
 		updateEnvironmentInput(
 			ctx,
 			cmd,
 			args[0],
-			state.SocketInput(unix),
+			state.SocketInput(detectStreamType(ctx, args[1])),
 		)
 	},
+}
+
+func detectStreamType(ctx context.Context, path string) (string, string) {
+	lg := log.Ctx(ctx)
+
+	if runtime.GOOS == "windows" {
+		// support the unix format for convenience
+		if path == "/var/run/docker.sock" || path == "\\var\\run\\docker.sock" {
+			path = "\\\\.\\pipe\\docker_engine"
+			lg.Info().Str("path", path).Msg("Windows detected, override unix socket path")
+		}
+
+		return path, "npipe"
+	}
+
+	st, err := os.Stat(path)
+	if err != nil {
+		lg.Fatal().Err(err).Str("path", path).Msg("invalid unix socket")
+	}
+
+	if st.Mode()&os.ModeSocket == 0 {
+		lg.Fatal().Str("path", path).Msg("not a unix socket")
+	}
+
+	return path, "unix"
 }
 
 func init() {
