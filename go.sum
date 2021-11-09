@@ -152,7 +152,6 @@ github.com/Microsoft/go-winio v0.4.16-0.20201130162521-d1ffc52c7331/go.mod h1:XB
 github.com/Microsoft/go-winio v0.4.16/go.mod h1:XB6nPKklQyQ7GC9LdcBEcBl8PF76WugXOPRXwdLnMv0=
 github.com/Microsoft/go-winio v0.4.17-0.20210211115548-6eac466e5fa3/go.mod h1:JPGBdM1cNvN/6ISo+n8V5iA4v8pBzdOpzfwIujj1a84=
 github.com/Microsoft/go-winio v0.4.17-0.20210324224401-5516f17a5958/go.mod h1:JPGBdM1cNvN/6ISo+n8V5iA4v8pBzdOpzfwIujj1a84=
-github.com/Microsoft/go-winio v0.4.17 h1:iT12IBVClFevaf8PuVyi3UmZOVh4OqnaLxDTW2O6j3w=
 github.com/Microsoft/go-winio v0.4.17/go.mod h1:JPGBdM1cNvN/6ISo+n8V5iA4v8pBzdOpzfwIujj1a84=
 github.com/Microsoft/go-winio v0.5.1 h1:aPJp2QD7OOrhO5tQXqQoGSJc+DjDtWTGLOmNyAm6FgY=
 github.com/Microsoft/go-winio v0.5.1/go.mod h1:JPGBdM1cNvN/6ISo+n8V5iA4v8pBzdOpzfwIujj1a84=
@@ -1403,8 +1402,8 @@ go.opentelemetry.io/otel v1.0.1/go.mod h1:OPEOD4jIT2SlZPMmwT6FqZz2C0ZNdQqiWcoK6M
 go.opentelemetry.io/otel v1.1.0 h1:8p0uMLcyyIx0KHNTgO8o3CW8A1aA+dJZJW6PvnMz0Wc=
 go.opentelemetry.io/otel v1.1.0/go.mod h1:7cww0OW51jQ8IaZChIEdqLwgh+44+7uiTdWsAL0wQpA=
 go.opentelemetry.io/otel/exporters/jaeger v1.0.0-RC1/go.mod h1:FXJnjGCoTQL6nQ8OpFJ0JI1DrdOvMoVx49ic0Hg4+D4=
-go.opentelemetry.io/otel/exporters/jaeger v1.0.1 h1:fg9udWIWWJMAT+Gq2ATFd/DFy3OZvKEZy9VK2amxvkw=
-go.opentelemetry.io/otel/exporters/jaeger v1.0.1/go.mod h1:85Ym3qknJdIdfRzYS9Ofy9NeLi9gKPFzFDBEHCKpfXI=
+go.opentelemetry.io/otel/exporters/jaeger v1.1.0 h1:VRF+Hf3EePFO6ab7/wfPoyWzSY4z5X0tTvQtV9/Mq8Y=
+go.opentelemetry.io/otel/exporters/jaeger v1.1.0/go.mod h1:D/GIBwAdrFTTqCy1iITpC9nh5rgJpIbFVgkhlz2vCXk=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.0-RC1/go.mod h1:FliQjImlo7emZVjixV8nbDMAa4iAkcWTE9zzSEOiEPw=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.1 h1:ofMbch7i29qIUf7VtF+r0HRF6ac0SBaPSziSsKp7wkk=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.1/go.mod h1:Kv8liBeVNFkkkbilbgWRpV+wWuu+H5xdOT6HAgd30iw=
