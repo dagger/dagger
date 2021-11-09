@@ -41,16 +41,14 @@ func Install(ctx context.Context, workspace, repoName, versionConstraint string)
 		return nil, err
 	}
 
+	defer fileLock.Unlock()
+
 	err = modfile.install(ctx, require)
 	if err != nil {
 		return nil, err
 	}
 
 	if err = modfile.write(); err != nil {
-		return nil, err
-	}
-
-	if err := fileLock.Unlock(); err != nil {
 		return nil, err
 	}
 
@@ -98,16 +96,14 @@ func Update(ctx context.Context, workspace, repoName, versionConstraint string) 
 		return nil, err
 	}
 
+	defer fileLock.Unlock()
+
 	updatedRequire, err := modfile.updateToLatest(ctx, require)
 	if err != nil {
 		return nil, err
 	}
 
 	if err = modfile.write(); err != nil {
-		return nil, err
-	}
-
-	if err := fileLock.Unlock(); err != nil {
 		return nil, err
 	}
 
