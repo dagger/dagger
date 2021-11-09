@@ -11,6 +11,9 @@ dagger:
 dagger-debug:
 	go build -race -o ./cmd/dagger/dagger-debug -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
 
+.PHONY: install
+	go install ./cmd/dagger
+
 .PHONY: test
 test:
 	go test -race -v ./...
