@@ -1,5 +1,10 @@
 package llb2
 
+// A filesystem state
+#FS: {
+	_fsID: string
+} | null
+
 // A stream of bytes
 #Stream: {
 	_streamID: string
@@ -52,9 +57,6 @@ package llb2
 	// Working directory
 	workdir?: string
 
-	// Exit code (filled after execution)
-	exit: int
-
 	// Optionally attach to command standard input stream
 	stdin?: #Stream
 
@@ -63,6 +65,15 @@ package llb2
 
 	// Optionally attach to command standard error stream
 	stderr?: #Stream
+
+	// Result of execution
+	output: {
+		// Command exit code
+		exit: int
+
+		// Modified filesystem
+		fs: #FS
+	}
 }
 
 // A transient filesystem mount.
@@ -146,7 +157,14 @@ package llb2
 		username: string
 		secret:   string | #Secret
 	}]
+	// The actual ref pulled, including digest
+	output: {
+		fs:  #FS
+		ref: #OCIRef
+	}
 }
+
+#OCIRef: string
 
 // Build a Docker image
 #DockerBuild: {
@@ -162,22 +180,28 @@ package llb2
 			contents: string
 		}
 	}
+
+	output: #FS
+	// FIXME: expose additional information about the build
+	// Ideally there is enough information to 
 }
 
 #ReadFile: {
 	_readFileID: string
 
-	input: #FS
-	path: string
+	input:    #FS
+	path:     string
 	contents: string
+	output:   #FS
 }
 
 #WriteFile: {
 	_writeFileID: string
 
-	input: #FS
-	path: string
+	input:    #FS
+	path:     string
 	contents: string
+	output:   #FS
 }
 
 #Copy: {
@@ -185,29 +209,8 @@ package llb2
 
 	input: #FS
 	source: {
-		fs: #FS
+		fs:   #FS
 		path: string | *"/"
 	}
+	output: #FS
 }
-
-// Interfaces (only use those for embedding!)
-
-#FS: {
-	_execID: _
-	...
-} | {
-	_importID: _
-	...
-} | {
-	_gitPullID: _
-	...
-} | {
-	_dockerPullID: _
-	...
-} | {
-	_dockerBuildID: _
-	...
-} | {
-	_writeFileID: _
-	...
-} | null
