@@ -280,7 +280,7 @@ func FileInput(data string) Input {
 }
 
 type fileInput struct {
-	Path string `json:"data,omitempty"`
+	Path string `yaml:"path,omitempty"`
 }
 
 func (i fileInput) Compile(_ string, _ *State) (*compiler.Value, error) {
@@ -296,20 +296,31 @@ func (i fileInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 }
 
 // A socket input value
-func SocketInput(data string) Input {
-	i := socketInput{
-		Unix: data,
+func SocketInput(data, socketType string) Input {
+	i := socketInput{}
+
+	switch socketType {
+	case "npipe":
+		i.Npipe = data
+	case "unix":
+		i.Unix = data
 	}
+
 	return Input{
 		Socket: &i,
 	}
 }
 
 type socketInput struct {
-	Unix string `json:"unix,omitempty"`
+	Unix  string `json:"unix,omitempty" yaml:"unix,omitempty"`
+	Npipe string `json:"npipe,omitempty" yaml:"npipe,omitempty"`
 }
 
 func (i socketInput) Compile(_ string, _ *State) (*compiler.Value, error) {
-	socketValue := fmt.Sprintf(`{unix: %q}`, i.Unix)
-	return compiler.Compile("", socketValue)
+	socketValue, err := json.Marshal(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return compiler.Compile("", string(socketValue))
 }

@@ -574,20 +574,35 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 			return nil, fmt.Errorf("invalid stream %q: not a stream", stream.Path().String())
 		}
 
+		// Unix socket
 		unixValue := stream.Lookup("unix")
-		if !unixValue.Exists() {
-			return nil, fmt.Errorf("invalid stream %q: not a unix socket", stream.Path().String())
+		if unixValue.Exists() {
+			unix, err := unixValue.String()
+			if err != nil {
+				return nil, fmt.Errorf("invalid unix path id: %w", err)
+			}
+
+			return llb.AddSSHSocket(
+				llb.SSHID(fmt.Sprintf("unix=%s", unix)),
+				llb.SSHSocketTarget(dest),
+			), nil
 		}
 
-		unix, err := unixValue.String()
-		if err != nil {
-			return nil, fmt.Errorf("invalid unix path id: %w", err)
+		// Windows named pipe
+		npipeValue := stream.Lookup("npipe")
+		if npipeValue.Exists() {
+			npipe, err := npipeValue.String()
+			if err != nil {
+				return nil, fmt.Errorf("invalid npipe path id: %w", err)
+			}
+
+			return llb.AddSSHSocket(
+				llb.SSHID(fmt.Sprintf("npipe=%s", npipe)),
+				llb.SSHSocketTarget(dest),
+			), nil
 		}
 
-		return llb.AddSSHSocket(
-			llb.SSHID(fmt.Sprintf("unix=%s", unix)),
-			llb.SSHSocketTarget(dest),
-		), nil
+		return nil, fmt.Errorf("invalid stream %q: not a valid stream", stream.Path().String())
 	}
 
 	// eg. mount: "/foo": { from: www.source }
