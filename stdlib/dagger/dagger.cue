@@ -29,7 +29,7 @@ import (
 
 	// Optionally produce a new container from modified filesystem
 	output?: #Container & {
-		fs: _exec
+		fs: _exec.output.fs
 	}
 
 	_exec: llb2.#Exec & {
