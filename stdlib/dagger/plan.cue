@@ -24,7 +24,7 @@ import (
 	// Export directories
 	export: [name=string]: {
 		source: llb2.#FS
-		path: string
+		path:   string
 	}
 
 	// Securely load external secrets
@@ -34,7 +34,9 @@ import (
 
 		{
 			// Execute a command and read secret from standard output
-			command: [string, ...string] | string
+			command:     [string, ...string] | string
+			// Execute command in an interactive terminal (eg. to prompt user for passphrase)
+			interactive: true | *false
 		} | {
 			// Read secret from a file
 			path: string
