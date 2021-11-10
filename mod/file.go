@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ModFilePath  = "./cue.mod/dagger.mod"
+	modFilePath  = "./cue.mod/dagger.mod"
 	sumFilePath  = "./cue.mod/dagger.sum"
 	lockFilePath = "./cue.mod/dagger.lock"
 	destBasePath = "./cue.mod/pkg"
@@ -31,7 +31,7 @@ type file struct {
 }
 
 func readPath(workspacePath string) (*file, error) {
-	pMod := path.Join(workspacePath, ModFilePath)
+	pMod := path.Join(workspacePath, modFilePath)
 	fMod, err := os.Open(pMod)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -276,7 +276,7 @@ func (f *file) write() error {
 		bMod.WriteString(fmt.Sprintf("%s %s\n", r.fullPath(), r.version))
 	}
 
-	err := ioutil.WriteFile(path.Join(f.workspacePath, ModFilePath), bMod.Bytes(), 0600)
+	err := ioutil.WriteFile(path.Join(f.workspacePath, modFilePath), bMod.Bytes(), 0600)
 	if err != nil {
 		return err
 	}

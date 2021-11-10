@@ -48,8 +48,7 @@ func init() {
 		}
 	}
 	rootCmd.PersistentPostRun = func(*cobra.Command, []string) {
-		warnDaggerVersion()
-		warnUniverseVersion()
+		warnVersion()
 	}
 
 	rootCmd.AddCommand(
