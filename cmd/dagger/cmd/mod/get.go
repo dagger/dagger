@@ -26,7 +26,8 @@ var getCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 
 		project := common.CurrentProject(ctx)
-		doneCh := common.TrackProjectCommand(ctx, cmd, project, nil, &telemetry.Property{
+		st := common.CurrentEnvironmentState(ctx, project)
+		doneCh := common.TrackProjectCommand(ctx, cmd, project, st, &telemetry.Property{
 			Name:  "packages",
 			Value: args,
 		})
