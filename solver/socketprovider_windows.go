@@ -13,7 +13,7 @@ import (
 )
 
 func dialStream(id string) (net.Conn, error) {
-	if !strings.HasPrefix(id, unixPrefix) {
+	if !strings.HasPrefix(id, npipePrefix) {
 		return nil, fmt.Errorf("invalid socket forward key %s", id)
 	}
 
