@@ -6,7 +6,7 @@ require (
 	cuelang.org/go v0.4.0
 	filippo.io/age v1.0.0
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
-	github.com/Microsoft/go-winio v0.5.1 // indirect
+	github.com/Microsoft/go-winio v0.5.1
 	github.com/containerd/console v1.0.3
 	github.com/containerd/containerd v1.5.7
 	github.com/docker/buildx v0.6.2
@@ -32,11 +32,11 @@ require (
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f
 	go.mozilla.org/sops/v3 v3.7.1
-	go.opentelemetry.io/otel v1.1.0
+	go.opentelemetry.io/otel v1.2.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.1.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.1 // indirect
 	go.opentelemetry.io/otel/sdk v1.1.0
-	go.opentelemetry.io/otel/trace v1.1.0
+	go.opentelemetry.io/otel/trace v1.2.0
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.5.1
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
