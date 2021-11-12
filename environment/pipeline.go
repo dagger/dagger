@@ -1178,6 +1178,8 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	if err != nil {
 		return st, err
 	}
+	// Update platform pipeline
+	p.platform = specs.Platform{OS: p.image.OS, Architecture: p.image.Architecture, Variant: p.image.Variant}
 	return applyImageToState(p.image, st), nil
 }
 
@@ -1246,27 +1248,12 @@ func dockerBuildOpts(op *compiler.Value, pctx *plancontext.Context) (map[string]
 		}
 	}
 
-	if platforms := op.Lookup("platforms"); platforms.Exists() {
-		p := []string{}
-		list, err := platforms.List()
+	if platform := op.Lookup("platform"); platform.Exists() {
+		p, err := platform.String()
 		if err != nil {
 			return nil, err
 		}
-
-		for _, platform := range list {
-			s, err := platform.String()
-			if err != nil {
-				return nil, err
-			}
-			p = append(p, s)
-		}
-
-		if len(p) > 0 {
-			opts["platform"] = strings.Join(p, ",")
-		}
-		if len(p) > 1 {
-			opts["multi-platform"] = "true"
-		}
+		opts["platform"] = p
 	}
 
 	return opts, nil

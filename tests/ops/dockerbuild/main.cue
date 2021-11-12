@@ -82,15 +82,56 @@ TestBuildLabels: #up: [
 	},
 ]
 
-// FIXME: this doesn't test anything beside not crashing
-TestBuildPlatform: #up: [
-	op.#DockerBuild & {
-		dockerfile: """
-			FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
-			"""
-		platforms: ["linux/amd64"]
-	},
-]
+// Verify that we can build an image with a targeted platform diffrent than host's one
+TestBuildPlatform: {
+	amd64: #up: [
+		op.#DockerBuild & {
+			dockerfile: """
+				FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
+				
+				RUN echo $(uname -a) > /platform.txt
+				"""
+			platform: "linux/amd64"
+		},
+
+		op.#Exec & {
+			always: true
+			args: ["/bin/sh", "-c", "cat /platform.txt | grep 'x86_64'"]
+		},
+	]
+
+	arm64: #up: [
+		op.#DockerBuild & {
+			dockerfile: """
+				FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
+
+				RUN echo $(uname -a) > /platform.txt
+				"""
+			platform: "linux/arm64"
+		},
+
+		op.#Exec & {
+			always: true
+			args: ["/bin/sh", "-c", "cat /platform.txt | grep 'aarch64'"]
+		},
+	]
+
+	s390x: #up: [
+		op.#DockerBuild & {
+			dockerfile: """
+				FROM alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
+
+				RUN echo $(uname -a) > /platform.txt
+				"""
+			platform: "linux/s390x"
+		},
+
+		op.#Exec & {
+			always: true
+			args: ["/bin/sh", "-c", "cat /platform.txt | grep 's390x'"]
+		},
+	]
+}
 
 TestImageMetadata: #up: [
 	op.#DockerBuild & {

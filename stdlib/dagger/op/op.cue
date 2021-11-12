@@ -121,7 +121,7 @@ package op
 	dockerfilePath?: string // path to the Dockerfile (defaults to "Dockerfile")
 	dockerfile?:     string
 
-	platforms?: [...string]
+	platform?: string // Target platform
 	buildArg?: {
 		// FIXME: should be `[string]: string | #Secret` (circular import)
 		[string]: string | _ @dagger(secret)
