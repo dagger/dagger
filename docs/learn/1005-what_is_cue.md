@@ -155,7 +155,7 @@ When unifying objects, or _structs_ as we like to call them, a form of merging h
 
 ```cue
 import (
-  "strings"
+  "strings" // a builtin package
 )
 
 #Person: {
@@ -208,6 +208,8 @@ Bob inherits the _default value_ but is now allowed to specify a different job.
 
 ### Packages
 
-Packages in CUE allow us to write _modular_, _reusable_, and _composable_ code. We can define schemas that are imported into various other projects.
+Packages in CUE allow us to write _modular_, _reusable_, and _composable_ code. We can define schemas that are _imported_ into various files and projects. If you&rsquo;ve written Go, then CUE should feel quite familiar. Not only is it [written in Go](https://pkg.go.dev/cuelang.org/go@v0.4.0/cue#pkg-overview) much of its behavior and syntax are modeled after Go as well.
 
-In the last few examples we've included an `import` statement to load the builtin `"strings"` package. If you've written Go then CUE should feel quite familiar. Not only is it [written in Go](https://pkg.go.dev/cuelang.org/go@v0.4.0/cue#pkg-overview) much of its behavior and syntax are modeled after Go as well.
+CUE has a number of [builtin packages](https://pkg.go.dev/cuelang.org/go/pkg) such as `strings`, `regexp`, `math`, and many more. These builtin packages are already available to CUE without the need to download or install anything else. Third-party packages are those that are placed within the `cue.mod/pkg/` folder and start with a fully qualified domain such as `alpha.dagger.io`.
+
+In the last few examples we&rsquo;ve included an `import` statement to load the builtin `strings` package. In the tutorials and other examples you will notice that other packages from `alpha.dagger.io` will be imported and used.
