@@ -69,6 +69,10 @@ setup() {
     run "$DAGGER" compute "$TESTDIR"/ops/fetch-container/exist
     assert_success
 
+    # Verify multi-platform management
+    run "$DAGGER" compute "$TESTDIR"/ops/fetch-container/platform
+    assert_success
+
     # missing ref
     # FIXME: distinguish missing inputs from incorrect config
     # run "$DAGGER" compute "$TESTDIR"/ops/fetch-container/invalid

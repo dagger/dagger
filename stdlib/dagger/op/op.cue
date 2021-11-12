@@ -72,8 +72,9 @@ package op
 }
 
 #FetchContainer: {
-	do:  "fetch-container"
-	ref: string
+	do:        "fetch-container"
+	ref:       string
+	platform?: string // Platform to fetch
 }
 
 #PushContainer: {

@@ -818,6 +818,19 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 		return st, err
 	}
 
+	platform := p.platform
+	if askedPlatform := op.Lookup("platform"); askedPlatform.Exists() {
+		platformStr, err := askedPlatform.String()
+		if err != nil {
+			return st, err
+		}
+
+		platform, err = bkplatforms.Parse(platformStr)
+		if err != nil {
+			return st, err
+		}
+	}
+
 	ref, err := reference.ParseNormalizedNamed(rawRef)
 	if err != nil {
 		return st, fmt.Errorf("failed to parse ref %s: %w", rawRef, err)
@@ -840,6 +853,7 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 		return st, err
 	}
 
+	p.platform = platform
 	return applyImageToState(p.image, st), nil
 }
 
