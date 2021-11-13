@@ -200,7 +200,6 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver, platform strin
 		}
 		v := compiler.Wrap(t.Value())
 
-		fmt.Println(platform)
 		var pipelinePlatform specs.Platform
 		if platform == "" {
 			pipelinePlatform = specs.Platform{OS: "linux", Architecture: "amd64"}
