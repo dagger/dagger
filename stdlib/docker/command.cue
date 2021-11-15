@@ -138,7 +138,7 @@ import (
 					TARGET_HOST:     registry.target
 					DOCKER_USERNAME: registry.username
 				}
-				mount: "/password": secret: registry.password
+				mount: "/password": secret: registry.secret
 			}
 		},
 
