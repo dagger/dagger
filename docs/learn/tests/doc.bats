@@ -22,11 +22,12 @@ setup() {
 
   dagger --project "$DAGGER_SANDBOX" -e 'local' up
 
-  until docker inspect --format "{{json .State.Status }}" todoapp | grep -m 1 "running"; do sleep 1 ; done
+  SECONDS=0 
+  while [[ "$(docker inspect --format '{{json .State.Status }}' todoapp | grep -m 1 'running')" != "running" && $SECONDS -lt 45 ]]; do sleep 1 ; done
   run curl -f -LI http://localhost:8080
   assert_output --partial '200 OK'
   docker stop todoapp && docker rm todoapp
-  docker stop registry && docker rm registry
+  docker stop registry-local && docker rm registry-local
 }
 
 @test "doc-1004-first-env" {
