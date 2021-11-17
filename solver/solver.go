@@ -18,6 +18,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/plancontext"
 )
 
 type Solver struct {
@@ -27,12 +28,12 @@ type Solver struct {
 }
 
 type Opts struct {
-	Control      *bk.Client
-	Gateway      bkgw.Client
-	Events       chan *bk.SolveStatus
-	Auth         *RegistryAuthProvider
-	SecretsStore SecretsStore
-	NoCache      bool
+	Control *bk.Client
+	Gateway bkgw.Client
+	Events  chan *bk.SolveStatus
+	Context *plancontext.Context
+	Auth    *RegistryAuthProvider
+	NoCache bool
 }
 
 func New(opts Opts) Solver {
@@ -194,8 +195,8 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 		Exports: []bk.ExportEntry{output},
 		Session: []session.Attachable{
 			s.opts.Auth,
-			s.opts.SecretsStore.Secrets,
-			NewDockerSocketProvider(),
+			NewSecretsStoreProvider(s.opts.Context),
+			NewDockerSocketProvider(s.opts.Context),
 		},
 	}
 

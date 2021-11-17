@@ -20,10 +20,8 @@ package op
 }
 
 #Local: {
-	do:  "local"
-	dir: string
-	include: [...string]
-	exclude: [...string]
+	do: "local"
+	id: string
 }
 
 // FIXME: bring back load (more efficient than copy)

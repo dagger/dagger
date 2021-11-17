@@ -1,8 +1,6 @@
 package state
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -13,6 +11,7 @@ import (
 	"cuelang.org/go/cue"
 
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/plancontext"
 )
 
 // An input is a value or artifact supplied by the user.
@@ -31,7 +30,6 @@ import (
 type Input struct {
 	Dir    *dirInput    `yaml:"dir,omitempty"`
 	Git    *gitInput    `yaml:"git,omitempty"`
-	Docker *dockerInput `yaml:"docker,omitempty"`
 	Secret *secretInput `yaml:"secret,omitempty"`
 	Text   *textInput   `yaml:"text,omitempty"`
 	JSON   *jsonInput   `yaml:"json,omitempty"`
@@ -41,28 +39,26 @@ type Input struct {
 	Socket *socketInput `yaml:"socket,omitempty"`
 }
 
-func (i Input) Compile(key string, state *State) (*compiler.Value, error) {
+func (i Input) Compile(state *State) (*compiler.Value, error) {
 	switch {
 	case i.Dir != nil:
-		return i.Dir.Compile(key, state)
+		return i.Dir.Compile(state)
 	case i.Git != nil:
-		return i.Git.Compile(key, state)
-	case i.Docker != nil:
-		return i.Docker.Compile(key, state)
+		return i.Git.Compile(state)
 	case i.Text != nil:
-		return i.Text.Compile(key, state)
+		return i.Text.Compile(state)
 	case i.Secret != nil:
-		return i.Secret.Compile(key, state)
+		return i.Secret.Compile(state)
 	case i.JSON != nil:
-		return i.JSON.Compile(key, state)
+		return i.JSON.Compile(state)
 	case i.YAML != nil:
-		return i.YAML.Compile(key, state)
+		return i.YAML.Compile(state)
 	case i.File != nil:
-		return i.File.Compile(key, state)
+		return i.File.Compile(state)
 	case i.Bool != nil:
-		return i.Bool.Compile(key, state)
+		return i.Bool.Compile(state)
 	case i.Socket != nil:
-		return i.Socket.Compile(key, state)
+		return i.Socket.Compile(state)
 	default:
 		return nil, fmt.Errorf("input has not been set")
 	}
@@ -85,28 +81,7 @@ type dirInput struct {
 	Exclude []string `yaml:"exclude,omitempty"`
 }
 
-func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
-	// FIXME: serialize an intermediate struct, instead of generating cue source
-
-	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
-	// in Cue because `null` is not a `[...string]`
-	includeLLB := []byte("[]")
-	if len(dir.Include) > 0 {
-		var err error
-		includeLLB, err = json.Marshal(dir.Include)
-		if err != nil {
-			return nil, err
-		}
-	}
-	excludeLLB := []byte("[]")
-	if len(dir.Exclude) > 0 {
-		var err error
-		excludeLLB, err = json.Marshal(dir.Exclude)
-		if err != nil {
-			return nil, err
-		}
-	}
-
+func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
 	p := dir.Path
 	if !filepath.IsAbs(p) {
 		p = filepath.Clean(path.Join(state.Project, dir.Path))
@@ -119,16 +94,15 @@ func (dir dirInput) Compile(_ string, state *State) (*compiler.Value, error) {
 		return nil, fmt.Errorf("%q dir doesn't exist", dir.Path)
 	}
 
-	dirPath, err := json.Marshal(p)
-	if err != nil {
-		return nil, err
-	}
+	id := state.Context.Directories.Register(&plancontext.Directory{
+		Path:    p,
+		Include: dir.Include,
+		Exclude: dir.Exclude,
+	})
 
 	llb := fmt.Sprintf(
-		`#up: [{do:"local",dir:%s, include:%s, exclude:%s}]`,
-		dirPath,
-		includeLLB,
-		excludeLLB,
+		`#up: [{do:"local", id: "%s"}]`,
+		id,
 	)
 	return compiler.Compile("", llb)
 }
@@ -150,7 +124,7 @@ func GitInput(remote, ref, dir string) Input {
 	}
 }
 
-func (git gitInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+func (git gitInput) Compile(_ *State) (*compiler.Value, error) {
 	ref := "HEAD"
 	if git.Ref != "" {
 		ref = git.Ref
@@ -169,23 +143,6 @@ func (git gitInput) Compile(_ string, _ *State) (*compiler.Value, error) {
 	))
 }
 
-// An input artifact loaded from a docker container
-func DockerInput(ref string) Input {
-	return Input{
-		Docker: &dockerInput{
-			Ref: ref,
-		},
-	}
-}
-
-type dockerInput struct {
-	Ref string `yaml:"ref,omitempty"`
-}
-
-func (i dockerInput) Compile(_ string, _ *State) (*compiler.Value, error) {
-	panic("NOT IMPLEMENTED")
-}
-
 // An input value encoded as text
 func TextInput(data string) Input {
 	i := textInput(data)
@@ -196,7 +153,7 @@ func TextInput(data string) Input {
 
 type textInput string
 
-func (i textInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+func (i textInput) Compile(_ *State) (*compiler.Value, error) {
 	return compiler.Compile("", fmt.Sprintf("%q", i))
 }
 
@@ -210,11 +167,11 @@ func SecretInput(data string) Input {
 
 type secretInput string
 
-func (i secretInput) Compile(key string, _ *State) (*compiler.Value, error) {
-	hash := sha256.New()
-	hash.Write([]byte(key))
-	checksum := hash.Sum([]byte(i.PlainText()))
-	secretValue := fmt.Sprintf(`{id:"secret=%s;hash=%x"}`, key, checksum)
+func (i secretInput) Compile(st *State) (*compiler.Value, error) {
+	id := st.Context.Secrets.Register(&plancontext.Secret{
+		PlainText: i.PlainText(),
+	})
+	secretValue := fmt.Sprintf(`{id: %q}`, id)
 	return compiler.Compile("", secretValue)
 }
 
@@ -232,7 +189,7 @@ func BoolInput(data string) Input {
 
 type boolInput string
 
-func (i boolInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+func (i boolInput) Compile(_ *State) (*compiler.Value, error) {
 	s := map[boolInput]struct{}{
 		"true":  {},
 		"false": {},
@@ -253,7 +210,7 @@ func JSONInput(data string) Input {
 
 type jsonInput string
 
-func (i jsonInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+func (i jsonInput) Compile(_ *State) (*compiler.Value, error) {
 	return compiler.DecodeJSON("", []byte(i))
 }
 
@@ -267,7 +224,7 @@ func YAMLInput(data string) Input {
 
 type yamlInput string
 
-func (i yamlInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+func (i yamlInput) Compile(_ *State) (*compiler.Value, error) {
 	return compiler.DecodeYAML("", []byte(i))
 }
 
@@ -283,7 +240,7 @@ type fileInput struct {
 	Path string `yaml:"path,omitempty"`
 }
 
-func (i fileInput) Compile(_ string, _ *State) (*compiler.Value, error) {
+func (i fileInput) Compile(_ *State) (*compiler.Value, error) {
 	data, err := ioutil.ReadFile(i.Path)
 	if err != nil {
 		return nil, err
@@ -316,11 +273,11 @@ type socketInput struct {
 	Npipe string `json:"npipe,omitempty" yaml:"npipe,omitempty"`
 }
 
-func (i socketInput) Compile(_ string, _ *State) (*compiler.Value, error) {
-	socketValue, err := json.Marshal(i)
-	if err != nil {
-		return nil, err
-	}
-
-	return compiler.Compile("", string(socketValue))
+func (i socketInput) Compile(st *State) (*compiler.Value, error) {
+	id := st.Context.Services.Register(&plancontext.Service{
+		Unix:  i.Unix,
+		Npipe: i.Npipe,
+	})
+	socketValue := fmt.Sprintf(`{id: %q}`, id)
+	return compiler.Compile("", socketValue)
 }

@@ -145,7 +145,6 @@ setup() {
     # Make sure the secret doesn't show in dagger query
     run "$DAGGER" query mySecret.id -f text
     assert_success
-    assert_output --partial "secret=mySecret;hash="
 }
 
 @test "core: stream" {

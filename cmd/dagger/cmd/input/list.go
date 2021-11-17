@@ -41,8 +41,13 @@ var listCmd = &cobra.Command{
 
 		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
 
-		c := common.NewClient(ctx)
-		err := c.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		env, err := environment.New(st)
+		if err != nil {
+			lg.Fatal().Msg("unable to create environment")
+		}
+
+		cl := common.NewClient(ctx)
+		err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 			inputs, err := env.ScanInputs(ctx, false)
 			if err != nil {
 				return err

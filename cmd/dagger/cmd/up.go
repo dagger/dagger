@@ -61,7 +61,12 @@ var upCmd = &cobra.Command{
 
 		cl := common.NewClient(ctx)
 
-		err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		env, err := environment.New(st)
+		if err != nil {
+			lg.Fatal().Msg("unable to create environment")
+		}
+
+		err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 			// check that all inputs are set
 			if err := checkInputs(ctx, env); err != nil {
 				return err

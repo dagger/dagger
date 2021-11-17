@@ -25,7 +25,6 @@ func init() {
 	Cmd.AddCommand(
 		dirCmd,
 		gitCmd,
-		containerCmd,
 		secretCmd,
 		textCmd,
 		jsonCmd,
@@ -52,11 +51,15 @@ func updateEnvironmentInput(ctx context.Context, cmd *cobra.Command, target stri
 		Value: target,
 	})
 
-	cl := common.NewClient(ctx)
-
 	st.SetInput(target, input)
 
-	err := cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+	env, err := environment.New(st)
+	if err != nil {
+		lg.Fatal().Msg("unable to create environment")
+	}
+
+	cl := common.NewClient(ctx)
+	err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 		// the inputs are set, check for cue errors by scanning all the inputs
 		_, err := env.ScanInputs(ctx, true)
 		if err != nil {

@@ -15,6 +15,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 	"go.mozilla.org/sops/v3"
@@ -43,6 +44,7 @@ var computeCmd = &cobra.Command{
 		doneCh := common.TrackCommand(ctx, cmd)
 
 		st := &state.State{
+			Context:  plancontext.New(),
 			Name:     "FIXME",
 			Platform: platforms.Format(specs.Platform{OS: "linux", Architecture: "amd64"}),
 			Path:     args[0],
@@ -191,7 +193,12 @@ var computeCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to compile inputs")
 		}
 
-		err = cl.Do(ctx, st, func(ctx context.Context, env *environment.Environment, s solver.Solver) error {
+		env, err := environment.New(st)
+		if err != nil {
+			lg.Fatal().Msg("unable to create environment")
+		}
+
+		err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 			// check that all inputs are set
 			checkInputs(ctx, env)
 

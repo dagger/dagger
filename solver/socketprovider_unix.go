@@ -4,17 +4,17 @@
 package solver
 
 import (
-	"fmt"
+	"errors"
 	"net"
-	"strings"
 	"time"
+
+	"go.dagger.io/dagger/plancontext"
 )
 
-func dialStream(id string) (net.Conn, error) {
-	if !strings.HasPrefix(id, unixPrefix) {
-		return nil, fmt.Errorf("invalid socket forward key %s", id)
+func dialService(service *plancontext.Service) (net.Conn, error) {
+	if service.Unix == "" {
+		return nil, errors.New("unsupported socket type")
 	}
 
-	id = strings.TrimPrefix(id, unixPrefix)
-	return net.DialTimeout("unix", id, time.Second)
+	return net.DialTimeout("unix", service.Unix, time.Second)
 }

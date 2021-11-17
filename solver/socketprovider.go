@@ -3,24 +3,20 @@ package solver
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
+	"go.dagger.io/dagger/plancontext"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-const (
-	unixPrefix  = "unix="
-	npipePrefix = "npipe="
-)
-
 type SocketProvider struct {
+	pctx *plancontext.Context
 }
 
-func NewDockerSocketProvider() session.Attachable {
-	return &SocketProvider{}
+func NewDockerSocketProvider(pctx *plancontext.Context) session.Attachable {
+	return &SocketProvider{pctx}
 }
 
 func (sp *SocketProvider) Register(server *grpc.Server) {
@@ -28,13 +24,6 @@ func (sp *SocketProvider) Register(server *grpc.Server) {
 }
 
 func (sp *SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
-	id := sshforward.DefaultID
-	if req.ID != "" {
-		id = req.ID
-	}
-	if !strings.HasPrefix(id, unixPrefix) && !strings.HasPrefix(id, npipePrefix) {
-		return &sshforward.CheckAgentResponse{}, fmt.Errorf("invalid socket forward key %s", id)
-	}
 	return &sshforward.CheckAgentResponse{}, nil
 }
 
@@ -47,7 +36,12 @@ func (sp *SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer)
 		id = v[0]
 	}
 
-	conn, err := dialStream(id)
+	service := sp.pctx.Services.Get(plancontext.ContextKey(id))
+	if service == nil {
+		return fmt.Errorf("invalid socket id %q", id)
+	}
+
+	conn, err := dialService(service)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", id, err)
 	}

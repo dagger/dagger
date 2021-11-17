@@ -23,11 +23,11 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	digest "github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
 
@@ -46,17 +46,17 @@ type Pipeline struct {
 	name     string
 	s        solver.Solver
 	state    llb.State
-	platform specs.Platform // Platform constraint
+	pctx     *plancontext.Context
 	result   bkgw.Reference
 	image    dockerfile2llb.Image
 	computed *compiler.Value
 }
 
-func NewPipeline(code *compiler.Value, s solver.Solver, platform specs.Platform) *Pipeline {
+func NewPipeline(code *compiler.Value, s solver.Solver, pctx *plancontext.Context) *Pipeline {
 	return &Pipeline{
 		code:     code,
 		name:     code.Path().String(),
-		platform: platform,
+		pctx:     pctx,
 		s:        s,
 		state:    llb.Scratch(),
 		computed: compiler.NewValue(),
@@ -233,7 +233,7 @@ func (p *Pipeline) run(ctx context.Context) error {
 		// so that errors map to the correct cue path.
 		// FIXME: might as well change FS to make every operation
 		// synchronous.
-		p.result, err = p.s.Solve(ctx, p.state, p.platform)
+		p.result, err = p.s.Solve(ctx, p.state, p.pctx.Platform.Get())
 		if err != nil {
 			return err
 		}
@@ -339,7 +339,7 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 		return st, err
 	}
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s, p.platform)
+	from := NewPipeline(op.Lookup("from"), p.s, p.pctx)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -361,50 +361,31 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 }
 
 func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	dir, err := op.Lookup("dir").String()
+	id, err := op.Lookup("id").String()
 	if err != nil {
 		return st, err
+	}
+	dir := p.pctx.Directories.Get(plancontext.ContextKey(id))
+	if dir == nil {
+		return st, fmt.Errorf("directory %q not found", id)
 	}
 
 	opts := []llb.LocalOption{
-		llb.WithCustomName(p.vertexNamef("Local %s", dir)),
+		llb.WithCustomName(p.vertexNamef("Local %s", dir.Path)),
 		// Without hint, multiple `llb.Local` operations on the
 		// same path get a different digest.
 		llb.SessionID(p.s.SessionID()),
-		llb.SharedKeyHint(dir),
+		llb.SharedKeyHint(dir.Path),
 	}
 
-	includes, err := op.Lookup("include").List()
-	if err != nil {
-		return st, err
-	}
-	if len(includes) > 0 {
-		includePatterns := []string{}
-		for _, i := range includes {
-			pattern, err := i.String()
-			if err != nil {
-				return st, err
-			}
-			includePatterns = append(includePatterns, pattern)
-		}
-		opts = append(opts, llb.IncludePatterns(includePatterns))
-	}
-
-	excludes, err := op.Lookup("exclude").List()
-	if err != nil {
-		return st, err
+	if len(dir.Include) > 0 {
+		opts = append(opts, llb.IncludePatterns(dir.Include))
 	}
 
 	// Excludes .dagger directory by default
 	excludePatterns := []string{"**/.dagger/"}
-	if len(excludes) > 0 {
-		for _, i := range excludes {
-			pattern, err := i.String()
-			if err != nil {
-				return st, err
-			}
-			excludePatterns = append(excludePatterns, pattern)
-		}
+	if len(dir.Exclude) > 0 {
+		excludePatterns = dir.Exclude
 	}
 	opts = append(opts, llb.ExcludePatterns(excludePatterns))
 
@@ -415,13 +396,13 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 	return st.File(
 		llb.Copy(
 			llb.Local(
-				dir,
+				dir.Path,
 				opts...,
 			),
 			"/",
 			"/",
 		),
-		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
+		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir.Path)),
 	), nil
 }
 
@@ -574,35 +555,15 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 			return nil, fmt.Errorf("invalid stream %q: not a stream", stream.Path().String())
 		}
 
-		// Unix socket
-		unixValue := stream.Lookup("unix")
-		if unixValue.Exists() {
-			unix, err := unixValue.String()
-			if err != nil {
-				return nil, fmt.Errorf("invalid unix path id: %w", err)
-			}
-
-			return llb.AddSSHSocket(
-				llb.SSHID(fmt.Sprintf("unix=%s", unix)),
-				llb.SSHSocketTarget(dest),
-			), nil
+		id, err := stream.Lookup("id").String()
+		if err != nil {
+			return nil, fmt.Errorf("invalid stream %q: %w", stream.Path().String(), err)
 		}
 
-		// Windows named pipe
-		npipeValue := stream.Lookup("npipe")
-		if npipeValue.Exists() {
-			npipe, err := npipeValue.String()
-			if err != nil {
-				return nil, fmt.Errorf("invalid npipe path id: %w", err)
-			}
-
-			return llb.AddSSHSocket(
-				llb.SSHID(fmt.Sprintf("npipe=%s", npipe)),
-				llb.SSHSocketTarget(dest),
-			), nil
-		}
-
-		return nil, fmt.Errorf("invalid stream %q: not a valid stream", stream.Path().String())
+		return llb.AddSSHSocket(
+			llb.SSHID(id),
+			llb.SSHSocketTarget(dest),
+		), nil
 	}
 
 	// eg. mount: "/foo": { from: www.source }
@@ -610,7 +571,7 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 		return nil, fmt.Errorf("invalid mount: should have %s structure",
 			"{from: _, path: string | *\"/\"}")
 	}
-	from := NewPipeline(mnt.Lookup("from"), p.s, p.platform)
+	from := NewPipeline(mnt.Lookup("from"), p.s, p.pctx)
 	if err := from.Run(ctx); err != nil {
 		return nil, err
 	}
@@ -736,7 +697,7 @@ func unmarshalAnything(data []byte, fn unmarshaller) (interface{}, error) {
 }
 
 // parseStringOrSecret retrieve secret as plain text or retrieve string
-func parseStringOrSecret(ctx context.Context, ss solver.SecretsStore, v *compiler.Value) (string, error) {
+func parseStringOrSecret(pctx *plancontext.Context, v *compiler.Value) (string, error) {
 	// Check if the value is a string, return as is
 	if value, err := v.String(); err == nil {
 		return value, nil
@@ -747,16 +708,16 @@ func parseStringOrSecret(ctx context.Context, ss solver.SecretsStore, v *compile
 	if err != nil {
 		return "", err
 	}
-	secretBytes, err := ss.GetSecret(ctx, id)
-	if err != nil {
-		return "", err
+	secret := pctx.Secrets.Get(plancontext.ContextKey(id))
+	if secret == nil {
+		return "", fmt.Errorf("secret %s not found", id)
 	}
-	return string(secretBytes), nil
+	return secret.PlainText, nil
 }
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// Execute 'from' in a tmp pipeline, and use the resulting fs
-	from := NewPipeline(op.Lookup("from"), p.s, p.platform)
+	from := NewPipeline(op.Lookup("from"), p.s, p.pctx)
 	if err := from.Run(ctx); err != nil {
 		return st, err
 	}
@@ -774,7 +735,7 @@ func (p *Pipeline) DockerLogin(ctx context.Context, op *compiler.Value, st llb.S
 	//  that function
 	// But currently it's not possible because ECR secret's is a string
 	// so we need to handle both options (string & secret)
-	secretValue, err := parseStringOrSecret(ctx, p.s.GetOptions().SecretsStore, op.Lookup("secret"))
+	secretValue, err := parseStringOrSecret(p.pctx, op.Lookup("secret"))
 	if err != nil {
 		return st, err
 	}
@@ -813,9 +774,10 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 	)
 
 	// Load image metadata and convert to to LLB.
+	platform := p.pctx.Platform.Get()
 	p.image, err = p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
 		LogName:  p.vertexNamef("load metadata for %s", ref.String()),
-		Platform: &p.platform,
+		Platform: &platform,
 	})
 	if err != nil {
 		return st, err
@@ -869,7 +831,7 @@ func (p *Pipeline) PushContainer(ctx context.Context, op *compiler.Value, st llb
 			"name": ref.String(),
 			"push": "true",
 		},
-	}, p.platform)
+	}, p.pctx.Platform.Get())
 
 	if err != nil {
 		return st, err
@@ -928,7 +890,7 @@ func (p *Pipeline) SaveImage(ctx context.Context, op *compiler.Value, st llb.Sta
 		Output: func(_ map[string]string) (io.WriteCloser, error) {
 			return pipeW, nil
 		},
-	}, p.platform)
+	}, p.pctx.Platform.Get())
 
 	if err != nil {
 		return st, err
@@ -1088,7 +1050,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	// docker build context. This can come from another component, so we need to
 	// compute it first.
 	if dockerContext.Exists() {
-		from := NewPipeline(op.Lookup("context"), p.s, p.platform)
+		from := NewPipeline(op.Lookup("context"), p.s, p.pctx)
 		if err := from.Run(ctx); err != nil {
 			return st, err
 		}
@@ -1118,7 +1080,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 		}
 	}
 
-	opts, err := dockerBuildOpts(ctx, op, p.s.GetOptions().SecretsStore)
+	opts, err := dockerBuildOpts(op, p.pctx)
 	if err != nil {
 		return st, err
 	}
@@ -1129,7 +1091,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 
 	// Set platform to configured one if no one is defined
 	if opts["platform"] == "" {
-		opts["platform"] = bkplatforms.Format(p.platform)
+		opts["platform"] = bkplatforms.Format(p.pctx.Platform.Get())
 	}
 
 	req := bkgw.SolveRequest{
@@ -1162,7 +1124,7 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	return applyImageToState(p.image, st), nil
 }
 
-func dockerBuildOpts(ctx context.Context, op *compiler.Value, ss solver.SecretsStore) (map[string]string, error) {
+func dockerBuildOpts(op *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
 	opts := map[string]string{}
 
 	if dockerfilePath := op.Lookup("dockerfilePath"); dockerfilePath.Exists() {
@@ -1205,7 +1167,7 @@ func dockerBuildOpts(ctx context.Context, op *compiler.Value, ss solver.SecretsS
 			return nil, err
 		}
 		for _, buildArg := range fields {
-			v, err := parseStringOrSecret(ctx, ss, buildArg.Value)
+			v, err := parseStringOrSecret(pctx, buildArg.Value)
 			if err != nil {
 				return nil, err
 			}
