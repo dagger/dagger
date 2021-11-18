@@ -2,6 +2,7 @@ package mod
 
 import (
 	"context"
+	"os"
 	"path"
 	"strings"
 
@@ -36,12 +37,16 @@ func Install(ctx context.Context, workspace, repoName, versionConstraint string)
 		return nil, err
 	}
 
-	fileLock := flock.New(path.Join(workspace, lockFilePath))
+	fileLockPath := path.Join(workspace, lockFilePath)
+	fileLock := flock.New(fileLockPath)
 	if err := fileLock.Lock(); err != nil {
 		return nil, err
 	}
 
-	defer fileLock.Unlock()
+	defer func() {
+		fileLock.Unlock()
+		os.Remove(fileLockPath)
+	}()
 
 	err = modfile.install(ctx, require)
 	if err != nil {
@@ -91,12 +96,16 @@ func Update(ctx context.Context, workspace, repoName, versionConstraint string) 
 		return nil, err
 	}
 
-	fileLock := flock.New(path.Join(workspace, lockFilePath))
+	fileLockPath := path.Join(workspace, lockFilePath)
+	fileLock := flock.New(fileLockPath)
 	if err := fileLock.Lock(); err != nil {
 		return nil, err
 	}
 
-	defer fileLock.Unlock()
+	defer func() {
+		fileLock.Unlock()
+		os.Remove(fileLockPath)
+	}()
 
 	updatedRequire, err := modfile.updateToLatest(ctx, require)
 	if err != nil {
