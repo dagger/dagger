@@ -183,6 +183,7 @@ jobs:
           REACT_APP_AMPLITUDE_ID: 123
         with:
           config: chromeWebSecurity=false
+          install-command: yarn install --silent
           start: |
             yarn start
             yarn start:withAuth
