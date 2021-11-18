@@ -19,6 +19,7 @@ import clsx from 'clsx';
 import styles from './styles.module.css';
 import {ThemeClassNames, docVersionSearchTag} from '@docusaurus/theme-common';
 import DocPageCustom from "../../components/DocPageCustom"
+import amplitude from 'amplitude-js';
 
 function DocPageContent({currentDocRoute, versionMetadata, children}) {
   const {pluginId, version} = versionMetadata;
@@ -138,7 +139,6 @@ function DocPage(props) {
   );
 
   useEffect(() => {
-    import('amplitude-js').then(amplitude => {
       if (userAccessStatus?.login) {
         var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
           apiEndpoint: `${window.location.hostname}/t`
@@ -149,7 +149,6 @@ function DocPage(props) {
           window.hj("identify", userAccessStatus?.login.toLowerCase(), {});
         }
       }
-    })
   }, [location.pathname, userAccessStatus])
 
   if (process.env.OAUTH_ENABLE == 'true' && userAccessStatus?.permission !== true) {
