@@ -1,6 +1,10 @@
 plan:
     package: ./docker/tests/run-ports
 name: docker-run-ports
+inputs:
+    dockersocket:
+        socket:
+            unix: /var/run/docker.sock
 sops:
     kms: []
     gcp_kms: []
@@ -16,8 +20,8 @@ sops:
             TS80V3BnN3BaeDFTRjNBRTAwbWRKcWcK1rH2zWxTQsbSgOs9Ys89ZCP7kVOm1wFe
             Kv849q+QOvIy9JPYkGgV16Yr3ijFF7z/h0PCicZRI76WYV/3JnbYmg==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-09-28T15:06:47Z"
-    mac: ENC[AES256_GCM,data:WF2X4RCio9x459Fv4XK/P933cS9uac3kHA2+kfaft++ndxbHOY0zmOhUvNMmzLtJNTXL7oBADWIIqIiFbaaC0pC+xGq1th+woR3LvAVQi5J0rlDTcdMDPT03KOPdOmsXFDow5jzyn8vPsC59VCys0ZmEnmnHIGufnFy2qKVV0bM=,iv:GUrSk66zhDqxx+rVM9zMDfmcaDBSOOMIeCSViS2cuLU=,tag:rgCoWe//hn8xmeRmbc5ybQ==,type:str]
+    lastmodified: "2021-11-18T00:19:27Z"
+    mac: ENC[AES256_GCM,data:TtV35YtlXlZLvE8H+EoPvjJmCowmFftsS2DIifDeIeuRxkyMfk9tq39BemWFjoLKJx3FgFvC8bXGbWi3UMWi8wpzgjqmFVJCDWUdQ6NpdzPCXCVdOdkGUV+F/yjLX0dnsUZHnwSOZco0+uk/sNCWxecBE590brHoJw91j075DXQ=,iv:P8dEwdFnDvvMSJvNK4GXPMbTXbvLEsqoEhoP4K1IPVQ=,tag:LTT6gXDfSMWYttLOXQjidg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
