@@ -214,6 +214,9 @@ import (
 	// Container name
 	name?: dagger.#Input & {string}
 
+	// Custom Command overriding entrypoint of the Image
+	containerCommand?: dagger.#Input & {string}
+
 	// Recreate container?
 	recreate: dagger.#Input & {bool | *true}
 
@@ -230,6 +233,7 @@ import (
 	#command: #"""
 		# Run detach container
 		OPTS=""
+		CMD=""
 
 		if [ ! -z "$CONTAINER_NAME" ]; then
 			OPTS="$OPTS --name $CONTAINER_NAME"
@@ -250,7 +254,11 @@ import (
 			OPTS="$OPTS -p $CONTAINER_PORTS"
 		fi
 
-		docker container run -d $OPTS "$IMAGE_REF"
+		if [ ! -z "$CONTAINER_CMD" ]; then
+			CMD="$CONTAINER_CMD"
+		fi
+
+		docker container run -d $OPTS "$IMAGE_REF" $CMD
 		"""#
 
 	run: #Command & {
@@ -278,6 +286,11 @@ import (
 			if ports != _|_ {
 				CONTAINER_PORTS: strings.Join(ports, " -p ")
 			}
+
+			if containerCommand != _|_ {
+				CONTAINER_CMD: containerCommand
+			}
+
 		}
 	}
 }
