@@ -23,12 +23,16 @@ var (
 )
 
 func Vendor(ctx context.Context, mod string) error {
-	fileLock := flock.New(path.Join(mod, lockFilePath))
+	lockFilePath := path.Join(mod, lockFilePath)
+	fileLock := flock.New(lockFilePath)
 	if err := fileLock.Lock(); err != nil {
 		return err
 	}
 
-	defer fileLock.Unlock()
+	defer func() {
+		fileLock.Unlock()
+		os.Remove(lockFilePath)
+	}()
 
 	// Remove any existing copy of the universe
 	if err := os.RemoveAll(path.Join(mod, Path)); err != nil {
