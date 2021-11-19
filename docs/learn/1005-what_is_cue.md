@@ -65,7 +65,7 @@ Bob: {
 }
 ```
 
-Here we&rsquo;ve defined the `Name` field as a `string` and the `Age` field as an `int`. Notice how `string` and `int` _are not_ within quotes. This is what we mean when we say "types _are_ values". This will be quite familiar to anyone who has written Go or some other strongly-typed language. With these types defined, CUE will now _enforce_ them, so that any attempt to provide say an integer for the Name or a string for the Age will result in an error. It&rsquo;s worth noting here that the output from this example is the result of _implicit uinification_; we&rsquo;ll talk about _explicit unification_ later. [Try it in the CUE playground](https://cuelang.org/play/?id=7iR-sFSEajk#cue@export@yaml).
+Here we&rsquo;ve defined the `Name` field as a `string` and the `Age` field as an `int`. Notice how `string` and `int` _are not_ within quotes. This is what we mean when we say "types _are_ values". This will be quite familiar to anyone who has written Go or some other strongly-typed language. With these types defined, CUE will now _enforce_ them, so that any attempt to provide say an integer for the Name or a string for the Age will result in an error. It&rsquo;s worth noting here that the output from this example is the result of _implicit unification_; we&rsquo;ll talk about _explicit unification_ later. [Try it in the CUE playground](https://cuelang.org/play/?id=7iR-sFSEajk#cue@export@yaml).
 
 ### Concrete Values
 
@@ -107,7 +107,7 @@ In this example we&rsquo;ve declared that `#Person` is a _definition_, as denote
 
 Definitions themselves are _not_ exported to final output. To get concrete output, we&rsquo;ve declared that the field `Bob` _is_ a `#Person`, and using the _single_ `&` (not the same as logical AND via `&&`!) we _unified_ the `#Person` definition with an object whose _concrete values satisfy the constraints_ defined by that definition.
 
-You can think of _definitions_ as a logical set of related _constraints_ and a _schema_ as a larger collective of contraints, not all of which need to be definitions.
+You can think of _definitions_ as a logical set of related _constraints_ and a _schema_ as a larger collective of constraints, not all of which need to be definitions.
 
 [Try it in the CUE playground](https://cuelang.org/play/?id=S-c7N0EZsYN#cue@export@yaml) and experiment with making fields optional via `?` with values both defined and not defined to see.
 
@@ -147,7 +147,7 @@ Bob:
 
 ```
 
-The output here is a product of _*unifying*_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _contraints_ declared by the field in the defintion. [Try it in the CUE playground](https://cuelang.org/play/?id=nAUx1-VlrY4#cue@export@yaml)
+The output here is a product of _*unifying*_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _constraints_ declared by the field in the defintion. [Try it in the CUE playground](https://cuelang.org/play/?id=nAUx1-VlrY4#cue@export@yaml)
 
 ### Default Values and the Nature of Inheritance
 
@@ -182,7 +182,7 @@ Bob: #Engineer & {
   Name: "Bob Smith"
   Email: "bob@smith.com"
   Age: 42
-  // Job: "Carptenter" // would result in an error
+  // Job: "Carpenter" // would result in an error
 }
 
 // output in YAML:
@@ -194,7 +194,7 @@ Bob:
 
 ```
 
-While it's possible for the Bob object to inherit the Job value from `#Engineer` which in turn inherits contraints from `#Person`, it is _not possible to override the Job value_. [Try it in the CUE playground](https://tip.cuelang.org/play/?id=_Cvwm6KeGZm#cue@export@yaml) and uncomment the Job field in Bob to see that CUE returns an error.
+While it's possible for the Bob object to inherit the Job value from `#Engineer` which in turn inherits constraints from `#Person`, it is _not possible to override the Job value_. [Try it in the CUE playground](https://tip.cuelang.org/play/?id=_Cvwm6KeGZm#cue@export@yaml) and uncomment the Job field in Bob to see that CUE returns an error.
 
 If we wanted the Bob object to have a different job, it would either need to be unified with a different type OR the `#Engineer:Job:` field would need a looser constraint with a _default value_. Try changing the Job field to the following:
 
