@@ -48,6 +48,7 @@ require (
 )
 
 replace (
+	cuelang.org/go => github.com/jlongtine/cue-1 v0.4.1-0.20211119215923-3cb6e6c17dec
 	github.com/hashicorp/go-immutable-radix => github.com/tonistiigi/go-immutable-radix v0.0.0-20170803185627-826af9ccf0fe
 	// genproto: corresponds to containerd
 	google.golang.org/genproto => google.golang.org/genproto v0.0.0-20200224152610-e50cd9704f63
