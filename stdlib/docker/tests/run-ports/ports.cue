@@ -5,6 +5,8 @@ import (
 	"alpha.dagger.io/random"
 )
 
+dockersocket: dagger.#Stream & dagger.#Input
+
 suffix: random.#String & {
 	seed: ""
 }
@@ -12,6 +14,6 @@ suffix: random.#String & {
 run: #Run & {
 	name:   "daggerci-test-ports-\(suffix.out)"
 	ref:    "nginx"
-	socket: dagger.#Stream & {unix: "/var/run/docker.sock"}
+	socket: dockersocket
 	ports: ["8080:80"]
 }

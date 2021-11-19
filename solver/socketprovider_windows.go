@@ -4,20 +4,19 @@
 package solver
 
 import (
-	"fmt"
+	"errors"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/Microsoft/go-winio"
+	"go.dagger.io/dagger/plancontext"
 )
 
-func dialStream(id string) (net.Conn, error) {
-	if !strings.HasPrefix(id, npipePrefix) {
-		return nil, fmt.Errorf("invalid socket forward key %s", id)
+func dialService(service *plancontext.Service) (net.Conn, error) {
+	if service.Npipe == "" {
+		return nil, errors.New("unsupported socket type")
 	}
 
-	id = strings.TrimPrefix(id, npipePrefix)
 	dur := time.Second
-	return winio.DialPipe(id, &dur)
+	return winio.DialPipe(service.Npipe, &dur)
 }

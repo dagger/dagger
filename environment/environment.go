@@ -3,13 +3,11 @@ package environment
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
-	"github.com/containerd/containerd/platforms"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 
@@ -74,59 +72,8 @@ func (e *Environment) Computed() *compiler.Value {
 	return e.computed
 }
 
-// Scan all scripts in the environment for references to local directories (do:"local"),
-// and return all referenced directory names.
-// This is used by clients to grant access to local directories when they are referenced
-// by user-specified scripts.
-func (e *Environment) LocalDirs() (map[string]string, error) {
-	dirs := map[string]string{}
-
-	localdirs := func(code *compiler.Value) error {
-		return Analyze(
-			func(op *compiler.Value) error {
-				do, err := op.Lookup("do").String()
-				if err != nil {
-					return err
-				}
-				if do != "local" {
-					return nil
-				}
-				dir, err := op.Lookup("dir").String()
-				if err != nil {
-					return err
-				}
-				abs, err := filepath.Abs(dir)
-				if err != nil {
-					return err
-				}
-
-				dirs[dir] = abs
-				return nil
-			},
-			code,
-		)
-	}
-	// 1. Scan the environment state
-	// FIXME: use a common `flow` instance to avoid rescanning the tree.
-	src := compiler.NewValue()
-	if err := src.FillPath(cue.MakePath(), e.plan); err != nil {
-		return nil, err
-	}
-	if err := src.FillPath(cue.MakePath(), e.input); err != nil {
-		return nil, err
-	}
-	flow := cueflow.New(
-		&cueflow.Config{},
-		src.Cue(),
-		newTaskFunc(noOpRunner),
-	)
-	for _, t := range flow.Tasks() {
-		if err := localdirs(compiler.Wrap(t.Value())); err != nil {
-			return nil, err
-		}
-	}
-
-	return dirs, nil
+func (e *Environment) Context() *plancontext.Context {
+	return e.state.Context
 }
 
 // Up missing values in environment configuration, and write them to state.
@@ -139,7 +86,7 @@ func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
 	flow := cueflow.New(
 		&cueflow.Config{},
 		e.src.Cue(),
-		newTaskFunc(newPipelineRunner(e.computed, s, e.state.Platform)),
+		NewTaskFunc(NewPipelineRunner(e.computed, s, e.state.Context)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -163,7 +110,7 @@ func (e *Environment) Down(ctx context.Context, _ *DownOpts) error {
 
 type QueryOpts struct{}
 
-func newTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
+func NewTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	return func(flowVal cue.Value) (cueflow.Runner, error) {
 		v := compiler.Wrap(flowVal)
 		if !isComponent(v) {
@@ -174,11 +121,7 @@ func newTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	}
 }
 
-func noOpRunner(t *cueflow.Task) error {
-	return nil
-}
-
-func newPipelineRunner(computed *compiler.Value, s solver.Solver, platform string) cueflow.RunnerFunc {
+func NewPipelineRunner(computed *compiler.Value, s solver.Solver, pctx *plancontext.Context) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
@@ -200,23 +143,7 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver, platform strin
 		}
 		v := compiler.Wrap(t.Value())
 
-		var pipelinePlatform specs.Platform
-		if platform == "" {
-			pipelinePlatform = specs.Platform{OS: "linux", Architecture: "amd64"}
-		} else {
-			p, err := platforms.Parse(platform)
-			if err != nil {
-				// Record the error
-				span.AddEvent("command", trace.WithAttributes(
-					attribute.String("error", err.Error()),
-				))
-
-				return err
-			}
-			pipelinePlatform = p
-		}
-
-		p := NewPipeline(v, s, pipelinePlatform)
+		p := NewPipeline(v, s, pctx)
 		err := p.Run(ctx)
 		if err != nil {
 			// Record the error

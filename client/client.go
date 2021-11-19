@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rs/zerolog/log"
@@ -23,13 +22,12 @@ import (
 	"github.com/moby/buildkit/session"
 
 	// docker output
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/util/buildkitd"
 	"go.dagger.io/dagger/util/progressui"
 
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/state"
 )
 
 // Client is a dagger client
@@ -74,17 +72,12 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	}, nil
 }
 
-type DoFunc func(context.Context, *environment.Environment, solver.Solver) error
+type DoFunc func(context.Context, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
+func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
-
-	env, err := environment.New(state)
-	if err != nil {
-		return err
-	}
 
 	// Spawn print function
 	events := make(chan *bk.SolveStatus)
@@ -92,18 +85,18 @@ func (c *Client) Do(ctx context.Context, state *state.State, fn DoFunc) error {
 		// Create a background context so that logging will not be cancelled
 		// with the main context.
 		dispCtx := lg.WithContext(context.Background())
-		return c.logSolveStatus(dispCtx, state, events)
+		return c.logSolveStatus(dispCtx, pctx, events)
 	})
 
 	// Spawn build function
 	eg.Go(func() error {
-		return c.buildfn(gctx, state, env, fn, events)
+		return c.buildfn(gctx, pctx, fn, events)
 	})
 
 	return eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.Environment, fn DoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
 	wg := sync.WaitGroup{}
 
 	// Close output channel
@@ -115,25 +108,21 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 
 	lg := log.Ctx(ctx)
 
-	// Scan local dirs to grant access
-	localdirs, err := env.LocalDirs()
-	if err != nil {
-		return err
-	}
-
 	// buildkit auth provider (registry)
 	auth := solver.NewRegistryAuthProvider()
 
-	// session (secrets & store)
-	secretsStore := solver.NewSecretsStoreProvider(st)
+	localdirs := map[string]string{}
+	for _, dir := range pctx.Directories.List() {
+		localdirs[dir.Path] = dir.Path
+	}
 
 	// Setup solve options
 	opts := bk.SolveOpt{
 		LocalDirs: localdirs,
 		Session: []session.Attachable{
 			auth,
-			secretsStore.Secrets,
-			solver.NewDockerSocketProvider(),
+			solver.NewSecretsStoreProvider(pctx),
+			solver.NewDockerSocketProvider(pctx),
 		},
 		CacheExports: c.cfg.CacheExports,
 		CacheImports: c.cfg.CacheImports,
@@ -167,12 +156,11 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		s := solver.New(solver.Opts{
-			Control:      c.c,
-			Gateway:      gw,
-			Events:       eventsCh,
-			Auth:         auth,
-			SecretsStore: secretsStore,
-			NoCache:      c.cfg.NoCache,
+			Control: c.c,
+			Gateway: gw,
+			Events:  eventsCh,
+			Auth:    auth,
+			NoCache: c.cfg.NoCache,
 		})
 
 		// Close events channel
@@ -180,28 +168,12 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 
 		// Compute output overlay
 		if fn != nil {
-			if err := fn(ctx, env, s); err != nil {
+			if err := fn(ctx, s); err != nil {
 				return nil, compiler.Err(err)
 			}
 		}
 
-		// Export environment to a cue directory
-		// FIXME: this should be elsewhere
-		lg.Debug().Msg("exporting environment")
-
-		tr := otel.Tracer("client")
-		_, span := tr.Start(ctx, "environment.Export")
-		defer span.End()
-
-		computed := env.Computed().JSON().PrettyString()
-		st := llb.
-			Scratch().
-			File(
-				llb.Mkfile("computed.json", 0600, []byte(computed)),
-				llb.WithCustomName("[internal] serializing computed values"),
-			)
-
-		ref, err := s.Solve(ctx, st, platforms.DefaultSpec())
+		ref, err := s.Solve(ctx, llb.Scratch(), platforms.DefaultSpec())
 		if err != nil {
 			return nil, err
 		}
@@ -224,7 +196,7 @@ func (c *Client) buildfn(ctx context.Context, st *state.State, env *environment.
 	return nil
 }
 
-func (c *Client) logSolveStatus(ctx context.Context, st *state.State, ch chan *bk.SolveStatus) error {
+func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, ch chan *bk.SolveStatus) error {
 	parseName := func(v *bk.Vertex) (string, string) {
 		// Pattern: `@name@ message`. Minimal length is len("@X@ ")
 		if len(v.Name) < 2 || !strings.HasPrefix(v.Name, "@") {
@@ -241,13 +213,11 @@ func (c *Client) logSolveStatus(ctx context.Context, st *state.State, ch chan *b
 	}
 
 	// Just like sprintf, but redacts secrets automatically
+	secrets := pctx.Secrets.List()
 	secureSprintf := func(format string, a ...interface{}) string {
 		s := fmt.Sprintf(format, a...)
-		for _, i := range st.Inputs {
-			if i.Secret == nil {
-				continue
-			}
-			s = strings.ReplaceAll(s, i.Secret.PlainText(), "***")
+		for _, secret := range secrets {
+			s = strings.ReplaceAll(s, secret.PlainText, "***")
 		}
 		return s
 	}

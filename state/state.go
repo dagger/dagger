@@ -6,10 +6,15 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/plancontext"
 )
 
 // Contents of an environment serialized to a file
 type State struct {
+	// Plan Context.
+	// FIXME: this is used as a bridge and is temporary.
+	Context *plancontext.Context `yaml:"-"`
+
 	// State path
 	Path string `yaml:"-"`
 
@@ -67,7 +72,7 @@ func (s *State) CompileInputs() (*compiler.Value, error) {
 
 	// Prepare inputs
 	for key, input := range s.Inputs {
-		i, err := input.Compile(key, s)
+		i, err := input.Compile(s)
 		if err != nil {
 			return nil, err
 		}

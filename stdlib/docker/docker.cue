@@ -160,6 +160,9 @@ import (
 		string
 
 		#up: [
+			// HACK: force a dependency with `load`
+			op.#Load & {from: load},
+
 			op.#Load & {from: save},
 
 			op.#Export & {

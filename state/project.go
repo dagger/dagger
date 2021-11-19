@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/stdlib"
 	"gopkg.in/yaml.v3"
 )
@@ -168,6 +169,12 @@ func (w *Project) Get(ctx context.Context, name string) (*State, error) {
 	if err := yaml.Unmarshal(manifest, &st); err != nil {
 		return nil, err
 	}
+	st.Context = plancontext.New()
+	if platform := st.Platform; platform != "" {
+		if err := st.Context.Platform.Set(platform); err != nil {
+			return nil, err
+		}
+	}
 	st.Path = envPath
 	// FIXME: Backward compat: Support for old-style `.dagger/env/<name>/plan`
 	if st.Plan.Module == "" {
@@ -258,6 +265,8 @@ func (w *Project) Create(ctx context.Context, name string, plan Plan, platform s
 	manifestPath := path.Join(envPath, manifestFile)
 
 	st := &State{
+		Context: plancontext.New(),
+
 		Path:    envPath,
 		Project: w.Path,
 		Plan: Plan{
