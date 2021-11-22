@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/random"
 )
 

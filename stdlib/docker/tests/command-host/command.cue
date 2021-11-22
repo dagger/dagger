@@ -1,9 +1,5 @@
 package docker
 
-import (
-	"alpha.dagger.io/dagger"
-)
-
 TestConfig: {
 	host: string @dagger(input)
 }
