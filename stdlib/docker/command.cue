@@ -30,6 +30,10 @@ import (
 		keyPassphrase?: dagger.#Secret @dagger(input)
 	}
 
+	// Connect via DOCKER_HOST, supports tcp://
+	// TODO: Consider refactoring to support ssh:// & even file://
+	host?: string @dagger(input)
+
 	// Command to execute
 	command: string
 
@@ -202,6 +206,9 @@ import (
 					if ssh.fingerprint != _|_ {
 						FINGERPRINT: ssh.fingerprint
 					}
+				}
+				if host != _|_ && ssh == _|_ {
+					DOCKER_HOST: host
 				}
 			}
 			"mount": {
