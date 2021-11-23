@@ -72,3 +72,15 @@ _No input._
 | -------------    |:-------------:    |:-------------:     |
 |*statusCode*      | `string`          |-                   |
 |*body*            | `string`          |-                   |
+
+## http.#Wait
+
+URL listener Creates a dependency on URL
+
+### http.#Wait Inputs
+
+_No input._
+
+### http.#Wait Outputs
+
+_No output._

@@ -2,9 +2,9 @@ package todoapp
 
 import (
 	"alpha.dagger.io/dagger"
-	"alpha.dagger.io/os"
 	"alpha.dagger.io/docker"
 	"alpha.dagger.io/js/yarn"
+	"alpha.dagger.io/os"
 )
 
 // Build the source code using Yarn

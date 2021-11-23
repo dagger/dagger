@@ -3,6 +3,7 @@ package todoapp
 import (
 	"alpha.dagger.io/dagger"
 	"alpha.dagger.io/docker"
+	"alpha.dagger.io/http"
 )
 
 // docker local socket
@@ -24,10 +25,16 @@ registry: docker.#Run & {
 	socket: dockerSocket
 }
 
+// As we pushed the registry to our local docker
+// we need to wait for the container to be up
+wait: http.#Wait & {
+	url: "localhost:5042"
+}
+
 // push to our local registry
 // this concrete value satisfies the string constraint
 // we defined in the previous file
-push: target: "localhost:5042/todoapp"
+push: target: "\(wait.url)/todoapp"
 
 // Application URL
 appURL: "http://localhost:8080/" & dagger.#Output

@@ -18,12 +18,12 @@ TestRun: docker.#Run & {
 	name:   "daggerci-test-wait-\(TestSuffix.out)"
 	ref:    "nginx"
 	socket: TestDockersocket
-	ports: ["8080:80"]
+	ports: ["8088:80"]
 }
 
 // Waits for TestRun to finish initializing
 Testhealth: #Wait & {
-	url: "http://localhost:8080/"
+	url: "http://localhost:8088/"
 }
 
 TestWait: query: os.#Container & {
