@@ -1,6 +1,10 @@
 plan:
     package: ./http/tests
 name: http
+inputs:
+    TestDockersocket:
+        socket:
+            unix: /var/run/docker.sock
 sops:
     kms: []
     gcp_kms: []
@@ -16,8 +20,8 @@ sops:
             NHkxc1VXWHBwZFN5WFNxamdPaGZLM3MKaZra2gWvKl7+pXSihV70/mQYel9697z2
             eBSMuRPuZSjrg3JCBLhXTdIgUYxbMgWhILLpN5UqhTBVboUlRsURQA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-10-19T11:50:42Z"
-    mac: ENC[AES256_GCM,data:iG/JWnCk8UpThscQBqd9l7R7k1Xae1ED7WbYqPQmK5GRXhb7hIZGENnjn1aARnFjlCtEob6WvutWaZe7q1P90ZCirwXVBGewAeHchHqFA0KmUORRdtjMkZjnlRLMDKYu6CeNkaVK1al+B87CPlCBKz5UMeL9gnvug0k298AxWLY=,iv:RZEtSdbkxwgq5xEucnC+qyD2RCMk1DuaShjCh5Ihe5M=,tag:swW4R7ni0zoxOrc9lrV9Ww==,type:str]
+    lastmodified: "2021-11-23T17:30:31Z"
+    mac: ENC[AES256_GCM,data:R82VFQG+vtFoH/H4R3TGfFzcmEBLRWv81/pfbYIoWGTH3iFmVgfiCXuqF2O4suhG6mlmiGVDCFBBGPfFvOIBPSwbAqOoNQrM+pXPk3nrm3KY6RLSiByZX3yS1G2HHzGSbQVDuxlTBGyXhpJZs1ZgysZguHUqtunbrjSpD4+iWE8=,iv:LhTwB1QKXCXz9tu03d5NHIv/Jwrgg3LXQYafXykFz/o=,tag:h0mgHTyfxflAuv/uYuRibw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

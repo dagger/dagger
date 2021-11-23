@@ -24,7 +24,9 @@ setup() {
 }
 
 @test "http" {
-  dagger -e http up 
+  dagger -e http up
+  CONTAINER=$(docker container ls -q --filter "name=daggerci-test-wait-*")
+  docker stop "$CONTAINER" && docker rm "$CONTAINER"
 }
 
 @test "js/yarn" {

@@ -6,6 +6,7 @@ import (
 
 	"alpha.dagger.io/alpine"
 	"alpha.dagger.io/dagger"
+	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/os"
 )
 
@@ -83,4 +84,71 @@ import (
 		"body":       body
 		"statusCode": strconv.Atoi(statusCode)
 	}
+}
+
+// URL listener
+// Creates a dependency on URL
+#Wait: {
+	// URL to listen
+	url: string
+
+	// Waiting time between checks (sec.)
+	interval: int | *30
+	
+	// Max amount of retries
+	retries: int | *3
+
+	// Max initialization time (sec.)
+	startPeriod: int | *0
+
+	// Time until timeout (sec.)
+	timeout: int | *30
+
+	#up: [
+		op.#Load & {
+			from: alpine.#Image & {
+				package: bash: "=~5.1"
+				package: curl: true
+			}
+		},
+		op.#Exec & {
+			args: ["/bin/bash", "-c",
+				#"""
+					# (f: str -> int)
+					nb_retries=$(($NB_RETRIES+0))
+					starting_period=$(($START_PERIOD+0))
+
+					status="0"
+					SECONDS=0
+					# START_PERIOD implementation
+					while [ $SECONDS -lt $starting_period ]; do
+						status="$(curl --connect-timeout 1 -s -o /dev/null -w ''%{http_code}'' $HEALTH_URL)"
+						if [ "$status" == "200" ]; then
+							exit 0;
+						fi
+						sleep 1;
+					done
+
+					# TIMEOUT, INTERVAL, INTERVAL implementation
+					for ((i=0;i<NB_RETRIES;i++)); do
+						status="$(curl --connect-timeout $TIMEOUT -s -o /dev/null -w ''%{http_code}'' $HEALTH_URL)"
+						if [ "$status" == "200" ]; then
+							exit 0;
+						fi
+						sleep "$INTERVAL";
+					done
+
+					exit 1;
+					"""#,
+			]
+			always: true
+			env: {
+				HEALTH_URL: url
+				INTERVAL: "\(interval)"
+				NB_RETRIES: "\(retries)"
+				START_PERIOD: "\(startPeriod)"
+				TIMEOUT: "\(timeout)"
+			}
+		},
+	]
 }
