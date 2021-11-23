@@ -8,7 +8,6 @@ import (
 	"alpha.dagger.io/random"
 )
 
-
 TestDockersocket: dagger.#Stream & dagger.#Input
 
 TestSuffix: random.#String & {
@@ -27,17 +26,15 @@ Testhealth: #Wait & {
 	url: "http://localhost:8080/"
 }
 
-TestWait: {
-	query: os.#Container & {
-		image: alpine.#Image & {
-			package: bash: "=~5.1"
-			package: curl: true
-		}
-		command: #"""
-			test "$(curl -L --fail --silent --show-error --write-out "%{http_code}" "$URL" -o /dev/null)" = "200"
-			"""#
-		env: URL: Testhealth.url
+TestWait: query: os.#Container & {
+	image: alpine.#Image & {
+		package: bash: "=~5.1"
+		package: curl: true
 	}
+	command: #"""
+		test "$(curl -L --fail --silent --show-error --write-out "%{http_code}" "$URL" -o /dev/null)" = "200"
+		"""#
+	env: URL: Testhealth.url
 }
 
 TestRequest: {
@@ -59,7 +56,7 @@ TestRequest: {
 		command: #Command
 	}
 	#Command: #"""
-	cat /content.json | grep -q nginx >/dev/null
-	test "$STATUS" = "200"
-	"""#
+		cat /content.json | grep -q nginx >/dev/null
+		test "$STATUS" = "200"
+		"""#
 }

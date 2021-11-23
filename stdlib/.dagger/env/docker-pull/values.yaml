@@ -3,7 +3,7 @@ plan:
 name: docker-pull
 inputs:
     ref:
-        text: docker.io/daggerio/ci-test:pncdyzkdemof@sha256:b92cbbfef6b952befc38812cd88cf5c4c1012f6df2891595c226f56cc053334e
+        text: docker.io/daggerio/ci-test:tyrgcrtlasex@sha256:3b308dec2f3d4c563b9c71ce4ddc660e476b899d06fa37f3b9fef350c1062a1f
 sops:
     kms: []
     gcp_kms: []
@@ -19,8 +19,8 @@ sops:
             SG1raUVNTzZIWDltV1pOS3hySHlJeWcKg3blmstOGcxtPww513+mAEA0MWOXwNAT
             5ngRvG6MraW3g9dhIuUYOwjuJyz1Z07/DBEocSxnjSyw45ZCkM1/9Q==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-08-31T10:10:02Z"
-    mac: ENC[AES256_GCM,data:30qNlAVLJunPEboTzeIxcsZ06LcLiDiXXJLVqHE328hcezcOYGsvhlYTiGEzxtAsv78Mwxw54oSbiFZmCKoew9bTZFUyb6FcFVk4GG8z2I8pn7FkZlcnEknWinVf9Tc/h5R/g4/BBGzsBf2dr4fx4ADewwO2z1Df/8wdup0PD4E=,iv:KJcMdpLCfSU1LvvPMXitSPzm0JPwrDWdLncdvVFngNk=,tag:X2/D+RhEnyizZHXJWYnmmg==,type:str]
+    lastmodified: "2021-11-23T18:15:32Z"
+    mac: ENC[AES256_GCM,data:+HpG1ZDND1Japu1hLgTVKF6CfEUbYp+sEBpv0WtsCHcHGYeYVkZT8ZJKajWlz8uFfikpKv76FkBw8XqKVXyPZYTQWuo9VvmPTF5HajiVE6kP5Ax3/5Sh7ecwfGdbqE3mQoj+jaQE8NBnGbCBljij/xFYW63fIaurqsyPWTQl2YI=,iv:fBPseUNueHO4ZUnlwDljfAwUvi4UyjGysXMTCmoAgYw=,tag:Pg4dGX4/05SahATlE6zrsA==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

@@ -94,7 +94,7 @@ import (
 
 	// Waiting time between checks (sec.)
 	interval: int | *30
-	
+
 	// Max amount of retries
 	retries: int | *3
 
@@ -143,11 +143,11 @@ import (
 			]
 			always: true
 			env: {
-				HEALTH_URL: url
-				INTERVAL: "\(interval)"
-				NB_RETRIES: "\(retries)"
+				HEALTH_URL:   url
+				INTERVAL:     "\(interval)"
+				NB_RETRIES:   "\(retries)"
 				START_PERIOD: "\(startPeriod)"
-				TIMEOUT: "\(timeout)"
+				TIMEOUT:      "\(timeout)"
 			}
 		},
 	]
