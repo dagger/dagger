@@ -55,7 +55,7 @@ func Init(ctx context.Context, dir string) (*Project, error) {
 		return nil, err
 	}
 
-	if err := vendorUniverse(ctx, root); err != nil {
+	if err := VendorUniverse(ctx, root); err != nil {
 		return nil, err
 	}
 
@@ -390,7 +390,7 @@ func cueModInit(ctx context.Context, parentDir string) error {
 	return nil
 }
 
-func vendorUniverse(ctx context.Context, p string) error {
+func VendorUniverse(ctx context.Context, p string) error {
 	// ensure cue module is initialized
 	if err := cueModInit(ctx, p); err != nil {
 		return err
