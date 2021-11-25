@@ -126,7 +126,7 @@ func newPipelineRunner(computed *compiler.Value, s solver.Solver, pctx *plancont
 		lg := log.
 			Ctx(ctx).
 			With().
-			Str("component", t.Path().String()).
+			Str("task", t.Path().String()).
 			Logger()
 		ctx = lg.WithContext(ctx)
 

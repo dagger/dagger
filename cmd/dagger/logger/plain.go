@@ -118,7 +118,7 @@ func formatMessage(event map[string]interface{}) string {
 
 func parseSource(event map[string]interface{}) string {
 	source := "system"
-	if task, ok := event["component"].(string); ok && task != "" {
+	if task, ok := event["task"].(string); ok && task != "" {
 		source = task
 	}
 	return source
@@ -141,7 +141,7 @@ func formatFields(entry map[string]interface{}) string {
 		zerolog.ErrorFieldName:     {},
 		zerolog.CallerFieldName:    {},
 		"environment":              {},
-		"component":                {},
+		"task":                     {},
 		"state":                    {},
 	}
 

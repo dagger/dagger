@@ -166,7 +166,7 @@ func (p *Pipeline) Run(ctx context.Context) error {
 	lg := log.
 		Ctx(ctx).
 		With().
-		Str("component", p.name).
+		Str("task", p.name).
 		Logger()
 
 	start := time.Now()

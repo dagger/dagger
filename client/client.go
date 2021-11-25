@@ -223,7 +223,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("component", component).
+				Str("task", component).
 				Logger()
 
 			lg.
@@ -238,7 +238,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("component", component).
+				Str("task", component).
 				Logger()
 
 			msg := secureSprintf(format, a...)
@@ -251,7 +251,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("component", component).
+				Str("task", component).
 				Logger()
 
 			msg := secureSprintf(format, a...)

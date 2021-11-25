@@ -43,7 +43,7 @@ func (l *Logs) Add(event Event) error {
 	l.l.Lock()
 	defer l.l.Unlock()
 
-	component, ok := event["component"].(string)
+	task, ok := event["task"].(string)
 	if !ok {
 		l.Messages = append(l.Messages, Message{
 			Event: event,
@@ -52,7 +52,7 @@ func (l *Logs) Add(event Event) error {
 		return nil
 	}
 
-	groupKey := strings.Split(component, ".#up")[0]
+	groupKey := strings.Split(task, ".#up")[0]
 	group := l.groups[groupKey]
 
 	// If the group doesn't exist, create it
@@ -72,8 +72,8 @@ func (l *Logs) Add(event Event) error {
 	// For state events, we just want to update the group status -- no need to
 	// dispanything
 	if st, ok := event["state"].(string); ok {
-		// Ignore state updates for "sub" components
-		if component != groupKey {
+		// Ignore state updates for "sub" tasks
+		if task != groupKey {
 			return nil
 		}
 

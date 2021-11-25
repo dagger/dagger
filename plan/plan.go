@@ -120,7 +120,7 @@ func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Va
 		// Wrapper around `task.Run` that handles logging, tracing, etc.
 		return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 			ctx := t.Context()
-			lg := log.Ctx(ctx).With().Str("component", t.Path().String()).Logger()
+			lg := log.Ctx(ctx).With().Str("task", t.Path().String()).Logger()
 			ctx = lg.WithContext(ctx)
 			ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("compute: %s", t.Path().String()))
 			defer span.End()
