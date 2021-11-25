@@ -24,8 +24,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-var universeMessage = ""
-
 var upCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Bring an environment online with latest plan and inputs",
@@ -64,7 +62,10 @@ var upCmd = &cobra.Command{
 			Str("environment", st.Name).
 			Logger()
 
-		go checkUniverseVersion(ctx, project.Path)
+		universeUpdateCh := make(chan bool)
+		go func() {
+			universeUpdateCh <- checkUniverseVersion(ctx, project.Path)
+		}()
 
 		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
 
@@ -117,25 +118,25 @@ var upCmd = &cobra.Command{
 		}
 
 		// Warn universe version if out of date
-		if universeMessage != "" {
-			fmt.Println(universeMessage)
+		if update := <-universeUpdateCh; update {
+			fmt.Println("A new version of universe is available, please run 'dagger mod get alpha.dagger.io'")
 		}
 	},
 }
 
-func checkUniverseVersion(ctx context.Context, projectPath string) {
+func checkUniverseVersion(ctx context.Context, projectPath string) bool {
 	lg := log.Ctx(ctx)
 
 	isLatest, err := mod.IsUniverseLatest(ctx, projectPath)
 	if err != nil {
 		lg.Debug().Err(err).Msg("failed to check universe version")
-		return
+		return false
 	}
 	if !isLatest {
-		universeMessage = "A new version of universe is available, please run 'dagger mod get alpha.dagger.io'"
-		return
+		return true
 	}
 	lg.Debug().Msg("universe is up to date")
+	return false
 }
 
 func europaUp(ctx context.Context, cl *client.Client, path string) error {
