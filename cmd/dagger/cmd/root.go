@@ -89,8 +89,7 @@ func Execute() {
 	)
 
 	if len(os.Args) > 1 {
-		tr := otel.Tracer("cmd")
-		ctx, span = tr.Start(ctx, os.Args[1])
+		ctx, span = otel.Tracer("dagger").Start(ctx, os.Args[1])
 		// Record the action
 		span.AddEvent("command", trace.WithAttributes(
 			attribute.String("args", strings.Join(os.Args, " ")),
