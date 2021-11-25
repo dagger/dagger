@@ -155,7 +155,7 @@ func NewPipelineRunner(computed *compiler.Value, s solver.Solver, pctx *plancont
 		}
 
 		// Mirror the computed values in both `Task` and `Result`
-		if p.Computed().IsEmptyStruct() {
+		if !p.Computed().IsConcrete() {
 			return nil
 		}
 

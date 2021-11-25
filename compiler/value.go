@@ -59,6 +59,11 @@ func (v *Value) Kind() cue.Kind {
 	return v.val.Kind()
 }
 
+// Proxy function to the underlying cue.Value
+func (v *Value) IncompleteKind() cue.Kind {
+	return v.Cue().IncompleteKind()
+}
+
 // Field represents a struct field
 type Field struct {
 	Selector cue.Selector
@@ -145,6 +150,10 @@ func (v *Value) List() ([]*Value, error) {
 	return l, nil
 }
 
+func (v *Value) IsConcrete() bool {
+	return v.val.IsConcrete()
+}
+
 // Recursive concreteness check.
 func (v *Value) IsConcreteR(opts ...cue.Option) error {
 	o := []cue.Option{cue.Concrete(true)}
@@ -220,15 +229,6 @@ func (v *Value) Source(opts ...cue.Option) ([]byte, error) {
 	)
 }
 
-func (v *Value) IsEmptyStruct() bool {
-	if st, err := v.Struct(); err == nil {
-		if st.Len() == 0 {
-			return true
-		}
-	}
-	return false
-}
-
 func (v *Value) Cue() cue.Value {
 	return v.val
 }
@@ -274,8 +274,4 @@ func (v *Value) Default() (*Value, bool) {
 
 func (v *Value) Doc() []*ast.CommentGroup {
 	return v.Cue().Doc()
-}
-
-func (v *Value) IncompleteKindString() string {
-	return v.Cue().IncompleteKind().String()
 }

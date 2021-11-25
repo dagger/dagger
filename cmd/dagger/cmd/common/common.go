@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"cuelang.org/go/cue"
 	"github.com/docker/buildx/util/buildflags"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
@@ -91,9 +92,9 @@ func FormatValue(val *compiler.Value) string {
 		return "dagger.#Secret"
 	}
 	if val.IsConcreteR() != nil {
-		return val.IncompleteKindString()
+		return val.IncompleteKind().String()
 	}
-	if val.IncompleteKindString() == "struct" {
+	if val.IncompleteKind() == cue.StructKind {
 		return "struct"
 	}
 
