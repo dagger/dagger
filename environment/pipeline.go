@@ -91,14 +91,14 @@ func (p *Pipeline) Computed() *compiler.Value {
 	return p.computed
 }
 
-func isComponent(v *compiler.Value) bool {
+func IsComponent(v *compiler.Value) bool {
 	return v.Lookup("#up").Exists()
 }
 
 func ops(code *compiler.Value) ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
 	// 1. attachment array
-	if isComponent(code) {
+	if IsComponent(code) {
 		xops, err := code.Lookup("#up").List()
 		if err != nil {
 			return nil, err
