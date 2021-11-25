@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rs/zerolog/log"
@@ -57,10 +58,9 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	}
 	opts := []bk.ClientOpt{}
 
-	// FIXME: uncomment when next version of buildkit will be released
-	// if span := trace.SpanFromContext(ctx); span != nil {
-	// 	opts = append(opts, bk.WithTracerProvider(span.TracerProvider()))
-	// }
+	if span := trace.SpanFromContext(ctx); span != nil {
+		opts = append(opts, bk.WithTracerProvider(span.TracerProvider()))
+	}
 
 	c, err := bk.New(ctx, host, opts...)
 	if err != nil {
