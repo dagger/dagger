@@ -14,7 +14,7 @@ TestHost: {
 	}
 
 	run: #Run & {
-		name: "daggerci-test-ssh-\(suffix.out)"
+		name: "daggerci-test-tcp-\(suffix.out)"
 		ref:  "hello-world"
 		host: TestConfig.host
 	}
