@@ -10,7 +10,7 @@ TestConfig: {
 
 TestHost: {
 	suffix: random.#String & {
-		seed: ""
+		seed: "docker-tcp-test"
 	}
 
 	run: #Run & {
