@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rs/zerolog/log"
@@ -57,10 +58,9 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	}
 	opts := []bk.ClientOpt{}
 
-	// FIXME: uncomment when next version of buildkit will be released
-	// if span := trace.SpanFromContext(ctx); span != nil {
-	// 	opts = append(opts, bk.WithTracerProvider(span.TracerProvider()))
-	// }
+	if span := trace.SpanFromContext(ctx); span != nil {
+		opts = append(opts, bk.WithTracerProvider(span.TracerProvider()))
+	}
 
 	c, err := bk.New(ctx, host, opts...)
 	if err != nil {
@@ -75,7 +75,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 type DoFunc func(context.Context, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
+func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, localdirs map[string]string, fn DoFunc) error {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -90,13 +90,13 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 
 	// Spawn build function
 	eg.Go(func() error {
-		return c.buildfn(gctx, pctx, fn, events)
+		return c.buildfn(gctx, pctx, localdirs, fn, events)
 	})
 
 	return eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, localdirs map[string]string, fn DoFunc, ch chan *bk.SolveStatus) error {
 	wg := sync.WaitGroup{}
 
 	// Close output channel
@@ -110,11 +110,6 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 
 	// buildkit auth provider (registry)
 	auth := solver.NewRegistryAuthProvider()
-
-	localdirs := map[string]string{}
-	for _, dir := range pctx.Directories.List() {
-		localdirs[dir.Path] = dir.Path
-	}
 
 	// Setup solve options
 	opts := bk.SolveOpt{
@@ -228,7 +223,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("component", component).
+				Str("task", component).
 				Logger()
 
 			lg.
@@ -243,7 +238,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("component", component).
+				Str("task", component).
 				Logger()
 
 			msg := secureSprintf(format, a...)
@@ -256,7 +251,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			lg := log.
 				Ctx(ctx).
 				With().
-				Str("component", component).
+				Str("task", component).
 				Logger()
 
 			msg := secureSprintf(format, a...)

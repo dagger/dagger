@@ -6,11 +6,13 @@ import (
 	"os"
 
 	"cuelang.org/go/cue"
+	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"golang.org/x/term"
 
@@ -61,12 +63,24 @@ var upCmd = &cobra.Command{
 
 		cl := common.NewClient(ctx)
 
+		if viper.GetBool("europa") {
+			err = europaUp(ctx, cl, project.Path)
+
+			<-doneCh
+
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to up environment")
+			}
+
+			return
+		}
+
 		env, err := environment.New(st)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("unable to create environment")
 		}
 
-		err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
+		err = cl.Do(ctx, env.Context(), env.Context().Directories.Paths(), func(ctx context.Context, s solver.Solver) error {
 			// check that all inputs are set
 			if err := checkInputs(ctx, env); err != nil {
 				return err
@@ -95,6 +109,27 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
 	},
+}
+
+func europaUp(ctx context.Context, cl *client.Client, path string) error {
+	lg := log.Ctx(ctx)
+
+	p, err := plan.Load(ctx, path, "")
+	if err != nil {
+		lg.Fatal().Err(err).Msg("failed to load plan")
+	}
+
+	localdirs, err := p.LocalDirectories()
+	if err != nil {
+		return err
+	}
+	return cl.Do(ctx, p.Context(), localdirs, func(ctx context.Context, s solver.Solver) error {
+		if err := p.Up(ctx, s); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func checkInputs(ctx context.Context, env *environment.Environment) error {

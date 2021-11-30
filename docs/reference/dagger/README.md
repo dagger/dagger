@@ -10,6 +10,28 @@ Dagger core types
 import "alpha.dagger.io/dagger"
 ```
 
+## dagger.#Context
+
+### dagger.#Context Inputs
+
+_No input._
+
+### dagger.#Context Outputs
+
+_No output._
+
+## dagger.#Plan
+
+A deployment plan executed by `dagger up`
+
+### dagger.#Plan Inputs
+
+_No input._
+
+### dagger.#Plan Outputs
+
+_No output._
+
 ## dagger.#Secret
 
 Secret value

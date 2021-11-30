@@ -55,7 +55,7 @@ func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
 	// 2) For backward compatibility: if the project was `dagger
 	// init`-ed before we added support for vendoring universe, it might not
 	// contain a `cue.mod`.
-	if err := vendorUniverse(ctx, w); err != nil {
+	if err := VendorUniverse(ctx, w); err != nil {
 		return nil, err
 	}
 

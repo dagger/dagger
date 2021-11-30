@@ -78,15 +78,14 @@ func (e *Environment) Context() *plancontext.Context {
 
 // Up missing values in environment configuration, and write them to state.
 func (e *Environment) Up(ctx context.Context, s solver.Solver) error {
-	tr := otel.Tracer("environment")
-	ctx, span := tr.Start(ctx, "environment.Up")
+	ctx, span := otel.Tracer("dagger").Start(ctx, "environment.Up")
 	defer span.End()
 
 	// Orchestrate execution with cueflow
 	flow := cueflow.New(
 		&cueflow.Config{},
 		e.src.Cue(),
-		NewTaskFunc(NewPipelineRunner(e.computed, s, e.state.Context)),
+		newTaskFunc(newPipelineRunner(e.computed, s, e.state.Context)),
 	)
 	if err := flow.Run(ctx); err != nil {
 		return err
@@ -110,10 +109,10 @@ func (e *Environment) Down(ctx context.Context, _ *DownOpts) error {
 
 type QueryOpts struct{}
 
-func NewTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
+func newTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	return func(flowVal cue.Value) (cueflow.Runner, error) {
 		v := compiler.Wrap(flowVal)
-		if !isComponent(v) {
+		if !IsComponent(v) {
 			// No compute script
 			return nil, nil
 		}
@@ -121,18 +120,17 @@ func NewTaskFunc(runner cueflow.RunnerFunc) cueflow.TaskFunc {
 	}
 }
 
-func NewPipelineRunner(computed *compiler.Value, s solver.Solver, pctx *plancontext.Context) cueflow.RunnerFunc {
+func newPipelineRunner(computed *compiler.Value, s solver.Solver, pctx *plancontext.Context) cueflow.RunnerFunc {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		lg := log.
 			Ctx(ctx).
 			With().
-			Str("component", t.Path().String()).
+			Str("task", t.Path().String()).
 			Logger()
 		ctx = lg.WithContext(ctx)
 
-		tr := otel.Tracer("environment")
-		ctx, span := tr.Start(ctx, fmt.Sprintf("compute: %s", t.Path().String()))
+		ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("compute: %s", t.Path().String()))
 		defer span.End()
 
 		for _, dep := range t.Dependencies() {
@@ -155,7 +153,7 @@ func NewPipelineRunner(computed *compiler.Value, s solver.Solver, pctx *plancont
 		}
 
 		// Mirror the computed values in both `Task` and `Result`
-		if p.Computed().IsEmptyStruct() {
+		if !p.Computed().IsConcrete() {
 			return nil
 		}
 

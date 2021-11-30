@@ -36,6 +36,8 @@ func init() {
 	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
 
+	rootCmd.PersistentFlags().Bool("europa", false, "Enable experiemental Europa UX")
+
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
@@ -89,8 +91,7 @@ func Execute() {
 	)
 
 	if len(os.Args) > 1 {
-		tr := otel.Tracer("cmd")
-		ctx, span = tr.Start(ctx, os.Args[1])
+		ctx, span = otel.Tracer("dagger").Start(ctx, os.Args[1])
 		// Record the action
 		span.AddEvent("command", trace.WithAttributes(
 			attribute.String("args", strings.Join(os.Args, " ")),

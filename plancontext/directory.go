@@ -40,3 +40,15 @@ func (c *directoryContext) List() []*Directory {
 
 	return directories
 }
+
+func (c *directoryContext) Paths() map[string]string {
+	c.l.RLock()
+	defer c.l.RUnlock()
+
+	directories := make(map[string]string)
+	for _, d := range c.store {
+		directories[d.Path] = d.Path
+	}
+
+	return directories
+}
