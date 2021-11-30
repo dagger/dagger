@@ -20,14 +20,11 @@ setup() {
   dagger --project "$DAGGER_SANDBOX" -e 'local' input socket dockerSocket /var/run/docker.sock
   dagger --project "$DAGGER_SANDBOX" -e 'local' input dir app.source "$DAGGER_SANDBOX"
 
-  dagger --project "$DAGGER_SANDBOX" -e 'local' up
+  run dagger --project "$DAGGER_SANDBOX" -e 'local' up
+  assert_success
 
-  SECONDS=0 
-  while [[ "$(docker inspect --format '{{json .State.Status }}' todoapp | grep -m 1 'running')" != "running" && $SECONDS -lt 45 ]]; do sleep 1 ; done
-  run curl -f -LI http://localhost:8080
-  assert_output --partial '200 OK'
-  docker stop todoapp && docker rm todoapp
-  docker stop registry-local && docker rm registry-local
+  docker rm -f todoapp
+  docker rm -f registry-local
 }
 
 @test "doc-1004-first-env" {
