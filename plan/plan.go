@@ -3,7 +3,6 @@ package plan
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,10 +34,16 @@ func Load(ctx context.Context, path, pkg string) (*Plan, error) {
 		return nil, err
 	}
 
-	return &Plan{
+	p := &Plan{
 		context: plancontext.New(),
 		source:  v,
-	}, nil
+	}
+
+	if err := p.registerLocalDirs(); err != nil {
+		return nil, err
+	}
+
+	return p, nil
 }
 
 func (p *Plan) Context() *plancontext.Context {
@@ -49,30 +54,26 @@ func (p *Plan) Source() *compiler.Value {
 	return p.source
 }
 
-// LocalDirectories scans the context for local imports.
+// registerLocalDirectories scans the context for local imports.
 // BuildKit requires to known the list of directories ahead of time.
-func (p *Plan) LocalDirectories() (map[string]string, error) {
-	dirs := map[string]string{}
-
+func (p *Plan) registerLocalDirs() error {
 	imports, err := p.source.Lookup("context.imports").Fields()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	for _, v := range imports {
 		dir, err := v.Value.Lookup("path").String()
 		if err != nil {
-			return nil, err
-		}
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			return nil, err
+			return err
 		}
 
-		dirs[dir] = abs
+		p.context.LocalDirs.Register(&plancontext.LocalDir{
+			Path: dir,
+		})
 	}
 
-	return dirs, nil
+	return nil
 }
 
 // Up executes the plan

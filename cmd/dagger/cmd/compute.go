@@ -198,7 +198,7 @@ var computeCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("unable to create environment")
 		}
 
-		err = cl.Do(ctx, env.Context(), env.Context().Directories.Paths(), func(ctx context.Context, s solver.Solver) error {
+		err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 			// check that all inputs are set
 			checkInputs(ctx, env)
 

@@ -15,10 +15,11 @@ type ContextKey string
 // id := ctx.Secrets.Register("mysecret")
 // secret := ctx.Secrets.Get(id)
 type Context struct {
-	Platform    *platformContext
-	Directories *directoryContext
-	Secrets     *secretContext
-	Services    *serviceContext
+	Platform  *platformContext
+	FS        *fsContext
+	LocalDirs *localDirContext
+	Secrets   *secretContext
+	Services  *serviceContext
 }
 
 func New() *Context {
@@ -26,8 +27,11 @@ func New() *Context {
 		Platform: &platformContext{
 			platform: defaultPlatform,
 		},
-		Directories: &directoryContext{
-			store: make(map[ContextKey]*Directory),
+		FS: &fsContext{
+			store: make(map[ContextKey]*FS),
+		},
+		LocalDirs: &localDirContext{
+			store: make(map[ContextKey]*LocalDir),
 		},
 		Secrets: &secretContext{
 			store: make(map[ContextKey]*Secret),

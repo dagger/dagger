@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -82,6 +83,27 @@ type dirInput struct {
 }
 
 func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
+	// FIXME: serialize an intermediate struct, instead of generating cue source
+
+	// json.Marshal([]string{}) returns []byte("null"), which wreaks havoc
+	// in Cue because `null` is not a `[...string]`
+	includeLLB := []byte("[]")
+	if len(dir.Include) > 0 {
+		var err error
+		includeLLB, err = json.Marshal(dir.Include)
+		if err != nil {
+			return nil, err
+		}
+	}
+	excludeLLB := []byte("[]")
+	if len(dir.Exclude) > 0 {
+		var err error
+		excludeLLB, err = json.Marshal(dir.Exclude)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	p := dir.Path
 	if !filepath.IsAbs(p) {
 		p = filepath.Clean(path.Join(state.Project, dir.Path))
@@ -94,15 +116,20 @@ func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
 		return nil, fmt.Errorf("%q dir doesn't exist", dir.Path)
 	}
 
-	id := state.Context.Directories.Register(&plancontext.Directory{
-		Path:    p,
-		Include: dir.Include,
-		Exclude: dir.Exclude,
+	dirPath, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+
+	state.Context.LocalDirs.Register(&plancontext.LocalDir{
+		Path: p,
 	})
 
 	llb := fmt.Sprintf(
-		`#up: [{do:"local", id: "%s"}]`,
-		id,
+		`#up: [{do: "local", dir: %s, include: %s, exclude: %s}]`,
+		dirPath,
+		includeLLB,
+		excludeLLB,
 	)
 	return compiler.Compile("", llb)
 }

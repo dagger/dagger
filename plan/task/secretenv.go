@@ -40,9 +40,8 @@ func (c secretEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ sol
 		PlainText: env,
 	})
 
-	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("contents.id"), id); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return compiler.NewValueWithContent(id,
+		cue.Str("contents"),
+		cue.Str("id"),
+	)
 }

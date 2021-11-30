@@ -59,7 +59,7 @@ func updateEnvironmentInput(ctx context.Context, cmd *cobra.Command, target stri
 	}
 
 	cl := common.NewClient(ctx)
-	err = cl.Do(ctx, env.Context(), env.Context().Directories.Paths(), func(ctx context.Context, s solver.Solver) error {
+	err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 		// the inputs are set, check for cue errors by scanning all the inputs
 		_, err := env.ScanInputs(ctx, true)
 		if err != nil {

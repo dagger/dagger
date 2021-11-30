@@ -20,7 +20,7 @@ package dagger
 		path: string
 		include?: [...string]
 		exclude?: [...string]
-		fs: #Artifact
+		fs: #FS
 	}
 
 	// Securely load external secrets
