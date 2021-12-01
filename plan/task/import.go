@@ -68,13 +68,10 @@ func (c importTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 		return nil, err
 	}
 
-	id := pctx.FS.Register(&plancontext.FS{
-		Result: result,
-	})
-
-	return compiler.NewValueWithContent(id,
-		cue.Str("fs"),
-		cue.Hid("_fs", "alpha.dagger.io/dagger"),
-		cue.Str("id"),
-	)
+	fs := pctx.FS.New(result)
+	out := compiler.NewValue()
+	if err := out.FillPath(cue.ParsePath("fs"), fs.Value()); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

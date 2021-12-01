@@ -88,7 +88,11 @@ func FormatValue(val *compiler.Value) string {
 	if val.HasAttr("artifact") {
 		return "dagger.#Artifact"
 	}
-	if val.HasAttr("secret") {
+
+	if val.LookupPath(cue.MakePath(
+		cue.Hid("_secret", "alpha.dagger.io/dagger"),
+		cue.Str("id"),
+	)).Exists() {
 		return "dagger.#Secret"
 	}
 	if val.IsConcreteR() != nil {

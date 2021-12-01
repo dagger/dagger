@@ -12,7 +12,6 @@ import (
 	"cuelang.org/go/cue"
 
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/plancontext"
 )
 
 // An input is a value or artifact supplied by the user.
@@ -121,9 +120,7 @@ func (dir dirInput) Compile(state *State) (*compiler.Value, error) {
 		return nil, err
 	}
 
-	state.Context.LocalDirs.Register(&plancontext.LocalDir{
-		Path: p,
-	})
+	state.Context.LocalDirs.Add(p)
 
 	llb := fmt.Sprintf(
 		`#up: [{do: "local", dir: %s, include: %s, exclude: %s}]`,
@@ -195,11 +192,8 @@ func SecretInput(data string) Input {
 type secretInput string
 
 func (i secretInput) Compile(st *State) (*compiler.Value, error) {
-	id := st.Context.Secrets.Register(&plancontext.Secret{
-		PlainText: i.PlainText(),
-	})
-	secretValue := fmt.Sprintf(`{id: %q}`, id)
-	return compiler.Compile("", secretValue)
+	secret := st.Context.Secrets.New(i.PlainText())
+	return secret.Value(), nil
 }
 
 func (i secretInput) PlainText() string {
@@ -301,10 +295,6 @@ type socketInput struct {
 }
 
 func (i socketInput) Compile(st *State) (*compiler.Value, error) {
-	id := st.Context.Services.Register(&plancontext.Service{
-		Unix:  i.Unix,
-		Npipe: i.Npipe,
-	})
-	socketValue := fmt.Sprintf(`{id: %q}`, id)
-	return compiler.Compile("", socketValue)
+	service := st.Context.Services.New(i.Unix, i.Npipe)
+	return service.Value(), nil
 }

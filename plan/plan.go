@@ -67,10 +67,7 @@ func (p *Plan) registerLocalDirs() error {
 		if err != nil {
 			return err
 		}
-
-		p.context.LocalDirs.Register(&plancontext.LocalDir{
-			Path: dir,
-		})
+		p.context.LocalDirs.Add(dir)
 	}
 
 	return nil

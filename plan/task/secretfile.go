@@ -35,12 +35,11 @@ func (c secretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ so
 	if err != nil {
 		return nil, err
 	}
-	id := pctx.Secrets.Register(&plancontext.Secret{
-		PlainText: string(data),
-	})
 
-	return compiler.NewValueWithContent(id,
-		cue.Str("contents"),
-		cue.Str("id"),
-	)
+	secret := pctx.Secrets.New(string(data))
+	out := compiler.NewValue()
+	if err := out.FillPath(cue.ParsePath("contents"), secret.Value()); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

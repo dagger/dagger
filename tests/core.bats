@@ -141,10 +141,6 @@ setup() {
     "$DAGGER" input secret mySecret SecretValue
     run "$DAGGER" up
     assert_success
-
-    # Make sure the secret doesn't show in dagger query
-    run "$DAGGER" query mySecret.id -f text
-    assert_success
 }
 
 @test "core: stream" {

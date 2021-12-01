@@ -24,10 +24,6 @@ func NewValue() *Value {
 	return DefaultCompiler.NewValue()
 }
 
-func NewValueWithContent(x interface{}, selectors ...cue.Selector) (*Value, error) {
-	return DefaultCompiler.NewValueWithContent(x, selectors...)
-}
-
 // FIXME can be refactored away now?
 func Wrap(v cue.Value) *Value {
 	return DefaultCompiler.Wrap(v)
@@ -82,14 +78,6 @@ func (c *Compiler) NewValue() *Value {
 		panic(err)
 	}
 	return empty
-}
-
-func (c *Compiler) NewValueWithContent(x interface{}, selectors ...cue.Selector) (*Value, error) {
-	v := c.NewValue()
-	if err := v.FillPath(cue.MakePath(selectors...), x); err != nil {
-		return nil, err
-	}
-	return v, nil
 }
 
 func (c *Compiler) Compile(name string, src string) (*Value, error) {

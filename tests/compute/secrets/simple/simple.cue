@@ -17,7 +17,6 @@ TestSecrets: #up: [
 
 	op.#Exec & {
 		mount: "/secret": secret: mySecret
-		env: PLAIN: mySecret.id
 		args: [
 			"/bin/bash",
 			"--noprofile",
@@ -27,7 +26,6 @@ TestSecrets: #up: [
 			"-c",
 			#"""
 				test "$(cat /secret)" = "SecretValue"
-				test "$PLAIN" != "SecretValue"
 				"""#,
 		]
 	},
