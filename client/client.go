@@ -75,7 +75,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 type DoFunc func(context.Context, solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
-func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, localdirs map[string]string, fn DoFunc) error {
+func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -90,13 +90,13 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, localdirs ma
 
 	// Spawn build function
 	eg.Go(func() error {
-		return c.buildfn(gctx, pctx, localdirs, fn, events)
+		return c.buildfn(gctx, pctx, fn, events)
 	})
 
 	return eg.Wait()
 }
 
-func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, localdirs map[string]string, fn DoFunc, ch chan *bk.SolveStatus) error {
+func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
 	wg := sync.WaitGroup{}
 
 	// Close output channel
@@ -110,6 +110,11 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, localdi
 
 	// buildkit auth provider (registry)
 	auth := solver.NewRegistryAuthProvider()
+
+	localdirs, err := pctx.LocalDirs.Paths()
+	if err != nil {
+		return err
+	}
 
 	// Setup solve options
 	opts := bk.SolveOpt{

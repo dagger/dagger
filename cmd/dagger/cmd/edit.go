@@ -83,7 +83,7 @@ var editCmd = &cobra.Command{
 		}
 
 		cl := common.NewClient(ctx)
-		err = cl.Do(ctx, env.Context(), env.Context().Directories.Paths(), func(ctx context.Context, s solver.Solver) error {
+		err = cl.Do(ctx, env.Context(), func(ctx context.Context, s solver.Solver) error {
 			// check for cue errors by scanning all the inputs
 			_, err := env.ScanInputs(ctx, true)
 			if err != nil {

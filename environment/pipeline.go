@@ -40,6 +40,13 @@ const (
 	StateCompleted = State("completed")
 )
 
+var (
+	fsIDPath = cue.MakePath(
+		cue.Hid("_fs", "alpha.dagger.io/dagger"),
+		cue.Str("id"),
+	)
+)
+
 // An execution pipeline
 type Pipeline struct {
 	code     *compiler.Value
@@ -95,8 +102,19 @@ func IsComponent(v *compiler.Value) bool {
 	return v.Lookup("#up").Exists()
 }
 
+func isFS(v *compiler.Value) bool {
+	return v.LookupPath(fsIDPath).Exists()
+}
+
 func ops(code *compiler.Value) ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
+
+	// dagger.#FS forward compat
+	// FIXME: remove this
+	if isFS(code) {
+		ops = append(ops, code)
+	}
+
 	// 1. attachment array
 	if IsComponent(code) {
 		xops, err := code.Lookup("#up").List()
@@ -138,6 +156,12 @@ func Analyze(fn func(*compiler.Value) error, code *compiler.Value) error {
 }
 
 func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
+	// dagger.#FS forward compat
+	// FIXME: remove this
+	if isFS(op) {
+		return nil
+	}
+
 	if err := fn(op); err != nil {
 		return err
 	}
@@ -243,6 +267,21 @@ func (p *Pipeline) run(ctx context.Context) error {
 }
 
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
+	// dagger.#FS forward compat
+	// FIXME: remove this
+	if isFS(op) {
+		id, err := op.LookupPath(fsIDPath).String()
+		if err != nil {
+			return st, err
+		}
+
+		fs := p.pctx.FS.Get(plancontext.ContextKey(id))
+		if fs == nil {
+			return st, fmt.Errorf("fs %q not found", id)
+		}
+		return fs.Result.ToState()
+	}
+
 	do, err := op.Lookup("do").String()
 	if err != nil {
 		return st, err
@@ -361,31 +400,49 @@ func (p *Pipeline) Copy(ctx context.Context, op *compiler.Value, st llb.State) (
 }
 
 func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
-	id, err := op.Lookup("id").String()
+	dir, err := op.Lookup("dir").String()
 	if err != nil {
 		return st, err
 	}
-	dir := p.pctx.Directories.Get(plancontext.ContextKey(id))
-	if dir == nil {
-		return st, fmt.Errorf("directory %q not found", id)
-	}
 
 	opts := []llb.LocalOption{
-		llb.WithCustomName(p.vertexNamef("Local %s", dir.Path)),
+		llb.WithCustomName(p.vertexNamef("Local %s", dir)),
 		// Without hint, multiple `llb.Local` operations on the
 		// same path get a different digest.
 		llb.SessionID(p.s.SessionID()),
-		llb.SharedKeyHint(dir.Path),
+		llb.SharedKeyHint(dir),
 	}
 
-	if len(dir.Include) > 0 {
-		opts = append(opts, llb.IncludePatterns(dir.Include))
+	includes, err := op.Lookup("include").List()
+	if err != nil {
+		return st, err
+	}
+	if len(includes) > 0 {
+		includePatterns := []string{}
+		for _, i := range includes {
+			pattern, err := i.String()
+			if err != nil {
+				return st, err
+			}
+			includePatterns = append(includePatterns, pattern)
+		}
+		opts = append(opts, llb.IncludePatterns(includePatterns))
 	}
 
+	excludes, err := op.Lookup("exclude").List()
+	if err != nil {
+		return st, err
+	}
 	// Excludes .dagger directory by default
 	excludePatterns := []string{"**/.dagger/"}
-	if len(dir.Exclude) > 0 {
-		excludePatterns = dir.Exclude
+	if len(excludes) > 0 {
+		for _, i := range excludes {
+			pattern, err := i.String()
+			if err != nil {
+				return st, err
+			}
+			excludePatterns = append(excludePatterns, pattern)
+		}
 	}
 	opts = append(opts, llb.ExcludePatterns(excludePatterns))
 
@@ -396,13 +453,13 @@ func (p *Pipeline) Local(ctx context.Context, op *compiler.Value, st llb.State) 
 	return st.File(
 		llb.Copy(
 			llb.Local(
-				dir.Path,
+				dir,
 				opts...,
 			),
 			"/",
 			"/",
 		),
-		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir.Path)),
+		llb.WithCustomName(p.vertexNamef("Local %s [copy]", dir)),
 	), nil
 }
 

@@ -39,9 +39,8 @@ func (c secretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ so
 		PlainText: string(data),
 	})
 
-	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("contents.id"), id); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return compiler.NewValueWithContent(id,
+		cue.Str("contents"),
+		cue.Str("id"),
+	)
 }
