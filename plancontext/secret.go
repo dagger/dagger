@@ -6,11 +6,12 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/stdlib"
 )
 
 var (
 	secretIDPath = cue.MakePath(
-		cue.Hid("_secret", "alpha.dagger.io/dagger"),
+		cue.Hid("_secret", stdlib.PackageName),
 		cue.Str("id"),
 	)
 )

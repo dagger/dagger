@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/stdlib"
 )
 
 const (
@@ -15,7 +16,7 @@ const (
 )
 
 func isUniverse(repoName string) bool {
-	return strings.HasPrefix(strings.ToLower(repoName), "alpha.dagger.io")
+	return strings.HasPrefix(strings.ToLower(repoName), stdlib.ModuleName)
 }
 
 func Install(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {

@@ -8,11 +8,12 @@ import (
 	"github.com/google/uuid"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/stdlib"
 )
 
 var (
 	fsIDPath = cue.MakePath(
-		cue.Hid("_fs", "alpha.dagger.io/dagger"),
+		cue.Hid("_fs", stdlib.PackageName),
 		cue.Str("id"),
 	)
 )

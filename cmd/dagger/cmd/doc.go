@@ -346,7 +346,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 			return nil
 		}
 
-		pkgName := fmt.Sprintf("alpha.dagger.io/%s", p)
+		pkgName := fmt.Sprintf("%s/%s", stdlib.ModuleName, p)
 		lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
 		val, err := loadCode(pkgName)
 		if err != nil {

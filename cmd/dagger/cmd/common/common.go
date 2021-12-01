@@ -12,6 +12,7 @@ import (
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/state"
+	"go.dagger.io/dagger/stdlib"
 )
 
 func CurrentProject(ctx context.Context) *state.Project {
@@ -90,7 +91,7 @@ func FormatValue(val *compiler.Value) string {
 	}
 
 	if val.LookupPath(cue.MakePath(
-		cue.Hid("_secret", "alpha.dagger.io/dagger"),
+		cue.Hid("_secret", stdlib.PackageName),
 		cue.Str("id"),
 	)).Exists() {
 		return "dagger.#Secret"

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"go.dagger.io/dagger/stdlib"
 )
 
 type Require struct {
@@ -25,7 +27,7 @@ func newRequire(repoName, versionConstraint string) (*Require, error) {
 	switch {
 	case strings.HasPrefix(repoName, "github.com"):
 		return parseGithubRepoName(repoName, versionConstraint)
-	case strings.HasPrefix(repoName, "alpha.dagger.io"):
+	case strings.HasPrefix(repoName, stdlib.ModuleName):
 		return parseDaggerRepoName(repoName, versionConstraint)
 	default:
 		return nil, fmt.Errorf("repo name does not match suported providers")
@@ -52,7 +54,7 @@ func parseGithubRepoName(repoName, versionConstraint string) (*Require, error) {
 	}, nil
 }
 
-var daggerRepoNameRegex = regexp.MustCompile(`alpha.dagger.io([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
+var daggerRepoNameRegex = regexp.MustCompile(stdlib.ModuleName + `([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
 
 func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 	repoMatches := daggerRepoNameRegex.FindStringSubmatch(repoName)
@@ -62,7 +64,7 @@ func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 	}
 
 	return &Require{
-		repo:              "alpha.dagger.io",
+		repo:              stdlib.ModuleName,
 		path:              repoMatches[1],
 		version:           repoMatches[2],
 		versionConstraint: versionConstraint,
