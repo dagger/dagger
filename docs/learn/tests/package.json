@@ -1,7 +1,7 @@
 {
   "license": "Apache-2.0",
   "scripts": {
-    "test": "bats --report-formatter junit --jobs 4 ."
+    "test": "bats --jobs 4 --show-output-of-passing-tests --print-output-on-failure ."
   },
   "devDependencies": {
     "bats": "https://github.com/bats-core/bats-core#master",
@@ -9,4 +9,3 @@
     "bats-support": "https://github.com/bats-core/bats-support"
   }
 }
-
