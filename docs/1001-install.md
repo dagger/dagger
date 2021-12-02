@@ -73,3 +73,20 @@ cd dagger; make
 ```shell
 cp ./cmd/dagger/dagger /usr/local/bin
 ```
+
+## Enable autocompletion manually
+
+You can generate an auto completion script using `dagger completion <your shell>`
+
+```sh
+Usage:
+  dagger completion [command]
+
+Available Commands:
+  bash        generate the autocompletion script for bash
+  fish        generate the autocompletion script for fish
+  powershell  generate the autocompletion script for powershell
+  zsh         generate the autocompletion script for zsh
+```
+
+Depending on your shell, add the output script belong your other completions' script.
