@@ -156,7 +156,10 @@ func (v *Value) IsConcrete() bool {
 
 // Recursive concreteness check.
 func (v *Value) IsConcreteR(opts ...cue.Option) error {
-	o := []cue.Option{cue.Concrete(true)}
+	o := []cue.Option{
+		cue.Concrete(true),
+		cue.Hidden(true),
+	}
 	o = append(o, opts...)
 	return v.val.Validate(o...)
 }
