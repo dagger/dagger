@@ -2,7 +2,10 @@
 slug: /1003/get-started/
 ---
 
+
 # Get Started with Dagger
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/QvyB3m9Fti0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 In this tutorial, you will learn the basics of Dagger by building a Dagger project from scratch. This simple project deploys a [React](https://reactjs.org/) application to your local machine via Docker. In later tutorials, you will learn how to configure Dagger to deploy to remote infrastructure such as EKS and GKE.
 
