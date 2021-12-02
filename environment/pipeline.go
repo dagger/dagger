@@ -23,6 +23,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	digest "github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 
@@ -257,6 +258,7 @@ func (p *Pipeline) run(ctx context.Context) error {
 		// so that errors map to the correct cue path.
 		// FIXME: might as well change FS to make every operation
 		// synchronous.
+		fmt.Println("Solve with", p.pctx.Platform.Get())
 		p.result, err = p.s.Solve(ctx, p.state, p.pctx.Platform.Get())
 		if err != nil {
 			return err
@@ -545,6 +547,8 @@ func (p *Pipeline) Exec(ctx context.Context, op *compiler.Value, st llb.State) (
 	opts = append(opts, llb.WithCustomName(p.vertexNamef("Exec [%s]", strings.Join(args, ", "))))
 
 	// --> Execute
+	fmt.Println("exec with platform ", p.pctx.Platform.Get())
+	st.Platform(p.pctx.Platform.Get())
 	return st.Run(opts...).Root(), nil
 }
 
@@ -818,7 +822,7 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 		return st, err
 	}
 
-	platform := p.platform
+	platform := p.pctx.Platform.Get()
 	if askedPlatform := op.Lookup("platform"); askedPlatform.Exists() {
 		platformStr, err := askedPlatform.String()
 		if err != nil {
@@ -844,7 +848,6 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 	)
 
 	// Load image metadata and convert to to LLB.
-	platform := p.pctx.Platform.Get()
 	p.image, err = p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
 		LogName:  p.vertexNamef("load metadata for %s", ref.String()),
 		Platform: &platform,
@@ -853,7 +856,10 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 		return st, err
 	}
 
-	p.platform = platform
+	err = p.pctx.Platform.Set(bkplatforms.Format(platform))
+	if err != nil {
+		return st, err
+	}
 	return applyImageToState(p.image, st), nil
 }
 
@@ -1192,8 +1198,13 @@ func (p *Pipeline) DockerBuild(ctx context.Context, op *compiler.Value, st llb.S
 	if err != nil {
 		return st, err
 	}
+
 	// Update platform pipeline
-	p.platform = specs.Platform{OS: p.image.OS, Architecture: p.image.Architecture, Variant: p.image.Variant}
+	err = p.pctx.Platform.Set(bkplatforms.Format(specs.Platform{OS: p.image.OS, Architecture: p.image.Architecture, Variant: p.image.Variant}))
+	if err != nil {
+		return st, err
+	}
+	fmt.Println("Set Platform to", p.pctx.Platform.Get())
 	return applyImageToState(p.image, st), nil
 }
 
