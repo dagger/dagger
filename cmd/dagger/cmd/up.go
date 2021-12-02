@@ -13,9 +13,9 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/plancontext"
-	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/solver"
 	"golang.org/x/term"
 
@@ -78,6 +78,11 @@ var upCmd = &cobra.Command{
 
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to up environment")
+			}
+
+			// Warn universe version if out of date
+			if update := <-universeUpdateCh; update {
+				fmt.Println("A new version of universe is available, please run 'dagger mod get alpha.dagger.io'")
 			}
 
 			return
