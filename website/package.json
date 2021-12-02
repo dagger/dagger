@@ -22,7 +22,7 @@
     "@docusaurus/preset-classic": "^2.0.0-beta.6",
     "@mdx-js/react": "^1.6.21",
     "@svgr/webpack": "^5.5.0",
-    "amplitude-js": "^8.12.0",
+    "amplitude-js": "^8.13.0",
     "clsx": "^1.1.1",
     "docusaurus-plugin-sass": "^0.2.1",
     "docusaurus2-dotenv": "^1.4.0",
