@@ -43,13 +43,10 @@ import (
 	}
 
 	// Mount content from other artifacts
-	mount: {
-		[string]: {
-			from: dagger.#Artifact
-		} | {
-			secret: dagger.#Secret
-		}
-	}
+	mount: [string]: from: dagger.#Artifact
+
+	// Mount secrets
+	secret: [string]: dagger.#Secret
 
 	// Mount persistent cache directories
 	cache: {
@@ -225,6 +222,9 @@ import (
 				}
 				for dest, o in mount {
 					"\(dest)": o
+				}
+				for dest, s in secret {
+					"\(dest)": secret: s
 				}
 				for dest, _ in cache {
 					"\(dest)": "cache"
