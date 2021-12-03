@@ -124,6 +124,10 @@ import (
 		keyPassphrase?: dagger.#Input & {dagger.#Secret}
 	}
 
+	// Connect via DOCKER_HOST, supports tcp://
+	// TODO: Consider refactoring to support ssh:// & even file://
+	host?: string @dagger(input)
+
 	// Mount local docker socket
 	socket?: dagger.#Stream & dagger.#Input
 
@@ -145,6 +149,9 @@ import (
 	load: #Command & {
 		if ssh != _|_ {
 			"ssh": ssh
+		}
+		if host != _|_ && ssh == _|_ {
+			"host": host
 		}
 		if socket != _|_ {
 			"socket": socket
@@ -193,6 +200,10 @@ import (
 		// ssh key passphrase
 		keyPassphrase?: dagger.#Input & {dagger.#Secret}
 	}
+
+	// Connect via DOCKER_HOST, supports tcp://
+	// TODO: Consider refactoring to support ssh:// & even file://
+	host?: string @dagger(input)
 
 	// Mount local docker socket
 	socket?: dagger.#Stream & dagger.#Input
@@ -245,6 +256,9 @@ import (
 	run: #Command & {
 		if ssh != _|_ {
 			"ssh": ssh
+		}
+		if host != _|_ && ssh == _|_ {
+			"host": host
 		}
 		if socket != _|_ {
 			"socket": socket
