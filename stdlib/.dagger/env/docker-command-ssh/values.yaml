@@ -8,6 +8,8 @@ inputs:
         secret: ENC[AES256_GCM,data:gb2yFGdX3oqjPpQmqn3gr0hqLAHMFBhzLEHI5Bi+VN5Op/SCSjfA5yEC0Olb/Brzssjp0i6PIPBPPwW+Pj/gDuSR6CqzGlAkF1Pz/Ks6R0zqWkcR0gFImXrfRzeflgpGagPBgPsRBtPcoY7WqJQ1Lue46cJe7OTNPRT+X9oDek7mk9ZiIpJCUQQVN0+alWStOPYuTjRlqcSfao+B6hnC2fMtcCWpVxz9Sj8UpSwX4EHLU5GsHr8ioD+BP7BCPlhP/aSKu1iwMaiMo6zRn6V+GtSGX4JrwN53CYSjGxi1g9RiFMCFxcWsDVA+hCnzAdzO3pMEmTL5xHZ9MoMLbOwEhN3Rnh+HX61uTq2DRfqGhKGtjXjcewOxb0NezGCj93Y0ov2TtBBo7wjYEi0AmI3ljCwoq9EDRYKg1a/w79FpGVpqoomd4XrJYbqP0SnHO0ZrsSLqKmqdIoDYbfxR7zprQQsN0ENOdDVf9WdTnHSJMSC5MTmyqAOogKZN1nNzW5LJQ2i0JUt1jl322RzdQ+brBLWiohVfenCy/23l,iv:gceSEfG6Eu2Pc9+JZpH0CLITNVnYFyN21drPneu15wk=,tag:zmYtioa5LTPZrSeFNmaBvg==,type:str]
     TestConfig.user:
         text: daggerci
+    TestPassword:
+        secret: ENC[AES256_GCM,data:8G7Cgw==,iv:+hlWzOxy4H9OYwP0x+7LIMFhQoebmP3yUGRuhPSGGgI=,tag:i+dHE+W2zud5xGvWL5PxVg==,type:str]
 sops:
     kms: []
     gcp_kms: []
@@ -23,8 +25,8 @@ sops:
             UEpoZy9HZUlHOVV3M05OSkZQS1l6aXcK3NfBITvd6la6nkcIzqH69xfv9RR0Jm7x
             vU5FvGROK3Z0ZR8NNXAtNH6VQQ21TDD2MOXWOVvjnIAAOVNEyc1amA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-08T09:52:59Z"
-    mac: ENC[AES256_GCM,data:Xd8UhlqoC9/tix66cUPdNffUiPjsofi+a2rvMaBUkzdki4oPO5bFawBIJeOmDML47KMMBlBy4fBkHKS0zaYLDU640ahLFiWI6og/pAEk7L4waRK7Aep2g63VvJmE9dtz22JyTStJLp7gFlK/Xngov+7IkjqxpQ/H3qGE4HqlHaA=,iv:mkSv8FufpVlAycli8qqj5UkxFnpSsUpnpbs+7M7b2wE=,tag:3qRTUf9h1MQGUYihkrTahQ==,type:str]
+    lastmodified: "2021-12-03T17:55:10Z"
+    mac: ENC[AES256_GCM,data:phVOMaY+57UEzTDQ9Vf1jdcesonG0s44qXVyfFrM2xuRTDffdgmR8uzboSQ5S+5u4fg//nz17oE9qaLe1ST1X5SekZm1z4KCK7Z29bqYvrywOTlmeBpQ9vDOGjY+BBnMnWNjLrC0bQ5bfVG1c1V0PxDuvey4EoFqplecENlEVQ8=,iv:kk/X/R7cFvaLaa4YHvIUOE4VGqdxFFmtxEspP1Uzp74=,tag:XrvWLPb5w7417T8LeiGCkg==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
