@@ -1125,10 +1125,10 @@
     core-js-pure "^3.0.0"
     regenerator-runtime "^0.13.4"
 
-"@babel/runtime@^7.1.2", "@babel/runtime@^7.10.2", "@babel/runtime@^7.10.3", "@babel/runtime@^7.12.1", "@babel/runtime@^7.12.5", "@babel/runtime@^7.8.4":
-  version "7.14.0"
-  resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.14.0.tgz#46794bc20b612c5f75e62dd071e24dfd95f1cbe6"
-  integrity sha512-JELkvo/DlpNdJ7dlyw/eY7E0suy5i5GQH+Vlxaq1nsNJ+H7f4Vtv3jMeCEgRhZZQFXTjldYfQgv2qmM6M1v5wA==
+"@babel/runtime@^7.1.2", "@babel/runtime@^7.10.2", "@babel/runtime@^7.10.3", "@babel/runtime@^7.12.1", "@babel/runtime@^7.12.5", "@babel/runtime@^7.3.4", "@babel/runtime@^7.8.4":
+  version "7.16.3"
+  resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.16.3.tgz#b86f0db02a04187a3c17caa77de69840165d42d5"
+  integrity sha512-WBwekcqacdY2e9AF/Q7WLFUWmdJGJTkbjqTjoMDgXkVZ3ZRUvOPsLb5KdwISoQVsbP+DQzVZW4Zhci0DvpbNTQ==
   dependencies:
     regenerator-runtime "^0.13.4"
 
@@ -2115,13 +2115,14 @@ alphanum-sort@^1.0.2:
   resolved "https://registry.yarnpkg.com/alphanum-sort/-/alphanum-sort-1.0.2.tgz#97a1119649b211ad33691d9f9f486a8ec9fbe0a3"
   integrity sha1-l6ERlkmyEa0zaR2fn0hqjsn74KM=
 
-amplitude-js@^8.13.0:
-  version "8.13.0"
-  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.13.0.tgz#9c93ba5a2cbd47c8c767302435297e9e2fe30a6a"
-  integrity sha512-lsoYayBx9ZCtoGR8GVfpaAk2xl1b5zXZkgMaNuVExMkH58iSRxtCxPMNsZeRxLwLXFdGLqmK9WWfkPUz2RaL0w==
+amplitude-js@^8.13.1:
+  version "8.13.1"
+  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.13.1.tgz#0ae654a5bdfb434e17e55aa40a34775a902e97dd"
+  integrity sha512-cjKtq+t51jyN5XrnXtZW05jSGRDZKtHVqx/BIuP+b1baBgWqFZ2P5GKEH2DqCWhZqwwkaBkAw+E7tanohYqLMw==
   dependencies:
     "@amplitude/ua-parser-js" "0.7.26"
     "@amplitude/utils" "^1.0.5"
+    "@babel/runtime" "^7.3.4"
     blueimp-md5 "^2.10.0"
     query-string "5"
 
