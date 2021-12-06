@@ -94,6 +94,52 @@ func TestParseArgument(t *testing.T) {
 				version: "26a1d46d1b3c",
 			},
 		},
+		{
+			name: "Unspecified provider without folder",
+			in:   "dagger.io/dagger/universe.git@main",
+			want: &Require{
+				repo:    "dagger.io/dagger/universe.git",
+				path:    "",
+				version: "main",
+			},
+		},
+		{
+			name: "Unspecified provider without folder",
+			in:   "dagger.io/dagger/universe.git/stdlib/alpha.dagger.io/dagger@v0.1.0",
+			want: &Require{
+				repo:    "dagger.io/dagger/universe.git",
+				path:    "/stdlib/alpha.dagger.io/dagger",
+				version: "v0.1.0",
+			},
+		},
+		{
+			name: "Unspecified provider without folder",
+			in:   "dagger.io/dagger/universe.git/stdlib@v5",
+			want: &Require{
+				repo:    "dagger.io/dagger/universe.git",
+				path:    "/stdlib",
+				version: "v5",
+			},
+		},
+		{
+			name: "Unspecified provider without folder",
+			in:   "dagger.io/dagger/universe.git",
+			want: &Require{
+				repo:    "dagger.io/dagger/universe.git",
+				path:    "",
+				version: "",
+			},
+		},
+		{
+			name: "Unspecified provider without folder",
+			in:   "dagger.io/dagger/universe.git/stdlib/alpha.dagger.io/dagger",
+			want: &Require{
+				repo:    "dagger.io/dagger/universe.git",
+				path:    "/stdlib/alpha.dagger.io/dagger",
+				version: "",
+			},
+		},
+		// TODO: Add more tests for ports!
 	}
 
 	for _, c := range cases {
