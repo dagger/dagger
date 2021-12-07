@@ -16,6 +16,10 @@ var (
 	)
 )
 
+func IsSecretValue(v *compiler.Value) bool {
+	return v.LookupPath(secretIDPath).Exists()
+}
+
 type Secret struct {
 	id        string
 	plainText string
@@ -53,10 +57,6 @@ func (c *secretContext) New(plaintext string) *Secret {
 
 	c.store[secret.id] = secret
 	return secret
-}
-
-func (c *secretContext) Contains(v *compiler.Value) bool {
-	return v.LookupPath(secretIDPath).Exists()
 }
 
 func (c *secretContext) FromValue(v *compiler.Value) (*Secret, error) {

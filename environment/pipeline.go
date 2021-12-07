@@ -100,7 +100,7 @@ func (p *Pipeline) ops() ([]*compiler.Value, error) {
 
 	// dagger.#FS forward compat
 	// FIXME: remove this
-	if p.pctx.FS.Contains(p.code) {
+	if plancontext.IsFSValue(p.code) {
 		ops = append(ops, p.code)
 	}
 
@@ -212,7 +212,7 @@ func (p *Pipeline) run(ctx context.Context) error {
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// dagger.#FS forward compat
 	// FIXME: remove this
-	if p.pctx.FS.Contains(op) {
+	if plancontext.IsFSValue(op) {
 		fs, err := p.pctx.FS.FromValue(op)
 		if err != nil {
 			return st, nil

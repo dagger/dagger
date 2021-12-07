@@ -16,6 +16,10 @@ var (
 	)
 )
 
+func IsServiceValue(v *compiler.Value) bool {
+	return v.LookupPath(serviceIDPath).Exists()
+}
+
 type Service struct {
 	id string
 
@@ -60,10 +64,6 @@ func (c *serviceContext) New(unix, npipe string) *Service {
 
 	c.store[s.id] = s
 	return s
-}
-
-func (c *serviceContext) Contains(v *compiler.Value) bool {
-	return v.LookupPath(serviceIDPath).Exists()
 }
 
 func (c *serviceContext) FromValue(v *compiler.Value) (*Service, error) {

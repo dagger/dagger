@@ -10,6 +10,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 
@@ -61,15 +62,15 @@ var listCmd = &cobra.Command{
 				_, hasDefault := inp.Default()
 
 				switch {
-				case env.Context().Secrets.Contains(inp):
+				case plancontext.IsSecretValue(inp):
 					if _, err := env.Context().Secrets.FromValue(inp); err != nil {
 						isConcrete = false
 					}
-				case env.Context().FS.Contains(inp):
+				case plancontext.IsFSValue(inp):
 					if _, err := env.Context().FS.FromValue(inp); err != nil {
 						isConcrete = false
 					}
-				case env.Context().Services.Contains(inp):
+				case plancontext.IsServiceValue(inp):
 					if _, err := env.Context().Services.FromValue(inp); err != nil {
 						isConcrete = false
 					}

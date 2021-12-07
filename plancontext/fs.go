@@ -18,6 +18,10 @@ var (
 	)
 )
 
+func IsFSValue(v *compiler.Value) bool {
+	return v.LookupPath(fsIDPath).Exists()
+}
+
 type FS struct {
 	id     string
 	result bkgw.Reference
@@ -52,10 +56,6 @@ func (c *fsContext) New(result bkgw.Reference) *FS {
 
 	c.store[fs.id] = fs
 	return fs
-}
-
-func (c *fsContext) Contains(v *compiler.Value) bool {
-	return v.LookupPath(fsIDPath).Exists()
 }
 
 func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
