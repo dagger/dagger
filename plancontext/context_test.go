@@ -10,7 +10,7 @@ func TestContext(t *testing.T) {
 	ctx := New()
 
 	secret := ctx.Secrets.New("test")
-	get, err := ctx.Secrets.FromValue(secret.Value())
+	get, err := ctx.Secrets.FromValue(secret.MarshalCUE())
 	require.NoError(t, err)
 	require.Equal(t, "test", get.PlainText())
 }

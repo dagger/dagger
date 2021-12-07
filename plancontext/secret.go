@@ -33,7 +33,7 @@ func (s *Secret) PlainText() string {
 	return s.plainText
 }
 
-func (s *Secret) Value() *compiler.Value {
+func (s *Secret) MarshalCUE() *compiler.Value {
 	v := compiler.NewValue()
 	if err := v.FillPath(secretIDPath, s.id); err != nil {
 		panic(err)

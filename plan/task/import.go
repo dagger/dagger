@@ -70,7 +70,7 @@ func (c importTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 
 	fs := pctx.FS.New(result)
 	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("fs"), fs.Value()); err != nil {
+	if err := out.FillPath(cue.ParsePath("fs"), fs.MarshalCUE()); err != nil {
 		return nil, err
 	}
 	return out, nil

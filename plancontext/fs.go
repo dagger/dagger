@@ -31,7 +31,7 @@ func (fs *FS) Result() bkgw.Reference {
 	return fs.result
 }
 
-func (fs *FS) Value() *compiler.Value {
+func (fs *FS) MarshalCUE() *compiler.Value {
 	v := compiler.NewValue()
 	if err := v.FillPath(fsIDPath, fs.id); err != nil {
 		panic(err)

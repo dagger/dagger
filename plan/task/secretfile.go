@@ -38,7 +38,7 @@ func (c secretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ so
 
 	secret := pctx.Secrets.New(string(plaintext))
 	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("contents"), secret.Value()); err != nil {
+	if err := out.FillPath(cue.ParsePath("contents"), secret.MarshalCUE()); err != nil {
 		return nil, err
 	}
 	return out, nil

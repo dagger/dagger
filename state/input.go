@@ -193,7 +193,7 @@ type secretInput string
 
 func (i secretInput) Compile(st *State) (*compiler.Value, error) {
 	secret := st.Context.Secrets.New(i.PlainText())
-	return secret.Value(), nil
+	return secret.MarshalCUE(), nil
 }
 
 func (i secretInput) PlainText() string {
@@ -296,5 +296,5 @@ type socketInput struct {
 
 func (i socketInput) Compile(st *State) (*compiler.Value, error) {
 	service := st.Context.Services.New(i.Unix, i.Npipe)
-	return service.Value(), nil
+	return service.MarshalCUE(), nil
 }

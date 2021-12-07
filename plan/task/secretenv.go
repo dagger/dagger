@@ -38,7 +38,7 @@ func (c secretEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ sol
 	}
 	secret := pctx.Secrets.New(env)
 	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("contents"), secret.Value()); err != nil {
+	if err := out.FillPath(cue.ParsePath("contents"), secret.MarshalCUE()); err != nil {
 		return nil, err
 	}
 	return out, nil

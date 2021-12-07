@@ -39,7 +39,7 @@ func (s *Service) NPipe() string {
 	return s.npipe
 }
 
-func (s *Service) Value() *compiler.Value {
+func (s *Service) MarshalCUE() *compiler.Value {
 	v := compiler.NewValue()
 	if err := v.FillPath(serviceIDPath, s.id); err != nil {
 		panic(err)
