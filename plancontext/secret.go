@@ -55,6 +55,10 @@ func (c *secretContext) New(plaintext string) *Secret {
 	return secret
 }
 
+func (c *secretContext) Contains(v *compiler.Value) bool {
+	return v.LookupPath(secretIDPath).Exists()
+}
+
 func (c *secretContext) FromValue(v *compiler.Value) (*Secret, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()

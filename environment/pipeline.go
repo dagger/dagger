@@ -40,13 +40,6 @@ const (
 	StateCompleted = State("completed")
 )
 
-var (
-	fsIDPath = cue.MakePath(
-		cue.Hid("_fs", "alpha.dagger.io/dagger"),
-		cue.Str("id"),
-	)
-)
-
 // An execution pipeline
 type Pipeline struct {
 	code     *compiler.Value
@@ -102,88 +95,38 @@ func IsComponent(v *compiler.Value) bool {
 	return v.Lookup("#up").Exists()
 }
 
-func isFS(v *compiler.Value) bool {
-	return v.LookupPath(fsIDPath).Exists()
-}
-
-func ops(code *compiler.Value) ([]*compiler.Value, error) {
+func (p *Pipeline) ops() ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
 
 	// dagger.#FS forward compat
 	// FIXME: remove this
-	if isFS(code) {
-		ops = append(ops, code)
+	if p.pctx.FS.Contains(p.code) {
+		ops = append(ops, p.code)
 	}
 
 	// 1. attachment array
-	if IsComponent(code) {
-		xops, err := code.Lookup("#up").List()
+	if IsComponent(p.code) {
+		xops, err := p.code.Lookup("#up").List()
 		if err != nil {
 			return nil, err
 		}
 		// 'from' has an executable attached
 		ops = append(ops, xops...)
 		// 2. individual op
-	} else if _, err := code.Lookup("do").String(); err == nil {
-		ops = append(ops, code)
+	} else if _, err := p.code.Lookup("do").String(); err == nil {
+		ops = append(ops, p.code)
 		// 3. op array
-	} else if xops, err := code.List(); err == nil {
+	} else if xops, err := p.code.List(); err == nil {
 		ops = append(ops, xops...)
 	} else {
 		// 4. error
-		source, err := code.Source()
+		source, err := p.code.Source()
 		if err != nil {
 			panic(err)
 		}
-		return nil, fmt.Errorf("not executable: %s (%s)", source, code.Path().String())
+		return nil, fmt.Errorf("not executable: %s (%s)", source, p.code.Path().String())
 	}
 	return ops, nil
-}
-
-func Analyze(fn func(*compiler.Value) error, code *compiler.Value) error {
-	ops, err := ops(code)
-	if err != nil {
-		// Ignore CUE errors when analyzing. This might be because the value is
-		// not concrete since static analysis runs before pipelines are executed.
-		return nil
-	}
-	for _, op := range ops {
-		if err := analyzeOp(fn, op); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
-	// dagger.#FS forward compat
-	// FIXME: remove this
-	if isFS(op) {
-		return nil
-	}
-
-	if err := fn(op); err != nil {
-		return err
-	}
-	do, err := op.Lookup("do").String()
-	if err != nil {
-		return err
-	}
-	switch do {
-	case "load", "copy":
-		return Analyze(fn, op.Lookup("from"))
-	case "exec":
-		fields, err := op.Lookup("mount").Fields()
-		if err != nil {
-			return err
-		}
-		for _, mnt := range fields {
-			if from := mnt.Value.Lookup("from"); from.Exists() {
-				return Analyze(fn, from)
-			}
-		}
-	}
-	return nil
 }
 
 func (p *Pipeline) Run(ctx context.Context) error {
@@ -230,7 +173,7 @@ func (p *Pipeline) Run(ctx context.Context) error {
 }
 
 func (p *Pipeline) run(ctx context.Context) error {
-	ops, err := ops(p.code)
+	ops, err := p.ops()
 	if err != nil {
 		return err
 	}
@@ -269,7 +212,7 @@ func (p *Pipeline) run(ctx context.Context) error {
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// dagger.#FS forward compat
 	// FIXME: remove this
-	if isFS(op) {
+	if p.pctx.FS.Contains(op) {
 		fs, err := p.pctx.FS.FromValue(op)
 		if err != nil {
 			return st, nil

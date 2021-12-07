@@ -62,6 +62,10 @@ func (c *serviceContext) New(unix, npipe string) *Service {
 	return s
 }
 
+func (c *serviceContext) Contains(v *compiler.Value) bool {
+	return v.LookupPath(serviceIDPath).Exists()
+}
+
 func (c *serviceContext) FromValue(v *compiler.Value) (*Service, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()

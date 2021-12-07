@@ -140,7 +140,23 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 	}
 
 	for _, i := range inputs {
-		if i.IsConcreteR(cue.Optional(true)) != nil {
+		isConcrete := (i.IsConcreteR(cue.Optional(true)) == nil)
+		switch {
+		case env.Context().Secrets.Contains(i):
+			if _, err := env.Context().Secrets.FromValue(i); err != nil {
+				isConcrete = false
+			}
+		case env.Context().FS.Contains(i):
+			if _, err := env.Context().FS.FromValue(i); err != nil {
+				isConcrete = false
+			}
+		case env.Context().Services.Contains(i):
+			if _, err := env.Context().Services.FromValue(i); err != nil {
+				isConcrete = false
+			}
+		}
+
+		if !isConcrete {
 			notConcreteInputs = append(notConcreteInputs, i)
 		}
 	}

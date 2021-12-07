@@ -60,6 +60,21 @@ var listCmd = &cobra.Command{
 				isConcrete := (inp.IsConcreteR() == nil)
 				_, hasDefault := inp.Default()
 
+				switch {
+				case env.Context().Secrets.Contains(inp):
+					if _, err := env.Context().Secrets.FromValue(inp); err != nil {
+						isConcrete = false
+					}
+				case env.Context().FS.Contains(inp):
+					if _, err := env.Context().FS.FromValue(inp); err != nil {
+						isConcrete = false
+					}
+				case env.Context().Services.Contains(inp):
+					if _, err := env.Context().Services.FromValue(inp); err != nil {
+						isConcrete = false
+					}
+				}
+
 				if !viper.GetBool("all") {
 					// skip input that is not overridable
 					if !hasDefault && isConcrete {

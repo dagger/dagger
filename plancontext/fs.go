@@ -54,6 +54,10 @@ func (c *fsContext) New(result bkgw.Reference) *FS {
 	return fs
 }
 
+func (c *fsContext) Contains(v *compiler.Value) bool {
+	return v.LookupPath(fsIDPath).Exists()
+}
+
 func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
