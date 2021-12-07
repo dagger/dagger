@@ -11,7 +11,7 @@ import (
 
 var (
 	secretIDPath = cue.MakePath(
-		cue.Hid("_secret", stdlib.PackageName),
+		cue.Hid("_secret", stdlib.EnginePackage),
 		cue.Str("id"),
 	)
 )
