@@ -25,7 +25,7 @@ import (
 var upCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Bring an environment online with latest plan and inputs",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -52,6 +52,20 @@ var upCmd = &cobra.Command{
 		}
 
 		ctx := lg.WithContext(cmd.Context())
+		cl := common.NewClient(ctx)
+
+		if viper.GetBool("europa") {
+			err = europaUp(ctx, cl, args...)
+
+			// TODO: rework telemetry
+			// <-doneCh
+
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to up environment")
+			}
+
+			return
+		}
 
 		project := common.CurrentProject(ctx)
 		st := common.CurrentEnvironmentState(ctx, project)
@@ -61,20 +75,6 @@ var upCmd = &cobra.Command{
 			Logger()
 
 		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
-
-		cl := common.NewClient(ctx)
-
-		if viper.GetBool("europa") {
-			err = europaUp(ctx, cl, project.Path)
-
-			<-doneCh
-
-			if err != nil {
-				lg.Fatal().Err(err).Msg("failed to up environment")
-			}
-
-			return
-		}
 
 		env, err := environment.New(st)
 		if err != nil {
@@ -112,10 +112,10 @@ var upCmd = &cobra.Command{
 	},
 }
 
-func europaUp(ctx context.Context, cl *client.Client, path string) error {
+func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 	lg := log.Ctx(ctx)
 
-	p, err := plan.Load(ctx, path, "")
+	p, err := plan.Load(ctx, args...)
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to load plan")
 	}

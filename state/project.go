@@ -356,6 +356,22 @@ func (w *Project) cleanPackageName(ctx context.Context, pkg string) (string, err
 func cueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
+	if parentDir == "" {
+		wd, _ := os.Getwd()
+		separator := string(os.PathSeparator)
+		dirs := strings.Split(wd, separator)
+		dirsLen := len(dirs)
+
+		// traverse the directory tree starting from PWD going up to successive parents
+		for i := dirsLen; i > 0; i-- {
+			parentDir = strings.Join(dirs[:i], separator)
+			// look for the cue.mod filder
+			if _, err := os.Stat(parentDir + "/cue.mod"); !os.IsNotExist(err) {
+				break // found it!
+			}
+		}
+	}
+
 	modDir := path.Join(parentDir, "cue.mod")
 	if err := os.Mkdir(modDir, 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {

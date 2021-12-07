@@ -23,13 +23,13 @@ type Plan struct {
 	source  *compiler.Value
 }
 
-func Load(ctx context.Context, path, pkg string) (*Plan, error) {
+func Load(ctx context.Context, args ...string) (*Plan, error) {
 	// FIXME: universe vendoring
-	if err := state.VendorUniverse(ctx, path); err != nil {
+	if err := state.VendorUniverse(ctx, ""); err != nil {
 		return nil, err
 	}
 
-	v, err := compiler.Build(path, nil, pkg)
+	v, err := compiler.Build("", nil, args...)
 	if err != nil {
 		return nil, err
 	}
