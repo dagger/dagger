@@ -12,9 +12,9 @@ import (
 )
 
 func dialService(service *plancontext.Service) (net.Conn, error) {
-	if service.Unix == "" {
+	if service.Unix() == "" {
 		return nil, errors.New("unsupported socket type")
 	}
 
-	return net.DialTimeout("unix", service.Unix, time.Second)
+	return net.DialTimeout("unix", service.Unix(), time.Second)
 }

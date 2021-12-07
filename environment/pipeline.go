@@ -40,13 +40,6 @@ const (
 	StateCompleted = State("completed")
 )
 
-var (
-	fsIDPath = cue.MakePath(
-		cue.Hid("_fs", "alpha.dagger.io/dagger"),
-		cue.Str("id"),
-	)
-)
-
 // An execution pipeline
 type Pipeline struct {
 	code     *compiler.Value
@@ -102,88 +95,38 @@ func IsComponent(v *compiler.Value) bool {
 	return v.Lookup("#up").Exists()
 }
 
-func isFS(v *compiler.Value) bool {
-	return v.LookupPath(fsIDPath).Exists()
-}
-
-func ops(code *compiler.Value) ([]*compiler.Value, error) {
+func (p *Pipeline) ops() ([]*compiler.Value, error) {
 	ops := []*compiler.Value{}
 
 	// dagger.#FS forward compat
 	// FIXME: remove this
-	if isFS(code) {
-		ops = append(ops, code)
+	if plancontext.IsFSValue(p.code) {
+		ops = append(ops, p.code)
 	}
 
 	// 1. attachment array
-	if IsComponent(code) {
-		xops, err := code.Lookup("#up").List()
+	if IsComponent(p.code) {
+		xops, err := p.code.Lookup("#up").List()
 		if err != nil {
 			return nil, err
 		}
 		// 'from' has an executable attached
 		ops = append(ops, xops...)
 		// 2. individual op
-	} else if _, err := code.Lookup("do").String(); err == nil {
-		ops = append(ops, code)
+	} else if _, err := p.code.Lookup("do").String(); err == nil {
+		ops = append(ops, p.code)
 		// 3. op array
-	} else if xops, err := code.List(); err == nil {
+	} else if xops, err := p.code.List(); err == nil {
 		ops = append(ops, xops...)
 	} else {
 		// 4. error
-		source, err := code.Source()
+		source, err := p.code.Source()
 		if err != nil {
 			panic(err)
 		}
-		return nil, fmt.Errorf("not executable: %s (%s)", source, code.Path().String())
+		return nil, fmt.Errorf("not executable: %s (%s)", source, p.code.Path().String())
 	}
 	return ops, nil
-}
-
-func Analyze(fn func(*compiler.Value) error, code *compiler.Value) error {
-	ops, err := ops(code)
-	if err != nil {
-		// Ignore CUE errors when analyzing. This might be because the value is
-		// not concrete since static analysis runs before pipelines are executed.
-		return nil
-	}
-	for _, op := range ops {
-		if err := analyzeOp(fn, op); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func analyzeOp(fn func(*compiler.Value) error, op *compiler.Value) error {
-	// dagger.#FS forward compat
-	// FIXME: remove this
-	if isFS(op) {
-		return nil
-	}
-
-	if err := fn(op); err != nil {
-		return err
-	}
-	do, err := op.Lookup("do").String()
-	if err != nil {
-		return err
-	}
-	switch do {
-	case "load", "copy":
-		return Analyze(fn, op.Lookup("from"))
-	case "exec":
-		fields, err := op.Lookup("mount").Fields()
-		if err != nil {
-			return err
-		}
-		for _, mnt := range fields {
-			if from := mnt.Value.Lookup("from"); from.Exists() {
-				return Analyze(fn, from)
-			}
-		}
-	}
-	return nil
 }
 
 func (p *Pipeline) Run(ctx context.Context) error {
@@ -230,7 +173,7 @@ func (p *Pipeline) Run(ctx context.Context) error {
 }
 
 func (p *Pipeline) run(ctx context.Context) error {
-	ops, err := ops(p.code)
+	ops, err := p.ops()
 	if err != nil {
 		return err
 	}
@@ -269,17 +212,12 @@ func (p *Pipeline) run(ctx context.Context) error {
 func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	// dagger.#FS forward compat
 	// FIXME: remove this
-	if isFS(op) {
-		id, err := op.LookupPath(fsIDPath).String()
+	if plancontext.IsFSValue(op) {
+		fs, err := p.pctx.FS.FromValue(op)
 		if err != nil {
-			return st, err
+			return st, nil
 		}
-
-		fs := p.pctx.FS.Get(plancontext.ContextKey(id))
-		if fs == nil {
-			return st, fmt.Errorf("fs %q not found", id)
-		}
-		return fs.Result.ToState()
+		return fs.Result().ToState()
 	}
 
 	do, err := op.Lookup("do").String()
@@ -595,30 +533,26 @@ func (p *Pipeline) mount(ctx context.Context, dest string, mnt *compiler.Value) 
 
 	// eg. mount: "/foo": secret: mysecret
 	if secret := mnt.Lookup("secret"); secret.Exists() {
-		id, err := getSecretID(secret)
+		s, err := p.pctx.Secrets.FromValue(secret)
 		if err != nil {
 			return nil, err
 		}
 
 		return llb.AddSecret(dest,
-			llb.SecretID(id),
+			llb.SecretID(s.ID()),
 			llb.SecretFileOpt(0, 0, 0400), // uid, gid, mask)
 		), nil
 	}
 
 	// eg. mount: "/var/run/docker.sock": stream: mystream
 	if stream := mnt.Lookup("stream"); stream.Exists() {
-		if !stream.HasAttr("stream") {
-			return nil, fmt.Errorf("invalid stream %q: not a stream", stream.Path().String())
-		}
-
-		id, err := stream.Lookup("id").String()
+		s, err := p.pctx.Services.FromValue(stream)
 		if err != nil {
-			return nil, fmt.Errorf("invalid stream %q: %w", stream.Path().String(), err)
+			return nil, err
 		}
 
 		return llb.AddSSHSocket(
-			llb.SSHID(id),
+			llb.SSHID(s.ID()),
 			llb.SSHSocketTarget(dest),
 		), nil
 	}
@@ -761,15 +695,11 @@ func parseStringOrSecret(pctx *plancontext.Context, v *compiler.Value) (string, 
 	}
 
 	// If we get here, it's a secret
-	id, err := getSecretID(v)
+	secret, err := pctx.Secrets.FromValue(v)
 	if err != nil {
 		return "", err
 	}
-	secret := pctx.Secrets.Get(plancontext.ContextKey(id))
-	if secret == nil {
-		return "", fmt.Errorf("secret %s not found", id)
-	}
-	return secret.PlainText, nil
+	return secret.PlainText(), nil
 }
 
 func (p *Pipeline) Load(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
@@ -973,21 +903,6 @@ func (p *Pipeline) SaveImage(ctx context.Context, op *compiler.Value, st llb.Sta
 	), nil
 }
 
-func getSecretID(secretField *compiler.Value) (string, error) {
-	if !secretField.HasAttr("secret") {
-		return "", fmt.Errorf("invalid secret %q: not a secret", secretField.Path().String())
-	}
-	idValue := secretField.Lookup("id")
-	if !idValue.Exists() {
-		return "", fmt.Errorf("invalid secret %q: no id field", secretField.Path().String())
-	}
-	id, err := idValue.String()
-	if err != nil {
-		return "", fmt.Errorf("invalid secret id: %w", err)
-	}
-	return id, nil
-}
-
 func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.State) (llb.State, error) {
 	remote, err := op.Lookup("remote").String()
 	if err != nil {
@@ -1017,18 +932,18 @@ func (p *Pipeline) FetchGit(ctx context.Context, op *compiler.Value, st llb.Stat
 	}
 	// Secret
 	if authToken := op.Lookup("authToken"); authToken.Exists() {
-		id, err := getSecretID(authToken)
+		authTokenSecret, err := p.pctx.Secrets.FromValue(authToken)
 		if err != nil {
 			return st, err
 		}
-		gitOpts = append(gitOpts, llb.AuthTokenSecret(id))
+		gitOpts = append(gitOpts, llb.AuthTokenSecret(authTokenSecret.ID()))
 	}
 	if authHeader := op.Lookup("authHeader"); authHeader.Exists() {
-		id, err := getSecretID(authHeader)
+		authHeaderSecret, err := p.pctx.Secrets.FromValue(authHeader)
 		if err != nil {
 			return st, err
 		}
-		gitOpts = append(gitOpts, llb.AuthHeaderSecret(id))
+		gitOpts = append(gitOpts, llb.AuthHeaderSecret(authHeaderSecret.ID()))
 	}
 
 	gitOpts = append(gitOpts, llb.WithCustomName(p.vertexNamef("FetchGit %s@%s", remoteRedacted, ref)))

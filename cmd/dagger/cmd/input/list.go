@@ -10,6 +10,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/state"
 
@@ -59,6 +60,21 @@ var listCmd = &cobra.Command{
 			for _, inp := range inputs {
 				isConcrete := (inp.IsConcreteR() == nil)
 				_, hasDefault := inp.Default()
+
+				switch {
+				case plancontext.IsSecretValue(inp):
+					if _, err := env.Context().Secrets.FromValue(inp); err != nil {
+						isConcrete = false
+					}
+				case plancontext.IsFSValue(inp):
+					if _, err := env.Context().FS.FromValue(inp); err != nil {
+						isConcrete = false
+					}
+				case plancontext.IsServiceValue(inp):
+					if _, err := env.Context().Services.FromValue(inp); err != nil {
+						isConcrete = false
+					}
+				}
 
 				if !viper.GetBool("all") {
 					// skip input that is not overridable

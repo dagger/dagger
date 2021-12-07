@@ -24,12 +24,17 @@ import (
 	...
 }
 
-// Dagger stream. Can be mounted as a UNIX socket.
-#Stream: {
-	@dagger(stream)
-
-	id: string
+// A reference to a network service endpoint, for example:
+//  - A TCP or UDP port
+//  - A unix or npipe socket
+//  - An HTTPS endpoint
+#Service: {
+	_service: id: string
 }
+
+// Dagger stream. Can be mounted as a UNIX socket.
+// FIXME: Deprecated. For backward compatibility only, use #Service instead.
+#Stream: #Service
 
 // A reference to an external secret, for example:
 //  - A password
@@ -38,9 +43,7 @@ import (
 // Secrets are never merged in the Cue tree. They can only be used
 // by a special filesystem mount designed to minimize leak risk.
 #Secret: {
-	@dagger(secret)
-
-	id: string
+	_secret: id: string
 }
 
 #Input: {

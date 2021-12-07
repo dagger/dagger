@@ -56,6 +56,18 @@ _No input._
 
 _No output._
 
+## dagger.#Service
+
+A reference to a network service endpoint, for example:  - A TCP or UDP port  - A unix or npipe socket  - An HTTPS endpoint
+
+### dagger.#Service Inputs
+
+_No input._
+
+### dagger.#Service Outputs
+
+_No output._
+
 ## dagger.#Stream
 
 Dagger stream. Can be mounted as a UNIX socket.

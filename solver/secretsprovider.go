@@ -21,7 +21,7 @@ type inputStore struct {
 func (s *inputStore) GetSecret(ctx context.Context, id string) ([]byte, error) {
 	lg := log.Ctx(ctx)
 
-	secret := s.pctx.Secrets.Get(plancontext.ContextKey(id))
+	secret := s.pctx.Secrets.Get(id)
 	if secret == nil {
 		return nil, secrets.ErrNotFound
 	}
@@ -31,5 +31,5 @@ func (s *inputStore) GetSecret(ctx context.Context, id string) ([]byte, error) {
 		Str("id", id).
 		Msg("injecting secret")
 
-	return []byte(secret.PlainText), nil
+	return []byte(secret.PlainText()), nil
 }

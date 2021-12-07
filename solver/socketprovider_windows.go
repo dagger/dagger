@@ -13,10 +13,10 @@ import (
 )
 
 func dialService(service *plancontext.Service) (net.Conn, error) {
-	if service.Npipe == "" {
+	if service.NPipe() == "" {
 		return nil, errors.New("unsupported socket type")
 	}
 
 	dur := time.Second
-	return winio.DialPipe(service.Npipe, &dur)
+	return winio.DialPipe(service.NPipe(), &dur)
 }

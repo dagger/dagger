@@ -217,7 +217,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 	secureSprintf := func(format string, a ...interface{}) string {
 		s := fmt.Sprintf(format, a...)
 		for _, secret := range secrets {
-			s = strings.ReplaceAll(s, secret.PlainText, "***")
+			s = strings.ReplaceAll(s, secret.PlainText(), "***")
 		}
 		return s
 	}

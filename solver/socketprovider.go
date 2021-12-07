@@ -36,7 +36,7 @@ func (sp *SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer)
 		id = v[0]
 	}
 
-	service := sp.pctx.Services.Get(plancontext.ContextKey(id))
+	service := sp.pctx.Services.Get(id)
 	if service == nil {
 		return fmt.Errorf("invalid socket id %q", id)
 	}

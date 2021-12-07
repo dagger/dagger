@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/state"
 )
 
@@ -85,12 +86,17 @@ func CurrentEnvironmentState(ctx context.Context, project *state.Project) *state
 
 // FormatValue returns the String representation of the cue value
 func FormatValue(val *compiler.Value) string {
-	if val.HasAttr("artifact") {
+	switch {
+	case val.HasAttr("artifact"):
 		return "dagger.#Artifact"
-	}
-	if val.HasAttr("secret") {
+	case plancontext.IsSecretValue(val):
 		return "dagger.#Secret"
+	case plancontext.IsFSValue(val):
+		return "dagger.#FS"
+	case plancontext.IsServiceValue(val):
+		return "dagger.#Service"
 	}
+
 	if val.IsConcreteR() != nil {
 		return val.IncompleteKind().String()
 	}

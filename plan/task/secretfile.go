@@ -31,16 +31,15 @@ func (c secretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ so
 
 	lg.Debug().Str("path", secretFile.Path).Msg("loading secret")
 
-	data, err := os.ReadFile(secretFile.Path)
+	plaintext, err := os.ReadFile(secretFile.Path)
 	if err != nil {
 		return nil, err
 	}
-	id := pctx.Secrets.Register(&plancontext.Secret{
-		PlainText: string(data),
-	})
 
-	return compiler.NewValueWithContent(id,
-		cue.Str("contents"),
-		cue.Str("id"),
-	)
+	secret := pctx.Secrets.New(string(plaintext))
+	out := compiler.NewValue()
+	if err := out.FillPath(cue.ParsePath("contents"), secret.MarshalCUE()); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

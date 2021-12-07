@@ -9,10 +9,8 @@ import (
 func TestContext(t *testing.T) {
 	ctx := New()
 
-	id := ctx.Secrets.Register(&Secret{
-		PlainText: "test",
-	})
-	secret := ctx.Secrets.Get(id)
-	require.NotNil(t, secret)
-	require.Equal(t, "test", secret.PlainText)
+	secret := ctx.Secrets.New("test")
+	get, err := ctx.Secrets.FromValue(secret.MarshalCUE())
+	require.NoError(t, err)
+	require.Equal(t, "test", get.PlainText())
 }

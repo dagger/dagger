@@ -13,6 +13,7 @@ import (
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/plan"
+	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 	"golang.org/x/term"
 
@@ -140,7 +141,23 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 	}
 
 	for _, i := range inputs {
-		if i.IsConcreteR(cue.Optional(true)) != nil {
+		isConcrete := (i.IsConcreteR(cue.Optional(true)) == nil)
+		switch {
+		case plancontext.IsSecretValue(i):
+			if _, err := env.Context().Secrets.FromValue(i); err != nil {
+				isConcrete = false
+			}
+		case plancontext.IsFSValue(i):
+			if _, err := env.Context().FS.FromValue(i); err != nil {
+				isConcrete = false
+			}
+		case plancontext.IsServiceValue(i):
+			if _, err := env.Context().Services.FromValue(i); err != nil {
+				isConcrete = false
+			}
+		}
+
+		if !isConcrete {
 			notConcreteInputs = append(notConcreteInputs, i)
 		}
 	}

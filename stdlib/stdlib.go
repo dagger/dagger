@@ -17,8 +17,9 @@ var (
 	//go:embed **/*.cue **/*/*.cue
 	FS embed.FS
 
-	PackageName  = "alpha.dagger.io"
-	Path         = path.Join("cue.mod", "pkg", PackageName)
+	ModuleName   = "alpha.dagger.io"
+	PackageName  = fmt.Sprintf("%s/dagger", ModuleName)
+	Path         = path.Join("cue.mod", "pkg", ModuleName)
 	lockFilePath = path.Join("cue.mod", "dagger.lock")
 )
 

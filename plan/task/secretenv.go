@@ -36,12 +36,10 @@ func (c secretEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ sol
 	if env == "" {
 		return nil, fmt.Errorf("environment variable %q not set", secretEnv.Envvar)
 	}
-	id := pctx.Secrets.Register(&plancontext.Secret{
-		PlainText: env,
-	})
-
-	return compiler.NewValueWithContent(id,
-		cue.Str("contents"),
-		cue.Str("id"),
-	)
+	secret := pctx.Secrets.New(env)
+	out := compiler.NewValue()
+	if err := out.FillPath(cue.ParsePath("contents"), secret.MarshalCUE()); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

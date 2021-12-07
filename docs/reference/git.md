@@ -19,7 +19,7 @@ Commit & push to git repository
 | Name                     | Type                | Description                              |
 | -------------            |:-------------:      |:-------------:                           |
 |*repository.remote*       | `string`            |Repository remote URL                     |
-|*repository.authToken*    | `dagger.#Secret`    |Authentication token (PAT or password)    |
+|*repository.authToken*    | `*null \| {}`       |Authentication token (PAT or password)    |
 |*repository.branch*       | `string`            |Git branch                                |
 |*name*                    | `string`            |Username                                  |
 |*email*                   | `string`            |Email                                     |
@@ -69,8 +69,8 @@ A git repository
 |*remote*          | `string`             |Git remote link                                             |
 |*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"    |
 |*subdir*          | `*null \| string`    |(optional) Subdirectory                                     |
-|*authToken*       | `dagger.#Secret`     |(optional) Add Personal Access Token                        |
-|*authHeader*      | `dagger.#Secret`     |(optional) Add OAuth Token                                  |
+|*authToken*       | `*null \| {}`        |(optional) Add Personal Access Token                        |
+|*authHeader*      | `*null \| {}`        |(optional) Add OAuth Token                                  |
 
 ### git.#Repository Outputs
 
