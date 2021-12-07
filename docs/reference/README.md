@@ -15,6 +15,7 @@
 - [azure/staticwebapp](./azure/staticwebapp.md) - -
 - [azure/storage](./azure/storage.md) - -
 - [dagger](./dagger/README.md) - Dagger core types
+- [dagger/engine](./dagger/engine.md) - -
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
 - [docker](./docker/README.md) - Docker container operations
 - [docker/compose](./docker/compose.md) - Docker-compose operations

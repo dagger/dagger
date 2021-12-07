@@ -17,10 +17,11 @@ var (
 	//go:embed **/*.cue **/*/*.cue
 	FS embed.FS
 
-	ModuleName   = "alpha.dagger.io"
-	PackageName  = fmt.Sprintf("%s/dagger", ModuleName)
-	Path         = path.Join("cue.mod", "pkg", ModuleName)
-	lockFilePath = path.Join("cue.mod", "dagger.lock")
+	ModuleName    = "alpha.dagger.io"
+	PackageName   = fmt.Sprintf("%s/dagger", ModuleName)
+	EnginePackage = fmt.Sprintf("%s/engine", PackageName)
+	Path          = path.Join("cue.mod", "pkg", ModuleName)
+	lockFilePath  = path.Join("cue.mod", "dagger.lock")
 )
 
 func Vendor(ctx context.Context, mod string) error {

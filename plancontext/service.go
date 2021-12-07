@@ -11,7 +11,7 @@ import (
 
 var (
 	serviceIDPath = cue.MakePath(
-		cue.Hid("_service", stdlib.PackageName),
+		cue.Hid("_service", stdlib.EnginePackage),
 		cue.Str("id"),
 	)
 )

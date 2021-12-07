@@ -13,7 +13,7 @@ import (
 
 var (
 	fsIDPath = cue.MakePath(
-		cue.Hid("_fs", stdlib.PackageName),
+		cue.Hid("_fs", stdlib.EnginePackage),
 		cue.Str("id"),
 	)
 )
