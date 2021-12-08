@@ -356,22 +356,6 @@ func (w *Project) cleanPackageName(ctx context.Context, pkg string) (string, err
 func cueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
-	if parentDir == "" {
-		wd, _ := os.Getwd()
-		separator := string(os.PathSeparator)
-		dirs := strings.Split(wd, separator)
-		dirsLen := len(dirs)
-
-		// traverse the directory tree starting from PWD going up to successive parents
-		for i := dirsLen; i > 0; i-- {
-			parentDir = strings.Join(dirs[:i], separator)
-			// look for the cue.mod filder
-			if _, err := os.Stat(parentDir + "/cue.mod"); !os.IsNotExist(err) {
-				break // found it!
-			}
-		}
-	}
-
 	modDir := path.Join(parentDir, "cue.mod")
 	if err := os.Mkdir(modDir, 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {
@@ -407,6 +391,11 @@ func cueModInit(ctx context.Context, parentDir string) error {
 }
 
 func VendorUniverse(ctx context.Context, p string) error {
+
+	if p == "" {
+		p = getCueModParent()
+	}
+
 	// ensure cue module is initialized
 	if err := cueModInit(ctx, p); err != nil {
 		return err
@@ -429,4 +418,28 @@ func VendorUniverse(ctx context.Context, p string) error {
 	}
 
 	return nil
+}
+
+func getCueModParent() string {
+
+	cwd, _ := os.Getwd()
+	parentDir := cwd
+
+	// traverse the directory tree up through ancestors looking for a cue.mod folder
+	for {
+
+		if _, err := os.Stat(path.Join(parentDir, "cue.mod")); !errors.Is(err, os.ErrNotExist) {
+			break // found it!
+		}
+
+		parentDir = filepath.Dir(parentDir)
+
+		if parentDir == string(os.PathSeparator) {
+			// reached the root
+			parentDir = cwd // reset to working directory
+			break
+		}
+	}
+
+	return parentDir
 }

@@ -25,6 +25,7 @@ type Plan struct {
 
 func Load(ctx context.Context, args ...string) (*Plan, error) {
 	// FIXME: universe vendoring
+
 	if err := state.VendorUniverse(ctx, ""); err != nil {
 		return nil, err
 	}
