@@ -391,7 +391,6 @@ func cueModInit(ctx context.Context, parentDir string) error {
 }
 
 func VendorUniverse(ctx context.Context, p string) error {
-
 	if p == "" {
 		p = getCueModParent()
 	}
@@ -421,13 +420,11 @@ func VendorUniverse(ctx context.Context, p string) error {
 }
 
 func getCueModParent() string {
-
 	cwd, _ := os.Getwd()
 	parentDir := cwd
 
 	// traverse the directory tree up through ancestors looking for a cue.mod folder
 	for {
-
 		if _, err := os.Stat(path.Join(parentDir, "cue.mod")); !errors.Is(err, os.ErrNotExist) {
 			break // found it!
 		}
