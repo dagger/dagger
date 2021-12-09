@@ -11,12 +11,13 @@ import (
 	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/stdlib"
 )
 
 var (
 	ErrNotTask = errors.New("not a task")
 	tasks      sync.Map
-	typePath   = cue.MakePath(cue.Hid("_type", "alpha.dagger.io/dagger"))
+	typePath   = cue.MakePath(cue.Hid("_type", stdlib.EnginePackage))
 )
 
 type NewFunc func() Task
