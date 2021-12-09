@@ -24,8 +24,9 @@ type Plan struct {
 }
 
 func Load(ctx context.Context, args ...string) (*Plan, error) {
-	// FIXME: universe vendoring
+	log.Ctx(ctx).Debug().Interface("args", args).Msg("loading plan")
 
+	// FIXME: universe vendoring
 	if err := state.VendorUniverse(ctx, ""); err != nil {
 		return nil, err
 	}
@@ -121,7 +122,7 @@ func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Va
 			ctx := t.Context()
 			lg := log.Ctx(ctx).With().Str("task", t.Path().String()).Logger()
 			ctx = lg.WithContext(ctx)
-			ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("compute: %s", t.Path().String()))
+			ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
 			defer span.End()
 
 			lg.Info().Str("state", string(environment.StateComputing)).Msg(string(environment.StateComputing))
@@ -145,7 +146,7 @@ func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Va
 
 			lg.Info().Dur("duration", time.Since(start)).Str("state", string(environment.StateCompleted)).Msg(string(environment.StateCompleted))
 
-			// If the result is not concrete, there's nothing to merge.
+			// If the result is not concrete (e.g. empty value), there's nothing to merge.
 			if !result.IsConcrete() {
 				return nil
 			}
