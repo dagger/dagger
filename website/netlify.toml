@@ -1,6 +1,7 @@
 [build]
   publish = "build/"
   command = "yarn build"
+  environment = { NODE_VERSION = "16.13.1" }
 
 [context.production]
   # Do not build the site if there's no site-related changes since the last
