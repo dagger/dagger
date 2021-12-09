@@ -6,7 +6,11 @@ import (
 )
 
 engine.#Plan & {
-	actions: sayHello: os.#Container & {
-		command: "echo Hello Europa!"
+	actions: {
+		sayHello: os.#Container & {
+			command: "echo Hello Europa! > /out.txt"
+		}
+
+		verify: "Hello Europa!\n" & (os.#File & {from: sayHello, path: "/out.txt"}).contents
 	}
 }
