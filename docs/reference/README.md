@@ -27,6 +27,7 @@
 - [gcp/secretmanager](./gcp/secretmanager.md) - Google Cloud Secret Manager
 - [git](./git.md) - Git operations
 - [go](./go.md) - Go build operations
+- [graphql](./graphql.md) - -
 - [http](./http.md) - -
 - [io](./io.md) - IO operations
 - [java/maven](./java/maven.md) - Maven is a build automation tool for Java
