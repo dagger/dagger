@@ -101,21 +101,21 @@ func (s Solver) SessionID() string {
 	return s.opts.Gateway.BuildOpts().SessionID
 }
 
-func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.ResolveImageConfigOpt) (dockerfile2llb.Image, error) {
+func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.ResolveImageConfigOpt) (dockerfile2llb.Image, digest.Digest, error) {
 	var image dockerfile2llb.Image
 
 	// Load image metadata and convert to to LLB.
 	// Inspired by https://github.com/moby/buildkit/blob/master/frontend/dockerfile/dockerfile2llb/convert.go
 	// FIXME: this needs to handle platform
-	_, meta, err := s.opts.Gateway.ResolveImageConfig(ctx, ref, opts)
+	dg, meta, err := s.opts.Gateway.ResolveImageConfig(ctx, ref, opts)
 	if err != nil {
-		return image, err
+		return image, "", err
 	}
 	if err := json.Unmarshal(meta, &image); err != nil {
-		return image, err
+		return image, "", err
 	}
 
-	return image, nil
+	return image, dg, nil
 }
 
 // Solve will block until the state is solved and returns a Reference.

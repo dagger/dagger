@@ -762,7 +762,7 @@ func (p *Pipeline) FetchContainer(ctx context.Context, op *compiler.Value, st ll
 
 	// Load image metadata and convert to to LLB.
 	platform := p.pctx.Platform.Get()
-	p.image, err = p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
+	p.image, _, err = p.s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
 		LogName:  p.vertexNamef("load metadata for %s", ref.String()),
 		Platform: &platform,
 	})
