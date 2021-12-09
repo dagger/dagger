@@ -7,8 +7,12 @@ import (
 	"go.dagger.io/dagger/compiler"
 )
 
-func withCustomName(v *compiler.Value, format string, a ...interface{}) llb.ConstraintsOpt {
+func vertexNamef(v *compiler.Value, format string, a ...interface{}) string {
 	prefix := fmt.Sprintf("@%s@", v.Path().String())
 	name := fmt.Sprintf(format, a...)
-	return llb.WithCustomName(prefix + " " + name)
+	return prefix + " " + name
+}
+
+func withCustomName(v *compiler.Value, format string, a ...interface{}) llb.ConstraintsOpt {
+	return llb.WithCustomName(vertexNamef(v, format, a...))
 }
