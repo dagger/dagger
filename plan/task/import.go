@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 
-	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -69,9 +68,7 @@ func (c importTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 	}
 
 	fs := pctx.FS.New(result)
-	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("fs"), fs.MarshalCUE()); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"fs": fs.MarshalCUE(),
+	})
 }

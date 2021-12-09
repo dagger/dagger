@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cuelang.org/go/cue"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/compiler"
@@ -64,16 +63,9 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	}
 	fs := pctx.FS.New(result)
 
-	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("output"), fs.MarshalCUE()); err != nil {
-		return nil, err
-	}
-	if err := out.FillPath(cue.ParsePath("digest"), digest.String()); err != nil {
-		return nil, err
-	}
-	if err := out.FillPath(cue.ParsePath("config"), image.Config); err != nil {
-		return nil, err
-	}
-
-	return out, nil
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"output": fs.MarshalCUE(),
+		"digest": digest,
+		"config": image.Config,
+	})
 }

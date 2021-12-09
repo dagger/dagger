@@ -31,6 +31,17 @@ func (v *Value) FillPath(p cue.Path, x interface{}) error {
 	return v.val.Err()
 }
 
+// FillFields fills multiple fields, in place
+func (v *Value) FillFields(values map[string]interface{}) (*Value, error) {
+	for p, x := range values {
+		if err := v.FillPath(cue.ParsePath(p), x); err != nil {
+			return nil, err
+		}
+	}
+
+	return v, nil
+}
+
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
 func (v *Value) LookupPath(p cue.Path) *Value {
 	v.cc.rlock()
