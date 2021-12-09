@@ -241,8 +241,8 @@ h1[class^="h1Heading"] {
 }
 
 /* navbar */
-.navbar__brand {
-  height: 3rem;
+.navbar__brand .navbar__logo {
+  height: 5rem;
   @include desktop {
     height: var(--ifm-navbar-height);
   }
@@ -266,12 +266,6 @@ h1[class^="h1Heading"] {
 }
 .navbar__items--right > :last-child {
   padding: 1rem;
-}
-
-.navbar__logo {
-  @include tablet {
-    height: auto;
-  }
 }
 
 .react-toggle {
@@ -339,7 +333,7 @@ a[class^="sidebarLogo"] {
 
 main[class^="docMainContainer"] {
   background: #ffffff;
-  padding: 2rem 2rem 2rem 4rem;
+  padding: 2rem 2rem 2rem 5rem;
 
   @include tablet {
     padding: 2rem;
@@ -348,11 +342,6 @@ main[class^="docMainContainer"] {
   html[data-theme="dark"] & {
     background: var(--ifm-color-primary-dark);
     color: var(--ifm-color-primary-light);
-  }
-
-  .docItemContainer_node_modules-\@docusaurus-theme-classic-lib-next-theme-DocItem-styles-module {
-    max-width: 940px !important;
-    margin: auto;
   }
 }
 
@@ -427,6 +416,9 @@ button[class^="copyButton"] {
   &:focus svg path + path {
     fill: var(--ifm-color-primary-dark);
   }
+  &::before {
+    display: none;
+  }
 }
 
 /* menu */
@@ -484,6 +476,7 @@ button[class^="copyButton"] {
     font-style: normal;
     font-weight: 700;
     line-height: 1;
+    position: relative;
   }
 
   & + .menu__list & {
