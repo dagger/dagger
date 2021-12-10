@@ -15,4 +15,5 @@ setup() {
   "$DAGGER" --europa up ./plan/hello-europa
   run curl http://localhost:8080
   assert_output --partial "<title>Hello World</title>"
+  docker rm -f nginx-hello
 }
