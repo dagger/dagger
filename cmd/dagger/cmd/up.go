@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 
 	"cuelang.org/go/cue"
@@ -12,6 +13,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -74,6 +76,11 @@ var upCmd = &cobra.Command{
 			Str("environment", st.Name).
 			Logger()
 
+		universeUpdateCh := make(chan bool)
+		go func() {
+			universeUpdateCh <- checkUniverseVersion(ctx, project.Path)
+		}()
+
 		doneCh := common.TrackProjectCommand(ctx, cmd, project, st)
 
 		env, err := environment.New(st)
@@ -109,7 +116,27 @@ var upCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
+
+		// Warn universe version if out of date
+		if update := <-universeUpdateCh; update {
+			fmt.Println("A new version of universe is available, please run 'dagger mod get alpha.dagger.io'")
+		}
 	},
+}
+
+func checkUniverseVersion(ctx context.Context, projectPath string) bool {
+	lg := log.Ctx(ctx)
+
+	isLatest, err := mod.IsUniverseLatest(ctx, projectPath)
+	if err != nil {
+		lg.Debug().Err(err).Msg("failed to check universe version")
+		return false
+	}
+	if !isLatest {
+		return true
+	}
+	lg.Debug().Msg("universe is up to date")
+	return false
 }
 
 func europaUp(ctx context.Context, cl *client.Client, args ...string) error {

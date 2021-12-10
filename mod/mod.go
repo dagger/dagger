@@ -2,6 +2,7 @@ package mod
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -17,6 +18,50 @@ const (
 
 func isUniverse(repoName string) bool {
 	return strings.HasPrefix(strings.ToLower(repoName), stdlib.ModuleName)
+}
+
+// IsUniverseLatest check that current universe is up-to-date or no
+// It returns true if universe is up-to-date, otherwise false
+// If universe was not installed from `dagger mod get`, it will
+// not compare anything.
+//
+// The latest tag is fetch from universe repo itself.
+func IsUniverseLatest(ctx context.Context, workspace string) (bool, error) {
+	modfile, err := readPath(workspace)
+	if err != nil {
+		return false, err
+	}
+
+	req, err := newRequire("alpha.dagger.io", UniverseVersionConstraint)
+	if err != nil {
+		return false, err
+	}
+
+	// Get current universe version
+	universe := modfile.searchInstalledRequire(req)
+	if universe == nil {
+		return false, fmt.Errorf("universe not installed")
+	}
+
+	tmpPath := path.Join(modfile.workspacePath, tmpBasePath, req.fullPath())
+	defer os.RemoveAll(tmpPath)
+
+	repo, err := clone(ctx, req, tmpPath, "", "")
+	if err != nil {
+		return false, err
+	}
+
+	// Get latest tag
+	latestTag, err := repo.latestTag(ctx, req.versionConstraint)
+	if err != nil {
+		return false, err
+	}
+
+	c, err := compareVersions(latestTag, universe.version)
+	if err != nil {
+		return false, err
+	}
+	return !(c == 1), nil
 }
 
 func Install(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
