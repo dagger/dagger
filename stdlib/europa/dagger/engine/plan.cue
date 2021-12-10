@@ -38,4 +38,14 @@ package engine
 			envvar: string
 		}
 	}
+
+	services: [string]: {
+		service: #Service
+		_type:   "Service"
+		{
+			unix: string
+		} | {
+			npipe: string
+		}
+	}
 }
