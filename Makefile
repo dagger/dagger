@@ -44,12 +44,12 @@ integration: core-integration universe-test doc-test
 .PHONY: core-integration
 core-integration: dagger-debug
 	yarn --cwd "./tests" install
-	DAGGER_BINARY="../cmd/dagger/dagger-debug" yarn --cwd "./tests" test
+	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./tests" test
 
 .PHONY: universe-test
 universe-test: dagger-debug
 	yarn --cwd "./universe" install
-	DAGGER_BINARY="../cmd/dagger/dagger-debug" yarn --cwd "./universe" test
+	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./universe" test
 
 .PHONY: doc-test
 doc-test: dagger-debug
