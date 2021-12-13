@@ -8,8 +8,12 @@ package dagger
 #DAG: {
 	// Receive inputs from the client
 	input: {
+		// Receive directories
 		directories: [name=string]: _#inputDirectory
-		secrets: [name=string]:     _#inputSecret
+		// Securely receive secrets
+		secrets: [name=string]: _#inputSecret
+		// Receive runtime parameters
+		params: [name=string]: _
 	}
 
 	// Send outputs to the client
