@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	"cuelang.org/go/cue"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -37,9 +36,7 @@ func (c secretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ so
 	}
 
 	secret := pctx.Secrets.New(string(plaintext))
-	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("contents"), secret.MarshalCUE()); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"contents": secret.MarshalCUE(),
+	})
 }
