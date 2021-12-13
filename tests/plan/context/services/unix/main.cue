@@ -2,15 +2,24 @@ package main
 
 import (
 	"alpha.dagger.io/dagger/engine"
-	"alpha.dagger.io/docker"
+	"alpha.dagger.io/dagger/op"
+  "alpha.dagger.io/alpine"
 )
 
 engine.#Plan & {
 	context: services: dockerSocket: unix: "/var/run/docker.sock"
-	actions: nginx: docker.#Run & {
-		ref:  "nginxdemos/nginx-hello"
-		name: "nginx-hello"
-		ports: ["8080:8080"]
-		socket: context.services.dockerSocket.service
+
+	actions: {
+		load: op.#Load & {
+			from: alpine.#Image & {
+				package: "docker-cli": true
+			}
+		}
+
+		exec: op.#Exec & {
+			always: true
+			mount: "/var/run/docker.sock": stream: context.services.dockerSocket.service
+			args: ["docker", "info"]
+		}
 	}
 }
