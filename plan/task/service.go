@@ -26,15 +26,13 @@ func (c serviceTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 		return nil, errors.New("invalid service")
 	}
 
-	lg := log.Ctx(ctx).Debug()
+	lg := log.Ctx(ctx)
 
 	if unix != "" {
-		lg.Str("unix", unix)
+		lg.Debug().Str("unix", unix).Msg("loading service")
 	} else if npipe != "" {
-		lg.Str("npipe", npipe)
+		lg.Debug().Str("npipe", npipe).Msg("loading service")
 	}
-
-	lg.Msg("loading service")
 
 	service := pctx.Services.New(unix, npipe)
 	out := compiler.NewValue()
