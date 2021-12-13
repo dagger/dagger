@@ -95,48 +95,57 @@ func TestParseArgument(t *testing.T) {
 			},
 		},
 		{
-			name: "Unspecified provider without folder",
-			in:   "dagger.io/dagger/universe.git@main",
+			name: "Custom git provider without folder",
+			in:   "git.blocklayer.com/dagger/universe.git@main",
 			want: &Require{
-				repo:    "dagger.io/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/universe.git",
 				path:    "",
 				version: "main",
 			},
 		},
 		{
-			name: "Unspecified provider without folder",
-			in:   "dagger.io/dagger/universe.git/stdlib/alpha.dagger.io/dagger@v0.1.0",
+			name: "Custom git provider with folder and version",
+			in:   "git.blocklayer.com/dagger/universe.git/stdlib/alpha.dagger.io/dagger@v0.1.0",
 			want: &Require{
-				repo:    "dagger.io/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/universe.git",
 				path:    "/stdlib/alpha.dagger.io/dagger",
 				version: "v0.1.0",
 			},
 		},
 		{
-			name: "Unspecified provider without folder",
-			in:   "dagger.io/dagger/universe.git/stdlib@v5",
+			name: "Custom git provider with folder and version",
+			in:   "git.blocklayer.com/dagger/universe.git/stdlib@v5",
 			want: &Require{
-				repo:    "dagger.io/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/universe.git",
 				path:    "/stdlib",
 				version: "v5",
 			},
 		},
 		{
-			name: "Unspecified provider without folder",
-			in:   "dagger.io/dagger/universe.git",
+			name: "Custom git provider without folder",
+			in:   "git.blocklayer.com/dagger/universe.git",
 			want: &Require{
-				repo:    "dagger.io/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/universe.git",
 				path:    "",
 				version: "",
 			},
 		},
 		{
-			name: "Unspecified provider without folder",
-			in:   "dagger.io/dagger/universe.git/stdlib/alpha.dagger.io/dagger",
+			name: "Custom git provider with folder, no version",
+			in:   "git.blocklayer.com/dagger/universe.git/stdlib/alpha.dagger.io/dagger",
 			want: &Require{
-				repo:    "dagger.io/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/universe.git",
 				path:    "/stdlib/alpha.dagger.io/dagger",
 				version: "",
+			},
+		},
+		{
+			name: "Custom git provider with custom port, folder, and version",
+			in:   "git.blocklayer.com:7999/ops/dagger.git/stuff/here@v5",
+			want: &Require{
+				repo:    "git.blocklayer.com:7999/ops/dagger.git",
+				path:    "/stuff/here",
+				version: "v5",
 			},
 		},
 		// TODO: Add more tests for ports!
