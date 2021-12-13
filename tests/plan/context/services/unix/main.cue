@@ -3,7 +3,7 @@ package main
 import (
 	"alpha.dagger.io/dagger/engine"
 	"alpha.dagger.io/dagger/op"
-  "alpha.dagger.io/alpine"
+	"alpha.dagger.io/alpine"
 )
 
 engine.#Plan & {
