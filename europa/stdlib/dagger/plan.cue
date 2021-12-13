@@ -8,17 +8,17 @@ package dagger
 #DAG: {
 	// Receive inputs from the client
 	input: {
-		directories: [name=string]: #InputDirectory
-		secrets: [name=string]:     #InputSecret
+		directories: [name=string]: _#inputDirectory
+		secrets: [name=string]:     _#inputSecret
 	}
 
 	// Send outputs to the client
 	output: {
-		directories: [name=string]: #OutputDirectory
+		directories: [name=string]: _#outputDirectory
 	}
 
 	// Forward network services to and from the client
-	proxy: [name=string]: #ProxyEndpoint
+	proxy: [name=string]: _#proxyEndpoint
 
 	// Execute actions in containers
 	actions: {
@@ -26,7 +26,7 @@ package dagger
 	}
 }
 
-#InputDirectory: {
+_#inputDirectory: {
 	// Import from this path ON THE CLIENT MACHINE
 	// Example: "/Users/Alice/dev/todoapp/src"
 	source: string
@@ -44,7 +44,7 @@ package dagger
 	contents: #FS
 }
 
-#OutputDirectory: {
+_#outputDirectory: {
 	// Filesystem contents to export
 	// Reference an #FS field produced by an action
 	contents: #FS
@@ -54,10 +54,11 @@ package dagger
 }
 
 // Securely receive a secret from the client
-#InputSecret: {
+_#inputSecret: {
 	// Reference to the secret contents
 	// Use this by securely mounting it into a container.
 	// See universe.dagger.io/docker.#Run.mounts
+	// FIXME: `contents` field name causes confusion (not actually the secret contents..)
 	contents: #Secret
 
 	{
@@ -76,7 +77,7 @@ package dagger
 }
 
 // Forward a network endpoint to and from the client
-#ProxyEndpoint: {
+_#proxyEndpoint: {
 	// Service endpoint can be proxied to action containers as unix sockets
 	// FIXME: should #Service be renamed to #ServiceEndpoint or #Endpoint? Naming things is hard...
 	endpoint: #Service
