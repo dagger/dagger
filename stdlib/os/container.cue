@@ -54,6 +54,9 @@ import (
 	// Safely mount secrets (in cleartext) as non-persistent files
 	secret: [string]: dagger.#Secret
 
+	// Mount unix socket or windows npipes to the corresponding path
+	socket: [string]: dagger.#Stream
+
 	// Write file in the container
 	files: [string]: {
 		content: string
@@ -119,6 +122,9 @@ import (
 					}
 					for dest, _ in tmpfs {
 						"\(dest)": "tmpfs"
+					}
+					for dest, s in socket {
+						"\(dest)": stream: s
 					}
 				}
 			}
