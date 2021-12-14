@@ -19,8 +19,23 @@ type serviceTask struct {
 }
 
 func (c serviceTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	unix, _ := v.LookupPath(cue.ParsePath("unix")).String()
-	npipe, _ := v.LookupPath(cue.ParsePath("npipe")).String()
+	var unix, npipe string
+	var stringErr error
+
+	unixV := v.Lookup("unix")
+	npipeV := v.Lookup("npipe")
+
+	if unixV.Exists() && unixV.IsConcrete() {
+		unix, stringErr = unixV.String()
+	}
+
+	if npipeV.Exists() && npipeV.IsConcrete() {
+		npipe, stringErr = npipeV.String()
+	}
+
+	if stringErr != nil {
+		return nil, stringErr
+	}
 
 	if unix == "" && npipe == "" {
 		return nil, errors.New("invalid service")
