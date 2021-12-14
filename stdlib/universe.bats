@@ -284,3 +284,7 @@ setup() {
 @test "trivy" {
   dagger -e trivy up
 }
+
+@test "bats" {
+  dagger -e bats up
+}

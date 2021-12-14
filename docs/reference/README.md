@@ -14,6 +14,7 @@
 - [azure/resourcegroup](./azure/resourcegroup.md) - -
 - [azure/staticwebapp](./azure/staticwebapp.md) - -
 - [azure/storage](./azure/storage.md) - -
+- [bats](./bats.md) - -
 - [dagger](./dagger/README.md) - Dagger core types
 - [dagger/engine](./dagger/engine.md) - -
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
