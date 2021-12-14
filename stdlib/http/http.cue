@@ -103,6 +103,9 @@ import (
 	// Time until timeout (sec.)
 	timeout: int | *30
 
+	// Env variables
+	env: [string]: string
+
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
@@ -141,12 +144,15 @@ import (
 					"""#,
 			]
 			always: true
-			env: {
+			"env": {
 				HEALTH_URL:   url
 				INTERVAL:     "\(interval)"
 				NB_RETRIES:   "\(retries)"
 				START_PERIOD: "\(startPeriod)"
 				TIMEOUT:      "\(timeout)"
+				for k, v in env {
+					"\(k)": v
+				}
 			}
 		},
 	]
