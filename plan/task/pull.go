@@ -35,7 +35,7 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 
 	st := llb.Image(
 		ref.String(),
-		withCustomName(v, "FetchContainer %s", rawRef),
+		withCustomName(v, "Pull %s", rawRef),
 	)
 
 	// Load image metadata and convert to to LLB.
