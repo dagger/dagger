@@ -181,104 +181,108 @@ setup() {
 }
 
 @test "doc-1008-aws-cloudformation" {
-  skip_unless_local_localstack
-  setup_example_sandbox
+  skip "debug CI deadlock"
 
-  ### Create a basic plan
-  ## Construct
-  mkdir -p "$DAGGER_SANDBOX"/cloudformation
-  cp "$DAGGER_PROJECT"/cloudformation/template.cue "$DAGGER_SANDBOX"/cloudformation
+  # skip_unless_local_localstack
+  # setup_example_sandbox
 
-  # Cloudformation relay
-  dagger --project "$DAGGER_SANDBOX" doc alpha.dagger.io/aws/cloudformation
-  cp "$DAGGER_PROJECT"/cloudformation/source-begin.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
+  # ### Create a basic plan
+  # ## Construct
+  # mkdir -p "$DAGGER_SANDBOX"/cloudformation
+  # cp "$DAGGER_PROJECT"/cloudformation/template.cue "$DAGGER_SANDBOX"/cloudformation
 
-  # Initialize new env
-  dagger --project "$DAGGER_SANDBOX" new 'cloudformation' -p "$DAGGER_SANDBOX"/cloudformation
+  # # Cloudformation relay
+  # dagger --project "$DAGGER_SANDBOX" doc alpha.dagger.io/aws/cloudformation
+  # cp "$DAGGER_PROJECT"/cloudformation/source-begin.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
 
-  # Finish template setup
-  cp "$DAGGER_PROJECT"/cloudformation/source-end.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
+  # # Initialize new env
+  # dagger --project "$DAGGER_SANDBOX" new 'cloudformation' -p "$DAGGER_SANDBOX"/cloudformation
 
-  # Copy corresponding env
-  cp -r "$DAGGER_PROJECT"/.dagger/env/cloudformation "$DAGGER_SANDBOX"/.dagger/env/
+  # # Finish template setup
+  # cp "$DAGGER_PROJECT"/cloudformation/source-end.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
 
-  # Run test
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation up
-  stackName=$(dagger --project "$DAGGER_SANDBOX" -e cloudformation query cfnStackName -f text)
+  # # Copy corresponding env
+  # cp -r "$DAGGER_PROJECT"/.dagger/env/cloudformation "$DAGGER_SANDBOX"/.dagger/env/
 
-  ## Cleanup
-  # Place back empty source
-  cp "$DAGGER_PROJECT"/cloudformation/source-begin.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
-  cp "$DAGGER_PROJECT"/cloudformation/deletion.cue "$DAGGER_SANDBOX"/cloudformation/deletion.cue
-  # Prepare and run cloudformation cleanup
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation input text stackRemoval.stackName "$stackName"
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation up
+  # # Run test
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation up
+  # stackName=$(dagger --project "$DAGGER_SANDBOX" -e cloudformation query cfnStackName -f text)
 
-  ### Template part
-  ## Create convert.cue
-  cp "$DAGGER_PROJECT"/cloudformation/template/convert.cue "$DAGGER_SANDBOX"/cloudformation/convert.cue
-  rm "$DAGGER_SANDBOX"/cloudformation/source.cue "$DAGGER_SANDBOX"/cloudformation/deletion.cue
+  # ## Cleanup
+  # # Place back empty source
+  # cp "$DAGGER_PROJECT"/cloudformation/source-begin.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
+  # cp "$DAGGER_PROJECT"/cloudformation/deletion.cue "$DAGGER_SANDBOX"/cloudformation/deletion.cue
+  # # Prepare and run cloudformation cleanup
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation input text stackRemoval.stackName "$stackName"
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation up
 
-  ## Retrieve Unmarshalled JSON
-  dagger --project "$DAGGER_SANDBOX" query -e cloudformation s3Template
+  # ### Template part
+  # ## Create convert.cue
+  # cp "$DAGGER_PROJECT"/cloudformation/template/convert.cue "$DAGGER_SANDBOX"/cloudformation/convert.cue
+  # rm "$DAGGER_SANDBOX"/cloudformation/source.cue "$DAGGER_SANDBOX"/cloudformation/deletion.cue
 
-  ## Remove convert.cue
-  rm "$DAGGER_SANDBOX"/cloudformation/convert.cue
+  # ## Retrieve Unmarshalled JSON
+  # dagger --project "$DAGGER_SANDBOX" query -e cloudformation s3Template
 
-  ## Store the output
-  cp "$DAGGER_PROJECT"/cloudformation/template/template-begin.cue "$DAGGER_SANDBOX"/cloudformation/template.cue
+  # ## Remove convert.cue
+  # rm "$DAGGER_SANDBOX"/cloudformation/convert.cue
 
-  # Inspect conf
-  dagger --project "$DAGGER_SANDBOX" query -e cloudformation template -f text
+  # ## Store the output
+  # cp "$DAGGER_PROJECT"/cloudformation/template/template-begin.cue "$DAGGER_SANDBOX"/cloudformation/template.cue
 
-  cp "$DAGGER_PROJECT"/cloudformation/template/deployment.cue "$DAGGER_SANDBOX"/cloudformation/deployment.cue
-  cp "$DAGGER_PROJECT"/cloudformation/template/template-end.cue "$DAGGER_SANDBOX"/cloudformation/template.cue
-  cp "$DAGGER_PROJECT"/cloudformation/source-end.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
+  # # Inspect conf
+  # dagger --project "$DAGGER_SANDBOX" query -e cloudformation template -f text
 
-  # Deploy again
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation query template -f text
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation up
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation output list
+  # cp "$DAGGER_PROJECT"/cloudformation/template/deployment.cue "$DAGGER_SANDBOX"/cloudformation/deployment.cue
+  # cp "$DAGGER_PROJECT"/cloudformation/template/template-end.cue "$DAGGER_SANDBOX"/cloudformation/template.cue
+  # cp "$DAGGER_PROJECT"/cloudformation/source-end.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
 
-  ## Cleanup again
-  stackName=$(dagger --project "$DAGGER_SANDBOX" -e cloudformation query cfnStackName -f text)
-  rm -rf "$DAGGER_SANDBOX"/cloudformation/*
+  # # Deploy again
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation query template -f text
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation up
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation output list
 
-  # Place back empty source
-  cp "$DAGGER_PROJECT"/cloudformation/source-begin.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
-  cp "$DAGGER_PROJECT"/cloudformation/deletion.cue "$DAGGER_SANDBOX"/cloudformation/deletion.cue
+  # ## Cleanup again
+  # stackName=$(dagger --project "$DAGGER_SANDBOX" -e cloudformation query cfnStackName -f text)
+  # rm -rf "$DAGGER_SANDBOX"/cloudformation/*
 
-  # Prepare and run cloudformation cleanup
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation input text stackRemoval.stackName "$stackName"
-  dagger --project "$DAGGER_SANDBOX" -e cloudformation up
+  # # Place back empty source
+  # cp "$DAGGER_PROJECT"/cloudformation/source-begin.cue "$DAGGER_SANDBOX"/cloudformation/source.cue
+  # cp "$DAGGER_PROJECT"/cloudformation/deletion.cue "$DAGGER_SANDBOX"/cloudformation/deletion.cue
+
+  # # Prepare and run cloudformation cleanup
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation input text stackRemoval.stackName "$stackName"
+  # dagger --project "$DAGGER_SANDBOX" -e cloudformation up
 }
 
 @test "doc-1010-dev-cue-package" {
-  # Initializing project
-  mkdir -p "$DAGGER_SANDBOX"/project
+  skip "debug CI deadlock"
 
-  # Writing package
-  # dagger init # The sandbox is already init
-  mkdir -p "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
-  cp "$DAGGER_PROJECT"/dev-cue-package/source.cue "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
-  cp "$DAGGER_PROJECT"/dev-cue-package/script.sh "$DAGGER_SANDBOX"/project/script.sh
+  # # Initializing project
+  # mkdir -p "$DAGGER_SANDBOX"/project
 
-  # We remove the last line of the script, as bats cannot expand dagger
-  # to dagger() bats helper func inside bash files
-  sed '$d' <"$DAGGER_SANDBOX"/project/script.sh >"$DAGGER_SANDBOX"/tmpFile
-  mv "$DAGGER_SANDBOX"/tmpFile "$DAGGER_SANDBOX"/project/script.sh
+  # # Writing package
+  # # dagger init # The sandbox is already init
+  # mkdir -p "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
+  # cp "$DAGGER_PROJECT"/dev-cue-package/source.cue "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
+  # cp "$DAGGER_PROJECT"/dev-cue-package/script.sh "$DAGGER_SANDBOX"/project/script.sh
 
-  chmod +x "$DAGGER_SANDBOX"/project/script.sh
-  "$DAGGER_SANDBOX"/project/script.sh
+  # # We remove the last line of the script, as bats cannot expand dagger
+  # # to dagger() bats helper func inside bash files
+  # sed '$d' <"$DAGGER_SANDBOX"/project/script.sh >"$DAGGER_SANDBOX"/tmpFile
+  # mv "$DAGGER_SANDBOX"/tmpFile "$DAGGER_SANDBOX"/project/script.sh
 
-  # Sync file from documentation
-  rsync -a test "$DAGGER_SANDBOX"
+  # chmod +x "$DAGGER_SANDBOX"/project/script.sh
+  # "$DAGGER_SANDBOX"/project/script.sh
 
-  # Command removed from script.sh above
-  dagger --project "$DAGGER_SANDBOX" new staging -p "$DAGGER_SANDBOX"/test
-  run dagger up --project "$DAGGER_SANDBOX" -e staging
-  assert_output --partial "input=run.gcpConfig.serviceKey"
+  # # Sync file from documentation
+  # rsync -a test "$DAGGER_SANDBOX"
 
-  # Clean script.sh output
-  rm -rf ./test
+  # # Command removed from script.sh above
+  # dagger --project "$DAGGER_SANDBOX" new staging -p "$DAGGER_SANDBOX"/test
+  # run dagger up --project "$DAGGER_SANDBOX" -e staging
+  # assert_output --partial "input=run.gcpConfig.serviceKey"
+
+  # # Clean script.sh output
+  # rm -rf ./test
 }
