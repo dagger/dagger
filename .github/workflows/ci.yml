@@ -240,24 +240,25 @@ jobs:
         run: |
           docker run -d -p 5000:5000 --name registry registry:2
 
-      - name: Write kind echo
-        run: |
-          echo 'kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          containerdConfigPatches:
-          - |-
-            [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
-              endpoint = ["http://registry:5000"]' > ./kind-config.yaml
-          cat ./kind-config.yaml
+      # # DISABLED for CI deadlock debugging
+      # - name: Write kind echo
+      #   run: |
+      #     echo 'kind: Cluster
+      #     apiVersion: kind.x-k8s.io/v1alpha4
+      #     containerdConfigPatches:
+      #     - |-
+      #       [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+      #         endpoint = ["http://registry:5000"]' > ./kind-config.yaml
+      #     cat ./kind-config.yaml
 
-      - name: Setup Kind Kubernetes Cluster
-        uses: helm/kind-action@v1.2.0
-        with:
-          config: "./kind-config.yaml"
+      # - name: Setup Kind Kubernetes Cluster
+      #   uses: helm/kind-action@v1.2.0
+      #   with:
+      #     config: "./kind-config.yaml"
 
-      - name: Connect registry to cluster
-        run: |
-          docker network connect kind registry
+      # - name: Connect registry to cluster
+      #   run: |
+      #     docker network connect kind registry
 
       - name: Import Dagger private key
         env:

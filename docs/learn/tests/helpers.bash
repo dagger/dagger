@@ -87,7 +87,7 @@ skip_unless_local_localstack() {
 #
 # This is need to do kubernetes test in the CI.
 skip_unless_local_kube() {
-    if [ -f ~/.kube/config ] && grep -q "127.0.0.1" ~/.kube/config &> /dev/null; then
+    if [ -f ~/.kube/config ] && grep -q "127.0.0.1" ~/.kube/config; then
         echo "Kubernetes available"
     else
         skip "local kubernetes cluster not available"
