@@ -29,6 +29,8 @@ func newRequire(repoName, versionConstraint string) (*Require, error) {
 		return parseGithubRepoName(repoName, versionConstraint)
 	case strings.HasPrefix(repoName, stdlib.ModuleName):
 		return parseDaggerRepoName(repoName, versionConstraint)
+	case strings.Contains(repoName, ".git"):
+		return parseGitRepoName(repoName, versionConstraint)
 	default:
 		return nil, fmt.Errorf("repo name does not match suported providers")
 	}
@@ -71,6 +73,27 @@ func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 
 		cloneRepo: "github.com/dagger/universe",
 		clonePath: path.Join("/stdlib", repoMatches[1]),
+	}, nil
+}
+
+// TODO: Get real URL regex
+var gitRepoNameRegex = regexp.MustCompile(`^([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+(?::\d*)?/[a-zA-Z0-9_.-/]+?\.git)([a-zA-Z0-9/_.-]*)?@?([0-9a-zA-Z.-]*)`)
+
+func parseGitRepoName(repoName, versionConstraint string) (*Require, error) {
+	repoMatches := gitRepoNameRegex.FindStringSubmatch(repoName)
+
+	if len(repoMatches) < 3 {
+		return nil, fmt.Errorf("issue when parsing git repo")
+	}
+
+	return &Require{
+		repo:              repoMatches[1],
+		path:              repoMatches[2],
+		version:           repoMatches[3],
+		versionConstraint: versionConstraint,
+
+		cloneRepo: repoMatches[1],
+		clonePath: repoMatches[2],
 	}, nil
 }
 
