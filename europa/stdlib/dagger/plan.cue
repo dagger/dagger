@@ -67,7 +67,11 @@ _#inputSecret: {
 
 	{
 		// Execute a command ON THE CLIENT MACHINE and read secret from standard output
-		command: [string, ...string] | string
+		_type: "SecretExec"
+    command: {
+      name: string
+      args: [...string]
+    }
 		// Execute command in an interactive terminal
 		//  for example to prompt for a passphrase
 		interactive: true | *false
