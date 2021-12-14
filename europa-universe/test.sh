@@ -2,9 +2,6 @@
 
 set -e
 
-# Run all tests from universe/
-cd universe
-
 targets=(
 	dagger.io/dagger
 	dagger.io/dagger/engine

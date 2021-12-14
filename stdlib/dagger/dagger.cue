@@ -3,7 +3,7 @@ package dagger
 
 import (
 	"alpha.dagger.io/dagger/op"
-	"alpha.dagger.io/dagger/engine"
+	"alpha.dagger.io/europa/dagger/engine"
 )
 
 // An artifact such as source code checkout, container image, binary archive...

@@ -16,10 +16,13 @@
 - [azure/storage](./azure/storage.md) - -
 - [bats](./bats.md) - -
 - [dagger](./dagger/README.md) - Dagger core types
-- [dagger/engine](./dagger/engine.md) - -
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
 - [docker](./docker/README.md) - Docker container operations
 - [docker/compose](./docker/compose.md) - Docker-compose operations
+- [europa/dagger](./europa/dagger/README.md) - The Dagger API.
+- [europa/dagger/engine](./europa/dagger/engine/README.md) - -
+- [europa/dagger/engine/spec](./europa/dagger/engine/spec/README.md) - Placeholder package, to keep docs generating tool happy.
+- [europa/dagger/engine/spec/engine](./europa/dagger/engine/spec/engine.md) - -
 - [gcp](./gcp/README.md) - Google Cloud Platform
 - [gcp/cloudrun](./gcp/cloudrun.md) - -
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry
