@@ -5,8 +5,6 @@ import (
 	"os/exec"
 	"strings"
 
-	// "gopkg.in/yaml.v3"
-
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
