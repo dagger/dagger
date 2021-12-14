@@ -19,7 +19,6 @@ type secretExecTask struct {
 }
 
 func (c secretExecTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-
 	var secretExec struct {
 		Command struct {
 			Name string
