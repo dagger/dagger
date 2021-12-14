@@ -51,7 +51,7 @@ Let's write the package logic. It is basically what we've seen in the 106-cloudr
 touch cue.mod/pkg/github.com/username/gcpcloudrun/source.cue
 ```
 
-```cue file=./tests/dev-cue-package/source.cue title="cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue"
+```cue file=./tests/dev-cue-package/source.cue title="cue.mod/pkg/github.com/username/gcpcloudrun/source.cue"
 ```
 
 ### Running the package
