@@ -26,7 +26,7 @@ package engine
 	// Securely load external secrets
 	secrets: [string]: {
 		// Secrets can be securely mounted into action containers as a file
-		contents: #Secret
+		contents: #Secret | {[string]: #Secret}
 
 		{
 			_type: "SecretFile"
@@ -36,7 +36,12 @@ package engine
 			_type: "SecretEnv"
 			// Read secret from an environment variable ON THE CLIENT MACHINE
 			envvar: string
-		}
+		} | {
+      _type: "SecretExec"
+      command: string
+      args: [...string]
+      format: "json" | "yaml" | "text"
+    }
 	}
 
 	services: [string]: {
