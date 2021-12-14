@@ -7,32 +7,39 @@ package engine
 	// Container filesystem
 	input: #FS
 
-	// Mounts
-	mounts: [...#Mount]
+	// Transient filesystem mounts
+	//   Key is an arbitrary name, for example "app source code"
+	//   Value is mount configuration
+	mounts: [name=string]: #Mount
 
 	// Command to execute
-	args: [...string] | string
+	// Example: ["echo", "hello, world!"]
+	args: [...string]
 
 	// Environment variables
-	environ: [...string]
+	env: [key=string]: string
 
 	// Working directory
-	workdir?: string
+	workdir: string | *"/"
 
-	// Optionally attach to command standard input stream
-	stdin?: #Stream
+	// User ID or name
+	user: string | *"root"
 
-	// Optionally attach to command standard output stream
-	stdout?: #Stream
-
-	// Optionally attach to command standard error stream
-	stderr?: #Stream
+	// If set, always execute even if the operation could be cached
+	always: true | *false
 
 	// Modified filesystem
 	output: #FS
 
 	// Command exit code
-	exit: int
+	// Currently this field can only ever be zero.
+	// If the command fails, DAG execution is immediately terminated.
+	// FIXME: expand API to allow custom handling of failed commands
+	exit: int & 0
+
+	// Inject hostname resolution into the container
+	// key is hostname, value is IP
+	hosts: [hostname=string]: string
 }
 
 // A transient filesystem mount.

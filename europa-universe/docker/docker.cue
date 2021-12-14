@@ -28,6 +28,7 @@ import (
 	mounts: [name=string]: engine.#Mount
 
 	// Expose network ports
+	// FIXME: investigate feasibility
 	ports: [name=string]: {
 		frontend: dagger.#Service
 		backend: {
@@ -84,12 +85,7 @@ import (
 	// Username or UID to ad
 	// User identity for this command
 	// Examples: "root", "0", "1002"
-	user: string
-
-	// Optionally attach to command standard streams
-	stdin:  dagger.#Stream | *null
-	stdout: dagger.#Stream | *null
-	stderr: dagger.#Stream | *null
+	user: string | *"root"
 
 	// Output fields
 	{
@@ -131,13 +127,12 @@ import (
 
 	// Actually execute the command
 	_exec: engine.#Exec & {
-		args:  [cmd.name] + cmd._flatFlags + cmd.args
-		input: image.rootfs
-		"mounts": [ for mnt in mounts {mnt}]
-		environ: [ for k, v in env {"\(k)=\(v)"}]
+		args:      [cmd.name] + cmd._flatFlags + cmd.args
+		input:     image.rootfs
+		"mounts":  mounts
+		"env":     env
 		"workdir": workdir
-		"stdin":   stdin
-		// FIXME: user
+		"user":    user
 	}
 }
 
