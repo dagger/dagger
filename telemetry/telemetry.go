@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	apiKey       = "cb9777c166aefe4b77b31f961508191c"
+	apiKey       = "cb9777c166aefe4b77b31f961508191c" //nolint
 	telemetryURL = "https://t.dagger.io/v1"
 )
 

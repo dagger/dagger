@@ -30,6 +30,18 @@ _No input._
 
 _No output._
 
+## engine.#ImageConfig
+
+Container image config. See [OCI](https://opencontainers.org/). Spec left open on purpose to account for additional fields. [Image Spec](https://github.com/opencontainers/image-spec/blob/main/specs-go/v1/config.go) [Docker Superset](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/dockerfile2llb/image.go)
+
+### engine.#ImageConfig Inputs
+
+_No input._
+
+### engine.#ImageConfig Outputs
+
+_No output._
+
 ## engine.#Plan
 
 A deployment plan executed by `dagger up`
@@ -39,6 +51,18 @@ A deployment plan executed by `dagger up`
 _No input._
 
 ### engine.#Plan Outputs
+
+_No output._
+
+## engine.#Pull
+
+Download a container image from a remote repository
+
+### engine.#Pull Inputs
+
+_No input._
+
+### engine.#Pull Outputs
 
 _No output._
 
