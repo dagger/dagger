@@ -7,22 +7,20 @@ import (
 )
 
 engine.#Plan & {
-  // should fail
+	// should fail
 	context: services: dockerSocket: {}
 
-	actions: {
-    test: #up: [
-      op.#Load & {
-        from: alpine.#Image & {
-          package: "docker-cli": true
-        }
-      },
+	actions: test: #up: [
+		op.#Load & {
+			from: alpine.#Image & {
+				package: "docker-cli": true
+			}
+		},
 
-      op.#Exec & {
-        always: true
-        mount: "/var/run/docker.sock": stream: context.services.dockerSocket.service
-        args: ["docker", "info"]
-      }
-    ]
-	}
+		op.#Exec & {
+			always: true
+			mount: "/var/run/docker.sock": stream: context.services.dockerSocket.service
+			args: ["docker", "info"]
+		},
+	]
 }
