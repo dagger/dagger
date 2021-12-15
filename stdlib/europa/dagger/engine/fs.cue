@@ -8,3 +8,13 @@ package engine
 	contents: string
 	output:   #FS
 }
+
+#WriteFile: {
+	_type: "WriteFile"
+
+	input:    #FS
+	path:     string
+	contents: string
+	mode:     int
+	output:   #FS
+}
