@@ -1,8 +1,8 @@
 package git
 
 import (
-	"dagger.io/dagger"
+	"dagger.io/dagger/engine"
 )
 
-#Pull: dagger.#GitPull
-#Push: dagger.#GitPush
+#Pull: engine.#GitPull
+#Push: engine.#GitPush
