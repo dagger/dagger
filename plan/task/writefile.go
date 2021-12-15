@@ -50,7 +50,6 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 
 	mode, err := v.Lookup("mode").Int64()
 
-	// err = fmt.Errorf("%s: unhandled data type in WriteFile: %w", path, err)
 	if err != nil {
 		return nil, err
 	}
