@@ -31,6 +31,23 @@ package engine
 	output:   #FS
 }
 
+// Create a directory
+#Mkdir: {
+	_mkdir: {}
+
+	input: #FS
+
+	// Path of the directory
+	path: string
+	// FIXME: this is not very dev friendly, as Cue does not support octal notation.
+	// What is a better option?
+	mode: int
+	// Create parent directories as needed?
+	parents: *true | false
+
+	output: #FS
+}
+
 #Copy: {
 	_copy: {}
 
