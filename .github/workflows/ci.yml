@@ -205,7 +205,7 @@ jobs:
     timeout-minutes: 30
     services:
       localstack:
-        image: localstack/localstack:0.12.16
+        image: localstack/localstack:0.13.1
         env:
           SERVICES: s3, cloudformation
           LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
