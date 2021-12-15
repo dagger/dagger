@@ -66,6 +66,16 @@ _No input._
 
 _No output._
 
+## engine.#ReadFile
+
+### engine.#ReadFile Inputs
+
+_No input._
+
+### engine.#ReadFile Outputs
+
+_No output._
+
 ## engine.#Secret
 
 A reference to an external secret, for example:  - A password  - A SSH private key  - An API token Secrets are never merged in the Cue tree. They can only be used by a special filesystem mount designed to minimize leak risk.
