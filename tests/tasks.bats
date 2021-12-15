@@ -15,12 +15,12 @@ setup() {
 }
 
 @test "task: #WriteFile" {
-    cd "$TESTDIR"
-    dagger --europa up ./tasks/write_file/write_file.cue
+    cd "$TESTDIR"/tasks/write_file
+    dagger --europa up ./write_file.cue
 }
 
 @test "task: #WriteFile failure: different contents" {
-    cd "$TESTDIR"
-    run dagger --europa up ./tasks/write_file/write_file_failure_diff_contents.cue
+    cd "$TESTDIR"/tasks/write_file
+    run dagger --europa up ./write_file_failure_diff_contents.cue
     assert_failure 
 }
