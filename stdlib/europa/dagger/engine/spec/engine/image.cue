@@ -1,7 +1,7 @@
 package engine
 
 // Container image config
-// See https://opencontainers.org
+// See [OCI](https://www.opencontainers.org)
 #ImageConfig: {
 	env?: [...string]
 	user?: string

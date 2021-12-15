@@ -4,7 +4,7 @@ package docker
 import (
 	"list"
 
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger/engine/spec/engine"
 	"dagger.io/dagger"
 )
 

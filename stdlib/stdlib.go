@@ -14,12 +14,11 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed **/*.cue **/*/*.cue
+	//go:embed **/*.cue **/*/*.cue europa/dagger/*.cue europa/dagger/engine/*.cue europa/dagger/engine/spec/*.cue europa/dagger/engine/spec/engine/*.cue
 	FS embed.FS
 
 	ModuleName    = "alpha.dagger.io"
-	PackageName   = fmt.Sprintf("%s/dagger", ModuleName)
-	EnginePackage = fmt.Sprintf("%s/engine", PackageName)
+	EnginePackage = fmt.Sprintf("%s/europa/dagger/engine", ModuleName)
 	Path          = path.Join("cue.mod", "pkg", ModuleName)
 	lockFilePath  = path.Join("cue.mod", "dagger.lock")
 )

@@ -9,7 +9,7 @@ package engine
 //   - "index.docker.io/dagger:latest@sha256:a89cb097693dd354de598d279c304a1c73ee550fbfff6d9ee515568e0c749cfe"
 #Ref: string
 
-// Container image config. See [OCI](https://opencontainers.org/).
+// Container image config. See [OCI](https://www.opencontainers.org/).
 // Spec left open on purpose to account for additional fields.
 // [Image Spec](https://github.com/opencontainers/image-spec/blob/main/specs-go/v1/config.go)
 // [Docker Superset](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/dockerfile2llb/image.go)

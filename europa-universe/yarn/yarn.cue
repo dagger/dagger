@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine" // FIXME: should not be needed for common cases
+	"dagger.io/dagger/engine/spec/engine"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
