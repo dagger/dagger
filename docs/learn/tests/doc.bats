@@ -263,8 +263,8 @@ setup() {
 
   # # Writing package
   # # dagger init # The sandbox is already init
-  # mkdir -p "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/tjovicic/gcpcloudrun
-  # cp "$DAGGER_PROJECT"/dev-cue-package/source.cue "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/tjovicic/gcpcloudrun/source.cue
+  # mkdir -p "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/username/gcpcloudrun
+  # cp "$DAGGER_PROJECT"/dev-cue-package/source.cue "$DAGGER_SANDBOX"/cue.mod/pkg/github.com/username/gcpcloudrun/source.cue
   # cp "$DAGGER_PROJECT"/dev-cue-package/script.sh "$DAGGER_SANDBOX"/project/script.sh
 
   # # We remove the last line of the script, as bats cannot expand dagger

@@ -6,7 +6,7 @@ cat > test/source.cue << EOF
 package test
 
 import (
-  "github.com/tjovicic/gcpcloudrun"
+  "github.com/username/gcpcloudrun"
 )
 
 run: gcpcloudrun.#Run
