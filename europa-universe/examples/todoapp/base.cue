@@ -22,7 +22,7 @@ dagger.#DAG & {
 				remote: "https://github.com/mdn/todo-react"
 				ref:    "master"
 			}
-			build: source: pull.checkout
+			build: source: pull.output
 		}
 	}
 }
