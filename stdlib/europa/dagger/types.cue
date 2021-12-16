@@ -1,7 +1,7 @@
 package dagger
 
 import (
-	"alpha.dagger.io/europa/dagger/engine/spec/engine"
+	"alpha.dagger.io/europa/dagger/engine"
 )
 
 // A reference to a filesystem tree.
@@ -20,17 +20,9 @@ import (
 // by a special filesystem mount designed to minimize leak risk.
 #Secret: engine.#Secret
 
-// A reference to a stream of bytes, for example:
-//  - The standard output or error stream of a command
-//  - The standard input stream of a command
-//  - The contents of a file or named pipe
-#Stream: engine.#Stream
-
 // A reference to a network service endpoint, for example:
 //  - A TCP or UDP port
 //  - A unix socket
 //  - An HTTPS endpoint
 #Service: engine.#Service
 
-// A network service address
-#Address: string & =~"^(tcp://|unix://|udp://).*"
