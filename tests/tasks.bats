@@ -6,7 +6,12 @@ setup() {
 
 @test "task: #Pull" {
     cd "$TESTDIR"/tasks/pull
-    "$DAGGER" --europa up
+    "$DAGGER" --europa up ./pull.cue
+}
+
+@test "task: #Pull with auth" {
+    cd "$TESTDIR"/tasks/pull
+    "$DAGGER" --europa up ./pull_auth.cue
 }
 
 @test "task: #ReadFile" {
