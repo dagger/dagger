@@ -1,11 +1,11 @@
 package main
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
+	"alpha.dagger.io/europa/dagger"
 	"alpha.dagger.io/os"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	actions: {
 		sayHello: os.#Container & {
 			command: "echo Hello Europa! > /out.txt"
