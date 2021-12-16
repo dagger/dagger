@@ -2,7 +2,7 @@ package engine
 
 // Push a directory to a git remote
 #GitPush: {
-	gitPush: {}
+	$dagger: task: _name: "GitPush"
 
 	input:  #FS
 	remote: string
@@ -11,7 +11,7 @@ package engine
 
 // Pull a directory from a git remote
 #GitPull: {
-	gitPull: {}
+	$dagger: task: _name: "GitPull"
 
 	remote: string
 	ref:    string

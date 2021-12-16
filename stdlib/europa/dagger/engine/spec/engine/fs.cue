@@ -2,19 +2,19 @@ package engine
 
 // A filesystem state
 #FS: {
-	_fs: ID: string
+	$dagger: fs: _id: string
 }
 
 // Produce an empty directory
 // FIXME: replace with a null value for #FS?
 #Scratch: {
-	_scratch: {}
+	$dagger: task: _name: "Scratch"
 
 	output: #FS
 }
 
 #ReadFile: {
-	_readFile: {}
+	$dagger: task: _name: "ReadFile"
 
 	input:    #FS
 	path:     string
@@ -23,7 +23,7 @@ package engine
 }
 
 #WriteFile: {
-	_writeFile: {}
+	$dagger: task: _name: "WriteFile"
 
 	input:    #FS
 	path:     string
@@ -33,7 +33,7 @@ package engine
 
 // Create a directory
 #Mkdir: {
-	_mkdir: {}
+	$dagger: task: _name: "Mkdir"
 
 	input: #FS
 
@@ -49,7 +49,7 @@ package engine
 }
 
 #Copy: {
-	_copy: {}
+	$dagger: task: _name: "Copy"
 
 	input: #FS
 	#CopyInfo
@@ -65,7 +65,7 @@ package engine
 }
 
 #Merge: {
-	_merge: {}
+	$dagger: task: _name: "Merge"
 
 	input: #FS
 	layers: [...#CopyInfo]

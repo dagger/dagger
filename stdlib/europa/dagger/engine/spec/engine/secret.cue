@@ -2,5 +2,5 @@ package engine
 
 // An external secret
 #Secret: {
-	_secret: ID: string
+	$dagger: secret: _id: string
 }
