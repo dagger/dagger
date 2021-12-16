@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/moby/buildkit/client/llb"
+	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -27,6 +28,8 @@ func (c localDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context, 
 		return nil, err
 	}
 
+	lg := log.Ctx(ctx)
+	lg.Debug().Str("path", dir.Path).Msg("loading local directory")
 	opts := []llb.LocalOption{
 		withCustomName(v, "Local %s", dir.Path),
 		// Without hint, multiple `llb.Local` operations on the
