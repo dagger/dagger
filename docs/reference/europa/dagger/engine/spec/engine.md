@@ -4,6 +4,8 @@ sidebar_label: engine
 
 # alpha.dagger.io/europa/dagger/engine/spec/engine
 
+HTTP operations
+
 ```cue
 import "alpha.dagger.io/europa/dagger/engine/spec/engine"
 ```
@@ -107,6 +109,18 @@ Push a directory to a git remote
 _No input._
 
 ### engine.#GitPush Outputs
+
+_No output._
+
+## engine.#HTTPFetch
+
+Fetch a file over HTTP
+
+### engine.#HTTPFetch Inputs
+
+_No input._
+
+### engine.#HTTPFetch Outputs
 
 _No output._
 
