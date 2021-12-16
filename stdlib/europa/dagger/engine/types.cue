@@ -7,7 +7,7 @@ package engine
 //  - A directory containing binary artifacts
 // Rule of thumb: if it fits in a tar archive, it fits in a #FS.
 #FS: {
-	_fs: id: string
+	$dagger: fs: _id: string
 }
 
 // A reference to an external secret, for example:
@@ -17,7 +17,7 @@ package engine
 // Secrets are never merged in the Cue tree. They can only be used
 // by a special filesystem mount designed to minimize leak risk.
 #Secret: {
-	_secret: id: string
+	$dagger: secret: _id: string
 }
 
 // A reference to a network service endpoint, for example:
@@ -25,5 +25,5 @@ package engine
 //  - A unix or npipe socket
 //  - An HTTPS endpoint
 #Service: {
-	_service: id: string
+	$dagger: service: _id: string
 }

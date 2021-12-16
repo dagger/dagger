@@ -11,8 +11,9 @@ import (
 
 var (
 	secretIDPath = cue.MakePath(
-		cue.Hid("_secret", stdlib.EnginePackage),
-		cue.Str("id"),
+		cue.Str("$dagger"),
+		cue.Str("secret"),
+		cue.Hid("_id", stdlib.EnginePackage),
 	)
 )
 
