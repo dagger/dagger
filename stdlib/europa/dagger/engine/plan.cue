@@ -22,8 +22,8 @@ package engine
 _#inputDirectory: {
 	// Import from this path ON THE CLIENT MACHINE
 	// Example: "/Users/Alice/dev/todoapp/src"
-  _type: "LocalDirectory"
-	path: string
+	_type: "LocalDirectory"
+	path:  string
 
 	// Filename patterns to include
 	// Example: ["*.go", "Dockerfile"]
@@ -48,11 +48,11 @@ _#inputSecret: {
 
 	{
 		// Read secret from a file ON THE CLIENT MACHINE
-    _type: "SecretFile"
-		path: string
+		_type: "SecretFile"
+		path:  string
 	} | {
 		// Read secret from an environment variable ON THE CLIENT MACHINE
-    _type: "SecretEnv"
+		_type:  "SecretEnv"
 		envvar: string
 	}
 }
@@ -62,7 +62,7 @@ _#proxyEndpoint: {
 	// Service endpoint can be proxied to action containers as unix sockets
 	// FIXME: should #Service be renamed to #ServiceEndpoint or #Endpoint? Naming things is hard...
 	// FIXME: reconcile with spec
-  _type: "Service"
+	_type:   "Service"
 	service: #Service
 	{
 		unix: string

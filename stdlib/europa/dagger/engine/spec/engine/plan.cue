@@ -1,5 +1,5 @@
 // The Dagger API.
-package dagger
+package engine
 
 // A deployment plan executed by `dagger up`
 #Plan: #DAG
