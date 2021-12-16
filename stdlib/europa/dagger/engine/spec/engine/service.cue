@@ -1,6 +1,7 @@
 package engine
 
 // An external network service
+// FIXME: rename to endpoint?
 #Service: {
-	_service: ID: string
+	$dagger: service: _id: string
 }
