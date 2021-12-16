@@ -19,6 +19,13 @@ func init() {
 type pullTask struct {
 }
 
+type authValue struct {
+	Target   string
+	Username string
+	// FIXME: handle secrets
+	Secret string
+}
+
 func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	// FIXME: handle auth
 	rawRef, err := v.Lookup("source").String()
@@ -55,6 +62,17 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	st, err = st.WithImageConfig(imageJSON)
 	if err != nil {
 		return nil, err
+	}
+
+	auth := []authValue{}
+
+	// Read auth data
+	if err := v.Lookup("auth").Decode(&auth); err != nil {
+		return nil, err
+	}
+
+	for _, a := range auth {
+		s.AddCredentials(a.Target, a.Username, a.Secret)
 	}
 
 	result, err := s.Solve(ctx, st, pctx.Platform.Get())
