@@ -1,4 +1,4 @@
-package dagger
+package engine
 
 import (
 	"alpha.dagger.io/europa/dagger/engine/spec/engine"
