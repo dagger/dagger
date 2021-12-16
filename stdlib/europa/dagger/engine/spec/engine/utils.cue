@@ -1,7 +1,7 @@
 package dagger
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
+	"alpha.dagger.io/europa/dagger/engine/spec/engine"
 )
 
 // Select a subdirectory from a filesystem tree
