@@ -10,13 +10,13 @@ import (
 )
 
 func init() {
-	Register("Import", func() Task { return &importTask{} })
+	Register("LocalDirectory", func() Task { return &localDirectoryTask{} })
 }
 
-type importTask struct {
+type localDirectoryTask struct {
 }
 
-func (c importTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c localDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var dir struct {
 		Path    string
 		Include []string
@@ -69,6 +69,6 @@ func (c importTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 
 	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"fs": fs.MarshalCUE(),
+		"contents": fs.MarshalCUE(),
 	})
 }
