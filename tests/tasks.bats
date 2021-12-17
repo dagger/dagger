@@ -36,7 +36,8 @@ setup() {
     "$DAGGER" --europa up ./env.cue
     "$DAGGER" --europa up ./hosts.cue
 
-    "$DAGGER" --europa up ./mount_cache.cue
+    # FIXME: disabled - flaky
+    # "$DAGGER" --europa up ./mount_cache.cue
     "$DAGGER" --europa up ./mount_fs.cue
     TESTSECRET="hello world" "$DAGGER" --europa up ./mount_secret.cue
     "$DAGGER" --europa up ./mount_tmp.cue
