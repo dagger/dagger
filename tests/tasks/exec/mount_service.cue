@@ -5,7 +5,7 @@ import (
 )
 
 engine.#Plan & {
-	context: services: dockerSocket: unix: "/var/run/docker.sock"
+	proxy: dockerSocket: unix: "/var/run/docker.sock"
 
 	actions: {
 		image: engine.#Pull & {
@@ -21,7 +21,7 @@ engine.#Plan & {
 			input: imageWithDocker.output
 			mounts: docker: {
 				dest:     "/var/run/docker.sock"
-				contents: context.services.dockerSocket.service
+				contents: proxy.dockerSocket.service
 			}
 			args: ["docker", "info"]
 		}
