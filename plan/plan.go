@@ -59,7 +59,7 @@ func (p *Plan) Source() *compiler.Value {
 // registerLocalDirectories scans the context for local imports.
 // BuildKit requires to known the list of directories ahead of time.
 func (p *Plan) registerLocalDirs() error {
-	imports, err := p.source.Lookup("input.directories").Fields()
+	imports, err := p.source.Lookup("inputs.directories").Fields()
 	if err != nil {
 		return err
 	}

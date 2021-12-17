@@ -10,6 +10,6 @@ engine.#Plan & {
 		input: inputs.directories.test.contents
 		path:  "test.txt"
 	} & {
-		contents: "local directory"
+		contents: "local dfsadf" // should fail with conflicting values
 	}
 }

@@ -7,7 +7,7 @@ package engine
 // A special kind of program which `dagger` can execute.
 #DAG: {
 	// Receive inputs from the client
-	input: {
+	inputs: {
 		// Receive directories
 		directories: [name=string]: _#inputDirectory
 		// Securely receive secrets
@@ -17,7 +17,7 @@ package engine
 	}
 
 	// Send outputs to the client
-	output: {
+	outputs: {
 		directories: [name=string]: _#outputDirectory
 	}
 

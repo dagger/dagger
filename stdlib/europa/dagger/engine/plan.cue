@@ -3,7 +3,7 @@ package engine
 // A deployment plan executed by `dagger up`
 #Plan: {
 	// Receive inputs from the client
-	input: {
+	inputs: {
 		// Receive directories
 		directories: [string]: _#inputDirectory
 		// Securely receive secrets
