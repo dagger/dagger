@@ -191,7 +191,7 @@ func (t *execTask) mountCache(_ *plancontext.Context, dest string, mnt *compiler
 		return nil, err
 	}
 
-	concurrency, err := mnt.Lookup("concurrency").String()
+	concurrency, err := contents.Lookup("concurrency").String()
 	if err != nil {
 		return nil, err
 	}
@@ -236,13 +236,15 @@ func (t *execTask) mountFS(pctx *plancontext.Context, dest string, mnt *compiler
 		mo = append(mo, llb.SourcePath(src))
 	}
 
-	// FIXME: handle readonly
-	// if readonly := mnt.Lookup("ro"); readonly.Exists() {
-	// 	ro, err := readonly.Cue().Bool()
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
+	if ro := mnt.Lookup("ro"); ro.Exists() {
+		readonly, err := ro.Bool()
+		if err != nil {
+			return nil, err
+		}
+		if readonly {
+			mo = append(mo, llb.Readonly)
+		}
+	}
 
 	st, err := contents.Result().ToState()
 	if err != nil {

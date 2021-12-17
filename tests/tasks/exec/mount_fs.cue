@@ -30,6 +30,40 @@ engine.#Plan & {
 				"sh", "-c",
 				#"""
 					test "$(cat /target/output.txt)" = "hello world"
+					touch /target/rw
+					"""#,
+			]
+		}
+
+		verifyRO: engine.#Exec & {
+			input: image.output
+			mounts: fs: {
+				dest:     "/target"
+				contents: exec.output
+				ro:       true
+			}
+			args: [
+				"sh", "-c",
+				#"""
+					test "$(cat /target/output.txt)" = "hello world"
+
+					touch /target/ro && exit 1
+					true
+					"""#,
+			]
+		}
+
+		verifySource: engine.#Exec & {
+			input: image.output
+			mounts: fs: {
+				dest:     "/target.txt"
+				contents: exec.output
+				source:   "/output.txt"
+			}
+			args: [
+				"sh", "-c",
+				#"""
+					test "$(cat /target.txt)" = "hello world"
 					"""#,
 			]
 		}
