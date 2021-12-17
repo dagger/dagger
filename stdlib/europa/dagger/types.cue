@@ -1,7 +1,7 @@
 package dagger
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
+	"alpha.dagger.io/europa/dagger/engine/spec/engine"
 )
 
 // A reference to a filesystem tree.
@@ -25,3 +25,7 @@ import (
 //  - A unix socket
 //  - An HTTPS endpoint
 #Service: engine.#Service
+
+#Stream: engine.#Stream
+
+#Address: engine.#Address
