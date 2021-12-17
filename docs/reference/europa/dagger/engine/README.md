@@ -8,6 +8,30 @@ sidebar_label: engine
 import "alpha.dagger.io/europa/dagger/engine"
 ```
 
+## engine.#CacheDir
+
+A (best effort) persistent cache dir
+
+### engine.#CacheDir Inputs
+
+_No input._
+
+### engine.#CacheDir Outputs
+
+_No output._
+
+## engine.#Exec
+
+Execute a command in a container
+
+### engine.#Exec Inputs
+
+_No input._
+
+### engine.#Exec Outputs
+
+_No output._
+
 ## engine.#FS
 
 A reference to a filesystem tree. For example:  - The root filesystem of a container  - A source code repository  - A directory containing binary artifacts Rule of thumb: if it fits in a tar archive, it fits in a #FS.
