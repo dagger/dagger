@@ -5,11 +5,19 @@ import (
 )
 
 engine.#Plan & {
+	context: secrets: {
+		dockerHubToken: envvar: "DOCKERHUB_TOKEN"
+	}
 	actions: pull: engine.#Pull & {
-		source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
+		source: "blocklayer/alpine-private:3.15.0@sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060"
+		auth: [{
+			target: "docker.io/blocklayer/alpine-private:3.15.0"
+			username: "daggertest"
+			secret: context.secrets.dockerHubToken.contents
+		}]
 	} & {
 		// assert result
-		digest: "sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
+		digest: "sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060"
 		config: {
 			Env: ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
 			Cmd: ["/bin/sh"]

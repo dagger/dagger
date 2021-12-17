@@ -7,6 +7,7 @@ import (
 
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -19,18 +20,22 @@ func init() {
 type pullTask struct {
 }
 
-type authValue struct {
-	Target   string
-	Username string
-	// FIXME: handle secrets
-	Secret string
-}
-
 func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	// FIXME: handle auth
+	lg := log.Ctx(ctx)
+
 	rawRef, err := v.Lookup("source").String()
 	if err != nil {
 		return nil, err
+	}
+
+	// Read auth info
+	auth, err := decodeAuthValue(pctx, v.Lookup("auth"))
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range auth {
+		s.AddCredentials(a.Target, a.Username, a.Secret.PlainText())
+		lg.Debug().Str("target", a.Target).Msg("add target credentials")
 	}
 
 	ref, err := reference.ParseNormalizedNamed(rawRef)
@@ -54,6 +59,7 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	if err != nil {
 		return nil, err
 	}
+
 	imageJSON, err := json.Marshal(image)
 	if err != nil {
 		return nil, err
@@ -62,17 +68,6 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	st, err = st.WithImageConfig(imageJSON)
 	if err != nil {
 		return nil, err
-	}
-
-	auth := []authValue{}
-
-	// Read auth data
-	if err := v.Lookup("auth").Decode(&auth); err != nil {
-		return nil, err
-	}
-
-	for _, a := range auth {
-		s.AddCredentials(a.Target, a.Username, a.Secret)
 	}
 
 	result, err := s.Solve(ctx, st, pctx.Platform.Get())
