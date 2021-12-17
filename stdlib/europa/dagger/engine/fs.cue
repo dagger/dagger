@@ -84,3 +84,19 @@ package engine
 	layers: [...#CopyInfo]
 	output: #FS
 }
+
+#Copy: {
+	_type: "Copy"
+
+	input: #FS
+	#CopyInfo
+	output: #FS
+}
+
+#CopyInfo: {
+	source: {
+		root: #FS
+		path: string | *"/"
+	}
+	dest: string
+}

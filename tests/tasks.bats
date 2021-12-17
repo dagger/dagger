@@ -46,3 +46,12 @@ setup() {
     "$DAGGER" --europa up ./user.cue
     "$DAGGER" --europa up ./workdir.cue
 }
+
+@test "task: #Copy" {
+    cd "$TESTDIR"/tasks/copy
+    "$DAGGER" --europa up ./copy_exec.cue
+    "$DAGGER" --europa up ./copy_file.cue
+    
+    run "$DAGGER" --europa up ./copy_exec_invalid.cue
+    assert_failure
+}
