@@ -44,6 +44,13 @@ setup() {
   "$DAGGER" --europa up ./plan/inputs/directories/exists.cue
 }
 
+@test "plan/inputs/directories not exists" {
+  cd "$TESTDIR"
+  run "$DAGGER" --europa up ./plan/inputs/directories/not_exists.cue
+	assert_failure
+	assert_output --partial 'tests/fasdfsdfs" does not exist'
+}
+
 @test "plan/inputs/directories conflicting values" {
   cd "$TESTDIR"
   run "$DAGGER" --europa up ./plan/inputs/directories/conflicting_values.cue

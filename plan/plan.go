@@ -2,7 +2,10 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -68,6 +71,13 @@ func (p *Plan) registerLocalDirs() error {
 		dir, err := v.Value.Lookup("path").String()
 		if err != nil {
 			return err
+		}
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(abs); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("path %q does not exist", abs)
 		}
 		p.context.LocalDirs.Add(dir)
 	}
