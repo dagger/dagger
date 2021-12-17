@@ -1,6 +1,23 @@
 package engine
 
 // Read a file from a filesystem tree
+#Mkdir: {
+	$dagger: task: _name: "Mkdir"
+
+	input: #FS
+
+	// Path of the directory
+	path: string
+
+	// Permission to set
+	mode: *0o755 | int
+
+	// Create parents' directory if they do not exist
+	parents: *true | false
+
+	output: #FS
+}
+
 #ReadFile: {
 	$dagger: task: _name: "ReadFile"
 
