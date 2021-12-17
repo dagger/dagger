@@ -191,15 +191,29 @@ func (t *execTask) mountCache(_ *plancontext.Context, dest string, mnt *compiler
 		return nil, err
 	}
 
-	// FIXME: handle concurrency
-	concurrency := llb.CacheMountShared
+	concurrency, err := mnt.Lookup("concurrency").String()
+	if err != nil {
+		return nil, err
+	}
+
+	var mode llb.CacheMountSharingMode
+	switch concurrency {
+	case "shared":
+		mode = llb.CacheMountShared
+	case "private":
+		mode = llb.CacheMountPrivate
+	case "locked":
+		mode = llb.CacheMountLocked
+	default:
+		return nil, fmt.Errorf("unknown concurrency mode %q", concurrency)
+	}
 
 	return llb.AddMount(
 		dest,
 		llb.Scratch(),
 		llb.AsPersistentCacheDir(
 			id,
-			concurrency,
+			mode,
 		),
 	), nil
 }
