@@ -4,6 +4,8 @@ sidebar_label: engine
 
 # alpha.dagger.io/europa/dagger/engine/spec/engine
 
+The Dagger API.
+
 HTTP operations
 
 ```cue
@@ -34,16 +36,6 @@ _No input._
 
 _No output._
 
-## engine.#Context
-
-### engine.#Context Inputs
-
-_No input._
-
-### engine.#Context Outputs
-
-_No output._
-
 ## engine.#Copy
 
 ### engine.#Copy Inputs
@@ -61,6 +53,18 @@ _No output._
 _No input._
 
 ### engine.#CopyInfo Outputs
+
+_No output._
+
+## engine.#DAG
+
+A special kind of program which `dagger` can execute.
+
+### engine.#DAG Inputs
+
+_No input._
+
+### engine.#DAG Outputs
 
 _No output._
 

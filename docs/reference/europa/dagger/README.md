@@ -4,8 +4,6 @@ sidebar_label: dagger
 
 # alpha.dagger.io/europa/dagger
 
-The Dagger API.
-
 ```cue
 import "alpha.dagger.io/europa/dagger"
 ```
@@ -72,7 +70,7 @@ _No output._
 
 ## dagger.#Stream
 
-A reference to a stream of bytes, for example:  - The standard output or error stream of a command  - The standard input stream of a command  - The contents of a file or named pipe
+A stream of bytes
 
 ### dagger.#Stream Inputs
 
