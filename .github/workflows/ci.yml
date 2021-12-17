@@ -101,7 +101,8 @@ jobs:
         uses: crazy-max/ghaction-github-runtime@v1
 
       - name: Integration test
-        # env:
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         #   DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-integration"
         #   DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-integration"
         run: |
