@@ -1,10 +1,5 @@
 package engine
 
-// A filesystem state
-#FS: {
-	$dagger: fs: _id: string
-}
-
 // Produce an empty directory
 // FIXME: replace with a null value for #FS?
 #Scratch: {
@@ -13,23 +8,9 @@ package engine
 	output: #FS
 }
 
-#ReadFile: {
-	$dagger: task: _name: "ReadFile"
+#ReadFile: $dagger: task: _name: "ReadFile"
 
-	input:    #FS
-	path:     string
-	contents: string
-	output:   #FS
-}
-
-#WriteFile: {
-	$dagger: task: _name: "WriteFile"
-
-	input:    #FS
-	path:     string
-	contents: string
-	output:   #FS
-}
+#WriteFile: $dagger: task: _name: "WriteFile"
 
 // Create a directory
 #Mkdir: {
@@ -39,8 +20,7 @@ package engine
 
 	// Path of the directory
 	path: string
-	// FIXME: this is not very dev friendly, as Cue does not support octal notation.
-	// What is a better option?
+	// FIXME: permissions?
 	mode: int
 	// Create parent directories as needed?
 	parents: *true | false

@@ -68,18 +68,6 @@ _No input._
 
 _No output._
 
-## dagger.#Stream
-
-A stream of bytes
-
-### dagger.#Stream Inputs
-
-_No input._
-
-### dagger.#Stream Outputs
-
-_No output._
-
 ## dagger.#Subdir
 
 Select a subdirectory from a filesystem tree

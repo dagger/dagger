@@ -94,6 +94,8 @@ _No output._
 
 ## engine.#ReadFile
 
+Read a file from a filesystem tree
+
 ### engine.#ReadFile Inputs
 
 _No input._
@@ -139,6 +141,8 @@ _No input._
 _No output._
 
 ## engine.#WriteFile
+
+Write a file to a filesystem tree, creating it if needed
 
 ### engine.#WriteFile Inputs
 
