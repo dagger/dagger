@@ -202,22 +202,22 @@ jobs:
   doc:
     name: Documentation
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    services:
-      localstack:
-        image: localstack/localstack:0.13.1
-        env:
-          SERVICES: s3, cloudformation
-          LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
-        ports:
-          - 4566:4566
-          - 4571:4571
-        options: >-
-          --health-cmd "curl -f http://localhost:4566/health"
-          --health-start-period 5s
-          --health-timeout 5s
-          --health-interval 5s
-          --health-retries 10
+    timeout-minutes: 15
+    # services:
+    #   localstack:
+    #     image: localstack/localstack:0.13.1
+    #     env:
+    #       SERVICES: s3, cloudformation
+    #       LOCALSTACK_API_KEY: ${{ secrets.LOCALSTACK_API_KEY }}
+    #     ports:
+    #       - 4566:4566
+    #       - 4571:4571
+    #     options: >-
+    #       --health-cmd "curl -f http://localhost:4566/health"
+    #       --health-start-period 5s
+    #       --health-timeout 5s
+    #       --health-interval 5s
+    #       --health-retries 10
 
     steps:
       - name: Check out
