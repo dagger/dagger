@@ -6,8 +6,6 @@ sidebar_label: engine
 
 The Dagger API.
 
-HTTP operations
-
 ```cue
 import "alpha.dagger.io/europa/dagger/engine/spec/engine"
 ```

@@ -23,8 +23,6 @@
 - [europa/dagger/engine](./europa/dagger/engine/README.md) - -
 - [europa/dagger/engine/spec](./europa/dagger/engine/spec/README.md) - Placeholder package, to keep docs generating tool happy.
 - [europa/dagger/engine/spec/engine](./europa/dagger/engine/spec/engine.md) - The Dagger API.
-
-HTTP operations
 - [gcp](./gcp/README.md) - Google Cloud Platform
 - [gcp/cloudrun](./gcp/cloudrun.md) - -
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry
