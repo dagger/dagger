@@ -7,8 +7,8 @@ import (
 )
 
 engine.#Plan & {
-	// should succeed
-	context: services: dockerSocket: unix: string
+	// should fail due to incomplete service
+	proxy: dockerSocket: {}
 
 	actions: test: #up: [
 		op.#Load & {
@@ -19,7 +19,7 @@ engine.#Plan & {
 
 		op.#Exec & {
 			always: true
-			mount: "/var/run/docker.sock": stream: context.services.dockerSocket.service
+			mount: "/var/run/docker.sock": stream: proxy.dockerSocket.service
 			args: ["docker", "info"]
 		},
 	]

@@ -7,8 +7,8 @@ import (
 )
 
 engine.#Plan & {
-	// should fail because of misspelled value
-	context: services: dockerSocket: unix: "/var/run/docker.soc"
+	// should fail because incomplete value
+	proxy: dockerSocket: unix: string
 
 	actions: test: #up: [
 		op.#Load & {
@@ -19,7 +19,7 @@ engine.#Plan & {
 
 		op.#Exec & {
 			always: true
-			mount: "/var/run/docker.sock": stream: context.services.dockerSocket.service
+			mount: "/var/run/docker.sock": stream: proxy.dockerSocket.service
 			args: ["docker", "info"]
 		},
 	]

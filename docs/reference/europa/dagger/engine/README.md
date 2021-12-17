@@ -20,16 +20,6 @@ _No input._
 
 _No output._
 
-## engine.#Context
-
-### engine.#Context Inputs
-
-_No input._
-
-### engine.#Context Outputs
-
-_No output._
-
 ## engine.#Exec
 
 Execute a command in a container

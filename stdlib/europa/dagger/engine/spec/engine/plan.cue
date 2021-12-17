@@ -1,17 +1,28 @@
+// The Dagger API.
 package engine
 
 // A deployment plan executed by `dagger up`
-#Plan: {
+#Plan: #DAG
+
+// A special kind of program which `dagger` can execute.
+#DAG: {
 	// Receive inputs from the client
 	inputs: {
 		// Receive directories
-		directories: [string]: _#inputDirectory
+		directories: [name=string]: _#inputDirectory
 		// Securely receive secrets
-		secrets: [string]: _#inputSecret
+		secrets: [name=string]: _#inputSecret
+		// Receive runtime parameters
+		params: [name=string]: _
+	}
+
+	// Send outputs to the client
+	outputs: {
+		directories: [name=string]: _#outputDirectory
 	}
 
 	// Forward network services to and from the client
-	proxy: [string]: _#proxyEndpoint
+	proxy: [name=string]: _#proxyEndpoint
 
 	// Execute actions in containers
 	actions: {
@@ -22,8 +33,7 @@ package engine
 _#inputDirectory: {
 	// Import from this path ON THE CLIENT MACHINE
 	// Example: "/Users/Alice/dev/todoapp/src"
-	_type: "LocalDirectory"
-	path:  string
+	source: string
 
 	// Filename patterns to include
 	// Example: ["*.go", "Dockerfile"]
@@ -38,6 +48,15 @@ _#inputDirectory: {
 	contents: #FS
 }
 
+_#outputDirectory: {
+	// Filesystem contents to export
+	// Reference an #FS field produced by an action
+	contents: #FS
+
+	// Export to this path ON THE CLIENT MACHINE
+	dest: string
+}
+
 // Securely receive a secret from the client
 _#inputSecret: {
 	// Reference to the secret contents
@@ -47,12 +66,16 @@ _#inputSecret: {
 	contents: #Secret
 
 	{
+		// Execute a command ON THE CLIENT MACHINE and read secret from standard output
+		command: [string, ...string] | string
+		// Execute command in an interactive terminal
+		//  for example to prompt for a passphrase
+		interactive: true | *false
+	} | {
 		// Read secret from a file ON THE CLIENT MACHINE
-		_type: "SecretFile"
-		path:  string
+		path: string
 	} | {
 		// Read secret from an environment variable ON THE CLIENT MACHINE
-		_type:  "SecretEnv"
 		envvar: string
 	}
 }
@@ -61,12 +84,19 @@ _#inputSecret: {
 _#proxyEndpoint: {
 	// Service endpoint can be proxied to action containers as unix sockets
 	// FIXME: should #Service be renamed to #ServiceEndpoint or #Endpoint? Naming things is hard...
-	// FIXME: reconcile with spec
-	_type:   "Service"
-	service: #Service
+	endpoint: #Service
+
 	{
-		unix: string
+		// Listen for connections ON THE CLIENT MACHINE, proxy to actions
+		listen: #Address
 	} | {
-		npipe: string
+		// Connect to a remote endpoint FROM THE CLIENT MACHINE, proxy to actions
+		connect: #Address
+	} | {
+		// Proxy to/from the contents of a file ON THE CLIENT MACHINE
+		filepath: string
+	} | {
+		// Proxy to/from standard input and output of a command ON THE CLIENT MACHINE
+		command: [string, ...string] | string
 	}
 }
