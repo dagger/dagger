@@ -78,6 +78,13 @@ _#inputSecret: {
 		// Read secret from an environment variable ON THE CLIENT MACHINE
 		_type:  "SecretEnv"
 		envvar: string
+	} | {
+		// Get secret by executing a command ON THE CLIENT MACHINE
+		_type: "SecretExec"
+		command: {
+			name: string
+			args: [...string]
+		}
 	}
 }
 
