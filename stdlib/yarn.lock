@@ -4,12 +4,12 @@
 
 "bats-assert@https://github.com/bats-core/bats-assert":
   version "2.0.0"
-  resolved "https://github.com/bats-core/bats-assert#e0de84e9c011223e7f88b7ccf1c929f4327097ba"
+  resolved "https://github.com/bats-core/bats-assert#4bdd58d3fbcdce3209033d44d884e87add1d8405"
 
 "bats-support@https://github.com/bats-core/bats-support":
   version "0.3.0"
   resolved "https://github.com/bats-core/bats-support#d140a65044b2d6810381935ae7f0c94c7023c8c3"
 
 "bats@https://github.com/bats-core/bats-core#master":
-  version "1.3.0"
-  resolved "https://github.com/bats-core/bats-core#ce5ca2802fabe5dc38393240cd40e20f8928d3b0"
+  version "1.5.0"
+  resolved "https://github.com/bats-core/bats-core#172580d2ce19ee33780b5f1df817bbddced43789"
