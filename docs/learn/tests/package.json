@@ -1,7 +1,7 @@
 {
   "license": "Apache-2.0",
   "scripts": {
-    "test": "bats --jobs 4 --show-output-of-passing-tests --print-output-on-failure ."
+    "test": "bats --jobs 4 --show-output-of-passing-tests --print-output-on-failure --no-parallelize-within-files ."
   },
   "devDependencies": {
     "bats": "https://github.com/bats-core/bats-core#master",
