@@ -13,8 +13,9 @@ import (
 
 var (
 	fsIDPath = cue.MakePath(
-		cue.Hid("_fs", stdlib.EnginePackage),
-		cue.Str("id"),
+		cue.Str("$dagger"),
+		cue.Str("fs"),
+		cue.Hid("_id", stdlib.EnginePackage),
 	)
 )
 

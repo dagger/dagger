@@ -11,8 +11,9 @@ import (
 
 var (
 	serviceIDPath = cue.MakePath(
-		cue.Hid("_service", stdlib.EnginePackage),
-		cue.Str("id"),
+		cue.Str("$dagger"),
+		cue.Str("service"),
+		cue.Hid("_id", stdlib.EnginePackage),
 	)
 )
 

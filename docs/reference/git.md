@@ -16,15 +16,15 @@ Commit & push to git repository
 
 ### git.#Commit Inputs
 
-| Name                     | Type                | Description                              |
-| -------------            |:-------------:      |:-------------:                           |
-|*repository.remote*       | `string`            |Repository remote URL                     |
-|*repository.authToken*    | `*null \| {}`       |Authentication token (PAT or password)    |
-|*repository.branch*       | `string`            |Git branch                                |
-|*name*                    | `string`            |Username                                  |
-|*email*                   | `string`            |Email                                     |
-|*message*                 | `string`            |Commit message                            |
-|*force*                   | `*false \| bool`    |Force push options                        |
+| Name                     | Type                | Description             |
+| -------------            |:-------------:      |:-------------:          |
+|*repository.remote*       | `string`            |Repository remote URL    |
+|*repository.authToken*    | `*null \| {\n       $dagger: {\n                  secret: {}\n    }\n}`    |Authentication token (PAT or password)    |
+|*repository.branch*       | `string`            |Git branch               |
+|*name*                    | `string`            |Username                 |
+|*email*                   | `string`            |Email                    |
+|*message*                 | `string`            |Commit message           |
+|*force*                   | `*false \| bool`    |Force push options       |
 
 ### git.#Commit Outputs
 
@@ -69,8 +69,8 @@ A git repository
 |*remote*          | `string`             |Git remote link                                             |
 |*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"    |
 |*subdir*          | `*null \| string`    |(optional) Subdirectory                                     |
-|*authToken*       | `*null \| {}`        |(optional) Add Personal Access Token                        |
-|*authHeader*      | `*null \| {}`        |(optional) Add OAuth Token                                  |
+|*authToken*       | `*null \| {\n        $dagger: {\n                                                     secret: {}\n    }\n}`    |(optional) Add Personal Access Token    |
+|*authHeader*      | `*null \| {\n        $dagger: {\n                                                     secret: {}\n    }\n}`    |(optional) Add OAuth Token              |
 
 ### git.#Repository Outputs
 
