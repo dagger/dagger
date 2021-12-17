@@ -12,7 +12,7 @@ engine.#Plan & {
 
 		mkdir: engine.#Mkdir & {
 			input: image.output
-			path: "/test"
+			path:  "/test"
 		}
 
 		writeChecker: engine.#WriteFile & {
@@ -24,7 +24,7 @@ engine.#Plan & {
 
 		readChecker: engine.#ReadFile & {
 			input: writeChecker.output
-			path: "/test/foo"
+			path:  "/test/foo"
 		} & {
 			// assert result
 			contents: "bar"

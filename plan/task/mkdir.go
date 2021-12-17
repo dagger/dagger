@@ -69,12 +69,12 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 	}
 
 	// Retrieve result result filesystem
-	outputFs := pctx.FS.New(result)
+	outputFS := pctx.FS.New(result)
 
 	// Init output
 	output := compiler.NewValue()
 
-	if err := output.FillPath(cue.ParsePath("output"), outputFs.MarshalCUE()); err != nil {
+	if err := output.FillPath(cue.ParsePath("output"), outputFS.MarshalCUE()); err != nil {
 		return nil, err
 	}
 	return output, nil

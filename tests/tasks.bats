@@ -58,16 +58,15 @@ setup() {
 
 
 @test "task: #Mkdir" {
+    # Make directory
     cd "$TESTDIR"/tasks/mkdir
     "$DAGGER" --europa up ./mkdir.cue
-}
 
-@test "task: #Mkdir: create parents" {
+    # Create parents
     cd "$TESTDIR"/tasks/mkdir
     "$DAGGER" --europa up ./mkdir_parents.cue
-}
 
-@test "task: #Mkdir failure: disable parents creation" {
+    # Disable parents creation
     cd "$TESTDIR"/tasks/mkdir
     run "$DAGGER" --europa up ./mkdir_failure_disable_parents.cue
     assert_failure

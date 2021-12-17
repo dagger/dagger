@@ -152,7 +152,7 @@ _No output._
 
 ## engine.#Mkdir
 
-Create a directory
+Create one or multiple directory in a container
 
 ### engine.#Mkdir Inputs
 
@@ -211,8 +211,6 @@ _No input._
 _No output._
 
 ## engine.#ReadFile
-
-Read a file from a filesystem tree
 
 ### engine.#ReadFile Inputs
 
