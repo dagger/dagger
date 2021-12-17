@@ -139,6 +139,11 @@ func (v *Value) Int64() (int64, error) {
 }
 
 // Proxy function to the underlying cue.Value
+func (v *Value) Bool() (bool, error) {
+	return v.val.Bool()
+}
+
+// Proxy function to the underlying cue.Value
 func (v *Value) Path() cue.Path {
 	return v.val.Path()
 }

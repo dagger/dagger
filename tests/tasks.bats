@@ -24,3 +24,19 @@ setup() {
     run "$DAGGER" --europa up ./writefile_failure_diff_contents.cue
     assert_failure 
 }
+
+@test "task: #Exec" {
+    cd "$TESTDIR"/tasks/exec
+    "$DAGGER" --europa up ./args.cue
+    "$DAGGER" --europa up ./env.cue
+    "$DAGGER" --europa up ./hosts.cue
+
+    "$DAGGER" --europa up ./mount_cache.cue
+    "$DAGGER" --europa up ./mount_fs.cue
+    TESTSECRET="hello world" "$DAGGER" --europa up ./mount_secret.cue
+    "$DAGGER" --europa up ./mount_tmp.cue
+    "$DAGGER" --europa up ./mount_service.cue
+
+    "$DAGGER" --europa up ./user.cue
+    "$DAGGER" --europa up ./workdir.cue
+}

@@ -8,6 +8,18 @@ sidebar_label: engine
 import "alpha.dagger.io/europa/dagger/engine"
 ```
 
+## engine.#CacheDir
+
+A (best effort) persistent cache dir
+
+### engine.#CacheDir Inputs
+
+_No input._
+
+### engine.#CacheDir Outputs
+
+_No output._
+
 ## engine.#Context
 
 ### engine.#Context Inputs
@@ -15,6 +27,18 @@ import "alpha.dagger.io/europa/dagger/engine"
 _No input._
 
 ### engine.#Context Outputs
+
+_No output._
+
+## engine.#Exec
+
+Execute a command in a container
+
+### engine.#Exec Inputs
+
+_No input._
+
+### engine.#Exec Outputs
 
 _No output._
 
@@ -39,6 +63,18 @@ Container image config. See [OCI](https://www.opencontainers.org/). Spec left op
 _No input._
 
 ### engine.#ImageConfig Outputs
+
+_No output._
+
+## engine.#Mount
+
+A transient filesystem mount.
+
+### engine.#Mount Inputs
+
+_No input._
+
+### engine.#Mount Outputs
 
 _No output._
 
@@ -97,6 +133,18 @@ A reference to a network service endpoint, for example:  - A TCP or UDP port  - 
 _No input._
 
 ### engine.#Service Outputs
+
+_No output._
+
+## engine.#TempDir
+
+A temporary directory for command execution
+
+### engine.#TempDir Inputs
+
+_No input._
+
+### engine.#TempDir Outputs
 
 _No output._
 
