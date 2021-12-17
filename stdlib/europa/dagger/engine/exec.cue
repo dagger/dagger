@@ -63,9 +63,9 @@ package engine
 	} | {
 		type:     "secret"
 		contents: #Secret
-		uid:      uint32 | *0
-		gid:      uint32 | *0
-		optional: true | *false
+		uid:      int | *0
+		gid:      int | *0
+		mask:     int | *0o400
 	}
 }
 

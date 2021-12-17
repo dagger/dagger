@@ -21,8 +21,29 @@ engine.#Plan & {
 				"sh", "-c",
 				#"""
 					test "$(cat /run/secrets/test)" = "hello world"
+					ls -l /run/secrets/test | grep -- "-r--------"
 					"""#,
 			]
 		}
+
+		verifyPerm: engine.#Exec & {
+			input: image.output
+			mounts: secret: {
+				dest:     "/run/secrets/test"
+				contents: context.secrets.testSecret.contents
+				uid:      42
+				gid:      24
+				mask:     0o666
+			}
+			args: [
+				"sh", "-c",
+				#"""
+					ls -l /run/secrets/test | grep -- "-rw-rw-rw-"
+					ls -l /run/secrets/test | grep -- "42"
+					ls -l /run/secrets/test | grep -- "24"
+					"""#,
+			]
+		}
+
 	}
 }

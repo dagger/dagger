@@ -260,10 +260,19 @@ func (t *execTask) mountSecret(pctx *plancontext.Context, dest string, mnt *comp
 		return nil, err
 	}
 
-	// FIXME: handle uid, gid, optional
+	opts := struct {
+		UID  int
+		GID  int
+		Mask int
+	}{}
+
+	if err := mnt.Decode(&opts); err != nil {
+		return nil, err
+	}
+
 	return llb.AddSecret(dest,
 		llb.SecretID(contents.ID()),
-		llb.SecretFileOpt(0, 0, 0400), // uid, gid, mask)
+		llb.SecretFileOpt(opts.UID, opts.GID, opts.Mask),
 	), nil
 }
 
