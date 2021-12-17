@@ -51,7 +51,24 @@ setup() {
     cd "$TESTDIR"/tasks/copy
     "$DAGGER" --europa up ./copy_exec.cue
     "$DAGGER" --europa up ./copy_file.cue
-    
+
     run "$DAGGER" --europa up ./copy_exec_invalid.cue
+    assert_failure
+}
+
+
+@test "task: #Mkdir" {
+    cd "$TESTDIR"/tasks/mkdir
+    "$DAGGER" --europa up ./mkdir.cue
+}
+
+@test "task: #Mkdir: create parents" {
+    cd "$TESTDIR"/tasks/mkdir
+    "$DAGGER" --europa up ./mkdir_parents.cue
+}
+
+@test "task: #Mkdir failure: disable parents creation" {
+    cd "$TESTDIR"/tasks/mkdir
+    run "$DAGGER" --europa up ./mkdir_failure_disable_parents.cue
     assert_failure
 }
