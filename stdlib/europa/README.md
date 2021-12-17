@@ -39,21 +39,3 @@ In Europa, `engine` will deprecate the following implicit API:
 * Convention to reference external secrets from the Cue lattice with `@dagger(secret)`
 * Convention to reference external network endpoints from the Cue lattive with `@dagger(stream)`
 * Convention that some operations (specifically `op.#Local`) are meant to be generated at runtime rather than authored manually.
-
-## TODO LIST
-
-* #Scratch: replace with null #FS?
-* Resolve registry auth special case (buildkit does not support scoping registry auth)
-* Are there runtime limitations in….
-     * using hidden fields `_foo` as part of the DAG?
-     * using `if` statements as part of the DAG?
-     * using inlined Cue expressions as part of the DAG?
-* Readability of error messages
-  * At a minimum don’t make it worse!
-  * Small improvements are good (eg. 
-* Make sure we don’t make error messages LESS readable
-* [Outstanding questions on proxy features](https://github.com/dagger/dagger/pull/1117#discussion_r765211280)
-* [Outstanding questions on #Stream and emulating unix pipes with them](https://github.com/dagger/dagger/pull/1117#discussion_r766145864)
-* [Outstanding questions on engine.#Pull and information loss](https://github.com/dagger/dagger/pull/1117#discussion_r765219049)
-* [Outstanding questions on global registry auth scope in buildkit](https://github.com/dagger/dagger/pull/1117#discussion_r765963051)
-* [Outstanding questions on platform key](https://github.com/dagger/dagger/pull/1117#discussion_r766085610)
