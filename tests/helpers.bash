@@ -10,7 +10,7 @@ common_setup() {
     DAGGER_LOG_FORMAT="plain"
     export DAGGER_LOG_FORMAT
 
-    DAGGER_PROJECT="$(mktemp -d -t dagger-project-XXXXXX)"
+    DAGGER_PROJECT="$BATS_TEST_TMPDIR"
     export DAGGER_PROJECT
 
     SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt

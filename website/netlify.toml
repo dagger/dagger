@@ -15,7 +15,7 @@
 [context.deploy-preview]
   # Do not build the site if there's no site-related changes since the last
   # deploy.
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF . ../docs/"
+  ignore = "git diff --quiet $COMMIT_REF $CACHED_COMMIT_REF -- ./ ../docs/"
   command = "yarn build:withoutAuth"
 
 [[redirects]]
