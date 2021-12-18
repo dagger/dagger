@@ -26,8 +26,5 @@ import (
 //  - An HTTPS endpoint
 #Service: engine.#Service
 
-// A stream of bytes
-#Stream: engine.#Stream
-
 // A network service address
 #Address: engine.#Address
