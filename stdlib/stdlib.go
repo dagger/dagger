@@ -14,7 +14,7 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed **/*.cue **/*/*.cue europa/dagger/*.cue europa/dagger/engine/*.cue europa/dagger/engine/spec/*.cue europa/dagger/engine/spec/engine/*.cue
+	//go:embed **/*.cue **/*/*.cue europa/dagger/*.cue europa/dagger/engine/*.cue
 	FS embed.FS
 
 	ModuleName    = "alpha.dagger.io"
