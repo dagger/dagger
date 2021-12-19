@@ -3,6 +3,7 @@ package engine
 // Execute a command in a container
 #Exec: {
 	_type: "Exec"
+	$dagger: task: _name: "Exec"
 
 	// Container filesystem
 	input: #FS

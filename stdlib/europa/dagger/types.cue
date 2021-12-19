@@ -1,7 +1,7 @@
 package dagger
 
 import (
-	"alpha.dagger.io/europa/dagger/engine/spec/engine"
+	"alpha.dagger.io/europa/dagger/engine"
 )
 
 // A reference to a filesystem tree.

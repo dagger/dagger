@@ -2,7 +2,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine/spec/engine"
+	"dagger.io/dagger/engine"
 )
 
 // Modular build API for Docker containers

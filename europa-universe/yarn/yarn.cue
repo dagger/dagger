@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine/spec/engine"
+	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
