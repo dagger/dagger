@@ -2,7 +2,6 @@ package engine
 
 // Read a file from a filesystem tree
 #ReadFile: {
-	_type: "ReadFile"
 	$dagger: task: _name: "ReadFile"
 
 	// Filesystem tree holding the file
@@ -18,7 +17,6 @@ package engine
 
 // Write a file to a filesystem tree, creating it if needed
 #WriteFile: {
-	_type: "WriteFile"
 	$dagger: task: _name: "WriteFile"
 
 	// Input filesystem tree

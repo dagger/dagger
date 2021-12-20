@@ -17,7 +17,10 @@ import (
 var (
 	ErrNotTask = errors.New("not a task")
 	tasks      sync.Map
-	typePath   = cue.MakePath(cue.Hid("_type", stdlib.EnginePackage))
+	typePath   = cue.MakePath(
+		cue.Str("$dagger"),
+		cue.Str("task"),
+		cue.Hid("_name", stdlib.EnginePackage))
 )
 
 type NewFunc func() Task
