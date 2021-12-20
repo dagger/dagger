@@ -97,4 +97,12 @@ setup() {
     cd "$TESTDIR"/tasks/gitPull/
     "$DAGGER" --europa up ./exists.cue
     "$DAGGER" --europa up ./gitdir.cue
+    run "$DAGGER" --europa up ./invalid.cue
+		assert_failure
+		run "$DAGGER" --europa up ./badremote.cue
+		assert_failure
+		run "$DAGGER" --europa up ./badref.cue
+		assert_failure
+
+
 }
