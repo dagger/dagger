@@ -67,5 +67,5 @@ setup() {
   cd "$TESTDIR"
   run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command.cue
 	assert_failure
-	assert_output --partial 'failed: exec: "rtyet": executable file not found in $PATH'
+	assert_output --partial 'failed: exec: "rtyet": executable file not found'
 }
