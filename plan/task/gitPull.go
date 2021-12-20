@@ -44,15 +44,17 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 	if opts.KeepGitDir {
 		gitOpts = append(gitOpts, llb.KeepGitDir())
 	}
+
 	// Secret
-	if authToken := v.Lookup("auth.token"); authToken.Exists() {
+	if authToken := v.Lookup("authToken"); authToken.Exists() {
 		authTokenSecret, err := pctx.Secrets.FromValue(authToken)
 		if err != nil {
 			return nil, err
 		}
 		gitOpts = append(gitOpts, llb.AuthTokenSecret(authTokenSecret.ID()))
 	}
-	if authHeader := v.Lookup("auth.header"); authHeader.Exists() {
+
+	if authHeader := v.Lookup("authHeader"); authHeader.Exists() {
 		authHeaderSecret, err := pctx.Secrets.FromValue(authHeader)
 		if err != nil {
 			return nil, err
@@ -62,11 +64,7 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 
 	gitOpts = append(gitOpts, withCustomName(v, "FetchGit %s@%s", remoteRedacted, ref))
 
-	st := llb.Git(
-		remote,
-		ref,
-		gitOpts...,
-	)
+	st := llb.Git(remote, ref, gitOpts...)
 
 	result, err := s.Solve(ctx, st, pctx.Platform.Get())
 	if err != nil {
@@ -75,6 +73,6 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 
 	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"contents": fs.MarshalCUE(),
+		"output": fs.MarshalCUE(),
 	})
 }

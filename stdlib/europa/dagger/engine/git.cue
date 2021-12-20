@@ -13,11 +13,10 @@ package engine
 // Pull a directory from a git remote
 #GitPull: {
 	$dagger: task: _name: "GitPull"
-	remote: string
-	ref:    string
-	auth: {
-		token?:  #Secret
-		header?: #Secret
-	}
-	output: #FS
+	remote:      string
+	ref:         string
+	authToken?:  #Secret
+	authHeader?: #Secret
+	keepGitDir:  true | *false
+	output:      #FS
 }
