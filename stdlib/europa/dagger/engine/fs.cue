@@ -63,10 +63,7 @@ package engine
 	$dagger: task: _name: "Copy"
 
 	input: #FS
-	source: {
-		root: #FS
-		path: string | *"/"
-	}
+	#CopyInfo
 	dest:   string
 	output: #FS
 }
