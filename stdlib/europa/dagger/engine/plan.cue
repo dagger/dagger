@@ -72,7 +72,7 @@ _#inputSecret: {
 		envvar: string
 	} | {
 		// Get secret by executing a command ON THE CLIENT MACHINE
-		_type: "SecretExec"
+		$dagger: task: _name: "SecretExec"
 		command: {
 			name: string
 			args: [...string]
