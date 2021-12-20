@@ -96,4 +96,5 @@ setup() {
 @test "task: #GitPull" {
     cd "$TESTDIR"/tasks/gitPull/
     "$DAGGER" --europa up ./exists.cue
+    "$DAGGER" --europa up ./gitdir.cue
 }
