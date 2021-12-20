@@ -80,12 +80,4 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": fs.MarshalCUE(),
 	})
-
-	// output := compiler.NewValue()
-
-	// if err := output.FillPath(cue.ParsePath("output"), fs.MarshalCUE()); err != nil {
-	// 	return nil, err
-	// }
-
-	// return output, nil
 }

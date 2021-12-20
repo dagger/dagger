@@ -63,7 +63,6 @@ package engine
 
 	input: #FS
 	#CopyInfo
-	dest:   string
 	output: #FS
 }
 
