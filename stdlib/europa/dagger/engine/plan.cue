@@ -35,7 +35,7 @@ package engine
 
 _#inputDirectory: {
 	// FIXME: rename to "InputDirectory" for consistency
-	_type: "LocalDirectory"
+	$dagger: task: _name: "LocalDirectory"
 
 	// Import from this path ON THE CLIENT MACHINE
 	// Example: "/Users/Alice/dev/todoapp/src"
@@ -72,11 +72,11 @@ _#inputSecret: {
 		interactive: true | *false
 	} | {
 		// Read secret from a file ON THE CLIENT MACHINE
-		_type: "SecretFile"
-		path:  string
+		$dagger: task: _name: "SecretFile"
+		path: string
 	} | {
 		// Read secret from an environment variable ON THE CLIENT MACHINE
-		_type:  "SecretEnv"
+		$dagger: task: _name: "SecretEnv"
 		envvar: string
 	}
 }
@@ -96,7 +96,7 @@ _#outputDirectory: {
 _#proxyEndpoint: {
 	// Service endpoint can be proxied to action containers as unix sockets
 	// FIXME: should #Service be renamed to #ServiceEndpoint or #Endpoint? Naming things is hard...
-	_type: "Service"
+	$dagger: task: _name: "Service"
 	// FIXME: should be endpoint
 	service:  #Service
 	endpoint: service

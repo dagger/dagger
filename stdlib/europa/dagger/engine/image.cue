@@ -47,7 +47,6 @@ package engine
 
 // Download a container image from a remote repository
 #Pull: {
-	_type: "Pull"
 	$dagger: task: _name: "Pull"
 
 	// Repository source ref
