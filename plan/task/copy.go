@@ -20,19 +20,16 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	var err error
 
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
-
 	if err != nil {
 		return nil, err
 	}
 
 	inputState, err := input.Result().ToState()
-
 	if err != nil {
 		return nil, err
 	}
 
 	sourceRoot, err := pctx.FS.FromValue(v.Lookup("source.root"))
-
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +45,6 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	}
 
 	destPath, err := v.Lookup("dest").String()
-
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +66,6 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	)
 
 	result, err := s.Solve(ctx, outputState, pctx.Platform.Get())
-
 	if err != nil {
 		return nil, err
 	}
