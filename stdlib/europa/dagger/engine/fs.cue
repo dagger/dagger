@@ -59,11 +59,15 @@ package engine
 
 // Copy files from one FS tree to another
 #Copy: {
-	@dagger(notimplemented)
+	// @dagger(notimplemented)
 	$dagger: task: _name: "Copy"
 
 	input: #FS
-	#CopyInfo
+	source: {
+		root: #FS
+		path: string | *"/"
+	}
+	dest:   string
 	output: #FS
 }
 
@@ -83,20 +87,4 @@ package engine
 	input: #FS
 	layers: [...#CopyInfo]
 	output: #FS
-}
-
-#Copy: {
-	_type: "Copy"
-
-	input: #FS
-	#CopyInfo
-	output: #FS
-}
-
-#CopyInfo: {
-	source: {
-		root: #FS
-		path: string | *"/"
-	}
-	dest: string
 }

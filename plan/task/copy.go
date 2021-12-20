@@ -2,9 +2,7 @@ package task
 
 import (
 	"context"
-	"fmt"
 
-	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -40,14 +38,11 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	}
 
 	sourceState, err := sourceRoot.Result().ToState()
-
 	if err != nil {
 		return nil, err
 	}
 
 	sourcePath, err := v.Lookup("source.path").String()
-	fmt.Println(sourcePath)
-
 	if err != nil {
 		return nil, err
 	}
@@ -82,11 +77,15 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 
 	fs := pctx.FS.New(result)
 
-	output := compiler.NewValue()
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"output": fs.MarshalCUE(),
+	})
 
-	if err := output.FillPath(cue.ParsePath("output"), fs.MarshalCUE()); err != nil {
-		return nil, err
-	}
+	// output := compiler.NewValue()
 
-	return output, nil
+	// if err := output.FillPath(cue.ParsePath("output"), fs.MarshalCUE()); err != nil {
+	// 	return nil, err
+	// }
+
+	// return output, nil
 }
