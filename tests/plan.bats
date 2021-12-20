@@ -57,3 +57,15 @@ setup() {
 	assert_failure
 	assert_output --partial 'failed to up environment: actions.verify.contents: conflicting values "local directory" and "local dfsadf"'
 }
+
+@test "plan/inputs/secrets exec" {
+  cd "$TESTDIR"
+  "$DAGGER" --europa up ./plan/inputs/secrets/exec.cue
+}
+
+@test "plan/inputs/secrets invalid command" {
+  cd "$TESTDIR"
+  run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command.cue
+	assert_failure
+	assert_output --partial 'failed: exec: "rtyet": executable file not found'
+}

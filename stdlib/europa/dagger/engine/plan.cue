@@ -63,14 +63,6 @@ _#inputSecret: {
 	contents: #Secret
 
 	{
-		@dagger(notimplemented)
-
-		// Execute a command ON THE CLIENT MACHINE and read secret from standard output
-		command: [string, ...string] | string
-		// Execute command in an interactive terminal
-		//  for example to prompt for a passphrase
-		interactive: true | *false
-	} | {
 		// Read secret from a file ON THE CLIENT MACHINE
 		$dagger: task: _name: "SecretFile"
 		path: string
@@ -78,6 +70,14 @@ _#inputSecret: {
 		// Read secret from an environment variable ON THE CLIENT MACHINE
 		$dagger: task: _name: "SecretEnv"
 		envvar: string
+	} | {
+		// Get secret by executing a command ON THE CLIENT MACHINE
+		_type: "SecretExec"
+		command: {
+			name: string
+			args: [...string]
+			interactive: true | *false @dagger(notimplemented) // FIXME: https://github.com/dagger/dagger/issues/1268
+		}
 	}
 }
 
