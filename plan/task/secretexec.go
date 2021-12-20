@@ -33,7 +33,8 @@ func (c secretExecTask) Run(ctx context.Context, pctx *plancontext.Context, _ so
 
 	lg.Debug().Str("name", secretExec.Command.Name).Str("args", strings.Join(secretExec.Command.Args, " ")).Msg("executing secret command")
 
-	out, err := exec.CommandContext(ctx, secretExec.Command.Name, secretExec.Command.Args...).Output()
+	// sec audited by @aluzzardi and @mrjones
+	out, err := exec.CommandContext(ctx, secretExec.Command.Name, secretExec.Command.Args...).Output() //#nosec G204
 	if err != nil {
 		return nil, err
 	}
