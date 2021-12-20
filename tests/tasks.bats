@@ -60,7 +60,6 @@ setup() {
     assert_failure
 }
 
-
 @test "task: #Mkdir" {
     # Make directory
     cd "$TESTDIR"/tasks/mkdir
@@ -74,4 +73,16 @@ setup() {
     cd "$TESTDIR"/tasks/mkdir
     run "$DAGGER" --europa up ./mkdir_failure_disable_parents.cue
     assert_failure
+}
+
+@test "task: #Build" {
+    cd "$TESTDIR"/tasks/build
+
+    "$DAGGER" --europa up ./dockerfile.cue
+    "$DAGGER" --europa up ./inlined_dockerfile.cue
+    "$DAGGER" --europa up ./dockerfile_path.cue
+    "$DAGGER" --europa up ./build_args.cue
+    "$DAGGER" --europa up ./image_config.cue
+    "$DAGGER" --europa up ./labels.cue
+    "$DAGGER" --europa up ./platform.cue
 }

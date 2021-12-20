@@ -71,7 +71,6 @@ package engine
 // Build a container image using buildkit
 // FIXME: rename to #Dockerfile to clarify scope
 #Build: {
-	@dagger(notimplemented)
 	$dagger: task: _name: "Build"
 
 	// Source directory to build
@@ -83,6 +82,13 @@ package engine
 		} | {
 			contents: string
 		}
+
+		platforms: [...string]
+		target: string
+		buildArg: [string]: string
+		label: [string]:    string
+		target: string
+		hosts: [string]: string
 	}
 
 	// Root filesystem produced by build
