@@ -60,7 +60,7 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 		return nil, err
 	}
 
-	inputState, err := input.Result().ToState()
+	inputState, err := input.State()
 
 	if err != nil {
 		return nil, err

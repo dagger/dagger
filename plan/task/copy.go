@@ -24,7 +24,7 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
-	inputState, err := input.Result().ToState()
+	inputState, err := input.State()
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
-	sourceState, err := sourceRoot.Result().ToState()
+	sourceState, err := sourceRoot.State()
 	if err != nil {
 		return nil, err
 	}

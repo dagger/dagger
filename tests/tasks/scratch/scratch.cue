@@ -22,10 +22,10 @@ engine.#Plan & {
 			args: [
 				"sh", "-c",
 				#"""
-					ls -al
+					test "$(ls -A /)" != ""
+					test "$(ls -A /scratch)" = ""
 					"""#,
 			]
 		}
-
 	}
 }

@@ -26,7 +26,7 @@ func (t execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.S
 	if err != nil {
 		return nil, err
 	}
-	st, err := input.Result().ToState()
+	st, err := input.State()
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (t *execTask) mountFS(pctx *plancontext.Context, dest string, mnt *compiler
 		}
 	}
 
-	st, err := contents.Result().ToState()
+	st, err := contents.State()
 	if err != nil {
 		return nil, err
 	}
