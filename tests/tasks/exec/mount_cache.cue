@@ -32,7 +32,7 @@ engine.#Plan & {
 			input: image.output
 			mounts: cache: {
 				dest:     "/cache"
-				contents: sharedCache
+				contents: exec.mounts.cache.contents
 			}
 			args: [
 				"sh", "-c",
