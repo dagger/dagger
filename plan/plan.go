@@ -86,7 +86,7 @@ func (p *Plan) registerLocalDirs() error {
 }
 
 // Up executes the plan
-func (p *Plan) Up(ctx context.Context, s solver.Solver) error {
+func (p *Plan) Up(ctx context.Context, s solver.Solver) (*compiler.Value, error) {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Up")
 	defer span.End()
 
@@ -98,7 +98,7 @@ func (p *Plan) Up(ctx context.Context, s solver.Solver) error {
 		newRunner(p.context, s, computed),
 	)
 	if err := flow.Run(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	if src, err := computed.Source(); err == nil {
@@ -109,9 +109,9 @@ func (p *Plan) Up(ctx context.Context, s solver.Solver) error {
 	// Check explicitly if the context is canceled.
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
-		return nil
+		return computed, nil
 	}
 }
 
