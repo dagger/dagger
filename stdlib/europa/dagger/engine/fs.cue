@@ -1,6 +1,26 @@
 package engine
 
-// Read a file from a filesystem tree
+// Create one or multiple directory in a container
+#Mkdir: {
+	$dagger: task: _name: "Mkdir"
+
+	// Container filesystem
+	input: #FS
+
+	// Path of the directory to create
+	// It can be nested (e.g : "/foo" or "/foo/bar")
+	path: string
+
+	// Permissions to set
+	mode: *0o755 | int
+
+	// If set, it creates parents' directory if they do not exist
+	parents: *true | false
+
+	// Modified filesystem
+	output: #FS
+}
+
 #ReadFile: {
 	$dagger: task: _name: "ReadFile"
 
@@ -36,23 +56,6 @@ package engine
 #Scratch: {
 	@dagger(notimplemented)
 	$dagger: task: _name: "Scratch"
-
-	output: #FS
-}
-
-// Create a directory
-#Mkdir: {
-	@dagger(notimplemented)
-	$dagger: task: _name: "Mkdir"
-
-	input: #FS
-
-	// Path of the directory
-	path: string
-	// FIXME: permissions?
-	mode: int
-	// Create parent directories as needed?
-	parents: *true | false
 
 	output: #FS
 }

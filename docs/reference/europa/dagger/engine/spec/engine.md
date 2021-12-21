@@ -150,7 +150,7 @@ _No output._
 
 ## engine.#Mkdir
 
-Create a directory
+Create one or multiple directory in a container Create a directory
 
 ### engine.#Mkdir Inputs
 
