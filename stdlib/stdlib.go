@@ -8,8 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-
-	"github.com/gofrs/flock"
 )
 
 var (
@@ -20,21 +18,9 @@ var (
 	ModuleName    = "alpha.dagger.io"
 	EnginePackage = fmt.Sprintf("%s/europa/dagger/engine", ModuleName)
 	Path          = path.Join("cue.mod", "pkg", ModuleName)
-	lockFilePath  = path.Join("cue.mod", "dagger.lock")
 )
 
 func Vendor(ctx context.Context, mod string) error {
-	lockFilePath := path.Join(mod, lockFilePath)
-	fileLock := flock.New(lockFilePath)
-	if err := fileLock.Lock(); err != nil {
-		return err
-	}
-
-	defer func() {
-		fileLock.Unlock()
-		os.Remove(lockFilePath)
-	}()
-
 	// Remove any existing copy of the universe
 	if err := os.RemoveAll(path.Join(mod, Path)); err != nil {
 		return err
