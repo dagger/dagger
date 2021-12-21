@@ -14,6 +14,11 @@ setup() {
     "$DAGGER" --europa up ./pull_auth.cue
 }
 
+@test "task: #Push" {
+    cd "$TESTDIR"/tasks/push
+    "$DAGGER" --europa up ./push.cue
+}
+
 @test "task: #ReadFile" {
     cd "$TESTDIR"/tasks/readfile
     "$DAGGER" --europa up
