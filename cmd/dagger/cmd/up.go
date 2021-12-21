@@ -148,8 +148,21 @@ func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 	}
 
 	return cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-		if err := p.Up(ctx, s); err != nil {
+		computed, err := p.Up(ctx, s)
+		if err != nil {
 			return err
+		}
+
+		if output := viper.GetString("output"); output != "" {
+			data := computed.JSON().PrettyString()
+			if output == "-" {
+				fmt.Println(data)
+				return nil
+			}
+			err := os.WriteFile(output, []byte(data), 0600)
+			if err != nil {
+				lg.Fatal().Err(err).Str("path", output).Msg("failed to write output")
+			}
 		}
 
 		return nil
@@ -206,6 +219,7 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 
 func init() {
 	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
+	upCmd.Flags().String("output", "", "Write computed output. Prints on stdout if set to-")
 
 	if err := viper.BindPFlags(upCmd.Flags()); err != nil {
 		panic(err)
