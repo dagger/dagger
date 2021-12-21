@@ -6,6 +6,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"github.com/google/uuid"
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/stdlib"
@@ -30,6 +31,17 @@ type FS struct {
 
 func (fs *FS) Result() bkgw.Reference {
 	return fs.result
+}
+
+// func (fs *FS) FS() *solver.BuildkitFS {
+// 	return solver.NewBuildkitFS(fs.result)
+// }
+
+func (fs *FS) State() (llb.State, error) {
+	if fs.Result() == nil {
+		return llb.State{}, nil
+	}
+	return fs.Result().ToState()
 }
 
 func (fs *FS) MarshalCUE() *compiler.Value {

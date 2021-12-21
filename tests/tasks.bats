@@ -88,3 +88,8 @@ setup() {
 
     "$DAGGER" --europa up ./build_auth.cue
 }
+@test "task: #Scratch" {
+    cd "$TESTDIR"/tasks/scratch
+    "$DAGGER" --europa up ./scratch.cue -l debug
+}
+
