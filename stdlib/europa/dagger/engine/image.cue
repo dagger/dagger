@@ -83,6 +83,14 @@ package engine
 			contents: string
 		}
 
+		// Authentication
+		auth: [...{
+			target:   string
+			username: string
+			secret:   string | #Secret
+		}]
+
+		// FIXME: options ported from op.#DockerBuild
 		platforms: [...string]
 		target: string
 		buildArg: [string]: string

@@ -85,4 +85,6 @@ setup() {
     "$DAGGER" --europa up ./image_config.cue
     "$DAGGER" --europa up ./labels.cue
     "$DAGGER" --europa up ./platform.cue
+
+    "$DAGGER" --europa up ./build_auth.cue
 }

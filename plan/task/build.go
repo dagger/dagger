@@ -3,10 +3,10 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	"cuelang.org/go/cue"
 	bkplatforms "github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -14,6 +14,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
+	"github.com/rs/zerolog/log"
 
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -42,7 +43,17 @@ func (t *buildTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 }
 
 func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	// FIXME: support auth
+	lg := log.Ctx(ctx)
+
+	// Read auth info
+	auth, err := decodeAuthValue(pctx, v.Lookup("auth"))
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range auth {
+		s.AddCredentials(a.Target, a.Username, a.Secret.PlainText())
+		lg.Debug().Str("target", a.Target).Msg("add target credentials")
+	}
 
 	source, err := pctx.FS.FromValue(v.Lookup("source"))
 	if err != nil {
@@ -104,23 +115,20 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 		return nil, err
 	}
 
-	out := compiler.NewValue()
-	if err := out.FillPath(cue.ParsePath("output"), pctx.FS.New(ref).MarshalCUE()); err != nil {
-		return nil, err
+	// Image metadata
+	meta, ok := res.Metadata[exptypes.ExporterImageConfigKey]
+	if !ok {
+		return nil, errors.New("build returned no image config")
+	}
+	var image dockerfile2llb.Image
+	if err := json.Unmarshal(meta, &image); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
 	}
 
-	// Load image metadata
-	if meta, ok := res.Metadata[exptypes.ExporterImageConfigKey]; ok {
-		var image dockerfile2llb.Image
-		if err := json.Unmarshal(meta, &image); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
-		}
-		if err := out.FillPath(cue.ParsePath("config"), image.Config); err != nil {
-			return nil, err
-		}
-	}
-
-	return out, nil
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"output": pctx.FS.New(ref).MarshalCUE(),
+		"config": image.Config,
+	})
 }
 
 func (t *buildTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
