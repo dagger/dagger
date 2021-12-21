@@ -2,7 +2,6 @@ package engine
 
 // Upload a container image to a remote repository
 #Push: {
-	@dagger(notimplemented)
 	$dagger: task: _name: "Push"
 
 	// Target repository address
