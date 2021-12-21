@@ -91,12 +91,11 @@ package engine
 		}]
 
 		// FIXME: options ported from op.#DockerBuild
-		platforms: [...string]
-		target: string
-		buildArg: [string]: string
-		label: [string]:    string
-		target: string
-		hosts: [string]: string
+		platforms?: [...string]
+		target?: string
+		buildArg?: [string]: string
+		label?: [string]:    string
+		hosts?: [string]:    string
 	}
 
 	// Root filesystem produced by build
