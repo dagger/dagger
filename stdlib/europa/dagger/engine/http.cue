@@ -18,7 +18,6 @@ package engine
 
 // Fetch a file over HTTP
 #HTTPFetch: {
-	@dagger(notimplemented)
 	$dagger: task: _name: "HTTPFetch"
 
 	// Source url
