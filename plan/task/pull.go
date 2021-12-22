@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/docker/distribution/reference"
@@ -56,16 +55,6 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		LogName:  vertexNamef(v, "load metadata for %s", ref.String()),
 		Platform: &platform,
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	imageJSON, err := json.Marshal(image)
-	if err != nil {
-		return nil, err
-	}
-	// Apply Image Config on top of LLB instructions
-	st, err = st.WithImageConfig(imageJSON)
 	if err != nil {
 		return nil, err
 	}
