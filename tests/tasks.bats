@@ -93,3 +93,18 @@ setup() {
     "$DAGGER" --europa up ./scratch.cue -l debug
 }
 
+@test "task: #GitPull" {
+    cd "$TESTDIR"
+    "$DAGGER" --europa up ./tasks/gitPull/exists.cue
+    "$DAGGER" --europa up ./tasks/gitPull/git_dir.cue
+    "$DAGGER" --europa up ./tasks/gitPull/private_repo.cue
+
+    run "$DAGGER" --europa up ./tasks/gitPull/invalid.cue
+    assert_failure
+    run "$DAGGER" --europa up ./tasks/gitPull/bad_remote.cue
+    assert_failure
+    run "$DAGGER" --europa up ./tasks/gitPull/bad_ref.cue
+    assert_failure
+
+
+}

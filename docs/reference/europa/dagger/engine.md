@@ -92,7 +92,7 @@ _No output._
 
 ## engine.#GitPull
 
-Pull a directory from a git remote
+Pull a directory from a git remote Warning: do NOT embed credentials in the remote url as this will expose them in logs. By using username and password Dagger will handle this for you in a secure manner.
 
 ### engine.#GitPull Inputs
 
