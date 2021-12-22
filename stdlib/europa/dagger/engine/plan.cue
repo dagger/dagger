@@ -97,7 +97,7 @@ _#inputSecretExec: {
 }
 
 _#outputDirectory: {
-	@dagger(notimplemented)
+	$dagger: task: _name: "OutputDirectory"
 
 	// Filesystem contents to export
 	// Reference an #FS field produced by an action

@@ -69,3 +69,11 @@ setup() {
 	assert_failure
 	assert_output --partial 'failed: exec: "rtyet": executable file not found'
 }
+
+@test "plan/outputs" {
+    cd "$TESTDIR"/plan/outputs
+
+    rm -f "./out/test"
+    "$DAGGER" --europa up ./outputs.cue
+    assert [ -f "./out/test" ]
+}
