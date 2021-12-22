@@ -25,7 +25,7 @@ engine.#Plan & {
 		testContent: engine.#Exec & {
 			input:  alpine.output
 			always: true
-			args: ["ls", "-l", "/repo"]
+			args: ["ls", "-l", "/repo/README.md"]
 			mounts: inputRepo: {
 				dest:     "/repo"
 				contents: testRepo.output
