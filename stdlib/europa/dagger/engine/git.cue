@@ -11,9 +11,8 @@ package engine
 }
 
 // Pull a directory from a git remote
-// Note: do not add credentials to the remote url: e.g: https://username:password@github.com
-// as this will expose those in logs. By using username and password (as #Secret) Dagger will
-// url encode them for you
+// Warning: do NOT embed credentials in the remote url as this will expose them in logs. 
+// By using username and password Dagger will handle this for you in a secure manner.
 #GitPull: {
 	$dagger: task: _name: "GitPull"
 	remote:     string
