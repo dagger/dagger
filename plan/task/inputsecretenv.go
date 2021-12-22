@@ -12,13 +12,13 @@ import (
 )
 
 func init() {
-	Register("SecretEnv", func() Task { return &secretEnvTask{} })
+	Register("InputSecretEnv", func() Task { return &inputSecretEnvTask{} })
 }
 
-type secretEnvTask struct {
+type inputSecretEnvTask struct {
 }
 
-func (c secretEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *inputSecretEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	var secretEnv struct {

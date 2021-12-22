@@ -12,13 +12,13 @@ import (
 )
 
 func init() {
-	Register("Service", func() Task { return &serviceTask{} })
+	Register("ProxyEndpoint", func() Task { return &proxyEndpointTask{} })
 }
 
-type serviceTask struct {
+type proxyEndpointTask struct {
 }
 
-func (c serviceTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *proxyEndpointTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var unix, npipe string
 	var stringErr error
 

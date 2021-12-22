@@ -12,13 +12,13 @@ import (
 )
 
 func init() {
-	Register("SecretExec", func() Task { return &secretExecTask{} })
+	Register("InputSecretExec", func() Task { return &inputSecretExecTask{} })
 }
 
-type secretExecTask struct {
+type inputSecretExecTask struct {
 }
 
-func (c secretExecTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *inputSecretExecTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var secretExec struct {
 		Command struct {
 			Name string

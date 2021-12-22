@@ -11,13 +11,13 @@ import (
 )
 
 func init() {
-	Register("SecretFile", func() Task { return &secretFileTask{} })
+	Register("InputSecretFile", func() Task { return &inputSecretFileTask{} })
 }
 
-type secretFileTask struct {
+type inputSecretFileTask struct {
 }
 
-func (c secretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *inputSecretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	var secretFile struct {

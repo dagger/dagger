@@ -35,7 +35,7 @@ package engine
 
 _#inputDirectory: {
 	// FIXME: rename to "InputDirectory" for consistency
-	$dagger: task: _name: "LocalDirectory"
+	$dagger: task: _name: "InputDirectory"
 
 	// Import from this path ON THE CLIENT MACHINE
 	// Example: "/Users/Alice/dev/todoapp/src"
@@ -56,29 +56,44 @@ _#inputDirectory: {
 
 // Securely receive a secret from the client
 _#inputSecret: {
+	_#inputSecretEnv | _#inputSecretFile | _#inputSecretExec
+
 	// Reference to the secret contents
 	// Use this by securely mounting it into a container.
 	// See universe.dagger.io/docker.#Run.mounts
 	// FIXME: `contents` field name causes confusion (not actually the secret contents..)
 	contents: #Secret
+}
 
-	{
-		// Read secret from a file ON THE CLIENT MACHINE
-		$dagger: task: _name: "SecretFile"
-		path: string
-	} | {
-		// Read secret from an environment variable ON THE CLIENT MACHINE
-		$dagger: task: _name: "SecretEnv"
-		envvar: string
-	} | {
-		// Get secret by executing a command ON THE CLIENT MACHINE
-		$dagger: task: _name: "SecretExec"
-		command: {
-			name: string
-			args: [...string]
-			interactive: true | *false @dagger(notimplemented) // FIXME: https://github.com/dagger/dagger/issues/1268
-		}
+// Read secret from an environment variable ON THE CLIENT MACHINE
+_#inputSecretEnv: {
+	$dagger: task: _name: "InputSecretEnv"
+
+	envvar: string
+
+	contents: #Secret
+}
+
+// Read secret from a file ON THE CLIENT MACHINE
+_#inputSecretFile: {
+	$dagger: task: _name: "InputSecretFile"
+
+	path: string
+
+	contents: #Secret
+}
+
+// Get secret by executing a command ON THE CLIENT MACHINE
+_#inputSecretExec: {
+	$dagger: task: _name: "InputSecretExec"
+
+	command: {
+		name: string
+		args: [...string]
+		interactive: true | *false @dagger(notimplemented) // FIXME: https://github.com/dagger/dagger/issues/1268
 	}
+
+	contents: #Secret
 }
 
 _#outputDirectory: {
@@ -94,9 +109,10 @@ _#outputDirectory: {
 
 // Forward a network endpoint to and from the client
 _#proxyEndpoint: {
+	$dagger: task: _name: "ProxyEndpoint"
+
 	// Service endpoint can be proxied to action containers as unix sockets
 	// FIXME: should #Service be renamed to #ServiceEndpoint or #Endpoint? Naming things is hard...
-	$dagger: task: _name: "Service"
 	// FIXME: should be endpoint
 	service:  #Service
 	endpoint: service
