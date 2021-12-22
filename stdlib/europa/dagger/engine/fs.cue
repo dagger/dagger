@@ -54,7 +54,6 @@ package engine
 
 // Produce an empty directory
 #Scratch: {
-	@dagger(notimplemented)
 	$dagger: task: _name: "Scratch"
 
 	output: #FS

@@ -33,13 +33,9 @@ func (fs *FS) Result() bkgw.Reference {
 	return fs.result
 }
 
-// func (fs *FS) FS() *solver.BuildkitFS {
-// 	return solver.NewBuildkitFS(fs.result)
-// }
-
 func (fs *FS) State() (llb.State, error) {
 	if fs.Result() == nil {
-		return llb.State{}, nil
+		return llb.Scratch(), nil
 	}
 	return fs.Result().ToState()
 }
