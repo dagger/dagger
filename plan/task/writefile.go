@@ -48,7 +48,7 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 		return nil, err
 	}
 
-	mode, err := v.Lookup("mode").Int64()
+	permissions, err := v.Lookup("permissions").Int64()
 
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 	}
 
 	outputState := inputState.File(
-		llb.Mkfile(path, fs.FileMode(mode), contents),
+		llb.Mkfile(path, fs.FileMode(permissions), contents),
 		withCustomName(v, "WriteFile %s", path),
 	)
 
@@ -77,11 +77,11 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 		return nil, err
 	}
 
-	fs := pctx.FS.New(result)
+	outputFS := pctx.FS.New(result)
 
 	output := compiler.NewValue()
 
-	if err := output.FillPath(cue.ParsePath("output"), fs.MarshalCUE()); err != nil {
+	if err := output.FillPath(cue.ParsePath("output"), outputFS.MarshalCUE()); err != nil {
 		return nil, err
 	}
 

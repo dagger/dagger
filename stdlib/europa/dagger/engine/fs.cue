@@ -11,8 +11,8 @@ package engine
 	// It can be nested (e.g : "/foo" or "/foo/bar")
 	path: string
 
-	// Permissions to set
-	mode: *0o755 | int
+	// Permissions of the directory
+	permissions: *0o755 | int
 
 	// If set, it creates parents' directory if they do not exist
 	parents: *true | false
@@ -43,8 +43,7 @@ package engine
 	// Contents to write
 	contents: string
 	// Permissions of the file
-	// FIXME: rename to 'permissions' for consistency
-	mode: int
+	permissions: int
 	// Output filesystem tree
 	output: #FS
 }

@@ -16,10 +16,10 @@ engine.#Plan & {
 		}
 
 		writeChecker: engine.#WriteFile & {
-			input:    mkdir.output
-			path:     "/test/baz/foo"
-			contents: "bar"
-			mode:     700
+			input:       mkdir.output
+			path:        "/test/baz/foo"
+			contents:    "bar"
+			permissions: 700
 		}
 
 		readChecker: engine.#ReadFile & {
