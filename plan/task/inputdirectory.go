@@ -11,13 +11,13 @@ import (
 )
 
 func init() {
-	Register("LocalDirectory", func() Task { return &localDirectoryTask{} })
+	Register("InputDirectory", func() Task { return &inputDirectoryTask{} })
 }
 
-type localDirectoryTask struct {
+type inputDirectoryTask struct {
 }
 
-func (c localDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *inputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var dir struct {
 		Path    string
 		Include []string
