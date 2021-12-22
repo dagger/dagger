@@ -30,9 +30,6 @@ package engine
 	path: string
 	// Contents of the file
 	contents: string
-	// Output filesystem tree
-	// FIXME: this is a no-op. No output needed.
-	output: #FS
 }
 
 // Write a file to a filesystem tree, creating it if needed
