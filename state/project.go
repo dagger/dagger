@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/keychain"
 	"go.dagger.io/dagger/plancontext"
@@ -31,6 +32,7 @@ const (
 	planDir      = "plan"
 	manifestFile = "values.yaml"
 	computedFile = "computed.json"
+	lockFilePath = "dagger.lock"
 )
 
 type Project struct {
@@ -357,12 +359,6 @@ func cueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
 	modDir := path.Join(parentDir, "cue.mod")
-	if err := os.Mkdir(modDir, 0755); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			return err
-		}
-	}
-
 	modFile := path.Join(modDir, "module.cue")
 	if _, err := os.Stat(modFile); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -394,6 +390,28 @@ func VendorUniverse(ctx context.Context, p string) error {
 	if p == "" {
 		p = getCueModParent()
 	}
+
+	cueModDir := path.Join(p, "cue.mod")
+	if err := os.Mkdir(cueModDir, 0755); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+
+	if err := os.MkdirAll(cueModDir, 0755); err != nil {
+		return err
+	}
+
+	lockFilePath := path.Join(cueModDir, lockFilePath)
+	fileLock := flock.New(lockFilePath)
+	if err := fileLock.Lock(); err != nil {
+		return err
+	}
+
+	defer func() {
+		fileLock.Unlock()
+		os.Remove(lockFilePath)
+	}()
 
 	// ensure cue module is initialized
 	if err := cueModInit(ctx, p); err != nil {
