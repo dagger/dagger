@@ -55,6 +55,7 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 			return nil, err
 		}
 
+		lg.Debug().Str("username", gitPull.Auth.Username).Str("password", "***").Msg("using username:password auth")
 		remote.User = url.UserPassword(gitPull.Auth.Username, strings.TrimSpace(pwdSecret.PlainText()))
 		gitPull.Remote = remote.String()
 	} else if authToken := v.Lookup("auth.authToken"); plancontext.IsSecretValue(authToken) {
