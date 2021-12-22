@@ -24,7 +24,9 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 		Remote     string
 		Ref        string
 		KeepGitDir bool
-		Username   string
+		Auth       struct {
+			Username string
+		}
 	}
 
 	if err := v.Decode(&gitPull); err != nil {
@@ -40,8 +42,8 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 		gitOpts = append(gitOpts, llb.KeepGitDir())
 	}
 
-	if gitPull.Username != "" {
-		pwd := v.Lookup("password")
+	if gitPull.Auth.Username != "" {
+		pwd := v.Lookup("auth.password")
 
 		pwdSecret, err := pctx.Secrets.FromValue(pwd)
 		if err != nil {
@@ -53,16 +55,16 @@ func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solve
 			return nil, err
 		}
 
-		remote.User = url.UserPassword(gitPull.Username, strings.TrimSpace(pwdSecret.PlainText()))
+		remote.User = url.UserPassword(gitPull.Auth.Username, strings.TrimSpace(pwdSecret.PlainText()))
 		gitPull.Remote = remote.String()
-	} else if authToken := v.Lookup("authToken"); plancontext.IsSecretValue(authToken) {
+	} else if authToken := v.Lookup("auth.authToken"); plancontext.IsSecretValue(authToken) {
 		authTokenSecret, err := pctx.Secrets.FromValue(authToken)
 		if err != nil {
 			return nil, err
 		}
 		lg.Debug().Str("authToken", "***").Msg("adding git option")
 		gitOpts = append(gitOpts, llb.AuthTokenSecret(authTokenSecret.ID()))
-	} else if authHeader := v.Lookup("authHeader"); plancontext.IsSecretValue(authHeader) {
+	} else if authHeader := v.Lookup("auth.authHeader"); plancontext.IsSecretValue(authHeader) {
 		authHeaderSecret, err := pctx.Secrets.FromValue(authHeader)
 		if err != nil {
 			return nil, err

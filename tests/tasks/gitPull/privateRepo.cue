@@ -14,10 +14,12 @@ engine.#Plan & {
 		}
 
 		testRepo: engine.#GitPull & {
-			remote:   "https://github.com/dagger/dagger.git"
-			ref:      "main"
-			username: "dagger-test"
-			password: inputs.secrets.token.contents
+			remote: "https://github.com/dagger/dagger.git"
+			ref:    "main"
+			auth: {
+				username: "dagger-test"
+				password: inputs.secrets.token.contents
+			}
 		}
 
 		testContent: engine.#Exec & {

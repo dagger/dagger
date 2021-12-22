@@ -19,7 +19,7 @@ package engine
 	remote:     string
 	ref:        string
 	keepGitDir: true | *false
-	{
+	auth?:      {
 		username: string
 		password: #Secret // can be password or personal access token
 	} | {
