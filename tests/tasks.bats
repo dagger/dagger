@@ -94,16 +94,16 @@ setup() {
 }
 
 @test "task: #GitPull" {
-    cd "$TESTDIR"/tasks/gitPull/
-    "$DAGGER" --europa up ./exists.cue
-    "$DAGGER" --europa up ./gitdir.cue
-    "$DAGGER" --europa up ./privateRepo.cue
+    cd "$TESTDIR"
+    "$DAGGER" --europa up ./tasks/gitPull/exists.cue
+    "$DAGGER" --europa up ./tasks/gitPull/git_dir.cue
+    "$DAGGER" --europa up ./tasks/gitPull/private_repo.cue
 
-    run "$DAGGER" --europa up ./invalid.cue
+    run "$DAGGER" --europa up ./tasks/gitPull/invalid.cue
     assert_failure
-    run "$DAGGER" --europa up ./badremote.cue
+    run "$DAGGER" --europa up ./tasks/gitPull/bad_remote.cue
     assert_failure
-    run "$DAGGER" --europa up ./badref.cue
+    run "$DAGGER" --europa up ./tasks/gitPull/bad_ref.cue
     assert_failure
 
 
