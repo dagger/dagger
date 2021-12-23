@@ -62,7 +62,7 @@ setup() {
   cd "$TESTDIR"
   run "$DAGGER" --europa up ./plan/inputs/directories/conflicting_values.cue
 	assert_failure
-	assert_output --partial 'failed to up environment: actions.verify.contents: conflicting values "local directory" and "local dfsadf"'
+	assert_output --partial 'conflicting values "local directory" and "local dfsadf"'
 }
 
 @test "plan/inputs/secrets exec" {

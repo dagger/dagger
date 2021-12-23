@@ -2,9 +2,7 @@ package plan
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -43,11 +41,11 @@ func Load(ctx context.Context, args ...string) (*Plan, error) {
 		source:  v,
 	}
 
-	if err := p.registerLocalDirs(); err != nil {
+	if err := p.configPlatform(); err != nil {
 		return nil, err
 	}
 
-	if err := p.configPlatform(); err != nil {
+	if err := p.prepare(ctx); err != nil {
 		return nil, err
 	}
 
@@ -87,26 +85,39 @@ func (p *Plan) configPlatform() error {
 	return nil
 }
 
-// registerLocalDirectories scans the context for local imports.
-// BuildKit requires to known the list of directories ahead of time.
-func (p *Plan) registerLocalDirs() error {
-	imports, err := p.source.Lookup("inputs.directories").Fields()
-	if err != nil {
-		return err
-	}
+// prepare executes the pre-run hooks of tasks
+func (p *Plan) prepare(ctx context.Context) error {
+	flow := cueflow.New(
+		&cueflow.Config{},
+		p.source.Cue(),
+		func(flowVal cue.Value) (cueflow.Runner, error) {
+			v := compiler.Wrap(flowVal)
+			t, err := task.Lookup(v)
+			if err != nil {
+				// Not a task
+				if err == task.ErrNotTask {
+					return nil, nil
+				}
+				return nil, err
+			}
+			r, ok := t.(task.PreRunner)
+			if !ok {
+				return nil, nil
+			}
 
-	for _, v := range imports {
-		dir, err := v.Value.Lookup("path").AbsPath()
-		if err != nil {
-			return err
-		}
-		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("path %q does not exist", dir)
-		}
-		p.context.LocalDirs.Add(dir)
-	}
+			return cueflow.RunnerFunc(func(t *cueflow.Task) error {
+				ctx := t.Context()
+				lg := log.Ctx(ctx).With().Str("task", t.Path().String()).Logger()
+				ctx = lg.WithContext(ctx)
 
-	return nil
+				if err := r.PreRun(ctx, p.context, compiler.Wrap(t.Value())); err != nil {
+					return fmt.Errorf("%s: %w", t.Path().String(), err)
+				}
+				return nil
+			}), nil
+		},
+	)
+	return flow.Run(ctx)
 }
 
 // Up executes the plan
@@ -175,7 +186,7 @@ func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Va
 				} else {
 					lg.Error().Dur("duration", time.Since(start)).Err(err).Str("state", string(environment.StateFailed)).Msg(string(environment.StateFailed))
 				}
-				return err
+				return fmt.Errorf("%s: %w", t.Path().String(), err)
 			}
 
 			lg.Info().Dur("duration", time.Since(start)).Str("state", string(environment.StateCompleted)).Msg(string(environment.StateCompleted))

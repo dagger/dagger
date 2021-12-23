@@ -2,6 +2,9 @@ package task
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/rs/zerolog/log"
@@ -15,6 +18,20 @@ func init() {
 }
 
 type inputDirectoryTask struct {
+}
+
+func (c *inputDirectoryTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {
+	path, err := v.Lookup("path").AbsPath()
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("path %q does not exist", path)
+	}
+	pctx.LocalDirs.Add(path)
+
+	return nil
 }
 
 func (c *inputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
