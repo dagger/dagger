@@ -132,3 +132,15 @@ setup() {
 
     "$DAGGER" --europa up ./newsecret.cue
 }
+
+@test "task: #Source" {
+    cd "$TESTDIR"/tasks/source
+    "$DAGGER" --europa up ./source.cue
+    "$DAGGER" --europa up ./source_include_exclude.cue
+
+    run "$DAGGER" --europa up ./source_invalid_path.cue
+    assert_failure
+
+    run "$DAGGER" --europa up ./source_not_exist.cue
+    assert_failure
+}
