@@ -105,6 +105,11 @@ setup() {
     assert_failure
     run "$DAGGER" --europa up ./tasks/gitPull/bad_ref.cue
     assert_failure
+}
 
-
+@test "task: #HTTPFetch" {
+    cd "$TESTDIR"
+    "$DAGGER" --europa up ./tasks/httpfetch/exist.cue
+    run "$DAGGER" --europa up ./tasks/httpfetch/not_exist.cue
+    assert_failure
 }
