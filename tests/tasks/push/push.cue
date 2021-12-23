@@ -6,7 +6,10 @@ import (
 )
 
 engine.#Plan & {
-	inputs: secrets: dockerHubToken: envvar: "DOCKERHUB_TOKEN"
+	inputs: secrets: dockerHubToken: command: {
+		name: "sops"
+		args: ["exec-env", "./secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
+	}
 
 	#auth: [{
 		target:   "daggerio/ci-test:private-pull"

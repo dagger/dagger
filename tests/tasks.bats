@@ -10,13 +10,13 @@ setup() {
 }
 
 @test "task: #Pull with auth" {
-    cd "$TESTDIR"/tasks/pull
-    "$DAGGER" --europa up ./pull_auth.cue
+    cd "$TESTDIR"
+    "$DAGGER" --europa up ./tasks/pull/pull_auth.cue
 }
 
 @test "task: #Push" {
-    cd "$TESTDIR"/tasks/push
-    "$DAGGER" --europa up ./push.cue
+    cd "$TESTDIR"
+    "$DAGGER" --europa up ./tasks/push/push.cue
 }
 
 @test "task: #ReadFile" {
@@ -86,7 +86,8 @@ setup() {
     "$DAGGER" --europa up ./labels.cue
     "$DAGGER" --europa up ./platform.cue
 
-    "$DAGGER" --europa up ./build_auth.cue
+    cd "$TESTDIR"
+    "$DAGGER" --europa up ./tasks/build/build_auth.cue
 }
 @test "task: #Scratch" {
     cd "$TESTDIR"/tasks/scratch

@@ -6,8 +6,11 @@ import (
 
 engine.#Plan & {
 	inputs: {
-		directories: testdata: path:     "./testdata"
-		secrets: dockerHubToken: envvar: "DOCKERHUB_TOKEN"
+		directories: testdata: path: "./tasks/build/testdata"
+		secrets: dockerHubToken: command: {
+			name: "sops"
+			args: ["exec-env", "./secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
+		}
 	}
 
 	actions: build: engine.#Build & {
