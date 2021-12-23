@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"net/url"
 
@@ -54,11 +55,11 @@ func (c httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s sol
 		httpOpts = append(httpOpts, llb.Filename(httpFetch.Dest))
 	}
 	if httpFetch.Permissions != 0 {
-		lg.Debug().Str("permissions", string(httpFetch.Permissions)).Msg("adding http option")
+		lg.Debug().Str("permissions", fmt.Sprint(httpFetch.Permissions)).Msg("adding http option")
 		httpOpts = append(httpOpts, llb.Chmod(fs.FileMode(httpFetch.Permissions)))
 	}
 	if httpFetch.UID != 0 && httpFetch.GID != 0 {
-		lg.Debug().Str("uid", string(httpFetch.UID)).Str("gid", string(httpFetch.GID)).Msg("adding http option")
+		lg.Debug().Str("uid", fmt.Sprint(httpFetch.UID)).Str("gid", fmt.Sprint(httpFetch.GID)).Msg("adding http option")
 		httpOpts = append(httpOpts, llb.Chown(httpFetch.UID, httpFetch.GID))
 	}
 
