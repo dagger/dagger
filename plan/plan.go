@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,16 +96,12 @@ func (p *Plan) registerLocalDirs() error {
 	}
 
 	for _, v := range imports {
-		dir, err := v.Value.Lookup("path").String()
+		dir, err := v.Value.Lookup("path").AbsPath()
 		if err != nil {
 			return err
 		}
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			return err
-		}
-		if _, err := os.Stat(abs); errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("path %q does not exist", abs)
+		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("path %q does not exist", dir)
 		}
 		p.context.LocalDirs.Add(dir)
 	}

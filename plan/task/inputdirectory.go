@@ -18,8 +18,12 @@ type inputDirectoryTask struct {
 }
 
 func (c *inputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+	path, err := v.Lookup("path").AbsPath()
+	if err != nil {
+		return nil, err
+	}
+
 	var dir struct {
-		Path    string
 		Include []string
 		Exclude []string
 	}
@@ -29,13 +33,13 @@ func (c *inputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context,
 	}
 
 	lg := log.Ctx(ctx)
-	lg.Debug().Str("path", dir.Path).Msg("loading local directory")
+	lg.Debug().Str("path", path).Msg("loading local directory")
 	opts := []llb.LocalOption{
-		withCustomName(v, "Local %s", dir.Path),
+		withCustomName(v, "Local %s", path),
 		// Without hint, multiple `llb.Local` operations on the
 		// same path get a different digest.
 		llb.SessionID(s.SessionID()),
-		llb.SharedKeyHint(dir.Path),
+		llb.SharedKeyHint(path),
 	}
 
 	if len(dir.Include) > 0 {
@@ -56,13 +60,13 @@ func (c *inputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context,
 	st := llb.Scratch().File(
 		llb.Copy(
 			llb.Local(
-				dir.Path,
+				path,
 				opts...,
 			),
 			"/",
 			"/",
 		),
-		withCustomName(v, "Local %s [copy]", dir.Path),
+		withCustomName(v, "Local %s [copy]", path),
 	)
 
 	result, err := s.Solve(ctx, st, pctx.Platform.Get())

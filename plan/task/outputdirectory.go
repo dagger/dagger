@@ -22,7 +22,7 @@ func (c outputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context,
 		return nil, err
 	}
 
-	dest, err := v.Lookup("dest").String()
+	dest, err := v.Lookup("dest").AbsPath()
 	if err != nil {
 		return nil, err
 	}
