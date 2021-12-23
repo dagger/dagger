@@ -28,7 +28,7 @@ package engine
 	proxy: [endpoint=string]: _#proxyEndpoint
 
 	// Configure platform execution
-	platform?: #Platform
+	platform?: string
 
 	// Execute actions in containers
 	actions: {
@@ -142,7 +142,3 @@ _#proxyEndpoint: {
 
 // A network service address
 #Address: string & =~"^(tcp://|unix://|udp://).*"
-
-// Platform supported by buildkit daemon
-#Platform: "linux/amd64" | "linux/arm64" | "linux/arm/v7" | "linux/arm/v6" |
-	"linux/s390x" | "linux/ppc64le" | "darwin/amd64" | "windows/amd64"
