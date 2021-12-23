@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 
@@ -24,21 +25,29 @@ func (c *inputSecretExecTask) Run(ctx context.Context, pctx *plancontext.Context
 			Name string
 			Args []string
 		}
+		TrimSpace bool
 	}
 
 	if err := v.Decode(&secretExec); err != nil {
 		return nil, err
 	}
-	lg := log.Ctx(ctx)
 
-	lg.Debug().Str("name", secretExec.Command.Name).Str("args", strings.Join(secretExec.Command.Args, " ")).Msg("executing secret command")
+	lg := log.Ctx(ctx)
+	lg.Debug().Str("name", secretExec.Command.Name).Str("args", strings.Join(secretExec.Command.Args, " ")).Str("trimSpace", fmt.Sprintf("%t", secretExec.TrimSpace)).Msg("loading secret")
 
 	// sec audited by @aluzzardi and @mrjones
 	out, err := exec.CommandContext(ctx, secretExec.Command.Name, secretExec.Command.Args...).Output() //#nosec G204
 	if err != nil {
 		return nil, err
 	}
-	secret := pctx.Secrets.New(string(out))
+
+	plaintext := string(out)
+
+	if secretExec.TrimSpace {
+		plaintext = strings.TrimSpace(plaintext)
+	}
+
+	secret := pctx.Secrets.New(plaintext)
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"contents": secret.MarshalCUE(),
 	})
