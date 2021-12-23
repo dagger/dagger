@@ -143,10 +143,10 @@ func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 	lg := log.Ctx(ctx)
 
 	p, err := plan.Load(ctx, plan.Config{
-		Args: args,
-		With: viper.GetStringSlice("with"),
+		Args:   args,
+		With:   viper.GetStringSlice("with"),
+		Target: viper.GetString("target"),
 	})
-
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to load plan")
 	}
@@ -225,6 +225,7 @@ func init() {
 	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
 	upCmd.Flags().String("output", "", "Write computed output. Prints on stdout if set to-")
 	upCmd.Flags().StringArrayP("with", "w", []string{}, "")
+	upCmd.Flags().StringP("target", "t", "", "Run a single target of the DAG (for debugging only)")
 
 	if err := viper.BindPFlags(upCmd.Flags()); err != nil {
 		panic(err)
