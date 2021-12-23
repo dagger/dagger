@@ -7,10 +7,10 @@ engine.#Plan & {
 		scratch: engine.#Scratch
 
 		data: engine.#WriteFile & {
-			input:    scratch.output
-			path:     "/test"
-			mode:     0o600
-			contents: "foobar"
+			input:       scratch.output
+			path:        "/test"
+			permissions: 0o600
+			contents:    "foobar"
 		}
 	}
 

@@ -43,7 +43,7 @@ package engine
 	// Contents to write
 	contents: string
 	// Permissions of the file
-	permissions: int
+	permissions: *0o600 | int
 	// Output filesystem tree
 	output: #FS
 }
