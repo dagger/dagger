@@ -8,7 +8,7 @@ import (
 engine.#Plan & {
 	inputs: secrets: dockerHubToken: command: {
 		name: "sops"
-		args: ["exec-env", "./secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
+		args: ["exec-env", "../../secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
 	}
 
 	#auth: [{

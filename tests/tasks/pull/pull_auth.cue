@@ -7,7 +7,7 @@ import (
 engine.#Plan & {
 	inputs: secrets: dockerHubToken: command: {
 		name: "sops"
-		args: ["exec-env", "./secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
+		args: ["exec-env", "../../secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
 	}
 	actions: pull: engine.#Pull & {
 		source: "daggerio/ci-test:private-pull@sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060"
