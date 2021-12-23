@@ -20,12 +20,7 @@ var (
 	Path          = path.Join("cue.mod", "pkg", ModuleName)
 )
 
-func Vendor(ctx context.Context, mod string) error {
-	// Remove any existing copy of the universe
-	if err := os.RemoveAll(path.Join(mod, Path)); err != nil {
-		return err
-	}
-
+func Vendor(ctx context.Context, dest string) error {
 	// Write the current version
 	return fs.WalkDir(FS, ".", func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -45,7 +40,7 @@ func Vendor(ctx context.Context, mod string) error {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 
-		overlayPath := path.Join(mod, Path, p)
+		overlayPath := path.Join(dest, p)
 
 		if err := os.MkdirAll(filepath.Dir(overlayPath), 0755); err != nil {
 			return err
