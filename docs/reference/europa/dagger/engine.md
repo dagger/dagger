@@ -138,6 +138,18 @@ _No input._
 
 _No output._
 
+## engine.#LoadSecret
+
+Load a secret from a filesystem tree
+
+### engine.#LoadSecret Inputs
+
+_No input._
+
+### engine.#LoadSecret Outputs
+
+_No output._
+
 ## engine.#Merge
 
 Merge multiple FS trees into one
