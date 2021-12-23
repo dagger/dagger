@@ -24,8 +24,8 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 		return nil, err
 	}
 
-	// Mode (int)
-	mode, err := v.Lookup("mode").Int64()
+	// Permissions (int)
+	permissions, err := v.Lookup("permissions").Int64()
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 
 	// Add Mkdir operation on input llb state
 	outputState := inputState.File(
-		llb.Mkdir(path, fs.FileMode(mode), mkdirOpts...),
+		llb.Mkdir(path, fs.FileMode(permissions), mkdirOpts...),
 		withCustomName(v, "Mkdir %s", path),
 	)
 
