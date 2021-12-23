@@ -12,6 +12,7 @@ setup() {
 }
 
 @test "cue-sanity-check" {
+  skip "Docs generation already validates the cue code of the library - disabled to avoid duplication"
   dagger -e sanity-check up
 }
 
