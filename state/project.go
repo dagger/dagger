@@ -428,9 +428,35 @@ func VendorUniverse(ctx context.Context, p string) error {
 	}
 
 	log.Ctx(ctx).Debug().Str("mod", p).Msg("vendoring universe")
-	if err := stdlib.Vendor(ctx, p); err != nil {
+
+	// Vendor in a temporary directory
+	tmp, err := os.MkdirTemp(path.Join(p, "cue.mod", "pkg"), "vendor-*")
+	if err != nil {
+		return err
+	}
+	if err := stdlib.Vendor(ctx, tmp); err != nil {
 		// FIXME(samalba): disabled install remote stdlib temporarily
 		// if _, err := mod.Install(ctx, p, stdlib.ModuleName, ""); err != nil {
+		return err
+	}
+
+	// Semi-atomic swap of the vendor directory
+	// The following basically does:
+	// rm -rf cue.mod/pkg/MODULE.old
+	// mv cue.mod/pkg/MODULE cue.mod/pkg/MODULE.old
+	// mv VENDOR cue.mod/pkg/MODULE
+	// rm -rf cue.mod/pkg/MODULE.old
+	newStdlib := path.Join(p, stdlib.Path)
+	oldStdlib := newStdlib + ".old"
+	if err := os.RemoveAll(oldStdlib); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(newStdlib, oldStdlib); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	defer os.RemoveAll(oldStdlib)
+
+	if err := os.Rename(tmp, newStdlib); err != nil {
 		return err
 	}
 
