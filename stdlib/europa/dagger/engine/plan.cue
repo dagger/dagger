@@ -66,6 +66,9 @@ _#inputSecret: {
 	// See universe.dagger.io/docker.#Run.mounts
 	// FIXME: `contents` field name causes confusion (not actually the secret contents..)
 	contents: #Secret
+
+	// Whether to trim leading and trailing space characters from secret value
+	trimSpace: *true | false
 }
 
 // Read secret from an environment variable ON THE CLIENT MACHINE

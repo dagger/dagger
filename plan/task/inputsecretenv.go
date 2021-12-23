@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
@@ -22,19 +23,25 @@ func (c *inputSecretEnvTask) Run(ctx context.Context, pctx *plancontext.Context,
 	lg := log.Ctx(ctx)
 
 	var secretEnv struct {
-		Envvar string
+		Envvar    string
+		TrimSpace bool
 	}
 
 	if err := v.Decode(&secretEnv); err != nil {
 		return nil, err
 	}
 
-	lg.Debug().Str("envvar", secretEnv.Envvar).Msg("loading secret")
+	lg.Debug().Str("envvar", secretEnv.Envvar).Str("trimSpace", fmt.Sprintf("%t", secretEnv.TrimSpace)).Msg("loading secret")
 
 	env := os.Getenv(secretEnv.Envvar)
 	if env == "" {
 		return nil, fmt.Errorf("environment variable %q not set", secretEnv.Envvar)
 	}
+
+	if secretEnv.TrimSpace {
+		env = strings.TrimSpace(env)
+	}
+
 	secret := pctx.Secrets.New(env)
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"contents": secret.MarshalCUE(),
