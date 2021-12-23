@@ -48,6 +48,10 @@ func Load(ctx context.Context, args ...string) (*Plan, error) {
 		return nil, err
 	}
 
+	if err := p.configPlatform(); err != nil {
+		return nil, err
+	}
+
 	return p, nil
 }
 
@@ -57,6 +61,31 @@ func (p *Plan) Context() *plancontext.Context {
 
 func (p *Plan) Source() *compiler.Value {
 	return p.source
+}
+
+// configPlatform load the platform specified in the context
+// Buildkit will then run every operation using that platform
+// If platform is not define, context keep default platform
+func (p *Plan) configPlatform() error {
+	platformField := p.source.Lookup("platform")
+
+	// Ignore if platform is not set in `#Plan`
+	if !platformField.Exists() {
+		return nil
+	}
+
+	// Convert platform to string
+	platform, err := platformField.String()
+	if err != nil {
+		return err
+	}
+
+	// Set platform to context
+	err = p.context.Platform.Set(platform)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // registerLocalDirectories scans the context for local imports.

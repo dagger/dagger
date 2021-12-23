@@ -27,6 +27,9 @@ package engine
 	// Forward network services to and from the client
 	proxy: [endpoint=string]: _#proxyEndpoint
 
+	// Configure platform execution
+	platform?: string
+
 	// Execute actions in containers
 	actions: {
 		...

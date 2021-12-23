@@ -77,3 +77,17 @@ setup() {
     "$DAGGER" --europa up ./outputs.cue
     assert [ -f "./out/test" ]
 }
+
+@test "plan/platform" {
+   cd "$TESTDIR"
+
+   # Run with amd64 platform
+   run "$DAGGER" --europa up ./plan/platform/config_platform_linux_amd64.cue
+
+   # Run with arm64 platform
+   run "$DAGGER" --europa up ./plan/platform/config_platform_linux_arm64.cue
+
+   # Run with invalid platform
+   run "$DAGGER" --europa up ./plan/platform/config_platform_failure_invalid_platform.cue
+   assert_failure
+}
