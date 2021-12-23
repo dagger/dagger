@@ -14,7 +14,7 @@ module.exports = {
     {
       type: "category",
       label: "Introduction",
-      collapsible: false,
+      collapsible: true,
       items: ["introduction/what_is", "introduction/vs"],
     },
     {
@@ -24,7 +24,8 @@ module.exports = {
     {
       type: "category",
       label: "Learn Dagger",
-      collapsible: false,
+      collapsible: true,
+      collapsed: false,
       items: [
         "learn/what_is_cue",
         "learn/get-started",
@@ -39,14 +40,15 @@ module.exports = {
     {
       type: "category",
       label: "Use Cases",
-      collapsible: false,
+      collapsible: true,
+      collapsed: true,
       items: ["use-cases/ci"],
     },
     {
       type: "category",
       label: "Universe - API Reference",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       // generate the sidebar for reference doc automatically
       items: [
         {
@@ -58,7 +60,8 @@ module.exports = {
     {
       type: "category",
       label: "Administrator Manual",
-      collapsible: false,
+      collapsible: true,
+      collapsed: true,
       items: ["administrator/operator-manual"],
     },
   ],
