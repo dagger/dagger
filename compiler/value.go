@@ -1,6 +1,9 @@
 package compiler
 
 import (
+	"errors"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 
@@ -280,6 +283,43 @@ func (v *Value) HasAttr(filter ...string) bool {
 	}
 
 	return false
+}
+
+// Filename returns the CUE filename where the value was defined
+func (v *Value) Filename() (string, error) {
+	pos := v.Cue().Pos()
+	if !pos.IsValid() {
+		return "", errors.New("invalid token position")
+	}
+	return pos.Filename(), nil
+}
+
+// Dirname returns the CUE dirname where the value was defined
+func (v *Value) Dirname() (string, error) {
+	f, err := v.Filename()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(f), nil
+}
+
+// AbsPath returns an absolute path contained in Value
+// Paths are relative to the CUE file they were declared in.
+func (v *Value) AbsPath() (string, error) {
+	p, err := v.String()
+	if err != nil {
+		return "", nil
+	}
+
+	if filepath.IsAbs(p) {
+		return p, nil
+	}
+
+	d, err := v.Dirname()
+	if err != nil {
+		return "", err
+	}
+	return path.Join(d, p), nil
 }
 
 func (v *Value) Dereference() *Value {

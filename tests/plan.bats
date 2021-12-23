@@ -44,11 +44,18 @@ setup() {
   "$DAGGER" --europa up ./plan/inputs/directories/exists.cue
 }
 
+@test "plan/inputs/directories relative directories" {
+  cd "$TESTDIR"
+  cd "$TESTDIR"/plan/inputs
+
+  "$DAGGER" --europa up ./directories/exists.cue
+}
+
 @test "plan/inputs/directories not exists" {
   cd "$TESTDIR"
   run "$DAGGER" --europa up ./plan/inputs/directories/not_exists.cue
 	assert_failure
-	assert_output --partial 'tests/fasdfsdfs" does not exist'
+	assert_output --partial 'fasdfsdfs" does not exist'
 }
 
 @test "plan/inputs/directories conflicting values" {
@@ -59,6 +66,11 @@ setup() {
 }
 
 @test "plan/inputs/secrets exec" {
+  cd "$TESTDIR"
+  "$DAGGER" --europa up ./plan/inputs/secrets/exec.cue
+}
+
+@test "plan/inputs/secrets exec relative" {
   cd "$TESTDIR"
   "$DAGGER" --europa up ./plan/inputs/secrets/exec.cue
 }
@@ -76,6 +88,14 @@ setup() {
     rm -f "./out/test"
     "$DAGGER" --europa up ./outputs.cue
     assert [ -f "./out/test" ]
+}
+
+@test "plan/outputs relative paths" {
+    cd "$TESTDIR"/plan
+
+    rm -f "./outputs/out/test"
+    "$DAGGER" --europa up ./outputs/outputs.cue
+    assert [ -f "./outputs/out/test" ]
 }
 
 @test "plan/platform" {

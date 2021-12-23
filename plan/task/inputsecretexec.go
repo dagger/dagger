@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -35,8 +36,18 @@ func (c *inputSecretExecTask) Run(ctx context.Context, pctx *plancontext.Context
 	lg := log.Ctx(ctx)
 	lg.Debug().Str("name", secretExec.Command.Name).Str("args", strings.Join(secretExec.Command.Args, " ")).Str("trimSpace", fmt.Sprintf("%t", secretExec.TrimSpace)).Msg("loading secret")
 
+	var err error
+
+	//#nosec G204: sec audited by @aluzzardi and @mrjones
+	cmd := exec.CommandContext(ctx, secretExec.Command.Name, secretExec.Command.Args...)
+	cmd.Env = os.Environ()
+	cmd.Dir, err = v.Lookup("command.name").Dirname()
+	if err != nil {
+		return nil, err
+	}
+
 	// sec audited by @aluzzardi and @mrjones
-	out, err := exec.CommandContext(ctx, secretExec.Command.Name, secretExec.Command.Args...).Output() //#nosec G204
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}

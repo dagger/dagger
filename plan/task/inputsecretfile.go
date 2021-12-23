@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 
@@ -20,25 +19,26 @@ type inputSecretFileTask struct {
 }
 
 func (c *inputSecretFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	var secretFile struct {
-		Path      string
-		TrimSpace bool
-	}
+	lg := log.Ctx(ctx)
 
-	if err := v.Decode(&secretFile); err != nil {
+	path, err := v.Lookup("path").AbsPath()
+	if err != nil {
 		return nil, err
 	}
 
-	lg := log.Ctx(ctx)
-	lg.Debug().Str("path", secretFile.Path).Str("trimSpace", fmt.Sprintf("%t", secretFile.TrimSpace)).Msg("loading secret")
+	lg.Debug().Str("path", path).Msg("loading secret")
 
-	fileBytes, err := os.ReadFile(secretFile.Path)
+	fileBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
 	plaintext := string(fileBytes)
-	if secretFile.TrimSpace {
+	trimSpace, err := v.Lookup("trimSpace").Bool()
+	if err != nil {
+		return nil, err
+	}
+	if trimSpace {
 		plaintext = strings.TrimSpace(plaintext)
 	}
 

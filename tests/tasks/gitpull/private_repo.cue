@@ -5,7 +5,7 @@ import "alpha.dagger.io/europa/dagger/engine"
 engine.#Plan & {
 	inputs: secrets: token: command: {
 		name: "sops"
-		args: ["exec-env", "./secrets_sops.yaml", "echo $TestPAT"]
+		args: ["exec-env", "../../secrets_sops.yaml", "echo $TestPAT"]
 	}
 
 	actions: {
