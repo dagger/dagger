@@ -14,13 +14,18 @@ import (
 	path: string
 
 	// Subdirectory tree
-	output: #FS & _copy.output
+	output: #FS & copy.output
 
-	_copy: engine.#Copy & {
-		"input": engine.#Scratch.output
+	// Base image
+	scratch: engine.#Scratch
+
+	// Copy action
+	copy: engine.#Copy & {
+		"input": scratch.output
 		source: {
 			root:   input
 			"path": path
 		}
+		dest: "/"
 	}
 }
