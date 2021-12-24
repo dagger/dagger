@@ -29,6 +29,12 @@ type Task interface {
 	Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error)
 }
 
+type PreRunner interface {
+	Task
+
+	PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error
+}
+
 // Register a task type and initializer
 func Register(typ string, f NewFunc) {
 	tasks.Store(typ, f)
