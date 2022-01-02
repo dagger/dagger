@@ -103,6 +103,9 @@ h2 {
 code {
   margin: 0 1px;
   color: var(--ifm-code-color);
+  .alert & {
+    color: var(--ifm-alert-foreground-color);
+  }
 }
 
 .markdown {
@@ -618,7 +621,7 @@ img[alt="github-contribute"] {
     .admonition-#{$name} .admonition-icon::before {
       mask: url($path);
       content: "";
-      background-color: var(--ifm-color-primary-dark);
+      background-color: var(--ifm-alert-foreground-color);
       display: block;
       width: 22px;
       height: 22px;
@@ -636,14 +639,3 @@ img[alt="github-contribute"] {
 
 $alert: secondary, success, info, warning, danger;
 
-@each $name in $alert {
-  $color: if(
-    $name==danger,
-    var(--ifm-color-primary-light),
-    var(--ifm-color-primary-dark)
-  );
-
-  .admonition.alert--#{$name} {
-    color: $color;
-  }
-}
