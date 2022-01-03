@@ -33,7 +33,7 @@ The development version of the Europa Low-Level Engine API can be imported as ei
 This table compares Dagger core packages, Dagger Universe packages, and the overall CUE package ecosystem.
 
 |   |  *Dagger core* | *Dagger Universe* | *CUE ecosystem* |
-|----------|--------------|------|
+|---|----------------|-------------------|-----------------|
 | Import path |  `dagger.io` | `universe.dagger.io` | Everything else |
 | Purpose |  Access core Dagger features | Safely reuse code from the Dagger community | Reuse any CUE code from anyone |
 | Author | Dagger team | Dagger community, curated by Dagger | Anyone |
