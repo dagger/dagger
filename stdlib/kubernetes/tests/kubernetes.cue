@@ -50,7 +50,7 @@ TestLinkApply: {
 	resources: #Resources & {
 		kubeconfig: TestKubeconfig
 		namespace:  "dagger-test"
-		url:        "https://raw.githubusercontent.com/mstrzele/intro-to-k8s/master/hello-world-pod.yaml"
+		url:        "https://gist.githubusercontent.com/grouville/04402633618f3289a633f652e9e4412c/raw/293fa6197b78ba3fad7200fa74b52c62ec8e6703/hello-world-pod.yaml"
 	}
 
 	// Verify deployment
