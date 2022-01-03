@@ -10,7 +10,7 @@ mySecret: dagger.#Secret
 TestString: #up: [
 	op.#Load & {
 		from: alpine.#Image & {
-			package: bash: "=~5.1"
+			package: bash: true
 		}
 	},
 
