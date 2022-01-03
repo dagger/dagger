@@ -27,7 +27,7 @@ func (c outputDirectoryTask) Run(ctx context.Context, pctx *plancontext.Context,
 		return nil, err
 	}
 
-	st, err := contents.Result().ToState()
+	st, err := contents.State()
 	if err != nil {
 		return nil, err
 	}

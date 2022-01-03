@@ -51,7 +51,7 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s solver
 	}
 
 	// Retrieve input llb state
-	inputState, err := input.Result().ToState()
+	inputState, err := input.State()
 	if err != nil {
 		return nil, err
 	}

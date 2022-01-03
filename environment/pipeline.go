@@ -217,7 +217,7 @@ func (p *Pipeline) doOp(ctx context.Context, op *compiler.Value, st llb.State) (
 		if err != nil {
 			return st, nil
 		}
-		return fs.Result().ToState()
+		return fs.State()
 	}
 
 	do, err := op.Lookup("do").String()

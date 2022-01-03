@@ -60,7 +60,7 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 		return nil, err
 	}
 
-	sourceSt, err := source.Result().ToState()
+	sourceSt, err := source.State()
 	if err != nil {
 		return nil, err
 	}
