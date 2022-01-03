@@ -50,7 +50,7 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	if err != nil {
 		return nil, err
 	}
-	st, err := input.Result().ToState()
+	st, err := input.State()
 	if err != nil {
 		return nil, err
 	}
