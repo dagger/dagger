@@ -6,7 +6,7 @@ import (
 )
 
 // Default Alpine version
-let defaultVersion = "3.15.0@sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060"
+let defaultVersion = "3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 
 // Base image for Alpine Linux
 #Image: {

@@ -37,20 +37,20 @@ import (
 			        # If secret not found
 			        if [[ ! "${status}" -eq 0 ]]; then
 			            (\
-			                RES=$(gcloud secrets create "${FILE##*/}" --replication-policy automatic --data-file "${FILE}" --format='value(name)' | sed -n '1!p') \
+			                RES="$(gcloud secrets create "${FILE##*/}" --replication-policy automatic --data-file "${FILE}" --format='value(name)' 2>&1 | sed -n '1!p')" \
 			                && cat <<< $(cat /tmp/output.json | jq ".|.\"${FILE##*/}\"=\"$RES\"") > /tmp/output.json \
 			            ) || (echo "Error while creating secret ${FILE##*/}" >&2 && exit 1)
 			            BOOL=1
 			        else
 									(\
-											RES=$(gcloud secrets versions add "${FILE##*/}" --data-file "${FILE}" --format='value(name)' | sed -n '1!p') \
+											RES="$(gcloud secrets versions add "${FILE##*/}" --data-file "${FILE}" --format='value(name)' 2>&1 | sed -n '1!p')" \
 											&& cat <<< $(cat /tmp/output.json | jq ".|.\"${FILE##*/}\"=\"$RES\"") > /tmp/output.json \
 									) || (echo "Error while updating secret ${FILE##*/}" >&2 && exit 1)
 									BOOL=1
 			        fi
 			        if [ $BOOL -eq 0 ]; then
 			            (\
-			                RES=$(gcloud secrets describe "${FILE##*/}" --format='value(name)') \
+			                RES="$(gcloud secrets describe "${FILE##*/}" --format='value(name)' 2>&1)" \
 			                && cat <<< $(cat /tmp/output.json | jq ".|.\"${FILE##*/}\"=\"$RES\"") > /tmp/output.json \
 			            ) || (echo "Error while retrieving secret ${FILE##*/}" >&2 && exit 1)
 			        fi

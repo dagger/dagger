@@ -17,9 +17,9 @@ EmptyDir: {
 Read: {
 	f: #File & {
 		from: alpine.#Image & {
-			version: "3.13.4"
+			version: "3.15.0"
 		}
 		path: "/etc/alpine-release"
 	}
-	f: contents: "3.13.4\n"
+	f: contents: "3.15.0\n"
 }

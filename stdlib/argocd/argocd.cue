@@ -38,8 +38,8 @@ import (
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
-				package: bash: "=~5.1"
-				package: jq:   "=~1.6"
+				package: bash: true
+				package: jq:   true
 				package: curl: true
 			}
 		},

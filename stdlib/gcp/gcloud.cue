@@ -8,21 +8,21 @@ import (
 // Re-usable gcloud component
 #GCloud: {
 	config:  #Config
-	version: string | *"288.0.0"
+	version: string | *"366.0.0"
 	package: [string]: string | bool
 
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
 				"package": package
-				"package": bash:    "=~5.1"
-				"package": python3: "=~3.8"
-				"package": jq:      "=~1.6"
+				"package": bash:    true
+				"package": python3: true
+				"package": jq:      true
 				"package": curl:    true
 			}
 		},
 
-		// Install the gcloud cli
+		// Install the gcloud cli 
 		op.#Exec & {
 			args: ["sh", "-c",
 				#"""

@@ -24,14 +24,14 @@ import (
 #V1: {
 	config: #Config
 	package: [string]: string | bool
-	version: dagger.#Input & {*"1.18" | string}
+	version: dagger.#Input & {*"1.19" | string}
 
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
 				"package": package
-				"package": bash:      "=~5.1"
-				"package": jq:        "=~1.6"
+				"package": bash:      true
+				"package": jq:        true
 				"package": curl:      true
 				"package": "aws-cli": "=~\( version )"
 				if config.localMode != false {
@@ -47,14 +47,14 @@ import (
 #V2: {
 	config: #Config
 	package: [string]: string | bool
-	version: dagger.#Input & {*"2.1.27" | string}
+	version: dagger.#Input & {*"2.1.29" | string}
 
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
 				"package": package
-				"package": bash:     "=~5.1"
-				"package": jq:       "=~1.6"
+				"package": bash:     true
+				"package": jq:       true
 				"package": curl:     true
 				"package": binutils: true
 				if config.localMode != false {
@@ -87,7 +87,7 @@ import (
 #CLI: {
 	config: #Config
 	package: [string]: string | bool
-	version: dagger.#Input & {*"1.18" | string}
+	version: dagger.#Input & {*"1.19" | string}
 
 	_isV2: regexp.Match("^2.*$", version)
 

@@ -15,7 +15,7 @@ TestReact: {
 
 	test: os.#Container & {
 		image: alpine.#Image & {
-			package: bash: "=5.1.0-r0"
+			package: bash: true
 		}
 		mount: "/build": from: pkg.build
 		command: """
@@ -42,7 +42,7 @@ TestSecretsAndFile: {
 
 	test: os.#Container & {
 		image: alpine.#Image & {
-			package: bash: "=5.1.0-r0"
+			package: bash: true
 		}
 		shell: path: "/bin/bash"
 		mount: "/build": from: pkg.build

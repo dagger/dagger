@@ -20,7 +20,7 @@ import "alpha.dagger.io/aws"
 |*config.accessKey*    | `dagger.#Secret`       |AWS access key         |
 |*config.secretKey*    | `dagger.#Secret`       |AWS secret key         |
 |*config.localMode*    | `*false \| bool`       |AWS localstack mode    |
-|*version*             | `*"1.18" \| string`    |-                      |
+|*version*             | `*"1.19" \| string`    |-                      |
 
 ### aws.#CLI Outputs
 
@@ -55,7 +55,7 @@ Configuration specific to CLI v1
 |*config.accessKey*    | `dagger.#Secret`       |AWS access key         |
 |*config.secretKey*    | `dagger.#Secret`       |AWS secret key         |
 |*config.localMode*    | `*false \| bool`       |AWS localstack mode    |
-|*version*             | `*"1.18" \| string`    |-                      |
+|*version*             | `*"1.19" \| string`    |-                      |
 
 ### aws.#V1 Outputs
 
@@ -73,7 +73,7 @@ Configuration specific to CLI v2
 |*config.accessKey*    | `dagger.#Secret`         |AWS access key         |
 |*config.secretKey*    | `dagger.#Secret`         |AWS secret key         |
 |*config.localMode*    | `*false \| bool`         |AWS localstack mode    |
-|*version*             | `*"2.1.27" \| string`    |-                      |
+|*version*             | `*"2.1.29" \| string`    |-                      |
 
 ### aws.#V2 Outputs
 

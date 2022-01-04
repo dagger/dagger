@@ -32,7 +32,7 @@ TestSpringBoot: {
 
 	test: os.#Container & {
 		image: alpine.#Image & {
-			package: bash: "=5.1.0-r0"
+			package: bash: true
 		}
 		copy: "/build": from: project.build
 		command: """

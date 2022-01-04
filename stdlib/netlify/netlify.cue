@@ -61,14 +61,14 @@ import (
 	ctr: os.#Container & {
 		image: alpine.#Image & {
 			package: {
-				bash: "=~5.1"
-				jq:   "=~1.6"
+				bash: true
+				jq:   true
 				curl: true
-				yarn: "=~1.22"
+				yarn: true
 			}
 		}
 		setup: [
-			"yarn global add netlify-cli@3.38.10",
+			"yarn global add netlify-cli@8.6.1",
 		]
 		// set in netlify.sh.cue
 		// FIXME: use embedding once cue supports it

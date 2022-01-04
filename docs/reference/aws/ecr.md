@@ -26,7 +26,7 @@ Convert ECR credentials to Docker Login format
 |*ctr.image.config.accessKey*    | `dagger.#Secret`       |AWS access key         |
 |*ctr.image.config.secretKey*    | `dagger.#Secret`       |AWS secret key         |
 |*ctr.image.config.localMode*    | `*false \| bool`       |AWS localstack mode    |
-|*ctr.image.version*             | `*"1.18" \| string`    |-                      |
+|*ctr.image.version*             | `*"1.19" \| string`    |-                      |
 
 ### ecr.#Credentials Outputs
 

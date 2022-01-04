@@ -53,8 +53,8 @@ import (
 	ctr: os.#Container & {
 		image: alpine.#Image & {
 			"package": package & {
-				bash: "=~5.1"
-				yarn: "=~1.22"
+				bash: true
+				yarn: true
 			}
 		}
 		shell: path: "/bin/bash"

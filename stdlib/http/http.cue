@@ -27,8 +27,8 @@ import (
 	ctr: os.#Container & {
 		image: alpine.#Image & {
 			package: curl: true
-			package: bash: "=5.1.0-r0"
-			package: jq:   "~=1.6"
+			package: bash: true
+			package: jq:   true
 		}
 		shell: path: "/bin/bash"
 		always: true
@@ -109,7 +109,7 @@ import (
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
-				package: bash: "=~5.1"
+				package: bash: true
 				package: curl: true
 			}
 		},

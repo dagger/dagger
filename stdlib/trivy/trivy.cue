@@ -45,9 +45,9 @@ import (
 		if config.awsAuth == null && config.gcpAuth == null {
 			op.#Load & {
 				from: alpine.#Image & {
-					package: bash: "=~5.1"
+					package: bash: true
 					package: curl: true
-					package: jq:   "=~1.6"
+					package: jq:   true
 				}
 			}
 		},

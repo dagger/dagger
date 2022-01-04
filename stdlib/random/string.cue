@@ -25,7 +25,7 @@ import (
 
 		#up: [
 			op.#Load & {from: alpine.#Image & {
-				package: python3: "=~3.8"
+				package: python3: true
 			}},
 
 			op.#WriteFile & {

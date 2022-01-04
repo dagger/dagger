@@ -31,7 +31,7 @@ tagsList: #Tags & {
 
 TestRepository: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=5.1.0-r0"
+		package: bash: true
 		package: git:  true
 	}
 	mount: "/repo1": from: repo
@@ -43,7 +43,7 @@ TestRepository: os.#Container & {
 
 TestSubRepository: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=5.1.0-r0"
+		package: bash: true
 		package: git:  true
 	}
 	mount: "/repo1": from: repoSubDir
@@ -55,7 +55,7 @@ TestSubRepository: os.#Container & {
 
 TestCurrentBranch: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=5.1.0-r0"
+		package: bash: true
 		package: git:  true
 	}
 	env: BRANCH_NAME: branch.name
@@ -66,7 +66,7 @@ TestCurrentBranch: os.#Container & {
 
 TestCurrentTags: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=5.1.0-r0"
+		package: bash: true
 		package: git:  true
 	}
 	env: TAGS: strings.Join([ for k, v in tagsList.tags {"\(k)=\(v)"}], "\n")
@@ -87,7 +87,7 @@ privateRepo: #Repository & {
 
 TestPrivateRepository: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=5.1.0-r0"
+		package: bash: true
 		package: git:  true
 	}
 	mount: "/repo1": from: privateRepo
@@ -99,7 +99,7 @@ TestPrivateRepository: os.#Container & {
 
 TestReferenceFormat: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=5.1.0-r0"
+		package: bash: true
 		package: git:  true
 	}
 	mount: "/repo1": from: privateRepo
