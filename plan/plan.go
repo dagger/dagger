@@ -23,7 +23,7 @@ type Plan struct {
 	source  *compiler.Value
 }
 
-func Load(ctx context.Context, args ...string) (*Plan, error) {
+func Load(ctx context.Context, withParams []string, args ...string) (*Plan, error) {
 	log.Ctx(ctx).Debug().Interface("args", args).Msg("loading plan")
 
 	// FIXME: universe vendoring
@@ -34,6 +34,21 @@ func Load(ctx context.Context, args ...string) (*Plan, error) {
 	v, err := compiler.Build("", nil, args...)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(withParams) > 0 {
+		for i, param := range withParams {
+			log.Ctx(ctx).Debug().Interface("with", param).Msg("applying parameter")
+			paramV, err := compiler.Compile(fmt.Sprintf("with%v", i), param)
+			if err != nil {
+				return nil, err
+			}
+
+			fillErr := v.FillPath(cue.ParsePath("inputs.params"), paramV)
+			if fillErr != nil {
+				return nil, err
+			}
+		}
 	}
 
 	p := &Plan{
