@@ -38,15 +38,16 @@ func Load(ctx context.Context, withParams []string, args ...string) (*Plan, erro
 
 	if len(withParams) > 0 {
 		for i, param := range withParams {
-			log.Ctx(ctx).Debug().Interface("with", param).Msg("applying parameter")
+			log.Ctx(ctx).Debug().Interface("with", param).Msg("compiling parameter")
 			paramV, err := compiler.Compile(fmt.Sprintf("with%v", i), param)
 			if err != nil {
 				return nil, err
 			}
 
-			fillErr := v.FillPath(cue.ParsePath("inputs.params"), paramV)
+			log.Ctx(ctx).Debug().Interface("with", param).Msg("filling parameter")
+			fillErr := v.FillPath(cue.ParsePath(""), paramV)
 			if fillErr != nil {
-				return nil, err
+				return nil, fillErr
 			}
 		}
 	}
