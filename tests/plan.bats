@@ -84,7 +84,15 @@ setup() {
 
 @test "plan/params" {
   cd "$TESTDIR"
-  "$DAGGER" --europa up --with 'foo:"bar"' ./plan/inputs/params/main.cue
+  "$DAGGER" --europa up --with 'inputs: params: foo:"bar"' ./plan/inputs/params/main.cue
+  
+  run "$DAGGER" --europa up --with 'inputs: params: foo:1' ./plan/inputs/params/main.cue
+  assert_failure
+  assert_output --partial "conflicting values string and 1"
+  
+  run "$DAGGER" --europa up ./plan/inputs/params/main.cue
+  assert_failure
+  assert_output --partial "actions.verify.env.FOO: non-concrete value string"
 }
 
 @test "plan/outputs" {
