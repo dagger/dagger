@@ -82,15 +82,16 @@ setup() {
 	assert_output --partial 'failed: exec: "rtyet": executable file not found'
 }
 
-@test "plan/params" {
+@test "plan/with" {
   cd "$TESTDIR"
-  "$DAGGER" --europa up --with 'inputs: params: foo:"bar"' ./plan/inputs/params/main.cue
+  "$DAGGER" --europa up --with 'inputs: params: foo:"bar"' ./plan/with/params.cue
+  "$DAGGER" --europa up --with 'actions: verify: env: FOO: "bar"' ./plan/with/actions.cue
   
-  run "$DAGGER" --europa up --with 'inputs: params: foo:1' ./plan/inputs/params/main.cue
+  run "$DAGGER" --europa up --with 'inputs: params: foo:1' ./plan/with/params.cue
   assert_failure
   assert_output --partial "conflicting values string and 1"
   
-  run "$DAGGER" --europa up ./plan/inputs/params/main.cue
+  run "$DAGGER" --europa up ./plan/with/params.cue
   assert_failure
   assert_output --partial "actions.verify.env.FOO: non-concrete value string"
 }
