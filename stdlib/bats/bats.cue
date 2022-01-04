@@ -35,8 +35,8 @@ import (
 	ctr: os.#Container & {
 		image: alpine.#Image & {
 			package: curl: true
-			package: bash: "~=5.1"
-			package: jq:   "~=1.6"
+			package: bash: true
+			package: jq:   true
 			package: npm:  true
 			package: git:  true
 		}

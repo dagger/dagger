@@ -28,7 +28,7 @@ TestPackageInstall: {
 	image: #Image & {
 		package: jq:   true
 		package: curl: true
-		version: "3.13"
+		version: "3.15.0"
 	}
 
 	test: #up: [

@@ -28,7 +28,7 @@ Testhealth: #Wait & {
 
 TestWait: query: os.#Container & {
 	image: alpine.#Image & {
-		package: bash: "=~5.1"
+		package: bash: true
 		package: curl: true
 	}
 	command: #"""
@@ -44,7 +44,7 @@ TestRequest: {
 
 	testRaw: os.#Container & {
 		image: alpine.#Image & {
-			package: jq:   "~=1.6"
+			package: jq:   true
 			package: bash: true
 		}
 		env: STATUS: "\(req.response.statusCode)"

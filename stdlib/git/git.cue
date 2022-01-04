@@ -31,7 +31,7 @@ import (
 	#up: [
 		op.#Load & {
 			from: alpine.#Image & {
-				package: git: "=~2.30"
+				package: git: true
 			}
 		},
 		op.#Copy & {
@@ -91,8 +91,8 @@ import (
 		#up: [
 			op.#Load & {
 				from: alpine.#Image & {
-					package: bash: "=~5.1"
-					package: git:  "=~2.30"
+					package: bash: true
+					package: git:  true
 				}
 			},
 
@@ -132,9 +132,9 @@ import (
 		#up: [
 			op.#Load & {
 				from: alpine.#Image & {
-					package: bash: "=~5.1"
-					package: jq:   "=~1.6"
-					package: git:  "=~2.30"
+					package: bash: true
+					package: jq:   true
+					package: git:  true
 				}
 			},
 

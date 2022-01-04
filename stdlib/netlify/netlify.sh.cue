@@ -44,9 +44,9 @@ package netlify
 	    --prod \
 	| tee /tmp/stdout
 
-	url=$(</tmp/stdout sed -n -e 's/^Website URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
-	deployUrl=$(</tmp/stdout sed -n -e 's/^Unique Deploy URL:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
-	logsUrl=$(</tmp/stdout sed -n -e 's/^Logs:.*\(https:\/\/.*\)$/\1/p' | tr -d '\n')
+	url="$(cat /tmp/stdout | grep Website | grep -Eo 'https://[^ >]+' | head -1)"
+	deployUrl="$(cat /tmp/stdout | grep Unique | grep -Eo 'https://[^ >]+' | head -1)"
+	logsUrl="$(cat /tmp/stdout | grep Logs | grep -Eo 'https://[^ >]+' | head -1)"
 
 	# Write output files
 	mkdir -p /netlify

@@ -40,9 +40,9 @@ import (
 	ctr: os.#Container & {
 		image: alpine.#Image & {
 			"package": package & {
-				bash:      "=~5.1"
-				openjdk11: "=~11.0.9"
-				maven:     "=~3.6.3"
+				bash:      true
+				openjdk11: true
+				maven:     true
 			}
 		}
 		shell: path: "/bin/bash"

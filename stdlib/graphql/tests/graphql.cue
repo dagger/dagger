@@ -39,7 +39,7 @@ TestQuery: {
 
 	testRaw: os.#Container & {
 		image: alpine.#Image & {
-			package: jq: "~=1.6"
+			package: jq: true
 		}
 		env: STATUS: "\(queryWithoutToken.post.response.statusCode)"
 		shell: args: ["--noprofile", "--norc", "-eo", "pipefail", "-c"]
