@@ -82,6 +82,11 @@ setup() {
 	assert_output --partial 'failed: exec: "rtyet": executable file not found'
 }
 
+@test "plan/params" {
+  cd "$TESTDIR"
+  "$DAGGER" --europa up --with 'foo:"bar"' ./plan/inputs/params/main.cue
+}
+
 @test "plan/outputs" {
     cd "$TESTDIR"/plan/outputs
 
