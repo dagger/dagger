@@ -12,10 +12,7 @@ package engine
 		// Securely receive secrets
 		secrets: [name=string]: _#inputSecret
 		// Receive runtime parameters
-		params: {
-			@dagger(notimplemented)
-			[name=string]: _
-		}
+		params: [name=string]: _
 	}
 
 	// Send outputs to the client

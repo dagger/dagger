@@ -142,7 +142,11 @@ func checkUniverseVersion(ctx context.Context, projectPath string) bool {
 func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 	lg := log.Ctx(ctx)
 
-	p, err := plan.Load(ctx, args...)
+	p, err := plan.Load(ctx, plan.Config{
+		Args: args,
+		With: viper.GetStringSlice("with"),
+	})
+
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to load plan")
 	}
@@ -220,6 +224,7 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 func init() {
 	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
 	upCmd.Flags().String("output", "", "Write computed output. Prints on stdout if set to-")
+	upCmd.Flags().StringArrayP("with", "w", []string{}, "")
 
 	if err := viper.BindPFlags(upCmd.Flags()); err != nil {
 		panic(err)
