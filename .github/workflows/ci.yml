@@ -103,8 +103,8 @@ jobs:
       - name: Integration test
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        #   DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-integration"
-        #   DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-integration"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-integration"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-integration"
         run: |
           env
           make core-integration
@@ -162,9 +162,9 @@ jobs:
         uses: crazy-max/ghaction-github-runtime@v1
 
       - name: Universe Test
-        # env:
-        #   DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
-        #   DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
         run: |
           make universe-test
 
@@ -240,8 +240,8 @@ jobs:
         uses: crazy-max/ghaction-github-runtime@v1
 
       - name: Documentation Test
-        # env:
-        #   DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-docs"
-        #   DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-docs"
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-docs"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-docs"
         run: |
           make doc-test
