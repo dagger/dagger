@@ -19,40 +19,46 @@ import (
 )
 
 type Plan struct {
+	config Config
+
 	context *plancontext.Context
 	source  *compiler.Value
 }
 
-func Load(ctx context.Context, withParams []string, args ...string) (*Plan, error) {
-	log.Ctx(ctx).Debug().Interface("args", args).Msg("loading plan")
+type Config struct {
+	Args []string
+	With []string
+}
+
+func Load(ctx context.Context, cfg Config) (*Plan, error) {
+	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
 	// FIXME: universe vendoring
 	if err := state.VendorUniverse(ctx, ""); err != nil {
 		return nil, err
 	}
 
-	v, err := compiler.Build("", nil, args...)
+	v, err := compiler.Build("", nil, cfg.Args...)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(withParams) > 0 {
-		for i, param := range withParams {
-			log.Ctx(ctx).Debug().Interface("with", param).Msg("compiling parameter")
-			paramV, err := compiler.Compile(fmt.Sprintf("with%v", i), param)
-			if err != nil {
-				return nil, err
-			}
+	for i, param := range cfg.With {
+		log.Ctx(ctx).Debug().Interface("with", param).Msg("compiling overlay")
+		paramV, err := compiler.Compile(fmt.Sprintf("with%v", i), param)
+		if err != nil {
+			return nil, err
+		}
 
-			log.Ctx(ctx).Debug().Interface("with", param).Msg("filling parameter")
-			fillErr := v.FillPath(cue.ParsePath(""), paramV)
-			if fillErr != nil {
-				return nil, fillErr
-			}
+		log.Ctx(ctx).Debug().Interface("with", param).Msg("filling overlay")
+		fillErr := v.FillPath(cue.ParsePath(""), paramV)
+		if fillErr != nil {
+			return nil, fillErr
 		}
 	}
 
 	p := &Plan{
+		config:  cfg,
 		context: plancontext.New(),
 		source:  v,
 	}
