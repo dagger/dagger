@@ -51,7 +51,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		}
 
 		log.Ctx(ctx).Debug().Interface("with", param).Msg("filling overlay")
-		fillErr := v.FillPath(cue.ParsePath(""), paramV)
+		fillErr := v.FillPath(cue.MakePath(), paramV)
 		if fillErr != nil {
 			return nil, fillErr
 		}
