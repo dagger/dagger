@@ -22,6 +22,7 @@ import (
 		"--exit-code":      *"1" | string
 		"--ignore-unfixed": *"" | string
 		"--format":         *"table" | string
+		"--output":         *"output" | string
 	}
 
 	ctr: os.#Container & {
