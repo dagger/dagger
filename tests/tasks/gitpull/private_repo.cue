@@ -1,16 +1,28 @@
 package main
 
-import "dagger.io/dagger/engine"
+import (
+	"encoding/yaml"
+	"dagger.io/dagger/engine"
+)
 
 engine.#Plan & {
-	inputs: secrets: token: command: {
+	inputs: secrets: sops: command: {
 		name: "sops"
-		args: ["exec-env", "../../secrets_sops.yaml", "echo $TestPAT"]
+		args: ["-d", "../../secrets_sops.yaml"]
 	}
 
 	actions: {
+
 		alpine: engine.#Pull & {
 			source: "alpine:3.15.0"
+		}
+
+		repoPassword: engine.#TransformSecret & {
+			input: inputs.secrets.sops.contents
+			#function: {
+				input:  _
+				output: yaml.Unmarshal(input).TestPAT
+			}
 		}
 
 		testRepo: engine.#GitPull & {
@@ -18,7 +30,7 @@ engine.#Plan & {
 			ref:    "main"
 			auth: {
 				username: "dagger-test"
-				password: inputs.secrets.token.contents
+				password: repoPassword.output
 			}
 		}
 
