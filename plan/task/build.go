@@ -115,6 +115,18 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 		return nil, err
 	}
 
+	st, err := ref.ToState()
+
+	if err != nil {
+		return nil, err
+	}
+
+	solvedRef, err := s.Solve(ctx, st, pctx.Platform.Get())
+
+	if err != nil {
+		return nil, err
+	}
+
 	// Image metadata
 	meta, ok := res.Metadata[exptypes.ExporterImageConfigKey]
 	if !ok {
@@ -126,7 +138,7 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 	}
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": pctx.FS.New(ref).MarshalCUE(),
+		"output": pctx.FS.New(solvedRef).MarshalCUE(),
 		"config": image.Config,
 	})
 }

@@ -120,6 +120,7 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 
 // Solve will block until the state is solved and returns a Reference.
 func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
+	req.Evaluate = true
 	res, err := s.opts.Gateway.Solve(ctx, req)
 	if err != nil {
 		return nil, CleanError(err)
