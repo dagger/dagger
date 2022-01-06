@@ -89,4 +89,4 @@ Available Commands:
   zsh         generate the autocompletion script for zsh
 ```
 
-Depending on your shell, add the output script belong your other completions' script.
+Use `dagger completion <your shell> --help` for shell specific instructions.
