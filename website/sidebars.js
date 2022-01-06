@@ -61,5 +61,9 @@ module.exports = {
       collapsible: false,
       items: ["administrator/operator-manual"],
     },
+    {
+      type: "doc",
+      id: "faq",
+    },
   ],
 };
