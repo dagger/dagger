@@ -94,6 +94,17 @@ setup() {
     "$DAGGER" --europa up ./scratch.cue -l debug
 }
 
+@test "task: #Subdir" {
+    cd "$TESTDIR"/tasks/subdir
+    "$DAGGER" --europa up ./subdir_simple.cue
+
+    run "$DAGGER" --europa up ./subdir_invalid_path.cue
+    assert_failure
+    
+    run "$DAGGER" --europa up ./subdir_invalid_exec.cue
+    assert_failure
+}
+
 @test "task: #GitPull" {
     cd "$TESTDIR"
     "$DAGGER" --europa up ./tasks/gitpull/exists.cue
