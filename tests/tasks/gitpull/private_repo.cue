@@ -21,7 +21,7 @@ engine.#Plan & {
 			input: inputs.secrets.sops.contents
 			#function: {
 				input:  _
-				output: yaml.Unmarshal(input).TestPAT
+				output: yaml.Unmarshal(input)
 			}
 		}
 
@@ -30,7 +30,7 @@ engine.#Plan & {
 			ref:    "main"
 			auth: {
 				username: "dagger-test"
-				password: repoPassword.output
+				password: repoPassword.output.TestPAT.contents
 			}
 		}
 

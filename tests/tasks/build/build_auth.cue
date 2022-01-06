@@ -19,7 +19,7 @@ engine.#Plan & {
 			input: inputs.secrets.sops.contents
 			#function: {
 				input:  _
-				output: yaml.Unmarshal(input).DOCKERHUB_TOKEN
+				output: yaml.Unmarshal(input)
 			}
 		}
 
@@ -29,7 +29,7 @@ engine.#Plan & {
 				target:   "daggerio/ci-test:private-pull"
 				username: "daggertest"
 
-				secret: dockerHubToken.output
+				secret: dockerHubToken.output.DOCKERHUB_TOKEN.contents
 			}]
 			dockerfile: contents: """
 				FROM daggerio/ci-test:private-pull@sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060

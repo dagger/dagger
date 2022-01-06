@@ -3,9 +3,11 @@ package task
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"cuelang.org/go/cue"
 	"github.com/rs/zerolog/log"
+	"github.com/sergi/go-diff/diffmatchpatch"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -23,9 +25,6 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 	lg.Debug().Msg("transforming secret")
 
 	input := v.Lookup("input")
-	if !plancontext.IsSecretValue(input) {
-		return nil, errors.New("#TransformSecret requires input: #Secret")
-	}
 
 	inputSecret, err := pctx.Secrets.FromValue(input)
 	if err != nil {
@@ -33,15 +32,37 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 	}
 
 	function := v.Lookup("#function")
-	function.FillPath(cue.ParsePath("input"), inputSecret.PlainText())
-
-	outputPlaintext, err := function.Lookup("output").String()
+	inputSecretPlaintext := inputSecret.PlainText()
+	err = function.FillPath(cue.ParsePath("input"), inputSecretPlaintext)
 	if err != nil {
-		return nil, err
+		dmp := diffmatchpatch.New()
+		errStr := err.Error()
+		diffs := dmp.DiffMain(inputSecretPlaintext, err.Error(), false)
+		for _, diff := range diffs {
+			if diff.Type == diffmatchpatch.DiffEqual {
+				diffText := strings.ReplaceAll(diff.Text, ":", "")
+				errStr = strings.ReplaceAll(errStr, diffText, "<redacted>")
+			}
+		}
+
+		return nil, errors.New(errStr)
 	}
 
-	outputSecret := pctx.Secrets.New(outputPlaintext)
-	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": outputSecret.MarshalCUE(),
+	output := compiler.NewValue()
+	// users could yaml.Unmarshal(input) and return a map
+	// or yaml.Unmarshal(input).someKey and return a string
+	// walk will ensure we convert every leaf
+	functionPathSelectors := function.Path().Selectors()
+	function.Lookup("output").Walk(nil, func(v *compiler.Value) {
+		if v.Kind() == cue.StringKind {
+			plaintext, _ := v.String()
+			secret := pctx.Secrets.New(plaintext)
+			newLeafSelectors := v.Path().Selectors()[len(functionPathSelectors):]
+			newLeafSelectors = append(newLeafSelectors, cue.Str("contents"))
+			newLeafPath := cue.MakePath(newLeafSelectors...)
+			output.FillPath(newLeafPath, secret.MarshalCUE())
+		}
 	})
+
+	return output, nil
 }

@@ -5,13 +5,14 @@ package engine
 	$dagger: task: _name: "TransformSecret"
 	// The original secret
 	input: #Secret
-	// A new secret with the transformation applied
-	output: #Secret
+	// A new secret or (map of secrets) with the transformation applied
+	output: #Secret | {[string]: output}
 	// Transformation function
 	#function: {
 		// Full contents of the input secret (only available to the function)
-		input: string
+		input:           string
+		_functionOutput: string | {[string]: _functionOutput}
 		// New contents of the output secret (must provided by the caller)
-		output: string
+		output: _functionOutput
 	}
 }
