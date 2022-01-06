@@ -99,9 +99,7 @@ engine.#Plan & {
 
 		appImage: engine.#Copy & {
 			input: runtimeImage.output
-			source: {
-				root: inputs.directories.app.contents
-			}
+			source: root: inputs.directories.app.contents
 			dest: "/app"
 		}
 
@@ -154,9 +152,7 @@ engine.#Plan & {
 
 		imageProdDockerCopy: engine.#Copy & {
 			input: imageProdCacheCopy.output
-			source: {
-				root: inputs.directories.docker.contents
-			}
+			source: root: inputs.directories.docker.contents
 			dest: "/"
 		}
 
