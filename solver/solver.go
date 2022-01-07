@@ -120,6 +120,10 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 
 // Solve will block until the state is solved and returns a Reference.
 func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
+	// makes Solve() to block until LLB graph is solved. otherwise it will
+	// return result (that you can for example use for next build) that
+	// will be evaluated on export or if you access files on it.
+	req.Evaluate = true
 	res, err := s.opts.Gateway.Solve(ctx, req)
 	if err != nil {
 		return nil, CleanError(err)
@@ -149,11 +153,6 @@ func (s Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform
 	// call solve
 	res, err := s.SolveRequest(ctx, bkgw.SolveRequest{
 		Definition: def,
-
-		// makes Solve() to block until LLB graph is solved. otherwise it will
-		// return result (that you can for example use for next build) that
-		// will be evaluated on export or if you access files on it.
-		Evaluate: true,
 	})
 	if err != nil {
 		return nil, err
