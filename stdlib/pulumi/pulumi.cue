@@ -31,7 +31,7 @@ import (
 
 	state: #up: [
 		op.#FetchContainer & {
-			ref: "pulumi/pulumi:\(version)"
+			ref: "pulumi/pulumi-\(runtime):\(version)"
 		},
 
 		op.#Copy & {
