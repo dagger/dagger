@@ -12,13 +12,13 @@ import (
 )
 
 func init() {
-	Register("LoadSecret", func() Task { return &loadSecretTask{} })
+	Register("NewSecret", func() Task { return &newSecretTask{} })
 }
 
-type loadSecretTask struct {
+type newSecretTask struct {
 }
 
-func (t *loadSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -49,6 +49,6 @@ func (t *loadSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s s
 	secret := pctx.Secrets.New(plaintext)
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"contents": secret.MarshalCUE(),
+		"output": secret.MarshalCUE(),
 	})
 }

@@ -126,8 +126,8 @@ setup() {
     assert_failure
 }
 
-@test "task: #LoadSecret" {
-    cd "$TESTDIR"/tasks/loadsecret
+@test "task: #NewSecret" {
+    cd "$TESTDIR"/tasks/newsecret
 
-    "$DAGGER" --europa up ./loadsecret.cue
+    "$DAGGER" --europa up ./newsecret.cue
 }

@@ -138,18 +138,6 @@ _No input._
 
 _No output._
 
-## engine.#LoadSecret
-
-Load a secret from a filesystem tree
-
-### engine.#LoadSecret Inputs
-
-_No input._
-
-### engine.#LoadSecret Outputs
-
-_No output._
-
 ## engine.#Merge
 
 Merge multiple FS trees into one
@@ -183,6 +171,18 @@ A transient filesystem mount.
 _No input._
 
 ### engine.#Mount Outputs
+
+_No output._
+
+## engine.#NewSecret
+
+Create a new a secret from a filesystem tree
+
+### engine.#NewSecret Inputs
+
+_No input._
+
+### engine.#NewSecret Outputs
 
 _No output._
 

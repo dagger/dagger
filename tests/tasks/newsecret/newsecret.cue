@@ -15,7 +15,7 @@ engine.#Plan & {
 			args: ["sh", "-c", "echo test > /secret"]
 		}
 
-		load: engine.#LoadSecret & {
+		load: engine.#NewSecret & {
 			input: generate.output
 			path:  "/secret"
 		}
@@ -24,7 +24,7 @@ engine.#Plan & {
 			input: image.output
 			mounts: secret: {
 				dest:     "/run/secrets/test"
-				contents: load.contents
+				contents: load.output
 			}
 			args: [
 				"sh", "-c",
