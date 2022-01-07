@@ -42,8 +42,14 @@ func (fs *FS) State() (llb.State, error) {
 
 func (fs *FS) MarshalCUE() *compiler.Value {
 	v := compiler.NewValue()
-	if err := v.FillPath(fsIDPath, fs.id); err != nil {
-		panic(err)
+	if fs.result == nil {
+		if err := v.FillPath(fsIDPath, nil); err != nil {
+			panic(err)
+		}
+	} else {
+		if err := v.FillPath(fsIDPath, fs.id); err != nil {
+			panic(err)
+		}
 	}
 	return v
 }
