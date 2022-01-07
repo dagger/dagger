@@ -23,7 +23,7 @@ Using Dagger, software teams can develop powerful CICD pipelines with minimal ef
 
 ## Useful links
 
-- [Join the Dagger community on Discord](https://discord.gg/ufnyBtc8uY)
-- [Install from a binary release](https://docs.dagger.io/1001/install/)
-- [Build from source](https://docs.dagger.io/1001/install/#option-4-install-from-source)
-- [How to contribute](CONTRIBUTING.md)
+* [Join the Dagger community on Discord](https://discord.gg/ufnyBtc8uY)
+* [Install from a binary release](https://docs.dagger.io/1001/install/)
+* [Build from source](https://docs.dagger.io/1001/install/#option-4-install-from-source)
+* [How to contribute](CONTRIBUTING.md)
