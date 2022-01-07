@@ -116,13 +116,11 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 	}
 
 	st, err := ref.ToState()
-
 	if err != nil {
 		return nil, err
 	}
 
 	solvedRef, err := s.Solve(ctx, st, pctx.Platform.Get())
-
 	if err != nil {
 		return nil, err
 	}
