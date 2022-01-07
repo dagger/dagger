@@ -4,10 +4,8 @@ import "alpha.dagger.io/europa/dagger/engine"
 
 engine.#Plan & {
 	actions: {
-		scratch: engine.#Scratch
-
 		data: engine.#WriteFile & {
-			input:       scratch.output
+			input:       engine.#Scratch
 			path:        "/test"
 			permissions: 0o600
 			contents:    "foobar"

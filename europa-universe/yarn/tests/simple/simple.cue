@@ -5,7 +5,7 @@ import (
 )
 
 b: #Build & {
-	source: engine.#Scratch.output
+	source: engine.#Scratch
 }
 
 out: b.output

@@ -16,12 +16,9 @@ import (
 	// Subdirectory tree
 	output: #FS & copy.output
 
-	// Base image
-	scratch: engine.#Scratch
-
 	// Copy action
 	copy: engine.#Copy & {
-		"input": scratch.output
+		"input": engine.#Scratch
 		source: {
 			root:   input
 			"path": path

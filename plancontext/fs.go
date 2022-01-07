@@ -71,6 +71,11 @@ func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
 
+	// This is #Scratch, so we'll return an empty FS
+	if v.LookupPath(fsIDPath).Kind() == cue.NullKind {
+		return &FS{}, nil
+	}
+
 	id, err := v.LookupPath(fsIDPath).String()
 	if err != nil {
 		return nil, fmt.Errorf("invalid FS %q: %w", v.Path(), err)
