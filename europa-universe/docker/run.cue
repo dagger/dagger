@@ -1,21 +1,11 @@
-// Build, ship and run Docker containers in Dagger
 package docker
 
 import (
 	"list"
 
-	"dagger.io/dagger/engine"
 	"dagger.io/dagger"
+	"dagger.io/dagger/engine"
 )
-
-// A container image
-#Image: {
-	// Root filesystem of the image.
-	rootfs: dagger.#FS
-
-	// Image config
-	config: engine.#ImageConfig
-}
 
 // Run a command in a container
 #Run: {
@@ -136,68 +126,5 @@ import (
 		"env":     env
 		"workdir": workdir
 		"user":    user
-	}
-}
-
-// A ref is an address for a remote container image
-// Examples:
-//   - "index.docker.io/dagger"
-//   - "dagger"
-//   - "index.docker.io/dagger:latest"
-//   - "index.docker.io/dagger:latest@sha256:a89cb097693dd354de598d279c304a1c73ee550fbfff6d9ee515568e0c749cfe"
-#Ref: engine.#Ref
-
-// Download an image from a remote registry
-#Pull: {
-	// Source ref.
-	source: #Ref
-
-	// Registry authentication
-	// Key must be registry address, for example "index.docker.io"
-	auth: [registry=string]: {
-		username: string
-		secret:   dagger.#Secret
-	}
-
-	_op: engine.#Pull & {
-		"source": source
-		"auth": [ for target, creds in auth {
-			"target": target
-			creds
-		}]
-	}
-
-	// Downloaded image
-	image: #Image & {
-		rootfs: _op.output
-		config: _op.config
-	}
-
-	// FIXME: compat with Build API
-	output: image
-}
-
-// Upload an image to a remote repository
-#Push: {
-	// Destination ref
-	dest: #Ref
-
-	// Complete ref after pushing (including digest)
-	result: #Ref & _push.result
-
-	// Registry authentication
-	// Key must be registry address
-	auth: [registry=string]: {
-		username: string
-		secret:   dagger.#Secret
-	}
-
-	// Image to push
-	image: #Image
-
-	_push: engine.#Push & {
-		dest:   dest
-		input:  image.rootfs
-		config: image.config
 	}
 }
