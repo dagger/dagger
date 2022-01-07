@@ -13,45 +13,11 @@ import (
 	// Generate build DAG from linerar steps
 	dag: {
 		for idx, step in steps {
-			///// FIXME: this section is broken and in the middle of debug + rewrite
-			//// // 1. image -> input
-			//// if (step.input == _|_) && ((step.image & #Image) != _|_) {
-			////  input: image
-			//// }
-
-			//// // 2. 
-			//// if ((step.output & docker.#Image) == _|_) && ((step.output.rootfs & dagger.#FS) != _|_) {
-			////  
-			//// }
-
-			//// // As a special case, wrap #Run into a valid step
-			//// if step.run != _|_ {
-			////  "\(idx)": {
-			////   input: _
-			////   run:   step & {
-			////    image: input
-			////    output: rootfs: _
-			////   }
-			////   output: {
-			////    config: input.config
-			////    rootfs: run.output.rootfs
-			////   }
-			////  }
-			//// }
-
-			//// // Otherwise, just use the step as is
-			//// if step.run == _|_ {
-			////  "\(idx)": {
-			////   run: false
-			////   step
-			////  }
-			//// }
-
-			"\(idx)": step
-
-			// Either way, connect input to previous output
-			if idx > 0 {
-				"\(idx)": input: dag["\(idx-1)"].output
+			"\(idx)": step & {
+				// connect input to previous output
+				if idx > 0 {
+					input: dag["\(idx-1)"].output
+				}
 			}
 		}
 	}
