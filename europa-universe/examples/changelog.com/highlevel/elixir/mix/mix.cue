@@ -50,7 +50,7 @@ import (
 				mix: {
 					"env":      env
 					"app":      app
-					depsCache:  "readonly"
+					depsCache:  "private"
 					buildCache: "locked"
 				}
 				workdir: "/app"
@@ -63,10 +63,11 @@ import (
 // Run mix correctly in a container
 #Run: {
 	mix: {
-		app:         string
-		env:         string
-		depsCache?:  "readonly" | "locked"
-		buildCache?: "readonly" | "locked"
+		app: string
+		env: string
+		// FIXME: "ro" | "rw"
+		depsCache?:  "private" | "locked"
+		buildCache?: "private" | "locked"
 	}
 	docker.#Run
 	env: MIX_ENV: mix.env
