@@ -115,7 +115,7 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 		return nil, err
 	}
 
-	var solvedRef bkgw.Reference
+	solvedRef := ref
 	if ref != nil {
 		st, err := ref.ToState()
 		if err != nil {
@@ -126,8 +126,6 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		solvedRef = ref
 	}
 
 	// Image metadata
