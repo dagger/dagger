@@ -174,6 +174,18 @@ _No input._
 
 _No output._
 
+## engine.#NewSecret
+
+Create a new a secret from a filesystem tree
+
+### engine.#NewSecret Inputs
+
+_No input._
+
+### engine.#NewSecret Outputs
+
+_No output._
+
 ## engine.#Plan
 
 A deployment plan executed by `dagger up`

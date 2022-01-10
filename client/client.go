@@ -213,8 +213,10 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 	}
 
 	// Just like sprintf, but redacts secrets automatically
-	secrets := pctx.Secrets.List()
 	secureSprintf := func(format string, a ...interface{}) string {
+		// Load a fresh copy of secrets (since they can be dynamically added).
+		secrets := pctx.Secrets.List()
+
 		s := fmt.Sprintf(format, a...)
 		for _, secret := range secrets {
 			s = strings.ReplaceAll(s, secret.PlainText(), "***")

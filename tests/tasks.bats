@@ -127,3 +127,9 @@ setup() {
     run "$DAGGER" --europa up ./tasks/httpfetch/not_exist.cue
     assert_failure
 }
+
+@test "task: #NewSecret" {
+    cd "$TESTDIR"/tasks/newsecret
+
+    "$DAGGER" --europa up ./newsecret.cue
+}
