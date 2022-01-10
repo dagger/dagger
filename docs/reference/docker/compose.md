@@ -17,7 +17,7 @@ import "alpha.dagger.io/docker/compose"
 | Name             | Type                     | Description                              |
 | -------------    |:-------------:           |:-------------:                           |
 |*name*            | `*"source" \| string`    |App name (use as COMPOSE_PROJECT_NAME)    |
-|*registries*      | `[]`                     |Image registries                          |
+|*registries*      | `[...{\n                 username: string\n                         secret: {\n        $dagger: {\n            secret: {}\n        }\n    }\n}]`    |Image registries    |
 
 ### compose.#App Outputs
 
