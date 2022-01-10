@@ -49,11 +49,7 @@ package engine
 }
 
 // Produce an empty directory
-#Scratch: {
-	$dagger: task: _name: "Scratch"
-
-	output: #FS
-}
+#Scratch: #FS & {$dagger: fs: _id: null}
 
 // Copy files from one FS tree to another
 #Copy: {

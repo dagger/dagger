@@ -115,14 +115,17 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 		return nil, err
 	}
 
-	st, err := ref.ToState()
-	if err != nil {
-		return nil, err
-	}
+	solvedRef := ref
+	if ref != nil {
+		st, err := ref.ToState()
+		if err != nil {
+			return nil, err
+		}
 
-	solvedRef, err := s.Solve(ctx, st, pctx.Platform.Get())
-	if err != nil {
-		return nil, err
+		solvedRef, err = s.Solve(ctx, st, pctx.Platform.Get())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Image metadata

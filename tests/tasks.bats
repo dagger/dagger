@@ -92,6 +92,8 @@ setup() {
 @test "task: #Scratch" {
     cd "$TESTDIR"/tasks/scratch
     "$DAGGER" --europa up ./scratch.cue -l debug
+    "$DAGGER" --europa up ./scratch_build_scratch.cue -l debug
+    "$DAGGER" --europa up ./scratch_writefile.cue -l debug
 }
 
 @test "task: #Subdir" {

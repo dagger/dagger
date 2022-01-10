@@ -42,8 +42,14 @@ func (fs *FS) State() (llb.State, error) {
 
 func (fs *FS) MarshalCUE() *compiler.Value {
 	v := compiler.NewValue()
-	if err := v.FillPath(fsIDPath, fs.id); err != nil {
-		panic(err)
+	if fs.result == nil {
+		if err := v.FillPath(fsIDPath, nil); err != nil {
+			panic(err)
+		}
+	} else {
+		if err := v.FillPath(fsIDPath, fs.id); err != nil {
+			panic(err)
+		}
 	}
 	return v
 }
@@ -70,6 +76,11 @@ func (c *fsContext) New(result bkgw.Reference) *FS {
 func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
+
+	// This is #Scratch, so we'll return an empty FS
+	if v.LookupPath(fsIDPath).Kind() == cue.NullKind {
+		return &FS{}, nil
+	}
 
 	id, err := v.LookupPath(fsIDPath).String()
 	if err != nil {

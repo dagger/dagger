@@ -7,7 +7,7 @@ package engine
 //  - A directory containing binary artifacts
 // Rule of thumb: if it fits in a tar archive, it fits in a #FS.
 #FS: {
-	$dagger: fs: _id: string
+	$dagger: fs: _id: string | null
 }
 
 // A reference to an external secret, for example:
