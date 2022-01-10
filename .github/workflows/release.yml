@@ -1,8 +1,13 @@
 name: Release
+
+# Only a single job with this concurrency can run at any given time
+concurrency: release
+
 on:
   push:
     tags:
     - v*
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest

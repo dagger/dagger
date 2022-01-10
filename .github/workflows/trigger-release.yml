@@ -1,0 +1,66 @@
+name: "Trigger Release"
+
+# Only a single job with this concurrency can run at any given time
+concurrency: release
+
+on:
+  # This runs on a schedule by default:
+  schedule:
+    # https://crontab.guru/#6_17_*_*_2
+    # Every Tuesday at 5:06pm UTC & 9:06am US West Coast.
+    # GitHub Actions defaults to UTC:
+    - cron: '6 17 * * 2'
+    # There is high load on GitHub Actions at the top of the hour:
+    #
+    #     Note: The schedule event can be delayed during periods of high loads of
+    #     GitHub Actions workflow runs. High load times include the start of every
+    #     hour. To decrease the chance of delay, schedule your workflow to run at a
+    #     different time of the hour.
+    #
+    # So we run these at a special time, 9:06. Ask @gerhard about it.
+
+  # And it also supports manual triggering:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Custom tag (default bumps last tag) DO NOT prefix with v'
+        required: false
+
+jobs:
+  bump_version-tag-push:
+    name: "Bump version, tag & push"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check out"
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: "Ensure that all other checks have succeeded"
+        # https://github.com/lewagon/wait-on-check-action
+        uses: lewagon/wait-on-check-action@v1.0.0
+        with:
+          ref: ${{ github.ref }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10 # polls the GitHub API every 10 every seconds
+          running-workflow-name: "Bump version, tag & push"
+          allowed-conclusions: success
+
+      - name: "Tag so that a new release is triggered"
+        id: tag_version
+        # https://github.com/mathieudutour/github-tag-action
+        uses: mathieudutour/github-tag-action@v6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fetch_all_tags: true
+          custom_tag: "${{ github.event.inputs.tag }}"
+          # This is OK for now, but let's revisit this around February 2022
+          release_branches: "there_are_only_prereleases_for_now"
+          # When we start auto-bumping patches/minors, consider removing pre-releases
+          pre_release_branches: "main"
+          append_to_pre_release_tag: "alpha"
+          # Set to true when you are testing / experimenting
+          dry_run: false
+        # This may be of interest when we need more control over the version bumps
+        # https://github.com/craig-day/compute-tag
+
