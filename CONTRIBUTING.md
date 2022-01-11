@@ -50,8 +50,8 @@ git push -f -u fork mybranch  # <-- update the pull request
 
 ## Scope of Pull Requests
 
-We prefer small incremental changes that can be reviewed and merged quickly,
-with no ceremony.  It's OK if it takes multiple pull requests to close an issue.
+We prefer small incremental changes that can be reviewed and merged quickly.
+It's OK if it takes multiple pull requests to close an issue.
 
 The idea is that each improvement should land in Dagger's main branch within a
 few hours.  The sooner we can get multiple people looking at and agreeing on a
@@ -63,9 +63,7 @@ The added benefit is that this will force everyone to think about handling
 partially implemented features & non-breaking changes. Both are great
 approached, and they work really well in the context of Dagger.
 
-"Small incremental changes FTW!" -> "Small pull requests that get merged within hours!"
-
-[Original context](https://github.com/dagger/dagger/pull/1348#issuecomment-1009628531)
+["Small incremental changes FTW!"](https://github.com/dagger/dagger/pull/1348#issuecomment-1009628531) -> "Small pull requests that get merged within hours!"
 
 ## Commits
 
