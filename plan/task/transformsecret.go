@@ -40,8 +40,8 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 		diffs := dmp.DiffMain(inputSecretPlaintext, err.Error(), false)
 		for _, diff := range diffs {
 			if diff.Type == diffmatchpatch.DiffEqual {
-				diffText := strings.ReplaceAll(diff.Text, ":", "")
-				errStr = strings.ReplaceAll(errStr, diffText, "<redacted>")
+				// diffText := strings.ReplaceAll(diff.Text, ":", "") // colons are tricky. Yaml keys end with them but if a secret contained one that got replaced, the secret wouldn't get redacted
+				errStr = strings.ReplaceAll(errStr, diff.Text, "<redacted>")
 			}
 		}
 
