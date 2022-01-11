@@ -9,9 +9,9 @@ import (
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/stdlib"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 	typePath   = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("task"),
-		cue.Hid("_name", stdlib.EnginePackage))
+		cue.Hid("_name", pkg.EnginePackage))
 )
 
 type NewFunc func() Task

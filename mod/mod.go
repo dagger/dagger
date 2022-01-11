@@ -9,7 +9,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
-	"go.dagger.io/dagger/stdlib"
+	"go.dagger.io/dagger/pkg"
 )
 
 const (
@@ -17,7 +17,7 @@ const (
 )
 
 func isUniverse(repoName string) bool {
-	return strings.HasPrefix(strings.ToLower(repoName), stdlib.ModuleName)
+	return strings.HasPrefix(strings.ToLower(repoName), pkg.AlphaModule)
 }
 
 // IsUniverseLatest check that current universe is up-to-date or no
@@ -32,7 +32,7 @@ func IsUniverseLatest(ctx context.Context, workspace string) (bool, error) {
 		return false, err
 	}
 
-	req, err := newRequire("alpha.dagger.io", UniverseVersionConstraint)
+	req, err := newRequire(pkg.AlphaModule, UniverseVersionConstraint)
 	if err != nil {
 		return false, err
 	}

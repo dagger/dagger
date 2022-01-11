@@ -9,14 +9,14 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/stdlib"
+	"go.dagger.io/dagger/pkg"
 )
 
 var (
 	fsIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("fs"),
-		cue.Hid("_id", stdlib.EnginePackage),
+		cue.Hid("_id", pkg.EnginePackage),
 	)
 )
 
