@@ -76,7 +76,7 @@ setup() {
   
   run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command_options.cue
 	assert_failure
-	assert_output --partial 'illegal option'
+	assert_output --partial 'option'
 }
 
 @test "plan/with" {
