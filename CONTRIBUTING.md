@@ -63,7 +63,7 @@ The added benefit is that this will force everyone to think about handling
 partially implemented features & non-breaking changes. Both are great
 approached, and they work really well in the context of Dagger.
 
-["Small incremental changes FTW!"](https://github.com/dagger/dagger/pull/1348#issuecomment-1009628531) -> "Small pull requests that get merged within hours!"
+["Small incremental changes ftw"](https://github.com/dagger/dagger/pull/1348#issuecomment-1009628531) -> Small pull requests that get merged within hours!
 
 ## Commits
 
