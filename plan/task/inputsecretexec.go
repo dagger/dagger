@@ -52,7 +52,7 @@ func (c *inputSecretExecTask) Run(ctx context.Context, pctx *plancontext.Context
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return nil, errors.New(string(exitErr.Stderr))
+			lg.Err(err).Msg(string(exitErr.Stderr))
 		}
 		return nil, err
 	}
