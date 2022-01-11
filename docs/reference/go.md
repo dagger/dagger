@@ -57,7 +57,7 @@ Re-usable component for the Go compiler
 | Name             | Type                   | Description                  |
 | -------------    |:-------------:         |:-------------:               |
 |*version*         | `*"1.16" \| string`    |Go version to use             |
-|*args*            | `[]`                   |Arguments to the Go binary    |
+|*args*            | `[...string]`          |Arguments to the Go binary    |
 |*source*          | `dagger.#Artifact`     |Source Directory to build     |
 
 ### go.#Go Outputs

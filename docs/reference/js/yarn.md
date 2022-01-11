@@ -25,7 +25,7 @@ A Yarn package
 |*writeEnvFile*    | `*"" \| string`         |Write the contents of `environment` to this file, in the "envfile" format             |
 |*buildDir*        | `*"build" \| string`    |Read build output from this directory (path must be relative to working directory)    |
 |*script*          | `*"build" \| string`    |Run this yarn script                                                                  |
-|*args*            | `*[] \| []`             |Optional arguments for the script                                                     |
+|*args*            | `*[] \| [...string]`    |Optional arguments for the script                                                     |
 
 ### yarn.#Package Outputs
 

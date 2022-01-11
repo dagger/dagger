@@ -90,4 +90,4 @@ List tags of a repository
 
 | Name             | Type              | Description        |
 | -------------    |:-------------:    |:-------------:     |
-|*tags*            | `[]`              |Repository tags     |
+|*tags*            | `[...string]`     |Repository tags     |
