@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,6 +50,10 @@ func (c *inputSecretExecTask) Run(ctx context.Context, pctx *plancontext.Context
 	// sec audited by @aluzzardi and @mrjones
 	out, err := cmd.Output()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, errors.New(string(exitErr.Stderr))
+		}
 		return nil, err
 	}
 

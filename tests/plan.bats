@@ -65,21 +65,18 @@ setup() {
 	assert_output --partial 'conflicting values "local directory" and "local dfsadf"'
 }
 
-@test "plan/inputs/secrets exec" {
+@test "plan/inputs/secrets" {
   cd "$TESTDIR"
   "$DAGGER" --europa up ./plan/inputs/secrets/exec.cue
-}
-
-@test "plan/inputs/secrets exec relative" {
-  cd "$TESTDIR"
-  "$DAGGER" --europa up ./plan/inputs/secrets/exec.cue
-}
-
-@test "plan/inputs/secrets invalid command" {
-  cd "$TESTDIR"
+  "$DAGGER" --europa up ./plan/inputs/secrets/exec_relative.cue
+  
   run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command.cue
 	assert_failure
 	assert_output --partial 'failed: exec: "rtyet": executable file not found'
+  
+  run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command_options.cue
+	assert_failure
+	assert_output --partial 'illegal option'
 }
 
 @test "plan/with" {
