@@ -80,6 +80,7 @@ setup() {
 }
 
 @test "aws: eks" {
+  skip "Temporary skip until porting to localstack"
   dagger -e aws-eks up
 }
 
