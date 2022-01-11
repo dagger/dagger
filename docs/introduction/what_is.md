@@ -12,7 +12,7 @@ Dagger is a portable devkit for CICD. It helps you develop powerful CICD pipelin
 * Avoid CI lock-in. Dagger runs natively on Github Actions, Gitlab, CircleCI, Jenkins, AWS Codebuild, Tekton, and more.
 * Test and debug your pipelines locally; catch configuration errors in seconds with static type checking.
 
-![Dagger_Website_Ship](https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png)
+<img src="/img/what-is-dagger.png" alt="Dagger_Website_Ship" style={{maxWidth: '50%'}} />
 
 ## Dagger is alpha software
 

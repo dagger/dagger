@@ -152,14 +152,9 @@ code {
   }
 
   img {
-    max-width: 380px;
     display: block;
     margin: auto;
     width: 100%;
-
-    @include desktopWide {
-      max-width: 500px;
-    }
   }
 }
 
