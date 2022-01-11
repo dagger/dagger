@@ -17,6 +17,6 @@ TestRepo: #up: [op.#FetchGit & {
 
 TestContent: os.#Container & {
 	always:  true
-	command: "ls -l /input/repo | grep 'universe -> stdlib'"
+	command: "ls -l /input/repo/README.md"
 	mount: "/input/repo": from: TestRepo
 }
