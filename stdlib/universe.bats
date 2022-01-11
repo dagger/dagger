@@ -43,6 +43,7 @@ setup() {
 }
 
 @test "netlify" {
+  skip "Temporary skip due to a regression in one of netlify's libraries"
   dagger -e netlify up
 }
 
@@ -79,6 +80,7 @@ setup() {
 }
 
 @test "aws: eks" {
+  skip "Temporary skip until porting to localstack"
   dagger -e aws-eks up
 }
 
