@@ -43,6 +43,7 @@ setup() {
 }
 
 @test "netlify" {
+  skip "Temporary skip due to a regression in one of netlify's libraries"
   dagger -e netlify up
 }
 
