@@ -1,4 +1,4 @@
-package stdlib
+package pkg
 
 import (
 	"context"
@@ -12,12 +12,11 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed **/*.cue **/*/*.cue europa/dagger/*.cue europa/dagger/engine/*.cue
+	//go:embed alpha.dagger.io/**/*.cue alpha.dagger.io/**/*/*.cue alpha.dagger.io/europa/dagger/*.cue alpha.dagger.io/europa/dagger/engine/*.cue
 	FS embed.FS
 
-	ModuleName    = "alpha.dagger.io"
-	EnginePackage = fmt.Sprintf("%s/europa/dagger/engine", ModuleName)
-	Path          = path.Join("cue.mod", "pkg", ModuleName)
+	AlphaModule   = "alpha.dagger.io"
+	EnginePackage = fmt.Sprintf("%s/europa/dagger/engine", AlphaModule)
 )
 
 func Vendor(ctx context.Context, dest string) error {

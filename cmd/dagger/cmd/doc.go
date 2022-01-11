@@ -21,7 +21,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
-	"go.dagger.io/dagger/stdlib"
+	"go.dagger.io/dagger/pkg"
 	"golang.org/x/term"
 )
 
@@ -315,7 +315,7 @@ func init() {
 
 func loadCode(packageName string) (*compiler.Value, error) {
 	sources := map[string]fs.FS{
-		stdlib.Path: stdlib.FS,
+		path.Join("cue.mod", "pkg"): pkg.FS,
 	}
 
 	src, err := compiler.Build("/config", sources, packageName)
@@ -333,20 +333,23 @@ func walkStdlib(ctx context.Context, output, format string) {
 	lg.Info().Str("output", output).Msg("generating stdlib")
 
 	packages := map[string]*Package{}
-	err := fs.WalkDir(stdlib.FS, ".", func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(pkg.FS, pkg.AlphaModule, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if p == "." || !d.IsDir() || d.Name() == "cue.mod" {
+
+		if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" {
 			return nil
 		}
+
+		p = strings.TrimPrefix(p, pkg.AlphaModule+"/")
 
 		// Ignore tests directories
 		if d.Name() == "tests" {
 			return nil
 		}
 
-		pkgName := fmt.Sprintf("%s/%s", stdlib.ModuleName, p)
+		pkgName := fmt.Sprintf("%s/%s", pkg.AlphaModule, p)
 		lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
 		val, err := loadCode(pkgName)
 		if err != nil {
