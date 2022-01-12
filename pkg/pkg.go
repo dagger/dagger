@@ -16,19 +16,22 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed alpha.dagger.io/**/*.cue alpha.dagger.io/**/*/*.cue dagger.io/**/*.cue dagger.io/**/*/*.cue
+	//go:embed */**/*.cue */**/**/*.cue
 	FS embed.FS
 )
 
 var (
-	AlphaModule   = "alpha.dagger.io"
-	DaggerModule  = "dagger.io"
-	EnginePackage = fmt.Sprintf("%s/dagger/engine", DaggerModule)
+	AlphaModule    = "alpha.dagger.io"
+	DaggerModule   = "dagger.io"
+	UniverseModule = "universe.dagger.io"
 
 	modules = []string{
 		AlphaModule,
 		DaggerModule,
+		UniverseModule,
 	}
+
+	EnginePackage = fmt.Sprintf("%s/dagger/engine", DaggerModule)
 
 	lockFilePath = "dagger.lock"
 )
