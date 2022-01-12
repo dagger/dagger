@@ -13,11 +13,8 @@ import (
 	// Example: "/build"
 	path: string
 
-	// Subdirectory tree
-	output: #FS & copy.output
-
 	// Copy action
-	copy: engine.#Copy & {
+	_copy: engine.#Copy & {
 		"input": engine.#Scratch
 		source: {
 			root:   input
@@ -25,4 +22,7 @@ import (
 		}
 		dest: "/"
 	}
+
+	// Subdirectory tree
+	output: #FS & _copy.output
 }
