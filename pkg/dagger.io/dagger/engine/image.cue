@@ -69,9 +69,8 @@ package engine
 }
 
 // Build a container image using buildkit
-// FIXME: rename to #Dockerfile to clarify scope
-#Build: {
-	$dagger: task: _name: "Build"
+#Dockerfile: {
+	$dagger: task: _name: "Dockerfile"
 
 	// Source directory to build
 	source: #FS

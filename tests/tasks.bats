@@ -75,8 +75,8 @@ setup() {
     assert_failure
 }
 
-@test "task: #Build" {
-    cd "$TESTDIR"/tasks/build
+@test "task: #Dockerfile" {
+    cd "$TESTDIR"/tasks/dockerfile
 
     "$DAGGER" --europa up ./dockerfile.cue
     "$DAGGER" --europa up ./inlined_dockerfile.cue
@@ -87,7 +87,7 @@ setup() {
     "$DAGGER" --europa up ./platform.cue
 
     cd "$TESTDIR"
-    "$DAGGER" --europa up ./tasks/build/build_auth.cue
+    "$DAGGER" --europa up ./tasks/dockerfile/build_auth.cue
 }
 @test "task: #Scratch" {
     cd "$TESTDIR"/tasks/scratch
