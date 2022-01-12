@@ -1,6 +1,6 @@
 package testing
 
-import "alpha.dagger.io/europa/dagger/engine"
+import "dagger.io/dagger/engine"
 
 engine.#Plan & {
 	actions: {

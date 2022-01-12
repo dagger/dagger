@@ -2,7 +2,7 @@ package main
 
 import (
 	"strings"
-	"alpha.dagger.io/europa/dagger/engine"
+	"dagger.io/dagger/engine"
 )
 
 engine.#Plan & {

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
-	"alpha.dagger.io/europa/dagger"
+	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
 engine.#Plan & {

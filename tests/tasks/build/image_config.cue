@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
+	"dagger.io/dagger/engine"
 )
 
 engine.#Plan & {

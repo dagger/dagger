@@ -1,7 +1,7 @@
 package main
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
+	"dagger.io/dagger/engine"
 )
 
 runtime_image_ref: string | *"thechangelog/runtime:2021-05-29T10.17.12Z"
