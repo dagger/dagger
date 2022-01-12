@@ -37,7 +37,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.1 // indirect
 	go.opentelemetry.io/otel/sdk v1.2.0
 	go.opentelemetry.io/otel/trace v1.2.0
-	golang.org/x/exp v0.0.0-20220104160115-025e73f80486 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
@@ -50,7 +49,7 @@ require (
 )
 
 replace (
-	cuelang.org/go => github.com/dagger/cue v0.4.1-rc.1.0.20220106143633-60d6503d1974
+	cuelang.org/go => github.com/dagger/cue v0.4.1-rc.1.0.20220112190800-9382b9fd5940
 	github.com/hashicorp/go-immutable-radix => github.com/tonistiigi/go-immutable-radix v0.0.0-20170803185627-826af9ccf0fe
 	// genproto: corresponds to containerd
 	google.golang.org/genproto => google.golang.org/genproto v0.0.0-20200224152610-e50cd9704f63
