@@ -127,3 +127,17 @@ Then from the repository root:
 ```console
 markdownlint -c .markdownlint.yaml docs/**/*.md
 ```
+
+### How to retrigger a Github Action workflow?
+
+There isn't a button that Dagger contributors can click in their fork of Dagger that will trigger a GitHub Action workflow run. See issue [#1669](https://github.com/dagger/dagger/issues/1169) for more context.
+
+The current workaround is to force push to your fork:
+
+```bash
+➜ # Apply a small change to a comment
+➜ git add --all
+➜ make lint # Make sure that the linter is happy :)
+➜ git commit --signoff --amend
+➜ git push <your-fork> <Branch> --force
+```
