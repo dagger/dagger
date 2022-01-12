@@ -150,7 +150,9 @@ func (p *Plan) Up(ctx context.Context, s solver.Solver) (*compiler.Value, error)
 	computed := compiler.NewValue()
 
 	flow := cueflow.New(
-		&cueflow.Config{},
+		&cueflow.Config{
+			FindHiddenTasks: true,
+		},
 		p.source.Cue(),
 		newRunner(p.context, s, computed),
 	)
