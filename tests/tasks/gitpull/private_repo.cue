@@ -1,6 +1,6 @@
 package main
 
-import "alpha.dagger.io/europa/dagger/engine"
+import "dagger.io/dagger/engine"
 
 engine.#Plan & {
 	inputs: secrets: token: command: {

@@ -19,8 +19,6 @@
 - [dagger/op](./dagger/op.md) - op: low-level operations for Dagger processing pipelines
 - [docker](./docker/README.md) - Docker container operations
 - [docker/compose](./docker/compose.md) - Docker-compose operations
-- [europa/dagger](./europa/dagger/README.md) - -
-- [europa/dagger/engine](./europa/dagger/engine.md) - -
 - [gcp](./gcp/README.md) - Google Cloud Platform
 - [gcp/cloudrun](./gcp/cloudrun.md) - -
 - [gcp/gcr](./gcp/gcr.md) - Google Container Registry

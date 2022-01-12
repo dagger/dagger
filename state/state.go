@@ -6,6 +6,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plancontext"
 )
 
@@ -55,7 +56,7 @@ func (s *State) CompilePlan(ctx context.Context) (*compiler.Value, error) {
 	// 2) For backward compatibility: if the project was `dagger
 	// init`-ed before we added support for vendoring universe, it might not
 	// contain a `cue.mod`.
-	if err := VendorUniverse(ctx, w); err != nil {
+	if err := pkg.Vendor(ctx, w); err != nil {
 		return nil, err
 	}
 

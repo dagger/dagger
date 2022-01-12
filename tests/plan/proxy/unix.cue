@@ -1,7 +1,7 @@
 package main
 
 import (
-	"alpha.dagger.io/europa/dagger/engine"
+	"dagger.io/dagger/engine"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/alpine"
 )

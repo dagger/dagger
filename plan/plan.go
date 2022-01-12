@@ -11,10 +11,10 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/state"
 	"go.opentelemetry.io/otel"
 )
 
@@ -33,8 +33,8 @@ type Config struct {
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
-	// FIXME: universe vendoring
-	if err := state.VendorUniverse(ctx, ""); err != nil {
+	// FIXME: vendoring path
+	if err := pkg.Vendor(ctx, ""); err != nil {
 		return nil, err
 	}
 
