@@ -83,6 +83,7 @@ html[data-theme="dark"] {
   --ifm-table-stripe-background: #2e526a;
   --ifm-code-background: var(--ifm-color-primary-dark);
   --ifm-heading-color: var(--ifm-color-primary-light);
+  --ifm-menu-color-background-hover: var(--ifm-color-primary);
   --ifm-blockquote-color: var(--ifm-menu-color-background-hover);
   --ifm-color-emphasis-300: var(--ifm-menu-color-background-hover);
 }
@@ -199,8 +200,7 @@ h1[class^="h1Heading"] {
 }
 
 #__docusaurus {
-  background-color: var(--ifm-color-primary-light);
-  // padding-bottom: 3rem;
+  background-color: white;
 
   html[data-theme="dark"] & {
     background: var(--ifm-color-primary-darker);
@@ -216,6 +216,7 @@ h1[class^="h1Heading"] {
 
 .button {
   background: var(--ifm-color-secondary);
+  color: var(--ifm-navbar-link-color);
   font-family: var(--ifm-font-family-title);
   font-size: 1rem;
   font-style: normal;
@@ -223,12 +224,13 @@ h1[class^="h1Heading"] {
   line-height: 1;
   letter-spacing: 0em;
   text-align: left;
-  padding: 1rem;
+  padding: 0.625rem 1.5rem;
   border: 0;
-  border-radius: 0;
+  border-radius: 50px;
 
   &:hover {
     background: #ffffff;
+    color: var(--ifm-navbar-link-color);
     cursor: pointer;
   }
 
@@ -238,6 +240,10 @@ h1[class^="h1Heading"] {
   }
 }
 
+.hash-link,
+.hash-link::before {
+  color: var(--ifm-color-info);
+}
 /* navbar */
 .navbar__brand .navbar__logo {
   height: 5rem;
@@ -263,7 +269,7 @@ h1[class^="h1Heading"] {
   margin: 0 0.75rem;
 }
 .navbar__items--right > :last-child {
-  padding: 1rem;
+  padding-right: 1.5rem;
 }
 
 .react-toggle {
@@ -273,8 +279,7 @@ h1[class^="h1Heading"] {
 .header-discord-link,
 .header-github-link {
   height: 48px;
-  padding: 0;
-
+  line-height: 36px;
   @include desktop {
     width: 48px;
     span {
@@ -283,12 +288,20 @@ h1[class^="h1Heading"] {
   }
 }
 
-.header-github-link {
+.header-github-link,
+.header-github-link:hover {
   background: url("/img/github-icon.svg") no-repeat;
+  @include tablet {
+    background-color: var(--ifm-color-primary);
+  }
 }
 
-.header-discord-link {
+.header-discord-link,
+.header-discord-link:hover {
   background: url("/img/discord-icon.svg") no-repeat;
+  @include tablet {
+    background-color: var(--ifm-color-primary);
+  }
 }
 
 .navbar .button svg {
@@ -401,160 +414,39 @@ button[class^="copyButton"] {
   color: var(--ifm-color-primary-dark);
 }
 
-/* hash-link */
-.hash-link {
-  svg path + path {
-    fill: #40b8bb;
-  }
-
-  &:hover svg path + path {
-    fill: #175761;
-  }
-
-  &:focus svg path + path {
-    fill: var(--ifm-color-primary-dark);
-  }
-  &::before {
-    display: none;
-  }
-}
-
-/* menu */
 .menu {
-  padding: 0 !important;
-
-  @include desktop {
-    & > ul > li:nth-child(1) > a:nth-child(1) {
-      padding-top: 2rem;
-      border-top: 0;
-    }
-  }
-
-  & > ul > li > a:nth-child(1) {
-    background-color: var(--ifm-color-primary-light);
-    border-top: 1px solid;
-    border-bottom: 1px solid;
-    border-color: #f0efe7;
-
-    html[data-theme="dark"] & {
-      background-color: var(--ifm-color-primary);
-      border-color: #65627b;
-    }
-  }
-
-  & > ul > li + li > a:nth-child(1) {
-    border-top: 0;
-  }
+  padding: 3rem 0.5rem 0.5rem !important;
 }
 
-.menu__list {
-  background-color: var(--ifm-color-secondary);
-
-  & > .menu__list-item > & {
-    padding-top: 0;
-  }
-
-  .menu__list-item {
-    margin-top: 0;
-  }
-  html[data-theme="dark"] & {
-    background-color: var(--ifm-color-primary-dark);
-  }
+.menu__link.button {
+  width: 190px;
+  margin: auto;
 }
 
-.menu__link {
-  border-radius: 0;
-  padding: 1rem;
-
+.menu__link:not(.button) {
   @include tablet {
-    display: flex;
-    justify-content: center;
-    font-family: var(--ifm-font-family-title);
-    font-size: 1rem;
-    font-style: normal;
-    font-weight: 700;
-    line-height: 1;
-    position: relative;
-  }
-
-  & + .menu__list & {
-    padding-left: 2rem;
-    width: calc(100% - 1rem);
-
-    &:hover,
-    &.active {
-      background-color: var(--ifm-color-primary-dark);
-      color: var(--ifm-color-primary-light);
-    }
-
-    &.active {
-      font-weight: bold;
-    }
-
-    &:focus,
-    &:active {
-      background-color: var(--ifm-color-primary-dark);
-      color: var(--ifm-color-primary-light);
-    }
-
-    &--active:not(.menu__link--sublist) {
-      background-color: var(--ifm-color-primary);
-      color: var(--ifm-color-primary-light);
-      font-weight: bold;
-
-      html[data-theme="dark"] & {
-        background-color: var(--ifm-menu-color-background-hover);
-        color: var(--ifm-color-primary);
-      }
-    }
-
-    html[data-theme="dark"] &,
-    html[data-theme="dark"] &:not([href]),
-    html[data-theme="dark"] &:focus {
-      color: var(--ifm-color-primary-light);
-    }
-
-    html[data-theme="dark"] &:not(.menu__link--active):hover {
-      background-color: var(--ifm-color-primary);
-    }
-
-    html[data-theme="dark"] &:not(.menu__link--active):active {
-      background-color: var(--ifm-color-primary-light);
-      color: var(--ifm-color-primary);
-    }
-
-    &.menu__link--sublist {
-      color: var(--ifm-color-primary-dark);
-      padding-right: 2rem;
-      margin-bottom: 0;
-
-      &:active,
-      &:focus {
-        background-color: var(--ifm-color-primary-light);
-      }
-
-      &:hover {
-        background-color: var(--ifm-menu-color-background-hover);
-      }
-
-      html[data-theme="dark"] & {
-        color: var(--ifm-color-primary-light);
-      }
-      html[data-theme="dark"] &:active,
-      html[data-theme="dark"] &:focus,
-      html[data-theme="dark"] &:hover {
-        color: var(--ifm-color-primary-light);
-        background-color: var(--ifm-color-primary);
-      }
+    background-color: transparent;
+    color: var(--ifm-color-primary-light);
+    // --ifm-menu-color-active: var(--ifm-color-primary-light);
+    // --ifm-menu-color-background-active: var(--ifm-color-primary);
+    span {
+      display: block;
+      margin-left: 3rem;
+      color: white;
     }
   }
+}
 
-  &--sublist {
-    margin-bottom: 0;
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: bold;
+  @include tablet {
+    background: var(--ifm-color-primary);
   }
+}
 
-  &--sublist::after {
-    margin-left: auto;
+.menu__link--active:hover {
+  @include tablet {
+    color: var(--ifm-color-primary-light);
   }
 }
 
