@@ -68,38 +68,35 @@ package engine
 	config: #ImageConfig
 }
 
-// Build a container image using buildkit
+// Build a container image using a Dockerfile
 #Dockerfile: {
 	$dagger: task: _name: "Dockerfile"
 
 	// Source directory to build
 	source: #FS
-	{
-		frontend:   "dockerfile"
-		dockerfile: {
-			path: string | *"Dockerfile"
-		} | {
-			contents: string
-		}
 
-		// Authentication
-		auth: [...{
-			target:   string
-			username: string
-			secret:   string | #Secret
-		}]
-
-		// FIXME: options ported from op.#DockerBuild
-		platforms?: [...string]
-		target?: string
-		buildArg?: [string]: string
-		label?: [string]:    string
-		hosts?: [string]:    string
+	*{
+		path: string | *"Dockerfile"
+	} | {
+		contents: string
 	}
 
-	// Root filesystem produced by build
+	// Authentication
+	auth: [...{
+		target:   string
+		username: string
+		secret:   string | #Secret
+	}]
+
+	platforms?: [...string]
+	target?: string
+	buildArg?: [string]: string
+	label?: [string]:    string
+	hosts?: [string]:    string
+
+	// Root filesystem produced
 	output: #FS
 
-	// Container image config produced by build
+	// Container image config produced
 	config: #ImageConfig
 }

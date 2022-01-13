@@ -85,9 +85,7 @@ setup() {
     "$DAGGER" --europa up ./image_config.cue
     "$DAGGER" --europa up ./labels.cue
     "$DAGGER" --europa up ./platform.cue
-
-    cd "$TESTDIR"
-    "$DAGGER" --europa up ./tasks/dockerfile/build_auth.cue
+    "$DAGGER" --europa up ./build_auth.cue
 }
 @test "task: #Scratch" {
     cd "$TESTDIR"/tasks/scratch
