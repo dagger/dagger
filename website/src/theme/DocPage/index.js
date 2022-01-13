@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
-import React, {useState, useCallback, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {MDXProvider} from '@mdx-js/react';
 import renderRoutes from '@docusaurus/renderRoutes';
 import Layout from '@theme/Layout';
@@ -17,16 +17,25 @@ import {matchPath} from '@docusaurus/router';
 import {translate} from '@docusaurus/Translate';
 import clsx from 'clsx';
 import styles from './styles.module.css';
-import {ThemeClassNames, docVersionSearchTag} from '@docusaurus/theme-common';
+import {
+  ThemeClassNames,
+  docVersionSearchTag,
+  DocsSidebarProvider,
+  useDocsSidebar,
+  DocsVersionProvider,
+} from '@docusaurus/theme-common';
+import Head from '@docusaurus/Head';
 import DocPageCustom from "../../components/DocPageCustom"
 import amplitude from 'amplitude-js';
 
-function DocPageContent({currentDocRoute, versionMetadata, children}) {
+function DocPageContent({
+  currentDocRoute,
+  versionMetadata,
+  children,
+  sidebarName,
+}) {
+  const sidebar = useDocsSidebar();
   const {pluginId, version} = versionMetadata;
-  const sidebarName = currentDocRoute.sidebar;
-  const sidebar = sidebarName
-    ? versionMetadata.docsSidebars[sidebarName]
-    : undefined;
   const [hiddenSidebarContainer, setHiddenSidebarContainer] = useState(false);
   const [hiddenSidebar, setHiddenSidebar] = useState(false);
   const toggleSidebar = useCallback(() => {
@@ -34,13 +43,13 @@ function DocPageContent({currentDocRoute, versionMetadata, children}) {
       setHiddenSidebar(false);
     }
 
-    setHiddenSidebarContainer(!hiddenSidebarContainer);
+    setHiddenSidebarContainer((value) => !value);
   }, [hiddenSidebar]);
   return (
     <Layout
-      wrapperClassName={ThemeClassNames.wrapper.docPages}
+      wrapperClassName={ThemeClassNames.wrapper.docsPages}
       pageClassName={ThemeClassNames.page.docsDocPage}
-      searchMetadatas={{
+      searchMetadata={{
         version,
         tag: docVersionSearchTag(pluginId, version),
       }}>
@@ -130,7 +139,7 @@ function DocPage(props) {
     matchPath(location.pathname, docRoute),
   );
 
-  // DocPage Swizzle
+    // DocPage Swizzle
   const [userAccessStatus, setUserAccessStatus] = useState(
     (() => {
       if (typeof window !== 'undefined')
@@ -157,19 +166,32 @@ function DocPage(props) {
   // End DocPageSwizzle
 
   if (!currentDocRoute) {
-    return <NotFound {...props} />;
-  }
+    return <NotFound />;
+  } // For now, the sidebarName is added as route config: not ideal!
 
+  const sidebarName = currentDocRoute.sidebar;
+  const sidebar = sidebarName
+    ? versionMetadata.docsSidebars[sidebarName]
+    : null;
   return (
-    <DocPageContent
-      currentDocRoute={currentDocRoute}
-      versionMetadata={versionMetadata}>
-      <div data-cy="cy-doc-content">
-        {renderRoutes(docRoutes, {
-          versionMetadata,
-        })}
-      </div>
-    </DocPageContent>
+    <>
+      <Head>
+        {/* TODO we should add a core addRoute({htmlClassName}) generic plugin option */}
+        <html className={versionMetadata.className} />
+      </Head>
+      <DocsVersionProvider version={versionMetadata}>
+        <DocsSidebarProvider sidebar={sidebar}>
+          <DocPageContent
+            currentDocRoute={currentDocRoute}
+            versionMetadata={versionMetadata}
+            sidebarName={sidebarName}>
+            {renderRoutes(docRoutes, {
+              versionMetadata,
+            })}
+          </DocPageContent>
+        </DocsSidebarProvider>
+      </DocsVersionProvider>
+    </>
   );
 }
 
