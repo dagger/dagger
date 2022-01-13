@@ -8,14 +8,13 @@ engine.#Plan & {
 	inputs: directories: testdata: path: "./testdata"
 
 	actions: {
-		build: engine.#Build & {
+		build: engine.#Dockerfile & {
 			source: inputs.directories.testdata.contents
-			dockerfile: path: "./dockerfilepath/Dockerfile.custom"
 		}
 
 		verify: engine.#Exec & {
 			input: build.output
-			args: ["sh", "-c", "test $(cat /test) = dockerfilePath"]
+			args: ["sh", "-c", "test $(cat /dir/foo) = foobar"]
 		}
 	}
 }

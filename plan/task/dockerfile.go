@@ -22,27 +22,13 @@ import (
 )
 
 func init() {
-	Register("Build", func() Task { return &buildTask{} })
+	Register("Dockerfile", func() Task { return &dockerfileTask{} })
 }
 
-type buildTask struct {
+type dockerfileTask struct {
 }
 
-func (t *buildTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	frontend, err := v.Lookup("frontend").String()
-	if err != nil {
-		return nil, err
-	}
-
-	switch frontend {
-	case "dockerfile":
-		return t.dockerfile(ctx, pctx, s, v)
-	default:
-		return nil, fmt.Errorf("unsupported frontend %q", frontend)
-	}
-}
-
-func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	// Read auth info
@@ -144,7 +130,7 @@ func (t *buildTask) dockerfile(ctx context.Context, pctx *plancontext.Context, s
 	})
 }
 
-func (t *buildTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
+func (t *dockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
 	opts := map[string]string{}
 
 	if dockerfilePath := v.Lookup("dockerfile.path"); dockerfilePath.Exists() {
