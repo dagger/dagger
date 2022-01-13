@@ -96,46 +96,46 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Custom git provider without folder",
-			in:   "git.blocklayer.com/dagger/universe.git@main",
+			in:   "git.blocklayer.com/dagger/test.git@main",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/test.git",
 				path:    "",
 				version: "main",
 			},
 		},
 		{
 			name: "Custom git provider with folder and version",
-			in:   "git.blocklayer.com/dagger/universe.git/stdlib/alpha.dagger.io/dagger@v0.1.0",
+			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/universe.git",
-				path:    "/stdlib/alpha.dagger.io/dagger",
-				version: "v0.1.0",
+				repo:    "git.blocklayer.com/dagger/test.git",
+				path:    "/test",
+				version: "v1.1.0",
 			},
 		},
 		{
 			name: "Custom git provider with folder and version",
-			in:   "git.blocklayer.com/dagger/universe.git/stdlib@v5",
+			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/universe.git",
-				path:    "/stdlib",
-				version: "v5",
+				repo:    "git.blocklayer.com/dagger/test.git",
+				path:    "/test",
+				version: "v1.1.0",
 			},
 		},
 		{
 			name: "Custom git provider without folder",
-			in:   "git.blocklayer.com/dagger/universe.git",
+			in:   "git.blocklayer.com/dagger/test.git",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/universe.git",
+				repo:    "git.blocklayer.com/dagger/test.git",
 				path:    "",
 				version: "",
 			},
 		},
 		{
 			name: "Custom git provider with folder, no version",
-			in:   "git.blocklayer.com/dagger/universe.git/stdlib/alpha.dagger.io/dagger",
+			in:   "git.blocklayer.com/dagger/test.git/test",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/universe.git",
-				path:    "/stdlib/alpha.dagger.io/dagger",
+				repo:    "git.blocklayer.com/dagger/test.git",
+				path:    "/test",
 				version: "",
 			},
 		},
@@ -163,15 +163,15 @@ func TestParseArgument(t *testing.T) {
 			}
 
 			if got.repo != c.want.repo {
-				t.Errorf("repos differ: want %s, got %s", c.want.repo, got.repo)
+				t.Errorf("repos differ %q: want %s, got %s", c.in, c.want.repo, got.repo)
 			}
 
 			if got.path != c.want.path {
-				t.Errorf("paths differ: want %s, got %s", c.want.path, got.path)
+				t.Errorf("paths differ %q: want %s, got %s", c.in, c.want.path, got.path)
 			}
 
 			if got.version != c.want.version {
-				t.Errorf("versions differ: want %s, got %s", c.want.version, got.version)
+				t.Errorf("versions differ (%q): want %s, got %s", c.in, c.want.version, got.version)
 			}
 		})
 	}

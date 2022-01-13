@@ -71,8 +71,8 @@ func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 		version:           repoMatches[2],
 		versionConstraint: versionConstraint,
 
-		cloneRepo: "github.com/dagger/universe",
-		clonePath: path.Join("/stdlib", repoMatches[1]),
+		cloneRepo: "github.com/dagger/examples",
+		clonePath: path.Join("/helloapp", repoMatches[1]),
 	}, nil
 }
 
