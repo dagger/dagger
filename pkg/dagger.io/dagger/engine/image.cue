@@ -75,7 +75,7 @@ package engine
 	// Source directory to build
 	source: #FS
 
-	*{
+	dockerfile: *{
 		path: string | *"Dockerfile"
 	} | {
 		contents: string

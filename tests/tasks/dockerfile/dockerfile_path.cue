@@ -10,7 +10,7 @@ engine.#Plan & {
 	actions: {
 		build: engine.#Dockerfile & {
 			source: inputs.directories.testdata.contents
-			path:   "./dockerfilepath/Dockerfile.custom"
+			dockerfile: path: "./dockerfilepath/Dockerfile.custom"
 		}
 
 		verify: engine.#Exec & {

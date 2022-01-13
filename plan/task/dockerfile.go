@@ -60,7 +60,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s s
 	dockerfileDef := contextDef
 
 	// Support inlined dockerfile
-	if dockerfile := v.Lookup("contents"); dockerfile.Exists() {
+	if dockerfile := v.Lookup("dockerfile.contents"); dockerfile.Exists() {
 		contents, err := dockerfile.String()
 		if err != nil {
 			return nil, err
@@ -133,7 +133,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s s
 func (t *dockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
 	opts := map[string]string{}
 
-	if dockerfilePath := v.Lookup("path"); dockerfilePath.Exists() {
+	if dockerfilePath := v.Lookup("dockerfile.path"); dockerfilePath.Exists() {
 		filename, err := dockerfilePath.String()
 		if err != nil {
 			return nil, err
