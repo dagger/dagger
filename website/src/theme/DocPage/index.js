@@ -185,9 +185,11 @@ function DocPage(props) {
             currentDocRoute={currentDocRoute}
             versionMetadata={versionMetadata}
             sidebarName={sidebarName}>
-            {renderRoutes(docRoutes, {
-              versionMetadata,
-            })}
+            <div data-cy="cy-doc-content">
+              {renderRoutes(docRoutes, {
+                versionMetadata,
+              })}
+            </div>
           </DocPageContent>
         </DocsSidebarProvider>
       </DocsVersionProvider>
