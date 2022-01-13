@@ -78,7 +78,7 @@ module.exports = {
         docs: {
           path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
-          editUrl: "https://github.com/dagger/dagger/blob/main",
+          editUrl: "https://github.com/dagger/dagger/edit/main/website",
           routeBasePath: "/",
           remarkPlugins: [remarkCodeImport],
         },
