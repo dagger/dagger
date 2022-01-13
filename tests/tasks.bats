@@ -80,6 +80,7 @@ setup() {
 
     "$DAGGER" --europa up ./dockerfile.cue
     "$DAGGER" --europa up ./inlined_dockerfile.cue
+    "$DAGGER" --europa up ./inlined_dockerfile_heredoc.cue
     "$DAGGER" --europa up ./dockerfile_path.cue
     "$DAGGER" --europa up ./build_args.cue
     "$DAGGER" --europa up ./image_config.cue
