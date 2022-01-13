@@ -42,18 +42,18 @@ import (
 	dest:     string | *"/"
 
 	// Execute copy operation
-	copy: engine.#Copy & {
+	_copy: engine.#Copy & {
 		"input": input.rootfs
 		"source": {
 			root: contents
 			path: source
 		}
-		dest: copy.dest
+		"dest": dest
 	}
 
 	output: #Image & {
 		config: input.config
-		rootfs: copy.output
+		rootfs: _copy.output
 	}
 }
 
