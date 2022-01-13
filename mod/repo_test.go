@@ -17,17 +17,17 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving branch name",
 			require: Require{
-				cloneRepo: "github.com/dagger/universe",
-				clonePath: "stdlib",
+				cloneRepo: "github.com/dagger/dagger-action",
+				clonePath: "",
 				version:   "main",
 			},
 		},
 		{
 			name: "resolving tag",
 			require: Require{
-				cloneRepo: "github.com/dagger/universe",
-				clonePath: "stdlib",
-				version:   "v0.1.0",
+				cloneRepo: "github.com/dagger/dagger-action",
+				clonePath: "",
+				version:   "v1.0.0",
 			},
 		},
 		// FIXME: disabled until we find a fix: "repo_test.go:56: ssh: handshake failed: knownhosts: key mismatch"
@@ -70,8 +70,8 @@ func TestListTags(t *testing.T) {
 	ctx := context.TODO()
 
 	r, err := clone(ctx, &Require{
-		cloneRepo: "github.com/dagger/universe",
-		clonePath: "stdlib",
+		cloneRepo: "github.com/dagger/dagger-action",
+		clonePath: "",
 		version:   "",
 	}, tmpDir, "", "")
 	if err != nil {
@@ -98,22 +98,22 @@ func TestVersionConstraint(t *testing.T) {
 	ctx := context.TODO()
 
 	r, err := clone(ctx, &Require{
-		cloneRepo: "github.com/dagger/universe",
-		clonePath: "stdlib",
+		cloneRepo: "github.com/dagger/dagger-action",
+		clonePath: "",
 		version:   "",
 	}, tmpDir, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tagVersion, err := r.latestTag(ctx, "<= 0.1.0")
+	tagVersion, err := r.latestTag(ctx, "<= 1.1.0")
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Make sure we select the right version based on constraint
-	if tagVersion != "v0.1.0" {
-		t.Errorf("wrong version: expected 0.1.0, got %v", tagVersion)
+	if tagVersion != "v1.1.0" {
+		t.Errorf("wrong version: expected v1.1.0, got %v", tagVersion)
 	}
 
 	// Make sure an invalid constraint (version out of range) returns an error
