@@ -24,7 +24,7 @@ import (
 	image: #Image
 
 	_push: engine.#Push & {
-		dest:   dest
+		"dest": dest
 		input:  image.rootfs
 		config: image.config
 	}
