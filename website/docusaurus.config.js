@@ -70,10 +70,6 @@ module.exports = {
         lightIcon: "img/Icon_Day-mode.svg",
       },
     },
-    gtag: {
-      trackingID: "G-RDXG80F635",
-      anonymizeIP: true,
-    },
   },
   presets: [
     [
@@ -82,9 +78,13 @@ module.exports = {
         docs: {
           path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
-          editUrl: "https://github.com/dagger/dagger/blob/main",
+          editUrl: "https://github.com/dagger/dagger/edit/main/website",
           routeBasePath: "/",
           remarkPlugins: [remarkCodeImport],
+        },
+        gtag: {
+          trackingID: "G-RDXG80F635",
+          anonymizeIP: true,
         },
         theme: {
           customCss: require.resolve("./src/css/custom.scss"),
