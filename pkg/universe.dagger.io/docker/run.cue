@@ -10,7 +10,6 @@ import (
 // Run a command in a container
 #Run: {
 	image: #Image
-	input: image // for compatibility with #Build
 
 	always: bool | *false
 
@@ -94,10 +93,7 @@ import (
 			message: string | *null
 		}
 
-		output?: {
-			// FIXME: hack for #Build compatibility
-			#Image
-
+		export: {
 			rootfs?: dagger.#FS & _exec.output
 			files: [path=string]: {
 				contents: string
