@@ -39,7 +39,7 @@ That will create 2 directories: `.dagger` and `cue.mod` where our package will r
 
 ### Install
 
-In our example we will use `gcpcloudrun` package from [github](https://github.com/dagger/packages/blob/main/gcpcloudrun/source.cue)
+In our example we will use `gcpcloudrun` package from [github](https://github.com/tjovicic/dagger-modules/tree/main/gcpcloudrun)
 Let's first add it to our `source.cue` file:
 
 ```cue title="./source.cue"
