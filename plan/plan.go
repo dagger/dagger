@@ -26,8 +26,9 @@ type Plan struct {
 }
 
 type Config struct {
-	Args []string
-	With []string
+	Args   []string
+	With   []string
+	Target string
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
@@ -149,10 +150,17 @@ func (p *Plan) Up(ctx context.Context, s solver.Solver) (*compiler.Value, error)
 
 	computed := compiler.NewValue()
 
+	cfg := &cueflow.Config{
+		FindHiddenTasks: true,
+	}
+	if p.config.Target != "" {
+		cfg.Root = cue.ParsePath(p.config.Target)
+		// The target may reference dependencies outside of the target path.
+		// InferTasks will include them in the workflow.
+		cfg.InferTasks = true
+	}
 	flow := cueflow.New(
-		&cueflow.Config{
-			FindHiddenTasks: true,
-		},
+		cfg,
 		p.source.Cue(),
 		newRunner(p.context, s, computed),
 	)
