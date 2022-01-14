@@ -54,29 +54,28 @@ import (
 	yarnImage: docker.#Run & {
 		image: alpine.image
 		script: """
-		apk add -U --no-cache bash yarn
-		"""
+			apk add -U --no-cache bash yarn
+			"""
 	}
 
 	// Run yarn in a containerized build environment
 	command: bash.#Run & {
 		// FIXME: not working?
 		// *{
-		// 	_image: alpine.#Build & {
-		// 		packages: {
-		// 			bash: version: "=~5.1"
-		// 			yarn: version: yarnVersion
-		// 		}
-		// 	}
+		//  _image: alpine.#Build & {
+		//   packages: {
+		//    bash: version: "=~5.1"
+		//    yarn: version: yarnVersion
+		//   }
+		//  }
 
-		// 	image: _image.output
-		// 	env: CUSTOM_IMAGE: "0"
+		//  image: _image.output
+		//  env: CUSTOM_IMAGE: "0"
 		// } | {
-		// 	env: CUSTOM_IMAGE: "1"
+		//  env: CUSTOM_IMAGE: "1"
 		// }
 
-		image: docker.#Image & yarnImage.output 
-
+		image: docker.#Image & yarnImage.output
 
 		script: #"""
 			# Create $ENVFILE_NAME file if set
