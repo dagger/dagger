@@ -98,7 +98,7 @@ func TestParseArgument(t *testing.T) {
 			name: "Custom git provider without folder",
 			in:   "git.blocklayer.com/dagger/test.git@main",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test.git",
+				repo:    "git.blocklayer.com/dagger/test",
 				path:    "",
 				version: "main",
 			},
@@ -107,7 +107,7 @@ func TestParseArgument(t *testing.T) {
 			name: "Custom git provider with folder and version",
 			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test.git",
+				repo:    "git.blocklayer.com/dagger/test",
 				path:    "/test",
 				version: "v1.1.0",
 			},
@@ -116,7 +116,7 @@ func TestParseArgument(t *testing.T) {
 			name: "Custom git provider with folder and version",
 			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test.git",
+				repo:    "git.blocklayer.com/dagger/test",
 				path:    "/test",
 				version: "v1.1.0",
 			},
@@ -125,7 +125,7 @@ func TestParseArgument(t *testing.T) {
 			name: "Custom git provider without folder",
 			in:   "git.blocklayer.com/dagger/test.git",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test.git",
+				repo:    "git.blocklayer.com/dagger/test",
 				path:    "",
 				version: "",
 			},
@@ -134,7 +134,7 @@ func TestParseArgument(t *testing.T) {
 			name: "Custom git provider with folder, no version",
 			in:   "git.blocklayer.com/dagger/test.git/test",
 			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test.git",
+				repo:    "git.blocklayer.com/dagger/test",
 				path:    "/test",
 				version: "",
 			},
@@ -143,7 +143,7 @@ func TestParseArgument(t *testing.T) {
 			name: "Custom git provider with custom port, folder, and version",
 			in:   "git.blocklayer.com:7999/ops/dagger.git/stuff/here@v5",
 			want: &Require{
-				repo:    "git.blocklayer.com:7999/ops/dagger.git",
+				repo:    "git.blocklayer.com:7999/ops/dagger",
 				path:    "/stuff/here",
 				version: "v5",
 			},
