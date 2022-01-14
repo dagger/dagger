@@ -1,5 +1,20 @@
 package engine
 
+// Access the source directory for the current CUE package
+// This may safely be called from any package
+#Source: {
+	$dagger: task: _name: "Source"
+
+	// Relative path to source.
+	path: string
+	// Optionally exclude certain files
+	include: [...string]
+	// Optionall include certain files
+	exclude: [...string]
+
+	output: #FS
+}
+
 // Create one or multiple directory in a container
 #Mkdir: {
 	$dagger: task: _name: "Mkdir"
