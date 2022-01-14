@@ -84,7 +84,7 @@ func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 
 	id, err := v.LookupPath(fsIDPath).String()
 	if err != nil {
-		return nil, fmt.Errorf("invalid FS %q: %w", v.Path(), err)
+		return nil, fmt.Errorf("invalid FS at path %q: %w", v.Path(), err)
 	}
 
 	fs, ok := c.store[id]
