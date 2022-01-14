@@ -32,7 +32,7 @@ import (
 	input?: #Image
 	output: #Image
 	...
-} | #Run
+}
 
 // Build step that copies files into the container image
 #Copy: {
