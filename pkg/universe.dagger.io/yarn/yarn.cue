@@ -100,8 +100,7 @@ import (
 			// FIXME: mount secrets
 		}
 
-		// FIXME
-		directories: "/build": _
+		export: directories: "/build": _
 
 		env: {
 			YARN_BUILD_SCRIPT:    yarnScript
@@ -119,5 +118,5 @@ import (
 	}
 
 	// The final contents of the package after build
-	output: command.directories."/build".contents
+	output: command.export.directories."/build".contents
 }
