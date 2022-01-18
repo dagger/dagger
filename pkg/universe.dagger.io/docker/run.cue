@@ -9,8 +9,16 @@ import (
 
 // Run a command in a container
 #Run: {
-	image: #Image
-	input: image // for compatibility with #Build
+	_image: #Image
+
+	{
+		image:  #Image
+		_image: image
+	} | {
+		// For compatibility with #Build
+		input:  #Image
+		_image: input
+	}
 
 	always: bool | *false
 
@@ -94,34 +102,35 @@ import (
 			message: string | *null
 		}
 
-		output?: {
-			// FIXME: hack for #Build compatibility
-			#Image
-
-			rootfs?: dagger.#FS & _exec.output
+		export: {
+			rootfs: dagger.#FS & _exec.output
 			files: [path=string]: {
-				contents: string
-				contents: _read.contents
-
-				_read: engine.#ReadFile & {
+				contents: string & _read.contents
+				_read:    engine.#ReadFile & {
 					input:  _exec.output
 					"path": path
 				}
 			}
 			directories: [path=string]: {
-				contents: dagger.#FS
-				contents: (dagger.#Subdir & {
+				contents: dagger.#FS & _subdir.output
+				_subdir:  dagger.#Subdir & {
 					input:  _exec.output
 					"path": path
-				}).output
+				}
 			}
 		}
+	}
+
+	// For compatibility with #Build
+	output: #Image & {
+		rootfs: _exec.output
+		config: _image.config
 	}
 
 	// Actually execute the command
 	_exec: engine.#Exec & {
 		args:      [cmd.name] + cmd._flatFlags + cmd.args
-		input:     image.rootfs
+		input:     _image.rootfs
 		"mounts":  mounts
 		"env":     env
 		"workdir": workdir

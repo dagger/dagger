@@ -11,19 +11,19 @@ import (
 	output: #Image
 
 	// Generate build DAG from linerar steps
-	dag: {
+	_dag: {
 		for idx, step in steps {
 			"\(idx)": step & {
 				// connect input to previous output
 				if idx > 0 {
-					input: dag["\(idx-1)"].output
+					input: _dag["\(idx-1)"].output
 				}
 			}
 		}
 	}
 
-	if len(dag) > 0 {
-		output: dag["\(len(dag)-1)"].output
+	if len(_dag) > 0 {
+		output: _dag["\(len(_dag)-1)"].output
 	}
 }
 
