@@ -139,6 +139,10 @@ func (t execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([
 		return nil, err
 	}
 	for _, mnt := range fields {
+		if mnt.Value.Lookup("dest").IsConcreteR() != nil {
+			return nil, fmt.Errorf("mount %q is not concrete", mnt.Selector.String())
+		}
+
 		dest, err := mnt.Value.Lookup("dest").String()
 		if err != nil {
 			return nil, err
