@@ -1,4 +1,4 @@
-name: "Trigger Release"
+name: "Auto Release"
 
 # Only a single job with this concurrency can run at any given time
 concurrency: release
@@ -27,8 +27,8 @@ on:
         required: false
 
 jobs:
-  bump_version-tag-push:
-    name: "Bump version, tag & push"
+  bump_version-tag-release:
+    name: "Bump version, tag & release"
     runs-on: ubuntu-latest
     steps:
       - name: "Check out"
@@ -46,7 +46,7 @@ jobs:
           running-workflow-name: "Bump version, tag & push"
           allowed-conclusions: success
 
-      - name: "Tag so that a new release is triggered"
+      - name: "Tag so that a new release can be produced"
         id: tag_version
         # https://github.com/mathieudutour/github-tag-action
         uses: mathieudutour/github-tag-action@v6.0
@@ -64,3 +64,17 @@ jobs:
         # This may be of interest when we need more control over the version bumps
         # https://github.com/craig-day/compute-tag
 
+      - name: "Install Go"
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16
+
+      - name: "Release"
+        uses: goreleaser/goreleaser-action@v2
+        with:
+          args: release --rm-dist --debug
+        env:
+          GITHUB_TOKEN: ${{ secrets.DAGGERCI_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
