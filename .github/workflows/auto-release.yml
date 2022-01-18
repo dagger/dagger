@@ -28,6 +28,7 @@ on:
 
 jobs:
   bump_version-tag-release:
+    # ⚠️ If this changes, remember to update the running-workflow-name property
     name: "Bump version, tag & release"
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +44,7 @@ jobs:
           ref: ${{ github.ref }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10 # polls the GitHub API every 10 every seconds
-          running-workflow-name: "Bump version, tag & push"
+          running-workflow-name: "Bump version, tag & release"
           allowed-conclusions: success
 
       - name: "Tag so that a new release can be produced"
