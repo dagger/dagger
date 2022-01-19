@@ -5,13 +5,11 @@ import (
 	"universe.dagger.io/docker"
 )
 
-// Default Alpine version
-let defaultVersion = "3.13.5@sha256:69e70a79f2d41ab5d637de98c1e0b055206ba40a8145e7bddb55ccc04e13cf8f"
-
 // Build an Alpine Linux container image
 #Build: {
-	// Alpine version to install
-	version: string | *defaultVersion
+
+	// Alpine version to install.
+	version: string | *"3.15.0@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300"
 
 	// List of packages to install
 	packages: [pkgName=string]: version: string | *""
