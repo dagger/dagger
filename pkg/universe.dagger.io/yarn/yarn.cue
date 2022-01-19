@@ -30,28 +30,51 @@ import (
 	// Run this yarn script
 	script: string | *"build"
 
+	// Fix for shadowing issues
+	let yarnScript = script
+
+	// Cache to use, passed by the caller
+	cache: engine.#CacheDir
+
 	// Optional arguments for the script
 	args: [...string] | *[]
 
 	// Secret variables
+	// FIXME: not implemented. Are they needed?
 	secrets: [string]: dagger.#Secret
 
+	// FIXME: Yarn's version depends on Alpine's version
 	// Yarn version
-	yarnVersion: *"=~1.22" | string
+	// yarnVersion: *"=~1.22" | string
+
+	// FIXME: custom base image not supported
+	image: alpine.#Build & {
+		packages: {
+			bash: {}
+			yarn: {}
+		}
+	}
 
 	// Run yarn in a containerized build environment
 	command: bash.#Run & {
-		*{
-			image: (alpine.#Build & {
-				bash: version: "=~5.1"
-				yarn: version: yarnVersion
-			}).image
-			env: CUSTOM_IMAGE: "0"
-		} | {
-			env: CUSTOM_IMAGE: "1"
-		}
+		// FIXME: not working?
+		// *{
+		//  _image: alpine.#Build & {
+		//   packages: {
+		//    bash: version: "=~5.1"
+		//    yarn: version: yarnVersion
+		//   }
+		//  }
 
-		script: """
+		//  image: _image.output
+		//  env: CUSTOM_IMAGE: "0"
+		// } | {
+		//  env: CUSTOM_IMAGE: "1"
+		// }
+
+		"image": image.output
+
+		script: #"""
 			# Create $ENVFILE_NAME file if set
 			[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
 
@@ -60,12 +83,12 @@ import (
 			opts=( $(echo $YARN_ARGS) )
 			yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
 			mv "$YARN_BUILD_DIRECTORY" /build
-			"""
+			"""#
 
 		mounts: {
 			"yarn cache": {
 				dest:     "/cache/yarn"
-				contents: engine.#CacheDir
+				contents: cache
 			}
 			"package source": {
 				dest:     "/src"
@@ -74,10 +97,10 @@ import (
 			// FIXME: mount secrets
 		}
 
-		output: directories: "/build": _
+		export: directories: "/build": _
 
 		env: {
-			YARN_BUILD_SCRIPT:    script
+			YARN_BUILD_SCRIPT:    yarnScript
 			YARN_ARGS:            strings.Join(args, "\n")
 			YARN_CACHE_FOLDER:    "/cache/yarn"
 			YARN_CWD:             cwd
@@ -92,5 +115,5 @@ import (
 	}
 
 	// The final contents of the package after build
-	output: command.output.directories."/build".contents
+	output: command.export.directories."/build".contents
 }

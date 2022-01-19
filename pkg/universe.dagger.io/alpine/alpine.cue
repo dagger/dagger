@@ -22,12 +22,14 @@ let defaultVersion = "3.13.5@sha256:69e70a79f2d41ab5d637de98c1e0b055206ba40a8145
 				source: "index.docker.io/alpine:\(version)"
 			},
 			for pkgName, pkg in packages {
-				run: cmd: {
-					name: "apk"
-					args: ["add", "\(pkgName)\(version)"]
-					flags: {
-						"-U":         true
-						"--no-cache": true
+				docker.#Run & {
+					cmd: {
+						name: "apk"
+						args: ["add", "\(pkgName)\(pkg.version)"]
+						flags: {
+							"-U":         true
+							"--no-cache": true
+						}
 					}
 				}
 			},
