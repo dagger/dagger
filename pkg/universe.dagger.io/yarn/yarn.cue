@@ -47,9 +47,13 @@ import (
 	// Yarn version
 	// yarnVersion: *"=~1.22" | string
 
-	// FIXME: trouble getting docker.#Build to work (cueflow task dependencies not working)
-	image: alpine.#Build & {
-		packages: "bash": {}
+	image: docker.#Image | *{
+		alpine.#Build & {
+		packages: {
+			"bash": {}
+			"yarn": {}
+		}
+	}
 	}
 
 	// Run yarn in a containerized build environment
