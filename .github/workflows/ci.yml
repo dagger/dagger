@@ -168,6 +168,29 @@ jobs:
         run: |
           make universe-test
 
+  europa:
+    name: Universe (Europa)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Universe Test
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
+          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
+        run: |
+          make europa-universe-test
+
   doc:
     name: Documentation
     runs-on: ubuntu-latest
