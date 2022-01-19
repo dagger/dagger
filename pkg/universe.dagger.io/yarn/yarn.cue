@@ -47,13 +47,12 @@ import (
 	// Yarn version
 	// yarnVersion: *"=~1.22" | string
 
-	image: docker.#Image | *{
-		alpine.#Build & {
+	// FIXME: custom base image not supported
+	image: alpine.#Build & {
 		packages: {
-			"bash": {}
-			"yarn": {}
+			bash: {}
+			yarn: {}
 		}
-	}
 	}
 
 	// Run yarn in a containerized build environment
