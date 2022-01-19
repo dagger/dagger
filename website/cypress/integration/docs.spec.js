@@ -36,11 +36,7 @@ describe('Visit Docs website', function() {
          })
       })
       cy.visit('http://localhost:3001?code=jergub54545')
-      cy.get('[data-cy=cy-page-redirect]').should('exist')
-      // cy.wait(10000)
-      // cy.location().should((location) => {
-      //   expect(location.host).to.eq('dagger.io')
-      // })
+      cy.get('[data-cy=cy-page-redirect]', {timeout: 10000}).should('exist')
     })
     
     it('Visit docs website with a user not authorized', function() {
