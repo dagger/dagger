@@ -24,7 +24,7 @@ golint:
 
 .PHONY: cuefmt
 cuefmt:
-	@(find . -name '*.cue' -exec cue fmt -s {} \;)
+	find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
 
 .PHONY: cuelint
 cuelint: cuefmt
@@ -32,8 +32,7 @@ cuelint: cuefmt
 
 .PHONY: shellcheck
 shellcheck:
-	shellcheck ./tests/*.bats ./tests/*.bash
-	shellcheck ./universe/*.bats ./universe/*.bash
+	shellcheck $$(find . -type f \( -iname \*.bats -o -iname \*.bash -o -iname \*.sh \) -not -path "*/node_modules/*" -not -path "*/bats-*/*")
 
 .PHONY: lint
 lint: shellcheck cuelint golint docslint
@@ -50,6 +49,11 @@ core-integration: dagger-debug
 universe-test: dagger-debug
 	yarn --cwd "./universe" install
 	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./universe" test
+
+.PHONY: europa-universe-test
+europa-universe-test: dagger-debug
+	yarn --cwd "./pkg/universe.dagger.io" install
+	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./pkg/universe.dagger.io" test
 
 .PHONY: doc-test
 doc-test: dagger-debug

@@ -1,3 +1,3 @@
 #!/bin/sh
 
-echo -n hello world > /test.txt
+printf "hello world" > /test.txt
