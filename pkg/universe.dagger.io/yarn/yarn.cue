@@ -7,8 +7,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 
-	// "universe.dagger.io/alpine"
-	"universe.dagger.io/docker"
+	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
 )
 
@@ -34,7 +33,7 @@ import (
 	// Fix for shadowing issues
 	let yarnScript = script
 
-	// FIXME: `CacheDir` must be passed by the caller?
+	// Cache to use, passed by the caller
 	cache: engine.#CacheDir
 
 	// Optional arguments for the script
@@ -44,18 +43,13 @@ import (
 	// FIXME: not implemented. Are they needed?
 	secrets: [string]: dagger.#Secret
 
+	// FIXME: Yarn's version depends on Alpine's version
 	// Yarn version
-	yarnVersion: *"=~1.22" | string
+	// yarnVersion: *"=~1.22" | string
 
 	// FIXME: trouble getting docker.#Build to work (cueflow task dependencies not working)
-	alpine: docker.#Pull & {
-		source: "index.docker.io/alpine:3.13.5@sha256:69e70a79f2d41ab5d637de98c1e0b055206ba40a8145e7bddb55ccc04e13cf8f"
-	}
-	yarnImage: docker.#Run & {
-		image: alpine.image
-		script: """
-			apk add -U --no-cache bash yarn
-			"""
+	image: alpine.#Build & {
+		packages: "bash": {}
 	}
 
 	// Run yarn in a containerized build environment
@@ -75,7 +69,7 @@ import (
 		//  env: CUSTOM_IMAGE: "1"
 		// }
 
-		image: docker.#Image & yarnImage.output
+		"image": image.output
 
 		script: #"""
 			# Create $ENVFILE_NAME file if set
