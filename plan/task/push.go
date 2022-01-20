@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
@@ -45,6 +46,26 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		lg.Debug().Str("target", a.Target).Msg("add target credentials")
 	}
 
+	// FIXME maybe we can find a better way than an if statement to
+	// handle push single image and multiple platform image
+	if input := v.Lookup("input"); input.Exists() {
+		return pushSinglePlatformImage(ctx, pctx, s, v, dest)
+	}
+
+	if inputs := v.Lookup("inputs"); inputs.Exists() {
+		return pushMultiPlatformImage(ctx, pctx, s, v, dest)
+	}
+	return nil, fmt.Errorf("no input provided")
+}
+
+func pushSinglePlatformImage(
+	ctx context.Context,
+	pctx *plancontext.Context,
+	s solver.Solver,
+	v *compiler.Value,
+	dest reference.Named) (*compiler.Value, error) {
+	lg := log.Ctx(ctx)
+
 	// Get input state
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
 	if err != nil {
@@ -74,6 +95,79 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
+	digest, hasImageDigest := resp.ExporterResponse["containerimage.digest"]
+	if !hasImageDigest {
+		return nil, fmt.Errorf("image push target %q did not return an image digest", dest.String())
+	}
+	imageRef := fmt.Sprintf("%s@%s", resp.ExporterResponse["image.name"], digest)
+
+	// Fill result
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"result": imageRef,
+	})
+}
+
+func pushMultiPlatformImage(
+	ctx context.Context,
+	pctx *plancontext.Context,
+	s solver.Solver,
+	v *compiler.Value,
+	dest reference.Named) (*compiler.Value, error) {
+	lg := log.Ctx(ctx)
+
+	// Retrieve inputs
+	var inputs map[string]interface{}
+	if err := v.Lookup("inputs").Decode(&inputs); err != nil {
+		return nil, err
+	}
+
+	images := []*solver.Image{}
+	// Retrieve images configuration
+	for e := range inputs {
+		// Parse platform
+		platform, err := platforms.Parse(e)
+		if err != nil {
+			return nil, err
+		}
+
+		path := fmt.Sprintf("inputs.\"%s\"", e)
+
+		// Retrieve filesystem
+		input, err := pctx.FS.FromValue(v.Lookup(fmt.Sprintf("%s.input", path)))
+		if err != nil {
+			return nil, err
+		}
+		st, err := input.State()
+		if err != nil {
+			return nil, err
+		}
+
+		// Decode the image config
+		imageConfig := dockerfile2llb.ImageConfig{}
+		if err := v.Lookup(fmt.Sprintf("%s.config", path)).Decode(&imageConfig); err != nil {
+			return nil, err
+		}
+
+		// Push it to images
+		images = append(images, &solver.Image{
+			Platform: platform,
+			State:    st,
+			Image:    &dockerfile2llb.Image{Config: imageConfig}})
+	}
+
+	lg.Debug().Str("dest", dest.String()).Msg("export image")
+	resp, err := s.Exports(ctx, images, bk.ExportEntry{
+		Type: bk.ExporterImage,
+		Attrs: map[string]string{
+			"name": dest.String(),
+			"push": "true",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Retrieve manifest list digest
 	digest, hasImageDigest := resp.ExporterResponse["containerimage.digest"]
 	if !hasImageDigest {
 		return nil, fmt.Errorf("image push target %q did not return an image digest", dest.String())
