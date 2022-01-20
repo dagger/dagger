@@ -239,18 +239,18 @@ dagger up -e multibucket
 
 ### Using the environment
 
-[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+[This section is not yet written](https://github.com/dagger/.github/blob/main/CONTRIBUTING.md)
 
 ## Share your environment
 
 ### Introduction to gitops
 
-[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+[This section is not yet written](https://github.com/dagger/.github/blob/main/CONTRIBUTING.md)
 
 ### Review changes
 
-[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+[This section is not yet written](https://github.com/dagger/.github/blob/main/CONTRIBUTING.md)
 
 ### Commit changes
 
-[This section is not yet written](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md)
+[This section is not yet written](https://github.com/dagger/.github/blob/main/CONTRIBUTING.md)
