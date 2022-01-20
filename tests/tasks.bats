@@ -7,6 +7,8 @@ setup() {
 @test "task: #Pull" {
     cd "$TESTDIR"/tasks/pull
     "$DAGGER" --europa up ./pull.cue
+    "$DAGGER" --europa up ./pull_platform.cue
+
 }
 
 @test "task: #Pull with auth" {
@@ -17,6 +19,7 @@ setup() {
 @test "task: #Push" {
     cd "$TESTDIR"
     "$DAGGER" --europa up ./tasks/push/push.cue
+    "$DAGGER" --europa up ./tasks/push/push_multi_platform.cue
 }
 
 @test "task: #ReadFile" {
