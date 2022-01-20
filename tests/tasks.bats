@@ -5,16 +5,15 @@ setup() {
     cd "$TESTDIR" || exit
 }
 
-@test "task: #Pull" {
+@test "task: #Pull auth" { {
     "$DAGGER" "do" -p ./tasks/pull/pull.cue pull
-}
-
-@test "task: #Pull auth" {
+    "$DAGGER" "do" -p ./tasks/pull/pull_platform.cue
     "$DAGGER" "do" -p ./tasks/pull/pull_auth.cue pull
 }
 
 @test "task: #Push" {
     "$DAGGER" "do" -p ./tasks/push/push.cue pullOutputFile
+    "$DAGGER" "do" -p ./tasks/push/push_multi_platform.cue
 }
 
 @test "task: #ReadFile" {
