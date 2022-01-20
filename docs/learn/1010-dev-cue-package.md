@@ -106,4 +106,4 @@ You've probably seen it when you've initialized your project:
 ```
 
 We are still a small community and are constantly looking for new contributors that will work with us to improve this fantastic project. If you feel like we are missing a package or want to improve an existing one, please start with our
-[contributing docs](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md) and open a PR.
+[contributing docs](https://github.com/dagger/.github/blob/main/CONTRIBUTING.md) and open a PR.
