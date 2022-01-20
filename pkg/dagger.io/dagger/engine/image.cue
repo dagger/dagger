@@ -8,10 +8,16 @@ package engine
 	dest: #Ref
 
 	// Filesystem contents to push
-	input: #FS
+	input?: #FS
 
 	// Container image config
 	config: #ImageConfig
+
+	// Map of image to push a multi-platform image
+	inputs: [platform=string]: {
+		input:  #FS
+		config: #ImageConfig
+	}
 
 	// Authentication
 	auth: [...{
@@ -51,6 +57,10 @@ package engine
 	// Repository source ref
 	source: #Ref
 
+	// Target platform to pull
+	// e.g "linux/arm64" or "linux/amd64"
+	platform?: string
+
 	// Authentication
 	auth: [...{
 		target:   string
@@ -88,8 +98,10 @@ package engine
 		secret:   string | #Secret
 	}]
 
-	platforms?: [...string]
-	target?: string
+	// Target platform to build image in
+	// e.g "linux/arm64" or "linux/amd64"
+	platform?: string
+	target?:   string
 	buildArg?: [string]: string
 	label?: [string]:    string
 	hosts?: [string]:    string
