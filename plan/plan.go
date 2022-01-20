@@ -111,7 +111,9 @@ func (p *Plan) configPlatform() error {
 // prepare executes the pre-run hooks of tasks
 func (p *Plan) prepare(ctx context.Context) error {
 	flow := cueflow.New(
-		&cueflow.Config{},
+		&cueflow.Config{
+			FindHiddenTasks: true,
+		},
 		p.source.Cue(),
 		func(flowVal cue.Value) (cueflow.Runner, error) {
 			v := compiler.Wrap(flowVal)

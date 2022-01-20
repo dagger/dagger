@@ -71,9 +71,13 @@ func (c *serviceContext) FromValue(v *compiler.Value) (*Service, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
 
+	if !v.LookupPath(serviceIDPath).IsConcrete() {
+		return nil, fmt.Errorf("invalid service at path %q: service is not set", v.Path())
+	}
+
 	id, err := v.LookupPath(serviceIDPath).String()
 	if err != nil {
-		return nil, fmt.Errorf("invalid service %q: %w", v.Path(), err)
+		return nil, fmt.Errorf("invalid service at path %q: %w", v.Path(), err)
 	}
 
 	s, ok := c.store[id]

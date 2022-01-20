@@ -131,6 +131,7 @@ import (
 	_exec: engine.#Exec & {
 		args:      [cmd.name] + cmd._flatFlags + cmd.args
 		input:     _image.rootfs
+		"always":  always
 		"mounts":  mounts
 		"env":     env
 		"workdir": workdir

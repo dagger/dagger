@@ -77,6 +77,10 @@ func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
 
+	if !v.LookupPath(fsIDPath).IsConcrete() {
+		return nil, fmt.Errorf("invalid FS at path %q: FS is not set", v.Path())
+	}
+
 	// This is #Scratch, so we'll return an empty FS
 	if v.LookupPath(fsIDPath).Kind() == cue.NullKind {
 		return &FS{}, nil
