@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/rs/zerolog/log"
@@ -49,8 +50,21 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		withCustomName(v, "Pull %s", rawRef),
 	)
 
-	// Load image metadata and convert to to LLB.
+	// Retrieve platform
 	platform := pctx.Platform.Get()
+	if p := v.Lookup("platform"); p.Exists() {
+		targetPlatform, err := p.String()
+		if err != nil {
+			return nil, err
+		}
+
+		platform, err = platforms.Parse(targetPlatform)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Load image metadata and convert to to LLB.
 	image, digest, err := s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
 		LogName:  vertexNamef(v, "load metadata for %s", ref.String()),
 		Platform: &platform,
@@ -59,7 +73,7 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
-	result, err := s.Solve(ctx, st, pctx.Platform.Get())
+	result, err := s.Solve(ctx, st, platform)
 	if err != nil {
 		return nil, err
 	}
