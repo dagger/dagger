@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containerd/containerd/platforms"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -210,6 +211,107 @@ func (s *Solver) forwardEvents(ch chan *bk.SolveStatus, ignoreLogs bool) {
 		}
 		s.opts.Events <- event
 	}
+}
+
+// Image is a structure containing all required data to
+// push an image using buildkit client
+// FIXME: this is currently impleneted as a hack, starting a new Build session
+// within buildkit from the Control API. Ideally the Gateway API should allow to
+// Export directly.
+type Image struct {
+	Platform specs.Platform
+	State    llb.State
+	Image    *dockerfile2llb.Image
+}
+
+// Exports multi platform image
+func (s Solver) Exports(ctx context.Context, images []*Image, output bk.ExportEntry) (*bk.SolveResponse, error) {
+	// Check close event channel and return if we're already done with the main pipeline
+	select {
+	case <-s.closeCh:
+		return nil, context.Canceled
+	default:
+	}
+
+	// Export merge definition with Image values to easily loop on
+	type Export struct {
+		Image *Image
+		Def   *bkpb.Definition
+	}
+
+	exports := []*Export{}
+	for _, image := range images {
+		def, err := s.Marshal(ctx, image.State, llb.Platform(image.Platform))
+		if err != nil {
+			return nil, err
+		}
+		exports = append(exports, &Export{Def: def, Image: image})
+	}
+
+	opts := bk.SolveOpt{
+		Exports: []bk.ExportEntry{output},
+		Session: []session.Attachable{
+			s.opts.Auth,
+			NewSecretsStoreProvider(s.opts.Context),
+			NewDockerSocketProvider(s.opts.Context),
+		},
+	}
+
+	ch := make(chan *bk.SolveStatus)
+
+	// Forward this build session events to the main events channel, for logging purposes.
+	go s.forwardEvents(ch)
+
+	return s.opts.Control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
+		// Init global result
+		res := bkgw.NewResult()
+
+		// Init platforms aggregator
+		expPlatforms := &exptypes.Platforms{Platforms: []exptypes.Platform{}}
+
+		// Export all image one by one
+		for _, export := range exports {
+			r, err := c.Solve(ctx, bkgw.SolveRequest{Definition: export.Def})
+			if err != nil {
+				return nil, err
+			}
+
+			// Get reference
+			ref, err := r.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+
+			platform := export.Image.Platform
+
+			// Add image config if exist
+			image := export.Image.Image
+			if image != nil {
+				config, err := json.Marshal(image)
+				if err != nil {
+					return nil, err
+				}
+
+				res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platforms.Format(platform)), config)
+			}
+
+			// Link the reference to the platform
+			res.AddRef(platforms.Format(platform), ref)
+			expPlatforms.Platforms = append(expPlatforms.Platforms, exptypes.Platform{
+				ID:       platforms.Format(platform),
+				Platform: platform})
+		}
+
+		// Retrieve manifest list
+		dt, err := json.Marshal(expPlatforms)
+		if err != nil {
+			return nil, err
+		}
+
+		// Add manifest list
+		res.AddMeta(exptypes.ExporterPlatformsKey, dt)
+		return res, nil
+	}, ch)
 }
 
 // Export will export `st` to `output`
