@@ -16,7 +16,12 @@ import (
 			"\(idx)": step & {
 				// connect input to previous output
 				if idx > 0 {
-					input: _dag["\(idx-1)"].output
+					// FIXME: the intermediary `output` is needed because of a possible CUE bug.
+					// `._dag."0".output: 1 errors in empty disjunction::`
+					// See: https://github.com/cue-lang/cue/issues/1446
+					// input: _dag["\(idx-1)"].output
+					_output: _dag["\(idx-1)"].output
+					input:   _output
 				}
 			}
 		}
