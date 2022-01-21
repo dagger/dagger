@@ -11,3 +11,10 @@ setup() {
     run dagger up ./multi-nested-build-test.cue
     assert_failure
 }
+
+@test "docker.#Run" {
+    dagger up ./run-command-test.cue
+    dagger up ./run-script-test.cue
+    dagger up ./run-export-file-test.cue
+    dagger up ./run-export-directory-test.cue
+}
