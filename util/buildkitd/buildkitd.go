@@ -65,7 +65,7 @@ func checkBuildkit(ctx context.Context) error {
 		lg.Debug().Msg("no buildkit daemon detected")
 
 		if err := removeBuildkit(ctx); err != nil {
-			return err
+			lg.Debug().Msg("Error while removing Buildkit")
 		}
 
 		if err := installBuildkit(ctx); err != nil {
