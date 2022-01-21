@@ -20,10 +20,15 @@ on:
     # So we run these at a special time, 9:06. Ask @gerhard about it.
 
   # And it also supports manual triggering:
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Custom tag (default bumps last tag) DO NOT prefix with v'
+      release_type:
+        description: 'major|minor|patch|release|prerel'
+        default: 'prerel alpha..'
+        required: true
+      release_version:
+        description: 'Optional release version, e.g. 0.2.0'
         required: false
 
 jobs:
@@ -47,23 +52,30 @@ jobs:
           running-workflow-name: "Bump version, tag & release"
           allowed-conclusions: success
 
-      - name: "Tag so that a new release can be produced"
-        id: tag_version
-        # https://github.com/mathieudutour/github-tag-action
-        uses: mathieudutour/github-tag-action@v6.0
+      - name: "Create next release tag"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ -n "${{ github.event.inputs.release_version }}" ]]
+          then
+            next_release_version="v${{ github.event.inputs.release_version }}"
+          else
+            previous_release_version="$(gh api /repos/:owner/:repo/releases --jq '.[0].tag_name')"
+            echo "PREVIOUS RELEASE VERSION: $previous_release_version"
+            # Rather than installing it on every run, we commit it locally so that we have everything we need locally
+            # wget https://raw.githubusercontent.com/fsaintjacques/semver-tool/3.3.0/src/semver
+            # https://github.com/fsaintjacques/semver-tool
+            next_release_version="v$(./semver bump ${{ github.event.inputs.release_type }} $previous_release_version)"
+          fi
+          echo "NEXT RELEASE VERSION: $next_release_version"
+          gh api -X POST /repos/:owner/:repo/git/refs \
+            --field ref="refs/tags/$next_release_version" \
+            --field sha="$GITHUB_SHA"
+
+      - name: "Fetch new tag"
+        uses: actions/checkout@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          fetch_all_tags: true
-          custom_tag: "${{ github.event.inputs.tag }}"
-          # This is OK for now, but let's revisit this around February 2022
-          release_branches: "there_are_only_prereleases_for_now"
-          # When we start auto-bumping patches/minors, consider removing pre-releases
-          pre_release_branches: "main"
-          append_to_pre_release_tag: "alpha"
-          # Set to true when you are testing / experimenting
-          dry_run: false
-        # This may be of interest when we need more control over the version bumps
-        # https://github.com/craig-day/compute-tag
+          fetch-depth: 0
 
       - name: "Install Go"
         uses: actions/setup-go@v2
