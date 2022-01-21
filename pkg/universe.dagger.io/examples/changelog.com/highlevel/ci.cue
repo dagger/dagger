@@ -42,8 +42,8 @@ dagger.#Plan & {
 					mix: {
 						env:        "prod"
 						app:        _appName
-						depsCache:  "readonly"
-						buildCache: "readonly"
+						depsCache:  "private"
+						buildCache: "private"
 					}
 					workdir: _
 					// FIXME: remove copy-pasta
@@ -52,7 +52,7 @@ dagger.#Plan & {
 							// FIXME: do we need an ID here?
 							id: "\(mix.app)_assets_node_modules"
 							// FIXME: does this command need write access to node_modules cache?
-							concurrency: "readonly"
+							concurrency: "private"
 						}
 						dest: "\(workdir)/node_modules"
 					}
@@ -71,14 +71,16 @@ dagger.#Plan & {
 			assets: docker.#Build & {
 				steps: [
 					// 1. Start from dev runtime build
-					build,
+					{
+						output: build.output
+					},
 					// 2. Build web assets
 					mix.#Run & {
 						mix: {
 							env:        "dev"
 							app:        _appName
-							depsCache:  "readonly"
-							buildCache: "readonly"
+							depsCache:  "private"
+							buildCache: "private"
 						}
 						// FIXME: move this to a reusable def (yarn package? or private?)
 						mounts: nodeModules: {

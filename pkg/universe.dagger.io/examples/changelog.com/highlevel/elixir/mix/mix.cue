@@ -71,9 +71,9 @@ import (
 	}
 	docker.#Run
 	env: MIX_ENV: mix.env
+	workdir: string
 	{
 		mix: depsCache: string
-		workdir: string
 		mounts: depsCache: {
 			contents: engine.#CacheDir & {
 				id:          "\(mix.app)_deps"
@@ -84,7 +84,6 @@ import (
 	} | {}
 	{
 		mix: buildCache: string
-		workdir: string
 		mounts: buildCache: {
 			contents: engine.#CacheDir & {
 				id:          "\(mix.app)_deps"
