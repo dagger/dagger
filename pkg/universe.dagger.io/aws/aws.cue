@@ -3,7 +3,9 @@ package aws
 
 import (
 	"strings"
+	"encoding/json"
 	"dagger.io/dagger"
+	"dagger.io/dagger/engine"
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
 )
@@ -12,22 +14,22 @@ _#regions: "us-east-2" | "us-east-1" | "us-west-1" | "us-west-2" | "af-south-1" 
 
 _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 
-// AWS Config shared by all AWS packages
+// AWS Config written to .aws/config and .aws/credentials
 #Config: {
-	// AWS region
-	region: _#regions
 	// AWS access key
-	accessKey: dagger.#Secret
+	AWS_ACCESS_KEY_ID?: dagger.#Secret
+
 	// AWS secret key
-	secretKey: dagger.#Secret
+	AWS_SECRET_ACCESS_KEY?: dagger.#Secret
+
 	// AWS session token
-	sessionToken?: dagger.#Secret
-	// AWS temporary credentials expiration
-	expiration?: dagger.#Secret | string
+	AWS_SESSION_TOKEN?: dagger.#Secret
+
+	// AWS region
+	AWS_REGION: _#regions
+
 	// Output format
-	output: _#output
-	// AWS localstack mode
-	localMode: *false | true
+	AWS_DEFAULT_OUTPUT: _#output
 }
 
 #CLI: {
@@ -40,10 +42,7 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 	// Additional packages to install to the Alpine image
 	packages: alpine.#Build.packages
 
-	// The service to run the command against.
-	service: "" | "accessanalyzer" | "account" | "acm" | "acm-pca" | "alexaforbusiness" | "amp" | "amplify" | "amplifybackend" | "amplifyuibuilder" | "apigateway" | "apigatewaymanagementapi" | "apigatewayv2" | "appconfig" | "appconfigdata" | "appflow" | "appintegrations" | "application-autoscaling" | "application-insights" | "applicationcostprofiler" | "appmesh" | "apprunner" | "appstream" | "appsync" | "athena" | "auditmanager" | "autoscaling" | "autoscaling-plans" | "backup" | "backup-gateway" | "batch" | "braket" | "budgets" | "ce" | "chime" | "chime-sdk-identity" | "chime-sdk-meetings" | "chime-sdk-messaging" | "cli-dev" | "cloud9" | "cloudcontrol" | "clouddirectory" | "cloudformation" | "cloudfront" | "cloudhsm" | "cloudtrail" | "cloudwatch" | "codeartifact" | "codebuild" | "codecommit" | "codeguru-reviewer" | "codeguruprofiler" | "codepipeline" | "codestar" | "codestar-connections" | "codestar-notifications" | "cognito-identity" | "cognito-idp" | "cognito-sync" | "comprehend" | "comprehendmedical" | "compute-optimizer" | "configservice" | "configure" | "connect" | "connect-contact-lens" | "connectparticipant" | "cur" | "customer-profiles" | "databrew" | "dataexchange" | "datapipeline" | "datasync" | "dax" | "ddb" | "deploy" | "detective" | "devicefarm" | "devops-guru" | "directconnect" | "discovery" | "dlm" | "dms" | "docdb" | "drs" | "ds" | "dynamodb" | "dynamodbstreams" | "ebs" | "ec2" | "ec2-instance-connect" | "ecr" | "ecr-public" | "ecs" | "efs" | "eks" | "elastic-inference" | "elasticache" | "elasticbeanstalk" | "elastictranscoder" | "elb" | "elbv2" | "emr" | "emr-containers" | "es" | "events" | "evidently" | "finspace" | "finspace-data" | "firehose" | "fis" | "fms" | "forecast" | "forecastquery" | "frauddetector" | "fsx" | "gamelift" | "glacier" | "globalaccelerator" | "glue" | "grafana" | "greengrass" | "greengrassv2" | "groundstation" | "guardduty" | "health" | "healthlake" | "help" | "history" | "honeycode" | "iam" | "identitystore" | "imagebuilder" | "importexport" | "inspector" | "inspector2" | "iot" | "iot-data" | "iot-jobs-data" | "iot1click-devices" | "iot1click-projects" | "iotanalytics" | "iotdeviceadvisor" | "iotevents" | "iotevents-data" | "iotfleethub" | "iotsecuretunneling" | "iotsitewise" | "iotthingsgraph" | "iottwinmaker" | "iotwireless" | "ivs" | "kafka" | "kafkaconnect" | "kendra" | "kinesis" | "kinesis-video-archived-media" | "kinesis-video-media" | "kinesis-video-signaling" | "kinesisanalytics" | "kinesisanalyticsv2" | "kinesisvideo" | "kms" | "lakeformation" | "lambda" | "lex-models" | "lex-runtime" | "lexv2-models" | "lexv2-runtime" | "license-manager" | "lightsail" | "location" | "logs" | "lookoutequipment" | "lookoutmetrics" | "lookoutvision" | "machinelearning" | "macie" | "macie2" | "managedblockchain" | "marketplace-catalog" | "marketplace-entitlement" | "marketplacecommerceanalytics" | "mediaconnect" | "mediaconvert" | "medialive" | "mediapackage" | "mediapackage-vod" | "mediastore" | "mediastore-data" | "mediatailor" | "memorydb" | "meteringmarketplace" | "mgh" | "mgn" | "migration-hub-refactor-spaces" | "migrationhub-config" | "migrationhubstrategy" | "mobile" | "mq" | "mturk" | "mwaa" | "neptune" | "network-firewall" | "networkmanager" | "nimble" | "opensearch" | "opsworks" | "opsworks-cm" | "organizations" | "outposts" | "panorama" | "personalize" | "personalize-events" | "personalize-runtime" | "pi" | "pinpoint" | "pinpoint-email" | "pinpoint-sms-voice" | "polly" | "pricing" | "proton" | "qldb" | "qldb-session" | "quicksight" | "ram" | "rbin" | "rds" | "rds-data" | "redshift" | "redshift-data" | "rekognition" | "resiliencehub" | "resource-groups" | "resourcegroupstaggingapi" | "robomaker" | "route53" | "route53-recovery-cluster" | "route53-recovery-control-config" | "route53-recovery-readiness" | "route53domains" | "route53resolver" | "rum" | "s3" | "s3api" | "s3control" | "s3outposts" | "sagemaker" | "sagemaker-a2i-runtime" | "sagemaker-edge" | "sagemaker-featurestore-runtime" | "sagemaker-runtime" | "savingsplans" | "schemas" | "sdb" | "secretsmanager" | "securityhub" | "serverlessrepo" | "service-quotas" | "servicecatalog" | "servicecatalog-appregistry" | "servicediscovery" | "ses" | "sesv2" | "shield" | "signer" | "sms" | "snow-device-management" | "snowball" | "sns" | "sqs" | "ssm" | "ssm-contacts" | "ssm-incidents" | "sso" | "sso-admin" | "sso-oidc" | "stepfunctions" | "storagegateway" | "sts" | "support" | "swf" | "synthetics" | "textract" | "timestream-query" | "timestream-write" | "transcribe" | "transfer" | "translate" | "voice-id" | "waf" | "waf-regional" | "wafv2" | "wellarchitected" | "wisdom" | "workdocs" | "worklink" | "workmail" | "workmailmessageflow" | "workspaces" | "workspaces-web" | "xray"
-
-	// Global arguments 
+	// Global arguments passed to the aws cli.
 	options: {
 		// Turn on debug logging.
 		debug?: bool
@@ -60,7 +59,7 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 		"no-paginate"?: bool
 
 		// The formatting style for command output.
-		output?: _#output
+		output: _#output
 
 		// A JMESPath query to use in filtering the response data.
 		query?: string
@@ -123,6 +122,16 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 		args: [...string]
 	}
 
+	// The service to run the command against.
+	service: "accessanalyzer" | "account" | "acm" | "acm-pca" | "alexaforbusiness" | "amp" | "amplify" | "amplifybackend" | "amplifyuibuilder" | "apigateway" | "apigatewaymanagementapi" | "apigatewayv2" | "appconfig" | "appconfigdata" | "appflow" | "appintegrations" | "application-autoscaling" | "application-insights" | "applicationcostprofiler" | "appmesh" | "apprunner" | "appstream" | "appsync" | "athena" | "auditmanager" | "autoscaling" | "autoscaling-plans" | "backup" | "backup-gateway" | "batch" | "braket" | "budgets" | "ce" | "chime" | "chime-sdk-identity" | "chime-sdk-meetings" | "chime-sdk-messaging" | "cli-dev" | "cloud9" | "cloudcontrol" | "clouddirectory" | "cloudformation" | "cloudfront" | "cloudhsm" | "cloudtrail" | "cloudwatch" | "codeartifact" | "codebuild" | "codecommit" | "codeguru-reviewer" | "codeguruprofiler" | "codepipeline" | "codestar" | "codestar-connections" | "codestar-notifications" | "cognito-identity" | "cognito-idp" | "cognito-sync" | "comprehend" | "comprehendmedical" | "compute-optimizer" | "configservice" | "configure" | "connect" | "connect-contact-lens" | "connectparticipant" | "cur" | "customer-profiles" | "databrew" | "dataexchange" | "datapipeline" | "datasync" | "dax" | "ddb" | "deploy" | "detective" | "devicefarm" | "devops-guru" | "directconnect" | "discovery" | "dlm" | "dms" | "docdb" | "drs" | "ds" | "dynamodb" | "dynamodbstreams" | "ebs" | "ec2" | "ec2-instance-connect" | "ecr" | "ecr-public" | "ecs" | "efs" | "eks" | "elastic-inference" | "elasticache" | "elasticbeanstalk" | "elastictranscoder" | "elb" | "elbv2" | "emr" | "emr-containers" | "es" | "events" | "evidently" | "finspace" | "finspace-data" | "firehose" | "fis" | "fms" | "forecast" | "forecastquery" | "frauddetector" | "fsx" | "gamelift" | "glacier" | "globalaccelerator" | "glue" | "grafana" | "greengrass" | "greengrassv2" | "groundstation" | "guardduty" | "health" | "healthlake" | "help" | "history" | "honeycode" | "iam" | "identitystore" | "imagebuilder" | "importexport" | "inspector" | "inspector2" | "iot" | "iot-data" | "iot-jobs-data" | "iot1click-devices" | "iot1click-projects" | "iotanalytics" | "iotdeviceadvisor" | "iotevents" | "iotevents-data" | "iotfleethub" | "iotsecuretunneling" | "iotsitewise" | "iotthingsgraph" | "iottwinmaker" | "iotwireless" | "ivs" | "kafka" | "kafkaconnect" | "kendra" | "kinesis" | "kinesis-video-archived-media" | "kinesis-video-media" | "kinesis-video-signaling" | "kinesisanalytics" | "kinesisanalyticsv2" | "kinesisvideo" | "kms" | "lakeformation" | "lambda" | "lex-models" | "lex-runtime" | "lexv2-models" | "lexv2-runtime" | "license-manager" | "lightsail" | "location" | "logs" | "lookoutequipment" | "lookoutmetrics" | "lookoutvision" | "machinelearning" | "macie" | "macie2" | "managedblockchain" | "marketplace-catalog" | "marketplace-entitlement" | "marketplacecommerceanalytics" | "mediaconnect" | "mediaconvert" | "medialive" | "mediapackage" | "mediapackage-vod" | "mediastore" | "mediastore-data" | "mediatailor" | "memorydb" | "meteringmarketplace" | "mgh" | "mgn" | "migration-hub-refactor-spaces" | "migrationhub-config" | "migrationhubstrategy" | "mobile" | "mq" | "mturk" | "mwaa" | "neptune" | "network-firewall" | "networkmanager" | "nimble" | "opensearch" | "opsworks" | "opsworks-cm" | "organizations" | "outposts" | "panorama" | "personalize" | "personalize-events" | "personalize-runtime" | "pi" | "pinpoint" | "pinpoint-email" | "pinpoint-sms-voice" | "polly" | "pricing" | "proton" | "qldb" | "qldb-session" | "quicksight" | "ram" | "rbin" | "rds" | "rds-data" | "redshift" | "redshift-data" | "rekognition" | "resiliencehub" | "resource-groups" | "resourcegroupstaggingapi" | "robomaker" | "route53" | "route53-recovery-cluster" | "route53-recovery-control-config" | "route53-recovery-readiness" | "route53domains" | "route53resolver" | "rum" | "s3" | "s3api" | "s3control" | "s3outposts" | "sagemaker" | "sagemaker-a2i-runtime" | "sagemaker-edge" | "sagemaker-featurestore-runtime" | "sagemaker-runtime" | "savingsplans" | "schemas" | "sdb" | "secretsmanager" | "securityhub" | "serverlessrepo" | "service-quotas" | "servicecatalog" | "servicecatalog-appregistry" | "servicediscovery" | "ses" | "sesv2" | "shield" | "signer" | "sms" | "snow-device-management" | "snowball" | "sns" | "sqs" | "ssm" | "ssm-contacts" | "ssm-incidents" | "sso" | "sso-admin" | "sso-oidc" | "stepfunctions" | "storagegateway" | "sts" | "support" | "swf" | "synthetics" | "textract" | "timestream-query" | "timestream-write" | "transcribe" | "transfer" | "translate" | "voice-id" | "waf" | "waf-regional" | "wafv2" | "wellarchitected" | "wisdom" | "workdocs" | "worklink" | "workmail" | "workmailmessageflow" | "workspaces" | "workspaces-web" | "xray" | ""
+
+	unmarshal: false | *true
+
+	image: docker.#Image | *_build.output
+
+	// Filesystem mounts
+	mounts: [name=string]: engine.#Mount
+
 	_build: alpine.#Build & {
 		"packages": packages
 		"packages": {
@@ -132,8 +141,8 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 	}
 
 	_install: docker.#Run & {
-		image:  _build.output
-		script: """
+		"image": image
+		script:  """
 			curl -sL https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub -o /etc/apk/keys/sgerrand.rsa.pub 
 			curl -sLO https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.31-r0/glibc-2.31-r0.apk 
 			curl -sLO https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.31-r0/glibc-bin-2.31-r0.apk 
@@ -148,67 +157,52 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 			"""
 	}
 
-	_config: docker.#Run & {
-		image: _install.output
-
-		mounts: {
-			accessKey: {
-				dest:     "/run/secrets/accessKey"
-				contents: config.accessKey
+	_shim: {
+		_scriptPreface: [string]: string
+		for k, v in config {
+			// pass all *non secrets* as env vars
+			if (v & string) != _|_ {
+				env: "\(k)": v
 			}
 
-			secretKey: {
-				dest:     "/run/secrets/secretKey"
-				contents: config.secretKey
-			}
-
-			if (config.sessionToken & dagger.#Secret) != _|_ {
-				sessionToken: {
-					dest:     "/run/secrets/sessionToken"
-					contents: config.sessionToken
-				}
-			}
-
-			if (config.expiration & dagger.#Secret) != _|_ {
-				expiration: {
-					dest:     "/run/secrets/expiration"
-					contents: config.expiration
+			// pass all secrets as secret mounts
+			if (v & string) == _|_ {
+				_scriptPreface: "\(k)": "export \(k)=$(cat /run/secrets/\(k))"
+				mounts: "\(k)": {
+					dest:     "/run/secrets/\(k)"
+					contents: v
 				}
 			}
 		}
-		cmd: {
-			name: "/bin/sh"
-			args: ["--noprofile", "--norc", "-eo", "pipefail", "-c", script]
-		}
-
-		script: """
-			# Setup credentials
-			aws configure set aws_access_key_id "$(cat /run/secrets/accessKey)"
-			aws configure set aws_secret_access_key "$(cat /run/secrets/secretKey)"
-
-			aws configure set default.region "\(config.region)"
-			aws configure set default.cli_pager ""
-			aws configure set default.output "\(config.output)"
-			"""
 	}
 
+	_options: [ for optName, opt in options {
+		if (opt & true) != _|_ {
+			"--\(optName)"
+		}
+		if (opt & string) != _|_ {
+			"--\(optName) \(opt)"
+		}
+	}]
+
+	_scriptPrefaceList: [ for _, s in _shim._scriptPreface {s}] + ["aws \(strings.Join(_options, " ")) \(service) \(cmd.name) \(strings.Join(cmd.args, " ")) > /output.txt"]
+
 	_run: docker.#Run & {
-		image: _config.output
-
-		_options: [ for optName, opt in options {
-			if (opt & true) != _|_ {
-				"--\(optName)"
-			}
-			if (opt & string) != _|_ {
-				"--\(optName) \(opt)"
-			}
-		}]
-
-		script: """
-		aws \(strings.Join(_options, " ")) \(service) \(cmd.name) \(strings.Join(cmd.args, " ")) > /output.txt
-		"""
+		image: _install.output
+		_shim
+		"mounts": mounts
+		script:   strings.Join(_scriptPrefaceList, "\n")
+		export: files: "/output.txt": _
 	}
 
 	output: _run.output
 	export: _run.export
+
+	_unmarshalable: string | number | bool | null | [..._unmarshalable] | {[string]: _unmarshalable}
+	result?:        _unmarshalable
+
+	if unmarshal != false {
+		options: output: "json"
+		result: json.Unmarshal(export.files["/output.txt"].contents)
+	}
 }
