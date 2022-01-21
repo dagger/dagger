@@ -4,7 +4,6 @@ package netlify
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
@@ -36,7 +35,7 @@ import (
 	create: *true | false
 
 	// Source code of the Netlify package
-	_source: engine.#Source & {
+	_source: dagger.#Source & {
 		path: "."
 		include: ["*.sh"]
 	}
