@@ -4,10 +4,9 @@ package netlify
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/docker"
 
 	"universe.dagger.io/alpine"
-	"universe.dagger.io/bash"
+	"universe.dagger.io/docker"
 )
 
 // Deploy a site to Netlify
@@ -35,30 +34,61 @@ import (
 	// Create the site if it doesn't exist
 	create: *true | false
 
-	// Execute `netlify deploy` in a container
-	command: bash.#Run & {
-		// Container image. `netlify` must be available in the execution path
-		*{
-			_buildDefaultImage: docker.#Build & {
-				input: alpine.#Build & {
-					bash: version: "=~5.1"
-					jq: version:   "=~1.6"
+	// Source code of the Netlify package
+	_source: dagger.#Source & {
+		path: "."
+		include: ["*.sh"]
+	}
+
+	_build: docker.#Build & {
+		steps: [
+			alpine.#Build & {
+				packages: {
+					bash: {}
 					curl: {}
-					yarn: version: "=~1.22"
+					jq: {}
+					yarn: {}
 				}
-				steps: [{
-					run: script: "yarn global add netlify-cli@3.38.10"
-				}]
-			}
+			},
+			docker.#Run & {
+				cmd: {
+					name: "yarn"
+					args: ["global", "add", "netlify-cli@8.6.21"]
+				}
+			},
+			docker.#Copy & {
+				contents: _source.output
+				dest:     "/app"
+			},
+		]
+	}
 
-			// No nested tasks, boo hoo hoo
-			image: _buildDefaultImage.output
-			env: CUSTOM_IMAGE: "0"
-		} | {
-			env: CUSTOM_IMAGE: "1"
-		}
+	// Execute `netlify deploy` in a container
+	command: docker.#Run & {
+		// FIXME: custom base image not supported
+		// Container image. `netlify` must be available in the execution path
+		// *{
+		//  _buildDefaultImage: docker.#Build & {
+		//   input: alpine.#Build & {
+		//    bash: version: "=~5.1"
+		//    jq: version:   "=~1.6"
+		//    curl: {}
+		//    yarn: version: "=~1.22"
+		//   }
+		//   steps: [{
+		//    run: script: "yarn global add netlify-cli@3.38.10"
+		//   }]
+		//  }
 
-		script: _deployScript // see deploy.sh
+		//  // No nested tasks, boo hoo hoo
+		//  image: _buildDefaultImage.output
+		//  env: CUSTOM_IMAGE: "0"
+		// } | {
+		//  env: CUSTOM_IMAGE: "1"
+		// }
+
+		image: _build.output
+
 		always: true
 		env: {
 			NETLIFY_SITE_NAME: site
@@ -81,7 +111,9 @@ import (
 				contents: token
 			}
 		}
-		output: files: {
+		cmd: name: "/app/deploy.sh"
+
+		export: files: {
 			"/netlify/url":       _
 			"/netlify/deployUrl": _
 			"/netlify/logsUrl":   _
@@ -89,11 +121,11 @@ import (
 	}
 
 	// URL of the deployed site
-	url: command.output.files."/netlify/url".contents
+	url: command.export.files."/netlify/url".contents
 
 	// URL of the latest deployment
-	deployUrl: command.output.files."/netlify/deployUrl".contents
+	deployUrl: command.export.files."/netlify/deployUrl".contents
 
 	// URL for logs of the latest deployment
-	logsUrl: command.output.files."/netlify/logsUrl".contents
+	logsUrl: command.export.files."/netlify/logsUrl".contents
 }

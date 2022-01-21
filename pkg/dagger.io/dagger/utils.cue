@@ -4,6 +4,10 @@ import (
 	"dagger.io/dagger/engine"
 )
 
+// Access the source directory for the current CUE package
+// This may safely be called from any package
+#Source: engine.#Source
+
 // Select a subdirectory from a filesystem tree
 #Subdir: {
 	// Input tree

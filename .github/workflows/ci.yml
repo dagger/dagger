@@ -181,6 +181,19 @@ jobs:
         with:
           go-version: 1.16
 
+      - name: Install Dependencies
+        run: |
+          # SOPS
+          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
+          sudo chmod +x /usr/local/bin/sops
+
+      - name: Import AGE Key
+        env:
+          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
+        run: |
+          mkdir -p ~/.config/sops/age
+          echo "$DAGGER_AGE_KEY" > ~/.config/sops/age/keys.txt
+
       - name: Expose GitHub Runtime
         uses: crazy-max/ghaction-github-runtime@v1
 

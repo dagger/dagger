@@ -47,7 +47,7 @@ func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, Err(err)
 		}
 	}
 	instances := cueload.Instances(args, buildConfig)
@@ -56,16 +56,16 @@ func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error
 	}
 	for _, value := range instances {
 		if value.Err != nil {
-			return nil, value.Err
+			return nil, Err(value.Err)
 		}
 	}
 	v, err := c.Context.BuildInstances(instances)
 	if err != nil {
-		return nil, errors.New(cueerrors.Details(err, &cueerrors.Config{}))
+		return nil, Err(errors.New(cueerrors.Details(err, &cueerrors.Config{})))
 	}
 	for _, value := range v {
 		if value.Err() != nil {
-			return nil, value.Err()
+			return nil, Err(value.Err())
 		}
 	}
 	if len(v) != 1 {
