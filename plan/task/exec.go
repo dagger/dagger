@@ -190,7 +190,12 @@ func (t *execTask) mountTmp(_ *plancontext.Context, dest string, _ *compiler.Val
 
 func (t *execTask) mountCache(_ *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
 	contents := mnt.Lookup("contents")
-	id, err := contents.Lookup("id").String()
+
+	idValue := contents.Lookup("id")
+	if !idValue.IsConcrete() {
+		return nil, fmt.Errorf("cache %q is not set", mnt.Path().String())
+	}
+	id, err := idValue.String()
 	if err != nil {
 		return nil, err
 	}
