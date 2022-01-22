@@ -12,14 +12,14 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: secrets: test: command: {
+	inputs: secrets: sops: command: {
 		name: "sops"
 		args: ["-d", "../../test_secrets.yaml"]
 	}
 
 	actions: {
-		testSecrets: engine.#TransformSecret & {
-			input: inputs.secrets.test.contents
+		secrets: engine.#TransformSecret & {
+			input: inputs.secrets.sops.contents
 			#function: {
 				input:  _
 				output: yaml.Unmarshal(input)
@@ -37,7 +37,7 @@ dagger.#Plan & {
 		// Deploy to netlify
 		deploy: netlify.#Deploy & {
 			team:  "blocklayer"
-			token: testSecrets.output.netlifyToken.contents
+			token: secrets.output.netlify.token.contents
 
 			site:     "dagger-test"
 			contents: data.output

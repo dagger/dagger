@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/yaml"
+
 	"dagger.io/dagger/engine"
 )
 
@@ -12,12 +13,11 @@ engine.#Plan & {
 	}
 
 	actions: {
-
 		alpine: engine.#Pull & {
 			source: "alpine:3.15.0"
 		}
 
-		repoPassword: engine.#TransformSecret & {
+		secrets: engine.#TransformSecret & {
 			input: inputs.secrets.sops.contents
 			#function: {
 				input:  _
@@ -30,7 +30,7 @@ engine.#Plan & {
 			ref:    "main"
 			auth: {
 				username: "dagger-test"
-				password: repoPassword.output.TestPAT.contents
+				password: secrets.output.github.token.contents
 			}
 		}
 
