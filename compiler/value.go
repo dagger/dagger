@@ -185,7 +185,10 @@ func (v *Value) IsConcreteR(opts ...cue.Option) error {
 }
 
 func (v *Value) Walk(before func(*Value) bool, after func(*Value)) {
-	// FIXME: lock?
+	// FIXME: this is a long lock
+	v.cc.rlock()
+	defer v.cc.runlock()
+
 	var (
 		llBefore func(cue.Value) bool
 		llAfter  func(cue.Value)
