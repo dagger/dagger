@@ -1,0 +1,25 @@
+name: "Test Unit"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: "Check out"
+        uses: actions/checkout@v2
+
+      - name: "Setup Go"
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: Test
+        run: |
+          make test

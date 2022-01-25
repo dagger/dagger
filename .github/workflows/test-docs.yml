@@ -1,0 +1,71 @@
+name: "Test Docs"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: "Check out"
+        uses: actions/checkout@v2
+
+      - name: "Setup Go"
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: "Install CUE"
+        run: |
+          # Cue
+          export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
+          export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
+          echo "Installing cue version $CUE_VERSION"
+          curl -L https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
+
+      - name: "Run local registry"
+        run: |
+          docker run -d -p 5000:5000 --name registry registry:2
+
+      # TODO: DISABLED for CI deadlock debugging
+      # - name: Generate KiND config
+      #   run: |
+      #     echo 'kind: Cluster
+      #     apiVersion: kind.x-k8s.io/v1alpha4
+      #     containerdConfigPatches:
+      #     - |-
+      #       [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+      #         endpoint = ["http://registry:5000"]' > ./kind-config.yaml
+      #     cat ./kind-config.yaml
+
+      # - name: "Setup KiND"
+      #   uses: helm/kind-action@v1.2.0
+      #   with:
+      #     config: "./kind-config.yaml"
+
+      # - name: Connect local registry to KiND
+      #   run: |
+      #     docker network connect kind registry
+
+      - name: "Import Dagger private key"
+        env:
+          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
+        run: |
+          mkdir -p ~/.config/dagger
+          echo "$DAGGER_AGE_KEY" > ~/.config/dagger/keys.txt
+
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Test
+        # TODO: https://github.com/dagger/dagger/pull/1341
+        # env:
+        #   DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-docs"
+        #   DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-docs"
+        run: |
+          make doc-test

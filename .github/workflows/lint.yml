@@ -1,0 +1,55 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  everything:
+    name: Everything
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check out"
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: "Set up go"
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: "Install deps"
+        run: |
+          # Cue
+          export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
+          export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
+          echo "Installing cue version $CUE_VERSION"
+          curl -L https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
+
+      - name: "Lint go"
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.39
+          skip-go-installation: true
+          args: --timeout=3m
+
+      - name: "Lint shell"
+        run: |
+          make shellcheck
+
+      - name: "Lint CUE"
+        run: |
+          make cuelint
+
+      - name: "Lint docs"
+        run: |
+          make docslint
+
+      - name: "Lint markdown"
+        uses: avto-dev/markdown-lint@v1
+        with:
+          config: ".markdownlint.yaml"
+          args: ./docs README.md
