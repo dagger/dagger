@@ -1,6 +1,8 @@
 package dagger
 
 import (
+	"encoding/yaml"
+	"encoding/json"
 	"dagger.io/dagger/engine"
 )
 
@@ -17,7 +19,7 @@ import (
 // Select a subdirectory from a filesystem tree
 #Subdir: {
 	// Input tree
-	input: #FS
+	input: engine.#FS
 
 	// Path of the subdirectory
 	// Example: "/build"
@@ -32,5 +34,27 @@ import (
 	}
 
 	// Subdirectory tree
-	output: #FS & _copy.output
+	output: engine.#FS & _copy.output
+}
+
+// DecodeSecret is a convenience wrapper around #TransformSecret. The plain text contents of input is expected to match the format
+#DecodeSecret: {
+	{
+		format: "json"
+		engine.#TransformSecret & {
+			#function: {
+				input:  _
+				output: json.Unmarshal(input)
+			}
+		}
+	} | {
+		format: "yaml"
+		engine.#TransformSecret & {
+			#function: {
+				input:  _
+				output: yaml.Unmarshal(input)
+			}
+		}
+	}
+
 }
