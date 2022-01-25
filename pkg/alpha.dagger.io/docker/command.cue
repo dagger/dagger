@@ -109,7 +109,7 @@ import (
 				echo "$FINGERPRINT" >> "$HOME"/.ssh/known_hosts
 			else
 				# Add host to known hosts
-				ssh -i /key -o "UserKnownHostsFile "$HOME"/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p "$DOCKER_PORT" "$DOCKER_USERNAME"@"$DOCKER_HOSTNAME" /bin/true > /dev/null 2>&1
+				ssh -i /key -o "UserKnownHostsFile "$HOME"/.ssh/known_hosts" -o "StrictHostKeyChecking accept-new" -p "$DOCKER_PORT" "$DOCKER_USERNAME"@"$DOCKER_HOSTNAME" true > /dev/null 2>&1
 			fi
 		fi
 

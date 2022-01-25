@@ -1,0 +1,28 @@
+#cloud-config
+write_files:
+- path: /etc/nixos/host.nix
+  permissions: '0644'
+  content: |
+    {pkgs, ...}:
+    {
+      environment.systemPackages = with pkgs; [
+        git
+        htop
+        nix-diff
+        nixfmt
+        nvd
+        tmux
+        vim
+      ];
+      services.do-agent.enable = true;
+      virtualisation.docker.package = pkgs.docker_20_10;
+      virtualisation.docker.enable = true;
+      virtualisation.docker.autoPrune.enable = true;
+      virtualisation.docker.autoPrune.dates = "daily";
+      users.users.root.openssh.authorizedKeys.keys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAl40j8zO5APwryoo8Ai0GiHkKWPA6MxPPVjEB6Rc1bm dagger-ci@2022_01_26"
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHUK9LTCmlmqHQahsqtUTTWfuKkdxrh80hkpasdI+PEo dagger-ci-pass@2022_01_26"
+      ];
+    }
+runcmd:
+  - curl https://raw.githubusercontent.com/elitak/nixos-infect/master/nixos-infect | PROVIDER=digitalocean NIXOS_IMPORT=./host.nix NIX_CHANNEL=nixos-21.11 bash 2>&1 | tee /tmp/nixos-infect.log

@@ -3,11 +3,11 @@ plan:
 name: docker-command-ssh
 inputs:
     TestConfig.host:
-        text: 143.198.64.230
+        text: 137.184.58.110
     TestConfig.key:
-        secret: ENC[AES256_GCM,data:gb2yFGdX3oqjPpQmqn3gr0hqLAHMFBhzLEHI5Bi+VN5Op/SCSjfA5yEC0Olb/Brzssjp0i6PIPBPPwW+Pj/gDuSR6CqzGlAkF1Pz/Ks6R0zqWkcR0gFImXrfRzeflgpGagPBgPsRBtPcoY7WqJQ1Lue46cJe7OTNPRT+X9oDek7mk9ZiIpJCUQQVN0+alWStOPYuTjRlqcSfao+B6hnC2fMtcCWpVxz9Sj8UpSwX4EHLU5GsHr8ioD+BP7BCPlhP/aSKu1iwMaiMo6zRn6V+GtSGX4JrwN53CYSjGxi1g9RiFMCFxcWsDVA+hCnzAdzO3pMEmTL5xHZ9MoMLbOwEhN3Rnh+HX61uTq2DRfqGhKGtjXjcewOxb0NezGCj93Y0ov2TtBBo7wjYEi0AmI3ljCwoq9EDRYKg1a/w79FpGVpqoomd4XrJYbqP0SnHO0ZrsSLqKmqdIoDYbfxR7zprQQsN0ENOdDVf9WdTnHSJMSC5MTmyqAOogKZN1nNzW5LJQ2i0JUt1jl322RzdQ+brBLWiohVfenCy/23l,iv:gceSEfG6Eu2Pc9+JZpH0CLITNVnYFyN21drPneu15wk=,tag:zmYtioa5LTPZrSeFNmaBvg==,type:str]
+        secret: ENC[AES256_GCM,data:y+EideEd0sTJ4FF0L8neepRT79T8GtE95dGNywkkG9EV6G81ewwyfkAQsF0Lgdtf/Lziqa/v/8xBQJwnfjTAqFi+qHPYvKjXAqgUyfeHSPTvHWudL4ELHcIu/4YvvUYOu5oaOSxeeb8qElZ2id9GyFBV2cJVywfHBagAdGuejnVKfHSMyZLc6Dxdpa+QZt8srPv4ZPnJUN6s7tOC0IgDESsRBFSgSE5ld4smb84QbP1bfNzSPW1Jq+vo1EmoTJgMjsOkjSDfXC0+rLdpHf958ZPLZuM5L86hx8BHauQZ1v3qNXChPNFbEbhEO7yrFAWlXc2GqvDrhAJlTYo+Xl6NPpE3cixcwgFtwEc3EHln4AaRxs9UZnx8s8qZ7Ys4iGU9nWdnWYIdPTxtcFjU7hdTcSYxCfDZMLYozT/9cyKaOUtI3TW3+bEgXUu6Zn6ABpcIZjf6ZjjfPXtS0cpKd7wCWMXGgPozO+PayFgJndJJteEDQb55r5oSaLbajpmrlrRNOXxJsGNhTBke9PSdJ3DGCS6iYigDsQ7S3mYW,iv:jKm2y1zzH2kvPkuDnJRNa8l05Nwbc9bf3IPKhMwRdVM=,tag:xDevSihBxMI4eOTb2iGREA==,type:str]
     TestConfig.user:
-        text: daggerci
+        text: root
     TestPassword:
         secret: ENC[AES256_GCM,data:8G7Cgw==,iv:+hlWzOxy4H9OYwP0x+7LIMFhQoebmP3yUGRuhPSGGgI=,tag:i+dHE+W2zud5xGvWL5PxVg==,type:str]
 sops:
@@ -25,8 +25,8 @@ sops:
             UEpoZy9HZUlHOVV3M05OSkZQS1l6aXcK3NfBITvd6la6nkcIzqH69xfv9RR0Jm7x
             vU5FvGROK3Z0ZR8NNXAtNH6VQQ21TDD2MOXWOVvjnIAAOVNEyc1amA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-12-03T17:55:10Z"
-    mac: ENC[AES256_GCM,data:phVOMaY+57UEzTDQ9Vf1jdcesonG0s44qXVyfFrM2xuRTDffdgmR8uzboSQ5S+5u4fg//nz17oE9qaLe1ST1X5SekZm1z4KCK7Z29bqYvrywOTlmeBpQ9vDOGjY+BBnMnWNjLrC0bQ5bfVG1c1V0PxDuvey4EoFqplecENlEVQ8=,iv:kk/X/R7cFvaLaa4YHvIUOE4VGqdxFFmtxEspP1Uzp74=,tag:XrvWLPb5w7417T8LeiGCkg==,type:str]
+    lastmodified: "2022-01-26T21:13:07Z"
+    mac: ENC[AES256_GCM,data:QHSy5Vryhe3G4OS6GRs0t24VuG2HKbka+WuC03CKTOaHlpE9K1l0kuXtFpEzGGxmYs8FKUW2Gb+K3HSP6L/w3T0D0jY9fvSMrX7anQUCzIqRlzxQiQ+ZYueeV9Nr8hF78QfN8Ix+vY03u7KaAWzc0+yHtxRsDAPGjArvrG4+vBs=,iv:ni2u3M1EUsz3wndefGxdhX4Q/KwcZ+FZaFgKhRep22w=,tag:LC3KBS+ijbn01HzSyySQDw==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1
