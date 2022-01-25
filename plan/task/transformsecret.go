@@ -48,7 +48,13 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 		return nil, errors.New(errStr)
 	}
 
-	output := compiler.NewValue()
+	type pathSecret struct {
+		path  cue.Path
+		value *compiler.Value
+	}
+
+	var pathsSecrets []pathSecret
+
 	// users could yaml.Unmarshal(input) and return a map
 	// or yaml.Unmarshal(input).someKey and return a string
 	// walk will ensure we convert every leaf
@@ -60,9 +66,15 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 			newLeafSelectors := v.Path().Selectors()[len(functionPathSelectors):]
 			newLeafSelectors = append(newLeafSelectors, cue.Str("contents"))
 			newLeafPath := cue.MakePath(newLeafSelectors...)
-			output.FillPath(newLeafPath, secret.MarshalCUE())
+			pathsSecrets = append(pathsSecrets, pathSecret{newLeafPath, secret.MarshalCUE()})
 		}
 	})
+
+	output := compiler.NewValue()
+
+	for _, ps := range pathsSecrets {
+		output.FillPath(ps.path, ps.value)
+	}
 
 	return output, nil
 }
