@@ -49,8 +49,8 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 	}
 
 	type pathSecret struct {
-		path  cue.Path
-		value *compiler.Value
+		path   cue.Path
+		secret *plancontext.Secret
 	}
 
 	var pathsSecrets []pathSecret
@@ -66,14 +66,14 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 			newLeafSelectors := v.Path().Selectors()[len(functionPathSelectors):]
 			newLeafSelectors = append(newLeafSelectors, cue.Str("contents"))
 			newLeafPath := cue.MakePath(newLeafSelectors...)
-			pathsSecrets = append(pathsSecrets, pathSecret{newLeafPath, secret.MarshalCUE()})
+			pathsSecrets = append(pathsSecrets, pathSecret{newLeafPath, secret})
 		}
 	})
 
 	output := compiler.NewValue()
 
 	for _, ps := range pathsSecrets {
-		output.FillPath(ps.path, ps.value)
+		output.FillPath(ps.path, ps.secret.MarshalCUE())
 	}
 
 	return output, nil
