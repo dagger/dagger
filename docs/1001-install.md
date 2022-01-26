@@ -4,6 +4,12 @@ slug: /1001/install/
 
 # Install Dagger
 
+:::caution Requirement
+
+- Dagger requires [Docker](https://docs.docker.com/get-docker/) to be installed and running.
+
+:::
+
 ## Option 1: Use Homebrew (Mac OS only)
 
 From your Mac OS terminal, run the following command:
