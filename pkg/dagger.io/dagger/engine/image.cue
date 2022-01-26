@@ -35,13 +35,26 @@ package engine
 
 // Container image config. See [OCI](https://www.opencontainers.org/).
 // Spec left open on purpose to account for additional fields.
-// [Image Spec](https://github.com/opencontainers/image-spec/blob/main/specs-go/v1/config.go)
-// [Docker Superset](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/dockerfile2llb/image.go)
 #ImageConfig: {
-	Env?: [...string]
-	User?: string
-	Cmd?: [...string]
+	user?: string
+	expose?: [string]: {}
+	env?: [string]: string
+	entrypoint?: [...string]
+	cmd?: [...string]
+	volume?: [string]: {}
+	workdir?: string
+	label?: [string]: string
+	healthcheck?: #HealthCheck
+	shell?: [...string]
 	...
+}
+
+#HealthCheck: {
+	test?: [...string]
+	interval?:    int
+	timeout?:     int
+	startPeriod?: int
+	retries?:     int
 }
 
 // Download a container image from a remote repository

@@ -126,7 +126,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s s
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": pctx.FS.New(solvedRef).MarshalCUE(),
-		"config": image.Config,
+		"config": ConvertImageConfig(image.Config),
 	})
 }
 

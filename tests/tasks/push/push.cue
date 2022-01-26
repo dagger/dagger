@@ -42,7 +42,7 @@ engine.#Plan & {
 		push: engine.#Push & {
 			dest:  "daggerio/ci-test:\(randomString.output)"
 			input: randomString.image.output
-			config: Env: ["FOO=\(randomString.output)"]
+			config: env: FOO: randomString.output
 			auth: #auth
 		}
 
@@ -54,9 +54,7 @@ engine.#Plan & {
 			// check digest
 			digest: strings.Split(push.result, "@")[1]
 			// check image config
-			config: {
-				Env: ["FOO=\(randomString.output)"]
-			}
+			config: env: FOO: randomString.output
 		}
 
 		pullOutputFile: engine.#ReadFile & {
