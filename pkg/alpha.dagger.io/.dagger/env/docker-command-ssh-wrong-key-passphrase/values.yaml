@@ -3,13 +3,13 @@ plan:
 name: docker-command-ssh-wrong-key-passphrase
 inputs:
     TestConfig.host:
-        text: 143.198.64.230
+        text: 137.184.58.110
     TestConfig.key:
-        secret: ENC[AES256_GCM,data:dbIEUHadOTOdPrmMAgyLGMdIY+FuyWZvv4mRyjr+BbLZavl7/fH6abiQFpPY0x3960iqPB+wEM6wG+VPDivHTj1QRVMGPIV8ZGrfeR/mfeDuaKXDttkWgRN8vyHOZ+oKnI22913tvK59gNbJX8fR0wPfqOCEWbzy+bRBh/bVH//CMwCoSU+v2rZwAqOnGyXCyeGbp+wo5xMufv+Dosgb4uhFk1CPQJfKfBJVMf1EJS0e9/P8GS5UUjevR9eeRnCJ7kdHu26b3lwAHhPWv72O/yuOIKItrgMkSuHz2H2BFdgt5xq/h/SfrONMwymg8+oEiuS3n1C8ZBv8I4RE5XF6GX/xWb9dZJLctbi6oBELtvKXhswnB0PWSK1OXMgrJ5yYFeBPpaBptRBxl0AJhOG92K6xM9O0cRxAT+vtz0zvJ7gIQDZtngcTTS+IMN6Kgmx4daW5x14FbRJRGKKqU+PHeUW2XpN70IwkWXZfLs445O9w8teayPUu3KePZJo8eLkVpWJIyVUnrk/5VIREV8EYZzRFUwTtwYSTefGycPfjz2L01xQR0fn55DxJpcLpCLqjGRhWHQE6Wn4j6aXyzbOXHMIYgw+Rx1egjszdKzgCWaA=,iv:CZyN1UCE0nI2/ch5O7kerfYBbCgoJX+dPvh5dRO3cxc=,tag:hwBmnOdC8Na0dwyUCU3QDw==,type:str]
+        secret: ENC[AES256_GCM,data:9H5WgztxyzMQPtXFvCOdjTDx9XXoGmF2C+Ml9GD51EDCMMSgmMSGnHn1R4iB3fF8phkKqI8izvPf1yJxuAJVy7RuY0SvysSGSUKncwNM7tZ0Ca/ItZx9rcQfViE44sN0Bhy5PtiEP/CfyCYzQfytjZL1AvnXLktKwuwtXOFPR9CgUtBCU3pgXlAfu23Yiko4L0RjzTVqai+T7BC5tjQXLVG3CzQexj7eo/QsrQoM3PZMWlANg8xSnjQabkfjmREN6TcCM1YsLNLEnBOZwbh3qpBuoDBmoc8WLQlNWALh4kRZgyMwvNlXRMK4I+BZ/GSo4gRvAHXEtDNbCPNINcOb3/j3yPnxNvBdLR4fSfHInvrgM4fcPmgMaJOMhFhR6i+f+La/JnNmwTSPnISh7p8gDsBRbRxZoTlCjGf9v30Bg9KQqSsFu5vsmnAB8+dbnqiyaPyz4TuoRPA0rnx0JQDIDbX1cntFV2o/HVQlPLpcNx2mSoFiAKpapjowOkcCghTFWP+unRdubCr9wVEzmkRkQHgvIsOwzQjPBGX+bQF9vCf+8HZ/qBWxFaQMHTpIWAMXUTf2QNawvZQkj2RWoh7zG5cD3y8JTEUCD+2eUXedx3k=,iv:9nBZTTbL/mvR/Sy9W+ozDWeoEfrGYxtm1wxIbx53HqY=,tag:KbOHlBNJlMZgpUi9AEbKSA==,type:str]
     TestConfig.keyPassphrase:
-        secret: ENC[AES256_GCM,data:RZK8tx7PZaYtmg==,iv:yFXA8CROxAbrhz/i3PQHeqCFh4rMo+GHITpVxfAOkdo=,tag:Ep1J0nazTcc8EjHP6GbwAQ==,type:str]
+        secret: ENC[AES256_GCM,data:1VJ0/g==,iv:4zm6VTnb29Sb/a+FXQ0vqF79vjbjVTdmHMNdgftjV7M=,tag:E5D/qDpFY5cTRhWKvp3YCQ==,type:str]
     TestConfig.user:
-        text: daggerci
+        text: root
 sops:
     kms: []
     gcp_kms: []
@@ -25,8 +25,8 @@ sops:
             R2tNU2JJWHFQTmhnUDd6eE13UUhQazgK+OQ50Q3+S5Fn2Y132ZeDrgUKWPcAk+et
             q8ppfZiPOtH4p6MwboSuh/vaTAAsxks7ctnqnU1pY+EHfnp8bHYHgQ==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2021-07-08T09:53:20Z"
-    mac: ENC[AES256_GCM,data:TDPIryvA+UdjGBuKPE5/OIdC8fv20/AA1EVuG1lspq069VaB4A+6esndMhiuA8cBNalpOSPRZXfT1dzI/xxmir161kpgHJbofU8K8APAWohBrNcOgMIbZApcpmGn1oVS2emkGNmARsJq7WSEKI1iRSRTHrvJFrs5Jvx293w476Q=,iv:GM66eqUNVEF2x5cFGyc7QhSaw1m+qCYuLCZvBEMD+Wg=,tag:NTVaLL5E5/t9XpxDJeU/Bg==,type:str]
+    lastmodified: "2022-01-26T22:46:36Z"
+    mac: ENC[AES256_GCM,data:Bc7LmOx1lEb4K+BszbT35YClp+C4euJaZzzHkEYqxXRT/+CErRYH7vChk+6ewfMP/NZzg4lfuCK2mGfl4c3yB251sjEv0hvMqkLn4lCDBSnAkIO4EnpbGPvHNctB/GY3XrXFNM/AQ4Ez2mNUDchuJAQkw3FmOkMsP2jE7ZIDf0Y=,iv:x7J0gtt1WwWzMFgaTuMYQuOlNM9MgzUjMIQ+P9ibbIM=,tag:fKOf/x9XsIFixWg1RaN00w==,type:str]
     pgp: []
     encrypted_suffix: secret
     version: 3.7.1

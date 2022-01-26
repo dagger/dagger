@@ -31,3 +31,9 @@ docs/learn/tests/node_modules
 # Integration CI dagger.mod, dagger.sum
 dagger.mod
 dagger.sum
+
+# Local binaries
+bin/
+
+# Local environment variables
+.env
