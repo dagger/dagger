@@ -2,6 +2,7 @@ package docker
 
 import (
 	"list"
+	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
@@ -36,7 +37,7 @@ import (
 	}
 
 	// Command to execute
-	cmd: {
+	cmd?: {
 		// Name of the command to execute
 		// Examples: "ls", "/bin/bash"
 		name: string
@@ -83,7 +84,7 @@ import (
 	// Username or UID to ad
 	// User identity for this command
 	// Examples: "root", "0", "1002"
-	user: string | *"root"
+	user: string
 
 	// Output fields
 	{
@@ -129,12 +130,41 @@ import (
 
 	// Actually execute the command
 	_exec: engine.#Exec & {
-		args:      [cmd.name] + cmd._flatFlags + cmd.args
-		input:     _image.rootfs
-		"always":  always
-		"mounts":  mounts
-		"env":     env
+		input:    _image.rootfs
+		"always": always
+		"mounts": mounts
+
+		if cmd != _|_ {
+			args: [cmd.name] + cmd._flatFlags + cmd.args
+		}
+		if cmd == _|_ {
+			args: list.Concat([
+				if _image.config.Entrypoint != _|_ {
+					_image.config.Entrypoint
+				},
+				if _image.config.Cmd != _|_ {
+					_image.config.Cmd
+				},
+			])
+		}
+		"env": env
+		if _image.config.Env != _|_ {
+			for _, envvar in _image.config.Env {
+				let split = strings.SplitN(envvar, "=", 2)
+				let k = split[0]
+				let v = split[1]
+				if env[k] == _|_ {
+					"env": "\(k)": v
+				}
+			}
+		}
 		"workdir": workdir
-		"user":    user
+		if workdir == _|_ && _image.config.WorkingDir != _|_ {
+			"workdir": _image.config.WorkingDir
+		}
+		"user": user
+		if user == _|_ && _image.config.User != _|_ {
+			"user": _image.config.User
+		}
 	}
 }
