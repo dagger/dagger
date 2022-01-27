@@ -84,7 +84,8 @@ func (r *repo) checkout(ctx context.Context, version string) error {
 	}
 
 	err = w.Checkout(&git.CheckoutOptions{
-		Hash: *h,
+		Hash:  *h,
+		Force: true,
 	})
 	if err != nil {
 		return err

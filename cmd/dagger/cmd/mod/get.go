@@ -6,6 +6,8 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
+	"go.dagger.io/dagger/pkg"
+	"go.dagger.io/dagger/state"
 	"go.dagger.io/dagger/telemetry"
 )
 
@@ -25,7 +27,15 @@ var getCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
+		var err error
+
 		project := common.CurrentProject(ctx)
+		cueModPath := pkg.GetCueModParent()
+		// err = pkg.CueModInit(ctx, cueModPath)
+		_, err = state.Init(ctx, cueModPath)
+		if err != nil && err != state.ErrAlreadyInit {
+			lg.Fatal().Err(err).Msg("failed to initialize cue.mod")
+		}
 		doneCh := common.TrackProjectCommand(ctx, cmd, project, nil, &telemetry.Property{
 			Name:  "packages",
 			Value: args,
@@ -34,16 +44,16 @@ var getCmd = &cobra.Command{
 		var update = viper.GetBool("update")
 
 		var processedRequires []*mod.Require
-		var err error
+
 		if update && len(args) == 0 {
 			lg.Info().Msg("updating all installed packages...")
-			processedRequires, err = mod.UpdateInstalled(ctx, project.Path)
+			processedRequires, err = mod.UpdateInstalled(ctx, cueModPath)
 		} else if update && len(args) > 0 {
 			lg.Info().Msg("updating specified packages...")
-			processedRequires, err = mod.UpdateAll(ctx, project.Path, args)
+			processedRequires, err = mod.UpdateAll(ctx, cueModPath, args)
 		} else if !update && len(args) > 0 {
 			lg.Info().Msg("installing specified packages...")
-			processedRequires, err = mod.InstallAll(ctx, project.Path, args)
+			processedRequires, err = mod.InstallAll(ctx, cueModPath, args)
 		} else {
 			lg.Fatal().Msg("unrecognized update/install operation")
 		}
