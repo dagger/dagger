@@ -27,9 +27,7 @@ dagger.#Plan & {
 		}
 		run: docker.#Run & {
 			image: myimage
-			cmd: {
-				name: "ls"
-			}
+			cmd: name: "ls"
 			export: files: {
 				"/dagger.txt": _ & {
 					contents: "not hello from dagger"

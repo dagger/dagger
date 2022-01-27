@@ -154,17 +154,17 @@ import (
 				let k = split[0]
 				let v = split[1]
 				if env[k] == _|_ {
-					"env": "\(k)": v
+					env: "\(k)": v
 				}
 			}
 		}
 		"workdir": workdir
 		if workdir == _|_ && _image.config.WorkingDir != _|_ {
-			"workdir": _image.config.WorkingDir
+			workdir: _image.config.WorkingDir
 		}
 		"user": user
 		if user == _|_ && _image.config.User != _|_ {
-			"user": _image.config.User
+			user: _image.config.User
 		}
 	}
 }
