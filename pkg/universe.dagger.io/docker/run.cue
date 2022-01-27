@@ -79,7 +79,7 @@ import (
 
 	// Working directory for the command
 	// Example: "/src"
-	workdir: string | *"/"
+	workdir: string
 
 	// Username or UID to ad
 	// User identity for this command
