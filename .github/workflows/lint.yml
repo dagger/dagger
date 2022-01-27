@@ -3,8 +3,30 @@ name: Lint
 on:
   push:
     branches: [main]
+    ignore-paths:
+      - 'docs/**'
+      - 'infra/**'
+      - 'website/**'
+      - '.gitignore'
+      - '.golangci.yml'
+      - '.goreleaser.yml'
+      - 'Dockerfile'
+      - 'install.ps1'
+      - 'semver'
+      - 'tracing.compose.yaml'
   pull_request:
     branches: [main]
+    ignore-paths:
+      - 'docs/**'
+      - 'infra/**'
+      - 'website/**'
+      - '.gitignore'
+      - '.golangci.yml'
+      - '.goreleaser.yml'
+      - 'Dockerfile'
+      - 'install.ps1'
+      - 'semver'
+      - 'tracing.compose.yaml'
 
 jobs:
   everything:
