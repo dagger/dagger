@@ -10,17 +10,18 @@ import (
 // This test verify that we can correctly build a simplistic image
 // using  docker.#Build
 dagger.#Plan & {
-	#testValue: "hello world"
+	inputs: params: test: "hello world"
 
 	actions: {
 		image: docker.#Build & {
 			steps: [
 				alpine.#Build,
 				docker.#Run & {
-					script: """
-							echo -n $TEST >> /test.txt
-						"""
-					env: TEST: #testValue
+					command: {
+						name: "sh"
+						flags: "-c": "echo -n $TEST>> /test.txt"
+					}
+					env: TEST: inputs.params.test
 				},
 			]
 		}
@@ -29,7 +30,7 @@ dagger.#Plan & {
 			input: image.output.rootfs
 			path:  "/test.txt"
 		} & {
-			contents: #testValue
+			contents: inputs.params.test
 		}
 	}
 }

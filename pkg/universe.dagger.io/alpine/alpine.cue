@@ -2,6 +2,8 @@
 package alpine
 
 import (
+	"strings"
+
 	"universe.dagger.io/docker"
 )
 
@@ -20,23 +22,23 @@ import (
 		version: string | *""
 	}
 
-	docker.#Build & {
-		steps: [
-			docker.#Pull & {
-				source: "index.docker.io/alpine:\(version)"
-			},
-			for pkgName, pkg in packages {
-				docker.#Run & {
-					cmd: {
-						name: "apk"
-						args: ["add", "\(pkgName)\(pkg.version)"]
-						flags: {
-							"-U":         true
-							"--no-cache": true
-						}
-					}
-				}
-			},
-		]
+	pull: docker.#Pull & {
+		source: "index.docker.io/alpine:\(version)"
 	}
+
+	// FIXME: use bash.#Run
+	install: docker.#Run & {
+		image: pull.output
+		command: {
+			name: "sh"
+			flags: "-c": strings.Join(
+					[ for pkgName, pkg in packages {
+					"apk add -U --no-cache '\(pkgName)\(pkg.version)'"
+				}],
+				"\n",
+				)
+		}
+	}
+
+	output: install.output
 }

@@ -109,14 +109,16 @@ dagger.#Plan & {
 			}
 
 			// Run tests
-			run: docker.#Run & {
-				image:  build.output
+			run: bash.#Run & {
 				script: "mix test"
-				// Don't cache running tests
-				// Just because we've tested a version before, doesn't mean we don't
-				// want to test it again.
-				// FIXME: make this configurable
-				always: true
+				container: {
+					image: build.output
+					// Don't cache running tests
+					// Just because we've tested a version before, doesn't mean we don't
+					// want to test it again.
+					// FIXME: make this configurable
+					always: true
+				}
 			}
 
 			db: {

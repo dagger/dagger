@@ -8,13 +8,14 @@ import (
 
 dagger.#Plan & {
 	actions: {
-		image: alpine.#Build
+		base: alpine.#Build
 
 		run: docker.#Run & {
-			"image": image.output
-			script: #"""
-				echo -n hello world >> /output.txt
-				"""#
+			command: {
+				name: "sh"
+				flags: "-c": "echo -n hello world >> /output.txt"
+			}
+			image: base.output
 			export: files: "/output.txt": _ & {
 				contents: "hello world"
 			}

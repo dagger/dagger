@@ -52,10 +52,16 @@ dagger.#Plan & {
 
 		// Check if the website was deployed
 		verify: bash.#Run & {
-			input:  image.output
-			script: #"""
-		  test "$(curl \#(deploy.deployUrl))" = "\#(marker)"
-		  """#
+			script: """
+				test "$(curl $URL)" = "$EXPECTED"
+				"""
+			container: {
+				image: image.output
+				env: {
+					URL:      deploy.deployUrl
+					EXPECTED: marker
+				}
+			}
 		}
 	}
 }

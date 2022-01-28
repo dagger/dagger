@@ -4,18 +4,18 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 	"universe.dagger.io/docker"
-	"universe.dagger.io/alpine"
 )
 
 dagger.#Plan & {
 	actions: {
-		image: alpine.#Build
+		image: docker.#Pull & {source: "alpine"}
 
 		run: docker.#Run & {
 			"image": image.output
-			script: #"""
-				echo -n $TEST_MESSAGE >> /output.txt
-				"""#
+			command: {
+				name: "sh"
+				flags: "-c": "echo -n $TEST_MESSAGE >> /output.txt"
+			}
 			env: TEST_MESSAGE: "hello world"
 		}
 
