@@ -48,12 +48,10 @@ import (
 
 	// Execute copy operation
 	_copy: engine.#Copy & {
-		"input": input.rootfs
-		"source": {
-			root: contents
-			path: source
-		}
-		"dest": dest
+		"input":    input.rootfs
+		"contents": contents
+		source:     source
+		"dest":     dest
 	}
 
 	output: #Image & {
