@@ -4,36 +4,30 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 	"universe.dagger.io/docker"
+	"universe.dagger.io/alpine"
 )
 
 // This test verify that we can correctly build an image
 // using docker.#Build with multiple steps executed during
 // the building process
 dagger.#Plan & {
-	inputs: directories: testdata: path: "./testdata"
-
 	actions: {
 		image: docker.#Build & {
 			steps: [
-				docker.#Pull & {
-					source: "golang:1.17-alpine"
-				},
-				docker.#Copy & {
-					contents: inputs.directories.testdata.contents
-					dest:     "/input"
-				},
+				alpine.#Build,
 				docker.#Run & {
 					script: """
-							# FIXME remove that line when #1517 is merged
-							export PATH=/go/bin:/usr/local/go/bin:$PATH
-							go build -o hello ./main.go
-							mv hello /bin
+							echo -n hello > /bar.txt
 						"""
-					workdir: "/input"
 				},
 				docker.#Run & {
 					script: """
-							hello >> /test.txt
+							echo -n $(cat /bar.txt) world > /foo.txt
+						"""
+				},
+				docker.#Run & {
+					script: """
+							echo -n $(cat /foo.txt) >> /test.txt
 						"""
 				},
 			]
