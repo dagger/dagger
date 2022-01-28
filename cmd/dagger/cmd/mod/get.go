@@ -3,12 +3,10 @@ package mod
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/state"
-	"go.dagger.io/dagger/telemetry"
 )
 
 var getCmd = &cobra.Command{
@@ -29,17 +27,12 @@ var getCmd = &cobra.Command{
 
 		var err error
 
-		project := common.CurrentProject(ctx)
 		cueModPath := pkg.GetCueModParent()
 		// err = pkg.CueModInit(ctx, cueModPath)
 		_, err = state.Init(ctx, cueModPath)
 		if err != nil && err != state.ErrAlreadyInit {
 			lg.Fatal().Err(err).Msg("failed to initialize cue.mod")
 		}
-		doneCh := common.TrackProjectCommand(ctx, cmd, project, nil, &telemetry.Property{
-			Name:  "packages",
-			Value: args,
-		})
 
 		var update = viper.GetBool("update")
 
@@ -68,7 +61,6 @@ var getCmd = &cobra.Command{
 			lg.Error().Err(err).Msg("error installing/updating packages")
 		}
 
-		<-doneCh
 	},
 }
 
