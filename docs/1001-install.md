@@ -71,7 +71,7 @@ git clone https://github.com/dagger/dagger.git
 2\. Build the `dagger` binary.
 
 ```shell
-cd dagger; make
+cd dagger; make dagger
 ```
 
 3\. Copy the `dagger` tool to a location listed in your `$PATH`. For example, to copy it to `/usr/local/bin`:
