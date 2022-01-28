@@ -23,12 +23,10 @@ engine.#Plan & {
 		}
 
 		copy: engine.#Copy & {
-			input: busybox1_34_1.output
-			source: {
-				root: alpine3_15_0.output
-				path: "/etc/alpine-release"
-			}
-			dest: "/alpine3_15_0_release"
+			input:    busybox1_34_1.output
+			contents: alpine3_15_0.output
+			source:   "/etc/alpine-release"
+			dest:     "/alpine3_15_0_release"
 		}
 
 		verify_copy: engine.#ReadFile & {

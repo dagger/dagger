@@ -98,9 +98,9 @@ engine.#Plan & {
 		}
 
 		appImage: engine.#Copy & {
-			input: runtimeImage.output
-			source: root: inputs.directories.app.contents
-			dest: "/app"
+			input:    runtimeImage.output
+			contents: inputs.directories.app.contents
+			dest:     "/app"
 		}
 
 		deps: engine.#Exec & {

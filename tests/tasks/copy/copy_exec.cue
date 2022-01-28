@@ -29,13 +29,12 @@ engine.#Plan & {
 		}
 
 		copy: engine.#Copy & {
-			input: image.output
-			source: {
-				root: exec.output
-				path: "/output.txt"
-			}
-			dest: "/output.txt"
+			input:    image.output
+			contents: exec.output
+			source:   "/output.txt"
+			dest:     "/output.txt"
 		}
+
 		verify_copy: engine.#ReadFile & {
 			input: copy.output
 			path:  "/output.txt"

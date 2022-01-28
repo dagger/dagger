@@ -25,12 +25,10 @@ import (
 
 	// Copy action
 	_copy: engine.#Copy & {
-		"input": engine.#Scratch
-		source: {
-			root:   input
-			"path": path
-		}
-		dest: "/"
+		"input":  engine.#Scratch
+		contents: input
+		source:   path
+		dest:     "/"
 	}
 
 	// Subdirectory tree
