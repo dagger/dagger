@@ -137,6 +137,7 @@ setup() {
     cd "$TESTDIR"/tasks/source
     "$DAGGER" --europa up ./source.cue
     "$DAGGER" --europa up ./source_include_exclude.cue
+    "$DAGGER" --europa up ./source_relative.cue
 
     run "$DAGGER" --europa up ./source_invalid_path.cue
     assert_failure
