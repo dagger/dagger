@@ -17,7 +17,7 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed */**/*.cue */**/**/*.cue */**/*.sh
+	//go:embed alpha.dagger.io dagger.io universe.dagger.io
 	FS embed.FS
 )
 
@@ -112,17 +112,6 @@ func Vendor(ctx context.Context, p string) error {
 	return nil
 }
 
-func isAllowedExt(ext string) bool {
-	// List of allowed extension to vendor in
-	allowedExtension := []string{".cue", ".sh"}
-	for _, v := range allowedExtension {
-		if v == ext {
-			return true
-		}
-	}
-	return false
-}
-
 func extractModules(dest string) error {
 	return fs.WalkDir(FS, ".", func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -130,10 +119,6 @@ func extractModules(dest string) error {
 		}
 
 		if !entry.Type().IsRegular() {
-			return nil
-		}
-
-		if !isAllowedExt(filepath.Ext(entry.Name())) {
 			return nil
 		}
 
@@ -148,7 +133,11 @@ func extractModules(dest string) error {
 			return err
 		}
 
-		return os.WriteFile(overlayPath, contents, 0600)
+		info, err := fs.Stat(FS, p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(overlayPath, contents, info.Mode().Perm())
 	})
 }
 
