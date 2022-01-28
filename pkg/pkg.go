@@ -133,11 +133,10 @@ func extractModules(dest string) error {
 			return err
 		}
 
-		info, err := fs.Stat(FS, p)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(overlayPath, contents, info.Mode().Perm())
+		// Give exec permission on embedded file to freely use shell script
+		// Exclude permission linter
+		//nolint
+		return os.WriteFile(overlayPath, contents, 0700)
 	})
 }
 
