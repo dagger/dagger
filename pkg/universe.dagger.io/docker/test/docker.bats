@@ -5,6 +5,9 @@ setup() {
 }
 
 @test "docker.#Build" {
+    dagger up ./build-simple.cue
+    dagger up ./build-multi-steps.cue
+
     dagger up ./nested-build-test.cue
 
     # FIXME: this is currently broken
