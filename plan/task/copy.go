@@ -29,17 +29,17 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
-	sourceRoot, err := pctx.FS.FromValue(v.Lookup("source.root"))
+	contents, err := pctx.FS.FromValue(v.Lookup("contents"))
 	if err != nil {
 		return nil, err
 	}
 
-	sourceState, err := sourceRoot.State()
+	contentsState, err := contents.State()
 	if err != nil {
 		return nil, err
 	}
 
-	sourcePath, err := v.Lookup("source.path").String()
+	sourcePath, err := v.Lookup("source").String()
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 
 	outputState := inputState.File(
 		llb.Copy(
-			sourceState,
+			contentsState,
 			sourcePath,
 			destPath,
 			// FIXME: allow more configurable llb options
