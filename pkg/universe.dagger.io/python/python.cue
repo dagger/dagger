@@ -10,7 +10,7 @@ import (
 // Run a python script in a container
 #Run: docker.#Run & {
 	script: string
-	cmd: {
+	command: {
 		name: "python"
 		flags: "-c": script
 	}

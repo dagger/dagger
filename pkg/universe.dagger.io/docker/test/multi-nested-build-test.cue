@@ -16,17 +16,17 @@ dagger.#Plan & {
 								source: "alpine"
 							},
 							docker.#Run & {
-								cmd: name: "ls"
+								command: name: "ls"
 							},
 						]
 					},
 					docker.#Run & {
-						cmd: name: "ls"
+						command: name: "ls"
 					},
 				]
 			},
 			docker.#Run & {
-				cmd: name: "ls"
+				command: name: "ls"
 			},
 		]
 	}

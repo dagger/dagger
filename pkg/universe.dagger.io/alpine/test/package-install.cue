@@ -16,12 +16,14 @@ dagger.#Plan & {
 		}
 
 		check: docker.#Run & {
+			command: {
+				name: "sh"
+				flags: "-c": """
+					jq --version > /jq-version.txt
+					curl --version > /curl-version.txt
+					"""
+			}
 			image: build.output
-			script: """
-				jq --version > /jq-version.txt
-				curl --version > /curl-version.txt
-				"""
-
 			export: files: {
 				"/jq-version.txt": contents:   =~"^jq"
 				"/curl-version.txt": contents: =~"^curl"

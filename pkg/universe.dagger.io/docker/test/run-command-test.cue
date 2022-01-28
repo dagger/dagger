@@ -13,7 +13,7 @@ dagger.#Plan & {
 
 		run: docker.#Run & {
 			"image": image.output
-			cmd: {
+			command: {
 				name: "/bin/sh"
 				args: ["-c", "echo -n hello world >> /output.txt"]
 			}

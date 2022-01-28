@@ -7,7 +7,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 
-	"universe.dagger.io/alpine"
+	"universe.dagger.io/docker"
 	"universe.dagger.io/bash"
 )
 
@@ -39,81 +39,69 @@ import (
 	// Optional arguments for the script
 	args: [...string] | *[]
 
-	// Secret variables
-	// FIXME: not implemented. Are they needed?
-	secrets: [string]: dagger.#Secret
-
 	// FIXME: Yarn's version depends on Alpine's version
 	// Yarn version
 	// yarnVersion: *"=~1.22" | string
 
-	// FIXME: custom base image not supported
-	image: alpine.#Build & {
-		packages: {
-			bash: {}
-			yarn: {}
-		}
-	}
-
 	// Run yarn in a containerized build environment
-	command: bash.#Run & {
-		// FIXME: not working?
-		// *{
-		//  _image: alpine.#Build & {
-		//   packages: {
-		//    bash: version: "=~5.1"
-		//    yarn: version: yarnVersion
-		//   }
-		//  }
+	run: bash.#Run & {
+		"args": args
 
-		//  image: _image.output
-		//  env: CUSTOM_IMAGE: "0"
-		// } | {
-		//  env: CUSTOM_IMAGE: "1"
-		// }
-
-		"image": image.output
-
-		script: #"""
-			# Create $ENVFILE_NAME file if set
-			[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
-
-			yarn --cwd "$YARN_CWD" install --production false
-
-			opts=( $(echo $YARN_ARGS) )
-			yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
-			mv "$YARN_BUILD_DIRECTORY" /build
-			"""#
-
-		mounts: {
-			"yarn cache": {
-				dest:     "/cache/yarn"
-				contents: cache
-			}
-			"package source": {
-				dest:     "/src"
-				contents: source
-			}
-			// FIXME: mount secrets
+		_loadScripts: dagger.#Source & {
+			path: "."
+			include: ["*.sh"]
 		}
+		"source": _loadScripts.output
+		filename: "yarn-build.sh"
 
-		export: directories: "/build": _
-
-		env: {
-			YARN_BUILD_SCRIPT:    yarnScript
-			YARN_ARGS:            strings.Join(args, "\n")
-			YARN_CACHE_FOLDER:    "/cache/yarn"
-			YARN_CWD:             cwd
-			YARN_BUILD_DIRECTORY: buildDir
-			if writeEnvFile != "" {
-				ENVFILE_NAME: writeEnvFile
-				ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
+		container: {
+			// FIXME: allow swapping out image
+			image: _installYarn.output
+			// FIXME use 'alpine' package
+			// FIXME: why does this not work in outer scope?
+			_base: docker.#Pull & {
+				source: "alpine"
 			}
-		}
+			_installYarn: docker.#Run & {
+				input: _base.output
+				command: {
+					name: "apk"
+					args: ["add", "bash", "yarn"]
+					flags: {
+						"-U":         true
+						"--no-cache": true
+					}
+				}
+			}
 
-		workdir: "/src"
+			mounts: {
+				"yarn cache": {
+					dest:     "/cache/yarn"
+					contents: cache
+				}
+				"package source": {
+					dest:     "/src"
+					contents: source
+				}
+			}
+
+			export: directories: "/build": _
+
+			env: {
+				YARN_BUILD_SCRIPT:    yarnScript
+				YARN_CACHE_FOLDER:    "/cache/yarn"
+				YARN_CWD:             cwd
+				YARN_BUILD_DIRECTORY: buildDir
+				if writeEnvFile != "" {
+					ENVFILE_NAME: writeEnvFile
+					ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
+				}
+			}
+
+			workdir: "/src"
+		}
 	}
 
 	// The final contents of the package after build
-	output: command.export.directories."/build".contents
+	output: run.container.export.directories."/build".contents
 }

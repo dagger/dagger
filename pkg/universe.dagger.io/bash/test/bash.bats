@@ -4,6 +4,7 @@ setup() {
     common_setup
 }
 
-@test "yarn.#Build (simple)" {
-    dagger up ./simple
+@test "bash.#Run" {
+    dagger up ./run-simple
 }
+
