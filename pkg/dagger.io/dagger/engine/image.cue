@@ -46,7 +46,6 @@ package engine
 	label?: [string]: string
 	healthcheck?: #HealthCheck
 	shell?: [...string]
-	...
 }
 
 #HealthCheck: {
