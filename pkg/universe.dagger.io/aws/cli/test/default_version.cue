@@ -6,11 +6,11 @@ import (
 )
 
 dagger.#Plan & {
-	actions: version: cli.#Exec & {
+	actions: version: cli.#Run & {
 		service: "" // blank so as to run `aws --version`
-		cmd: name:        ""
+		command: name:    ""
 		options: version: true
 		unmarshal: false
-		result:    =~"^aws-cli/2.4.12"
+		export: files: "/output.txt": contents: =~"^aws-cli/2.4.12"
 	}
 }

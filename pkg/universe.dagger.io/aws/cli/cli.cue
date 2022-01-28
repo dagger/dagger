@@ -3,19 +3,15 @@ package cli
 import (
 	"strings"
 	"encoding/json"
+
 	"dagger.io/dagger/engine"
 	"universe.dagger.io/aws"
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
 )
 
-_#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
-
-// Image contains the aws cli pre-installed to alpine. Used by default with #Exec. Can be customized with packages, and can be used with docker.#Run for executing custom scripts.
-#Image: {
-
-	// The resulting docker.#Image
-	output: docker.#Image & _install.output
+// Build provides the aws cli pre-installed to alpine. Used by default with #Exec. Can be customized with packages, and can be used with docker.#Run for executing custom scripts.
+#Build: {
 
 	// Additional packages to install to the Alpine image
 	packages: alpine.#Build.packages
@@ -32,10 +28,10 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 	}
 
 	_scripts: engine.#Source & {
-		path: "./scripts"
+		path: "scripts"
 	}
 
-	_install: docker.#Run & {
+	docker.#Run & {
 		image: _build.output
 		cmd: {
 			name: "/src/install.sh"
@@ -48,30 +44,20 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 	}
 }
 
-// Exec provides a convenient, declarative interface to the aws cli
-#Exec: {
+// Run provides a convenient, declarative interface to the aws cli
+#Run: {
 
 	// The aws service command to run.
 	// example: 
 	// service: ec2
 	// cmd: name: "describe-instances"
-	cmd: {
+	command: {
 		name: string
 		args: [...string]
 	}
 
 	// Credentials provides long or short-term credentials
 	credentials: aws.#Credentials
-
-	// Export proxied from docker.#Run
-	export: _run.export
-
-	// Image specified the image used which must contain the aws cli installed and properly pathed.
-	image:  docker.#Image | *_image.output
-	_image: #Image
-
-	// Filesystem mounts, (proxied through to docker.#Run)
-	mounts: [name=string]: engine.#Mount
 
 	// Global arguments passed to the aws cli.
 	options: {
@@ -90,7 +76,7 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 		"no-paginate"?: bool
 
 		// The formatting style for command output.
-		output: _#output
+		output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 
 		// A JMESPath query to use in filtering the response data.
 		query?: string
@@ -146,9 +132,9 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 		"no-cli-auto-prompt"?: bool
 	}
 
-	// Output is proxied from docker.#Run
-	output: _run.output
-
+	// The service to run the command against.
+	service: "accessanalyzer" | "account" | "acm" | "acm-pca" | "alexaforbusiness" | "amp" | "amplify" | "amplifybackend" | "amplifyuibuilder" | "apigateway" | "apigatewaymanagementapi" | "apigatewayv2" | "appconfig" | "appconfigdata" | "appflow" | "appintegrations" | "application-autoscaling" | "application-insights" | "applicationcostprofiler" | "appmesh" | "apprunner" | "appstream" | "appsync" | "athena" | "auditmanager" | "autoscaling" | "autoscaling-plans" | "backup" | "backup-gateway" | "batch" | "braket" | "budgets" | "ce" | "chime" | "chime-sdk-identity" | "chime-sdk-meetings" | "chime-sdk-messaging" | "cli-dev" | "cloud9" | "cloudcontrol" | "clouddirectory" | "cloudformation" | "cloudfront" | "cloudhsm" | "cloudtrail" | "cloudwatch" | "codeartifact" | "codebuild" | "codecommit" | "codeguru-reviewer" | "codeguruprofiler" | "codepipeline" | "codestar" | "codestar-connections" | "codestar-notifications" | "cognito-identity" | "cognito-idp" | "cognito-sync" | "comprehend" | "comprehendmedical" | "compute-optimizer" | "configservice" | "configure" | "connect" | "connect-contact-lens" | "connectparticipant" | "cur" | "customer-profiles" | "databrew" | "dataexchange" | "datapipeline" | "datasync" | "dax" | "ddb" | "deploy" | "detective" | "devicefarm" | "devops-guru" | "directconnect" | "discovery" | "dlm" | "dms" | "docdb" | "drs" | "ds" | "dynamodb" | "dynamodbstreams" | "ebs" | "ec2" | "ec2-instance-connect" | "ecr" | "ecr-public" | "ecs" | "efs" | "eks" | "elastic-inference" | "elasticache" | "elasticbeanstalk" | "elastictranscoder" | "elb" | "elbv2" | "emr" | "emr-containers" | "es" | "events" | "evidently" | "finspace" | "finspace-data" | "firehose" | "fis" | "fms" | "forecast" | "forecastquery" | "frauddetector" | "fsx" | "gamelift" | "glacier" | "globalaccelerator" | "glue" | "grafana" | "greengrass" | "greengrassv2" | "groundstation" | "guardduty" | "health" | "healthlake" | "help" | "history" | "honeycode" | "iam" | "identitystore" | "imagebuilder" | "importexport" | "inspector" | "inspector2" | "iot" | "iot-data" | "iot-jobs-data" | "iot1click-devices" | "iot1click-projects" | "iotanalytics" | "iotdeviceadvisor" | "iotevents" | "iotevents-data" | "iotfleethub" | "iotsecuretunneling" | "iotsitewise" | "iotthingsgraph" | "iottwinmaker" | "iotwireless" | "ivs" | "kafka" | "kafkaconnect" | "kendra" | "kinesis" | "kinesis-video-archived-media" | "kinesis-video-media" | "kinesis-video-signaling" | "kinesisanalytics" | "kinesisanalyticsv2" | "kinesisvideo" | "kms" | "lakeformation" | "lambda" | "lex-models" | "lex-runtime" | "lexv2-models" | "lexv2-runtime" | "license-manager" | "lightsail" | "location" | "logs" | "lookoutequipment" | "lookoutmetrics" | "lookoutvision" | "machinelearning" | "macie" | "macie2" | "managedblockchain" | "marketplace-catalog" | "marketplace-entitlement" | "marketplacecommerceanalytics" | "mediaconnect" | "mediaconvert" | "medialive" | "mediapackage" | "mediapackage-vod" | "mediastore" | "mediastore-data" | "mediatailor" | "memorydb" | "meteringmarketplace" | "mgh" | "mgn" | "migration-hub-refactor-spaces" | "migrationhub-config" | "migrationhubstrategy" | "mobile" | "mq" | "mturk" | "mwaa" | "neptune" | "network-firewall" | "networkmanager" | "nimble" | "opensearch" | "opsworks" | "opsworks-cm" | "organizations" | "outposts" | "panorama" | "personalize" | "personalize-events" | "personalize-runtime" | "pi" | "pinpoint" | "pinpoint-email" | "pinpoint-sms-voice" | "polly" | "pricing" | "proton" | "qldb" | "qldb-session" | "quicksight" | "ram" | "rbin" | "rds" | "rds-data" | "redshift" | "redshift-data" | "rekognition" | "resiliencehub" | "resource-groups" | "resourcegroupstaggingapi" | "robomaker" | "route53" | "route53-recovery-cluster" | "route53-recovery-control-config" | "route53-recovery-readiness" | "route53domains" | "route53resolver" | "rum" | "s3" | "s3api" | "s3control" | "s3outposts" | "sagemaker" | "sagemaker-a2i-runtime" | "sagemaker-edge" | "sagemaker-featurestore-runtime" | "sagemaker-runtime" | "savingsplans" | "schemas" | "sdb" | "secretsmanager" | "securityhub" | "serverlessrepo" | "service-quotas" | "servicecatalog" | "servicecatalog-appregistry" | "servicediscovery" | "ses" | "sesv2" | "shield" | "signer" | "sms" | "snow-device-management" | "snowball" | "sns" | "sqs" | "ssm" | "ssm-contacts" | "ssm-incidents" | "sso" | "sso-admin" | "sso-oidc" | "stepfunctions" | "storagegateway" | "sts" | "support" | "swf" | "synthetics" | "textract" | "timestream-query" | "timestream-write" | "transcribe" | "transfer" | "translate" | "voice-id" | "waf" | "waf-regional" | "wafv2" | "wellarchitected" | "wisdom" | "workdocs" | "worklink" | "workmail" | "workmailmessageflow" | "workspaces" | "workspaces-web" | "xray" | ""
+	export:  _
 	// allows any JSON result to be unmarshaled to CUE
 	_unmarshalable: string | number | bool | null | [..._unmarshalable] | {[string]: _unmarshalable}
 
@@ -157,23 +143,21 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 
 	if unmarshal != false {
 		options: output: "json"
-		result: json.Unmarshal(_run.export.files["/output.txt"].contents)
+		result: json.Unmarshal(export.files["/output.txt"].contents)
 	}
 
 	if unmarshal == false {
-		result: _run.export.files["/output.txt"].contents
+		result: export.files["/output.txt"].contents
 	}
-
-	// The service to run the command against.
-	service: "accessanalyzer" | "account" | "acm" | "acm-pca" | "alexaforbusiness" | "amp" | "amplify" | "amplifybackend" | "amplifyuibuilder" | "apigateway" | "apigatewaymanagementapi" | "apigatewayv2" | "appconfig" | "appconfigdata" | "appflow" | "appintegrations" | "application-autoscaling" | "application-insights" | "applicationcostprofiler" | "appmesh" | "apprunner" | "appstream" | "appsync" | "athena" | "auditmanager" | "autoscaling" | "autoscaling-plans" | "backup" | "backup-gateway" | "batch" | "braket" | "budgets" | "ce" | "chime" | "chime-sdk-identity" | "chime-sdk-meetings" | "chime-sdk-messaging" | "cli-dev" | "cloud9" | "cloudcontrol" | "clouddirectory" | "cloudformation" | "cloudfront" | "cloudhsm" | "cloudtrail" | "cloudwatch" | "codeartifact" | "codebuild" | "codecommit" | "codeguru-reviewer" | "codeguruprofiler" | "codepipeline" | "codestar" | "codestar-connections" | "codestar-notifications" | "cognito-identity" | "cognito-idp" | "cognito-sync" | "comprehend" | "comprehendmedical" | "compute-optimizer" | "configservice" | "configure" | "connect" | "connect-contact-lens" | "connectparticipant" | "cur" | "customer-profiles" | "databrew" | "dataexchange" | "datapipeline" | "datasync" | "dax" | "ddb" | "deploy" | "detective" | "devicefarm" | "devops-guru" | "directconnect" | "discovery" | "dlm" | "dms" | "docdb" | "drs" | "ds" | "dynamodb" | "dynamodbstreams" | "ebs" | "ec2" | "ec2-instance-connect" | "ecr" | "ecr-public" | "ecs" | "efs" | "eks" | "elastic-inference" | "elasticache" | "elasticbeanstalk" | "elastictranscoder" | "elb" | "elbv2" | "emr" | "emr-containers" | "es" | "events" | "evidently" | "finspace" | "finspace-data" | "firehose" | "fis" | "fms" | "forecast" | "forecastquery" | "frauddetector" | "fsx" | "gamelift" | "glacier" | "globalaccelerator" | "glue" | "grafana" | "greengrass" | "greengrassv2" | "groundstation" | "guardduty" | "health" | "healthlake" | "help" | "history" | "honeycode" | "iam" | "identitystore" | "imagebuilder" | "importexport" | "inspector" | "inspector2" | "iot" | "iot-data" | "iot-jobs-data" | "iot1click-devices" | "iot1click-projects" | "iotanalytics" | "iotdeviceadvisor" | "iotevents" | "iotevents-data" | "iotfleethub" | "iotsecuretunneling" | "iotsitewise" | "iotthingsgraph" | "iottwinmaker" | "iotwireless" | "ivs" | "kafka" | "kafkaconnect" | "kendra" | "kinesis" | "kinesis-video-archived-media" | "kinesis-video-media" | "kinesis-video-signaling" | "kinesisanalytics" | "kinesisanalyticsv2" | "kinesisvideo" | "kms" | "lakeformation" | "lambda" | "lex-models" | "lex-runtime" | "lexv2-models" | "lexv2-runtime" | "license-manager" | "lightsail" | "location" | "logs" | "lookoutequipment" | "lookoutmetrics" | "lookoutvision" | "machinelearning" | "macie" | "macie2" | "managedblockchain" | "marketplace-catalog" | "marketplace-entitlement" | "marketplacecommerceanalytics" | "mediaconnect" | "mediaconvert" | "medialive" | "mediapackage" | "mediapackage-vod" | "mediastore" | "mediastore-data" | "mediatailor" | "memorydb" | "meteringmarketplace" | "mgh" | "mgn" | "migration-hub-refactor-spaces" | "migrationhub-config" | "migrationhubstrategy" | "mobile" | "mq" | "mturk" | "mwaa" | "neptune" | "network-firewall" | "networkmanager" | "nimble" | "opensearch" | "opsworks" | "opsworks-cm" | "organizations" | "outposts" | "panorama" | "personalize" | "personalize-events" | "personalize-runtime" | "pi" | "pinpoint" | "pinpoint-email" | "pinpoint-sms-voice" | "polly" | "pricing" | "proton" | "qldb" | "qldb-session" | "quicksight" | "ram" | "rbin" | "rds" | "rds-data" | "redshift" | "redshift-data" | "rekognition" | "resiliencehub" | "resource-groups" | "resourcegroupstaggingapi" | "robomaker" | "route53" | "route53-recovery-cluster" | "route53-recovery-control-config" | "route53-recovery-readiness" | "route53domains" | "route53resolver" | "rum" | "s3" | "s3api" | "s3control" | "s3outposts" | "sagemaker" | "sagemaker-a2i-runtime" | "sagemaker-edge" | "sagemaker-featurestore-runtime" | "sagemaker-runtime" | "savingsplans" | "schemas" | "sdb" | "secretsmanager" | "securityhub" | "serverlessrepo" | "service-quotas" | "servicecatalog" | "servicecatalog-appregistry" | "servicediscovery" | "ses" | "sesv2" | "shield" | "signer" | "sms" | "snow-device-management" | "snowball" | "sns" | "sqs" | "ssm" | "ssm-contacts" | "ssm-incidents" | "sso" | "sso-admin" | "sso-oidc" | "stepfunctions" | "storagegateway" | "sts" | "support" | "swf" | "synthetics" | "textract" | "timestream-query" | "timestream-write" | "transcribe" | "transfer" | "translate" | "voice-id" | "waf" | "waf-regional" | "wafv2" | "wellarchitected" | "wisdom" | "workdocs" | "worklink" | "workmail" | "workmailmessageflow" | "workspaces" | "workspaces-web" | "xray" | ""
 
 	// unmarshal determines whether to automatically json.Unmarshal() the command result. If set to true, the output field will be set to "json" and the command output will be Unmarshaled to result:
 	unmarshal: false | *true
 
-	_run: docker.#Run & {
-		always:   true
-		"image":  image
-		"mounts": mounts
+	_image: #Build
+	docker.#Run & {
+		always: true
+
+		image: docker.#Image | *_image.output
 
 		for k, v in credentials {
 			// pass all secrets as secret mounts
@@ -204,7 +188,7 @@ _#output: *"json" | "text" | "table" | "yaml" | "yaml-stream"
 		if [ -f /run/secrets/sessionToken ]; then
 			export AWS_SESSION_TOKEN=$(cat /run/secrets/sessionToken)
 		fi
-		aws \(strings.Join(_options, " ")) \(service) \(cmd.name) \(strings.Join(cmd.args, " ")) > /output.txt
+		aws \(strings.Join(_options, " ")) \(service) \(command.name) \(strings.Join(command.args, " ")) > /output.txt
 		"""
 		export: files: "/output.txt": _
 	}
