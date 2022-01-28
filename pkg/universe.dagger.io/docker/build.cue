@@ -50,7 +50,7 @@ import (
 	_copy: engine.#Copy & {
 		"input":    input.rootfs
 		"contents": contents
-		source:     source
+		"source":   source
 		"dest":     dest
 	}
 
