@@ -36,7 +36,7 @@ import (
 	}
 
 	// Command to execute
-	cmd: {
+	cmd?: {
 		// Name of the command to execute
 		// Examples: "ls", "/bin/bash"
 		name: string
@@ -78,12 +78,12 @@ import (
 
 	// Working directory for the command
 	// Example: "/src"
-	workdir: string | *"/"
+	workdir: string
 
 	// Username or UID to ad
 	// User identity for this command
 	// Examples: "root", "0", "1002"
-	user: string | *"root"
+	user: string
 
 	// Output fields
 	{
@@ -129,12 +129,38 @@ import (
 
 	// Actually execute the command
 	_exec: engine.#Exec & {
-		args:      [cmd.name] + cmd._flatFlags + cmd.args
-		input:     _image.rootfs
-		"always":  always
-		"mounts":  mounts
-		"env":     env
+		input:    _image.rootfs
+		"always": always
+		"mounts": mounts
+
+		if cmd != _|_ {
+			args: [cmd.name] + cmd._flatFlags + cmd.args
+		}
+		if cmd == _|_ {
+			args: list.Concat([
+				if _image.config.entrypoint != _|_ {
+					_image.config.entrypoint
+				},
+				if _image.config.cmd != _|_ {
+					_image.config.cmd
+				},
+			])
+		}
+		"env": env
+		if _image.config.env != _|_ {
+			for key, val in _image.config.env {
+				if env[key] == _|_ {
+					env: "\(key)": val
+				}
+			}
+		}
 		"workdir": workdir
-		"user":    user
+		if workdir == _|_ && _image.config.workdir != _|_ {
+			workdir: _image.config.workdir
+		}
+		"user": user
+		if user == _|_ && _image.config.user != _|_ {
+			user: _image.config.user
+		}
 	}
 }

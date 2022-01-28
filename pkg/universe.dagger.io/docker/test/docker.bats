@@ -17,4 +17,5 @@ setup() {
     dagger up ./run-script-test.cue
     dagger up ./run-export-file-test.cue
     dagger up ./run-export-directory-test.cue
+    dagger up ./image-config-test.cue
 }
