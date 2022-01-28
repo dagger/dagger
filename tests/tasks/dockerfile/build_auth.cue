@@ -1,8 +1,8 @@
 package testing
 
 import (
+	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
-	"encoding/yaml"
 )
 
 engine.#Plan & {
@@ -15,21 +15,18 @@ engine.#Plan & {
 	}
 
 	actions: {
-		dockerHubToken: engine.#TransformSecret & {
-			input: inputs.secrets.sops.contents
-			#function: {
-				input:  _
-				output: yaml.Unmarshal(input)
-			}
+		sopsSecrets: dagger.#DecodeSecret & {
+			format: "yaml"
+			input:  inputs.secrets.sops.contents
 		}
 
-		build: engine.#Build & {
+		build: engine.#Dockerfile & {
 			source: inputs.directories.testdata.contents
 			auth: [{
 				target:   "daggerio/ci-test:private-pull"
 				username: "daggertest"
 
-				secret: dockerHubToken.output.DOCKERHUB_TOKEN.contents
+				secret: sopsSecrets.output.DOCKERHUB_TOKEN.contents
 			}]
 			dockerfile: contents: """
 				FROM daggerio/ci-test:private-pull@sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060

@@ -2,22 +2,29 @@ package main
 
 import (
 	"strings"
+	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 )
 
 engine.#Plan & {
-	inputs: secrets: dockerHubToken: command: {
+	inputs: secrets: sops: command: {
 		name: "sops"
-		args: ["exec-env", "../../secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
+		args: ["-d", "../../secrets_sops.yaml"]
 	}
 
 	#auth: [{
 		target:   "daggerio/ci-test:private-pull"
 		username: "daggertest"
-		secret:   inputs.secrets.dockerHubToken.contents
+		secret:   actions.sopsSecrets.output.DOCKERHUB_TOKEN.contents
 	}]
 
 	actions: {
+
+		sopsSecrets: dagger.#DecodeSecret & {
+			format: "yaml"
+			input:  inputs.secrets.sops.contents
+		}
+
 		randomString: {
 			baseImage: engine.#Pull & {
 				source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
