@@ -17,7 +17,7 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed */**/*.cue */**/**/*.cue
+	//go:embed */**/*.cue */**/**/*.cue */**/*.sh
 	FS embed.FS
 )
 
@@ -112,6 +112,17 @@ func Vendor(ctx context.Context, p string) error {
 	return nil
 }
 
+func isAllowedExt(ext string) bool {
+	// List of allowed extension to vendor in
+	allowedExtension := []string{".cue", ".sh"}
+	for _, v := range allowedExtension {
+		if v == ext {
+			return true
+		}
+	}
+	return false
+}
+
 func extractModules(dest string) error {
 	return fs.WalkDir(FS, ".", func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -122,7 +133,7 @@ func extractModules(dest string) error {
 			return nil
 		}
 
-		if filepath.Ext(entry.Name()) != ".cue" {
+		if !isAllowedExt(filepath.Ext(entry.Name())) {
 			return nil
 		}
 
