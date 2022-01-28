@@ -56,14 +56,14 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	}
 
 	// Decode the image config
-	imageConfig := dockerfile2llb.ImageConfig{}
+	imageConfig := ImageConfig{}
 	if err := v.Lookup("config").Decode(&imageConfig); err != nil {
 		return nil, err
 	}
 
 	// Export image
 	lg.Debug().Str("dest", dest.String()).Msg("export image")
-	resp, err := s.Export(ctx, st, &dockerfile2llb.Image{Config: imageConfig}, bk.ExportEntry{
+	resp, err := s.Export(ctx, st, &dockerfile2llb.Image{Config: imageConfig.ToSpec()}, bk.ExportEntry{
 		Type: bk.ExporterImage,
 		Attrs: map[string]string{
 			"name": dest.String(),

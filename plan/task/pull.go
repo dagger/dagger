@@ -68,6 +68,6 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": fs.MarshalCUE(),
 		"digest": digest,
-		"config": image.Config,
+		"config": ConvertImageConfig(image.Config),
 	})
 }

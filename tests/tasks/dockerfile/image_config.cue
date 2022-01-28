@@ -18,8 +18,8 @@ engine.#Plan & {
 				"""
 		} & {
 			config: {
-				Env: ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "test=foobar"]
-				Cmd: ["/bin/sh", "-c", "/test-cmd"]
+				env: test: "foobar"
+				cmd: ["/bin/sh", "-c", "/test-cmd"]
 			}
 		}
 	}
