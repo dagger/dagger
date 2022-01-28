@@ -61,18 +61,54 @@ import (
 
 // Build step that executes a Dockerfile
 #Dockerfile: {
-	// Source directory
-	source: dagger.#FS
+	// Source image
+	input?: #Image
 
-	// FIXME: not yet implemented
-	*{
-		// Look for Dockerfile in source at default path
-		path: "Dockerfile"
+	// FIXME cannot replace with _source: *engine.#Scratch | input.rootfs
+	// Got error "$dagger" not found
+	_source: input.rootfs
+	if input == _|_ {
+		_source: engine.#Scratch
+	}
+
+	// Dockerfile definition or path into source
+	dockerfile: *{
+		path: string | *"Dockerfile"
 	} | {
-		// Look for Dockerfile in source at a custom path
-		path: string
-	} | {
-		// Custom dockerfile  contents
 		contents: string
+	}
+
+	// Registry authentication
+	// Key must be registry address
+	auth: [registry=string]: {
+		username: string
+		secret:   dagger.#Secret
+	}
+
+	platforms: [...string]
+	target?: string
+	buildArg: [string]: string
+	label: [string]:    string
+	hosts: [string]:    string
+
+	_build: engine.#Dockerfile & {
+		source: _source
+		"auth": [ for target, creds in auth {
+			"target": target
+			creds
+		}]
+		"dockerfile": dockerfile
+		"platforms":  platforms
+		if target != _|_ {
+			"target": target
+		}
+		"buildArg": buildArg
+		"label":    label
+		"hosts":    hosts
+	}
+
+	output: #Image & {
+		rootfs: _build.output
+		config: _build.config
 	}
 }
