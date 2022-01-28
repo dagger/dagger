@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/rs/zerolog/log"
@@ -22,13 +22,9 @@ type sourceTask struct {
 }
 
 func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {
-	path, err := v.Lookup("path").String()
+	origPath, err := v.Lookup("path").String()
 	if err != nil {
 		return err
-	}
-
-	if !fs.ValidPath(path) {
-		return fmt.Errorf("invalid path %q", path)
 	}
 
 	absPath, err := v.Lookup("path").AbsPath()
@@ -36,8 +32,17 @@ func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *c
 		return err
 	}
 
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("path %q does not exist", path)
+	location, err := v.Lookup("path").Dirname()
+	if err != nil {
+		return err
+	}
+
+	if !strings.HasPrefix(absPath, location) {
+		return fmt.Errorf("path %q is not relative", origPath)
+	}
+
+	if _, err := os.Stat(absPath); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("path %q does not exist", origPath)
 	}
 
 	pctx.LocalDirs.Add(absPath)

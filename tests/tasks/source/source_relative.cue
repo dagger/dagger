@@ -11,7 +11,15 @@ engine.#Plan & {
 		}
 
 		source: engine.#Source & {
-			path: "testdata/../.."
+			path: "./testdata"
+		}
+
+		verifyHello: engine.#ReadFile & {
+			input: source.output
+			path:  "/world.txt"
+		} & {
+			// assert result
+			contents: "world\n"
 		}
 	}
 }

@@ -25,18 +25,18 @@ engine.#Plan & {
 
 		verifyHello: engine.#ReadFile & {
 			input: source.output
-			path:  "/hello.txt"
-		} & {
-			// assert result
-			contents: "hello\n"
-		}
-
-		verifyWorld: engine.#ReadFile & {
-			input: source.output
 			path:  "/world.txt"
 		} & {
 			// assert result
 			contents: "world\n"
+		}
+
+		verifyWorld: engine.#ReadFile & {
+			input: exec.output
+			path:  "/test.txt"
+		} & {
+			// assert result
+			contents: "hello world"
 		}
 	}
 }
