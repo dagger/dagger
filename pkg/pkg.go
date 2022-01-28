@@ -17,7 +17,7 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed */**/*.cue */**/**/*.cue
+	//go:embed alpha.dagger.io dagger.io universe.dagger.io
 	FS embed.FS
 )
 
@@ -122,10 +122,6 @@ func extractModules(dest string) error {
 			return nil
 		}
 
-		if filepath.Ext(entry.Name()) != ".cue" {
-			return nil
-		}
-
 		contents, err := fs.ReadFile(FS, p)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
@@ -137,7 +133,10 @@ func extractModules(dest string) error {
 			return err
 		}
 
-		return os.WriteFile(overlayPath, contents, 0600)
+		// Give exec permission on embedded file to freely use shell script
+		// Exclude permission linter
+		//nolint
+		return os.WriteFile(overlayPath, contents, 0700)
 	})
 }
 

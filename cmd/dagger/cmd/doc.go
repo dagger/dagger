@@ -338,7 +338,9 @@ func walkStdlib(ctx context.Context, output, format string) {
 			return err
 		}
 
-		if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" {
+		// Ignore useless embedded files
+		if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" ||
+			strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
 			return nil
 		}
 
@@ -354,6 +356,10 @@ func walkStdlib(ctx context.Context, output, format string) {
 		val, err := loadCode(pkgName)
 		if err != nil {
 			if strings.Contains(err.Error(), "no CUE files") {
+				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+				return nil
+			}
+			if strings.Contains(err.Error(), "cannot find package") {
 				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
 				return nil
 			}
