@@ -2,7 +2,6 @@ package docker
 
 import (
 	"list"
-	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
@@ -139,32 +138,29 @@ import (
 		}
 		if cmd == _|_ {
 			args: list.Concat([
-				if _image.config.Entrypoint != _|_ {
-					_image.config.Entrypoint
+				if _image.config.entrypoint != _|_ {
+					_image.config.entrypoint
 				},
-				if _image.config.Cmd != _|_ {
-					_image.config.Cmd
+				if _image.config.cmd != _|_ {
+					_image.config.cmd
 				},
 			])
 		}
 		"env": env
-		if _image.config.Env != _|_ {
-			for _, envvar in _image.config.Env {
-				let split = strings.SplitN(envvar, "=", 2)
-				let k = split[0]
-				let v = split[1]
-				if env[k] == _|_ {
-					env: "\(k)": v
+		if _image.config.env != _|_ {
+			for key, val in _image.config.env {
+				if env[key] == _|_ {
+					env: "\(key)": val
 				}
 			}
 		}
 		"workdir": workdir
-		if workdir == _|_ && _image.config.WorkingDir != _|_ {
-			workdir: _image.config.WorkingDir
+		if workdir == _|_ && _image.config.workdir != _|_ {
+			workdir: _image.config.workdir
 		}
 		"user": user
-		if user == _|_ && _image.config.User != _|_ {
-			user: _image.config.User
+		if user == _|_ && _image.config.user != _|_ {
+			user: _image.config.user
 		}
 	}
 }

@@ -44,7 +44,11 @@ package engine
 	volume?: [string]: {}
 	workdir?: string
 	label?: [string]: string
+	stopsignal?:  string
 	healthcheck?: #HealthCheck
+	argsescaped?: bool
+	onbuild?: [...string]
+	stoptimeout?: int
 	shell?: [...string]
 }
 
