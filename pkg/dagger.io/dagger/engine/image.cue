@@ -69,7 +69,7 @@ package engine
 	// Authentication
 	auth?: {
 		username: string
-		secret:   string | #Secret
+		secret:   #Secret
 	}
 
 	// Root filesystem of downloaded image
@@ -96,11 +96,10 @@ package engine
 	}
 
 	// Authentication
-	auth: [...{
-		target:   string
+	auth: [registry=string]: {
 		username: string
-		secret:   string | #Secret
-	}]
+		secret:   #Secret
+	}
 
 	platforms?: [...string]
 	target?: string
