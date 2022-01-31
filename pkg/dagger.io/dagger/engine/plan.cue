@@ -17,8 +17,10 @@ package engine
 
 	// Send outputs to the client
 	outputs: {
-		@dagger(notimplemented)
+		// Export an #FS to the client
 		directories: [name=string]: _#outputDirectory
+		// Export a string to a file
+		files: [name=string]: _#outputFile
 	}
 
 	// Forward network services to and from the client
@@ -108,6 +110,19 @@ _#outputDirectory: {
 
 	// Export to this path ON THE CLIENT MACHINE
 	dest: string
+}
+
+_#outputFile: {
+	$dagger: task: _name: "OutputFile"
+
+	// File contents to export
+	contents: string
+
+	// Export to this path ON THE CLIENT MACHINE
+	dest: string
+
+	// Permissions of the file (defaults to 0o644)
+	permissions?: int
 }
 
 // Forward a network endpoint to and from the client

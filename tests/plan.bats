@@ -69,11 +69,11 @@ setup() {
   cd "$TESTDIR"
   "$DAGGER" --europa up ./plan/inputs/secrets/exec.cue
   "$DAGGER" --europa up ./plan/inputs/secrets/exec_relative.cue
-  
+
   run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command.cue
 	assert_failure
 	assert_output --partial 'failed: exec: "rtyet": executable file not found'
-  
+
   run "$DAGGER" --europa up ./plan/inputs/secrets/invalid_command_options.cue
 	assert_failure
 	assert_output --partial 'option'
@@ -83,30 +83,74 @@ setup() {
   cd "$TESTDIR"
   "$DAGGER" --europa up --with 'inputs: params: foo:"bar"' ./plan/with/params.cue
   "$DAGGER" --europa up --with 'actions: verify: env: FOO: "bar"' ./plan/with/actions.cue
-  
+
   run "$DAGGER" --europa up --with 'inputs: params: foo:1' ./plan/with/params.cue
   assert_failure
   assert_output --partial "conflicting values string and 1"
-  
+
   run "$DAGGER" --europa up ./plan/with/params.cue
   assert_failure
   assert_output --partial "actions.verify.env.FOO: non-concrete value string"
 }
 
-@test "plan/outputs" {
-    cd "$TESTDIR"/plan/outputs
+@test "plan/outputs/directories" {
+    cd "$TESTDIR"/plan/outputs/directories
 
     rm -f "./out/test"
     "$DAGGER" --europa up ./outputs.cue
     assert [ -f "./out/test" ]
 }
 
-@test "plan/outputs relative paths" {
+@test "plan/outputs/directories relative paths" {
     cd "$TESTDIR"/plan
 
-    rm -f "./outputs/out/test"
-    "$DAGGER" --europa up ./outputs/outputs.cue
-    assert [ -f "./outputs/out/test" ]
+    rm -f "./outputs/directories/out/test"
+    "$DAGGER" --europa up ./outputs/directories/outputs.cue
+    assert [ -f "./outputs/directories/out/test" ]
+}
+
+@test "plan/outputs/files normal usage" {
+  cd "$TESTDIR"/plan/outputs/files
+
+  "$DAGGER" --europa up ./usage.cue
+
+  run ./test.sh
+  assert_output "Hello World!"
+
+  run ls -l "./test.sh"
+  assert_output --partial "-rwxr-x---"
+
+  rm -f "./test.sh"
+}
+
+@test "plan/outputs/files relative path" {
+    cd "$TESTDIR"/plan
+
+    "$DAGGER" --europa up ./outputs/files/usage.cue
+    assert [ -f "./outputs/files/test.sh" ]
+
+    rm -f "./outputs/files/test.sh"
+}
+
+@test "plan/outputs/files default permissions" {
+  cd "$TESTDIR"/plan/outputs/files
+
+  "$DAGGER" --europa up ./default_permissions.cue
+
+  run ls -l "./test"
+  assert_output --partial "-rw-r--r--"
+
+  rm -f "./test"
+}
+
+@test "plan/outputs/files no contents" {
+  cd "$TESTDIR"/plan/outputs/files
+
+  run "$DAGGER" --europa up ./no_contents.cue
+  assert_failure
+  assert_output --partial "contents is not set"
+
+  assert [ ! -f "./test" ]
 }
 
 @test "plan/platform" {
