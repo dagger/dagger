@@ -31,7 +31,13 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 		return nil, err
 	}
 
-	function := v.Lookup("#function")
+	// "copy" function value to new empty value to avoid data race associated with v.Fill during a task
+	function := compiler.NewValue()
+	err = function.FillPath(cue.MakePath(), v.Lookup("#function"))
+	if err != nil {
+		return nil, err
+	}
+
 	inputSecretPlaintext := inputSecret.PlainText()
 	err = function.FillPath(cue.ParsePath("input"), inputSecretPlaintext)
 	if err != nil {
@@ -72,6 +78,7 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 
 	output := compiler.NewValue()
 
+	// use FillPath outside of Walk to avoid data race
 	for _, ps := range pathsSecrets {
 		output.FillPath(ps.path, ps.secret.MarshalCUE())
 	}
