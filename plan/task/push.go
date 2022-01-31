@@ -36,13 +36,19 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	dest = reference.TagNameOnly(dest)
 
 	// Read auth info
-	auth, err := decodeAuthValue(pctx, v.Lookup("auth"))
-	if err != nil {
-		return nil, err
-	}
-	for _, a := range auth {
-		s.AddCredentials(a.Target, a.Username, a.Secret.PlainText())
-		lg.Debug().Str("target", a.Target).Msg("add target credentials")
+	if auth := v.Lookup("auth"); auth.Exists() {
+		// Read auth info
+		a, err := decodeAuthValue(pctx, auth)
+		if err != nil {
+			return nil, err
+		}
+		// Extract registry target from dest
+		target, err := solver.ParseAuthHost(rawDest)
+		if err != nil {
+			return nil, err
+		}
+		s.AddCredentials(target, a.Username, a.Secret.PlainText())
+		lg.Debug().Str("target", target).Msg("add target credentials")
 	}
 
 	// Get input state

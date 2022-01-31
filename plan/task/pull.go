@@ -28,13 +28,18 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	}
 
 	// Read auth info
-	auth, err := decodeAuthValue(pctx, v.Lookup("auth"))
-	if err != nil {
-		return nil, err
-	}
-	for _, a := range auth {
-		s.AddCredentials(a.Target, a.Username, a.Secret.PlainText())
-		lg.Debug().Str("target", a.Target).Msg("add target credentials")
+	if auth := v.Lookup("auth"); auth.Exists() {
+		a, err := decodeAuthValue(pctx, auth)
+		if err != nil {
+			return nil, err
+		}
+		// Extract registry target from source
+		target, err := solver.ParseAuthHost(rawRef)
+		if err != nil {
+			return nil, err
+		}
+		s.AddCredentials(target, a.Username, a.Secret.PlainText())
+		lg.Debug().Str("target", target).Msg("add target credentials")
 	}
 
 	ref, err := reference.ParseNormalizedNamed(rawRef)

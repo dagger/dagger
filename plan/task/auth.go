@@ -6,7 +6,6 @@ import (
 )
 
 type authValue struct {
-	Target   string
 	Username string
 	Secret   *plancontext.Secret
 }
@@ -14,41 +13,23 @@ type authValue struct {
 // Decodes an auth field value
 //
 // Cue format:
-//   auth: [...{
-//     target:   string
+//   auth: {
 //     username: string
 //     secret:   string | #Secret
-//   }]
-func decodeAuthValue(pctx *plancontext.Context, v *compiler.Value) ([]*authValue, error) {
-	vals, err := v.List()
+//   }
+func decodeAuthValue(pctx *plancontext.Context, v *compiler.Value) (*authValue, error) {
+	authVal := authValue{}
+	username, err := v.Lookup("username").String()
 	if err != nil {
 		return nil, err
 	}
+	authVal.Username = username
 
-	authVals := []*authValue{}
-	for _, val := range vals {
-		authVal := authValue{}
-
-		target, err := val.Lookup("target").String()
-		if err != nil {
-			return nil, err
-		}
-		authVal.Target = target
-
-		username, err := val.Lookup("username").String()
-		if err != nil {
-			return nil, err
-		}
-		authVal.Username = username
-
-		secret, err := pctx.Secrets.FromValue(val.Lookup("secret"))
-		if err != nil {
-			return nil, err
-		}
-		authVal.Secret = secret
-
-		authVals = append(authVals, &authVal)
+	secret, err := pctx.Secrets.FromValue(v.Lookup("secret"))
+	if err != nil {
+		return nil, err
 	}
+	authVal.Secret = secret
 
-	return authVals, nil
+	return &authVal, nil
 }

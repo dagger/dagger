@@ -14,11 +14,10 @@ package engine
 	config: #ImageConfig
 
 	// Authentication
-	auth: [...{
-		target:   string
+	auth?: {
 		username: string
-		secret:   string | #Secret
-	}]
+		secret:   #Secret
+	}
 
 	// Complete ref of the pushed image, including digest
 	result: #Ref
@@ -68,11 +67,10 @@ package engine
 	source: #Ref
 
 	// Authentication
-	auth: [...{
-		target:   string
+	auth?: {
 		username: string
 		secret:   string | #Secret
-	}]
+	}
 
 	// Root filesystem of downloaded image
 	output: #FS

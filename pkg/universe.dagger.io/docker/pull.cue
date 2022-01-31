@@ -12,18 +12,16 @@ import (
 	source: #Ref
 
 	// Registry authentication
-	// Key must be registry address, for example "index.docker.io"
-	auth: [registry=string]: {
+	auth?: {
 		username: string
 		secret:   dagger.#Secret
 	}
 
 	_op: engine.#Pull & {
 		"source": source
-		"auth": [ for target, creds in auth {
-			"target": target
-			creds
-		}]
+		if auth != _|_ {
+			"auth": auth
+		}
 	}
 
 	// Downloaded image

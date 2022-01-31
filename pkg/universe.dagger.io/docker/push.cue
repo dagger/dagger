@@ -14,8 +14,7 @@ import (
 	result: #Ref & _push.result
 
 	// Registry authentication
-	// Key must be registry address
-	auth: [registry=string]: {
+	auth?: {
 		username: string
 		secret:   dagger.#Secret
 	}
@@ -25,10 +24,9 @@ import (
 
 	_push: engine.#Push & {
 		"dest": dest
-		"auth": [ for target, creds in auth {
-			"target": target
-			creds
-		}]
+		if auth != _|_ {
+			"auth": auth
+		}
 		input:  image.rootfs
 		config: image.config
 	}
