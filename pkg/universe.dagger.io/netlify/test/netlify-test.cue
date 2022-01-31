@@ -1,8 +1,6 @@
 package yarn
 
 import (
-	"encoding/yaml"
-
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 
@@ -12,20 +10,12 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: secrets: test: command: {
+	inputs: secrets: testSecrets: command: {
 		name: "sops"
-		args: ["-d", "../../test_secrets.yaml"]
+		args: ["exec-env", "../../test_secrets.yaml", "echo $netlifyToken"]
 	}
 
 	actions: {
-		testSecrets: engine.#TransformSecret & {
-			input: inputs.secrets.test.contents
-			#function: {
-				input:  _
-				output: yaml.Unmarshal(input)
-			}
-		}
-
 		marker: "hello world"
 
 		data: engine.#WriteFile & {
@@ -37,7 +27,7 @@ dagger.#Plan & {
 		// Deploy to netlify
 		deploy: netlify.#Deploy & {
 			team:  "blocklayer"
-			token: testSecrets.output.netlifyToken.contents
+			token: inputs.secrets.testSecrets.contents
 
 			site:     "dagger-test"
 			contents: data.output
