@@ -63,7 +63,6 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 			newLeafPath := cue.MakePath(newLeafSelectors...)
 			p := newLeafPath.String()
 			pathToSecrets[p] = plaintext
-
 		}
 	})
 
