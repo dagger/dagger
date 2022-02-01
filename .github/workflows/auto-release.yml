@@ -6,10 +6,10 @@ concurrency: release
 on:
   # This runs on a schedule by default:
   schedule:
-    # https://crontab.guru/#6_21_*_*_2
-    # Every Tuesday at 9:06pm UTC & 1:06pm US West Coast.
+    # https://crontab.guru/#6_17_*_*_2
+    # Every Tuesday at 5:06pm UTC & 9:06am US West Coast.
     # GitHub Actions defaults to UTC:
-    - cron: '6 21 * * 2'
+    - cron: '6 17 * * 2'
     # There is high load on GitHub Actions at the top of the hour:
     #
     #     Note: The schedule event can be delayed during periods of high loads of
