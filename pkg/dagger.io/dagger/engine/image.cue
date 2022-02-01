@@ -1,5 +1,9 @@
 package engine
 
+import (
+	"list"
+)
+
 // Upload a container image to a remote repository
 #Push: {
 	$dagger: task: _name: "Push"
@@ -33,7 +37,6 @@ package engine
 #Ref: string
 
 // Container image config. See [OCI](https://www.opencontainers.org/).
-// Spec left open on purpose to account for additional fields.
 #ImageConfig: {
 	user?: string
 	expose?: [string]: {}
@@ -112,4 +115,76 @@ package engine
 
 	// Container image config produced
 	config: #ImageConfig
+}
+
+// Change image config
+#Set: {
+	// The source image config
+	input: #ImageConfig
+
+	// The config to merge
+	config: #ImageConfig
+
+	// Resulting config
+	output: #ImageConfig & {
+		let structs = ["env", "label", "volume", "expose"]
+		let lists = ["onbuild"]
+
+		// doesn't exist in config, copy away
+		for field, value in input if config[field] == _|_ {
+			"\(field)": value
+		}
+
+		// only exists in config, just copy as is
+		for field, value in config if input[field] == _|_ {
+			"\(field)": value
+		}
+
+		// these should exist in both places
+		for field, value in config if input[field] != _|_ {
+			"\(field)": {
+				// handle structs that need merging
+				if list.Contains(structs, field) {
+					_#mergeStructs & {
+						#a: input[field]
+						#b: config[field]
+					}
+				}
+
+				// handle lists that need concatenation
+				if list.Contains(lists, field) {
+					list.Concat([
+						input[field],
+						config[field],
+					])
+				}
+
+				// replace anything else
+				if !list.Contains(structs+lists, field) {
+					value
+				}
+			}
+		}
+	}
+}
+
+// Merge two structs by overwriting or adding values
+_#mergeStructs: {
+	// Struct with defaults
+	#a: [string]: _
+
+	// Struct with overrides
+	#b: [string]: _
+	{
+		// FIXME: we need exists() in if because this matches any kind of error (cue-lang/cue#943)
+		// add anything not in b
+		for field, value in #a if #b[field] == _|_ {
+			"\(field)": value
+		}
+
+		// safely add all of b
+		for field, value in #b {
+			"\(field)": value
+		}
+	}
 }

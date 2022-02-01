@@ -22,3 +22,7 @@ setup() {
     dagger up ./run-export-directory-test.cue
     dagger up ./image-config-test.cue
 }
+
+@test "docker.#Set" {
+    dagger up ./set.cue
+}
