@@ -19,11 +19,10 @@ engine.#Plan & {
 
 		pull: engine.#Pull & {
 			source: "daggerio/ci-test:private-pull@sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060"
-			auth: [{
-				target:   "daggerio/ci-test:private-pull"
+			auth: {
 				username: "daggertest"
 				secret:   sopsSecrets.output.DOCKERHUB_TOKEN.contents
-			}]
+			}
 		} & {
 			// assert result
 			digest: "sha256:c74f1b1166784193ea6c8f9440263b9be6cae07dfe35e32a5df7a31358ac2060"

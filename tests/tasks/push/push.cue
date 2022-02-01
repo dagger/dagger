@@ -12,11 +12,10 @@ engine.#Plan & {
 		args: ["-d", "../../secrets_sops.yaml"]
 	}
 
-	#auth: [{
-		target:   "daggerio/ci-test:private-pull"
+	#auth: {
 		username: "daggertest"
 		secret:   actions.sopsSecrets.output.DOCKERHUB_TOKEN.contents
-	}]
+	}
 
 	actions: {
 

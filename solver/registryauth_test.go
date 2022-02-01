@@ -257,7 +257,7 @@ func TestParseAuthHost(t *testing.T) {
 
 	successRefs := []output{}
 	for _, scase := range scases {
-		named, err := parseAuthHost(scase.Host)
+		named, err := ParseAuthHost(scase.Host)
 		if err != nil {
 			t.Fatalf("Invalid normalized reference for [%q]. Got %q", scase, err)
 		}
@@ -273,7 +273,7 @@ func TestParseAuthHost(t *testing.T) {
 	}
 
 	for _, fcase := range fcases {
-		named, err := parseAuthHost(fcase.Host)
+		named, err := ParseAuthHost(fcase.Host)
 		if err == nil {
 			t.Fatalf("Invalid normalized reference for [%q]. Expected failure for %q", fcase, named)
 		}

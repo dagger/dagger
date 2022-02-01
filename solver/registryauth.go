@@ -51,7 +51,7 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 	defer a.m.RUnlock()
 
 	for authHost, auth := range a.credentials {
-		u, err := parseAuthHost(authHost)
+		u, err := ParseAuthHost(authHost)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func (a *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 
 // Parsing function based on splitReposSearchTerm
 // "github.com/docker/docker/registry"
-func parseAuthHost(host string) (string, error) {
+func ParseAuthHost(host string) (string, error) {
 	host = strings.TrimPrefix(host, "http://")
 	host = strings.TrimPrefix(host, "https://")
 	host = strings.TrimSuffix(host, "/")

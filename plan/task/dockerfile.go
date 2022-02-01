@@ -30,15 +30,24 @@ type dockerfileTask struct {
 
 func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
-
-	// Read auth info
-	auth, err := decodeAuthValue(pctx, v.Lookup("auth"))
+	auths, err := v.Lookup("auth").Fields()
 	if err != nil {
 		return nil, err
 	}
-	for _, a := range auth {
-		s.AddCredentials(a.Target, a.Username, a.Secret.PlainText())
-		lg.Debug().Str("target", a.Target).Msg("add target credentials")
+
+	for _, auth := range auths {
+		// Read auth info
+		a, err := decodeAuthValue(pctx, auth.Value)
+		if err != nil {
+			return nil, err
+		}
+		// Extract registry target from dest
+		target, err := solver.ParseAuthHost(auth.Label())
+		if err != nil {
+			return nil, err
+		}
+		s.AddCredentials(target, a.Username, a.Secret.PlainText())
+		lg.Debug().Str("target", target).Msg("add target credentials")
 	}
 
 	source, err := pctx.FS.FromValue(v.Lookup("source"))
