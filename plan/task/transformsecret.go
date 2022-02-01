@@ -48,32 +48,29 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 		return nil, errors.New(errStr)
 	}
 
-	type pathSecret struct {
-		path   cue.Path
-		secret *plancontext.Secret
-	}
-
-	var pathsSecrets []pathSecret
+	pathToSecrets := make(map[string]string)
 
 	// users could yaml.Unmarshal(input) and return a map
 	// or yaml.Unmarshal(input).someKey and return a string
 	// walk will ensure we convert every leaf
 	functionPathSelectors := function.Path().Selectors()
+
 	function.Lookup("output").Walk(nil, func(v *compiler.Value) {
 		if v.Kind() == cue.StringKind {
 			plaintext, _ := v.String()
-			secret := pctx.Secrets.New(plaintext)
 			newLeafSelectors := v.Path().Selectors()[len(functionPathSelectors):]
 			newLeafSelectors = append(newLeafSelectors, cue.Str("contents"))
 			newLeafPath := cue.MakePath(newLeafSelectors...)
-			pathsSecrets = append(pathsSecrets, pathSecret{newLeafPath, secret})
+			p := newLeafPath.String()
+			pathToSecrets[p] = plaintext
 		}
 	})
 
 	output := compiler.NewValue()
 
-	for _, ps := range pathsSecrets {
-		output.FillPath(ps.path, ps.secret.MarshalCUE())
+	for p, s := range pathToSecrets {
+		secret := pctx.Secrets.New(s)
+		output.FillPath(cue.ParsePath(p), secret.MarshalCUE())
 	}
 
 	return output, nil
