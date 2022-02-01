@@ -122,6 +122,11 @@ func extractModules(dest string) error {
 			return nil
 		}
 
+		// Do not vendor the package's `cue.mod/pkg`
+		if strings.Contains(p, "cue.mod/pkg") {
+			return nil
+		}
+
 		contents, err := fs.ReadFile(FS, p)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
