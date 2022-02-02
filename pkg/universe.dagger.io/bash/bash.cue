@@ -18,7 +18,9 @@ import (
 	args: [...string]
 
 	{
-		script:    string
+		// Optionally specify an inline script
+		script: string
+
 		_mkSource: engine.#WriteFile & {
 			input:    engine.#Scratch
 			path:     "run.sh"
@@ -34,9 +36,10 @@ import (
 	filename: string
 
 	container: docker.#Run & {
-		// FIXME: why does this not work if moved to outer scope?
-		_buildDefaultImage: alpine.#Build & {packages: bash: _}
-		image:              _ | *_buildDefaultImage.output
+		_buildDefault: alpine.#Build & {
+			packages: bash: _
+		}
+		image: *_buildDefault.output | _
 		command: {
 			name:   "bash"
 			"args": ["\(mountpoint)/\(filename)"] + args
@@ -52,5 +55,3 @@ import (
 		}
 	}
 }
-
-// A ready-to-use Docker image with bash installed
