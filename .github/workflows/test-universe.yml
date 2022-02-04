@@ -3,8 +3,26 @@ name: "Test Universe"
 on:
   push:
     branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-universe.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-universe.yml'
 
 jobs:
   universe:

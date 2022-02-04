@@ -3,8 +3,26 @@ name: "Test Integration"
 on:
   push:
     branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-integration.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-integration.yml'
 
 jobs:
   integration:
