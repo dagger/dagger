@@ -43,7 +43,7 @@ dagger.#Plan & {
 			contents: data.output
 		}
 
-		_alpine: alpine.#Build & {
+		image: alpine.#Build & {
 			packages: {
 				bash: {}
 				curl: {}
@@ -52,7 +52,7 @@ dagger.#Plan & {
 
 		// Check if the website was deployed
 		verify: bash.#Run & {
-			input:  _alpine.output
+			input:  image.output
 			script: #"""
 		  test "$(curl \#(deploy.deployUrl))" = "\#(marker)"
 		  """#
