@@ -17,7 +17,7 @@ package engine
 	args: [...string]
 
 	// Environment variables
-	env: [key=string]: string
+	env: [key=string]: string | #Secret
 
 	// Working directory
 	workdir: string | *"/"

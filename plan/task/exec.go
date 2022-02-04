@@ -77,12 +77,21 @@ func (t execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]ll
 	if err != nil {
 		return nil, err
 	}
+
 	for _, env := range envs {
-		v, err := env.Value.String()
-		if err != nil {
-			return nil, err
+		if plancontext.IsSecretValue(env.Value) {
+			secret, err := pctx.Secrets.FromValue(env.Value)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, llb.AddSecret(env.Label(), llb.SecretID(secret.ID()), llb.SecretAsEnv(true)))
+		} else {
+			s, err := env.Value.String()
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, llb.AddEnv(env.Label(), s))
 		}
-		opts = append(opts, llb.AddEnv(env.Label(), v))
 	}
 
 	// always?
