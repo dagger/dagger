@@ -52,7 +52,13 @@ func (l *Logs) Add(event Event) error {
 		return nil
 	}
 
+	// Hide `#up.*` from log group names
+	// FIXME: remove in Europa
 	groupKey := strings.Split(task, ".#up")[0]
+
+	// Hide hidden fields (e.g. `._*`) from log group names
+	groupKey = strings.Split(groupKey, "._")[0]
+
 	group := l.groups[groupKey]
 
 	// If the group doesn't exist, create it
@@ -70,15 +76,16 @@ func (l *Logs) Add(event Event) error {
 
 	// Handle state events
 	// For state events, we just want to update the group status -- no need to
-	// dispanything
+	// display anything
+	//
+	// FIXME: Since we don't know in advance how many tasks are in a group, the state will change back and forth.
+	// For each task in a group, the status will transition from computing to complete, then back to computing and so on.
+	// The transition is fast enough not to cause a problem.
 	if st, ok := event["state"].(string); ok {
-		// Ignore state updates for "sub" tasks
-		if task != groupKey {
-			return nil
-		}
-
 		group.State = environment.State(st)
-		if group.State != environment.StateComputing {
+		if group.State == environment.StateComputing {
+			group.Completed = nil
+		} else {
 			now := time.Now()
 			group.Completed = &now
 		}
