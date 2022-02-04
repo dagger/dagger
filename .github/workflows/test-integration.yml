@@ -3,32 +3,26 @@ name: "Test Integration"
 on:
   push:
     branches: [main]
-    ignore-paths:
-      - 'docs/**'
-      - 'infra/**'
-      - 'website/**'
-      - '.gitignore'
-      - '.golangci.yml'
-      - '.goreleaser.yml'
-      - 'Dockerfile'
-      - 'README.md'
-      - 'install.ps1'
-      - 'semver'
-      - 'tracing.compose.yaml'
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-integration.yml'
   pull_request:
     branches: [main]
-    ignore-paths:
-      - 'docs/**'
-      - 'infra/**'
-      - 'website/**'
-      - '.gitignore'
-      - '.golangci.yml'
-      - '.goreleaser.yml'
-      - 'Dockerfile'
-      - 'README.md'
-      - 'install.ps1'
-      - 'semver'
-      - 'tracing.compose.yaml'
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-integration.yml'
 
 jobs:
   integration:

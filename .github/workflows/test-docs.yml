@@ -3,30 +3,20 @@ name: "Test Docs"
 on:
   push:
     branches: [main]
-    ignore-paths:
-      - 'infra/**'
-      - 'website/**'
-      - '.gitignore'
-      - '.golangci.yml'
-      - '.goreleaser.yml'
-      - 'Dockerfile'
-      - 'README.md'
-      - 'install.ps1'
-      - 'semver'
-      - 'tracing.compose.yaml'
+    paths:
+      - '**.go'
+      - '**.cue'
+      - 'docs/**'
+      - 'Makefile'
+      - '.github/workflows/test-docs.yml'
   pull_request:
     branches: [main]
-    ignore-paths:
-      - 'infra/**'
-      - 'website/**'
-      - '.gitignore'
-      - '.golangci.yml'
-      - '.goreleaser.yml'
-      - 'Dockerfile'
-      - 'README.md'
-      - 'install.ps1'
-      - 'semver'
-      - 'tracing.compose.yaml'
+    paths:
+      - '**.go'
+      - '**.cue'
+      - 'docs/**'
+      - 'Makefile'
+      - '.github/workflows/test-docs.yml'
 
 jobs:
   docs:

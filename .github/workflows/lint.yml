@@ -3,30 +3,28 @@ name: Lint
 on:
   push:
     branches: [main]
-    ignore-paths:
+    paths:
+      - '**.go'
+      - '**.sh'
+      - '**.bash'
+      - '**.cue'
       - 'docs/**'
-      - 'infra/**'
-      - 'website/**'
-      - '.gitignore'
       - '.golangci.yml'
-      - '.goreleaser.yml'
-      - 'Dockerfile'
-      - 'install.ps1'
-      - 'semver'
-      - 'tracing.compose.yaml'
+      - 'Makefile'
+      - 'README.md'
+      - '.github/workflows/lint.yml'
   pull_request:
     branches: [main]
-    ignore-paths:
+    paths:
+      - '**.go'
+      - '**.sh'
+      - '**.bash'
+      - '**.cue'
       - 'docs/**'
-      - 'infra/**'
-      - 'website/**'
-      - '.gitignore'
       - '.golangci.yml'
-      - '.goreleaser.yml'
-      - 'Dockerfile'
-      - 'install.ps1'
-      - 'semver'
-      - 'tracing.compose.yaml'
+      - 'Makefile'
+      - 'README.md'
+      - '.github/workflows/lint.yml'
 
 jobs:
   everything:
