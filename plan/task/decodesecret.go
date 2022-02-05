@@ -62,10 +62,10 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _
 		switch entry := i.(type) {
 		case string:
 			secret := pctx.Secrets.New(entry)
-			path := cue.MakePath(append(p, cue.ParsePath("contents").Selectors()...)...)
-			pathSelectors := path.Selectors()
-			logPath := cue.MakePath(pathSelectors[1 : len(pathSelectors)-1]...)
+			p = append(p, cue.ParsePath("contents").Selectors()...)
+			logPath := cue.MakePath(p[1 : len(p)-1]...)
 			lg.Debug().Str("path", logPath.String()).Str("type", "string").Msg("found secret")
+			path := cue.MakePath(p...)
 			output.FillPath(path, secret.MarshalCUE())
 		case map[string]interface{}:
 			for k, v := range entry {
