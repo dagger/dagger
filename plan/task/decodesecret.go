@@ -69,7 +69,9 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _
 			output.FillPath(path, secret.MarshalCUE())
 		case map[string]interface{}:
 			for k, v := range entry {
-				convert(append(p, cue.ParsePath(k).Selectors()...), v)
+				np := append([]cue.Selector{}, p...)
+				np = append(np, cue.ParsePath(k).Selectors()...)
+				convert(np, v)
 			}
 		}
 	}
