@@ -65,4 +65,43 @@ module.exports = {
       items: ["administrator/operator-manual"],
     },
   ],
+  europaSidebar: [
+    {
+      type: "category",
+      label: "Getting Started",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "getting-started/local-ci",
+        "getting-started/github-actions"
+      ],
+    },
+    {
+      type: "category",
+      label: "Core Concepts",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "core-concepts/plan",
+        "core-concepts/inputs",
+        "core-concepts/secrets",
+        "core-concepts/caching",
+        "core-concepts/container-images",
+        "core-concepts/packages",
+      ],
+    },
+    {
+      type: "category",
+      label: "Use Cases",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "use-cases/phoenix-kubernetes",
+        "use-cases/docusaurus-netlify",
+        "use-cases/go-goreleaser",
+        "use-cases/go-docker-swarm",
+        "use-cases/svelte-vercel",
+      ],
+    },
+  ],
 };
