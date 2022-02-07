@@ -9,19 +9,21 @@ import clsx from 'clsx';
 import Translate from '@docusaurus/Translate';
 import SearchBar from '@theme/SearchBar';
 import Toggle from '@theme/Toggle';
-import useThemeContext from '@theme/hooks/useThemeContext';
 import {
   useThemeConfig,
   useMobileSecondaryMenuRenderer,
   usePrevious,
+  useHistoryPopHandler,
+  useHideableNavbar,
+  useLockBodyScroll,
+  useWindowSize,
+  useColorMode,
 } from '@docusaurus/theme-common';
-import useHideableNavbar from '@theme/hooks/useHideableNavbar';
-import useLockBodyScroll from '@theme/hooks/useLockBodyScroll';
-import useWindowSize from '@theme/hooks/useWindowSize';
-import {useActivePlugin} from '@theme/hooks/useDocs';
+import {useActivePlugin} from '@docusaurus/plugin-content-docs/client';
 import NavbarItem from '@theme/NavbarItem';
 import Logo from '@theme/Logo';
 import IconMenu from '@theme/IconMenu';
+import IconClose from '@theme/IconClose';
 import styles from './styles.module.css'; // retrocompatible with v1
 
 const DefaultNavItemPosition = 'right';
@@ -50,7 +52,19 @@ function useMobileSidebar() {
 
   const shouldRender = windowSize === 'mobile'; // || windowSize === 'ssr';
 
-  const [shown, setShown] = useState(false);
+  const [shown, setShown] = useState(false); // Close mobile sidebar on navigation pop
+  // Most likely firing when using the Android back button (but not only)
+
+  useHistoryPopHandler(() => {
+    if (shown) {
+      setShown(false); // Should we prevent the navigation here?
+      // See https://github.com/facebook/docusaurus/pull/5462#issuecomment-911699846
+
+      return false; // prevent pop navigation
+    }
+
+    return undefined;
+  });
   const toggle = useCallback(() => {
     setShown((s) => !s);
   }, []);
@@ -70,7 +84,7 @@ function useColorModeToggle() {
   const {
     colorMode: {disableSwitch},
   } = useThemeConfig();
-  const {isDarkTheme, setLightTheme, setDarkTheme} = useThemeContext();
+  const {isDarkTheme, setLightTheme, setDarkTheme} = useColorMode();
   const toggle = useCallback(
     (e) => (e.target.checked ? setDarkTheme() : setLightTheme()),
     [setLightTheme, setDarkTheme],
@@ -87,12 +101,13 @@ function useSecondaryMenu({sidebarShown, toggleSidebar}) {
     toggleSidebar,
   });
   const previousContent = usePrevious(content);
-  const [shown, setShown] = useState(() => {
-    // /!\ content is set with useEffect,
-    // so it's not available on mount anyway
-    // "return !!content" => always returns false
-    return false;
-  }); // When content is become available for the first time (set in useEffect)
+  const [shown, setShown] = useState(
+    () =>
+      // /!\ content is set with useEffect,
+      // so it's not available on mount anyway
+      // "return !!content" => always returns false
+      false,
+  ); // When content is become available for the first time (set in useEffect)
   // we set this content to be shown!
 
   useEffect(() => {
@@ -141,12 +156,22 @@ function NavbarMobileSidebar({sidebarShown, toggleSidebar}) {
           imageClassName="navbar__logo"
           titleClassName="navbar__title"
         />
-        {!colorModeToggle.disabled && sidebarShown && (
+        {!colorModeToggle.disabled && (
           <Toggle
+            className={styles.navbarSidebarToggle}
             checked={colorModeToggle.isDarkTheme}
             onChange={colorModeToggle.toggle}
           />
         )}
+        <button
+          type="button"
+          className="clean-btn navbar-sidebar__close"
+          onClick={toggleSidebar}>
+          <IconClose
+            color="var(--ifm-color-emphasis-600)"
+            className={styles.navbarSidebarCloseSvg}
+          />
+        </button>
       </div>
 
       <div
