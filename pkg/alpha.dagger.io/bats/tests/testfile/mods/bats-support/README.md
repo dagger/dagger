@@ -103,7 +103,7 @@ for added readability, starting on the next line. This is called
 status : 1
 output (2 lines):
   Error! Something went terribly wrong!
-  Our engineers are panicing... \`>`;/
+  Our engineers are panicking... \`>`;/
 --
 ```
 

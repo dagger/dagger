@@ -18,7 +18,7 @@ import (
 	// ArgoCD project
 	project: *"default" | dagger.#Input & {string}
 
-	// Basic authentification to login
+	// Basic authentication to login
 	basicAuth: {
 		// Username
 		username: dagger.#Input & {string}

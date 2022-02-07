@@ -42,7 +42,7 @@ func TrackProjectCommand(ctx context.Context, cmd *cobra.Command, w *state.Proje
 			Value: hash(gitRepoURL(w.Path)),
 		},
 		{
-			// The project path might contain the username (e.g. /home/user/project), so we hash itfor privacy.
+			// The project path might contain the username (e.g. /home/user/project), so we hash it for privacy.
 			Name:  "project_path_hash",
 			Value: hash(w.Path),
 		},

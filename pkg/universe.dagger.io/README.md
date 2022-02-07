@@ -53,7 +53,7 @@ The `docker` package is a native Cue API for Docker. You can use it to build, ru
 The Dagger container API defines the following types:
 
 * `#Image`: a container image
-* `#Run`: run a comand in a container
+* `#Run`: run a command in a container
 * `#Push`: upload an image to a repository
 * `#Pull`: download an image from a repository
 * `#Build`: build an image

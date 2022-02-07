@@ -25,7 +25,7 @@ The Dagger Core API defines core types and utilities for programming Dagger:
 ### Low-level Engine API: `dagger.io/dagger/engine`
 
 * *Development import path (implemented subset): `alpha.dagger.io/europa/dagger/engine`*
-* *Development importa pth (full spec): `alpha.dagger.io/dagger/europa/dagger/engine/spec/engine`*
+* *Development import path (full spec): `alpha.dagger.io/dagger/europa/dagger/engine/spec/engine`*
 
 `engine` is a low-level API for accessing the raw capabilities of the Dagger Engine. Most developers should use the Dagger Core API instead (`dagger.io/dagger`), but experts and framework developers can target the engine API directly for maximum control.
 
@@ -37,5 +37,5 @@ In Europa, `engine` will deprecate the following implicit API:
 * Convention to embed pipelines in the Cue lattice with the special nested definition `#up`
 * Convention to reference filesystem state from the Cue lattice with `@dagger(artifact)`
 * Convention to reference external secrets from the Cue lattice with `@dagger(secret)`
-* Convention to reference external network endpoints from the Cue lattive with `@dagger(stream)`
+* Convention to reference external network endpoints from the Cue lattice with `@dagger(stream)`
 * Convention that some operations (specifically `op.#Local`) are meant to be generated at runtime rather than authored manually.

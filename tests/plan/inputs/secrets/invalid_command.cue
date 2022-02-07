@@ -6,7 +6,7 @@ import (
 
 engine.#Plan & {
 	inputs: secrets: echo: command: {
-		name: "rtyet" // should fail because command doesnt exist
+		name: "rtyet" // should fail because command doesn't exist
 		args: ["hello europa"]
 	}
 

@@ -9,7 +9,7 @@ package engine
 	path: string
 	// Optionally exclude certain files
 	include: [...string]
-	// Optionall include certain files
+	// Optionally include certain files
 	exclude: [...string]
 
 	output: #FS

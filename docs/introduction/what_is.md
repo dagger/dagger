@@ -4,7 +4,7 @@ slug: /
 
 # What is Dagger?
 
-Dagger is a portable devkit for CICD. It helps you develop powerful CICD pipelines that can run anwyhere.
+Dagger is a portable devkit for CICD. It helps you develop powerful CICD pipelines that can run anywhere.
 
 * Choose from a wide catalog of reusable actions, or create your own in your favorite programming language.
 * Tie it all together with [CUE](https://cuelang.org), the next-generation declarative language invented at Google. No more YAML hell!

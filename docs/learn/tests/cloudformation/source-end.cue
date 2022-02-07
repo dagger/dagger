@@ -15,7 +15,7 @@ suffix: random.#String & {
 	seed: ""
 }
 
-// Query the Cloudformation stackname, or create one with a random suffix to keep unicity
+// Query the Cloudformation stackname, or create one with a random suffix for uniqueness
 cfnStackName: *"stack-\(suffix.out)" | string & dagger.#Input
 
 // AWS Cloudformation stdlib
