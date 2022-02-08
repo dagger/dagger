@@ -36,7 +36,7 @@ import (
 	}
 
 	// Command to execute
-	cmd?: {
+	command?: {
 		// Name of the command to execute
 		// Examples: "ls", "/bin/bash"
 		name: string
@@ -59,17 +59,6 @@ import (
 				}
 			},
 		], 1)
-	}
-
-	// Optionally pass a script to interpret
-	// Example: "echo hello\necho world"
-	script?: string
-	if script != _|_ {
-		// Default interpreter is /bin/sh -c
-		cmd: *{
-			name: "/bin/sh"
-			flags: "-c": script
-		} | {}
 	}
 
 	// Environment variables
@@ -133,10 +122,10 @@ import (
 		"always": always
 		"mounts": mounts
 
-		if cmd != _|_ {
-			args: [cmd.name] + cmd._flatFlags + cmd.args
+		if command != _|_ {
+			args: [command.name] + command._flatFlags + command.args
 		}
-		if cmd == _|_ {
+		if command == _|_ {
 			args: list.Concat([
 				if _image.config.entrypoint != _|_ {
 					_image.config.entrypoint

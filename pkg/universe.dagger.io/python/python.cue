@@ -8,17 +8,22 @@ import (
 )
 
 // Run a python script in a container
-#Run: docker.#Run & {
+#Run: {
+	// Contents of the python script
 	script: string
-	cmd: {
-		name: "python"
-		flags: "-c": script
-	}
 
-	// As a convenience, image defaults to a ready-to-use python environment
-	image: docker.#Image | *_defaultImage
+	// FIXME: don't pass the script as argument: write to filesystme instead
+	docker.#Run & {
+		command: {
+			name: "python"
+			flags: "-c": script
+		}
 
-	_defaultImage: alpine.#Image & {
-		packages: python: version: "3"
+		// As a convenience, image defaults to a ready-to-use python environment
+		image: docker.#Image | *_defaultImage
+
+		_defaultImage: alpine.#Image & {
+			packages: python: version: "3"
+		}
 	}
 }

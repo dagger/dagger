@@ -17,9 +17,10 @@ dagger.#Plan & {
 			steps: [
 				alpine.#Build,
 				docker.#Run & {
-					script: """
-							echo -n $TEST >> /test.txt
-						"""
+					command: {
+						name: "sh"
+						flags: "-c": "echo -n $TEST >> /test.txt"
+					}
 					env: TEST: #testValue
 				},
 			]

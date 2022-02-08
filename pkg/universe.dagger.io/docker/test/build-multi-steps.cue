@@ -16,19 +16,28 @@ dagger.#Plan & {
 			steps: [
 				alpine.#Build,
 				docker.#Run & {
-					script: """
+					command: {
+						name: "sh"
+						flags: "-c": """
 							echo -n hello > /bar.txt
-						"""
+							"""
+					}
 				},
 				docker.#Run & {
-					script: """
+					command: {
+						name: "sh"
+						flags: "-c": """
 							echo -n $(cat /bar.txt) world > /foo.txt
-						"""
+							"""
+					}
 				},
 				docker.#Run & {
-					script: """
+					command: {
+						name: "sh"
+						flags: "-c": """
 							echo -n $(cat /foo.txt) >> /test.txt
-						"""
+							"""
+					}
 				},
 			]
 		}

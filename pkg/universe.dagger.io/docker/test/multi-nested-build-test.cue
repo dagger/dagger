@@ -5,6 +5,7 @@ import (
 	"universe.dagger.io/docker"
 )
 
+// FIXME: this test is currently broken (see docker.bats)
 dagger.#Plan & {
 	actions: build: docker.#Build & {
 		steps: [
@@ -16,17 +17,17 @@ dagger.#Plan & {
 								source: "alpine"
 							},
 							docker.#Run & {
-								cmd: name: "ls"
+								command: name: "ls"
 							},
 						]
 					},
 					docker.#Run & {
-						cmd: name: "ls"
+						command: name: "ls"
 					},
 				]
 			},
 			docker.#Run & {
-				cmd: name: "ls"
+				command: name: "ls"
 			},
 		]
 	}
