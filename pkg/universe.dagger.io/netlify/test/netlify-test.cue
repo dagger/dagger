@@ -1,8 +1,6 @@
 package yarn
 
 import (
-	"encoding/yaml"
-
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 
@@ -18,12 +16,9 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		testSecrets: engine.#TransformSecret & {
-			input: inputs.secrets.test.contents
-			#function: {
-				input:  _
-				output: yaml.Unmarshal(input)
-			}
+		testSecrets: dagger.#DecodeSecret & {
+			input:  inputs.secrets.test.contents
+			format: "yaml"
 		}
 
 		marker: "hello world"
