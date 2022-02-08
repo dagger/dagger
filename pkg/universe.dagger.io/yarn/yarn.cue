@@ -48,33 +48,19 @@ import (
 	// yarnVersion: *"=~1.22" | string
 
 	// FIXME: custom base image not supported
-	image: alpine.#Build & {
+	_buildImage: alpine.#Build & {
 		packages: {
 			bash: {}
 			yarn: {}
 		}
 	}
 
-	// Run yarn in a containerized build environment
-	command: bash.#Run & {
-		// FIXME: not working?
-		// *{
-		//  _image: alpine.#Build & {
-		//   packages: {
-		//    bash: version: "=~5.1"
-		//    yarn: version: yarnVersion
-		//   }
-		//  }
+	// Run yarn in a docker container
+	container: bash.#Run & {
+		image: _buildImage.output
 
-		//  image: _image.output
-		//  env: CUSTOM_IMAGE: "0"
-		// } | {
-		//  env: CUSTOM_IMAGE: "1"
-		// }
-
-		"image": image.output
-
-		script: #"""
+		// FIXME: move shell script to its own file
+		script: contents: #"""
 			# Create $ENVFILE_NAME file if set
 			[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
 
@@ -94,7 +80,6 @@ import (
 				dest:     "/src"
 				contents: source
 			}
-			// FIXME: mount secrets
 		}
 
 		export: directories: "/build": _
@@ -115,5 +100,5 @@ import (
 	}
 
 	// The final contents of the package after build
-	output: command.export.directories."/build".contents
+	output: container.export.directories."/build".contents
 }
