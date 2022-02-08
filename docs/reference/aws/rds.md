@@ -76,6 +76,6 @@ Creates a new user credentials on an existing RDS Instance
 
 ### rds.#User Outputs
 
-| Name             | Type              | Description         |
-| -------------    |:-------------:    |:-------------:      |
-|*out*             | `string`          |Outputed username    |
+| Name             | Type              | Description          |
+| -------------    |:-------------:    |:-------------:       |
+|*out*             | `string`          |Outputted username    |
