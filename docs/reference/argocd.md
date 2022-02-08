@@ -102,7 +102,7 @@ Get application's status
 
 ## argocd.#Sync
 
-Sync an application to its targer state
+Sync an application to its target state
 
 ### argocd.#Sync Inputs
 
