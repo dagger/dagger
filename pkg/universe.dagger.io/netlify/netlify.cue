@@ -4,9 +4,11 @@ package netlify
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
+	"universe.dagger.io/bash"
 )
 
 // Deploy a site to Netlify
@@ -34,12 +36,7 @@ import (
 	// Create the site if it doesn't exist
 	create: *true | false
 
-	// Source code of the Netlify package
-	_source: dagger.#Source & {
-		path: "."
-		include: ["*.sh"]
-	}
-
+	// Build a docker image to run the netlify client
 	_build: docker.#Build & {
 		steps: [
 			alpine.#Build & {
@@ -50,45 +47,26 @@ import (
 					yarn: {}
 				}
 			},
+			// FIXME: make this an alpine custom package, that would be so cool.
 			docker.#Run & {
 				command: {
 					name: "yarn"
 					args: ["global", "add", "netlify-cli@8.6.21"]
 				}
 			},
-			docker.#Copy & {
-				contents: _source.output
-				dest:     "/app"
-			},
 		]
 	}
 
-	// Execute `netlify deploy` in a container
-	command: docker.#Run & {
-		// FIXME: custom base image not supported
-		// Container image. `netlify` must be available in the execution path
-		// *{
-		//  _buildDefaultImage: docker.#Build & {
-		//   input: alpine.#Build & {
-		//    bash: version: "=~5.1"
-		//    jq: version:   "=~1.6"
-		//    curl: {}
-		//    yarn: version: "=~1.22"
-		//   }
-		//   steps: [{
-		//    run: command: {
-		//      name: "sh"
-		//      flags: "-c": "yarn global add netlify-cli@3.38.10"
-		//    }
-		//   }]
-		//  }
-
-		//  // No nested tasks, boo hoo hoo
-		//  image: _buildDefaultImage.output
-		//  env: CUSTOM_IMAGE: "0"
-		// } | {
-		//  env: CUSTOM_IMAGE: "1"
-		// }
+	// Run the netlify client in a container
+	container: bash.#Run & {
+		script: {
+			_load: engine.#Source & {
+				path: "."
+				include: ["*.sh"]
+			}
+			directory: _load.output
+			filename:  "deploy.sh"
+		}
 
 		image: _build.output
 
@@ -114,7 +92,6 @@ import (
 				contents: token
 			}
 		}
-		command: name: "/app/deploy.sh"
 
 		export: files: {
 			"/netlify/url":       _
@@ -124,11 +101,11 @@ import (
 	}
 
 	// URL of the deployed site
-	url: command.export.files."/netlify/url".contents
+	url: container.export.files."/netlify/url".contents
 
 	// URL of the latest deployment
-	deployUrl: command.export.files."/netlify/deployUrl".contents
+	deployUrl: container.export.files."/netlify/deployUrl".contents
 
 	// URL for logs of the latest deployment
-	logsUrl: command.export.files."/netlify/logsUrl".contents
+	logsUrl: container.export.files."/netlify/logsUrl".contents
 }

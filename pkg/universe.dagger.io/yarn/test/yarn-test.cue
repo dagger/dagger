@@ -33,7 +33,7 @@ dagger.#Plan & {
 				dest:     "/build"
 				contents: pkg.output
 			}
-			script: #"""
+			script: contents: #"""
 				test "$(cat /build/test)" = "output"
 				"""#
 		}
