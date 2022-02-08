@@ -13,6 +13,11 @@ import (
 
 // Build a Yarn package
 #Build: {
+	// Custom name for the build.
+	//   When building different apps in the same plan, assign
+	//   different names for optimal caching.
+	name: string | *""
+
 	// Application source code
 	source: dagger.#FS
 
@@ -32,9 +37,6 @@ import (
 
 	// Fix for shadowing issues
 	let yarnScript = script
-
-	// Cache to use, passed by the caller
-	cache: engine.#CacheDir
 
 	// Optional arguments for the script
 	args: [...string] | *[]
@@ -74,7 +76,10 @@ import (
 		mounts: {
 			"yarn cache": {
 				dest:     "/cache/yarn"
-				contents: cache
+				contents: engine.#CacheDir & {
+					// FIXME: are there character limitations in cache ID?
+					id: "universe.dagger.io/yarn.#Build \(name)"
+				}
 			}
 			"package source": {
 				dest:     "/src"

@@ -2,9 +2,9 @@ package yarn
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/engine"
+
 	"universe.dagger.io/yarn"
-	"universe.dagger.io/alpine"
-	"universe.dagger.io/bash"
 )
 
 dagger.#Plan & {
@@ -13,60 +13,48 @@ dagger.#Plan & {
 		testdata2: path: "./testdata2"
 	}
 
-	actions: {
-		cache: dagger.#CacheDir & {
-			id: "yarn cache"
-		}
+	actions: tests: {
 
-		pkg: yarn.#Build & {
-			source:  inputs.directories.testdata.contents
-			"cache": cache
-		}
-
-		_image: alpine.#Build & {
-			packages: bash: {}
-		}
-
-		test: bash.#Run & {
-			image: _image.output
-			mounts: build: {
-				dest:     "/build"
-				contents: pkg.output
+		simple: {
+			build: yarn.#Build & {
+				source: inputs.directories.testdata.contents
 			}
-			script: contents: #"""
-				test "$(cat /build/test)" = "output"
-				"""#
+
+			verify: #AssertFile & {
+				input:    build.output
+				path:     "test"
+				contents: "output\n"
+			}
 		}
 
-		// FIXME: re-enable?
-		// TestSecretsAndFile: {
-		//  pkg: #Package & {
-		//   source:       inputs.directories.testdata2
-		//   writeEnvFile: "/.env"
-		//   env: {
-		//    one: "one"
-		//    two: "two"
-		//   }
-		//   secrets: {
-		//    secretone: dagger.#Secret @dagger(input)
-		//    secretwo:  dagger.#Secret @dagger(input)
-		//   }
-		//  }
-
-		//  test: os.#Container & {
-		//   image: alpine.#Image & {
-		//    package: bash: true
-		//   }
-		//   shell: path: "/bin/bash"
-		//   mount: "/build": from: pkg.build
-		//   command: """
-		//    content="$(cat /build/env)"
-		//    [[ "${content}" = *"SECRETONE="* ]] && \\
-		//    [[ "${content}" = *"SECRETWO="* ]] && \\
-		//    [[ "${content}" = *"ONE=one"* ]] && \\
-		//    [[ "${content}" = *"TWO=two"* ]]
-		//    """
-		//  }
-		// }
+		// Run yarn.#Build with a custom name
+		customName: {
+			build: yarn.#Build & {
+				name:   "My Build"
+				source: inputs.directories.testdata.contents
+			}
+			verify: #AssertFile & {
+				input:    build.output
+				path:     "test"
+				contents: "output\n"
+			}
+		}
 	}
+}
+
+// Make an assertion on the contents of a file
+#AssertFile: {
+	input:    dagger.#FS
+	path:     string
+	contents: string
+
+	_read: engine.#ReadFile & {
+		"input": input
+		"path":  path
+	}
+
+	actual: _read.contents
+
+	// Assertion
+	contents: actual
 }
