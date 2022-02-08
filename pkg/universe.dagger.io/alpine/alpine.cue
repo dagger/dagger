@@ -27,7 +27,7 @@ import (
 			},
 			for pkgName, pkg in packages {
 				docker.#Run & {
-					cmd: {
+					command: {
 						name: "apk"
 						args: ["add", "\(pkgName)\(pkg.version)"]
 						flags: {

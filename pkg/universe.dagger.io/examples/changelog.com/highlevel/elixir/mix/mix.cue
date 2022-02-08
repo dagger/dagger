@@ -42,7 +42,10 @@ import (
 					depsCache: "locked"
 				}
 				workdir: "/app"
-				script:  "mix deps.get"
+				command: {
+					name: "mix"
+					args: ["deps.get"]
+				}
 			},
 			// 4. Build!
 			// FIXME: step 5 is to add image data, see issue 1339
@@ -54,7 +57,10 @@ import (
 					buildCache: "locked"
 				}
 				workdir: "/app"
-				script:  "mix do deps.compile, compile"
+				command: {
+					name: "mix"
+					args: ["do", "deps.compile,compile"]
+				}
 			},
 		]
 	}

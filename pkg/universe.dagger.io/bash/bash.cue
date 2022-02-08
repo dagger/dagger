@@ -6,16 +6,21 @@ import (
 )
 
 // Run a bash command or script in a container
-#Run: docker.#Run & {
+#Run: {
+	// Contents of the bash script
 	script: string
-	cmd: {
-		name: "bash"
-		flags: {
-			"-c":          script
-			"--noprofile": true
-			"--norc":      true
-			"-e":          true
-			"-o":          "pipefail"
+
+	// FIXME: don't pass the script as argument: write to filesystme instead
+	docker.#Run & {
+		command: {
+			name: "bash"
+			flags: {
+				"-c":          script
+				"--noprofile": true
+				"--norc":      true
+				"-e":          true
+				"-o":          "pipefail"
+			}
 		}
 	}
 }

@@ -38,7 +38,10 @@ dagger.#Plan & {
 				dev.assets,
 				// 2. Mix magical command
 				mix.#Run & {
-					script: "mix phx.digest"
+					command: {
+						name: "mix"
+						args: ["phx.digest"]
+					}
 					mix: {
 						env:        "prod"
 						app:        _appName
@@ -94,7 +97,12 @@ dagger.#Plan & {
 						}
 						// FIXME: run 'yarn install' and 'yarn run compile' separately, with different caching?
 						// FIXME: can we reuse universe.dagger.io/yarn ???? 0:-)
-						script:  "yarn install --frozen-lockfile && yarn run compile"
+						command: {
+							name: "sh"
+							flags: "-c": """
+								yarn install --frozen-lockfile && yarn run compile"
+								"""
+						}
 						workdir: "/app/assets"
 					},
 				]
@@ -110,8 +118,11 @@ dagger.#Plan & {
 
 			// Run tests
 			run: docker.#Run & {
-				image:  build.output
-				script: "mix test"
+				image: build.output
+				command: {
+					name: "mix"
+					args: ["test"]
+				}
 				// Don't cache running tests
 				// Just because we've tested a version before, doesn't mean we don't
 				// want to test it again.

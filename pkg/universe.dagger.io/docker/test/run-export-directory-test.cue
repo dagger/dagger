@@ -13,10 +13,13 @@ dagger.#Plan & {
 
 		run: docker.#Run & {
 			"image": image.output
-			script: #"""
-				mkdir -p test
-				echo -n hello world >> /test/output.txt
-				"""#
+			command: {
+				name: "sh"
+				flags: "-c": #"""
+					mkdir -p test
+					echo -n hello world >> /test/output.txt
+					"""#
+			}
 			export: {
 				directories: "/test":      _
 				files: "/test/output.txt": _ & {

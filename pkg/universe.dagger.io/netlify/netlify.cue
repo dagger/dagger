@@ -51,7 +51,7 @@ import (
 				}
 			},
 			docker.#Run & {
-				cmd: {
+				command: {
 					name: "yarn"
 					args: ["global", "add", "netlify-cli@8.6.21"]
 				}
@@ -76,7 +76,10 @@ import (
 		//    yarn: version: "=~1.22"
 		//   }
 		//   steps: [{
-		//    run: script: "yarn global add netlify-cli@3.38.10"
+		//    run: command: {
+		//      name: "sh"
+		//      flags: "-c": "yarn global add netlify-cli@3.38.10"
+		//    }
 		//   }]
 		//  }
 
@@ -111,7 +114,7 @@ import (
 				contents: token
 			}
 		}
-		cmd: name: "/app/deploy.sh"
+		command: name: "/app/deploy.sh"
 
 		export: files: {
 			"/netlify/url":       _

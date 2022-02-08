@@ -27,7 +27,7 @@ dagger.#Plan & {
 		}
 		run: docker.#Run & {
 			image: myimage
-			cmd: name: "ls"
+			command: name: "ls"
 			export: files: {
 				"/dagger.txt": _ & {
 					contents: "not hello from dagger"
@@ -57,9 +57,12 @@ dagger.#Plan & {
 
 		verify_working_directory: docker.#Run & {
 			image: myimage
-			script: #"""
-				pwd > dir.txt
-				"""#
+			command: {
+				name: "sh"
+				flags: "-c": #"""
+					pwd > dir.txt
+					"""#
+			}
 			export: files: "/bin/dir.txt": _ & {
 				contents: "/bin\n"
 			}
@@ -67,9 +70,12 @@ dagger.#Plan & {
 		verify_working_directory_is_overridden: docker.#Run & {
 			image:   myimage
 			workdir: "/"
-			script: #"""
-				pwd > dir.txt
-				"""#
+			command: {
+				name: "sh"
+				flags: "-c": #"""
+					pwd > dir.txt
+					"""#
+			}
 			export: files: "/dir.txt": _ & {
 				contents: "/\n"
 			}

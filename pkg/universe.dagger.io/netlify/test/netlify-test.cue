@@ -54,8 +54,8 @@ dagger.#Plan & {
 		verify: bash.#Run & {
 			input:  image.output
 			script: #"""
-		  test "$(curl \#(deploy.deployUrl))" = "\#(marker)"
-		  """#
+			  test "$(curl \#(deploy.deployUrl))" = "\#(marker)"
+			  """#
 		}
 	}
 }
