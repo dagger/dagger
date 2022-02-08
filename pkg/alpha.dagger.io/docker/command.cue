@@ -132,7 +132,7 @@ import (
 		for registry in registries {
 			op.#Exec & {
 				args: ["/bin/bash", "-c", #"""
-						echo "$TARGER_HOST" | docker login --username "$DOCKER_USERNAME" --password-stdin "$(cat /password)"
+						echo "$TARGET_HOST" | docker login --username "$DOCKER_USERNAME" --password-stdin "$(cat /password)"
 					"""#,
 				]
 				env: {

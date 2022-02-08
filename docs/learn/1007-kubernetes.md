@@ -179,7 +179,7 @@ The following `config.cue` defines:
 
 The below `config.cue` defines:
 
-- `kubeconfig` a generic value created to embbed this `gke.#KubeConfig` value
+- `kubeconfig` a generic value created to embed this `gke.#KubeConfig` value
 - `gcpConfig`: connection to Google using `alpha.dagger.io/gcp`
 - `gkeConfig`: transform a `gcpConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/gcp/gke`
@@ -194,7 +194,7 @@ The below `config.cue` defines:
 
 The below `config.cue` defines:
 
-- `kubeconfig`, a generic value created to embbed this `eksConfig.kubeconfig` value
+- `kubeconfig`, a generic value created to embed this `eksConfig.kubeconfig` value
 - `awsConfig`, connection to Amazon using `alpha.dagger.io/aws`
 - `eksConfig`, transform a `awsConfig` to a readable format for `kubernetes.#Resources.kubeconfig`
   using `alpha.dagger.io/aws/eks`

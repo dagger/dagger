@@ -10,7 +10,7 @@ import (
 	steps: [#Step, ...#Step]
 	output: #Image
 
-	// Generate build DAG from linerar steps
+	// Generate build DAG from linear steps
 	_dag: {
 		for idx, step in steps {
 			"\(idx)": step & {

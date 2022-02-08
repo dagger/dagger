@@ -174,7 +174,7 @@ func (s Solver) forwardEvents(ch chan *bk.SolveStatus) {
 }
 
 // Export will export `st` to `output`
-// FIXME: this is currently impleneted as a hack, starting a new Build session
+// FIXME: this is currently implemented as a hack, starting a new Build session
 // within buildkit from the Control API. Ideally the Gateway API should allow to
 // Export directly.
 func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry, platform specs.Platform) (*bk.SolveResponse, error) {

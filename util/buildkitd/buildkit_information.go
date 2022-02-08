@@ -10,7 +10,7 @@ import (
 	"github.com/docker/distribution/reference"
 )
 
-func getBuildkitInformation(ctx context.Context) (*BuilkitInformation, error) {
+func getBuildkitInformation(ctx context.Context) (*BuildkitInformation, error) {
 	formatString := "{{.Config.Image}};{{.State.Running}};{{if index .NetworkSettings.Networks \"host\"}}{{\"true\"}}{{else}}{{\"false\"}}{{end}}"
 	cmd := exec.CommandContext(ctx,
 		"docker",
@@ -48,14 +48,14 @@ func getBuildkitInformation(ctx context.Context) (*BuilkitInformation, error) {
 		return nil, err
 	}
 
-	return &BuilkitInformation{
+	return &BuildkitInformation{
 		Version:         tag.Tag(),
 		IsActive:        isActive,
 		HaveHostNetwork: haveHostNetwork,
 	}, nil
 }
 
-type BuilkitInformation struct {
+type BuildkitInformation struct {
 	Version         string
 	IsActive        bool
 	HaveHostNetwork bool

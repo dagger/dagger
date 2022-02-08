@@ -5,7 +5,7 @@ import (
 	"alpha.dagger.io/os"
 )
 
-// Sync an application to its targer state
+// Sync an application to its target state
 #Sync: {
 	// ArgoCD configuration
 	config: #Config

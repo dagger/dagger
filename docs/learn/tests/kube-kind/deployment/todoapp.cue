@@ -23,7 +23,7 @@ manifest: dagger.#Artifact & dagger.#Input
 
 // Todoapp deployment pipeline
 todoApp: {
-	// Build the image from repositoru artifact
+	// Build the image from repository artifact
 	image: docker.#Build & {
 		source: repository
 	}

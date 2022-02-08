@@ -16,7 +16,7 @@ tag:      "test-ecr"
 
 // Todoapp deployment pipeline
 todoApp: {
-	// Build the image from repositoru artifact
+	// Build the image from repository artifact
 	image: docker.#Build & {
 		source: repository
 	}
@@ -37,7 +37,7 @@ todoApp: {
 		image: remoteImage.ref
 	}
 
-	// Deploy the customized manifest to a kubernetes cluster 
+	// Deploy the customized manifest to a kubernetes cluster
 	kubeSrc: kubernetes.#Resources & {
 		"kubeconfig": kubeconfig
 		manifest:     deployment.manifest

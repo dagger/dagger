@@ -67,7 +67,7 @@ Dagger will load all `.cue` files recursively in the current Dagger project. Mor
 
 ### Write a Dagger Plan
 
-A Dagger _plan_ is written in CUE and defines the _resources_, _dependencies_, and _logic_ to deploy an application to an environment. Unlike traditional glue code written in a scripting language such as Bash or PowerShell, a Dagger plan is _declarative_ rather than _imperative_. This frees us from thinking about the order of operations, since Dagger will infer dependendencies and calculate correct order on its own.
+A Dagger _plan_ is written in CUE and defines the _resources_, _dependencies_, and _logic_ to deploy an application to an environment. Unlike traditional glue code written in a scripting language such as Bash or PowerShell, a Dagger plan is _declarative_ rather than _imperative_. This frees us from thinking about the order of operations, since Dagger will infer dependencies and calculate correct order on its own.
 
 Let&rsquo;s first create a directory to hold our Dagger plan separately from our application code:
 
@@ -155,7 +155,7 @@ dockerSocket  struct            true         Mount local docker socket
 
 Notice that Dagger now reports that both inputs have been set.
 
-### Deploy the Appplication
+### Deploy the Application
 
 With our plan in place, our environment set, and our inputs defined, we can deploy the application as simply as:
 

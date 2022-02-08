@@ -2,7 +2,7 @@
 
 package op
 
-// Full resolution schema enforciong the complete op spec
+// Full resolution schema enforcing the complete op spec
 #Op: (#Export |
 	#FetchContainer |
 	#PushContainer |
