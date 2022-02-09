@@ -18,7 +18,7 @@ dagger.#Plan & {
 			image: alpine.#Build
 
 			run: docker.#Run & {
-				image: _image
+				input: _image
 				command: {
 					name: "/bin/sh"
 					args: ["-c", "echo -n hello world >> /output.txt"]
@@ -50,7 +50,7 @@ dagger.#Plan & {
 		// Test: export a directory
 		exportDirectory: {
 			run: docker.#Run & {
-				image: _image
+				input: _image
 				command: {
 					name: "sh"
 					flags: "-c": #"""

@@ -59,7 +59,7 @@ import (
 
 	// Run yarn in a docker container
 	container: bash.#Run & {
-		image: _buildImage.output
+		input: _buildImage.output
 
 		// FIXME: move shell script to its own file
 		script: contents: #"""

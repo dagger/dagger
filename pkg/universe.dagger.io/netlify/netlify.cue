@@ -59,6 +59,7 @@ import (
 
 	// Run the netlify client in a container
 	container: bash.#Run & {
+		input: _build.output
 		script: {
 			_load: engine.#Source & {
 				path: "."
@@ -67,8 +68,6 @@ import (
 			directory: _load.output
 			filename:  "deploy.sh"
 		}
-
-		image: _build.output
 
 		always: true
 		env: {

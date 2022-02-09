@@ -62,7 +62,7 @@ dagger.#Plan & {
 				config: build.config
 			}
 			run: docker.#Run & {
-				image: myimage
+				input: myimage
 				command: name: "ls"
 				export: files: {
 					"/dagger.txt": _ & {
@@ -78,13 +78,13 @@ dagger.#Plan & {
 				}
 			}
 			verify_cmd_is_run: docker.#Run & {
-				image: myimage
+				input: myimage
 				export: files: "/dagger.txt": _ & {
 					contents: "hello from dagger"
 				}
 			}
 			verify_env_is_overridden: docker.#Run & {
-				image: myimage
+				input: myimage
 				export: files: "/dagger.txt": _ & {
 					contents: "hello from europa"
 				}
@@ -92,7 +92,7 @@ dagger.#Plan & {
 			}
 
 			verify_working_directory: docker.#Run & {
-				image: myimage
+				input: myimage
 				command: {
 					name: "sh"
 					flags: "-c": #"""
@@ -104,7 +104,7 @@ dagger.#Plan & {
 				}
 			}
 			verify_working_directory_is_overridden: docker.#Run & {
-				image:   myimage
+				input:   myimage
 				workdir: "/"
 				command: {
 					name: "sh"

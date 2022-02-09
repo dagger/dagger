@@ -25,7 +25,7 @@ dagger.#Plan & {
 			}
 
 			run: bash.#Run & {
-				image: _image
+				input: _image
 				export: files: "/out.txt": _
 				script: {
 					directory: dir
@@ -38,7 +38,7 @@ dagger.#Plan & {
 		// Run a script from string
 		runString: {
 			run: bash.#Run & {
-				image: _image
+				input: _image
 				export: files: "/output.txt": _
 				script: contents: "echo 'Hello, inlined world!' > /output.txt"
 			}
