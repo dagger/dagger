@@ -3,7 +3,6 @@ setup() {
 
     common_setup
 }
-
-@test "netlify.#Deploy" {
-    dagger up ./netlify-test.cue
+@test "alpine" {
+    dagger up
 }

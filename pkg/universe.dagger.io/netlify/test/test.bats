@@ -4,7 +4,6 @@ setup() {
     common_setup
 }
 
-@test "bash.#Run" {
-    dagger up ./run-simple
+@test "netlify" {
+    dagger up
 }
-
