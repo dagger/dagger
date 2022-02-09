@@ -9,16 +9,8 @@ import (
 
 // Run a command in a container
 #Run: {
-	_image: #Image
-
-	{
-		image:  #Image
-		_image: image
-	} | {
-		// For compatibility with #Build
-		input:  #Image
-		_image: input
-	}
+	// Docker image to execute
+	input: #Image
 
 	always: bool | *false
 
@@ -113,12 +105,12 @@ import (
 	// For compatibility with #Build
 	output: #Image & {
 		rootfs: _exec.output
-		config: _image.config
+		config: input.config
 	}
 
 	// Actually execute the command
 	_exec: engine.#Exec & {
-		input:    _image.rootfs
+		"input":  input.rootfs
 		"always": always
 		"mounts": mounts
 
@@ -127,29 +119,29 @@ import (
 		}
 		if command == _|_ {
 			args: list.Concat([
-				if _image.config.entrypoint != _|_ {
-					_image.config.entrypoint
+				if input.config.entrypoint != _|_ {
+					input.config.entrypoint
 				},
-				if _image.config.cmd != _|_ {
-					_image.config.cmd
+				if input.config.cmd != _|_ {
+					input.config.cmd
 				},
 			])
 		}
 		"env": env
-		if _image.config.env != _|_ {
-			for key, val in _image.config.env {
+		if input.config.env != _|_ {
+			for key, val in input.config.env {
 				if env[key] == _|_ {
 					env: "\(key)": val
 				}
 			}
 		}
 		"workdir": workdir
-		if workdir == _|_ && _image.config.workdir != _|_ {
-			workdir: _image.config.workdir
+		if workdir == _|_ && input.config.workdir != _|_ {
+			workdir: input.config.workdir
 		}
 		"user": user
-		if user == _|_ && _image.config.user != _|_ {
-			user: _image.config.user
+		if user == _|_ && input.config.user != _|_ {
+			user: input.config.user
 		}
 	}
 }

@@ -34,7 +34,7 @@ dagger.#Plan & {
 			}
 
 			check: docker.#Run & {
-				image: build.output
+				input: build.output
 				command: {
 					name: "sh"
 					flags: "-c": """
