@@ -9,12 +9,13 @@ import (
 
 dagger.#Plan & {
 	inputs: directories: {
-		testdata: path:  "./testdata"
-		testdata2: path: "./testdata2"
+		testdata: path:  "./data/foo"
+		testdata2: path: "./data/bar"
 	}
 
 	actions: tests: {
 
+		// Run yarn.#Build
 		simple: {
 			build: yarn.#Build & {
 				source: inputs.directories.testdata.contents

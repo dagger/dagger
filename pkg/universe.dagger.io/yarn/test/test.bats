@@ -4,6 +4,6 @@ setup() {
     common_setup
 }
 
-@test "yarn.#Build" {
-    dagger up ./yarn-test.cue
+@test "yarn" {
+    dagger up
 }
