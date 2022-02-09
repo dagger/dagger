@@ -8,7 +8,7 @@ import (
 	"universe.dagger.io/yarn"
 )
 
-dagger.#DAG & {
+dagger.#Plan & {
 	// Build the app with yarn
 	actions: build: yarn.#Build
 
