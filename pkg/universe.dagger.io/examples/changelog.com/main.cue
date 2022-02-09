@@ -55,10 +55,10 @@ dagger.#Plan & {
 			}
 
 			// Assemble base image
-			_pull: docker.#Pull & {
+			base: docker.#Pull & {
 				source: inputs.params.app.image
 			}
-			image: _pull.output
+			image: base.output
 
 			// Download Elixir dependencies
 			deps: mix.#Get & {

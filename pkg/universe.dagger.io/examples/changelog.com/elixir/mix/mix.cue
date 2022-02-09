@@ -16,7 +16,7 @@ import (
 	}
 	container: command: {
 		name: "sh"
-		flags: "-c": "mix do deps.compile, compile"
+		flags: "-c": "mix do deps.get"
 	}
 }
 
