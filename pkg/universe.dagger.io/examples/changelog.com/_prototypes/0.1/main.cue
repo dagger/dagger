@@ -40,7 +40,7 @@ test_db_container_name: "changelog_test_postgres"
 //    - caching is buildkit layers
 //
 // 3. Open Telemetry integration out-of-the-box
-//    - visualize all steps in Jaeger UI
+//    - visualise all steps in Jaeger UI
 
 // PIPELINE OVERVIEW ###########################################################
 //
