@@ -4,18 +4,8 @@
   environment = { NODE_VERSION = "16.13.1" }
 
 [context.production]
-  # Do not build the site if there's no site-related changes since the last
-  # commit.
-  # This assumes PRs to `main` only contain merge commits, so it's safe to
-  # compare the current commit to the previous.
-  # We can't use `$CACHED_COMMIT_REF` because that points to the PR preview
-  # that was built before merging.
-  ignore = "git diff --quiet HEAD^ HEAD -- . ../docs/"
 
 [context.deploy-preview]
-  # Do not build the site if there's no site-related changes since the last
-  # deploy.
-  ignore = "git diff --quiet $COMMIT_REF $CACHED_COMMIT_REF -- ./ ../docs/"
   command = "yarn build:withoutAuth"
 
 [[redirects]]
