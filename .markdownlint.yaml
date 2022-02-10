@@ -1,7 +1,7 @@
 # Default state for all rules
 default: true
 
-# MD013/line-length - Line length
+# MD013/line-length - Allow long lines
 MD013: false
 
 # MD033 - Inline HTML. Needed for tabs in docusaurus

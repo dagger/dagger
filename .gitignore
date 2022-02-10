@@ -37,3 +37,6 @@ bin/
 
 # Local environment variables
 .env
+
+# Local configuration
+.config
