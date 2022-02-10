@@ -27,8 +27,8 @@ on:
       - '.github/workflows/lint.yml'
 
 jobs:
-  everything:
-    name: Everything
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: "Check out"

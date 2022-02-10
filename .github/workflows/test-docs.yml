@@ -19,8 +19,8 @@ on:
       - '.github/workflows/test-docs.yml'
 
 jobs:
-  docs:
-    name: Docs
+  test-docs:
+    name: "Test Docs"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

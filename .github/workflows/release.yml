@@ -9,7 +9,8 @@ on:
     - v*
 
 jobs:
-  goreleaser:
+  release:
+    name: "Release"
     runs-on: ubuntu-latest
     defaults:
       run:
