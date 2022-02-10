@@ -19,8 +19,8 @@ on:
       - '.github/workflows/test-unit.yml'
 
 jobs:
-  unit:
-    name: Unit
+  unit-tests:
+    name: "Unit Tests"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

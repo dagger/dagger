@@ -1,11 +1,8 @@
-name: Website
+# TODO: https://github.com/dagger/dagger.io/issues/45
+name: "Test Website"
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "website/**"
-  pull_request:
     branches: [main]
     paths:
       - "website/**"
@@ -14,8 +11,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  website:
-    name: Website
+  test-website:
+    name: "Test Website"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

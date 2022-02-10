@@ -25,8 +25,8 @@ on:
       - '.github/workflows/test-integration.yml'
 
 jobs:
-  integration:
-    name: Integration
+  test-integration:
+    name: "Integration Tests"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

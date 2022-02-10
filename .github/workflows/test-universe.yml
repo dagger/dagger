@@ -25,8 +25,8 @@ on:
       - '.github/workflows/test-universe.yml'
 
 jobs:
-  universe:
-    name: Universe
+  universe-tests:
+    name: "Universe Tests"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -85,8 +85,8 @@ jobs:
         run: |
           make universe-test
 
-  universe-europa:
-    name: "Universe - Europa"
+  universe-europa-tests:
+    name: "Universe Tests - Europa"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
