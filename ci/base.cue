@@ -5,6 +5,7 @@ import (
 )
 
 let GoVersion = "1.17"
+let GolangCILintVersion = "1.44.0"
 
 // Base container images used for the CI
 images: {
@@ -28,6 +29,16 @@ images: {
 						}
 					}
 				}
+			},
+		]
+	}
+
+	// base image for the Go linter
+	// https://golangci-lint.run/usage/install/#docker
+	goLinter: docker.#Build & {
+		steps: [
+			docker.#Pull & {
+				source: "index.docker.io/golangci/golangci-lint:v\(GolangCILintVersion)"
 			},
 		]
 	}
