@@ -1,6 +1,11 @@
 # Default state for all rules
 default: true
 
+# MD001/heading-increment - Do not require h1 -> h2 transitions,
+# allow headings with better proportions.
+# h2 is too large, h3 is just right so we use h1 -> h3 in places.
+MD001: false
+
 # MD013/line-length - Allow long lines
 MD013: false
 
