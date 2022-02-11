@@ -1,12 +1,13 @@
-package yarn
+package netlify
 
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/engine"
 
+	"universe.dagger.io/docker"
 	"universe.dagger.io/netlify"
-	"universe.dagger.io/alpine"
-	"universe.dagger.io/bash"
+
+	"universe.dagger.io/netlify/test/testutils"
 )
 
 dagger.#Plan & {
@@ -16,12 +17,15 @@ dagger.#Plan & {
 	}
 
 	actions: tests: {
-		// Test: netlify.#Deploy correctly receives API token
-		receiveToken: {
+
+		// Configuration common to all tests
+		common: {
 			testSecrets: dagger.#DecodeSecret & {
 				input:  inputs.secrets.test.contents
 				format: "yaml"
 			}
+
+			token: testSecrets.output.netlifyToken.contents
 
 			marker: "hello world"
 
@@ -30,29 +34,66 @@ dagger.#Plan & {
 				path:     "index.html"
 				contents: marker
 			}
+		}
 
+		// Test: deploy a simple site to Netlify
+		simple: {
 			// Deploy to netlify
 			deploy: netlify.#Deploy & {
-				team:  "blocklayer"
-				token: testSecrets.output.netlifyToken.contents
-
+				team:     "blocklayer"
+				token:    common.token
 				site:     "dagger-test"
-				contents: data.output
+				contents: common.data.output
 			}
 
-			image: alpine.#Build & {
-				packages: {
-					bash: {}
-					curl: {}
-				}
+			verify: testutils.#AssertURL & {
+				url:      deploy.deployUrl
+				contents: common.marker
+			}
+		}
+
+		// Test: deploy to Netlify with a custom image
+		swapImage: {
+			// Deploy to netlify
+			deploy: netlify.#Deploy & {
+				team:     "blocklayer"
+				token:    common.token
+				site:     "dagger-test"
+				contents: common.data.output
+				container: input: customImage.output
 			}
 
-			// Check if the website was deployed
-			verify: bash.#Run & {
-				input: image.output
-				script: contents: #"""
-				  test "$(curl \#(deploy.deployUrl))" = "\#(marker)"
-				  """#
+			customImage: docker.#Build & {
+				steps: [
+					docker.#Pull & {
+						source: "alpine"
+					},
+					docker.#Run & {
+						command: {
+							name: "apk"
+							args: [
+								"add",
+								"--no-cache",
+								"yarn",
+								"bash",
+								"rsync",
+								"curl",
+								"jq",
+							]
+						}
+					},
+					docker.#Run & {
+						command: {
+							name: "yarn"
+							args: ["global", "add", "netlify-cli"]
+						}
+					},
+				]
+			}
+
+			verify: testutils.#AssertURL & {
+				url:      deploy.deployUrl
+				contents: common.marker
 			}
 		}
 	}
