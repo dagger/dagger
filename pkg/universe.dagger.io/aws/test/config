@@ -1,0 +1,3 @@
+[profile ci]
+credential_source = Environment
+role_arn = arn:aws:iam::125635003186:role/dagger-ci
