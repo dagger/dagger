@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	// "dagger.io/dagger"
 	"dagger.io/dagger/engine"
 
@@ -10,6 +12,10 @@ import (
 engine.#Plan & {
 	inputs: {
 		params: {
+			// FIXME: until we support a better way
+			os: string | *"darwin"
+			arch: string | *"amd64"
+
 			// FIXME: implement condition actions using params
 		}
 
@@ -32,19 +38,20 @@ engine.#Plan & {
 		build: bash.#Run & {
 			input: images.goBuilder.output
 
+			env: {
+				GOMODCACHE: mounts["go mod cache"].dest
+				GOOS: strings.ToLower(inputs.params.os)
+				GOARCH: strings.ToLower(inputs.params.arch)
+			}
+
 			script: contents: #"""
-				export GOMODCACHE=/gomodcache
 				mkdir -p /build
 				git_revision=$(git rev-parse --short HEAD)
-				GO_ENABLED=0 \
+				CGO_ENABLED=0 \
 					go build -v -o /build/dagger \
 					-ldflags '-s -w -X go.dagger.io/dagger/version.Revision='${git_revision} \
 					./cmd/dagger/
 				"""#
-
-			export: directories: "/build": _
-			workdir: "/usr/src/dagger"
-			env: GOMODCACHE: "/gomodcache"
 
 			mounts: {
 				"dagger source code": {
@@ -59,6 +66,7 @@ engine.#Plan & {
 			}
 
 			workdir: mounts["dagger source code"].dest
+			export: directories: "/build": _
 		}
 	}
 }
