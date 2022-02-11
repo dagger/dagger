@@ -25,6 +25,7 @@ import Logo from '@theme/Logo';
 import IconMenu from '@theme/IconMenu';
 import IconClose from '@theme/IconClose';
 import styles from './styles.module.css'; // retrocompatible with v1
+import DocSwitcher from '../../components/DocSwitcher';
 
 const DefaultNavItemPosition = 'right';
 
@@ -245,30 +246,31 @@ function Navbar() {
             imageClassName="navbar__logo"
             titleClassName="navbar__title"
           />
+          <DocSwitcher />
           {leftItems.map((item, i) => (
             <NavbarItem {...item} key={i} />
           ))}
         </div>
         <div className="navbar__items navbar__items--right">
           {!hasSearchNavbarItem && <SearchBar />}
-            {rightItems.map((item, i) => {
-              if(item.type === "search") {
-                return (
-                  <React.Fragment key={i}>
-                    <NavbarItem {...item} />
-                    {!colorModeToggle.disabled && (
-                      <Toggle
-                        className={styles.toggle}
-                        checked={colorModeToggle.isDarkTheme}
-                        onChange={colorModeToggle.toggle}
-                      />
-                    )}
-                  </React.Fragment>
-                )
-              } else {
-                return <NavbarItem {...item} key={i} />
-              }
-            })}
+          {rightItems.map((item, i) => {
+            if (item.type === 'search') {
+              return (
+                <React.Fragment key={i}>
+                  <NavbarItem {...item} />
+                  {!colorModeToggle.disabled && (
+                    <Toggle
+                      className={styles.toggle}
+                      checked={colorModeToggle.isDarkTheme}
+                      onChange={colorModeToggle.toggle}
+                    />
+                  )}
+                </React.Fragment>
+              );
+            } else {
+              return <NavbarItem {...item} key={i} />;
+            }
+          })}
         </div>
       </div>
 
