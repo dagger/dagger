@@ -99,11 +99,11 @@ import (
 	}
 
 	// URL of the deployed site
-	url: container.export.files."/netlify/url".contents
+	url: container.export.files."/netlify/url"
 
 	// URL of the latest deployment
-	deployUrl: container.export.files."/netlify/deployUrl".contents
+	deployUrl: container.export.files."/netlify/deployUrl"
 
 	// URL for logs of the latest deployment
-	logsUrl: container.export.files."/netlify/logsUrl".contents
+	logsUrl: container.export.files."/netlify/logsUrl"
 }

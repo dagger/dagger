@@ -32,7 +32,7 @@ dagger.#Plan & {
 					filename:  "hello.sh"
 				}
 			}
-			output: run.export.files."/out.txt".contents & "Hello, world\n"
+			output: run.export.files."/out.txt" & "Hello, world\n"
 		}
 
 		// Run a script from string
@@ -42,7 +42,7 @@ dagger.#Plan & {
 				export: files: "/output.txt": _
 				script: contents: "echo 'Hello, inlined world!' > /output.txt"
 			}
-			output: run.export.files."/output.txt".contents & "Hello, inlined world!\n"
+			output: run.export.files."/output.txt" & "Hello, inlined world!\n"
 		}
 
 	}

@@ -84,19 +84,36 @@ import (
 
 		export: {
 			rootfs: dagger.#FS & _exec.output
-			files: [path=string]: {
-				contents: string & _read.contents
-				_read:    dagger.#ReadFile & {
-					input:  _exec.output
-					"path": path
+			files: [path=string]: string
+			_files: {
+				for path, _ in files {
+					"\(path)": {
+						contents: string & _read.contents
+						_read:    dagger.#ReadFile & {
+							input:  _exec.output
+							"path": path
+						}
+					}
 				}
 			}
-			directories: [path=string]: {
-				contents: dagger.#FS & _subdir.output
-				_subdir:  dagger.#Subdir & {
-					input:  _exec.output
-					"path": path
+			for path, output in _files {
+				files: "\(path)": output.contents
+			}
+
+			directories: [path=string]: dagger.#FS
+			_directories: {
+				for path, _ in directories {
+					"\(path)": {
+						contents: dagger.#FS & _subdir.output
+						_subdir:  dagger.#Subdir & {
+							input:  _exec.output
+							"path": path
+						}
+					}
 				}
+			}
+			for path, output in _directories {
+				directories: "\(path)": output.contents
 			}
 		}
 	}
