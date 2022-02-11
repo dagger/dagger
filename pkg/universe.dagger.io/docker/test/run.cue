@@ -32,8 +32,8 @@ dagger.#Plan & {
 		}
 
 		// Test: export a file
-		exportFile: {
-			image: _image
+		exportFile: docker.#Run & {
+			input: _image
 			command: {
 				name: "sh"
 				flags: "-c": #"""
