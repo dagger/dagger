@@ -5,78 +5,88 @@ displayed_sidebar: europaSidebar
 
 # Go on Docker Swarm
 
-> TODO: particubes.com screenshot
+![particubes.com](/img/use-cases/particubes.com.png)
 
-[Particubes](https://particubes.com) is a platform dedicated to voxel games, which are games made out of little cubes (like Minecraft).
+[Particubes](https://particubes.com) is a platform dedicated to voxel games, which are games made out of little cubes, like Minecraft.
 The team consists of 10 developers that like to keep things simple.
+They write primarily Go & Lua, push to GitHub and use GitHub Actions for automation.
+The production setup is a multi-node Docker Swarm cluster running on AWS.
 
-Particubes chose Dagger because it was the easiest way to integrate with their Docker Swarm production setup.
-Every commit to the main branch gets deployed straight to [particubes.com](https://particubes.com) with Dagger running in GitHub Actions.
-The Dagger Universe made it very easy for to build this pipeline.
-`docker.#Build`, `docker.#Push` and `docker.#Command` was all that it took.
+The Particubes team chose Dagger for continuous deployment because it was the easiest way of integrating GitHub with Docker Swarm.
+Every commit to the main branch goes straight to [docs.particubes.com](https://docs.particubes.com) via a Dagger pipeline that runs in GitHub Actions.
+`universe.dagger.io/docker` made building this pipeline trivial:
 
 :::danger
-TODO: this config is pre-Europa, the next step is to convert it to Europa.
+TODO: this config is meta Europa, meaning that it was not tested. Next steps:
+- implement it in GitHub Actions and ensure that it all works as expected
+- update this meta config to the final version that we know works
 :::
-
-This is the entire Particubes Dagger plan:
 
 ```cue
 package particubes
 
 import (
-  "alpha.dagger.io/dagger"
-  "alpha.dagger.io/docker"
+  "dagger.io/dagger"
+  "universe.dagger.io/docker"
 )
 
-repo: dagger.#Input & {dagger.#Artifact}
-
-swarmSSH: {
-  user: dagger.#Input & {*"ubuntu" | string}
-  host: dagger.#Input & {string}
-  key: dagger.#Input & {dagger.#Secret}
-}
-
-docs: {
-  containerImageName: dagger.#Input & {string}
-  containerImageTag: dagger.#Input & {*"latest" | string}
-
-  // TODO: write the GIT_SHA into a static /git_sha.txt
-  buildContainerImage: docker.#Build & {
-    source: repo
-  }
-
-  // TODO:
-  // - [ ] bootContainer
-  // - [ ] checkHttpResponse
-  // - [ ] stopContainer
-
-  publishContainerImage: docker.#Push & {
-    "target": "\(containerImageName):\(containerImageTag)"
-    source: buildContainerImage
-  }
-
-  deployContainerImage: docker.#Command & {
-    ssh: swarmSSH
-    command: "docker service update --image registry.particubes.com/lua-docs:$IMAGE_REF lua-docs"
-    env: {
-      "IMAGE_REF": publishContainerImage.ref
+dagger.#Plan & {
+  inputs: {
+    directories: src: path: "./lua-docs"
+    secrets: docs: command: {
+      name: "sops"
+      args: ["-d", "../../lua-docs/sops_secrets.yaml"]
+    }
+    params: {
+      image: ref: docker.#Ref | *"registry.particubes.com/lua-docs:latest"
     }
   }
 
-  // TODO: // check that the expected GIT_SHA is running in production
-  // checkHttpResponse /git_sha.txt
+  actions: {
+    docs: {
+      // TODO: write GITHUB_SHA into a static /github_sha.txt
+      build: docker.#Dockerfile & {
+        source: inputs.directories.src.contents
+      }
+
+      test: {
+        // TODO:
+        // - run container
+        // - check http response code
+        // - verify /github_sha.txt value matches GITHUB_SHA
+        // - stop container
+      }
+
+      push: docker.#Push {
+        dest: inputs.params.image.ref
+        image: build.output
+      }
+
+      docsSecrets: dagger.#DecodeSecret & {
+        input: inputs.secrets.docs.contents
+        format: "yaml"
+      }
+      deploy: {
+        // TODO:
+        // - run this command in the remote Docker Swarm
+        // - secrests are ready in docsSecrets, e.g. docsSecrets.output.swarmKey.contents
+      }
+
+      verifyDeploy: {
+        // TODO:
+        // - check http response code
+        // - verify /github_sha.txt value matches GITHUB_SHA
+      }
+    }
+  }
 }
 ```
 
-You can find [the original pipeline](https://github.com/voxowl/particubes/blob/b698777465c02462296de37087dd3c341c29df92/lua-docs/docs.cue) in the Particubes GitHub repository.
-
-Anyone on the Particubes team can run this pipeline locally using `dagger up`.
-It also runs in GitHub Actions on every commit using the following config:
+This is the GitHub Actions workflow config that invokes `dagger`, which in turn runs the above pipeline:
 
 ```yaml
 name: Dagger/docs.particubes.com
-  
+
 on:
   push:
     branches: [ master ]
@@ -89,13 +99,27 @@ jobs:
         uses: actions/checkout@v2
         with:
           lfs: true
+      // TODO: install sops
       - name: Dagger
         uses: dagger/dagger-action@v1
         with:
           age-key: ${{ secrets.DAGGER_AGE_KEY }}
-          args: up -e docs
+          args: up
 ```
 
-### What comes next for particubes.com?
+Since this is a Dagger pipeline, anyone on the team can run it locally with a single command:
 
-We don't know but we would like find out 😀
+```console
+dagger up
+```
+
+This is the first step that enabled the Particubes team to have the same CI/CD experience everywhere.
+
+We don't know what comes next for particubes.com, but we would like find out. Some ideas:
+- deploy particubes.com with Dagger
+- manage the Docker Swarm cluster with Dagger
+- contribute `universe.dagger.io/particubes` package
+
+:::tip
+The latest version of this pipeline can be found at [github.com/voxowl/particubes/lua-docs/docs.cue](https://github.com/voxowl/particubes/blob/b698777465c02462296de37087dd3c341c29df92/lua-docs/docs.cue)
+:::
