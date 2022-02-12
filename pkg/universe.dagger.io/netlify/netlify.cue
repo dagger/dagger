@@ -59,7 +59,7 @@ import (
 
 	// Run the netlify client in a container
 	container: bash.#Run & {
-		input: _build.output
+		input: *_build.output | docker.#Image
 		script: {
 			_load: engine.#Source & {
 				path: "."
