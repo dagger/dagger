@@ -9,6 +9,7 @@ import (
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
+	"universe.dagger.io/docker"
 )
 
 // Build a Yarn package
@@ -59,7 +60,7 @@ import (
 
 	// Run yarn in a docker container
 	container: bash.#Run & {
-		input: _buildImage.output
+		input: *_buildImage.output | docker.#Image
 
 		// FIXME: move shell script to its own file
 		script: contents: #"""
