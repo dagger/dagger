@@ -18,6 +18,7 @@ Every commit to the main branch goes straight to [docs.particubes.com](https://d
 
 :::danger
 TODO: this config is meta Europa, meaning that it was not tested. Next steps:
+
 - implement it in GitHub Actions and ensure that it all works as expected
 - update this meta config to the final version that we know works
 :::
@@ -116,6 +117,7 @@ dagger up
 This is the first step that enabled the Particubes team to have the same CI/CD experience everywhere.
 
 We don't know what comes next for particubes.com, but we would like find out. Some ideas:
+
 - deploy particubes.com with Dagger
 - manage the Docker Swarm cluster with Dagger
 - contribute `universe.dagger.io/particubes` package
