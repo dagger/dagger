@@ -29,14 +29,17 @@ type Config struct {
 	Args   []string
 	With   []string
 	Target string
+	Vendor bool
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
-	// FIXME: vendoring path
-	if err := pkg.Vendor(ctx, ""); err != nil {
-		return nil, err
+	if cfg.Vendor {
+		// FIXME: vendoring path
+		if err := pkg.Vendor(ctx, ""); err != nil {
+			return nil, err
+		}
 	}
 
 	v, err := compiler.Build("", nil, cfg.Args...)
