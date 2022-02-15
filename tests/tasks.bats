@@ -39,6 +39,7 @@ setup() {
     cd "$TESTDIR"/tasks/exec
     "$DAGGER" --europa up ./args.cue
     "$DAGGER" --europa up ./env.cue
+    "$DAGGER" --europa up ./env_secret.cue
     "$DAGGER" --europa up ./hosts.cue
 
     "$DAGGER" --europa up ./mount_cache.cue

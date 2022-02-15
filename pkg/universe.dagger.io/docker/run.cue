@@ -55,7 +55,7 @@ import (
 
 	// Environment variables
 	// Example: {"DEBUG": "1"}
-	env: [string]: string
+	env: [string]: string | engine.#Secret
 
 	// Working directory for the command
 	// Example: "/src"
