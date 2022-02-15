@@ -1,10 +1,7 @@
 package engine
 
-// A deployment plan executed by `dagger up`
-#Plan: #DAG
-
 // A special kind of program which `dagger` can execute.
-#DAG: {
+#Plan: {
 	// Receive inputs from the client
 	inputs: {
 		// Receive directories
