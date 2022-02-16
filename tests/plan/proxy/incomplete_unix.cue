@@ -1,12 +1,11 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/alpine"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	// should fail because incomplete value
 	proxy: dockerSocket: unix: string
 

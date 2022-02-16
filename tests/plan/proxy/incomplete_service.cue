@@ -1,12 +1,13 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
+
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/alpine"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	// should fail due to incomplete service
 	proxy: dockerSocket: {}
 

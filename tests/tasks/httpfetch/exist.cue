@@ -1,9 +1,11 @@
 package main
 
-import "dagger.io/dagger/engine"
+import (
+	"dagger.io/dagger"
+)
 
-engine.#Plan & {
-	actions: fetch: engine.#HTTPFetch & {
+dagger.#Plan & {
+	actions: fetch: dagger.#HTTPFetch & {
 		source: "https://releases.dagger.io/dagger/latest_version"
 		dest:   "/latest.html"
 	}

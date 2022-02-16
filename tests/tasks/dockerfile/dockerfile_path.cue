@@ -1,19 +1,19 @@
 package testing
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	inputs: directories: testdata: path: "./testdata"
 
 	actions: {
-		build: engine.#Dockerfile & {
+		build: dagger.#Dockerfile & {
 			source: inputs.directories.testdata.contents
 			dockerfile: path: "./dockerfilepath/Dockerfile.custom"
 		}
 
-		verify: engine.#Exec & {
+		verify: dagger.#Exec & {
 			input: build.output
 			args: ["sh", "-c", "test $(cat /test) = dockerfilePath"]
 		}

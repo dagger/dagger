@@ -3,7 +3,7 @@ package dagger
 
 import (
 	"alpha.dagger.io/dagger/op"
-	"dagger.io/dagger/engine"
+	dagger_0_2 "dagger.io/dagger"
 )
 
 // An artifact such as source code checkout, container image, binary archive...
@@ -16,7 +16,7 @@ import (
 }
 
 // Dagger stream. Can be mounted as a UNIX socket.
-#Stream: engine.#Service
+#Stream: dagger_0_2.#Service
 
 // A reference to an external secret, for example:
 //  - A password
@@ -24,7 +24,7 @@ import (
 //  - An API token
 // Secrets are never merged in the Cue tree. They can only be used
 // by a special filesystem mount designed to minimize leak risk.
-#Secret: engine.#Secret
+#Secret: dagger_0_2.#Secret
 
 #Input: {
 	@dagger(input)

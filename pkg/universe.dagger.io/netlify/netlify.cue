@@ -4,7 +4,6 @@ package netlify
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
@@ -61,7 +60,7 @@ import (
 	container: bash.#Run & {
 		input: *_build.output | docker.#Image
 		script: {
-			_load: engine.#Source & {
+			_load: dagger.#Source & {
 				path: "."
 				include: ["*.sh"]
 			}

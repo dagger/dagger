@@ -2,7 +2,6 @@ package mix
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/docker"
 )
@@ -68,7 +67,7 @@ import (
 		}
 		if cache.deps != null {
 			mounts: deps: {
-				contents: engine.#CacheDir & {
+				contents: dagger.#CacheDir & {
 					id:          "\(app.name)_deps"
 					concurrency: cache.deps
 				}
@@ -77,7 +76,7 @@ import (
 		}
 		if cache.build != null {
 			mounts: buildCache: {
-				contents: engine.#CacheDir & {
+				contents: dagger.#CacheDir & {
 					id:          "\(app.name)_build_\(env)"
 					concurrency: cache.build
 				}

@@ -1,7 +1,9 @@
 package main
 
-import "dagger.io/dagger/engine"
+import (
+	"dagger.io/dagger"
+)
 
-engine.#Plan & {
-	actions: invalid: engine.#GitPull & {}
+dagger.#Plan & {
+	actions: invalid: dagger.#GitPull & {}
 }

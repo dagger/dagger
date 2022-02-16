@@ -1,10 +1,12 @@
 package main
 
-import "dagger.io/dagger/engine"
+import (
+	"dagger.io/dagger"
+)
 
-engine.#Plan & {
-	actions: data: engine.#WriteFile & {
-		input:       engine.#Scratch
+dagger.#Plan & {
+	actions: data: dagger.#WriteFile & {
+		input:       dagger.#Scratch
 		path:        "/test"
 		permissions: 0o600
 		contents:    "foobar"

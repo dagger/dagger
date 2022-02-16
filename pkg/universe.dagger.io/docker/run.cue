@@ -4,7 +4,6 @@ import (
 	"list"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 )
 
 // Run a command in a container
@@ -15,7 +14,7 @@ import (
 	always: bool | *false
 
 	// Filesystem mounts
-	mounts: [name=string]: engine.#Mount
+	mounts: [name=string]: dagger.#Mount
 
 	// Expose network ports
 	// FIXME: investigate feasibility
@@ -55,7 +54,7 @@ import (
 
 	// Environment variables
 	// Example: {"DEBUG": "1"}
-	env: [string]: string | engine.#Secret
+	env: [string]: string | dagger.#Secret
 
 	// Working directory for the command
 	// Example: "/src"
@@ -87,7 +86,7 @@ import (
 			rootfs: dagger.#FS & _exec.output
 			files: [path=string]: {
 				contents: string & _read.contents
-				_read:    engine.#ReadFile & {
+				_read:    dagger.#ReadFile & {
 					input:  _exec.output
 					"path": path
 				}
@@ -109,7 +108,7 @@ import (
 	}
 
 	// Actually execute the command
-	_exec: engine.#Exec & {
+	_exec: dagger.#Exec & {
 		"input":  input.rootfs
 		"always": always
 		"mounts": mounts

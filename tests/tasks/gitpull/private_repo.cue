@@ -2,10 +2,9 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	inputs: secrets: sops: command: {
 		name: "sops"
 		args: ["-d", "../../secrets_sops.yaml"]
@@ -13,7 +12,7 @@ engine.#Plan & {
 
 	actions: {
 
-		alpine: engine.#Pull & {
+		alpine: dagger.#Pull & {
 			source: "alpine:3.15.0"
 		}
 
@@ -22,7 +21,7 @@ engine.#Plan & {
 			input:  inputs.secrets.sops.contents
 		}
 
-		testRepo: engine.#GitPull & {
+		testRepo: dagger.#GitPull & {
 			remote: "https://github.com/dagger/dagger.git"
 			ref:    "main"
 			auth: {
@@ -31,7 +30,7 @@ engine.#Plan & {
 			}
 		}
 
-		testContent: engine.#Exec & {
+		testContent: dagger.#Exec & {
 			input:  alpine.output
 			always: true
 			args: ["ls", "-l", "/repo/README.md"]

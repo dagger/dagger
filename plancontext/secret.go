@@ -13,7 +13,7 @@ var (
 	secretIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("secret"),
-		cue.Hid("_id", pkg.EnginePackage),
+		cue.Hid("_id", pkg.DaggerPackage),
 	)
 )
 

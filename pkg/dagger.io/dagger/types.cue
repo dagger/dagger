@@ -1,16 +1,19 @@
 package dagger
 
-import (
-	"dagger.io/dagger/engine"
-)
-
 // A reference to a filesystem tree.
 // For example:
 //  - The root filesystem of a container
 //  - A source code repository
 //  - A directory containing binary artifacts
 // Rule of thumb: if it fits in a tar archive, it fits in a #FS.
-#FS: engine.#FS
+#FS: {
+	$dagger: fs: _id: string | null
+}
+
+// An empty directory
+#Scratch: #FS & {
+	$dagger: fs: _id: null
+}
 
 // A reference to an external secret, for example:
 //  - A password
@@ -18,13 +21,17 @@ import (
 //  - An API token
 // Secrets are never merged in the Cue tree. They can only be used
 // by a special filesystem mount designed to minimize leak risk.
-#Secret: engine.#Secret
+#Secret: {
+	$dagger: secret: _id: string
+}
 
 // A reference to a network service endpoint, for example:
 //  - A TCP or UDP port
 //  - A unix socket
 //  - An HTTPS endpoint
-#Service: engine.#Service
+#Service: {
+	$dagger: service: _id: string
+}
 
 // A network service address
-#Address: engine.#Address
+#Address: string & =~"^(tcp://|unix://|udp://).*"

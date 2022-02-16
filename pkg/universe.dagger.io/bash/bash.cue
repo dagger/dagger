@@ -3,7 +3,6 @@ package bash
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/docker"
 )
@@ -27,8 +26,8 @@ import (
 		contents: string
 
 		_filename: "run.sh"
-		_write:    engine.#WriteFile & {
-			input:      engine.#Scratch
+		_write:    dagger.#WriteFile & {
+			input:      dagger.#Scratch
 			path:       _filename
 			"contents": contents
 		}

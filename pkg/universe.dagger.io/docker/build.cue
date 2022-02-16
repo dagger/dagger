@@ -2,7 +2,6 @@ package docker
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 )
 
 // Modular build API for Docker containers
@@ -47,7 +46,7 @@ import (
 	dest:     string | *"/"
 
 	// Execute copy operation
-	_copy: engine.#Copy & {
+	_copy: dagger.#Copy & {
 		"input":    input.rootfs
 		"contents": contents
 		"source":   source

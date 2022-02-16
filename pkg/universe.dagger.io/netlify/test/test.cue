@@ -2,7 +2,6 @@ package netlify
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/docker"
 	"universe.dagger.io/netlify"
@@ -29,8 +28,8 @@ dagger.#Plan & {
 
 			marker: "hello world"
 
-			data: engine.#WriteFile & {
-				input:    engine.#Scratch
+			data: dagger.#WriteFile & {
+				input:    dagger.#Scratch
 				path:     "index.html"
 				contents: marker
 			}

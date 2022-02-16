@@ -1,12 +1,12 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	inputs: directories: test: path: "."
-	actions: verify: engine.#ReadFile & {
+	actions: verify: dagger.#ReadFile & {
 		input: inputs.directories.test.contents
 		path:  "test.txt"
 	} & {

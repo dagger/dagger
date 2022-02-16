@@ -1,16 +1,16 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	actions: {
-		image: engine.#Pull & {
+		image: dagger.#Pull & {
 			source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 		}
 
-		exec: engine.#Exec & {
+		exec: dagger.#Exec & {
 			input: image.output
 			args: [
 				"sh", "-c",
@@ -20,7 +20,7 @@ engine.#Plan & {
 			]
 		}
 
-		verify: engine.#Exec & {
+		verify: dagger.#Exec & {
 			input: image.output
 			mounts: fs: {
 				dest:     "/target"
@@ -35,7 +35,7 @@ engine.#Plan & {
 			]
 		}
 
-		verifyRO: engine.#Exec & {
+		verifyRO: dagger.#Exec & {
 			input: image.output
 			mounts: fs: {
 				dest:     "/target"
@@ -53,7 +53,7 @@ engine.#Plan & {
 			]
 		}
 
-		verifySource: engine.#Exec & {
+		verifySource: dagger.#Exec & {
 			input: image.output
 			mounts: fs: {
 				dest:     "/target.txt"

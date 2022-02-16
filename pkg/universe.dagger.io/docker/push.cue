@@ -2,7 +2,6 @@ package docker
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 )
 
 // Upload an image to a remote repository
@@ -22,7 +21,7 @@ import (
 	// Image to push
 	image: #Image
 
-	_push: engine.#Push & {
+	_push: dagger.#Push & {
 		"dest": dest
 		if auth != _|_ {
 			"auth": auth

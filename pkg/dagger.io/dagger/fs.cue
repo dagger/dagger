@@ -1,4 +1,4 @@
-package engine
+package dagger
 
 // Access the source directory for the current CUE package
 // This may safely be called from any package
@@ -63,9 +63,6 @@ package engine
 	output: #FS
 }
 
-// Produce an empty directory
-#Scratch: #FS & {$dagger: fs: _id: null}
-
 // Copy files from one FS tree to another
 #Copy: {
 	$dagger: task: _name: "Copy"
@@ -97,4 +94,25 @@ package engine
 	input: #FS
 	layers: [...#CopyInfo]
 	output: #FS
+}
+
+// Select a subdirectory from a filesystem tree
+#Subdir: {
+	// Input tree
+	input: #FS
+
+	// Path of the subdirectory
+	// Example: "/build"
+	path: string
+
+	// Copy action
+	_copy: #Copy & {
+		"input":  #Scratch
+		contents: input
+		source:   path
+		dest:     "/"
+	}
+
+	// Subdirectory tree
+	output: #FS & _copy.output
 }

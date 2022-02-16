@@ -1,9 +1,11 @@
 package main
 
-import "dagger.io/dagger/engine"
+import (
+	"dagger.io/dagger"
+)
 
-engine.#Plan & {
-	actions: gitPull: engine.#GitPull & {
+dagger.#Plan & {
+	actions: gitPull: dagger.#GitPull & {
 		remote: "https://github.com/blocklayerhq/acme-clothing.git"
 		ref:    "master"
 	}
