@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
@@ -77,7 +76,7 @@ import (
 		mounts: {
 			"yarn cache": {
 				dest:     "/cache/yarn"
-				contents: engine.#CacheDir & {
+				contents: dagger.#CacheDir & {
 					// FIXME: are there character limitations in cache ID?
 					id: "universe.dagger.io/yarn.#Build \(name)"
 				}

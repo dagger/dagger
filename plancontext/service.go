@@ -13,7 +13,7 @@ var (
 	serviceIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("service"),
-		cue.Hid("_id", pkg.EnginePackage),
+		cue.Hid("_id", pkg.DaggerPackage),
 	)
 )
 

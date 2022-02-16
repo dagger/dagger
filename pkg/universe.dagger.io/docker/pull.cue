@@ -2,7 +2,6 @@
 package docker
 
 import (
-	"dagger.io/dagger/engine"
 	"dagger.io/dagger"
 )
 
@@ -17,7 +16,7 @@ import (
 		secret:   dagger.#Secret
 	}
 
-	_op: engine.#Pull & {
+	_op: dagger.#Pull & {
 		"source": source
 		if auth != _|_ {
 			"auth": auth

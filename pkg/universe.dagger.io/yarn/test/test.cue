@@ -2,7 +2,6 @@ package yarn
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 
 	"universe.dagger.io/docker"
 	"universe.dagger.io/yarn"
@@ -79,7 +78,7 @@ dagger.#Plan & {
 	path:     string
 	contents: string
 
-	_read: engine.#ReadFile & {
+	_read: dagger.#ReadFile & {
 		"input": input
 		"path":  path
 	}

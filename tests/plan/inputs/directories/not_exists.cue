@@ -1,13 +1,13 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	// should fail because path does not exist locally
 	inputs: directories: test: path: "./fasdfsdfs"
-	actions: verify: engine.#ReadFile & {
+	actions: verify: dagger.#ReadFile & {
 		input: inputs.directories.test.contents
 		path:  "test.txt"
 	} & {

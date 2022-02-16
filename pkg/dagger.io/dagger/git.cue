@@ -1,4 +1,4 @@
-package engine
+package dagger
 
 // Push a directory to a git remote
 #GitPush: {

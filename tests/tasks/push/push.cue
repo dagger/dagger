@@ -3,10 +3,9 @@ package main
 import (
 	"strings"
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	inputs: secrets: sops: command: {
 		name: "sops"
 		args: ["-d", "../../secrets_sops.yaml"]
@@ -25,18 +24,18 @@ engine.#Plan & {
 		}
 
 		randomString: {
-			baseImage: engine.#Pull & {
+			baseImage: dagger.#Pull & {
 				source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 			}
 
-			image: engine.#Exec & {
+			image: dagger.#Exec & {
 				input: baseImage.output
 				args: [
 					"sh", "-c", "echo -n $RANDOM > /output.txt",
 				]
 			}
 
-			outputFile: engine.#ReadFile & {
+			outputFile: dagger.#ReadFile & {
 				input: image.output
 				path:  "/output.txt"
 			}
@@ -45,7 +44,7 @@ engine.#Plan & {
 		}
 
 		// Push image with random content
-		push: engine.#Push & {
+		push: dagger.#Push & {
 			dest:  "daggerio/ci-test:\(randomString.output)"
 			input: randomString.image.output
 			config: env: FOO: randomString.output
@@ -53,7 +52,7 @@ engine.#Plan & {
 		}
 
 		// Pull same image and check the content
-		pull: engine.#Pull & {
+		pull: dagger.#Pull & {
 			source: "daggerio/ci-test:\(randomString.output)"
 			auth:   #auth
 		} & {
@@ -63,7 +62,7 @@ engine.#Plan & {
 			config: env: FOO: randomString.output
 		}
 
-		pullOutputFile: engine.#ReadFile & {
+		pullOutputFile: dagger.#ReadFile & {
 			input: pull.output
 			path:  "/output.txt"
 		}

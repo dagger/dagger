@@ -32,7 +32,7 @@ var (
 		UniverseModule,
 	}
 
-	EnginePackage = fmt.Sprintf("%s/dagger/engine", DaggerModule)
+	DaggerPackage = fmt.Sprintf("%s/dagger", DaggerModule)
 
 	lockFilePath = "dagger.lock"
 )

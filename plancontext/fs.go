@@ -16,7 +16,7 @@ var (
 	fsIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("fs"),
-		cue.Hid("_id", pkg.EnginePackage),
+		cue.Hid("_id", pkg.DaggerPackage),
 	)
 )
 

@@ -1,22 +1,21 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
 	"dagger.io/dagger"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	actions: {
-		image: engine.#Pull & {
+		image: dagger.#Pull & {
 			source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 		}
 
-		mkdir: engine.#Mkdir & {
+		mkdir: dagger.#Mkdir & {
 			input: image.output
 			path:  "/test/foo"
 		}
 
-		writeChecker: engine.#WriteFile & {
+		writeChecker: dagger.#WriteFile & {
 			input:       mkdir.output
 			path:        "/test/foo/hello"
 			contents:    "world"
@@ -28,7 +27,7 @@ engine.#Plan & {
 			path:  "/directorynotfound"
 		}
 
-		verify: engine.#Exec & {
+		verify: dagger.#Exec & {
 			input: image.output
 			mounts: fs: {
 				dest:     "/target"

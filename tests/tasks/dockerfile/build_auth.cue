@@ -2,10 +2,9 @@ package testing
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	inputs: {
 		directories: testdata: path: "./testdata"
 		secrets: sops: command: {
@@ -20,7 +19,7 @@ engine.#Plan & {
 			input:  inputs.secrets.sops.contents
 		}
 
-		build: engine.#Dockerfile & {
+		build: dagger.#Dockerfile & {
 			source: inputs.directories.testdata.contents
 			auth: "daggerio/ci-test:private-pull": {
 				username: "daggertest"

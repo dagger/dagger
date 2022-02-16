@@ -2,7 +2,6 @@ package docker
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 	"universe.dagger.io/docker"
 )
 
@@ -13,7 +12,7 @@ dagger.#Plan & {
 		// Test: change image config with docker.#Set
 		set: {
 			image: output: docker.#Image & {
-				rootfs: engine.#Scratch
+				rootfs: dagger.#Scratch
 				config: {
 					cmd: ["/bin/sh"]
 					env: PATH: "/sbin:/bin"
@@ -44,8 +43,8 @@ dagger.#Plan & {
 
 		// Test: image config behavior is correct
 		config: {
-			build: engine.#Dockerfile & {
-				source: engine.#Scratch
+			build: dagger.#Dockerfile & {
+				source: dagger.#Scratch
 				dockerfile: contents: """
 					FROM alpine:3.15.0
 					RUN echo -n 'not hello from dagger' > /dagger.txt

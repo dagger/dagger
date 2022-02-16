@@ -1,14 +1,14 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
-engine.#Plan & {
-	actions: build: engine.#Build & {
-		source: engine.#Scratch
+dagger.#Plan & {
+	actions: build: dagger.#Build & {
+		source: dagger.#Scratch
 		dockerfile: contents: "FROM scratch"
-		// Assert that output is engine.#Scratch
-		output: engine.#Scratch
+		// Assert that output is dagger.#Scratch
+		output: dagger.#Scratch
 	}
 }

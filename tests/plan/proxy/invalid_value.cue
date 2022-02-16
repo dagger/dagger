@@ -1,12 +1,11 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
 	"alpha.dagger.io/dagger/op"
 	"alpha.dagger.io/alpine"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	// should fail because of misspelled value
 	proxy: dockerSocket: unix: "/var/run/docker.soc"
 

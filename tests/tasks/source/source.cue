@@ -1,20 +1,20 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	actions: {
-		image: engine.#Pull & {
+		image: dagger.#Pull & {
 			source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 		}
 
-		source: engine.#Source & {
+		source: dagger.#Source & {
 			path: "."
 		}
 
-		exec: engine.#Exec & {
+		exec: dagger.#Exec & {
 			input: image.output
 			mounts: code: {
 				dest:     "/src"
@@ -23,7 +23,7 @@ engine.#Plan & {
 			args: ["/src/test.sh"]
 		}
 
-		verifyHello: engine.#ReadFile & {
+		verifyHello: dagger.#ReadFile & {
 			input: source.output
 			path:  "/world.txt"
 		} & {
@@ -31,7 +31,7 @@ engine.#Plan & {
 			contents: "world\n"
 		}
 
-		verifyWorld: engine.#ReadFile & {
+		verifyWorld: dagger.#ReadFile & {
 			input: exec.output
 			path:  "/test.txt"
 		} & {

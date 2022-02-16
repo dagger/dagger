@@ -1,12 +1,11 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
 )
 
 runtime_image_ref: string | *"thechangelog/runtime:2021-05-29T10.17.12Z"
 
-engine.#Plan & {
+dagger.#Plan & {
 	inputs: directories: app: {
 		path: "."
 		exclude: [
@@ -57,11 +56,11 @@ engine.#Plan & {
 	}
 
 	actions: {
-		runtimeImage: engine.#Pull & {
+		runtimeImage: dagger.#Pull & {
 			source: runtime_image_ref
 		}
 
-		depsCache: engine.#CacheDir & {
+		depsCache: dagger.#CacheDir & {
 			id: "depsCache"
 		}
 
@@ -70,7 +69,7 @@ engine.#Plan & {
 			contents: depsCache
 		}
 
-		buildCacheTest: engine.#CacheDir & {
+		buildCacheTest: dagger.#CacheDir & {
 			id: "buildCacheTest"
 		}
 
@@ -79,7 +78,7 @@ engine.#Plan & {
 			contents: buildCacheTest
 		}
 
-		buildCacheProd: engine.#CacheDir & {
+		buildCacheProd: dagger.#CacheDir & {
 			id: "buildCacheProd"
 		}
 
@@ -88,7 +87,7 @@ engine.#Plan & {
 			contents: buildCacheProd
 		}
 
-		nodeModulesCache: engine.#CacheDir & {
+		nodeModulesCache: dagger.#CacheDir & {
 			id: "nodeModulesCache"
 		}
 
@@ -97,20 +96,20 @@ engine.#Plan & {
 			contents: nodeModulesCache
 		}
 
-		appImage: engine.#Copy & {
+		appImage: dagger.#Copy & {
 			input:    runtimeImage.output
 			contents: inputs.directories.app.contents
 			dest:     "/app"
 		}
 
-		deps: engine.#Exec & {
+		deps: dagger.#Exec & {
 			input:   appImage.output
 			mounts:  depsCacheMount
 			workdir: "/app"
 			args: ["bash", "-c", " mix deps.get"]
 		}
 
-		assetsCompile: engine.#Exec & {
+		assetsCompile: dagger.#Exec & {
 			input:   depsCompileProd.output
 			mounts:  depsCacheMount & nodeModulesCacheMount
 			workdir: "/app/assets"
@@ -118,7 +117,7 @@ engine.#Plan & {
 			args: ["bash", "-c", "yarn install --frozen-lockfile && yarn run compile"]
 		}
 
-		#depsCompile: engine.#Exec & {
+		#depsCompile: dagger.#Exec & {
 			input:   deps.output
 			mounts:  depsCacheMount
 			workdir: "/app"
@@ -135,7 +134,7 @@ engine.#Plan & {
 			mounts: buildCacheProdMount
 		}
 
-		assetsDigest: engine.#Exec & {
+		assetsDigest: dagger.#Exec & {
 			input:  assetsCompile.output
 			mounts: depsCacheMount & buildCacheProdMount & nodeModulesCacheMount
 			env: MIX_ENV: "prod"
@@ -143,20 +142,20 @@ engine.#Plan & {
 			args: ["bash", "-c", "mix phx.digest"]
 		}
 
-		imageProdCacheCopy: engine.#Exec & {
+		imageProdCacheCopy: dagger.#Exec & {
 			input:  assetsDigest.output
 			mounts: (depsCacheMount & {depsCache: dest:           "/mnt/app/deps/"} )
 			mounts: (buildCacheProdMount & {buildCacheProd: dest: "/mnt/app/_build/prod"} )
 			args: ["bash", "-c", "cp -Rp /mnt/app/deps/* /app/deps/ && cp -Rp /mnt/app/_build/prod/* /app/_build/prod/"]
 		}
 
-		imageProdDockerCopy: engine.#Copy & {
+		imageProdDockerCopy: dagger.#Copy & {
 			input: imageProdCacheCopy.output
 			source: root: inputs.directories.docker.contents
 			dest: "/"
 		}
 
-		imageProd: engine.#Build & {
+		imageProd: dagger.#Build & {
 			source: imageProdDockerCopy.output
 			dockerfile: path: "/docker/Dockerfile.production"
 			buildArg: {

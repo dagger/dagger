@@ -20,7 +20,7 @@ var (
 	typePath   = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("task"),
-		cue.Hid("_name", pkg.EnginePackage))
+		cue.Hid("_name", pkg.DaggerPackage))
 )
 
 type NewFunc func() Task

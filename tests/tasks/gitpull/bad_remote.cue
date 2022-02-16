@@ -1,9 +1,11 @@
 package main
 
-import "dagger.io/dagger/engine"
+import (
+	"dagger.io/dagger"
+)
 
-engine.#Plan & {
-	actions: badremote: engine.#GitPull & {
+dagger.#Plan & {
+	actions: badremote: dagger.#GitPull & {
 		remote: "https://github.com/blocklayerhq/lalalala.git"
 		ref:    "master"
 	}
