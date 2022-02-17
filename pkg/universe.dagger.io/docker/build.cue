@@ -61,15 +61,7 @@ import (
 
 // Build step that executes a Dockerfile
 #Dockerfile: {
-	// Source image
-	input?: #Image
-
-	// FIXME cannot replace with _source: *engine.#Scratch | input.rootfs
-	// Got error "$dagger" not found
-	_source: input.rootfs
-	if input == _|_ {
-		_source: engine.#Scratch
-	}
+	source: dagger.#FS
 
 	// Dockerfile definition or path into source
 	dockerfile: *{
@@ -91,12 +83,9 @@ import (
 	label: [string]:    string
 	hosts: [string]:    string
 
-	_build: engine.#Dockerfile & {
-		source: _source
-		"auth": [ for target, creds in auth {
-			"target": target
-			creds
-		}]
+	_build: dagger.#Dockerfile & {
+		"source":     source
+		"auth":       auth
 		"dockerfile": dockerfile
 		"platforms":  platforms
 		if target != _|_ {
