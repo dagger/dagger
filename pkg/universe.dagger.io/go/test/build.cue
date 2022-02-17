@@ -2,7 +2,6 @@ package go
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 	"universe.dagger.io/go"
 	"universe.dagger.io/docker"
 	"universe.dagger.io/alpine"
@@ -17,24 +16,23 @@ dagger.#Plan & {
 		simple: {
 			build: go.#Build & {
 				source: inputs.directories.testhello.contents
-				output: "/bin/hello"
 			}
 
 			exec: docker.#Run & {
 				input: _baseImage.output
 				command: {
 					name: "/bin/sh"
-					args: ["-c", "hello >> /output.txt"]
+					args: ["-c", "/bin/hello >> /output.txt"]
 				}
 				env: NAME: "dagger"
 				mounts: binary: {
-					dest:     build.output
+					dest:     "/bin/hello"
 					contents: build.binary
-					source:   "/bin/hello"
+					source:   "/test"
 				}
 			}
 
-			verify: engine.#ReadFile & {
+			verify: dagger.#ReadFile & {
 				input: exec.output.rootfs
 				path:  "/output.txt"
 			} & {

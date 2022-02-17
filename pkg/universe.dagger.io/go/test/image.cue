@@ -2,14 +2,13 @@ package go
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/engine"
 	"universe.dagger.io/go"
 	"universe.dagger.io/docker"
 )
 
 dagger.#Plan & {
 	actions: tests: image: {
-		_source: engine.#Scratch & {}
+		_source: dagger.#Scratch & {}
 
 		simple: {
 			_image: go.#Image & {}

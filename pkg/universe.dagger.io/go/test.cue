@@ -6,6 +6,12 @@ package go
 	package: *"." | string
 
 	#Container & {
-		args: ["test", "-v", package]
+		command: {
+			args: [package]
+			flags: {
+				test: true
+				"-v": true
+			}
+		}
 	}
 }

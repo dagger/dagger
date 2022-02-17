@@ -4,9 +4,12 @@ import (
 	"universe.dagger.io/docker"
 )
 
+// Go image default version
+#DefaultVersion: "1.16"
+
 // Build a go base image
 #Image: {
-	version: *"1.16" | string
+	version: *#DefaultVersion | string
 
 	packages: [pkgName=string]: version: string | *""
 
