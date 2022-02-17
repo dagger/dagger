@@ -62,7 +62,7 @@ type HealthConfig struct {
 	// Zero means to inherit. Durations are expressed as integer nanoseconds.
 	Interval    time.Duration `json:"interval,omitempty"`    // Interval is the time to wait between checks.
 	Timeout     time.Duration `json:"timeout,omitempty"`     // Timeout is the time to wait before considering the check to have hung.
-	StartPeriod time.Duration `json:"startPeriod,omitempty"` // The start period for the container to initialize before the retries starts to count down.
+	StartPeriod time.Duration `json:"startperiod,omitempty"` // The start period for the container to initialize before the retries starts to count down.
 
 	// Retries is the number of consecutive failures needed to consider a container as unhealthy.
 	// Zero means inherit.

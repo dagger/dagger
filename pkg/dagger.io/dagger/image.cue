@@ -58,7 +58,7 @@ import (
 	test?: [...string]
 	interval?:    int
 	timeout?:     int
-	startPeriod?: int
+	startperiod?: int
 	retries?:     int
 }
 
