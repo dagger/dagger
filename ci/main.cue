@@ -24,14 +24,16 @@ engine.#Plan & {
 	}
 
 	outputs: directories: "go binaries": {
-	 contents: actions.build.export.directories["/build"].contents
-	 dest:     "./build"
+		contents: actions.build.export.directories["/build"].contents
+		dest:     "./build"
 	}
 
 	actions: {
 		goModCache: engine.#CacheDir & {
 			id: "go mod cache"
 		}
+
+		baseImages: #Images
 
 		source: "dagger source code": {
 			contents: inputs.directories.source.contents
@@ -40,7 +42,7 @@ engine.#Plan & {
 
 		// FIXME: build only if the linter passed
 		build: bash.#Run & {
-			input: images.goBuilder.output
+			input: baseImages.goBuilder
 
 			env: {
 				GOMODCACHE: mounts["go mod cache"].dest
@@ -71,7 +73,7 @@ engine.#Plan & {
 		}
 
 		goLint: bash.#Run & {
-			input: images.goLinter.output
+			input: baseImages.goLinter
 
 			// FIXME: the source volume is too slow, taking >3m on docker for mac (vs < 2sec on the host machine)
 			script: contents: "golangci-lint run -v --timeout 5m"
