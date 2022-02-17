@@ -11,8 +11,13 @@ import (
 	"universe.dagger.io/docker"
 )
 
+#Build: #Run & {
+	buildDir: *"build" | string
+	script:   *"build" | string
+}
+
 // Build a Yarn package
-#Build: {
+#Run: {
 	// Custom name for the build.
 	//   When building different apps in the same plan, assign
 	//   different names for optimal caching.
@@ -30,10 +35,10 @@ import (
 
 	// Read build output from this directory
 	// (path must be relative to working directory)
-	buildDir: string | *"build"
+	buildDir?: string
 
 	// Run this yarn script
-	script: string | *"build"
+	script: string
 
 	// Fix for shadowing issues
 	let yarnScript = script
@@ -70,7 +75,11 @@ import (
 
 			opts=( $(echo $YARN_ARGS) )
 			yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
-			mv "$YARN_BUILD_DIRECTORY" /build
+			if [ ! -z "${YARN_BUILD_DIRECTORY:-}" ]; then
+				mv "$YARN_BUILD_DIRECTORY" /build
+			else
+				mkdir /build
+			fi
 			"""#
 
 		mounts: {
@@ -90,11 +99,13 @@ import (
 		export: directories: "/build": _
 
 		env: {
-			YARN_BUILD_SCRIPT:    yarnScript
-			YARN_ARGS:            strings.Join(args, "\n")
-			YARN_CACHE_FOLDER:    "/cache/yarn"
-			YARN_CWD:             cwd
-			YARN_BUILD_DIRECTORY: buildDir
+			YARN_BUILD_SCRIPT: yarnScript
+			YARN_ARGS:         strings.Join(args, "\n")
+			YARN_CACHE_FOLDER: "/cache/yarn"
+			YARN_CWD:          cwd
+			if buildDir != _|_ {
+				YARN_BUILD_DIRECTORY: buildDir
+			}
 			if writeEnvFile != "" {
 				ENVFILE_NAME: writeEnvFile
 				ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
