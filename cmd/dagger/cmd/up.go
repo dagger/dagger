@@ -158,16 +158,11 @@ func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 			return err
 		}
 
-		if output := viper.GetString("output"); output != "" {
-			data := computed.JSON().PrettyString()
-			if output == "-" {
-				fmt.Println(data)
-				return nil
-			}
-			err := os.WriteFile(output, []byte(data), 0600)
-			if err != nil {
-				lg.Fatal().Err(err).Str("path", output).Msg("failed to write output")
-			}
+		format := viper.GetString("output-format")
+		file := viper.GetString("output")
+
+		if err := plan.ListOutputs(ctx, p, computed, format, file); err != nil {
+			lg.Fatal().Err(err).Msg("failed to write output values")
 		}
 
 		return nil
@@ -224,7 +219,8 @@ func checkInputs(ctx context.Context, env *environment.Environment) error {
 
 func init() {
 	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
-	upCmd.Flags().String("output", "", "Write computed output. Prints on stdout if set to-")
+	upCmd.Flags().String("output", "", "Write computed output values. Prints on stdout if empty")
+	upCmd.Flags().String("output-format", "plain", "Format for output values (plain, json, yaml)")
 	upCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	upCmd.Flags().StringP("target", "t", "", "Run a single target of the DAG (for debugging only)")
 	upCmd.Flags().Bool("no-vendor", false, "Force up, disable inputs check")

@@ -18,6 +18,8 @@ package dagger
 		directories: [name=string]: _#outputDirectory
 		// Export a string to a file
 		files: [name=string]: _#outputFile
+		// Write values to stdout or a file
+		values?: [name=string]: _
 	}
 
 	// Forward network services to and from the client

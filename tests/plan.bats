@@ -153,6 +153,30 @@ setup() {
   assert [ ! -f "./test" ]
 }
 
+@test "plan/outputs/values" {
+  cd "$TESTDIR"/plan/outputs/values
+  rm -rf "./test.json"
+
+  run "$DAGGER" --europa up ./not_exists.cue
+  refute_output --partial "Output:"
+
+  run "$DAGGER" --europa up ./non_concrete.cue
+  assert_failure
+
+  run "$DAGGER" --europa up ./computed.cue
+  assert_output --partial "Output:"
+  assert_output --partial "sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
+
+  run "$DAGGER" --europa up --output-format yaml ./computed.cue
+  assert_output --partial "digest: sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
+
+  "$DAGGER" --europa up --output-format json --output test.json ./computed.cue
+  run jq -re '.test.config.cmd[0]' "./test.json"
+  assert_output "/bin/sh"
+
+  rm -rf "./test.json"
+}
+
 @test "plan/platform" {
    cd "$TESTDIR"
 
