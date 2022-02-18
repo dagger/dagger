@@ -17,7 +17,7 @@ const (
 )
 
 func isUniverse(repoName string) bool {
-	return strings.HasPrefix(strings.ToLower(repoName), pkg.AlphaModule)
+	return strings.HasPrefix(strings.ToLower(repoName), pkg.UniverseModule)
 }
 
 // IsUniverseLatest check that current universe is up-to-date or no
@@ -32,7 +32,7 @@ func IsUniverseLatest(ctx context.Context, workspace string) (bool, error) {
 		return false, err
 	}
 
-	req, err := newRequire(pkg.AlphaModule, UniverseVersionConstraint)
+	req, err := newRequire(pkg.UniverseModule, UniverseVersionConstraint)
 	if err != nil {
 		return false, err
 	}

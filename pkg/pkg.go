@@ -17,17 +17,15 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed alpha.dagger.io dagger.io universe.dagger.io
+	//go:embed dagger.io universe.dagger.io
 	FS embed.FS
 )
 
 var (
-	AlphaModule    = "alpha.dagger.io"
 	DaggerModule   = "dagger.io"
 	UniverseModule = "universe.dagger.io"
 
 	modules = []string{
-		AlphaModule,
 		DaggerModule,
 		UniverseModule,
 	}

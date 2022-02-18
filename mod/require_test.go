@@ -63,9 +63,9 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Alpha Dagger repo with path",
-			in:   "alpha.dagger.io/gcp/gke@v0.1.0-alpha.20",
+			in:   "universe.dagger.io/gcp/gke@v0.1.0-alpha.20",
 			want: &Require{
-				repo:    "alpha.dagger.io",
+				repo:    "universe.dagger.io",
 				path:    "/gcp/gke",
 				version: "v0.1.0-alpha.20",
 
@@ -75,9 +75,9 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Alpha Dagger repo",
-			in:   "alpha.dagger.io@v0.1.0-alpha.23",
+			in:   "universe.dagger.io@v0.1.0-alpha.23",
 			want: &Require{
-				repo:    "alpha.dagger.io",
+				repo:    "universe.dagger.io",
 				path:    "",
 				version: "v0.1.0-alpha.23",
 
