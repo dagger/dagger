@@ -9,7 +9,6 @@ import (
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
-	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/environment"
@@ -108,7 +107,7 @@ var upCmd = &cobra.Command{
 			if tty != nil {
 				tty.Stop()
 			}
-			return output.ListOutputs(ctx, env, term.IsTerminal(int(os.Stdout.Fd())))
+			return nil
 		})
 
 		<-doneCh
