@@ -37,11 +37,7 @@ let GolangCILintVersion = "1.44.0"
 	// base image for the Go linter
 	// https://golangci-lint.run/usage/install/#docker
 	goLinter:  _goLinter.output
-	_goLinter: docker.#Build & {
-		steps: [
-			docker.#Pull & {
-				source: "index.docker.io/golangci/golangci-lint:v\(GolangCILintVersion)"
-			},
-		]
+	_goLinter: docker.#Pull & {
+		source: "index.docker.io/golangci/golangci-lint:v\(GolangCILintVersion)"
 	}
 }

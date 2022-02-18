@@ -8,13 +8,19 @@ import (
 )
 
 engine.#Plan & {
+
+	// FIXME: Ideally we would want to automatically set the platform's arch identical to the host
+	// to avoid the performance hit caused by qemu (linter goes from <3s to >3m when arch is x86)
+	platform: "linux/aarch64"
+
 	inputs: {
 		params: {
 			// FIXME: until we support a better way
 			os:   string | *"darwin"
 			arch: string | *"amd64"
 
-			// FIXME: implement condition actions using params
+			// FIXME: implement condition actions using params until we have a
+			// better way to select specific actions
 		}
 
 		directories: {
@@ -29,20 +35,23 @@ engine.#Plan & {
 	}
 
 	actions: {
-		goModCache: engine.#CacheDir & {
-			id: "go mod cache"
+		_goModCache: "go mod cache": {
+			dest:     "/gomodcache"
+			contents: engine.#CacheDir & {
+				id: "go mod cache"
+			}
 		}
 
-		baseImages: #Images
+		_baseImages: #Images
 
-		source: "dagger source code": {
+		_source: "dagger source code": {
 			contents: inputs.directories.source.contents
 			dest:     "/usr/src/dagger"
 		}
 
 		// FIXME: build only if the linter passed
 		build: bash.#Run & {
-			input: baseImages.goBuilder
+			input: _baseImages.goBuilder
 
 			env: {
 				GOMODCACHE: mounts["go mod cache"].dest
@@ -59,27 +68,23 @@ engine.#Plan & {
 					./cmd/dagger/
 				"""#
 
+			workdir: mounts["dagger source code"].dest
 			mounts: {
-				source
-
-				"go mod cache": {
-					dest:     "/gomodcache"
-					contents: goModCache
-				}
+				_source
+				_goModCache
 			}
 
-			workdir: mounts["dagger source code"].dest
 			export: directories: "/build": _
 		}
 
 		goLint: bash.#Run & {
-			input: baseImages.goLinter
+			input: _baseImages.goLinter
 
-			// FIXME: the source volume is too slow, taking >3m on docker for mac (vs < 2sec on the host machine)
 			script: contents: "golangci-lint run -v --timeout 5m"
 			workdir: mounts["dagger source code"].dest
 			mounts: {
-				source
+				_source
+				_goModCache
 			}
 		}
 	}
