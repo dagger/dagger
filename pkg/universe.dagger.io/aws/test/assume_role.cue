@@ -15,7 +15,7 @@ dagger.#Plan & {
 
 		secrets: sops: command: {
 			name: "sops"
-			args: ["-d", "../../secrets_sops.yaml"]
+			args: ["-d", "--extract", "[\"AWS\"]", "../../secrets_sops.yaml"]
 		}
 	}
 
