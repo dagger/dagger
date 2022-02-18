@@ -55,7 +55,6 @@ func init() {
 		initCmd,
 		listCmd,
 		upCmd,
-		downCmd,
 		loginCmd,
 		logoutCmd,
 		versionCmd,
