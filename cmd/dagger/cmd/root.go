@@ -53,7 +53,6 @@ func init() {
 
 	rootCmd.AddCommand(
 		initCmd,
-		newCmd,
 		listCmd,
 		upCmd,
 		downCmd,
