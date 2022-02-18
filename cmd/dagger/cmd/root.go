@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"go.dagger.io/dagger/cmd/dagger/logger"
-	"go.dagger.io/dagger/keychain"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -34,15 +33,7 @@ func init() {
 	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
-		lg := logger.New()
-		ctx := lg.WithContext(cmd.Context())
-
 		go checkVersion()
-
-		err := keychain.EnsureDefaultKey(ctx)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to generate default key")
-		}
 	}
 	rootCmd.PersistentPostRun = func(*cobra.Command, []string) {
 		warnVersion()
