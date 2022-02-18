@@ -10,7 +10,6 @@ import (
 	cueflow "cuelang.org/go/tools/flow"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
@@ -207,7 +206,7 @@ func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Va
 			ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
 			defer span.End()
 
-			lg.Info().Str("state", string(environment.StateComputing)).Msg(string(environment.StateComputing))
+			lg.Info().Str("state", string(task.StateComputing)).Msg(string(task.StateComputing))
 
 			// Debug: dump dependencies
 			for _, dep := range t.Dependencies() {
@@ -219,14 +218,14 @@ func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Va
 			if err != nil {
 				// FIXME: this should use errdefs.IsCanceled(err)
 				if strings.Contains(err.Error(), "context canceled") {
-					lg.Error().Dur("duration", time.Since(start)).Str("state", string(environment.StateCanceled)).Msg(string(environment.StateCanceled))
+					lg.Error().Dur("duration", time.Since(start)).Str("state", string(task.StateCanceled)).Msg(string(task.StateCanceled))
 				} else {
-					lg.Error().Dur("duration", time.Since(start)).Err(err).Str("state", string(environment.StateFailed)).Msg(string(environment.StateFailed))
+					lg.Error().Dur("duration", time.Since(start)).Err(err).Str("state", string(task.StateFailed)).Msg(string(task.StateFailed))
 				}
 				return fmt.Errorf("%s: %w", t.Path().String(), err)
 			}
 
-			lg.Info().Dur("duration", time.Since(start)).Str("state", string(environment.StateCompleted)).Msg(string(environment.StateCompleted))
+			lg.Info().Dur("duration", time.Since(start)).Str("state", string(task.StateCompleted)).Msg(string(task.StateCompleted))
 
 			// If the result is not concrete (e.g. empty value), there's nothing to merge.
 			if !result.IsConcrete() {

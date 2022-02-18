@@ -8,7 +8,6 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -21,6 +20,16 @@ var (
 		cue.Str("$dagger"),
 		cue.Str("task"),
 		cue.Hid("_name", pkg.DaggerPackage))
+)
+
+// State is the state of the task.
+type State string
+
+const (
+	StateComputing = State("computing")
+	StateCanceled  = State("canceled")
+	StateFailed    = State("failed")
+	StateCompleted = State("completed")
 )
 
 type NewFunc func() Task
@@ -52,9 +61,9 @@ func New(typ string) Task {
 
 func Lookup(v *compiler.Value) (Task, error) {
 	// FIXME: legacy pipelines
-	if environment.IsComponent(v) {
-		return New("#up"), nil
-	}
+	// if environment.IsComponent(v) {
+	// 	return New("#up"), nil
+	// }
 
 	if v.Kind() != cue.StructKind {
 		return nil, ErrNotTask

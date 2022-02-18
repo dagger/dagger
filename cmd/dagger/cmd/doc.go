@@ -20,7 +20,6 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/pkg"
 	"golang.org/x/term"
 )
@@ -55,23 +54,6 @@ type Package struct {
 func Parse(ctx context.Context, packageName string, val *compiler.Value) *Package {
 	lg := log.Ctx(ctx)
 
-	parseValues := func(field string, values []*compiler.Value) []Value {
-		val := []Value{}
-
-		for _, i := range values {
-			v := Value{}
-			v.Name = strings.TrimPrefix(
-				i.Path().String(),
-				field+".",
-			)
-			v.Type = common.FormatValue(i)
-			v.Description = common.ValueDocOneLine(i)
-			val = append(val, v)
-		}
-
-		return val
-	}
-
 	fields, err := val.Fields(cue.Definitions(true))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("cannot get fields")
@@ -103,14 +85,6 @@ func Parse(ctx context.Context, packageName string, val *compiler.Value) *Packag
 		// Field Name + Description
 		field.Name = name
 		field.Description = common.ValueDocOneLine(v)
-
-		// Inputs
-		inp := environment.ScanInputs(ctx, v)
-		field.Inputs = parseValues(field.Name, inp)
-
-		// Outputs
-		out := environment.ScanOutputs(ctx, v)
-		field.Outputs = parseValues(field.Name, out)
 
 		pkg.Fields = append(pkg.Fields, field)
 	}
