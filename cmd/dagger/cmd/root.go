@@ -55,8 +55,6 @@ func init() {
 		initCmd,
 		listCmd,
 		upCmd,
-		loginCmd,
-		logoutCmd,
 		versionCmd,
 		docCmd,
 		mod.Cmd,
