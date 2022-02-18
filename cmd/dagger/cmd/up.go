@@ -8,7 +8,6 @@ import (
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
-	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"golang.org/x/term"
@@ -61,20 +60,20 @@ var upCmd = &cobra.Command{
 	},
 }
 
-func checkUniverseVersion(ctx context.Context, projectPath string) bool {
-	lg := log.Ctx(ctx)
+// func checkUniverseVersion(ctx context.Context, projectPath string) bool {
+// 	lg := log.Ctx(ctx)
 
-	isLatest, err := mod.IsUniverseLatest(ctx, projectPath)
-	if err != nil {
-		lg.Debug().Err(err).Msg("failed to check universe version")
-		return false
-	}
-	if !isLatest {
-		return true
-	}
-	lg.Debug().Msg("universe is up to date")
-	return false
-}
+// 	isLatest, err := mod.IsUniverseLatest(ctx, projectPath)
+// 	if err != nil {
+// 		lg.Debug().Err(err).Msg("failed to check universe version")
+// 		return false
+// 	}
+// 	if !isLatest {
+// 		return true
+// 	}
+// 	lg.Debug().Msg("universe is up to date")
+// 	return false
+// }
 
 func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 	lg := log.Ctx(ctx)
