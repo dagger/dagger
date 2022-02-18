@@ -16,12 +16,7 @@ Base Google Cloud Config
 
 ### gcp.#Config Inputs
 
-| Name             | Type                 | Description        |
-| -------------    |:-------------:       |:-------------:     |
-|*region*          | `*null \| string`    |GCP region          |
-|*zone*            | `*null \| string`    |GCP zone            |
-|*project*         | `string`             |GCP project         |
-|*serviceKey*      | `dagger.#Secret`     |GCP service key     |
+_No input._
 
 ### gcp.#Config Outputs
 
@@ -33,12 +28,7 @@ Re-usable gcloud component
 
 ### gcp.#GCloud Inputs
 
-| Name                  | Type                 | Description        |
-| -------------         |:-------------:       |:-------------:     |
-|*config.region*        | `*null \| string`    |GCP region          |
-|*config.zone*          | `*null \| string`    |GCP zone            |
-|*config.project*       | `string`             |GCP project         |
-|*config.serviceKey*    | `dagger.#Secret`     |GCP service key     |
+_No input._
 
 ### gcp.#GCloud Outputs
 

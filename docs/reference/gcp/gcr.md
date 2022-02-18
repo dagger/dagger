@@ -16,16 +16,8 @@ Credentials retriever for GCR
 
 ### gcr.#Credentials Inputs
 
-| Name                  | Type                 | Description        |
-| -------------         |:-------------:       |:-------------:     |
-|*config.region*        | `*null \| string`    |GCP region          |
-|*config.zone*          | `*null \| string`    |GCP zone            |
-|*config.project*       | `string`             |GCP project         |
-|*config.serviceKey*    | `dagger.#Secret`     |GCP service key     |
+_No input._
 
 ### gcr.#Credentials Outputs
 
-| Name             | Type                     | Description             |
-| -------------    |:-------------:           |:-------------:          |
-|*username*        | `"oauth2accesstoken"`    |GCR registry username    |
-|*secret*          | `string`                 |GCR registry secret      |
+_No output._

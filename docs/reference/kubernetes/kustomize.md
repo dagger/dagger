@@ -14,9 +14,7 @@ import "alpha.dagger.io/kubernetes/kustomize"
 
 ### kustomize.#Kustomization Inputs
 
-| Name             | Type                     | Description                |
-| -------------    |:-------------:           |:-------------:             |
-|*version*         | `*"v3.8.7" \| string`    |Kustomize binary version    |
+_No input._
 
 ### kustomize.#Kustomization Outputs
 
@@ -28,11 +26,7 @@ Apply a Kubernetes Kustomize folder
 
 ### kustomize.#Kustomize Inputs
 
-| Name              | Type                     | Description                   |
-| -------------     |:-------------:           |:-------------:                |
-|*source*           | `dagger.#Artifact`       |Kubernetes source              |
-|*kustomization*    | `string`                 |Optional Kustomization file    |
-|*version*          | `*"v3.8.7" \| string`    |Kustomize binary version       |
+_No input._
 
 ### kustomize.#Kustomize Outputs
 

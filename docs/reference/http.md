@@ -16,10 +16,7 @@ _No input._
 
 ### http.#Delete Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*statusCode*      | `string`          |-                   |
-|*body*            | `string`          |-                   |
+_No output._
 
 ## http.#Do
 
@@ -29,10 +26,7 @@ _No input._
 
 ### http.#Do Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*statusCode*      | `string`          |-                   |
-|*body*            | `string`          |-                   |
+_No output._
 
 ## http.#Get
 
@@ -42,10 +36,7 @@ _No input._
 
 ### http.#Get Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*statusCode*      | `string`          |-                   |
-|*body*            | `string`          |-                   |
+_No output._
 
 ## http.#Post
 
@@ -55,10 +46,7 @@ _No input._
 
 ### http.#Post Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*statusCode*      | `string`          |-                   |
-|*body*            | `string`          |-                   |
+_No output._
 
 ## http.#Put
 
@@ -68,10 +56,7 @@ _No input._
 
 ### http.#Put Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*statusCode*      | `string`          |-                   |
-|*body*            | `string`          |-                   |
+_No output._
 
 ## http.#Wait
 

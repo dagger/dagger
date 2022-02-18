@@ -16,10 +16,7 @@ Build a Docker image from source
 
 ### docker.#Build Inputs
 
-| Name             | Type                  | Description                     |
-| -------------    |:-------------:        |:-------------:                  |
-|*source*          | `dagger.#Artifact`    |Build context                    |
-|*dockerfile*      | `*null \| string`     |Dockerfile passed as a string    |
+_No input._
 
 ### docker.#Build Outputs
 
@@ -43,16 +40,11 @@ Load a docker image into a docker engine
 
 ### docker.#Load Inputs
 
-| Name             | Type                  | Description                                          |
-| -------------    |:-------------:        |:-------------:                                       |
-|*tag*             | `string`              |Name and optionally a tag in the 'name:tag' format    |
-|*source*          | `dagger.#Artifact`    |Image source                                          |
+_No input._
 
 ### docker.#Load Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*id*              | `string`          |Image ID            |
+_No output._
 
 ## docker.#Pull
 
@@ -60,9 +52,7 @@ Pull a docker container
 
 ### docker.#Pull Inputs
 
-| Name             | Type              | Description                                             |
-| -------------    |:-------------:    |:-------------:                                          |
-|*from*            | `string`          |Remote ref (example: "index.docker.io/alpine:latest")    |
+_No input._
 
 ### docker.#Pull Outputs
 
@@ -74,27 +64,17 @@ Push a docker image to a remote registry
 
 ### docker.#Push Inputs
 
-| Name             | Type                  | Description                                                |
-| -------------    |:-------------:        |:-------------:                                             |
-|*target*          | `string`              |Remote target (example: "index.docker.io/alpine:latest")    |
-|*source*          | `dagger.#Artifact`    |Image source                                                |
+_No input._
 
 ### docker.#Push Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*ref*             | `string`          |Image ref           |
-|*digest*          | `string`          |Image digest        |
+_No output._
 
 ## docker.#Run
 
 ### docker.#Run Inputs
 
-| Name                  | Type               | Description                           |
-| -------------         |:-------------:     |:-------------:                        |
-|*ref*                  | `string`           |Image reference (e.g: nginx:alpine)    |
-|*recreate*             | `*true \| bool`    |Recreate container?                    |
-|*run.env.IMAGE_REF*    | `string`           |-                                      |
+_No input._
 
 ### docker.#Run Outputs
 

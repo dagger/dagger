@@ -16,13 +16,8 @@ Terraform configuration
 
 ### terraform.#Configuration Inputs
 
-| Name             | Type                     | Description            |
-| -------------    |:-------------:           |:-------------:         |
-|*version*         | `*"latest" \| string`    |Terraform version       |
-|*source*          | `dagger.#Artifact`       |Source configuration    |
+_No input._
 
 ### terraform.#Configuration Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*output*          | `struct`          |-                   |
+_No output._

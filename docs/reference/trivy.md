@@ -42,6 +42,4 @@ _No input._
 
 ### trivy.#Image Outputs
 
-| Name             | Type              | Description          |
-| -------------    |:-------------:    |:-------------:       |
-|*ref*             | `string`          |Reference analyzed    |
+_No output._

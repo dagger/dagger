@@ -16,21 +16,11 @@ Commit & push to git repository
 
 ### git.#Commit Inputs
 
-| Name                     | Type                | Description             |
-| -------------            |:-------------:      |:-------------:          |
-|*repository.remote*       | `string`            |Repository remote URL    |
-|*repository.authToken*    | `*null \| {\n       $dagger: {\n                  secret: {}\n    }\n}`    |Authentication token (PAT or password)    |
-|*repository.branch*       | `string`            |Git branch               |
-|*name*                    | `string`            |Username                 |
-|*email*                   | `string`            |Email                    |
-|*message*                 | `string`            |Commit message           |
-|*force*                   | `*false \| bool`    |Force push options       |
+_No input._
 
 ### git.#Commit Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*hash*            | `string`          |Commit hash         |
+_No output._
 
 ## git.#CurrentBranch
 
@@ -38,15 +28,11 @@ Get the name of the current checked out branch or tag
 
 ### git.#CurrentBranch Inputs
 
-| Name             | Type                  | Description        |
-| -------------    |:-------------:        |:-------------:     |
-|*repository*      | `dagger.#Artifact`    |Git repository      |
+_No input._
 
 ### git.#CurrentBranch Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*name*            | `string`          |Git branch name     |
+_No output._
 
 ## git.#Image
 
@@ -64,13 +50,7 @@ A git repository
 
 ### git.#Repository Inputs
 
-| Name             | Type                 | Description                                                |
-| -------------    |:-------------:       |:-------------:                                             |
-|*remote*          | `string`             |Git remote link                                             |
-|*ref*             | `string`             |Git ref: can be a commit, tag or branch. Example: "main"    |
-|*subdir*          | `*null \| string`    |(optional) Subdirectory                                     |
-|*authToken*       | `*null \| {\n        $dagger: {\n                                                     secret: {}\n    }\n}`    |(optional) Add Personal Access Token    |
-|*authHeader*      | `*null \| {\n        $dagger: {\n                                                     secret: {}\n    }\n}`    |(optional) Add OAuth Token              |
+_No input._
 
 ### git.#Repository Outputs
 
@@ -82,12 +62,8 @@ List tags of a repository
 
 ### git.#Tags Inputs
 
-| Name             | Type                  | Description        |
-| -------------    |:-------------:        |:-------------:     |
-|*repository*      | `dagger.#Artifact`    |Git repository      |
+_No input._
 
 ### git.#Tags Outputs
 
-| Name             | Type              | Description        |
-| -------------    |:-------------:    |:-------------:     |
-|*tags*            | `[...string]`     |Repository tags     |
+_No output._

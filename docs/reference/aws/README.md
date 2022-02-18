@@ -14,13 +14,7 @@ import "alpha.dagger.io/aws"
 
 ### aws.#CLI Inputs
 
-| Name                 | Type                   | Description           |
-| -------------        |:-------------:         |:-------------:        |
-|*config.region*       | `string`               |AWS region             |
-|*config.accessKey*    | `dagger.#Secret`       |AWS access key         |
-|*config.secretKey*    | `dagger.#Secret`       |AWS secret key         |
-|*config.localMode*    | `*false \| bool`       |AWS localstack mode    |
-|*version*             | `*"1.19" \| string`    |-                      |
+_No input._
 
 ### aws.#CLI Outputs
 
@@ -32,12 +26,7 @@ AWS Config shared by all AWS packages
 
 ### aws.#Config Inputs
 
-| Name             | Type                | Description           |
-| -------------    |:-------------:      |:-------------:        |
-|*region*          | `string`            |AWS region             |
-|*accessKey*       | `dagger.#Secret`    |AWS access key         |
-|*secretKey*       | `dagger.#Secret`    |AWS secret key         |
-|*localMode*       | `*false \| bool`    |AWS localstack mode    |
+_No input._
 
 ### aws.#Config Outputs
 
@@ -49,13 +38,7 @@ Configuration specific to CLI v1
 
 ### aws.#V1 Inputs
 
-| Name                 | Type                   | Description           |
-| -------------        |:-------------:         |:-------------:        |
-|*config.region*       | `string`               |AWS region             |
-|*config.accessKey*    | `dagger.#Secret`       |AWS access key         |
-|*config.secretKey*    | `dagger.#Secret`       |AWS secret key         |
-|*config.localMode*    | `*false \| bool`       |AWS localstack mode    |
-|*version*             | `*"1.19" \| string`    |-                      |
+_No input._
 
 ### aws.#V1 Outputs
 
@@ -67,13 +50,7 @@ Configuration specific to CLI v2
 
 ### aws.#V2 Inputs
 
-| Name                 | Type                     | Description           |
-| -------------        |:-------------:           |:-------------:        |
-|*config.region*       | `string`                 |AWS region             |
-|*config.accessKey*    | `dagger.#Secret`         |AWS access key         |
-|*config.secretKey*    | `dagger.#Secret`         |AWS secret key         |
-|*config.localMode*    | `*false \| bool`         |AWS localstack mode    |
-|*version*             | `*"2.1.29" \| string`    |-                      |
+_No input._
 
 ### aws.#V2 Outputs
 

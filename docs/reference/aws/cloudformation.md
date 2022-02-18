@@ -16,18 +16,7 @@ AWS CloudFormation Stack
 
 ### cloudformation.#Stack Inputs
 
-| Name                 | Type                                         | Description                                                     |
-| -------------        |:-------------:                               |:-------------:                                                  |
-|*config.region*       | `string`                                     |AWS region                                                       |
-|*config.accessKey*    | `dagger.#Secret`                             |AWS access key                                                   |
-|*config.secretKey*    | `dagger.#Secret`                             |AWS secret key                                                   |
-|*config.localMode*    | `*false \| bool`                             |AWS localstack mode                                              |
-|*source*              | `string`                                     |Source is the Cloudformation template (JSON/YAML string)         |
-|*stackName*           | `string`                                     |Stackname is the cloudformation stack                            |
-|*parameters*          | `struct`                                     |Stack parameters                                                 |
-|*onFailure*           | `*"DO_NOTHING" \| "ROLLBACK" \| "DELETE"`    |Behavior when failure to create/update the Stack                 |
-|*timeout*             | `*10 \| \>=0 & int`                          |Maximum waiting time until stack creation/update (in minutes)    |
-|*neverUpdate*         | `*false \| true`                             |Never update the stack if already exists                         |
+_No input._
 
 ### cloudformation.#Stack Outputs
 

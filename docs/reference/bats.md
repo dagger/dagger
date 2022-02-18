@@ -12,10 +12,7 @@ import "alpha.dagger.io/bats"
 
 ### bats.#Bats Inputs
 
-| Name                      | Type                  | Description                    |
-| -------------             |:-------------:        |:-------------:                 |
-|*source*                   | `dagger.#Artifact`    |Source containing bats files    |
-|*ctr.mount."/src".from*    | `dagger.#Artifact`    |-                               |
+_No input._
 
 ### bats.#Bats Outputs
 

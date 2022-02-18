@@ -16,8 +16,4 @@ _No input._
 
 ### graphql.#Query Outputs
 
-| Name                | Type              | Description        |
-| -------------       |:-------------:    |:-------------:     |
-|*post.statusCode*    | `string`          |-                   |
-|*post.body*          | `string`          |-                   |
-|*data*               | `_\|_`            |-                   |
+_No output._
