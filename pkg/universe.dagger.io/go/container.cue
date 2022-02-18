@@ -8,27 +8,20 @@ import (
 
 // A standalone go environment to run go command
 #Container: {
-	// Go version to use
-	version: *#DefaultVersion | string
+	// Container app name
+	name: *"go_builder" | string
 
 	// Source code
 	source: dagger.#FS
 
-	// Configure caching
-	cache: {
-		id: *"go_build" | string
-	}
-
 	// Use go image
-	_image: #Image & {
-		"version": version
-	}
+	_image: #Image
 
 	_sourcePath: "/src"
 	_cachePath:  "/root/.cache/gocache"
 
 	docker.#Run & {
-		input:   _image.output
+		input:   *_image.output | docker.#Image
 		workdir: "/src"
 		command: name: "go"
 		mounts: {
@@ -38,7 +31,7 @@ import (
 			}
 			"go assets cache": {
 				contents: dagger.#CacheDir & {
-					id: "\(cache.id)_assets"
+					id: "\(name)_assets"
 				}
 				dest: _cachePath
 			}

@@ -28,7 +28,11 @@ import (
 
 	container: #Container & {
 		"source": source
-		"env":    env
+		"env": {
+			env
+			GOOS:   os
+			GOARCH: arch
+		}
 		command: {
 			args: [package]
 			flags: {
@@ -39,12 +43,8 @@ import (
 				"-o":       "/output/"
 			}
 		}
+		export: directories: "/output/": _
 	}
 
-	_binary: dagger.#Subdir & {
-		input: container.output.rootfs
-		path:  "/output"
-	}
-
-	binary: _binary.output
+	binary: container.export.directories."/output/".contents
 }
