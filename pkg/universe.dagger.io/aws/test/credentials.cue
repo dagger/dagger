@@ -27,16 +27,16 @@ dagger.#Plan & {
 			command: {
 				name: "sh"
 				flags: "-c": true
-				args: ["aws sts get-caller-identity > /output.txt"]
+				args: ["aws sts get-caller-identity"]
 			}
 
-			export: files: "/output.txt": _
+			// export: files: "/output.txt": _
 		}
 
-		verify: json.Unmarshal(getCallerIdentity.export.files."/output.txt".contents) & {
-			UserId:  string & !~"^$"
-			Account: =~"^12[0-9]{8}86$"
-			Arn:     =~"(12[0-9]{8}86)"
-		}
+		// verify: json.Unmarshal(getCallerIdentity.export.files."/output.txt".contents) & {
+		//  UserId:  string & !~"^$"
+		//  Account: =~"^12[0-9]{8}86$"
+		//  Arn:     =~"(12[0-9]{8}86)"
+		// }
 	}
 }
