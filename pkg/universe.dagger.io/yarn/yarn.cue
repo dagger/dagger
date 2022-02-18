@@ -116,5 +116,5 @@ import (
 	}
 
 	// The final contents of the package after build
-	output: container.export.directories."/build".contents
+	output: container.export.directories."/build"
 }

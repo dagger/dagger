@@ -33,16 +33,15 @@ dagger.#Plan & {
 
 		// Test: export a file
 		exportFile: {
-			image: _image
-			command: {
-				name: "sh"
-				flags: "-c": #"""
-					echo -n hello world >> /output.txt
-					"""#
-			}
-			export: files: "/output.txt": _ & {
-				// Assert content
-				contents: "hello world"
+			run: docker.#Run & {
+				input: _image
+				command: {
+					name: "sh"
+					flags: "-c": #"""
+						echo -n hello world >> /output.txt
+						"""#
+				}
+				export: files: "/output.txt": string & "hello world"
 			}
 		}
 
@@ -61,7 +60,7 @@ dagger.#Plan & {
 			}
 
 			verify: dagger.#ReadFile & {
-				input: run.export.directories."/test".contents
+				input: run.export.directories."/test"
 				path:  "/output.txt"
 			}
 			verify: contents: "hello world"
