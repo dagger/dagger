@@ -33,8 +33,6 @@ func init() {
 
 	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
 
-	rootCmd.PersistentFlags().Bool("europa", false, "Enable experiemental Europa UX")
-
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())

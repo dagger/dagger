@@ -50,19 +50,14 @@ var upCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
-		if viper.GetBool("europa") {
-			err = europaUp(ctx, cl, args...)
+		err = europaUp(ctx, cl, args...)
 
-			// TODO: rework telemetry
-			// <-doneCh
+		// TODO: rework telemetry
+		// <-doneCh
 
-			if err != nil {
-				lg.Fatal().Err(err).Msg("failed to up environment")
-			}
-
-			return
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-
 	},
 }
 
