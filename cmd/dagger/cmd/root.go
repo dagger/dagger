@@ -31,7 +31,6 @@ func init() {
 	rootCmd.PersistentFlags().StringArray("cache-from", []string{},
 		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
-	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
 
 	rootCmd.PersistentFlags().Bool("europa", false, "Enable experiemental Europa UX")
