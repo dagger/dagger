@@ -5,9 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
-	"go.dagger.io/dagger/state"
+	"go.dagger.io/dagger/pkg"
 )
 
 var initCmd = &cobra.Command{
@@ -37,12 +36,13 @@ var initCmd = &cobra.Command{
 			dir = cwd
 		}
 
-		project, err := state.Init(ctx, dir)
+		err := pkg.CueModInit(ctx, dir)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		<-common.TrackProjectCommand(ctx, cmd, project, nil)
+		// TODO: Add telemtry for init
+		// <-common.TrackProjectCommand(ctx, cmd, project, nil)
 
 	},
 }

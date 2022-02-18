@@ -59,7 +59,7 @@ func Vendor(ctx context.Context, p string) error {
 	}()
 
 	// ensure cue module is initialized
-	if err := cueModInit(ctx, p); err != nil {
+	if err := CueModInit(ctx, p); err != nil {
 		return err
 	}
 
@@ -167,7 +167,7 @@ func GetCueModParent() string {
 	return parentDir
 }
 
-func cueModInit(ctx context.Context, parentDir string) error {
+func CueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
 	modDir := path.Join(parentDir, "cue.mod")
