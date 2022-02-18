@@ -7,7 +7,6 @@ import (
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/cmd/dagger/cmd/input"
 	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
@@ -64,7 +63,6 @@ func init() {
 		historyCmd,
 		loginCmd,
 		logoutCmd,
-		input.Cmd,
 		output.Cmd,
 		versionCmd,
 		docCmd,
