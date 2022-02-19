@@ -26,6 +26,7 @@ dagger.#Plan & {
 		}
 
 		getCallerIdentity: aws.#Run & {
+			always:     true
 			configFile: inputs.directories.awsConfig.contents
 
 			credentials: aws.#Credentials & {

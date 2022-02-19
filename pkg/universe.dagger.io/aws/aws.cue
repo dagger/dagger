@@ -3,7 +3,6 @@ package aws
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
 )
 
@@ -12,27 +11,30 @@ import (
 // Used by default with aws.#Run
 #Build: {
 
-	_build: alpine.#Build & {
-		"packages": packages
-		"packages": curl: {}
+	docker.#Build & {
+		steps: [
+			docker.#Pull & {
+				source: "amazonlinux:2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
+			},
+			// cache yum install separately
+			docker.#Run & {
+				command: {
+					name: "yum"
+					args: ["install", "unzip", "-y"]
+				}
+			},
+			docker.#Run & {
+				command: {
+					name: "/scripts/install.sh"
+					args: [version]
+				}
+				mounts: scripts: {
+					dest:     "/scripts"
+					contents: _scripts.output
+				}
+			},
+		]
 	}
-
-	_install: docker.#Run & {
-		input: _build.output
-		command: {
-			name: "/scripts/install.sh"
-			args: [version]
-		}
-		mounts: scripts: {
-			dest:     "/scripts"
-			contents: _scripts.output
-		}
-	}
-
-	output: _install.output
-
-	// Additional packages to install to the Alpine image
-	packages: alpine.#Build.packages
 
 	_scripts: dagger.#Source & {
 		path: "_scripts"

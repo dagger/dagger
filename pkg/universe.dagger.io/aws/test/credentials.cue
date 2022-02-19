@@ -1,7 +1,7 @@
 package test
 
 import (
-	// "encoding/json"
+	"encoding/json"
 	"dagger.io/dagger"
 	"universe.dagger.io/aws"
 )
@@ -19,6 +19,7 @@ dagger.#Plan & {
 		}
 
 		getCallerIdentity: aws.#Run & {
+			always:      true
 			credentials: aws.#Credentials & {
 				accessKeyId:     sopsSecrets.output.AWS_ACCESS_KEY_ID.contents
 				secretAccessKey: sopsSecrets.output.AWS_SECRET_ACCESS_KEY.contents
@@ -27,16 +28,16 @@ dagger.#Plan & {
 			command: {
 				name: "sh"
 				flags: "-c": true
-				args: ["aws sts get-caller-identity"]
+				args: ["aws sts get-caller-identity > /output.txt"]
 			}
 
-			// export: files: "/output.txt": _
+			export: files: "/output.txt": _
 		}
 
-		// verify: json.Unmarshal(getCallerIdentity.export.files."/output.txt".contents) & {
-		//  UserId:  string & !~"^$"
-		//  Account: =~"^12[0-9]{8}86$"
-		//  Arn:     =~"(12[0-9]{8}86)"
-		// }
+		verify: json.Unmarshal(getCallerIdentity.export.files."/output.txt".contents) & {
+			UserId:  string & !~"^$"
+			Account: =~"^12[0-9]{8}86$"
+			Arn:     =~"(12[0-9]{8}86)"
+		}
 	}
 }
