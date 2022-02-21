@@ -169,10 +169,17 @@ func CueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
 	modDir := path.Join(parentDir, "cue.mod")
+	if err := os.Mkdir(modDir, 0755); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+
 	modFile := path.Join(modDir, "module.cue")
 	if _, err := os.Stat(modFile); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
+		statErr, ok := err.(*os.PathError)
+		if !ok {
+			return statErr
 		}
 
 		lg.Debug().Str("mod", parentDir).Msg("initializing cue.mod")
