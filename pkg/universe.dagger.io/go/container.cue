@@ -36,9 +36,6 @@ import (
 				dest: _cachePath
 			}
 		}
-		env: {
-			CGO_ENABLED: "0"
-			GOMODCACHE:  _cachePath
-		}
+		env: GOMODCACHE: _cachePath
 	}
 }

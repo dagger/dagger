@@ -15,7 +15,7 @@ dagger.#Plan & {
 			command: args: ["version"]
 		}
 
-		overide: {
+		override: {
 			base: alpine.#Build & {
 				packages: go: _
 			}

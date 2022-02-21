@@ -27,7 +27,7 @@ dagger.#Plan & {
 				env: NAME: "dagger"
 				mounts: binary: {
 					dest:     "/bin/hello"
-					contents: build.binary
+					contents: build.output
 					source:   "/test"
 				}
 			}

@@ -43,8 +43,9 @@ import (
 				"-o":       "/output/"
 			}
 		}
-		export: directories: "/output/": _
+		export: directories: "/output": _
 	}
 
-	binary: container.export.directories."/output/"
+	// Directory containing the output of the build
+	output: container.export.directories."/output"
 }
