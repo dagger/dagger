@@ -334,7 +334,9 @@ func walkStdlib(ctx context.Context, output, format string) {
 		lg.Fatal().Err(err).Msg("cannot generate stdlib doc index")
 	}
 	defer index.Close()
-	fmt.Fprintf(index, "# Index\n\n")
+	// FIXME: I removed a \n character, so that markdownlint doesn't complain
+	//        about an extra newline at the end of the file.
+	fmt.Fprintf(index, "# Index\n")
 	indexKeys := []string{}
 
 	for p, pkg := range packages {
@@ -357,6 +359,11 @@ func walkStdlib(ctx context.Context, output, format string) {
 
 	// Generate index from sorted list of packages
 	sort.Strings(indexKeys)
+	// Add a extra blank line if we have at least one package
+	// TODO: this is a hack, fixes issue with markdownlint, if we haven't generated any docs.
+	if len(indexKeys) > 0 {
+		fmt.Fprintf(index, "\n")
+	}
 	for _, p := range indexKeys {
 		description := mdEscape(packages[p].Description)
 		fmt.Fprintf(index, "- [%s](./%s) - %s\n", p, getFileName(p), description)
