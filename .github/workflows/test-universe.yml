@@ -58,4 +58,4 @@ jobs:
           DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
           DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
         run: |
-          make europa-universe-test
+          make universe-test
