@@ -35,7 +35,7 @@ require (
 	go.mozilla.org/sops/v3 v3.7.1
 	go.opentelemetry.io/otel v1.4.1
 	go.opentelemetry.io/otel/exporters/jaeger v1.4.0
-	go.opentelemetry.io/otel/sdk v1.4.0
+	go.opentelemetry.io/otel/sdk v1.4.1
 	go.opentelemetry.io/otel/trace v1.4.1
 	golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
