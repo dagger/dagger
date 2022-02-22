@@ -1,6 +1,7 @@
 # Index
 
 - [alpine](./alpine.md) - Base package for Alpine Linux
+- [ansible](./ansible.md) - -
 - [argocd](./argocd.md) - ArgoCD client operations
 - [aws](./aws/README.md) - AWS base package
 - [aws/cloudformation](./aws/cloudformation.md) - AWS CloudFormation

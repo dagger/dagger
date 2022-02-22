@@ -290,3 +290,10 @@ setup() {
 @test "bats" {
   dagger -e bats up
 }
+
+@test "ansible" {
+  # Fails due to missing required variables
+  run dagger -e ansible up
+  assert_success
+  assert_output --partial "Hello Ansible, here is Dagger"
+}

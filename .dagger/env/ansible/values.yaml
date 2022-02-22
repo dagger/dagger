@@ -1,0 +1,34 @@
+plan:
+    package: ./pkg/alpha.dagger.io/ansible/tests
+name: ansible
+inputs:
+    Inventory.file:
+        text: |+
+            127.0.0.1 ansible_connection=local
+
+    PlaybookConfig.source:
+        dir:
+            path: ./pkg/alpha.dagger.io/ansible/tests/src
+    SSH.keysSource:
+        dir:
+            path: ./pkg/alpha.dagger.io/ansible/tests/ssh
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age185d6cq53ld33q5hvmhpnj82w5zcz3eg9t0yxk2uxndvlshszd5gscs0eff
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxY2I1K3lnQXpST2s3aStF
+            SkZ5Z2hMRmJndHM5OXRjeXdaWjNaWkdIdzNVCmRKMUxZOWdDc0QwN2oxbk1CV1Q5
+            bXBPb1p3RGtlNmt1QkRYaVAwdlFUeTQKLS0tIE92VVJ2REpmR2xNVUlvMklUZXVU
+            SmdFK0szMThORFZaQ0FreUVBRzJsR1UKPpByCSdOlovNDNCMixCnyj51p3vkPobR
+            Y+0gNF8RQ4/Gv0i638WY8qYZH7chiPj0cl6Qpdyk2470xz/3tnW9vA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2022-02-24T15:28:21Z"
+    mac: ENC[AES256_GCM,data:3yCt3GXX9aqKo8q4MaNK+FLnRFXbAkD1AWfQ2P8vWcnNyQeubhgzzQSON2Bef98RUUyldzx3vHJzOO09F3JcaJmIQ+fGJUPc1yekKps00r2BIXpqxviQutp8yWPtUc5ZQWkwQ2H3Uh2WNPVDJONPH8Vja61gIZc++ibFlBJ2w+Q=,iv:qCdIhJKiKSTEL61TQoglhVdJZVvgNRgsgq8qewt7GBc=,tag:NW5OvNsfhayxGzGsCqO90A==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
