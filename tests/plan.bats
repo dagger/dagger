@@ -16,12 +16,11 @@ setup() {
   assert_failure
 }
 
-# TODO/FIXME: this test is broken, it's not asserting that the proxy is not running
-# @test "plan/proxy invalid value" {
-#   cd "$TESTDIR"
-#   run "$DAGGER" up ./plan/proxy/invalid_value.cue
-#   assert_failure
-# }
+@test "plan/proxy invalid value" {
+  cd "$TESTDIR"
+  run "$DAGGER" up ./plan/proxy/invalid_value.cue
+  assert_failure
+}
 
 @test "plan/proxy incomplete unix" {
   cd "$TESTDIR"
@@ -29,12 +28,11 @@ setup() {
   assert_failure
 }
 
-# TODO/FIXME: this test is broken, it's not asserting that the proxy is not running
-# @test "plan/proxy incomplete service" {
-#   cd "$TESTDIR"
-#   run "$DAGGER" up ./plan/proxy/incomplete_service.cue
-#   assert_output --partial "pipeline was partially executed because of missing inputs"
-# }
+@test "plan/proxy incomplete service" {
+  cd "$TESTDIR"
+  run "$DAGGER" up ./plan/proxy/incomplete_service.cue
+  assert_output --partial 'mount "docker" is not concrete'
+}
 
 @test "plan/proxy unix" {
   cd "$TESTDIR"
