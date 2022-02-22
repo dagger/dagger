@@ -7,6 +7,7 @@ import (
 
 dagger.#Plan & {
 	actions: {
+		// TODO/FIXME: Use Europa constructs for this
 		// sayHello: os.#Container & {
 		//  command: "echo Hello Europa! > /out.txt"
 		// }
