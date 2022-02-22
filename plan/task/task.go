@@ -60,11 +60,6 @@ func New(typ string) Task {
 }
 
 func Lookup(v *compiler.Value) (Task, error) {
-	// FIXME: legacy pipelines
-	// if environment.IsComponent(v) {
-	// 	return New("#up"), nil
-	// }
-
 	if v.Kind() != cue.StructKind {
 		return nil, ErrNotTask
 	}
