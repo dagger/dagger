@@ -307,6 +307,48 @@ func walkStdlib(ctx context.Context, output, format string) {
 	lg.Info().Str("output", output).Msg("generating stdlib")
 
 	packages := map[string]*Package{}
+	// TODO: Does this need to be re-worked for Europa?
+	// err := fs.WalkDir(pkg.FS, pkg.AlphaModule, func(p string, d fs.DirEntry, err error) error {
+	// 	if err != nil {
+	// 		return err
+	// 	}
+
+	// 	// Ignore useless embedded files
+	// 	if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" ||
+	// 		strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
+	// 		return nil
+	// 	}
+
+	// 	p = strings.TrimPrefix(p, pkg.AlphaModule+"/")
+
+	// 	// Ignore tests directories
+	// 	if d.Name() == "tests" {
+	// 		return nil
+	// 	}
+
+	// 	pkgName := fmt.Sprintf("%s/%s", pkg.AlphaModule, p)
+	// 	lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
+	// 	val, err := loadCode(pkgName)
+	// 	if err != nil {
+	// 		if strings.Contains(err.Error(), "no CUE files") {
+	// 			lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+	// 			return nil
+	// 		}
+	// 		if strings.Contains(err.Error(), "cannot find package") {
+	// 			lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+	// 			return nil
+	// 		}
+	// 		return err
+	// 	}
+
+	// 	pkg := Parse(ctx, pkgName, val)
+	// 	packages[p] = pkg
+	// 	return nil
+	// })
+
+	// if err != nil {
+	// 	lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
+	// }
 
 	hasSubPackages := func(name string) bool {
 		for p := range packages {
