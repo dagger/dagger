@@ -3,11 +3,11 @@ package main
 import (
 	"strings"
 
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
 	"universe.dagger.io/bash"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 
 	// FIXME: Ideally we would want to automatically set the platform's arch identical to the host
 	// to avoid the performance hit caused by qemu (linter goes from <3s to >3m when arch is x86)
@@ -29,22 +29,25 @@ engine.#Plan & {
 		}
 	}
 
-	outputs: directories: "go binaries": {
-		contents: actions.build.export.directories["/build"].contents
-		dest:     "./build"
-	}
+	// FIXME?
+	// FTL failed to load plan: outputs.directories."go binaries".contents: undefined field: contents:
+	// 
+	// outputs: directories: "go binaries": {
+	// 	contents: actions.build.export.directories["/build"].contents
+	// 	dest:     "./build"
+	// }
 
 	actions: {
 		_goModCache: "go mod cache": {
 			dest:     "/gomodcache"
-			contents: engine.#CacheDir & {
+			contents: dagger.#CacheDir & {
 				id: "go mod cache"
 			}
 		}
 
 		_baseImages: #Images
 
-		_source: "dagger source code": {
+		_sourceCode: "dagger source code": {
 			contents: inputs.directories.source.contents
 			dest:     "/usr/src/dagger"
 		}
@@ -63,14 +66,14 @@ engine.#Plan & {
 				mkdir -p /build
 				git_revision=$(git rev-parse --short HEAD)
 				CGO_ENABLED=0 \
-					go build -v -o /build/dagger \
-					-ldflags '-s -w -X go.dagger.io/dagger/version.Revision='${git_revision} \
-					./cmd/dagger/
+				 go build -v -o /build/dagger \
+				 -ldflags '-s -w -X go.dagger.io/dagger/version.Revision='${git_revision} \
+				 ./cmd/dagger/
 				"""#
 
 			workdir: mounts["dagger source code"].dest
 			mounts: {
-				_source
+				_sourceCode
 				_goModCache
 			}
 
@@ -83,8 +86,20 @@ engine.#Plan & {
 			script: contents: "golangci-lint run -v --timeout 5m"
 			workdir: mounts["dagger source code"].dest
 			mounts: {
-				_source
+				_sourceCode
 				_goModCache
+			}
+		}
+
+		cueFmt: bash.#Run & {
+			input: _baseImages.cue
+
+			script: contents: #"""
+				find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
+				"""#
+			workdir: mounts["dagger source code"].dest
+			mounts: {
+				_sourceCode
 			}
 		}
 	}

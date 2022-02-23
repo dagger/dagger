@@ -6,6 +6,7 @@ import (
 
 let GoVersion = "1.17"
 let GolangCILintVersion = "1.44.0"
+let CUEVersion = "0.4.2"
 
 // Base container images used for the CI
 #Images: {
@@ -39,5 +40,41 @@ let GolangCILintVersion = "1.44.0"
 	goLinter:  _goLinter.output
 	_goLinter: docker.#Pull & {
 		source: "index.docker.io/golangci/golangci-lint:v\(GolangCILintVersion)"
+	}
+
+	// base image for CUE cli + alpine distrib
+	cue: _cue._alpine.output
+	_cue: {
+		_cueBinary: docker.#Pull & {
+			source: "index.docker.io/cuelang/cue:\(CUEVersion)"
+		}
+
+		_alpine: docker.#Build & {
+			_packages: ["bash", "git"]
+
+			steps: [
+				docker.#Pull & {
+					source: "index.docker.io/alpine:3"
+				},
+				for pkg in _packages {
+					docker.#Run & {
+						command: {
+							name: "apk"
+							args: ["add", pkg]
+							flags: {
+								"-U":         true
+								"--no-cache": true
+							}
+						}
+					}
+				},
+				docker.#Copy & {
+					// input:    _alpine.output
+					contents: _cueBinary.output.rootfs
+					source:   "/usr/bin/cue"
+					dest:     "/usr/bin/cue"
+				},
+			]
+		}
 	}
 }
