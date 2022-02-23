@@ -17,17 +17,15 @@ import (
 
 var (
 	// FS contains the filesystem of the stdlib.
-	//go:embed alpha.dagger.io dagger.io universe.dagger.io
+	//go:embed dagger.io universe.dagger.io
 	FS embed.FS
 )
 
 var (
-	AlphaModule    = "alpha.dagger.io"
 	DaggerModule   = "dagger.io"
 	UniverseModule = "universe.dagger.io"
 
 	modules = []string{
-		AlphaModule,
 		DaggerModule,
 		UniverseModule,
 	}
@@ -59,7 +57,7 @@ func Vendor(ctx context.Context, p string) error {
 	}()
 
 	// ensure cue module is initialized
-	if err := cueModInit(ctx, p); err != nil {
+	if err := CueModInit(ctx, p); err != nil {
 		return err
 	}
 
@@ -167,14 +165,21 @@ func GetCueModParent() string {
 	return parentDir
 }
 
-func cueModInit(ctx context.Context, parentDir string) error {
+func CueModInit(ctx context.Context, parentDir string) error {
 	lg := log.Ctx(ctx)
 
 	modDir := path.Join(parentDir, "cue.mod")
+	if err := os.Mkdir(modDir, 0755); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+	}
+
 	modFile := path.Join(modDir, "module.cue")
 	if _, err := os.Stat(modFile); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
+		statErr, ok := err.(*os.PathError)
+		if !ok {
+			return statErr
 		}
 
 		lg.Debug().Str("mod", parentDir).Msg("initializing cue.mod")

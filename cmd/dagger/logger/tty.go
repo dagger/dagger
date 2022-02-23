@@ -14,14 +14,14 @@ import (
 	"github.com/containerd/console"
 	"github.com/morikuni/aec"
 	"github.com/tonistiigi/vt100"
-	"go.dagger.io/dagger/environment"
+	"go.dagger.io/dagger/plan/task"
 )
 
 type Event map[string]interface{}
 
 type Group struct {
 	Name      string
-	State     environment.State
+	State     task.State
 	Events    []Event
 	Started   *time.Time
 	Completed *time.Time
@@ -43,7 +43,7 @@ func (l *Logs) Add(event Event) error {
 	l.l.Lock()
 	defer l.l.Unlock()
 
-	task, ok := event["task"].(string)
+	taskPath, ok := event["task"].(string)
 	if !ok {
 		l.Messages = append(l.Messages, Message{
 			Event: event,
@@ -52,12 +52,8 @@ func (l *Logs) Add(event Event) error {
 		return nil
 	}
 
-	// Hide `#up.*` from log group names
-	// FIXME: remove in Europa
-	groupKey := strings.Split(task, ".#up")[0]
-
 	// Hide hidden fields (e.g. `._*`) from log group names
-	groupKey = strings.Split(groupKey, "._")[0]
+	groupKey := strings.Split(taskPath, "._")[0]
 
 	group := l.groups[groupKey]
 
@@ -82,8 +78,8 @@ func (l *Logs) Add(event Event) error {
 	// For each task in a group, the status will transition from computing to complete, then back to computing and so on.
 	// The transition is fast enough not to cause a problem.
 	if st, ok := event["state"].(string); ok {
-		group.State = environment.State(st)
-		if group.State == environment.StateComputing {
+		group.State = task.State(st)
+		if group.State == task.StateComputing {
 			group.Completed = nil
 		} else {
 			now := time.Now()
@@ -228,7 +224,7 @@ func (c *TTYOutput) linesPerGroup(width, height int) int {
 
 	runningGroups := 0
 	for _, message := range c.logs.Messages {
-		if group := message.Group; group != nil && group.State == environment.StateComputing {
+		if group := message.Group; group != nil && group.State == task.StateComputing {
 			runningGroups++
 		}
 	}
@@ -268,13 +264,13 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 
 	prefix := ""
 	switch group.State {
-	case environment.StateComputing:
+	case task.StateComputing:
 		prefix = "[+]"
-	case environment.StateCanceled:
+	case task.StateCanceled:
 		prefix = "[✗]"
-	case environment.StateFailed:
+	case task.StateFailed:
 		prefix = "[✗]"
-	case environment.StateCompleted:
+	case task.StateCompleted:
 		prefix = "[✔]"
 	}
 
@@ -298,13 +294,13 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 
 	// color
 	switch group.State {
-	case environment.StateComputing:
+	case task.StateComputing:
 		out = aec.Apply(out, aec.LightBlueF)
-	case environment.StateCanceled:
+	case task.StateCanceled:
 		out = aec.Apply(out, aec.LightYellowF)
-	case environment.StateFailed:
+	case task.StateFailed:
 		out = aec.Apply(out, aec.LightRedF)
-	case environment.StateCompleted:
+	case task.StateCompleted:
 		out = aec.Apply(out, aec.LightGreenF)
 	}
 
@@ -314,19 +310,19 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 
 	printEvents := []Event{}
 	switch group.State {
-	case environment.StateComputing:
+	case task.StateComputing:
 		printEvents = group.Events
 		// for computing tasks, show only last N
 		if len(printEvents) > maxLines {
 			printEvents = printEvents[len(printEvents)-maxLines:]
 		}
-	case environment.StateCanceled:
+	case task.StateCanceled:
 		// for completed tasks, don't show any logs
 		printEvents = []Event{}
-	case environment.StateFailed:
+	case task.StateFailed:
 		// for failed, show all logs
 		printEvents = group.Events
-	case environment.StateCompleted:
+	case task.StateCompleted:
 		// for completed tasks, don't show any logs
 		printEvents = []Event{}
 	}

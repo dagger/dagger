@@ -12,77 +12,7 @@ import (
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
-	"go.dagger.io/dagger/state"
 )
-
-func CurrentProject(ctx context.Context) *state.Project {
-	lg := log.Ctx(ctx)
-
-	if projectPath := viper.GetString("project"); projectPath != "" {
-		project, err := state.Open(ctx, projectPath)
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Str("path", projectPath).
-				Msg("failed to open project")
-		}
-		return project
-	}
-
-	project, err := state.Current(ctx)
-	if err != nil {
-		lg.
-			Fatal().
-			Err(err).
-			Msg("failed to determine current project")
-	}
-	return project
-}
-
-func CurrentEnvironmentState(ctx context.Context, project *state.Project) *state.State {
-	lg := log.Ctx(ctx)
-
-	environmentName := viper.GetString("environment")
-	if environmentName != "" {
-		st, err := project.Get(ctx, environmentName)
-		if err != nil {
-			lg.
-				Fatal().
-				Err(err).
-				Msg("failed to load environment")
-		}
-		return st
-	}
-
-	environments, err := project.List(ctx)
-	if err != nil {
-		lg.
-			Fatal().
-			Err(err).
-			Msg("failed to list environments")
-	}
-
-	if len(environments) == 0 {
-		lg.
-			Fatal().
-			Msg("no environments")
-	}
-
-	if len(environments) > 1 {
-		envNames := []string{}
-		for _, e := range environments {
-			envNames = append(envNames, e.Name)
-		}
-		lg.
-			Fatal().
-			Err(err).
-			Strs("environments", envNames).
-			Msg("multiple environments available in the project, select one with `--environment`")
-	}
-
-	return environments[0]
-}
 
 // FormatValue returns the String representation of the cue value
 func FormatValue(val *compiler.Value) string {

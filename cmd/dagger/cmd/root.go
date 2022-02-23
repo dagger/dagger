@@ -7,11 +7,8 @@ import (
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/cmd/dagger/cmd/input"
 	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
-	"go.dagger.io/dagger/cmd/dagger/cmd/output"
 	"go.dagger.io/dagger/cmd/dagger/logger"
-	"go.dagger.io/dagger/keychain"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -33,21 +30,10 @@ func init() {
 	rootCmd.PersistentFlags().StringArray("cache-from", []string{},
 		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
-	rootCmd.PersistentFlags().StringP("environment", "e", "", "Select an environment")
 	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
 
-	rootCmd.PersistentFlags().Bool("europa", false, "Enable experiemental Europa UX")
-
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
-		lg := logger.New()
-		ctx := lg.WithContext(cmd.Context())
-
 		go checkVersion()
-
-		err := keychain.EnsureDefaultKey(ctx)
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to generate default key")
-		}
 	}
 	rootCmd.PersistentPostRun = func(*cobra.Command, []string) {
 		warnVersion()
@@ -55,18 +41,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		initCmd,
-		newCmd,
-		computeCmd,
-		listCmd,
-		queryCmd,
 		upCmd,
-		downCmd,
-		editCmd,
-		historyCmd,
-		loginCmd,
-		logoutCmd,
-		input.Cmd,
-		output.Cmd,
 		versionCmd,
 		docCmd,
 		mod.Cmd,

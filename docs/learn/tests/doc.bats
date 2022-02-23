@@ -9,73 +9,76 @@ setup() {
 
 #  Test 1003-get-started
 @test "doc-1003-get-started" {
-  setup_example_sandbox
+  skip "TODO: Implement for Europa"
+  # setup_example_sandbox
 
-  # Follow tutorial
-  mkdir -p "$DAGGER_SANDBOX"/plans/local
-  cp "$DAGGER_PROJECT"/getting-started/plans/todoapp.cue "$DAGGER_SANDBOX"/plans/todoapp.cue
-  cp "$DAGGER_PROJECT"/getting-started/plans/local/local.cue "$DAGGER_SANDBOX"/plans/local/local.cue
+  # # Follow tutorial
+  # mkdir -p "$DAGGER_SANDBOX"/plans/local
+  # cp "$DAGGER_PROJECT"/getting-started/plans/todoapp.cue "$DAGGER_SANDBOX"/plans/todoapp.cue
+  # cp "$DAGGER_PROJECT"/getting-started/plans/local/local.cue "$DAGGER_SANDBOX"/plans/local/local.cue
   
-  dagger --project "$DAGGER_SANDBOX" new 'local' -p "$DAGGER_SANDBOX"/plans/local
-  dagger --project "$DAGGER_SANDBOX" -e 'local' input socket dockerSocket /var/run/docker.sock
-  dagger --project "$DAGGER_SANDBOX" -e 'local' input dir app.source "$DAGGER_SANDBOX"
+  # dagger --project "$DAGGER_SANDBOX" new 'local' -p "$DAGGER_SANDBOX"/plans/local
+  # dagger --project "$DAGGER_SANDBOX" -e 'local' input socket dockerSocket /var/run/docker.sock
+  # dagger --project "$DAGGER_SANDBOX" -e 'local' input dir app.source "$DAGGER_SANDBOX"
 
-  run dagger --project "$DAGGER_SANDBOX" -e 'local' up
-  assert_success
+  # run dagger --project "$DAGGER_SANDBOX" -e 'local' up
+  # assert_success
 
-  docker rm -f todoapp
-  docker rm -f registry-local
+  # docker rm -f todoapp
+  # docker rm -f registry-local
 }
 
 @test "doc-1004-first-env" {
-  setup_example_sandbox
+  skip "TODO: Implement for Europa"
+  # setup_example_sandbox
 
-  # Follow tutorial
-  mkdir -p "$DAGGER_SANDBOX"/multibucket
-  cp "$DAGGER_PROJECT"/multibucket/source.cue "$DAGGER_SANDBOX"/multibucket
-  cp "$DAGGER_PROJECT"/multibucket/yarn.cue "$DAGGER_SANDBOX"/multibucket
-  cp "$DAGGER_PROJECT"/multibucket/netlify.cue "$DAGGER_SANDBOX"/multibucket
+  # # Follow tutorial
+  # mkdir -p "$DAGGER_SANDBOX"/multibucket
+  # cp "$DAGGER_PROJECT"/multibucket/source.cue "$DAGGER_SANDBOX"/multibucket
+  # cp "$DAGGER_PROJECT"/multibucket/yarn.cue "$DAGGER_SANDBOX"/multibucket
+  # cp "$DAGGER_PROJECT"/multibucket/netlify.cue "$DAGGER_SANDBOX"/multibucket
 
-  dagger --project "$DAGGER_SANDBOX" doc alpha.dagger.io/netlify
-  dagger --project "$DAGGER_SANDBOX" doc alpha.dagger.io/js/yarn
+  # dagger --project "$DAGGER_SANDBOX" doc alpha.dagger.io/netlify
+  # dagger --project "$DAGGER_SANDBOX" doc alpha.dagger.io/js/yarn
 
-  # Initialize new env
-  dagger --project "$DAGGER_SANDBOX" new 'multibucket' -p "$DAGGER_SANDBOX"/multibucket
+  # # Initialize new env
+  # dagger --project "$DAGGER_SANDBOX" new 'multibucket' -p "$DAGGER_SANDBOX"/multibucket
 
-  # Copy corresponding env
-  cp -r "$DAGGER_PROJECT"/.dagger/env/multibucket "$DAGGER_SANDBOX"/.dagger/env/
+  # # Copy corresponding env
+  # cp -r "$DAGGER_PROJECT"/.dagger/env/multibucket "$DAGGER_SANDBOX"/.dagger/env/
 
-  # Add missing src input
-  dagger --project "$DAGGER_SANDBOX" -e multibucket input dir src "$DAGGER_SANDBOX"
+  # # Add missing src input
+  # dagger --project "$DAGGER_SANDBOX" -e multibucket input dir src "$DAGGER_SANDBOX"
 
-  # Run test
-  dagger --project "$DAGGER_SANDBOX" -e multibucket up
-  url=$(dagger --project "$DAGGER_SANDBOX" -e multibucket query -f text site.netlify.deployUrl)
+  # # Run test
+  # dagger --project "$DAGGER_SANDBOX" -e multibucket up
+  # url=$(dagger --project "$DAGGER_SANDBOX" -e multibucket query -f text site.netlify.deployUrl)
 
-  # Check output
-  run curl "$url"
-  assert_output --partial "./static/css/main.9149988f.chunk.css"
+  # # Check output
+  # run curl "$url"
+  # assert_output --partial "./static/css/main.9149988f.chunk.css"
 }
 
 @test "doc-1006-google-cloud-run" {
-  setup_example_sandbox
+  skip "TODO: Implement for Europa"
+  # setup_example_sandbox
 
-  # Follow tutorial
-  mkdir -p "$DAGGER_SANDBOX"/gcpcloudrun
-  cp "$DAGGER_PROJECT"/gcpcloudrun/source.cue "$DAGGER_SANDBOX"/gcpcloudrun
+  # # Follow tutorial
+  # mkdir -p "$DAGGER_SANDBOX"/gcpcloudrun
+  # cp "$DAGGER_PROJECT"/gcpcloudrun/source.cue "$DAGGER_SANDBOX"/gcpcloudrun
 
-  # Initialize new env
-  dagger --project "$DAGGER_SANDBOX" new 'gcpcloudrun' -p "$DAGGER_SANDBOX"/gcpcloudrun
+  # # Initialize new env
+  # dagger --project "$DAGGER_SANDBOX" new 'gcpcloudrun' -p "$DAGGER_SANDBOX"/gcpcloudrun
 
-  # Copy corresponding env
-  cp -r "$DAGGER_PROJECT"/.dagger/env/gcpcloudrun "$DAGGER_SANDBOX"/.dagger/env/
+  # # Copy corresponding env
+  # cp -r "$DAGGER_PROJECT"/.dagger/env/gcpcloudrun "$DAGGER_SANDBOX"/.dagger/env/
 
-  # Add missing src input
-  dagger --project "$DAGGER_SANDBOX" -e gcpcloudrun input dir src "$DAGGER_SANDBOX"
+  # # Add missing src input
+  # dagger --project "$DAGGER_SANDBOX" -e gcpcloudrun input dir src "$DAGGER_SANDBOX"
 
-  # Run test
-  run dagger --project "$DAGGER_SANDBOX" -e gcpcloudrun up
-  assert_success
+  # # Run test
+  # run dagger --project "$DAGGER_SANDBOX" -e gcpcloudrun up
+  # assert_success
 }
 
 @test "doc-1007-kube-kind" {

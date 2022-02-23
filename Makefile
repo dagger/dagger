@@ -59,13 +59,13 @@ core-integration: dagger-debug # Run core integration tests
 	yarn --cwd "./tests" install
 	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./tests" test
 
+# .PHONY: universe-test
+# universe-test: dagger-debug # Run universe tests
+# 	yarn --cwd "./universe" install
+# 	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./universe" test
+
 .PHONY: universe-test
 universe-test: dagger-debug # Run universe tests
-	yarn --cwd "./universe" install
-	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./universe" test
-
-.PHONY: europa-universe-test
-europa-universe-test: dagger-debug # Run Europa universe tests
 	yarn --cwd "./pkg/universe.dagger.io" install
 	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./pkg/universe.dagger.io" test
 

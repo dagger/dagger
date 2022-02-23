@@ -46,5 +46,5 @@ import (
 		export: directories: "/output/": _
 	}
 
-	binary: container.export.directories."/output/".contents
+	binary: container.export.directories."/output/"
 }

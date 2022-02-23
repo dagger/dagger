@@ -20,7 +20,6 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/environment"
 	"go.dagger.io/dagger/pkg"
 	"golang.org/x/term"
 )
@@ -55,22 +54,22 @@ type Package struct {
 func Parse(ctx context.Context, packageName string, val *compiler.Value) *Package {
 	lg := log.Ctx(ctx)
 
-	parseValues := func(field string, values []*compiler.Value) []Value {
-		val := []Value{}
+	// parseValues := func(field string, values []*compiler.Value) []Value {
+	// 	val := []Value{}
 
-		for _, i := range values {
-			v := Value{}
-			v.Name = strings.TrimPrefix(
-				i.Path().String(),
-				field+".",
-			)
-			v.Type = common.FormatValue(i)
-			v.Description = common.ValueDocOneLine(i)
-			val = append(val, v)
-		}
+	// 	for _, i := range values {
+	// 		v := Value{}
+	// 		v.Name = strings.TrimPrefix(
+	// 			i.Path().String(),
+	// 			field+".",
+	// 		)
+	// 		v.Type = common.FormatValue(i)
+	// 		v.Description = common.ValueDocOneLine(i)
+	// 		val = append(val, v)
+	// 	}
 
-		return val
-	}
+	// 	return val
+	// }
 
 	fields, err := val.Fields(cue.Definitions(true))
 	if err != nil {
@@ -103,14 +102,6 @@ func Parse(ctx context.Context, packageName string, val *compiler.Value) *Packag
 		// Field Name + Description
 		field.Name = name
 		field.Description = common.ValueDocOneLine(v)
-
-		// Inputs
-		inp := environment.ScanInputs(ctx, v)
-		field.Inputs = parseValues(field.Name, inp)
-
-		// Outputs
-		out := environment.ScanOutputs(ctx, v)
-		field.Outputs = parseValues(field.Name, out)
 
 		pkg.Fields = append(pkg.Fields, field)
 	}
@@ -333,47 +324,48 @@ func walkStdlib(ctx context.Context, output, format string) {
 	lg.Info().Str("output", output).Msg("generating stdlib")
 
 	packages := map[string]*Package{}
-	err := fs.WalkDir(pkg.FS, pkg.AlphaModule, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	// TODO: Does this need to be re-worked for Europa?
+	// err := fs.WalkDir(pkg.FS, pkg.AlphaModule, func(p string, d fs.DirEntry, err error) error {
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		// Ignore useless embedded files
-		if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" ||
-			strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
-			return nil
-		}
+	// 	// Ignore useless embedded files
+	// 	if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" ||
+	// 		strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
+	// 		return nil
+	// 	}
 
-		p = strings.TrimPrefix(p, pkg.AlphaModule+"/")
+	// 	p = strings.TrimPrefix(p, pkg.AlphaModule+"/")
 
-		// Ignore tests directories
-		if d.Name() == "tests" {
-			return nil
-		}
+	// 	// Ignore tests directories
+	// 	if d.Name() == "tests" {
+	// 		return nil
+	// 	}
 
-		pkgName := fmt.Sprintf("%s/%s", pkg.AlphaModule, p)
-		lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
-		val, err := loadCode(pkgName)
-		if err != nil {
-			if strings.Contains(err.Error(), "no CUE files") {
-				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
-				return nil
-			}
-			if strings.Contains(err.Error(), "cannot find package") {
-				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
-				return nil
-			}
-			return err
-		}
+	// 	pkgName := fmt.Sprintf("%s/%s", pkg.AlphaModule, p)
+	// 	lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
+	// 	val, err := loadCode(pkgName)
+	// 	if err != nil {
+	// 		if strings.Contains(err.Error(), "no CUE files") {
+	// 			lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+	// 			return nil
+	// 		}
+	// 		if strings.Contains(err.Error(), "cannot find package") {
+	// 			lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+	// 			return nil
+	// 		}
+	// 		return err
+	// 	}
 
-		pkg := Parse(ctx, pkgName, val)
-		packages[p] = pkg
-		return nil
-	})
+	// 	pkg := Parse(ctx, pkgName, val)
+	// 	packages[p] = pkg
+	// 	return nil
+	// })
 
-	if err != nil {
-		lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
-	}
+	// if err != nil {
+	// 	lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
+	// }
 
 	hasSubPackages := func(name string) bool {
 		for p := range packages {
@@ -401,7 +393,9 @@ func walkStdlib(ctx context.Context, output, format string) {
 		lg.Fatal().Err(err).Msg("cannot generate stdlib doc index")
 	}
 	defer index.Close()
-	fmt.Fprintf(index, "# Index\n\n")
+	// FIXME: I removed a \n character, so that markdownlint doesn't complain
+	//        about an extra newline at the end of the file.
+	fmt.Fprintf(index, "# Index\n")
 	indexKeys := []string{}
 
 	for p, pkg := range packages {
@@ -424,6 +418,11 @@ func walkStdlib(ctx context.Context, output, format string) {
 
 	// Generate index from sorted list of packages
 	sort.Strings(indexKeys)
+	// Add a extra blank line if we have at least one package
+	// TODO: this is a hack, fixes issue with markdownlint, if we haven't generated any docs.
+	if len(indexKeys) > 0 {
+		fmt.Fprintf(index, "\n")
+	}
 	for _, p := range indexKeys {
 		description := mdEscape(packages[p].Description)
 		fmt.Fprintf(index, "- [%s](./%s) - %s\n", p, getFileName(p), description)

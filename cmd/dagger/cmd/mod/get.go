@@ -6,7 +6,6 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/pkg"
-	"go.dagger.io/dagger/state"
 )
 
 var getCmd = &cobra.Command{
@@ -28,10 +27,10 @@ var getCmd = &cobra.Command{
 		var err error
 
 		cueModPath := pkg.GetCueModParent()
-		// err = pkg.CueModInit(ctx, cueModPath)
-		_, err = state.Init(ctx, cueModPath)
-		if err != nil && err != state.ErrAlreadyInit {
+		err = pkg.CueModInit(ctx, cueModPath)
+		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize cue.mod")
+			panic(err)
 		}
 
 		var update = viper.GetBool("update")

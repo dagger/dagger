@@ -25,7 +25,7 @@ type Require struct {
 
 func newRequire(repoName, versionConstraint string) (*Require, error) {
 	switch {
-	case strings.HasPrefix(repoName, pkg.AlphaModule):
+	case strings.HasPrefix(repoName, pkg.UniverseModule):
 		return parseDaggerRepoName(repoName, versionConstraint)
 	default:
 		return parseGitRepoName(repoName, versionConstraint)
@@ -52,7 +52,7 @@ func parseGitRepoName(repoName, versionConstraint string) (*Require, error) {
 	}, nil
 }
 
-var daggerRepoNameRegex = regexp.MustCompile(pkg.AlphaModule + `([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
+var daggerRepoNameRegex = regexp.MustCompile(pkg.UniverseModule + `([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
 
 func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 	repoMatches := daggerRepoNameRegex.FindStringSubmatch(repoName)
@@ -62,7 +62,7 @@ func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 	}
 
 	return &Require{
-		repo:              pkg.AlphaModule,
+		repo:              pkg.UniverseModule,
 		path:              repoMatches[1],
 		version:           repoMatches[2],
 		versionConstraint: versionConstraint,
