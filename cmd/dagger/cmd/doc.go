@@ -54,6 +54,23 @@ type Package struct {
 func Parse(ctx context.Context, packageName string, val *compiler.Value) *Package {
 	lg := log.Ctx(ctx)
 
+	// parseValues := func(field string, values []*compiler.Value) []Value {
+	// 	val := []Value{}
+
+	// 	for _, i := range values {
+	// 		v := Value{}
+	// 		v.Name = strings.TrimPrefix(
+	// 			i.Path().String(),
+	// 			field+".",
+	// 		)
+	// 		v.Type = common.FormatValue(i)
+	// 		v.Description = common.ValueDocOneLine(i)
+	// 		val = append(val, v)
+	// 	}
+
+	// 	return val
+	// }
+
 	fields, err := val.Fields(cue.Definitions(true))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("cannot get fields")
