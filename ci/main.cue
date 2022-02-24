@@ -92,8 +92,10 @@ dagger.#Plan & {
 			input: _baseImages.cue
 
 			script: contents: #"""
+				# Format the cue code
 				find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
-				test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
+				# Check that all formatted files where committed
+				test -z $(git status -s . | grep -e '^ M'  | grep .cue | cut -d ' ' -f3)
 				"""#
 			workdir: mounts["dagger source code"].dest
 			mounts: {
