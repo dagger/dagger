@@ -29,13 +29,10 @@ dagger.#Plan & {
 		}
 	}
 
-	// FIXME?
-	// FTL failed to load plan: outputs.directories."go binaries".contents: undefined field: contents:
-	// 
-	// outputs: directories: "go binaries": {
-	// 	contents: actions.build.export.directories["/build"].contents
-	// 	dest:     "./build"
-	// }
+	outputs: directories: "go binaries": {
+		contents: actions.build.export.directories["/build"]
+		dest:     "./build"
+	}
 
 	actions: {
 		_goModCache: "go mod cache": {
@@ -91,11 +88,12 @@ dagger.#Plan & {
 			}
 		}
 
-		cueFmt: bash.#Run & {
+		cueLint: bash.#Run & {
 			input: _baseImages.cue
 
 			script: contents: #"""
 				find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
+				test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
 				"""#
 			workdir: mounts["dagger source code"].dest
 			mounts: {
