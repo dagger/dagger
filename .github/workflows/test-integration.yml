@@ -63,6 +63,12 @@ jobs:
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
 
+      - name: "Install gnu parallel"
+        run: |
+          echo "Was it here?"
+          dpkg -l | grep parallel
+          sudo apt-get install -qq parallel
+
       - name: Test
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
