@@ -160,4 +160,7 @@ import (
 			user: input.config.user
 		}
 	}
+
+	// Command exit code
+	exit: _exec.exit
 }
