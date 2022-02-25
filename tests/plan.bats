@@ -112,6 +112,8 @@ setup() {
 @test "plan/outputs/files normal usage" {
   cd "$TESTDIR"/plan/outputs/files
 
+  rm -f "./test.sh"
+
   "$DAGGER" up ./usage.cue
 
   run ./test.sh
@@ -120,31 +122,32 @@ setup() {
   run ls -l "./test.sh"
   assert_output --partial "-rwxr-x---"
 
-  rm -f "./test.sh"
 }
 
 @test "plan/outputs/files relative path" {
-    cd "$TESTDIR"/plan
+  cd "$TESTDIR"/plan
 
-    "$DAGGER" up ./outputs/files/usage.cue
-    assert [ -f "./outputs/files/test.sh" ]
+  rm -f "./outputs/files/test.sh"
 
-    rm -f "./outputs/files/test.sh"
+  "$DAGGER" up ./outputs/files/usage.cue
+  assert [ -f "./outputs/files/test.sh" ]
 }
 
 @test "plan/outputs/files default permissions" {
   cd "$TESTDIR"/plan/outputs/files
 
+  rm -f "./test"
+
   "$DAGGER" up ./default_permissions.cue
 
   run ls -l "./test"
   assert_output --partial "-rw-r--r--"
-
-  rm -f "./test"
 }
 
 @test "plan/outputs/files no contents" {
   cd "$TESTDIR"/plan/outputs/files
+
+  rm -f "./test"
 
   run "$DAGGER" up ./no_contents.cue
   assert_failure
