@@ -94,19 +94,21 @@ setup() {
 }
 
 @test "plan/outputs/directories" {
-    cd "$TESTDIR"/plan/outputs/directories
+  cd "$TESTDIR"/plan/outputs/directories
 
-    rm -f "./out/test"
-    "$DAGGER" up ./outputs.cue
-    assert [ -f "./out/test" ]
+  "$DAGGER" up ./outputs.cue
+  assert [ -f "./out/test_outputs" ]
+
+  rm -f "./out/test_outputs"
 }
 
 @test "plan/outputs/directories relative paths" {
-    cd "$TESTDIR"/plan
+  cd "$TESTDIR"/plan
 
-    rm -f "./outputs/directories/out/test"
-    "$DAGGER" up ./outputs/directories/outputs.cue
-    assert [ -f "./outputs/directories/out/test" ]
+  "$DAGGER" up ./outputs/directories/relative.cue
+  assert [ -f "./outputs/directories/out/test_relative" ]
+
+  rm -f "./outputs/directories/out/test_relative"
 }
 
 @test "plan/outputs/files normal usage" {
@@ -114,22 +116,22 @@ setup() {
 
   "$DAGGER" up ./usage.cue
 
-  run ./test.sh
+  run ./test_usage
   assert_output "Hello World!"
 
-  run ls -l "./test.sh"
+  run ls -l "./test_usage"
   assert_output --partial "-rwxr-x---"
 
-  rm -f "./test.sh"
+  rm -f "./test_usage"
 }
 
 @test "plan/outputs/files relative path" {
-    cd "$TESTDIR"/plan
+  cd "$TESTDIR"/plan
 
-    "$DAGGER" up ./outputs/files/usage.cue
-    assert [ -f "./outputs/files/test.sh" ]
+  "$DAGGER" up ./outputs/files/relative.cue
+  assert [ -f "./outputs/files/test_relative" ]
 
-    rm -f "./outputs/files/test.sh"
+  rm -f "./outputs/files/test_relative"
 }
 
 @test "plan/outputs/files default permissions" {
@@ -137,10 +139,10 @@ setup() {
 
   "$DAGGER" up ./default_permissions.cue
 
-  run ls -l "./test"
+  run ls -l "./test_default_permissions"
   assert_output --partial "-rw-r--r--"
 
-  rm -f "./test"
+  rm -f "./test_default_permissions"
 }
 
 @test "plan/outputs/files no contents" {
@@ -150,7 +152,9 @@ setup() {
   assert_failure
   assert_output --partial "contents is not set"
 
-  assert [ ! -f "./test" ]
+  assert [ ! -f "./test_no_contents" ]
+
+  rm -f "./test_no_contents"
 }
 
 @test "plan/platform" {

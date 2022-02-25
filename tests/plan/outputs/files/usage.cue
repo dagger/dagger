@@ -5,7 +5,7 @@ import "dagger.io/dagger"
 dagger.#Plan & {
 	outputs: files: {
 		[path=string]: dest: path
-		"test.sh": {
+		test_usage: {
 			contents: """
 				#!/bin/bash
 				set -euo pipefail
