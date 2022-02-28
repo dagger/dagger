@@ -5,6 +5,6 @@ import "dagger.io/dagger"
 dagger.#Plan & {
 	outputs: files: test: {
 		contents: "foobar"
-		dest:     "./test"
+		dest:     "./test_default_permissions"
 	}
 }
