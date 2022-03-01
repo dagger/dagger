@@ -1,0 +1,42 @@
+name: "Dagger CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - '**.bats'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dagger-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - '**.bats'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dagger-ci.yml'
+
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+      -
+        name: Dagger
+        uses: dagger/dagger-for-github@v1
+        with:
+          age-key: ${{ secrets.DAGGER_AGE_KEY }}
+          args: up ./ci
