@@ -4,9 +4,11 @@
   environment = { NODE_VERSION = "16.13.1" }
 
 [context.production]
+  ignore = "false"
 
 [context.deploy-preview]
   command = "yarn build:withoutAuth"
+  ignore = "false"
 
 [[redirects]]
   # Embargoes compliance. DO NOT REMOVE
