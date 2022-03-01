@@ -25,7 +25,10 @@ dagger.#Plan & {
 
 		directories: {
 			// dagger repository
-			source: path: "../"
+			source: {
+				path: "../"
+				exclude: ["./ci"]
+			}
 		}
 	}
 
@@ -35,27 +38,35 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		_goModCache: "go mod cache": {
-			dest:     "/gomodcache"
-			contents: dagger.#CacheDir & {
-				id: "go mod cache"
+		_mountGoCache: {
+			mounts: "go mod cache": {
+				dest:     "/root/.gocache"
+				contents: dagger.#CacheDir & {
+					id: "go mod cache"
+				}
 			}
+			env: GOMODCACHE: mounts["go mod cache"].dest
+		}
+
+		_mountSourceCode: {
+			mounts: "dagger source code": {
+				contents: inputs.directories.source.contents
+				dest:     "/usr/src/dagger"
+			}
+			workdir: mounts["dagger source code"].dest
 		}
 
 		_baseImages: #Images
 
-		_sourceCode: "dagger source code": {
-			contents: inputs.directories.source.contents
-			dest:     "/usr/src/dagger"
-		}
-
 		build: bash.#Run & {
+			_mountSourceCode
+			_mountGoCache
+
 			input: _baseImages.goBuilder
 
 			env: {
-				GOMODCACHE: mounts["go mod cache"].dest
-				GOOS:       strings.ToLower(inputs.params.os)
-				GOARCH:     strings.ToLower(inputs.params.arch)
+				GOOS:   strings.ToLower(inputs.params.os)
+				GOARCH: strings.ToLower(inputs.params.arch)
 				// Makes sure the linter completes before starting the build
 				"__depends": "\(goLint.exit)"
 			}
@@ -69,27 +80,21 @@ dagger.#Plan & {
 				 ./cmd/dagger/
 				"""#
 
-			workdir: mounts["dagger source code"].dest
-			mounts: {
-				_sourceCode
-				_goModCache
-			}
-
 			export: directories: "/build": _
 		}
 
 		goLint: bash.#Run & {
+			_mountSourceCode
+			_mountGoCache
+
 			input: _baseImages.goLinter
 
 			script: contents: "golangci-lint run -v --timeout 5m"
-			workdir: mounts["dagger source code"].dest
-			mounts: {
-				_sourceCode
-				_goModCache
-			}
 		}
 
 		cueLint: bash.#Run & {
+			_mountSourceCode
+
 			input: _baseImages.cue
 
 			script: contents: #"""
@@ -98,10 +103,6 @@ dagger.#Plan & {
 				# Check that all formatted files where committed
 				test -z $(git status -s . | grep -e '^ M'  | grep .cue | cut -d ' ' -f3)
 				"""#
-			workdir: mounts["dagger source code"].dest
-			mounts: {
-				_sourceCode
-			}
 		}
 	}
 }
