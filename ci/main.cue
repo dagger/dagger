@@ -33,7 +33,7 @@ dagger.#Plan & {
 	}
 
 	outputs: directories: "go binaries": {
-		contents: actions.build.export.directories["/build"]
+		contents: actions.goBuild.export.directories["/build"]
 		dest:     "./build"
 	}
 
@@ -58,24 +58,27 @@ dagger.#Plan & {
 
 		_baseImages: #Images
 
-		build: bash.#Run & {
+		// Go build the dagger binary
+		// depends on goLint and goTest to complete successfully
+		goBuild: bash.#Run & {
 			_mountSourceCode
 			_mountGoCache
 
 			input: _baseImages.goBuilder
 
 			env: {
-				GOOS:   strings.ToLower(inputs.params.os)
-				GOARCH: strings.ToLower(inputs.params.arch)
-				// Makes sure the linter completes before starting the build
-				"__depends": "\(goLint.exit)"
+				GOOS:        strings.ToLower(inputs.params.os)
+				GOARCH:      strings.ToLower(inputs.params.arch)
+				CGO_ENABLED: "0"
+				// Makes sure the linter and unit tests complete before starting the build
+				"__depends_lint":  "\(goLint.exit)"
+				"__depends_tests": "\(goTest.exit)"
 			}
 
 			script: contents: #"""
 				mkdir -p /build
 				git_revision=$(git rev-parse --short HEAD)
-				CGO_ENABLED=0 \
-				 go build -v -o /build/dagger \
+				go build -v -o /build/dagger \
 				 -ldflags '-s -w -X go.dagger.io/dagger/version.Revision='${git_revision} \
 				 ./cmd/dagger/
 				"""#
@@ -83,20 +86,29 @@ dagger.#Plan & {
 			export: directories: "/build": _
 		}
 
+		// Go unit tests
+		goTest: bash.#Run & {
+			_mountSourceCode
+			_mountGoCache
+
+			input: _baseImages.goBuilder
+			script: contents: "go test -race -v ./..."
+		}
+
+		// Go lint using golangci-lint
 		goLint: bash.#Run & {
 			_mountSourceCode
 			_mountGoCache
 
 			input: _baseImages.goLinter
-
 			script: contents: "golangci-lint run -v --timeout 5m"
 		}
 
+		// CUE lint
 		cueLint: bash.#Run & {
 			_mountSourceCode
 
 			input: _baseImages.cue
-
 			script: contents: #"""
 				# Format the cue code
 				find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s

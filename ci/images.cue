@@ -14,7 +14,7 @@ let CUEVersion = "0.4.2"
 	// base image to build go binaries
 	goBuilder:  _goBuilder.output
 	_goBuilder: docker.#Build & {
-		_packages: ["bash", "git"]
+		_packages: ["bash", "git", "alpine-sdk"]
 
 		steps: [
 			docker.#Pull & {
