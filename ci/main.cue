@@ -49,7 +49,6 @@ dagger.#Plan & {
 			dest:     "/usr/src/dagger"
 		}
 
-		// FIXME: build only if the linter passed
 		build: bash.#Run & {
 			input: _baseImages.goBuilder
 
@@ -57,6 +56,8 @@ dagger.#Plan & {
 				GOMODCACHE: mounts["go mod cache"].dest
 				GOOS:       strings.ToLower(inputs.params.os)
 				GOARCH:     strings.ToLower(inputs.params.arch)
+				// Makes sure the linter completes before starting the build
+				"__depends": "\(goLint.exit)"
 			}
 
 			script: contents: #"""
