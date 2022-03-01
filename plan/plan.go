@@ -17,11 +17,16 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+const (
+	ActionsPath = "actions"
+)
+
 type Plan struct {
 	config Config
 
 	context *plancontext.Context
 	source  *compiler.Value
+	action  *Action
 }
 
 type Config struct {
@@ -66,6 +71,8 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		source:  v,
 	}
 
+	p.fillAction()
+
 	if err := p.configPlatform(); err != nil {
 		return nil, err
 	}
@@ -83,6 +90,10 @@ func (p *Plan) Context() *plancontext.Context {
 
 func (p *Plan) Source() *compiler.Value {
 	return p.source
+}
+
+func (p *Plan) Action() *Action {
+	return p.action
 }
 
 // configPlatform load the platform specified in the context
@@ -184,6 +195,78 @@ func (p *Plan) Up(ctx context.Context, s solver.Solver) (*compiler.Value, error)
 	default:
 		return computed, nil
 	}
+}
+
+func (p *Plan) fillAction() {
+	cfg := &cueflow.Config{
+		FindHiddenTasks: true,
+		Root:            cue.ParsePath(ActionsPath),
+	}
+
+	flow := cueflow.New(
+		cfg,
+		p.source.Cue(),
+		noOpRunner,
+	)
+
+	actions := p.source.Lookup(ActionsPath)
+	actionsComment := ""
+	for _, cg := range actions.Doc() {
+		actionsComment += cg.Text()
+	}
+	p.action = &Action{
+		ActionsPath,
+		false,
+		actions.Path(),
+		actionsComment,
+		[]*Action{},
+	}
+
+	tasks := flow.Tasks()
+
+	for _, t := range tasks {
+		var q []cue.Selector
+		prevAction := p.action
+		for _, s := range t.Path().Selectors() {
+			q = append(q, s)
+			path := cue.MakePath(q...)
+			a := prevAction.FindByPath(path)
+			if a == nil {
+				v := p.Source().LookupPath(path)
+				childComment := ""
+				for _, cg := range v.Doc() {
+					childComment += cg.Text()
+				}
+
+				a = &Action{
+					s.String(),
+					s.PkgPath() != "",
+					path,
+					childComment,
+					[]*Action{},
+				}
+				prevAction.AddChild(a)
+			}
+			prevAction = a
+		}
+	}
+}
+
+func noOpRunner(flowVal cue.Value) (cueflow.Runner, error) {
+	v := compiler.Wrap(flowVal)
+	_, err := task.Lookup(v)
+	if err != nil {
+		// Not a task
+		if err == task.ErrNotTask {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Wrapper around `task.Run` that handles logging, tracing, etc.
+	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
+		return nil
+	}), nil
 }
 
 func newRunner(pctx *plancontext.Context, s solver.Solver, computed *compiler.Value) cueflow.TaskFunc {

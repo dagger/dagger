@@ -30,7 +30,7 @@ func init() {
 	rootCmd.PersistentFlags().StringArray("cache-from", []string{},
 		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
-	rootCmd.PersistentFlags().String("project", "", "Specify a project directory (defaults to current)")
+	rootCmd.PersistentFlags().StringP("project", "p", "./", "Specify a project directory (defaults to current)")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		go checkVersion()
@@ -45,6 +45,7 @@ func init() {
 		versionCmd,
 		docCmd,
 		mod.Cmd,
+		doCmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
