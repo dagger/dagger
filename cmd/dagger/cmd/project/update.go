@@ -3,9 +3,11 @@ package project
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/pkg"
+	"go.dagger.io/dagger/telemetry"
 )
 
 var updateCmd = &cobra.Command{
@@ -63,6 +65,11 @@ var updateCmd = &cobra.Command{
 		if err != nil {
 			lg.Error().Err(err).Msg("error installing/updating packages")
 		}
+
+		<-common.TrackCommand(ctx, cmd, &telemetry.Property{
+			Name:  "num_packages",
+			Value: len(processedRequires),
+		})
 
 	},
 }

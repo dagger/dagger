@@ -6,8 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/pkg"
+	"go.dagger.io/dagger/telemetry"
 )
 
 var sep = string(os.PathSeparator)
@@ -39,7 +41,7 @@ var initCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		// FIXME: Add telemtry for init
+		<-common.TrackCommand(ctx, cmd, &telemetry.Property{})
 	},
 }
 

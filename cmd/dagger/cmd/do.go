@@ -64,7 +64,7 @@ var doCmd = &cobra.Command{
 			return p.Do(ctx, getTargetPath(args), s)
 		})
 
-		// FIXME: rework telemetry
+		<-common.TrackPlanCommand(ctx, cmd, *p)
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")

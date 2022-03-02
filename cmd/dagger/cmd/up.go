@@ -4,15 +4,12 @@ import (
 	"context"
 	"os"
 
-	"cuelang.org/go/cue"
-	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"golang.org/x/term"
 
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -53,10 +50,25 @@ var upCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
-		err = europaUp(ctx, cl, args...)
+		// err = europaUp(ctx, cl, args...)
+
+		p, err := plan.Load(ctx, plan.Config{
+			Args:   args,
+			With:   viper.GetStringSlice("with"),
+			Target: viper.GetString("target"),
+		})
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to load plan")
+		}
+
+		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
+			err := p.Do(ctx, p.Action().Path, s)
+
+			return err
+		})
 
 		// TODO: rework telemetry
-		// <-doneCh
+		<-common.TrackPlanCommand(ctx, cmd, *p)
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")
@@ -78,23 +90,6 @@ var upCmd = &cobra.Command{
 // 	lg.Debug().Msg("universe is up to date")
 // 	return false
 // }
-
-func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
-	lg := log.Ctx(ctx)
-
-	p, err := plan.Load(ctx, plan.Config{
-		Args:   args,
-		With:   viper.GetStringSlice("with"),
-		Target: viper.GetString("target"),
-	})
-	if err != nil {
-		lg.Fatal().Err(err).Msg("failed to load plan")
-	}
-
-	return cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-		return p.Do(ctx, cue.ParsePath(viper.GetString("target")), s)
-	})
-}
 
 func init() {
 	upCmd.Flags().BoolP("force", "f", false, "Force up, disable inputs check")
