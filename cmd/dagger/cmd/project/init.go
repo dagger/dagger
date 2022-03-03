@@ -1,6 +1,7 @@
-package cmd
+package project
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -9,10 +10,12 @@ import (
 	"go.dagger.io/dagger/pkg"
 )
 
+var sep = string(os.PathSeparator)
+
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize a new empty project",
-	Args:  cobra.NoArgs,
+	Use:   fmt.Sprintf("init [path%sto%sproject]", sep, sep),
+	Short: "Initialize a new empty project.",
+	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -24,30 +27,24 @@ var initCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		dir := viper.GetString("project")
-		if dir == "" {
-			cwd, err := os.Getwd()
-			if err != nil {
-				lg.
-					Fatal().
-					Err(err).
-					Msg("failed to get current working dir")
-			}
-			dir = cwd
+		dir := "."
+		if len(args) > 0 {
+			dir = args[0]
 		}
 
-		err := pkg.CueModInit(ctx, dir)
+		name := viper.GetString("name")
+
+		err := pkg.CueModInit(ctx, dir, name)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		// TODO: Add telemtry for init
-		// <-common.TrackProjectCommand(ctx, cmd, project, nil)
-
+		// FIXME: Add telemtry for init
 	},
 }
 
 func init() {
+	initCmd.Flags().StringP("name", "n", "", "project name")
 	if err := viper.BindPFlags(initCmd.Flags()); err != nil {
 		panic(err)
 	}
