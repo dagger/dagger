@@ -109,6 +109,15 @@ module.exports = {
       ],
     },
     {
+      type: "category",
+      label: "DRAFTS",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "learn/api",
+      ],
+    },
+    {
       type: "link",
       label: "🕸  pre-Europa 🕸",
       href: "/",
