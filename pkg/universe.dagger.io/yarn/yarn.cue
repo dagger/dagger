@@ -18,26 +18,24 @@ import (
 
 // Run a Yarn command
 #Run: {
-	// Custom name for the build.
-	//   When building different apps in the same plan, assign
-	//   different names for optimal caching.
+	// Custom name for this command.
+	// Assign an app-specific name if there are multiple apps in the same plan.
 	name: string | *""
 
-	// Application source code
+	// App source code
 	source: dagger.#FS
 
-	// working directory to use
+	// Working directory to use
 	cwd: *"." | string
 
-	// Write the contents of `environment` to this file,
-	// in the "envfile" format
+	// Write the contents of `environment` to this file, in the "envfile" format
 	writeEnvFile: string | *""
 
-	// Read build output from this directory
-	// (path must be relative to working directory)
+	// Optional: Read build output from this directory
+	// Must be relative to working directory, cwd
 	buildDir?: string
 
-	// Run this yarn script
+	// Yarn script to run for this command.
 	script: string
 
 	// Fix for shadowing issues
@@ -50,18 +48,22 @@ import (
 	// FIXME: not implemented. Are they needed?
 	secrets: [string]: dagger.#Secret
 
-	_build: docker.#Build & {
+	container: #input: docker.#Image | *{
+		// FIXME: Yarn's version depends on Alpine's version
+		// Yarn version
+		// yarnVersion: *"=~1.22" | string
+		// FIXME: custom base image not supported
+		alpine.#Build & {
+			packages: {
+				bash: {}
+				yarn: {}
+			}
+		}
+	}
+
+	_run: docker.#Build & {
 		steps: [
-			// FIXME: Yarn's version depends on Alpine's version
-			// Yarn version
-			// yarnVersion: *"=~1.22" | string
-			// FIXME: custom base image not supported
-			alpine.#Build & {
-				packages: {
-					bash: {}
-					yarn: {}
-				}
-			},
+			container.#input,
 
 			docker.#Copy & {
 				dest:     "/src"
@@ -132,9 +134,9 @@ import (
 		]
 	}
 
-	// The final contents of the package after build
+	// The final contents of the package after run
 	_output: dagger.#Subdir & {
-		input: _build.output.rootfs
+		input: _run.output.rootfs
 		path:  "/build"
 	}
 

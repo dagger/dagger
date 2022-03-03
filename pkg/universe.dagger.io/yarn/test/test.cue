@@ -66,7 +66,7 @@ dagger.#Plan & {
 
 			build: yarn.#Build & {
 				source: common.data
-				container: input: buildImage.output
+				container: #input: buildImage.output
 			}
 		}
 	}
