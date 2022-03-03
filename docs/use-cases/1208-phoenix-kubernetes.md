@@ -1,6 +1,6 @@
 ---
 slug: /1208/phoenix-kubernetes
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # Elixir/Phoenix on Kubernetes

@@ -1,6 +1,6 @@
 ---
 slug: /1204/secrets
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # How to use secrets

@@ -1,6 +1,6 @@
 ---
 slug: /1212/svelte-vercel
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # Svelte on Vercel

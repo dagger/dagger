@@ -1,6 +1,6 @@
 ---
 slug: /1201/ci-cd-platform
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # From local dev to CI/CD platform

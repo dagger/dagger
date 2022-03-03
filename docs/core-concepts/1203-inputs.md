@@ -1,6 +1,6 @@
 ---
 slug: /1203/inputs
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # Configuring inputs
