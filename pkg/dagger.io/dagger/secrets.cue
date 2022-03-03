@@ -27,3 +27,14 @@ package dagger
 	// Contents of the secret
 	output: #Secret
 }
+
+// Trim leading and trailing space characters from a secret
+#TrimSecret: {
+	$dagger: task: _name: "TrimSecret"
+
+	// Original secret
+	input: #Secret
+
+	// New trimmed secret
+	output: #Secret
+}
