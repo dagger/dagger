@@ -10,7 +10,7 @@
  */
 
 module.exports = {
-  tutorialSidebar: [
+  preEuropa: [
     {
       type: "category",
       label: "Introduction",
@@ -64,8 +64,13 @@ module.exports = {
       collapsed: true,
       items: ["administrator/operator-manual"],
     },
+    {
+      type: "link",
+      label: "🆕 Dagger Europa 🆕",
+      href: "/1201/ci-cd-platform",
+    },
   ],
-  europaSidebar: [
+  europa: [
     {
       type: "category",
       label: "Getting Started",
@@ -102,6 +107,11 @@ module.exports = {
         "use-cases/go-docker-swarm",
         "use-cases/svelte-vercel",
       ],
+    },
+    {
+      type: "link",
+      label: "🕸  pre-Europa 🕸",
+      href: "/",
     },
   ],
 };

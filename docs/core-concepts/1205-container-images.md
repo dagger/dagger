@@ -1,6 +1,6 @@
 ---
 slug: /1205/container-images
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # Building container images

@@ -1,6 +1,6 @@
 ---
 slug: /1200/local-ci
-displayed_sidebar: europaSidebar
+displayed_sidebar: europa
 ---
 
 # Local CI setup
