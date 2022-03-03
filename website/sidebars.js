@@ -73,7 +73,7 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/local-ci",
-        "getting-started/github-actions"
+        "getting-started/ci-cd-platform"
       ],
     },
     {
