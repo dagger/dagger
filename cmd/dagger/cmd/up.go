@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 
+	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/client"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
@@ -89,24 +89,7 @@ func europaUp(ctx context.Context, cl *client.Client, args ...string) error {
 	}
 
 	return cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-		computed, err := p.Up(ctx, s)
-		if err != nil {
-			return err
-		}
-
-		if output := viper.GetString("output"); output != "" {
-			data := computed.JSON().PrettyString()
-			if output == "-" {
-				fmt.Println(data)
-				return nil
-			}
-			err := os.WriteFile(output, []byte(data), 0600)
-			if err != nil {
-				lg.Fatal().Err(err).Str("path", output).Msg("failed to write output")
-			}
-		}
-
-		return nil
+		return p.Do(ctx, cue.ParsePath(viper.GetString("target")), s)
 	})
 }
 
