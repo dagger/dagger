@@ -27,7 +27,7 @@ var getCmd = &cobra.Command{
 		var err error
 
 		cueModPath := pkg.GetCueModParent()
-		err = pkg.CueModInit(ctx, cueModPath)
+		err = pkg.CueModInit(ctx, cueModPath, "")
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize cue.mod")
 			panic(err)

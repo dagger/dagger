@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
+	"go.dagger.io/dagger/cmd/dagger/cmd/project"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 
 	"go.opentelemetry.io/otel"
@@ -40,12 +41,12 @@ func init() {
 	}
 
 	rootCmd.AddCommand(
-		initCmd,
 		upCmd,
 		versionCmd,
 		docCmd,
 		mod.Cmd,
 		doCmd,
+		project.Cmd,
 	)
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {

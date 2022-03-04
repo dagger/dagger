@@ -57,7 +57,7 @@ func Vendor(ctx context.Context, p string) error {
 	}()
 
 	// ensure cue module is initialized
-	if err := CueModInit(ctx, p); err != nil {
+	if err := CueModInit(ctx, p, ""); err != nil {
 		return err
 	}
 
@@ -165,11 +165,16 @@ func GetCueModParent() string {
 	return parentDir
 }
 
-func CueModInit(ctx context.Context, parentDir string) error {
+func CueModInit(ctx context.Context, parentDir, module string) error {
 	lg := log.Ctx(ctx)
 
-	modDir := path.Join(parentDir, "cue.mod")
-	if err := os.Mkdir(modDir, 0755); err != nil {
+	absParentDir, err := filepath.Abs(parentDir)
+	if err != nil {
+		return err
+	}
+
+	modDir := path.Join(absParentDir, "cue.mod")
+	if err := os.MkdirAll(modDir, 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
@@ -183,8 +188,8 @@ func CueModInit(ctx context.Context, parentDir string) error {
 		}
 
 		lg.Debug().Str("mod", parentDir).Msg("initializing cue.mod")
-
-		if err := os.WriteFile(modFile, []byte("module: \"\"\n"), 0600); err != nil {
+		contents := fmt.Sprintf(`module: "%s"`, module)
+		if err := os.WriteFile(modFile, []byte(contents), 0600); err != nil {
 			return err
 		}
 	}

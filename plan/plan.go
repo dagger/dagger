@@ -39,6 +39,7 @@ type Config struct {
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
+	// FIXME: move vendoring to explicit project update command
 	if cfg.Vendor {
 		// FIXME: vendoring path
 		if err := pkg.Vendor(ctx, ""); err != nil {
