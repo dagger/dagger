@@ -97,24 +97,12 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Use Cases",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        "use-cases/phoenix-kubernetes",
-        "use-cases/docusaurus-netlify",
-        "use-cases/go-goreleaser",
-        "use-cases/go-docker-swarm",
-        "use-cases/svelte-vercel",
-      ],
-    },
-    {
-      type: "category",
       label: "DRAFTS",
       collapsible: true,
       collapsed: true,
       items: [
         "learn/api",
+        "use-cases/go-docker-swarm",
       ],
     },
     {
