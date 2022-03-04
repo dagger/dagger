@@ -67,7 +67,7 @@ module.exports = {
     {
       type: "link",
       label: "🆕 Dagger Europa 🆕",
-      href: "/1201/ci-cd-platform",
+      href: "/1201/ci-environment",
     },
   ],
   europa: [
@@ -78,7 +78,7 @@ module.exports = {
       collapsed: false,
       items: [
         "getting-started/local-ci",
-        "getting-started/ci-cd-platform"
+        "getting-started/ci-environment"
       ],
     },
     {
