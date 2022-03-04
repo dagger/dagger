@@ -16,28 +16,26 @@ import (
 	script:   *"build" | string
 }
 
-// Build a Yarn package
+// Run a Yarn command
 #Run: {
-	// Custom name for the build.
-	//   When building different apps in the same plan, assign
-	//   different names for optimal caching.
+	// Custom name for this command.
+	// Assign an app-specific name if there are multiple apps in the same plan.
 	name: string | *""
 
-	// Application source code
+	// App source code
 	source: dagger.#FS
 
-	// working directory to use
+	// Working directory to use
 	cwd: *"." | string
 
-	// Write the contents of `environment` to this file,
-	// in the "envfile" format
+	// Write the contents of `environment` to this file, in the "envfile" format
 	writeEnvFile: string | *""
 
-	// Read build output from this directory
-	// (path must be relative to working directory)
+	// Optional: Read build output from this directory
+	// Must be relative to working directory, cwd
 	buildDir?: string
 
-	// Run this yarn script
+	// Yarn script to run for this command.
 	script: string
 
 	// Fix for shadowing issues
@@ -50,71 +48,97 @@ import (
 	// FIXME: not implemented. Are they needed?
 	secrets: [string]: dagger.#Secret
 
-	// FIXME: Yarn's version depends on Alpine's version
-	// Yarn version
-	// yarnVersion: *"=~1.22" | string
-
-	// FIXME: custom base image not supported
-	_buildImage: alpine.#Build & {
-		packages: {
-			bash: {}
-			yarn: {}
+	container: #input: docker.#Image | *{
+		// FIXME: Yarn's version depends on Alpine's version
+		// Yarn version
+		// yarnVersion: *"=~1.22" | string
+		// FIXME: custom base image not supported
+		alpine.#Build & {
+			packages: {
+				bash: {}
+				yarn: {}
+			}
 		}
 	}
 
-	// Run yarn in a docker container
-	container: bash.#Run & {
-		input: *_buildImage.output | docker.#Image
+	_run: docker.#Build & {
+		steps: [
+			container.#input,
 
-		// FIXME: move shell script to its own file
-		script: contents: #"""
-			# Create $ENVFILE_NAME file if set
-			[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
-
-			yarn --cwd "$YARN_CWD" install --production false
-
-			opts=( $(echo $YARN_ARGS) )
-			yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
-			if [ ! -z "${YARN_BUILD_DIRECTORY:-}" ]; then
-				mv "$YARN_BUILD_DIRECTORY" /build
-			else
-				mkdir /build
-			fi
-			"""#
-
-		mounts: {
-			"yarn cache": {
-				dest:     "/cache/yarn"
-				contents: dagger.#CacheDir & {
-					// FIXME: are there character limitations in cache ID?
-					id: "universe.dagger.io/yarn.#Build \(name)"
-				}
-			}
-			"package source": {
+			docker.#Copy & {
 				dest:     "/src"
 				contents: source
-			}
-		}
+			},
 
-		export: directories: "/build": _
+			bash.#Run & {
+				// FIXME: move shell script to its own file
+				script: contents: #"""
+					yarn --cwd "$YARN_CWD" install --production false
+					"""#
 
-		env: {
-			YARN_BUILD_SCRIPT: yarnScript
-			YARN_ARGS:         strings.Join(args, "\n")
-			YARN_CACHE_FOLDER: "/cache/yarn"
-			YARN_CWD:          cwd
-			if buildDir != _|_ {
-				YARN_BUILD_DIRECTORY: buildDir
-			}
-			if writeEnvFile != "" {
-				ENVFILE_NAME: writeEnvFile
-				ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
-			}
-		}
+				mounts: "yarn cache": {
+					dest:     "/cache/yarn"
+					contents: dagger.#CacheDir & {
+						// FIXME: are there character limitations in cache ID?
+						id: "universe.dagger.io/yarn.#Run \(name)"
+					}
+				}
 
-		workdir: "/src"
+				env: {
+					YARN_CACHE_FOLDER: "/cache/yarn"
+					YARN_CWD:          cwd
+				}
+
+				workdir: "/src"
+			},
+
+			bash.#Run & {
+				// FIXME: move shell script to its own file
+				script: contents: #"""
+					# Create $ENVFILE_NAME file if set
+					[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
+
+					opts=( $(echo $YARN_ARGS) )
+					yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
+					if [ ! -z "${YARN_BUILD_DIRECTORY:-}" ]; then
+						mv "$YARN_BUILD_DIRECTORY" /build
+					else
+						mkdir /build
+					fi
+					"""#
+
+				mounts: "yarn cache": {
+					dest:     "/cache/yarn"
+					contents: dagger.#CacheDir & {
+						// FIXME: are there character limitations in cache ID?
+						id: "universe.dagger.io/yarn.#Run \(name)"
+					}
+				}
+
+				env: {
+					YARN_BUILD_SCRIPT: yarnScript
+					YARN_ARGS:         strings.Join(args, "\n")
+					YARN_CACHE_FOLDER: "/cache/yarn"
+					YARN_CWD:          cwd
+					if buildDir != _|_ {
+						YARN_BUILD_DIRECTORY: buildDir
+					}
+					if writeEnvFile != "" {
+						ENVFILE_NAME: writeEnvFile
+						ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
+					}
+				}
+
+				workdir: "/src"
+			},
+		]
 	}
 
-	// The final contents of the package after build
-	output: container.export.directories."/build"
+	// The final contents of the package after run
+	_output: dagger.#Subdir & {
+		input: _run.output.rootfs
+		path:  "/build"
+	}
+
+	output: _output.output
 }
