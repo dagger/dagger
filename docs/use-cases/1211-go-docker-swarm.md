@@ -58,7 +58,7 @@ dagger.#Plan & {
         // - stop container
       }
 
-      push: docker.#Push {
+      push: docker.#Push & {
         dest: inputs.params.image.ref
         image: build.output
       }
