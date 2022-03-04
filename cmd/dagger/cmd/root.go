@@ -31,8 +31,6 @@ func init() {
 	rootCmd.PersistentFlags().StringArray("cache-from", []string{},
 		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
-	rootCmd.PersistentFlags().StringP("project", "p", "./", "Specify a project directory (defaults to current)")
-
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		go checkVersion()
 	}
