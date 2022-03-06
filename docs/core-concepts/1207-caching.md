@@ -1,5 +1,5 @@
 ---
-slug: /1206/caching
+slug: /1207/caching
 displayed_sidebar: europa
 ---
 
