@@ -77,7 +77,7 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
-        "getting-started/local-ci",
+        "getting-started/local-dev",
         "getting-started/ci-environment"
       ],
     },
