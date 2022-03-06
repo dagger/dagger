@@ -1,5 +1,5 @@
 ---
-slug: /1207/packages
+slug: /1206/packages
 displayed_sidebar: europa
 ---
 
