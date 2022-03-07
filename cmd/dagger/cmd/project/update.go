@@ -1,4 +1,4 @@
-package mod
+package project
 
 import (
 	"github.com/spf13/cobra"
@@ -8,9 +8,9 @@ import (
 	"go.dagger.io/dagger/pkg"
 )
 
-var getCmd = &cobra.Command{
-	Use:   "get [packages]",
-	Short: "download and install dependencies",
+var updateCmd = &cobra.Command{
+	Use:   "update [package]",
+	Short: "Download and install dependencies",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
@@ -26,11 +26,15 @@ var getCmd = &cobra.Command{
 
 		var err error
 
-		cueModPath := pkg.GetCueModParent()
-		err = pkg.CueModInit(ctx, cueModPath, "")
-		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to initialize cue.mod")
-			panic(err)
+		cueModPath, cueModExists := pkg.GetCueModParent()
+		if !cueModExists {
+			lg.Fatal().Msg("dagger project not found. Run `dagger project init`")
+		}
+
+		if len(args) == 0 {
+			lg.Debug().Msg("No package specified, updating all packages")
+			pkg.Vendor(ctx, cueModPath)
+			return
 		}
 
 		var update = viper.GetBool("update")
@@ -64,11 +68,11 @@ var getCmd = &cobra.Command{
 }
 
 func init() {
-	getCmd.Flags().String("private-key-file", "", "Private ssh key")
-	getCmd.Flags().String("private-key-password", "", "Private ssh key password")
-	getCmd.Flags().BoolP("update", "u", false, "Update specified package")
+	updateCmd.Flags().String("private-key-file", "", "Private ssh key")
+	updateCmd.Flags().String("private-key-password", "", "Private ssh key password")
+	updateCmd.Flags().BoolP("update", "u", false, "Update specified package")
 
-	if err := viper.BindPFlags(getCmd.Flags()); err != nil {
+	if err := viper.BindPFlags(updateCmd.Flags()); err != nil {
 		panic(err)
 	}
 }

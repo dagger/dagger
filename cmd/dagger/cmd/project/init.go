@@ -14,7 +14,7 @@ var sep = string(os.PathSeparator)
 
 var initCmd = &cobra.Command{
 	Use:   fmt.Sprintf("init [path%sto%sproject]", sep, sep),
-	Short: "Initialize a new empty project.",
+	Short: "Initialize a new empty project",
 	Args:  cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:

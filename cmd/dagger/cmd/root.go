@@ -7,7 +7,6 @@ import (
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/cmd/dagger/cmd/mod"
 	"go.dagger.io/dagger/cmd/dagger/cmd/project"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 
@@ -42,7 +41,6 @@ func init() {
 		upCmd,
 		versionCmd,
 		docCmd,
-		mod.Cmd,
 		doCmd,
 		project.Cmd,
 	)

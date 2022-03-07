@@ -25,5 +25,6 @@ func init() {
 
 	Cmd.AddCommand(
 		initCmd,
+		updateCmd,
 	)
 }

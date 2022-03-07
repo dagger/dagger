@@ -88,9 +88,8 @@ func loadPlan() (*plan.Plan, error) {
 	}
 
 	return plan.Load(context.Background(), plan.Config{
-		Args:   []string{planPath},
-		With:   viper.GetStringSlice("with"),
-		Vendor: !viper.GetBool("no-vendor"),
+		Args: []string{planPath},
+		With: viper.GetStringSlice("with"),
 	})
 }
 
@@ -106,23 +105,32 @@ func doHelp(cmd *cobra.Command, _ []string) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.StripEscape)
 	defer w.Flush()
 
+	planPath := viper.GetString("plan")
+
+	var (
+		errorMsg            string
+		loadedMsg           string
+		actionLookupPathMsg string
+		actions             []*plan.Action
+	)
+
 	p, err := loadPlan()
 	if err != nil {
-		fmt.Printf("%s", err)
-		fmt.Fprintln(w, "failed to load plan")
-		return
+		errorMsg = "Error: failed to load plan\n\n"
+	} else {
+		loadedMsg = "Plan loaded from " + planPath
+		actionLookupPath := getTargetPath(cmd.Flags().Args())
+		actions = p.Action().FindByPath(actionLookupPath).Children
+		actionLookupPathMsg = fmt.Sprintf(`%s:`, actionLookupPath.String())
 	}
-	planPath := viper.GetString("plan")
-	actionLookupPath := getTargetPath(cmd.Flags().Args())
-	actions := p.Action().FindByPath(actionLookupPath).Children
-
-	fmt.Printf(`Execute a dagger action.
+	fmt.Printf(`%s%s
 
 %s
 
-Plan loaded from %s:
 %s
-`, cmd.UsageString(), planPath, "\n"+actionLookupPath.String()+":")
+
+%s
+`, errorMsg, cmd.Short, cmd.UsageString(), loadedMsg, actionLookupPathMsg)
 
 	// fmt.Fprintln(w, "Actions\tDescription\tPackage")
 	// fmt.Fprintln(w, "\t\t")
@@ -136,8 +144,7 @@ Plan loaded from %s:
 
 func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
-	doCmd.Flags().Bool("no-vendor", false, "Force up, disable inputs check")
-	doCmd.PersistentFlags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
+	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 
 	doCmd.SetHelpFunc(doHelp)
 
