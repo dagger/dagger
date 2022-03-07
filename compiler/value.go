@@ -45,6 +45,14 @@ func (v *Value) FillFields(values map[string]interface{}) (*Value, error) {
 	return v, nil
 }
 
+// Fill updates a value, in place
+func (v *Value) Fill(value interface{}) (*Value, error) {
+	if err := v.FillPath(cue.MakePath(), value); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
 // LookupPath is a concurrency safe wrapper around cue.Value.LookupPath
 func (v *Value) LookupPath(p cue.Path) *Value {
 	v.cc.rlock()
@@ -87,6 +95,19 @@ type Field struct {
 // Label returns the unquoted selector
 func (f Field) Label() string {
 	l := f.Selector.String()
+	if unquoted, err := strconv.Unquote(l); err == nil {
+		return unquoted
+	}
+	return l
+}
+
+// ParentLabel returns the unquoted parent selector of a value
+func (v *Value) ParentLabel(depth int) string {
+	sel := v.Path().Selectors()
+	if depth > len(sel) {
+		return ""
+	}
+	l := sel[len(sel)-depth].String()
 	if unquoted, err := strconv.Unquote(l); err == nil {
 		return unquoted
 	}

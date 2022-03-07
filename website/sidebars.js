@@ -88,7 +88,7 @@ module.exports = {
       collapsed: false,
       items: [
         "core-concepts/plan",
-        "core-concepts/inputs",
+        "core-concepts/client",
         "core-concepts/secrets",
         "core-concepts/caching",
         "core-concepts/container-images",
