@@ -24,12 +24,6 @@ func init() {
 	rootCmd.PersistentFlags().String("log-format", "auto", "Log format (auto, plain, tty, json)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
 
-	rootCmd.PersistentFlags().Bool("no-cache", false, "Disable caching")
-	rootCmd.PersistentFlags().StringArray("cache-to", []string{},
-		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
-	rootCmd.PersistentFlags().StringArray("cache-from", []string{},
-		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
-
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		go checkVersion()
 	}
