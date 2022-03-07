@@ -67,7 +67,7 @@ module.exports = {
     {
       type: "link",
       label: "🆕 Dagger Europa 🆕",
-      href: "/1201/ci-environment",
+      href: "/1200/local-dev",
     },
   ],
   europa: [
