@@ -40,9 +40,7 @@ var initCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		// TODO: Add telemtry for init
 		<-common.TrackCommand(ctx, cmd)
-
 	},
 }
 
