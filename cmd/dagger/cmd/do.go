@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -77,9 +78,22 @@ var doCmd = &cobra.Command{
 }
 
 func loadPlan(target string) (*plan.Plan, error) {
-	project := viper.GetString("project")
+	planPath := viper.GetString("plan")
+
+	// support only local filesystem paths
+	// even though CUE supports loading module and package names
+	absPlanPath, err := filepath.Abs(planPath)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = os.Stat(absPlanPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return plan.Load(context.Background(), plan.Config{
-		Args:   []string{project},
+		Args:   []string{planPath},
 		With:   viper.GetStringSlice("with"),
 		Target: target,
 		Vendor: !viper.GetBool("no-vendor"),
@@ -106,7 +120,7 @@ func doHelp(cmd *cobra.Command, _ []string) {
 		fmt.Fprintln(w, "failed to load plan")
 		return
 	}
-	project := viper.GetString("project")
+	planPath := viper.GetString("plan")
 	actionLookupPath := getTargetPath(cmd.Flags().Args())
 	actions := p.Action().FindByPath(actionLookupPath).Children
 
@@ -116,7 +130,7 @@ func doHelp(cmd *cobra.Command, _ []string) {
 
 Plan loaded from %s:
 %s
-`, cmd.UsageString(), project, "\n"+actionLookupPath.String()+":")
+`, cmd.UsageString(), planPath, "\n"+actionLookupPath.String()+":")
 
 	// fmt.Fprintln(w, "Actions\tDescription\tPackage")
 	// fmt.Fprintln(w, "\t\t")
@@ -131,6 +145,7 @@ Plan loaded from %s:
 func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	doCmd.Flags().Bool("no-vendor", false, "Force up, disable inputs check")
+	doCmd.PersistentFlags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 
 	doCmd.SetHelpFunc(doHelp)
 
