@@ -35,6 +35,9 @@ if [ -z "$site_id" ] ; then
 	if [ -z "$site_id" ]; then
 		echo "create site failed"
 		exit 1
+	else
+		echo "clean create site API response..."
+		rm -f body
 	fi
 fi
 
