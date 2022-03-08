@@ -45,12 +45,10 @@ dagger.#Plan & {
 			}
 		}
 
-		dependent: {
-			one: bash.#Run & {
-				input: test.one.output
-				script: contents: "cat /output.txt"
-				export: files: "/output.txt": string
-			}
+		dependent: one: bash.#Run & {
+			input: test.one.output
+			script: contents: "cat /output.txt"
+			export: files: "/output.txt": string
 		}
 
 		notMe: bash.#Run & {
