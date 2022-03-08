@@ -8,8 +8,8 @@ import (
 )
 
 dagger.#Plan & {
-	outputs: files: andrea: {
-		dest:     "./andrea_do"
+	outputs: files: dagger: {
+		dest:     "./dagger_do"
 		contents: actions.test.b.y.export.files["/output.txt"]
 	}
 
@@ -21,7 +21,7 @@ dagger.#Plan & {
 		test: {
 			a: bash.#Run & {
 				input: image.output
-				script: contents: "echo -n 'from andrea with love' > /output.txt"
+				script: contents: "echo -n 'from dagger with love' > /output.txt"
 				export: files: "/output.txt": string
 			}
 			b: {
@@ -41,9 +41,9 @@ dagger.#Plan & {
 			}
 		}
 
-		// notMe: bash.#Run & {
-		//  input: image.output
-		//  script: contents: "false"
-		// }
+		notMe: bash.#Run & {
+			input: image.output
+			script: contents: "false"
+		}
 	}
 }
