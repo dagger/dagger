@@ -32,7 +32,7 @@ setup() {
 @test "task: #WriteFile failure: different contents" {
     cd "$TESTDIR"/tasks/writefile
     run "$DAGGER" up ./writefile_failure_diff_contents.cue
-    assert_failure 
+    assert_failure
 }
 
 @test "task: #Exec" {
@@ -102,7 +102,7 @@ setup() {
 
     run "$DAGGER" up ./subdir_invalid_path.cue
     assert_failure
-    
+
     run "$DAGGER" up ./subdir_invalid_exec.cue
     assert_failure
 }
@@ -132,6 +132,12 @@ setup() {
     cd "$TESTDIR"/tasks/newsecret
 
     "$DAGGER" up ./newsecret.cue
+}
+
+@test "task: #TrimSecret" {
+    cd "$TESTDIR"/tasks/trimsecret
+
+    "$DAGGER" up ./trimsecret.cue
 }
 
 @test "task: #Source" {
