@@ -7,6 +7,8 @@ import (
 	"universe.dagger.io/bash"
 )
 
+// NOTE: This is NOT working. Just an interesting/weird case.
+
 dagger.#Plan & {
 	// This is acting weird... 
 	// I don't understand why `cue/flow` thinks that outputs.files.test has a dependency
