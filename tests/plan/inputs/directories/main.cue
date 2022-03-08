@@ -8,23 +8,24 @@ dagger.#Plan & {
 	inputs: directories: test: path: string
 
 	actions: {
-		_readFile: dagger.#ReadFile & {
-			input: inputs.directories.test.contents
-			path:  "test.txt"
-		}
-
 		// Test that file exists and contains correct content
-		exists: _readFile & {
+		exists: dagger.#ReadFile & {
+			input:    inputs.directories.test.contents
+			path:     "test.txt"
 			contents: "local directory"
 		}
 
 		// Test that file does NOT exist
-		notExists: _readFile & {
+		notExists: dagger.#ReadFile & {
+			input:    inputs.directories.test.contents
+			path:     "test.txt"
 			contents: "local directory"
 		}
 
 		// Test that file exists and contains conflicting content
-		conflictingValues: _readFile & {
+		conflictingValues: dagger.#ReadFile & {
+			input:    inputs.directories.test.contents
+			path:     "test.txt"
 			contents: "local dfsadf"
 		}
 	}

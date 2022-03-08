@@ -55,29 +55,24 @@ var doCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
-		p, err := loadPlan(getTargetPath(args).String())
+		p, err := loadPlan()
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to load plan")
 		}
 
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-			_, err := p.Up(ctx, s)
-			if err != nil {
-				return err
-			}
-
-			return nil
+			return p.Do(ctx, getTargetPath(args), s)
 		})
 
 		// FIXME: rework telemetry
 
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to up environment")
+			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 	},
 }
 
-func loadPlan(target string) (*plan.Plan, error) {
+func loadPlan() (*plan.Plan, error) {
 	planPath := viper.GetString("plan")
 
 	// support only local filesystem paths
@@ -95,26 +90,23 @@ func loadPlan(target string) (*plan.Plan, error) {
 	return plan.Load(context.Background(), plan.Config{
 		Args:   []string{planPath},
 		With:   viper.GetStringSlice("with"),
-		Target: target,
 		Vendor: !viper.GetBool("no-vendor"),
 	})
 }
 
 func getTargetPath(args []string) cue.Path {
-	actionLookupArgs := []string{plan.ActionsPath}
-	actionLookupArgs = append(actionLookupArgs, args...)
-	actionLookupSelectors := []cue.Selector{}
-	for _, a := range actionLookupArgs {
-		actionLookupSelectors = append(actionLookupSelectors, cue.Str(a))
+	selectors := []cue.Selector{plan.ActionSelector}
+	for _, arg := range args {
+		selectors = append(selectors, cue.Str(arg))
 	}
-	return cue.MakePath(actionLookupSelectors...)
+	return cue.MakePath(selectors...)
 }
 
 func doHelp(cmd *cobra.Command, _ []string) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.StripEscape)
 	defer w.Flush()
 
-	p, err := loadPlan("")
+	p, err := loadPlan()
 	if err != nil {
 		fmt.Printf("%s", err)
 		fmt.Fprintln(w, "failed to load plan")
@@ -125,7 +117,7 @@ func doHelp(cmd *cobra.Command, _ []string) {
 	actions := p.Action().FindByPath(actionLookupPath).Children
 
 	fmt.Printf(`Execute a dagger action.
-	
+
 %s
 
 Plan loaded from %s:
