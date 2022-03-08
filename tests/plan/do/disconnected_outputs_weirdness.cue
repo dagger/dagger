@@ -19,10 +19,7 @@ dagger.#Plan & {
 	//     actions.fromAndrea.a.export._files."/output.txt"._read
 	//     actions.image._dag."1"._exec
 	//     actions.image._dag."0"._op
-	outputs: files: test: {
-		dest:     "./test_do"
-		contents: actions.test1.one.export.files["/output.txt"]
-	}
+	client: filesystem: "./test_do": write: contents: actions.test1.one.export.files["/output.txt"]
 
 	actions: {
 		image: alpine.#Build & {
