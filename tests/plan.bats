@@ -16,24 +16,24 @@ setup() {
   "$DAGGER" "do" -p ./usage test valid
 
   run "$DAGGER" "do" -p ./usage test conflictingValues
-	assert_failure
-	assert_output --partial 'conflicting values "local directory" and "local foobar"'
+  assert_failure
+  assert_output --partial 'conflicting values "local directory" and "local foobar"'
 
   run "$DAGGER" "do" -p ./usage test excluded
-	assert_failure
-	assert_line --partial 'test.log: no such file or directory'
+  assert_failure
+  assert_line --partial 'test.log: no such file or directory'
 
   run "$DAGGER" "do" -p ./usage test notExists
-	assert_failure
-	assert_output --partial 'test.json: no such file or directory'
+  assert_failure
+  assert_output --partial 'test.json: no such file or directory'
 }
 
 @test "plan/client/filesystem/read/fs/not_exists" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/not_exists"
 
   run "$DAGGER" "do" -p . test
-	assert_failure
-	assert_output --partial 'path "/foobar" does not exist'
+  assert_failure
+  assert_output --partial 'path "/foobar" does not exist'
 }
 
 @test "plan/client/filesystem/read/fs/relative" {
@@ -42,8 +42,8 @@ setup() {
   "$DAGGER" "do" -p . test valid
 
   run "$DAGGER" "do" -p . test notIncluded
-	assert_failure
-	assert_output --partial 'test.log: no such file or directory'
+  assert_failure
+  assert_output --partial 'test.log: no such file or directory'
 }
 
 @test "plan/client/filesystem/read/file" {
@@ -142,72 +142,16 @@ setup() {
   "$DAGGER" "do" -p . test valid
 
   run "$DAGGER" "do" -p . test invalid
-	assert_failure
-	assert_output --partial 'exec: "foobar": executable file not found'
-}
-
-@test "plan/proxy invalid schema" {
-  cd "$TESTDIR"
-  run "$DAGGER" "do" -p ./plan/proxy/invalid_schema.cue verify
   assert_failure
-}
-
-@test "plan/proxy invalid value" {
-  cd "$TESTDIR"
-  run "$DAGGER" "do" -p ./plan/proxy/invalid_value.cue verify
-  assert_failure
-}
-
-@test "plan/proxy incomplete unix" {
-  cd "$TESTDIR"
-  run "$DAGGER" "do" -p ./plan/proxy/incomplete_unix.cue verify
-  assert_failure
-}
-
-@test "plan/proxy incomplete service" {
-  cd "$TESTDIR"
-  run "$DAGGER" "do" -p ./plan/proxy/incomplete_service.cue verify
-  assert_output --partial 'mount "docker" is not concrete'
-}
-
-@test "plan/proxy unix" {
-  cd "$TESTDIR"
-  "$DAGGER" "do" -p ./plan/proxy/unix.cue verify
-}
-
-@test "plan/inputs/directories" {
-  cd "$TESTDIR"
-  "$DAGGER" "do" -p ./plan/inputs/directories/valid exists
-
-  run "$DAGGER" "do" -p ./plan/inputs/directories/invalid notExists
-	assert_failure
-	assert_output --partial 'fasdfsdfs" does not exist'
-
-  run "$DAGGER" "do" -p ./plan/inputs/directories/valid conflictingValues
-	assert_failure
-	assert_output --partial 'conflicting values "local directory" and "local dfsadf"'
-}
-
-@test "plan/inputs/secrets" {
-  cd "$TESTDIR"
-  "$DAGGER" "do" -p ./plan/inputs/secrets test valid
-  "$DAGGER" "do" -p ./plan/inputs/secrets test relative
-
-  run "$DAGGER" "do" -p ./plan/inputs/secrets test badCommand
-	assert_failure
-	assert_output --partial 'failed: exec: "rtyet": executable file not found'
-
-  run "$DAGGER" "do" -p ./plan/inputs/secrets test badArgs
-	assert_failure
-	assert_output --partial 'option'
+  assert_output --partial 'exec: "foobar": executable file not found'
 }
 
 @test "plan/with" {
   cd "$TESTDIR"
-  "$DAGGER" "do" --with 'inputs: params: foo:"bar"' -p ./plan/with test params
+  "$DAGGER" "do" --with 'actions: params: foo:"bar"' -p ./plan/with test params
   "$DAGGER" "do" --with 'actions: test: direct: env: FOO: "bar"' -p ./plan/with test direct
 
-  run "$DAGGER" "do" --with 'inputs: params: foo:1' -p ./plan/with test params
+  run "$DAGGER" "do" --with 'actions: params: foo:1' -p ./plan/with test params
   assert_failure
   assert_output --partial "conflicting values string and 1"
 

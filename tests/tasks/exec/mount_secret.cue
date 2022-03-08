@@ -5,7 +5,7 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: secrets: testSecret: envvar: "TESTSECRET"
+	client: env: TESTSECRET: dagger.#Secret
 	actions: {
 		image: dagger.#Pull & {
 			source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
@@ -15,7 +15,7 @@ dagger.#Plan & {
 			input: image.output
 			mounts: secret: {
 				dest:     "/run/secrets/test"
-				contents: inputs.secrets.testSecret.contents
+				contents: client.env.TESTSECRET
 			}
 			args: [
 				"sh", "-c",
@@ -30,7 +30,7 @@ dagger.#Plan & {
 			input: image.output
 			mounts: secret: {
 				dest:     "/run/secrets/test"
-				contents: inputs.secrets.testSecret.contents
+				contents: client.env.TESTSECRET
 				uid:      42
 				gid:      24
 				mask:     0o666

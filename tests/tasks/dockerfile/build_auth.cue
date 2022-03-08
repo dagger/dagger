@@ -5,22 +5,23 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: {
-		directories: testdata: path: "./testdata"
-		secrets: sops: command: {
+	client: {
+		filesystem: testdata: read: contents: dagger.#FS
+		commands: sops: {
 			name: "sops"
 			args: ["-d", "../../secrets_sops.yaml"]
+			stdout: dagger.#Secret
 		}
 	}
 
 	actions: {
 		sopsSecrets: dagger.#DecodeSecret & {
 			format: "yaml"
-			input:  inputs.secrets.sops.contents
+			input:  client.commands.sops.stdout
 		}
 
 		build: dagger.#Dockerfile & {
-			source: inputs.directories.testdata.contents
+			source: client.filesystem.testdata.read.contents
 			auth: "daggerio/ci-test:private-pull": {
 				username: "daggertest"
 				secret:   sopsSecrets.output.DOCKERHUB_TOKEN.contents

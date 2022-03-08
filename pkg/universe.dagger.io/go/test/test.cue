@@ -6,10 +6,10 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: directories: testhello: path: "./data/hello"
+	client: filesystem: "./data/hello": read: contents: dagger.#FS
 
 	actions: tests: test: simple: go.#Test & {
-		source:  inputs.directories.testhello.contents
+		source:  client.filesystem."./data/hello".read.contents
 		package: "./greeting"
 	}
 }

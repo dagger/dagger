@@ -5,11 +5,11 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: directories: testdata: path: "./testdata"
+	client: filesystem: testdata: read: contents: dagger.#FS
 
 	actions: {
 		build: dagger.#Dockerfile & {
-			source: inputs.directories.testdata.contents
+			source: client.filesystem.testdata.read.contents
 			dockerfile: path: "./dockerfilepath/Dockerfile.custom"
 		}
 
