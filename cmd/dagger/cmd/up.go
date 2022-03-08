@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
@@ -62,7 +63,7 @@ var upCmd = &cobra.Command{
 		}
 
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-			err := p.Do(ctx, p.Action().Path, s)
+			err := p.Do(ctx, cue.MakePath(), s)
 
 			return err
 		})
