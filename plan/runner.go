@@ -89,9 +89,9 @@ func (r *Runner) initTasks() {
 		}
 	}
 
-	// If an `output` task is targeting an allowed task, allow the output task as well
+	// If a `client` task is targeting an allowed task, allow the output task as well
 	for _, t := range flow.Tasks() {
-		if t.Path().Selectors()[0] != OutputSelector {
+		if t.Path().Selectors()[0] != ClientSelector {
 			continue
 		}
 		for _, dep := range t.Dependencies() {

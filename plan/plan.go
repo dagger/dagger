@@ -17,7 +17,7 @@ import (
 
 var (
 	ActionSelector = cue.Str("actions")
-	OutputSelector = cue.Str("outputs")
+	ClientSelector = cue.Str("client")
 )
 
 type Plan struct {

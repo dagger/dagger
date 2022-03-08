@@ -8,10 +8,7 @@ import (
 )
 
 dagger.#Plan & {
-	outputs: files: test: {
-		dest:     "./test_do"
-		contents: actions.test.one.export.files["/output.txt"]
-	}
+	client: filesystem: "./test_do": write: contents: actions.test.one.export.files["/output.txt"]
 
 	actions: {
 		image: alpine.#Build & {
