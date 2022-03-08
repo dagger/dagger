@@ -29,7 +29,7 @@ setup() {
   assert_output --partial "actions.test.one.export"
   assert_output --partial 'client.filesystem."./test_do".write'
   refute_output --partial "actions.notMe"
-  refute_output --partial "actions.notMe"
+  refute_output --partial 'client.filesystem."./dependent_do".write'
 }
 
 
