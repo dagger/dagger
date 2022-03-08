@@ -27,7 +27,8 @@ setup() {
   assert_output --partial "actions.test.two"
   assert_output --partial "actions.test.three"
   assert_output --partial "actions.test.one.export"
-  assert_output --partial "outputs.files.test"
+  assert_output --partial 'client.filesystem."./test_do".write'
+  refute_output --partial "actions.notMe"
   refute_output --partial "actions.notMe"
 }
 

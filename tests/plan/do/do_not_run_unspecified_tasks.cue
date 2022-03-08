@@ -8,10 +8,8 @@ import (
 )
 
 dagger.#Plan & {
-	outputs: files: test: {
-		dest:     "./test_do"
-		contents: actions.test.one.export.files["/output.txt"]
-	}
+	client: filesystem: "./test_do": write: contents:      actions.test.one.export.files["/output.txt"]
+	client: filesystem: "./dependent_do": write: contents: actions.dependent.one.export.files["/output.txt"]
 
 	outputs: files: dependent: {
 		dest:     "./dependent_do"
