@@ -38,6 +38,10 @@ func NewRunner(pctx *plancontext.Context, target cue.Path, s solver.Solver) *Run
 }
 
 func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
+	if !src.LookupPath(r.target).Exists() {
+		return fmt.Errorf("%s not found", r.target.String())
+	}
+
 	if err := r.update(cue.MakePath(), src); err != nil {
 		return err
 	}
