@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/pkg"
 )
@@ -34,12 +35,14 @@ var initCmd = &cobra.Command{
 
 		name := viper.GetString("name")
 
+		doneCh := common.TrackCommand(ctx, cmd)
+
 		err := pkg.CueModInit(ctx, dir, name)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		// FIXME: Add telemtry for init
+		<-doneCh
 	},
 }
 
