@@ -209,7 +209,8 @@ func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Im
 
 	return s.opts.Control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		res, err := c.Solve(ctx, bkgw.SolveRequest{
-			Definition: def,
+			Definition:   def,
+			CacheImports: s.opts.CacheImports,
 		})
 		if err != nil {
 			return nil, err

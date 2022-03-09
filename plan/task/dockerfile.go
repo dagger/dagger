@@ -100,6 +100,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s s
 			dockerfilebuilder.DefaultLocalNameContext:    contextDef,
 			dockerfilebuilder.DefaultLocalNameDockerfile: dockerfileDef,
 		},
+		CacheImports: s.GetOptions().CacheImports,
 	}
 	res, err := s.SolveRequest(ctx, req)
 	if err != nil {
