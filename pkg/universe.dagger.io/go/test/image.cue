@@ -7,7 +7,7 @@ import (
 )
 
 dagger.#Plan & {
-	actions: tests: image: {
+	actions: test: {
 		_source: dagger.#Scratch & {}
 
 		simple: {

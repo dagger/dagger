@@ -16,7 +16,7 @@ dagger.#Plan & {
 		stdout: dagger.#Secret
 	}
 
-	actions: tests: {
+	actions: test: {
 
 		// Configuration common to all tests
 		common: {

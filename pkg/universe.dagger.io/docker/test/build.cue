@@ -8,7 +8,7 @@ import (
 )
 
 dagger.#Plan & {
-	actions: tests: build: {
+	actions: test: build: {
 		// Test: simple docker.#Build
 		simple: {
 			#testValue: "hello world"

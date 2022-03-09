@@ -5,6 +5,6 @@ setup() {
 }
 
 @test "bash" {
-    dagger up
+    dagger "do" -p ./test.cue test
 }
 

@@ -13,7 +13,7 @@ dagger.#Plan & {
 		"./data/bar": read: contents: dagger.#FS
 	}
 
-	actions: tests: {
+	actions: test: {
 
 		// Configuration for all tests
 		common: {

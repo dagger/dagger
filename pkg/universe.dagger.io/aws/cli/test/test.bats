@@ -5,5 +5,5 @@ setup() {
 }
 
 @test "aws/cli" {
-    dagger up ./sts_get_caller_identity.cue
+    dagger "do" -p ./sts_get_caller_identity.cue verify
 }

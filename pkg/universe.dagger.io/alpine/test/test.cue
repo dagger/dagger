@@ -8,7 +8,7 @@ import (
 )
 
 dagger.#Plan & {
-	actions: tests: {
+	actions: test: {
 		// Test: customize alpine version
 		alpineVersion: {
 			build: alpine.#Build & {

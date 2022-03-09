@@ -198,12 +198,12 @@ setup() {
    cd "$TESTDIR"
 
    # Run with amd64 platform
-   run "$DAGGER" up ./plan/platform/config_platform_linux_amd64.cue
+   run "$DAGGER" "do" -p./plan/platform/config_platform_linux_amd64.cue verify
 
    # Run with arm64 platform
-   run "$DAGGER" up ./plan/platform/config_platform_linux_arm64.cue
+   run "$DAGGER" "do" -p./plan/platform/config_platform_linux_arm64.cue verify
 
    # Run with invalid platform
-   run "$DAGGER" up ./plan/platform/config_platform_failure_invalid_platform.cue
+   run "$DAGGER" "do" -p./plan/platform/config_platform_failure_invalid_platform.cue verify
    assert_failure
 }

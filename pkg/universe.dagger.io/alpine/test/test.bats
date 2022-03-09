@@ -4,5 +4,5 @@ setup() {
     common_setup
 }
 @test "alpine" {
-    dagger up
+    dagger "do" -p ./test.cue test
 }

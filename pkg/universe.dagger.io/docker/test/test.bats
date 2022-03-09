@@ -5,5 +5,5 @@ setup() {
 }
 
 @test "docker" {
-    dagger up
+    dagger "do" -p ./ test
 }

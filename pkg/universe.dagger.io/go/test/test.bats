@@ -5,8 +5,8 @@ setup() {
 }
 
 @test "bash" {
-    dagger up ./build.cue
-    dagger up ./container.cue
-    dagger up ./image.cue
-    dagger up ./test.cue
+    dagger "do" -p ./build.cue test
+    dagger "do" -p ./container.cue test
+    dagger "do" -p ./image.cue test
+    dagger "do" -p ./test.cue test
 }

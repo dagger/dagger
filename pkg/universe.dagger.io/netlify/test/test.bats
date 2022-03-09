@@ -5,5 +5,5 @@ setup() {
 }
 
 @test "netlify" {
-    dagger up
+    dagger "do" test
 }
