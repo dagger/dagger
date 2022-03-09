@@ -1,5 +1,5 @@
 const path = require("path");
-const remarkCodeImport = require('remark-code-import');
+const remarkCodeImport = require("remark-code-import");
 
 /** @type {import('@docusaurus/types').DocusaurusConfig} */
 module.exports = {
@@ -51,24 +51,18 @@ module.exports = {
           className: "button",
         },
       ],
-      hideOnScroll: true
+      hideOnScroll: true,
     },
     algolia: {
       apiKey: "559dcddb4378b889baa48352394616ec",
       indexName: "Dagger_docs",
-      appId: 'XSSC1LRN4S',
+      appId: "XSSC1LRN4S",
     },
     hotjar: {
       siteId: "2541514",
     },
     colorMode: {
-      // "light" | "dark"
       defaultMode: "light",
-
-      switchConfig: {
-        darkIcon: "img/Icon_Night-mode.svg",
-        lightIcon: "img/Icon_Day-mode.svg",
-      },
     },
   },
   presets: [
@@ -76,6 +70,7 @@ module.exports = {
       "@docusaurus/preset-classic",
       {
         docs: {
+          breadcrumbs: false,
           path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
