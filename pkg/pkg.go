@@ -37,7 +37,7 @@ var (
 
 func Vendor(ctx context.Context, p string) error {
 	if p == "" {
-		p = GetCueModParent()
+		p, _ = GetCueModParent()
 	}
 
 	cuePkgDir := path.Join(p, "cue.mod", "pkg")
@@ -144,12 +144,14 @@ func extractModules(dest string) error {
 }
 
 // GetCueModParent traverses the directory tree up through ancestors looking for a cue.mod folder
-func GetCueModParent() string {
+func GetCueModParent() (string, bool) {
 	cwd, _ := os.Getwd()
 	parentDir := cwd
+	found := false
 
 	for {
 		if _, err := os.Stat(path.Join(parentDir, "cue.mod")); !errors.Is(err, os.ErrNotExist) {
+			found = true
 			break // found it!
 		}
 
@@ -162,7 +164,7 @@ func GetCueModParent() string {
 		}
 	}
 
-	return parentDir
+	return parentDir, found
 }
 
 func CueModInit(ctx context.Context, parentDir, module string) error {

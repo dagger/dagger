@@ -32,18 +32,14 @@ type Config struct {
 	Args   []string
 	With   []string
 	Target string
-	Vendor bool
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
-	// FIXME: move vendoring to explicit project update command
-	if cfg.Vendor {
-		// FIXME: vendoring path
-		if err := pkg.Vendor(ctx, ""); err != nil {
-			return nil, err
-		}
+	_, cueModExists := pkg.GetCueModParent()
+	if !cueModExists {
+		return nil, fmt.Errorf("dagger project not found. Run `dagger project init`")
 	}
 
 	v, err := compiler.Build("", nil, cfg.Args...)

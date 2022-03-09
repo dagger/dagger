@@ -4,13 +4,19 @@ setup() {
 	common_setup
 }
 
-@test "project init" {
-	cd "$TESTDIR"
-	# mkdir -p ./project/init
-	"$DAGGER" project init ./project/init --name "github.com/foo/bar"
-	test -d ./project/init/cue.mod/pkg
-	test -d ./project/init/cue.mod/usr
-	test -f ./project/init/cue.mod/module.cue
-	contents=$(cat ./project/init/cue.mod/module.cue)
+@test "project init and update" {
+	TEMPDIR=$(mktemp -d)
+	echo "TEMPDIR=$TEMPDIR"
+	cd "$TEMPDIR"
+	
+	"$DAGGER" project init ./ --name "github.com/foo/bar"
+	test -d ./cue.mod/pkg
+	test -d ./cue.mod/usr
+	test -f ./cue.mod/module.cue
+	contents=$(cat ./cue.mod/module.cue)
 	[ "$contents" == 'module: "github.com/foo/bar"' ]
+
+	dagger project update
+	test -d ./cue.mod/pkg/dagger.io
+	test -d ./cue.mod/pkg/universe.dagger.io
 }
