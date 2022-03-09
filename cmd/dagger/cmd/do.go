@@ -70,10 +70,11 @@ var doCmd = &cobra.Command{
 			return p.Do(ctx, getTargetPath(args), s)
 		})
 
+		<-doneCh
+
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
-		<-doneCh
 	},
 }
 

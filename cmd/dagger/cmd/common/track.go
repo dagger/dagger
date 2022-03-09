@@ -19,15 +19,18 @@ func TrackCommand(ctx context.Context, cmd *cobra.Command, props ...*telemetry.P
 			Name:  "command",
 			Value: commandName(cmd),
 		},
-		{
-			// Hash the repository URL for privacy
-			Name:  "git_repository_hash",
-			Value: hash(gitRepoURL(".")),
-		},
 	}, props...)
 
-	projectDir, found := pkg.GetCueModParent()
-	if found {
+	if repo := gitRepoURL("."); repo != "" {
+		props = append(props, &telemetry.Property{
+			// Hash the repository URL for privacy
+			Name:  "git_repository_hash",
+			Value: hash(repo),
+		})
+	}
+
+	if projectDir, found := pkg.GetCueModParent(); found {
+		// Hash the project path for privacy
 		props = append(props, &telemetry.Property{
 			Name:  "project_path_hash",
 			Value: hash(projectDir),
