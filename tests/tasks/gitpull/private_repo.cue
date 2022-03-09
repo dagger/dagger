@@ -5,9 +5,10 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: secrets: sops: command: {
+	client: commands: sops: {
 		name: "sops"
-		args: ["-d", "../../secrets_sops.yaml"]
+		args: ["-d", "secrets_sops.yaml"]
+		stdout: dagger.#Secret
 	}
 
 	actions: {
@@ -18,7 +19,7 @@ dagger.#Plan & {
 
 		sopsSecrets: dagger.#DecodeSecret & {
 			format: "yaml"
-			input:  inputs.secrets.sops.contents
+			input:  client.commands.sops.stdout
 		}
 
 		testRepo: dagger.#GitPull & {

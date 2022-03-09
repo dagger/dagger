@@ -7,15 +7,16 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: secrets: sops: command: {
+	client: commands: sops: {
 		name: "sops"
 		args: ["-d", "--extract", "[\"AWS\"]", "../../secrets_sops.yaml"]
+		stdout: dagger.#Secret
 	}
 
 	actions: {
 		sopsSecrets: dagger.#DecodeSecret & {
 			format: "yaml"
-			input:  inputs.secrets.sops.contents
+			input:  client.commands.sops.stdout
 		}
 
 		getCallerIdentity: aws.#Container & {

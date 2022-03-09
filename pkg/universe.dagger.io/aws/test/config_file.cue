@@ -7,27 +7,27 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: {
-		directories: awsConfig: {
-			path: "./"
+	client: {
+		filesystem: ".": read: {
+			contents: dagger.#FS
 			include: ["config"]
 		}
-
-		secrets: sops: command: {
+		commands: sops: {
 			name: "sops"
 			args: ["-d", "--extract", "[\"AWS\"]", "../../secrets_sops.yaml"]
+			stdout: dagger.#Secret
 		}
 	}
 
 	actions: {
 		sopsSecrets: dagger.#DecodeSecret & {
 			format: "yaml"
-			input:  inputs.secrets.sops.contents
+			input:  client.commands.sops.stdout
 		}
 
 		getCallerIdentity: aws.#Container & {
 			always:     true
-			configFile: inputs.directories.awsConfig.contents
+			configFile: client.filesystem.".".read.contents
 
 			credentials: aws.#Credentials & {
 				accessKeyId:     sopsSecrets.output.AWS_ACCESS_KEY_ID.contents

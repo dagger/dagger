@@ -10,9 +10,10 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: secrets: test: command: {
+	client: commands: sops: {
 		name: "sops"
 		args: ["-d", "../../test_secrets.yaml"]
+		stdout: dagger.#Secret
 	}
 
 	actions: tests: {
@@ -20,7 +21,7 @@ dagger.#Plan & {
 		// Configuration common to all tests
 		common: {
 			testSecrets: dagger.#DecodeSecret & {
-				input:  inputs.secrets.test.contents
+				input:  client.commands.sops.stdout
 				format: "yaml"
 			}
 

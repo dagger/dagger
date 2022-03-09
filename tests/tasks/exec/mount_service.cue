@@ -5,7 +5,7 @@ import (
 )
 
 dagger.#Plan & {
-	proxy: dockerSocket: unix: "/var/run/docker.sock"
+	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Service
 
 	actions: {
 		image: dagger.#Pull & {
@@ -21,7 +21,7 @@ dagger.#Plan & {
 			input: imageWithDocker.output
 			mounts: docker: {
 				dest:     "/var/run/docker.sock"
-				contents: proxy.dockerSocket.service
+				contents: client.filesystem."/var/run/docker.sock".read.contents
 			}
 			args: ["docker", "info"]
 		}

@@ -8,16 +8,16 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: directories: {
-		testdata: path:  "./data/foo"
-		testdata2: path: "./data/bar"
+	client: filesystem: {
+		"./data/foo": read: contents: dagger.#FS
+		"./data/bar": read: contents: dagger.#FS
 	}
 
 	actions: tests: {
 
 		// Configuration for all tests
 		common: {
-			data: inputs.directories.testdata.contents
+			data: client.filesystem."./data/foo".read.contents
 		}
 
 		// Run yarn.#Build

@@ -31,11 +31,6 @@ dagger.#Plan & {
 				input: write.output
 				path:  "out.txt"
 			}
-			// FIXME: hack until we can do outputs with `dagger do`
-			verify: dagger.#Exec & {
-				input: image.output
-				args: ["echo", client.filesystem."test.txt".write.contents]
-			}
 		}
 	}
 }

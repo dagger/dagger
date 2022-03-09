@@ -8,14 +8,14 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: directories: testhello: path: "./data/hello"
+	client: filesystem: "./data/hello": read: contents: dagger.#FS
 
 	actions: tests: build: {
 		_baseImage: alpine.#Build
 
 		simple: {
 			build: go.#Build & {
-				source: inputs.directories.testhello.contents
+				source: client.filesystem."./data/hello".read.contents
 			}
 
 			exec: docker.#Run & {
