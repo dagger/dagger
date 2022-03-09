@@ -63,9 +63,7 @@ var upCmd = &cobra.Command{
 		doneCh := common.TrackCommand(ctx, cmd)
 
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-			err := p.Do(ctx, cue.MakePath(), s)
-
-			return err
+			return p.Do(ctx, cue.ParsePath(viper.GetString("target")), s)
 		})
 
 		if err != nil {
