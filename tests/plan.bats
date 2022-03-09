@@ -4,7 +4,13 @@ setup() {
     common_setup
 }
 
-@test "plan/do dynamic tasks - fails to find tasks" {
+@test "plan/do: action sanity checks" {
+  run "$DAGGER" "do" -p ./plan/do/actions.cue not exist
+  assert_failure
+  assert_output --partial "not found"
+}
+
+@test "plan/do: dynamic tasks - fails to find tasks" {
   # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod
   cd "$TESTDIR"
   run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue test b
@@ -12,12 +18,12 @@ setup() {
   refute_output --partial "actions.test.b"
 }
 
-@test "plan/do dynamic tasks - fails to run tasks" {
+@test "plan/do: dynamic tasks - fails to run tasks" {
   run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue "test"
   refute_output --partial 'actions.test.b.y'
 }
 
-@test "plan/do don't run unspecified tasks" {
+@test "plan/do: don't run unspecified tasks" {
   run "$DAGGER" "do" -p ./plan/do/do_not_run_unspecified_tasks.cue test
   assert_output --partial "actions.test.one.script"
   assert_output --partial "actions.test.three.script"
@@ -31,7 +37,6 @@ setup() {
   refute_output --partial "actions.notMe"
   refute_output --partial 'client.filesystem."./dependent_do".write'
 }
-
 
 @test "plan/hello" {
   # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod

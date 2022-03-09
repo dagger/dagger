@@ -175,17 +175,19 @@ func (p *Plan) fillAction() {
 		noOpRunner,
 	)
 
-	actions := p.source.LookupPath(cue.MakePath(ActionSelector))
-	actionsComment := ""
-	for _, cg := range actions.Doc() {
-		actionsComment += cg.Text()
-	}
 	p.action = &Action{
-		ActionSelector.String(),
-		false,
-		actions.Path(),
-		actionsComment,
-		[]*Action{},
+		Name:     ActionSelector.String(),
+		Hidden:   false,
+		Path:     cue.MakePath(ActionSelector),
+		Children: []*Action{},
+	}
+
+	actions := p.source.LookupPath(cue.MakePath(ActionSelector))
+	if actions.Exists() {
+		return
+	}
+	for _, cg := range actions.Doc() {
+		p.action.Comment += cg.Text()
 	}
 
 	tasks := flow.Tasks()
@@ -205,11 +207,11 @@ func (p *Plan) fillAction() {
 				}
 
 				a = &Action{
-					s.String(),
-					s.PkgPath() != "",
-					path,
-					childComment,
-					[]*Action{},
+					Name:     s.String(),
+					Hidden:   s.PkgPath() != "",
+					Path:     path,
+					Comment:  childComment,
+					Children: []*Action{},
 				}
 				prevAction.AddChild(a)
 			}
