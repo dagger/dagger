@@ -1,5 +1,5 @@
 ---
-slug: /1200/local-dev
+slug: /
 displayed_sidebar: europa
 ---
 

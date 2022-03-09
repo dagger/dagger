@@ -66,8 +66,8 @@ module.exports = {
     },
     {
       type: "link",
-      label: "🆕 Dagger Europa 🆕",
-      href: "/1200/local-dev",
+      label: "Dagger 0.2 ➡️",
+      href: "/",
     },
   ],
   europa: [
@@ -90,9 +90,7 @@ module.exports = {
         "core-concepts/plan",
         "core-concepts/client",
         "core-concepts/secrets",
-        "core-concepts/caching",
         "core-concepts/container-images",
-        "core-concepts/packages",
       ],
     },
     {
@@ -107,8 +105,8 @@ module.exports = {
     },
     {
       type: "link",
-      label: "🕸  pre-Europa 🕸",
-      href: "/",
+      label: "⬅️ Dagger 0.1",
+      href: "/1200/what/",
     },
   ],
 };
