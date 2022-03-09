@@ -111,6 +111,7 @@ func doHelp(cmd *cobra.Command, _ []string) {
 		errorMsg            string
 		loadedMsg           string
 		actionLookupPathMsg string
+		action              *plan.Action
 		actions             []*plan.Action
 	)
 
@@ -120,8 +121,13 @@ func doHelp(cmd *cobra.Command, _ []string) {
 	} else {
 		loadedMsg = "Plan loaded from " + planPath
 		actionLookupPath := getTargetPath(cmd.Flags().Args())
-		actions = p.Action().FindByPath(actionLookupPath).Children
-		actionLookupPathMsg = fmt.Sprintf(`%s:`, actionLookupPath.String())
+		action = p.Action().FindByPath(actionLookupPath)
+		if action == nil {
+			errorMsg = "Error: action not found\n\n"
+		} else {
+			actions = action.Children
+			actionLookupPathMsg = fmt.Sprintf(`%s:`, actionLookupPath.String())
+		}
 	}
 	fmt.Printf(`%s%s
 
