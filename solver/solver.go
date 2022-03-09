@@ -28,12 +28,13 @@ type Solver struct {
 }
 
 type Opts struct {
-	Control *bk.Client
-	Gateway bkgw.Client
-	Events  chan *bk.SolveStatus
-	Context *plancontext.Context
-	Auth    *RegistryAuthProvider
-	NoCache bool
+	Control      *bk.Client
+	Gateway      bkgw.Client
+	Events       chan *bk.SolveStatus
+	Context      *plancontext.Context
+	Auth         *RegistryAuthProvider
+	NoCache      bool
+	CacheImports []bkgw.CacheOptionsEntry
 }
 
 func New(opts Opts) Solver {
@@ -152,7 +153,8 @@ func (s Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform
 
 	// call solve
 	res, err := s.SolveRequest(ctx, bkgw.SolveRequest{
-		Definition: def,
+		Definition:   def,
+		CacheImports: s.opts.CacheImports,
 	})
 	if err != nil {
 		return nil, err

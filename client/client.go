@@ -96,6 +96,19 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	return eg.Wait()
 }
 
+func convertCacheOptionEntries(ims []bk.CacheOptionsEntry) []bkgw.CacheOptionsEntry {
+	convertIms := []bkgw.CacheOptionsEntry{}
+
+	for _, im := range ims {
+		convertIm := bkgw.CacheOptionsEntry{
+			Type:  im.Type,
+			Attrs: im.Attrs,
+		}
+		convertIms = append(convertIms, convertIm)
+	}
+	return convertIms
+}
+
 func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
 	wg := sync.WaitGroup{}
 
@@ -156,11 +169,12 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		s := solver.New(solver.Opts{
-			Control: c.c,
-			Gateway: gw,
-			Events:  eventsCh,
-			Auth:    auth,
-			NoCache: c.cfg.NoCache,
+			Control:      c.c,
+			Gateway:      gw,
+			Events:       eventsCh,
+			Auth:         auth,
+			NoCache:      c.cfg.NoCache,
+			CacheImports: convertCacheOptionEntries(opts.CacheImports),
 		})
 
 		// Close events channel
