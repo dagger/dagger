@@ -8,7 +8,7 @@ displayed_sidebar: europa
 Everyone should be able to run their CI/CD pipeline locally.
 Having to commit & push in order to test a change is a slow way to iterate on a pipeline.
 This guide shows you the Dagger way.
-Within 5 minutes, you will have a local CI/CD loop and run your first build, test & deploy pipeline.
+Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 
@@ -34,71 +34,71 @@ type dagger
 dagger is /opt/homebrew/bin/dagger
 ```
 
-Before we can build, test & deploy our example app with `dagger`, we need to have Docker running.
+Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
 If not, [Docker Desktop](https://www.docker.com/products/docker-desktop) makes this easy.
-With Docker running, we are ready to download our example app and use its dev CI/CD pipeline:
+With Docker running, we are ready to download our example app and run its CI/CD pipeline:
 
 ```shell
-git clone https://github.com/dagger/examples
-cd examples/todoapp
+git clone https://github.com/dagger/dagger
+cd dagger
+git checkout v0.2.0-beta.1
+
+cd pkg/universe.dagger.io/examples/todoapp
 ```
 
 With everything in place, we run the CI/CD pipeline locally:
 
 ```shell
-dagger up dev.cue
+dagger do build
 ```
 
-With an empty cache, installing all dependencies, then building, testing & deploying this example app completes in just under 3 minutes:
+With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under 3 minutes:
 
 ```shell
-[✔] inputs.directories.app                                        0.3s
-[✔] actions.test                                                125.6s
-[✔] actions.build                                               163.0s
-[+] actions.deploy                                              167.5s
-#18 INFO: System: Ran is running on HTTP port 8020
-#18 INFO: System: Listening on http://0.0.0.0:8020
+[✔] client.filesystem.".".read                                    0.1s
+[✔] actions.deps                                                118.8s
+[✔] actions.test.script                                           0.1s
+[✔] actions.test                                                  6.3s
+[✔] actions.build.run.script                                      0.0s
+[✔] actions.build.run                                            43.7s
+[✔] actions.build.contents                                        0.4s
+[✔] client.filesystem.build.write                                 0.1s
 ```
 
-:::caution
-[localhost:8020](http://localhost:8020) is not accessible on macOS 12 & Docker 20.10.12. Works fine on Linux 🤷
-:::
+Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
+The last step copies the build result into the `build` directory on the host.
+On macOS, we run `open build/index.html` in our terminal and see the following app preview:
 
-We can now access the application on [localhost:8020](http://localhost:8020) and get a preview of what the app would look like if the same thing ran in a CI environment.
+![todoapp preview](/img/getting-started/todoapp.png)
 
-While this is a good first step, it gets better when we run this again - the cache makes it quicker.
-Type `^C` to exit the deployment, and run `dagger up dev.cue` again:
-
-```shell
-[✔] inputs.directories.app                                        0.1s
-[✔] actions.build                                                 0.6s
-[✔] actions.test                                                  0.6s
-[+] actions.deploy                                                1.1s
-#18 INFO: System: Ran is running on HTTP port 8020
-#18 INFO: System: Listening on http://0.0.0.0:8020
-```
+One of the big advantages to this approach is that we did not have to install any dependencies specific to this application.
+Dagger managed all the intermediary steps, and we ended up with the end-result on our host, without any of the transient dependencies.
 
 Now that we have everything running locally, let us make a change and get a feel for our local CI/CD loop.
 The quicker we can close this loop, the quicker we can learn what actually works.
+With Dagger, we can close this loop locally, without committing and pushing our changes.
+And since every action is cached, subsequent runs will be quicker.
 
-In the todoapp dir, edit line `25` of `src/components/Form.js` and save the file.
+In the todoapp directory, edit line `25` of `src/components/Form.js` and save the file.
 
-I change this line to `What must be done today?` and run build, test & deploy again:
+I change this line to `What must be done today?` and run the build locally again:
 
 ```shell
-dagger up dev.cue
+dagger do build
 
-[✔] inputs.directories.app                                        7.5s
-[✔] actions.build                                                94.7s
-[✔] actions.test                                                 57.3s
-[+] actions.deploy                                               96.1s
-#18 INFO: System: Ran is running on HTTP port 8020
-#18 INFO: System: Listening on http://0.0.0.0:8020
+[✔] client.filesystem.".".read                                    0.0s
+[✔] actions.deps                                                 40.8s
+[✔] actions.test.script                                           0.0s
+[✔] actions.test                                                  6.3s
+[✔] actions.build.run.script                                      0.0s
+[✔] actions.build.run                                            43.6s
+[✔] actions.build.contents                                        0.4s
+[✔] client.filesystem.build.write                                 0.1s
 ```
 
-The total `94.7s` time is macOS specific, since the Linux alternative is more than 5x quicker.
-Either way, this local build, test & deploy loop is likely to change the approach to iterating on changes.
+The total `84.4` time is macOS specific, since the Linux alternative is more than 5x quicker.
+Either way, this local test & build loop is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
 </TabItem>
@@ -118,63 +118,67 @@ dagger is /usr/local/bin/dagger
 Before we can build, test & deploy our example app with `dagger`, we need to have Docker Engine running.
 You most likely already have Docker Engine set up.
 If not, [Docker on Linux install](https://docs.docker.com/engine/install/#server) makes this easy.
-With Docker Engine running, we are ready to download our example app and use its dev CI/CD pipeline:
+With Docker Engine running, we are ready to download our example app and run its CI/CD pipeline:
 
 ```shell
-git clone https://github.com/dagger/examples
-cd examples/todoapp
+git clone https://github.com/dagger/dagger
+cd dagger
+git checkout v0.2.0-beta.1
+
+cd pkg/universe.dagger.io/examples/todoapp
 ```
 
 With everything in place, we run the CI/CD pipeline locally:
 
 ```shell
-dagger up dev.cue
+dagger do build
 ```
 
-With an empty cache, installing all dependencies, then building, testing & deploying this example app completes in just under 1 minute:
+With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under 1 minute:
 
 ```shell
-[✔] inputs.directories.app                                        0.3s
-[✔] actions.test                                                 45.1s
-[✔] actions.build                                                53.8s
-[+] actions.deploy                                               57.5s
-#18 INFO: System: Ran is running on HTTP port 8020
-#18 INFO: System: Listening on http://0.0.0.0:8020
+[✔] client.filesystem.".".read                                    0.3s
+[✔] actions.deps                                                 39.7s
+[✔] actions.test.script                                           0.2s
+[✔] actions.test                                                  1.9s
+[✔] actions.build.run.script                                      0.1s
+[✔] actions.build.run                                            10.0s
+[✔] actions.build.contents                                        0.6s
+[✔] client.filesystem.build.write                                 0.1s
 ```
 
-We can now access the application on [localhost:8020](http://localhost:8020) and get a preview of what the app would look like if the same thing ran in a CI environment.
+Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
+The last step copies the build result into the `build` directory on the host.
+On Linux, we run `xdg-open build/index.html` in our terminal and see the following app preview:
 
-While this is a good first step, it gets better when we run this again - the cache makes it quicker.
-Type `^C` to exit the deployment, and run `dagger up dev.cue` again:
+![todoapp preview](/img/getting-started/todoapp.png)
 
-```shell
-[✔] inputs.directories.app                                        0.1s
-[✔] actions.build                                                 1.7s
-[✔] actions.test                                                  1.8s
-[+] actions.deploy                                                2.1s
-#18 INFO: System: Ran is running on HTTP port 8020
-#18 INFO: System: Listening on http://0.0.0.0:8020
-```
+One of the big advantages to this approach is that we did not have to install any dependencies specific to this application.
+Dagger managed all the intermediary steps, and we ended up with the end-result on our host, without any of the transient dependencies.
 
 Now that we have everything running locally, let us make a change and get a feel for our local CI/CD loop.
 The quicker we can close this loop, the quicker we can learn what actually works.
+With Dagger, we can close this loop locally, without committing and pushing our changes.
+And since every action is cached, subsequent runs will be quicker.
 
-In the todoapp dir, edit line `25` of `src/components/Form.js` and save the file.
+In the todoapp directory, edit line `25` of `src/components/Form.js` and save the file.
 
-I change this line to `What must be done today?` and run build, test & deploy again:
+I change this line to `What must be done today?` and run the build locally again:
 
 ```shell
-dagger up dev.cue
+dagger do build
 
-[✔] inputs.directories.app                                        0.1s
-[✔] actions.build                                                24.7s
-[✔] actions.test                                                 16.2s
-[+] actions.deploy                                               17.1s
-#18 INFO: System: Ran is running on HTTP port 8020
-#18 INFO: System: Listening on http://0.0.0.0:8020
+[✔] client.filesystem.".".read                                    0.1s
+[✔] actions.deps                                                 13.3s
+[✔] actions.test.script                                           0.0s
+[✔] actions.test                                                  1.8s
+[✔] actions.build.run.script                                      0.0s
+[✔] actions.build.run                                            10.1s
+[✔] actions.build.contents                                        0.6s
+[✔] client.filesystem.build.write                                 0.1s
 ```
 
-Being able to re-run a build, test & deploy loop locally in `17.1s` is likely to change the approach to iterating on changes.
+Being able to re-run the test & build loop locally in `26.7s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
 </TabItem>
@@ -203,5 +207,6 @@ C:\<your home folder>\dagger.exe
 
 :::tip
 Now that we are comfortable with our local CI/CD loop, let us configure a remote CI environment in the second part.
+The difference is that we will also deploy the build output to Netlify.
 Dagger makes this easy.
 :::
