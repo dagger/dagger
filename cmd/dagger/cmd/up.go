@@ -18,6 +18,10 @@ import (
 )
 
 var upCmd = &cobra.Command{
+	// FIXME: this command will be removed soon
+	Hidden:     true,
+	Deprecated: "please use `dagger do ACTION` instead",
+
 	Use:   "up",
 	Short: "Bring an environment online with latest plan and inputs",
 	Args:  cobra.MaximumNArgs(1),
