@@ -68,7 +68,7 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         # TODO: https://github.com/dagger/dagger/pull/1341
           DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-integration"
-          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-integration"
+          DAGGER_CACHE_FROM: "type=gha,scope=test-integration"
         run: |
           env
           make core-integration
