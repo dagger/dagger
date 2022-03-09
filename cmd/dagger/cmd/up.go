@@ -61,15 +61,14 @@ var upCmd = &cobra.Command{
 		}
 
 		doneCh := common.TrackCommand(ctx, cmd)
-
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
 			return p.Do(ctx, cue.ParsePath(viper.GetString("target")), s)
 		})
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
-		<-doneCh
 	},
 }
 

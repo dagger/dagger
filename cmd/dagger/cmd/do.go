@@ -60,20 +60,22 @@ var doCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to load plan")
 		}
+		target := getTargetPath(args)
 
 		doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
 			Name:  "action",
-			Value: p.Action().Path.String(),
+			Value: target.String(),
 		})
 
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
-			return p.Do(ctx, getTargetPath(args), s)
+			return p.Do(ctx, target, s)
 		})
+
+		<-doneCh
 
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
-		<-doneCh
 	},
 }
 

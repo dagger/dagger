@@ -7,7 +7,6 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/mod"
 	"go.dagger.io/dagger/pkg"
-	"go.dagger.io/dagger/telemetry"
 )
 
 var updateCmd = &cobra.Command{
@@ -41,6 +40,7 @@ var updateCmd = &cobra.Command{
 
 		var update = viper.GetBool("update")
 
+		doneCh := common.TrackCommand(ctx, cmd)
 		var processedRequires []*mod.Require
 
 		if update && len(args) == 0 {
@@ -62,16 +62,12 @@ var updateCmd = &cobra.Command{
 			}
 		}
 
-		doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
-			Name:  "num_packages",
-			Value: len(processedRequires),
-		})
+		<-doneCh
 
 		if err != nil {
 			lg.Error().Err(err).Msg("error installing/updating packages")
 		}
 
-		<-doneCh
 	},
 }
 
