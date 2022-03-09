@@ -150,22 +150,23 @@ setup() {
   export TEST_STRING="foo"
   export TEST_SECRET="bar"
 
-  "$DAGGER" "do" -p ./plan/client/env test usage
+  "$DAGGER" "do" -p ./plan/client/env/usage.cue test
 }
 
 @test "plan/client/env not exists" {
   cd "${TESTDIR}"
 
-  run "$DAGGER" "do" -p ./plan/client/env test usage
+  run "$DAGGER" "do" -p ./plan/client/env/usage.cue test
   assert_failure
+  assert_output --regexp "environment variable \"TEST_(STRING|SECRET)\" not set"
 }
 
-@test "plan/client/env invalid" {
+@test "plan/client/env concrete" {
   cd "${TESTDIR}"
 
   export TEST_FAIL="foobar"
 
-  run "$DAGGER" "do" -p ./plan/client/env test concrete
+  run "$DAGGER" "do" -p ./plan/client/env/concrete.cue test
   assert_failure
   assert_output --partial "TEST_FAIL: unexpected concrete value"
 }
