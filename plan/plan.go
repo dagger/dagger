@@ -183,7 +183,7 @@ func (p *Plan) fillAction() {
 	}
 
 	actions := p.source.LookupPath(cue.MakePath(ActionSelector))
-	if actions.Exists() {
+	if !actions.Exists() {
 		return
 	}
 	for _, cg := range actions.Doc() {
