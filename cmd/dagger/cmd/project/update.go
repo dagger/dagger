@@ -62,15 +62,16 @@ var updateCmd = &cobra.Command{
 			}
 		}
 
-		if err != nil {
-			lg.Error().Err(err).Msg("error installing/updating packages")
-		}
-
-		<-common.TrackCommand(ctx, cmd, &telemetry.Property{
+		doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
 			Name:  "num_packages",
 			Value: len(processedRequires),
 		})
 
+		if err != nil {
+			lg.Error().Err(err).Msg("error installing/updating packages")
+		}
+
+		<-doneCh
 	},
 }
 

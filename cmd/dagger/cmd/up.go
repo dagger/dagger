@@ -51,8 +51,6 @@ var upCmd = &cobra.Command{
 		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
-		// err = europaUp(ctx, cl, args...)
-
 		p, err := plan.Load(ctx, plan.Config{
 			Args:   args,
 			With:   viper.GetStringSlice("with"),
@@ -62,18 +60,18 @@ var upCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load plan")
 		}
 
+		doneCh := common.TrackCommand(ctx, cmd)
+
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
 			err := p.Do(ctx, cue.MakePath(), s)
 
 			return err
 		})
 
-		// TODO: rework telemetry
-		<-common.TrackPlanCommand(ctx, cmd, *p)
-
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to up environment")
 		}
+		<-doneCh
 	},
 }
 

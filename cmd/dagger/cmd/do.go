@@ -15,6 +15,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/telemetry"
 	"golang.org/x/term"
 )
 
@@ -60,15 +61,19 @@ var doCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to load plan")
 		}
 
+		doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
+			Name:  "action",
+			Value: p.Action().Path.String(),
+		})
+
 		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
 			return p.Do(ctx, getTargetPath(args), s)
 		})
 
-		<-common.TrackPlanCommand(ctx, cmd, *p)
-
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
+		<-doneCh
 	},
 }
 

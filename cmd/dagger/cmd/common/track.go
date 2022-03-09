@@ -9,7 +9,6 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/spf13/cobra"
 	"go.dagger.io/dagger/pkg"
-	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/telemetry"
 )
 
@@ -20,7 +19,20 @@ func TrackCommand(ctx context.Context, cmd *cobra.Command, props ...*telemetry.P
 			Name:  "command",
 			Value: commandName(cmd),
 		},
+		{
+			// Hash the repository URL for privacy
+			Name:  "git_repository_hash",
+			Value: hash(gitRepoURL(".")),
+		},
 	}, props...)
+
+	projectDir, found := pkg.GetCueModParent()
+	if found {
+		props = append(props, &telemetry.Property{
+			Name:  "project_path_hash",
+			Value: hash(projectDir),
+		})
+	}
 
 	return telemetry.TrackAsync(ctx, "Command Executed", props...)
 }
@@ -32,58 +44,6 @@ func commandName(cmd *cobra.Command) string {
 	}
 	return strings.Join(parts, " ")
 }
-
-// TrackPlanCommand sends telemetry about a plan execution
-func TrackPlanCommand(ctx context.Context, cmd *cobra.Command, daggerplan plan.Plan, props ...*telemetry.Property) chan struct{} {
-	props = append([]*telemetry.Property{
-		{
-			// Hash the repository URL for privacy
-			Name:  "git_repository_hash",
-			Value: hash(gitRepoURL(pkg.GetCueModParent())),
-		},
-		{
-			// The project path might contain the username (e.g. /home/user/project), so we hash it for privacy.
-			Name:  "project_path_hash",
-			Value: hash(pkg.GetCueModParent()),
-		},
-	}, props...)
-
-	if action := daggerplan.Action(); action != nil {
-		props = append(props, &telemetry.Property{
-			Name:  "action",
-			Value: true,
-		})
-	}
-	return TrackCommand(ctx, cmd, props...)
-}
-
-// TrackProjectCommand is like TrackCommand but includes project and
-// optionally environment metadata.
-// func TrackProjectCommand(ctx context.Context, cmd *cobra.Command, w *state.Project, env *state.State, props ...*telemetry.Property) chan struct{} {
-// 	props = append([]*telemetry.Property{
-// 		{
-// 			// Hash the repository URL for privacy
-// 			Name:  "git_repository_hash",
-// 			Value: hash(gitRepoURL(w.Path)),
-// 		},
-// 		{
-// 			// The project path might contain the username (e.g. /home/user/project), so we hash it for privacy.
-// 			Name:  "project_path_hash",
-// 			Value: hash(w.Path),
-// 		},
-// 	}, props...)
-
-// 	if env != nil {
-// 		props = append([]*telemetry.Property{
-// 			{
-// 				Name:  "environment_name",
-// 				Value: env.Name,
-// 			},
-// 		}, props...)
-// 	}
-
-// 	return TrackCommand(ctx, cmd, props...)
-// }
 
 // hash returns the sha256 digest of the string
 func hash(s string) string {

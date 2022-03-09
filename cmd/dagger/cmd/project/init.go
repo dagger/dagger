@@ -35,12 +35,14 @@ var initCmd = &cobra.Command{
 
 		name := viper.GetString("name")
 
+		doneCh := common.TrackCommand(ctx, cmd)
+
 		err := pkg.CueModInit(ctx, dir, name)
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
 
-		<-common.TrackCommand(ctx, cmd)
+		<-doneCh
 	},
 }
 
