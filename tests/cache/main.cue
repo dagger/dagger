@@ -2,23 +2,21 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/bash"
+	"universe.dagger.io/docker"
 	"universe.dagger.io/alpine"
 )
 
-
 dagger.#Plan & {
 	actions: {
-		_image: alpine.#Build & {
-			packages: {
-				bash: _
-			}
-		}
+		image: alpine.#Build & {}
 
 		// Test script
-		test: bash.#Run & {
-			input: _image.output
-			script: contents: "sleep 15 && echo test"
+		test: docker.#Run & {
+			input: image.output
+			command: {
+				name: "/bin/sh"
+				args: ["-c", "sleep 10 && echo test"]
+			}
 		}
 	}
 }
