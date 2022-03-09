@@ -24,7 +24,7 @@ package dagger
 		}
 
 		// Access client environment variables
-		env: [string]: *string | #Secret
+		env: _#clientEnv
 
 		// Execute commands in the client
 		commands: [id=string]: _#clientCommand
@@ -91,6 +91,13 @@ _#clientFilesystemWrite: {
 		// Reference an #FS field produced by an action
 		contents: #FS
 	}
+}
+
+_#clientEnv: {
+	$dagger: task: _name: "ClientEnv"
+
+	// CUE type defines expected content
+	[!~"\\$dagger"]: *string | #Secret
 }
 
 _#clientCommand: {

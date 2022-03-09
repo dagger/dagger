@@ -101,19 +101,6 @@ func (f Field) Label() string {
 	return l
 }
 
-// ParentLabel returns the unquoted parent selector of a value
-func (v *Value) ParentLabel(depth int) string {
-	sel := v.Path().Selectors()
-	if depth > len(sel) {
-		return ""
-	}
-	l := sel[len(sel)-depth].String()
-	if unquoted, err := strconv.Unquote(l); err == nil {
-		return unquoted
-	}
-	return l
-}
-
 // Proxy function to the underlying cue.Value
 // Field ordering is guaranteed to be stable.
 func (v *Value) Fields(opts ...cue.Option) ([]Field, error) {
