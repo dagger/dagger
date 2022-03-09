@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -147,6 +149,14 @@ func getDeviceID() (string, error) {
 	}
 	id, err := os.ReadFile(idFile)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+
+		if err := os.MkdirAll(filepath.Dir(idFile), 0755); err != nil {
+			return "", err
+		}
+
 		id = []byte(uuid.New().String())
 		if err := os.WriteFile(idFile, id, 0600); err != nil {
 			return "", err
