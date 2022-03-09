@@ -60,11 +60,10 @@ jobs:
 
       - name: Deploy to Netlify
         # https://github.com/dagger/dagger-for-github
-        uses: dagger/dagger-for-github@v0.2
+        uses: dagger/dagger-for-github@v2
         with:
           workdir: pkg/universe.dagger.io/examples/todoapp
-          plan: .
-          do: deploy
+          args: do deploy
 ```
 
 </TabItem>
