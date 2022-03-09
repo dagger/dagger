@@ -95,6 +95,9 @@ func NewClient(ctx context.Context) *client.Client {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
 	}
 
+	fmt.Printf("cacheExports: %v\n", cacheExports)
+	fmt.Printf("cacheImports: %v\n", cacheImports)
+
 	cl, err := client.New(ctx, "", client.Config{
 		CacheExports: cacheExports,
 		CacheImports: cacheImports,
