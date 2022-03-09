@@ -26,38 +26,38 @@ on:
       - 'go.sum'
       - '.github/workflows/test-universe.yml'
 
-jobs:
-  universe-europa-tests:
-    name: "Universe Tests - Europa"
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: "Check out"
-        uses: actions/checkout@v2
-
-      - name: "Set up Go"
-        uses: actions/setup-go@v1
-        with:
-          go-version: 1.16
-
-      - name: "Install SOPS"
-        run: |
-          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
-          sudo chmod +x /usr/local/bin/sops
-
-      - name: "Import Dagger private key"
-        env:
-          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
-        run: |
-          mkdir -p ~/.config/sops/age
-          echo "$DAGGER_AGE_KEY" > ~/.config/sops/age/keys.txt
-
-      - name: "Expose GitHub Runtime"
-        uses: crazy-max/ghaction-github-runtime@v1
-
-      - name: Test
-        env:
-          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
-          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
-        run: |
-          make universe-test
+# jobs:
+#   universe-europa-tests:
+#     name: "Universe Tests - Europa"
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 30
+#     steps:
+#       - name: "Check out"
+#         uses: actions/checkout@v2
+#
+#       - name: "Set up Go"
+#         uses: actions/setup-go@v1
+#         with:
+#           go-version: 1.16
+#
+#       - name: "Install SOPS"
+#         run: |
+#           sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
+#           sudo chmod +x /usr/local/bin/sops
+#
+#       - name: "Import Dagger private key"
+#         env:
+#           DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
+#         run: |
+#           mkdir -p ~/.config/sops/age
+#           echo "$DAGGER_AGE_KEY" > ~/.config/sops/age/keys.txt
+#
+#       - name: "Expose GitHub Runtime"
+#         uses: crazy-max/ghaction-github-runtime@v1
+#
+#       - name: Test
+#         env:
+#           DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
+#           DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
+#         run: |
+#           make universe-test

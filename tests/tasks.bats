@@ -2,138 +2,153 @@ setup() {
     load 'helpers'
 
     common_setup
-    cd "$TESTDIR" || exit
 }
 
-@test "task: #Pull" {
-    "$DAGGER" "do" -p ./tasks/pull/pull.cue pull
-    "$DAGGER" "do" -p ./tasks/pull/pull_auth.cue pull
-}
-
-@test "task: #Push" {
-    "$DAGGER" "do" -p ./tasks/push/push.cue pullContent
-}
-
-@test "task: #ReadFile" {
-    "$DAGGER" "do" -p ./tasks/readfile/readfile.cue readfile
-}
-
-@test "task: #WriteFile" {
-    "$DAGGER" "do" -p ./tasks/writefile/writefile.cue readfile
-    run "$DAGGER" "do" -p ./tasks/writefile/writefile_failure_diff_contents.cue readfile
-    assert_failure
-}
-
-@test "task: #Exec" {
-    cd ./tasks/exec
-    "$DAGGER" "do" -p ./args.cue verify
-    "$DAGGER" "do" -p ./env.cue verify
-    "$DAGGER" "do" -p ./env_secret.cue verify
-    "$DAGGER" "do" -p ./hosts.cue verify
-
-    "$DAGGER" "do" -p ./mount_cache.cue test
-    "$DAGGER" "do" -p ./mount_fs.cue test
-    TESTSECRET="hello world" "$DAGGER" "do" -p ./mount_secret.cue test
-    "$DAGGER" "do" -p ./mount_tmp.cue verify
-    "$DAGGER" "do" -p ./mount_service.cue verify
-
-    "$DAGGER" "do" -p ./user.cue test
-    "$DAGGER" "do" -p ./workdir.cue verify
-}
-
-@test "task: #Copy" {
-    "$DAGGER" "do" -p ./tasks/copy/copy_exec.cue test
-    "$DAGGER" "do" -p ./tasks/copy/copy_file.cue test
-
-    run "$DAGGER" "do" -p ./tasks/copy/copy_exec_invalid.cue test
-    assert_failure
-}
-
-@test "task: #Mkdir" {
-    # Make directory
-    "$DAGGER" "do" -p ./tasks/mkdir/mkdir.cue readChecker
-
-    # Create parents
-    "$DAGGER" "do" -p ./tasks/mkdir/mkdir_parents.cue readChecker
-
-    # Disable parents creation
-    run "$DAGGER" "do" -p ./tasks/mkdir/mkdir_failure_disable_parents.cue readChecker
-    assert_failure
-}
-
-@test "task: #Dockerfile" {
-    cd "$TESTDIR"/tasks/dockerfile
-    "$DAGGER" "do" -p ./dockerfile.cue
-    "$DAGGER" "do" -p ./inlined_dockerfile.cue verify
-    "$DAGGER" "do" -p ./inlined_dockerfile_heredoc.cue verify
-    "$DAGGER" "do" -p ./dockerfile_path.cue verify
-    "$DAGGER" "do" -p ./build_args.cue build
-    "$DAGGER" "do" -p ./image_config.cue build
-    "$DAGGER" "do" -p ./labels.cue build
-    "$DAGGER" "do" -p ./platform.cue build
-    "$DAGGER" "do" -p ./build_auth.cue build
-}
-
-@test "task: #Scratch" {
-    "$DAGGER" "do" -p ./tasks/scratch/scratch.cue exec
-    "$DAGGER" "do" -p ./tasks/scratch/scratch_build_scratch.cue build
-    "$DAGGER" "do" -p ./tasks/scratch/scratch_writefile.cue readfile
-}
-
-@test "task: #Subdir" {
-    "$DAGGER" "do" -p ./tasks/subdir/subdir_simple.cue verify
-
-    run "$DAGGER" "do" -p ./tasks/subdir/subdir_invalid_path.cue verify
-    assert_failure
-
-    run "$DAGGER" "do" -p ./tasks/subdir/subdir_invalid_exec.cue verify
-    assert_failure
-}
-
-@test "task: #GitPull" {
-    "$DAGGER" "do" -p ./tasks/gitpull/exists.cue gitPull
-    "$DAGGER" "do" -p ./tasks/gitpull/git_dir.cue verify
-    "$DAGGER" "do" -p ./tasks/gitpull/private_repo.cue testContent
-
-    run "$DAGGER" "do" -p ./tasks/gitpull/invalid.cue invalid
-    assert_failure
-    run "$DAGGER" "do" -p ./tasks/gitpull/bad_remote.cue badremote
-    assert_failure
-    run "$DAGGER" "do" -p ./tasks/gitpull/bad_ref.cue badref
-    assert_failure
-}
-
-@test "task: #HTTPFetch" {
-    "$DAGGER" "do" -p ./tasks/httpfetch/exist.cue fetch
-    run "$DAGGER" "do" -p ./tasks/httpfetch/not_exist.cue fetch
-    assert_failure
-}
-
-@test "task: #NewSecret" {
-    "$DAGGER" "do" -p ./tasks/newsecret/newsecret.cue verify
-}
-
-@test "task: #TrimSecret" {
-    "$DAGGER" "do" -p ./tasks/trimsecret/trimsecret.cue verify
-}
-
-@test "task: #Source" {
-    "$DAGGER" "do" -p ./tasks/source/source.cue test
-    "$DAGGER" "do" -p ./tasks/source/source_include_exclude.cue test
-    "$DAGGER" "do" -p ./tasks/source/source_relative.cue verifyHello
-
-    run "$DAGGER" "do" -p ./tasks/source/source_invalid_path.cue source
-    assert_failure
-
-    run "$DAGGER" "do" -p ./tasks/source/source_not_exist.cue source
-    assert_failure
-}
-
-@test "task: #Merge" {
-    "$DAGGER" "do" -p ./tasks/merge/merge.cue test
-}
-
-@test "task: #Diff" {
-    "$DAGGER" "do" -p ./tasks/diff/diff.cue test
-}
-
+# @test "task: #Pull" {
+#     cd "$TESTDIR"/tasks/pull
+#     "$DAGGER" up ./pull.cue
+# }
+#
+# @test "task: #Pull with auth" {
+#     cd "$TESTDIR"
+#     "$DAGGER" up ./tasks/pull/pull_auth.cue
+# }
+#
+# @test "task: #Push" {
+#     cd "$TESTDIR"
+#     "$DAGGER" up ./tasks/push/push.cue
+# }
+#
+# @test "task: #ReadFile" {
+#     cd "$TESTDIR"/tasks/readfile
+#     "$DAGGER" up
+# }
+#
+# @test "task: #WriteFile" {
+#     cd "$TESTDIR"/tasks/writefile
+#     "$DAGGER" up ./writefile.cue
+# }
+#
+# @test "task: #WriteFile failure: different contents" {
+#     cd "$TESTDIR"/tasks/writefile
+#     run "$DAGGER" up ./writefile_failure_diff_contents.cue
+#     assert_failure
+# }
+#
+# @test "task: #Exec" {
+#     cd "$TESTDIR"/tasks/exec
+#     "$DAGGER" up ./args.cue
+#     "$DAGGER" up ./env.cue
+#     "$DAGGER" up ./env_secret.cue
+#     "$DAGGER" up ./hosts.cue
+#
+#     "$DAGGER" up ./mount_cache.cue
+#     "$DAGGER" up ./mount_fs.cue
+#     TESTSECRET="hello world" "$DAGGER" up ./mount_secret.cue
+#     "$DAGGER" up ./mount_tmp.cue
+#     "$DAGGER" up ./mount_service.cue
+#
+#     "$DAGGER" up ./user.cue
+#     "$DAGGER" up ./workdir.cue
+# }
+#
+# @test "task: #Copy" {
+#     cd "$TESTDIR"/tasks/copy
+#     "$DAGGER" up ./copy_exec.cue
+#     "$DAGGER" up ./copy_file.cue
+#
+#     run "$DAGGER" up ./copy_exec_invalid.cue
+#     assert_failure
+# }
+#
+# @test "task: #Mkdir" {
+#     # Make directory
+#     cd "$TESTDIR"/tasks/mkdir
+#     "$DAGGER" up ./mkdir.cue
+#
+#     # Create parents
+#     cd "$TESTDIR"/tasks/mkdir
+#     "$DAGGER" up ./mkdir_parents.cue
+#
+#     # Disable parents creation
+#     cd "$TESTDIR"/tasks/mkdir
+#     run "$DAGGER" up ./mkdir_failure_disable_parents.cue
+#     assert_failure
+# }
+#
+# @test "task: #Dockerfile" {
+#     cd "$TESTDIR"/tasks/dockerfile
+#
+#     "$DAGGER" up ./dockerfile.cue
+#     "$DAGGER" up ./inlined_dockerfile.cue
+#     "$DAGGER" up ./inlined_dockerfile_heredoc.cue
+#     "$DAGGER" up ./dockerfile_path.cue
+#     "$DAGGER" up ./build_args.cue
+#     "$DAGGER" up ./image_config.cue
+#     "$DAGGER" up ./labels.cue
+#     "$DAGGER" up ./platform.cue
+#     "$DAGGER" up ./build_auth.cue
+# }
+# @test "task: #Scratch" {
+#     cd "$TESTDIR"/tasks/scratch
+#     "$DAGGER" up ./scratch.cue -l debug
+#     "$DAGGER" up ./scratch_build_scratch.cue -l debug
+#     "$DAGGER" up ./scratch_writefile.cue -l debug
+# }
+#
+# @test "task: #Subdir" {
+#     cd "$TESTDIR"/tasks/subdir
+#     "$DAGGER" up ./subdir_simple.cue
+#
+#     run "$DAGGER" up ./subdir_invalid_path.cue
+#     assert_failure
+#
+#     run "$DAGGER" up ./subdir_invalid_exec.cue
+#     assert_failure
+# }
+#
+# @test "task: #GitPull" {
+#     cd "$TESTDIR"
+#     "$DAGGER" up ./tasks/gitpull/exists.cue
+#     "$DAGGER" up ./tasks/gitpull/git_dir.cue
+#     "$DAGGER" up ./tasks/gitpull/private_repo.cue
+#
+#     run "$DAGGER" up ./tasks/gitpull/invalid.cue
+#     assert_failure
+#     run "$DAGGER" up ./tasks/gitpull/bad_remote.cue
+#     assert_failure
+#     run "$DAGGER" up ./tasks/gitpull/bad_ref.cue
+#     assert_failure
+# }
+#
+# @test "task: #HTTPFetch" {
+#     cd "$TESTDIR"
+#     "$DAGGER" up ./tasks/httpfetch/exist.cue
+#     run "$DAGGER" up ./tasks/httpfetch/not_exist.cue
+#     assert_failure
+# }
+#
+# @test "task: #NewSecret" {
+#     cd "$TESTDIR"/tasks/newsecret
+#
+#     "$DAGGER" up ./newsecret.cue
+# }
+#
+# @test "task: #TrimSecret" {
+#     cd "$TESTDIR"/tasks/trimsecret
+#
+#     "$DAGGER" up ./trimsecret.cue
+# }
+#
+# @test "task: #Source" {
+#     cd "$TESTDIR"/tasks/source
+#     "$DAGGER" up ./source.cue
+#     "$DAGGER" up ./source_include_exclude.cue
+#     "$DAGGER" up ./source_relative.cue
+#
+#     run "$DAGGER" up ./source_invalid_path.cue
+#     assert_failure
+#
+#     run "$DAGGER" up ./source_not_exist.cue
+#     assert_failure
+# }
