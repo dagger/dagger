@@ -67,8 +67,24 @@ blobs:
     folder: "dagger/releases/{{ .Version }}"
 
 publishers:
-  - name: publish-version
+  - name: publish-latest-version
     cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
+    env:
+      - PATH={{ .Env.PATH }}
+      - AWS_EC2_METADATA_DISABLED=true
+      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
+      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
+      - AWS_REGION={{ .Env.AWS_REGION }}
+  - name: publish-latest
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/versions/latest"
+    env:
+      - PATH={{ .Env.PATH }}
+      - AWS_EC2_METADATA_DISABLED=true
+      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
+      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
+      - AWS_REGION={{ .Env.AWS_REGION }}
+  - name: publish-latest-major-minor
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/versions/{{ .Major }}.{{ .Minor }}"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
