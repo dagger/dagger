@@ -61,7 +61,7 @@ var doCmd = &cobra.Command{
 			errstring := err.Error()
 
 			if strings.Contains(errstring, "cannot find package") && strings.Contains(errstring, "alpha.dagger.io") {
-				lg.Fatal().Msg("Attempting to load a 0.1.0 plan. Please upgrade your plan to use the latest version of dagger. Contact the Dagger team if you need help!")
+				lg.Fatal().Msg("Attempting to load a dagger 0.1.0 project. Please upgrade your config to be compatible with this version of dagger. Contact the Dagger team if you need help!")
 			} else {
 				lg.Fatal().Err(err).Msg("failed to load plan")
 			}
