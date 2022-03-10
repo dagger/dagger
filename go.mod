@@ -15,7 +15,7 @@ require (
 	github.com/gofrs/flock v0.8.1
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-version v1.4.0
-	github.com/mattn/go-colorable v0.1.6
+	github.com/mattn/go-colorable v0.1.12
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/buildkit v0.10.0
@@ -24,8 +24,8 @@ require (
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/rs/zerolog v1.26.1
 	github.com/sergi/go-diff v1.2.0
-	github.com/spf13/cobra v1.2.1
-	github.com/spf13/viper v1.8.1
+	github.com/spf13/cobra v1.3.0
+	github.com/spf13/viper v1.10.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tonistiigi/fsutil v0.0.0-20220115021204-b19f7f9cb274
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
