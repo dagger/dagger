@@ -158,6 +158,11 @@ func doHelp(cmd *cobra.Command, _ []string) {
 func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
+	doCmd.Flags().Bool("no-cache", false, "Disable caching")
+	doCmd.Flags().StringArray("cache-to", []string{},
+		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
+	doCmd.Flags().StringArray("cache-from", []string{},
+		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
 	doCmd.SetHelpFunc(doHelp)
 
