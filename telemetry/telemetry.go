@@ -98,6 +98,7 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		"Accept":       {"*/*"},
 	}
 
+	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		lg.Trace().Err(err).Msg("failed to send telemetry event")
@@ -110,7 +111,7 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		return
 	}
 
-	lg.Trace().Msg("telemetry event")
+	lg.Trace().Dur("duration", time.Since(start)).Msg("telemetry event")
 }
 
 type payload struct {
