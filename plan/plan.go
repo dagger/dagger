@@ -2,7 +2,9 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -16,8 +18,9 @@ import (
 )
 
 var (
-	ActionSelector = cue.Str("actions")
-	ClientSelector = cue.Str("client")
+	ErrIncompatiblePlan = errors.New("attempting to load a dagger 0.1.0 project.\nPlease upgrade your config to be compatible with this version of dagger. Contact the Dagger team if you need help")
+	ActionSelector      = cue.Str("actions")
+	ClientSelector      = cue.Str("client")
 )
 
 type Plan struct {
@@ -44,6 +47,12 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 
 	v, err := compiler.Build("", nil, cfg.Args...)
 	if err != nil {
+		errstring := err.Error()
+
+		if strings.Contains(errstring, "cannot find package") && strings.Contains(errstring, "alpha.dagger.io") {
+			return nil, ErrIncompatiblePlan
+		}
+
 		return nil, err
 	}
 

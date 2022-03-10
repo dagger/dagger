@@ -38,9 +38,12 @@ setup() {
   refute_output --partial 'client.filesystem."./dependent_do".write'
 }
 
-@test "plan/do: Nice error message for 0.1.0 projects" {
+@test "plan/do: nice error message for 0.1.0 projects" {
   run "$DAGGER" "do" -p ./plan/do/error_message_for_0.1_projects.cue
-  assert_output --partial "Attempting to load a dagger 0.1.0 project."
+  assert_output --partial "attempting to load a dagger 0.1.0 project."
+
+  run "$DAGGER" "do" -p ./plan/do/error_message_for_0.1_projects.cue test
+  assert_output --partial "attempting to load a dagger 0.1.0 project."
 }
 
 @test "plan/hello" {
