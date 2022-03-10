@@ -7,7 +7,7 @@ import (
 )
 
 dagger.#Plan & {
-	actions: tests: container: {
+	actions: test: {
 		_source: dagger.#Scratch & {}
 
 		simple: go.#Container & {

@@ -5,7 +5,7 @@ setup() {
 }
 
 @test "aws" {
-    dagger up ./default_version.cue
-    dagger up ./credentials.cue
-    dagger up ./config_file.cue
+    dagger "do" -p ./default_version.cue getVersion
+    dagger "do" -p ./credentials.cue verify
+    dagger "do" -p ./config_file.cue verify
 }

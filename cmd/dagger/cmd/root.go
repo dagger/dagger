@@ -38,7 +38,6 @@ func init() {
 	}
 
 	rootCmd.AddCommand(
-		upCmd,
 		versionCmd,
 		docCmd,
 		doCmd,

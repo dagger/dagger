@@ -8,7 +8,7 @@ import (
 )
 
 dagger.#Plan & {
-	actions: tests: {
+	actions: test: {
 
 		_pull: docker.#Pull & {
 			source: "index.docker.io/debian"

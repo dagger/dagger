@@ -20,26 +20,28 @@ dagger.#Plan & {
 			]
 		}
 
-		verify_file: dagger.#ReadFile & {
-			input: exec.output
-			path:  "/output.txt"
-		} & {
-			// assert result
-			contents: "hello world from dagger"
-		}
+		test: {
+			verify_file: dagger.#ReadFile & {
+				input: exec.output
+				path:  "/output.txt"
+			} & {
+				// assert result
+				contents: "hello world from dagger"
+			}
 
-		copy: dagger.#Copy & {
-			input:    image.output
-			contents: exec.output
-			source:   "/output.txt"
-			dest:     "/output.txt"
-		}
-		verify_copy: dagger.#ReadFile & {
-			input: copy.output
-			path:  "/output.txt"
-		} & {
-			// assert result
-			contents: "hello world"
+			copy: dagger.#Copy & {
+				input:    image.output
+				contents: exec.output
+				source:   "/output.txt"
+				dest:     "/output.txt"
+			}
+			verify_copy: dagger.#ReadFile & {
+				input: copy.output
+				path:  "/output.txt"
+			} & {
+				// assert result
+				contents: "hello world"
+			}
 		}
 	}
 }

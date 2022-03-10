@@ -20,52 +20,54 @@ dagger.#Plan & {
 			]
 		}
 
-		verify: dagger.#Exec & {
-			input: image.output
-			mounts: fs: {
-				dest:     "/target"
-				contents: exec.output
+		test: {
+			verify: dagger.#Exec & {
+				input: image.output
+				mounts: fs: {
+					dest:     "/target"
+					contents: exec.output
+				}
+				args: [
+					"sh", "-c",
+					#"""
+						test "$(cat /target/output.txt)" = "hello world"
+						touch /target/rw
+						"""#,
+				]
 			}
-			args: [
-				"sh", "-c",
-				#"""
-					test "$(cat /target/output.txt)" = "hello world"
-					touch /target/rw
-					"""#,
-			]
-		}
 
-		verifyRO: dagger.#Exec & {
-			input: image.output
-			mounts: fs: {
-				dest:     "/target"
-				contents: exec.output
-				ro:       true
+			verifyRO: dagger.#Exec & {
+				input: image.output
+				mounts: fs: {
+					dest:     "/target"
+					contents: exec.output
+					ro:       true
+				}
+				args: [
+					"sh", "-c",
+					#"""
+						test "$(cat /target/output.txt)" = "hello world"
+
+						touch /target/ro && exit 1
+						true
+						"""#,
+				]
 			}
-			args: [
-				"sh", "-c",
-				#"""
-					test "$(cat /target/output.txt)" = "hello world"
 
-					touch /target/ro && exit 1
-					true
-					"""#,
-			]
-		}
-
-		verifySource: dagger.#Exec & {
-			input: image.output
-			mounts: fs: {
-				dest:     "/target.txt"
-				contents: exec.output
-				source:   "/output.txt"
+			verifySource: dagger.#Exec & {
+				input: image.output
+				mounts: fs: {
+					dest:     "/target.txt"
+					contents: exec.output
+					source:   "/output.txt"
+				}
+				args: [
+					"sh", "-c",
+					#"""
+						test "$(cat /target.txt)" = "hello world"
+						"""#,
+				]
 			}
-			args: [
-				"sh", "-c",
-				#"""
-					test "$(cat /target.txt)" = "hello world"
-					"""#,
-			]
 		}
 	}
 }

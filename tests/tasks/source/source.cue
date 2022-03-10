@@ -23,20 +23,22 @@ dagger.#Plan & {
 			args: ["/src/test.sh"]
 		}
 
-		verifyHello: dagger.#ReadFile & {
-			input: source.output
-			path:  "/world.txt"
-		} & {
-			// assert result
-			contents: "world\n"
-		}
+		test: {
+			verifyHello: dagger.#ReadFile & {
+				input: source.output
+				path:  "/world.txt"
+			} & {
+				// assert result
+				contents: "world\n"
+			}
 
-		verifyWorld: dagger.#ReadFile & {
-			input: exec.output
-			path:  "/test.txt"
-		} & {
-			// assert result
-			contents: "hello world"
+			verifyWorld: dagger.#ReadFile & {
+				input: exec.output
+				path:  "/test.txt"
+			} & {
+				// assert result
+				contents: "hello world"
+			}
 		}
 	}
 }

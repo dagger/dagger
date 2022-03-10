@@ -14,28 +14,28 @@ dagger.#Plan & {
 			input: image.output
 			args: ["adduser", "-D", "test"]
 		}
+		test: {
+			verifyUsername: dagger.#Exec & {
+				input: addUser.output
+				user:  "test"
+				args: [
+					"sh", "-c",
+					#"""
+						test "$(whoami)" = "test"
+						"""#,
+				]
+			}
 
-		verifyUsername: dagger.#Exec & {
-			input: addUser.output
-			user:  "test"
-			args: [
-				"sh", "-c",
-				#"""
-					test "$(whoami)" = "test"
-					"""#,
-			]
+			verifyUserID: dagger.#Exec & {
+				input: addUser.output
+				user:  "1000"
+				args: [
+					"sh", "-c",
+					#"""
+						test "$(whoami)" = "test"
+						"""#,
+				]
+			}
 		}
-
-		verifyUserID: dagger.#Exec & {
-			input: addUser.output
-			user:  "1000"
-			args: [
-				"sh", "-c",
-				#"""
-					test "$(whoami)" = "test"
-					"""#,
-			]
-		}
-
 	}
 }

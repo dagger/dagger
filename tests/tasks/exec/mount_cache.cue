@@ -28,36 +28,38 @@ dagger.#Plan & {
 			]
 		}
 
-		verify: dagger.#Exec & {
-			input: image.output
-			mounts: cache: {
-				dest:     "/cache"
-				contents: exec.mounts.cache.contents
+		test: {
+			verify: dagger.#Exec & {
+				input: image.output
+				mounts: cache: {
+					dest:     "/cache"
+					contents: exec.mounts.cache.contents
+				}
+				args: [
+					"sh", "-c",
+					#"""
+						test -f /cache/output.txt
+						test "$(cat /cache/output.txt)" = "hello world"
+						"""#,
+				]
 			}
-			args: [
-				"sh", "-c",
-				#"""
-					test -f /cache/output.txt
-					test "$(cat /cache/output.txt)" = "hello world"
-					"""#,
-			]
-		}
 
-		otherCache: dagger.#CacheDir & {
-			id: "othercache"
-		}
-		verifyOtherCache: dagger.#Exec & {
-			input: image.output
-			mounts: cache: {
-				dest:     "/cache"
-				contents: otherCache
+			otherCache: dagger.#CacheDir & {
+				id: "othercache"
 			}
-			args: [
-				"sh", "-c",
-				#"""
-					test ! -f /cache/output.txt
-					"""#,
-			]
+			verifyOtherCache: dagger.#Exec & {
+				input: image.output
+				mounts: cache: {
+					dest:     "/cache"
+					contents: otherCache
+				}
+				args: [
+					"sh", "-c",
+					#"""
+						test ! -f /cache/output.txt
+						"""#,
+				]
+			}
 		}
 	}
 }

@@ -10,7 +10,7 @@ import (
 dagger.#Plan & {
 	client: filesystem: "./data/hello": read: contents: dagger.#FS
 
-	actions: tests: build: {
+	actions: test: {
 		_baseImage: alpine.#Build
 
 		simple: {

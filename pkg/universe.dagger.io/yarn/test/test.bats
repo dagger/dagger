@@ -5,5 +5,5 @@ setup() {
 }
 
 @test "yarn" {
-    dagger up
+    dagger "do" test
 }

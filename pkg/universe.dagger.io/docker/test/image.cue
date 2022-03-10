@@ -7,7 +7,7 @@ import (
 
 dagger.#Plan & {
 
-	actions: tests: image: {
+	actions: test: image: {
 
 		// Test: change image config with docker.#Set
 		set: {

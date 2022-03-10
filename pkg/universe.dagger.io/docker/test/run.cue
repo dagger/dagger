@@ -8,7 +8,7 @@ import (
 )
 
 dagger.#Plan & {
-	actions: tests: run: {
+	actions: test: run: {
 		_build: alpine.#Build
 		_image: _build.output
 
