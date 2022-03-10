@@ -39,7 +39,7 @@ require (
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	golang.org/x/tools v0.1.8 // indirect
-	google.golang.org/grpc v1.44.0
+	google.golang.org/grpc v1.45.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 
