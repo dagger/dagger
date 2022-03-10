@@ -1,0 +1,44 @@
+name: "Dagger CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - '**.bats'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dagger-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.sh'
+      - '**.bash'
+      - '**.go'
+      - '**.cue'
+      - '**.bats'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dagger-ci.yml'
+
+env:
+  DAGGER_LOG_FORMAT: plain
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+      -
+        name: Dagger CI
+        uses: dagger/dagger-for-github@v2
+        with:
+          workdir: ci
+          args: do build
