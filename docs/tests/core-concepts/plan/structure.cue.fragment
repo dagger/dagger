@@ -1,0 +1,26 @@
+dagger.#Plan & {
+  client: {
+    filesystem: {
+      // ...
+    }
+    env: {
+      // ...
+    }
+  }
+  actions: {
+    deps: docker.#Build & {
+      // ...
+    }
+    test: bash.#Run & {
+      // ...
+    }
+    build: {
+      run: bash.#Run & {
+         // ...
+      }
+      contents: dagger.#Subdir & {
+        // ...
+      }
+    }
+  }
+}

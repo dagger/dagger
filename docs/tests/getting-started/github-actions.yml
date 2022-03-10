@@ -1,0 +1,30 @@
+name: todoapp
+
+push:
+  # Trigger this workflow only on commits pushed to the main branch
+  branches:
+    - main
+
+# Dagger plan gets configured via client environment variables
+env:
+  # This needs to be unique across all of netlify.app
+  APP_NAME: todoapp-dagger-europa
+  NETLIFY_TEAM: dagger
+  # Get one from https://app.netlify.com/user/applications/personal
+  NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+  # GitHub Actions friendly logs
+  DAGGER_LOG_FORMAT: plain
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v2
+
+      - name: Deploy to Netlify
+        uses: dagger/dagger-for-github@v2
+        # See all options at https://github.com/dagger/dagger-for-github
+        with:
+          workdir: pkg/universe.dagger.io/examples/todoapp
+          args: do deploy

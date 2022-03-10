@@ -42,7 +42,7 @@ With Docker running, we are ready to download our example app and run its CI/CD 
 ```shell
 git clone https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.0-beta.1
+git checkout v0.2.0-beta.2
 
 cd pkg/universe.dagger.io/examples/todoapp
 ```
@@ -123,7 +123,7 @@ With Docker Engine running, we are ready to download our example app and run its
 ```shell
 git clone https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.0-beta.1
+git checkout v0.2.0-beta.2
 
 cd pkg/universe.dagger.io/examples/todoapp
 ```
