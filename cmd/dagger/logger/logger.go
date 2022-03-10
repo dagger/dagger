@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/mattn/go-colorable"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
 	"golang.org/x/term"
@@ -22,7 +23,7 @@ func New() zerolog.Logger {
 		Logger()
 
 	if !jsonLogs() {
-		logger = logger.Output(&PlainOutput{Out: os.Stderr})
+		logger = logger.Output(&PlainOutput{Out: colorable.NewColorableStderr()})
 	} else {
 		logger = logger.With().Timestamp().Caller().Logger()
 	}
