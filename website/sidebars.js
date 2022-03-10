@@ -72,6 +72,10 @@ module.exports = {
   ],
   europa: [
     {
+      type: "doc",
+      id: "knowledge-base/migrate-from-dagger-0.1",
+    },
+    {
       type: "category",
       label: "Getting Started",
       collapsible: false,
@@ -88,17 +92,8 @@ module.exports = {
         "core-concepts/client",
         "core-concepts/secrets",
         "core-concepts/container-images",
-      ],
-    },
-    {
-      type: "category",
-      label: "Knowledge Base",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        "knowledge-base/migrate-from-dagger-0.1",
-        "learn/api",
-        "use-cases/go-docker-swarm",
+        "core-concepts/cue",
+        "core-concepts/dagger-cue",
       ],
     },
     {
