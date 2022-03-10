@@ -5,7 +5,7 @@ setup() {
 }
 
 @test "cache-test" {
-    run "$DAGGER" "do" --log-format plain --log-level debug -p  ./cache/main.cue test
+    run "$DAGGER" "do" --log-format plain --log-level debug -p  ./cache/main.cue build
     assert_success
 }
 
