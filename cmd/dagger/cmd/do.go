@@ -22,7 +22,6 @@ import (
 var doCmd = &cobra.Command{
 	Use:   "do [OPTIONS] ACTION [SUBACTION...]",
 	Short: "Execute a dagger action.",
-	// Args:  cobra.MinimumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
@@ -32,7 +31,7 @@ var doCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
-			doHelp(cmd, nil)
+			doHelpCmd(cmd, nil)
 			return
 		}
 
@@ -108,46 +107,32 @@ func getTargetPath(args []string) cue.Path {
 	return cue.MakePath(selectors...)
 }
 
-func doHelp(cmd *cobra.Command, _ []string) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.StripEscape)
-	defer w.Flush()
+func doHelpCmd(cmd *cobra.Command, _ []string) {
+	lg := logger.New()
 
-	planPath := viper.GetString("plan")
-
-	var (
-		errorMsg            string
-		loadedMsg           string
-		actionLookupPathMsg string
-		action              *plan.Action
-		actions             []*plan.Action
-	)
+	fmt.Printf("%s\n\n%s", cmd.Short, cmd.UsageString())
 
 	p, err := loadPlan()
 	if err != nil {
-		errorMsg = "Error: failed to load plan\n\n"
-	} else {
-		loadedMsg = "Plan loaded from " + planPath
-		actionLookupPath := getTargetPath(cmd.Flags().Args())
-		action = p.Action().FindByPath(actionLookupPath)
-		if action == nil {
-			errorMsg = "Error: action not found\n\n"
-		} else {
-			actions = action.Children
-			actionLookupPathMsg = fmt.Sprintf(`%s:`, actionLookupPath.String())
-		}
+		lg.Fatal().Err(err).Msg("failed to load plan")
 	}
-	fmt.Printf(`%s%s
 
-%s
+	target := getTargetPath(cmd.Flags().Args())
+	action := p.Action().FindByPath(target)
+	if action == nil {
+		lg.Fatal().Msg(fmt.Sprintf("action %s not found", target.String()))
+		return
+	}
 
-%s
+	if len(action.Name) < 1 {
+		return
+	}
 
-%s
-`, errorMsg, cmd.Short, cmd.UsageString(), loadedMsg, actionLookupPathMsg)
+	fmt.Println("")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.StripEscape)
+	defer w.Flush()
 
-	// fmt.Fprintln(w, "Actions\tDescription\tPackage")
-	// fmt.Fprintln(w, "\t\t")
-	for _, a := range actions {
+	for _, a := range action.Children {
 		if !a.Hidden {
 			lineParts := []string{"", a.Name, strings.TrimSpace(a.Comment)}
 			fmt.Fprintln(w, strings.Join(lineParts, "\t"))
@@ -164,7 +149,7 @@ func init() {
 	doCmd.Flags().StringArray("cache-from", []string{},
 		"External cache sources (eg. user/app:cache, type=local,src=path/to/dir)")
 
-	doCmd.SetHelpFunc(doHelp)
+	doCmd.SetHelpFunc(doHelpCmd)
 
 	if err := viper.BindPFlags(doCmd.Flags()); err != nil {
 		panic(err)
