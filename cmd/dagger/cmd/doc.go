@@ -246,9 +246,11 @@ func mdEscape(s string) string {
 }
 
 var docCmd = &cobra.Command{
-	Use:   "doc [PACKAGE | PATH]",
-	Short: "document a package",
-	Args:  cobra.MaximumNArgs(1),
+	// FIXME: this command is currently broken as of 0.2.
+	Hidden: true,
+	Use:    "doc [PACKAGE | PATH]",
+	Short:  "document a package",
+	Args:   cobra.MaximumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		// Fix Viper bug for duplicate flags:
 		// https://github.com/spf13/viper/issues/233
