@@ -128,3 +128,12 @@ setup() {
     run "$DAGGER" "do" -p ./tasks/source/source_not_exist.cue source
     assert_failure
 }
+
+@test "task: #Merge" {
+    "$DAGGER" "do" -p ./tasks/merge/merge.cue test
+}
+
+@test "task: #Diff" {
+    "$DAGGER" "do" -p ./tasks/diff/diff.cue test
+}
+
