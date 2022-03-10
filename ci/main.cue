@@ -1,8 +1,6 @@
 package main
 
 import (
-	"strings"
-
 	"dagger.io/dagger"
 	"universe.dagger.io/bash"
 )
@@ -13,28 +11,14 @@ dagger.#Plan & {
 	// to avoid the performance hit caused by qemu (linter goes from <3s to >3m when arch is x86)
 	platform: "linux/aarch64"
 
-	inputs: {
-		params: {
-			// FIXME: until we support a better way
-			os:   string | *"darwin"
-			arch: string | *"amd64"
-
-			// FIXME: implement condition actions using params until we have a
-			// better way to select specific actions
-		}
-
-		directories: {
-			// dagger repository
-			source: {
-				path: "../"
-				exclude: ["./ci"]
-			}
-		}
-	}
-
-	outputs: directories: "go binaries": {
-		contents: actions.goBuild.export.directories["/build"]
-		dest:     "./build"
+	client: filesystem: {
+		"../": read: exclude: [
+			"ci",
+			"node_modules",
+			"cmd/dagger/dagger",
+			"cmd/dagger/dagger-debug",
+		]
+		"./build": write: contents: actions.build.export.directories["/build"]
 	}
 
 	actions: {
@@ -50,7 +34,7 @@ dagger.#Plan & {
 
 		_mountSourceCode: {
 			mounts: "dagger source code": {
-				contents: inputs.directories.source.contents
+				contents: client.filesystem."../".read.contents
 				dest:     "/usr/src/dagger"
 			}
 			workdir: mounts["dagger source code"].dest
@@ -60,15 +44,15 @@ dagger.#Plan & {
 
 		// Go build the dagger binary
 		// depends on goLint and goTest to complete successfully
-		goBuild: bash.#Run & {
+		build: bash.#Run & {
 			_mountSourceCode
 			_mountGoCache
 
 			input: _baseImages.goBuilder
 
 			env: {
-				GOOS:        strings.ToLower(inputs.params.os)
-				GOARCH:      strings.ToLower(inputs.params.arch)
+				GOOS:        client.platform.os
+				GOARCH:      client.platform.arch
 				CGO_ENABLED: "0"
 				// Makes sure the linter and unit tests complete before starting the build
 				"__depends_lint":  "\(goLint.exit)"
