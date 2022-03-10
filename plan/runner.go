@@ -107,6 +107,11 @@ func (r *Runner) initTasks() {
 }
 
 func (r *Runner) addTask(t *cueflow.Task) {
+	// avoid circular dependencies
+	if _, ok := r.tasks.Load(t.Path().String()); ok {
+		return
+	}
+
 	r.tasks.Store(t.Path().String(), struct{}{})
 
 	for _, dep := range t.Dependencies() {
@@ -156,9 +161,9 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 			if strings.Contains(err.Error(), "context canceled") {
 				lg.Error().Dur("duration", time.Since(start)).Str("state", string(task.StateCanceled)).Msg(string(task.StateCanceled))
 			} else {
-				lg.Error().Dur("duration", time.Since(start)).Err(err).Str("state", string(task.StateFailed)).Msg(string(task.StateFailed))
+				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", string(task.StateFailed)).Msg(string(task.StateFailed))
 			}
-			return fmt.Errorf("%s: %w", t.Path().String(), err)
+			return fmt.Errorf("%s: %w", t.Path().String(), compiler.Err(err))
 		}
 
 		lg.Info().Dur("duration", time.Since(start)).Str("state", string(task.StateCompleted)).Msg(string(task.StateCompleted))
