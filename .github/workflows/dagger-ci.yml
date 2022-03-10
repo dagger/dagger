@@ -26,17 +26,19 @@ on:
       - 'go.sum'
       - '.github/workflows/dagger-ci.yml'
 
+env:
+  DAGGER_LOG_FORMAT: plain
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       -
         name: Checkout
         uses: actions/checkout@v2
       -
-        name: Dagger
-        uses: dagger/dagger-for-github@v1
+        name: Dagger CI
+        uses: dagger/dagger-for-github@v2
         with:
-          age-key: ${{ secrets.DAGGER_AGE_KEY }}
-          args: up ./ci
+          workdir: ci
+          args: do build
