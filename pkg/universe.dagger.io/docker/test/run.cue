@@ -19,8 +19,8 @@ dagger.#Plan & {
 			run: docker.#Run & {
 				input: _image
 				command: {
-					name: "/bin/sh"
-					args: ["-c", "echo -n hello world >> /output.txt"]
+					// optional name
+					args: ["/bin/sh", "-c", "echo -n hello world >> /output.txt"]
 				}
 			}
 

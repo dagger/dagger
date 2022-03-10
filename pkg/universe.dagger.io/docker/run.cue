@@ -30,7 +30,7 @@ import (
 	command?: {
 		// Name of the command to execute
 		// Examples: "ls", "/bin/bash"
-		name: string
+		name?: string
 
 		// Positional arguments to the command
 		// Examples: ["/tmp"]
@@ -131,7 +131,13 @@ import (
 		"mounts": mounts
 
 		if command != _|_ {
-			args: [command.name] + command._flatFlags + command.args
+			args: list.Concat([
+				if command.name != _|_ {
+					[command.name]
+				},
+				command._flatFlags,
+				command.args,
+			])
 		}
 		if command == _|_ {
 			args: list.Concat([
