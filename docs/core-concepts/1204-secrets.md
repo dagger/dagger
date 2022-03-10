@@ -27,26 +27,7 @@ dagger.#Plan & {
 
 You may need to trim the whitespace, especially when reading from a file:
 
-```cue
-dagger.#Plan & {
-    // Path may be absolute, or relative to current working directory
-    client: filesystem: ".registry": read: {
-        // CUE type defines expected content
-        contents: dagger.#Secret
-    }
-    actions: {
-        registry: dagger.#TrimSecret & {
-            input: client.filesystem.".registry".read.contents
-        }
-        pull: docker.#Pull & {
-            source: "myprivate/image"
-            auth: {
-                username: "_token_"
-                secret: registry.output
-            }
-        }
-    }
-}
+```cue file=../tests/core-concepts/secrets/plans/file.cue
 ```
 
 ## SOPS
@@ -59,30 +40,5 @@ sops:
     ...
 ```
 
-```cue title="main.cue"
-dagger.#Plan & {
-    client: commands: sops: {
-        name: "sops"
-        args: ["-d", "./secrets.yaml"]
-        stdout: dagger.#Secret
-    }
-
-    actions: {
-        // Makes the yaml keys easily accessible
-        secrets: dagger.#DecodeSecret & {
-            input: client.commands.sops.stdout
-            format: "yaml"
-        }
-
-        run: docker.#Run & {
-            mounts: secret: {
-                dest:     "/run/secrets/token"
-                contents: secrets.output.myToken
-            }
-            // Do something with `/run/secrets/token`
-            ...
-        }
-    }
-}
-
+```cue file=../tests/core-concepts/secrets/plans/sops.cue title="main.cue"
 ```
