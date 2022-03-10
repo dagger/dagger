@@ -130,7 +130,13 @@ func doHelp(cmd *cobra.Command, _ []string) {
 
 	p, err := loadPlan()
 	if err != nil {
-		errorMsg = "Error: failed to load plan\n\n"
+		errstring := err.Error()
+		if strings.Contains(errstring, "cannot find package") && strings.Contains(errstring, "alpha.dagger.io") {
+			errorMsg = "Attempting to load a dagger 0.1.0 project. Please upgrade your config to be compatible with this version of dagger. Contact the Dagger team if you need help!\n\n"
+			// lg.Fatal().Msg("Attempting to load a dagger 0.1.0 project. Please upgrade your config to be compatible with this version of dagger. Contact the Dagger team if you need help!")
+		} else {
+			errorMsg = "Error: failed to load plan\n\n"
+		}
 	} else {
 		loadedMsg = "Plan loaded from " + planPath
 		actionLookupPath := getTargetPath(cmd.Flags().Args())
