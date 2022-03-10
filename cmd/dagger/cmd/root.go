@@ -44,6 +44,7 @@ func init() {
 		doCmd,
 		project.Cmd,
 	)
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
 		panic(err)
