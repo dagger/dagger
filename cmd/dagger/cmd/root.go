@@ -45,6 +45,8 @@ func init() {
 		project.Cmd,
 	)
 
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
+
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
 		panic(err)
 	}
