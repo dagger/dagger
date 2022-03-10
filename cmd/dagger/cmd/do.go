@@ -58,7 +58,13 @@ var doCmd = &cobra.Command{
 
 		p, err := loadPlan()
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to load plan")
+			errstring := err.Error()
+
+			if strings.Contains(errstring, "cannot find package") && strings.Contains(errstring, "alpha.dagger.io") {
+				lg.Fatal().Msg("Attempting to load a 0.1.0 plan. Please upgrade your plan to use the latest version of dagger. Contact the Dagger team if you need help!")
+			} else {
+				lg.Fatal().Err(err).Msg("failed to load plan")
+			}
 		}
 		target := getTargetPath(args)
 
