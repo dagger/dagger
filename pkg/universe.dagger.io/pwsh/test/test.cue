@@ -29,7 +29,7 @@ dagger.#Plan & {
 				export: files: "/out.txt": _
 				script: {
 					directory: dir
-					filename:  "hello.psq"
+					filename:  "hello.ps1"
 				}
 			}
 			output: run.export.files."/out.txt" & "Hello world!\n"
