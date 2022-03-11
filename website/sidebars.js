@@ -76,10 +76,7 @@ module.exports = {
       label: "Getting Started",
       collapsible: false,
       collapsed: false,
-      items: [
-        "getting-started/local-dev",
-        "getting-started/ci-environment"
-      ],
+      items: ["getting-started/local-dev", "getting-started/ci-environment"],
     },
     {
       type: "category",
@@ -95,10 +92,11 @@ module.exports = {
     },
     {
       type: "category",
-      label: "DRAFTS",
-      collapsible: true,
-      collapsed: true,
+      label: "Knowledge Base",
+      collapsible: false,
+      collapsed: false,
       items: [
+        "knowledge-base/migrate-from-dagger-0.1",
         "learn/api",
         "use-cases/go-docker-swarm",
       ],
