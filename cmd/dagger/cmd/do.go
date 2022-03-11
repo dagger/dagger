@@ -128,13 +128,13 @@ func doHelpCmd(cmd *cobra.Command, _ []string) {
 		return
 	}
 
-	fmt.Println("")
+	fmt.Printf("\nAvailable Actions:\n")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.StripEscape)
 	defer w.Flush()
 
 	for _, a := range action.Children {
 		if !a.Hidden {
-			lineParts := []string{"", a.Name, strings.TrimSpace(a.Comment)}
+			lineParts := []string{"", a.Name, a.Documentation}
 			fmt.Fprintln(w, strings.Join(lineParts, "\t"))
 		}
 	}
