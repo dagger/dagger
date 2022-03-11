@@ -42,7 +42,7 @@ With Docker running, we are ready to download our example app and run its CI/CD 
 ```shell
 git clone https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.0-beta.2
+git checkout v0.2.0
 
 cd pkg/universe.dagger.io/examples/todoapp
 ```
@@ -123,7 +123,7 @@ With Docker Engine running, we are ready to download our example app and run its
 ```shell
 git clone https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.0-beta.2
+git checkout v0.2.0
 
 cd pkg/universe.dagger.io/examples/todoapp
 ```
@@ -195,14 +195,82 @@ curl https://releases.dagger.io/dagger/install.ps1 -OutFile install.ps1 ; ./inst
 We try to move the dagger binary under `C:\Windows\System32` but
 in case we miss the necessary permissions, we'll save everything under `<your home folder>/dagger`
 
-Check that `dagger` is installed correctly by opening a command prompt and run:
+Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 
 ```shell
 where dagger
 C:\<your home folder>\dagger.exe
 ```
 
+Before we can build & test our example app with `dagger`, we need to have Docker running.
+You most likely already have Docker set up.
+If not, [Docker Desktop](https://www.docker.com/products/docker-desktop) makes this easy.
+With Docker running, we are ready to download our example app and run its CI/CD pipeline.
+Still in your `Command Prompt` terminal:
+
+```shell
+git clone https://github.com/dagger/dagger
+cd dagger
+git checkout v0.2.0
+
+cd pkg/universe.dagger.io/examples/todoapp
+```
+
+With everything in place, we run the CI/CD pipeline locally:
+
+```shell
+dagger do build
+```
+
+With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under a minute:
+
+```shell
+[✔] client.filesystem.".".read                                    0.2s
+[✔] actions.deps                                                 55.2s
+[✔] actions.test.script                                           0.1s
+[✔] actions.test                                                  1.8s
+[✔] actions.build.run.script                                      0.1s
+[✔] actions.build.run                                             8.6s
+[✔] actions.build.contents                                        0.4s
+[✔] client.filesystem.build.write                                 0.2s
+```
+
+Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
+The last step copies the build result into the `build` directory on the host.
+On Windows, we run `start build/index.html` in our `Command Prompt` terminal and see the following app preview:
+
+![todoapp preview](/img/getting-started/todoapp.png)
+
+One of the big advantages to this approach is that we did not have to install any dependencies specific to this application.
+Dagger managed all the intermediary steps, and we ended up with the end-result on our host, without any of the transient dependencies.
+
+Now that we have everything running locally, let us make a change and get a feel for our local CI/CD loop.
+The quicker we can close this loop, the quicker we can learn what actually works.
+With Dagger, we can close this loop locally, without committing and pushing our changes.
+And since every action is cached, subsequent runs will be quicker.
+
+In the todoapp directory, edit line `25` of `src/components/Form.js` and save the file.
+
+I change this line to `What must be done today?` and run the build locally again:
+
+```shell
+dagger do build
+INF upgrading buildkit    have host network=true version=v0.10.0
+[✔] client.filesystem.".".read                                   0.1s
+[✔] actions.deps                                                15.0s
+[✔] actions.test.script                                          0.0s
+[✔] actions.test                                                 1.8s
+[✔] actions.build.run.script                                     0.0s
+[✔] actions.build.run                                            8.9s
+[✔] actions.build.contents                                       0.4s
+[✔] client.filesystem.build.write                                0.1s
+```
+
+Being able to re-run the test & build loop locally in `26.3s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
+It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
+
 </TabItem>
+
 </Tabs>
 
 :::tip
