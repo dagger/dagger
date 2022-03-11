@@ -37,7 +37,7 @@ dagger.#Plan & {
 
 		// Run a script from string
 		runString: {
-			run: bash.#Run & {
+			run: pwsh.#Run & {
 				input: _image
 				export: files: "/output.txt": _
 				script: contents: "Set-Content -Value 'Hello inline world!' -Path '/output.txt'"
