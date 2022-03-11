@@ -6,7 +6,7 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: ".": read: contents: dagger.#FS
+	client: filesystem: "./src": read: contents: dagger.#FS
 
 	actions: build: docker.#Build & {
 		steps: [
@@ -14,7 +14,7 @@ dagger.#Plan & {
 				source: "python:3.9"
 			},
 			docker.#Copy & {
-				contents: client.filesystem.".".read.contents
+				contents: client.filesystem."./src".read.contents
 				dest:     "/app"
 			},
 			docker.#Run & {

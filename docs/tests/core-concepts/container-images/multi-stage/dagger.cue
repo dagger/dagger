@@ -8,12 +8,12 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: src: read: contents: dagger.#FS
+	client: filesystem: "./src": read: contents: dagger.#FS
 
 	actions: {
 		// Build app in a "golang" container image.
 		build: go.#Build & {
-			source: client.filesystem.src.read.contents
+			source: client.filesystem."./src".read.contents
 		}
 
 		base: alpine.#Build & {
