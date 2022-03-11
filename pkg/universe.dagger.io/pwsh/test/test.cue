@@ -21,7 +21,7 @@ dagger.#Plan & {
 			dir:   _load.output
 			_load: dagger.#Source & {
 				path: "./data"
-				include: ["*.sh"]
+				include: ["*.ps1"]
 			}
 
 			run: pwsh.#Run & {
