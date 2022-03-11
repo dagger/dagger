@@ -25,7 +25,7 @@ on:
     inputs:
       release_type:
         description: 'major|minor|patch|release|prerel'
-        default: 'prerel alpha..'
+        default: 'patch'
         required: true
       release_version:
         description: 'Optional release version, e.g. 0.2.0'
