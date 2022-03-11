@@ -4,7 +4,7 @@ setup() {
     common_setup
 }
 
-@test "bash" {
+@test "pwsh" {
     dagger "do" -p ./test.cue test
 }
 
