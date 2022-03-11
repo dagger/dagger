@@ -13,15 +13,7 @@ dagger.#Plan & {
 	// platform: "linux/aarch64"
 	platform: "linux/amd64"
 
-	client: filesystem: {
-		"../": read: exclude: [
-			"ci",
-			"node_modules",
-			"cmd/dagger/dagger",
-			"cmd/dagger/dagger-debug",
-		]
-		"./build": write: contents: actions.build.export.directories["/build"]
-	}
+	client: filesystem: "./build": write: contents: actions.build.export.directories["/build"]
 
 	actions: {
 		_mountGoCache: {
@@ -36,7 +28,7 @@ dagger.#Plan & {
 
 		_mountSourceCode: {
 			mounts: "dagger source code": {
-				contents: client.filesystem."../".read.contents
+				contents: _source.output
 				dest:     "/usr/src/dagger"
 			}
 			workdir: mounts["dagger source code"].dest
