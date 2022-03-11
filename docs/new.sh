@@ -21,8 +21,12 @@ function new() {
 
 	local filename="$next-$name.md"
 	echo "Creating $filename"
-	touch "$filename"
+	cat <<- EOF > "$filename"
+		---
+		slug: /$next/$name
+		displayed_sidebar: europa
+		---
+EOF
 }
-
 
 new "$@"
