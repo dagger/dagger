@@ -46,6 +46,11 @@ setup() {
   assert_output --partial "attempting to load a dagger 0.1.0 project."
 }
 
+@test "plan/do: missing packages suggests project update" {
+  run "$DAGGER" "do" -p ./plan/do/missing_dependencies.cue test
+  assert_output --partial ": running \`dagger project update\` may resolve this"
+}
+
 @test "plan/hello" {
   # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod
   cd "$TESTDIR"
