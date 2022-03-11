@@ -49,8 +49,12 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	if err != nil {
 		errstring := err.Error()
 
-		if strings.Contains(errstring, "cannot find package") && strings.Contains(errstring, "alpha.dagger.io") {
-			return nil, ErrIncompatiblePlan
+		if strings.Contains(errstring, "cannot find package") {
+			if strings.Contains(errstring, "alpha.dagger.io") {
+				return nil, ErrIncompatiblePlan
+			} else if strings.Contains(errstring, pkg.DaggerModule) || strings.Contains(errstring, pkg.UniverseModule) {
+				return nil, fmt.Errorf("%w: running `dagger project update` may resolve this", err)
+			}
 		}
 
 		return nil, err
