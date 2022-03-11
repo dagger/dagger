@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,34 +111,44 @@ func getTargetPath(args []string) cue.Path {
 func doHelpCmd(cmd *cobra.Command, _ []string) {
 	lg := logger.New()
 
-	fmt.Printf("%s\n\n%s", cmd.Short, cmd.UsageString())
+	fmt.Println(cmd.Short)
 
-	p, err := loadPlan()
+	err := printActions(os.Stdout, getTargetPath(cmd.Flags().Args()))
+
+	fmt.Printf("\n%s", cmd.UsageString())
+
 	if err != nil {
 		lg.Fatal().Err(err).Msg("failed to load plan")
 	}
+}
 
-	target := getTargetPath(cmd.Flags().Args())
+func printActions(w io.Writer, target cue.Path) error {
+	p, err := loadPlan()
+	if err != nil {
+		return err
+	}
+
 	action := p.Action().FindByPath(target)
 	if action == nil {
-		lg.Fatal().Msg(fmt.Sprintf("action %s not found", target.String()))
-		return
+		return fmt.Errorf("action %s not found", target.String())
 	}
 
 	if len(action.Name) < 1 {
-		return
+		return nil
 	}
 
 	fmt.Printf("\nAvailable Actions:\n")
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.StripEscape)
-	defer w.Flush()
+	tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', tabwriter.StripEscape)
+	defer tw.Flush()
 
 	for _, a := range action.Children {
 		if !a.Hidden {
 			lineParts := []string{"", a.Name, a.Documentation}
-			fmt.Fprintln(w, strings.Join(lineParts, "\t"))
+			fmt.Fprintln(tw, strings.Join(lineParts, "\t"))
 		}
 	}
+
+	return nil
 }
 
 func init() {
