@@ -7,7 +7,7 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		copy: docker.Copy & {
+		copy: docker.#Copy & {
 			contents: client.filesystem.".".read.contents
 		}
 		// ...
