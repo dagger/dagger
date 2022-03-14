@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/ast"
@@ -345,4 +346,17 @@ func (v *Value) Default() (*Value, bool) {
 
 func (v *Value) Doc() []*ast.CommentGroup {
 	return v.Cue().Doc()
+}
+
+// DocSummary returns the first line of documentation
+func (v *Value) DocSummary() string {
+	doc := ""
+	for _, c := range v.Doc() {
+		doc += c.Text()
+	}
+
+	doc = strings.TrimSpace(doc)
+	doc = strings.SplitN(doc, "\n", 2)[0]
+
+	return doc
 }
