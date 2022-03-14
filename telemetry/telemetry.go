@@ -3,17 +3,21 @@ package telemetry
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"time"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/google/uuid"
 	"github.com/mitchellh/go-homedir"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/version"
 )
 
@@ -42,15 +46,11 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		Str("event", eventName).
 		Logger()
 
-	if telemetryDisabled() || isCI() {
+	if telemetryDisabled() {
 		return
 	}
 
-	deviceID, err := getDeviceID()
-	if err != nil {
-		lg.Trace().Err(err).Msg("failed to get device id")
-		return
-	}
+	repo := gitRepoURL(".")
 
 	// Base properties
 	props := map[string]interface{}{
@@ -60,11 +60,28 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		"arch":            runtime.GOARCH,
 	}
 
+	if repo != "" {
+		// Hash the repository URL for privacy
+		props["git_repository_hash"] = hash(repo)
+	}
+
+	if projectDir, found := pkg.GetCueModParent(); found {
+		// Hash the project path for privacy
+		props["project_path_hash"] = hash(projectDir)
+	}
+
 	// Merge extra properties
 	for _, p := range properties {
 		props[p.Name] = p.Value
 	}
-	lg = lg.With().Fields(props).Logger()
+
+	deviceID, err := getDeviceID(repo)
+	if err != nil {
+		lg.Trace().Err(err).Msg("failed to get device id")
+		return
+	}
+
+	lg = lg.With().Str("device_id", deviceID).Fields(props).Logger()
 
 	ev := &event{
 		DeviceID:        deviceID,
@@ -143,7 +160,13 @@ func telemetryDisabled() bool {
 		os.Getenv("DO_NOT_TRACK") != "" // https://consoledonottrack.com/
 }
 
-func getDeviceID() (string, error) {
+func getDeviceID(repo string) (string, error) {
+	if isCI() {
+		if repo == "" {
+			return "", fmt.Errorf("unable to determine device ID")
+		}
+		return "ci-" + hash(repo), nil
+	}
 	idFile, err := homedir.Expand("~/.config/dagger/cli_id")
 	if err != nil {
 		return "", err
@@ -164,4 +187,30 @@ func getDeviceID() (string, error) {
 		}
 	}
 	return string(id), nil
+}
+
+// hash returns the sha256 digest of the string
+func hash(s string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
+}
+
+// // gitRepoURL returns the git repository remote, if any.
+func gitRepoURL(path string) string {
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
+		DetectDotGit: true,
+	})
+	if err != nil {
+		return ""
+	}
+
+	origin, err := repo.Remote("origin")
+	if err != nil {
+		return ""
+	}
+
+	if urls := origin.Config().URLs; len(urls) > 0 {
+		return urls[0]
+	}
+
+	return ""
 }
