@@ -89,6 +89,7 @@ module.exports = {
         "core-concepts/secrets",
         "core-concepts/container-images",
         "core-concepts/what-is-cue",
+        "core-concepts/dagger-cue",
       ],
     },
     {
@@ -98,7 +99,6 @@ module.exports = {
       collapsed: false,
       items: [
         "knowledge-base/migrate-from-dagger-0.1",
-        "learn/api",
         "use-cases/go-docker-swarm",
       ],
     },
