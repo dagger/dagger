@@ -167,7 +167,9 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 	wg.Add(1)
 	go catchOutput(buildCh)
 
+	log.Printf("Before build\n")
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		log.Printf("Start solver\n")
 		s := solver.New(solver.Opts{
 			Control:      c.c,
 			Gateway:      gw,
@@ -180,6 +182,8 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 		// Close events channel
 		defer s.Stop()
 
+		// TODO do repro case for max
+		// Create with buildx a buildkit container and test with it
 		// Compute output overlay
 		if fn != nil {
 			if err := fn(ctx, s); err != nil {

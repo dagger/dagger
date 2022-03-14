@@ -12,6 +12,7 @@ dagger.#Plan & {
 		dockerfile: contents: #"""
 			FROM alpine
 			RUN sleep 10 && echo test
+			RUN echo test >> test.txt
 			"""#
 	}
 }
