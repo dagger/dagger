@@ -88,6 +88,7 @@ module.exports = {
         "core-concepts/client",
         "core-concepts/secrets",
         "core-concepts/container-images",
+        "core-concepts/what-is-cue",
       ],
     },
     {
