@@ -66,7 +66,7 @@ jobs:
             # Rather than installing it on every run, we commit it locally so that we have everything we need locally
             # wget https://raw.githubusercontent.com/fsaintjacques/semver-tool/3.3.0/src/semver
             # https://github.com/fsaintjacques/semver-tool
-            next_release_version="v$(./semver bump ${SEMVER_BUMP:=prerel alpha..}  $previous_release_version)"
+            next_release_version="v$(./semver bump ${SEMVER_BUMP:=patch}  $previous_release_version)"
           fi
           echo "NEXT RELEASE VERSION: $next_release_version"
           gh api -X POST /repos/:owner/:repo/git/refs \
