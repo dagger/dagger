@@ -102,6 +102,15 @@ module.exports = {
       ],
     },
     {
+      type: "category",
+      label: "Use Cases",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "use-cases/go-on-docker-hub"
+      ],
+    },
+    {
       type: "link",
       label: "⬅️ Dagger 0.1",
       href: "/1200/what/",
