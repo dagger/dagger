@@ -9,13 +9,11 @@ import (
 
 dagger.#Plan & {
 	client: {
-		// Retrieve go source code
 		filesystem: ".": read: {
 			contents: dagger.#FS
 			include: ["go.mod", "go.sum", "**/*.go"]
 		}
 
-		// Retrieve docker password from environment
 		env: DOCKER_PASSWORD: dagger.#Secret
 	}
 
@@ -23,9 +21,20 @@ dagger.#Plan & {
 		// Alias to code
 		_code: client.filesystem.".".read.contents
 
-		// Improved go base image with useful tool
+		// Improve go base image with useful tool
+		// Enable cgo by installing build-base
 		_base: go.#Image & {
-			packages: "build-base": version: _
+			packages: {
+				"build-base": version: _
+				bash: version:         _
+			}
+		}
+
+		// Run go unit test
+		"unit-test": go.#Test & {
+			source:  _code
+			package: "./..."
+			input:   _base.output
 		}
 
 		// Build go project
@@ -45,7 +54,7 @@ dagger.#Plan & {
 						dest:     "/usr/bin"
 					},
 					docker.#Set & {
-						config: cmd: ["/<path>/<to>/<your>/<binary>"]
+						config: cmd: ["<path/to/binary>"]
 					},
 				]
 			}
@@ -54,11 +63,11 @@ dagger.#Plan & {
 		// Push image to remote registry (depends on image)
 		push: {
 			// Docker username
-			_dockerUsername: "<docker username>"
+			_dockerUsername: "<my_username>"
 
 			docker.#Push & {
 				"image": image.output
-				dest:    "\(_dockerUsername)/<repository>:<tag>"
+				dest:    "\(_dockerUsername)/<my_repository>"
 				auth: {
 					username: "\(_dockerUsername)"
 					secret:   client.env.DOCKER_PASSWORD

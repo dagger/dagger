@@ -1,0 +1,22 @@
+import (
+    "universe.dagger.io/alpine"
+    "universe.dagger.io/docker"
+)
+
+// Build docker image (depends on build)
+image: {
+	_base: alpine.#Build & {}
+
+	docker.#Build & {
+		steps: [
+			docker.#Copy & {
+				input:    _base.output
+				contents: build.output
+				dest:     "/usr/bin"
+			},
+			docker.#Set & {
+				config: cmd: ["</path/to/binary>"]
+			},
+		]
+	}
+}
