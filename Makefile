@@ -26,7 +26,7 @@ dagger-debug: # Build a debug version of the dev dagger binary
 
 .PHONY: install
 install: # Install a dev dagger binary
-	go install -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger
+	go install -mod vendor -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger
 
 .PHONY: test
 test: # Run all tests
