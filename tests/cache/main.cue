@@ -2,18 +2,23 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"universe.dagger.io/docker"
 )
 
 dagger.#Plan & {
-	actions: build: dagger.#Dockerfile & {
-		source: dagger.#Scratch
-		// Default is to look for a Dockerfile in the context,
-		// but let's declare it here.
-		dockerfile: contents: #"""
-			FROM alpine
-			RUN sleep 10 && echo test
-			RUN echo test >> test.txt
-			"""#
+	actions: build: dagger.#Build & {
+		steps: [
+			docker.#Pull & {
+				source: "alpine"
+			},
+			docker.#Run & {
+				command: {
+					name: "sh"
+					args: ["-c", "sleep 10 && echo -n test > /test"]
+				}
+				user: "root"
+			},
+		]
 	}
 }
 
