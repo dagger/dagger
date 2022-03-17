@@ -33,17 +33,27 @@ If you do, you can install `dagger` with a single command:
 brew install dagger/tap/dagger
 ```
 
-Check that `dagger` installed correctly by verifying its execution path:
+This installs `dagger` in `/opt/homebrew/bin`:
 
 ```shell
 type dagger
 dagger is /opt/homebrew/bin/dagger
 ```
 
+If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
+
+```shell
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.0 sh
+
+./bin/dagger version
+dagger 0.2.0 (e499297e) darwin/arm64
+```
+
 Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
 If not, [Docker Desktop](https://www.docker.com/products/docker-desktop) makes this easy.
-With Docker running, we are ready to download our example app and run its CI/CD pipeline:
+
+With Docker running, we are ready to download our example app and run its CI/CD pipeline locally:
 
 ```shell
 git clone https://github.com/dagger/dagger
@@ -51,11 +61,6 @@ cd dagger
 git checkout v0.2.0
 
 cd pkg/universe.dagger.io/examples/todoapp
-```
-
-With everything in place, we run the CI/CD pipeline locally:
-
-```shell
 dagger do build
 ```
 
@@ -73,10 +78,11 @@ With an empty cache, installing all dependencies, then testing & generating a bu
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
-The last step copies the build result into the `build` directory on the host.
+The last step - `client.filesystem.build.write` - copies the build result into the `build` directory on the host.
+
 On macOS, we run `open build/index.html` in our terminal and see the following app preview:
 
-![todoapp preview](/img/getting-started/todoapp.png)
+![todoapp preview](/img/getting-started/todoapp.macos.png)
 
 One of the big advantages to this approach is that we did not have to install any dependencies specific to this application.
 Dagger managed all the intermediary steps, and we ended up with the end-result on our host, without any of the transient dependencies.
@@ -111,19 +117,35 @@ It becomes even more obvious when the change is not as straightforward as knowin
 
 <TabItem value="linux">
 
-[Download the latest 64bit Linux binary release](https://github.com/dagger/dagger/releases/latest).
-We support both x86 & ARM architectures.
+The quickest way of installing `dagger` on Linux is to run the following command:
 
-We install `dagger` in `/usr/local/bin`, but anywhere in your `PATH` works:
+```shell
+cd /usr/local
+curl -L https://dl.dagger.io/dagger/install.sh | sh
+```
+
+This installs `dagger` in `/usr/local/bin`:
 
 ```shell
 type dagger
 dagger is /usr/local/bin/dagger
 ```
 
+If you want to install dagger to a different location, `cd` where you want `./bin/dagger` in.
+
+If you want to install a specific version of `dagger`, you can run:
+
+```shell
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.0 sh
+
+./bin/dagger version
+dagger 0.2.0 (e499297e) linux/amd64
+```
+
 Before we can build, test & deploy our example app with `dagger`, we need to have Docker Engine running.
 You most likely already have Docker Engine set up.
-If not, [Docker on Linux install](https://docs.docker.com/engine/install/#server) makes this easy.
+If not, [install Docker Engine on Linux](https://docs.docker.com/engine/install/#server) makes this easy.
+
 With Docker Engine running, we are ready to download our example app and run its CI/CD pipeline:
 
 ```shell
@@ -132,11 +154,6 @@ cd dagger
 git checkout v0.2.0
 
 cd pkg/universe.dagger.io/examples/todoapp
-```
-
-With everything in place, we run the CI/CD pipeline locally:
-
-```shell
 dagger do build
 ```
 
@@ -154,10 +171,11 @@ With an empty cache, installing all dependencies, then testing & generating a bu
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
-The last step copies the build result into the `build` directory on the host.
+The last step - `client.filesystem.build.write` - copies the build result into the `build` directory on the host.
+
 On Linux, we run `xdg-open build/index.html` in our terminal and see the following app preview:
 
-![todoapp preview](/img/getting-started/todoapp.png)
+![todoapp preview](/img/getting-started/todoapp.linux.png)
 
 One of the big advantages to this approach is that we did not have to install any dependencies specific to this application.
 Dagger managed all the intermediary steps, and we ended up with the end-result on our host, without any of the transient dependencies.
@@ -192,10 +210,12 @@ It becomes even more obvious when the change is not as straightforward as knowin
 <TabItem value="windows">
 
 We assume that you have [curl](https://curl.se/windows/) installed.
-If you do, you can install `dagger` with a single command. From a powershell terminal, run the following command:
+If you do, you can install `dagger` with a few commands. From a powershell terminal, run:
 
 ```shell
-curl https://releases.dagger.io/dagger/install.ps1 -OutFile install.ps1 ; ./install.ps1; rm install.ps1
+curl https://dl.dagger.io/dagger/install.ps1 -OutFile install.ps1
+./install.ps1
+rm install.ps1
 ```
 
 We try to move the dagger binary under `C:\Windows\System32` but
@@ -220,11 +240,6 @@ cd dagger
 git checkout v0.2.0
 
 cd pkg/universe.dagger.io/examples/todoapp
-```
-
-With everything in place, we run the CI/CD pipeline locally:
-
-```shell
 dagger do build
 ```
 
@@ -243,10 +258,11 @@ With an empty cache, installing all dependencies, then testing & generating a bu
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
-The last step copies the build result into the `build` directory on the host.
+The last step - `client.filesystem.build.write` - copies the build result into the `build` directory on the host.
+
 On Windows, we run `start build/index.html` in our `Command Prompt` terminal and see the following app preview:
 
-![todoapp preview](/img/getting-started/todoapp.png)
+![todoapp preview](/img/getting-started/todoapp.macos.png)
 
 One of the big advantages to this approach is that we did not have to install any dependencies specific to this application.
 Dagger managed all the intermediary steps, and we ended up with the end-result on our host, without any of the transient dependencies.
