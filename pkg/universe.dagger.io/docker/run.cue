@@ -96,8 +96,10 @@ import (
 					}
 				}
 			}
-			for path, output in _files {
-				files: "\(path)": output.contents
+			files: {
+				for path, output in _files {
+					"\(path)": output.contents
+				}
 			}
 
 			directories: [path=string]: dagger.#FS
@@ -112,8 +114,10 @@ import (
 					}
 				}
 			}
-			for path, output in _directories {
-				directories: "\(path)": output.contents
+			directories: {
+				for path, output in _directories {
+					"\(path)": output.contents
+				}
 			}
 		}
 	}
