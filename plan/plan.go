@@ -199,9 +199,7 @@ func (p *Plan) fillAction() {
 	if !actions.Exists() {
 		return
 	}
-	for _, cg := range actions.Doc() {
-		p.action.Comment += cg.Text()
-	}
+	p.action.Documentation = actions.DocSummary()
 
 	tasks := flow.Tasks()
 
@@ -214,17 +212,12 @@ func (p *Plan) fillAction() {
 			a := prevAction.FindByPath(path)
 			if a == nil {
 				v := p.Source().LookupPath(path)
-				childComment := ""
-				for _, cg := range v.Doc() {
-					childComment += cg.Text()
-				}
-
 				a = &Action{
-					Name:     s.String(),
-					Hidden:   s.PkgPath() != "",
-					Path:     path,
-					Comment:  childComment,
-					Children: []*Action{},
+					Name:          s.String(),
+					Hidden:        s.PkgPath() != "",
+					Path:          path,
+					Documentation: v.DocSummary(),
+					Children:      []*Action{},
 				}
 				prevAction.AddChild(a)
 			}

@@ -27,14 +27,14 @@ require (
 	github.com/sergi/go-diff v1.2.0
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/viper v1.10.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/tonistiigi/fsutil v0.0.0-20220115021204-b19f7f9cb274
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f
-	go.opentelemetry.io/otel v1.4.1
-	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
-	go.opentelemetry.io/otel/sdk v1.4.1
-	go.opentelemetry.io/otel/trace v1.4.1
+	go.opentelemetry.io/otel v1.5.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.5.0
+	go.opentelemetry.io/otel/sdk v1.5.0
+	go.opentelemetry.io/otel/trace v1.5.0
 	golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b

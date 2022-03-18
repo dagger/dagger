@@ -13,7 +13,7 @@ Most operations in `client` support handling secrets (see [Interacting with the 
 - Read a secret from the output of a command;
 - Use a secret as the input of a command.
 
-## Environmnet
+## Environment
 
 The simplest use case is reading from an environment variable:
 

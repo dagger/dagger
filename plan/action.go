@@ -5,12 +5,11 @@ import (
 )
 
 type Action struct {
-	Name     string
-	Hidden   bool
-	Path     cue.Path
-	Comment  string
-	Children []*Action
-	// pkg      string
+	Name          string
+	Hidden        bool
+	Path          cue.Path
+	Documentation string
+	Children      []*Action
 }
 
 func (a *Action) AddChild(c *Action) {
