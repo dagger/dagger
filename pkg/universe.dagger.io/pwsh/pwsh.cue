@@ -42,10 +42,9 @@ import (
 	docker.#Run & {
 		command: {
 			name:   "pwsh"
-			"args": ["-File", "\(_mountpoint)/\(script._filename)"] + args
-			// FIXME: make default flags overrideable
+			"args": args
 			flags: {
-
+				"-File": "\(_mountpoint)/\(script._filename)"
 			}
 		}
 		mounts: "Pwsh scripts": {
