@@ -43,9 +43,7 @@ import (
 		command: {
 			name:   "pwsh"
 			"args": args
-			flags: {
-				"-File": "\(_mountpoint)/\(script._filename)"
-			}
+			flags: "-File": "\(_mountpoint)/\(script._filename)"
 		}
 		mounts: "Pwsh scripts": {
 			contents: script._directory
