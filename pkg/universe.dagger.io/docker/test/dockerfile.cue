@@ -6,9 +6,9 @@ import (
 )
 
 dagger.#Plan & {
-	inputs: directories: testdata: path: "./testdata"
+	client: filesystem: "./testdata": read: contents: dagger.#FS
 
-	actions: tests: dockerfile: {
+	actions: test: dockerfile: {
 		simple: {
 			build: docker.#Build & {
 				steps: [
@@ -45,7 +45,7 @@ dagger.#Plan & {
 			build: docker.#Build & {
 				steps: [
 					docker.#Dockerfile & {
-						source: inputs.directories.testdata.contents
+						source: client.filesystem."./testdata".read.contents
 					},
 					docker.#Run & {
 						command: {
