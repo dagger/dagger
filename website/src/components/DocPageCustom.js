@@ -14,8 +14,8 @@ function DocPageCustom({ location, userAccessStatus, setUserAccessStatus }) {
 
   useEffect(async () => {
     NProgress.start()
-    if (!isEmpty(authQuery) && userAccessStatus === null) { //callback after successful auth with github
-      const user = await checkUserCollaboratorStatus(authQuery.code);
+    if (!isEmpty(authQuery?.code) && userAccessStatus === null) { //callback after successful auth with github
+      const user = await checkUserCollaboratorStatus(authQuery?.code);
       setUserAccessStatus(user)
       if (user?.permission) {
         window.localStorage.setItem('user', JSON.stringify(user));

@@ -88,11 +88,16 @@ package dagger
 
 // Merge multiple FS trees into one
 #Merge: {
-	@dagger(notimplemented)
 	$dagger: task: _name: "Merge"
+	inputs: [...#FS]
+	output: #FS
+}
 
-	input: #FS
-	layers: [...#CopyInfo]
+// Extract the difference from lower FS to upper FS as its own FS
+#Diff: {
+	$dagger: task: _name: "Diff"
+	lower:  #FS
+	upper:  #FS
 	output: #FS
 }
 
