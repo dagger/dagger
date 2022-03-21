@@ -6,19 +6,19 @@ import (
 )
 
 dagger.#Plan & {
-	actions: build: dagger.#Build & {
-		steps: [
-			docker.#Pull & {
-				source: "alpine"
-			},
-			docker.#Run & {
-				command: {
-					name: "sh"
-					args: ["-c", "sleep 10 && echo -n test > /test"]
-				}
-				user: "root"
-			},
-		]
+	actions: build: {
+		image: docker.#Pull & {
+			source: "alpine"
+		}
+
+		test: docker.#Run & {
+			input: image.output
+			command: {
+				name: "sh"
+				args: ["-c", "sleep 10 && echo -n test > /test"]
+			}
+			user: "root"
+		}
 	}
 }
 

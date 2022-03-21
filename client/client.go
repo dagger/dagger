@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
+	"go.dagger.io/dagger/compiler"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -27,7 +28,6 @@ import (
 	"go.dagger.io/dagger/util/buildkitd"
 	"go.dagger.io/dagger/util/progressui"
 
-	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/solver"
 )
 
@@ -190,16 +190,33 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 				return nil, compiler.Err(err)
 			}
 		}
-
-		ref, err := s.Solve(ctx, llb.Scratch(), platforms.DefaultSpec())
+		res := bkgw.NewResult()
+		// Cache works with that state
+		st1 := llb.Image("alpine").
+			User("root").Run(llb.Shlex(`sh -c "sleep 10 && echo -n ref1 > /test"`)).State
+		ref1, err := s.Solve(ctx, st1, platforms.MustParse("linux/arm64/v7"))
 		if err != nil {
 			return nil, err
 		}
-		res := bkgw.NewResult()
-		res.SetRef(ref)
+
+		res.AddRef("ref1", ref1)
+		// If I comment that line, the state above is cached
+		// What if I remove the comment
+		// It doesn't work -> No layer
+		// ref, err = s.Solve(ctx, llb.Scratch(), platforms.MustParse("linux/arm64/v7"))
+		st2 := llb.Image("alpine").
+			User("root").Run(llb.Shlex(`sh -c "sleep 10 && echo -n ref2 > /test"`)).State
+		ref2, err := s.Solve(ctx, st2, platforms.MustParse("linux/arm64/v7"))
+		if err != nil {
+			return nil, err
+		}
+
+		res.AddRef("ref2", ref2)
+
 		return res, nil
 	}, buildCh)
 	if err != nil {
+		log.Printf("error\n")
 		return solver.CleanError(err)
 	}
 	for k, v := range resp.ExporterResponse {
