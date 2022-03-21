@@ -52,7 +52,7 @@ jobs:
       - name: "Lint go"
         uses: golangci/golangci-lint-action@v2
         with:
-          version: v1.39
+          version: v1.45
           skip-go-installation: true
           args: --timeout=3m
 
