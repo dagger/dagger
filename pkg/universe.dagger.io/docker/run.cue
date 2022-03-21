@@ -26,6 +26,9 @@ import (
 		}
 	}
 
+	// Entrypoint to prepend to command
+	entrypoint?: [...string]
+
 	// Command to execute
 	command?: {
 		// Name of the command to execute
@@ -64,6 +67,37 @@ import (
 	// User identity for this command
 	// Examples: "root", "0", "1002"
 	user: string
+
+	// Add defaults to image config
+	// This ensures these values are present
+	_defaults: dagger.#Set & {
+		"input": {
+			entrypoint: []
+			cmd: []
+			workdir: "/"
+			user:    "root"
+		}
+		config: input.config
+	}
+
+	// Override with user config
+	_config: dagger.#Set & {
+		input: _defaults.output
+		config: {
+			if entrypoint != _|_ {
+				"entrypoint": entrypoint
+			}
+			if command != _|_ {
+				cmd: [command.name] + command._flatFlags + command.args
+			}
+			if workdir != _|_ {
+				"workdir": workdir
+			}
+			if user != _|_ {
+				"user": user
+			}
+		}
+	}
 
 	// Output fields
 	{
@@ -129,35 +163,17 @@ import (
 		"input":  input.rootfs
 		"always": always
 		"mounts": mounts
-
-		if command != _|_ {
-			args: [command.name] + command._flatFlags + command.args
-		}
-		if command == _|_ {
-			args: list.Concat([
-				if input.config.entrypoint != _|_ {
-					input.config.entrypoint
-				},
-				if input.config.cmd != _|_ {
-					input.config.cmd
-				},
-			])
-		}
-		"env": env
+		args:     _config.output.entrypoint + _config.output.cmd
+		workdir:  _config.output.workdir
+		user:     _config.output.user
+		"env":    env
+		// env may contain secrets so we can't use dagger.#Set
 		if input.config.env != _|_ {
 			for key, val in input.config.env {
 				if env[key] == _|_ {
 					env: "\(key)": val
 				}
 			}
-		}
-		"workdir": workdir
-		if workdir == _|_ && input.config.workdir != _|_ {
-			workdir: input.config.workdir
-		}
-		"user": user
-		if user == _|_ && input.config.user != _|_ {
-			user: input.config.user
 		}
 	}
 

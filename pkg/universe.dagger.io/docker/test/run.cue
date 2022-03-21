@@ -9,13 +9,13 @@ import (
 
 dagger.#Plan & {
 	actions: test: run: {
-		_build: alpine.#Build
+		_build: alpine.#Build & {
+			packages: bash: _
+		}
 		_image: _build.output
 
 		// Test: run a simple shell command
 		simpleShell: {
-			image: alpine.#Build
-
 			run: docker.#Run & {
 				input: _image
 				command: {
@@ -64,6 +64,44 @@ dagger.#Plan & {
 				path:  "/output.txt"
 			}
 			verify: contents: "hello world"
+		}
+
+		// Test: configs overriding image defaults
+		configs: {
+			_base: docker.#Set & {
+				input: _image
+				config: {
+					user:    "nobody"
+					workdir: "/sbin"
+					entrypoint: ["sh"]
+					cmd: ["-c", "echo -n $0 $PWD $(whoami) > /tmp/output.txt"]
+				}
+			}
+
+			// check defaults not overriden by image config
+			runDefaults: docker.#Run & {
+				input: _image
+				command: {
+					name: "sh"
+					flags: "-c": "echo -n $PWD $(whoami) > /output.txt"
+				}
+				export: files: "/output.txt": "/ root"
+			}
+
+			// check image defaults
+			imageDefaults: docker.#Run & {
+				input: _base.output
+				export: files: "/tmp/output.txt": "sh /sbin nobody"
+			}
+
+			// check overrides by user
+			overrides: docker.#Run & {
+				input: _base.output
+				entrypoint: ["bash"]
+				workdir: "/root"
+				user:    "root"
+				export: files: "/tmp/output.txt": "bash /root root"
+			}
 		}
 	}
 }
