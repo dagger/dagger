@@ -67,9 +67,15 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
+	// Add platform to image configuration
+	exportImageConfig := &dockerfile2llb.Image{Config: imageConfig.ToSpec()}
+	exportImageConfig.OS = pctx.Platform.Get().OS
+	exportImageConfig.Architecture = pctx.Platform.Get().Architecture
+	exportImageConfig.Variant = pctx.Platform.Get().Variant
+
 	// Export image
 	lg.Debug().Str("dest", dest.String()).Msg("export image")
-	resp, err := s.Export(ctx, st, &dockerfile2llb.Image{Config: imageConfig.ToSpec()}, bk.ExportEntry{
+	resp, err := s.Export(ctx, st, exportImageConfig, bk.ExportEntry{
 		Type: bk.ExporterImage,
 		Attrs: map[string]string{
 			"name": dest.String(),
