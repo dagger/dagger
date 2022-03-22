@@ -168,17 +168,17 @@ I change this line to `What must be done today?` and run the build locally again
 ```shell
 dagger do build
 
-[✔] client.filesystem.".".read                                    0.1s
-[✔] actions.deps                                                 13.3s
+[✔] client.filesystem.".".read                                    0.0s
+[✔] actions.deps                                                  1.1s
 [✔] actions.test.script                                           0.0s
-[✔] actions.test                                                  1.8s
-[✔] actions.build.run.script                                      0.0s
-[✔] actions.build.run                                            10.1s
-[✔] actions.build.contents                                        0.6s
-[✔] client.filesystem.build.write                                 0.1s
+[✔] actions.test                                                  0.0s
+[✔] actions.build.run.script                                      0.8s
+[✔] actions.build.run                                             2.9s
+[✔] actions.build.contents                                        0.0s
+[✔] client.filesystem.build.write                                 0.0s
 ```
 
-Being able to re-run the test & build loop locally in `26.7s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
+Being able to re-run the test & build loop locally in `4.8s`, at the same speed as running `yarn` scripts locally and without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
 </TabItem>
