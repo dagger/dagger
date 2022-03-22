@@ -43,14 +43,14 @@ import (
 					bash: {}
 					curl: {}
 					jq: {}
-					yarn: {}
+					npm: {}
 				}
 			},
 			// FIXME: make this an alpine custom package, that would be so cool.
 			docker.#Run & {
 				command: {
-					name: "yarn"
-					args: ["global", "add", "netlify-cli@8.6.21"]
+					name: "npm"
+					args: ["-g", "install", "netlify-cli@8.6.21"]
 				}
 			},
 		]
