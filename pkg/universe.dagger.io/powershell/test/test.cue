@@ -45,5 +45,27 @@ dagger.#Plan & {
 			output: run.export.files."/output.txt" & "Hello inline world!\n"
 		}
 
+		// Test args from string
+		runStringArg: {
+			run: powershell.#Run & {
+				input: _image
+				export: files: "/output.txt": _
+				script: contents: "Set-Content -Value 'Hello arg world!' -Path $($args[0])"
+				args: ["/output.txt"]
+			}
+			output: run.export.files."/output.txt" & "Hello arg world!\n"
+		}
+
+		// Test 2 args from string
+		runString2Arg: {
+			run: powershell.#Run & {
+				input: _image
+				export: files: "/output.txt": _
+				script: contents: "Set-Content -Value \"Hello args $($args[0])\" -Path $($args[1])"
+				args: ["world!","/output.txt"]
+			}
+			output: run.export.files."/output.txt" & "Hello args world!\n"
+		}
+
 	}
 }
