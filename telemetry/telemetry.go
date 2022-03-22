@@ -50,7 +50,7 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		return
 	}
 
-	repo := gitRepoURL(".")
+	repo := gitRepoURL(ctx, ".")
 
 	// Base properties
 	props := map[string]interface{}{
@@ -194,8 +194,8 @@ func hash(s string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
 }
 
-// // gitRepoURL returns the git repository remote, if any.
-func gitRepoURL(path string) string {
+// gitRepoURL returns the git repository remote, if any.
+func gitRepoURL(ctx context.Context, path string) string {
 	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -208,9 +208,16 @@ func gitRepoURL(path string) string {
 		return ""
 	}
 
-	if urls := origin.Config().URLs; len(urls) > 0 {
-		return urls[0]
+	urls := origin.Config().URLs
+	if len(urls) == 0 {
+		return ""
 	}
 
-	return ""
+	endpoint, err := parseGitURL(urls[0])
+	if err != nil {
+		log.Ctx(ctx).Debug().Err(err).Str("url", urls[0]).Msg("failed to parse git URL")
+		return ""
+	}
+
+	return endpoint
 }
