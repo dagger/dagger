@@ -62,7 +62,7 @@ dagger.#Plan & {
 				input: _image
 				export: files: "/output.txt": _
 				script: contents: "Set-Content -Value \"Hello args $($args[0])\" -Path $($args[1])"
-				args: ["world!","/output.txt"]
+				args: ["world!", "/output.txt"]
 			}
 			output: run.export.files."/output.txt" & "Hello args world!\n"
 		}
