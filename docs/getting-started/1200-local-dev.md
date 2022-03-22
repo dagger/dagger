@@ -88,16 +88,16 @@ I change this line to `What must be done today?` and run the build locally again
 dagger do build
 
 [✔] client.filesystem.".".read                                    0.0s
-[✔] actions.deps                                                 40.8s
+[✔] actions.deps                                                  7.5s
 [✔] actions.test.script                                           0.0s
-[✔] actions.test                                                  6.3s
+[✔] actions.test                                                  6.0s
 [✔] actions.build.run.script                                      0.0s
-[✔] actions.build.run                                            43.6s
-[✔] actions.build.contents                                        0.4s
+[✔] actions.build.run                                            29.2s
+[✔] actions.build.contents                                        0.0s
 [✔] client.filesystem.build.write                                 0.1s
 ```
 
-The total `84.4` time is macOS specific, since the Linux alternative is more than 5x quicker.
+The total `42.8` time is macOS specific, since the Linux alternative is more than 8x quicker.
 Either way, this local test & build loop is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
