@@ -1,5 +1,5 @@
 // Helpers to run PowerShell commands in containers
-package pwsh
+package powershell
 
 import (
 	"dagger.io/dagger"
@@ -37,7 +37,7 @@ import (
 	args: [...string]
 
 	// Where in the container to mount the scripts directory
-	_mountpoint: "/pwsh/scripts"
+	_mountpoint: "/powershell/scripts"
 
 	docker.#Run & {
 		command: {

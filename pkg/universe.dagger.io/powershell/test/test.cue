@@ -1,10 +1,10 @@
-package pwsh
+package powershell
 
 import (
 	"dagger.io/dagger"
 
 	"universe.dagger.io/docker"
-	"universe.dagger.io/pwsh"
+	"universe.dagger.io/powershell"
 )
 
 dagger.#Plan & {
@@ -24,7 +24,7 @@ dagger.#Plan & {
 				include: ["*.ps1"]
 			}
 
-			run: pwsh.#Run & {
+			run: powershell.#Run & {
 				input: _image
 				export: files: "/out.txt": _
 				script: {
@@ -37,7 +37,7 @@ dagger.#Plan & {
 
 		// Run a script from string
 		runString: {
-			run: pwsh.#Run & {
+			run: powershell.#Run & {
 				input: _image
 				export: files: "/output.txt": _
 				script: contents: "Set-Content -Value 'Hello inline world!' -Path '/output.txt'"
