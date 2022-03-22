@@ -6,7 +6,8 @@ import (
 	"universe.dagger.io/docker"
 )
 
-// Run a PowerShell script in a Docker container
+// Run a PowerShell (pwsh) script in a Docker container
+//  This does not suppore Windows containers or Windows PowerShell.
 //  Since this is a thin wrapper over docker.#Run, we embed it.
 //  Whether to embed or wrap is a case-by-case decision, like in Go.
 #Run: {
