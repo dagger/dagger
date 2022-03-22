@@ -22,11 +22,12 @@ create_site() {
 	jq -r '.site_id' body
 }
 
-site_id=$(curl -s -S -f -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-		"https://api.netlify.com/api/v1/sites?filter=all" | \
-		jq -r ".[] | select(.name==\"$NETLIFY_SITE_NAME\") | .id" \
-	)
-if [ -z "$site_id" ] ; then
+site_id=$(
+	curl -s -S -f -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+		"https://api.netlify.com/api/v1/sites?filter=all" |
+		jq -r ".[] | select(.name==\"$NETLIFY_SITE_NAME\") | .id"
+)
+if [ -z "$site_id" ]; then
 	if [ "${NETLIFY_SITE_CREATE:-}" != 1 ]; then
 		echo "Site $NETLIFY_SITE_NAME does not exist"
 		exit 1
@@ -42,20 +43,19 @@ if [ -z "$site_id" ] ; then
 fi
 
 netlify link --id "$site_id"
-netlify build
 
 netlify deploy \
-	--dir="$(pwd)" \
+	--build \
 	--site="$site_id" \
-	--prod \
-| tee /tmp/stdout
+	--prodIfUnlocked |
+	tee /tmp/stdout
 
-url="$(</tmp/stdout grep Website | grep -Eo 'https://[^ >]+' | head -1)"
-deployUrl="$(</tmp/stdout grep Unique | grep -Eo 'https://[^ >]+' | head -1)"
-logsUrl="$(</tmp/stdout grep Logs | grep -Eo 'https://[^ >]+' | head -1)"
+url="$(grep </tmp/stdout Website | grep -Eo 'https://[^ >]+' | head -1)"
+deployUrl="$(grep </tmp/stdout Unique | grep -Eo 'https://[^ >]+' | head -1)"
+logsUrl="$(grep </tmp/stdout Logs | grep -Eo 'https://[^ >]+' | head -1)"
 
 # Write output files
 mkdir -p /netlify
-echo -n "$url" > /netlify/url
-echo -n "$deployUrl" > /netlify/deployUrl
-echo -n "$logsUrl" > /netlify/logsUrl
+echo -n "$url" >/netlify/url
+echo -n "$deployUrl" >/netlify/deployUrl
+echo -n "$logsUrl" >/netlify/logsUrl
