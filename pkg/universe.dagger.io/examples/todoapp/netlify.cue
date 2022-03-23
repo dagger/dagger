@@ -8,16 +8,15 @@ import (
 	"universe.dagger.io/netlify"
 )
 
-nodeModulesMount: "/src/node_modules": dagger.#Mount & {
-	dest:     "/src/node_modules"
-	type:     "cache"
-	contents: dagger.#CacheDir & {
-		id: "todoapp-modules-cache"
-	}
-
-}
-
 dagger.#Plan & {
+	_nodeModulesMount: "/src/node_modules": dagger.#Mount & {
+		dest:     "/src/node_modules"
+		type:     "cache"
+		contents: dagger.#CacheDir & {
+			id: "todoapp-modules-cache"
+		}
+
+	}
 	client: {
 		filesystem: {
 			".": read: {
@@ -63,7 +62,7 @@ dagger.#Plan & {
 								id: "todoapp-yarn-cache"
 							}
 						}
-						nodeModulesMount
+						_nodeModulesMount
 					}
 					script: contents: #"""
 						yarn config set cache-folder /cache/yarn
@@ -76,7 +75,7 @@ dagger.#Plan & {
 		test: bash.#Run & {
 			input:   deps.output
 			workdir: "/src"
-			mounts:  nodeModulesMount
+			mounts:  _nodeModulesMount
 			script: contents: #"""
 				yarn run test
 				"""#
@@ -85,7 +84,7 @@ dagger.#Plan & {
 		build: {
 			run: bash.#Run & {
 				input:   test.output
-				mounts:  nodeModulesMount
+				mounts:  _nodeModulesMount
 				workdir: "/src"
 				script: contents: #"""
 					yarn run build
