@@ -40,7 +40,7 @@ const (
 type NewFunc func() Task
 
 type Task interface {
-	Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error)
+	Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error)
 }
 
 type PreRunner interface {

@@ -67,7 +67,7 @@ var doCmd = &cobra.Command{
 			Value: target.String(),
 		})
 
-		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
+		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s *solver.Solver) error {
 			return p.Do(ctx, target, s)
 		})
 

@@ -19,7 +19,7 @@ func init() {
 type pullTask struct {
 }
 
-func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	rawRef, err := v.Lookup("source").String()
@@ -68,8 +68,8 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 	if err != nil {
 		return nil, err
 	}
-	fs := pctx.FS.New(result)
 
+	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": fs.MarshalCUE(),
 		"digest": digest,

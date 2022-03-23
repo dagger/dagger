@@ -22,13 +22,13 @@ import (
 type Runner struct {
 	pctx   *plancontext.Context
 	target cue.Path
-	s      solver.Solver
+	s      *solver.Solver
 	tasks  sync.Map
 	mirror *compiler.Value
 	l      sync.Mutex
 }
 
-func NewRunner(pctx *plancontext.Context, target cue.Path, s solver.Solver) *Runner {
+func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver) *Runner {
 	return &Runner{
 		pctx:   pctx,
 		target: target,

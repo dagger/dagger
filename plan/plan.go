@@ -168,7 +168,7 @@ func (p *Plan) prepare(ctx context.Context) error {
 }
 
 // Do executes an action in the plan
-func (p *Plan) Do(ctx context.Context, path cue.Path, s solver.Solver) error {
+func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Up")
 	defer span.End()
 

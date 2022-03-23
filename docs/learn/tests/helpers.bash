@@ -28,6 +28,12 @@ common_setup() {
     export DAGGER_SANDBOX
     dagger init --project "$DAGGER_SANDBOX"
 
+    if [ -n "$GITHUB_ACTIONS" ];
+    then
+        export DAGGER_CACHE_TO="type=gha,mode=max,scope=docs-tests-$BATS_TEST_NAME"
+        export DAGGER_CACHE_FROM="type=gha,scope=docs-tests-$BATS_TEST_NAME"
+    fi
+
     # allows the use of `sops`
     SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt
     export SOPS_AGE_KEY_FILE
