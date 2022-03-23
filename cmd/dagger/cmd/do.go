@@ -30,7 +30,14 @@ var doCmd = &cobra.Command{
 			panic(err)
 		}
 	},
+	FParseErrWhitelist: cobra.FParseErrWhitelist{
+		UnknownFlags: true,
+	},
 	Run: func(cmd *cobra.Command, args []string) {
+		for _, f := range cmd.Flags().GetUnknownFlags() {
+			fmt.Println("FLAG", f)
+		}
+
 		if len(args) < 1 {
 			doHelpCmd(cmd, nil)
 			return

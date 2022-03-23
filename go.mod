@@ -26,6 +26,7 @@ require (
 	github.com/rs/zerolog v1.26.1
 	github.com/sergi/go-diff v1.2.0
 	github.com/spf13/cobra v1.4.0
+	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.10.0
 	github.com/stretchr/testify v1.7.1
 	github.com/tonistiigi/fsutil v0.0.0-20220115021204-b19f7f9cb274
@@ -47,4 +48,5 @@ require (
 replace (
 	cuelang.org/go => github.com/dagger/cue v0.4.1-rc.1.0.20220121023213-66df011a52c2
 	github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220121014307-40bb9831756f+incompatible
+	github.com/spf13/pflag => github.com/cornfeedhobo/pflag v1.1.0
 )
