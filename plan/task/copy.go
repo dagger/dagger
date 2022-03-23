@@ -16,7 +16,7 @@ func init() {
 type copyTask struct {
 }
 
-func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var err error
 
 	input, err := pctx.FS.FromValue(v.Lookup("input"))

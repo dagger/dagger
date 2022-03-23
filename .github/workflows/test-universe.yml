@@ -57,8 +57,5 @@ jobs:
         uses: crazy-max/ghaction-github-runtime@v1
 
       - name: Test
-        env:
-          DAGGER_CACHE_TO: "type=gha,mode=max,scope=test-universe"
-          DAGGER_CACHE_FROM: "type=gha,mode=max,scope=test-universe"
         run: |
           make universe-test

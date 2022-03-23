@@ -18,7 +18,7 @@ func init() {
 type readFileTask struct {
 }
 
-func (t *readFileTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *readFileTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err

@@ -144,7 +144,7 @@ setup() {
   cd "$TESTDIR/plan/client/filesystem/conflict"
 
   echo -n foo > test.txt
-  run "$DAGGER" "do" --log-level debug -p . test
+  run "$DAGGER" "do" -p . test
   assert_line --regexp "client\.filesystem\..+\.write.+dependency=client\.filesystem\..+\.read"
 
   rm -f test.txt

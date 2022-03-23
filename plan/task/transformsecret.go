@@ -20,7 +20,7 @@ func init() {
 type transformSecretTask struct {
 }
 
-func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("transforming secret")
 

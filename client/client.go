@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -18,7 +18,6 @@ import (
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
-	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 
@@ -72,7 +71,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	}, nil
 }
 
-type DoFunc func(context.Context, solver.Solver) error
+type DoFunc func(context.Context, *solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
 func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
@@ -94,6 +93,19 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	})
 
 	return eg.Wait()
+}
+
+func convertCacheOptionEntries(ims []bk.CacheOptionsEntry) []bkgw.CacheOptionsEntry {
+	convertIms := []bkgw.CacheOptionsEntry{}
+
+	for _, im := range ims {
+		convertIm := bkgw.CacheOptionsEntry{
+			Type:  im.Type,
+			Attrs: im.Attrs,
+		}
+		convertIms = append(convertIms, convertIm)
+	}
+	return convertIms
 }
 
 func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
@@ -156,29 +168,31 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		s := solver.New(solver.Opts{
-			Control: c.c,
-			Gateway: gw,
-			Events:  eventsCh,
-			Auth:    auth,
-			NoCache: c.cfg.NoCache,
+			Control:      c.c,
+			Gateway:      gw,
+			Events:       eventsCh,
+			Auth:         auth,
+			NoCache:      c.cfg.NoCache,
+			CacheImports: convertCacheOptionEntries(opts.CacheImports),
 		})
 
 		// Close events channel
 		defer s.Stop()
 
 		// Compute output overlay
+		res := bkgw.NewResult()
 		if fn != nil {
-			if err := fn(ctx, s); err != nil {
+			err := fn(ctx, s)
+			if err != nil {
 				return nil, compiler.Err(err)
 			}
-		}
 
-		ref, err := s.Solve(ctx, llb.Scratch(), platforms.DefaultSpec())
-		if err != nil {
-			return nil, err
+			refs := s.References()
+			// Add functions layers
+			for _, ref := range refs {
+				res.AddRef(uuid.New().String(), ref)
+			}
 		}
-		res := bkgw.NewResult()
-		res.SetRef(ref)
 		return res, nil
 	}, buildCh)
 	if err != nil {
