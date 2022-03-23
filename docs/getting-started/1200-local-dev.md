@@ -12,7 +12,10 @@ Within 5 minutes, you will have a local CI/CD loop and run your first test & bui
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 
-<Tabs defaultValue="macos"
+<Tabs defaultValue={
+	window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
+	window.navigator.userAgent.indexOf('Win') != -1 ? 'windows':
+	'macos'}
 groupId="os"
 values={[
 {label: 'macOS', value: 'macos'}, {label: 'Linux', value: 'linux'}, {label: 'Windows', value: 'windows'},

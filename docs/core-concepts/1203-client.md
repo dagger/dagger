@@ -32,7 +32,7 @@ You can use a local socket in an action:
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-<Tabs defaultValue="unix" groupId="client-env">
+<Tabs defaultValue={window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix'} groupId="client-env">
 
 <TabItem value="unix" label="Linux/macOS">
 
