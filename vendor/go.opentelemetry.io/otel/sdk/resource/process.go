@@ -39,7 +39,12 @@ var (
 	defaultExecutablePathProvider executablePathProvider = os.Executable
 	defaultCommandArgsProvider    commandArgsProvider    = func() []string { return os.Args }
 	defaultOwnerProvider          ownerProvider          = user.Current
-	defaultRuntimeNameProvider    runtimeNameProvider    = func() string { return runtime.Compiler }
+	defaultRuntimeNameProvider    runtimeNameProvider    = func() string {
+		if runtime.Compiler == "gc" {
+			return "go"
+		}
+		return runtime.Compiler
+	}
 	defaultRuntimeVersionProvider runtimeVersionProvider = runtime.Version
 	defaultRuntimeOSProvider      runtimeOSProvider      = func() string { return runtime.GOOS }
 	defaultRuntimeArchProvider    runtimeArchProvider    = func() string { return runtime.GOARCH }

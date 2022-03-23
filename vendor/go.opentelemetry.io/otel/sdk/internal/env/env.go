@@ -40,6 +40,30 @@ const (
 	// Note: Must be less than or equal to EnvBatchSpanProcessorMaxQueueSize
 	// i.e. 512
 	BatchSpanProcessorMaxExportBatchSizeKey = "OTEL_BSP_MAX_EXPORT_BATCH_SIZE"
+
+	// SpanAttributeValueLengthKey
+	// Maximum allowed attribute value size.
+	SpanAttributeValueLengthKey = "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT"
+
+	// SpanAttributeCountKey
+	// Maximum allowed span attribute count
+	SpanAttributeCountKey = "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT"
+
+	// SpanEventCountKey
+	// Maximum allowed span event count
+	SpanEventCountKey = "OTEL_SPAN_EVENT_COUNT_LIMIT"
+
+	// SpanEventAttributeCountKey
+	// Maximum allowed attribute per span event count.
+	SpanEventAttributeCountKey = "OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT"
+
+	// SpanLinkCountKey
+	// Maximum allowed span link count
+	SpanLinkCountKey = "OTEL_SPAN_LINK_COUNT_LIMIT"
+
+	// SpanLinkAttributeCountKey
+	// Maximum allowed attribute per span link count
+	SpanLinkAttributeCountKey = "OTEL_LINK_ATTRIBUTE_COUNT_LIMIT"
 )
 
 // IntEnvOr returns the int value of the environment variable with name key if
@@ -85,4 +109,46 @@ func BatchSpanProcessorMaxQueueSize(defaultValue int) int {
 // is returned.
 func BatchSpanProcessorMaxExportBatchSize(defaultValue int) int {
 	return IntEnvOr(BatchSpanProcessorMaxExportBatchSizeKey, defaultValue)
+}
+
+// SpanAttributeValueLength returns the environment variable value for the
+// OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT key if it exists, otherwise
+// defaultValue is returned.
+func SpanAttributeValueLength(defaultValue int) int {
+	return IntEnvOr(SpanAttributeValueLengthKey, defaultValue)
+}
+
+// SpanAttributeCount returns the environment variable value for the
+// OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT key if it exists, otherwise defaultValue is
+// returned.
+func SpanAttributeCount(defaultValue int) int {
+	return IntEnvOr(SpanAttributeCountKey, defaultValue)
+}
+
+// SpanEventCount returns the environment variable value for the
+// OTEL_SPAN_EVENT_COUNT_LIMIT key if it exists, otherwise defaultValue is
+// returned.
+func SpanEventCount(defaultValue int) int {
+	return IntEnvOr(SpanEventCountKey, defaultValue)
+}
+
+// SpanEventAttributeCount returns the environment variable value for the
+// OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT key if it exists, otherwise defaultValue
+// is returned.
+func SpanEventAttributeCount(defaultValue int) int {
+	return IntEnvOr(SpanEventAttributeCountKey, defaultValue)
+}
+
+// SpanLinkCount returns the environment variable value for the
+// OTEL_SPAN_LINK_COUNT_LIMIT key if it exists, otherwise defaultValue is
+// returned.
+func SpanLinkCount(defaultValue int) int {
+	return IntEnvOr(SpanLinkCountKey, defaultValue)
+}
+
+// SpanLinkAttributeCount returns the environment variable value for the
+// OTEL_LINK_ATTRIBUTE_COUNT_LIMIT key if it exists, otherwise defaultValue is
+// returned.
+func SpanLinkAttributeCount(defaultValue int) int {
+	return IntEnvOr(SpanLinkAttributeCountKey, defaultValue)
 }

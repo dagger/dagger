@@ -171,3 +171,16 @@ func WithProcessRuntimeVersion() Option {
 func WithProcessRuntimeDescription() Option {
 	return WithDetectors(processRuntimeDescriptionDetector{})
 }
+
+// WithContainer adds all the Container attributes to the configured Resource.
+// See individual WithContainer* functions to configure specific attributes.
+func WithContainer() Option {
+	return WithDetectors(
+		cgroupContainerIDDetector{},
+	)
+}
+
+// WithContainerID adds an attribute with the id of the container to the configured Resource.
+func WithContainerID() Option {
+	return WithDetectors(cgroupContainerIDDetector{})
+}

@@ -96,7 +96,9 @@ var _ trace.TracerProvider = &TracerProvider{}
 // The passed opts are used to override these default values and configure the
 // returned TracerProvider appropriately.
 func NewTracerProvider(opts ...TracerProviderOption) *TracerProvider {
-	o := tracerProviderConfig{}
+	o := tracerProviderConfig{
+		spanLimits: NewSpanLimits(),
+	}
 
 	for _, opt := range opts {
 		o = opt.apply(o)
@@ -344,16 +346,64 @@ func WithSampler(s Sampler) TracerProviderOption {
 	})
 }
 
-// WithSpanLimits returns a TracerProviderOption that will configure the
-// SpanLimits sl as a TracerProvider's SpanLimits. The configured SpanLimits
-// are used used by the Tracers the TracerProvider and the Spans they create
-// to limit tracing resources used.
+// WithSpanLimits returns a TracerProviderOption that configures a
+// TracerProvider to use the SpanLimits sl. These SpanLimits bound any Span
+// created by a Tracer from the TracerProvider.
 //
-// If this option is not used, the TracerProvider will use the default
-// SpanLimits.
+// If any field of sl is zero or negative it will be replaced with the default
+// value for that field.
+//
+// If this or WithRawSpanLimits are not provided, the TracerProvider will use
+// the limits defined by environment variables, or the defaults if unset.
+// Refer to the NewSpanLimits documentation for information about this
+// relationship.
+//
+// Deprecated: Use WithRawSpanLimits instead which allows setting unlimited
+// and zero limits. This option will be kept until the next major version
+// incremented release.
 func WithSpanLimits(sl SpanLimits) TracerProviderOption {
+	if sl.AttributeValueLengthLimit <= 0 {
+		sl.AttributeValueLengthLimit = DefaultAttributeValueLengthLimit
+	}
+	if sl.AttributeCountLimit <= 0 {
+		sl.AttributeCountLimit = DefaultAttributeCountLimit
+	}
+	if sl.EventCountLimit <= 0 {
+		sl.EventCountLimit = DefaultEventCountLimit
+	}
+	if sl.AttributePerEventCountLimit <= 0 {
+		sl.AttributePerEventCountLimit = DefaultAttributePerEventCountLimit
+	}
+	if sl.LinkCountLimit <= 0 {
+		sl.LinkCountLimit = DefaultLinkCountLimit
+	}
+	if sl.AttributePerLinkCountLimit <= 0 {
+		sl.AttributePerLinkCountLimit = DefaultAttributePerLinkCountLimit
+	}
 	return traceProviderOptionFunc(func(cfg tracerProviderConfig) tracerProviderConfig {
 		cfg.spanLimits = sl
+		return cfg
+	})
+}
+
+// WithRawSpanLimits returns a TracerProviderOption that configures a
+// TracerProvider to use these limits. These limits bound any Span created by
+// a Tracer from the TracerProvider.
+//
+// The limits will be used as-is. Zero or negative values will not be changed
+// to the default value like WithSpanLimits does. Setting a limit to zero will
+// effectively disable the related resource it limits and setting to a
+// negative value will mean that resource is unlimited. Consequentially, this
+// means that the zero-value SpanLimits will disable all span resources.
+// Because of this, limits should be constructed using NewSpanLimits and
+// updated accordingly.
+//
+// If this or WithSpanLimits are not provided, the TracerProvider will use the
+// limits defined by environment variables, or the defaults if unset. Refer to
+// the NewSpanLimits documentation for information about this relationship.
+func WithRawSpanLimits(limits SpanLimits) TracerProviderOption {
+	return traceProviderOptionFunc(func(cfg tracerProviderConfig) tracerProviderConfig {
+		cfg.spanLimits = limits
 		return cfg
 	})
 }
@@ -366,7 +416,6 @@ func ensureValidTracerProviderConfig(cfg tracerProviderConfig) tracerProviderCon
 	if cfg.idGenerator == nil {
 		cfg.idGenerator = defaultIDGenerator()
 	}
-	cfg.spanLimits.ensureDefault()
 	if cfg.resource == nil {
 		cfg.resource = resource.Default()
 	}

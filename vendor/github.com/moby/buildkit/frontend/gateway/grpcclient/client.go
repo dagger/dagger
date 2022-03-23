@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -360,7 +359,6 @@ func (c *grpcClient) Solve(ctx context.Context, creq client.SolveRequest) (res *
 		}
 	}
 
-	log.Printf("%v\n", cacheImports)
 	req := &pb.SolveRequest{
 		Definition:          creq.Definition,
 		Frontend:            creq.Frontend,

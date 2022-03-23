@@ -100,7 +100,9 @@ func ParseOutputs(inp []string) ([]client.ExportEntry, error) {
 			delete(out.Attrs, "dest")
 		case "registry":
 			out.Type = client.ExporterImage
-			out.Attrs["push"] = "true"
+			if _, ok := out.Attrs["push"]; !ok {
+				out.Attrs["push"] = "true"
+			}
 		}
 
 		outs = append(outs, out)

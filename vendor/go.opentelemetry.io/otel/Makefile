@@ -25,7 +25,7 @@ TIMEOUT = 60
 .DEFAULT_GOAL := precommit
 
 .PHONY: precommit ci
-precommit: license-check misspell go-mod-tidy golangci-lint-fix test-default
+precommit: dependabot-generate license-check misspell go-mod-tidy golangci-lint-fix test-default
 ci: dependabot-check license-check lint vanity-import-check build test-default check-clean-work-tree test-coverage
 
 # Tools
@@ -47,6 +47,9 @@ $(TOOLS)/semconvgen: PACKAGE=go.opentelemetry.io/build-tools/semconvgen
 CROSSLINK = $(TOOLS)/crosslink
 $(TOOLS)/crosslink: PACKAGE=go.opentelemetry.io/otel/$(TOOLS_MOD_DIR)/crosslink
 
+DBOTCONF = $(TOOLS)/dbotconf
+$(TOOLS)/dbotconf: PACKAGE=go.opentelemetry.io/otel/$(TOOLS_MOD_DIR)/dbotconf
+
 GOLANGCI_LINT = $(TOOLS)/golangci-lint
 $(TOOLS)/golangci-lint: PACKAGE=github.com/golangci/golangci-lint/cmd/golangci-lint
 
@@ -66,7 +69,7 @@ GOJQ = $(TOOLS)/gojq
 $(TOOLS)/gojq: PACKAGE=github.com/itchyny/gojq/cmd/gojq
 
 .PHONY: tools
-tools: $(CROSSLINK) $(GOLANGCI_LINT) $(MISSPELL) $(GOCOVMERGE) $(STRINGER) $(PORTO) $(GOJQ) $(SEMCONVGEN) $(MULTIMOD)
+tools: $(CROSSLINK) $(DBOTCONF) $(GOLANGCI_LINT) $(MISSPELL) $(GOCOVMERGE) $(STRINGER) $(PORTO) $(GOJQ) $(SEMCONVGEN) $(MULTIMOD)
 
 # Build
 
@@ -187,8 +190,14 @@ dependabot-check:
 	if [ -n "$$result" ]; then \
 		echo "missing dependabot entry:"; echo "$$result"; \
 		echo "new modules need to be added to the $(DEPENDABOT_PATH) file"; \
+		echo "(run: make dependabot-generate)"; \
 		exit 1; \
 	fi
+
+.PHONY: dependabot-generate
+dependabot-generate: $(DBOTCONF)
+	@echo "gerating dependabot configuration"; \
+	$(DBOTCONF)
 
 .PHONY: check-clean-work-tree
 check-clean-work-tree:
