@@ -147,7 +147,7 @@ Bob:
 
 ```
 
-The output here is a product of _*unifying*_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _constraints_ declared by the field in the definition. [Try it in the CUE playground](https://cuelang.org/play/?id=nAUx1-VlrY4#cue@export@yaml)
+The output here is a product of _unifying_ the `#Person` _definition_ with an object that contains _concrete values_ each of which is the product of unifying the concrete value with the _types_ and _constraints_ declared by the field in the definition. [Try it in the CUE playground](https://cuelang.org/play/?id=nAUx1-VlrY4#cue@export@yaml)
 
 ### Default Values and the Nature of Inheritance
 
