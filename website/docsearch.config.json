@@ -1,16 +1,22 @@
 {
   "index_name": "Dagger_docs",
   "start_urls": [
-    "https://deploy-preview-929--devel-docs-dagger-io.netlify.app/"
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/index.html",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1201/ci-environment/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1202/plan/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1203/client/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1204/secrets/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1205/container-images/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1211/go-docker-swarm/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1213/api/",
+    "https://deploy-preview-1833--devel-docs-dagger-io.netlify.app/1214/migrate-from-dagger-0.1/"
   ],
-  "sitemap_urls": [
-    "https://deploy-preview-929--devel-docs-dagger-io.netlify.app/sitemap.xml"
-  ],
+  "sitemap_urls": [],
   "sitemap_alternate_links": true,
   "stop_urls": [],
   "selectors": {
     "lvl0": {
-      "selector": "(//ul[contains(@class,'menu__list')]//a[contains(@class, 'menu__link menu__link--sublist menu__link--active')]/text() | //nav[contains(@class, 'navbar')]//a[contains(@class, 'navbar__link--active')]/text())[last()]",
+      "selector": "(//nav[contains(@class,'menu')]//a[contains(@class, 'menu__link menu__link--sublist menu__link--active')]/text())[last()]",
       "type": "xpath",
       "global": true,
       "default_value": "Documentation"
