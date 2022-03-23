@@ -1,9 +1,10 @@
 name: todoapp
 
-push:
-  # Trigger this workflow only on commits pushed to the main branch
-  branches:
-    - main
+on:
+  push:
+    # Trigger this workflow only on commits pushed to the main branch
+    branches:
+      - main
 
 # Dagger plan gets configured via client environment variables
 env:
