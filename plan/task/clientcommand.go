@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -21,8 +22,12 @@ func init() {
 }
 
 type clientCommandTask struct {
+	ref bkgw.Reference
 }
 
+func (t *clientCommandTask) GetReference() bkgw.Reference {
+	return t.ref
+}
 func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var opts struct {
 		Name string

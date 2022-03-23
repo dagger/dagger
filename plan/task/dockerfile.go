@@ -26,6 +26,11 @@ func init() {
 }
 
 type dockerfileTask struct {
+	ref bkgw.Reference
+}
+
+func (t *dockerfileTask) GetReference() bkgw.Reference {
+	return t.ref
 }
 
 func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {

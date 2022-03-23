@@ -9,6 +9,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -20,6 +21,10 @@ func init() {
 }
 
 type clientFilesystemReadTask struct {
+}
+
+func (t clientFilesystemReadTask) GetReference() bkgw.Reference {
+	return nil
 }
 
 func (t clientFilesystemReadTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {

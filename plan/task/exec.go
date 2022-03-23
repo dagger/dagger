@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -18,9 +20,15 @@ func init() {
 }
 
 type execTask struct {
+	ref bkgw.Reference
 }
 
-func (t execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *execTask) GetReference() bkgw.Reference {
+	log.Print("execTask.GetReference: ", t.ref)
+	return t.ref
+}
+
+func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	// Get input state
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
 	if err != nil {
@@ -44,6 +52,9 @@ func (t execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.S
 		return nil, err
 	}
 
+	log.Println("Set result", result)
+	t.ref = result
+
 	// Fill result
 	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
@@ -52,7 +63,7 @@ func (t execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.S
 	})
 }
 
-func (t execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]llb.RunOption, error) {
+func (t *execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]llb.RunOption, error) {
 	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
@@ -141,7 +152,7 @@ func (t execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]ll
 	return opts, nil
 }
 
-func (t execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
+func (t *execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
 	opts := []llb.RunOption{}
 	fields, err := mounts.Fields()
 	if err != nil {

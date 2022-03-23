@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -14,6 +15,10 @@ func init() {
 }
 
 type trimSecretTask struct {
+}
+
+func (t *trimSecretTask) GetReference() bkgw.Reference {
+	return nil
 }
 
 func (t *trimSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {

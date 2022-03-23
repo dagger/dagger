@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"go.dagger.io/dagger/compiler"
@@ -18,6 +19,10 @@ func init() {
 }
 
 type transformSecretTask struct {
+}
+
+func (c *transformSecretTask) GetReference() bkgw.Reference {
+	return nil
 }
 
 func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {

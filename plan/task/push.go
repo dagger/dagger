@@ -7,6 +7,7 @@ import (
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -18,6 +19,11 @@ func init() {
 }
 
 type pushTask struct {
+	ref bkgw.Reference
+}
+
+func (c *pushTask) GetReference() bkgw.Reference {
+	return c.ref
 }
 
 func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {

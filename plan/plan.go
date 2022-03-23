@@ -8,6 +8,7 @@ import (
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/pkg"
@@ -168,7 +169,7 @@ func (p *Plan) prepare(ctx context.Context) error {
 }
 
 // Do executes an action in the plan
-func (p *Plan) Do(ctx context.Context, path cue.Path, s solver.Solver) error {
+func (p *Plan) Do(ctx context.Context, path cue.Path, s solver.Solver) ([]bkgw.Reference, error) {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Up")
 	defer span.End()
 

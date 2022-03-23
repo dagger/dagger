@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -17,9 +18,14 @@ func init() {
 }
 
 type gitPullTask struct {
+	ref bkgw.Reference
 }
 
-func (c gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *gitPullTask) GetReference() bkgw.Reference {
+	return c.ref
+}
+
+func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var gitPull struct {
 		Remote     string
 		Ref        string

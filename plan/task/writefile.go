@@ -7,6 +7,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -17,6 +18,11 @@ func init() {
 }
 
 type writeFileTask struct {
+	ref bkgw.Reference
+}
+
+func (t *writeFileTask) GetReference() bkgw.Reference {
+	return t.ref
 }
 
 func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {

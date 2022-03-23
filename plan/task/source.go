@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -19,6 +20,10 @@ func init() {
 }
 
 type sourceTask struct {
+}
+
+func (c *sourceTask) GetReference() bkgw.Reference {
+	return nil
 }
 
 func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {

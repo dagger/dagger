@@ -6,6 +6,7 @@ import (
 
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -17,6 +18,12 @@ func init() {
 }
 
 type pullTask struct {
+	ref bkgw.Reference
+}
+
+func (c *pullTask) GetReference() bkgw.Reference {
+	log.Print("pullTask.GetReference: ", c.ref)
+	return c.ref
 }
 
 func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
@@ -69,6 +76,9 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 	fs := pctx.FS.New(result)
+
+	log.Print("Set result", result)
+	c.ref = result
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": fs.MarshalCUE(),

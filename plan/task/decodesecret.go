@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"cuelang.org/go/cue"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -20,6 +21,9 @@ func init() {
 type decodeSecretTask struct {
 }
 
+func (c *decodeSecretTask) GetReference() bkgw.Reference {
+	return nil
+}
 func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("decoding secret")

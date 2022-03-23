@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"cuelang.org/go/cue"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plancontext"
@@ -35,6 +36,7 @@ const (
 type NewFunc func() Task
 
 type Task interface {
+	GetReference() bkgw.Reference
 	Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error)
 }
 

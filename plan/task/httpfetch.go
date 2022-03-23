@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
@@ -19,9 +20,14 @@ func init() {
 }
 
 type httpFetchTask struct {
+	ref bkgw.Reference
 }
 
-func (c httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *httpFetchTask) GetReference() bkgw.Reference {
+	return c.ref
+}
+
+func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var httpFetch struct {
 		Source      string
 		Checksum    string

@@ -9,6 +9,7 @@ import (
 
 	"cuelang.org/go/cue"
 	bk "github.com/moby/buildkit/client"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -20,6 +21,10 @@ func init() {
 }
 
 type clientFilesystemWriteTask struct {
+}
+
+func (t clientFilesystemWriteTask) GetReference() bkgw.Reference {
+	return nil
 }
 
 func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {

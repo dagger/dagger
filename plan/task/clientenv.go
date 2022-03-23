@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"cuelang.org/go/cue"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -17,6 +18,10 @@ func init() {
 }
 
 type clientEnvTask struct {
+}
+
+func (t clientEnvTask) GetReference() bkgw.Reference {
+	return nil
 }
 
 func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ solver.Solver, v *compiler.Value) (*compiler.Value, error) {

@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"cuelang.org/go/cue"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -67,7 +68,7 @@ var doCmd = &cobra.Command{
 			Value: target.String(),
 		})
 
-		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) error {
+		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s solver.Solver) ([]bkgw.Reference, error) {
 			return p.Do(ctx, target, s)
 		})
 

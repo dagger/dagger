@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
@@ -26,6 +27,7 @@ type Runner struct {
 	tasks  sync.Map
 	mirror *compiler.Value
 	l      sync.Mutex
+	ref    []bkgw.Reference
 }
 
 func NewRunner(pctx *plancontext.Context, target cue.Path, s solver.Solver) *Runner {
@@ -37,13 +39,13 @@ func NewRunner(pctx *plancontext.Context, target cue.Path, s solver.Solver) *Run
 	}
 }
 
-func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
+func (r *Runner) Run(ctx context.Context, src *compiler.Value) ([]bkgw.Reference, error) {
 	if !src.LookupPath(r.target).Exists() {
-		return fmt.Errorf("%s not found", r.target.String())
+		return nil, fmt.Errorf("%s not found", r.target.String())
 	}
 
 	if err := r.update(cue.MakePath(), src); err != nil {
-		return err
+		return nil, err
 	}
 
 	flow := cueflow.New(
@@ -55,14 +57,14 @@ func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
 	)
 
 	if err := flow.Run(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
-		return nil
+		return r.ref, nil
 	}
 }
 
@@ -188,6 +190,8 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 			return err
 		}
 
+		r.ref = append(r.ref, handler.GetReference())
+		log.Print("taskFunc.ref: ", r.ref)
 		return nil
 	}), nil
 }

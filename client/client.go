@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/platforms"
 	"go.dagger.io/dagger/compiler"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -19,7 +18,6 @@ import (
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
-	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 
@@ -72,7 +70,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	}, nil
 }
 
-type DoFunc func(context.Context, solver.Solver) error
+type DoFunc func(context.Context, solver.Solver) ([]bkgw.Reference, error)
 
 // FIXME: return completed *Route, instead of *compiler.Value
 func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
@@ -185,33 +183,38 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 		// TODO do repro case for max
 		// Create with buildx a buildkit container and test with it
 		// Compute output overlay
+		res := bkgw.NewResult()
 		if fn != nil {
-			if err := fn(ctx, s); err != nil {
+			subRes, err := fn(ctx, s)
+			if err != nil {
 				return nil, compiler.Err(err)
 			}
+			log.Print("Sub result", subRes)
+			for i, r := range subRes {
+				res.AddRef(fmt.Sprintf("fn-%v", i), r)
+			}
 		}
-		res := bkgw.NewResult()
 		// Cache works with that state
-		st1 := llb.Image("alpine").
-			User("root").Run(llb.Shlex(`sh -c "sleep 10 && echo -n ref1 > /test"`)).State
-		ref1, err := s.Solve(ctx, st1, platforms.MustParse("linux/arm64/v7"))
-		if err != nil {
-			return nil, err
-		}
-
-		res.AddRef("ref1", ref1)
+		//		st1 := llb.Image("alpine").
+		//			User("root").Run(llb.Shlex(`sh -c "sleep 10 && echo -n ref1 > /test"`)).State
+		//		ref1, err := s.Solve(ctx, st1, platforms.MustParse("linux/arm64/v7"))
+		//		if err != nil {
+		//			return nil, err
+		//		}
+		//
+		//		res.AddRef("ref1", ref1)
 		// If I comment that line, the state above is cached
 		// What if I remove the comment
 		// It doesn't work -> No layer
 		// ref, err = s.Solve(ctx, llb.Scratch(), platforms.MustParse("linux/arm64/v7"))
-		st2 := llb.Image("alpine").
-			User("root").Run(llb.Shlex(`sh -c "sleep 10 && echo -n ref2 > /test"`)).State
-		ref2, err := s.Solve(ctx, st2, platforms.MustParse("linux/arm64/v7"))
-		if err != nil {
-			return nil, err
-		}
-
-		res.AddRef("ref2", ref2)
+		//		st2 := llb.Image("alpine").
+		//			User("root").Run(llb.Shlex(`sh -c "sleep 10 && echo -n ref2 > /test"`)).State
+		//		ref2, err := s.Solve(ctx, st2, platforms.MustParse("linux/arm64/v7"))
+		//		if err != nil {
+		//			return nil, err
+		//		}
+		//
+		//		res.AddRef("ref2", ref2)
 
 		return res, nil
 	}, buildCh)
