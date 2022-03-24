@@ -76,7 +76,7 @@ doc-test: dagger-debug # Test docs
 
 .PHONY: docs
 docs: dagger # Generate docs
-	./cmd/dagger/dagger doc --output ./docs/reference --format md
+	DAGGER_TELEMETRY_DISABLE=1 ./cmd/dagger/dagger doc --output ./docs/reference --format md
 
 .PHONY: docslint
 docslint: docs # Generate & lint docs

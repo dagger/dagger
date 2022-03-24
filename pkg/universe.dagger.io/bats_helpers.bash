@@ -7,9 +7,9 @@ common_setup() {
     #   otherwise infinite recursion when DAGGER_BINARY is not set.
     export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
 
-    # Force Europa mode
-    DAGGER_EUROPA="1"
-    export DAGGER_EUROPA
+    # Disable telemetry
+    DAGGER_TELEMETRY_DISABLE="1"
+    export DAGGER_TELEMETRY_DISABLE
 
     # Force plain printing for error reporting
     DAGGER_LOG_FORMAT="plain"

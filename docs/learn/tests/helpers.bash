@@ -10,6 +10,10 @@ common_setup() {
     #   otherwise infinite recursion when DAGGER_BINARY is not set.
     export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
 
+    # Disable telemetry
+    DAGGER_TELEMETRY_DISABLE="1"
+    export DAGGER_TELEMETRY_DISABLE
+
     # Set the project to the universe directory (so tests can run from anywhere)
     UNIVERSE="$( cd "$( dirname "$BATS_TEST_FILENAME" )" >/dev/null 2>&1 && pwd )"
     DAGGER_PROJECT="$UNIVERSE"
