@@ -137,3 +137,6 @@ setup() {
     "$DAGGER" "do" -p ./tasks/diff/diff.cue test
 }
 
+@test "task: #Export" {
+    "$DAGGER" "do" -p ./tasks/export/export.cue test
+}

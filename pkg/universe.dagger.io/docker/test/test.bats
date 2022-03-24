@@ -9,4 +9,5 @@ setup() {
     dagger "do" -p ./dockerfile.cue test
     dagger "do" -p ./run.cue test
     dagger "do" -p ./image.cue test
+    dagger "do" -p ./load.cue test
 }

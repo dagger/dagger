@@ -5,6 +5,7 @@ import (
 
 	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // ImageConfig defines the execution parameters which should be used as a base when running a container using an image.
@@ -151,4 +152,15 @@ func ConvertHealthConfig(spec *dockerfile2llb.HealthConfig) *HealthConfig {
 	cfg.Retries = spec.Retries
 
 	return &cfg
+}
+
+func NewImage(config ImageConfig, platform specs.Platform) dockerfile2llb.Image {
+	return dockerfile2llb.Image{
+		Config: config.ToSpec(),
+		Image: specs.Image{
+			Architecture: platform.Architecture,
+			OS:           platform.OS,
+		},
+		Variant: platform.Variant,
+	}
 }

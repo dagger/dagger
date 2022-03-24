@@ -10,6 +10,7 @@ type Context struct {
 	Platform  *platformContext
 	FS        *fsContext
 	LocalDirs *localDirContext
+	TempDirs  *tempDirContext
 	Secrets   *secretContext
 	Services  *serviceContext
 }
@@ -24,6 +25,9 @@ func New() *Context {
 		},
 		LocalDirs: &localDirContext{
 			store: []string{},
+		},
+		TempDirs: &tempDirContext{
+			store: make(map[string]string),
 		},
 		Secrets: &secretContext{
 			store: make(map[string]*Secret),

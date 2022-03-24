@@ -117,6 +117,32 @@ import (
 	config: #ImageConfig
 }
 
+// Export an image as a tar archive
+#Export: {
+	$dagger: task: _name: "Export"
+
+	// Filesystem contents to export
+	input: #FS
+
+	// Container image config
+	config: #ImageConfig
+
+	// Name and optionally a tag in the 'name:tag' format
+	tag: string
+
+	// Type of export
+	type: *"docker" | "oci"
+
+	// Path to the exported file inside `output`
+	path: string | *"/image.tar"
+
+	// Exported image ID
+	imageID: string
+
+	// Root filesystem with exported file
+	output: #FS
+}
+
 // Change image config
 #Set: {
 	// The source image config
