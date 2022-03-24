@@ -225,14 +225,15 @@ dagger do build
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under a minute:
 
 ```shell
-[✔] client.filesystem.".".read                                    0.2s
-[✔] actions.deps                                                 55.2s
-[✔] actions.test.script                                           0.1s
-[✔] actions.test                                                  1.8s
-[✔] actions.build.run.script                                      0.1s
-[✔] actions.build.run                                             8.6s
-[✔] actions.build.contents                                        0.4s
+[✔] actions.deps                                                 62.1s
+[✔] actions.build.run.script                                      0.4s
+[✔] actions.test.script                                           0.5s
+[✔] client.filesystem.".".read                                    0.6s
+[✔] actions.test                                                  2.0s
+[✔] actions.build.run                                            12.4s
+[✔] actions.build.contents                                        0.1s
 [✔] client.filesystem.build.write                                 0.2s
+[✔] client.filesystem.".".read                                    0.2s
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
@@ -256,17 +257,18 @@ I change this line to `What must be done today?` and run the build locally again
 ```shell
 dagger do build
 INF upgrading buildkit    have host network=true version=v0.10.0
-[✔] client.filesystem.".".read                                   0.1s
-[✔] actions.deps                                                15.0s
+[✔] actions.build.run.script                                     0.0s
+[✔] actions.deps                                                 3.4s
+[✔] client.filesystem.".".read                                   0.2s
 [✔] actions.test.script                                          0.0s
 [✔] actions.test                                                 1.8s
-[✔] actions.build.run.script                                     0.0s
-[✔] actions.build.run                                            8.9s
-[✔] actions.build.contents                                       0.4s
-[✔] client.filesystem.build.write                                0.1s
+[✔] actions.build.run                                            7.7s
+[✔] actions.build.contents                                       0.2s
+[✔] client.filesystem.build.write                                0.2s
+[✔] client.filesystem.".".read                                   0.1s
 ```
 
-Being able to re-run the test & build loop locally in `26.3s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
+Being able to re-run the test & build loop locally in `13.6s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
 </TabItem>
