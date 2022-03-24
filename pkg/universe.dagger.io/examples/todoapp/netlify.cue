@@ -9,6 +9,14 @@ import (
 )
 
 dagger.#Plan & {
+	_nodeModulesMount: "/src/node_modules": dagger.#Mount & {
+		dest:     "/src/node_modules"
+		type:     "cache"
+		contents: dagger.#CacheDir & {
+			id: "todoapp-modules-cache"
+		}
+
+	}
 	client: {
 		filesystem: {
 			".": read: {
@@ -46,12 +54,15 @@ dagger.#Plan & {
 				// install yarn dependencies
 				bash.#Run & {
 					workdir: "/src"
-					mounts: "/cache/yarn": dagger.#Mount & {
-						dest:     "/cache/yarn"
-						type:     "cache"
-						contents: dagger.#CacheDir & {
-							id: "todoapp-yarn-cache"
+					mounts: {
+						"/cache/yarn": dagger.#Mount & {
+							dest:     "/cache/yarn"
+							type:     "cache"
+							contents: dagger.#CacheDir & {
+								id: "todoapp-yarn-cache"
+							}
 						}
+						_nodeModulesMount
 					}
 					script: contents: #"""
 						yarn config set cache-folder /cache/yarn
@@ -64,6 +75,7 @@ dagger.#Plan & {
 		test: bash.#Run & {
 			input:   deps.output
 			workdir: "/src"
+			mounts:  _nodeModulesMount
 			script: contents: #"""
 				yarn run test
 				"""#
@@ -72,6 +84,7 @@ dagger.#Plan & {
 		build: {
 			run: bash.#Run & {
 				input:   test.output
+				mounts:  _nodeModulesMount
 				workdir: "/src"
 				script: contents: #"""
 					yarn run build

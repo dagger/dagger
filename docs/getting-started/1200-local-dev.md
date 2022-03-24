@@ -88,16 +88,16 @@ I change this line to `What must be done today?` and run the build locally again
 dagger do build
 
 [✔] client.filesystem.".".read                                    0.0s
-[✔] actions.deps                                                 40.8s
+[✔] actions.deps                                                  7.5s
 [✔] actions.test.script                                           0.0s
-[✔] actions.test                                                  6.3s
+[✔] actions.test                                                  6.0s
 [✔] actions.build.run.script                                      0.0s
-[✔] actions.build.run                                            43.6s
-[✔] actions.build.contents                                        0.4s
+[✔] actions.build.run                                            29.2s
+[✔] actions.build.contents                                        0.0s
 [✔] client.filesystem.build.write                                 0.1s
 ```
 
-The total `84.4` time is macOS specific, since the Linux alternative is more than 5x quicker.
+The total `42.8` time is macOS specific, since the Linux alternative is more than 8x quicker.
 Either way, this local test & build loop is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
@@ -168,17 +168,17 @@ I change this line to `What must be done today?` and run the build locally again
 ```shell
 dagger do build
 
-[✔] client.filesystem.".".read                                    0.1s
-[✔] actions.deps                                                 13.3s
+[✔] client.filesystem.".".read                                    0.0s
+[✔] actions.deps                                                  1.1s
 [✔] actions.test.script                                           0.0s
-[✔] actions.test                                                  1.8s
-[✔] actions.build.run.script                                      0.0s
-[✔] actions.build.run                                            10.1s
-[✔] actions.build.contents                                        0.6s
-[✔] client.filesystem.build.write                                 0.1s
+[✔] actions.test                                                  0.0s
+[✔] actions.build.run.script                                      0.8s
+[✔] actions.build.run                                             2.9s
+[✔] actions.build.contents                                        0.0s
+[✔] client.filesystem.build.write                                 0.0s
 ```
 
-Being able to re-run the test & build loop locally in `26.7s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
+Being able to re-run the test & build loop locally in `4.8s`, at the same speed as running `yarn` scripts locally and without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
 </TabItem>
@@ -225,14 +225,15 @@ dagger do build
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under a minute:
 
 ```shell
-[✔] client.filesystem.".".read                                    0.2s
-[✔] actions.deps                                                 55.2s
-[✔] actions.test.script                                           0.1s
-[✔] actions.test                                                  1.8s
-[✔] actions.build.run.script                                      0.1s
-[✔] actions.build.run                                             8.6s
-[✔] actions.build.contents                                        0.4s
+[✔] actions.deps                                                 62.1s
+[✔] actions.build.run.script                                      0.4s
+[✔] actions.test.script                                           0.5s
+[✔] client.filesystem.".".read                                    0.6s
+[✔] actions.test                                                  2.0s
+[✔] actions.build.run                                            12.4s
+[✔] actions.build.contents                                        0.1s
 [✔] client.filesystem.build.write                                 0.2s
+[✔] client.filesystem.".".read                                    0.2s
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
@@ -256,17 +257,18 @@ I change this line to `What must be done today?` and run the build locally again
 ```shell
 dagger do build
 INF upgrading buildkit    have host network=true version=v0.10.0
-[✔] client.filesystem.".".read                                   0.1s
-[✔] actions.deps                                                15.0s
+[✔] actions.build.run.script                                     0.0s
+[✔] actions.deps                                                 3.4s
+[✔] client.filesystem.".".read                                   0.2s
 [✔] actions.test.script                                          0.0s
 [✔] actions.test                                                 1.8s
-[✔] actions.build.run.script                                     0.0s
-[✔] actions.build.run                                            8.9s
-[✔] actions.build.contents                                       0.4s
-[✔] client.filesystem.build.write                                0.1s
+[✔] actions.build.run                                            7.7s
+[✔] actions.build.contents                                       0.2s
+[✔] client.filesystem.build.write                                0.2s
+[✔] client.filesystem.".".read                                   0.1s
 ```
 
-Being able to re-run the test & build loop locally in `26.3s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
+Being able to re-run the test & build loop locally in `13.6s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
 It becomes even more obvious when the change is not as straightforward as knowing _exactly_ which line to edit.
 
 </TabItem>
