@@ -40,3 +40,4 @@ bin/
 
 # Local configuration
 .config
+.envrc
