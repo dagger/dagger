@@ -31,8 +31,11 @@ You can use a local socket in an action:
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import BrowserOnly from '@docusaurus/BrowserOnly';
 
-<Tabs defaultValue={window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix'} groupId="client-env">
+<BrowserOnly>
+  {() =>
+<Tabs defaultValue={ window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix'} groupId="client-env">
 
 <TabItem value="unix" label="Linux/macOS">
 
@@ -48,6 +51,8 @@ import TabItem from '@theme/TabItem';
 
 </TabItem>
 </Tabs>
+  }
+</BrowserOnly>
 
 ## Environment variables
 
