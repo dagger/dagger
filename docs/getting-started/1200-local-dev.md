@@ -11,8 +11,14 @@ This guide shows you the Dagger way.
 Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
+import BrowserOnly from '@docusaurus/BrowserOnly';
 
-<Tabs defaultValue="macos"
+<BrowserOnly>
+{() =>
+<Tabs defaultValue={
+ window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
+ window.navigator.userAgent.indexOf('Win') != -1 ? 'windows':
+ 'macos'}
 groupId="os"
 values={[
 {label: 'macOS', value: 'macos'}, {label: 'Linux', value: 'linux'}, {label: 'Windows', value: 'windows'},
@@ -274,6 +280,9 @@ It becomes even more obvious when the change is not as straightforward as knowin
 </TabItem>
 
 </Tabs>
+}
+
+</BrowserOnly>
 
 :::tip
 Now that we are comfortable with our local CI/CD loop, let us configure a remote CI environment in the second part.

@@ -42,14 +42,14 @@ cuefmt: # Format all cue files
 
 .PHONY: cuelint
 cuelint: cuefmt # Lint and format all cue files
-	@test -z "$$(git status -s . | grep -e "^ M"  | grep .cue | cut -d ' ' -f3 | tee /dev/stderr)"
+	@test -z "$$(git status -s . | grep -e "^ M"  | grep "\.cue" | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: shellcheck
 shellcheck: # Run shellcheck
 	shellcheck $$(find . -type f \( -iname \*.bats -o -iname \*.bash -o -iname \*.sh \) -not -path "*/node_modules/*" -not -path "*/bats-*/*")
 
 .PHONY: lint
-lint: shellcheck cuelint golint docslint # Lint everything
+lint: shellcheck cuelint golint docslint mdlint # Lint everything
 
 .PHONY: integration
 integration: core-integration universe-test doc-test # Run all integration tests
@@ -81,6 +81,10 @@ docs: dagger # Generate docs
 .PHONY: docslint
 docslint: docs # Generate & lint docs
 	@test -z "$$(git status -s . | grep -e "^ M"  | grep docs/reference | cut -d ' ' -f3 | tee /dev/stderr)"
+
+.PHONY: mdlint
+mdlint: # Markdown lint for web
+	@markdownlint ./docs README.md
 
 .PHONY: web
 web: # Run the website locally
