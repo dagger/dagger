@@ -47,7 +47,7 @@ dagger.#Plan & {
 					}
 				},
 				docker.#Copy & {
-					contents: client.filesystem.".".read.contents
+					contents: client.filesystem."./".read.contents
 					dest:     "/src"
 				},
 				bash.#Run & {
