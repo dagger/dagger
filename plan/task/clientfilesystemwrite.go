@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"cuelang.org/go/cue"
 	bk "github.com/moby/buildkit/client"
@@ -28,7 +27,7 @@ func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Co
 		return nil, err
 	}
 
-	path, err = filepath.Abs(path)
+	path, err = clientFilePath(path)
 	if err != nil {
 		return nil, err
 	}
