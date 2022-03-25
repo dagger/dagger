@@ -8,7 +8,7 @@ require (
 	github.com/Microsoft/go-winio v0.5.2
 	github.com/containerd/console v1.0.3
 	github.com/containerd/containerd v1.6.2
-	github.com/docker/buildx v0.8.0
+	github.com/docker/buildx v0.8.1
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/emicklei/proto v1.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.4.2
@@ -28,7 +28,7 @@ require (
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/viper v1.10.0
 	github.com/stretchr/testify v1.7.1
-	github.com/tonistiigi/fsutil v0.0.0-20220115021204-b19f7f9cb274
+	github.com/tonistiigi/fsutil v0.0.0-20220315205639-9ed612626da3
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f
 	go.opentelemetry.io/otel v1.6.0
