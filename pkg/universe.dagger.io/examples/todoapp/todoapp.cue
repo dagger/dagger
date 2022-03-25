@@ -19,7 +19,7 @@ dagger.#Plan & {
 	}
 	client: {
 		filesystem: {
-			".": read: {
+			"./": read: {
 				contents: dagger.#FS
 				exclude: [
 					"README.md",
