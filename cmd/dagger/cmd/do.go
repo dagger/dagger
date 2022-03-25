@@ -73,6 +73,8 @@ var doCmd = &cobra.Command{
 
 		<-doneCh
 
+		p.Context().TempDirs.Clean()
+
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}

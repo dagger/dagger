@@ -6,7 +6,6 @@ import (
 
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -67,15 +66,11 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
-	// Add platform to image configuration
-	exportImageConfig := &dockerfile2llb.Image{Config: imageConfig.ToSpec()}
-	exportImageConfig.OS = pctx.Platform.Get().OS
-	exportImageConfig.Architecture = pctx.Platform.Get().Architecture
-	exportImageConfig.Variant = pctx.Platform.Get().Variant
+	img := NewImage(imageConfig, pctx.Platform.Get())
 
 	// Export image
 	lg.Debug().Str("dest", dest.String()).Msg("export image")
-	resp, err := s.Export(ctx, st, exportImageConfig, bk.ExportEntry{
+	resp, err := s.Export(ctx, st, &img, bk.ExportEntry{
 		Type: bk.ExporterImage,
 		Attrs: map[string]string{
 			"name": dest.String(),
