@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
@@ -66,10 +65,7 @@ func (t clientFilesystemReadTask) parsePath(v *compiler.Value) (path string, err
 		return
 	}
 
-	path, err = filepath.Abs(path)
-	if err != nil {
-		return
-	}
+	path, err = clientFilePath(path)
 
 	return
 }
