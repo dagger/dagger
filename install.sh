@@ -267,7 +267,7 @@ latest_version() {
 base_url() {
     os="$(uname_os)"
     arch="$(uname_arch)"
-    version="${DAGGER_VERSION?:$(latest_version)}"
+    version="${DAGGER_VERSION:-$(latest_version)}"
     url="${base}/${name}/releases/${version}"
     echo "$url"
 }
@@ -275,7 +275,7 @@ base_url() {
 tarball() {
     os="$(uname_os)"
     arch="$(uname_arch)"
-    version="${DAGGER_VERSION?:$(latest_version)}"
+    version="${DAGGER_VERSION:-$(latest_version)}"
     name="${name}_v${version}_${os}_${arch}"
     if [ "$os" = "windows" ]; then
         name="${name}.zip"
