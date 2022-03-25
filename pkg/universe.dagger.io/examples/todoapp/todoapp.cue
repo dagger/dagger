@@ -1,4 +1,4 @@
-package netlify
+package todoapp
 
 import (
 	"dagger.io/dagger"
@@ -23,12 +23,12 @@ dagger.#Plan & {
 				contents: dagger.#FS
 				exclude: [
 					"README.md",
-					"build",
-					"netlify.cue",
+					"_build",
+					"todoapp.cue",
 					"node_modules",
 				]
 			}
-			build: write: contents: actions.build.contents.output
+			"./_build": write: contents: actions.build.contents.output
 		}
 		env: {
 			APP_NAME:      string
@@ -50,8 +50,6 @@ dagger.#Plan & {
 					contents: client.filesystem.".".read.contents
 					dest:     "/src"
 				},
-				// bash.#Run is a superset of docker.#Run
-				// install yarn dependencies
 				bash.#Run & {
 					workdir: "/src"
 					mounts: {
