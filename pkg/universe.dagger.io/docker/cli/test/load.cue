@@ -1,4 +1,4 @@
-package docker
+package test
 
 import (
 	"dagger.io/dagger"
@@ -6,12 +6,13 @@ import (
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
 	"universe.dagger.io/docker"
+	"universe.dagger.io/docker/cli"
 )
 
 dagger.#Plan & {
 	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Service
 
-	actions: test: load: {
+	actions: test: {
 		_cli: alpine.#Build & {
 			packages: {
 				bash: {}
@@ -27,7 +28,7 @@ dagger.#Plan & {
 			}
 		}
 
-		load: docker.#Load & {
+		load: cli.#Load & {
 			image: _image.output
 			host:  client.filesystem."/var/run/docker.sock".read.contents
 			tag:   "dagger:load"
@@ -51,7 +52,4 @@ dagger.#Plan & {
 				"""#
 		}
 	}
-
-	// FIXME: test remote connections with `docker:dind`
-	// image when we have long running tasks
 }

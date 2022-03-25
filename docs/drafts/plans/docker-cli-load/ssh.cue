@@ -3,6 +3,7 @@ package main
 import (
 	"dagger.io/dagger"
 	"universe.dagger.io/docker"
+	"universe.dagger.io/docker/cli"
 )
 
 dagger.#Plan & {
@@ -16,7 +17,7 @@ dagger.#Plan & {
 			...
 		}
 
-		load: docker.#Load & {
+		load: cli.#Load & {
 			image: build.output
 			tag:   "myimage:v2"
 			host:  "ssh://root@93.184.216.34"
