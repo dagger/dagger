@@ -67,20 +67,20 @@ dagger do build
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under 3 minutes:
 
 ```shell
-[✔] client.filesystem.".".read                                    0.1s
+[✔] client.filesystem."./".read                                   0.1s
 [✔] actions.deps                                                118.8s
 [✔] actions.test.script                                           0.1s
 [✔] actions.test                                                  6.3s
 [✔] actions.build.run.script                                      0.0s
 [✔] actions.build.run                                            43.7s
 [✔] actions.build.contents                                        0.4s
-[✔] client.filesystem.build.write                                 0.1s
+[✔] client.filesystem."./_build".write                            0.1s
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
-The last step - `client.filesystem.build.write` - copies the build result into the `build` directory on the host.
+The last step - `client.filesystem.build.write` - copies the build result into the `_build` directory on the host.
 
-On macOS, we run `open build/index.html` in our terminal and see the following app preview:
+On macOS, we run `open _build/index.html` in our terminal and see the following app preview:
 
 ![todoapp preview](/img/getting-started/todoapp.macos.png)
 
@@ -99,14 +99,14 @@ I change this line to `What must be done today?` and run the build locally again
 ```shell
 dagger do build
 
-[✔] client.filesystem.".".read                                    0.0s
+[✔] client.filesystem."./".read                                   0.0s
 [✔] actions.deps                                                  7.5s
 [✔] actions.test.script                                           0.0s
 [✔] actions.test                                                  6.0s
 [✔] actions.build.run.script                                      0.0s
 [✔] actions.build.run                                            29.2s
 [✔] actions.build.contents                                        0.0s
-[✔] client.filesystem.build.write                                 0.1s
+[✔] client.filesystem."./_build".write                            0.1s
 ```
 
 The total `42.8` time is macOS specific, since the Linux alternative is more than 8x quicker.
@@ -160,20 +160,20 @@ dagger do build
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under 1 minute:
 
 ```shell
-[✔] client.filesystem.".".read                                    0.3s
+[✔] client.filesystem."./".read                                   0.3s
 [✔] actions.deps                                                 39.7s
 [✔] actions.test.script                                           0.2s
 [✔] actions.test                                                  1.9s
 [✔] actions.build.run.script                                      0.1s
 [✔] actions.build.run                                            10.0s
 [✔] actions.build.contents                                        0.6s
-[✔] client.filesystem.build.write                                 0.1s
+[✔] client.filesystem."./_build".write                            0.1s
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
-The last step - `client.filesystem.build.write` - copies the build result into the `build` directory on the host.
+The last step - `client.filesystem.build.write` - copies the build result into the `_build` directory on the host.
 
-On Linux, we run `xdg-open build/index.html` in our terminal and see the following app preview:
+On Linux, we run `xdg-open _build/index.html` in our terminal and see the following app preview:
 
 ![todoapp preview](/img/getting-started/todoapp.linux.png)
 
@@ -192,14 +192,14 @@ I change this line to `What must be done today?` and run the build locally again
 ```shell
 dagger do build
 
-[✔] client.filesystem.".".read                                    0.0s
+[✔] client.filesystem."./".read                                   0.0s
 [✔] actions.deps                                                  1.1s
 [✔] actions.test.script                                           0.0s
 [✔] actions.test                                                  0.0s
 [✔] actions.build.run.script                                      0.8s
 [✔] actions.build.run                                             2.9s
 [✔] actions.build.contents                                        0.0s
-[✔] client.filesystem.build.write                                 0.0s
+[✔] client.filesystem."./_build".write                             0.0s
 ```
 
 Being able to re-run the test & build loop locally in `4.8s`, at the same speed as running `yarn` scripts locally and without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.
@@ -249,16 +249,15 @@ With an empty cache, installing all dependencies, then testing & generating a bu
 [✔] actions.deps                                                 62.1s
 [✔] actions.build.run.script                                      0.4s
 [✔] actions.test.script                                           0.5s
-[✔] client.filesystem.".".read                                    0.6s
+[✔] client.filesystem."./".read                                   0.6s
 [✔] actions.test                                                  2.0s
 [✔] actions.build.run                                            12.4s
 [✔] actions.build.contents                                        0.1s
-[✔] client.filesystem.build.write                                 0.2s
-[✔] client.filesystem.".".read                                    0.2s
+[✔] client.filesystem."./_build".write                            0.2s
 ```
 
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
-The last step - `client.filesystem.build.write` - copies the build result into the `build` directory on the host.
+The last step - `client.filesystem.build.write` - copies the build result into the `_build` directory on the host.
 
 On Windows, we run `start build/index.html` in our `Command Prompt` terminal and see the following app preview:
 
@@ -278,16 +277,14 @@ I change this line to `What must be done today?` and run the build locally again
 
 ```shell
 dagger do build
-INF upgrading buildkit    have host network=true version=v0.10.0
 [✔] actions.build.run.script                                     0.0s
 [✔] actions.deps                                                 3.4s
-[✔] client.filesystem.".".read                                   0.2s
+[✔] client.filesystem."./".read                                  0.1s
 [✔] actions.test.script                                          0.0s
 [✔] actions.test                                                 1.8s
 [✔] actions.build.run                                            7.7s
 [✔] actions.build.contents                                       0.2s
-[✔] client.filesystem.build.write                                0.2s
-[✔] client.filesystem.".".read                                   0.1s
+[✔] client.filesystem."./_build".write                           0.2s
 ```
 
 Being able to re-run the test & build loop locally in `13.6s`, without adding any extra dependencies to our host, is likely to change our approach to iterating on changes.

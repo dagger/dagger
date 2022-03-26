@@ -1,3 +1,8 @@
+// ...
+// A plan has pre-requisited that we cover below.
+// For now we focus on the dagger.#Plan structure.
+// ...
+
 dagger.#Plan & {
   client: {
     filesystem: {
@@ -21,6 +26,9 @@ dagger.#Plan & {
       contents: dagger.#Subdir & {
         // ...
       }
+    }
+    deploy: netlify.#Deploy & {
+      // ...
     }
   }
 }
