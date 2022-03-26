@@ -1,31 +1,6 @@
-package dagger
+package core
 
-import (
-	"list"
-)
-
-// Upload a container image to a remote repository
-#Push: {
-	$dagger: task: _name: "Push"
-
-	// Target repository address
-	dest: #Ref
-
-	// Filesystem contents to push
-	input: #FS
-
-	// Container image config
-	config: #ImageConfig
-
-	// Authentication
-	auth?: {
-		username: string
-		secret:   #Secret
-	}
-
-	// Complete ref of the pushed image, including digest
-	result: #Ref
-}
+import "list"
 
 // A ref is an address for a remote container image
 //
@@ -60,6 +35,29 @@ import (
 	timeout?:     int
 	startperiod?: int
 	retries?:     int
+}
+
+// Upload a container image to a remote repository
+#Push: {
+	$dagger: task: _name: "Push"
+
+	// Target repository address
+	dest: #Ref
+
+	// Filesystem contents to push
+	input: #FS
+
+	// Container image config
+	config: #ImageConfig
+
+	// Authentication
+	auth?: {
+		username: string
+		secret:   #Secret
+	}
+
+	// Complete ref of the pushed image, including digest
+	result: #Ref
 }
 
 // Download a container image from a remote repository

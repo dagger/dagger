@@ -2,6 +2,7 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
@@ -13,16 +14,16 @@ dagger.#Plan & {
 
 	actions: {
 
-		alpine: dagger.#Pull & {
+		alpine: core.#Pull & {
 			source: "alpine:3.15.0"
 		}
 
-		sopsSecrets: dagger.#DecodeSecret & {
+		sopsSecrets: core.#DecodeSecret & {
 			format: "yaml"
 			input:  client.commands.sops.stdout
 		}
 
-		testRepo: dagger.#GitPull & {
+		testRepo: core.#GitPull & {
 			remote: "https://github.com/dagger/dagger.git"
 			ref:    "main"
 			auth: {
@@ -31,7 +32,7 @@ dagger.#Plan & {
 			}
 		}
 
-		testContent: dagger.#Exec & {
+		testContent: core.#Exec & {
 			input:  alpine.output
 			always: true
 			args: ["ls", "-l", "/repo/README.md"]

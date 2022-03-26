@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // Execute a command in a container
 #Exec: {

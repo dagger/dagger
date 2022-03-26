@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
@@ -28,28 +29,28 @@ dagger.#Plan & {
 		invalid: name: "foobar"
 	}
 	actions: {
-		image: dagger.#Pull & {
+		image: core.#Pull & {
 			source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 		}
 		test: {
-			invalid: dagger.#Exec & {
+			invalid: core.#Exec & {
 				input: image.output
 				args: ["echo", client.commands.invalid.stdout]
 			}
 			valid: {
-				normal: dagger.#Exec & {
+				normal: core.#Exec & {
 					input: image.output
 					args: ["test", strings.TrimSpace(client.commands.normal.stdout), "=", "hello europa"]
 				}
-				relative: dagger.#Exec & {
+				relative: core.#Exec & {
 					input: image.output
 					args: ["test", strings.TrimSpace(client.commands.relative.stdout), "=", "test"]
 				}
-				error: dagger.#Exec & {
+				error: core.#Exec & {
 					input: image.output
 					args: ["test", strings.TrimSpace(client.commands.error.stderr), "=", "error"]
 				}
-				secret: dagger.#Exec & {
+				secret: core.#Exec & {
 					input: image.output
 					mounts: secret: {
 						dest:     "/run/secrets/test"

@@ -2,6 +2,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
 )
 
@@ -16,7 +17,7 @@ dagger.#Plan & {
 						source: dagger.#Scratch
 						dockerfile: contents: """
 							FROM alpine:3.15
-							
+
 							RUN echo -n hello world >> /test.txt
 						"""
 					},
@@ -33,7 +34,7 @@ dagger.#Plan & {
 				]
 			}
 
-			verify: dagger.#ReadFile & {
+			verify: core.#ReadFile & {
 				input: build.output.rootfs
 				path:  "/test.txt"
 			} & {
@@ -58,7 +59,7 @@ dagger.#Plan & {
 				]
 			}
 
-			verify: dagger.#ReadFile & {
+			verify: core.#ReadFile & {
 				input: build.output.rootfs
 				path:  "/test.txt"
 			} & {

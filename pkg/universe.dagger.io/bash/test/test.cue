@@ -2,6 +2,7 @@ package bash
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
 	"universe.dagger.io/bash"
@@ -19,7 +20,7 @@ dagger.#Plan & {
 		runFile: {
 
 			dir:   _load.output
-			_load: dagger.#Source & {
+			_load: core.#Source & {
 				path: "./data"
 				include: ["*.sh"]
 			}

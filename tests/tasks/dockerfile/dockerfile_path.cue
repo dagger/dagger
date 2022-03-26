@@ -2,18 +2,19 @@ package testing
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
 	client: filesystem: testdata: read: contents: dagger.#FS
 
 	actions: {
-		build: dagger.#Dockerfile & {
+		build: core.#Dockerfile & {
 			source: client.filesystem.testdata.read.contents
 			dockerfile: path: "./dockerfilepath/Dockerfile.custom"
 		}
 
-		verify: dagger.#Exec & {
+		verify: core.#Exec & {
 			input: build.output
 			args: ["sh", "-c", "test $(cat /test) = dockerfilePath"]
 		}

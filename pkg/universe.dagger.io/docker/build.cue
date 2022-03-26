@@ -2,6 +2,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // Modular build API for Docker containers
@@ -46,7 +47,7 @@ import (
 	dest:     string | *"/"
 
 	// Execute copy operation
-	_copy: dagger.#Copy & {
+	_copy: core.#Copy & {
 		"input":    input.rootfs
 		"contents": contents
 		"source":   source
@@ -83,7 +84,7 @@ import (
 	label: [string]:    string
 	hosts: [string]:    string
 
-	_build: dagger.#Dockerfile & {
+	_build: core.#Dockerfile & {
 		"source":     source
 		"auth":       auth
 		"dockerfile": dockerfile

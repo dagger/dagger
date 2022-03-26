@@ -19,7 +19,7 @@ actions: {
 	//    workdir: _
 	//    // FIXME: remove copy-pasta
 	//    mounts: nodeModules: {
-	//     contents: dagger.#CacheDir & {
+	//     contents: core.#CacheDir & {
 	//      // FIXME: do we need an ID here?
 	//      id: "\(mix.app)_assets_node_modules"
 	//      // FIXME: does this command need write access to node_modules cache?
@@ -55,7 +55,7 @@ actions: {
 	//    }
 	//    // FIXME: move this to a reusable def (yarn package? or private?)
 	//    mounts: nodeModules: {
-	//     contents: dagger.#CacheDir & {
+	//     contents: core.#CacheDir & {
 	//      // FIXME: do we need an ID here?
 	//      id: "\(mix.app)_assets_node_modules"
 	//      // FIXME: will there be multiple writers?

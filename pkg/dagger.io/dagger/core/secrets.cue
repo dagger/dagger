@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // Decode the contents of a secrets without leaking it.
 // Supported formats: json, yaml

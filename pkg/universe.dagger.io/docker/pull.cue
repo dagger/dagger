@@ -3,6 +3,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // Download an image from a remote registry
@@ -16,7 +17,7 @@ import (
 		secret:   dagger.#Secret
 	}
 
-	_op: dagger.#Pull & {
+	_op: core.#Pull & {
 		"source": source
 		if auth != _|_ {
 			"auth": auth

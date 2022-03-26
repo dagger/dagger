@@ -2,13 +2,14 @@ package testing
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
 	client: filesystem: testdata: read: contents: dagger.#FS
 
 	actions: {
-		build: dagger.#Dockerfile & {
+		build: core.#Dockerfile & {
 			source: client.filesystem.testdata.read.contents
 			dockerfile: contents: """
 				# syntax = docker/dockerfile:1.3
@@ -17,7 +18,7 @@ dagger.#Plan & {
 				"""
 		}
 
-		verify: dagger.#Exec & {
+		verify: core.#Exec & {
 			input: build.output
 			args: ["sh", "-c", "test $(cat /output) = foobar"]
 		}

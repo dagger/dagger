@@ -2,26 +2,27 @@ package testing
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
 	actions: {
-		repo1: dagger.#GitPull & {
+		repo1: core.#GitPull & {
 			remote: "https://github.com/blocklayerhq/acme-clothing.git"
 			ref:    "master"
 		}
 
-		repo2: dagger.#GitPull & {
+		repo2: core.#GitPull & {
 			remote:     "https://github.com/blocklayerhq/acme-clothing.git"
 			ref:        "master"
 			keepGitDir: true
 		}
 
-		image: dagger.#Pull & {
+		image: core.#Pull & {
 			source: "alpine:3.15.0"
 		}
 
-		verify: dagger.#Exec & {
+		verify: core.#Exec & {
 			input: image.output
 			args: ["sh", "-c", """
 				set -eu

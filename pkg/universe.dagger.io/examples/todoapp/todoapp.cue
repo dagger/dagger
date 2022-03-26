@@ -2,6 +2,7 @@ package todoapp
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
 	"universe.dagger.io/docker"
@@ -9,7 +10,7 @@ import (
 )
 
 dagger.#Plan & {
-	_nodeModulesMount: "/src/node_modules": dagger.#Mount & {
+	_nodeModulesMount: "/src/node_modules": {
 		dest:     "/src/node_modules"
 		type:     "cache"
 		contents: dagger.#CacheDir & {
@@ -53,7 +54,7 @@ dagger.#Plan & {
 				bash.#Run & {
 					workdir: "/src"
 					mounts: {
-						"/cache/yarn": dagger.#Mount & {
+						"/cache/yarn": {
 							dest:     "/cache/yarn"
 							type:     "cache"
 							contents: dagger.#CacheDir & {
@@ -89,7 +90,7 @@ dagger.#Plan & {
 					"""#
 			}
 
-			contents: dagger.#Subdir & {
+			contents: core.#Subdir & {
 				input: run.output.rootfs
 				path:  "/src/build"
 			}

@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // A special kind of program which `dagger` can execute.
 #Plan: {

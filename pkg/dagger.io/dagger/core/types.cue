@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // A reference to a filesystem tree.
 // For example:

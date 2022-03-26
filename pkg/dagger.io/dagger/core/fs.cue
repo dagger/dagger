@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // Access the source directory for the current CUE package
 // This may safely be called from any package

@@ -28,6 +28,7 @@ package particubes
 
 import (
   "dagger.io/dagger"
+  "dagger.io/dagger/core"
   "universe.dagger.io/docker"
 )
 
@@ -63,7 +64,7 @@ dagger.#Plan & {
         image: build.output
       }
 
-      docsSecrets: dagger.#DecodeSecret & {
+      docsSecrets: core.#DecodeSecret & {
         input: inputs.secrets.docs.contents
         format: "yaml"
       }

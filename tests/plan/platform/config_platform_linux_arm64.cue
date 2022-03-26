@@ -1,17 +1,19 @@
 package main
 
 import (
+	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
 	platform: "linux/arm64"
 
 	actions: {
-		image: dagger.#Pull & {
+		image: core.#Pull & {
 			source: "alpine:3.15.0"
 		}
 
-		writeArch: dagger.#Exec & {
+		writeArch: core.#Exec & {
 			input:  image.output
 			always: true
 			args: [
@@ -21,7 +23,7 @@ dagger.#Plan & {
 			]
 		}
 
-		verify: dagger.#ReadFile & {
+		verify: core.#ReadFile & {
 			input: writeArch.output
 			path:  "/arch.txt"
 		} & {

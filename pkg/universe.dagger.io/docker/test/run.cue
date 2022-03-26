@@ -2,6 +2,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
 	"universe.dagger.io/alpine"
@@ -24,7 +25,7 @@ dagger.#Plan & {
 				}
 			}
 
-			verify: dagger.#ReadFile & {
+			verify: core.#ReadFile & {
 				input: run.output.rootfs
 				path:  "/output.txt"
 			}
@@ -59,7 +60,7 @@ dagger.#Plan & {
 				export: directories: "/test": _
 			}
 
-			verify: dagger.#ReadFile & {
+			verify: core.#ReadFile & {
 				input: run.export.directories."/test"
 				path:  "/output.txt"
 			}

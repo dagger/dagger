@@ -5,7 +5,7 @@ dagger.#Plan & {
 		contents: dagger.#Secret
 	}
 	actions: {
-		registry: dagger.#TrimSecret & {
+		registry: core.#TrimSecret & {
 			input: client.filesystem.".registry".read.contents
 		}
 		pull: docker.#Pull & {

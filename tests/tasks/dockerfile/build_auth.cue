@@ -2,6 +2,7 @@ package testing
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
@@ -15,12 +16,12 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		sopsSecrets: dagger.#DecodeSecret & {
+		sopsSecrets: core.#DecodeSecret & {
 			format: "yaml"
 			input:  client.commands.sops.stdout
 		}
 
-		build: dagger.#Dockerfile & {
+		build: core.#Dockerfile & {
 			source: client.filesystem.testdata.read.contents
 			auth: "daggerio/ci-test:private-pull": {
 				username: "daggertest"

@@ -2,6 +2,7 @@ package docker
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
 )
 
@@ -43,7 +44,7 @@ dagger.#Plan & {
 
 		// Test: image config behavior is correct
 		config: {
-			build: dagger.#Dockerfile & {
+			build: core.#Dockerfile & {
 				source: dagger.#Scratch
 				dockerfile: contents: """
 					FROM alpine:3.15.0
@@ -71,7 +72,7 @@ dagger.#Plan & {
 						contents: """
 							#!/bin/sh
 							echo -n "hello from $HELLO_FROM" > /dagger.txt
-							
+
 							"""
 					}
 				}

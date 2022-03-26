@@ -4,6 +4,7 @@ import (
 	"list"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 // Run a command in a container
@@ -14,7 +15,7 @@ import (
 	always: bool | *false
 
 	// Filesystem mounts
-	mounts: [name=string]: dagger.#Mount
+	mounts: [name=string]: core.#Mount
 
 	// Expose network ports
 	// FIXME: investigate feasibility
@@ -70,7 +71,7 @@ import (
 
 	// Add defaults to image config
 	// This ensures these values are present
-	_defaults: dagger.#Set & {
+	_defaults: core.#Set & {
 		"input": {
 			entrypoint: []
 			cmd: []
@@ -81,7 +82,7 @@ import (
 	}
 
 	// Override with user config
-	_config: dagger.#Set & {
+	_config: core.#Set & {
 		input: _defaults.output
 		config: {
 			if entrypoint != _|_ {
@@ -123,7 +124,7 @@ import (
 				for path, _ in files {
 					"\(path)": {
 						contents: string & _read.contents
-						_read:    dagger.#ReadFile & {
+						_read:    core.#ReadFile & {
 							input:  _exec.output
 							"path": path
 						}
@@ -139,7 +140,7 @@ import (
 				for path, _ in directories {
 					"\(path)": {
 						contents: dagger.#FS & _subdir.output
-						_subdir:  dagger.#Subdir & {
+						_subdir:  core.#Subdir & {
 							input:  _exec.output
 							"path": path
 						}
@@ -159,7 +160,7 @@ import (
 	}
 
 	// Actually execute the command
-	_exec: dagger.#Exec & {
+	_exec: core.#Exec & {
 		"input":  input.rootfs
 		"always": always
 		"mounts": mounts
@@ -167,7 +168,7 @@ import (
 		workdir:  _config.output.workdir
 		user:     _config.output.user
 		"env":    env
-		// env may contain secrets so we can't use dagger.#Set
+		// env may contain secrets so we can't use core.#Set
 		if input.config.env != _|_ {
 			for key, val in input.config.env {
 				if env[key] == _|_ {

@@ -2,17 +2,18 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
 	actions: {
-		write: dagger.#WriteFile & {
+		write: core.#WriteFile & {
 			input:       dagger.#Scratch
 			path:        "/testing"
 			contents:    "1,2,3"
 			permissions: 700
 		}
-		readfile: dagger.#ReadFile & {
+		readfile: core.#ReadFile & {
 			input: write.output
 			path:  "/testing"
 		} & {

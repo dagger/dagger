@@ -1,10 +1,10 @@
 package main
 
 import (
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
-_source: dagger.#Source & {
+_source: core.#Source & {
 	path: "."
 	exclude: [
 		"ci",

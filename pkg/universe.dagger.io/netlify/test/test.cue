@@ -2,6 +2,7 @@ package netlify
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
 	"universe.dagger.io/netlify"
@@ -20,7 +21,7 @@ dagger.#Plan & {
 
 		// Configuration common to all tests
 		common: {
-			testSecrets: dagger.#DecodeSecret & {
+			testSecrets: core.#DecodeSecret & {
 				input:  client.commands.sops.stdout
 				format: "yaml"
 			}
@@ -29,7 +30,7 @@ dagger.#Plan & {
 
 			marker: "hello world"
 
-			data: dagger.#WriteFile & {
+			data: core.#WriteFile & {
 				input:    dagger.#Scratch
 				path:     "index.html"
 				contents: marker

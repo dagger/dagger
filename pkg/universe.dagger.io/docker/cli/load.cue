@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
 )
 
@@ -19,7 +19,7 @@ import (
 	// Root filesystem with exported file
 	result: _export.output
 
-	_export: dagger.#Export & {
+	_export: core.#Export & {
 		"tag":  tag
 		input:  image.rootfs
 		config: image.config

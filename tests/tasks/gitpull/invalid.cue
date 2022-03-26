@@ -2,8 +2,9 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
 dagger.#Plan & {
-	actions: invalid: dagger.#GitPull & {}
+	actions: invalid: core.#GitPull & {}
 }

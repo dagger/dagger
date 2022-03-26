@@ -3,6 +3,7 @@ package test
 import (
 	"encoding/json"
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/aws"
 )
 
@@ -14,7 +15,7 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		sopsSecrets: dagger.#DecodeSecret & {
+		sopsSecrets: core.#DecodeSecret & {
 			format: "yaml"
 			input:  client.commands.sops.stdout
 		}

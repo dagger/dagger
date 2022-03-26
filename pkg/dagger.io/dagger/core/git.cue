@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // Push a directory to a git remote
 #GitPush: {
@@ -11,7 +11,7 @@ package dagger
 }
 
 // Pull a directory from a git remote
-// Warning: do NOT embed credentials in the remote url as this will expose them in logs. 
+// Warning: do NOT embed credentials in the remote url as this will expose them in logs.
 // By using username and password Dagger will handle this for you in a secure manner.
 #GitPull: {
 	$dagger: task: _name: "GitPull"

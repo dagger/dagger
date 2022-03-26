@@ -56,11 +56,11 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		runtimeImage: dagger.#Pull & {
+		runtimeImage: core.#Pull & {
 			source: runtime_image_ref
 		}
 
-		depsCache: dagger.#CacheDir & {
+		depsCache: core.#CacheDir & {
 			id: "depsCache"
 		}
 
@@ -69,7 +69,7 @@ dagger.#Plan & {
 			contents: depsCache
 		}
 
-		buildCacheTest: dagger.#CacheDir & {
+		buildCacheTest: core.#CacheDir & {
 			id: "buildCacheTest"
 		}
 
@@ -78,7 +78,7 @@ dagger.#Plan & {
 			contents: buildCacheTest
 		}
 
-		buildCacheProd: dagger.#CacheDir & {
+		buildCacheProd: core.#CacheDir & {
 			id: "buildCacheProd"
 		}
 
@@ -87,7 +87,7 @@ dagger.#Plan & {
 			contents: buildCacheProd
 		}
 
-		nodeModulesCache: dagger.#CacheDir & {
+		nodeModulesCache: core.#CacheDir & {
 			id: "nodeModulesCache"
 		}
 
@@ -96,20 +96,20 @@ dagger.#Plan & {
 			contents: nodeModulesCache
 		}
 
-		appImage: dagger.#Copy & {
+		appImage: core.#Copy & {
 			input:    runtimeImage.output
 			contents: inputs.directories.app.contents
 			dest:     "/app"
 		}
 
-		deps: dagger.#Exec & {
+		deps: core.#Exec & {
 			input:   appImage.output
 			mounts:  depsCacheMount
 			workdir: "/app"
 			args: ["bash", "-c", " mix deps.get"]
 		}
 
-		assetsCompile: dagger.#Exec & {
+		assetsCompile: core.#Exec & {
 			input:   depsCompileProd.output
 			mounts:  depsCacheMount & nodeModulesCacheMount
 			workdir: "/app/assets"
@@ -117,7 +117,7 @@ dagger.#Plan & {
 			args: ["bash", "-c", "yarn install --frozen-lockfile && yarn run compile"]
 		}
 
-		#depsCompile: dagger.#Exec & {
+		#depsCompile: core.#Exec & {
 			input:   deps.output
 			mounts:  depsCacheMount
 			workdir: "/app"
@@ -134,7 +134,7 @@ dagger.#Plan & {
 			mounts: buildCacheProdMount
 		}
 
-		assetsDigest: dagger.#Exec & {
+		assetsDigest: core.#Exec & {
 			input:  assetsCompile.output
 			mounts: depsCacheMount & buildCacheProdMount & nodeModulesCacheMount
 			env: MIX_ENV: "prod"
@@ -142,20 +142,20 @@ dagger.#Plan & {
 			args: ["bash", "-c", "mix phx.digest"]
 		}
 
-		imageProdCacheCopy: dagger.#Exec & {
+		imageProdCacheCopy: core.#Exec & {
 			input:  assetsDigest.output
 			mounts: (depsCacheMount & {depsCache: dest:           "/mnt/app/deps/"} )
 			mounts: (buildCacheProdMount & {buildCacheProd: dest: "/mnt/app/_build/prod"} )
 			args: ["bash", "-c", "cp -Rp /mnt/app/deps/* /app/deps/ && cp -Rp /mnt/app/_build/prod/* /app/_build/prod/"]
 		}
 
-		imageProdDockerCopy: dagger.#Copy & {
+		imageProdDockerCopy: core.#Copy & {
 			input: imageProdCacheCopy.output
 			source: root: inputs.directories.docker.contents
 			dest: "/"
 		}
 
-		imageProd: dagger.#Build & {
+		imageProd: core.#Dockerfile & {
 			source: imageProdDockerCopy.output
 			dockerfile: path: "/docker/Dockerfile.production"
 			buildArg: {

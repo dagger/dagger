@@ -3,6 +3,7 @@ package powershell
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
 )
 
@@ -26,7 +27,7 @@ import (
 		contents: string
 
 		_filename: "run.ps1"
-		_write:    dagger.#WriteFile & {
+		_write:    core.#WriteFile & {
 			input:      dagger.#Scratch
 			path:       _filename
 			"contents": contents
