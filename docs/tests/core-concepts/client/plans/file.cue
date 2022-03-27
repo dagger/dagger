@@ -8,8 +8,4 @@ dagger.#Plan & {
 		// Convert a CUE value into a YAML formatted string
 		contents: yaml.Marshal(actions.pull.output.config)
 	}
-
-	actions: pull: docker.#Pull & {
-		source: "alpine"
-	}
 }
