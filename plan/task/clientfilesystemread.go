@@ -170,7 +170,7 @@ func (t clientFilesystemReadTask) readService(pctx *plancontext.Context, v *comp
 	case "npipe":
 		npipe = path
 	default:
-		return nil, fmt.Errorf("invalid service type %q", typ)
+		return nil, fmt.Errorf("invalid socket type %q", typ)
 	}
 
 	service := pctx.Services.New(unix, npipe)
