@@ -2,6 +2,7 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/bash"
 )
 
@@ -19,7 +20,7 @@ dagger.#Plan & {
 		_mountGoCache: {
 			mounts: "go mod cache": {
 				dest:     "/root/.gocache"
-				contents: dagger.#CacheDir & {
+				contents: core.#CacheDir & {
 					id: "go mod cache"
 				}
 			}

@@ -1,17 +1,19 @@
-package dagger
+package core
+
+import "dagger.io/dagger"
 
 // Push a directory to a git remote
 #GitPush: {
 	@dagger(notimplemented)
 	$dagger: task: _name: "GitPush"
 
-	input:  #FS
+	input:  dagger.#FS
 	remote: string
 	ref:    string
 }
 
 // Pull a directory from a git remote
-// Warning: do NOT embed credentials in the remote url as this will expose them in logs. 
+// Warning: do NOT embed credentials in the remote url as this will expose them in logs.
 // By using username and password Dagger will handle this for you in a secure manner.
 #GitPull: {
 	$dagger: task: _name: "GitPull"
@@ -20,11 +22,11 @@ package dagger
 	keepGitDir: true | *false
 	auth?:      {
 		username: string
-		password: #Secret // can be password or personal access token
+		password: dagger.#Secret // can be password or personal access token
 	} | {
-		authToken: #Secret
+		authToken: dagger.#Secret
 	} | {
-		authHeader: #Secret
+		authHeader: dagger.#Secret
 	}
-	output: #FS
+	output: dagger.#FS
 }

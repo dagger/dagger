@@ -63,7 +63,7 @@ setup() {
 
 @test "task: #Dockerfile" {
     cd "$TESTDIR"/tasks/dockerfile
-    "$DAGGER" "do" -p ./dockerfile.cue
+    "$DAGGER" "do" -p ./dockerfile.cue verify
     "$DAGGER" "do" -p ./inlined_dockerfile.cue verify
     "$DAGGER" "do" -p ./inlined_dockerfile_heredoc.cue verify
     "$DAGGER" "do" -p ./dockerfile_path.cue verify

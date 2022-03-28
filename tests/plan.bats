@@ -36,6 +36,7 @@ setup() {
   assert_output --partial 'client.filesystem."./test_do".write'
   refute_output --partial "actions.notMe"
   refute_output --partial 'client.filesystem."./dependent_do".write'
+  rm -f ./test_do
 }
 
 @test "plan/do: nice error message for 0.1.0 projects" {

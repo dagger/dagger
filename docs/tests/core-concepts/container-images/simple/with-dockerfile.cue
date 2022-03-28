@@ -2,12 +2,13 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"universe.dagger.io/docker"
 )
 
 dagger.#Plan & {
 	client: filesystem: "./src": read: contents: dagger.#FS
 
-	actions: build: dagger.#Dockerfile & {
+	actions: build: docker.#Dockerfile & {
 		// This is the context.
 		source: client.filesystem."./src".read.contents
 

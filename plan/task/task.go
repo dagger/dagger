@@ -20,6 +20,11 @@ var (
 		cue.Str("$dagger"),
 		cue.Str("task"),
 		cue.Hid("_name", pkg.DaggerPackage))
+	corePath = cue.MakePath(
+		cue.Str("$dagger"),
+		cue.Str("task"),
+		cue.Hid("_name", pkg.DaggerCorePackage))
+	paths = []cue.Path{corePath, typePath}
 )
 
 // State is the state of the task.
@@ -64,12 +69,7 @@ func Lookup(v *compiler.Value) (Task, error) {
 		return nil, ErrNotTask
 	}
 
-	typ := v.LookupPath(typePath)
-	if !typ.Exists() {
-		return nil, ErrNotTask
-	}
-
-	typeString, err := typ.String()
+	typeString, err := lookupType(v)
 	if err != nil {
 		return nil, err
 	}
@@ -80,4 +80,14 @@ func Lookup(v *compiler.Value) (Task, error) {
 	}
 
 	return t, nil
+}
+
+func lookupType(v *compiler.Value) (string, error) {
+	for _, path := range paths {
+		typ := v.LookupPath(path)
+		if typ.Exists() {
+			return typ.String()
+		}
+	}
+	return "", ErrNotTask
 }

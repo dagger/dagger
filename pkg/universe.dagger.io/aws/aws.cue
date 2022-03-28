@@ -3,13 +3,14 @@ package aws
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
 )
 
 #DefaultLinuxVersion: "amazonlinux:2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
 #DefaultCliVersion:   "2.4.12"
 
-// Build provides a docker.#Image with the aws cli pre-installed to Amazon Linux 2. 
+// Build provides a docker.#Image with the aws cli pre-installed to Amazon Linux 2.
 // Can be customized with packages, and can be used with docker.#Run for executing custom scripts.
 // Used by default with aws.#Run
 #Build: {
@@ -39,7 +40,7 @@ import (
 		]
 	}
 
-	_scripts: dagger.#Source & {
+	_scripts: core.#Source & {
 		path: "_scripts"
 	}
 

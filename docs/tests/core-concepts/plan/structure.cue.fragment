@@ -23,7 +23,7 @@ dagger.#Plan & {
       run: bash.#Run & {
          // ...
       }
-      contents: dagger.#Subdir & {
+      contents: core.#Subdir & {
         // ...
       }
     }

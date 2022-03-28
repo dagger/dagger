@@ -2,6 +2,7 @@ package alpine
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
@@ -16,7 +17,7 @@ dagger.#Plan & {
 				version: "3.10.9"
 			}
 
-			verify: dagger.#Readfile & {
+			verify: core.#ReadFile & {
 				input:    build.output.rootfs
 				path:     "/etc/alpine-release"
 				contents: "3.10.9\n"

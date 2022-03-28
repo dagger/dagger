@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
@@ -78,7 +79,7 @@ import (
 
 				mounts: "yarn cache": {
 					dest:     "/cache/yarn"
-					contents: dagger.#CacheDir & {
+					contents: core.#CacheDir & {
 						// FIXME: are there character limitations in cache ID?
 						id: "universe.dagger.io/yarn.#Run \(name)"
 					}
@@ -109,7 +110,7 @@ import (
 
 				mounts: "yarn cache": {
 					dest:     "/cache/yarn"
-					contents: dagger.#CacheDir & {
+					contents: core.#CacheDir & {
 						// FIXME: are there character limitations in cache ID?
 						id: "universe.dagger.io/yarn.#Run \(name)"
 					}
@@ -135,7 +136,7 @@ import (
 	}
 
 	// The final contents of the package after run
-	_output: dagger.#Subdir & {
+	_output: core.#Subdir & {
 		input: _run.output.rootfs
 		path:  "/build"
 	}

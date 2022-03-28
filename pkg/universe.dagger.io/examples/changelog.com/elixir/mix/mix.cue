@@ -67,7 +67,7 @@ import (
 		}
 		if cache.deps != null {
 			mounts: deps: {
-				contents: dagger.#CacheDir & {
+				contents: core.#CacheDir & {
 					id:          "\(app.name)_deps"
 					concurrency: cache.deps
 				}
@@ -76,7 +76,7 @@ import (
 		}
 		if cache.build != null {
 			mounts: buildCache: {
-				contents: dagger.#CacheDir & {
+				contents: core.#CacheDir & {
 					id:          "\(app.name)_build_\(env)"
 					concurrency: cache.build
 				}

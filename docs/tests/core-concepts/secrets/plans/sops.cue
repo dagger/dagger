@@ -7,7 +7,7 @@ dagger.#Plan & {
 
 	actions: {
 		// Makes the yaml keys easily accessible
-		secrets: dagger.#DecodeSecret & {
+		secrets: core.#DecodeSecret & {
 			input:  client.commands.sops.stdout
 			format: "yaml"
 		}

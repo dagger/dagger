@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // A core action that does nothing
 // Useful to work around bugs in the DAG resolver.

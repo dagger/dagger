@@ -1,11 +1,13 @@
-package dagger
+package core
+
+import "dagger.io/dagger"
 
 // Execute a command in a container
 #Exec: {
 	$dagger: task: _name: "Exec"
 
 	// Container filesystem
-	input: #FS
+	input: dagger.#FS
 
 	// Transient filesystem mounts
 	//   Key is an arbitrary name, for example "app source code"
@@ -17,7 +19,7 @@ package dagger
 	args: [...string]
 
 	// Environment variables
-	env: [key=string]: string | #Secret
+	env: [key=string]: string | dagger.#Secret
 
 	// Working directory
 	workdir: string | *"/"
@@ -33,7 +35,7 @@ package dagger
 	hosts: [hostname=string]: string
 
 	// Modified filesystem
-	output: #FS
+	output: dagger.#FS
 
 	// Command exit code
 	// Currently this field can only ever be zero.
@@ -54,15 +56,15 @@ package dagger
 		contents: #TempDir
 	} | {
 		type:     "service"
-		contents: #Service
+		contents: dagger.#Service
 	} | {
 		type:     "fs"
-		contents: #FS
+		contents: dagger.#FS
 		source?:  string
 		ro?:      true | *false
 	} | {
 		type:     "secret"
-		contents: #Secret
+		contents: dagger.#Secret
 		uid:      int | *0
 		gid:      int | *0
 		mask:     int | *0o400

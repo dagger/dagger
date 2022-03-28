@@ -1,4 +1,4 @@
-package dagger
+package core
 
 // HTTP operations
 
@@ -15,6 +15,8 @@ package dagger
 // func Chmod(perm os.FileMode) HTTPOption
 // func Chown(uid, gid int) HTTPOption
 // func Filename(name string) HTTPOption
+
+import "dagger.io/dagger"
 
 // Fetch a file over HTTP
 #HTTPFetch: {
@@ -43,5 +45,5 @@ package dagger
 	gid?: int
 
 	// New filesystem state containing the downloaded file
-	output: #FS
+	output: dagger.#FS
 }
