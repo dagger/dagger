@@ -20,7 +20,7 @@ import (
 
 // Connect via local docker socket
 #RunSocket: {
-	host: dagger.#Service
+	host: dagger.#Socket
 
 	docker.#Run & {
 		mounts: docker: {

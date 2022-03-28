@@ -175,7 +175,7 @@ func (t execTask) mount(pctx *plancontext.Context, dest string, mnt *compiler.Va
 		return t.mountCache(pctx, dest, mnt)
 	case "tmp":
 		return t.mountTmp(pctx, dest, mnt)
-	case "service":
+	case "socket":
 		return t.mountService(pctx, dest, mnt)
 	case "fs":
 		return t.mountFS(pctx, dest, mnt)

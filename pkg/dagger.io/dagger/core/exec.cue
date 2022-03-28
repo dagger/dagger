@@ -55,8 +55,8 @@ import "dagger.io/dagger"
 		type:     "tmp"
 		contents: #TempDir
 	} | {
-		type:     "service"
-		contents: dagger.#Service
+		type:     "socket"
+		contents: dagger.#Socket
 	} | {
 		type:     "fs"
 		contents: dagger.#FS

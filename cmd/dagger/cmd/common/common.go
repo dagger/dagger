@@ -24,7 +24,7 @@ func FormatValue(val *compiler.Value) string {
 	case plancontext.IsFSValue(val):
 		return "dagger.#FS"
 	case plancontext.IsServiceValue(val):
-		return "dagger.#Service"
+		return "dagger.#Socket"
 	}
 
 	if val.IsConcreteR() != nil {

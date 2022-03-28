@@ -7,7 +7,7 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Service
+	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Socket
 
 	actions: {
 		build: docker.#Build & {

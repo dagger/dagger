@@ -20,7 +20,7 @@ import (
 	// Expose network ports
 	// FIXME: investigate feasibility
 	ports: [name=string]: {
-		frontend: dagger.#Service
+		frontend: dagger.#Socket
 		backend: {
 			protocol: *"tcp" | "udp"
 			address:  string

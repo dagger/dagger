@@ -67,8 +67,8 @@ _#clientFilesystemRead: {
 		exclude?: [...string]
 	} | {
 		// CUE type defines expected content:
-		//     #Service: unix socket or npipe
-		contents: #Service
+		//     #Socket: unix socket or npipe
+		contents: #Socket
 
 		// Type of service
 		type: *"unix" | "npipe"

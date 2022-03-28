@@ -1,6 +1,6 @@
 dagger.#Plan & {
 	client: filesystem: "//./pipe/docker_engine": read: {
-		contents: dagger.#Service
+		contents: dagger.#Socket
 		type:     "npipe"
 	}
 

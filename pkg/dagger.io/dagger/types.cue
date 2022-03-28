@@ -26,10 +26,10 @@ package dagger
 }
 
 // A reference to a network service endpoint, for example:
-//  - A TCP or UDP port
 //  - A unix socket
+//  - A TCP or UDP port
 //  - An HTTPS endpoint
-#Service: {
+#Socket: {
 	$dagger: service: _id: string
 }
 
