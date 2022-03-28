@@ -72,6 +72,15 @@ module.exports = {
   ],
   europa: [
     {
+      type: "link",
+      label: "⬅️ Dagger 0.1",
+      href: "/1200/what/",
+    },
+    {
+      type: "doc",
+      id: "migrate-from-dagger-0.1",
+    },
+    {
       type: "category",
       label: "Getting Started",
       collapsible: false,
@@ -94,27 +103,13 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Knowledge Base",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        "knowledge-base/migrate-from-dagger-0.1",
-        "use-cases/go-docker-swarm",
-      ],
-    },
-    {
-      type: "category",
       label: "Use Cases",
       collapsible: false,
       collapsed: false,
       items: [
+        "use-cases/go-docker-swarm",
         "use-cases/go-on-docker-hub"
       ],
-    },
-    {
-      type: "link",
-      label: "⬅️ Dagger 0.1",
-      href: "/1200/what/",
     },
   ],
 };

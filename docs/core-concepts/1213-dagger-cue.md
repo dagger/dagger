@@ -3,9 +3,9 @@ slug: /1213/api
 displayed_sidebar: europa
 ---
 
-# Dagger CUE API (0.2+)
+# Dagger CUE API
 
-As of Dagger 0.2 (codename Europa), the Dagger CUE API can be imported via `dagger.io/dagger` & `dagger.io/dagger/core`
+As of Dagger 0.2.0, the Dagger CUE API can be imported via `dagger.io/dagger` & `dagger.io/dagger/core`
 
 The Dagger CUE API is the set of CUE packages released alongside the Dagger engine.
 

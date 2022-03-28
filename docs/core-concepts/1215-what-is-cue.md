@@ -2,7 +2,7 @@
 slug: /1215/what-is-cue/
 ---
 
-# What is Cue?
+# What is CUE?
 
 CUE is a powerful configuration language created by Marcel van Lohuizen who co-created the Borg Configuration Language (BCL)&mdash;the [language used to deploy all applications at Google](https://storage.googleapis.com/pub-tools-public-publication-data/pdf/43438.pdf). CUE is the result of years of experience writing configuration languages at Google, and seeks to improve the developer experience while avoiding some nasty pitfalls. It is a superset of JSON, with additional features to make declarative, data-driven programming as pleasant and productive as regular imperative programming.
 
