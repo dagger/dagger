@@ -25,10 +25,10 @@ package dagger
 	$dagger: secret: _id: string
 }
 
-// A reference to a network service endpoint, for example:
-//  - A unix socket
+// A reference to a network socket, for example:
+//  - A UNIX socket
 //  - A TCP or UDP port
-//  - An HTTPS endpoint
+//  - A Windows named pipe
 #Socket: {
 	$dagger: service: _id: string
 }
