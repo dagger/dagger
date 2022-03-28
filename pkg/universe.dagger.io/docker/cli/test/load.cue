@@ -10,7 +10,7 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Socket
+	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
 
 	actions: test: {
 		_cli: alpine.#Build & {
@@ -30,14 +30,14 @@ dagger.#Plan & {
 
 		load: cli.#Load & {
 			image: _image.output
-			host:  client.filesystem."/var/run/docker.sock".read.contents
+			host:  client.network."unix:///var/run/docker.sock".connect
 			tag:   "dagger:load"
 		}
 
 		verify: bash.#Run & {
 			input: _cli.output
 			mounts: docker: {
-				contents: client.filesystem."/var/run/docker.sock".read.contents
+				contents: client.network."unix:///var/run/docker.sock".connect
 				dest:     "/var/run/docker.sock"
 			}
 			env: {

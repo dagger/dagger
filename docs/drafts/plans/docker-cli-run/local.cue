@@ -6,10 +6,10 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Socket
+	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
 
 	actions: run: cli.#Run & {
-		host: client.filesystem."/var/run/docker.sock".read.contents
+		host: client.network."unix:///var/run/docker.sock".connect
 		command: name: "info"
 	}
 }

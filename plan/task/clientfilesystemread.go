@@ -79,11 +79,6 @@ func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *planco
 		return t.readFS(ctx, pctx, s, v, path)
 	}
 
-	if plancontext.IsServiceValue(contents) {
-		lg.Debug().Str("path", path).Msg("loading local service")
-		return t.readService(pctx, v, path)
-	}
-
 	if plancontext.IsSecretValue(contents) {
 		lg.Debug().Str("path", path).Msg("loading local secret file")
 		return t.readSecret(pctx, path)
@@ -154,27 +149,6 @@ func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.
 
 	fs := pctx.FS.New(result)
 	return fs.MarshalCUE(), nil
-}
-
-func (t clientFilesystemReadTask) readService(pctx *plancontext.Context, v *compiler.Value, path string) (*compiler.Value, error) {
-	typ, err := v.Lookup("type").String()
-	if err != nil {
-		return nil, err
-	}
-
-	var unix, npipe string
-
-	switch typ {
-	case "unix":
-		unix = path
-	case "npipe":
-		npipe = path
-	default:
-		return nil, fmt.Errorf("invalid socket type %q", typ)
-	}
-
-	service := pctx.Services.New(unix, npipe)
-	return service.MarshalCUE(), nil
 }
 
 func (t clientFilesystemReadTask) readSecret(pctx *plancontext.Context, path string) (*compiler.Value, error) {

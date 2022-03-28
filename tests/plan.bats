@@ -104,14 +104,6 @@ setup() {
   assert_output --partial "unexpected concrete value"
 }
 
-@test "plan/client/filesystem/read/service" {
-  cd "$TESTDIR"
-  "$DAGGER" "do" -p ./plan/client/filesystem/read/service/valid.cue test
-
-  run "$DAGGER" "do" -p ./plan/client/filesystem/read/service/invalid.cue test
-  assert_failure
-}
-
 @test "plan/client/filesystem/write fs" {
   cd "$TESTDIR/plan/client/filesystem/write"
 
@@ -156,6 +148,14 @@ setup() {
   assert_line --regexp "client\.filesystem\..+\.write.+dependency=client\.filesystem\..+\.read"
 
   rm -f test.txt
+}
+
+@test "plan/client/network" {
+  cd "$TESTDIR"
+  "$DAGGER" "do" -p ./plan/client/network/valid.cue test
+
+  run "$DAGGER" "do" -p ./plan/client/network/invalid.cue test
+  assert_failure
 }
 
 @test "plan/client/env usage" {

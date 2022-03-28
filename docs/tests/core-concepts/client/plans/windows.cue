@@ -1,8 +1,5 @@
 dagger.#Plan & {
-	client: filesystem: "//./pipe/docker_engine": read: {
-		contents: dagger.#Socket
-		type:     "npipe"
-	}
+	client: network: "npipe:////./pipe/docker_engine": connect: dagger.#Socket
 
 	actions: {
 		image: alpine.#Build & {
@@ -12,7 +9,7 @@ dagger.#Plan & {
 			input: image.output
 			mounts: docker: {
 				dest:     "/var/run/docker.sock"
-				contents: client.filesystem."//./pipe/docker_engine".read.contents
+				contents: client.network."npipe:////./pipe/docker_engine".connect
 			}
 			command: {
 				name: "docker"
