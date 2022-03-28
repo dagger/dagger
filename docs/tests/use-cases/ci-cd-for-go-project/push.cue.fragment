@@ -1,0 +1,14 @@
+// Push image to remote registry (depends on image)
+push: {
+	// Docker username
+	_dockerUsername: "<my_username>"
+
+	docker.#Push & {
+		"image": image.output
+		dest:    "\(_dockerUsername)/<my_repository>"
+		auth: {
+			username: "\(_dockerUsername)"
+			secret:   client.env.DOCKER_PASSWORD
+		}
+	}
+}

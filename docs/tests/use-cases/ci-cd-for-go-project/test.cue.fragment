@@ -1,0 +1,6 @@
+// Run go unit test
+"unit-test": go.#Test & {
+	source:  _code
+	package: "./..."
+	input:   _base.output
+}
