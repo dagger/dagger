@@ -4,6 +4,7 @@ import (
 	"dagger.io/dagger"
 
 	"universe.dagger.io/alpine"
+	"universe.dagger.io/docker"
 	"universe.dagger.io/docker/cli"
 )
 
@@ -17,19 +18,27 @@ dagger.#Plan & {
 		}
 
 		differentImage: {
-			_cli: alpine.#Build & {
-				packages: {
-					bash: {}
-					"docker-cli": {}
-				}
+			_cli: docker.#Build & {
+				steps: [
+					alpine.#Build & {
+						packages: "docker-cli": {}
+					},
+					docker.#Run & {
+						command: {
+							name: "sh"
+							flags: "-c": "echo -n foobar > /test.txt"
+						}
+					},
+				]
 			}
-			run: cli.#RunSocket & {
+			run: cli.#Run & {
 				input: _cli.output
 				host:  client.filesystem."/var/run/docker.sock".read.contents
 				command: {
 					name: "docker"
 					args: ["info"]
 				}
+				export: files: "/test.txt": "foobar"
 			}
 		}
 
