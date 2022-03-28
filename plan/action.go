@@ -10,6 +10,13 @@ type Action struct {
 	Path          cue.Path
 	Documentation string
 	Children      []*Action
+	Inputs        []Input
+}
+
+type Input struct {
+	Name          string
+	Type          string
+	Documentation string
 }
 
 func (a *Action) AddChild(c *Action) {

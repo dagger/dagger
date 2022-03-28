@@ -201,6 +201,8 @@ func (p *Plan) fillAction() {
 	}
 	p.action.Documentation = actions.DocSummary()
 
+	p.action.Inputs = getInputs(actions)
+
 	tasks := flow.Tasks()
 
 	for _, t := range tasks {
@@ -218,10 +220,33 @@ func (p *Plan) fillAction() {
 					Path:          path,
 					Documentation: v.DocSummary(),
 					Children:      []*Action{},
+					Inputs:        getInputs(v),
 				}
 				prevAction.AddChild(a)
 			}
 			prevAction = a
 		}
 	}
+}
+
+func getInputs(v *compiler.Value) []Input {
+	cueVal := v.Cue()
+	inputs := []Input{}
+	for iter, _ := cueVal.Fields(cue.All()); iter.Next(); {
+		val := iter.Value()
+		cVal := compiler.Wrap(val)
+
+		_, refPath := val.ReferencePath()
+
+		ik := val.IncompleteKind()
+		validKind := ik == cue.StringKind || ik == cue.NumberKind || ik == cue.BoolKind || ik == cue.IntKind || ik == cue.FloatKind
+		if validKind && !val.IsConcrete() && len(refPath.Selectors()) == 0 {
+			inputs = append(inputs, Input{
+				Name:          iter.Label(),
+				Type:          ik.String(),
+				Documentation: cVal.DocSummary(),
+			})
+		}
+	}
+	return inputs
 }
