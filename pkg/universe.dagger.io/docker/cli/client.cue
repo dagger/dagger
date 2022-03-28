@@ -5,17 +5,21 @@ import (
 	"universe.dagger.io/docker"
 )
 
-// See https://github.com/dagger/dagger/issues/1856
+// See https://github.com/dagger/dagger/discussions/1874
+
+// Default image
+#Image: docker.#Pull & {
+	source: "docker:20.10.13-alpine3.15"
+}
 
 // Run a docker CLI command
 #Run: {
 	#RunSocket | #RunSSH | #RunTCP
 
-	_image: docker.#Pull & {
-		source: "docker:20.10.13-alpine3.15"
-	}
+	_defaultImage: #Image
 
-	input: _image.output
+	// As a convenience, input defaults to a ready-to-use docker environment
+	input: docker.#Image | *_defaultImage.output
 }
 
 // Connect via local docker socket
