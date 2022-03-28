@@ -5,7 +5,7 @@ displayed_sidebar: europa
 
 # Integrating with your CI environment
 
-Dagger can be used with any CI environment (no migration required) and has two important advantages which make the overall experience less error-prone and more efficient: <!-- Is there a reason not to mention the catalog of actions / the fact that you can reuse actions and whole pipelines easily? -->
+Dagger can be used with any CI environment (no migration required) and has two important advantages which make the overall experience less error-prone and more efficient:
 
 1. You don't write YAML [CUE](https://cuelang.org/) - typed configuration with built-in formatting
 2. Configuration is executed in [BuildKit](https://github.com/moby/buildkit), the execution engine at the heart of Docker
