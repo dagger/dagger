@@ -13,7 +13,7 @@ dagger.#Plan & {
 	_nodeModulesMount: "/src/node_modules": {
 		dest:     "/src/node_modules"
 		type:     "cache"
-		contents: dagger.#CacheDir & {
+		contents: core.#CacheDir & {
 			id: "todoapp-modules-cache"
 		}
 
@@ -57,7 +57,7 @@ dagger.#Plan & {
 						"/cache/yarn": {
 							dest:     "/cache/yarn"
 							type:     "cache"
-							contents: dagger.#CacheDir & {
+							contents: core.#CacheDir & {
 								id: "todoapp-yarn-cache"
 							}
 						}

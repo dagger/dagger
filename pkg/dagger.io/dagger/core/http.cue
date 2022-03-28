@@ -16,6 +16,8 @@ package core
 // func Chown(uid, gid int) HTTPOption
 // func Filename(name string) HTTPOption
 
+import "dagger.io/dagger"
+
 // Fetch a file over HTTP
 #HTTPFetch: {
 	$dagger: task: _name: "HTTPFetch"
@@ -43,5 +45,5 @@ package core
 	gid?: int
 
 	// New filesystem state containing the downloaded file
-	output: #FS
+	output: dagger.#FS
 }

@@ -1,63 +1,31 @@
 package core
 
-import "list"
-
-// A ref is an address for a remote container image
-//
-// Examples:
-//   - "index.docker.io/dagger"
-//   - "dagger"
-//   - "index.docker.io/dagger:latest"
-//   - "index.docker.io/dagger:latest@sha256:a89cb097693dd354de598d279c304a1c73ee550fbfff6d9ee515568e0c749cfe"
-#Ref: string
-
-// Container image config. See [OCI](https://www.opencontainers.org/).
-#ImageConfig: {
-	user?: string
-	expose?: [string]: {}
-	env?: [string]: string
-	entrypoint?: [...string]
-	cmd?: [...string]
-	volume?: [string]: {}
-	workdir?: string
-	label?: [string]: string
-	stopsignal?:  string
-	healthcheck?: #HealthCheck
-	argsescaped?: bool
-	onbuild?: [...string]
-	stoptimeout?: int
-	shell?: [...string]
-}
-
-#HealthCheck: {
-	test?: [...string]
-	interval?:    int
-	timeout?:     int
-	startperiod?: int
-	retries?:     int
-}
+import (
+	"list"
+	"dagger.io/dagger"
+)
 
 // Upload a container image to a remote repository
 #Push: {
 	$dagger: task: _name: "Push"
 
 	// Target repository address
-	dest: #Ref
+	dest: dagger.#Ref
 
 	// Filesystem contents to push
-	input: #FS
+	input: dagger.#FS
 
 	// Container image config
-	config: #ImageConfig
+	config: dagger.#ImageConfig
 
 	// Authentication
 	auth?: {
 		username: string
-		secret:   #Secret
+		secret:   dagger.#Secret
 	}
 
 	// Complete ref of the pushed image, including digest
-	result: #Ref
+	result: dagger.#Ref
 }
 
 // Download a container image from a remote repository
@@ -65,22 +33,22 @@ import "list"
 	$dagger: task: _name: "Pull"
 
 	// Repository source ref
-	source: #Ref
+	source: dagger.#Ref
 
 	// Authentication
 	auth?: {
 		username: string
-		secret:   #Secret
+		secret:   dagger.#Secret
 	}
 
 	// Root filesystem of downloaded image
-	output: #FS
+	output: dagger.#FS
 
 	// Image digest
 	digest: string
 
 	// Downloaded container image config
-	config: #ImageConfig
+	config: dagger.#ImageConfig
 }
 
 // Build a container image using a Dockerfile
@@ -88,7 +56,7 @@ import "list"
 	$dagger: task: _name: "Dockerfile"
 
 	// Source directory to build
-	source: #FS
+	source: dagger.#FS
 
 	dockerfile: *{
 		path: string | *"Dockerfile"
@@ -99,7 +67,7 @@ import "list"
 	// Authentication
 	auth: [registry=string]: {
 		username: string
-		secret:   #Secret
+		secret:   dagger.#Secret
 	}
 
 	platforms?: [...string]
@@ -109,10 +77,10 @@ import "list"
 	hosts?: [string]:    string
 
 	// Root filesystem produced
-	output: #FS
+	output: dagger.#FS
 
 	// Container image config produced
-	config: #ImageConfig
+	config: dagger.#ImageConfig
 }
 
 // Export an image as a tar archive
@@ -120,10 +88,10 @@ import "list"
 	$dagger: task: _name: "Export"
 
 	// Filesystem contents to export
-	input: #FS
+	input: dagger.#FS
 
 	// Container image config
-	config: #ImageConfig
+	config: dagger.#ImageConfig
 
 	// Name and optionally a tag in the 'name:tag' format
 	tag: string
@@ -138,19 +106,19 @@ import "list"
 	imageID: string
 
 	// Root filesystem with exported file
-	output: #FS
+	output: dagger.#FS
 }
 
 // Change image config
 #Set: {
 	// The source image config
-	input: #ImageConfig
+	input: dagger.#ImageConfig
 
 	// The config to merge
-	config: #ImageConfig
+	config: dagger.#ImageConfig
 
 	// Resulting config
-	output: #ImageConfig & {
+	output: dagger.#ImageConfig & {
 		let structs = ["env", "label", "volume", "expose"]
 		let lists = ["onbuild"]
 

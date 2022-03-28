@@ -1,11 +1,13 @@
 package core
 
+import "dagger.io/dagger"
+
 // Push a directory to a git remote
 #GitPush: {
 	@dagger(notimplemented)
 	$dagger: task: _name: "GitPush"
 
-	input:  #FS
+	input:  dagger.#FS
 	remote: string
 	ref:    string
 }
@@ -20,11 +22,11 @@ package core
 	keepGitDir: true | *false
 	auth?:      {
 		username: string
-		password: #Secret // can be password or personal access token
+		password: dagger.#Secret // can be password or personal access token
 	} | {
-		authToken: #Secret
+		authToken: dagger.#Secret
 	} | {
-		authHeader: #Secret
+		authHeader: dagger.#Secret
 	}
-	output: #FS
+	output: dagger.#FS
 }

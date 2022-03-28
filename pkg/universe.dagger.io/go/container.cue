@@ -3,6 +3,7 @@ package go
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
 )
 
@@ -30,7 +31,7 @@ import (
 				contents: source
 			}
 			"go assets cache": {
-				contents: dagger.#CacheDir & {
+				contents: core.#CacheDir & {
 					id: "\(name)_assets"
 				}
 				dest: _cachePath
