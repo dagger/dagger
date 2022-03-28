@@ -75,6 +75,10 @@ import (
 		certs?: dagger.#FS
 
 		if certs != _|_ {
+			env: {
+				DOCKER_TLS_VERIFY: "1"
+				DOCKER_CERT_PATH:  "/certs/client"
+			}
 			mounts: "certs": {
 				dest:     "/certs/client"
 				contents: certs
