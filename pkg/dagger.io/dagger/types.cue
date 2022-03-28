@@ -34,4 +34,5 @@ package dagger
 }
 
 // A network service address
-#Address: string & =~"^(tcp://|unix://|udp://).*"
+#Address: string & =~"^(unix://|npipe://).+"
+// TODO: #Address: string & =~"^(tcp://|unix://|npipe://|udp://).+"

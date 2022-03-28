@@ -1,5 +1,5 @@
 dagger.#Plan & {
-	client: filesystem: "/var/run/docker.sock": read: contents: dagger.#Socket
+	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
 
 	actions: {
 		image: alpine.#Build & {
@@ -9,7 +9,7 @@ dagger.#Plan & {
 			input: image.output
 			mounts: docker: {
 				dest:     "/var/run/docker.sock"
-				contents: client.filesystem."/var/run/docker.sock".read.contents
+				contents: client.network."unix:///var/run/docker.sock".connect
 			}
 			command: {
 				name: "docker"

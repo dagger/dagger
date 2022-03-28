@@ -6,7 +6,7 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: "//./pipe/docker_engine": read: contents: dagger.#Socket
+	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
 
 	actions: {
 		image: core.#Pull & {
@@ -22,7 +22,7 @@ dagger.#Plan & {
 			input: imageWithDocker.output
 			mounts: docker: {
 				dest:     "/var/run/docker.sock"
-				contents: client.filesystem."//./pipe/docker_engine".read.contents
+				contents: client.network."unix:///var/run/docker.sock".connect
 			}
 			args: ["docker", "info"]
 		}
