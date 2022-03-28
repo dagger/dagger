@@ -32,7 +32,7 @@ require (
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f
 	go.opentelemetry.io/otel v1.6.1
-	go.opentelemetry.io/otel/exporters/jaeger v1.6.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.6.1
 	go.opentelemetry.io/otel/sdk v1.6.1
 	go.opentelemetry.io/otel/trace v1.6.1
 	golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57
