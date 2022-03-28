@@ -11,7 +11,7 @@ setup() {
 }
 
 @test "task: #Push" {
-    "$DAGGER" "do" -p ./tasks/push/push.cue pullContent
+    "$DAGGER" "do" -p ./tasks/push/push.cue pullOutputFile
 }
 
 @test "task: #ReadFile" {
