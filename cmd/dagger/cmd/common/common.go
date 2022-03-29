@@ -17,8 +17,6 @@ import (
 // FormatValue returns the String representation of the cue value
 func FormatValue(val *compiler.Value) string {
 	switch {
-	case val.HasAttr("artifact"):
-		return "dagger.#Artifact"
 	case plancontext.IsSecretValue(val):
 		return "dagger.#Secret"
 	case plancontext.IsFSValue(val):
