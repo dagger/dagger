@@ -140,6 +140,9 @@ function DocPage(props) {
 
     // DocPage Swizzle
   useEffect(() => {
+      var instance1 = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, null, {
+        apiEndpoint: `${window.location.hostname}/t`
+      })
       amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
   }, [location.pathname])
   // End DocPageSwizzle
