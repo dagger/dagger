@@ -85,6 +85,12 @@ module.exports = {
       label: "Getting Started",
       collapsible: false,
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'Getting Started',
+        description:
+          "Let's learn how Dagger can build and run a powerfull and blazingly fast pipeline! 🚀",
+      },
       items: ["getting-started/local-dev", "getting-started/ci-environment"],
     },
     {
