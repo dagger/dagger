@@ -1,4 +1,3 @@
-# TODO: https://github.com/dagger/dagger.io/issues/45
 name: "Test Website"
 
 on:
@@ -6,9 +5,12 @@ on:
     branches: [main]
     paths:
       - "website/**"
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+      - ".github/workflows/test-website.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/test-website.yml"
 
 jobs:
   test-website:
@@ -30,7 +32,6 @@ jobs:
           install-command: yarn install --silent
           start: |
             yarn start
-            yarn start:withAuth
           working-directory: ./website
       - uses: actions/upload-artifact@v1
         if: failure()
