@@ -7,7 +7,7 @@ displayed_sidebar: europa
 
 Dagger can be used with any CI environment (no migration required) and has two important advantages which make the overall experience less error-prone and more efficient:
 
-1. You don't write YAML [CUE](https://cuelang.org/) - typed configuration with built-in formatting
+1. You don't write YAML, you write [CUE](https://cuelang.org/) - typed configuration with built-in formatting
 2. Configuration is executed in [BuildKit](https://github.com/moby/buildkit), the execution engine at the heart of Docker
 
 This makes any CI environment with Docker pre-installed work with Dagger out of the box.
