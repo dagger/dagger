@@ -125,7 +125,6 @@ module.exports = {
       },
       items: [
         "use-cases/go-docker-swarm",
-        "use-cases/go-on-docker-hub"
       ],
     },
   ],
