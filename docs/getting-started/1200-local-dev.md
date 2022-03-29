@@ -5,8 +5,8 @@ displayed_sidebar: europa
 
 # CI/CD in your local dev
 
-Everyone should be able to run their CI/CD pipeline locally.
-Having to commit & push in order to test a change is a slow way to iterate on a pipeline.
+Everyone should be able to develop, test and run their CI/CD pipeline locally.
+Having to commit & push in order to test a change slows down iteration.
 This guide shows you the Dagger way.
 Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
 
