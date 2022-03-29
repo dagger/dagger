@@ -45,6 +45,10 @@ changelog:
       - "^doc:"
       - "^test:"
       - "^tests:"
+      - "^ci:"
+      - "^website:"
+      - "^infra:"
+      - "^build\\(deps\\):"
       - "^Merge pull request"
 
 brews:
