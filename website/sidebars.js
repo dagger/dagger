@@ -109,6 +109,7 @@ module.exports = {
         "core-concepts/container-images",
         "core-concepts/what-is-cue",
         "core-concepts/dagger-cue",
+        "core-concepts/cli-telemetry",
       ],
     },
     {
