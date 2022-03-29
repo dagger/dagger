@@ -25,7 +25,6 @@ import {
   DocsVersionProvider,
 } from '@docusaurus/theme-common';
 import Head from '@docusaurus/Head';
-import DocPageCustom from "../../components/DocPageCustom"
 import amplitude from 'amplitude-js';
 
 function DocPageContent({
@@ -140,29 +139,9 @@ function DocPage(props) {
   );
 
     // DocPage Swizzle
-  const [userAccessStatus, setUserAccessStatus] = useState(
-    (() => {
-      if (typeof window !== 'undefined')
-        return JSON.parse(window.localStorage.getItem('user'));
-    })(),
-  );
-
   useEffect(() => {
-      if (userAccessStatus?.login) {
-        var amplitudeInstance = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, userAccessStatus?.login.toLowerCase(), {
-          apiEndpoint: `${window.location.hostname}/t`
-        });
-        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
-
-        if (window?.hj) {
-          window.hj("identify", userAccessStatus?.login.toLowerCase(), {});
-        }
-      }
-  }, [location.pathname, userAccessStatus])
-
-  if (process.env.OAUTH_ENABLE == 'true' && userAccessStatus?.permission !== true) {
-    return <DocPageCustom location={location} userAccessStatus={userAccessStatus} setUserAccessStatus={setUserAccessStatus} />
-  }
+      amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
+  }, [location.pathname])
   // End DocPageSwizzle
 
   if (!currentDocRoute) {
