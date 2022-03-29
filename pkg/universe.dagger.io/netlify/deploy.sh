@@ -15,6 +15,7 @@ create_site() {
 
 	# shellcheck disable=SC2181
 	if [ $? -ne 0 ]; then
+		>&2 echo "Error creating site [${NETLIFY_SITE_NAME}] for account [${NETLIFY_ACCOUNT}]"
 		cat body >&2
 		exit 1
 	fi
@@ -47,7 +48,7 @@ netlify link --id "$site_id"
 netlify deploy \
 	--build \
 	--site="$site_id" \
-	--prodIfUnlocked |
+	--prod |
 	tee /tmp/stdout
 
 url="$(grep </tmp/stdout Website | grep -Eo 'https://[^ >]+' | head -1)"
