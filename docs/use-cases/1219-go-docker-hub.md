@@ -1,5 +1,5 @@
 ---
-slug: /1216/ci-cd-for-go-project
+slug: /1219/go-docker-hub
 displayed_sidebar: europa
 ---
 
