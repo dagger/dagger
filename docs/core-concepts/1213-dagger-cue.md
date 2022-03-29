@@ -5,45 +5,51 @@ displayed_sidebar: europa
 
 # Dagger CUE API
 
-As of Dagger 0.2, the Dagger CUE API can be imported via `dagger.io/dagger` & `dagger.io/dagger/core`
-
 The Dagger CUE API is the set of CUE packages released alongside the Dagger engine.
 
-Developers of other Dagger packages are expected to build on top of these core packages.
+Developers of other Dagger packages are expected to build on top of these.
 
-### Plan definition
+As of Dagger 0.2, the Dagger CUE API can be imported via:
 
-`#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger do`
+- `dagger.io/dagger` for standard types and interfaces
+- `dagger.io/dagger/core` for low-level primitives that enable precise control over the engine
+
+### Standard types and interfaces
+
+`#Plan` defines the structure of a Dagger plan.
+This is a complete configuration executable by `dagger do`
 
 | Definition | File                                                                                   | Description                                          |
 | :--        | :--                                                                                    | :--                                                  |
 | `#Plan`    | [plan.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/plan.cue) | A special kind of program which `dagger` can execute |
 
-### Core types
+Dagger extends the CUE type system with the following standard types:
 
-Dagger extends the CUE type system with the following core types:
+| Definition     | File                                                                                     | Description                                           |
+| :--            | :--                                                                                      | :--                                                   |
+| `#Address`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue) | Network service address                               |
+| `#FS`          | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue) | Reference to a filesystem tree                        |
+| `#HealthCheck` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/image.cue) | Container health check                                |
+| `#ImageConfig` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/image.cue) | Container image config                                |
+| `#Ref`         | [image.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/image.cue) | An address for a remote container image               |
+| `#Scratch`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue) | An empty directory                                    |
+| `#Secret`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue) | Secure reference to an external secret                |
+| `#Socket`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue) | Reference to a network socket: unix, tcp/udp or npipe |
 
-| Definition     | File                                                                                        | Description                                           |
-| :--            | :--                                                                                         | :--                                                   |
-| `#Address`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | Network service address                               |
-| `#CacheDir`    | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | A (best effort) persistent cache dir                  |
-| `#FS`          | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | Reference to a filesystem tree                        |
-| `#HealthCheck` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/image.cue)    | Container health check                                |
-| `#ImageConfig` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/image.cue)    | Container image config                                |
-| `#Mount`       | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | Transient filesystem mount                            |
-| `#Ref`         | [image.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/image.cue)    | An address for a remote container image               |
-| `#Scratch`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | An empty directory                                    |
-| `#Secret`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | Secure reference to an external secret                |
-| `#Socket`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | Reference to a network socket: unix, tcp/udp or npipe |
-| `#TempDir`     | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | A temporary directory for command execution           |
+### Low-level primitives
 
-### Core actions
+Core types:
+
+| Definition  | File                                                                                        | Description                                 |
+| :--         | :--                                                                                         | :--                                         |
+| `#CacheDir` | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | A (best effort) persistent cache dir        |
+| `#Mount`    | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | Transient filesystem mount                  |
+| `#TempDir`  | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | A temporary directory for command execution |
 
 Dagger works by executing actions in a certain order and passing data between actions in a certain layout.
 
-Developers can combine actions into higher-level actions, which in turn can be combined into even higher-level actions,
-and so on at arbitrary levels of depth. At the bottom of this abstraction stack are *core actions*: these
-are implemented by Dagger itself, and are always available.
+Developers can combine actions into higher-level actions, which in turn can be combined into even higher-level actions, and so on at arbitrary levels of depth.
+At the bottom of this abstraction stack are *core actions*: these are implemented by Dagger itself, and are always available.
 
 The following core actions are available:
 
