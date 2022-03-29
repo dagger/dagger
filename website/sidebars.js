@@ -85,6 +85,12 @@ module.exports = {
       label: "Getting Started",
       collapsible: false,
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'Getting Started',
+        description:
+          "Run your CI/CD pipelines locally, then easily integrate them with any CI environment.",
+      },
       items: ["getting-started/local-dev", "getting-started/ci-environment"],
     },
     {
@@ -92,6 +98,10 @@ module.exports = {
       label: "Core Concepts",
       collapsible: false,
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'Core Concepts',
+      },
       items: [
         "core-concepts/plan",
         "core-concepts/client",
@@ -106,6 +116,12 @@ module.exports = {
       label: "Use Cases",
       collapsible: false,
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'Use Cases',
+        description:
+          "See how others are using Dagger for their CI/CD pipelines. This includes integrating with CI environments.",
+      },
       items: [
         "use-cases/go-docker-swarm",
         "use-cases/go-on-docker-hub"
