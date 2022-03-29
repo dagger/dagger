@@ -89,7 +89,7 @@ module.exports = {
         type: 'generated-index',
         title: 'Getting Started',
         description:
-          "Let's learn how Dagger can build and run a powerfull and blazingly fast pipeline! 🚀",
+          "Run your CI/CD pipelines locally, then easily integrate them with any CI environment.",
       },
       items: ["getting-started/local-dev", "getting-started/ci-environment"],
     },
@@ -101,8 +101,6 @@ module.exports = {
       link: {
         type: 'generated-index',
         title: 'Core Concepts',
-        description:
-          "Let's learn Dagger core concepts...",
       },
       items: [
         "core-concepts/plan",
@@ -122,7 +120,7 @@ module.exports = {
         type: 'generated-index',
         title: 'Use Cases',
         description:
-          "Let's have a look on real case with Dagger!",
+          "See how others are using Dagger for their CI/CD pipelines. This includes integrating with CI environments.",
       },
       items: [
         "use-cases/go-docker-swarm",
