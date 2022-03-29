@@ -98,6 +98,12 @@ module.exports = {
       label: "Core Concepts",
       collapsible: false,
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'Core Concepts',
+        description:
+          "Let's learn Dagger core concepts...",
+      },
       items: [
         "core-concepts/plan",
         "core-concepts/client",
@@ -112,6 +118,12 @@ module.exports = {
       label: "Use Cases",
       collapsible: false,
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'Use Cases',
+        description:
+          "Let's have a look on real case with Dagger!",
+      },
       items: [
         "use-cases/go-docker-swarm",
         "use-cases/go-on-docker-hub"
