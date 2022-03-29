@@ -167,7 +167,7 @@ func GetCueModParent() (string, bool) {
 
 		parentDir = filepath.Dir(parentDir)
 
-		if parentDir == string(os.PathSeparator) {
+		if parentDir == fmt.Sprintf("%s%s", filepath.VolumeName(parentDir), string(os.PathSeparator)) {
 			// reached the root
 			parentDir = cwd // reset to working directory
 			break
