@@ -13,7 +13,7 @@ import (
 dagger.#Plan & {
 	client: commands: sops: {
 		name: "sops"
-		args: ["-d", "../../test_secrets.yaml"]
+		args: ["-d", "../../secrets_sops.yaml"]
 		stdout: dagger.#Secret
 	}
 
@@ -26,7 +26,7 @@ dagger.#Plan & {
 				format: "yaml"
 			}
 
-			token: testSecrets.output.netlifyToken.contents
+			token: testSecrets.output.NETLIFY_TOKEN.contents
 
 			marker: "hello world"
 
@@ -41,7 +41,7 @@ dagger.#Plan & {
 		simple: {
 			// Deploy to netlify
 			deploy: netlify.#Deploy & {
-				team:     "blocklayer"
+				team:     "dagger-test"
 				token:    common.token
 				site:     "dagger-test"
 				contents: common.data.output
@@ -57,7 +57,7 @@ dagger.#Plan & {
 		swapImage: {
 			// Deploy to netlify
 			deploy: netlify.#Deploy & {
-				team:     "blocklayer"
+				team:     "dagger-test"
 				token:    common.token
 				site:     "dagger-test"
 				contents: common.data.output

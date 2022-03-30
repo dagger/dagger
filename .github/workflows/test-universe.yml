@@ -49,11 +49,9 @@ jobs:
           sudo chmod +x /usr/local/bin/sops
 
       - name: "Import Dagger private key"
-        env:
-          DAGGER_AGE_KEY: ${{ secrets.DAGGER_AGE_KEY }}
         run: |
           mkdir -p ~/.config/sops/age
-          echo "$DAGGER_AGE_KEY" > ~/.config/sops/age/keys.txt
+          echo ./tests/age_key.txt ~/.config/sops/age/keys.txt
 
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
