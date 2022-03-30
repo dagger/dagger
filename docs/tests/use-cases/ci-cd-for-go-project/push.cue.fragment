@@ -7,7 +7,7 @@ push: {
 		"image": image.output
 		dest:    "\(_dockerUsername)/<my_repository>"
 		auth: {
-			username: "\(_dockerUsername)"
+			username: _dockerUsername
 			secret:   client.env.DOCKER_PASSWORD
 		}
 	}

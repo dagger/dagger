@@ -4,19 +4,16 @@ import (
 )
 
 // Build docker image (depends on build)
-image: {
-	_base: alpine.#Build & {}
-
-	docker.#Build & {
-		steps: [
-			docker.#Copy & {
-				input:    _base.output
-				contents: build.output
-				dest:     "/usr/bin"
-			},
-			docker.#Set & {
-				config: cmd: ["</path/to/binary>"]
-			},
-		]
-	}
+image: docker.#Build & {
+	steps: [
+		alpine.#Build,
+		docker.#Copy & {
+			input:    _base.output
+			contents: build.output
+			dest:     "/usr/bin"
+		},
+		docker.#Set & {
+			config: cmd: ["</path/to/binary>"]
+		},
+	]
 }
