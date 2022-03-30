@@ -15,6 +15,9 @@ module.exports = {
   stylesheets: [
     "https://fonts.googleapis.com/css2?family=Karla&family=Montserrat:wght@700&display=swap",
   ],
+  customFields: {
+    AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID
+  },
   themeConfig: {
     sidebarCollapsed: false,
     prism: {
