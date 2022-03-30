@@ -8,13 +8,17 @@ import (
 
 dagger.#Plan & {
 
-	// FIXME: Ideally we would want to automatically set the platform's arch identical to the host
-	// to avoid the performance hit caused by qemu (linter goes from <3s to >3m when arch is x86)
-	// Uncomment if running locally on Mac M1 to bypass qemu
-	// platform: "linux/aarch64"
-	platform: "linux/amd64"
-
-	client: filesystem: "./build": write: contents: actions.build.export.directories["/build"]
+	client: {
+		filesystem: "./build": write: contents: actions.build.export.directories["/build"]
+		env: {
+			// ⚠️  If this is set to darwin on a Mac ARM, expect to pay the qemu penalty and be ~50x slower.
+			// FWIW, this runs in a BuildKit container within Docker.
+			// Docker on macOS runs within a Linux VM, hence:
+			// Darwin -> Linux -> Darwin => ~50x slower than native Darwin
+			GOOS:   string | *"linux"
+			GOARCH: string | client.platform.arch
+		}
+	}
 
 	actions: {
 		_mountGoCache: {
@@ -46,8 +50,8 @@ dagger.#Plan & {
 			input: _baseImages.goBuilder
 
 			env: {
-				GOOS:        client.platform.os
-				GOARCH:      client.platform.arch
+				GOOS:        client.env.GOOS
+				GOARCH:      client.env.GOARCH
 				CGO_ENABLED: "0"
 				// Makes sure the linter and unit tests complete before starting the build
 				"__depends_lint":  "\(goLint.exit)"
