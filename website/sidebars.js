@@ -72,11 +72,6 @@ module.exports = {
   ],
   europa: [
     {
-      type: "link",
-      label: "⬅️ Dagger 0.1",
-      href: "/1200/what/",
-    },
-    {
       type: "doc",
       id: "migrate-from-dagger-0.1",
     },
@@ -126,6 +121,11 @@ module.exports = {
       items: [
         "use-cases/go-docker-swarm",
       ],
+    },
+    {
+      type: "link",
+      label: "⬅️ Dagger 0.1",
+      href: "/1200/what/",
     },
   ],
 };
