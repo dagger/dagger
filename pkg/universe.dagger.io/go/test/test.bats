@@ -4,7 +4,7 @@ setup() {
     common_setup
 }
 
-@test "bash" {
+@test "go" {
     dagger "do" -p ./build.cue test
     dagger "do" -p ./container.cue test
     dagger "do" -p ./image.cue test
