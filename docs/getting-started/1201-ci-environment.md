@@ -46,7 +46,60 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 
 <TabItem value="gitlab">
 
-If you would like us to document GitLab next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
+```yaml
+.docker:
+    image: docker:${DOCKER_VERSION}-git
+    services:
+        - docker:${DOCKER_VERSION}-dind
+    variables:
+        # See https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#docker-in-docker-with-tls-enabled-in-the-docker-executor
+        DOCKER_HOST: tcp://docker:2376
+
+        DOCKER_TLS_VERIFY: '1'
+        DOCKER_TLS_CERTDIR: '/certs'
+        DOCKER_CERT_PATH: '/certs/client'
+
+        # Faster than the default, apparently
+        DOCKER_DRIVER: overlay2
+
+        DOCKER_VERSION: '20.10'
+
+.dagger:
+    extends: [.docker]
+    variables:
+        DAGGER_VERSION: 0.2.4
+        DAGGER_LOG_FORMAT: plain
+        DAGGER_CACHE_PATH: .dagger-cache
+
+        ARGS: ''
+    cache:
+        key: dagger-${CI_JOB_NAME}
+        paths:
+            - ${DAGGER_CACHE_PATH}
+    before_script:
+        - apk add --no-cache curl
+        - |
+            # install dagger
+            cd /usr/local
+            curl -L https://dl.dagger.io/dagger/install.sh | sh
+            cd -
+
+            dagger version
+    script:
+        - dagger project update
+        - |
+            dagger \
+                do \
+                --cache-from type=local,src=${DAGGER_CACHE_PATH} \
+                --cache-to type=local,mode=max,dest=${DAGGER_CACHE_PATH} \
+                ${ARGS}
+
+build:
+    extends: [.dagger]
+    variables:
+        ARGS: build
+
+```
 
 </TabItem>
 
