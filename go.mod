@@ -6,6 +6,7 @@ require (
 	cuelang.org/go v0.4.1-rc.1.0.20220106143633-60d6503d1974
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/Microsoft/go-winio v0.5.2
+	github.com/charmbracelet/glamour v0.5.0 // indirect
 	github.com/containerd/console v1.0.3
 	github.com/containerd/containerd v1.6.2
 	github.com/docker/buildx v0.8.1
