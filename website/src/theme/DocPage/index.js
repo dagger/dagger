@@ -7,6 +7,7 @@
 import React, {useState, useEffect, useCallback} from 'react';
 import {MDXProvider} from '@mdx-js/react';
 import renderRoutes from '@docusaurus/renderRoutes';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import DocSidebar from '@theme/DocSidebar';
 import MDXComponents from '@theme/MDXComponents';
@@ -138,12 +139,15 @@ function DocPage(props) {
     matchPath(location.pathname, docRoute),
   );
 
-    // DocPage Swizzle
+  // DocPage Swizzle
+  const {siteConfig} = useDocusaurusContext();
   useEffect(() => {
-      var instance1 = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, null, {
-        apiEndpoint: `${window.location.hostname}/t`
-      })
-      amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
+      if(siteConfig.AMPLITUDE_ID) {
+        var instance1 = amplitude.getInstance().init(process.env.REACT_APP_AMPLITUDE_ID, null, {
+          apiEndpoint: `${window.location.hostname}/t`
+        })
+        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
+      }
   }, [location.pathname])
   // End DocPageSwizzle
 
