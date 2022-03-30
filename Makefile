@@ -89,7 +89,7 @@ mdlint: # Markdown lint for web
 .PHONY: web
 web: # Run the website locally
 	yarn --cwd "./website" install
-	yarn --cwd "./website" start
+	yarn --cwd "./website" dev
 
 .PHONY: todo
 todo: # Find all TODO items
