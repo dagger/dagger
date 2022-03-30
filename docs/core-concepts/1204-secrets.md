@@ -5,17 +5,16 @@ displayed_sidebar: europa
 
 # How to use secrets
 
-Most operations in `client` support handling secrets (see [Interacting with the client](./1203-client.md)). More specifically, you can:
+We can use secrets in a `dagger.#Plan` via the `client` property.
+This enables us to:
 
-- Write a secret to a file;
-- Read a secret from a file;
-- Read a secret from an environment variable;
-- Read a secret from the output of a command;
-- Use a secret as the input of a command.
+- read a secret from an environment variable
+- read a secret from a file
+- read a secret from the output of a command
 
-## Environment
+## Environment variable
 
-The simplest use case is reading from an environment variable:
+The simplest use case is to read secrets from an environment variable:
 
 ```cue
 dagger.#Plan & {
@@ -25,14 +24,19 @@ dagger.#Plan & {
 
 ## File
 
-You may need to trim the whitespace, especially when reading from a file:
+Some use cases require reading secrets from files that are only readable by specific users:
 
 ```cue file=../tests/core-concepts/secrets/plans/file.cue
 ```
 
-## SOPS
+Notice above that we are trimming whitespace via `core.#TrimSecret`
 
-There’s many ways to store encrypted secrets in your git repository. If you use [SOPS](https://github.com/mozilla/sops), here's a simple example where you can access keys from an encrypted yaml file:
+## Command
+
+This example reads a secret token from the output of a [`sops`](https://github.com/mozilla/sops) command:
+
+```cue file=../tests/core-concepts/secrets/plans/sops.cue title="main.cue"
+```
 
 ```yaml title="secrets.yaml"
 myToken: ENC[AES256_GCM,data:AlUz7g==,iv:lq3mHi4GDLfAssqhPcuUIHMm5eVzJ/EpM+q7RHGCROU=,tag:dzbT5dEGhMnHbiRTu4bHdg==,type:str]
@@ -40,5 +44,7 @@ sops:
     ...
 ```
 
-```cue file=../tests/core-concepts/secrets/plans/sops.cue title="main.cue"
-```
+:::tip
+With a good understanding of secrets, it is now time to shift our focus to `actions`, packages & imports.
+This is where you will be spending most of your time with Dagger.
+:::

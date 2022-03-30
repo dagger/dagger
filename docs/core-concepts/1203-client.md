@@ -68,9 +68,7 @@ Sometimes you need something more advanced that only a local command can give yo
 ```cue file=../tests/core-concepts/client/plans/cmd.cue
 ```
 
-:::tip
-You can also capture `stderr` for errors and provide `stdin` for input.
-:::
+You can also capture `stderr` for errors, and provide `stdin` for input.
 
 ## Platform
 
@@ -78,3 +76,8 @@ If you need the current platform though, there’s a more portable way than runn
 
 ```cue file=../tests/core-concepts/client/plans/platform.cue
 ```
+
+:::tip
+Now that we understand how to interact with the local machine via the `client` property in `dagger.#Plan`,
+let us learn about how to use secrets such as passwords, API tokens and other credentials in a Dagger plan.
+:::

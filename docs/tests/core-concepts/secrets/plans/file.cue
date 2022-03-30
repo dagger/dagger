@@ -1,18 +1,18 @@
 dagger.#Plan & {
-	// Path may be absolute, or relative to current working directory
-	client: filesystem: ".registry": read: {
+	// Path may be absolute or relative to the current working directory
+	client: filesystem: ".registry.secret": read: {
 		// CUE type defines expected content
 		contents: dagger.#Secret
 	}
 	actions: {
-		registry: core.#TrimSecret & {
-			input: client.filesystem.".registry".read.contents
+		registrySecret: core.#TrimSecret & {
+			input: client.filesystem.".registry.secret".read.contents
 		}
 		pull: docker.#Pull & {
 			source: "registry.example.com/image"
 			auth: {
-				username: "_token_"
-				secret:   registry.output
+				username: "YOUR_USERNAME"
+				secret:   registrySecret.output
 			}
 		}
 	}
