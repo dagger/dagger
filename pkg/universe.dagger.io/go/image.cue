@@ -5,11 +5,11 @@ import (
 )
 
 // Go image default version
-#_DefaultVersion: "1.18"
+_#DefaultVersion: "1.18"
 
 // Build a go base image
 #Image: {
-	version: *#_DefaultVersion | string
+	version: *_#DefaultVersion | string
 
 	packages: [pkgName=string]: version: string | *""
 
