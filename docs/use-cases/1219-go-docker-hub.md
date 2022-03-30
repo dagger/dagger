@@ -5,22 +5,21 @@ displayed_sidebar: europa
 
 # Go on Docker Hub
 
-Dagger stand as a powerful CI/CD tool that works on any environment.
+Dagger stands as a powerful CI/CD tool that works on any environment.
 
-For instance, you can use [go package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/go)
-to control the whole CI/CD process, from test to push into a remote registry.
+For instance, you can use the [Dagger Go package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/go)
+to control the whole CI/CD process, from testing to pushing into a remote registry.
 
 :::tip
-Following examples can be used as a template for any standalone go project.
+The following examples can be used as a template for any standalone Go project.
 :::
 
 ## Retrieve Go project
 
-First important step is to make go project accessible in dagger plan.
+The first step is to make your Go project accessible to the Dagger plan.
 
-You can indeed choose which files to include in the filesystem.  
-Since it's a Golang project, filesystem should contain module and every go
-source files:
+You can indeed choose which files to include. Since it's a Golang project
+it should contain the module and all Go source files:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/retrieve-go-project/dagger.cue
 ```
@@ -32,60 +31,59 @@ act as an alias.
 
 ## Build a Go base image
 
-[Dagger go universe](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/go)
-provide a [base image](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.io/go/image.cue)
-to build your pipeline but your project may use `CGO` or any external dependencies.
+The [universe.dagger.io/go](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/go)
+package provides a [base image](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.io/go/image.cue)
+to build your pipeline, but your project may use `CGO` or any external dependencies.
 
-You can customize that base image to install required dependencies:
+You can customize the base image to install required dependencies:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/base.cue.fragment
 ```
 
-## Run unit test
+## Run unit tests
 
-Before deliver your application, you certainly want to run unit test.
+Before delivering your application, you certainly want to run unit tests.
 
-By using previous steps, you can use the [test](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.io/go/test.cue)
-definition to run your unit test:
+Use the [#Test](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.io/go/test.cue)
+definition:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/test.cue.fragment
 ```
 
 <!-- FIXME(TomChv): we should write a bunch of documentation about TDD with dagger -->
 :::tip
-You can also use dagger to write integration tests
+You can also use Dagger to write integration tests.
 :::
 
 ## Build Go binary
 
-To put your go project on docker hub, you first need to compile a binary.
+To put your Go project on Docker Hub, you first need to compile a binary.
 
-Go universe expose a [build](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.io/go/build.cue)
-definition so you can build a binary:
+Use the [#Build](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.io/go/build.cue)
+definition to do that:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/build.cue.fragment
 ```
 
 :::tip
-You can control the binary platform with `os` and `arch` field.
+You can control the binary platform with `os` and `arch` fields.
 :::
 
 ## Prepare docker image
 
-To make it usable by other user, you must put your binary in an image and set an entrypoint.
+To make it usable for other users, you must put your binary in an image and set an entrypoint.
 
-For optimisation purpose, you can use alpine as base image to contain your binary:
+For optimization purposes, you can use alpine as the base image to contain your binary:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/image.cue.fragment
 ```
 
 ## Push to Docker Hub
 
-To push an image to docker hub, you will need to forward credential to allow
-dagger push.
+To push an image to Docker Hub, you will need your private credentials.
 
-To not hard code your docker password in the plan, you can retrieve it as an
-environment value:
+To not hard code your docker password in the plan, you can retrieve it
+from your environment:
 
 ```cue
 dagger.#Plan & {
@@ -104,7 +102,7 @@ You can now push your image:
 
 ## Complete CI/CD
 
-After merging all examples, you will have a complete CI/CD to deliver a go
+After merging all examples, you will have a complete CI/CD to deliver a Go
 binary on Docker Hub.
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/complete-ci-cd/dagger.cue

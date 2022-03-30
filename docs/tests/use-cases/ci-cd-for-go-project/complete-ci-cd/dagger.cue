@@ -30,8 +30,8 @@ dagger.#Plan & {
 			}
 		}
 
-		// Run go unit test
-		"unit-test": go.#Test & {
+		// Run go unit tests
+		unitTest: go.#Test & {
 			source:  _code
 			package: "./..."
 			input:   _base.output
@@ -43,21 +43,17 @@ dagger.#Plan & {
 		}
 
 		// Build docker image (depends on build)
-		image: {
-			_base: alpine.#Build & {}
-
-			docker.#Build & {
-				steps: [
-					docker.#Copy & {
-						input:    _base.output
-						contents: build.output
-						dest:     "/usr/bin"
-					},
-					docker.#Set & {
-						config: cmd: ["<path/to/binary>"]
-					},
-				]
-			}
+		image: docker.#Build & {
+			steps: [
+				alpine.#Build,
+				docker.#Copy & {
+					contents: build.output
+					dest:     "/usr/bin"
+				},
+				docker.#Set & {
+					config: cmd: ["<path/to/binary>"]
+				},
+			]
 		}
 
 		// Push image to remote registry (depends on image)
@@ -69,7 +65,7 @@ dagger.#Plan & {
 				"image": image.output
 				dest:    "\(_dockerUsername)/<my_repository>"
 				auth: {
-					username: "\(_dockerUsername)"
+					username: _dockerUsername
 					secret:   client.env.DOCKER_PASSWORD
 				}
 			}
