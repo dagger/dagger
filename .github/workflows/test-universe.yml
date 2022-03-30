@@ -4,27 +4,30 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.sh'
-      - '**.bash'
-      - '**.go'
-      - '**.cue'
-      - '**.bats'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/test-universe.yml'
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-universe.yml"
+      - "!docs/**"
+
   pull_request:
     branches: [main]
     paths:
-      - '**.sh'
-      - '**.bash'
-      - '**.go'
-      - '**.cue'
-      - '**.bats'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/test-universe.yml'
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-universe.yml"
+      - "!docs/**"
 
 jobs:
   universe-europa-tests:

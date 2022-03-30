@@ -4,27 +4,30 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.sh'
-      - '**.bash'
-      - '**.go'
-      - '**.cue'
-      - '**.bats'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/test-integration.yml'
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-integration.yml"
+      - "!docs/**"
+
   pull_request:
     branches: [main]
     paths:
-      - '**.sh'
-      - '**.bash'
-      - '**.go'
-      - '**.cue'
-      - '**.bats'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/test-integration.yml'
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-integration.yml"
+      - "!docs/**"
 
 jobs:
   test-integration:
