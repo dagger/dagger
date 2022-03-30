@@ -51,7 +51,7 @@ jobs:
       - name: "Import Dagger private key"
         run: |
           mkdir -p ~/.config/sops/age
-          echo ./tests/age_key.txt ~/.config/sops/age/keys.txt
+          cp ./tests/age_key.txt ~/.config/sops/age/keys.txt
 
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
