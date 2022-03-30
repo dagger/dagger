@@ -24,7 +24,7 @@ dagger.#Plan & {
 		}
 
 		testRepo: core.#GitPull & {
-			remote: "https://github.com/dagger/dagger.git"
+			remote: "https://github.com/dagger/test.git"
 			ref:    "main"
 			auth: {
 				username: "dagger-test"
