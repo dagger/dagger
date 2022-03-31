@@ -84,6 +84,15 @@ setup() {
   assert_output --partial 'path "/foobar" does not exist'
 }
 
+
+@test "plan/client/filesystem/read/fs/invalid" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/invalid"
+
+  run "$DAGGER" "do" -p . test
+  assert_failure
+  assert_output --partial 'test.txt" is not a directory'
+}
+
 @test "plan/client/filesystem/read/fs/relative" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/relative"
 
