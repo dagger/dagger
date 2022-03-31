@@ -25,7 +25,7 @@ func init() {
 type exportTask struct {
 }
 
-func (t exportTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {
+func (t exportTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
 	dir, err := os.MkdirTemp("", "dagger-export-*")
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func (t exportTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *co
 	return nil
 }
 
-func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	dir := pctx.TempDirs.Get(v.Path().String())

@@ -2,7 +2,7 @@ name: "Dagger CI"
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - '**.sh'
       - '**.bash'
@@ -14,7 +14,7 @@ on:
       - 'go.sum'
       - '.github/workflows/dagger-ci.yml'
   pull_request:
-    branches: [main]
+    branches: [ main ]
     paths:
       - '**.sh'
       - '**.bash'
@@ -33,11 +33,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      -
-        name: Checkout
+      - name: Checkout
         uses: actions/checkout@v2
-      -
-        name: Dagger CI
+
+      - name: Dagger CI
         uses: dagger/dagger-for-github@v2
         with:
           workdir: ci

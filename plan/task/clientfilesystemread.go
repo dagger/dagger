@@ -21,7 +21,7 @@ func init() {
 type clientFilesystemReadTask struct {
 }
 
-func (t clientFilesystemReadTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {
+func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
 	path, err := t.parsePath(v)
 	if err != nil {
 		return err
@@ -38,7 +38,7 @@ func (t clientFilesystemReadTask) PreRun(ctx context.Context, pctx *plancontext.
 	return nil
 }
 
-func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := t.parsePath(v)
 	if err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ func (t clientFilesystemReadTask) parsePath(v *compiler.Value) (path string, err
 	return
 }
 
-func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value, path string) (interface{}, error) {
+func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) (interface{}, error) {
 	lg := log.Ctx(ctx)
 	contents := v.Lookup("contents")
 
@@ -97,7 +97,7 @@ func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *planco
 	return nil, fmt.Errorf("unsupported type %q", k)
 }
 
-func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value, path string) (*compiler.Value, error) {
+func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) (*compiler.Value, error) {
 	var dir struct {
 		Include []string
 		Exclude []string

@@ -19,7 +19,7 @@ func init() {
 type pushTask struct {
 }
 
-func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	rawDest, err := v.Lookup("dest").String()

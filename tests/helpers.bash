@@ -13,6 +13,13 @@ common_setup() {
     DAGGER_TELEMETRY_DISABLE="1"
     export DAGGER_TELEMETRY_DISABLE
 
+    export DAGGER_LOG_LEVEL="debug"
+    if [ -n "$GITHUB_ACTIONS" ];
+    then
+        export DAGGER_CACHE_TO="type=gha,mode=max,scope=integration-tests-$BATS_TEST_NAME"
+        export DAGGER_CACHE_FROM="type=gha,scope=integration-tests-$BATS_TEST_NAME"
+    fi
+
     SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt
     export SOPS_AGE_KEY_FILE
 }

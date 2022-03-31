@@ -19,7 +19,7 @@ func init() {
 type writeFileTask struct {
 }
 
-func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var contents []byte
 	var err error
 
@@ -49,19 +49,16 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 	}
 
 	permissions, err := v.Lookup("permissions").Int64()
-
 	if err != nil {
 		return nil, err
 	}
 
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
-
 	if err != nil {
 		return nil, err
 	}
 
 	inputState, err := input.State()
-
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +69,6 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 	)
 
 	result, err := s.Solve(ctx, outputState, pctx.Platform.Get())
-
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +76,6 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s so
 	outputFS := pctx.FS.New(result)
 
 	output := compiler.NewValue()
-
 	if err := output.FillPath(cue.ParsePath("output"), outputFS.MarshalCUE()); err != nil {
 		return nil, err
 	}

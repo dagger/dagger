@@ -20,7 +20,7 @@ func init() {
 type execTask struct {
 }
 
-func (t execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	// Get input state
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
 	if err != nil {
@@ -52,7 +52,7 @@ func (t execTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.S
 	})
 }
 
-func (t execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]llb.RunOption, error) {
+func (t *execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]llb.RunOption, error) {
 	opts := []llb.RunOption{}
 	var cmd struct {
 		Args   []string
@@ -141,7 +141,7 @@ func (t execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]ll
 	return opts, nil
 }
 
-func (t execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
+func (t *execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
 	opts := []llb.RunOption{}
 	fields, err := mounts.Fields()
 	if err != nil {
@@ -165,7 +165,7 @@ func (t execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([
 	return opts, err
 }
 
-func (t execTask) mount(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
+func (t *execTask) mount(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
 	typ, err := mnt.Lookup("type").String()
 	if err != nil {
 		return nil, err
