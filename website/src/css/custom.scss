@@ -101,7 +101,9 @@ h2 {
   line-height: 32px;
 }
 
-code {
+code,
+.table-of-contents__link code,
+.table-of-contents__link:hover code {
   margin: 0 1px;
   color: var(--ifm-code-color);
   .alert & {
