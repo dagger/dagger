@@ -259,7 +259,7 @@ With an empty cache, installing all dependencies, then testing & generating a bu
 Since this is a static application, we can open the files which are generated in `actions.build.contents` in a browser.
 The last step - `client.filesystem.build.write` - copies the build result into the `_build` directory on the host.
 
-On Windows, we run `start build/index.html` in our `Command Prompt` terminal and see the following app preview:
+On Windows, we run `start _build/index.html` in our `Command Prompt` terminal and see the following app preview:
 
 ![todoapp preview](/img/getting-started/todoapp.macos.png)
 
