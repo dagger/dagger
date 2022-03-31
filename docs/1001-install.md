@@ -10,9 +10,9 @@ slug: /1001/install/
 
 :::
 
-## Option 1: Use Homebrew (Mac OS only)
+## Option 1 (Mac OS and Linux): Use Homebrew
 
-From your Mac OS terminal, run the following command:
+From a terminal, run the following command:
 
 ```shell
 brew install dagger/tap/dagger
@@ -25,7 +25,7 @@ brew update
 brew upgrade dagger
 ```
 
-## Option 2: Run a shell script
+## Option 2 (Mac OS and Linux): Run a shell script
 
 From a terminal, run the following command:
 
