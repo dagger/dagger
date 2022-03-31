@@ -310,15 +310,6 @@ h1[class^="h1Heading"] {
 }
 
 /* sidebar */
-@include desktop {
-  aside[class^="docSidebarContainer"] {
-    width: 340px;
-
-    div[class^="sidebar"] {
-      width: 340px;
-    }
-  }
-}
 
 a[class^="sidebarLogo"] {
   img {
@@ -341,7 +332,7 @@ a[class^="sidebarLogo"] {
 
 main[class^="docMainContainer"] {
   background: #ffffff;
-  padding: 2rem 2rem 2rem 5rem;
+  padding: 2rem;
 
   @include tablet {
     padding: 2rem;
