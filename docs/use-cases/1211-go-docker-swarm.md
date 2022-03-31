@@ -23,7 +23,7 @@ This is a high level overview of all actions in the Particubes docs Dagger plan:
 
 We can see all available actions in a Plan by running the following command:
 
-```bash
+```console
 $ dagger do
 Execute a dagger action.
 
