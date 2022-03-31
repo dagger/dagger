@@ -124,7 +124,7 @@ code {
     --ifm-h3-vertical-rhythm-top: 2;
   }
 
-  a {
+  a:not(.card) {
     font-weight: bold;
     text-decoration: underline;
     color: var(--ifm-color-primary-dark);
