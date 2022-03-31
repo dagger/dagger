@@ -279,9 +279,9 @@ h1[class^="h1Heading"] {
   line-height: 36px;
   @include desktop {
     width: 48px;
-    span {
-      display: none;
-    }
+    text-indent: 9999px;
+    white-space: nowrap;
+    overflow: hidden;
   }
 }
 
