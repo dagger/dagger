@@ -2,7 +2,7 @@ name: "Test Integration"
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.sh"
       - "**.bash"
@@ -16,7 +16,7 @@ on:
       - "!docs/**"
 
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.sh"
       - "**.bash"
@@ -28,6 +28,9 @@ on:
       - "go.sum"
       - ".github/workflows/test-integration.yml"
       - "!docs/**"
+
+permissions:
+  checks: write
 
 jobs:
   test-integration:
@@ -67,6 +70,7 @@ jobs:
       - name: Test
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           env
           make core-integration

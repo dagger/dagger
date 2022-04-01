@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"cuelang.org/go/cue"
+	"github.com/google/go-github/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -17,8 +19,49 @@ import (
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/telemetry"
+	"golang.org/x/oauth2"
 	"golang.org/x/term"
 )
+
+func ghTest() {
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+	)
+	tc := oauth2.NewClient(context.Background(), ts)
+	ghClient := github.NewClient(tc)
+
+	sha := os.Getenv("GITHUB_SHA")
+	ref := os.Getenv("GITHUB_REF")
+
+	if os.Getenv("GITHUB_TOKEN") != "" {
+		fmt.Printf("GOT TOKEN\n")
+	} else {
+		fmt.Printf("NO TOKEN\n")
+	}
+	fmt.Printf("SHA: %s\n", sha)
+	fmt.Printf("REF: %s\n", ref)
+
+	status := "in_progress"
+	cr, _, err := ghClient.Checks.CreateCheckRun(context.TODO(), "dagger", "dagger", github.CreateCheckRunOptions{
+		Name:       "dagger",
+		HeadBranch: ref,
+		HeadSHA:    sha,
+		Status:     &status,
+	})
+	if err != nil {
+		panic(err)
+	}
+	go func() {
+		time.Sleep(10 * time.Second)
+		status = "completed"
+		cr, _, err = ghClient.Checks.UpdateCheckRun(context.TODO(), "dagger", "dagger", cr.GetID(), github.UpdateCheckRunOptions{
+			Status: &status,
+		})
+		if err != nil {
+			panic(err)
+		}
+	}()
+}
 
 var doCmd = &cobra.Command{
 	Use:   "do [OPTIONS] ACTION [SUBACTION...]",
@@ -35,6 +78,8 @@ var doCmd = &cobra.Command{
 			doHelpCmd(cmd, nil)
 			return
 		}
+
+		ghTest()
 
 		var (
 			lg  = logger.New()
