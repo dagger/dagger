@@ -13,10 +13,10 @@ import (
 	package: *"." | string
 
 	// Target architecture
-	arch: *"amd64" | string
+	arch?: string
 
 	// Target OS
-	os: *"linux" | string
+	os?: string
 
 	// Build tags to use for building
 	tags: *"" | string
@@ -30,8 +30,12 @@ import (
 		"source": source
 		"env": {
 			env
-			GOOS:   os
-			GOARCH: arch
+			if os != _|_ {
+				GOOS: os
+			}
+			if arch != _|_ {
+				GOARCH: arch
+			}
 		}
 		command: {
 			args: [package]
