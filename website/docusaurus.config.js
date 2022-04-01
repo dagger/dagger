@@ -47,12 +47,6 @@ module.exports = {
           className: "header-github-link hide-target-icon",
           "aria-label": "GitHub repository",
         },
-        {
-          position: "right",
-          label: "Schedule a demo",
-          href: "https://savvycal.com/dagger/meet",
-          className: "button",
-        },
       ],
       hideOnScroll: true,
     },
