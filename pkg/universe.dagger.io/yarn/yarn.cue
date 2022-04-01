@@ -49,6 +49,7 @@ import (
 	// FIXME: not implemented. Are they needed?
 	secrets: [string]: dagger.#Secret
 
+	// FIXME: this is a weird hack. We should remove it.
 	container: #input: docker.#Image | *{
 		// FIXME: Yarn's version depends on Alpine's version
 		// Yarn version
@@ -62,6 +63,11 @@ import (
 		}
 	}
 
+	_loadScripts: core.#Source & {
+		path: "."
+		include: ["*.sh"]
+	}
+
 	_run: docker.#Build & {
 		steps: [
 			container.#input,
@@ -72,11 +78,10 @@ import (
 			},
 
 			bash.#Run & {
-				// FIXME: move shell script to its own file
-				script: contents: #"""
-					yarn --cwd "$YARN_CWD" install --production false
-					"""#
-
+				script: {
+					directory: _loadScripts.output
+					filename:  "install.sh"
+				}
 				mounts: "yarn cache": {
 					dest:     "/cache/yarn"
 					contents: core.#CacheDir & {
@@ -94,19 +99,10 @@ import (
 			},
 
 			bash.#Run & {
-				// FIXME: move shell script to its own file
-				script: contents: #"""
-					# Create $ENVFILE_NAME file if set
-					[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
-
-					opts=( $(echo $YARN_ARGS) )
-					yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
-					if [ ! -z "${YARN_BUILD_DIRECTORY:-}" ]; then
-						mv "$YARN_BUILD_DIRECTORY" /build
-					else
-						mkdir /build
-					fi
-					"""#
+				script: {
+					directory: _loadScripts.output
+					filename:  "run.sh"
+				}
 
 				mounts: "yarn cache": {
 					dest:     "/cache/yarn"

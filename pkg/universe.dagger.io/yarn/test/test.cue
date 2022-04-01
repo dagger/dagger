@@ -9,6 +9,8 @@ import (
 )
 
 dagger.#Plan & {
+	// FIXME: tests should not depend on current working directory
+	//   use core.#Source instead
 	client: filesystem: {
 		"./data/foo": read: contents: dagger.#FS
 		"./data/bar": read: contents: dagger.#FS
