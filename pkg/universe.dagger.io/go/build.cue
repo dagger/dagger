@@ -38,6 +38,7 @@ import (
 			}
 		}
 		command: {
+			name: "go"
 			args: [package]
 			flags: {
 				build:      true
