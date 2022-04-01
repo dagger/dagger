@@ -209,13 +209,10 @@ It becomes even more obvious when the change is not as straightforward as knowin
 
 <TabItem value="windows">
 
-We assume that you have [curl](https://curl.se/windows/) installed.
-If you do, you can install `dagger` with a few commands. From a powershell terminal, run:
+From a powershell terminal, run:
 
 ```shell
-curl https://dl.dagger.io/dagger/install.ps1 -OutFile install.ps1
-./install.ps1
-rm install.ps1
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
 We try to move the dagger binary under `C:\Windows\System32` but
