@@ -83,7 +83,7 @@ module.exports = {
         type: 'doc',
         id: 'getting-started/index'
       },
-      items: ["getting-started/local-dev", "getting-started/ci-environment"],
+      items: ["getting-started/local-dev", "getting-started/ci-environment", "getting-started/vs"],
     },
     {
       type: "category",
