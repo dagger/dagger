@@ -7,6 +7,7 @@ package go
 
 	#Container & {
 		command: {
+			name: "go"
 			args: [package]
 			flags: {
 				test: true
