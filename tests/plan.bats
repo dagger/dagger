@@ -85,12 +85,21 @@ setup() {
 }
 
 
-@test "plan/client/filesystem/read/fs/invalid" {
-  cd "$TESTDIR/plan/client/filesystem/read/fs/invalid"
+@test "plan/client/filesystem/read/fs/invalid_fs_input" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/invalid_fs_input"
 
   run "$DAGGER" "do" -p . test
   assert_failure
   assert_output --partial 'test.txt" is not a directory'
+}
+
+
+@test "plan/client/filesystem/read/fs/invalid_fs_type" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/invalid_fs_type"
+
+  run "$DAGGER" "do" -p . test
+  assert_failure
+  assert_output --partial 'rootfs" cannot be a directory'
 }
 
 @test "plan/client/filesystem/read/fs/relative" {

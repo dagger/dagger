@@ -26,10 +26,15 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 		return err
 	}
 
-	if pi, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	isFS := plancontext.IsFSValue(v.Lookup("contents"))
+
+	switch pi, err := os.Stat(path); {
+	case errors.Is(err, os.ErrNotExist):
 		return fmt.Errorf("path %q does not exist", path)
-	} else if !pi.IsDir() && plancontext.IsFSValue(v.Lookup("contents")) {
+	case !pi.IsDir() && isFS:
 		return fmt.Errorf("path %q is not a directory", path)
+	case pi.IsDir() && !isFS:
+		return fmt.Errorf("path %q cannot be a directory", path)
 	}
 
 	if plancontext.IsFSValue(v.Lookup("contents")) {
