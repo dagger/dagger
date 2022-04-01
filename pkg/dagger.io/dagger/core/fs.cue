@@ -76,6 +76,10 @@ import "dagger.io/dagger"
 	source: string | *"/"
 	// Destination path (optional)
 	dest: string | *"/"
+	// Optionally exclude certain files
+	include: [...string]
+	// Optionally include certain files
+	exclude: [...string]
 	// Output of the operation
 	output: dagger.#FS
 }
