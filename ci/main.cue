@@ -8,6 +8,8 @@ import (
 	"universe.dagger.io/docker"
 	"universe.dagger.io/go"
 	"universe.dagger.io/go/golangci"
+
+	"github.com/dagger/dagger/ci/pkg/shellcheck"
 )
 
 dagger.#Plan & {
@@ -88,6 +90,10 @@ dagger.#Plan & {
 			go: golangci.#Lint & {
 				source:  _source
 				version: "1.45"
+			}
+
+			shell: shellcheck.#Lint & {
+				source: _source
 			}
 
 			cue: docker.#Build & {
