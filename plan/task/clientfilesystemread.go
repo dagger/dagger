@@ -125,12 +125,9 @@ func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.
 		opts = append(opts, llb.IncludePatterns(dir.Include))
 	}
 
-	// Excludes .dagger directory by default
-	excludePatterns := []string{"**/.dagger/"}
 	if len(dir.Exclude) > 0 {
-		excludePatterns = dir.Exclude
+		opts = append(opts, llb.ExcludePatterns(dir.Exclude))
 	}
-	opts = append(opts, llb.ExcludePatterns(excludePatterns))
 
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
