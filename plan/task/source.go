@@ -69,7 +69,7 @@ func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solv
 
 	lg.Debug().Str("path", path).Msg("loading local directory")
 	opts := []llb.LocalOption{
-		withCustomName(v, "Embed %s", path),
+		withCustomName(v, "Source %s", path),
 		llb.IncludePatterns(source.Include),
 		llb.ExcludePatterns(source.Exclude),
 		// Without hint, multiple `llb.Local` operations on the
