@@ -7,9 +7,10 @@ import (
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
 	"universe.dagger.io/go"
-	"universe.dagger.io/go/golangci"
 
+	"github.com/dagger/dagger/ci/pkg/golangci"
 	"github.com/dagger/dagger/ci/pkg/shellcheck"
+	"github.com/dagger/dagger/ci/pkg/markdownlint"
 )
 
 dagger.#Plan & {
@@ -94,6 +95,11 @@ dagger.#Plan & {
 
 			shell: shellcheck.#Lint & {
 				source: _source
+			}
+
+			markdown: markdownlint.#Lint & {
+				source: _source
+				files: ["./docs", "README.md"]
 			}
 
 			cue: docker.#Build & {
