@@ -65,11 +65,11 @@ import (
 		}
 		workdir: "/src"
 		mounts: {
-			"src": {
+			src: {
 				dest:     "/src"
 				contents: source
 			}
-			"node_modules": {
+			node_modules: {
 				dest:     "/src/node_modules"
 				type:     "cache"
 				contents: core.#CacheDir & {

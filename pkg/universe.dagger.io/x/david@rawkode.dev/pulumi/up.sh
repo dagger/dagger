@@ -13,21 +13,21 @@ fi
 if test -v PULUMI_ACCESS_TOKEN; then
   if (pulumi stack ls | grep -e "^${STACK_NAME}"); then
     echo "Stack exists, let's refresh"
-    pulumi stack select ${PULUMI_STACK}
+    pulumi stack select "${PULUMI_STACK}"
     # Could be first deployment, so let's not worry about this failing
     pulumi config refresh --force || true
   else
     echo "Stack does not exist, let's create"
-    pulumi stack init ${PULUMI_STACK}
+    pulumi stack init "${PULUMI_STACK}"
   fi
 else
   # Not using Pulumi SaaS, relying on local stack files
-  if test -v PULUMI_STACK_CREATE && test ! -f Pulumi.${PULUMI_STACK}.yaml; then
-    pulumi stack init ${PULUMI_STACK}
+  if test -v PULUMI_STACK_CREATE && test ! -f "Pulumi.${PULUMI_STACK}.yaml"; then
+    pulumi stack init "${PULUMI_STACK}"
   fi
 fi
 
-case $PULUMI_RUNTIME in
+case "$PULUMI_RUNTIME" in
   nodejs)
     npm install
     ;;
@@ -37,4 +37,4 @@ case $PULUMI_RUNTIME in
     ;;
 esac
 
-pulumi up --stack ${PULUMI_STACK} --yes
+pulumi up --stack "${PULUMI_STACK}" --yes

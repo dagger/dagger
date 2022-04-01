@@ -7,23 +7,17 @@ import (
 
 dagger.#Plan & {
 	client: {
-		filesystem: {
-			"./": read: {
-				contents: dagger.#FS
-			}
-		}
+		filesystem: "./": read: contents: dagger.#FS
 		env: {
 			PULUMI_CONFIG_PASSPHRASE: dagger.#Secret
 			PULUMI_ACCESS_TOKEN:      dagger.#Secret
 		}
 	}
-	actions: {
-		rawkode: pulumi.#Up & {
-			stack:       "test"
-			stackCreate: true
-			runtime:     "nodejs"
-			accessToken: client.env.PULUMI_ACCESS_TOKEN
-			source:      client.filesystem."./".read.contents
-		}
+	actions: rawkode: pulumi.#Up & {
+		stack:       "test"
+		stackCreate: true
+		runtime:     "nodejs"
+		accessToken: client.env.PULUMI_ACCESS_TOKEN
+		source:      client.filesystem."./".read.contents
 	}
 }
