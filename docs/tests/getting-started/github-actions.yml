@@ -23,16 +23,12 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v2
 
-      - name: Project init
-        uses: dagger/dagger-for-github@v2
-        # See all options at https://github.com/dagger/dagger-for-github
-        with:
-          args: project init
-
+      # You need to run `dagger project init` locally before and commit the cue.mod directory to the repository with its contents
       - name: Project update
         uses: dagger/dagger-for-github@v2
-        # See all options at https://github.com/dagger/dagger-for-github
         with:
+          version: 0.2
+          # To pin external dependencies, you can use `project update github.com/[package-source]@v[n]`
           args: project update
 
       - name: Deploy to Netlify
