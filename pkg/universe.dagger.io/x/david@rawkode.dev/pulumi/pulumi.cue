@@ -71,7 +71,6 @@ import (
 			}
 			node_modules: {
 				dest:     "/src/node_modules"
-				type:     "cache"
 				contents: core.#CacheDir & {
 					id: "pulumi-npm-cache"
 				}

@@ -9,8 +9,9 @@ dagger.#Plan & {
 	client: {
 		filesystem: "./": read: contents: dagger.#FS
 		env: {
-			PULUMI_CONFIG_PASSPHRASE: dagger.#Secret
-			PULUMI_ACCESS_TOKEN:      dagger.#Secret
+			PULUMI_ACCESS_TOKEN: dagger.#Secret
+			// If not using Pulumi SaaS, use CONFIG_PASSPHRASE
+			// PULUMI_CONFIG_PASSPHRASE: dagger.#Secret
 		}
 	}
 	actions: rawkode: pulumi.#Up & {
