@@ -2,98 +2,136 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/core"
+
 	"universe.dagger.io/bash"
+	"universe.dagger.io/alpine"
+	"universe.dagger.io/docker"
+	"universe.dagger.io/go"
+	"universe.dagger.io/go/golangci"
 )
 
 dagger.#Plan & {
-
 	// FIXME: Ideally we would want to automatically set the platform's arch identical to the host
 	// to avoid the performance hit caused by qemu (linter goes from <3s to >3m when arch is x86)
 	// Uncomment if running locally on Mac M1 to bypass qemu
 	// platform: "linux/aarch64"
 	platform: "linux/amd64"
 
-	client: filesystem: "./build": write: contents: actions.build.export.directories["/build"]
+	client: filesystem: "../": read: exclude: [
+		"ci",
+		"**/node_modules",
+		"cmd/dagger/dagger",
+		"cmd/dagger/dagger-debug",
+	]
+	client: filesystem: "./build": write: contents: actions.build.output
 
 	actions: {
-		_mountGoCache: {
-			mounts: "go mod cache": {
-				dest:     "/root/.gocache"
-				contents: core.#CacheDir & {
-					id: "go mod cache"
+		_source: client.filesystem["../"].read.contents
+
+		// FIXME: this can be removed once `go` supports built-in VCS info
+		version: {
+			_image: alpine.#Build & {
+				packages: bash: _
+				packages: curl: _
+				packages: git:  _
+			}
+
+			_revision: bash.#Run & {
+				input:   _image.output
+				workdir: "/src"
+				mounts: source: {
+					dest:     "/src"
+					contents: _source
 				}
+
+				script: contents: #"""
+					printf "$(git rev-parse --short HEAD)" > /revision
+					"""#
+				export: files: "/revision": string
 			}
-			env: GOMODCACHE: mounts["go mod cache"].dest
+
+			output: _revision.export.files["/revision"]
 		}
 
-		_mountSourceCode: {
-			mounts: "dagger source code": {
-				contents: _source.output
-				dest:     "/usr/src/dagger"
-			}
-			workdir: mounts["dagger source code"].dest
-		}
+		build: go.#Build & {
+			source:  _source
+			package: "./cmd/dagger/"
+			os:      client.platform.os
+			arch:    client.platform.arch
 
-		_baseImages: #Images
-
-		// Go build the dagger binary
-		// depends on goLint and goTest to complete successfully
-		build: bash.#Run & {
-			_mountSourceCode
-			_mountGoCache
-
-			input: _baseImages.goBuilder
+			ldflags: "-s -w -X go.dagger.io/dagger/version.Revision=\(version.output)"
 
 			env: {
-				GOOS:        client.platform.os
-				GOARCH:      client.platform.arch
 				CGO_ENABLED: "0"
 				// Makes sure the linter and unit tests complete before starting the build
-				"__depends_lint":  "\(goLint.exit)"
-				"__depends_tests": "\(goTest.exit)"
+				// "__depends_lint":  "\(goLint.exit)"
+				// "__depends_tests": "\(goTest.exit)"
 			}
-
-			script: contents: #"""
-				mkdir -p /build
-				git_revision=$(git rev-parse --short HEAD)
-				go build -v -o /build/dagger \
-				 -ldflags '-s -w -X go.dagger.io/dagger/version.Revision='${git_revision} \
-				 ./cmd/dagger/
-				"""#
-
-			export: directories: "/build": _
 		}
 
 		// Go unit tests
-		goTest: bash.#Run & {
-			_mountSourceCode
-			_mountGoCache
+		test: go.#Test & {
+			// container: image: _goImage.output
+			source:  _source
+			package: "./..."
 
-			input: _baseImages.goBuilder
-			script: contents: "go test -race -v ./..."
+			// FIXME: doesn't work with CGO_ENABLED=0
+			// command: flags: "-race": true
+
+			env: {
+				// FIXME: removing this complains about lack of gcc
+				CGO_ENABLED: "0"
+			}
 		}
 
-		// Go lint using golangci-lint
-		goLint: bash.#Run & {
-			_mountSourceCode
-			_mountGoCache
+		lint: {
+			go: golangci.#Lint & {
+				source:  _source
+				version: "1.45"
+			}
 
-			input: _baseImages.goLinter
-			script: contents: "golangci-lint run -v --timeout 5m"
-		}
+			cue: docker.#Build & {
+				steps: [
+					alpine.#Build & {
+						packages: bash: _
+						packages: curl: _
+						packages: git:  _
+					},
 
-		// CUE lint
-		cueLint: bash.#Run & {
-			_mountSourceCode
+					docker.#Copy & {
+						contents: _source
+						source:   "go.mod"
+						dest:     "go.mod"
+					},
 
-			input: _baseImages.cue
-			script: contents: #"""
-				# Format the cue code
-				find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
-				# Check that all formatted files where committed
-				test -z $(git status -s . | grep -e '^ M'  | grep .cue | cut -d ' ' -f3)
-				"""#
+					// Install CUE
+					bash.#Run & {
+						script: contents: #"""
+								export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
+								export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
+								echo "Installing cue version $CUE_VERSION"
+								curl -L "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL}" | tar zxf - -C /usr/local/bin
+								cue version
+						"""#
+					},
+
+					// CACHE: copy only *.cue files
+					docker.#Copy & {
+						contents: _source
+						include: ["*.cue"]
+						dest: "/cue"
+					},
+
+					// LINT
+					bash.#Run & {
+						workdir: "/cue"
+						script: contents: #"""
+							find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -t -n 1 -P 8 cue fmt -s
+							test -z "$(git status -s . | grep -e "^ M"  | grep "\.cue" | cut -d ' ' -f3 | tee /dev/stderr)"
+							"""#
+					},
+				]
+			}
 		}
 	}
 }
