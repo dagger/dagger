@@ -101,7 +101,9 @@ h2 {
   line-height: 32px;
 }
 
-code {
+code,
+.table-of-contents__link code,
+.table-of-contents__link:hover code {
   margin: 0 1px;
   color: var(--ifm-code-color);
   .alert & {
@@ -124,7 +126,7 @@ code {
     --ifm-h3-vertical-rhythm-top: 2;
   }
 
-  a {
+  a:not(.card) {
     font-weight: bold;
     text-decoration: underline;
     color: var(--ifm-color-primary-dark);
@@ -279,9 +281,9 @@ h1[class^="h1Heading"] {
   line-height: 36px;
   @include desktop {
     width: 48px;
-    span {
-      display: none;
-    }
+    text-indent: 9999px;
+    white-space: nowrap;
+    overflow: hidden;
   }
 }
 
@@ -310,15 +312,6 @@ h1[class^="h1Heading"] {
 }
 
 /* sidebar */
-@include desktop {
-  aside[class^="docSidebarContainer"] {
-    width: 340px;
-
-    div[class^="sidebar"] {
-      width: 340px;
-    }
-  }
-}
 
 a[class^="sidebarLogo"] {
   img {
@@ -341,7 +334,7 @@ a[class^="sidebarLogo"] {
 
 main[class^="docMainContainer"] {
   background: #ffffff;
-  padding: 2rem 2rem 2rem 5rem;
+  padding: 2rem;
 
   @include tablet {
     padding: 2rem;

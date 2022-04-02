@@ -15,7 +15,7 @@ The production setup is a multi-node Docker Swarm cluster running on AWS.
 The Particubes team chose Dagger for continuous deployment because it was the easiest way of integrating GitHub with Docker Swarm.
 Every commit to the main branch goes straight to [docs.particubes.com](https://docs.particubes.com) via a Dagger pipeline that runs in GitHub Actions. Let us see how the Particubes Dagger plan fits together.
 
-### Actions API
+## Actions API
 
 This is a high level overview of all actions in the Particubes docs Dagger plan:
 
@@ -23,7 +23,7 @@ This is a high level overview of all actions in the Particubes docs Dagger plan:
 
 We can see all available actions in a Plan by running the following command:
 
-```bash
+```console
 $ dagger do
 Execute a dagger action.
 
@@ -34,7 +34,7 @@ Available Actions:
  deploy Deploy a container image
 ```
 
-### Client API
+## Client API
 
 Dagger actions usually need to interact with the host environment where the Dagger client runs. The Particubes' plan uses environment variables and the filesystem.
 
@@ -45,20 +45,22 @@ This is an overview of all client interactions for this plan:
 This is what the above looks like in the Dagger plan config:
 
 ```cue file=../tests/use-cases/go-docker-swarm/client-api.cue.fragment
+
 ```
 
-### The *build* Action
+## The `build` Action
 
-This is a more in-depth overview of the *build* action and how it interacts with the client in the Particubes docs Dagger plan:
+This is a more in-depth overview of the _build_ action and how it interacts with the client in the Particubes docs Dagger plan:
 
 ![build action](/img/use-cases/build-action.png)
 
 This is what the above looks like in the Dagger plan config:
 
 ```cue file=../tests/use-cases/go-docker-swarm/build-action.cue.fragment
+
 ```
 
-### Github Action integration
+## Github Action integration
 
 This is the GitHub Actions workflow config that invokes `dagger`, which in turn runs the full plan:
 
@@ -102,16 +104,17 @@ dagger do
 
 This is the first step that enabled the Particubes team to have the same CI/CD experience everywhere.
 
-### Full Particubes docs Dagger plan
+## Full Particubes docs Dagger plan
 
 This is the entire plan running on Particubes' CI:
 
 ```cue file=../tests/use-cases/go-docker-swarm/full/particubes.docs.cue
+
 ```
 
-### What comes next ?
+## What comes next ?
 
-Particubes' team suggested that we create a `dev` action with *hot reload*, that way Dagger would even asbtract away the ramp-up experience when developing the doc
+Particubes' team suggested that we create a `dev` action with _hot reload_, that way Dagger would even asbtract away the ramp-up experience when developing the doc
 
 :::tip
 The latest version of this pipeline can be found at [github.com/voxowl/particubes/pull/144](https://github.com/voxowl/particubes/blob/2af173596729929cfb7a7a1f78f1ec0d8b685e5e/lua-docs/docs.cue)

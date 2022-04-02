@@ -84,6 +84,24 @@ setup() {
   assert_output --partial 'path "/foobar" does not exist'
 }
 
+
+@test "plan/client/filesystem/read/fs/invalid_fs_input" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/invalid_fs_input"
+
+  run "$DAGGER" "do" -p . test
+  assert_failure
+  assert_output --partial 'test.txt" is not a directory'
+}
+
+
+@test "plan/client/filesystem/read/fs/invalid_fs_type" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/invalid_fs_type"
+
+  run "$DAGGER" "do" -p . test
+  assert_failure
+  assert_output --partial 'rootfs" cannot be a directory'
+}
+
 @test "plan/client/filesystem/read/fs/relative" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/relative"
 
@@ -144,7 +162,7 @@ setup() {
   cd "$TESTDIR/plan/client/filesystem/conflict"
 
   echo -n foo > test.txt
-  run "$DAGGER" "do" --log-level debug -p . test
+  run "$DAGGER" "do" -p . test
   assert_line --regexp "client\.filesystem\..+\.write.+dependency=client\.filesystem\..+\.read"
 
   rm -f test.txt

@@ -21,7 +21,7 @@ func init() {
 type clientFilesystemWriteTask struct {
 }
 
-func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Co
 	return compiler.NewValue(), nil
 }
 
-func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value, path string) error {
+func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) error {
 	lg := log.Ctx(ctx)
 	contents := v.Lookup("contents")
 
@@ -79,7 +79,7 @@ func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plan
 	return fmt.Errorf("unsupported type %q", k)
 }
 
-func (t clientFilesystemWriteTask) writeFS(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value, path string) error {
+func (t clientFilesystemWriteTask) writeFS(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) error {
 	contents, err := pctx.FS.FromValue(v)
 	if err != nil {
 		return err

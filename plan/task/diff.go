@@ -16,7 +16,7 @@ func init() {
 type diffTask struct {
 }
 
-func (t diffTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *diffTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lowerFS, err := pctx.FS.FromValue(v.Lookup("lower"))
 	if err != nil {
 		return nil, err

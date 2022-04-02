@@ -25,19 +25,22 @@ type Solver struct {
 	opts     Opts
 	eventsWg *sync.WaitGroup
 	closeCh  chan *bk.SolveStatus
+	refs     []bkgw.Reference
+	l        sync.RWMutex
 }
 
 type Opts struct {
-	Control *bk.Client
-	Gateway bkgw.Client
-	Events  chan *bk.SolveStatus
-	Context *plancontext.Context
-	Auth    *RegistryAuthProvider
-	NoCache bool
+	Control      *bk.Client
+	Gateway      bkgw.Client
+	Events       chan *bk.SolveStatus
+	Context      *plancontext.Context
+	Auth         *RegistryAuthProvider
+	NoCache      bool
+	CacheImports []bkgw.CacheOptionsEntry
 }
 
-func New(opts Opts) Solver {
-	return Solver{
+func New(opts Opts) *Solver {
+	return &Solver{
 		eventsWg: &sync.WaitGroup{},
 		closeCh:  make(chan *bk.SolveStatus),
 		opts:     opts,
@@ -63,25 +66,25 @@ func invalidateCache(def *llb.Definition) error {
 	return nil
 }
 
-func (s Solver) GetOptions() Opts {
+func (s *Solver) GetOptions() Opts {
 	return s.opts
 }
 
-func (s Solver) NoCache() bool {
+func (s *Solver) NoCache() bool {
 	return s.opts.NoCache
 }
 
-func (s Solver) Stop() {
+func (s *Solver) Stop() {
 	close(s.closeCh)
 	s.eventsWg.Wait()
 	close(s.opts.Events)
 }
 
-func (s Solver) AddCredentials(target, username, secret string) {
+func (s *Solver) AddCredentials(target, username, secret string) {
 	s.opts.Auth.AddCredentials(target, username, secret)
 }
 
-func (s Solver) Marshal(ctx context.Context, st llb.State, co ...llb.ConstraintsOpt) (*bkpb.Definition, error) {
+func (s *Solver) Marshal(ctx context.Context, st llb.State, co ...llb.ConstraintsOpt) (*bkpb.Definition, error) {
 	// FIXME: do not hardcode the platform
 	def, err := st.Marshal(ctx, co...)
 	if err != nil {
@@ -97,11 +100,11 @@ func (s Solver) Marshal(ctx context.Context, st llb.State, co ...llb.Constraints
 	return def.ToPB(), nil
 }
 
-func (s Solver) SessionID() string {
+func (s *Solver) SessionID() string {
 	return s.opts.Gateway.BuildOpts().SessionID
 }
 
-func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.ResolveImageConfigOpt) (dockerfile2llb.Image, digest.Digest, error) {
+func (s *Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.ResolveImageConfigOpt) (dockerfile2llb.Image, digest.Digest, error) {
 	var image dockerfile2llb.Image
 
 	// Load image metadata and convert to to LLB.
@@ -119,7 +122,7 @@ func (s Solver) ResolveImageConfig(ctx context.Context, ref string, opts llb.Res
 }
 
 // Solve will block until the state is solved and returns a Reference.
-func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
+func (s *Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.Result, error) {
 	// makes Solve() to block until LLB graph is solved. otherwise it will
 	// return result (that you can for example use for next build) that
 	// will be evaluated on export or if you access files on it.
@@ -131,9 +134,15 @@ func (s Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw.
 	return res, nil
 }
 
+func (s *Solver) References() []bkgw.Reference {
+	s.l.RLock()
+	defer s.l.RUnlock()
+	return s.refs
+}
+
 // Solve will block until the state is solved and returns a Reference.
 // It takes a platform as argument which correspond to the targeted platform.
-func (s Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform) (bkgw.Reference, error) {
+func (s *Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform) (bkgw.Reference, error) {
 	def, err := s.Marshal(ctx, st, llb.Platform(platform))
 	if err != nil {
 		return nil, err
@@ -152,19 +161,29 @@ func (s Solver) Solve(ctx context.Context, st llb.State, platform specs.Platform
 
 	// call solve
 	res, err := s.SolveRequest(ctx, bkgw.SolveRequest{
-		Definition: def,
+		Definition:   def,
+		CacheImports: s.opts.CacheImports,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return res.SingleRef()
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	s.l.Lock()
+	defer s.l.Unlock()
+	s.refs = append(s.refs, ref)
+
+	return ref, nil
 }
 
 // Forward events from solver to the main events channel
 // It creates a task in the solver waiting group to be
 // sure that everything will be forward to the main channel
-func (s Solver) forwardEvents(ch chan *bk.SolveStatus) {
+func (s *Solver) forwardEvents(ch chan *bk.SolveStatus) {
 	s.eventsWg.Add(1)
 	defer s.eventsWg.Done()
 
@@ -177,7 +196,7 @@ func (s Solver) forwardEvents(ch chan *bk.SolveStatus) {
 // FIXME: this is currently implemented as a hack, starting a new Build session
 // within buildkit from the Control API. Ideally the Gateway API should allow to
 // Export directly.
-func (s Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry, platform specs.Platform) (*bk.SolveResponse, error) {
+func (s *Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.Image, output bk.ExportEntry, platform specs.Platform) (*bk.SolveResponse, error) {
 	// Check close event channel and return if we're already done with the main pipeline
 	select {
 	case <-s.closeCh:
