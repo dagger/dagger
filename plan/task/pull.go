@@ -16,8 +16,7 @@ func init() {
 	Register("Pull", func() Task { return &pullTask{} })
 }
 
-type pullTask struct {
-}
+type pullTask struct{}
 
 func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)

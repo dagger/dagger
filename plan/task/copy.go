@@ -13,8 +13,7 @@ func init() {
 	Register("Copy", func() Task { return &copyTask{} })
 }
 
-type copyTask struct {
-}
+type copyTask struct{}
 
 func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var err error

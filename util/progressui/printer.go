@@ -11,10 +11,12 @@ import (
 	"github.com/tonistiigi/units"
 )
 
-const antiFlicker = 5 * time.Second
-const maxDelay = 10 * time.Second
-const minTimeDelta = 5 * time.Second
-const minProgressDelta = 0.05 // %
+const (
+	antiFlicker      = 5 * time.Second
+	maxDelay         = 10 * time.Second
+	minTimeDelta     = 5 * time.Second
+	minProgressDelta = 0.05 // %
+)
 
 type lastStatus struct {
 	Current   int64

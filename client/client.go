@@ -8,26 +8,20 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rs/zerolog/log"
-
-	// Cue
-
 	// buildkit
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
-
+	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/compiler"
 	// docker output
 	"go.dagger.io/dagger/plancontext"
+	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/util/buildkitd"
 	"go.dagger.io/dagger/util/progressui"
-
-	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/solver"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 // Client is a dagger client

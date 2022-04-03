@@ -16,8 +16,7 @@ func init() {
 	Register("ClientEnv", func() Task { return &clientEnvTask{} })
 }
 
-type clientEnvTask struct {
-}
+type clientEnvTask struct{}
 
 func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	log.Ctx(ctx).Debug().Msg("loading environment variables")

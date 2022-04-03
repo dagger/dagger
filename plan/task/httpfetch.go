@@ -18,8 +18,7 @@ func init() {
 	Register("HTTPFetch", func() Task { return &httpFetchTask{} })
 }
 
-type httpFetchTask struct {
-}
+type httpFetchTask struct{}
 
 func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var httpFetch struct {

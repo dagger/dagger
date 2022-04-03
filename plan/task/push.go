@@ -16,8 +16,7 @@ func init() {
 	Register("Push", func() Task { return &pushTask{} })
 }
 
-type pushTask struct {
-}
+type pushTask struct{}
 
 func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)

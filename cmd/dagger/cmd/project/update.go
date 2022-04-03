@@ -38,7 +38,7 @@ var updateCmd = &cobra.Command{
 			return
 		}
 
-		var update = viper.GetBool("update")
+		update := viper.GetBool("update")
 
 		doneCh := common.TrackCommand(ctx, cmd)
 		var processedRequires []*mod.Require
@@ -67,7 +67,6 @@ var updateCmd = &cobra.Command{
 		if err != nil {
 			lg.Error().Err(err).Msg("error installing/updating packages")
 		}
-
 	},
 }
 

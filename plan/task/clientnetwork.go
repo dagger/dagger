@@ -17,8 +17,7 @@ func init() {
 	Register("ClientNetwork", func() Task { return &clientNetwork{} })
 }
 
-type clientNetwork struct {
-}
+type clientNetwork struct{}
 
 func (t clientNetwork) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)

@@ -9,12 +9,10 @@ import (
 	"go.dagger.io/dagger/pkg"
 )
 
-var (
-	secretIDPath = cue.MakePath(
-		cue.Str("$dagger"),
-		cue.Str("secret"),
-		cue.Hid("_id", pkg.DaggerPackage),
-	)
+var secretIDPath = cue.MakePath(
+	cue.Str("$dagger"),
+	cue.Str("secret"),
+	cue.Hid("_id", pkg.DaggerPackage),
 )
 
 func IsSecretValue(v *compiler.Value) bool {

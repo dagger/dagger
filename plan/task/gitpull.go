@@ -16,8 +16,7 @@ func init() {
 	Register("GitPull", func() Task { return &gitPullTask{} })
 }
 
-type gitPullTask struct {
-}
+type gitPullTask struct{}
 
 func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var gitPull struct {

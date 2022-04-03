@@ -17,8 +17,7 @@ func init() {
 	Register("DecodeSecret", func() Task { return &decodeSecretTask{} })
 }
 
-type decodeSecretTask struct {
-}
+type decodeSecretTask struct{}
 
 func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)

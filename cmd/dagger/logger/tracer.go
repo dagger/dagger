@@ -67,8 +67,7 @@ func (t tracer) Close() error {
 	return t.provider.Shutdown(ctx)
 }
 
-type nopCloser struct {
-}
+type nopCloser struct{}
 
 func (*nopCloser) Close() error {
 	return nil

@@ -177,12 +177,12 @@ func getDeviceID(repo string) (string, error) {
 			return "", err
 		}
 
-		if err := os.MkdirAll(filepath.Dir(idFile), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(idFile), 0o755); err != nil {
 			return "", err
 		}
 
 		id = []byte(uuid.New().String())
-		if err := os.WriteFile(idFile, id, 0600); err != nil {
+		if err := os.WriteFile(idFile, id, 0o600); err != nil {
 			return "", err
 		}
 	}

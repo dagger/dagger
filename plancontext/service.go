@@ -9,12 +9,10 @@ import (
 	"go.dagger.io/dagger/pkg"
 )
 
-var (
-	serviceIDPath = cue.MakePath(
-		cue.Str("$dagger"),
-		cue.Str("service"),
-		cue.Hid("_id", pkg.DaggerPackage),
-	)
+var serviceIDPath = cue.MakePath(
+	cue.Str("$dagger"),
+	cue.Str("service"),
+	cue.Hid("_id", pkg.DaggerPackage),
 )
 
 func IsServiceValue(v *compiler.Value) bool {

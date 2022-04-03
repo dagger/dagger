@@ -15,8 +15,7 @@ func init() {
 	Register("NewSecret", func() Task { return &newSecretTask{} })
 }
 
-type newSecretTask struct {
-}
+type newSecretTask struct{}
 
 func (t *newSecretTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()

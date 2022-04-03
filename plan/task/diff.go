@@ -13,8 +13,7 @@ func init() {
 	Register("Diff", func() Task { return &diffTask{} })
 }
 
-type diffTask struct {
-}
+type diffTask struct{}
 
 func (t *diffTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lowerFS, err := pctx.FS.FromValue(v.Lookup("lower"))

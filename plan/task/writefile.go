@@ -16,8 +16,7 @@ func init() {
 	Register("WriteFile", func() Task { return &writeFileTask{} })
 }
 
-type writeFileTask struct {
-}
+type writeFileTask struct{}
 
 func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var contents []byte

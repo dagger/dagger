@@ -16,6 +16,8 @@ help: # Show how to get started & what targets are available
 	@echo
 
 GIT_REVISION := $(shell git rev-parse --short HEAD)
+GO_PACKAGES := `go list -f {{.Dir}} ./... | grep -v /vendor/`
+
 .PHONY: dagger
 dagger: # Build a dev dagger binary
 	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w -X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
@@ -35,6 +37,11 @@ test: # Run all tests
 .PHONY: golint
 golint: # Go lint
 	golangci-lint run --timeout 3m
+
+.PHONY: fmt
+fmt:
+	go fmt $(GO_PACKAGES)
+	gofumpt -w $(GO_PACKAGES)
 
 .PHONY: cuefmt
 cuefmt: # Format all cue files

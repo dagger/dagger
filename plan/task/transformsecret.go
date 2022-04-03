@@ -17,8 +17,7 @@ func init() {
 	Register("TransformSecret", func() Task { return &transformSecretTask{} })
 }
 
-type transformSecretTask struct {
-}
+type transformSecretTask struct{}
 
 func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)

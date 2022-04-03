@@ -18,8 +18,7 @@ func init() {
 	Register("ClientFilesystemWrite", func() Task { return &clientFilesystemWriteTask{} })
 }
 
-type clientFilesystemWriteTask struct {
-}
+type clientFilesystemWriteTask struct{}
 
 func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()
@@ -48,7 +47,7 @@ func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plan
 		return t.writeFS(ctx, pctx, s, contents, path)
 	}
 
-	permissions := fs.FileMode(0644) // default permission
+	permissions := fs.FileMode(0o644) // default permission
 	if vl := v.Lookup("permissions"); vl.Exists() {
 		p, err := vl.Int64()
 		if err != nil {

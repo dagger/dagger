@@ -20,8 +20,7 @@ func init() {
 	Register("ClientCommand", func() Task { return &clientCommandTask{} })
 }
 
-type clientCommandTask struct {
-}
+type clientCommandTask struct{}
 
 func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var opts struct {

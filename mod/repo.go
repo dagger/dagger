@@ -7,12 +7,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/rs/zerolog/log"
-
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/hashicorp/go-version"
+	"github.com/rs/zerolog/log"
 )
 
 type repo struct {
@@ -24,7 +23,7 @@ func clone(ctx context.Context, require *Require, dir string, privateKeyFile, pr
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, fmt.Errorf("error cleaning up tmp directory")
 	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("error creating tmp dir for cloning package")
 	}
 

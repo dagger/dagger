@@ -18,8 +18,7 @@ func init() {
 	Register("Source", func() Task { return &sourceTask{} })
 }
 
-type sourceTask struct {
-}
+type sourceTask struct{}
 
 func (c *sourceTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
 	origPath, err := v.Lookup("path").String()

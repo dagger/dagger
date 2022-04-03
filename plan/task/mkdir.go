@@ -15,8 +15,7 @@ func init() {
 	Register("Mkdir", func() Task { return &mkdirTask{} })
 }
 
-type mkdirTask struct {
-}
+type mkdirTask struct{}
 
 func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()

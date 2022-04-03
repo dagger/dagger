@@ -5,14 +5,12 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-var (
-	// Default platform.
-	// FIXME: This should be auto detected using buildkit
-	defaultPlatform = specs.Platform{
-		OS:           "linux",
-		Architecture: "amd64",
-	}
-)
+// Default platform.
+// FIXME: This should be auto detected using buildkit
+var defaultPlatform = specs.Platform{
+	OS:           "linux",
+	Architecture: "amd64",
+}
 
 type platformContext struct {
 	platform specs.Platform

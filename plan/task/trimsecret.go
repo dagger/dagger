@@ -13,8 +13,7 @@ func init() {
 	Register("TrimSecret", func() Task { return &trimSecretTask{} })
 }
 
-type trimSecretTask struct {
-}
+type trimSecretTask struct{}
 
 func (t *trimSecretTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	input, err := pctx.Secrets.FromValue(v.Lookup("input"))

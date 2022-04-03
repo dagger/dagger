@@ -14,10 +14,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var (
-	// vendoredVersion is filled in by init()
-	vendoredVersion string
-)
+// vendoredVersion is filled in by init()
+var vendoredVersion string
 
 const (
 	image         = "moby/buildkit"

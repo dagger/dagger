@@ -23,9 +23,7 @@ const (
 	versionURL  = "https://releases.dagger.io/dagger/latest_version"
 )
 
-var (
-	versionMessage = ""
-)
+var versionMessage = ""
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
@@ -144,7 +142,7 @@ func checkVersion() {
 	baseDir := path.Dir(versionFilePath)
 
 	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(baseDir, 0700); err != nil {
+		if err := os.MkdirAll(baseDir, 0o700); err != nil {
 			// mkdir fails, ignore silently
 			return
 		}
@@ -166,7 +164,7 @@ func checkVersion() {
 
 	// Update check timestamps file
 	now := time.Now().Format(time.RFC3339)
-	ioutil.WriteFile(path.Join(versionFilePath), []byte(now), 0600)
+	ioutil.WriteFile(path.Join(versionFilePath), []byte(now), 0o600)
 }
 
 func warnVersion() bool {

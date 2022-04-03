@@ -7,15 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"cuelang.org/go/cue"
+	cueflow "cuelang.org/go/tools/flow"
+	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
-
-	"cuelang.org/go/cue"
-	cueflow "cuelang.org/go/tools/flow"
-
-	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 )
 

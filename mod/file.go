@@ -276,7 +276,7 @@ func (f *file) write() error {
 		bMod.WriteString(fmt.Sprintf("%s %s\n", r.fullPath(), r.version))
 	}
 
-	err := ioutil.WriteFile(path.Join(f.workspacePath, modFilePath), bMod.Bytes(), 0600)
+	err := ioutil.WriteFile(path.Join(f.workspacePath, modFilePath), bMod.Bytes(), 0o600)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (f *file) write() error {
 		bSum.WriteString(fmt.Sprintf("%s %s\n", r.fullPath(), r.checksum))
 	}
 
-	err = ioutil.WriteFile(path.Join(f.workspacePath, sumFilePath), bSum.Bytes(), 0600)
+	err = ioutil.WriteFile(path.Join(f.workspacePath, sumFilePath), bSum.Bytes(), 0o600)
 	if err != nil {
 		return err
 	}

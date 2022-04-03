@@ -15,8 +15,7 @@ func init() {
 	Register("ReadFile", func() Task { return &readFileTask{} })
 }
 
-type readFileTask struct {
-}
+type readFileTask struct{}
 
 func (t *readFileTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()

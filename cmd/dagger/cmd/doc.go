@@ -404,7 +404,7 @@ func walkStdlib(ctx context.Context, output, format string) {
 		filename := getFileName(p)
 		filepath := path.Join(output, filename)
 
-		if err := os.MkdirAll(path.Dir(filepath), 0755); err != nil {
+		if err := os.MkdirAll(path.Dir(filepath), 0o755); err != nil {
 			lg.Fatal().Err(err).Msg("cannot create directory")
 		}
 

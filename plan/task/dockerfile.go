@@ -15,7 +15,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkpb "github.com/moby/buildkit/solver/pb"
 	"github.com/rs/zerolog/log"
-
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -25,8 +24,7 @@ func init() {
 	Register("Dockerfile", func() Task { return &dockerfileTask{} })
 }
 
-type dockerfileTask struct {
-}
+type dockerfileTask struct{}
 
 func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
@@ -76,7 +74,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 		}
 		dockerfileDef, err = s.Marshal(ctx,
 			llb.Scratch().File(
-				llb.Mkfile("/Dockerfile", 0644, []byte(contents)),
+				llb.Mkfile("/Dockerfile", 0o644, []byte(contents)),
 			),
 		)
 		if err != nil {

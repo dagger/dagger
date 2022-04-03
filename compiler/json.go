@@ -14,9 +14,7 @@ func (s JSON) Get(path ...string) ([]byte, error) {
 	if s == nil {
 		s = []byte("{}")
 	}
-	var (
-		root *jonson.JSON
-	)
+	var root *jonson.JSON
 	root, err := jonson.Parse(s)
 	if err != nil {
 		return nil, fmt.Errorf("parse root json: %w", err)
@@ -34,9 +32,7 @@ func (s JSON) Unset(path ...string) (JSON, error) {
 	if s == nil {
 		s = []byte("{}")
 	}
-	var (
-		root *jonson.JSON
-	)
+	var root *jonson.JSON
 	root, err := jonson.Parse(s)
 	if err != nil {
 		return nil, fmt.Errorf("unset: parse root json: %w", err)

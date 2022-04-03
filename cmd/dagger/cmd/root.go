@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/project"
 	"go.dagger.io/dagger/cmd/dagger/logger"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"

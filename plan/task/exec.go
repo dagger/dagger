@@ -17,8 +17,7 @@ func init() {
 	Register("Exec", func() Task { return &execTask{} })
 }
 
-type execTask struct {
-}
+type execTask struct{}
 
 func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	// Get input state

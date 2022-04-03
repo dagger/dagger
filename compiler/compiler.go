@@ -11,10 +11,8 @@ import (
 	cueyaml "cuelang.org/go/encoding/yaml"
 )
 
-var (
-	// DefaultCompiler is the default Compiler and is used by Compile
-	DefaultCompiler = New()
-)
+// DefaultCompiler is the default Compiler and is used by Compile
+var DefaultCompiler = New()
 
 func Compile(name string, src string) (*Value, error) {
 	return DefaultCompiler.Compile(name, src)

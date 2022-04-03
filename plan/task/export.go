@@ -7,11 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/moby/buildkit/exporter/containerimage/exptypes"
-
 	"github.com/docker/distribution/reference"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -22,8 +21,7 @@ func init() {
 	Register("Export", func() Task { return &exportTask{} })
 }
 
-type exportTask struct {
-}
+type exportTask struct{}
 
 func (t exportTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
 	dir, err := os.MkdirTemp("", "dagger-export-*")
@@ -96,7 +94,6 @@ func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 			return os.Create(file)
 		},
 	}, pctx.Platform.Get())
-
 	if err != nil {
 		return nil, err
 	}
