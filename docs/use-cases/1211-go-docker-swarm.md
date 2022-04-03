@@ -86,7 +86,7 @@ jobs:
         with:
           install-only: true
 
-      - name: Dagger poject update
+      - name: Dagger project update
         run: dagger project update
 
       - name: Dagger do test
