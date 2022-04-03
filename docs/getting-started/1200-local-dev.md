@@ -33,7 +33,7 @@ If you do, you can install `dagger` with a single command:
 brew install dagger/tap/dagger
 ```
 
-This installs `dagger` in `/opt/homebrew/bin` for **Mac with Apple Chip** & in `/usr/local/bin` for **Mac with Intel Chip**:
+This installs `dagger` in `/opt/homebrew/bin` for **Mac with Apple Chip** or in `/usr/local/bin` for **Mac with Intel Chip**:
 
 ```shell
 type dagger
