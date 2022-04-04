@@ -8,7 +8,7 @@ import "dagger.io/dagger"
 	$dagger: task: _name: "Source"
 
 	// Relative path to source.
-	path: string
+	path: string | *"."
 	// Optionally exclude certain files
 	include: [...string]
 	// Optionally include certain files
