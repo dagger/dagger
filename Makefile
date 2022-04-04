@@ -16,7 +16,7 @@ help: # Show how to get started & what targets are available
 	@echo
 
 GIT_REVISION := $(shell git rev-parse --short HEAD)
-GO_PACKAGES := `go list -f {{.Dir}} ./... | grep -v /vendor/`
+GO_PACKAGES := $(go list -f {{.Dir}} ./... | grep -v /vendor/)
 
 .PHONY: dagger
 dagger: # Build a dev dagger binary
@@ -39,7 +39,7 @@ golint: # Go lint
 	golangci-lint run --timeout 3m
 
 .PHONY: fmt
-fmt:
+fmt: # Format code
 	go fmt $(GO_PACKAGES)
 	gofumpt -w $(GO_PACKAGES)
 
