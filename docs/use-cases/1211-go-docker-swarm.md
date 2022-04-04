@@ -60,7 +60,7 @@ This is what the above looks like in the Dagger plan config:
 
 ```
 
-## Github Action integration
+## GitHub Action integration
 
 This is the GitHub Actions workflow config that invokes `dagger`, which in turn runs the full plan:
 
