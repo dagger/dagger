@@ -27,6 +27,8 @@ import "dagger.io/dagger"
 		authToken: dagger.#Secret
 	} | {
 		authHeader: dagger.#Secret
+	} | {
+		sshAgent: dagger.#Socket
 	}
 	output: dagger.#FS @dagger(generated)
 }

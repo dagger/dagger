@@ -72,6 +72,14 @@ func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *sol
 		}
 		lg.Debug().Str("authHeader", "***").Msg("adding git option")
 		gitOpts = append(gitOpts, llb.AuthHeaderSecret(authHeaderSecret.ID()))
+	} else if authSocket := v.Lookup("auth.sshAgent"); plancontext.IsSocketValue(authSocket) {
+		s, err := pctx.Sockets.FromValue(authSocket)
+		if err != nil {
+			return nil, err
+		}
+
+		lg.Debug().Str("sshAgent", "***").Msg("adding git option")
+		gitOpts = append(gitOpts, llb.MountSSHSock(s.ID()))
 	}
 
 	remoteRedacted := gitPull.Remote
