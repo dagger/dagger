@@ -58,6 +58,7 @@ func tracerProvider(url string) (*tracesdk.TracerProvider, error) {
 			semconv.ServiceNameKey.String("dagger"),
 		)),
 	)
+
 	return tp, nil
 }
 

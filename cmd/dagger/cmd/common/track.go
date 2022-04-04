@@ -22,8 +22,10 @@ func TrackCommand(ctx context.Context, cmd *cobra.Command, props ...*telemetry.P
 
 func commandName(cmd *cobra.Command) string {
 	parts := []string{}
+
 	for c := cmd; c.Parent() != nil; c = c.Parent() {
 		parts = append([]string{c.Name()}, parts...)
 	}
+
 	return strings.Join(parts, " ")
 }

@@ -33,6 +33,7 @@ func New() zerolog.Logger {
 	if err != nil {
 		panic(err)
 	}
+
 	return logger.Level(lvl)
 }
 
@@ -50,5 +51,6 @@ func jsonLogs() bool {
 		fmt.Fprintf(os.Stderr, "invalid --log-format %q\n", f)
 		os.Exit(1)
 	}
+
 	return false
 }

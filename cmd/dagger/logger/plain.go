@@ -77,6 +77,7 @@ func formatTimestamp(event map[string]interface{}) string {
 	if err != nil {
 		panic(err)
 	}
+
 	return fmt.Sprintf("[dark_gray]%s[reset]", t.Format(time.Kitchen))
 }
 
@@ -121,6 +122,7 @@ func parseSource(event map[string]interface{}) string {
 	if task, ok := event["task"].(string); ok && task != "" {
 		source = task
 	}
+
 	return source
 }
 
@@ -176,6 +178,7 @@ func formatFields(entry map[string]interface{}) string {
 	sort.SliceStable(fields, func(i, j int) bool {
 		return fields[i] < fields[j]
 	})
+
 	return fmt.Sprintf("    [bold]%s[reset]", strings.Join(fields, " "))
 }
 
@@ -193,5 +196,6 @@ func hashColor(text string) string {
 		"light_cyan",
 	}
 	h := adler32.Checksum([]byte(text))
+
 	return colors[int(h)%len(colors)]
 }

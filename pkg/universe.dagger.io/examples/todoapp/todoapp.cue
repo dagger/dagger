@@ -16,8 +16,8 @@ dagger.#Plan & {
 		contents: core.#CacheDir & {
 			id: "todoapp-modules-cache"
 		}
-
 	}
+
 	client: {
 		filesystem: {
 			"./": read: {
@@ -37,6 +37,7 @@ dagger.#Plan & {
 			NETLIFY_TOKEN: dagger.#Secret
 		}
 	}
+
 	actions: {
 		deps: docker.#Build & {
 			steps: [
@@ -89,7 +90,6 @@ dagger.#Plan & {
 					yarn run build
 					"""#
 			}
-
 			contents: core.#Subdir & {
 				input: run.output.rootfs
 				path:  "/src/build"

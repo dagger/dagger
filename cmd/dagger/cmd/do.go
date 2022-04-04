@@ -107,6 +107,7 @@ func getTargetPath(args []string) cue.Path {
 	for _, arg := range args {
 		selectors = append(selectors, cue.Str(arg))
 	}
+
 	return cue.MakePath(selectors...)
 }
 

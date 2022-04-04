@@ -47,6 +47,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
+
 	if host == "" {
 		h, err := buildkitd.Start(ctx)
 		if err != nil {
@@ -55,6 +56,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 
 		host = h
 	}
+
 	opts := []bk.ClientOpt{}
 
 	if span := trace.SpanFromContext(ctx); span != nil {
@@ -65,6 +67,7 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
+
 	return &Client{
 		c:   c,
 		cfg: cfg,
@@ -105,6 +108,7 @@ func convertCacheOptionEntries(ims []bk.CacheOptionsEntry) []bkgw.CacheOptionsEn
 		}
 		convertIms = append(convertIms, convertIm)
 	}
+
 	return convertIms
 }
 
@@ -223,6 +227,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 		}
 
 		component := v.Name[1 : prefixEndPos+1]
+
 		return component, v.Name[prefixEndPos+3 : len(v.Name)]
 	}
 
@@ -235,6 +240,7 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 		for _, secret := range secrets {
 			s = strings.ReplaceAll(s, secret.PlainText(), "***")
 		}
+
 		return s
 	}
 

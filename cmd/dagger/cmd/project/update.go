@@ -20,7 +20,6 @@ var updateCmd = &cobra.Command{
 			panic(err)
 		}
 	},
-
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
@@ -67,7 +66,6 @@ var updateCmd = &cobra.Command{
 		if err != nil {
 			lg.Error().Err(err).Msg("error installing/updating packages")
 		}
-
 	},
 }
 

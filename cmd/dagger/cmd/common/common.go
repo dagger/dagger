@@ -30,6 +30,7 @@ func FormatValue(val *compiler.Value) string {
 	if val.IsConcreteR() != nil {
 		return val.IncompleteKind().String()
 	}
+
 	if val.IncompleteKind() == cue.StructKind {
 		return "struct"
 	}
@@ -50,6 +51,7 @@ func ValueDocFull(val *compiler.Value) string {
 	if len(doc) == 0 {
 		return "-"
 	}
+
 	return doc
 }
 
@@ -59,6 +61,7 @@ func ValueDocOneLine(val *compiler.Value) string {
 	for _, c := range val.Doc() {
 		docs = append(docs, strings.TrimSpace(c.Text()))
 	}
+
 	doc := strings.Join(docs, " ")
 
 	lines := strings.Split(doc, "\n")
@@ -76,9 +79,11 @@ func ValueDocOneLine(val *compiler.Value) string {
 		}
 		docs = append(docs, line)
 	}
+
 	if len(docs) == 0 {
 		return "-"
 	}
+
 	return strings.Join(docs, " ")
 }
 
@@ -90,6 +95,7 @@ func NewClient(ctx context.Context) *client.Client {
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-to options")
 	}
+
 	cacheImports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-from"))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
@@ -100,6 +106,7 @@ func NewClient(ctx context.Context) *client.Client {
 		CacheImports: cacheImports,
 		NoCache:      viper.GetBool("no-cache"),
 	})
+
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")
 	}

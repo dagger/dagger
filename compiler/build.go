@@ -71,5 +71,6 @@ func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error
 	if len(v) != 1 {
 		return nil, errors.New("internal: wrong number of values")
 	}
+
 	return Wrap(v[0]), nil
 }
