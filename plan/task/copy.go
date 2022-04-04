@@ -16,7 +16,7 @@ func init() {
 type copyTask struct {
 }
 
-func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var err error
 
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
@@ -49,18 +49,31 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.
 		return nil, err
 	}
 
+	var filters struct {
+		Include []string
+		Exclude []string
+	}
+
+	if err := v.Decode(&filters); err != nil {
+		return nil, err
+	}
+
+	// FIXME: allow more configurable llb options
+	// For now we define the following convenience presets.
+	opts := &llb.CopyInfo{
+		CopyDirContentsOnly: true,
+		CreateDestPath:      true,
+		AllowWildcard:       true,
+		IncludePatterns:     filters.Include,
+		ExcludePatterns:     filters.Exclude,
+	}
+
 	outputState := inputState.File(
 		llb.Copy(
 			contentsState,
 			sourcePath,
 			destPath,
-			// FIXME: allow more configurable llb options
-			// For now we define the following convenience presets:
-			&llb.CopyInfo{
-				CopyDirContentsOnly: true,
-				CreateDestPath:      true,
-				AllowWildcard:       true,
-			},
+			opts,
 		),
 		withCustomName(v, "Copy %s %s", sourcePath, destPath),
 	)

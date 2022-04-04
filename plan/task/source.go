@@ -21,7 +21,7 @@ func init() {
 type sourceTask struct {
 }
 
-func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {
+func (c *sourceTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
 	origPath, err := v.Lookup("path").String()
 	if err != nil {
 		return err
@@ -50,7 +50,7 @@ func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *c
 	return nil
 }
 
-func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	path, err := v.Lookup("path").AbsPath()

@@ -23,7 +23,7 @@ func init() {
 type clientCommandTask struct {
 }
 
-func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var opts struct {
 		Name string
 		Args []string

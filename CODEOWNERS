@@ -1,0 +1,29 @@
+# CODEOWNERS is a tool to encode PR approval rules.
+#
+# When a PR is opened, at least one code owner is required to approve it
+# before being merged.
+#
+# It does **not**:
+#
+# - Limit reviewers: Everyone is welcome and encouraged to review any PR.
+#   But at least one CODEOWNER must approve before merging.
+#
+# - Limit contributions or ownership: Every maintainer is responsible for
+#   the entire project. CODEOWNERs are there to review PRs for
+#   consistency.
+#
+# By default, any maintainer can approve any PR. There's a couple of
+# exceptions for consistency/specialty.
+
+# Default owners for everything in the repo
+# Later matches takes precedence
+*                           @dagger/maintainers
+
+# Core CUE API
+/pkg/dagger.io/             @helderco @shykes
+
+# Universe
+/pkg/universe.dagger.io/    @helderco @shykes
+
+# Documentation website
+/website/                   @slumbering

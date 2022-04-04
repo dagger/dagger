@@ -16,7 +16,7 @@ func init() {
 type mergeTask struct {
 }
 
-func (t mergeTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *mergeTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	inputs, err := v.Lookup("inputs").List()
 	if err != nil {
 		return nil, err

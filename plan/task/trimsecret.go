@@ -16,7 +16,7 @@ func init() {
 type trimSecretTask struct {
 }
 
-func (t *trimSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *trimSecretTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	input, err := pctx.Secrets.FromValue(v.Lookup("input"))
 	if err != nil {
 		return nil, err
