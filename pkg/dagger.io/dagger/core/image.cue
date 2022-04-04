@@ -5,18 +5,53 @@ import (
 	"dagger.io/dagger"
 )
 
+// A ref is an address for a remote container image
+//
+// Examples:
+//   - "index.docker.io/dagger"
+//   - "dagger"
+//   - "index.docker.io/dagger:latest"
+//   - "index.docker.io/dagger:latest@sha256:a89cb097693dd354de598d279c304a1c73ee550fbfff6d9ee515568e0c749cfe"
+#Ref: string
+
+// Container image config. See [OCI](https://www.opencontainers.org/).
+#ImageConfig: {
+	user?: string
+	expose?: [string]: {}
+	env?: [string]: string
+	entrypoint?: [...string]
+	cmd?: [...string]
+	volume?: [string]: {}
+	workdir?: string
+	label?: [string]: string
+	stopsignal?:  string
+	healthcheck?: #HealthCheck
+	argsescaped?: bool
+	onbuild?: [...string]
+	stoptimeout?: int
+	shell?: [...string]
+}
+
+#HealthCheck: {
+	test?: [...string]
+	interval?:    int
+	timeout?:     int
+	startperiod?: int
+	retries?:     int
+}
+
 // Upload a container image to a remote repository
 #Push: {
 	$dagger: task: _name: "Push"
 
 	// Target repository address
-	dest: dagger.#Ref
+	dest: #Ref
 
 	// Filesystem contents to push
 	input: dagger.#FS
 
 	// Container image config
-	config: dagger.#ImageConfig
+	config: #ImageConfig
 
 	// Authentication
 	auth?: {
@@ -25,7 +60,7 @@ import (
 	}
 
 	// Complete ref of the pushed image, including digest
-	result: dagger.#Ref
+	result: #Ref
 }
 
 // Download a container image from a remote repository
@@ -33,7 +68,7 @@ import (
 	$dagger: task: _name: "Pull"
 
 	// Repository source ref
-	source: dagger.#Ref
+	source: #Ref
 
 	// Authentication
 	auth?: {
@@ -48,7 +83,7 @@ import (
 	digest: string
 
 	// Downloaded container image config
-	config: dagger.#ImageConfig
+	config: #ImageConfig
 }
 
 // Build a container image using a Dockerfile
@@ -80,7 +115,7 @@ import (
 	output: dagger.#FS
 
 	// Container image config produced
-	config: dagger.#ImageConfig
+	config: #ImageConfig
 }
 
 // Export an image as a tar archive
@@ -91,7 +126,7 @@ import (
 	input: dagger.#FS
 
 	// Container image config
-	config: dagger.#ImageConfig
+	config: #ImageConfig
 
 	// Name and optionally a tag in the 'name:tag' format
 	tag: string
@@ -112,13 +147,13 @@ import (
 // Change image config
 #Set: {
 	// The source image config
-	input: dagger.#ImageConfig
+	input: #ImageConfig
 
 	// The config to merge
-	config: dagger.#ImageConfig
+	config: #ImageConfig
 
 	// Resulting config
-	output: dagger.#ImageConfig & {
+	output: #ImageConfig & {
 		let structs = ["env", "label", "volume", "expose"]
 		let lists = ["onbuild"]
 
