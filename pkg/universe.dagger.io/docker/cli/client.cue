@@ -51,17 +51,18 @@ import (
 	docker.#Run & {
 		env: DOCKER_HOST: host
 
-		if ssh.key != _|_ {
-			mounts: ssh_key: {
-				dest:     "/root/.ssh/id_rsa"
-				contents: ssh.key
+		mounts: {
+			if ssh.key != _|_ {
+				ssh_key: {
+					dest:     "/root/.ssh/id_rsa"
+					contents: ssh.key
+				}
 			}
-		}
-
-		if ssh.knownHosts != _|_ {
-			mounts: ssh_hosts: {
-				dest:     "/root/.ssh/known_hosts"
-				contents: ssh.knownHosts
+			if ssh.knownHosts != _|_ {
+				ssh_hosts: {
+					dest:     "/root/.ssh/known_hosts"
+					contents: ssh.knownHosts
+				}
 			}
 		}
 	}
@@ -71,21 +72,25 @@ import (
 #RunTCP: {
 	host: =~"^tcp://.+"
 
+	// Directory with certificates to verify ({ca,cert,key}.pem files).
+	// This enables HTTPS.
+	certs?: dagger.#FS
+
 	docker.#Run & {
-		env: DOCKER_HOST: host
+		env: {
+			DOCKER_HOST: host
 
-		// Directory with certificates to verify ({ca,cert,key}.pem files).
-		// This enables HTTPS.
-		certs?: dagger.#FS
-
-		if certs != _|_ {
-			env: {
+			if certs != _|_ {
 				DOCKER_TLS_VERIFY: "1"
 				DOCKER_CERT_PATH:  "/certs/client"
 			}
-			mounts: "certs": {
-				dest:     "/certs/client"
-				contents: certs
+		}
+		mounts: {
+			if certs != _|_ {
+				"certs": {
+					dest:     "/certs/client"
+					contents: certs
+				}
 			}
 		}
 	}
