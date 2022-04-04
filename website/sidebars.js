@@ -108,6 +108,8 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
+        "guides/contributing",
+        "guides/coding-style",
         "guides/container-images",
         "guides/cli-telemetry",
         "guides/docker-cli-load",
@@ -115,7 +117,6 @@ module.exports = {
         "guides/custom-buildkit",
         "guides/self-signed-certificates",
         "guides/pushing-plan-dependencies",
-        "guides/coding-style",
       ],
     },
     {
