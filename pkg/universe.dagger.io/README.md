@@ -46,7 +46,7 @@ This table compares Dagger core packages, Dagger Universe packages, and the over
 
 ### Docker API
 
-*Import path: [`universe.dagger.io/docker`](./universe/docker)*
+*Import path: [`universe.dagger.io/docker`](./docker)*
 
 The `docker` package is a native Cue API for Docker. You can use it to build, run, push and pull Docker containers directly from Cue.
 
