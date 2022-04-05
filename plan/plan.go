@@ -123,7 +123,7 @@ func (p *Plan) configPlatform() error {
 	}
 
 	// Set platform to context
-	err = p.context.Platform.Set(platform)
+	err = p.context.Platform.SetString(platform)
 	if err != nil {
 		return err
 	}
