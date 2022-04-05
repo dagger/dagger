@@ -215,8 +215,7 @@ From a powershell terminal, run:
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
-We try to move the dagger binary under `C:\Windows\System32` but
-in case we miss the necessary permissions, we'll save everything under `<your home folder>/dagger`
+ We'll save everything under `<your home folder>/dagger`
 
 Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 
