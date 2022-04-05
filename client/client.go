@@ -44,6 +44,8 @@ type Config struct {
 
 	CacheExports []bk.CacheOptionsEntry
 	CacheImports []bk.CacheOptionsEntry
+
+	TargetPlatform *specs.Platform
 }
 
 func New(ctx context.Context, host string, cfg Config) (*Client, error) {
@@ -81,8 +83,9 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
-	// if platform is set through plan config, skip detection.
-	if !pctx.Platform.IsSet() {
+	if c.cfg.TargetPlatform != nil {
+		pctx.Platform.Set(*c.cfg.TargetPlatform)
+	} else {
 		p, err := c.detectPlatform(ctx)
 		if err != nil {
 			return err
