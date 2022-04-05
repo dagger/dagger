@@ -52,6 +52,7 @@ changelog:
       - "^ci:"
       - "^website:"
       - "^infra:"
+      - "^chore:"
       - "^build\\(deps\\):"
       - "^Merge pull request"
 
