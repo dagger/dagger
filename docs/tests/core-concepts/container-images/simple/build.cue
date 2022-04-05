@@ -10,7 +10,7 @@ import (
 #PythonBuild: {
 	// Source code of the Python application
 	app: dagger.#FS
-	
+
 	// Container image
 	image: _build.output
 

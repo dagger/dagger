@@ -20,10 +20,12 @@ Dagger can natively load and execute Dockerfiles. This is recommended in cases w
 
 You can specify your container build natively in CUE, using the official Docker package: `universe.dagger.io/docker`. This is recommended when you don't need to worry about Dockerfile compatibility, and want to take advantage of the full power of CUE and the Dagger APIs.
 
-Native CUE builds have the same backend as Dockerfile builds, so all the same features are available. Since CUE is a more powerful language than the Dockerfile syntax, every Dockerfile can be ported to an equivalent CUE configuration, but the opposite is not true. The following example produces the same image as above:
+Native CUE builds have the same backend as Dockerfile builds, so all the same features are available. Since CUE is a more powerful language than the Dockerfile syntax, every Dockerfile can be ported to an equivalent CUE configuration, but the opposite is not true. The following example produces the same image as above.
 
 ```cue file=../tests/core-concepts/container-images/simple/build.cue
 ```
+
+Because this build configuration is pure CUE, it can leverage the full power of Dagger's composition model.
 
 ## Automation
 
