@@ -39,7 +39,8 @@ package dagger
 	}
 
 	// Configure platform execution
-	platform?: string
+	// FIXME: temporarily disabled
+	// platform?: string
 
 	// Execute actions in containers
 	actions: {
