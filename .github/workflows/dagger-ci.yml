@@ -55,7 +55,6 @@ jobs:
           DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-build"
           DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-build"
         run: |
-          cd ci
           dagger do build
 
   lint:
@@ -83,5 +82,4 @@ jobs:
           DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-lint"
           DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-lint"
         run: |
-          cd ci
           dagger do lint
