@@ -19,19 +19,13 @@ on:
       - '.github/workflows/test-unit.yml'
 
 jobs:
-  unit-tests:
-    name: "Unit Tests"
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
-      - name: "Check out"
+      - name: Checkout
         uses: actions/checkout@v2
 
-      - name: "Setup Go"
-        uses: actions/setup-go@v1
+      - name: Dagger goTest
+        uses: dagger/dagger-for-github@v2
         with:
-          go-version: 1.16
-
-      - name: Test
-        run: |
-          make test
+          args: do goTest

@@ -41,3 +41,6 @@ bin/
 # Local configuration
 .config
 .envrc
+
+# Moving from CI
+build/*

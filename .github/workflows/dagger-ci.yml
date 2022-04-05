@@ -39,5 +39,4 @@ jobs:
       - name: Dagger CI
         uses: dagger/dagger-for-github@v2
         with:
-          workdir: ci
           args: do build

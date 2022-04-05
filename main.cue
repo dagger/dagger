@@ -80,7 +80,7 @@ dagger.#Plan & {
 			_mountGoCache
 
 			input: _baseImages.goLinter
-			script: contents: "golangci-lint run -v --timeout 5m"
+			script: contents: "golangci-lint run -v --timeout 3m"
 		}
 
 		// CUE lint

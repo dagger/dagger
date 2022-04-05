@@ -28,28 +28,16 @@ dagger-debug: # Build a debug version of the dev dagger binary
 install: # Install a dev dagger binary
 	go install -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger
 
-.PHONY: test
-test: # Run all tests
-	go test -race -v ./...
-
-.PHONY: golint
-golint: # Go lint
-	golangci-lint run --timeout 3m
-
 .PHONY: cuefmt
 cuefmt: # Format all cue files
 	find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
-
-.PHONY: cuelint
-cuelint: cuefmt # Lint and format all cue files
-	@test -z "$$(git status -s . | grep -e "^ M"  | grep "\.cue" | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: shellcheck
 shellcheck: # Run shellcheck
 	shellcheck $$(find . -type f \( -iname \*.bats -o -iname \*.bash -o -iname \*.sh \) -not -path "*/node_modules/*" -not -path "*/bats-*/*")
 
 .PHONY: lint
-lint: shellcheck cuelint golint docslint mdlint # Lint everything
+lint: shellcheck docslint mdlint # Lint everything not in dagger already
 
 .PHONY: integration
 integration: core-integration universe-test doc-test # Run all integration tests
