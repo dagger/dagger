@@ -55,6 +55,12 @@ changelog:
       - "^chore:"
       - "^build\\(deps\\):"
       - "^Merge pull request"
+  groups:
+    - title: Breaking Changes
+      regexp: "^.*!:+.*$"
+      order: 0
+    - title: Changes
+      order: 999
 
 brews:
   - tap:
