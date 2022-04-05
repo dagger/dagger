@@ -20,7 +20,7 @@ import (
 		source: "tmknom/markdownlint:\(version)"
 	}
 
-	container: docker.#Run & {
+	docker.#Run & {
 		input: _image.output
 		mounts: "source": {
 			dest:     "/src"

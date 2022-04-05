@@ -33,23 +33,24 @@ test: # Run all tests
 	go test -race -v ./...
 
 .PHONY: golint
-golint: # Go lint
-	golangci-lint run --timeout 3m
+golint: dagger # Go lint
+	./cmd/dagger/dagger do lint go
 
 .PHONY: cuefmt
 cuefmt: # Format all cue files
 	find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
 
 .PHONY: cuelint
-cuelint: cuefmt # Lint and format all cue files
-	@test -z "$$(git status -s . | grep -e "^ M"  | grep "\.cue" | cut -d ' ' -f3 | tee /dev/stderr)"
+cuelint: dagger # Lint all cue files
+	./cmd/dagger/dagger do lint cue
 
 .PHONY: shellcheck
-shellcheck: # Run shellcheck
-	shellcheck $$(find . -type f \( -iname \*.bats -o -iname \*.bash -o -iname \*.sh \) -not -path "*/node_modules/*" -not -path "*/bats-*/*")
+shellcheck: dagger # Run shellcheck
+	./cmd/dagger/dagger do lint shell
 
 .PHONY: lint
-lint: shellcheck cuelint golint docslint mdlint # Lint everything
+lint: dagger # Lint everything
+	./cmd/dagger/dagger do lint
 
 .PHONY: integration
 integration: core-integration universe-test doc-test # Run all integration tests
@@ -77,10 +78,6 @@ doc-test: dagger-debug # Test docs
 .PHONY: docs
 docs: dagger # Generate docs
 	DAGGER_TELEMETRY_DISABLE=1 ./cmd/dagger/dagger doc --output ./docs/reference --format md
-
-.PHONY: docslint
-docslint: docs # Generate & lint docs
-	@test -z "$$(git status -s . | grep -e "^ M"  | grep docs/reference | cut -d ' ' -f3 | tee /dev/stderr)"
 
 .PHONY: mdlint
 mdlint: # Markdown lint for web

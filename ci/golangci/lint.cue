@@ -22,7 +22,7 @@ import (
 		source: "golangci/golangci-lint:v\(version)"
 	}
 
-	container: go.#Container & {
+	go.#Container & {
 		"source": source
 		input:    _image.output
 		command: {
