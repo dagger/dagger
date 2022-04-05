@@ -17,9 +17,7 @@ type Context struct {
 
 func New() *Context {
 	return &Context{
-		Platform: &platformContext{
-			platform: defaultPlatform,
-		},
+		Platform: &platformContext{},
 		FS: &fsContext{
 			store: make(map[string]*FS),
 		},
