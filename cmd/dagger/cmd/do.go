@@ -157,6 +157,7 @@ func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
+	doCmd.Flags().String("experimental-platform", "", "Set target build platform (experimental)")
 	doCmd.Flags().StringArray("cache-to", []string{},
 		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
 	doCmd.Flags().StringArray("cache-from", []string{},
