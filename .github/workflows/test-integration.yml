@@ -2,7 +2,7 @@ name: "Test Integration"
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.sh"
       - "**.bash"
@@ -16,7 +16,7 @@ on:
       - "!docs/**"
 
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.sh"
       - "**.bash"
@@ -65,8 +65,6 @@ jobs:
         uses: crazy-max/ghaction-github-runtime@v1
 
       - name: Test
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           env
           make core-integration
