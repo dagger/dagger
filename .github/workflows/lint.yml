@@ -4,27 +4,27 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.go'
-      - '**.sh'
-      - '**.bash'
-      - '**.cue'
-      - 'docs/**'
-      - '.golangci.yml'
-      - 'Makefile'
-      - 'README.md'
-      - '.github/workflows/lint.yml'
+      - "**.go"
+      - "**.sh"
+      - "**.bash"
+      - "**.cue"
+      - "docs/**"
+      - ".golangci.yml"
+      - "Makefile"
+      - "README.md"
+      - ".github/workflows/lint.yml"
   pull_request:
     branches: [main]
     paths:
-      - '**.go'
-      - '**.sh'
-      - '**.bash'
-      - '**.cue'
-      - 'docs/**'
-      - '.golangci.yml'
-      - 'Makefile'
-      - 'README.md'
-      - '.github/workflows/lint.yml'
+      - "**.go"
+      - "**.sh"
+      - "**.bash"
+      - "**.cue"
+      - "docs/**"
+      - ".golangci.yml"
+      - "Makefile"
+      - "README.md"
+      - ".github/workflows/lint.yml"
 
 jobs:
   lint:
@@ -41,35 +41,24 @@ jobs:
         with:
           go-version: 1.16
 
-      - name: "Install deps"
-        run: |
-          # Cue
-          export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
-          export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
-          echo "Installing cue version $CUE_VERSION"
-          curl -L https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
 
-      - name: "Lint go"
-        uses: golangci/golangci-lint-action@v2
+      # - name: "Set up dagger from source"
+      #   run: |
+      #     make dagger
+      #     cp ./cmd/dagger/dagger /usr/local/bin
+
+      - name: "Set up dagger"
+        uses: dagger/dagger-for-github@v2
         with:
-          version: v1.45
-          skip-go-installation: true
-          args: --timeout=3m
+          install-only: true
 
-      - name: "Lint shell"
+      - name: Lint
+        env:
+          DAGGER_LOG_LEVEL: "debug"
+          DAGGER_LOG_FORMAT: "plain"
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-lint"
+          DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-lint"
         run: |
-          make shellcheck
-
-      - name: "Lint CUE"
-        run: |
-          make cuelint
-
-      - name: "Lint docs"
-        run: |
-          make docslint
-
-      - name: "Lint markdown"
-        uses: avto-dev/markdown-lint@v1
-        with:
-          config: ".markdownlint.yaml"
-          args: ./docs README.md
+          dagger do lint
