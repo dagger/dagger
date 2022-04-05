@@ -9,7 +9,7 @@ on:
     # https://crontab.guru/#6_17_*_*_2
     # Every Tuesday at 5:06pm UTC & 9:06am US West Coast.
     # GitHub Actions defaults to UTC:
-    - cron: '6 17 * * 2'
+    - cron: "6 17 * * 2"
     # There is high load on GitHub Actions at the top of the hour:
     #
     #     Note: The schedule event can be delayed during periods of high loads of
@@ -24,11 +24,11 @@ on:
   workflow_dispatch:
     inputs:
       release_type:
-        description: 'major|minor|patch|release|prerel'
-        default: 'patch'
+        description: "major|minor|patch|release|prerel"
+        default: "patch"
         required: true
       release_version:
-        description: 'Optional release version, e.g. 0.2.0'
+        description: "Optional release version, e.g. 0.2.0"
         required: false
 
 jobs:
@@ -88,7 +88,7 @@ jobs:
         with:
           args: release --rm-dist --debug
         env:
-          GITHUB_TOKEN: ${{ secrets.DAGGERCI_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
