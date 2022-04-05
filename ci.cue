@@ -8,9 +8,9 @@ import (
 	"universe.dagger.io/docker"
 	"universe.dagger.io/go"
 
-	"github.com/dagger/dagger/ci/pkg/golangci"
-	"github.com/dagger/dagger/ci/pkg/shellcheck"
-	"github.com/dagger/dagger/ci/pkg/markdownlint"
+	"github.com/dagger/dagger/ci/golangci"
+	"github.com/dagger/dagger/ci/shellcheck"
+	"github.com/dagger/dagger/ci/markdownlint"
 )
 
 dagger.#Plan & {
@@ -20,16 +20,16 @@ dagger.#Plan & {
 	// platform: "linux/aarch64"
 	platform: "linux/amd64"
 
-	client: filesystem: "../": read: exclude: [
-		"ci",
+	client: filesystem: ".": read: exclude: [
+		"bin",
 		"**/node_modules",
 		"cmd/dagger/dagger",
 		"cmd/dagger/dagger-debug",
 	]
-	client: filesystem: "./build": write: contents: actions.build.output
+	client: filesystem: "./bin": write: contents: actions.build.output
 
 	actions: {
-		_source: client.filesystem["../"].read.contents
+		_source: client.filesystem["."].read.contents
 
 		// FIXME: this can be removed once `go` supports built-in VCS info
 		version: {
@@ -103,6 +103,7 @@ dagger.#Plan & {
 			}
 
 			cue: docker.#Build & {
+				// FIXME: spin off into its own package?
 				steps: [
 					alpine.#Build & {
 						packages: bash: _
