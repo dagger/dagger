@@ -3,16 +3,24 @@ slug: /1205/container-images
 displayed_sidebar: europa
 ---
 
-# Building container images
+# Building docker container images
 
-You can use Dagger to build container images. Here's a simple example of a [Dockerfile](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/) build:
+You can use Dagger to build container images, either by executing a Dockerfile, or specifying the build steps natively in CUE. Which method to choose depends on the requirements of your project. You can mix and match builds from both methods in the same plan.
+
+## Executing a Dockerfile
+
+Dagger can natively load and execute Dockerfiles. This is recommended in cases where compatibility with existing Dockerfiles is more important than fully leveraging the power of CUE.
+
+ Here's a simple example of a [Dockerfile](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/) build:
 
 ```cue file=../tests/core-concepts/container-images/simple/with-dockerfile.cue
 ```
 
-## Building with CUE
+## Specifying a build in CUE
 
-`Dockerfile` files are easy to start, but you can also build images entirely in CUE. The following example produces the same image as above:
+You can specify your container build natively in CUE, using the official Docker package: `universe.dagger.io/docker`. This is recommended when you don't need to worry about Dockerfile compatibility, and want to take advantage of the full power of CUE and the Dagger APIs.
+
+Native CUE builds have the same backend as Dockerfile builds, so all the same features are available. Since CUE is a more powerful language than the Dockerfile syntax, every Dockerfile can be ported to an equivalent CUE configuration, but the opposite is not true. The following example produces the same image as above:
 
 ```cue file=../tests/core-concepts/container-images/simple/build.cue
 ```
