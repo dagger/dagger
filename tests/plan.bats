@@ -228,15 +228,23 @@ setup() {
 }
 
 @test "plan/platform" {
+
    cd "$TESTDIR"
 
-   # Run with amd64 platform
-   run "$DAGGER" "do" -p./plan/platform/config_platform_linux_amd64.cue verify
-
-   # Run with arm64 platform
-   run "$DAGGER" "do" -p./plan/platform/config_platform_linux_arm64.cue verify
-
-   # Run with invalid platform
-   run "$DAGGER" "do" -p./plan/platform/config_platform_failure_invalid_platform.cue verify
+   # Run with invalid platform format
+   run "$DAGGER" "do" --experimental --platform invalid -p./plan/platform/platform.cue test
    assert_failure
+   assert_output --partial "unknown operating system or architecture: invalid argument"
+
+
+   # Require --experimental flag
+   run "$DAGGER" "do" --platform linux/arm64 -p./plan/platform/platform.cue test
+   assert_failure
+   assert_output --partial "--platform requires --experimental flag"
+
+
+   # Run with non-existing platform
+   run "$DAGGER" "do" --experimental --platform invalid/invalid -p./plan/platform/platform.cue test
+   assert_failure
+   assert_output --partial "no match for platform in manifest"
 }

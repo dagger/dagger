@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	"github.com/containerd/containerd/platforms"
 	"github.com/docker/buildx/util/buildflags"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/client"
@@ -95,10 +97,21 @@ func NewClient(ctx context.Context) *client.Client {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
 	}
 
+	ep := viper.GetString("platform")
+	var p *specs.Platform
+	if len(ep) > 0 {
+		pp, err := platforms.Parse(ep)
+		if err != nil {
+			lg.Fatal().Err(err).Msg("invalid value for --platform")
+		}
+		p = &pp
+	}
+
 	cl, err := client.New(ctx, "", client.Config{
-		CacheExports: cacheExports,
-		CacheImports: cacheImports,
-		NoCache:      viper.GetBool("no-cache"),
+		CacheExports:   cacheExports,
+		CacheImports:   cacheImports,
+		NoCache:        viper.GetBool("no-cache"),
+		TargetPlatform: p,
 	})
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to create client")

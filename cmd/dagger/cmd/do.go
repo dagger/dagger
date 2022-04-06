@@ -42,6 +42,11 @@ var doCmd = &cobra.Command{
 			err error
 		)
 
+		switch !viper.GetBool("experimental") {
+		case len(viper.GetString("platform")) > 0:
+			lg.Fatal().Err(err).Msg("--platform requires --experimental flag")
+		}
+
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
 			tty, err = logger.NewTTYOutput(os.Stderr)
 			if err != nil {
@@ -157,6 +162,7 @@ func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
+	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
 	doCmd.Flags().StringArray("cache-to", []string{},
 		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
 	doCmd.Flags().StringArray("cache-from", []string{},

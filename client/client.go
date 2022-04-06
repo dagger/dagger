@@ -44,6 +44,8 @@ type Config struct {
 
 	CacheExports []bk.CacheOptionsEntry
 	CacheImports []bk.CacheOptionsEntry
+
+	TargetPlatform *specs.Platform
 }
 
 func New(ctx context.Context, host string, cfg Config) (*Client, error) {
@@ -81,8 +83,9 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
-	// if platform is set through plan config, skip detection.
-	if !pctx.Platform.IsSet() {
+	if c.cfg.TargetPlatform != nil {
+		pctx.Platform.Set(*c.cfg.TargetPlatform)
+	} else {
 		p, err := c.detectPlatform(ctx)
 		if err != nil {
 			return err
@@ -107,8 +110,8 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	return eg.Wait()
 }
 
-// detectPlatform will try to automatically Buildkit's target platform.
-// If not possible, default platform will be used.
+// detectPlatform tries using Buildkit's target platform;
+// if not possible, default platform will be used.
 func (c *Client) detectPlatform(ctx context.Context) (*specs.Platform, error) {
 	w, err := c.c.ListWorkers(ctx)
 	if err != nil {

@@ -25,7 +25,3 @@ func (c *platformContext) SetString(platform string) error {
 func (c *platformContext) Set(p specs.Platform) {
 	c.platform = &p
 }
-
-func (c *platformContext) IsSet() bool {
-	return c.platform != nil
-}

@@ -23,6 +23,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().String("log-format", "auto", "Log format (auto, plain, tty, json)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
+	rootCmd.PersistentFlags().Bool("experimental", false, "Enable experimental features")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		go checkVersion()

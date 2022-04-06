@@ -14,11 +14,6 @@ import (
 )
 
 dagger.#Plan & {
-	// FIXME: Ideally we would want to automatically set the platform's arch identical to the host
-	// to avoid the performance hit caused by qemu (linter goes from <3s to >3m when arch is x86)
-	// Uncomment if running locally on Mac M1 to bypass qemu
-	// platform: "linux/aarch64"
-	// platform: "linux/amd64"
 
 	client: filesystem: ".": read: exclude: [
 		"bin",
