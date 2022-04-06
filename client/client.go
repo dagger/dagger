@@ -110,8 +110,8 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	return eg.Wait()
 }
 
-// detectPlatform will try to automatically Buildkit's target platform.
-// If not possible, default platform will be used.
+// detectPlatform tries using Buildkit's target platform;
+// if not possible, default platform will be used.
 func (c *Client) detectPlatform(ctx context.Context) (*specs.Platform, error) {
 	w, err := c.c.ListWorkers(ctx)
 	if err != nil {
