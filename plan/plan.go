@@ -109,7 +109,8 @@ func (p *Plan) Action() *Action {
 // configPlatform load the platform specified in the context
 // Buildkit will then run every operation using that platform
 // If platform is not define, context keep default platform
-// FIXME: `platform` field temporarily disabled
+// FIXME: `platform` field temporarily disabled until we decide the proper
+// DX for multi-platform builds
 // func (p *Plan) configPlatform() error {
 // 	platformField := p.source.Lookup("platform")
 

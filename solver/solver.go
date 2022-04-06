@@ -85,7 +85,6 @@ func (s *Solver) AddCredentials(target, username, secret string) {
 }
 
 func (s *Solver) Marshal(ctx context.Context, st llb.State, co ...llb.ConstraintsOpt) (*bkpb.Definition, error) {
-	// FIXME: do not hardcode the platform
 	def, err := st.Marshal(ctx, co...)
 	if err != nil {
 		return nil, err
