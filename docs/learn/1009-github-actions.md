@@ -2,26 +2,26 @@
 slug: /1009/github-actions/
 ---
 
-# Integrate Dagger with Github Actions
+# Integrate Dagger with GitHub Actions
 
-This tutorial illustrates how to use Github Actions and Dagger to build, push and deploy Docker images to Cloud Run.
+This tutorial illustrates how to use GitHub Actions and Dagger to build, push and deploy Docker images to Cloud Run.
 
 ## Prerequisites
 
 We assume that you've finished our 106-cloudrun tutorial as this one continues right after.
 
-## Setup new Github repo
+## Setup new GitHub repo
 
-Push existing `examples/todoapp` directory to your new Github repo (public or private). It should contain all the code
+Push existing `examples/todoapp` directory to your new GitHub repo (public or private). It should contain all the code
 from `https://github.com/dagger/examples/tree/main/todoapp`, `gcpcloudrun` and `.dagger/env/gcpcloudrun/` directory.
 
-### Add Github Actions Secret
+### Add GitHub Actions Secret
 
 Dagger encrypts all input secrets using your key stored at `~/.config/dagger/keys.txt`. Copy the entire line starting
-with `AGE-SECRET-KEY-` and save it to a Github secret named `DAGGER_AGE_KEY`. In case you don't know how to create
-secrets on Github take a look at [this tutorial](https://docs.github.com/en/actions/reference/encrypted-secrets).
+with `AGE-SECRET-KEY-` and save it to a GitHub secret named `DAGGER_AGE_KEY`. In case you don't know how to create
+secrets on GitHub take a look at [this tutorial](https://docs.github.com/en/actions/reference/encrypted-secrets).
 
-## Create a Github Actions Workflow
+## Create a GitHub Actions Workflow
 
 Create `.github/workflows/gcpcloudrun.yml` file and paste the following code into it:
 

@@ -18,7 +18,7 @@ dagger.#Plan & {
 				command: {
 					name: "/bin/sh"
 					args: ["-c", """
-							go version | grep "1.18"
+							go version | grep "1.18" ; git version
 						"""]
 				}
 			}
@@ -35,7 +35,7 @@ dagger.#Plan & {
 				command: {
 					name: "/bin/bash"
 					args: ["-c", """
-							go version | grep "1.17"
+							go version | grep "1.17" ; git version
 						"""]
 				}
 			}

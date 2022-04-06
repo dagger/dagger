@@ -5,7 +5,7 @@ displayed_sidebar: europa
 
 # Migrate from Dagger 0.1
 
-We are getting ready to release dagger 0.2, codename Europa. This release has one focus: improve the developer experience. It features a redesigned CLI and powerful new APIs. The result is a completely new way to develop CI/CD pipelines: more productive, more portable… and way more fun!
+This is the documentation for dagger 0.2, codename Europa. This release has one focus: improve the developer experience. It features a redesigned CLI and powerful new APIs. The result is a completely new way to develop CI/CD pipelines: more productive, more portable… and way more fun!
 
 However, there is a downside: unfortunately, this release is not backwards compatible: plans written for dagger 0.1 will not run on version 0.2. Automatic migration is not supported, but manual migration is relatively straightforward.
 

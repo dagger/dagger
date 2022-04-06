@@ -82,9 +82,10 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 
 	p.fillAction()
 
-	if err := p.configPlatform(); err != nil {
-		return nil, err
-	}
+	// FIXME: `platform` field temporarily disabled
+	// if err := p.configPlatform(); err != nil {
+	// 	return nil, err
+	// }
 
 	if err := p.prepare(ctx); err != nil {
 		return nil, err
@@ -108,27 +109,28 @@ func (p *Plan) Action() *Action {
 // configPlatform load the platform specified in the context
 // Buildkit will then run every operation using that platform
 // If platform is not define, context keep default platform
-func (p *Plan) configPlatform() error {
-	platformField := p.source.Lookup("platform")
+// FIXME: `platform` field temporarily disabled
+// func (p *Plan) configPlatform() error {
+// 	platformField := p.source.Lookup("platform")
 
-	// Ignore if platform is not set in `#Plan`
-	if !platformField.Exists() {
-		return nil
-	}
+// 	// Ignore if platform is not set in `#Plan`
+// 	if !platformField.Exists() {
+// 		return nil
+// 	}
 
-	// Convert platform to string
-	platform, err := platformField.String()
-	if err != nil {
-		return err
-	}
+// 	// Convert platform to string
+// 	platform, err := platformField.String()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	// Set platform to context
-	err = p.context.Platform.Set(platform)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+// 	// Set platform to context
+// 	err = p.context.Platform.SetString(platform)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
 
 // prepare executes the pre-run hooks of tasks
 func (p *Plan) prepare(ctx context.Context) error {

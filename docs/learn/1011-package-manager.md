@@ -58,7 +58,7 @@ To install it just run
 dagger mod get github.com/dagger/packages/gcpcloudrun@v0.1
 ```
 
-It should pull the `v0.1` version from Github, leave a copy in `cue.mod/pkg` and reflect the change in
+It should pull the `v0.1` version from GitHub, leave a copy in `cue.mod/pkg` and reflect the change in
 `cue.mod/dagger.mod` file:
 
 ```shell

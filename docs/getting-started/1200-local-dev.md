@@ -215,8 +215,7 @@ From a powershell terminal, run:
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
-We try to move the dagger binary under `C:\Windows\System32` but
-in case we miss the necessary permissions, we'll save everything under `<your home folder>/dagger`
+ We'll save everything under `<your home folder>/dagger`
 
 Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 
@@ -232,13 +231,19 @@ With Docker running, we are ready to download our example app and run its CI/CD 
 Still in your `Command Prompt` terminal:
 
 ```shell
-git clone https://github.com/dagger/dagger
+git clone -c core.symlinks=true https://github.com/dagger/dagger
 cd dagger
 git checkout v0.2.4
 
 cd pkg/universe.dagger.io/examples/todoapp
 dagger do build
 ```
+
+:::tip
+By default, git on Windows does not automatically convert posix symbolic links, which explains the extra option `core.symlinks=true` while cloning the repository.
+
+But you can also enable this once and for all in your git configuration, by running the following command from a Powershell terminal: `git config --global core.symlinks true`.
+:::
 
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under a minute:
 

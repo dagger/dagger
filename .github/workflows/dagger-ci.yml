@@ -2,42 +2,84 @@ name: "Dagger CI"
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - '**.sh'
-      - '**.bash'
-      - '**.go'
-      - '**.cue'
-      - '**.bats'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/dagger-ci.yml'
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/dagger-ci.yml"
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - '**.sh'
-      - '**.bash'
-      - '**.go'
-      - '**.cue'
-      - '**.bats'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/dagger-ci.yml'
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/dagger-ci.yml"
 
 env:
   DAGGER_LOG_FORMAT: plain
 
 jobs:
   build:
+    name: "Build"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Dagger CI
-        uses: dagger/dagger-for-github@v2
+      - name: "Setup Go"
+        uses: actions/setup-go@v1
         with:
-          workdir: ci
-          args: do build
+          go-version: 1.16
+
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Prepare dagger
+        run: |
+          make dagger
+          cp ./cmd/dagger/dagger /usr/local/bin
+
+      - name: Build
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-build"
+          DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-build"
+        run: |
+          dagger do build
+
+  lint:
+    name: "Lint"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: "Setup Go"
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Prepare dagger
+        run: |
+          make dagger
+          cp ./cmd/dagger/dagger /usr/local/bin
+
+      - name: Lint
+        env:
+          DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-lint"
+          DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-lint"
+        run: |
+          dagger do lint

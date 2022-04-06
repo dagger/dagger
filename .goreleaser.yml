@@ -20,6 +20,9 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - 7
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
@@ -38,6 +41,7 @@ snapshot:
   name_template: "{{ .Tag }}-next"
 
 changelog:
+  use: github
   sort: asc
   filters:
     exclude:
@@ -48,8 +52,15 @@ changelog:
       - "^ci:"
       - "^website:"
       - "^infra:"
+      - "^chore:"
       - "^build\\(deps\\):"
       - "^Merge pull request"
+  groups:
+    - title: Breaking Changes
+      regexp: "^.*!:+.*$"
+      order: 0
+    - title: Changes
+      order: 999
 
 brews:
   - tap:
@@ -95,3 +106,11 @@ publishers:
       - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
+
+release:
+  footer: |
+    **Full Changelog**: https://github.com/dagger/dagger/compare/{{ .PreviousTag }}...{{ .Tag }}
+    ## What to do next?
+    - Read the [documentation](https://docs.dagger.io)
+    - Join our [Discord server](https://discord.gg/dagger-io)
+    - Follow us on [Twitter](https://twitter.com/dagger_io)

@@ -7,11 +7,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rs/zerolog/log"
+
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	// Cue
 
@@ -78,6 +81,15 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	lg := log.Ctx(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 
+	// if platform is set through plan config, skip detection.
+	if !pctx.Platform.IsSet() {
+		p, err := c.detectPlatform(ctx)
+		if err != nil {
+			return err
+		}
+		pctx.Platform.Set(*p)
+	}
+
 	// Spawn print function
 	events := make(chan *bk.SolveStatus)
 	eg.Go(func() error {
@@ -93,6 +105,26 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	})
 
 	return eg.Wait()
+}
+
+// detectPlatform will try to automatically Buildkit's target platform.
+// If not possible, default platform will be used.
+func (c *Client) detectPlatform(ctx context.Context) (*specs.Platform, error) {
+	w, err := c.c.ListWorkers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error detecting platform %w", err)
+	}
+
+	lg := log.Ctx(ctx)
+	if len(w) > 0 && len(w[0].Platforms) > 0 {
+		dPlatform := w[0].Platforms[0]
+		lg.Debug().
+			Str("platform", fmt.Sprintf("%s", dPlatform)).
+			Msg("platform detected automatically")
+		return &dPlatform, nil
+	}
+	defaultPlatform := platforms.DefaultSpec()
+	return &defaultPlatform, nil
 }
 
 func convertCacheOptionEntries(ims []bk.CacheOptionsEntry) []bkgw.CacheOptionsEntry {

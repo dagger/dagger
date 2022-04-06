@@ -35,6 +35,8 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 		return fmt.Errorf("path %q is not a directory", path)
 	case pi.IsDir() && !isFS:
 		return fmt.Errorf("path %q cannot be a directory", path)
+	case err != nil:
+		return fmt.Errorf("path %q cannot be stat'd: %w", path, err)
 	}
 
 	if plancontext.IsFSValue(v.Lookup("contents")) {
@@ -125,12 +127,9 @@ func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.
 		opts = append(opts, llb.IncludePatterns(dir.Include))
 	}
 
-	// Excludes .dagger directory by default
-	excludePatterns := []string{"**/.dagger/"}
 	if len(dir.Exclude) > 0 {
-		excludePatterns = dir.Exclude
+		opts = append(opts, llb.ExcludePatterns(dir.Exclude))
 	}
-	opts = append(opts, llb.ExcludePatterns(excludePatterns))
 
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
