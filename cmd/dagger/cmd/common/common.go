@@ -97,12 +97,12 @@ func NewClient(ctx context.Context) *client.Client {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
 	}
 
-	ep := viper.GetString("experimental-platform")
+	ep := viper.GetString("platform")
 	var p *specs.Platform
 	if len(ep) > 0 {
 		pp, err := platforms.Parse(ep)
 		if err != nil {
-			lg.Fatal().Err(err).Msg("invalid value for --experimental-platform")
+			lg.Fatal().Err(err).Msg("invalid value for --platform")
 		}
 		p = &pp
 	}

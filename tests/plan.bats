@@ -232,13 +232,19 @@ setup() {
    cd "$TESTDIR"
 
    # Run with invalid platform format
-   run "$DAGGER" "do" --experimental-platform invalid -p./plan/platform/platform.cue test
+   run "$DAGGER" "do" --experimental --platform invalid -p./plan/platform/platform.cue test
    assert_failure
    assert_output --partial "unknown operating system or architecture: invalid argument"
 
 
+   # Require --experimental flag
+   run "$DAGGER" "do" --platform linux/arm64 -p./plan/platform/platform.cue test
+   assert_failure
+   assert_output --partial "--platform requires --experimental flag"
+
+
    # Run with non-existing platform
-   run "$DAGGER" "do" --experimental-platform invalid/invalid -p./plan/platform/platform.cue test
+   run "$DAGGER" "do" --experimental --platform invalid/invalid -p./plan/platform/platform.cue test
    assert_failure
    assert_output --partial "no match for platform in manifest"
 }
