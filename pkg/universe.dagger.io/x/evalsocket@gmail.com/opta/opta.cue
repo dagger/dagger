@@ -5,26 +5,34 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
-	"universe.dagger.io/bash"
+	"universe.dagger.io/aws"
 )
 
 #DefaultLinuxVersion: "amazonlinux:2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
 #DefaultCliVersion:   "2.4.12"
 
-// Build provides a docker.#Image with the aws cli pre-installed to Amazon Linux 2.
-// Can be customized with packages, and can be used with docker.#Run for executing custom scripts.
-// Used by default with aws.#Run
 #Build: {
 	docker.#Build & {
 		steps: [
 			docker.#Pull & {
 				source: #DefaultLinuxVersion
 			},
-			// cache yum install separately
 			docker.#Run & {
 				command: {
 					name: "yum"
-					args: ["install", "unzip", "curl", "git", "-y"]
+					args: ["install", "unzip", "curl", "git", "yum-utils", "-y"]
+				}
+			},
+			docker.#Run & {
+				command: {
+					name: "yum-config-manager"
+					args: ["--add-repo", "https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo"]
+				}
+			},
+			docker.#Run & {
+				command: {
+					name: "yum"
+					args: ["install", "terraform", "-y"]
 				}
 			},
 			docker.#Run & {
@@ -51,14 +59,16 @@ import (
 
 // Run a `opta Apply`
 #Action: {
+	_build: #Build
+
 	// Source code of Opta program
 	source: dagger.#FS
 
 	// Opta action used for this Opta program
 	action: "apply" | "destroy" | "force-unlock"
 
-	// Opta env used for this Opta program
-	env: string
+	// Opta environment used for this Opta program
+	environment: string
 
 	// Opta extra cli flags used for this Opta program
 	extraArgs: string
@@ -70,19 +80,15 @@ import (
 	credentials: aws.#Credentials
 
 	// Run Opta apply
-	container: bash.#Run & {
-		input: docker.#Image | *_build.output
-		script: {
-			_load: core.#Source & {
-				path: "."
-				include: ["*.sh"]
-			}
-			directory: _load.output
-			filename:  "opta.sh"
+	container: docker.#Run & {
+		input:  _build.output
+		command: {
+			name: "/scripts/opta.sh"
+			args: []
 		}
 		env: {
 			ACTION:  action
-			ENV:  env
+			ENV:  environment
 			CONFIG_FILE:  configFile
 			EXTRA_ARGS: extraArgs
 
@@ -100,15 +106,13 @@ import (
 			}
 		}
 		workdir: "/src"
-		mounts: {
-			src: {
-				dest:     "/src"
-				contents: source
-			}
-			src: {
-				dest:     "/src"
-				contents: _scripts.output
-			}
+		mounts: scripts: {
+			dest:     "/scripts"
+			contents: _scripts.output
+		}
+		mounts: opta: {
+			dest:     "/src"
+			contents: source
 		}
 	}
 

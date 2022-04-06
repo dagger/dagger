@@ -1,9 +1,19 @@
-#!/usr/bin/env bash
+#!/bin/bash
+
 set -xeo pipefail
 
-if [[ ${ACTION} == "apply" ||  ${ACTION} == "destroy" ]] then
-  opta ${ACTION} -c ${OPTA_CONFIG}  --auto-approve --env ${ENV} ${EXTRA_ARGS}
+export  LC_ALL=en_US.utf-8
+
+ENV_CMD=""
+if [[ $ENV != "" ]]
+then
+ENV_CMD="--env $ENV"
+fi
+
+if [[ $ACTION == "apply" ||  ACTION == "destroy" ]]
+then
+  opta $ACTION -c $CONFIG_FILE  --auto-approve $ENV_CMD $EXTRA_ARGS
 else
-  opta force-unlock -c ${OPTA_CONFIG}  --auto-approve --env ${ENV} ${EXTRA_ARGS}
+  opta force-unlock -c $CONFIG_FILE  --auto-approve $ENV_CMD $EXTRA_ARGS
 fi
 

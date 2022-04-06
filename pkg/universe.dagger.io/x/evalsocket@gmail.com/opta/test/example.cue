@@ -10,27 +10,20 @@ import (
 
 dagger.#Plan & {
 	client: {
-		filesystem: "./": read: contents: dagger.#FS
+		filesystem: "./opta": read: contents: dagger.#FS
 		env: {
-			PULUMI_ACCESS_TOKEN: dagger.#Secret
+            ACCESS_KEY_ID: dagger.#Secret
+            SECRET_ACCESS_KEY: dagger.#Secret
+            SESSION_TOKEN: dagger.#Secret
 		}
-		commands: sops: {
-			name: "sops"
-			args: ["-d", "--extract", "[\"AWS\"]", "../../secrets_sops.yaml"]
-			stdout: dagger.#Secret
-		}
-	}
-	actions: build: opta.#Build
-	actions: soapSecret: core.#DecodeSecret & {
-			format: "yaml"
-			input:  client.commands.sops.stdout
 	}
 	actions: apply: opta.#Action & {
 		action:       "apply"
-		env: "production"
+		environment: "production"
 		credentials: aws.#Credentials & {
-			accessKeyId:     sopsSecrets.output.AWS_ACCESS_KEY_ID.contents
-			secretAccessKey: sopsSecrets.output.AWS_SECRET_ACCESS_KEY.contents
+			accessKeyId: client.env.ACCESS_KEY_ID
+			secretAccessKey: client.env.SECRET_ACCESS_KEY
+			sessionToken: client.env.SESSION_TOKEN
 		}
 		configFile:     "opta.yaml"
 		extraArgs: "", // "--var changelog=sha"
@@ -40,8 +33,9 @@ dagger.#Plan & {
 		action:       "destroy"
 		env: "production"
 		credentials: aws.#Credentials & {
-			accessKeyId:     sopsSecrets.output.AWS_ACCESS_KEY_ID.contents
-			secretAccessKey: sopsSecrets.output.AWS_SECRET_ACCESS_KEY.contents
+			accessKeyId: client.env.ACCESS_KEY_ID
+			secretAccessKey: client.env.SECRET_ACCESS_KEY
+			sessionToken: client.env.SESSION_TOKEN
 		}
 		configFile:     "opta.yaml"
 		extraArgs: "", // "--var changelog=sha"
@@ -51,8 +45,9 @@ dagger.#Plan & {
 		action:       "force-unlock"
 		env: "production"
 		credentials: aws.#Credentials & {
-			accessKeyId:     sopsSecrets.output.AWS_ACCESS_KEY_ID.contents
-			secretAccessKey: sopsSecrets.output.AWS_SECRET_ACCESS_KEY.contents
+			accessKeyId: client.env.ACCESS_KEY_ID
+			secretAccessKey: client.env.SECRET_ACCESS_KEY
+			sessionToken: client.env.SESSION_TOKEN
 		}
 		configFile:     "opta.yaml"
 		extraArgs: "", // "--var changelog=sha"
