@@ -95,14 +95,21 @@ module.exports = {
         title: 'Core Concepts',
       },
       items: [
+        "core-concepts/action",
         "core-concepts/plan",
         "core-concepts/client",
         "core-concepts/secrets",
-        "core-concepts/container-images",
         "core-concepts/what-is-cue",
         "core-concepts/dagger-cue",
         "core-concepts/cli-telemetry",
       ],
+    },
+    {
+      type: "category",
+      label: "Guides",
+      collapsible: false,
+      collapsed: false,
+      items: ["guides/container-images"],
     },
     {
       type: "category",
