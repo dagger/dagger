@@ -16,6 +16,9 @@ import (
 
 	container: #Container & {
 		"source": source
+		"env": {
+			env
+		}
 		command: {
 			args: [package]
 			flags: {
