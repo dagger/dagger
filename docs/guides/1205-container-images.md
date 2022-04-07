@@ -3,7 +3,7 @@ slug: /1205/container-images
 displayed_sidebar: europa
 ---
 
-# Building docker container images
+# Building container images
 
 You can use Dagger to build container images, either by executing a Dockerfile, or specifying the build steps natively in CUE. Which method to choose depends on the requirements of your project. You can mix and match builds from both methods in the same plan.
 
