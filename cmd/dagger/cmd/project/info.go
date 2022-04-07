@@ -2,6 +2,7 @@ package project
 
 import (
 	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/logger"
@@ -27,7 +28,7 @@ var infoCmd = &cobra.Command{
 			lg.Fatal().Msg("dagger project not found. Run `dagger project init`")
 		}
 
-		fmt.Println(fmt.Sprintf("Current dagger project in: %s", cueModPath))
+		fmt.Printf("\nCurrent dagger project in: %s", cueModPath)
 
 		// TODO: find available plans and if they load successfully
 	},

@@ -31,4 +31,5 @@ setup() {
 
 	"$DAGGER" project info
 	assert_output --partial "Current dagger project in"
+	assert_output --partial "$TEMPDIR"
 }
