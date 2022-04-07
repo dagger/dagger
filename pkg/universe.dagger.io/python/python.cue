@@ -2,28 +2,60 @@
 package python
 
 import (
-	"universe.dagger.io/docker"
+	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
+	"universe.dagger.io/docker"
 	"universe.dagger.io/alpine"
 )
 
 // Run a python script in a container
 #Run: {
 	// Contents of the python script
-	script: string
+	script: {
+		// A directory containing one or more bash scripts
+		directory: dagger.#FS
 
-	// FIXME: don't pass the script as argument: write to filesystme instead
+		// Name of the file to execute
+		filename: string
+
+		_directory: directory
+		_filename:  filename
+	} | {
+		// Script contents
+		contents: string
+
+		_filename: "run.py"
+		_write:    core.#WriteFile & {
+			input:      dagger.#Scratch
+			path:       _filename
+			"contents": contents
+		}
+		_directory: _write.output
+	}
+
+	// arguments to the script
+	args: [...string]
+
+	// where to mount the script inside the container
+	_mountpoint: "/run/python"
+
 	docker.#Run & {
 		command: {
-			name: "python"
-			flags: "-c": script
+			name:   "python3"
+			"args": ["\(_mountpoint)/\(script._filename)"] + args
 		}
 
 		// As a convenience, image defaults to a ready-to-use python environment
-		image: docker.#Image | *_defaultImage
+		input: docker.#Image | *_defaultImage.output
 
-		_defaultImage: alpine.#Image & {
+		_defaultImage: alpine.#Build & {
 			packages: python: version: "3"
+		}
+
+		mounts: "Python script": {
+			contents: script._directory
+			dest:     _mountpoint
 		}
 	}
 }
