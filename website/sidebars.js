@@ -100,7 +100,6 @@ module.exports = {
         "core-concepts/client",
         "core-concepts/secrets",
         "core-concepts/what-is-cue",
-        "core-concepts/dagger-cue",
         "core-concepts/cli-telemetry",
       ],
     },
@@ -110,6 +109,15 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: ["guides/container-images"],
+    },
+    {
+      type: "category",
+      label: "References",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "references/core-actions-reference",
+      ],
     },
     {
       type: "category",
