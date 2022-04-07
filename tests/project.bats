@@ -28,7 +28,8 @@ setup() {
 
 	test ! -f ./cue.mod/pkg/.gitignore
 
-	"$DAGGER" project info
+	run "$DAGGER" project info
+	assert_success
 	assert_output --partial "Current dagger project in:"
 	assert_output --partial "$TEMPDIR"
 }
