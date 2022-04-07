@@ -28,7 +28,7 @@ var infoCmd = &cobra.Command{
 			lg.Fatal().Msg("dagger project not found. Run `dagger project init`")
 		}
 
-		fmt.Printf("\nCurrent dagger project in: %s", cueModPath)
+		fmt.Printf("\nCurrent dagger project in: %s\n", cueModPath)
 
 		// TODO: find available plans and if they load successfully
 	},

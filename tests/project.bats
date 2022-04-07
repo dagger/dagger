@@ -4,6 +4,7 @@ setup() {
 	common_setup
 
 	TEMPDIR=$(mktemp -d)
+	TEMPDIR2=$(mktemp -d)
 }
 
 @test "project init and update and info" {
@@ -32,4 +33,9 @@ setup() {
 	assert_success
 	assert_output --partial "Current dagger project in:"
 	assert_output --partial "$TEMPDIR"
+
+	cd "$TEMPDIR2" || exit
+	run "$DAGGER" project info
+	assert_failure
+	assert_output --partial "dagger project not found. Run \`dagger project init\`"
 }
