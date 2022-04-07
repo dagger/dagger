@@ -16,7 +16,7 @@ module.exports = {
     "https://fonts.googleapis.com/css2?family=Karla&family=Montserrat:wght@700&display=swap",
   ],
   customFields: {
-    AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID
+    AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID,
   },
   themeConfig: {
     sidebarCollapsed: false,
@@ -30,8 +30,8 @@ module.exports = {
       },
       items: [
         {
-          type: 'docsVersionDropdown',
-          position: 'left',
+          type: "docsVersionDropdown",
+          position: "left",
           dropdownActiveClassDisabled: true,
         },
         {
@@ -73,13 +73,13 @@ module.exports = {
       {
         docs: {
           breadcrumbs: false,
-          lastVersion: 'current',
+          lastVersion: "current",
           versions: {
             current: {
-              label: '0.2',
+              label: "0.2",
             },
-            "0.1": {
-              label: '0.1',
+            0.1: {
+              label: "0.1",
             },
           },
           path: "../docs",
@@ -108,5 +108,65 @@ module.exports = {
       },
     ],
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          // /docs/oldDoc -> /docs/newDoc
+          {
+            to: "/0.1/1001/install/",
+            from: "/1001/install/",
+          },
+          {
+            to: "/0.1/1002/vs/",
+            from: "/1002/vs/",
+          },
+          {
+            to: "/0.1/1003/get-started/",
+            from: "/1003/get-started/",
+          },
+          {
+            to: "/0.1/1004/dev-first-env/",
+            from: "/1004/dev-first-env/",
+          },
+          {
+            to: "/0.1/1005/what-is-cue/",
+            from: "/1005/what-is-cue/",
+          },
+          {
+            to: "/0.1/1006/google-cloud-run/",
+            from: "/1006/google-cloud-run/",
+          },
+          {
+            to: "/0.1/1007/kubernetes/",
+            from: "/1007/kubernetes/",
+          },
+          {
+            to: "/0.1/1008/aws-cloudformation/",
+            from: "/1008/aws-cloudformation/",
+          },
+          {
+            to: "/0.1/1009/github-actions/",
+            from: "/1009/github-actions/",
+          },
+          {
+            to: "/0.1/1010/dev-cue-package/",
+            from: "/1010/dev-cue-package/",
+          },
+          {
+            to: "/0.1/1011/package-manager/",
+            from: "/1011/package-manager/",
+          },
+          {
+            to: "/0.1/1012/ci",
+            from: "/1012/ci",
+          },
+          {
+            to: "/0.1/1013/operator-manual/",
+            from: "/1013/operator-manual/",
+          },
+        ],
+      },
+    ],
   ],
 };
