@@ -5,21 +5,22 @@ import (
 	"universe.dagger.io/docker"
 )
 
+// This action builds a docker image from a python app.
+// Build steps are defined in an inline Dockerfile.
+#PythonBuild: docker.#Dockerfile & {
+	dockerfile: contents: """
+		FROM python:3.9
+		COPY . /app
+		RUN pip install -r /app/requirements.txt
+		CMD python /app/app.py
+		"""
+}
+
+// Example usage in a plan
 dagger.#Plan & {
 	client: filesystem: "./src": read: contents: dagger.#FS
 
-	actions: build: docker.#Dockerfile & {
-		// This is the context.
+	actions: build: #PythonBuild & {
 		source: client.filesystem."./src".read.contents
-
-		// Default is to look for a Dockerfile in the context,
-		// but let's declare it here.
-		dockerfile: contents: #"""
-			FROM python:3.9
-			COPY . /app
-			RUN pip install -r /app/requirements.txt
-			CMD python /app/app.py
-
-			"""#
 	}
 }
