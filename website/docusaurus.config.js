@@ -30,6 +30,11 @@ module.exports = {
       },
       items: [
         {
+          type: 'docsVersionDropdown',
+          position: 'left',
+          dropdownActiveClassDisabled: true,
+        },
+        {
           type: "search",
           position: "right",
         },
@@ -68,6 +73,15 @@ module.exports = {
       {
         docs: {
           breadcrumbs: false,
+          lastVersion: 'current',
+          versions: {
+            current: {
+              label: '0.2',
+            },
+            "0.1": {
+              label: '0.1',
+            },
+          },
           path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/edit/main/website",

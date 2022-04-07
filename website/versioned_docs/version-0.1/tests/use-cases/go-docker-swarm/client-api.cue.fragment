@@ -1,0 +1,20 @@
+package docs
+
+import (
+	"dagger.io/dagger"
+)
+
+dagger.#Plan & {
+	client: {
+		// Locally, manual source of the .env or install https://direnv.net
+		env: {
+			GITHUB_SHA:                   string
+			SSH_PRIVATE_KEY_DOCKER_SWARM: dagger.#Secret
+		}
+		filesystem: {
+			"./": read: contents:              dagger.#FS
+			"./merge.output": write: contents: actions.build.image.rootfs // Creates a build artifact for debug
+		}
+		network: "unix:///var/run/docker.sock": connect: dagger.#Socket // Docker daemon socket
+	}
+}

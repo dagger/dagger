@@ -1,0 +1,34 @@
+// ...
+// A plan has pre-requisites that we cover below.
+// For now we focus on the dagger.#Plan structure.
+// ...
+
+dagger.#Plan & {
+  client: {
+    filesystem: {
+      // ...
+    }
+    env: {
+      // ...
+    }
+  }
+  actions: {
+    deps: docker.#Build & {
+      // ...
+    }
+    test: bash.#Run & {
+      // ...
+    }
+    build: {
+      run: bash.#Run & {
+         // ...
+      }
+      contents: core.#Subdir & {
+        // ...
+      }
+    }
+    deploy: netlify.#Deploy & {
+      // ...
+    }
+  }
+}

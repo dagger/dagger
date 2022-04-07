@@ -269,6 +269,11 @@ h1[class^="h1Heading"] {
 
 .navbar__item {
   margin: 0 0.75rem;
+
+  &.dropdown {
+    border-radius: 40px;
+    background-color: var(--ifm-color-primary-light);
+  }
 }
 
 .react-toggle {
