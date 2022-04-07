@@ -95,6 +95,7 @@ module.exports = {
         title: 'Core Concepts',
       },
       items: [
+        "core-concepts/action",
         "core-concepts/plan",
         "core-concepts/client",
         "core-concepts/secrets",
