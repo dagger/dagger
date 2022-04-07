@@ -34,7 +34,7 @@ A composite action's lifecycle has 4 stages:
 3. Discovery
 4. Execution
 
-## Definition
+### Definition
 
 A new action is *defined* in a declarative template called a [CUE definition](https://cuetorials.com/overview/foundations/#definitions). This definition describes the action's inputs, outputs, sub-actions, and the wiring between them.
 
@@ -76,7 +76,7 @@ Also note the free-form structure: an action definition is not structured by a r
 
 There are no constraints to an action's field names or types.
 
-## Integration
+### Integration
 
 Action definitions cannot be executed directly: they must be integrated into a plan.
 
@@ -113,7 +113,7 @@ Note that `#AddHello` was integrated *directly* into the plan, whereas `core.#Wr
 
 To learn more about the structure of a plan, see [it all begins with a plan](./1202-plan).
 
-## Discovery
+### Discovery
 
 Once integrated into a plan, actions can be discovered by end users, by using the familiar convention of usage messages:
 
@@ -131,7 +131,7 @@ Flags:
   [...]
 ```
 
-## Execution
+### Execution
 
 Once the end user has discovered the action that they need, they can execute it with `dagger do`. For example:
 
