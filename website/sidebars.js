@@ -107,7 +107,7 @@ module.exports = {
       label: "Guides",
       collapsible: false,
       collapsed: false,
-      items: ["guides/container-images", "guides/cli-telemetry"],
+      items: ["guides/container-images", "guides/cli-telemetry", "guides/docker-cli-load", "guides/docker-cli-run"],
     },
     {
       type: "category",
