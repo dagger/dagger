@@ -189,12 +189,6 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 		wg.Done()
 	}
 
-	// Catch solver's events
-	// Closed manually
-	eventsCh := make(chan *bk.SolveStatus)
-	wg.Add(1)
-	go catchOutput(eventsCh)
-
 	// Catch build events
 	// Closed by buildkit
 	buildCh := make(chan *bk.SolveStatus)
@@ -202,6 +196,12 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 	go catchOutput(buildCh)
 
 	resp, err := c.c.Build(ctx, opts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		// Catch solver's events
+		// Closed by solver.Stop
+		eventsCh := make(chan *bk.SolveStatus)
+		wg.Add(1)
+		go catchOutput(eventsCh)
+
 		s := solver.New(solver.Opts{
 			Control:      c.c,
 			Gateway:      gw,

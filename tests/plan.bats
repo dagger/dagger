@@ -248,3 +248,13 @@ setup() {
    assert_failure
    assert_output --partial "no match for platform in manifest"
 }
+
+@test "plan/do: invalid BUILDKIT_HOST results in error" {
+   cd "$TESTDIR"
+
+   # ip address is in a reserved range that should be unroutable
+   export BUILDKIT_HOST=tcp://192.0.2.1:1234
+   run timeout 30 "$DAGGER" "do" -p ./plan/do/actions.cue test
+   assert_failure
+   assert_output --partial "Unavailable: connection error"
+}
