@@ -20,6 +20,24 @@ To use a buildkit daemon running in a container named "super-buildkit" on the lo
 export BUILDKIT_HOST=docker-container://super-buildkit
 ```
 
+## Using a custom remote buildkit running in Docker
+
+Dagger can also be configured to use a remote buildkit daemon running in a Docker container. This an be done using the environment variable `DOCKER_HOST`.
+
+```shell
+export DOCKER_HOST=ssh://user@IP
+```
+
+You will also need to set the `BUILDKIT_HOST` environment variable explained above.
+
+## Running a custom buildkit container in Docker
+
+To run a customized Buildkit version with Docker, this can be done using the below command:
+
+```shell
+docker run -d --name dagger-buildkitd --privileged --network=host docker.io/moby/buildkit:latest
+```
+
 ## OpenTracing Support
 
 Both Dagger and buildkit support opentracing. To capture traces to

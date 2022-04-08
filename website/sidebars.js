@@ -107,7 +107,15 @@ module.exports = {
       label: "Guides",
       collapsible: false,
       collapsed: false,
-      items: ["guides/container-images", "guides/cli-telemetry", "guides/docker-cli-load", "guides/docker-cli-run"],
+      items: [
+        "guides/container-images",
+        "guides/cli-telemetry",
+        "guides/docker-cli-load",
+        "guides/docker-cli-run",
+        "guides/custom-buildkit",
+        "guides/self-signed-certificates",
+        "guides/pushing-plan-dependencies",
+      ],
     },
     {
       type: "category",
