@@ -1,0 +1,129 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: dagger-deploy
+spec:
+  description: |
+    dagger-deploy gets a git repository and an app name and deploy it.
+  params:
+  - name: repo-url
+    type: string
+    description: The git repository URL to clone from.
+  - name: app-dir
+    type: string
+    description: The path to access the app dagger codebase within the repository.
+  - name: app-name
+    type: string
+    description: The name of the app to deploy.
+  workspaces:
+  - name: shared-data
+    description: |
+      This workspace will receive the cloned git repo and be passed
+      to the next Task.
+
+  tasks:
+
+  - name: fetch-repo
+    taskRef:
+      name: git-clone
+    workspaces:
+    - name: output
+      workspace: shared-data
+    params:
+    - name: url
+      value: $(params.repo-url)
+
+  - name: build-deploy-app
+    runAfter: ["fetch-repo"]  # Wait until the clone is done before deploying the app.
+    workspaces:
+    - name: source
+      workspace: shared-data
+    params:
+      - name: app-dir
+        value: $(params.app-dir)
+      - name: app-name
+        value: $(params.app-name)
+    taskSpec:
+      workspaces:
+      - name: source
+      params:
+      - name: app-dir
+      - name: app-name
+      steps:
+      - image: docker:20.10.13
+        name: build-deploy
+        workingDir: "$(workspaces.source.path)/$(params.app-dir)"
+        script: |
+          #!/usr/bin/env sh
+
+          # Install dagger
+          # Could be removed by using an official muli-arch dagger.io image
+          arch=$(uname -m)
+          case $arch in
+            x86_64) arch="amd64" ;;
+            aarch64) arch="arm64" ;;
+          esac
+
+          wget -c https://github.com/dagger/dagger/releases/download/v0.2.5/dagger_v0.2.5_linux_${arch}.tar.gz  -O - |  \
+          tar zxf - -C /usr/local/bin
+
+          dagger version
+          dagger project update
+          dagger do build
+
+          # Use the Netlify token to deploy
+          dagger do deploy
+
+        env:
+          - name: APP_NAME
+            value: $(params.app-name)
+          - name: NETLIFY_TEAM
+            value: dagger
+          - name: DAGGER_LOG_FORMAT
+            value: plain
+          # Get one from https://app.netlify.com/user/applications/personal
+          # and save it as a generic kubernetes secret
+          - name: NETLIFY_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: netlify
+                key: token
+        volumeMounts:
+        - mountPath: /var/run/
+          name: dind-socket
+      sidecars:
+        - image: docker:20.10.13-dind
+          name: server
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - mountPath: /var/run/
+            name: dind-socket
+      volumes:
+      - name: dind-socket
+        emptyDir: {}
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: deploy-todo-app
+spec:
+  pipelineRef:
+    name: dagger-deploy
+  workspaces:
+  - name: shared-data
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  params:
+  - name: repo-url
+    value: https://github.com/dagger/dagger.git
+  - name: app-dir
+    value: pkg/universe.dagger.io/examples/todoapp
+  # This needs to be unique across all of netlify.app
+  - name: app-name
+    value: todoapp-dagger-europa
