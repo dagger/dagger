@@ -8,7 +8,7 @@ setup() {
 }
 
 @test "project init and update and info" {
-	cd "$TEMPDIR" || exit
+	cd "$TEMPDIR" || exit 1
 
 	"$DAGGER" project init ./ --name "github.com/foo/bar"
 	test -d ./cue.mod/pkg
@@ -38,4 +38,28 @@ setup() {
 	run "$DAGGER" project info
 	assert_failure
 	assert_output --partial "dagger project not found. Run \`dagger project init\`"
+}
+
+
+@test "project init with template" {
+  cd "$TEMPDIR" || exit 1
+
+  if test -f ./hello.cue
+  then
+    echo "./hello.cue should not exist"
+    exit 1
+  fi
+
+  run "$DAGGER" project init -t hello
+
+  assert_success
+
+  if test ! -f ./hello.cue
+  then
+    echo "./hello.cue file was not created by the template flag"
+    exit 1
+  fi
+
+  cd -
+  diff --unified "$TEMPDIR/hello.cue" "$TESTDIR/../cmd/dagger/cmd/project/templates/hello.cue"
 }
