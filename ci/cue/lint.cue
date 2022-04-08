@@ -39,7 +39,7 @@ import (
 			// CACHE: copy only *.cue files
 			docker.#Copy & {
 				contents: source
-				include: ["*.cue"]
+				include: ["*.cue", "**/*.cue"]
 				dest: "/cue"
 			},
 
