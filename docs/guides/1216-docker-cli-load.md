@@ -11,10 +11,10 @@ It can be useful to debug or test a build locally before pushing.
 
 ## Local daemon
 
-```cue file=./plans/docker-cli-load/local.cue
+```cue file=../plans/docker-cli-load/local.cue
 ```
 
 ## Remote daemon, via SSH
 
-```cue file=./plans/docker-cli-load/ssh.cue
+```cue file=../plans/docker-cli-load/ssh.cue
 ```

@@ -100,7 +100,6 @@ module.exports = {
         "core-concepts/client",
         "core-concepts/secrets",
         "core-concepts/what-is-cue",
-        "core-concepts/cli-telemetry",
       ],
     },
     {
@@ -108,7 +107,7 @@ module.exports = {
       label: "Guides",
       collapsible: false,
       collapsed: false,
-      items: ["guides/container-images"],
+      items: ["guides/container-images", "guides/cli-telemetry", "guides/docker-cli-load", "guides/docker-cli-run"],
     },
     {
       type: "category",
