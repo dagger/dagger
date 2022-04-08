@@ -45,9 +45,9 @@ import (
 	contents: dagger.#FS
 	source:   string | *"/"
 	dest:     string | *"/"
-	// Optionally exclude certain files
-	include: [...string]
 	// Optionally include certain files
+	include: [...string]
+	// Optionally exclude certain files
 	exclude: [...string]
 
 	// Execute copy operation
