@@ -105,7 +105,38 @@ build:
 
 <TabItem value="jenkins">
 
-If you would like us to document Jenkins next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
+With `docker` and `dagger` installed on your Jenkins agent.
+
+```groovy
+pipeline {
+  agent any
+  environment {
+    //https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials
+    //e.g.
+    //DH_CREDS=credentials('jenkins-dockerhub-creds')
+    //AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
+    //AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+  }
+  stages {
+    stage("setup") {
+      steps {
+        //only needed if you don't commit the cue.mod directory to git
+        //sh '''
+        //  dagger project init
+        //  dagger project update
+        //'''
+      }
+    }
+    stage("do") {
+      steps {
+        //substitute your action name for 'helloworld'
+        //e.g. 'build' or 'push' or whatever you've created!
+        sh 'dagger do helloworld --log-format=plain'
+      }
+    }
+  }
+}
+```
 
 </TabItem>
 
