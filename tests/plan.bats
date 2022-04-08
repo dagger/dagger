@@ -14,8 +14,7 @@ setup() {
   # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod
   cd "$TESTDIR"
   run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue test b
-  # No output because of weirdness with dynamic tasks, which causes it to fail
-  refute_output --partial "actions.test.b"
+  assert_success
 }
 
 @test "plan/do: dynamic tasks - fails to run tasks" {
