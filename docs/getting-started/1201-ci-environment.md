@@ -111,8 +111,9 @@ If you would like us to document Jenkins next, vote for it here: [dagger#1677](h
 
 <TabItem value="tekton">
 
-If you would like us to document Tekton next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
+```yaml file=../tests/getting-started/tekton.yml title="tekton-todoapp.yml"
 
+```
 </TabItem>
 
 </Tabs>
