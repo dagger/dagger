@@ -34,7 +34,9 @@ var updateCmd = &cobra.Command{
 
 		if len(args) == 0 {
 			lg.Debug().Msg("No package specified, updating all packages")
-			pkg.Vendor(ctx, cueModPath)
+			if err := pkg.Vendor(ctx, cueModPath); err != nil {
+				lg.Fatal().Err(err).Msg("vendor pkg failed")
+			}
 			return
 		}
 
