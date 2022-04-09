@@ -70,7 +70,9 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 
 	for p, s := range pathToSecrets {
 		secret := pctx.Secrets.New(s)
-		output.FillPath(cue.ParsePath(p), secret.MarshalCUE())
+		if err := output.FillPath(cue.ParsePath(p), secret.MarshalCUE()); err != nil {
+			lg.Info().Err(err).Msg("Error closing file")
+		}
 	}
 
 	return output, nil

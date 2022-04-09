@@ -86,7 +86,9 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _
 
 		go func() {
 			defer stdin.Close()
-			io.WriteString(stdin, val)
+			if _, err := io.WriteString(stdin, val); err != nil {
+				lg.Info().Err(err).Msg("Error closing file")
+			}
 		}()
 	}
 

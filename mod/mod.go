@@ -90,8 +90,12 @@ func Install(ctx context.Context, workspace, repoName, versionConstraint string)
 	}
 
 	defer func() {
-		fileLock.Unlock()
-		os.Remove(fileLockPath)
+		if err := fileLock.Unlock(); err != nil {
+			lg.Info().Err(err).Msg("failed to unlock")
+		}
+		if err := os.Remove(fileLockPath); err != nil {
+			lg.Info().Err(err).Msg("failed to close file")
+		}
 	}()
 
 	err = modfile.install(ctx, require)
@@ -149,8 +153,12 @@ func Update(ctx context.Context, workspace, repoName, versionConstraint string) 
 	}
 
 	defer func() {
-		fileLock.Unlock()
-		os.Remove(fileLockPath)
+		if err := fileLock.Unlock(); err != nil {
+			lg.Info().Err(err).Msg("failed to unlock")
+		}
+		if err := os.Remove(fileLockPath); err != nil {
+			lg.Info().Err(err).Msg("failed to remove file")
+		}
 	}()
 
 	updatedRequire, err := modfile.updateToLatest(ctx, require)

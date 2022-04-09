@@ -22,6 +22,7 @@ import (
 )
 
 const (
+	/* #nosec G101 */
 	apiKey       = "cb9777c166aefe4b77b31f961508191c" //nolint
 	telemetryURL = "https://t.dagger.io/v1"
 )
@@ -121,7 +122,9 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		lg.Trace().Err(err).Msg("failed to send telemetry event")
 		return
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		lg.Info().Err(err).Msg("Error closing file")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		lg.Trace().Str("status", resp.Status).Msg("telemetry request failed")
@@ -171,13 +174,13 @@ func getDeviceID(repo string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	id, err := os.ReadFile(idFile)
+	id, err := os.ReadFile(filepath.Clean(idFile))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
 
-		if err := os.MkdirAll(filepath.Dir(idFile), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(idFile), 0750); err != nil {
 			return "", err
 		}
 

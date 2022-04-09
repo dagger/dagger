@@ -71,7 +71,7 @@ func Execute() {
 		if span != nil {
 			span.End()
 		}
-		closer.Close()
+		closer.Close() // #nosec G104
 	}()
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {

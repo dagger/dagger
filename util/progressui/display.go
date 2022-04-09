@@ -326,6 +326,7 @@ func (t *trace) update(s *client.SolveStatus, termWidth int) {
 				v.term.Resize(termHeight, termWidth-termPad)
 			}
 			v.termBytes += len(l.Data)
+			/* #nosec G104 */
 			v.term.Write(l.Data) // error unhandled on purpose. don't trust vt100
 		}
 		i := 0

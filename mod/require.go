@@ -87,7 +87,7 @@ func replace(r *Require, sourceRepoPath, destPath string) error {
 	}
 
 	// Make sure the destination exists
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil {
 		return err
 	}
 

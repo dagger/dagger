@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
@@ -166,7 +167,7 @@ func (t clientFilesystemReadTask) readSecret(pctx *plancontext.Context, path str
 }
 
 func (t clientFilesystemReadTask) readString(path string) (string, error) {
-	contents, err := os.ReadFile(path)
+	contents, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return "", err
 	}

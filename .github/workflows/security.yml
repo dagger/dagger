@@ -1,0 +1,30 @@
+name: "Security checks"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-unit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test-unit.yml'
+
+jobs:
+  security-checks:
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: on
+    steps:
+      - uses: actions/checkout@v3
+      - uses: securego/gosec@master
+        with:
+          args: ./...

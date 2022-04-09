@@ -24,7 +24,7 @@ func clone(ctx context.Context, require *Require, dir string, privateKeyFile, pr
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, fmt.Errorf("error cleaning up tmp directory")
 	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("error creating tmp dir for cloning package")
 	}
 

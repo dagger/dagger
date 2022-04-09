@@ -143,7 +143,7 @@ func (p *Package) Text() string {
 			fmt.Fprintf(tw, "\t\t%s\t%s\t%s\n",
 				i.Name, i.Type, terminalTrim(i.Description))
 		}
-		tw.Flush()
+		tw.Flush() //#nosec G104
 	}
 
 	// Package Fields
@@ -207,7 +207,7 @@ func (p *Package) Markdown() string {
 				mdEscape(i.Description),
 			)
 		}
-		tw.Flush()
+		tw.Flush() //#nosec G104
 	}
 
 	// Package Fields
@@ -390,11 +390,15 @@ func walkStdlib(ctx context.Context, output, format string) {
 	}
 
 	// Create main index
-	index, err := os.Create(path.Join(output, "README.md"))
+	index, err := os.Create(filepath.Clean(path.Join(output, "README.md")))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("cannot generate stdlib doc index")
 	}
-	defer index.Close()
+	defer func() {
+		if err := index.Close(); err != nil {
+			lg.Log().Err(err).Msg("error closing file")
+		}
+	}()
 	// FIXME: I removed a \n character, so that markdownlint doesn't complain
 	//        about an extra newline at the end of the file.
 	fmt.Fprintf(index, "# Index\n")
@@ -402,17 +406,21 @@ func walkStdlib(ctx context.Context, output, format string) {
 
 	for p, pkg := range packages {
 		filename := getFileName(p)
-		filepath := path.Join(output, filename)
+		fpath := path.Join(output, filename)
 
-		if err := os.MkdirAll(path.Dir(filepath), 0755); err != nil {
+		if err := os.MkdirAll(path.Dir(fpath), 0750); err != nil {
 			lg.Fatal().Err(err).Msg("cannot create directory")
 		}
 
-		f, err := os.Create(filepath)
+		f, err := os.Create(filepath.Clean(fpath))
 		if err != nil {
 			lg.Fatal().Err(err).Msg("cannot create file")
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				lg.Log().Err(err).Msg("error closing file")
+			}
+		}()
 
 		indexKeys = append(indexKeys, p)
 		fmt.Fprintf(f, "%s", pkg.Format(format))

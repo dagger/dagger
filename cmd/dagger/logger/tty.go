@@ -255,7 +255,8 @@ func (c *TTYOutput) printLine(w io.Writer, event Event, width int) int {
 	fmt.Fprint(w, message)
 
 	t := vt100.NewVT100(100, width)
-	t.Write([]byte(message))
+	t.Write([]byte(message)) //#nosec G104
+
 	return t.UsedHeight()
 }
 

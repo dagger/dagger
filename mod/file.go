@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -32,27 +33,27 @@ type file struct {
 
 func readPath(workspacePath string) (*file, error) {
 	pMod := path.Join(workspacePath, modFilePath)
-	fMod, err := os.Open(pMod)
+	fMod, err := os.Open(filepath.Clean(pMod))
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
 
 		// dagger.mod doesn't exist, let's create an empty file
-		if fMod, err = os.Create(pMod); err != nil {
+		if fMod, err = os.Create(filepath.Clean(pMod)); err != nil {
 			return nil, err
 		}
 	}
 
 	pSum := path.Join(workspacePath, sumFilePath)
-	fSum, err := os.Open(pSum)
+	fSum, err := os.Open(filepath.Clean(pSum))
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
 
 		// dagger.sum doesn't exist, let's create an empty file
-		if fSum, err = os.Create(pSum); err != nil {
+		if fSum, err = os.Create(filepath.Clean(pSum)); err != nil {
 			return nil, err
 		}
 	}

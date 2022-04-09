@@ -66,7 +66,10 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _
 			logPath := cue.MakePath(p[1 : len(p)-1]...)
 			lg.Debug().Str("path", logPath.String()).Str("type", "string").Msg("found secret")
 			path := cue.MakePath(p...)
-			output.FillPath(path, secret.MarshalCUE())
+			if err := output.FillPath(path, secret.MarshalCUE()); err != nil {
+				lg.Info().Err(err).Msg("Error closing file")
+			}
+
 		case map[string]interface{}:
 			for k, v := range entry {
 				np := append([]cue.Selector{}, p...)

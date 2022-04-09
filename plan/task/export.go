@@ -93,7 +93,7 @@ func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 		},
 		Output: func(a map[string]string) (io.WriteCloser, error) {
 			file := filepath.Join(dir, opts.Path)
-			return os.Create(file)
+			return os.Create(filepath.Clean(file))
 		},
 	}, pctx.Platform.Get())
 

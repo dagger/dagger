@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -75,7 +76,7 @@ func isCheckOutdated(path string) bool {
 		return false
 	}
 
-	data, err := ioutil.ReadFile(path)
+	data, err := ioutil.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return true
 	}
@@ -166,7 +167,7 @@ func checkVersion() {
 
 	// Update check timestamps file
 	now := time.Now().Format(time.RFC3339)
-	ioutil.WriteFile(path.Join(versionFilePath), []byte(now), 0600)
+	ioutil.WriteFile(path.Join(versionFilePath), []byte(now), 0600) //#nosec G104
 }
 
 func warnVersion() bool {
