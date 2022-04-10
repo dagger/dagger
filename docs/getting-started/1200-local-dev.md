@@ -64,6 +64,7 @@ cd dagger
 git checkout v0.2.4
 
 cd pkg/universe.dagger.io/examples/todoapp
+dagger do develop
 dagger do build
 ```
 
@@ -157,6 +158,7 @@ cd dagger
 git checkout v0.2.4
 
 cd pkg/universe.dagger.io/examples/todoapp
+dagger do develop
 dagger do build
 ```
 
@@ -239,6 +241,7 @@ cd dagger
 git checkout v0.2.4
 
 cd pkg/universe.dagger.io/examples/todoapp
+dagger do develop
 dagger do build
 ```
 

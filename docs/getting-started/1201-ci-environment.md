@@ -86,7 +86,6 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 
       dagger version
   script:
-    - dagger project update
     - |
       dagger \
           do \
