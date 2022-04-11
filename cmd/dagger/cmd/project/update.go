@@ -1,6 +1,8 @@
 package project
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -35,6 +37,7 @@ var updateCmd = &cobra.Command{
 		if len(args) == 0 {
 			lg.Debug().Msg("No package specified, updating all packages")
 			pkg.Vendor(ctx, cueModPath)
+			fmt.Println("Project updated")
 			return
 		}
 
