@@ -9,6 +9,7 @@ dagger.#Plan & {
 	client: env: {
 		TEST_STRING: string
 		TEST_SECRET: dagger.#Secret
+		TEST_DEFAULT: string | *"hello world"
 	}
 	actions: {
 		image: core.#Pull & {
@@ -18,6 +19,10 @@ dagger.#Plan & {
 			string: core.#Exec & {
 				input: image.output
 				args: ["test", client.env.TEST_STRING, "=", "foo"]
+			}
+			default: core.#Exec & {
+				input: image.output
+				args: ["test", client.env.TEST_DEFAULT, "=", "hello world"]
 			}
 			secret: core.#Exec & {
 				input: image.output
