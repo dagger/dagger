@@ -190,7 +190,7 @@ setup() {
 
   run "$DAGGER" "do" -p ./plan/client/env/usage.cue test
   assert_failure
-  assert_output --regexp "environment variable \"TEST_(STRING|SECRET)\" not set"
+  assert_output --regexp "environment variable \"TEST_(STRING|DEFAULT|SECRET)\" not set"
 }
 
 @test "plan/client/env concrete" {
