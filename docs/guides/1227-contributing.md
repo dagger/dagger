@@ -1,6 +1,6 @@
 ---
 slug: /1227/contributing
-displayed_sidebar: europa
+displayed_sidebar: 0.2
 ---
 
 # Contributing to Dagger
