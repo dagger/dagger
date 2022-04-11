@@ -104,7 +104,7 @@ dagger.#Plan & {
     }
     client: filesystem: ".": {
         read: contents: dagger.#FS
-        write: contents: actions.hello.dir.result
+        write: contents: actions.hello.result
     }
 }
 ```
