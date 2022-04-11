@@ -7,7 +7,6 @@ module.exports = {
   tagline: "Dagger is a programmable deployment system",
   url: "https://docs.dagger.io",
   baseUrl: "/",
-  onBrokenLinks: "warn",
   onBrokenMarkdownLinks: "warn",
   favicon: "img/favicon.png",
   organizationName: "Dagger",
