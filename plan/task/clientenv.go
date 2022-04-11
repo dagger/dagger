@@ -44,13 +44,18 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *so
 }
 
 func (t clientEnvTask) getEnv(envvar string, v *compiler.Value, pctx *plancontext.Context) (interface{}, error) {
-	env := os.Getenv(envvar)
-	if env == "" {
+	// Resolve default in disjunction if a type hasn't been specified
+	val, hasDefault := v.Default()
+
+	env, hasEnv := os.LookupEnv(envvar)
+	if !hasEnv {
+		if hasDefault {
+			// we can only have default strings so
+			// don't worry about secret values here
+			return val, nil
+		}
 		return nil, fmt.Errorf("environment variable %q not set", envvar)
 	}
-
-	// Resolve default in disjunction if a type hasn't been specified
-	val, _ := v.Default()
 
 	if plancontext.IsSecretValue(val) {
 		secret := pctx.Secrets.New(env)
@@ -58,7 +63,7 @@ func (t clientEnvTask) getEnv(envvar string, v *compiler.Value, pctx *plancontex
 	}
 
 	if val.IsConcrete() {
-		return nil, fmt.Errorf("%s: unexpected concrete value, please use a type", envvar)
+		return nil, fmt.Errorf("%s: unexpected concrete value, please use a type or set a default", envvar)
 	}
 
 	k := val.IncompleteKind()
