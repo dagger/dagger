@@ -13,7 +13,7 @@ module.exports = {
   organizationName: "Dagger",
   projectName: "Dagger",
   stylesheets: [
-    "https://fonts.googleapis.com/css2?family=Karla&family=Montserrat:wght@700&display=swap",
+    "https://fonts.googleapis.com/css2?family=Karla&family=Source+Code+Pro:wght@400&family=Montserrat:wght@700&display=swap",
   ],
   customFields: {
     AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID
