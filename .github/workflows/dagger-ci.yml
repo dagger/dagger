@@ -2,7 +2,7 @@ name: "Dagger CI"
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - "**.sh"
       - "**.bash"
@@ -14,7 +14,7 @@ on:
       - "go.sum"
       - ".github/workflows/dagger-ci.yml"
   pull_request:
-    branches: [main]
+    branches: [ main ]
     paths:
       - "**.sh"
       - "**.bash"
@@ -28,6 +28,7 @@ on:
 
 env:
   DAGGER_LOG_FORMAT: plain
+  DAGGER_CACHE_BASE: dagger-ci-build
 
 jobs:
   build:
@@ -55,11 +56,20 @@ jobs:
         with:
           install-only: true
 
+      - name: Sets env vars on push to main
+        run: |
+          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
+          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'push' && github.base_ref == 'main' }}
+
+      - name: Sets env vars on pull request
+        run: |
+          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
+          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main type=gha,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'pull_request' }}
+
       - name: Build
         env:
           DAGGER_LOG_LEVEL: "debug"
-          DAGGER_LOG_FORMAT: "plain"
-          DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-build"
-          DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-build"
         run: |
           dagger do build

@@ -29,6 +29,9 @@ on:
       - ".github/workflows/test-universe.yml"
       - "!docs/**"
 
+env:
+  DAGGER_CACHE_BASE: dagger-ci-universe
+
 jobs:
   universe-europa-tests:
     name: "Universe Tests - Europa"
@@ -55,6 +58,18 @@ jobs:
 
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Sets env vars on push to main
+        run: |
+          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
+          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'push' && github.base_ref == 'main' }}
+
+      - name: Sets env vars on pull request
+        run: |
+          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
+          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main type=gha,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'pull_request' }}
 
       - name: Test
         run: |
