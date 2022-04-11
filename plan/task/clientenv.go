@@ -62,7 +62,7 @@ func (t clientEnvTask) getEnv(envvar string, v *compiler.Value, pctx *plancontex
 		return secret.MarshalCUE(), nil
 	}
 
-	if val.IsConcrete() {
+	if !hasDefault && val.IsConcrete() {
 		return nil, fmt.Errorf("%s: unexpected concrete value, please use a type or set a default", envvar)
 	}
 

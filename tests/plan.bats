@@ -183,6 +183,16 @@ setup() {
   export TEST_SECRET="bar"
 
   "$DAGGER" "do" -p ./plan/client/env/usage.cue test
+
+}
+
+@test "plan/client/env default" {
+  cd "${TESTDIR}"
+
+  export TEST_DEFAULT="hello universe"
+
+  "$DAGGER" "do" -p ./plan/client/env/default.cue test
+
 }
 
 @test "plan/client/env not exists" {
