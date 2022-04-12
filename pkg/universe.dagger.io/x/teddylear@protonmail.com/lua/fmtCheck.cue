@@ -7,13 +7,13 @@ import (
 
 // Checks lua format via Stylua
 #StyluaCheck: {
-    // Files to Copy
-    source: dagger.#FS
+	// Files to Copy
+	source: dagger.#FS
 
-    // Any extra formatting args
-    extraArgs: [...string]
+	// Any extra formatting args
+	extraArgs: [...string]
 
-    _run: docker.#Build & {
+	_run: docker.#Build & {
 		steps: [
 			docker.#Pull & {
 				source: "rust:latest"
