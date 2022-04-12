@@ -7,8 +7,8 @@ import (
 
 dagger.#Plan & {
 	client: env: {
-		TEST_STRING: string
-		TEST_SECRET: dagger.#Secret
+		TEST_STRING:  string
+		TEST_SECRET:  dagger.#Secret
 		TEST_DEFAULT: string | *"hello world"
 	}
 	actions: {

@@ -8,12 +8,7 @@ import (
 dagger.#Plan & {
 	client: filesystem: "./data/hello": read: contents: dagger.#FS
 
-	actions: test: {
-		simple: {
-			fmtCheck: lua.#StyluaCheck & {
-				source: client.filesystem."./data/hello".read.contents
-			}
-		}
+	actions: test: simple: fmtCheck: lua.#StyluaCheck & {
+		source: client.filesystem."./data/hello".read.contents
 	}
 }
-
