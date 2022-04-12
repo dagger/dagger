@@ -1,9 +1,9 @@
 ---
-slug: /1228/better-logs
+slug: /1230/better-logs
 displayed_sidebar: europa
 ---
 
-# How can I have better logs ?
+# Log formats
 
 Dagger exposes 2 logging format options:
 

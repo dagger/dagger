@@ -58,6 +58,19 @@ module.exports = {
       ],
     },
     {
+      type: "doc",
+      label: "FAQ",
+      id: "faq/index",
+      customProps: {
+        "items": [
+          { docId: "faq/empty-buildkit-cache", href: "1229/empty-buildkit-cache" },
+          { docId: "faq/better-logs", href: "1230/better-logs" },
+          { docId: "faq/always-execute", href: "1231/always-execute" },
+          { docId: "faq/chain-actions", href: "1232/chain-actions" },
+        ]
+      }
+    },
+    {
       type: "category",
       label: "References",
       collapsible: false,
