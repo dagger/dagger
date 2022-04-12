@@ -42,7 +42,7 @@ import (
 
 	docker.#Run & {
 		command: {
-			name:   "python3"
+			name:   string | *"python3"
 			"args": ["\(_mountpoint)/\(script._filename)"] + args
 		}
 
