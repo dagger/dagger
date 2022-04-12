@@ -7,7 +7,7 @@ displayed_sidebar: europa
 
 Core Actions are primitives implemented by the Dagger Engine itself. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
 
-For more information about Dagger Actions, see [Dagger Actions](../core-concepts/1221-action).
+For more information about Dagger Actions, see [Dagger Actions](../core-concepts/1221-action.md).
 
 The following core actions are available:
 
