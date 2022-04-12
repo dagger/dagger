@@ -8,6 +8,8 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/buildx/util/buildflags"
+	"github.com/mitchellh/go-homedir"
+	buildkit "github.com/moby/buildkit/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
@@ -84,6 +86,24 @@ func ValueDocOneLine(val *compiler.Value) string {
 	return strings.Join(docs, " ")
 }
 
+func convertRelativePaths(cacheOptionEntries []buildkit.CacheOptionsEntry) []buildkit.CacheOptionsEntry {
+	pathableAttributes := []string{"src", "dest"}
+
+	for _, option := range cacheOptionEntries {
+		for _, key := range pathableAttributes {
+			if _, ok := option.Attrs[key]; ok {
+				path, err := homedir.Expand(option.Attrs[key])
+				if err != nil {
+					panic(err)
+				}
+				option.Attrs[key] = path
+			}
+		}
+	}
+
+	return cacheOptionEntries
+}
+
 // NewClient creates a new client
 func NewClient(ctx context.Context) *client.Client {
 	lg := log.Ctx(ctx)
@@ -108,8 +128,8 @@ func NewClient(ctx context.Context) *client.Client {
 	}
 
 	cl, err := client.New(ctx, "", client.Config{
-		CacheExports:   cacheExports,
-		CacheImports:   cacheImports,
+		CacheExports:   convertRelativePaths(cacheExports),
+		CacheImports:   convertRelativePaths(cacheImports),
 		NoCache:        viper.GetBool("no-cache"),
 		TargetPlatform: p,
 	})
