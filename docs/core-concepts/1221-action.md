@@ -44,6 +44,7 @@ Here is an example of a simple action definition:
 package hello
 
 import (
+    "dagger.io/dagger"
     "dagger.io/dagger/core"
 )
 
