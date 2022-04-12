@@ -29,3 +29,6 @@
 # Exception: Sidebar changes use regular CODEOWNERS
 /website/                   @slumbering
 /website/sidebars.js
+
+# Changing this file requires approval of project owners
+/CODEOWNERS                   @shykes @samalba @aluzzardi
