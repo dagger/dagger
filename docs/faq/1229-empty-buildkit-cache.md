@@ -1,9 +1,9 @@
 ---
-slug: /1227/empty-buildkit-cache
+slug: /1229/empty-buildkit-cache
 displayed_sidebar: europa
 ---
 
-# How to empty BuildKit's cache ?
+# Empty BuildKit's cache
 
 There are two ways of emptying the BuildKit cache:
 

@@ -1,9 +1,9 @@
 ---
-slug: /1229/always-execute
+slug: /1231/always-execute
 displayed_sidebar: europa
 ---
 
-# How to make sure an action is always being executed ?
+# Always executing an action
 
 Dagger implemented a way to tell Buildkit not to rely on cache for a specific action.
 

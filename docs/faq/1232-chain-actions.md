@@ -1,9 +1,9 @@
 ---
-slug: /1230/chain-actions
+slug: /1232/chain-actions
 displayed_sidebar: europa
 ---
 
-# How can I chain actions together ?
+# Chaining actions
 
 Dependencies are materialized at runtime, when your Cue files are parsed and the corresponding DAG gets generated:
 
