@@ -111,7 +111,7 @@ dagger.#Plan & {
 
 Note that `#AddHello` was integrated *directly* into the plan, whereas `core.#WriteFile` was integrated *indirectly*, by virtue of being a sub-action of `#AddHello`.
 
-To learn more about the structure of a plan, see [it all begins with a plan](./1202-plan).
+To learn more about the structure of a plan, see [it all begins with a plan](./1202-plan.md).
 
 ### Discovery
 
