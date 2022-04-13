@@ -27,7 +27,7 @@ require (
 	github.com/sergi/go-diff v1.2.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.4.0
-	github.com/spf13/viper v1.10.0
+	github.com/spf13/viper v1.11.0
 	github.com/stretchr/testify v1.7.1
 	github.com/tonistiigi/fsutil v0.0.0-20220315205639-9ed612626da3
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
@@ -38,8 +38,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.6.3
 	golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
-	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
+	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	golang.org/x/tools v0.1.8 // indirect
 	google.golang.org/grpc v1.45.0
