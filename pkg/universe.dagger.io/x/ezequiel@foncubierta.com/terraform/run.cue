@@ -28,19 +28,19 @@ import (
 
   // Run command within a container
   _run: docker.#Build & {
-		steps: [
-			docker.#Pull & {
+    steps: [
+      docker.#Pull & {
         source: containerRef
       },
 
-			docker.#Copy & {
-				dest:     "/src"
-				contents: source
-			},
+      docker.#Copy & {
+        dest:     "/src"
+        contents: source
+      },
 
-			docker.#Run & {
-				workdir: "/src"
-				command: {
+      docker.#Run & {
+        workdir: "/src"
+        command: {
           name: cmd
           args: cmdArgs
         }
@@ -49,7 +49,7 @@ import (
             TF_WORKSPACE: workspace
           }
         }
-			}
+      }
     ]
   }
 
