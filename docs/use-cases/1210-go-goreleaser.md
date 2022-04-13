@@ -1,6 +1,6 @@
 ---
 slug: /1210/go-goreleaser
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Go with GoReleaser

@@ -1,6 +1,6 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # CI/CD in your local dev
@@ -215,7 +215,7 @@ From a powershell terminal, run:
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
- We'll save everything under `<your home folder>/dagger`
+We'll save everything under `<your home folder>/dagger`
 
 Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 

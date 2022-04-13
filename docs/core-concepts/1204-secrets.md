@@ -1,6 +1,6 @@
 ---
 slug: /1204/secrets
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # How to use secrets
@@ -28,6 +28,7 @@ dagger.#Plan & {
 You may need to trim the whitespace, especially when reading from a file:
 
 ```cue file=../tests/core-concepts/secrets/plans/file.cue
+
 ```
 
 ## SOPS
@@ -36,9 +37,9 @@ There’s many ways to store encrypted secrets in your git repository. If you us
 
 ```yaml title="secrets.yaml"
 myToken: ENC[AES256_GCM,data:AlUz7g==,iv:lq3mHi4GDLfAssqhPcuUIHMm5eVzJ/EpM+q7RHGCROU=,tag:dzbT5dEGhMnHbiRTu4bHdg==,type:str]
-sops:
-    ...
+sops: ...
 ```
 
 ```cue file=../tests/core-concepts/secrets/plans/sops.cue title="main.cue"
+
 ```

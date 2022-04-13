@@ -1,6 +1,6 @@
 ---
 slug: /1226/coding-style
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Package Coding Style
@@ -59,7 +59,7 @@ Choose `_camelCase` for private fields (implementation details).
 }
 ```
 
-## Definitions for *schemas*, fields for concrete *implementations*
+## Definitions for _schemas_, fields for concrete _implementations_
 
 ```cue
 // good, defines a schema
@@ -187,7 +187,7 @@ run: bash.#Run & {
 
 ## Don’t inline scripts
 
-Avoid inlining scripts (e.g., *sh*, *py*, etc). Instead, put them in their own files
+Avoid inlining scripts (e.g., _sh_, _py_, etc). Instead, put them in their own files
 with proper extension, and use `core.#Source` to import into CUE. This allows linting
 and avoids some limitations (script size, escaping).
 
@@ -259,7 +259,7 @@ run: python.#Run & {
 }
 ```
 
-## Favor disjunctions over *if* conditions
+## Favor disjunctions over _if_ conditions
 
 ```cue
 // bad
@@ -283,7 +283,7 @@ if type == "cache" {
 }
 ```
 
-## Favor templates over *for* loops
+## Favor templates over _for_ loops
 
 ```cue
 // bad
@@ -334,11 +334,11 @@ files: {
 }
 ```
 
-## Use *top* to match anything
+## Use _top_ to match anything
 
 From [CUE](https://cuelang.org/docs/references/spec/#values-1):
 
-> At the top of the lattice is the single ancestor of all values, called *top*, denoted `_` in CUE. Every value is an instance of top.
+> At the top of the lattice is the single ancestor of all values, called _top_, denoted `_` in CUE. Every value is an instance of top.
 
 There's a recurring theme when you have a template and need to create instances from it:
 

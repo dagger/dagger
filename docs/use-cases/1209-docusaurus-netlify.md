@@ -1,6 +1,6 @@
 ---
 slug: /1209/docusaurus-netlify
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Docusaurus on Netlify
