@@ -1,6 +1,6 @@
 ---
 slug: /1221/action
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Dagger Actions
@@ -11,7 +11,7 @@ software component that can be safely shared, and repeatably executed by any Dag
 
 Actions can be executed directly with `dagger do`, or integrated as a component of a more complex action.
 
-There are two types of actions: *core actions* and *composite actions*.
+There are two types of actions: _core actions_ and _composite actions_.
 
 ## Core Actions
 
@@ -36,7 +36,7 @@ A composite action's lifecycle has 4 stages:
 
 ### Definition
 
-A new action is *defined* in a declarative template called a [CUE definition](https://cuetorials.com/overview/foundations/#definitions). This definition describes the action's inputs, outputs, sub-actions, and the wiring between them.
+A new action is _defined_ in a declarative template called a [CUE definition](https://cuetorials.com/overview/foundations/#definitions). This definition describes the action's inputs, outputs, sub-actions, and the wiring between them.
 
 Here is an example of a simple action definition:
 
@@ -71,9 +71,9 @@ Note that this action includes one sub-action: `core.#WriteFile`. An action can 
 
 Also note the free-form structure: an action definition is not structured by a rigid schema. It is simply a CUE struct with fields of various types.
 
-* "inputs" are simply fields which are not complete, and therefore can receive an external value at integration. For example, `dir` and `name` are inputs.
-* "outputs" are simply fields which produce a value that can be referenced externally at integration. For example, `result` is an output.
-* "sub-actions" are simply fields which contain another action definition. For example, `write` is a sub-action.
+- "inputs" are simply fields which are not complete, and therefore can receive an external value at integration. For example, `dir` and `name` are inputs.
+- "outputs" are simply fields which produce a value that can be referenced externally at integration. For example, `result` is an output.
+- "sub-actions" are simply fields which contain another action definition. For example, `write` is a sub-action.
 
 There are no constraints to an action's field names or types.
 
@@ -83,11 +83,11 @@ Action definitions cannot be executed directly: they must be integrated into a p
 
 A plan is an execution context for actions. It specifies:
 
-* What actions to present to the end user
-* Dependencies between those tasks, if any
-* Interactions between the tasks and the client system, if any
+- What actions to present to the end user
+- Dependencies between those tasks, if any
+- Interactions between the tasks and the client system, if any
 
-Actions are integrated into a plan by *merging* their CUE definition into the plan's CUE definition.
+Actions are integrated into a plan by _merging_ their CUE definition into the plan's CUE definition.
 
 Here is an example of a plan:
 
@@ -110,7 +110,7 @@ dagger.#Plan & {
 }
 ```
 
-Note that `#AddHello` was integrated *directly* into the plan, whereas `core.#WriteFile` was integrated *indirectly*, by virtue of being a sub-action of `#AddHello`.
+Note that `#AddHello` was integrated _directly_ into the plan, whereas `core.#WriteFile` was integrated _indirectly_, by virtue of being a sub-action of `#AddHello`.
 
 To learn more about the structure of a plan, see [it all begins with a plan](./1202-plan.md).
 

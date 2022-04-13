@@ -1,6 +1,6 @@
 ---
 slug: /1218/cli-telemetry
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Understanding CLI Telemetry
@@ -15,10 +15,10 @@ us better understand how Dagger is used, and will allow us to improve your exper
 
 The following information is included in telemetry:
 
-* Dagger version
-* Platform information
-* Command run
-* Anonymous device ID
+- Dagger version
+- Platform information
+- Command run
+- Anonymous device ID
 
 We use telemetry for aggregate analysis, and do not tie telemetry events to a specific identity.
 
