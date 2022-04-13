@@ -25,6 +25,9 @@
 # Universe
 /pkg/universe.dagger.io/    @helderco @shykes
 
+# Universe experimental
+/pkg/universe.dagger.io/x/    @helderco @jpadams
+
 # Documentation Website
 # Exception: Sidebar changes use regular CODEOWNERS
 /website/                   @slumbering
