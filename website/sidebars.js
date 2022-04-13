@@ -53,6 +53,8 @@ module.exports = {
         "guides/custom-buildkit",
         "guides/self-signed-certificates",
         "guides/pushing-plan-dependencies",
+        "guides/coding-style",
+	"guides/handling-outputs",
       ],
     },
     {
