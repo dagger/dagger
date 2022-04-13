@@ -12,12 +12,10 @@ import (
 	"go.dagger.io/dagger/pkg"
 )
 
-var (
-	fsIDPath = cue.MakePath(
-		cue.Str("$dagger"),
-		cue.Str("fs"),
-		cue.Hid("_id", pkg.DaggerPackage),
-	)
+var fsIDPath = cue.MakePath(
+	cue.Str("$dagger"),
+	cue.Str("fs"),
+	cue.Hid("_id", pkg.DaggerPackage),
 )
 
 func IsFSValue(v *compiler.Value) bool {

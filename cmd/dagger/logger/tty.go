@@ -43,8 +43,14 @@ func (l *Logs) Add(event Event) error {
 	l.l.Lock()
 	defer l.l.Unlock()
 
+	// same thing as in plain.go group all the non-identified tasks
+	// into a general group called system
+	source := systemGroup
 	taskPath, ok := event["task"].(string)
-	if !ok {
+
+	if ok && len(taskPath) > 0 {
+		source = taskPath
+	} else if !ok {
 		l.Messages = append(l.Messages, Message{
 			Event: event,
 		})
@@ -53,7 +59,7 @@ func (l *Logs) Add(event Event) error {
 	}
 
 	// Hide hidden fields (e.g. `._*`) from log group names
-	groupKey := strings.Split(taskPath, "._")[0]
+	groupKey := strings.Split(source, "._")[0]
 
 	group := l.groups[groupKey]
 
@@ -262,51 +268,56 @@ func (c *TTYOutput) printLine(w io.Writer, event Event, width int) int {
 func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	lineCount := 0
 
-	prefix := ""
-	switch group.State {
-	case task.StateComputing:
-		prefix = "[+]"
-	case task.StateCanceled:
-		prefix = "[✗]"
-	case task.StateFailed:
-		prefix = "[✗]"
-	case task.StateCompleted:
-		prefix = "[✔]"
+	var out string
+	// treat the "system" group as a special case as we don't
+	// want it to be displayed as an action in the output
+	if group.Name != systemGroup {
+		prefix := ""
+		switch group.State {
+		case task.StateComputing:
+			prefix = "[+]"
+		case task.StateCanceled:
+			prefix = "[✗]"
+		case task.StateFailed:
+			prefix = "[✗]"
+		case task.StateCompleted:
+			prefix = "[✔]"
+		}
+
+		out = prefix + " " + group.Name
+
+		endTime := time.Now()
+		if group.Completed != nil {
+			endTime = *group.Completed
+		}
+
+		dt := endTime.Sub(*group.Started).Seconds()
+		if dt < 0.05 {
+			dt = 0
+		}
+		timer := fmt.Sprintf("%3.1fs", dt)
+
+		// align
+		out += strings.Repeat(" ", width-utf8.RuneCountInString(out)-len(timer))
+		out += timer
+		out += "\n"
+
+		// color
+		switch group.State {
+		case task.StateComputing:
+			out = aec.Apply(out, aec.LightBlueF)
+		case task.StateCanceled:
+			out = aec.Apply(out, aec.LightYellowF)
+		case task.StateFailed:
+			out = aec.Apply(out, aec.LightRedF)
+		case task.StateCompleted:
+			out = aec.Apply(out, aec.LightGreenF)
+		}
+
+		// Print
+		fmt.Fprint(c.cons, out)
+		lineCount++
 	}
-
-	out := prefix + " " + group.Name
-
-	endTime := time.Now()
-	if group.Completed != nil {
-		endTime = *group.Completed
-	}
-
-	dt := endTime.Sub(*group.Started).Seconds()
-	if dt < 0.05 {
-		dt = 0
-	}
-	timer := fmt.Sprintf("%3.1fs", dt)
-
-	// align
-	out += strings.Repeat(" ", width-utf8.RuneCountInString(out)-len(timer))
-	out += timer
-	out += "\n"
-
-	// color
-	switch group.State {
-	case task.StateComputing:
-		out = aec.Apply(out, aec.LightBlueF)
-	case task.StateCanceled:
-		out = aec.Apply(out, aec.LightYellowF)
-	case task.StateFailed:
-		out = aec.Apply(out, aec.LightRedF)
-	case task.StateCompleted:
-		out = aec.Apply(out, aec.LightGreenF)
-	}
-
-	// Print
-	fmt.Fprint(c.cons, out)
-	lineCount++
 
 	printEvents := []Event{}
 	switch group.State {

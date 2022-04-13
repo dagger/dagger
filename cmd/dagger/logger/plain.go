@@ -23,6 +23,8 @@ type PlainOutput struct {
 	Out io.Writer
 }
 
+const systemGroup = "system"
+
 func (c *PlainOutput) Write(p []byte) (int, error) {
 	event := map[string]interface{}{}
 	d := json.NewDecoder(bytes.NewReader(p))
@@ -117,7 +119,7 @@ func formatMessage(event map[string]interface{}) string {
 }
 
 func parseSource(event map[string]interface{}) string {
-	source := "system"
+	source := systemGroup
 	if task, ok := event["task"].(string); ok && task != "" {
 		source = task
 	}

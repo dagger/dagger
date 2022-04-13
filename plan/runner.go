@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.dagger.io/dagger/compiler"
+
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -15,6 +16,7 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 )
@@ -124,6 +126,15 @@ func (r *Runner) shouldRun(p cue.Path) bool {
 	return ok
 }
 
+func taskLog(tp string, log *zerolog.Logger, t task.Task, fn func(lg zerolog.Logger)) {
+	fn(log.With().Str("task", tp).Logger())
+	// setup logger here
+	_, isDockerfileTask := t.(*task.DockerfileTask)
+	if isDockerfileTask {
+		fn(log.With().Str("task", "system").Logger())
+	}
+}
+
 func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 	v := compiler.Wrap(flowVal)
 	handler, err := task.Lookup(v)
@@ -142,31 +153,41 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 	// Wrapper around `task.Run` that handles logging, tracing, etc.
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
-		lg := log.Ctx(ctx).With().Str("task", t.Path().String()).Logger()
+		taskPath := t.Path().String()
+		lg := log.Ctx(ctx).With().Logger()
 		ctx = lg.WithContext(ctx)
 		ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
 		defer span.End()
 
-		lg.Info().Str("state", string(task.StateComputing)).Msg(string(task.StateComputing))
+		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+			lg.Info().Str("state", string(task.StateComputing)).Msg(string(task.StateComputing))
+		})
 
 		// Debug: dump dependencies
 		for _, dep := range t.Dependencies() {
-			lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
+			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+				lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
+			})
 		}
 
 		start := time.Now()
 		result, err := handler.Run(ctx, r.pctx, r.s, compiler.Wrap(t.Value()))
 		if err != nil {
 			// FIXME: this should use errdefs.IsCanceled(err)
+
+			// we don't wrap taskLog here since in some cases, actions could still be
+			// running in goroutines which will scramble outputs.
 			if strings.Contains(err.Error(), "context canceled") {
-				lg.Error().Dur("duration", time.Since(start)).Str("state", string(task.StateCanceled)).Msg(string(task.StateCanceled))
+				lg.Error().Dur("duration", time.Since(start)).Str("task", taskPath).Str("state", string(task.StateCanceled)).Msg(string(task.StateCanceled))
 			} else {
-				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", string(task.StateFailed)).Msg(string(task.StateFailed))
+				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("task", taskPath).Str("state", string(task.StateFailed)).Msg(string(task.StateFailed))
 			}
 			return fmt.Errorf("%s: %w", t.Path().String(), compiler.Err(err))
 		}
 
-		lg.Info().Dur("duration", time.Since(start)).Str("state", string(task.StateCompleted)).Msg(string(task.StateCompleted))
+		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+			lg.Info().Dur("duration", time.Since(start)).Str("state", string(task.StateCompleted)).Msg(string(task.StateCompleted))
+		})
 
 		// If the result is not concrete (e.g. empty value), there's nothing to merge.
 		if !result.IsConcrete() {
@@ -174,7 +195,9 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		}
 
 		if src, err := result.Source(); err == nil {
-			lg.Debug().Str("result", string(src)).Msg("merging task result")
+			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+				lg.Debug().Str("result", string(src)).Msg("merging task result")
+			})
 		}
 
 		// Mirror task result and re-scan tasks that should run.
@@ -184,7 +207,9 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		// }
 
 		if err := t.Fill(result.Cue()); err != nil {
-			lg.Error().Err(err).Msg("failed to fill task")
+			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+				lg.Error().Err(err).Msg("failed to fill task")
+			})
 			return err
 		}
 
