@@ -4,11 +4,17 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    labels:
+      - "kind/dependencies"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "daily"
+    labels:
+      - "kind/dependencies"
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:
       interval: "daily"
+    labels:
+      - "kind/dependencies"
