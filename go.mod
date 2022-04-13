@@ -25,6 +25,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/rs/zerolog v1.26.1
 	github.com/sergi/go-diff v1.2.0
+	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/viper v1.10.0
 	github.com/stretchr/testify v1.7.1
