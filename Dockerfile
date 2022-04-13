@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:1.2
 
-FROM golang:1.16.15-alpine AS build
+FROM golang:1.18.1-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache file
 ENV GOMODCACHE /root/.cache/gocache
