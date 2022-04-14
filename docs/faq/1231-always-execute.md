@@ -1,11 +1,11 @@
 ---
 slug: /1231/always-execute
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
-# Always executing an action
+# How to always execute an action ?
 
-Dagger implemented a way to tell Buildkit not to rely on cache for a specific action.
+Dagger implemented a way invalidate cache for a specific action.
 
 The `docker.#Run` and `core.#Exec` definitions have an `always` field:
 
@@ -22,3 +22,7 @@ test: bash.#Run & {
     ...
 }
 ```
+
+:::warning
+Any dependent actions will also be retriggered
+:::

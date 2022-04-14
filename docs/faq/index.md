@@ -1,6 +1,6 @@
 ---
 slug: /faq
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # FAQ
@@ -13,7 +13,7 @@ export const FaqItems = () => {
     {/* access root category object from Docusaurus */}
     const docsVersion = useDocsVersion();
     {/* customProps object retrieved from sidebar.js */}
-    const faqItem = docsVersion.docsSidebars.europa.filter(item => item.label === 'FAQ');
+    const faqItem = docsVersion.docsSidebars['0.2'].filter(item => item.label === 'FAQ');
     {/* Return custom FAQ Items array */}
     const customPropsItem = faqItem[0].customProps.items.map(customPropsItem => {
         const result = Object.values(docsVersion.docs).filter(item => item.id === customPropsItem.docId)[0]
