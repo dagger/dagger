@@ -41,6 +41,7 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
+		fmt.Println("Project initialized! To install dagger packages, run `dagger project update`")
 	},
 }
 
