@@ -32,7 +32,3 @@ package dagger
 #Socket: {
 	$dagger: service: _id: string
 }
-
-// A network service address
-#Address: string & =~"^(unix://|npipe://).+"
-// TODO: #Address: string & =~"^(tcp://|unix://|npipe://|udp://).+"
