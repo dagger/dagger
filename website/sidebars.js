@@ -53,8 +53,8 @@ module.exports = {
         "guides/custom-buildkit",
         "guides/self-signed-certificates",
         "guides/pushing-plan-dependencies",
-        "guides/coding-style",
 	"guides/handling-outputs",
+      	"guides/migrate-from-dagger-0.1",
       ],
     },
     {
@@ -80,10 +80,6 @@ module.exports = {
       items: [
         "use-cases/go-docker-swarm",
       ],
-    },
-    {
-      type: "doc",
-      id: "migrate-from-dagger-0.1",
     },
     {
       type: "link",
