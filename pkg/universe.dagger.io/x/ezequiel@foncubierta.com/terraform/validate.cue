@@ -2,5 +2,6 @@ package terraform
 
 // Run `terraform validate`
 #Validate: #Run & {
-  cmd: "validate"
+	// Terraform `validate` command
+	cmd: "validate"
 }

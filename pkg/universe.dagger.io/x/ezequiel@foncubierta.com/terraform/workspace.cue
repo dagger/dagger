@@ -1,9 +1,13 @@
 package terraform
 
-_#workspaceSubcmd: "new" | "select" | "delete"
+// Subcommands of `terraform workspace` command
+#WorkspaceSubcmd: "new" | "select" | "delete"
 
 // Run `terraform workspace`
 #Workspace: #Run & {
-  cmd: "workspace " + subCmd
-  subCmd: _#workspaceSubcmd
+	// Terraform `workspace` command
+	cmd: "workspace \(subCmd)"
+
+	// Terraform `workspace` subcommand (i.e. new, select, delete)
+	subCmd: #WorkspaceSubcmd
 }

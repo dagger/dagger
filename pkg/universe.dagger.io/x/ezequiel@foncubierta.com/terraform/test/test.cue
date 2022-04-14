@@ -2,48 +2,48 @@ package terraform
 
 import (
 	"dagger.io/dagger"
-  "dagger.io/dagger/core"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/x/ezequiel@foncubierta.com/terraform"
 )
 
 dagger.#Plan & {
 	actions: test: {
-    tfSource: core.#Source & {
-      path: "./data"
-    }
+		tfSource: core.#Source & {
+			path: "./data"
+		}
 
-    applyWorkflow: {
-      init: terraform.#Init & {
-        source: tfSource.output
-      }
+		applyWorkflow: {
+			init: terraform.#Init & {
+				source: tfSource.output
+			}
 
-      validate: terraform.#Validate & {
-        source: init.output
-      }
+			validate: terraform.#Validate & {
+				source: init.output
+			}
 
-      plan: terraform.#Plan & {
-        source: validate.output
-      }
+			plan: terraform.#Plan & {
+				source: validate.output
+			}
 
-      apply: terraform.#Apply & {
-        source: plan.output
-      }
+			apply: terraform.#Apply & {
+				source: plan.output
+			}
 
-      verify: #AssertFile & {
-        input:    apply.output
-        path:     "./out.txt"
-        contents: "Hello, world!"
-      }
-    }
+			verify: #AssertFile & {
+				input:    apply.output
+				path:     "./out.txt"
+				contents: "Hello, world!"
+			}
+		}
 
-    destroyWorkflow: {
-      destroy: terraform.#Destroy & {
-        source: applyWorkflow.apply.output
-      }
+		destroyWorkflow: {
+			destroy: terraform.#Destroy & {
+				source: applyWorkflow.apply.output
+			}
 
-      // TODO assert out.txt doesn't exist
-    }
+			// TODO assert out.txt doesn't exist
+		}
 	}
 }
 

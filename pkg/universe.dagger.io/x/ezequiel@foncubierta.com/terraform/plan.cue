@@ -1,11 +1,16 @@
 package terraform
 
 // File to write the output plan
-_#defaultPlanFile: string | *"./out.tfplan"
+_#DefaultPlanFile: "./out.tfplan"
 
 // Run `terraform plan`
 #Plan: #Run & {
-  cmd: "plan"
-  withinCmdArgs: ["-out=\(planFile)"]
-  planFile: _#defaultPlanFile
+	// Terraform `plan` command
+	cmd: "plan"
+
+	// Internal pre-defined arguments for `terraform plan`
+	withinCmdArgs: ["-out=\(planFile)"]
+
+	// Path to a Terraform plan file
+	planFile: string | *_#DefaultPlanFile
 }
