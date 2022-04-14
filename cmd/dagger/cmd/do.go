@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"cuelang.org/go/cue"
+	"github.com/google/shlex"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -31,11 +32,6 @@ var doCmd = &cobra.Command{
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) < 1 {
-			doHelpCmd(cmd, nil)
-			return
-		}
-
 		var (
 			lg  = logger.New()
 			tty *logger.TTYOutput
@@ -58,6 +54,16 @@ var doCmd = &cobra.Command{
 			lg = lg.Output(tty)
 		}
 
+		actions, err := getActions(args)
+		if err != nil {
+			lg.Fatal().Err(err).Msgf("failed to parse action")
+		}
+
+		if len(actions) < 1 {
+			doHelpCmd(cmd, nil)
+			return
+		}
+
 		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
@@ -65,18 +71,21 @@ var doCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to load plan")
 		}
-		target := getTargetPath(args)
 
-		doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
-			Name:  "action",
-			Value: target.String(),
-		})
+		for _, action := range actions {
+			target := getTargetPath(action)
 
-		err = cl.Do(ctx, p.Context(), func(ctx context.Context, s *solver.Solver) error {
-			return p.Do(ctx, target, s)
-		})
+			doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
+				Name:  "action",
+				Value: target.String(),
+			})
 
-		<-doneCh
+			err = cl.Do(ctx, p.Context(), func(ctx context.Context, s *solver.Solver) error {
+				return p.Do(ctx, target, s)
+			})
+
+			<-doneCh
+		}
 
 		p.Context().TempDirs.Clean()
 
@@ -84,6 +93,28 @@ var doCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 	},
+}
+
+func getActions(args []string) ([][]string, error) {
+	actionsFromFlags := viper.GetStringSlice("action")
+	actions := make([][]string, 0, len(actionsFromFlags)+1)
+	for _, flagAction := range actionsFromFlags {
+		action, err := shlex.Split(flagAction)
+		if err != nil {
+			return nil, err
+		}
+		actions = append(actions, action)
+	}
+
+	if len(args) > 0 {
+		actions = append(actions, args)
+	}
+
+	if len(actions) == 0 {
+		actions = append(actions, make([]string, 0))
+	}
+
+	return actions, nil
 }
 
 func loadPlan() (*plan.Plan, error) {
@@ -160,6 +191,7 @@ func printActions(w io.Writer, target cue.Path) error {
 
 func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
+	doCmd.Flags().StringArrayP("action", "a", []string{}, "Action to run (e.g. 'build win64')")
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")

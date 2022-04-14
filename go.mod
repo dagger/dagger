@@ -13,6 +13,7 @@ require (
 	github.com/emicklei/proto v1.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/gofrs/flock v0.8.1
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-version v1.4.0
 	github.com/lib/pq v1.10.0 // indirect
