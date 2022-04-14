@@ -9,6 +9,7 @@
 *.dylib
 /cmd/dagger/dagger
 /cmd/dagger/dagger-debug
+**/obj/*
 
 # Test binary, build with `go test -c`
 *.test

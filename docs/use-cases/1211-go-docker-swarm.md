@@ -1,6 +1,6 @@
 ---
 slug: /1211/go-docker-swarm
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Go on Docker Swarm

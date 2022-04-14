@@ -1,6 +1,6 @@
 ---
 slug: /1219/go-docker-hub
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Go on Docker Hub
@@ -22,6 +22,7 @@ You can indeed choose which files to include. Since it's a Golang project
 it should contain the module and all Go source files:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/retrieve-go-project/dagger.cue
+
 ```
 
 :::tip
@@ -38,6 +39,7 @@ to build your pipeline, but your project may use `CGO` or any external dependenc
 You can customize the base image to install required dependencies:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/base.cue.fragment
+
 ```
 
 ## Run unit tests
@@ -48,9 +50,11 @@ Use the [#Test](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.i
 definition:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/test.cue.fragment
+
 ```
 
 <!-- FIXME(TomChv): we should write a bunch of documentation about TDD with dagger -->
+
 :::tip
 You can also use Dagger to write integration tests.
 :::
@@ -63,6 +67,7 @@ Use the [#Build](https://github.com/dagger/dagger/blob/main/pkg/universe.dagger.
 definition to do that:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/build.cue.fragment
+
 ```
 
 :::tip
@@ -76,6 +81,7 @@ To make it usable for other users, you must put your binary in an image and set 
 For optimization purposes, you can use alpine as the base image to contain your binary:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/image.cue.fragment
+
 ```
 
 ## Push to Docker Hub
@@ -98,6 +104,7 @@ dagger.#Plan & {
 You can now push your image:
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/push.cue.fragment
+
 ```
 
 ## Complete CI/CD
@@ -106,6 +113,7 @@ After merging all examples, you will have a complete CI/CD to deliver a Go
 binary on Docker Hub.
 
 ```cue file=../tests/use-cases/ci-cd-for-go-project/complete-ci-cd/dagger.cue
+
 ```
 
 You can then use `dagger do` to select which action you want to run.

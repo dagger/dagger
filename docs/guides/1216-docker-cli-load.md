@@ -1,6 +1,6 @@
 ---
 slug: /1216/docker-cli-load
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Loading a dagger image into a docker daemon
@@ -12,9 +12,11 @@ It can be useful to debug or test a build locally before pushing.
 ## Local daemon
 
 ```cue file=../plans/docker-cli-load/local.cue
+
 ```
 
 ## Remote daemon, via SSH
 
 ```cue file=../plans/docker-cli-load/ssh.cue
+
 ```

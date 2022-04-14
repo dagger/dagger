@@ -1,0 +1,18 @@
+#SomeAction: {
+	// Nop to make dagger run the action
+	core.#Nop & {}
+	url:       "test.com"
+	deployUrl: "test.com/deploy"
+	logsUrl:   "test.com/logs"
+}
+
+dagger.#Plan & {
+	client: filesystem: "output.json": write: contents: json.Marshal({
+		url:       actions.test.url
+		deployUrl: actions.test.deployUrl
+		logsUrl:   actions.test.logsUrl
+	})
+	actions: {
+		test: #SomeAction & {}
+	}
+}
