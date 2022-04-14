@@ -55,6 +55,7 @@ module.exports = {
         "guides/pushing-plan-dependencies",
 	"guides/handling-outputs",
       	"guides/migrate-from-dagger-0.1",
+        "guides/go-ci",
       ],
     },
     {
