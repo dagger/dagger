@@ -1,20 +1,23 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: dagger-deploy
+  name: dagger
 spec:
   description: |
-    dagger-deploy gets a git repository and an app name and deploy it.
+    Execute a dagger action from a git repo.
   params:
+  - name: dagger-action
+    type: string
+    description: The dagger action to execute.
   - name: repo-url
     type: string
     description: The git repository URL to clone from.
   - name: app-dir
     type: string
     description: The path to access the app dagger codebase within the repository.
-  - name: app-name
+  - name: netlify-site-name
     type: string
-    description: The name of the app to deploy.
+    description: The Netlify site name. Unique value among Netlify sites.
   workspaces:
   - name: shared-data
     description: |
@@ -32,23 +35,28 @@ spec:
     params:
     - name: url
       value: $(params.repo-url)
+    - name: revision
+      value: "v0.2.6"
 
-  - name: build-deploy-app
+  - name: dagger-do
     runAfter: ["fetch-repo"]  # Wait until the clone is done before deploying the app.
     workspaces:
     - name: source
       workspace: shared-data
     params:
+      - name: dagger-action
+        value: $(params.dagger-action)
       - name: app-dir
         value: $(params.app-dir)
-      - name: app-name
-        value: $(params.app-name)
+      - name: netlify-site-name
+        value: $(params.netlify-site-name)
     taskSpec:
       workspaces:
       - name: source
       params:
+      - name: dagger-action
       - name: app-dir
-      - name: app-name
+      - name: netlify-site-name
       steps:
       - image: docker:20.10.13
         name: build-deploy
@@ -68,11 +76,11 @@ spec:
           tar zxf - -C /usr/local/bin
 
           dagger version
-          dagger do deploy
+          dagger do $(params.dagger-action)
 
         env:
           - name: APP_NAME
-            value: $(params.app-name)
+            value: $(params.netlify-site-name)
           - name: NETLIFY_TEAM
             value: dagger
           - name: DAGGER_LOG_FORMAT
@@ -105,7 +113,7 @@ metadata:
   name: deploy-todo-app
 spec:
   pipelineRef:
-    name: dagger-deploy
+    name: dagger
   workspaces:
   - name: shared-data
     volumeClaimTemplate:
@@ -116,10 +124,11 @@ spec:
           requests:
             storage: 1Gi
   params:
+  - name: dagger-action
+    value: deploy
   - name: repo-url
     value: https://github.com/dagger/dagger.git
   - name: app-dir
     value: pkg/universe.dagger.io/examples/todoapp
-  # This needs to be unique across all of netlify.app
-  - name: app-name
+  - name: netlify-site-name
     value: todoapp-dagger-europa
