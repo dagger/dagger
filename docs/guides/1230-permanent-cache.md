@@ -27,32 +27,32 @@ standard way
 package ci
 
 import (
-	"dagger.io/dagger"
-	"universe.dagger.io/go"
+  "dagger.io/dagger"
+  "universe.dagger.io/go"
 )
 
 dagger.#Plan & {
-	// Retrieve source from current directory
-	// Input
-	client: filesystem: ".": read: {
-		contents: dagger.#FS
-		include: ["**/*.go", "go.mod", "go.sum"]
-	}
+  // Retrieve source from current directory
+  // Input
+  client: filesystem: ".": read: {
+    contents: dagger.#FS
+    include: ["**/*.go", "go.mod", "go.sum"]
+  }
 
-	// Output
-	client: filesystem: "./output": write: {
-		contents: actions.build.output
-	}
+  // Output
+  client: filesystem: "./output": write: {
+  	contents: actions.build.output
+  }
 
-	actions: {
-		// Alias on source
-		_source: client.filesystem.".".read.contents
+  actions: {
+    // Alias on source
+    _source: client.filesystem.".".read.contents
 
-        // Build go binary
-		build: go.#Build & {
-			source: _source
-		}
-	}
+    // Build go binary
+    build: go.#Build & {
+      source: _source
+    }
+  }
 }
 ```
 
@@ -71,7 +71,7 @@ Here's an example of a run
 Indeed, Dagger has an ephemeral cache so if you rerun it, that shouldn't take
 that long.
 
-```
+```shell
 [✔] actions.build.container                                                 2.9s
 [✔] client.filesystem.".".read                                              0.0s
 [✔] actions.build.container.export                                          0.0s
@@ -118,8 +118,7 @@ If you run different action in the plan, don't forget to store cache in differen
 destination, so it will be not overwritten.
 :::
 
-To import the cache previously stored, you can use 
-`--cache-from type=local,src=<cache folder>`.
+To import the cache previously stored, you can use `--cache-from type=local,src=<cache folder>`.
 
 Here's an example, using a new buildkit daemon
 
@@ -142,7 +141,33 @@ to see more options on local export, look at [Buildkit cache documentation](http
 
 ## Keep cache in a remote registry
 
-Coming soon...
+Buildkit can also import/export cache to a registry, it's a great way to share cache between your team and avoid
+flooding your filesystem.
+
+:::tip
+Using a registry as cache storage is more efficient than local storage because Buildkit will only re-export
+missing layers on multiple runs.
+:::
+
+Let's first deploy a simple registry in your localhost
+
+```shell
+docker run -d -p 6000:5000 --restart=always --name cache-registry registry:2
+```
+
+Then it's not much different from local export
+
+```shell
+dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cache-from type=registry,ref=localhost:5000/cache
+[✔] actions.build.container                                                 1.3s
+[✔] client.filesystem.".".read                                              0.0s
+[✔] actions.build.container.export                                          0.0s
+[✔] client.filesystem."./output".write                                      0.1s
+```
+
+:::info
+See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit#registry-push-image-and-cache-separately)
+:::
 
 ## Keep cache in GitHub Actions
 
