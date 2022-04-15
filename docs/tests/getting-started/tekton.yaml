@@ -145,6 +145,6 @@ spec:
   - name: app-dir
     value: pkg/universe.dagger.io/examples/todoapp
   - name: netlify-site-name
-    value: mgreau-todoapp-dagger-europa
+    value: todoapp-dagger-europa
   - name: netlify-team
-    value: mgreau
+    value: dagger
