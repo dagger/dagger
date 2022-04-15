@@ -68,10 +68,6 @@ spec:
           tar zxf - -C /usr/local/bin
 
           dagger version
-          dagger project update
-          dagger do build
-
-          # Use the Netlify token to deploy
           dagger do deploy
 
         env:
