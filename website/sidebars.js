@@ -13,13 +13,26 @@ module.exports = {
   "0.2": [
     {
       type: "category",
+      label: "Introduction",
+      collapsible: false,
+      items: [
+	      "introduction/what",
+	      "introduction/vs",
+	],
+      link: {
+        type: 'generated-index',
+	title: "Dagger Documentation",
+      },
+    },
+    {
+      type: "category",
       label: "Getting Started",
       collapsible: false,
       link: {
         type: 'doc',
         id: 'getting-started/index'
       },
-      items: ["getting-started/local-dev", "getting-started/ci-environment", "getting-started/vs"],
+      items: ["getting-started/local-dev", "getting-started/ci-environment"],
     },
     {
       type: "category",
