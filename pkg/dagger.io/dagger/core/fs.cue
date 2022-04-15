@@ -60,7 +60,7 @@ import "dagger.io/dagger"
 	// Contents to write
 	contents: string
 	// Permissions of the file
-	permissions: *0o600 | int
+	permissions: *0o644 | int
 	// Output filesystem tree
 	output: dagger.#FS
 }
