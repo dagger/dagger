@@ -38,17 +38,17 @@ To run a customized Buildkit version with Docker, this can be done using the bel
 docker run -d --name dagger-buildkitd --privileged --network=host docker.io/moby/buildkit:latest
 ```
 
-## OpenTracing Support
+## OpenTelemetry Support
 
-Both Dagger and buildkit support opentracing. To capture traces to
-[Jaeger](https://github.com/jaegertracing/jaeger), set the `JAEGER_TRACE` environment variable to the collection address.
+Both Dagger and buildkit support opentelemetry. To capture traces to
+[Jaeger](https://github.com/jaegertracing/jaeger), set the `OTEL_EXPORTER_JAEGER_ENDPOINT` environment variable to the collection address.
 
 A `docker-compose` file is available to help bootstrap the tracing environment:
 
 ```shell
 docker-compose -f ./dagger-main/tracing.compose.yaml up -d
-export JAEGER_TRACE=localhost:6831
 export BUILDKIT_HOST=docker-container://dagger-buildkitd-jaeger
+export OTEL_EXPORTER_JAEGER_ENDPOINT=http://localhost:14268/api/traces
 
 dagger up
 ```
