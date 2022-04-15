@@ -79,6 +79,7 @@ module.exports = {
       collapsed: false,
       items: [
         "references/core-actions-reference",
+        "references/dagger-types-reference",
       ],
     },
     {
