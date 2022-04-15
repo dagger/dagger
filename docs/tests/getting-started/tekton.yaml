@@ -6,6 +6,9 @@ spec:
   description: |
     Execute a dagger action from a git repo.
   params:
+  - name: dagger-version
+    type: string
+    description: The dagger version to run.
   - name: dagger-action
     type: string
     description: The dagger action to execute.
@@ -18,6 +21,9 @@ spec:
   - name: netlify-site-name
     type: string
     description: The Netlify site name. Unique value among Netlify sites.
+  - name: netlify-team
+    type: string
+    description: The Netlify team to deploy to.
   workspaces:
   - name: shared-data
     description: |
@@ -36,7 +42,7 @@ spec:
     - name: url
       value: $(params.repo-url)
     - name: revision
-      value: "v0.2.6"
+      value: $(params.dagger-version)
 
   - name: dagger-do
     runAfter: ["fetch-repo"]  # Wait until the clone is done before deploying the app.
@@ -44,22 +50,28 @@ spec:
     - name: source
       workspace: shared-data
     params:
+      - name: dagger-version
+        value: $(params.dagger-version)
       - name: dagger-action
         value: $(params.dagger-action)
       - name: app-dir
         value: $(params.app-dir)
       - name: netlify-site-name
         value: $(params.netlify-site-name)
+      - name: netlify-team
+        value: $(params.netlify-team)
     taskSpec:
       workspaces:
       - name: source
       params:
+      - name: dagger-version
       - name: dagger-action
       - name: app-dir
       - name: netlify-site-name
+      - name: netlify-team
       steps:
       - image: docker:20.10.13
-        name: build-deploy
+        name: run-dagger-action
         workingDir: "$(workspaces.source.path)/$(params.app-dir)"
         script: |
           #!/usr/bin/env sh
@@ -72,7 +84,7 @@ spec:
             aarch64) arch="arm64" ;;
           esac
 
-          wget -c https://github.com/dagger/dagger/releases/download/v0.2.5/dagger_v0.2.5_linux_${arch}.tar.gz  -O - |  \
+          wget -c https://github.com/dagger/dagger/releases/download/$(params.dagger-version)/dagger_$(params.dagger-version)_linux_${arch}.tar.gz  -O - |  \
           tar zxf - -C /usr/local/bin
 
           dagger version
@@ -82,7 +94,7 @@ spec:
           - name: APP_NAME
             value: $(params.netlify-site-name)
           - name: NETLIFY_TEAM
-            value: dagger
+            value: $(params.netlify-team)
           - name: DAGGER_LOG_FORMAT
             value: plain
           # Get one from https://app.netlify.com/user/applications/personal
@@ -124,6 +136,8 @@ spec:
           requests:
             storage: 1Gi
   params:
+  - name: dagger-version
+    value: v0.2.6
   - name: dagger-action
     value: deploy
   - name: repo-url
@@ -131,4 +145,6 @@ spec:
   - name: app-dir
     value: pkg/universe.dagger.io/examples/todoapp
   - name: netlify-site-name
-    value: todoapp-dagger-europa
+    value: mgreau-todoapp-dagger-europa
+  - name: netlify-team
+    value: mgreau
