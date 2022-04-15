@@ -8,8 +8,16 @@ import (
 dagger.#Plan & {
 	client: filesystem: "./data/hello": read: contents: dagger.#FS
 
-	actions: test: go.#Test & {
-		source:  client.filesystem."./data/hello".read.contents
-		package: "./greeting"
+	actions: test: {
+		simple: go.#Test & {
+			source:  client.filesystem."./data/hello".read.contents
+			package: "./greeting"
+		}
+
+		withPackages: go.#Test & {
+			source: client.filesystem."./data/hello".read.contents
+			packages: ["./greeting", "./math"]
+		}
+
 	}
 }

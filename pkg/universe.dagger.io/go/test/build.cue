@@ -32,6 +32,57 @@ dagger.#Plan & {
 					source:   "/testgreet"
 				}
 			}
+			verify: core.#ReadFile & {
+				input: exec.output.rootfs
+				path:  "/output.txt"
+			} & {
+				contents: "Hi dagger!"
+			}
+		}
+		withPackage: {
+			build: go.#Build & {
+				source:  client.filesystem."./data/hello".read.contents
+				package: "."
+			}
+			exec: docker.#Run & {
+				input: _baseImage.output
+				command: {
+					name: "/bin/sh"
+					args: ["-c", "/bin/hello >> /output.txt"]
+				}
+				env: NAME: "dagger"
+				mounts: binary: {
+					dest:     "/bin/hello"
+					contents: build.output
+					source:   "/testgreet"
+				}
+			}
+
+			verify: core.#ReadFile & {
+				input: exec.output.rootfs
+				path:  "/output.txt"
+			} & {
+				contents: "Hi dagger!"
+			}
+		}
+		withPackages: {
+			build: go.#Build & {
+				source: client.filesystem."./data/hello".read.contents
+				packages: ["."]
+			}
+			exec: docker.#Run & {
+				input: _baseImage.output
+				command: {
+					name: "/bin/sh"
+					args: ["-c", "/bin/hello >> /output.txt"]
+				}
+				env: NAME: "dagger"
+				mounts: binary: {
+					dest:     "/bin/hello"
+					contents: build.output
+					source:   "/testgreet"
+				}
+			}
 
 			verify: core.#ReadFile & {
 				input: exec.output.rootfs

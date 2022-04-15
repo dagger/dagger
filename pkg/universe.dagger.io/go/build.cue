@@ -10,8 +10,11 @@ import (
 	// Source code
 	source: dagger.#FS
 
+	// DEPRECATED: use packages instead
+	package: string | *null
+
 	// Target package to build
-	package: *"." | string
+	packages: [...string]
 
 	// Target architecture
 	arch?: string
@@ -46,8 +49,22 @@ import (
 			}
 		}
 		command: {
+			_packages: [...string] | []
+			if package == null && len(packages) == 0 {
+				_packages: ["."]
+			}
+			if package != null && len(packages) == 0 {
+				_packages: [package]
+			}
+			if package == null && len(packages) > 0 {
+				_packages: packages
+			}
+			if package != null && len(packages) > 0 {
+				_packages: [package] + packages
+			}
+
 			name: "go"
-			args: [package]
+			args: _packages
 			flags: {
 				build:      true
 				"-v":       true
