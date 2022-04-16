@@ -172,3 +172,13 @@ git commit --amend -s
 # Force push the new commit to re-run all GitHub Actions jobs:
 git push -f mybranch
 ```
+
+### Can I use a remote development environment?
+
+Yes! The Dagger repository has Github Codespaces configuration included to help help you get started contributing directly from GitHub.
+
+The versions of `dagger` and `cue` you are working against will be pre-installed so you can develop your packages, plans and tests with the right tools.
+
+You will also have basic syntax highlighting and formatting for CUE in Visual Studio Code via pre-installed extensions.
+
+Support for other platforms, such as Gitpod, may be added if there is demand. Visit the [developer experience](https://github.com/dagger/dagger/discussions/2052) discussion on GitHub to show your interest.

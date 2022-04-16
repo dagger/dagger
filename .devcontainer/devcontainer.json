@@ -1,0 +1,51 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.224.3/containers/go
+{
+	"name": "Dagger",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			// Update the VARIANT arg to pick a version of Go: 1, 1.18, 1.17
+			// Append -bullseye or -buster to pin to an OS version.
+			// Use -bullseye variants on local arm64/Apple Silicon.
+			"VARIANT": "1.18-bullseye",
+			// Options
+			"NODE_VERSION": "lts/*"
+		}
+	},
+	"runArgs": [
+		"--cap-add=SYS_PTRACE",
+		"--security-opt",
+		"seccomp=unconfined"
+	],
+	// Set *default* container specific settings.json values on container create.
+	"settings": {
+		// https://code.visualstudio.com/docs/editor/integrated-terminal#_why-is-my-terminal-showing-a-multicolored-triangle-or-a-completely-black-rectangle
+		"terminal.integrated.gpuAcceleration": "off",
+		"go.toolsManagement.checkForUpdates": "local",
+		"go.useLanguageServer": true,
+		"go.gopath": "/go",
+		"extensions.ignoreRecommendations": true,
+		"[cue]": {
+			"editor.useTabStops": true
+		}
+	},
+	// Add the IDs of extensions you want installed when the container is created.
+	"extensions": [
+		"golang.Go",
+		"nickgo.cuelang",
+		"jallen7usa.vscode-cue-fmt",
+		"yzhang.markdown-all-in-one"
+	],
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": "/usr/local/bin/post-install.sh",
+	// Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "vscode",
+	"features": {
+		"docker-from-docker": "20.10",
+		"sshd": "latest",
+		"powershell": "7.1"
+	}
+}
