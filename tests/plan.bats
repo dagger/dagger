@@ -52,6 +52,14 @@ setup() {
   assert_output --partial ": running \`dagger project update\` may resolve this"
 }
 
+@test "plan/do: check flags" {
+  run "$DAGGER" "do" -p ./plan/do/do_flags.cue test --help
+  assert_output --partial "--doit"
+  assert_output --partial "--message string"
+  assert_output --partial "--name string"
+  assert_output --partial "--num float"
+}
+
 @test "plan/hello" {
   # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod
   cd "$TESTDIR"
@@ -183,6 +191,16 @@ setup() {
   export TEST_SECRET="bar"
 
   "$DAGGER" "do" -p ./plan/client/env/usage.cue test
+
+}
+
+@test "plan/client/env default" {
+  cd "${TESTDIR}"
+
+  export TEST_DEFAULT="hello universe"
+
+  "$DAGGER" "do" -p ./plan/client/env/default.cue test
+
 }
 
 @test "plan/client/env not exists" {
@@ -190,7 +208,7 @@ setup() {
 
   run "$DAGGER" "do" -p ./plan/client/env/usage.cue test
   assert_failure
-  assert_output --regexp "environment variable \"TEST_(STRING|SECRET)\" not set"
+  assert_output --regexp "environment variable \"TEST_(STRING|DEFAULT|SECRET)\" not set"
 }
 
 @test "plan/client/env concrete" {
@@ -254,7 +272,7 @@ setup() {
 
    # ip address is in a reserved range that should be unroutable
    export BUILDKIT_HOST=tcp://192.0.2.1:1234
-   run timeout 30 "$DAGGER" "do" -p ./plan/do/actions.cue test
+   run timeout 30 "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
    assert_failure
    assert_output --partial "Unavailable: connection error"
 }

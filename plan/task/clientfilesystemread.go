@@ -40,7 +40,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 		return fmt.Errorf("path %q cannot be stat'd: %w", path, err)
 	}
 
-	if plancontext.IsFSValue(v.Lookup("contents")) {
+	if isFS {
 		pctx.LocalDirs.Add(path)
 	}
 

@@ -20,7 +20,10 @@ import (
 
 	// buildkit
 	bk "github.com/moby/buildkit/client"
-	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
+	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
+	_ "github.com/moby/buildkit/client/connhelper/kubepod"         // import the kubernetes connection driver
+	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
+
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 

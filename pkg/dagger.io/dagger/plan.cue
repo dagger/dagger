@@ -24,7 +24,7 @@ package dagger
 		}
 
 		// Access client network endpoints
-		network: [address=#Address]: _#clientNetwork & {
+		network: [address=_#address]: _#clientNetwork & {
 			"address": address
 		}
 
@@ -97,7 +97,7 @@ _#clientNetwork: {
 
 	// URL to the socket
 	// Example: unix:///var/run/docker.sock
-	address: #Address
+	address: _#address
 
 	{
 		// unix socket or npipe
@@ -107,6 +107,9 @@ _#clientNetwork: {
 		//  listen: #Socket
 	}
 }
+
+// A network service address
+_#address: string & =~"^(unix://|npipe://).+"
 
 _#clientEnv: {
 	$dagger: task: _name: "ClientEnv"

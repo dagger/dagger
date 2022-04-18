@@ -1,6 +1,6 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # CI/CD in your local dev
@@ -33,11 +33,14 @@ If you do, you can install `dagger` with a single command:
 brew install dagger/tap/dagger
 ```
 
-This installs `dagger` in `/opt/homebrew/bin`:
+This installs `dagger` in:
 
 ```shell
 type dagger
+# macOS ARM:
 dagger is /opt/homebrew/bin/dagger
+# macOS Intel:
+dagger is /usr/local/bin/dagger
 ```
 
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
@@ -215,7 +218,7 @@ From a powershell terminal, run:
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
- We'll save everything under `<your home folder>/dagger`
+We'll save everything under `<your home folder>/dagger`
 
 Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 

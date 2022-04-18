@@ -1,5 +1,6 @@
 ---
 slug: /1013/operator-manual/
+displayed_sidebar: "0.1"
 ---
 
 # Dagger Operator Manual

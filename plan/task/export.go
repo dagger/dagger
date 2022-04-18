@@ -61,7 +61,7 @@ func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 	// Normalize tag
 	tag, err := reference.ParseNormalizedNamed(opts.Tag)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse ref %s: %w", opts.Tag, err)
+		return nil, fmt.Errorf("failed to parse ref %q: %w", opts.Tag, err)
 	}
 	tag = reference.TagNameOnly(tag)
 

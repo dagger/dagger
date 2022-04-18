@@ -1,6 +1,6 @@
 ---
 slug: /1214/migrate-from-dagger-0.1
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Migrate from Dagger 0.1

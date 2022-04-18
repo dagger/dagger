@@ -1,6 +1,6 @@
 ---
 slug: /1213/api
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Dagger CUE API
@@ -16,7 +16,7 @@ Developers of other Dagger packages are expected to build on top of these core p
 `#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger do`
 
 | Definition | File                                                                                   | Description                                          |
-| :--        | :--                                                                                    | :--                                                  |
+| :--------- | :------------------------------------------------------------------------------------- | :--------------------------------------------------- |
 | `#Plan`    | [plan.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/plan.cue) | A special kind of program which `dagger` can execute |
 
 ### Core types
@@ -24,7 +24,7 @@ Developers of other Dagger packages are expected to build on top of these core p
 Dagger extends the CUE type system with the following core types:
 
 | Definition     | File                                                                                        | Description                                           |
-| :--            | :--                                                                                         | :--                                                   |
+| :------------- | :------------------------------------------------------------------------------------------ | :---------------------------------------------------- |
 | `#Address`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | Network service address                               |
 | `#CacheDir`    | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/exec.cue) | A (best effort) persistent cache dir                  |
 | `#FS`          | [types.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/types.cue)    | Reference to a filesystem tree                        |
@@ -42,13 +42,13 @@ Dagger extends the CUE type system with the following core types:
 Dagger works by executing actions in a certain order and passing data between actions in a certain layout.
 
 Developers can combine actions into higher-level actions, which in turn can be combined into even higher-level actions,
-and so on at arbitrary levels of depth. At the bottom of this abstraction stack are *core actions*: these
+and so on at arbitrary levels of depth. At the bottom of this abstraction stack are _core actions_: these
 are implemented by Dagger itself, and are always available.
 
 The following core actions are available:
 
 | Definition      | File                                                                                              | Description                                                           |
-| :--             | :--                                                                                               | :--                                                                   |
+| :-------------- | :------------------------------------------------------------------------------------------------ | :-------------------------------------------------------------------- |
 | `#Copy`         | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/fs.cue)           | Copy files between two filesystem trees                               |
 | `#DecodeSecret` | [secrets.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/secrets.cue) | Decode a secret without leaking its contents                          |
 | `#Diff`         | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.4/pkg/dagger.io/dagger/core/fs.cue)           | Extract the difference between two filesystems as its own file system |

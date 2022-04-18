@@ -4,7 +4,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/docker/buildx/util/logutil"
 	"github.com/moby/buildkit/util/appcontext"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/project"
@@ -21,6 +23,16 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	// filter out useless commandConn.CloseWrite warning message that can occur
+	// when dagger runs for the first time. This should be fixed upstream:
+	// unreachable: "commandConn.CloseWrite: commandconn: failed to wait: signal: killed"
+	// https://github.com/docker/cli/blob/3fb4fb83dfb5db0c0753a8316f21aea54dab32c5/cli/connhelper/commandconn/commandconn.go#L203-L214
+	logrus.AddHook(logutil.NewFilter([]logrus.Level{
+		logrus.WarnLevel,
+	},
+		"commandConn.CloseWrite:",
+	))
+
 	rootCmd.PersistentFlags().String("log-format", "auto", "Log format (auto, plain, tty, json)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "Log level")
 	rootCmd.PersistentFlags().Bool("experimental", false, "Enable experimental features")

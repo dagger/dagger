@@ -39,7 +39,7 @@ import (
 			// CACHE: copy only *.cue files
 			docker.#Copy & {
 				contents: source
-				include: ["*.cue", "**/*.cue"]
+				include: [".git", "*.cue", "**/*.cue"]
 				dest: "/cue"
 			},
 
@@ -47,6 +47,8 @@ import (
 			bash.#Run & {
 				workdir: "/cue"
 				script: contents: #"""
+					git status
+
 					find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -t -n 1 -P 8 cue fmt -s
 					test -z "$(git status -s . | grep -e "^ M"  | grep "\.cue" | cut -d ' ' -f3 | tee /dev/stderr)"
 					"""#

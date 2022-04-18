@@ -1,6 +1,8 @@
 package project
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -34,9 +36,14 @@ var updateCmd = &cobra.Command{
 
 		if len(args) == 0 {
 			lg.Debug().Msg("No package specified, updating all packages")
+<<<<<<< HEAD
 			if err := pkg.Vendor(ctx, cueModPath); err != nil {
 				lg.Log().Err(err).Msg("failed to open vendor file")
 			}
+=======
+			pkg.Vendor(ctx, cueModPath)
+			fmt.Println("Project updated")
+>>>>>>> origin/main
 			return
 		}
 

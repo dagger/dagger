@@ -25,7 +25,16 @@
 # Universe
 /pkg/universe.dagger.io/    @helderco @shykes
 
+# Universe experimental
+/pkg/universe.dagger.io/x/    @helderco @jpadams
+
 # Documentation Website
 # Exception: Sidebar changes use regular CODEOWNERS
 /website/                   @slumbering
 /website/sidebars.js
+
+# dagger command-line 
+/cmd/dagger/                @shykes @samalba @aluzzardi
+
+# Changing this file requires approval of project owners
+/CODEOWNERS                   @shykes @samalba @aluzzardi
