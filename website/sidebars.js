@@ -20,8 +20,8 @@ module.exports = {
 	      "introduction/vs",
 	],
       link: {
-        type: 'generated-index',
-	title: "Dagger Documentation",
+        type: 'doc',
+        id: 'introduction/index'
       },
     },
     {
