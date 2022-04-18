@@ -26,7 +26,7 @@ func createTemplate(name string) error {
 	}
 
 	defer func() error {
-		return fout.Close(); err != nil {
+		if fout.Close(); err != nil {
 			return err
 		}
 		return nil
