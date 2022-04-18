@@ -84,12 +84,20 @@ func (l *Logs) Add(event Event) error {
 	// For each task in a group, the status will transition from computing to complete, then back to computing and so on.
 	// The transition is fast enough not to cause a problem.
 	if st, ok := event["state"].(string); ok {
-		group.State = task.State(st)
-		if group.State == task.StateComputing {
-			group.Completed = nil
-		} else {
-			now := time.Now()
-			group.Completed = &now
+		if t, err := task.ParseState(st); err != nil {
+			return err
+			// concurrent "system" tasks are the only exception to transition
+			// from another state to failed since we need to show the error to
+			// the user
+		} else if group.State.CanTransition(t) ||
+			(group.Name == systemGroup && t == task.StateFailed) {
+			group.State = t
+			if group.State == task.StateComputing {
+				group.Completed = nil
+			} else {
+				now := time.Now()
+				group.Completed = &now
+			}
 		}
 
 		return nil

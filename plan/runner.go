@@ -160,7 +160,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		defer span.End()
 
 		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-			lg.Info().Str("state", string(task.StateComputing)).Msg(string(task.StateComputing))
+			lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
 		})
 
 		// Debug: dump dependencies
@@ -178,15 +178,19 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 			// we don't wrap taskLog here since in some cases, actions could still be
 			// running in goroutines which will scramble outputs.
 			if strings.Contains(err.Error(), "context canceled") {
-				lg.Error().Dur("duration", time.Since(start)).Str("task", taskPath).Str("state", string(task.StateCanceled)).Msg(string(task.StateCanceled))
+				taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+					lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
+				})
 			} else {
-				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("task", taskPath).Str("state", string(task.StateFailed)).Msg(string(task.StateFailed))
+				taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
+					lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
+				})
 			}
 			return fmt.Errorf("%s: %w", t.Path().String(), compiler.Err(err))
 		}
 
 		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-			lg.Info().Dur("duration", time.Since(start)).Str("state", string(task.StateCompleted)).Msg(string(task.StateCompleted))
+			lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
 		})
 
 		// If the result is not concrete (e.g. empty value), there's nothing to merge.
