@@ -41,7 +41,7 @@ A new action is _defined_ in a declarative template called a [CUE definition](ht
 Here is an example of a simple action definition:
 
 ```cue
-package hello
+package main
 
 import (
     "dagger.io/dagger"
