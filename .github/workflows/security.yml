@@ -25,6 +25,8 @@ jobs:
       GO111MODULE: on
     steps:
       - uses: actions/checkout@v3
-      - uses: securego/gosec@master
+      - name: Run golang ci lint for security
+        uses: golangci/golangci-lint-action@v2
         with:
-          args: ./...
+          version: latest
+          args: --timeout 3m0s -E gosec
