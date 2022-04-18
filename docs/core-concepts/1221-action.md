@@ -92,7 +92,7 @@ Actions are integrated into a plan by _merging_ their CUE definition into the pl
 Here is an example of a plan:
 
 ```cue
-package main
+package hello
 
 import (
     "dagger.io/dagger"
