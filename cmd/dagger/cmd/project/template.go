@@ -20,12 +20,17 @@ func createTemplate(name string) error {
 	}
 	defer f.Close()
 
-	fout, err := os.Create(filename)
+	fout, err := os.Create(filepath.Clean(filename))
 	if err != nil {
 		return err
 	}
 
-	defer fout.Close()
+	defer func() error {
+		return fout.Close(); err != nil {
+			return err
+		}
+		return nil
+	}()
 
 	_, err = io.Copy(fout, f)
 	if err != nil {

@@ -38,7 +38,9 @@ var doCmd = &cobra.Command{
 	// We're going to take care of flag parsing ourselves
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Flags().Parse(args)
+		if err := cmd.Flags().Parse(args); err != nil {
+			panic(err)
+		}
 		if err := viper.BindPFlags(cmd.Flags()); err != nil {
 			panic(err)
 		}
@@ -126,7 +128,10 @@ var doCmd = &cobra.Command{
 				flagPath := []cue.Selector{}
 				flagPath = append(flagPath, targetPath.Selectors()...)
 				flagPath = append(flagPath, cue.Str(flag.Name))
-				daggerPlan.Source().FillPath(cue.MakePath(flagPath...), viper.Get(flag.Name))
+				err = daggerPlan.Source().FillPath(cue.MakePath(flagPath...), viper.Get(flag.Name))
+				if err != nil {
+					lg.Fatal().Err(err).Msg("failed to execute plan")
+				}
 			}
 		})
 
@@ -245,7 +250,7 @@ func getActionFlags(action *plan.Action) *pflag.FlagSet {
 			flags.Float64(input.Name, 0, input.Documentation)
 		default:
 		}
-		flags.MarkHidden(input.Name)
+		flags.MarkHidden(input.Name) //#nosec G104
 	}
 	return flags
 }
