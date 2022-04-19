@@ -73,13 +73,7 @@ dagger.#Plan & {
 			source:  _source
 			package: "./..."
 
-			// FIXME: doesn't work with CGO_ENABLED=0
-			// command: flags: "-race": true
-
-			env: {
-				// FIXME: removing this complains about lack of gcc
-				CGO_ENABLED: "0"
-			}
+			command: flags: "-race": true
 		}
 
 		lint: {
