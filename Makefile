@@ -29,8 +29,8 @@ install: # Install a dev dagger binary
 	go install -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger
 
 .PHONY: test
-test: # Run all tests
-	go test -race -v ./...
+test: dagger # Run all tests
+	./cmd/dagger/dagger do test
 
 .PHONY: golint
 golint: dagger # Go lint
