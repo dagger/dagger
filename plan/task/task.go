@@ -28,13 +28,36 @@ var (
 )
 
 // State is the state of the task.
-type State string
+type State int8
+
+func (s State) String() string {
+	return [...]string{"computing", "cancelled", "failed", "completed"}[s]
+}
+
+func ParseState(s string) (State, error) {
+	switch s {
+	case "computing":
+		return StateComputing, nil
+	case "cancelled":
+		return StateCanceled, nil
+	case "failed":
+		return StateFailed, nil
+	case "completed":
+		return StateCompleted, nil
+	}
+
+	return -1, fmt.Errorf("invalid state [%s]", s)
+}
+
+func (s State) CanTransition(t State) bool {
+	return s == StateComputing && s <= t
+}
 
 const (
-	StateComputing = State("computing")
-	StateCanceled  = State("canceled")
-	StateFailed    = State("failed")
-	StateCompleted = State("completed")
+	StateComputing State = iota
+	StateCanceled
+	StateFailed
+	StateCompleted
 )
 
 type NewFunc func() Task

@@ -25,9 +25,11 @@ const (
 	defaultDisplayTimeout = 100 * time.Millisecond
 )
 
-type VertexPrintFunc func(v *client.Vertex, index int)
-type StatusPrintFunc func(v *client.Vertex, format string, a ...interface{})
-type LogPrintFunc func(v *client.Vertex, stream int, partial bool, format string, a ...interface{})
+type (
+	VertexPrintFunc func(v *client.Vertex, index int)
+	StatusPrintFunc func(v *client.Vertex, format string, a ...interface{})
+	LogPrintFunc    func(v *client.Vertex, stream int, partial bool, format string, a ...interface{})
+)
 
 func PrintSolveStatus(ctx context.Context, ch chan *client.SolveStatus, vertexPrintCb VertexPrintFunc, statusPrintCb StatusPrintFunc, logPrintCb LogPrintFunc) error {
 	printer := &textMux{
@@ -148,8 +150,10 @@ func DisplaySolveStatus(ctx context.Context, phase string, c console.Console, w 
 	}
 }
 
-const termHeight = 6
-const termPad = 10
+const (
+	termHeight = 6
+	termPad    = 10
+)
 
 type displayInfo struct {
 	startTime      time.Time
