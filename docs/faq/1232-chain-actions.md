@@ -42,7 +42,7 @@ bar: bash.#Run & {
     script: contents: #"""
         echo "hello"
         """#
-    env: HACK: "\(test.success)" // <== HACK: CHAINING of action happening here
+    env: HACK: "\(foo.success)" // <== HACK: CHAINING of action happening here
 }
 ```
 
