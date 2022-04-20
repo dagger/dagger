@@ -40,7 +40,8 @@ import (
 			docker.#Run & {
 				command: {
 					name: "rm"
-					args: ["-rf", "/var/lib/apt/lists/*"]
+					args: ["/var/lib/apt/lists/*"]
+					flags: "-rf": true
 				}
 			},
 		]
