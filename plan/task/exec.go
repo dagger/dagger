@@ -295,7 +295,7 @@ func (t *execTask) mountSecret(pctx *plancontext.Context, dest string, mnt *comp
 }
 
 func (t *execTask) mountService(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
-	contents, err := pctx.Services.FromValue(mnt.Lookup("contents"))
+	contents, err := pctx.Sockets.FromValue(mnt.Lookup("contents"))
 	if err != nil {
 		return nil, err
 	}
