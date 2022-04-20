@@ -11,10 +11,10 @@ import (
 	"go.dagger.io/dagger/plancontext"
 )
 
-func dialService(service *plancontext.Socket) (net.Conn, error) {
-	if service.Unix() == "" {
+func dialSocket(socket *plancontext.Socket) (net.Conn, error) {
+	if socket.Unix() == "" {
 		return nil, errors.New("unsupported socket type")
 	}
 
-	return net.DialTimeout("unix", service.Unix(), time.Second)
+	return net.DialTimeout("unix", socket.Unix(), time.Second)
 }

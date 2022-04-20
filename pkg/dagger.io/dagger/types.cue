@@ -25,5 +25,5 @@ package dagger
 //  - A TCP or UDP port
 //  - A Windows named pipe
 #Socket: {
-	$dagger: service: _id: string
+	$dagger: socket: _id: string
 }

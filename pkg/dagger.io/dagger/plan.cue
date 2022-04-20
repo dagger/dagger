@@ -108,7 +108,7 @@ _#clientNetwork: {
 	}
 }
 
-// A network service address
+// A network socket address
 _#address: string & =~"^(unix://|npipe://).+"
 
 _#clientEnv: {

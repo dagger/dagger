@@ -47,7 +47,7 @@ func (t clientNetwork) Run(ctx context.Context, pctx *plancontext.Context, _ *so
 	case "npipe":
 		npipe = u.Path
 	default:
-		return nil, fmt.Errorf("invalid service type %q", u.Scheme)
+		return nil, fmt.Errorf("invalid socket type %q", u.Scheme)
 	}
 
 	connect := v.Lookup("connect")
