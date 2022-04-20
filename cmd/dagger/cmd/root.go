@@ -30,6 +30,7 @@ func init() {
 	logrus.AddHook(logutil.NewFilter([]logrus.Level{
 		logrus.WarnLevel,
 	},
+		"commandConn.CloseRead:",
 		"commandConn.CloseWrite:",
 	))
 
