@@ -67,7 +67,7 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 .dagger:
   extends: [.docker]
   variables:
-    DAGGER_VERSION: 0.2.4
+    DAGGER_VERSION: 0.2.7
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
