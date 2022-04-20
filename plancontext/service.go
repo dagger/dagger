@@ -10,54 +10,54 @@ import (
 )
 
 var (
-	serviceIDPath = cue.MakePath(
+	socketIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("service"),
 		cue.Hid("_id", pkg.DaggerPackage),
 	)
 )
 
-func IsServiceValue(v *compiler.Value) bool {
-	return v.LookupPath(serviceIDPath).Exists()
+func IsSocketValue(v *compiler.Value) bool {
+	return v.LookupPath(socketIDPath).Exists()
 }
 
-type Service struct {
+type Socket struct {
 	id string
 
 	unix  string
 	npipe string
 }
 
-func (s *Service) ID() string {
+func (s *Socket) ID() string {
 	return s.id
 }
 
-func (s *Service) Unix() string {
+func (s *Socket) Unix() string {
 	return s.unix
 }
 
-func (s *Service) NPipe() string {
+func (s *Socket) NPipe() string {
 	return s.npipe
 }
 
-func (s *Service) MarshalCUE() *compiler.Value {
+func (s *Socket) MarshalCUE() *compiler.Value {
 	v := compiler.NewValue()
-	if err := v.FillPath(serviceIDPath, s.id); err != nil {
+	if err := v.FillPath(socketIDPath, s.id); err != nil {
 		panic(err)
 	}
 	return v
 }
 
-type serviceContext struct {
+type socketContext struct {
 	l     sync.RWMutex
-	store map[string]*Service
+	store map[string]*Socket
 }
 
-func (c *serviceContext) New(unix, npipe string) *Service {
+func (c *socketContext) New(unix, npipe string) *Socket {
 	c.l.Lock()
 	defer c.l.Unlock()
 
-	s := &Service{
+	s := &Socket{
 		id:    hashID(unix, npipe),
 		unix:  unix,
 		npipe: npipe,
@@ -67,28 +67,28 @@ func (c *serviceContext) New(unix, npipe string) *Service {
 	return s
 }
 
-func (c *serviceContext) FromValue(v *compiler.Value) (*Service, error) {
+func (c *socketContext) FromValue(v *compiler.Value) (*Socket, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
 
-	if !v.LookupPath(serviceIDPath).IsConcrete() {
-		return nil, fmt.Errorf("invalid service at path %q: service is not set", v.Path())
+	if !v.LookupPath(socketIDPath).IsConcrete() {
+		return nil, fmt.Errorf("invalid socket at path %q: socket is not set", v.Path())
 	}
 
-	id, err := v.LookupPath(serviceIDPath).String()
+	id, err := v.LookupPath(socketIDPath).String()
 	if err != nil {
-		return nil, fmt.Errorf("invalid service at path %q: %w", v.Path(), err)
+		return nil, fmt.Errorf("invalid socket at path %q: %w", v.Path(), err)
 	}
 
 	s, ok := c.store[id]
 	if !ok {
-		return nil, fmt.Errorf("service %q not found", id)
+		return nil, fmt.Errorf("socket %q not found", id)
 	}
 
 	return s, nil
 }
 
-func (c *serviceContext) Get(id string) *Service {
+func (c *socketContext) Get(id string) *Socket {
 	c.l.RLock()
 	defer c.l.RUnlock()
 

@@ -12,7 +12,7 @@ type Context struct {
 	LocalDirs *localDirContext
 	TempDirs  *tempDirContext
 	Secrets   *secretContext
-	Services  *serviceContext
+	Sockets   *socketContext
 }
 
 func New() *Context {
@@ -30,8 +30,8 @@ func New() *Context {
 		Secrets: &secretContext{
 			store: make(map[string]*Secret),
 		},
-		Services: &serviceContext{
-			store: make(map[string]*Service),
+		Sockets: &socketContext{
+			store: make(map[string]*Socket),
 		},
 	}
 }

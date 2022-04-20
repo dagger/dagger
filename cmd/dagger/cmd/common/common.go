@@ -27,7 +27,7 @@ func FormatValue(val *compiler.Value) string {
 		return "dagger.#Secret"
 	case plancontext.IsFSValue(val):
 		return "dagger.#FS"
-	case plancontext.IsServiceValue(val):
+	case plancontext.IsSocketValue(val):
 		return "dagger.#Socket"
 	}
 
