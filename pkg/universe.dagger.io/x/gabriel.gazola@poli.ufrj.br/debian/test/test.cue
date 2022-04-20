@@ -18,8 +18,8 @@ dagger.#Plan & {
 			}
 
 			verify: core.#Exec & {
-				input:    build.output.rootfs
-				args:     ["[[ $(uname -r) != '5.13.0-39-generic' ]]"
+				input: build.output.rootfs
+				args: ["[[ $(uname -r) != '5.13.0-39-generic' ]]"]
 			}
 		}
 
