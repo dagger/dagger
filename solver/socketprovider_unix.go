@@ -11,7 +11,7 @@ import (
 	"go.dagger.io/dagger/plancontext"
 )
 
-func dialService(service *plancontext.Service) (net.Conn, error) {
+func dialService(service *plancontext.Socket) (net.Conn, error) {
 	if service.Unix() == "" {
 		return nil, errors.New("unsupported socket type")
 	}

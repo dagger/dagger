@@ -9,5 +9,5 @@ then
 fi
 
 sed --in-place --regexp-extended --expression \
-  's/'"${DAGGER_VERSION_FROM:-0.2.3}"'/'"${DAGGER_VERSION_TO:-0.2.4}"'/g' \
+  's/'"${DAGGER_VERSION_FROM:-0.2.4}"'/'"${DAGGER_VERSION_TO:-0.2.7}"'/g' \
   ./*/*.md
