@@ -22,7 +22,7 @@ export const FaqItems = () => {
                 type: "link",
                 label: result.title,
                 description: result.description,
-                href: customPropsItem.href,
+                href: customPropsItem.href.replace('/faq',''),
                 docId: customPropsItem.docId
             }
     })
