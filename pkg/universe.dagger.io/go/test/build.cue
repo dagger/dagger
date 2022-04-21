@@ -29,7 +29,7 @@ dagger.#Plan & {
 				mounts: binary: {
 					dest:     "/bin/hello"
 					contents: build.output
-					source:   "/test"
+					source:   "/testgreet"
 				}
 			}
 

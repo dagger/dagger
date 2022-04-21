@@ -30,7 +30,7 @@ dagger.#Plan & {
 					dest:     "/opt"
 				},
 				docker.#Set & {
-					config: cmd: ["/opt/app"]
+					config: cmd: ["/opt/testmulti"]
 				},
 			]
 		}
