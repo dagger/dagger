@@ -2,7 +2,11 @@
 slug: /1009/github-actions/
 ---
 
+import CautionBanner from '../\_caution-banner.md'
+
 # Integrate Dagger with GitHub Actions
+
+<CautionBanner old="0.1" new="0.2" />
 
 This tutorial illustrates how to use GitHub Actions and Dagger to build, push and deploy Docker images to Cloud Run.
 

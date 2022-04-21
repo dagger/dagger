@@ -1,9 +1,13 @@
 ---
 slug: /1013/operator-manual/
-displayed_sidebar: "0.1"
+displayed_sidebar: '0.1'
 ---
 
+import CautionBanner from '../\_caution-banner.md'
+
 # Dagger Operator Manual
+
+<CautionBanner old="0.1" new="0.2" />
 
 ## Custom buildkit setup
 
@@ -46,9 +50,9 @@ export BUILDKIT_HOST=podman-container://buildkitd
 
 Dagger currently supports these connection schemes:
 
-* `docker-container://`
-* `podman-container://`
-* `kube-pod://`
+- `docker-container://`
+- `podman-container://`
+- `kube-pod://`
 
 ## OpenTelemetry Support
 

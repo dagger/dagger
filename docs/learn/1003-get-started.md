@@ -2,7 +2,11 @@
 slug: /1003/get-started/
 ---
 
+import CautionBanner from '../\_caution-banner.md'
+
 # Get Started with Dagger
+
+<CautionBanner old="0.1" new="0.2" />
 
 <iframe width="800" height="450" style={{width: '100%', marginBottom: '2rem'}} src="https://www.youtube.com/embed/QvyB3m9Fti0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"></iframe>
 
