@@ -85,13 +85,9 @@ var doCmd = &cobra.Command{
 		}
 
 		actionFlags := getActionFlags(action)
-
+		actionFlags.Parse(args)
 		cmd.Flags().AddFlagSet(actionFlags)
 
-		cmd.Flags().ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{
-			UnknownFlags: false,
-		}
-		err = cmd.Flags().Parse(args)
 		if err != nil {
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{err.Error()})
 			os.Exit(1)
@@ -221,6 +217,9 @@ func doHelpCmd(cmd *cobra.Command, daggerPlan *plan.Plan, action *plan.Action, a
 
 func getActionFlags(action *plan.Action) *pflag.FlagSet {
 	flags := pflag.NewFlagSet("action inputs", pflag.ContinueOnError)
+	flags.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{
+		UnknownFlags: true,
+	}
 	flags.Usage = func() {}
 
 	if action == nil {
