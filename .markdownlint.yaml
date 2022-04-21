@@ -11,3 +11,6 @@ MD013: false
 
 # MD033 - Inline HTML. Needed for tabs in docusaurus
 MD033: false
+
+# MD041 - Display Caution block before a top-level heading
+MD041: false
