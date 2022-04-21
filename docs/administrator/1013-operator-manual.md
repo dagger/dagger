@@ -28,6 +28,28 @@ export BUILDKIT_HOST=docker-container://super-buildkit
 export DOCKER_HOST=tcp://my-remote-docker-host:2376
 ```
 
+## Custom runtime setup
+
+If you aren't using the Docker container runtime in your environment, you simply have to run buildkit daemon in the runtime of your choice and instruct Dagger to use it.
+
+To create a buildkit daemon in Podman:
+
+```shell
+podman run -d --name buildkitd --privileged moby/buildkit:latest
+```
+
+To the use that daemon, set the `BUILDKIT_HOST` environment variable with the correct scheme. Continuing with the Podman example:
+
+```shell
+export BUILDKIT_HOST=podman-container://buildkitd
+```
+
+Dagger currently supports these connection schemes:
+
+* `docker-container://`
+* `podman-container://`
+* `kube-pod://`
+
 ## OpenTelemetry Support
 
 Both Dagger and buildkit support opentelemetry. To capture traces to
