@@ -12,11 +12,11 @@ import (
 	"go.dagger.io/dagger/plancontext"
 )
 
-func dialService(service *plancontext.Service) (net.Conn, error) {
-	if service.NPipe() == "" {
+func dialSocket(socket *plancontext.Socket) (net.Conn, error) {
+	if socket.NPipe() == "" {
 		return nil, errors.New("unsupported socket type")
 	}
 
 	dur := time.Second
-	return winio.DialPipe(service.NPipe(), &dur)
+	return winio.DialPipe(socket.NPipe(), &dur)
 }

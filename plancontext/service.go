@@ -12,7 +12,7 @@ import (
 var (
 	socketIDPath = cue.MakePath(
 		cue.Str("$dagger"),
-		cue.Str("service"),
+		cue.Str("socket"),
 		cue.Hid("_id", pkg.DaggerPackage),
 	)
 )

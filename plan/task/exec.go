@@ -176,7 +176,7 @@ func (t *execTask) mount(pctx *plancontext.Context, dest string, mnt *compiler.V
 	case "tmp":
 		return t.mountTmp(pctx, dest, mnt)
 	case "socket":
-		return t.mountService(pctx, dest, mnt)
+		return t.mountSocket(pctx, dest, mnt)
 	case "fs":
 		return t.mountFS(pctx, dest, mnt)
 	case "secret":
@@ -294,7 +294,7 @@ func (t *execTask) mountSecret(pctx *plancontext.Context, dest string, mnt *comp
 	), nil
 }
 
-func (t *execTask) mountService(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
+func (t *execTask) mountSocket(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
 	contents, err := pctx.Sockets.FromValue(mnt.Lookup("contents"))
 	if err != nil {
 		return nil, err
