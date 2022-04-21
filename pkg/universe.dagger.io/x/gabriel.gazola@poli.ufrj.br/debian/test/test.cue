@@ -4,8 +4,9 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
-	"universe.dagger.io/debian"
 	"universe.dagger.io/docker"
+
+	"universe.dagger.io/x/gabriel.gazola@poli.ufrj.br/debian"
 )
 
 dagger.#Plan & {
