@@ -28,6 +28,7 @@ import (
 	"github.com/moby/buildkit/session"
 
 	// docker output
+	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/util/buildkitd"
 	"go.dagger.io/dagger/util/progressui"
@@ -250,18 +251,12 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 
 func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, ch chan *bk.SolveStatus) error {
 	parseName := func(v *bk.Vertex) (string, string) {
-		// Pattern: `@name@ message`. Minimal length is len("@X@ ")
-		if len(v.Name) < 2 || !strings.HasPrefix(v.Name, "@") {
-			return "", v.Name
+		// For all cases besides resolve image config, the component is set in the progress group id
+		if v.ProgressGroup != nil {
+			return v.ProgressGroup.Id, v.Name
 		}
-
-		prefixEndPos := strings.Index(v.Name[1:], "@")
-		if prefixEndPos == -1 {
-			return "", v.Name
-		}
-
-		component := v.Name[1 : prefixEndPos+1]
-		return component, v.Name[prefixEndPos+3 : len(v.Name)]
+		// fallback to parsing the component and vertex name of out just the name
+		return task.ParseResolveImageConfigLog(v.Name)
 	}
 
 	// Just like sprintf, but redacts secrets automatically
