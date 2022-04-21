@@ -259,7 +259,8 @@ Bob:
   Domain: Backend
 ```
 
-Any definition that embed `#Engineer` will share its properties, and they will be accessible directly from the definition.
+Any definition that embed `#Engineer` will share its properties, and they will be accessible directly from the definition.  
+[Try it in the CUE Playground](https://cuelang.org/play/?id=iFcZKx72Bwm#cue@export@cue)
 
 ### Packages
 
