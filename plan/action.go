@@ -26,9 +26,12 @@ func (a *Action) AddChild(c *Action) {
 }
 
 func (a *Action) FindByPath(path cue.Path) *Action {
+	if a == nil {
+		return nil
+	}
 	queue := []*Action{a}
 
-	for len(queue) > 0 {
+	for len(queue) > 0 && queue != nil {
 		nextUp := queue[0]
 		queue = queue[1:]
 		if nextUp.Path.String() == path.String() {
@@ -42,6 +45,9 @@ func (a *Action) FindByPath(path cue.Path) *Action {
 }
 
 func (a *Action) FindClosest(path cue.Path) *Action {
+	if a == nil {
+		return a
+	}
 	if a.Path.String() == path.String() {
 		return a
 	}
