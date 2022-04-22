@@ -2,6 +2,7 @@ package mod
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -27,6 +28,8 @@ func newRequire(repoName, versionConstraint string) (*Require, error) {
 	switch {
 	case strings.HasPrefix(repoName, pkg.UniverseModule):
 		return parseDaggerRepoName(repoName, versionConstraint)
+	case strings.HasPrefix(repoName, "https://") || strings.HasPrefix(repoName, "http://"):
+		return parseHTTPRepoName(repoName, versionConstraint)
 	default:
 		return parseGitRepoName(repoName, versionConstraint)
 	}
@@ -67,8 +70,30 @@ func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
 		version:           repoMatches[2],
 		versionConstraint: versionConstraint,
 
-		cloneRepo: "github.com/dagger/examples",
-		clonePath: path.Join("/helloapp", repoMatches[1]),
+		cloneRepo: "github.com/dagger/dagger",
+		clonePath: path.Join("/stdlib", repoMatches[1]),
+	}, nil
+}
+
+func parseHTTPRepoName(repoName, versionConstraint string) (*Require, error) {
+	u, err := url.Parse(repoName)
+
+	if err != nil {
+		return nil, fmt.Errorf("issue when parsing HTTP repo")
+	}
+
+	clone, _ := url.Parse(repoName)
+	clone.Path = path.Join(clone.Path, strings.TrimPrefix(clone.Fragment, "/"))
+	clone.Fragment = ""
+
+	return &Require{
+		repo:              u.Host + u.Path,
+		path:              "",
+		version:           "",
+		versionConstraint: versionConstraint,
+
+		cloneRepo: clone.String(),
+		clonePath: "",
 	}, nil
 }
 

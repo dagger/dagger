@@ -148,6 +148,66 @@ func TestParseArgument(t *testing.T) {
 				version: "v5",
 			},
 		},
+		{
+			name: "HTTPS Dagger repo",
+			in:   "https://github.com/dagger/dagger#/archive/refs/tags/v0.2.7.tar.gz",
+			want: &Require{
+				repo:      "github.com/dagger/dagger",
+				path:      "",
+				version:   "",
+				cloneRepo: "https://github.com/dagger/dagger/archive/refs/tags/v0.2.7.tar.gz",
+			},
+		},
+		{
+			name: "HTTPS Dagger repo without hash-slash",
+			in:   "https://github.com/dagger/dagger#archive/refs/tags/v0.2.7.tar.gz",
+			want: &Require{
+				repo:      "github.com/dagger/dagger",
+				path:      "",
+				version:   "",
+				cloneRepo: "https://github.com/dagger/dagger/archive/refs/tags/v0.2.7.tar.gz",
+			},
+		},
+		{
+			name: "HTTP Dagger repo",
+			in:   "http://github.com/dagger/dagger#/archive/refs/tags/v0.2.7.tar.gz",
+			want: &Require{
+				repo:      "github.com/dagger/dagger",
+				path:      "",
+				version:   "",
+				cloneRepo: "http://github.com/dagger/dagger/archive/refs/tags/v0.2.7.tar.gz",
+			},
+		},
+		{
+			name: "HTTP Dagger repo without hash-slash",
+			in:   "http://github.com/dagger/dagger#archive/refs/tags/v0.2.7.tar.gz",
+			want: &Require{
+				repo:      "github.com/dagger/dagger",
+				path:      "",
+				version:   "",
+				cloneRepo: "http://github.com/dagger/dagger/archive/refs/tags/v0.2.7.tar.gz",
+			},
+		},
+		{
+			name: "HTTP Dagger repo with at",
+			in:   "http://test:foo@github.com/dagger/dagger#/archive/refs/tags/v0.2.7.tar.gz",
+			want: &Require{
+				repo:      "github.com/dagger/dagger",
+				path:      "",
+				version:   "",
+				cloneRepo: "http://test:foo@github.com/dagger/dagger/archive/refs/tags/v0.2.7.tar.gz",
+			},
+		},
+		{
+			name: "HTTP Dagger repo with port",
+			in:   "http://github.com:1234/dagger/dagger#/archive/refs/tags/v0.2.7.tar.gz",
+			want: &Require{
+				repo:      "github.com:1234/dagger/dagger",
+				path:      "",
+				version:   "",
+				cloneRepo: "http://github.com:1234/dagger/dagger/archive/refs/tags/v0.2.7.tar.gz",
+			},
+		},
 		// TODO: Add more tests for ports!
 	}
 
@@ -172,6 +232,14 @@ func TestParseArgument(t *testing.T) {
 
 			if got.version != c.want.version {
 				t.Errorf("versions differ (%q): want %s, got %s", c.in, c.want.version, got.version)
+			}
+
+			if c.want.cloneRepo != "" && got.cloneRepo != c.want.cloneRepo {
+				t.Errorf("clone repos differ (%q): want %s, got %s", c.in, c.want.cloneRepo, got.cloneRepo)
+			}
+
+			if c.want.clonePath != "" && got.clonePath != c.want.clonePath {
+				t.Errorf("clone paths differ (%q): want %s, got %s", c.in, c.want.clonePath, got.clonePath)
 			}
 		})
 	}
