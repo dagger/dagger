@@ -11,7 +11,10 @@ import (
 	// Source code
 	source: dagger.#FS
 
-	assets: [dagger.#FS]
+	initScript: string | *null
+
+	// Environment variables to pass to bats
+	env: [string]: string
 
 	// shellcheck version
 	version: *"1.6.0" | string
@@ -22,24 +25,40 @@ import (
 				source: "bats/bats:\(version)"
 			},
 
+			// Symlink bash so we can `bash.#Run` entrypoint can work
+			docker.#Run & {
+				// FIXME: need to clear the entrypoint of the base image
+				entrypoint: _
+				command: {
+					name: "ln"
+					args: ["-sf", "/usr/local/bin/bash", "/bin/bash"]
+				}
+			},
+
 			docker.#Copy & {
 				contents: source
-				include: ["tests"]
-				dest: "/src"
+				dest:     "/src"
 			},
 
 			bash.#Run & {
-				entrypoint: _
-				workdir:    "/src/tests"
+				workdir: "/src/tests"
 				script: contents: #"""
-					apk add --no-cache yarn
+					apk add --no-cache yarn git
 					yarn add bats-support bats-assert
 					"""#
 			},
 
+			if initScript != null {
+				bash.#Run & {
+					"env":   env
+					workdir: "/src"
+					script: contents: initScript
+				}
+			},
+
 			bash.#Run & {
-				entrypoint: _
-				workdir:    "/src/tests"
+				"env":   env
+				workdir: "/src"
 				script: contents: #"""
 					bats --jobs 4 --print-output-on-failure --verbose-run .
 					"""#

@@ -61,7 +61,7 @@ dagger.#Plan & {
 			"go": go.#Build & {
 				source:  _source
 				package: "./cmd/dagger/"
-				os:      client.platform.os
+				os:      *client.platform.os | "linux"
 				arch:    client.platform.arch
 
 				ldflags: "-s -w -X go.dagger.io/dagger/version.Revision=\(version.output)"
@@ -89,7 +89,24 @@ dagger.#Plan & {
 		}
 
 		integration: bats.#Bats & {
-			source: _source
+			_daggerLinuxBin: build.go & {
+				os: "linux"
+			}
+			_testDir: core.#Subdir & {
+				input: _source
+				path:  "tests"
+			}
+			_mergeFS: core.#Merge & {
+				inputs: [
+					// directory containing integration tests
+					_testDir.output,
+					// dagger binary
+					_daggerLinuxBin.output,
+				]
+			}
+			env: DAGGER_BINARY: "/src/dagger"
+			source:     _mergeFS.output
+			initScript: "$DAGGER_BINARY project update"
 		}
 
 		lint: {
