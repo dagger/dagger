@@ -35,6 +35,7 @@ dagger.sum
 
 # Local binaries
 bin/
+ci/build
 
 # Local environment variables
 .env
