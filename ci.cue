@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/ci/shellcheck"
 	"github.com/dagger/dagger/ci/markdownlint"
 	"github.com/dagger/dagger/ci/cue"
+	"github.com/dagger/dagger/ci/bats"
 )
 
 dagger.#Plan & {
@@ -85,6 +86,10 @@ dagger.#Plan & {
 			package: "./..."
 
 			command: flags: "-race": true
+		}
+
+		integration: bats.#Bats & {
+			source: _source
 		}
 
 		lint: {
