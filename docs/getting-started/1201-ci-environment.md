@@ -104,33 +104,29 @@ build:
 
 <TabItem value="jenkins">
 
-With `docker` and `dagger` installed on your Jenkins agent.
+With `docker` client and `dagger` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`:
 
 ```groovy
 pipeline {
-  agent any
+  agent { label 'dagger' }
+  
   environment {
     //https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials
-    //e.g.
-    //DH_CREDS=credentials('jenkins-dockerhub-creds')
+    //DH_CREDS              = credentials('jenkins-dockerhub-creds')
     //AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
     //AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+    //https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables
+    GREETING = "Hello there, Jenkins! Hello"
   }
   stages {
-    stage("setup") {
-      steps {
-        //only needed if you don't commit the cue.mod directory to git
-        //sh '''
-        //  dagger project init
-        //  dagger project update
-        //'''
-      }
-    }
     stage("do") {
       steps {
-        //substitute your action name for 'helloworld'
+        //this example uses https://github.com/jpadams/helloworld-dagger-jenkins
+        //if you're using your own Dagger plan, substitute your action name for 'hello'
         //e.g. 'build' or 'push' or whatever you've created!
-        sh 'dagger do helloworld --log-format=plain'
+        sh '''
+            dagger do hello --log-format=plain
+        '''
       }
     }
   }
