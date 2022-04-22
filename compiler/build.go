@@ -7,7 +7,6 @@ import (
 	"path"
 	"path/filepath"
 
-	cueerrors "cuelang.org/go/cue/errors"
 	cueload "cuelang.org/go/cue/load"
 )
 
@@ -61,11 +60,11 @@ func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error
 	}
 	v, err := c.Context.BuildInstances(instances)
 	if err != nil {
-		return nil, Err(errors.New(cueerrors.Details(err, &cueerrors.Config{})))
+		return nil, c.Err(err)
 	}
 	for _, value := range v {
 		if value.Err() != nil {
-			return nil, Err(value.Err())
+			return nil, c.Err(value.Err())
 		}
 	}
 	if len(v) != 1 {

@@ -43,9 +43,7 @@ package dagger
 	// platform?: string
 
 	// Execute actions in containers
-	actions: {
-		...
-	}
+	actions: _
 }
 
 _#clientFilesystemRead: {
@@ -58,11 +56,11 @@ _#clientFilesystemRead: {
 		// CUE type defines expected content:
 		//     string: contents of a regular file
 		//     #Secret: secure reference to the file contents
-		contents: string | #Secret
+		contents: string | #Secret @dagger(generated)
 	} | {
 		// CUE type defines expected content:
 		//     #FS: contents of a directory
-		contents: #FS
+		contents: #FS @dagger(generated)
 
 		// Filename patterns to include
 		// Example: ["*.go", "Dockerfile"]
@@ -81,14 +79,14 @@ _#clientFilesystemWrite: {
 	path: string
 	{
 		// File contents to export (as a string or secret)
-		contents: string | #Secret
+		contents: string | #Secret @dagger(generated)
 
 		// File permissions (defaults to 0o644)
 		permissions?: int
 	} | {
 		// Filesystem contents to export
 		// Reference an #FS field produced by an action
-		contents: #FS
+		contents: #FS @dagger(generated)
 	}
 }
 
@@ -101,7 +99,7 @@ _#clientNetwork: {
 
 	{
 		// unix socket or npipe
-		connect: #Socket
+		connect: #Socket @dagger(generated)
 		// } | {
 		//  // FIXME: not yet implemented
 		//  listen: #Socket
@@ -115,7 +113,7 @@ _#clientEnv: {
 	$dagger: task: _name: "ClientEnv"
 
 	// CUE type defines expected content
-	[!~"\\$dagger"]: *string | #Secret
+	[!~"\\$dagger"]: *string | #Secret @dagger(generated)
 }
 
 _#clientCommand: {
@@ -138,20 +136,20 @@ _#clientCommand: {
 	env: [string]: string | #Secret
 
 	// Capture standard output (as a string or secret)
-	stdout?: *string | #Secret
+	stdout?: *string | #Secret @dagger(generated)
 
 	// Capture standard error (as a string or secret)
-	stderr?: *string | #Secret
+	stderr?: *string | #Secret @dagger(generated)
 
 	// Inject standard input (from a string or secret)
-	stdin?: string | #Secret
+	stdin?: string | #Secret @dagger(generated)
 }
 
 _#clientPlatform: {
 	$dagger: task: _name: "ClientPlatform"
 
 	// Operating system of the client machine
-	os: string
+	os: string @dagger(generated)
 	// Hardware architecture of the client machine
-	arch: string
+	arch: string @dagger(generated)
 }

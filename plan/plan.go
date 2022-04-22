@@ -70,7 +70,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		log.Ctx(ctx).Debug().Interface("with", param).Msg("filling overlay")
 		fillErr := v.FillPath(cue.MakePath(), paramV)
 		if fillErr != nil {
-			return nil, fillErr
+			return nil, compiler.Err(fillErr)
 		}
 	}
 
@@ -78,6 +78,10 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		config:  cfg,
 		context: plancontext.New(),
 		source:  v,
+	}
+
+	if err := p.validate(); err != nil {
+		return nil, compiler.Err(err)
 	}
 
 	p.fillAction()
@@ -230,4 +234,8 @@ func (p *Plan) fillAction() {
 			prevAction = a
 		}
 	}
+}
+
+func (p *Plan) validate() error {
+	return isPlanConcrete(p.source, p.source)
 }

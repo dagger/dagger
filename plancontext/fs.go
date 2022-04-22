@@ -22,6 +22,10 @@ func IsFSValue(v *compiler.Value) bool {
 	return v.LookupPath(fsIDPath).Exists()
 }
 
+func IsFSScratchValue(v *compiler.Value) bool {
+	return IsFSValue(v) && v.LookupPath(fsIDPath).Kind() == cue.NullKind
+}
+
 type FS struct {
 	id     string
 	result bkgw.Reference
@@ -80,7 +84,7 @@ func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	}
 
 	// This is #Scratch, so we'll return an empty FS
-	if v.LookupPath(fsIDPath).Kind() == cue.NullKind {
+	if IsFSScratchValue(v) {
 		return &FS{}, nil
 	}
 

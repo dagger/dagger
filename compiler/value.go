@@ -11,6 +11,7 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/ast"
 	cueformat "cuelang.org/go/cue/format"
+	"cuelang.org/go/cue/token"
 )
 
 // Value is a wrapper around cue.Value.
@@ -91,6 +92,8 @@ func (v *Value) IncompleteKind() cue.Kind {
 type Field struct {
 	Selector cue.Selector
 	Value    *Value
+
+	IsOptional bool
 }
 
 // Label returns the unquoted selector
@@ -113,8 +116,9 @@ func (v *Value) Fields(opts ...cue.Option) ([]Field, error) {
 	fields := []Field{}
 	for it.Next() {
 		fields = append(fields, Field{
-			Selector: it.Selector(),
-			Value:    v.cc.Wrap(it.Value()),
+			Selector:   it.Selector(),
+			Value:      v.cc.Wrap(it.Value()),
+			IsOptional: it.IsOptional(),
 		})
 	}
 
@@ -123,6 +127,16 @@ func (v *Value) Fields(opts ...cue.Option) ([]Field, error) {
 	})
 
 	return fields, nil
+}
+
+// Proxy function to the underlying cue.Value
+func (v *Value) Expr() (cue.Op, []*Value) {
+	op, expr := v.val.Expr()
+	vv := make([]*Value, 0, len(expr))
+	for _, e := range expr {
+		vv = append(vv, v.cc.Wrap(e))
+	}
+	return op, vv
 }
 
 // Proxy function to the underlying cue.Value
@@ -249,8 +263,8 @@ func (v *Value) JSON() JSON {
 
 // Check that a value is valid. Optionally check that it matches
 // all the specified spec definitions..
-func (v *Value) Validate() error {
-	return v.val.Validate()
+func (v *Value) Validate(opts ...cue.Option) error {
+	return v.val.Validate(opts...)
 }
 
 // Return cue source for this value
@@ -295,6 +309,10 @@ func (v *Value) HasAttr(filter ...string) bool {
 	}
 
 	return false
+}
+
+func (v *Value) Pos() token.Pos {
+	return v.val.Pos()
 }
 
 // Filename returns the CUE filename where the value was defined

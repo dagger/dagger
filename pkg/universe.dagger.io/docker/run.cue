@@ -12,7 +12,7 @@ import (
 	// Docker image to execute
 	input: #Image
 
-	always: bool | *false
+	always?: bool
 
 	// Filesystem mounts
 	mounts: [name=string]: core.#Mount
@@ -62,12 +62,12 @@ import (
 
 	// Working directory for the command
 	// Example: "/src"
-	workdir: string
+	workdir?: string
 
 	// Username or UID to ad
 	// User identity for this command
 	// Examples: "root", "0", "1002"
-	user: string
+	user?: string
 
 	// Add defaults to image config
 	// This ensures these values are present
@@ -161,8 +161,10 @@ import (
 
 	// Actually execute the command
 	_exec: core.#Exec & {
-		"input":  input.rootfs
-		"always": always
+		"input": input.rootfs
+		if always != _|_ {
+			"always": always
+		}
 		"mounts": mounts
 		args:     _config.output.entrypoint + _config.output.cmd
 		workdir:  _config.output.workdir
