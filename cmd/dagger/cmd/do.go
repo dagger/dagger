@@ -79,6 +79,11 @@ var doCmd = &cobra.Command{
 			err = fmt.Errorf("action not found: %s", targetStr)
 			// Find closest action
 			action = daggerPlan.Action().FindClosest(targetPath)
+			if action == nil {
+				err = fmt.Errorf("no action found")
+				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
+				os.Exit(1)
+			}
 			targetPath = action.Path
 			doHelpCmd(cmd, daggerPlan, action, nil, action.Path, []string{err.Error()})
 			os.Exit(1)
