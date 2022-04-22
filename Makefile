@@ -75,6 +75,10 @@ doc-test: dagger-debug # Test docs
 	yarn --cwd "./docs/learn/tests" install
 	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./docs/learn/tests" test
 
+.PHONY: docsID
+docsID: # Output last docs ID used
+	ls -R docs | grep '**/*-*.md' | sort -n -t - -k 1 | tail -n 1
+
 .PHONY: docs
 docs: dagger # Generate docs
 	DAGGER_TELEMETRY_DISABLE=1 ./cmd/dagger/dagger doc --output ./docs/reference --format md

@@ -95,5 +95,20 @@ dagger.#Plan & {
 				source: _source
 			}
 		}
+
+		// Last docs ID used
+		docsID: bash.#Run & {
+			input:   version._image.output
+			workdir: "/src"
+			always:  true
+			mounts: source: {
+				dest:     "/src"
+				contents: _source
+			}
+
+			script: contents: #"""
+				ls -R /src/docs | grep '**/*-*.md' | sort -n -t - -k 1 | tail -n 1
+				"""#
+		}
 	}
 }
