@@ -21,14 +21,14 @@ import (
 			},
 			docker.#Run & {
 				command: {
-					name: "apt"
+					name: "apt-get"
 					args: ["update"]
 				}
 			},
 			for pkgName, pkg in packages {
 				docker.#Run & {
 					command: {
-						name: "apt"
+						name: "apt-get"
 						args: ["install", "\(pkgName)\(pkg.version)"]
 						flags: {
 							"-y":                      true
