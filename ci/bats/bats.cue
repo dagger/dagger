@@ -11,6 +11,8 @@ import (
 	// Source code
 	source: dagger.#FS
 
+	assets: [dagger.#FS]
+
 	// shellcheck version
 	version: *"1.6.0" | string
 
@@ -21,14 +23,14 @@ import (
 			},
 
 			docker.#Copy & {
-					contents: source
-					include: ["tests"]
-					dest: "/src"
-				},
+				contents: source
+				include: ["tests"]
+				dest: "/src"
+			},
 
 			bash.#Run & {
 				entrypoint: _
-				workdir: "/src/tests"
+				workdir:    "/src/tests"
 				script: contents: #"""
 					apk add --no-cache yarn
 					yarn add bats-support bats-assert
@@ -37,7 +39,7 @@ import (
 
 			bash.#Run & {
 				entrypoint: _
-				workdir: "/src/tests"
+				workdir:    "/src/tests"
 				script: contents: #"""
 					bats --jobs 4 --print-output-on-failure --verbose-run .
 					"""#

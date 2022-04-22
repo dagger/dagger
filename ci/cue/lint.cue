@@ -28,11 +28,11 @@ import (
 			// Install CUE
 			bash.#Run & {
 				script: contents: #"""
-					        export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
-					        export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
-					        echo "Installing cue version $CUE_VERSION"
-					        curl -L "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL}" | tar zxf - -C /usr/local/bin
-					        cue version
+					export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
+					export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
+					echo "Installing cue version $CUE_VERSION"
+					curl -L "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL}" | tar zxf - -C /usr/local/bin
+					cue version
 					"""#
 			},
 
