@@ -46,18 +46,23 @@ func IsUniverseLatest(ctx context.Context, workspace string) (bool, error) {
 	tmpPath := path.Join(modfile.workspacePath, tmpBasePath, req.fullPath())
 	defer os.RemoveAll(tmpPath)
 
-	repo, err := clone(ctx, req, tmpPath, "", "")
+	repo := GithubRepoSource{
+		owner: "dagger",
+		repo:  "dagger",
+	}
+
+	// Get latest version
+	versions, err := repo.getVersions(ctx)
 	if err != nil {
 		return false, err
 	}
 
-	// Get latest tag
-	latestTag, err := repo.latestTag(ctx, req.versionConstraint)
+	latestVersion, err := latestVersion(ctx, pkg.UniverseModule, versions, req.versionConstraint)
 	if err != nil {
 		return false, err
 	}
 
-	c, err := compareVersions(latestTag, universe.version)
+	c, err := compareVersions(latestVersion, universe.version)
 	if err != nil {
 		return false, err
 	}

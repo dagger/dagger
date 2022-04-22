@@ -77,6 +77,7 @@ var updateCmd = &cobra.Command{
 func init() {
 	updateCmd.Flags().String("private-key-file", "", "Private ssh key")
 	updateCmd.Flags().String("private-key-password", "", "Private ssh key password")
+	updateCmd.Flags().String("authorization-header", "", "The authorization header to send for HTTP")
 	updateCmd.Flags().BoolP("update", "u", false, "Update specified package")
 
 	if err := viper.BindPFlags(updateCmd.Flags()); err != nil {

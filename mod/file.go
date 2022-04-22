@@ -12,8 +12,6 @@ import (
 	"path"
 	"regexp"
 	"strings"
-
-	"github.com/spf13/viper"
 )
 
 const (
@@ -141,10 +139,8 @@ func (f *file) install(ctx context.Context, req *Require) error {
 	tmpPath := path.Join(f.workspacePath, tmpBasePath, req.fullPath())
 	defer os.RemoveAll(tmpPath)
 
-	// clone to a tmp directory
-	r, err := clone(ctx, req, tmpPath, viper.GetString("private-key-file"), viper.GetString("private-key-password"))
-	if err != nil {
-		return fmt.Errorf("error downloading package %s: %w", req, err)
+	if err := req.source.download(ctx, req, tmpPath); err != nil {
+		return err
 	}
 
 	destPath := path.Join(f.workspacePath, destBasePath, req.fullPath())
@@ -152,7 +148,7 @@ func (f *file) install(ctx context.Context, req *Require) error {
 	// requirement is new, so we should move the cloned files from tmp to pkg and add it to the mod file
 	existing := f.searchInstalledRequire(req)
 	if existing == nil {
-		if err = replace(req, tmpPath, destPath); err != nil {
+		if err := replace(req, tmpPath, destPath); err != nil {
 			return err
 		}
 
@@ -168,14 +164,10 @@ func (f *file) install(ctx context.Context, req *Require) error {
 		return nil
 	}
 
-	// checkout the cloned repo to that tag, change the version in the existing requirement and
-	// replace the code in the /pkg folder
+	// change the version in the existing requirement and replace the code in the /pkg folder
 	existing.version = req.version
-	if err = r.checkout(ctx, req.version); err != nil {
-		return err
-	}
 
-	if err = replace(req, tmpPath, destPath); err != nil {
+	if err := replace(req, tmpPath, destPath); err != nil {
 		return err
 	}
 
@@ -200,35 +192,13 @@ func (f *file) updateToLatest(ctx context.Context, req *Require) (*Require, erro
 	tmpPath := path.Join(f.workspacePath, tmpBasePath, existing.fullPath())
 	defer os.RemoveAll(tmpPath)
 
-	// clone to a tmp directory
-	gitRepo, err := clone(ctx, existing, tmpPath, viper.GetString("private-key-file"), viper.GetString("private-key-password"))
-	if err != nil {
-		return nil, fmt.Errorf("error downloading package %s: %w", existing, err)
-	}
-
-	// checkout the latest tag
-	latestTag, err := gitRepo.latestTag(ctx, req.versionConstraint)
-	if err != nil {
-		return nil, err
-	}
-
-	c, err := compareVersions(latestTag, existing.version)
-	if err != nil {
-		return nil, err
-	}
-
-	if c < 0 {
-		return nil, fmt.Errorf("latest git tag is less than the current version")
-	}
-
-	existing.version = latestTag
-	if err = gitRepo.checkout(ctx, existing.version); err != nil {
+	if err := req.source.download(ctx, req, tmpPath); err != nil {
 		return nil, err
 	}
 
 	// move the package from tmp to pkg directory
 	destPath := path.Join(f.workspacePath, destBasePath, existing.fullPath())
-	if err = replace(existing, tmpPath, destPath); err != nil {
+	if err := replace(existing, tmpPath, destPath); err != nil {
 		return nil, err
 	}
 
