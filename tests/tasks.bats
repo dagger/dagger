@@ -75,6 +75,11 @@ setup() {
     "$DAGGER" "do" -p ./mount_socket.cue verify
 }
 
+@test "task: #Exec mount file" {
+    cd ./tasks/exec
+    "$DAGGER" "do" -p ./mount_file.cue test
+}
+
 @test "task: #Exec user" {
     cd ./tasks/exec
     "$DAGGER" "do" -p ./user.cue test
