@@ -49,9 +49,9 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		return nil, fmt.Errorf("dagger project not found. Run `dagger project init`")
 	}
 
-	if err := pkg.EnsureCompatibility(ctx, ""); err != nil {
-		return nil, err
-	}
+	//if err := pkg.EnsureCompatibility(ctx, ""); err != nil {
+	//	return nil, err
+	//}
 
 	v, err := compiler.Build(ctx, "", nil, cfg.Args...)
 	if err != nil {

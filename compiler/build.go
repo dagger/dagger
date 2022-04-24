@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	cueload "cuelang.org/go/cue/load"
+	"github.com/octohelm/cuemod/pkg/cuemod"
 	"go.opentelemetry.io/otel"
 )
 
@@ -19,10 +20,7 @@ func Build(ctx context.Context, src string, overlays map[string]fs.FS, args ...s
 
 	c := DefaultCompiler
 
-	buildConfig := &cueload.Config{
-		Dir:     src,
-		Overlay: map[string]cueload.Source{},
-	}
+	buildConfig := cuemod.ContextFor(src).BuildConfig(context.Background())
 
 	// Map the source files into the overlay
 	for mnt, f := range overlays {

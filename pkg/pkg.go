@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofrs/flock"
 	gv "github.com/hashicorp/go-version"
+	"github.com/octohelm/cuemod/pkg/cuemod/stdlib"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/version"
 )
@@ -23,6 +24,10 @@ var (
 	//go:embed dagger.io universe.dagger.io
 	FS embed.FS
 )
+
+func init() {
+	stdlib.Register(FS, version.Version, DaggerModule, UniverseModule)
+}
 
 var (
 	DaggerModule   = "dagger.io"
