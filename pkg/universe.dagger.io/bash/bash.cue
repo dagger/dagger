@@ -42,9 +42,10 @@ import (
 	_mountpoint: "/bash/scripts"
 
 	docker.#Run & {
+		entrypoint: ["/bin/bash"]
 		command: {
-			name:   "bash"
-			"args": ["\(_mountpoint)/\(script._filename)"] + args
+			name:   "\(_mountpoint)/\(script._filename)"
+			"args": args
 			// FIXME: make default flags overrideable
 			flags: {
 				"--norc": true
