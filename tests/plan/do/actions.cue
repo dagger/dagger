@@ -12,63 +12,67 @@ dagger.#Plan & {
 	actions: {
 
 		// Run core integration tests
-		"core-integration": _
+		"core-integration": {}
 
 		// Format all cue files
-		cuefmt: _
+		cuefmt: {}
 
 		// Lint and format all cue files
-		cuelint: _
+		cuelint: {}
 
 		// Build a debug version of the dev dagger binary
-		"dagger-debug": _
+		"dagger-debug": {}
 
 		// Test docs
-		"doc-test": _
+		"doc-test": {}
 
 		// Generate docs
-		docs: _
+		docs: {}
 
 		// Generate & lint docs
-		docslint: _
+		docslint: {}
 
 		// Run Europa universe tests
-		"europa-universe-test": _
+		"europa-universe-test": {}
 
 		// Go lint
-		golint: _
+		golint: {}
 
 		// Show how to get started & what targets are available
-		help: _
+		help: {}
 
 		// Install a dev dagger binary
-		install: _
+		install: {}
 
 		// Run all integration tests
-		integration: _
+		integration: {}
 
 		// Lint everything
-		lint: _
+		lint: {}
 
 		// Run shellcheck
-		shellcheck: _
+		shellcheck: {}
 
 		// Run all tests
-		test: _
+		test: {}
 
 		// Find all TODO items
-		todo: _
+		todo: {}
 
 		// Run universe tests
-		"universe-test": _
+		"universe-test": {}
 
 		// Build, test and deploy frontend web client
 		frontend: {
 			// Build via yarn
-			build: yarn.#Build
+			build: yarn.#Build & {
+				source: dagger.#Scratch
+			}
 
 			// Test via headless browser
-			test: docker.#Run
+			test: docker.#Run & {
+				input: docker.#Image
+			}
 		}
 	}
 }

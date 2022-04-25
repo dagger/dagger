@@ -11,7 +11,7 @@ setup() {
 }
 
 @test "task: #Push" {
-    "$DAGGER" "do" -p ./tasks/push/push.cue pullContent
+    "$DAGGER" "do" -p ./tasks/push/push.cue pullOutputFile
 }
 
 @test "task: #ReadFile" {
@@ -35,7 +35,7 @@ setup() {
     "$DAGGER" "do" -p ./mount_fs.cue test
     TESTSECRET="hello world" "$DAGGER" "do" -p ./mount_secret.cue test
     "$DAGGER" "do" -p ./mount_tmp.cue verify
-    "$DAGGER" "do" -p ./mount_service.cue verify
+    "$DAGGER" "do" -p ./mount_socket.cue verify
 
     "$DAGGER" "do" -p ./user.cue test
     "$DAGGER" "do" -p ./workdir.cue verify

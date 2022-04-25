@@ -1,6 +1,6 @@
 ---
-slug: /
-displayed_sidebar: europa
+slug: /getting-started
+displayed_sidebar: '0.2'
 ---
 
 # Getting Started

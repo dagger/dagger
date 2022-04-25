@@ -35,7 +35,7 @@ import "dagger.io/dagger"
 	hosts: [hostname=string]: string
 
 	// Modified filesystem
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 
 	// Command exit code
 	// Currently this field can only ever be zero.

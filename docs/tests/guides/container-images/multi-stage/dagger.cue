@@ -16,23 +16,21 @@ dagger.#Plan & {
 			source: client.filesystem."./src".read.contents
 		}
 
-		base: alpine.#Build & {
-			packages: "ca-certificates": _
-		}
-
 		// Build lighter image,
 		// without app's build dependencies.
 		run: docker.#Build & {
 			steps: [
+				alpine.#Build & {
+					packages: "ca-certificates": _
+				},
+				// This is the important part, it works like
+				// `COPY --from=build /output /opt` in a Dockerfile.
 				docker.#Copy & {
-					input: base.output
-					// This is the important part, it works like
-					// `COPY --from=build /output /opt` in a Dockerfile.
 					contents: build.output
 					dest:     "/opt"
 				},
 				docker.#Set & {
-					config: cmd: ["/opt/app"]
+					config: cmd: ["/opt/testmulti"]
 				},
 			]
 		}

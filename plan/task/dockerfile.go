@@ -22,13 +22,12 @@ import (
 )
 
 func init() {
-	Register("Dockerfile", func() Task { return &dockerfileTask{} })
+	Register("Dockerfile", func() Task { return &DockerfileTask{} })
 }
 
-type dockerfileTask struct {
-}
+type DockerfileTask struct{}
 
-func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *DockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	auths, err := v.Lookup("auth").Fields()
 	if err != nil {
@@ -76,7 +75,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 		}
 		dockerfileDef, err = s.Marshal(ctx,
 			llb.Scratch().File(
-				llb.Mkfile("/Dockerfile", 0644, []byte(contents)),
+				llb.Mkfile("/Dockerfile", 0o644, []byte(contents)),
 			),
 		)
 		if err != nil {
@@ -139,7 +138,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 	})
 }
 
-func (t *dockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
+func (t *DockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
 	opts := map[string]string{}
 
 	if dockerfilePath := v.Lookup("dockerfile.path"); dockerfilePath.Exists() {

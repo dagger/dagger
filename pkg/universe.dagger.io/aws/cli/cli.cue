@@ -86,8 +86,8 @@ import (
 	}
 
 	// Result will contain the cli output. If unmarshal is set to false this will be the raw string as provided by the aws cli command. If unmarshal is set to true this will be a map as returned by json.Unmarshal.
-	_unmarshalable: string | number | bool | null | [..._unmarshalable] | {[string]: _unmarshalable}
-	result:         _unmarshalable
+	#_unmarshalable: string | number | bool | null | [...#_unmarshalable] | {[string]: #_unmarshalable}
+	result:          #_unmarshalable
 
 	if unmarshal != false {
 		options: output: "json"

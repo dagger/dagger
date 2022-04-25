@@ -4,7 +4,7 @@
     "test": "bats --jobs 4 --print-output-on-failure --verbose-run ."
   },
   "devDependencies": {
-    "bats": "https://github.com/bats-core/bats-core#master",
+    "bats": "https://github.com/bats-core/bats-core#v1.6.0",
     "bats-assert": "https://github.com/bats-core/bats-assert",
     "bats-support": "https://github.com/bats-core/bats-support"
   }

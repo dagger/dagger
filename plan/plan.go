@@ -70,7 +70,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		log.Ctx(ctx).Debug().Interface("with", param).Msg("filling overlay")
 		fillErr := v.FillPath(cue.MakePath(), paramV)
 		if fillErr != nil {
-			return nil, fillErr
+			return nil, compiler.Err(fillErr)
 		}
 	}
 
@@ -78,6 +78,10 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		config:  cfg,
 		context: plancontext.New(),
 		source:  v,
+	}
+
+	if err := p.validate(); err != nil {
+		return nil, compiler.Err(err)
 	}
 
 	p.fillAction()
@@ -191,18 +195,20 @@ func (p *Plan) fillAction() {
 		noOpRunner,
 	)
 
-	p.action = &Action{
-		Name:     ActionSelector.String(),
-		Hidden:   false,
-		Path:     cue.MakePath(ActionSelector),
-		Children: []*Action{},
-	}
-
-	actions := p.source.LookupPath(cue.MakePath(ActionSelector))
+	actionsPath := cue.MakePath(ActionSelector)
+	actions := p.source.LookupPath(actionsPath)
 	if !actions.Exists() {
 		return
 	}
-	p.action.Documentation = actions.DocSummary()
+
+	p.action = &Action{
+		Name:          ActionSelector.String(),
+		Documentation: actions.DocSummary(),
+		Hidden:        false,
+		Path:          actionsPath,
+		Children:      []*Action{},
+		Value:         p.Source().LookupPath(actionsPath),
+	}
 
 	tasks := flow.Tasks()
 
@@ -221,10 +227,15 @@ func (p *Plan) fillAction() {
 					Path:          path,
 					Documentation: v.DocSummary(),
 					Children:      []*Action{},
+					Value:         v,
 				}
 				prevAction.AddChild(a)
 			}
 			prevAction = a
 		}
 	}
+}
+
+func (p *Plan) validate() error {
+	return isPlanConcrete(p.source, p.source)
 }

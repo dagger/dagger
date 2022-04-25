@@ -14,7 +14,7 @@ import "dagger.io/dagger"
 	// Optionally exclude certain files
 	exclude: [...string]
 
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }
 
 // Create one or multiple directory in a container
@@ -35,7 +35,7 @@ import "dagger.io/dagger"
 	parents: *true | false
 
 	// Modified filesystem
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }
 
 #ReadFile: {
@@ -46,7 +46,7 @@ import "dagger.io/dagger"
 	// Path of the file to read
 	path: string
 	// Contents of the file
-	contents: string
+	contents: string @dagger(generated)
 }
 
 // Write a file to a filesystem tree, creating it if needed
@@ -60,9 +60,9 @@ import "dagger.io/dagger"
 	// Contents to write
 	contents: string
 	// Permissions of the file
-	permissions: *0o600 | int
+	permissions: *0o644 | int
 	// Output filesystem tree
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }
 
 // Copy files from one FS tree to another
@@ -81,7 +81,7 @@ import "dagger.io/dagger"
 	// Optionally exclude certain files
 	exclude: [...string]
 	// Output of the operation
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }
 
 #CopyInfo: {
@@ -96,7 +96,7 @@ import "dagger.io/dagger"
 #Merge: {
 	$dagger: task: _name: "Merge"
 	inputs: [...dagger.#FS]
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }
 
 // Extract the difference from lower FS to upper FS as its own FS
@@ -104,7 +104,7 @@ import "dagger.io/dagger"
 	$dagger: task: _name: "Diff"
 	lower:  dagger.#FS
 	upper:  dagger.#FS
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }
 
 // Select a subdirectory from a filesystem tree
@@ -125,5 +125,5 @@ import "dagger.io/dagger"
 	}
 
 	// Subdirectory tree
-	output: dagger.#FS & _copy.output
+	output: dagger.#FS & _copy.output @dagger(generated)
 }

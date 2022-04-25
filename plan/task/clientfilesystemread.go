@@ -39,7 +39,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 		return fmt.Errorf("path %q cannot be stat'd: %w", path, err)
 	}
 
-	if plancontext.IsFSValue(v.Lookup("contents")) {
+	if isFS {
 		pctx.LocalDirs.Add(path)
 	}
 
@@ -69,7 +69,7 @@ func (t clientFilesystemReadTask) parsePath(v *compiler.Value) (path string, err
 	}
 
 	// Keep socket paths as is (e.g., npipe)
-	if plancontext.IsServiceValue(v.Lookup("contents")) {
+	if plancontext.IsSocketValue(v.Lookup("contents")) {
 		return
 	}
 

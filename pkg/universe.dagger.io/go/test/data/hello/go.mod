@@ -1,3 +1,3 @@
-module dagger.io/test
+module dagger.io/testgreet
 
 go 1.17

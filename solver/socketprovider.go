@@ -36,12 +36,12 @@ func (sp *SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer)
 		id = v[0]
 	}
 
-	service := sp.pctx.Services.Get(id)
-	if service == nil {
+	socket := sp.pctx.Sockets.Get(id)
+	if socket == nil {
 		return fmt.Errorf("invalid socket id %q", id)
 	}
 
-	conn, err := dialService(service)
+	conn, err := dialSocket(socket)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", id, err)
 	}

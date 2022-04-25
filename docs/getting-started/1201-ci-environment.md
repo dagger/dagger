@@ -1,6 +1,6 @@
 ---
 slug: /1201/ci-environment
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Integrating with your CI environment
@@ -48,64 +48,92 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 
 ```yaml
 .docker:
-    image: docker:${DOCKER_VERSION}-git
-    services:
-        - docker:${DOCKER_VERSION}-dind
-    variables:
-        # See https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#docker-in-docker-with-tls-enabled-in-the-docker-executor
-        DOCKER_HOST: tcp://docker:2376
+  image: docker:${DOCKER_VERSION}-git
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    # See https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#docker-in-docker-with-tls-enabled-in-the-docker-executor
+    DOCKER_HOST: tcp://docker:2376
 
-        DOCKER_TLS_VERIFY: '1'
-        DOCKER_TLS_CERTDIR: '/certs'
-        DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
 
-        # Faster than the default, apparently
-        DOCKER_DRIVER: overlay2
+    # Faster than the default, apparently
+    DOCKER_DRIVER: overlay2
 
-        DOCKER_VERSION: '20.10'
+    DOCKER_VERSION: '20.10'
 
 .dagger:
-    extends: [.docker]
-    variables:
-        DAGGER_VERSION: 0.2.4
-        DAGGER_LOG_FORMAT: plain
-        DAGGER_CACHE_PATH: .dagger-cache
+  extends: [.docker]
+  variables:
+    DAGGER_VERSION: 0.2.7
+    DAGGER_LOG_FORMAT: plain
+    DAGGER_CACHE_PATH: .dagger-cache
 
-        ARGS: ''
-    cache:
-        key: dagger-${CI_JOB_NAME}
-        paths:
-            - ${DAGGER_CACHE_PATH}
-    before_script:
-        - apk add --no-cache curl
-        - |
-            # install dagger
-            cd /usr/local
-            curl -L https://dl.dagger.io/dagger/install.sh | sh
-            cd -
+    ARGS: ''
+  cache:
+    key: dagger-${CI_JOB_NAME}
+    paths:
+      - ${DAGGER_CACHE_PATH}
+  before_script:
+    - apk add --no-cache curl
+    - |
+      # install dagger
+      cd /usr/local
+      curl -L https://dl.dagger.io/dagger/install.sh | sh
+      cd -
 
-            dagger version
-    script:
-        - dagger project update
-        - |
-            dagger \
-                do \
-                --cache-from type=local,src=${DAGGER_CACHE_PATH} \
-                --cache-to type=local,mode=max,dest=${DAGGER_CACHE_PATH} \
-                ${ARGS}
+      dagger version
+  script:
+    - dagger project update
+    - |
+      dagger \
+          do \
+          --cache-from type=local,src=${DAGGER_CACHE_PATH} \
+          --cache-to type=local,mode=max,dest=${DAGGER_CACHE_PATH} \
+          ${ARGS}
 
 build:
-    extends: [.dagger]
-    variables:
-        ARGS: build
-
+  extends: [.dagger]
+  variables:
+    ARGS: build
 ```
 
 </TabItem>
 
 <TabItem value="jenkins">
 
-If you would like us to document Jenkins next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
+<iframe width="800" height="450" style={{width: '100%', marginBottom: '2rem'}} src="https://youtube.com/embed/alNKzHh-PnQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"></iframe>
+
+With `docker` client and `dagger` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`:
+
+```groovy
+pipeline {
+  agent { label 'dagger' }
+  
+  environment {
+    //https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials
+    //DH_CREDS              = credentials('jenkins-dockerhub-creds')
+    //AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
+    //AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+    //https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables
+    GREETING = "Hello there, Jenkins! Hello"
+  }
+  stages {
+    stage("do") {
+      steps {
+        //this example uses https://github.com/jpadams/helloworld-dagger-jenkins
+        //if you're using your own Dagger plan, substitute your action name for 'hello'
+        //e.g. 'build' or 'push' or whatever you've created!
+        sh '''
+            dagger do hello --log-format=plain
+        '''
+      }
+    }
+  }
+}
+```
 
 </TabItem>
 

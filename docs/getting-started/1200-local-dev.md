@@ -1,6 +1,6 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # CI/CD in your local dev
@@ -33,20 +33,23 @@ If you do, you can install `dagger` with a single command:
 brew install dagger/tap/dagger
 ```
 
-This installs `dagger` in `/opt/homebrew/bin`:
+This installs `dagger` in:
 
 ```shell
 type dagger
+# macOS ARM:
 dagger is /opt/homebrew/bin/dagger
+# macOS Intel:
+dagger is /usr/local/bin/dagger
 ```
 
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.4 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.7 sh
 
 ./bin/dagger version
-dagger 0.2.4 (GIT_SHA) darwin/arm64
+dagger 0.2.7 (GIT_SHA) darwin/arm64
 ```
 
 Before we can build & test our example app with `dagger`, we need to have Docker running.
@@ -58,7 +61,7 @@ With Docker running, we are ready to download our example app and run its CI/CD 
 ```shell
 git clone https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.4
+git checkout v0.2.7
 
 cd pkg/universe.dagger.io/examples/todoapp
 dagger do build
@@ -136,10 +139,10 @@ If you want to install dagger to a different location, `cd` where you want `./bi
 If you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.4 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.7 sh
 
 ./bin/dagger version
-dagger 0.2.4 (GIT_SHA) linux/amd64
+dagger 0.2.7 (GIT_SHA) linux/amd64
 ```
 
 Before we can build, test & deploy our example app with `dagger`, we need to have Docker Engine running.
@@ -151,7 +154,7 @@ With Docker Engine running, we are ready to download our example app and run its
 ```shell
 git clone https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.4
+git checkout v0.2.7
 
 cd pkg/universe.dagger.io/examples/todoapp
 dagger do build
@@ -215,7 +218,7 @@ From a powershell terminal, run:
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
- We'll save everything under `<your home folder>/dagger`
+We'll save everything under `<your home folder>/dagger`
 
 Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 
@@ -233,7 +236,7 @@ Still in your `Command Prompt` terminal:
 ```shell
 git clone -c core.symlinks=true https://github.com/dagger/dagger
 cd dagger
-git checkout v0.2.4
+git checkout v0.2.7
 
 cd pkg/universe.dagger.io/examples/todoapp
 dagger do build

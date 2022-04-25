@@ -49,16 +49,35 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
+	var resolveMode llb.ResolveMode
+	resolveModeValue, err := v.Lookup("resolveMode").String()
+	if err != nil {
+		return nil, err
+	}
+
+	switch resolveModeValue {
+	case "default":
+		resolveMode = llb.ResolveModeDefault
+	case "forcePull":
+		resolveMode = llb.ResolveModeForcePull
+	case "preferLocal":
+		resolveMode = llb.ResolveModePreferLocal
+	default:
+		return nil, fmt.Errorf("unknown resolve mode for %s: %s", rawRef, resolveModeValue)
+	}
+
 	st := llb.Image(
 		ref.String(),
 		withCustomName(v, "Pull %s", rawRef),
+		resolveMode,
 	)
 
 	// Load image metadata and convert to to LLB.
 	platform := pctx.Platform.Get()
 	image, digest, err := s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
-		LogName:  vertexNamef(v, "load metadata for %s", ref.String()),
-		Platform: &platform,
+		LogName:     vertexNamef(v, "load metadata for %s", ref.String()),
+		Platform:    &platform,
+		ResolveMode: resolveMode.String(),
 	})
 	if err != nil {
 		return nil, err

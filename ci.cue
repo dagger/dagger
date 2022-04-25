@@ -2,6 +2,7 @@ package main
 
 import (
 	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 
 	"universe.dagger.io/bash"
 	"universe.dagger.io/alpine"
@@ -21,7 +22,11 @@ dagger.#Plan & {
 		"cmd/dagger/dagger",
 		"cmd/dagger/dagger-debug",
 	]
-	client: filesystem: "./bin": write: contents: actions.build.output
+	client: filesystem: "./": read: {
+		contents: dagger.#FS
+		exclude: ["website"]
+	}
+	client: filesystem: "./bin": write: contents: actions.build."go".output
 
 	actions: {
 		_source: client.filesystem["."].read.contents
@@ -51,19 +56,25 @@ dagger.#Plan & {
 			output: _revision.export.files["/revision"]
 		}
 
-		build: go.#Build & {
-			source:  _source
-			package: "./cmd/dagger/"
-			os:      client.platform.os
-			arch:    client.platform.arch
+		build: {
+			"go": go.#Build & {
+				source:  _source
+				package: "./cmd/dagger/"
+				os:      client.platform.os
+				arch:    client.platform.arch
 
-			ldflags: "-s -w -X go.dagger.io/dagger/version.Revision=\(version.output)"
+				ldflags: "-s -w -X go.dagger.io/dagger/version.Revision=\(version.output)"
 
-			env: {
-				CGO_ENABLED: "0"
-				// Makes sure the linter and unit tests complete before starting the build
-				// "__depends_lint":  "\(goLint.exit)"
-				// "__depends_tests": "\(goTest.exit)"
+				env: {
+					CGO_ENABLED: "0"
+					// Makes sure the linter and unit tests complete before starting the build
+					// "__depends_lint":  "\(goLint.exit)"
+					// "__depends_tests": "\(goTest.exit)"
+				}
+			}
+			docker: core.#Dockerfile & {
+				source: client.filesystem["./"].read.contents
+				dockerfile: path: "Dockerfile"
 			}
 		}
 
@@ -73,13 +84,7 @@ dagger.#Plan & {
 			source:  _source
 			package: "./..."
 
-			// FIXME: doesn't work with CGO_ENABLED=0
-			// command: flags: "-race": true
-
-			env: {
-				// FIXME: removing this complains about lack of gcc
-				CGO_ENABLED: "0"
-			}
+			command: flags: "-race": true
 		}
 
 		lint: {

@@ -33,19 +33,34 @@ var initCmd = &cobra.Command{
 			dir = args[0]
 		}
 
-		name := viper.GetString("name")
+		// TODO @gerhard suggested maybe eventually having a
+		// `dagger project template [list, new]`
+		t := viper.GetString("template")
+		if len(t) > 0 {
+			err := createTemplate(t)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to initialize template")
+			}
+		}
 
+		name := viper.GetString("name")
 		doneCh := common.TrackCommand(ctx, cmd)
 		err := pkg.CueModInit(ctx, dir, name)
 		<-doneCh
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
+		fmt.Println("Project initialized! To install dagger packages, run `dagger project update`")
 	},
 }
 
 func init() {
 	initCmd.Flags().StringP("name", "n", "", "project name")
+	t, err := getTemplateNames()
+	if err != nil {
+		panic(err)
+	}
+	initCmd.Flags().StringP("template", "t", "", fmt.Sprintf("Template name %s", t))
 	if err := viper.BindPFlags(initCmd.Flags()); err != nil {
 		panic(err)
 	}

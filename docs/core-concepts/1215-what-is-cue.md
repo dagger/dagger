@@ -28,7 +28,8 @@ At least for our purposes here you need to understand a few key concepts, each o
 4. Constraints, definitions, and schemas
 5. Unification
 6. Default values and the nature of inheritance
-7. Packages
+7. Embedding
+8. Packages
 
 It would be most helpful to [install CUE](https://github.com/cue-lang/cue#download-and-install), but if you prefer you can also try these examples in the [CUE playground](https://cuelang.org/play/).
 
@@ -205,6 +206,61 @@ If we wanted the Bob object to have a different job, it would either need to be 
 ```
 
 Bob inherits the _default value_ but is now allowed to specify a different job.
+
+### Embedding
+
+CUE allows the embedding of one definition into another, similar
+to [Golang Embedding](https://go.dev/doc/effective_go#embedding)
+or [object-oriented composition](https://en.wikipedia.org/wiki/Composition_over_inheritance).  
+This avoids adding an extra level of depth to the definition
+
+```cue
+import (
+  "strings" // a builtin package
+)
+
+#Person: {
+  // further constrain to a min and max length
+  Name: string & strings.MinRunes(3) & strings.MaxRunes(22)
+
+  // we don't need string because the regex handles that
+  Email: =~"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+
+  // further constrain to realistic ages
+  Age?: int & >0 & <140
+
+  // Job is optional and a string
+  Job?: string
+}
+
+// Engineer definition embed #Person and add Domain field
+#Engineer: {
+  Domain: "Backend" | "Frontend" | "DevOps"
+
+  // Embed and add additional constraint on Job
+  #Person & {
+    Job: "Engineer" // Job is further constrained to required and exactly this value
+  }
+}
+
+Bob: #Engineer & {
+  Name: "Bob Smith"
+  Email: "bob@smith.com"
+  Age: 42
+  Domain: "Backend"
+}
+
+// output in YAML:
+Bob:
+  Name: Bob Smith
+  Email: bob@smith.com
+  Age: 42
+  Job: Engineer
+  Domain: Backend
+```
+
+Any definition that embed `#Engineer` will share its properties, and they will be accessible directly from the definition.  
+[Try it in the CUE Playground](https://cuelang.org/play/?id=iFcZKx72Bwm#cue@export@cue)
 
 ### Packages
 

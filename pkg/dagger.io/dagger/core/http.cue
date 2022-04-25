@@ -45,5 +45,5 @@ import "dagger.io/dagger"
 	gid?: int
 
 	// New filesystem state containing the downloaded file
-	output: dagger.#FS
+	output: dagger.#FS @dagger(generated)
 }

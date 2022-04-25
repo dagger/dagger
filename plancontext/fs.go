@@ -12,16 +12,18 @@ import (
 	"go.dagger.io/dagger/pkg"
 )
 
-var (
-	fsIDPath = cue.MakePath(
-		cue.Str("$dagger"),
-		cue.Str("fs"),
-		cue.Hid("_id", pkg.DaggerPackage),
-	)
+var fsIDPath = cue.MakePath(
+	cue.Str("$dagger"),
+	cue.Str("fs"),
+	cue.Hid("_id", pkg.DaggerPackage),
 )
 
 func IsFSValue(v *compiler.Value) bool {
 	return v.LookupPath(fsIDPath).Exists()
+}
+
+func IsFSScratchValue(v *compiler.Value) bool {
+	return IsFSValue(v) && v.LookupPath(fsIDPath).Kind() == cue.NullKind
 }
 
 type FS struct {
@@ -82,7 +84,7 @@ func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	}
 
 	// This is #Scratch, so we'll return an empty FS
-	if v.LookupPath(fsIDPath).Kind() == cue.NullKind {
+	if IsFSScratchValue(v) {
 		return &FS{}, nil
 	}
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"dagger.io/test/greeting"
+	"dagger.io/testgreet/greeting"
 )
 
 func main() {

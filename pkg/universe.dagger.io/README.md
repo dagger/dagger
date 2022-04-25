@@ -1,32 +1,11 @@
 # Europa Universe
 
-## About this directory
-
-`europa-universe/` is a staging area for the upcoming `universe.dagger.io` package namespace,
-which will be shipped as part of the [Europa release](https://github.com/dagger/dagger/issues/1088).
-
 ## What is Universe?
 
-The Dagger Universe is a catalog of reusable Cue packages, curated by Dagger but possibly authored by third parties. Most packages in Universe contain reusable actions; some may also contain entire configuration templates.
+The Dagger Universe is a catalog of reusable CUE packages, curated by Dagger but possibly authored by third parties.
+Most packages in Universe contain reusable actions; some may also contain entire configuration templates.
 
-The import domain for Universe will be `universe.dagger.io`. It will deprecate the current domain `alpha.dagger.io`.
-
-## Where is the `dagger` package?
-
-Europa will also introduce a new package for the Dagger Core API: `dagger.io/dagger`.
-This is a core package, and is *not* part of Universe (note the import domain).
-
-The development version of the Europa core API can be imported as [alpha.dagger.io/europa/dagger](../stdlib/europa/dagger).
-
-## Where is the `dagger/engine` package?
-
-Europa will also introduce a new package for the Low-Level Dagger Engine API : `dagger.io/dagger/engine`.
-This is a core package, and is *not* part of Universe (note the import domain).
-
-The development version of the Europa Low-Level Engine API can be imported as either:
-
-* [alpha.dagger.io/europa/dagger/engine/spec/engine](../stdlib/europa/dagger/engine/spec/engine) for the full spec
-* [alpha.dagger.io/dagger/europa/engine](../stdlib/europa/dagger/engine) for the implemented subset of the spec
+The import domain for Universe will be `universe.dagger.io`.
 
 ## Universe vs other packages
 
@@ -40,7 +19,6 @@ This table compares Dagger core packages, Dagger Universe packages, and the over
 | Release cycle |    Released with Dagger engine   |  Released continuously | No release cycle |
 | Size |  Small  | Large | Very large |
 | Growth rate | Grows slowly, with engine features | Grows fast, with Dagger community | Grows even faster, with CUE ecosystem |
-
 
 ## Notable packages
 
@@ -66,11 +44,13 @@ This package contains examples of complete Dagger configurations, including the 
 
 For example, [the todoapp example](./examples/todoapp) corresponds to the [Getting Started tutorial](https://docs.dagger.io/1003/get-started/)
 
+## Coding Style
+
+When contributing, please follow the guidelines from the [Package Coding Style](https://docs.dagger.io/1226/coding-style).
 
 ## TODO LIST
 
 * Support native language dev in `docker.#Run` with good DX (Python, Go, Typescript etc.)
-* Coding style. When to use verbs vs. nouns?
 * Easy file injection API (`container.#Image.files` ?)
 * Use file injection instead of inline for `#Command.script` (to avoid hitting arg character limits)
 * Organize universe packages in sub-categories?

@@ -47,18 +47,18 @@ func (t clientNetwork) Run(ctx context.Context, pctx *plancontext.Context, _ *so
 	case "npipe":
 		npipe = u.Path
 	default:
-		return nil, fmt.Errorf("invalid service type %q", u.Scheme)
+		return nil, fmt.Errorf("invalid socket type %q", u.Scheme)
 	}
 
 	connect := v.Lookup("connect")
 
-	if !plancontext.IsServiceValue(connect) {
+	if !plancontext.IsSocketValue(connect) {
 		return nil, fmt.Errorf("wrong type %q", connect.Kind())
 	}
 
-	service := pctx.Services.New(unix, npipe)
+	socket := pctx.Sockets.New(unix, npipe)
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"connect": service.MarshalCUE(),
+		"connect": socket.MarshalCUE(),
 	})
 }
