@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"errors"
+	"os"
 	"sync"
 
 	"cuelang.org/go/cue"
@@ -127,5 +128,11 @@ func (c *Compiler) Err(err error) error {
 	if err == nil {
 		return nil
 	}
-	return errors.New(cueerrors.Details(err, &cueerrors.Config{}))
+
+	cfg := &cueerrors.Config{}
+	if cwd, err := os.Getwd(); err == nil {
+		cfg.Cwd = cwd
+	}
+
+	return errors.New(cueerrors.Details(err, cfg))
 }

@@ -238,11 +238,7 @@ setup() {
 
   run "$DAGGER" "do" --with 'actions: params: foo:1' -p ./plan/with test params
   assert_failure
-  assert_output --partial "conflicting values string and 1"
-
-  run "$DAGGER" "do" -p ./plan/with test params
-  assert_failure
-  assert_output --partial "actions.test.params.env.FOO: non-concrete value string"
+  assert_output --partial "conflicting values"
 }
 
 @test "plan/platform" {
@@ -275,4 +271,43 @@ setup() {
    run timeout 30 "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
    assert_failure
    assert_output --partial "Unavailable: connection error"
+}
+
+@test "plan/concrete" {
+  cd "$TESTDIR"
+
+  run "$DAGGER" "do" -p ./plan/concrete/definition.cue test
+  assert_failure
+  assert_output --partial '"actions.test.required" is not set'
+  assert_output --partial './plan/concrete/definition.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/reference.cue test
+  assert_failure
+  assert_output --partial '"actions.test._ref" is not set'
+  assert_output --partial './plan/concrete/reference.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/fs.cue test
+  assert_failure
+  assert_output --partial '"actions.test.required" is not set'
+  assert_output --partial './plan/concrete/fs.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/task.cue test
+  assert_failure
+  assert_output --partial '"actions.test.path" is not set'
+  assert_output --partial './plan/concrete/task.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/multitype.cue test
+  assert_failure
+  assert_output --partial '"actions.test.required" is not set'
+  assert_output --partial './plan/concrete/multitype.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/docker_image.cue test
+  assert_failure
+  assert_output --partial '"actions.test.input" is not set'
+  assert_output --partial './plan/concrete/docker_image.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/yarn.cue test
+  assert_failure
+  assert_output --partial '"actions.test.source" is not set'
+  assert_output --partial './plan/concrete/yarn.cue'
 }

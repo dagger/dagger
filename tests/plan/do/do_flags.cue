@@ -22,13 +22,13 @@ dagger.#Plan & {
 			// Which name?
 			name: string | *"World"
 			// What message?
-			message: string
+			message?: string
 			// How many?
-			num: float
+			num?: float
 			// on or off?
 			doit: bool | *true
 			// this is foo2
-			foo2: foo
+			foo2?: foo
 			// do the first thing
 			one: bash.#Run & {
 				input: image.output
