@@ -16,8 +16,8 @@ common_setup() {
     export DAGGER_LOG_LEVEL="debug"
     if [ -n "$GITHUB_ACTIONS" ];
     then
-        export DAGGER_CACHE_TO="type=gha,mode=max,scope=integration-tests-$BATS_TEST_NAME"
-        export DAGGER_CACHE_FROM="type=gha,scope=integration-tests-$BATS_TEST_NAME"
+        export DAGGER_CACHE_TO="$DAGGER_CACHE_TO-$BATS_TEST_NAME"
+        export DAGGER_CACHE_FROM="$DAGGER_CACHE_FROM-$BATS_TEST_NAME"
     fi
 
     SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt

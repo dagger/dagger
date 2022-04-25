@@ -112,6 +112,7 @@ func NewClient(ctx context.Context) *client.Client {
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-to options")
 	}
+
 	cacheImports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-from"))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
