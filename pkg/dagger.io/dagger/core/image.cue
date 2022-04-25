@@ -76,6 +76,9 @@ import (
 		secret:   dagger.#Secret
 	}
 
+	// When to pull the image
+	resolveMode: *"default" | "forcePull" | "preferLocal"
+
 	// Root filesystem of downloaded image
 	output: dagger.#FS @dagger(generated)
 
