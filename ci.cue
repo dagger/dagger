@@ -26,7 +26,7 @@ dagger.#Plan & {
 		contents: dagger.#FS
 		exclude: ["website"]
 	}
-	client: filesystem: "./bin": write: contents: actions.build.output
+	client: filesystem: "./bin": write: contents: actions.build."go".output
 
 	actions: {
 		_source: client.filesystem["."].read.contents
