@@ -28,18 +28,19 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 		return nil, err
 	}
 
-	switch kind := v.Lookup("contents").Kind(); kind {
+	contentsVal := v.Lookup("contents")
+	switch kind := contentsVal.Kind(); kind {
 	// TODO: support bytes?
 	// case cue.BytesKind:
 	// 	contents, err = v.Lookup("contents").Bytes()
 	case cue.StringKind:
 		var str string
-		str, err = v.Lookup("contents").String()
+		str, err = contentsVal.String()
 		if err == nil {
 			contents = []byte(str)
 		}
 	case cue.BottomKind:
-		err = fmt.Errorf("%s: WriteFile contents is not set", path)
+		err = fmt.Errorf("%s: WriteFile contents is not set:\n\n%s", path, compiler.Err(contentsVal.Cue().Err()))
 	default:
 		err = fmt.Errorf("%s: unhandled data type in WriteFile: %s", path, kind)
 	}
