@@ -58,6 +58,7 @@ func isDockerImage(v *compiler.Value) bool {
 
 func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 	kind := v.IncompleteKind()
+	_, hasDefault := v.Default()
 
 	switch {
 	// Scalar types (string, int, etc)
@@ -67,8 +68,6 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 	// - Is a reference (e.g. `foo: bar`)
 	// Otherwise, abort.
 	case kind.IsAnyOf(ScalarKind):
-		_, hasDefault := v.Default()
-
 		if !v.IsConcrete() && !hasDefault && !isReference(v) {
 			return fieldMissingErr(p, v)
 		}
@@ -94,9 +93,12 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 
 	// For structures, recursively call this function to check sub-fields
 	case kind.IsAnyOf(cue.StructKind):
+		if !v.IsConcrete() && !hasDefault {
+			return fieldMissingErr(p, v)
+		}
 		it, err := v.Cue().Fields(cue.All())
 		if err != nil {
-			return err
+			return compiler.Err(err)
 		}
 
 		for it.Next() {
