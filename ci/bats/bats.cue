@@ -16,10 +16,16 @@ import (
 	// Environment variables to pass to bats
 	env: [string]: string
 
-	// shellcheck version
+	// Bats version
 	version: *"1.6.0" | string
 
+	// Mount points for the bats container
+	mounts: [name=string]: _
+
 	docker.#Build & {
+		_packages: ["yarn", "git", "docker", "curl"]
+		_batsMods: ["bats-support", "bats-assert"]
+
 		steps: [
 			docker.#Pull & {
 				source: "bats/bats:\(version)"
@@ -27,8 +33,7 @@ import (
 
 			// Symlink bash so we can `bash.#Run` entrypoint can work
 			docker.#Run & {
-				// FIXME: need to clear the entrypoint of the base image
-				entrypoint: _
+				entrypoint: []
 				command: {
 					name: "ln"
 					args: ["-sf", "/usr/local/bin/bash", "/bin/bash"]
@@ -40,12 +45,25 @@ import (
 				dest:     "/src"
 			},
 
-			bash.#Run & {
-				workdir: "/src/tests"
-				script: contents: #"""
-					apk add --no-cache yarn git
-					yarn add bats-support bats-assert
-					"""#
+			for pkg in _packages {
+				docker.#Run & {
+					entrypoint: []
+					command: {
+						name: "apk"
+						args: ["add", "--no-cache", pkg]
+					}
+				}
+			},
+
+			for mod in _batsMods {
+				docker.#Run & {
+					entrypoint: []
+					workdir: "/src"
+					command: {
+						name: "yarn"
+						args: ["add", mod]
+					}
+				}
 			},
 
 			if initScript != null {
@@ -57,11 +75,12 @@ import (
 			},
 
 			bash.#Run & {
-				"env":   env
-				workdir: "/src"
-				script: contents: #"""
+				"env":    env
+				"mounts": mounts
+				workdir:  "/src"
+				script: contents: """
 					bats --jobs 4 --print-output-on-failure --verbose-run .
-					"""#
+					"""
 			},
 		]
 	}

@@ -28,6 +28,7 @@ dagger.#Plan & {
 		exclude: ["website"]
 	}
 	client: filesystem: "./bin": write: contents: actions.build."go".output
+	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
 
 	actions: {
 		_source: client.filesystem["."].read.contents
@@ -105,8 +106,23 @@ dagger.#Plan & {
 				]
 			}
 			env: DAGGER_BINARY: "/src/dagger"
-			source:     _mergeFS.output
-			initScript: "$DAGGER_BINARY project update"
+			source: _mergeFS.output
+			initScript: #"""
+				# Remove the symlinked pkgs
+				rm -rf cue.mod/pkg/*
+				# Install sops
+				# FIXME: should be in its own package
+				arch=amd64
+				[ "$(uname -m)" == aarch64 ] && arch="arm64"
+				curl -o /usr/bin/sops -L \
+					https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux.${arch} \
+					&& chmod +x /usr/bin/sops
+				$DAGGER_BINARY project update
+				"""#
+			mounts: docker: {
+				dest:     "/var/run/docker.sock"
+				contents: client.network."unix:///var/run/docker.sock".connect
+			}
 		}
 
 		lint: {
