@@ -2,11 +2,12 @@ package kustomize
 
 import (
 	"universe.dagger.io/bash"
+	"universe.dagger.io/docker"
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 )
 
-// Apply a Kubernetes Kustomize folder
+// Kustomize and output kubernetes manifest
 #Kustomize: {
 	// Kubernetes source
 	source: dagger.#FS
@@ -14,30 +15,20 @@ import (
 	// Optional Kustomization file
 	kustomization: string
 
-	// Kubeconfig
-	kubeconfig: dagger.#Secret
-
-	_baseImage: #Image
-
-	_writeYaml: output: core.#FS
-
 	_writeYaml: core.#WriteFile & {
 		input:    dagger.#Scratch
 		path:     "kustomization.yaml"
 		contents: kustomization
 	}
 
+	_baseImage: #Image
+
 	run: bash.#Run & {
-		input: _baseImage.output
+		input: *_baseImage.output | docker.#Image
 		mounts: {
 			"kustomization.yaml": {
 				contents: _writeYaml.output
 				dest:     "/kustom"
-			}
-			"/root/.kube/config": {
-				dest:     "/root/.kube/config"
-				type:     "secret"
-				contents: kubeconfig
 			}
 			"/source": {
 				dest:     "/source"

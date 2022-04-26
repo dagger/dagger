@@ -10,7 +10,7 @@ import (
 	// Kustomize binary version
 	version: *"3.8.7" | string
 
-	_build: docker.#Build & {
+	docker.#Build & {
 		steps: [
 			alpine.#Build & {
 				packages: {
@@ -27,6 +27,4 @@ import (
 			},
 		]
 	}
-
-	output: _build.output
 }

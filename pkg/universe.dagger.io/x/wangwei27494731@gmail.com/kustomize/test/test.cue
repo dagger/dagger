@@ -10,19 +10,12 @@ import (
 
 dagger.#Plan & {
 	client: {
-		env: KUBECONFIG: string
-		commands: kubeconfig: {
-			name: "cat"
-			args: ["\(env.KUBECONFIG)"]
-			stdout: dagger.#Secret
-		}
 		filesystem: "./test/testdata": read: contents: dagger.#FS
 	}
 	actions: test: {
 		// Run Kustomize
 		kustom: kustomize.#Kustomize & {
 			source:        client.filesystem."./test/testdata".read.contents
-			kubeconfig:    client.commands.kubeconfig.stdout
 			kustomization: yaml.Marshal({
 				resources: ["deployment.yaml", "pod.yaml"]
 				images: [{
@@ -50,7 +43,6 @@ dagger.#Plan & {
 				cat /result/result.yaml
 				grep -q "replicas: 2" /result/result.yaml
 				"""#
-			always: true
 			mounts: "/result": {
 				dest:     "/result"
 				contents: _file.output
