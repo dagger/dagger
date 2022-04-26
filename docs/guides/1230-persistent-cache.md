@@ -1,19 +1,19 @@
 ---
-slug: /1230/permanent-cache-with-dagger
+slug: /1230/persistent-cache-with-dagger
 displayed_sidebar: 0.2
 ---
 
-# Permanent cache your CI
+# Persistent cache
 
-CI that takes eternity is a real pain and can become a bottleneck when your 
-infrastructure and process grow. But Dagger, working with a Buildkit daemon, 
+CI that takes eternity is a real pain and can become a bottleneck when your
+infrastructure and process grow. But Dagger, working with a Buildkit daemon,
 have a powerful cache system that triggers actions only when it's necessary.
 
 However, sometime you can't keep the same Buildkit daemon along your CI/CD.
 For instance, if you use GitHub runner, your daemon will be created on each
-run and **cache will be lost**. 
+run and **cache will be lost**.
 
-In this page, we will see how to use `--cache-from` and `--cache-to` flags 
+In this page, we will see how to use `--cache-from` and `--cache-to` flags
 keep a permanent cache, from a local environment to GitHub action.
 
 ## Ephemeral cache
@@ -41,7 +41,7 @@ dagger.#Plan & {
 
   // Output
   client: filesystem: "./output": write: {
-  	contents: actions.build.output
+    contents: actions.build.output
   }
 
   actions: {
@@ -87,7 +87,7 @@ store cache in your local filesystem, so you can clean your docker engine withou
 losing all your CI's cache.
 :::
 
-## Keep cache in your local filesystem
+## Persistent cache in your local filesystem
 
 To store cache in your local filesystem, you don't need much effort : just
 add `--cache-from type=local,mode=max,dest=<output folder>` to `dagger do build`.
@@ -139,7 +139,7 @@ In this part, we have how to keep cache in a local filesystem, if you want
 to see more options on local export, look at [Buildkit cache documentation](https://github.com/moby/buildkit#local-directory-1)
 :::
 
-## Keep cache in a remote registry
+## Persistent cache in a remote registry
 
 Buildkit can also import/export cache to a registry, it's a great way to share cache between your team and avoid
 flooding your filesystem.
@@ -169,11 +169,48 @@ dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cac
 See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit#registry-push-image-and-cache-separately)
 :::
 
-## Keep cache in GitHub Actions
+## Persistent cache in GitHub Actions
 
 Buildkit has a great integration to store cache from GitHub Action.  
-That features is really powerful with Dagger because you can cache everything
-that has not changes in your PR.
+That features is really powerful with Dagger because you can cache everything that has not changes in your PR.
 
-// Require integrating cache in Dagger action
-Coming soon...
+It's not much different as `local` or `registry` exports, let's integrate cache in a
+simple workflow
+
+```yaml title=".github/workflows/build-example.cue"
+name: "Dagger export export"
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    # Set cache export environment
+    env:
+      DAGGER_CACHE_FROM: type=gha,scope=dagger-cache-example
+      DAGGER_CACHE_TO: type=gha,mode=max,scope=dagger-cache-example
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+          
+      # Required to retrieve GitHub token    
+      - name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v1
+      
+      - name: "Run Dagger"
+        uses: dagger/dagger-for-github@v2
+        with:
+          cmds: |
+             do build
+```
+
+:::warning
+To avoid invalidating cache between your PR, you can take inspiration from [dagger ci](https://github.com/dagger/dagger/blob/main/.github/workflows/dagger-ci.yml#L61)
+:::
+
+:::info
+See more options on GitHub export at [Buildkit cache documentation](https://github.com/moby/buildkit#github-actions-cache-experimental)
+:::
