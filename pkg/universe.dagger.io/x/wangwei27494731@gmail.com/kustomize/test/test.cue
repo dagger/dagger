@@ -9,11 +9,11 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: "./test/testdata": read: contents: dagger.#FS
+	client: filesystem: "./testdata": read: contents: dagger.#FS
 	actions: test: {
 		// Run Kustomize
 		kustom: kustomize.#Kustomize & {
-			source:        client.filesystem."./test/testdata".read.contents
+			source:        client.filesystem."./testdata".read.contents
 			kustomization: yaml.Marshal({
 				resources: ["deployment.yaml", "pod.yaml"]
 				images: [{
@@ -49,8 +49,8 @@ dagger.#Plan & {
 
 		// Test for kustomization FS type
 		kustomFS: kustomize.#Kustomize & {
-			source:        client.filesystem."./test/testdata".read.contents
-			kustomization: client.filesystem."./test/testdata".read.contents
+			source:        client.filesystem."./testdata".read.contents
+			kustomization: client.filesystem."./testdata".read.contents
 		}
 
 		_fileFS: core.#WriteFile & {
