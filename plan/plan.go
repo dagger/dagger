@@ -67,6 +67,17 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 
 		return nil, err
 	}
+	planSchema, err := compiler.Build(ctx, "", nil, pkg.DaggerPackage)
+	if err != nil {
+		return nil, err
+	}
+
+	planSchema = planSchema.LookupPath(cue.MakePath(cue.Def("#Plan")))
+
+	unifiedV := v.Cue().Unify(planSchema.Cue())
+	if unifiedV.Err() != nil {
+		return nil, compiler.Err(unifiedV.Err())
+	}
 
 	for i, param := range cfg.With {
 		log.Ctx(ctx).Debug().Interface("with", param).Msg("compiling overlay")

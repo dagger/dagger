@@ -45,6 +45,7 @@ package dagger
 
 	// Execute actions in containers
 	actions: _
+	...
 }
 
 _#clientFilesystemRead: {
