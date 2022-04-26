@@ -145,7 +145,7 @@ setup() {
   cd "$TESTDIR/plan/client/filesystem/write"
 
   mkdir -p ./out_files
-  rm -f ./out_files/*
+  rm -rf ./out_files/*
 
   # -- string --
 
@@ -162,6 +162,13 @@ setup() {
   assert [ "$(cat ./out_files/secret.txt)" = "foo-barab-oof" ]
   run ls -l "./out_files/secret.txt"
   assert_output --partial "-rw-------"
+
+  # -- exec --
+  # This test is focused on ensuring that the export doesn't cause
+  # duplicated output. Easiest to just use external grep for this
+  run sh -c '"$DAGGER" "do" --log-format=plain -l info -p ./ test exec 2>&1 | grep -c "hello world"'
+  assert_output 1
+  assert [ "$(cat ./out_files/execTest/output.txt)" = "hello world" ]
 
   rm -rf ./out_files
 }
