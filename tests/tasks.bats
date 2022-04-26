@@ -110,7 +110,8 @@ setup() {
 }
 
 @test "task: #NewSecret" {
-    "$DAGGER" "do" -p ./tasks/newsecret/newsecret.cue verify
+    run "$DAGGER" "do" -p ./tasks/newsecret/newsecret.cue verify
+    assert_line --partial HELLOWORLD
 }
 
 @test "task: #TrimSecret" {
