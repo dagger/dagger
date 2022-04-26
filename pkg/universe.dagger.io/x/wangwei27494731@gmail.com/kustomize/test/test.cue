@@ -11,65 +11,68 @@ import (
 dagger.#Plan & {
 	client: filesystem: "./testdata": read: contents: dagger.#FS
 	actions: test: {
-		// Run Kustomize
-		kustom: kustomize.#Kustomize & {
-			source:        client.filesystem."./testdata".read.contents
-			kustomization: yaml.Marshal({
-				resources: ["deployment.yaml", "pod.yaml"]
-				images: [{
-					name:   "nginx"
-					newTag: "v1"
-				}]
-				replicas: [{
-					name:  "nginx-deployment"
-					count: 2
-				}]
-			})
-		}
-
 		_baseImage: #Image
 
-		_file: core.#WriteFile & {
-			input:    dagger.#Scratch
-			path:     "/result.yaml"
-			contents: kustom.output
-		}
+		inlineFile: {
+			// Run Kustomize
+			kustom: kustomize.#Kustomize & {
+				source:        client.filesystem."./testdata".read.contents
+				kustomization: yaml.Marshal({
+					resources: ["deployment.yaml", "pod.yaml"]
+					images: [{
+						name:   "nginx"
+						newTag: "v1"
+					}]
+					replicas: [{
+						name:  "nginx-deployment"
+						count: 2
+					}]
+				})
+			}
 
-		run: bash.#Run & {
-			input: _baseImage.output
-			script: contents: #"""
-				cat /result/result.yaml
-				grep -q "replicas: 2" /result/result.yaml
-				"""#
-			mounts: "/result": {
-				dest:     "/result"
-				contents: _file.output
+			_file: core.#WriteFile & {
+				input:    dagger.#Scratch
+				path:     "/result.yaml"
+				contents: kustom.output
+			}
+
+			verify: bash.#Run & {
+				input: _baseImage.output
+				script: contents: #"""
+					cat /result/result.yaml
+					grep -q "replicas: 2" /result/result.yaml
+					"""#
+				mounts: "/result": {
+					dest:     "/result"
+					contents: _file.output
+				}
 			}
 		}
 
-		// Test for kustomization FS type
-		kustomFS: kustomize.#Kustomize & {
-			source:        client.filesystem."./testdata".read.contents
-			kustomization: client.filesystem."./testdata".read.contents
-		}
+		mountedKustomization: {
+			// Test for kustomization FS type
+			kustom: kustomize.#Kustomize & {
+				source:        client.filesystem."./testdata".read.contents
+				kustomization: client.filesystem."./testdata".read.contents
+			}
 
-		_fileFS: core.#WriteFile & {
-			input:    dagger.#Scratch
-			path:     "/result.yaml"
-			contents: kustomFS.output
-		}
+			_file: core.#WriteFile & {
+				input:    dagger.#Scratch
+				path:     "/result.yaml"
+				contents: kustom.output
+			}
 
-		runFS: bash.#Run & {
-			input: _baseImage.output
-			script: contents: #"""
-				cat /result/result.yaml
-				grep -q "replicas: 2" /result/result.yaml
-				"""#
-			mounts: "/result": {
-				dest:     "/result"
-				contents: _fileFS.output
+			verify: bash.#Run & {
+				input: _baseImage.output
+				script: contents: #"""
+					cat /result/result.yaml
+					grep -q "replicas: 2" /result/result.yaml
+					"""#
+				mounts: "/result": {
+					dest:     "/result"
+					contents: _file.output
+				}
 			}
 		}
-
 	}
 }
