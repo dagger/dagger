@@ -2,6 +2,12 @@
 slug: /1001/install/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
 import CautionBanner from './\_caution-banner.md'
 
 # Install Dagger

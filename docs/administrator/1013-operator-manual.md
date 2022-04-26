@@ -3,6 +3,12 @@ slug: /1013/operator-manual/
 displayed_sidebar: '0.1'
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
 import CautionBanner from '../\_caution-banner.md'
 
 # Dagger Operator Manual

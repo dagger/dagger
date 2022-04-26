@@ -2,6 +2,12 @@
 slug: /1007/kubernetes/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
 import CautionBanner from '../\_caution-banner.md'
 
 # Deploy to Kubernetes with Dagger

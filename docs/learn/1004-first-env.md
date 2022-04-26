@@ -2,6 +2,12 @@
 slug: /1004/dev-first-env/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
 import CautionBanner from '../\_caution-banner.md'
 
 # Create your first Dagger environment

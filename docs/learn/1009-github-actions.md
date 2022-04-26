@@ -2,6 +2,12 @@
 slug: /1009/github-actions/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
 import CautionBanner from '../\_caution-banner.md'
 
 # Integrate Dagger with GitHub Actions

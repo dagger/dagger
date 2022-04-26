@@ -2,6 +2,12 @@
 slug: /1003/get-started/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
 import CautionBanner from '../\_caution-banner.md'
 
 # Get Started with Dagger
