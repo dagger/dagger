@@ -266,7 +266,9 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 
 		s := fmt.Sprintf(format, a...)
 		for _, secret := range secrets {
-			s = strings.ReplaceAll(s, secret.PlainText(), "***")
+			if secretText := secret.PlainText(); secretText != "" {
+				s = strings.ReplaceAll(s, secretText, "***")
+			}
 		}
 		return s
 	}
