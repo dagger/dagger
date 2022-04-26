@@ -19,9 +19,7 @@ import (
 				}
 			},
 			bash.#Run & {
-				env: {
-					VERSION: version
-				}
+				env: VERSION: version
 				script: contents: #"""
 					# download Kustomize binary
 					curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s $VERSION && mv kustomize /usr/local/bin
