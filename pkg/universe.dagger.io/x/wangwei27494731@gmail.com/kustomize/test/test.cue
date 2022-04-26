@@ -9,9 +9,7 @@ import (
 )
 
 dagger.#Plan & {
-	client: {
-		filesystem: "./test/testdata": read: contents: dagger.#FS
-	}
+	client: filesystem: "./test/testdata": read: contents: dagger.#FS
 	actions: test: {
 		// Run Kustomize
 		kustom: kustomize.#Kustomize & {
@@ -48,5 +46,30 @@ dagger.#Plan & {
 				contents: _file.output
 			}
 		}
+
+		// Test for kustomization FS type
+		kustomFS: kustomize.#Kustomize & {
+			source:        client.filesystem."./test/testdata".read.contents
+			kustomization: client.filesystem."./test/testdata".read.contents
+		}
+
+		_fileFS: core.#WriteFile & {
+			input:    dagger.#Scratch
+			path:     "/result.yaml"
+			contents: kustomFS.output
+		}
+
+		runFS: bash.#Run & {
+			input: _baseImage.output
+			script: contents: #"""
+				cat /result/result.yaml
+				grep -q "replicas: 2" /result/result.yaml
+				"""#
+			mounts: "/result": {
+				dest:     "/result"
+				contents: _fileFS.output
+			}
+		}
+
 	}
 }

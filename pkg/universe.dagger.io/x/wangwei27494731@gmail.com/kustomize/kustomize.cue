@@ -13,12 +13,16 @@ import (
 	source: dagger.#FS
 
 	// Optional Kustomization file
-	kustomization: string
+	kustomization: string | dagger.#FS
 
-	_writeYaml: core.#WriteFile & {
-		input:    dagger.#Scratch
-		path:     "kustomization.yaml"
-		contents: kustomization
+	_writeYaml: output: dagger.#FS
+
+	if (kustomization & string) != _|_ {
+		_writeYaml: core.#WriteFile & {
+			input:    dagger.#Scratch
+			path:     "kustomization.yaml"
+			contents: kustomization
+		}
 	}
 
 	_baseImage: #Image
@@ -26,9 +30,17 @@ import (
 	run: bash.#Run & {
 		input: *_baseImage.output | docker.#Image
 		mounts: {
-			"kustomization.yaml": {
-				contents: _writeYaml.output
-				dest:     "/kustom"
+			if (kustomization & string) != _|_ {
+				"kustomization.yaml": {
+					contents: _writeYaml.output
+					dest:     "/kustom"
+				}
+			}
+			if (kustomization & string) == _|_ {
+				"kustomization.yaml": {
+					contents: kustomization
+					dest:     "/kustom"
+				}
 			}
 			"/source": {
 				dest:     "/source"
