@@ -332,7 +332,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	case task.StateComputing:
 		printEvents = group.Events
 		// for computing tasks, show only last N
-		if len(printEvents) > maxLines {
+		if len(printEvents) > maxLines && maxLines >= 0 {
 			printEvents = printEvents[len(printEvents)-maxLines:]
 		}
 	case task.StateCanceled:
