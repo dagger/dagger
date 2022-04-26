@@ -54,6 +54,7 @@ changelog:
       - "^infra:"
       - "^chore:"
       - "^build\\(deps\\):"
+      - "^build\\(deps-dev\\):"
       - "^Merge pull request"
   groups:
     - title: Breaking Changes
