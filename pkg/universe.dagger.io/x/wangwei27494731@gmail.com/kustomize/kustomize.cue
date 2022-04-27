@@ -44,11 +44,9 @@ _#kustomizationType: "file" | "directory"
 
 	run: bash.#Run & {
 		input: *_baseImage.output | docker.#Image
-		mounts: {
-			"/source": {
-				dest:     "/source"
-				contents: source
-			}
+		mounts: "/source": {
+			dest:     "/source"
+			contents: source
 		}
 		script: contents: #"""
 			cp /kustom/kustomization.yaml /source | true
