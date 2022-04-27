@@ -62,6 +62,14 @@ jobs:
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
 
+      # Install QEMU to enable multi-platform on runner
+      - name: Set up QEMU
+        id: qemu
+        uses: docker/setup-qemu-action@v1
+        with:
+          image: tonistiigi/binfmt:latest
+          platforms: all
+
       - name: Start Buildkitd and Jaeger
         run: |
           JAEGER_CONTAINER_NAME=dagger-jaeger-ci
