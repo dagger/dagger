@@ -17,7 +17,7 @@ There are two types of actions: _core actions_ and _composite actions_.
 
 Core Actions are primitives implemented by the Dagger Engine itself. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
 
-To learn more about core actions, see [the core action reference](https://github.com/dagger/dagger/tree/main/pkg/dagger.io/dagger/core).
+To learn more about core actions, see [the core action reference](../references/1222-core-actions-reference.md).
 
 ## Composite Actions
 
