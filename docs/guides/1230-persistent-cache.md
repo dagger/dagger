@@ -5,22 +5,22 @@ displayed_sidebar: 0.2
 
 # Persistent cache
 
-CI that takes eternity is a real pain and can become a bottleneck when your
+CI that takes an eternity is a real pain and can become a bottleneck when your
 infrastructure and process grow. But Dagger, working with a Buildkit daemon,
-have a powerful cache system that triggers actions only when it's necessary.
+has a powerful cache system that triggers actions only when it's necessary.
 
-However, sometime you can't keep the same Buildkit daemon along your CI/CD.
-For instance, if you use GitHub runner, your daemon will be created on each
+However, sometimes you can't keep a persistent Buildkit daemon along your CI/CD.
+For instance, if you use a GitHub Actions runner, your daemon will be created on each
 run and **cache will be lost**.
 
-In this page, we will see how to use `--cache-from` and `--cache-to` flags
-keep a permanent cache, from a local environment to GitHub action.
+In this page, we will see how to use `--cache-from` and `--cache-to` flags to
+keep a permanent cache, from a local environment to GitHub Actions.
 
 ## Ephemeral cache
 
-As an example, we will use a Dagger plan to build a go program.
+As an example, we will use a Dagger plan to build a Go program.
 
-You can use any go project and the following snippet to build it in a
+You can use any Go project and the following snippet to build it in a
 standard way
 
 ```cue
@@ -36,6 +36,8 @@ dagger.#Plan & {
   // Input
   client: filesystem: ".": read: {
     contents: dagger.#FS
+    // Include only contents we need to build our project
+    // Any other files or patterns can be added
     include: ["**/*.go", "go.mod", "go.sum"]
   }
 
@@ -56,8 +58,8 @@ dagger.#Plan & {
 }
 ```
 
-To build go binary, just tip `dagger do build`, it should take some time to
-install dependencies, build binary and output it.
+To build a Go binary, just run `dagger do build`. It should then take some time to
+install dependencies, build the binary and output it.
 
 Here's an example of a run
 
@@ -78,27 +80,28 @@ that long.
 [✔] client.filesystem."./output".write                                      0.1s
 ```
 
-But if you stop Buildkit daemon and remove volume, cache will be lost and
+But if you stop the Buildkit daemon and remove its storage volume, cache will be lost and
 all actions will be executed again.
 
 :::info
 Now we have seen how ephemeral cache works, let's continue to understand how
-store cache in your local filesystem, so you can clean your docker engine without
+store cache in your local filesystem, so you can clean your Buildkit daemon without
 losing all your CI's cache.
 :::
 
 ## Persistent cache in your local filesystem
 
 To store cache in your local filesystem, you don't need much effort : just
-add `--cache-from type=local,mode=max,dest=<output folder>` to `dagger do build`.
+run `dagger do build --cache-from type=local,mode=max,dest=<output folder>`
 
 :::tip
 Using `mode=max` argument will cache **all** layers from intermediate
 steps, with is really useful in the context of Dagger where you will have
-multiple steps to execute.
+multiple steps to execute.  
+To only store the final layer, use `mode=min`.
 :::
 
-Here's an example that exports cache to `storage`.
+Here's an example that exports cache to a local directory at path `./storage`.
 
 ```shell
 dagger do build --cache-to type=local,mode=max,dest=storage 
@@ -111,7 +114,7 @@ storage
 └── ingest
 ```
 
-A new directory has been created that contains cache the run
+As shown above, new directory has been created that contains cache artifacts from the run
 
 :::caution
 If you run different action in the plan, don't forget to store cache in different
@@ -136,13 +139,13 @@ dagger do build --cache-to type=local,mode=max,dest=storage --cache-from type=lo
 
 :::info
 In this part, we have how to keep cache in a local filesystem, if you want
-to see more options on local export, look at [Buildkit cache documentation](https://github.com/moby/buildkit#local-directory-1)
+to see more options on local export, look at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#local-directory-1)
 :::
 
 ## Persistent cache in a remote registry
 
-Buildkit can also import/export cache to a registry, it's a great way to share cache between your team and avoid
-flooding your filesystem.
+Buildkit can also import/export cache to a registry. This is a great way to
+share cache between your team and avoid flooding your filesystem.
 
 :::tip
 Using a registry as cache storage is more efficient than local storage because Buildkit will only re-export
@@ -166,7 +169,7 @@ dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cac
 ```
 
 :::info
-See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit#registry-push-image-and-cache-separately)
+See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#registry-push-image-and-cache-separately)
 :::
 
 ## Persistent cache in GitHub Actions
@@ -208,9 +211,9 @@ jobs:
 ```
 
 :::warning
-To avoid invalidating cache between your PR, you can take inspiration from [dagger ci](https://github.com/dagger/dagger/blob/main/.github/workflows/dagger-ci.yml#L61)
+To avoid invalidating cache between your PR, you can take inspiration from [Dagger ci](https://github.com/dagger/dagger/blob/v0.2.8/.github/workflows/dagger-ci.yml#L61)
 :::
 
 :::info
-See more options on GitHub export at [Buildkit cache documentation](https://github.com/moby/buildkit#github-actions-cache-experimental)
+See more options on GitHub export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#github-actions-cache-experimental)
 :::
