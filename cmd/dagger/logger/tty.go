@@ -20,11 +20,13 @@ import (
 type Event map[string]interface{}
 
 type Group struct {
-	Name      string
-	State     task.State
-	Events    []Event
-	Started   *time.Time
-	Completed *time.Time
+	Name         string
+	CurrentState task.State
+	FinalState   task.State
+	Events       []Event
+	Started      *time.Time
+	Completed    *time.Time
+	Members      int
 }
 
 type Message struct {
@@ -79,24 +81,26 @@ func (l *Logs) Add(event Event) error {
 	// Handle state events
 	// For state events, we just want to update the group status -- no need to
 	// display anything
-	//
-	// FIXME: Since we don't know in advance how many tasks are in a group, the state will change back and forth.
-	// For each task in a group, the status will transition from computing to complete, then back to computing and so on.
-	// The transition is fast enough not to cause a problem.
 	if st, ok := event["state"].(string); ok {
-		if t, err := task.ParseState(st); err != nil {
+		t, err := task.ParseState(st)
+		if err != nil {
 			return err
-			// concurrent "system" tasks are the only exception to transition
-			// from another state to failed since we need to show the error to
-			// the user
-		} else if group.State.CanTransition(t) ||
-			(group.Name == systemGroup && t == task.StateFailed) {
-			group.State = t
-			if group.State == task.StateComputing {
-				group.Completed = nil
-			} else {
+		}
+
+		if group.FinalState.CanTransition(t) {
+			group.FinalState = t
+		}
+
+		if t == task.StateComputing {
+			group.CurrentState = t
+			group.Members++
+			group.Completed = nil
+		} else {
+			group.Members--
+			if group.Members <= 0 {
 				now := time.Now()
 				group.Completed = &now
+				group.CurrentState = group.FinalState
 			}
 		}
 
@@ -238,7 +242,7 @@ func (c *TTYOutput) linesPerGroup(width, height int) int {
 
 	runningGroups := 0
 	for _, message := range c.logs.Messages {
-		if group := message.Group; group != nil && group.State == task.StateComputing {
+		if group := message.Group; group != nil && group.CurrentState == task.StateComputing {
 			runningGroups++
 		}
 	}
@@ -281,7 +285,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	// want it to be displayed as an action in the output
 	if group.Name != systemGroup {
 		prefix := ""
-		switch group.State {
+		switch group.CurrentState {
 		case task.StateComputing:
 			prefix = "[+]"
 		case task.StateCanceled:
@@ -311,7 +315,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 		out += "\n"
 
 		// color
-		switch group.State {
+		switch group.CurrentState {
 		case task.StateComputing:
 			out = aec.Apply(out, aec.LightBlueF)
 		case task.StateCanceled:
@@ -328,7 +332,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	}
 
 	printEvents := []Event{}
-	switch group.State {
+	switch group.CurrentState {
 	case task.StateComputing:
 		printEvents = group.Events
 		// for computing tasks, show only last N
