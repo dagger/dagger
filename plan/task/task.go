@@ -31,7 +31,7 @@ var (
 type State int8
 
 func (s State) String() string {
-	return [...]string{"computing", "cancelled", "failed", "completed"}[s]
+	return [...]string{"computing", "completed", "cancelled", "failed"}[s]
 }
 
 func ParseState(s string) (State, error) {
@@ -55,9 +55,9 @@ func (s State) CanTransition(t State) bool {
 
 const (
 	StateComputing State = iota
+	StateCompleted
 	StateCanceled
 	StateFailed
-	StateCompleted
 )
 
 type NewFunc func() Task
