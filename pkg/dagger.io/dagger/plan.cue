@@ -79,14 +79,14 @@ _#clientFilesystemWrite: {
 	path: string
 	{
 		// File contents to export (as a string or secret)
-		contents: string | #Secret @dagger(generated)
+		contents: string | #Secret
 
 		// File permissions (defaults to 0o644)
 		permissions?: int
 	} | {
 		// Filesystem contents to export
 		// Reference an #FS field produced by an action
-		contents: #FS @dagger(generated)
+		contents: #FS
 	}
 }
 
