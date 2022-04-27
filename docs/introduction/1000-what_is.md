@@ -2,7 +2,17 @@
 slug: /1000/what/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
+import CautionBanner from '../\_caution-banner.md'
+
 # What is Dagger?
+
+<CautionBanner old="0.1" new="0.2" />
 
 Dagger is a portable devkit for CICD. It helps you develop powerful CICD pipelines that can run anywhere.
 

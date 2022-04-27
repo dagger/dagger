@@ -2,7 +2,17 @@
 slug: /1006/google-cloud-run/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
+import CautionBanner from '../\_caution-banner.md'
+
 # Deploy to Google Cloud Run with Dagger
+
+<CautionBanner old="0.1" new="0.2" />
 
 This tutorial illustrates how to use Dagger to build, push and deploy Docker images to Cloud Run.
 

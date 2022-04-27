@@ -2,7 +2,17 @@
 slug: /1011/package-manager/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
+import CautionBanner from '../\_caution-banner.md'
+
 # Manage packages using the package manager
+
+<CautionBanner old="0.1" new="0.2" />
 
 This tutorial illustrates how to install and upgrade packages using Dagger package manager.
 
