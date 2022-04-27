@@ -23,7 +23,7 @@ As an example, we will use a Dagger plan to build a Go program.
 You can use any Go project and the following snippet to build it in a
 standard way
 
-```cue
+```cue file=../tests/guides/persistent-cache/build.cue title="build.cue"
 package ci
 
 import (
