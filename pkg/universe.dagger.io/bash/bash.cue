@@ -42,10 +42,12 @@ import (
 	_mountpoint: "/bash/scripts"
 
 	docker.#Run & {
-		entrypoint: ["/bin/bash"]
+		// ignore entrypoint from image config as it can
+		// create issues if it's not exec'ing to "$@"
+		entrypoint: []
 		command: {
-			name:   "\(_mountpoint)/\(script._filename)"
-			"args": args
+			name:   "bash"
+			"args": ["\(_mountpoint)/\(script._filename)"] + args
 			// FIXME: make default flags overrideable
 			flags: {
 				"--norc": true
