@@ -49,6 +49,7 @@ A `docker-compose` file is available to help bootstrap the tracing environment:
 docker-compose -f ./dagger-main/tracing.compose.yaml up -d
 export BUILDKIT_HOST=docker-container://dagger-buildkitd-jaeger
 export OTEL_EXPORTER_JAEGER_ENDPOINT=http://localhost:14268/api/traces
+export JAEGER_TRACE=localhost:6831
 
 dagger up
 ```

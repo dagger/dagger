@@ -156,7 +156,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		taskPath := t.Path().String()
 		lg := log.Ctx(ctx).With().Logger()
 		ctx = lg.WithContext(ctx)
-		ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
+		ctx, span := otel.Tracer("dagger").Start(ctx, t.Path().String())
 		defer span.End()
 
 		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {

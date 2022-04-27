@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,10 +9,14 @@ import (
 	"path/filepath"
 
 	cueload "cuelang.org/go/cue/load"
+	"go.opentelemetry.io/otel"
 )
 
 // Build a cue configuration tree from the files in fs.
-func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error) {
+func Build(ctx context.Context, src string, overlays map[string]fs.FS, args ...string) (*Value, error) {
+	_, span := otel.Tracer("dagger").Start(ctx, "compiler.Build")
+	defer span.End()
+
 	c := DefaultCompiler
 
 	buildConfig := &cueload.Config{

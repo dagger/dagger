@@ -12,6 +12,7 @@ import (
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
 )
 
 var (
@@ -40,6 +41,9 @@ func init() {
 }
 
 func Start(ctx context.Context) (string, error) {
+	ctx, span := otel.Tracer("dagger").Start(ctx, "buildkitd.Start")
+	defer span.End()
+
 	if vendoredVersion == "" {
 		return "", fmt.Errorf("vendored version is empty")
 	}

@@ -38,6 +38,9 @@ type Config struct {
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
+	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Load")
+	defer span.End()
+
 	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
 	_, cueModExists := pkg.GetCueModParent()
@@ -45,7 +48,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		return nil, fmt.Errorf("dagger project not found. Run `dagger project init`")
 	}
 
-	v, err := compiler.Build("", nil, cfg.Args...)
+	v, err := compiler.Build(ctx, "", nil, cfg.Args...)
 	if err != nil {
 		errstring := err.Error()
 
@@ -80,11 +83,11 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		source:  v,
 	}
 
-	if err := p.validate(); err != nil {
+	if err := p.validate(ctx); err != nil {
 		return nil, compiler.Err(err)
 	}
 
-	p.fillAction()
+	p.fillAction(ctx)
 
 	// FIXME: `platform` field temporarily disabled
 	// if err := p.configPlatform(); err != nil {
@@ -139,6 +142,9 @@ func (p *Plan) Action() *Action {
 
 // prepare executes the pre-run hooks of tasks
 func (p *Plan) prepare(ctx context.Context) error {
+	_, span := otel.Tracer("dagger").Start(ctx, "plan.Prepare")
+	defer span.End()
+
 	flow := cueflow.New(
 		&cueflow.Config{
 			FindHiddenTasks: true,
@@ -176,14 +182,17 @@ func (p *Plan) prepare(ctx context.Context) error {
 
 // Do executes an action in the plan
 func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Up")
+	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Do")
 	defer span.End()
 
 	r := NewRunner(p.context, path, s)
 	return r.Run(ctx, p.source)
 }
 
-func (p *Plan) fillAction() {
+func (p *Plan) fillAction(ctx context.Context) {
+	_, span := otel.Tracer("dagger").Start(ctx, "plan.FillAction")
+	defer span.End()
+
 	cfg := &cueflow.Config{
 		FindHiddenTasks: true,
 		Root:            cue.MakePath(ActionSelector),
@@ -236,6 +245,9 @@ func (p *Plan) fillAction() {
 	}
 }
 
-func (p *Plan) validate() error {
+func (p *Plan) validate(ctx context.Context) error {
+	_, span := otel.Tracer("dagger").Start(ctx, "plan.Validate")
+	defer span.End()
+
 	return isPlanConcrete(p.source, p.source)
 }
