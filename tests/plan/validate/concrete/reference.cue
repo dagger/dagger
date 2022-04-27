@@ -17,7 +17,7 @@ import (
 
 dagger.#Plan & {
 	actions: test: #Test & {
-		_ref:     string
 		required: _ref
+		_ref:     string
 	}
 }

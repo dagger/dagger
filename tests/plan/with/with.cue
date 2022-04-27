@@ -25,8 +25,10 @@ dagger.#Plan & {
 				]
 			}
 
-			direct: env: FOO:   *"direct" | string
-			"params": env: FOO: params.foo
+			direct: env: FOO: *"direct" | string
+			if params.foo != _|_ {
+				"params": env: FOO: params.foo
+			}
 		}
 	}
 }
