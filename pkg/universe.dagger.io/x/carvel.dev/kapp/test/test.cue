@@ -3,13 +3,14 @@ package kapp
 import (
 	"dagger.io/dagger"
 	"universe.dagger.io/bash"
+	"universe.dagger.io/x/carvel.dev/kapp"
 )
 
 #AssertDep: {
 	fs:         dagger.#FS
 	kubeConfig: dagger.#Secret
 
-	_image: #Image & {
+	_image: kapp.#Image & {
 		imgFs: fs
 	}
 	run: bash.#Run & {
@@ -28,7 +29,7 @@ import (
 
 dagger.#Plan & {
 	actions: test: {
-		deploy: #Deploy & {
+		deploy: kapp.#Deploy & {
 			app:        "dtest"
 			fs:         client.filesystem."./".read.contents
 			kubeConfig: client.commands.kc.stdout
@@ -38,17 +39,17 @@ dagger.#Plan & {
 			fs:         client.filesystem."./".read.contents
 			kubeConfig: client.commands.kc.stdout
 		}
-		ls: #List & {
+		ls: kapp.#List & {
 			fs:         client.filesystem."./".read.contents
 			kubeConfig: client.commands.kc.stdout
 			namespace:  "default"
 		}
-		inspect: #Inspect & {
+		inspect: kapp.#Inspect & {
 			app:        "dtest"
 			fs:         client.filesystem."./".read.contents
 			kubeConfig: client.commands.kc.stdout
 		}
-		delete: #Delete & {
+		delete: kapp.#Delete & {
 			app:        "dtest"
 			fs:         client.filesystem."./".read.contents
 			kubeConfig: client.commands.kc.stdout
