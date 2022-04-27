@@ -53,7 +53,7 @@ func fieldMissingErr(p *compiler.Value, field *compiler.Value) error {
 }
 
 func isDockerImage(v *compiler.Value) bool {
-	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind().IsAnyOf(cue.StructKind)
+	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind() == cue.StructKind
 }
 
 func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
@@ -92,7 +92,7 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 		return fieldMissingErr(p, v)
 
 	// For structures, recursively call this function to check sub-fields
-	case kind.IsAnyOf(cue.StructKind):
+	case kind == cue.StructKind:
 		if !v.IsConcrete() && !hasDefault {
 			return fieldMissingErr(p, v)
 		}

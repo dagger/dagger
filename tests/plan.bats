@@ -317,4 +317,7 @@ setup() {
   assert_failure
   assert_output --partial '"actions.test.source" is not set'
   assert_output --partial './plan/concrete/yarn.cue'
+
+  run "$DAGGER" "do" -p ./plan/concrete/struct_or_other.cue test
+  assert_success
 }
