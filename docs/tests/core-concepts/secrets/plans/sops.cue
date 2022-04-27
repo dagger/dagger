@@ -15,7 +15,7 @@ dagger.#Plan & {
 		run: docker.#Run & {
 			mounts: secret: {
 				dest:     "/run/secrets/token"
-				contents: secrets.output.myToken
+				contents: secrets.output.myToken.contents
 			}
 			// Do something with `/run/secrets/token`
 		}
