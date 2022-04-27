@@ -16,7 +16,6 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 )
@@ -126,15 +125,6 @@ func (r *Runner) shouldRun(p cue.Path) bool {
 	return ok
 }
 
-func taskLog(tp string, log *zerolog.Logger, t task.Task, fn func(lg zerolog.Logger)) {
-	fn(log.With().Str("task", tp).Logger())
-	// setup logger here
-	_, isDockerfileTask := t.(*task.DockerfileTask)
-	if isDockerfileTask {
-		fn(log.With().Str("task", "system").Logger())
-	}
-}
-
 func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 	v := compiler.Wrap(flowVal)
 	handler, err := task.Lookup(v)
@@ -154,20 +144,16 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		taskPath := t.Path().String()
-		lg := log.Ctx(ctx).With().Logger()
+		lg := log.Ctx(ctx).With().Str("task", taskPath).Logger()
 		ctx = lg.WithContext(ctx)
 		ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
 		defer span.End()
 
-		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-			lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
-		})
+		lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
 
 		// Debug: dump dependencies
 		for _, dep := range t.Dependencies() {
-			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-				lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
-			})
+			lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
 		}
 
 		start := time.Now()
@@ -175,23 +161,15 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		if err != nil {
 			// FIXME: this should use errdefs.IsCanceled(err)
 
-			// we don't wrap taskLog here since in some cases, actions could still be
-			// running in goroutines which will scramble outputs.
 			if strings.Contains(err.Error(), "context canceled") {
-				taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-					lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
-				})
+				lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
 			} else {
-				taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-					lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
-				})
+				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
 			}
 			return fmt.Errorf("%s: %w", t.Path().String(), compiler.Err(err))
 		}
 
-		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-			lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
-		})
+		lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
 
 		// If the result is not concrete (e.g. empty value), there's nothing to merge.
 		if !result.IsConcrete() {
@@ -199,9 +177,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		}
 
 		if src, err := result.Source(); err == nil {
-			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-				lg.Debug().Str("result", string(src)).Msg("merging task result")
-			})
+			lg.Debug().Str("result", string(src)).Msg("merging task result")
 		}
 
 		// Mirror task result and re-scan tasks that should run.
@@ -211,9 +187,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		// }
 
 		if err := t.Fill(result.Cue()); err != nil {
-			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-				lg.Error().Err(err).Msg("failed to fill task")
-			})
+			lg.Error().Err(err).Msg("failed to fill task")
 			return err
 		}
 

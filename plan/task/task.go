@@ -50,10 +50,13 @@ func ParseState(s string) (State, error) {
 }
 
 func (s State) CanTransition(t State) bool {
-	return s == StateComputing && s <= t
+	return s <= t
 }
 
 const (
+	// state order is important here since it defines the  order
+	// on how states can transition only forwards
+	// computing > completed > canceled > failed
 	StateComputing State = iota
 	StateCompleted
 	StateCanceled
