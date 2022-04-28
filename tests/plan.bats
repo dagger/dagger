@@ -280,6 +280,38 @@ setup() {
    assert_output --partial "Unavailable: connection error"
 }
 
+@test "plan/do: cache" {
+   cd "$TESTDIR"
+
+   unset ACTIONS_RUNTIME_URL
+   unset ACTIONS_RUNTIME_TOKEN
+   unset ACTIONS_CACHE_URL
+
+   export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions token"
+   unset DAGGER_CACHE_FROM
+
+   export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions token"
+   unset DAGGER_CACHE_TO
+
+   export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions cache url"
+   unset DAGGER_CACHE_FROM
+
+   export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions cache url"
+   unset DAGGER_CACHE_TO
+}
+
 @test "plan/concrete" {
   cd "$TESTDIR"
 

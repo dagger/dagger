@@ -2,14 +2,16 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"cuelang.org/go/cue"
 	"github.com/containerd/containerd/platforms"
-	"github.com/docker/buildx/util/buildflags"
 	"github.com/mitchellh/go-homedir"
 	buildkit "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/cmd/buildctl/build"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
@@ -104,16 +106,71 @@ func convertRelativePaths(cacheOptionEntries []buildkit.CacheOptionsEntry) []bui
 	return cacheOptionEntries
 }
 
+func addGithubActionsAttrs(opts buildkit.CacheOptionsEntry) error {
+	if opts.Type != "gha" {
+		return nil
+	}
+	if _, ok := opts.Attrs["token"]; !ok {
+		if token, ok := os.LookupEnv("ACTIONS_RUNTIME_TOKEN"); ok {
+			opts.Attrs["token"] = token
+		} else {
+			return errors.New("missing github actions token, set \"token\" attribute in cache options or set ACTIONS_RUNTIME_TOKEN environment variable")
+		}
+	}
+	if _, ok := opts.Attrs["url"]; !ok {
+		if url, ok := os.LookupEnv("ACTIONS_CACHE_URL"); ok {
+			opts.Attrs["url"] = url
+		} else {
+			return errors.New("missing github actions cache url, set \"url\" attribute in cache options or set ACTIONS_CACHE_URL environment variable")
+		}
+	}
+	return nil
+}
+
+func parseExportCache(exports []string) ([]buildkit.CacheOptionsEntry, error) {
+	cacheExports, err := build.ParseExportCache(exports, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheExports = convertRelativePaths(cacheExports)
+
+	for _, ex := range cacheExports {
+		if err := addGithubActionsAttrs(ex); err != nil {
+			return nil, fmt.Errorf("failed to parse cache export options: %w", err)
+		}
+	}
+
+	return cacheExports, nil
+}
+
+func parseImportCache(imports []string) ([]buildkit.CacheOptionsEntry, error) {
+	cacheImports, err := build.ParseImportCache(imports)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheImports = convertRelativePaths(cacheImports)
+
+	for _, im := range cacheImports {
+		if err := addGithubActionsAttrs(im); err != nil {
+			return nil, fmt.Errorf("failed to parse cache import options: %w", err)
+		}
+	}
+
+	return cacheImports, nil
+}
+
 // NewClient creates a new client
 func NewClient(ctx context.Context) *client.Client {
 	lg := log.Ctx(ctx)
 
-	cacheExports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-to"))
+	cacheExports, err := parseExportCache(viper.GetStringSlice("cache-to"))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-to options")
 	}
 
-	cacheImports, err := buildflags.ParseCacheEntry(viper.GetStringSlice("cache-from"))
+	cacheImports, err := parseImportCache(viper.GetStringSlice("cache-from"))
 	if err != nil {
 		lg.Fatal().Err(err).Msg("unable to parse --cache-from options")
 	}
@@ -129,8 +186,8 @@ func NewClient(ctx context.Context) *client.Client {
 	}
 
 	cl, err := client.New(ctx, "", client.Config{
-		CacheExports:   convertRelativePaths(cacheExports),
-		CacheImports:   convertRelativePaths(cacheImports),
+		CacheExports:   cacheExports,
+		CacheImports:   cacheImports,
 		NoCache:        viper.GetBool("no-cache"),
 		TargetPlatform: p,
 	})
