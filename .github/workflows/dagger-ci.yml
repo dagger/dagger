@@ -75,3 +75,8 @@ jobs:
           DAGGER_LOG_LEVEL: "debug"
         run: |
           dagger do build
+
+      - name: Print Buildkitd Logs
+        if: ${{ failure() }}
+        run: |
+          docker logs dagger-buildkitd

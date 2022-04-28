@@ -83,3 +83,8 @@ jobs:
         run: |
           env
           make core-integration
+
+      - name: Print Buildkitd Logs
+        if: ${{ failure() }}
+        run: |
+          docker logs dagger-buildkitd
