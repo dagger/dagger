@@ -37,5 +37,5 @@ There's also some data structures that are tightly coupled to [core actions](./1
 
 | Definition     | File                                                                                             | Description                                           |
 | :------------- | :----------------------------------------------------------------------------------------------- | :---------------------------------------------------- |
-| `#ImageConfig` | [core/image.cue](https://github.com/dagger/dagger/blob/v0.2.7/pkg/dagger.io/dagger/image.cue)    | Container image config                                |
-| `#HealthCheck` | [core/image.cue](https://github.com/dagger/dagger/blob/v0.2.7/pkg/dagger.io/dagger/image.cue)    | Container health check                                |
+| `#ImageConfig` | [core/image.cue](https://github.com/dagger/dagger/blob/v0.2.7/pkg/dagger.io/dagger/core/image.cue)    | Container image config                                |
+| `#HealthCheck` | [core/image.cue](https://github.com/dagger/dagger/blob/v0.2.7/pkg/dagger.io/dagger/core/image.cue)    | Container health check                                |
