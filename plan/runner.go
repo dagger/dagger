@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"go.dagger.io/dagger/compiler"
-
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -21,30 +20,32 @@ import (
 )
 
 type Runner struct {
-	pctx   *plancontext.Context
-	target cue.Path
-	s      *solver.Solver
-	tasks  sync.Map
-	mirror *compiler.Value
-	l      sync.Mutex
+	pctx     *plancontext.Context
+	target   cue.Path
+	s        *solver.Solver
+	tasks    sync.Map
+	computed *compiler.Value
+	mirror   *compiler.Value
+	l        sync.Mutex
 }
 
 func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver) *Runner {
 	return &Runner{
-		pctx:   pctx,
-		target: target,
-		s:      s,
-		mirror: compiler.NewValue(),
+		pctx:     pctx,
+		target:   target,
+		s:        s,
+		computed: compiler.NewValue(),
+		mirror:   compiler.NewValue(),
 	}
 }
 
-func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
+func (r *Runner) Run(ctx context.Context, src *compiler.Value) (*compiler.Value, error) {
 	if !src.LookupPath(r.target).Exists() {
-		return fmt.Errorf("%s not found", r.target.String())
+		return nil, fmt.Errorf("%s not found", r.target.String())
 	}
 
 	if err := r.update(cue.MakePath(), src); err != nil {
-		return err
+		return nil, err
 	}
 
 	flow := cueflow.New(
@@ -56,14 +57,27 @@ func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
 	)
 
 	if err := flow.Run(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
-		return nil
+		if compSrc, err := r.computed.Source(); err == nil {
+			log.Ctx(ctx).Debug().Str("computed", string(compSrc)).Msg("computed values")
+		}
+
+		final := compiler.NewValue()
+		if err := final.FillPath(cue.MakePath(), src); err != nil {
+			return nil, err
+		}
+
+		if err := final.FillPath(cue.MakePath(), r.computed); err != nil {
+			return nil, err
+		}
+
+		return final, nil
 	}
 }
 
@@ -188,6 +202,12 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 
 		if err := t.Fill(result.Cue()); err != nil {
 			lg.Error().Err(err).Msg("failed to fill task")
+			return err
+		}
+
+		// Merge task value into computed
+		if err := r.computed.FillPath(t.Path(), result); err != nil {
+			lg.Error().Err(err).Msg("failed to fill computed")
 			return err
 		}
 
