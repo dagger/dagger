@@ -2,10 +2,11 @@ common_setup() {
     load "$(dirname "${BASH_SOURCE[0]}")/node_modules/bats-support/load.bash"
     load "$(dirname "${BASH_SOURCE[0]}")/node_modules/bats-assert/load.bash"
 
-    # Dagger Binary
+    # Dagger & CUE Binaries
     # FIXME: `command -v` must be wrapped in a sub-bash,
-    #   otherwise infinite recursion when DAGGER_BINARY is not set.
+    #   otherwise infinite recursion when DAGGER_BINARY/CUE_BINARY is not set.
     export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
+    export CUE="${CUE_BINARY:-$(bash -c 'command -v cue')}"
 
     # Disable telemetry
     DAGGER_TELEMETRY_DISABLE="1"
@@ -24,6 +25,11 @@ common_setup() {
 
     # cd into the directory containing the bats file
     cd "$BATS_TEST_DIRNAME" || exit 1
+}
+
+# cue helper to execute the right binary
+cue() {
+    "${CUE}" "$@"
 }
 
 # dagger helper to execute the right binary
