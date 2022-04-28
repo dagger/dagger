@@ -146,7 +146,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		taskPath := t.Path().String()
 		lg := log.Ctx(ctx).With().Str("task", taskPath).Logger()
 		ctx = lg.WithContext(ctx)
-		ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
+		ctx, span := otel.Tracer("dagger").Start(ctx, t.Path().String())
 		defer span.End()
 
 		lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
