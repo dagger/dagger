@@ -74,3 +74,8 @@ jobs:
       - name: Test
         run: |
           make universe-test
+
+      - name: Print Buildkitd Logs
+        if: ${{ failure() }}
+        run: |
+          docker logs dagger-buildkitd

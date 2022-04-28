@@ -1,7 +1,7 @@
 {
   "license": "Apache-2.0",
   "scripts": {
-    "test": "bats --jobs 4 --print-output-on-failure --verbose-run ."
+    "test": "bats --jobs 1 --print-output-on-failure --verbose-run ."
   },
   "devDependencies": {
     "bats": "https://github.com/bats-core/bats-core#v1.6.0",

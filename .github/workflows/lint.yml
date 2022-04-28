@@ -62,3 +62,8 @@ jobs:
           DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-lint"
         run: |
           dagger do lint
+
+      - name: Print Buildkitd Logs
+        if: ${{ failure() }}
+        run: |
+          docker logs dagger-buildkitd
