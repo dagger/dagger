@@ -45,18 +45,10 @@ jobs:
         with:
           go-version: 1.16
 
-      - name: "Expose GitHub Runtime"
-        uses: crazy-max/ghaction-github-runtime@v1
-
       # - name: "Set up dagger from source"
       #   run: |
       #     make dagger
       #     cp ./cmd/dagger/dagger /usr/local/bin
-
-      - name: "Set up dagger"
-        uses: dagger/dagger-for-github@v2
-        with:
-          install-only: true
 
       - name: Sets env vars on push to main
         run: |
@@ -71,10 +63,12 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
 
       - name: Build
+        uses: dagger/dagger-for-github@v2
+        with:
+          cmds: |
+            do build
         env:
           DAGGER_LOG_LEVEL: "debug"
-        run: |
-          dagger do build
 
       - name: Print Buildkitd Logs
         if: ${{ failure() }}

@@ -41,9 +41,6 @@ jobs:
         with:
           go-version: 1.16
 
-      - name: "Expose GitHub Runtime"
-        uses: crazy-max/ghaction-github-runtime@v1
-
       # - name: "Set up dagger from source"
       #   run: |
       #     make dagger
@@ -55,13 +52,15 @@ jobs:
           install-only: true
 
       - name: Lint
+        uses: dagger/dagger-for-github@v2
+        with:
+          cmds: |
+            do lint
         env:
           DAGGER_LOG_LEVEL: "debug"
           DAGGER_LOG_FORMAT: "plain"
           DAGGER_CACHE_TO: "type=gha,mode=max,scope=dagger-ci-lint"
           DAGGER_CACHE_FROM: "type=gha,scope=dagger-ci-lint"
-        run: |
-          dagger do lint
 
       - name: Print Buildkitd Logs
         if: ${{ failure() }}
