@@ -6,7 +6,13 @@ import (
 )
 
 dagger.#Plan & {
-	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
+	client: network: {
+		"unix:///var/run/docker.sock": connect: dagger.#Socket
+		docker: {
+			connect: dagger.#Socket
+			address: "unix:///var/run/docker.sock"
+		}
+	}
 
 	actions: {
 		image: core.#Pull & {
@@ -18,13 +24,23 @@ dagger.#Plan & {
 			args: ["apk", "add", "--no-cache", "docker-cli"]
 		}
 
-		test: core.#Exec & {
-			input: imageWithDocker.output
-			mounts: docker: {
-				dest:     "/var/run/docker.sock"
-				contents: client.network."unix:///var/run/docker.sock".connect
+		test: {
+			default: core.#Exec & {
+				input: imageWithDocker.output
+				mounts: docker: {
+					dest:     "/var/run/docker.sock"
+					contents: client.network."unix:///var/run/docker.sock".connect
+				}
+				args: ["docker", "info"]
 			}
-			args: ["docker", "info"]
+			custom: core.#Exec & {
+				input: imageWithDocker.output
+				mounts: docker: {
+					dest:     "/var/run/docker.sock"
+					contents: client.network.docker.connect
+				}
+				args: ["docker", "info"]
+			}
 		}
 	}
 }
