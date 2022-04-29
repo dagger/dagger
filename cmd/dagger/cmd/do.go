@@ -69,7 +69,7 @@ var doCmd = &cobra.Command{
 
 		action := daggerPlan.Action().FindByPath(targetPath)
 
-		if err := action.Validate(); err != nil {
+		if err := action.Validate(cmd.Context()); err != nil {
 			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
