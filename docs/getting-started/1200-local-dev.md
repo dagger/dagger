@@ -4,6 +4,7 @@ displayed_sidebar: '0.2'
 ---
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 import DaggerVersionLatestReleased from '@site/src/components/DaggerVersionLatestReleased';
 
@@ -53,12 +54,12 @@ dagger is /usr/local/bin/dagger
 
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
-```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=<DaggerVersionLatestReleased> sh
+<CodeBlock language="shell">
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=<DaggerVersionLatestReleased/> sh
 
 ./bin/dagger version
 dagger 0.2.8 (GIT_SHA) darwin/arm64
-```
+</CodeBlock>
 
 Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
