@@ -1,9 +1,11 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: "0.2"
+displayed_sidebar: '0.2'
 ---
 
 import DaggerCloudCTA from '../includes/\_dagger-cloud-cta.md';
+import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
+import BrowserOnly from '@docusaurus/BrowserOnly';
 
 # Build & run locally...then in CI
 
@@ -18,9 +20,6 @@ Before we can build & test our example app with `dagger`, we need to have [Dagge
 :::tip
 [The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
 :::
-
-import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
-import BrowserOnly from '@docusaurus/BrowserOnly';
 
 <BrowserOnly>
 {() =>
