@@ -69,6 +69,11 @@ var doCmd = &cobra.Command{
 
 		action := daggerPlan.Action().FindByPath(targetPath)
 
+		if err := action.Validate(); err != nil {
+			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
+			os.Exit(1)
+		}
+
 		if action == nil {
 			selectorStrs := []string{}
 			for _, selector := range targetPath.Selectors()[1:] {

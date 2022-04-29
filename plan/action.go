@@ -1,8 +1,11 @@
 package plan
 
 import (
+	"context"
+
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
+	"go.opentelemetry.io/otel"
 )
 
 type Action struct {
@@ -64,6 +67,13 @@ func (a *Action) FindClosest(path cue.Path) *Action {
 		return a
 	}
 	return nil
+}
+
+func (a *Action) Validate(ctx context.Context) error {
+	_, span := otel.Tracer("dagger").Start(ctx, "action.Validate")
+	defer span.End()
+
+	return isPlanConcrete(a.Value, a.Value)
 }
 
 func commonSubPath(a, b cue.Path) cue.Path {

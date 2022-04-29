@@ -83,10 +83,6 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		source:  v,
 	}
 
-	if err := p.validate(ctx); err != nil {
-		return nil, compiler.Err(err)
-	}
-
 	p.fillAction(ctx)
 
 	// FIXME: `platform` field temporarily disabled
@@ -243,11 +239,4 @@ func (p *Plan) fillAction(ctx context.Context) {
 			prevAction = a
 		}
 	}
-}
-
-func (p *Plan) validate(ctx context.Context) error {
-	_, span := otel.Tracer("dagger").Start(ctx, "plan.Validate")
-	defer span.End()
-
-	return isPlanConcrete(p.source, p.source)
 }
