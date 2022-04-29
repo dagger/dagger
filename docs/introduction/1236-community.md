@@ -22,7 +22,7 @@ Dagger is open source! Anyone is welcome to join the community and help shape th
 
 ## Blogs
 
-* [Dagger.io blog posts](https://dagger.io/blog)
+* [Dagger.io blog](https://dagger.io/blog)
 * add yours
 
 ## Twitter
