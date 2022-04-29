@@ -1,9 +1,13 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: "0.2"
+displayed_sidebar: '0.2'
 ---
 
-# Build & run locally...then in CI
+import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
+import BrowserOnly from '@docusaurus/BrowserOnly';
+import DaggerVersionLatestReleased from '@site/src/components/DaggerVersionLatestReleased';
+
+# CI/CD in your local dev
 
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.
@@ -16,9 +20,6 @@ Before we can build & test our example app with `dagger`, we need to have [Dagge
 :::tip
 [The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
 :::
-
-import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
-import BrowserOnly from '@docusaurus/BrowserOnly';
 
 <BrowserOnly>
 {() =>
@@ -33,6 +34,33 @@ values={[
 
 <TabItem value="macos">
 
+We assume that you have [Homebrew](https://brew.sh/) installed.
+If you do, you can install `dagger` with a single command:
+
+```shell
+brew install dagger/tap/dagger
+```
+
+This installs `dagger` in:
+
+```shell
+type dagger
+# macOS ARM:
+dagger is /opt/homebrew/bin/dagger
+# macOS Intel:
+dagger is /usr/local/bin/dagger
+```
+
+If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
+
+```shell
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=<DaggerVersionLatestReleased> sh
+
+./bin/dagger version
+dagger 0.2.8 (GIT_SHA) darwin/arm64
+```
+
+Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
 If not, [Docker Desktop](https://www.docker.com/products/docker-desktop) makes this easy.
 
