@@ -247,7 +247,7 @@ By default, git on Windows does not automatically convert posix symbolic links, 
 
 But you can also enable this once and for all in your git configuration, by running the following command from a Powershell terminal: `git config --global core.symlinks true`.
 
-If you get a `Permission denied` error on Windows, try running your terminal with elevated privileges; right-click on the Start button and select `Terminal (Admin)`, `Windows Powershell (Admin)` or `Command Prompt (Admin)`, depending on what you have set up.
+If you get a `Permission denied` error on Windows, [see this guide](https://github.com/git-for-windows/git/wiki/Symbolic-Links#allowing-non-administrators-to-create-symbolic-links) to disable this restriction.
 :::
 
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under a minute:
