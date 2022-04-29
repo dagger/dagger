@@ -352,4 +352,8 @@ setup() {
 
   run "$DAGGER" "do" -p ./plan/concrete/struct_or_other.cue test
   assert_success
+
+  # https://github.com/dagger/dagger/issues/2363
+  run "$DAGGER" "do" -p ./plan/concrete/clientenv_default.cue test
+  assert_success
 }

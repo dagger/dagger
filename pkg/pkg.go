@@ -31,8 +31,8 @@ var (
 	// ModuleRequirements specifies the MINIMUM version of the module dagger requires in order to work.
 	// This must be updated whenever we make breaking changes so users are prompt to upgrade the packages.
 	ModuleRequirements = map[string]*gv.Version{
-		DaggerModule:   gv.Must(gv.NewVersion("0.2.8")),
-		UniverseModule: gv.Must(gv.NewVersion("0.2.8")),
+		DaggerModule:   gv.Must(gv.NewVersion("0.2.9")),
+		UniverseModule: gv.Must(gv.NewVersion("0.2.9")),
 	}
 
 	DaggerPackage     = fmt.Sprintf("%s/dagger", DaggerModule)

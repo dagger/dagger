@@ -57,6 +57,11 @@ func isDockerImage(v *compiler.Value) bool {
 }
 
 func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
+	// Always assume generated fields are concrete.
+	if v.HasAttr("generated") {
+		return nil
+	}
+
 	kind := v.IncompleteKind()
 	_, hasDefault := v.Default()
 
@@ -108,11 +113,6 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 			if it.Selector().IsDefinition() {
 				continue
 			}
-
-			if compiler.Wrap(it.Value()).HasAttr("generated") {
-				continue
-			}
-
 			if err := isPlanConcrete(p, compiler.Wrap(it.Value())); err != nil {
 				return err
 			}
