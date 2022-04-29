@@ -125,5 +125,8 @@ import "dagger.io/dagger"
 	}
 
 	// Subdirectory tree
-	output: dagger.#FS & _copy.output @dagger(generated)
+	output: {
+		@dagger(generated)
+		dagger.#FS & _copy.output
+	}
 }
