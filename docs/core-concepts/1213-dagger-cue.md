@@ -23,19 +23,19 @@ Developers of other Dagger packages are expected to build on top of these core p
 
 Dagger extends the CUE type system with the following core types:
 
-| Definition     | File                                                                                        | Description                                           |
-| :------------- | :------------------------------------------------------------------------------------------ | :---------------------------------------------------- |
-| `#Address`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)    | Network service address                               |
-| `#CacheDir`    | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/exec.cue) | A (best effort) persistent cache dir                  |
-| `#FS`          | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)    | Reference to a filesystem tree                        |
-| `#HealthCheck` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/image.cue)    | Container health check                                |
-| `#ImageConfig` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/image.cue)    | Container image config                                |
-| `#Mount`       | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/exec.cue) | Transient filesystem mount                            |
-| `#Ref`         | [image.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/image.cue)    | An address for a remote container image               |
-| `#Scratch`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)    | An empty directory                                    |
-| `#Secret`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)    | Secure reference to an external secret                |
-| `#Socket`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)    | Reference to a network socket: unix, tcp/udp or npipe |
-| `#TempDir`     | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/exec.cue) | A temporary directory for command execution           |
+| Definition     | File                                                                                          | Description                                           |
+| :------------- | :------------------------------------------------------------------------------------------   | :---------------------------------------------------- |
+| `#Address`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)      | Network service address                               |
+| `#CacheDir`    | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/exec.cue)   | A (best effort) persistent cache dir                  |
+| `#FS`          | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)      | Reference to a filesystem tree                        |
+| `#HealthCheck` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/image.cue) | Container health check                                |
+| `#ImageConfig` | [image.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/image.cue) | Container image config                                |
+| `#Mount`       | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/exec.cue)   | Transient filesystem mount                            |
+| `#Ref`         | [image.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/image.cue) | An address for a remote container image               |
+| `#Scratch`     | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)      | An empty directory                                    |
+| `#Secret`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)      | Secure reference to an external secret                |
+| `#Socket`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/types.cue)      | Reference to a network socket: unix, tcp/udp or npipe |
+| `#TempDir`     | [exec.cue](https://github.com/dagger/dagger/blob/v0.2.8/pkg/dagger.io/dagger/core/exec.cue)   | A temporary directory for command execution           |
 
 ### Core actions
 
