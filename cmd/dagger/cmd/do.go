@@ -45,18 +45,17 @@ var doCmd = &cobra.Command{
 
 		var (
 			lg  = logger.New()
-			tty *logger.TTYOutput
-			err error
+			ctx = lg.WithContext(cmd.Context())
 		)
 
 		switch !viper.GetBool("experimental") {
 		case len(viper.GetString("platform")) > 0:
-			lg.Fatal().Err(err).Msg("--platform requires --experimental flag")
+			lg.Fatal().Msg("--platform requires --experimental flag")
 		}
 
 		targetPath := getTargetPath(cmd.Flags().Args())
 
-		daggerPlan, err := loadPlan(viper.GetString("plan"))
+		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
 			if viper.GetBool("help") {
 				doHelpCmd(cmd, nil, nil, nil, targetPath, nil)
@@ -108,7 +107,7 @@ var doCmd = &cobra.Command{
 		}
 
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
-			tty, err = logger.NewTTYOutput(os.Stderr)
+			tty, err := logger.NewTTYOutput(os.Stderr)
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to initialize TTY logger")
 			}
@@ -116,9 +115,9 @@ var doCmd = &cobra.Command{
 			defer tty.Stop()
 
 			lg = lg.Output(tty)
+			ctx = lg.WithContext(ctx)
 		}
 
-		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
 		actionFlags.VisitAll(func(flag *pflag.Flag) {
@@ -150,7 +149,7 @@ var doCmd = &cobra.Command{
 	},
 }
 
-func loadPlan(planPath string) (*plan.Plan, error) {
+func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
 	// support only local filesystem paths
 	// even though CUE supports loading module and package names
 	absPlanPath, err := filepath.Abs(planPath)
@@ -163,7 +162,7 @@ func loadPlan(planPath string) (*plan.Plan, error) {
 		return nil, err
 	}
 
-	return plan.Load(context.Background(), plan.Config{
+	return plan.Load(ctx, plan.Config{
 		Args: []string{planPath},
 		With: viper.GetStringSlice("with"),
 	})

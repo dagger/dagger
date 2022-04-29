@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/gofrs/flock"
+	gv "github.com/hashicorp/go-version"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/version"
 )
 
 var (
@@ -26,16 +28,68 @@ var (
 	DaggerModule   = "dagger.io"
 	UniverseModule = "universe.dagger.io"
 
-	modules = []string{
-		DaggerModule,
-		UniverseModule,
+	// ModuleRequirements specifies the MINIMUM version of the module dagger requires in order to work.
+	// This must be updated whenever we make breaking changes so users are prompt to upgrade the packages.
+	ModuleRequirements = map[string]*gv.Version{
+		DaggerModule:   gv.Must(gv.NewVersion("0.2.8")),
+		UniverseModule: gv.Must(gv.NewVersion("0.2.8")),
 	}
 
 	DaggerPackage     = fmt.Sprintf("%s/dagger", DaggerModule)
 	DaggerCorePackage = fmt.Sprintf("%s/core", DaggerPackage)
 
-	lockFilePath = "dagger.lock"
+	lockFilePath    = "dagger.lock"
+	versionFilePath = path.Join("cue.mod", "version.txt")
 )
+
+func EnsureCompatibility(ctx context.Context, p string) error {
+	// Skip version checking for development versions of dagger
+	if version.Version == version.DevelopmentVersion {
+		return nil
+	}
+	daggerVersion := gv.Must(gv.NewVersion(version.Version))
+
+	if p == "" {
+		p, _ = GetCueModParent()
+	}
+	cuePkgDir := path.Join(p, "cue.mod", "pkg")
+
+	for module, minimumVersion := range ModuleRequirements {
+		moduleDir := path.Join(cuePkgDir, module)
+
+		// Skip version checking if the module is a symlink
+		if fi, err := os.Lstat(moduleDir); err == nil {
+			if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
+				continue
+			}
+		}
+
+		versionFile := path.Join(moduleDir, versionFilePath)
+		data, err := os.ReadFile(versionFile)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("failed to read %q: %w", versionFile, err)
+			}
+
+			return fmt.Errorf("package %q is incompatible with this version of dagger (requires %s or newer). Run `dagger project update` to resolve this", module, minimumVersion.String())
+		}
+
+		vendoredVersion, err := gv.NewVersion(strings.TrimSpace(string(data)))
+		if err != nil {
+			return fmt.Errorf("failed to parse %q: %w", versionFile, err)
+		}
+
+		if vendoredVersion.LessThan(minimumVersion) {
+			return fmt.Errorf("package %q (version %s) is incompatible with this version of dagger (requires %s or newer). Run `dagger project update` to resolve this", module, vendoredVersion.String(), minimumVersion.String())
+		}
+
+		if vendoredVersion.GreaterThan(daggerVersion) {
+			return fmt.Errorf("this plan requires dagger %s or newer. Run `dagger version --check` to check for latest version", vendoredVersion.String())
+		}
+	}
+
+	return nil
+}
 
 func Vendor(ctx context.Context, p string) error {
 	if p == "" {
@@ -93,7 +147,7 @@ func Vendor(ctx context.Context, p string) error {
 		return err
 	}
 
-	for _, module := range modules {
+	for module := range ModuleRequirements {
 		// Semi-atomic swap of the module
 		//
 		// The following basically does:
@@ -102,8 +156,24 @@ func Vendor(ctx context.Context, p string) error {
 		// $ mv VENDOR/MODULE cue.mod/pkg/MODULE
 		// $ rm -rf cue.mod/pkg/MODULE.old
 
+		newModuleDir := path.Join(unpackDir, module)
 		moduleDir := path.Join(cuePkgDir, module)
 		backupModuleDir := moduleDir + ".old"
+
+		// Do not override the module if it's a symlink.
+		if fi, err := os.Lstat(moduleDir); err == nil {
+			if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
+				log.Ctx(ctx).Warn().Str("module", module).Msg("skip vendoring: module is symlinked")
+				continue
+			}
+		}
+
+		if version.Version != version.DevelopmentVersion {
+			if err := os.WriteFile(path.Join(newModuleDir, versionFilePath), []byte(version.Version), 0600); err != nil {
+				return err
+			}
+		}
+
 		if err := os.RemoveAll(backupModuleDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -112,7 +182,7 @@ func Vendor(ctx context.Context, p string) error {
 		}
 		defer os.RemoveAll(backupModuleDir)
 
-		if err := os.Rename(path.Join(unpackDir, module), moduleDir); err != nil {
+		if err := os.Rename(newModuleDir, moduleDir); err != nil {
 			return err
 		}
 	}
