@@ -49,7 +49,9 @@ import (
 			}
 		}
 		command: {
-			_packages: [...string] | []
+			//FIXME: find a better workaround with disjunction
+			//FIXME: factor with the part from test.cue
+			_packages: [...string]
 			if package == null && len(packages) == 0 {
 				_packages: ["."]
 			}

@@ -2,7 +2,7 @@ package go
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/core"
+
 	"universe.dagger.io/go"
 	"universe.dagger.io/docker"
 	"universe.dagger.io/alpine"
@@ -31,14 +31,10 @@ dagger.#Plan & {
 					contents: build.output
 					source:   "/testgreet"
 				}
-			}
-			verify: core.#ReadFile & {
-				input: exec.output.rootfs
-				path:  "/output.txt"
-			} & {
-				contents: "Hi dagger!"
+				export: files: "/output.txt": string & "Hi dagger!"
 			}
 		}
+
 		withPackage: {
 			build: go.#Build & {
 				source:  client.filesystem."./data/hello".read.contents
@@ -56,15 +52,10 @@ dagger.#Plan & {
 					contents: build.output
 					source:   "/testgreet"
 				}
-			}
-
-			verify: core.#ReadFile & {
-				input: exec.output.rootfs
-				path:  "/output.txt"
-			} & {
-				contents: "Hi dagger!"
+				export: files: "/output.txt": string & "Hi dagger!"
 			}
 		}
+
 		withPackages: {
 			build: go.#Build & {
 				source: client.filesystem."./data/hello".read.contents
@@ -82,13 +73,7 @@ dagger.#Plan & {
 					contents: build.output
 					source:   "/testgreet"
 				}
-			}
-
-			verify: core.#ReadFile & {
-				input: exec.output.rootfs
-				path:  "/output.txt"
-			} & {
-				contents: "Hi dagger!"
+				export: files: "/output.txt": string & "Hi dagger!"
 			}
 		}
 
