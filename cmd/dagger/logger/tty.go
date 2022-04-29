@@ -288,6 +288,8 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 		switch group.CurrentState {
 		case task.StateComputing:
 			prefix = "[+]"
+		case task.StateSkipped:
+			prefix = "[-]"
 		case task.StateCanceled:
 			prefix = "[✗]"
 		case task.StateFailed:
@@ -318,6 +320,8 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 		switch group.CurrentState {
 		case task.StateComputing:
 			out = aec.Apply(out, aec.LightBlueF)
+		case task.StateSkipped:
+			out = aec.Apply(out, aec.LightCyanF)
 		case task.StateCanceled:
 			out = aec.Apply(out, aec.LightYellowF)
 		case task.StateFailed:
@@ -339,6 +343,9 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 		if len(printEvents) > maxLines && maxLines >= 0 {
 			printEvents = printEvents[len(printEvents)-maxLines:]
 		}
+	case task.StateSkipped:
+		// for skipped tasks, don't show any logs
+		printEvents = []Event{}
 	case task.StateCanceled:
 		// for completed tasks, don't show any logs
 		printEvents = []Event{}

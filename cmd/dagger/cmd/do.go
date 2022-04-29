@@ -21,6 +21,11 @@ import (
 	"golang.org/x/term"
 )
 
+var experimentalFlags = []string{
+	"platform",
+	"dry-run",
+}
+
 var doCmd = &cobra.Command{
 	Use: "do ACTION [SUBACTION...]",
 	// Short: "Execute a dagger action.",
@@ -49,9 +54,12 @@ var doCmd = &cobra.Command{
 			ctx = lg.WithContext(cmd.Context())
 		)
 
-		switch !viper.GetBool("experimental") {
-		case len(viper.GetString("platform")) > 0:
-			lg.Fatal().Msg("--platform requires --experimental flag")
+		if !viper.GetBool("experimental") {
+			for _, f := range experimentalFlags {
+				if viper.IsSet(f) {
+					lg.Fatal().Msg(fmt.Sprintf("--%s requires --experimental flag", f))
+				}
+			}
 		}
 
 		targetPath := getTargetPath(cmd.Flags().Args())
@@ -59,7 +67,7 @@ var doCmd = &cobra.Command{
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
 			if viper.GetBool("help") {
-				doHelpCmd(cmd, nil, nil, nil, targetPath, nil)
+				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
 			}
 			err = fmt.Errorf("failed to load plan: %w", err)
@@ -179,8 +187,9 @@ func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
 	}
 
 	return plan.Load(ctx, plan.Config{
-		Args: []string{planPath},
-		With: viper.GetStringSlice("with"),
+		Args:   []string{planPath},
+		With:   viper.GetStringSlice("with"),
+		DryRun: viper.GetBool("dry-run"),
 	})
 }
 
@@ -299,6 +308,7 @@ func printActions(p *plan.Plan, action *plan.Action, w io.Writer, target cue.Pat
 func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
+	doCmd.Flags().Bool("dry-run", false, "Dry run mode")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
 	doCmd.Flags().String("output", "", "File path to write the action's output values. Prints to stdout if empty")

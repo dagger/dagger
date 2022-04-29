@@ -36,6 +36,7 @@ type Config struct {
 	Args   []string
 	With   []string
 	Target string
+	DryRun bool
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
@@ -194,7 +195,7 @@ func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Do")
 	defer span.End()
 
-	r := NewRunner(p.context, path, s)
+	r := NewRunner(p.context, path, s, p.config.DryRun)
 	final, err := r.Run(ctx, p.source)
 	if err != nil {
 		return err
