@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/gofrs/flock"
+	"github.com/mitchellh/go-homedir"
 	bk "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the container connection driver
 	"github.com/rs/zerolog/log"
@@ -24,6 +28,11 @@ const (
 	image         = "moby/buildkit"
 	containerName = "dagger-buildkitd"
 	volumeName    = "dagger-buildkitd"
+
+	buildkitdLockPath = "~/.config/dagger/.buildkitd.lock"
+	// Long timeout to allow for slow image pulls of
+	// buildkitd while not blocking for infinity
+	lockTimeout = 10 * time.Minute
 )
 
 func init() {
@@ -59,8 +68,37 @@ func Start(ctx context.Context) (string, error) {
 func checkBuildkit(ctx context.Context) error {
 	lg := log.Ctx(ctx)
 
+	// acquire a file-based lock to ensure parallel dagger clients
+	// don't interfere with checking+creating the buildkitd container
+	lockFilePath, err := homedir.Expand(buildkitdLockPath)
+	if err != nil {
+		return fmt.Errorf("unable to expand buildkitd lock path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(lockFilePath), 0755); err != nil {
+		return fmt.Errorf("unable to create buildkitd lock path parent dir: %w", err)
+	}
+	lock := flock.New(lockFilePath)
+	lg.Debug().Str("lockFilePath", lockFilePath).Msg("acquiring buildkitd lock")
+	lockCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	defer cancel()
+	locked, err := lock.TryLockContext(lockCtx, 100*time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("failed to lock buildkitd lock file: %w", err)
+	}
+	if !locked {
+		return fmt.Errorf("failed to acquire buildkitd lock file")
+	}
+	defer lock.Unlock()
+	lg.Debug().Msg("acquired buildkitd lock")
+
+	// check status of buildkitd container
 	config, err := getBuildkitInformation(ctx)
 	if err != nil {
+		lg.
+			Debug().
+			Err(err).
+			Msg("failed to get buildkit information")
+
 		// If that failed, it might be because the docker CLI is out of service.
 		if err := checkDocker(ctx); err != nil {
 			return err
