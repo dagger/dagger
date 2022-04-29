@@ -7,9 +7,7 @@ displayed_sidebar: "0.2"
 
 Dagger is open source! Anyone is welcome to join the community and help shape the evolution of Dagger.
 
-## Chat
-
-### Discord
+## Discord
 
 * [Dagger Official Discord](https://discord.gg/dagger-io)
   * Rules:
