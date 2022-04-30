@@ -24,8 +24,8 @@ package dagger
 		}
 
 		// Access client network endpoints
-		network: [address=_#address]: _#clientNetwork & {
-			"address": address
+		network: [address=string]: _#clientNetwork & {
+			"address": _#address | *address
 		}
 
 		// Access client environment variables
