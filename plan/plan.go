@@ -28,6 +28,7 @@ type Plan struct {
 
 	context *plancontext.Context
 	source  *compiler.Value
+	final   *compiler.Value
 	action  *Action
 }
 
@@ -113,6 +114,10 @@ func (p *Plan) Source() *compiler.Value {
 	return p.source
 }
 
+func (p *Plan) Final() *compiler.Value {
+	return p.final
+}
+
 func (p *Plan) Action() *Action {
 	return p.action
 }
@@ -190,7 +195,14 @@ func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 	defer span.End()
 
 	r := NewRunner(p.context, path, s)
-	return r.Run(ctx, p.source)
+	final, err := r.Run(ctx, p.source)
+	if err != nil {
+		return err
+	}
+
+	p.final = final
+
+	return nil
 }
 
 func (p *Plan) fillAction(ctx context.Context) {

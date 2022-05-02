@@ -12,6 +12,7 @@ type Action struct {
 	Documentation string
 	Children      []*Action
 	Value         *compiler.Value
+	final         *compiler.Value
 	inputs        []Input
 }
 
@@ -84,25 +85,65 @@ func commonSubPath(a, b cue.Path) cue.Path {
 
 func (a *Action) Inputs() []Input {
 	if a.inputs == nil {
-		cueVal := a.Value.Cue()
 		inputs := []Input{}
-		for iter, _ := cueVal.Fields(cue.All()); iter.Next(); {
-			val := iter.Value()
-			cVal := compiler.Wrap(val)
 
-			_, refPath := val.ReferencePath()
+		for iter, _ := a.Value.Cue().Fields(cue.Optional(true)); iter.Next(); {
+			v := compiler.Wrap(iter.Value())
+			ik := v.IncompleteKind()
 
-			ik := val.IncompleteKind()
-			validKind := ik == cue.StringKind || ik == cue.NumberKind || ik == cue.BoolKind || ik == cue.IntKind || ik == cue.FloatKind
-			if validKind && !val.IsConcrete() && len(refPath.Selectors()) == 0 {
+			if ik.IsAnyOf(ScalarKind) && !v.IsConcrete() && !isReference(v) && !v.HasAttr("generated") {
 				inputs = append(inputs, Input{
 					Name:          iter.Label(),
 					Type:          ik.String(),
-					Documentation: cVal.DocSummary(),
+					Documentation: v.DocSummary(),
 				})
 			}
 		}
 		a.inputs = inputs
 	}
 	return a.inputs
+}
+
+func (a *Action) UpdateFinal(final *compiler.Value) {
+	a.final = final.LookupPath(a.Path)
+}
+
+func (a *Action) Outputs() []compiler.Field {
+	outputs := []compiler.Field{}
+
+	for iter, _ := a.final.Cue().Fields(); iter.Next(); {
+		name := iter.Label()
+		v := compiler.Wrap(iter.Value())
+
+		if v.Kind().IsAnyOf(ScalarKind) && a.isOutput(name) {
+			outputs = append(outputs, compiler.Field{
+				Selector: cue.Str(name),
+				Value:    v,
+			})
+		}
+	}
+
+	return outputs
+}
+
+func (a *Action) isOutput(name string) bool {
+	// returned by a core action
+	if a.final.Lookup(name).HasAttr("generated") {
+		return true
+	}
+
+	// exclude concrete values from before running
+	v := a.Value.Lookup(name)
+	if v.Exists() && v.IsConcrete() {
+		return false
+	}
+
+	// exclude CLI inputs
+	for _, i := range a.Inputs() {
+		if i.Name == name {
+			return false
+		}
+	}
+
+	return true
 }

@@ -146,6 +146,21 @@ var doCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
+
+		format := viper.GetString("output-format")
+		file := viper.GetString("output")
+
+		if file != "" && tty != nil {
+			// stop tty logger because we're about to print to stdout for the outputs
+			tty.Stop()
+			lg = logger.New()
+		}
+
+		action.UpdateFinal(daggerPlan.Final())
+
+		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
+			lg.Fatal().Err(err).Msg("failed to print action outputs")
+		}
 	},
 }
 
@@ -285,6 +300,8 @@ func init() {
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
+	doCmd.Flags().String("output", "", "File path to write the action's output values. Prints to stdout if empty")
+	doCmd.Flags().String("output-format", "plain", "Format for output values (plain, json, yaml)")
 	doCmd.Flags().StringArray("cache-to", []string{},
 		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
 	doCmd.Flags().StringArray("cache-from", []string{},
@@ -300,6 +317,7 @@ Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "he
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 Flags:
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
 Global Flags:
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
