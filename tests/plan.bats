@@ -10,19 +10,6 @@ setup() {
   assert_output --partial "not found"
 }
 
-@test "plan/do: dynamic tasks - fails to find tasks" {
-  # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod
-  cd "$TESTDIR"
-  run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue test b
-  # No output because of weirdness with dynamic tasks, which causes it to fail
-  refute_output --partial "actions.test.b"
-}
-
-@test "plan/do: dynamic tasks - fails to run tasks" {
-  run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue "test"
-  refute_output --partial 'actions.test.b.y'
-}
-
 @test "plan/do: don't run unspecified tasks" {
   run "$DAGGER" "do" -p ./plan/do/do_not_run_unspecified_tasks.cue test
   assert_output --partial "actions.test.one.script"
@@ -332,48 +319,67 @@ setup() {
    unset DAGGER_CACHE_TO
 }
 
-@test "plan/concrete" {
+@test "plan/validate/concrete" {
   cd "$TESTDIR"
 
-  run "$DAGGER" "do" -p ./plan/concrete/definition.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/definition.cue test
   assert_failure
   assert_output --partial '"actions.test.required" is not set'
-  assert_output --partial './plan/concrete/definition.cue'
+  assert_output --partial './plan/validate/concrete/definition.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/reference.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/reference.cue test
   assert_failure
   assert_output --partial '"actions.test._ref" is not set'
-  assert_output --partial './plan/concrete/reference.cue'
+  assert_output --partial './plan/validate/concrete/reference.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/fs.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/fs.cue test
   assert_failure
   assert_output --partial '"actions.test.required" is not set'
-  assert_output --partial './plan/concrete/fs.cue'
+  assert_output --partial './plan/validate/concrete/fs.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/task.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/task.cue test
   assert_failure
   assert_output --partial '"actions.test.path" is not set'
-  assert_output --partial './plan/concrete/task.cue'
+  assert_output --partial './plan/validate/concrete/task.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/multitype.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/multitype.cue test
   assert_failure
   assert_output --partial '"actions.test.required" is not set'
-  assert_output --partial './plan/concrete/multitype.cue'
+  assert_output --partial './plan/validate/concrete/multitype.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/docker_image.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/docker_image.cue test
   assert_failure
   assert_output --partial '"actions.test.input" is not set'
-  assert_output --partial './plan/concrete/docker_image.cue'
+  assert_output --partial './plan/validate/concrete/docker_image.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/yarn.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/yarn.cue test
   assert_failure
   assert_output --partial '"actions.test.source" is not set'
-  assert_output --partial './plan/concrete/yarn.cue'
+  assert_output --partial './plan/validate/concrete/yarn.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/struct_or_other.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/struct_or_other.cue test
   assert_success
 
   # https://github.com/dagger/dagger/issues/2363
-  run "$DAGGER" "do" -p ./plan/concrete/clientenv_default.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/clientenv.cue test
   assert_success
+
+  run "$DAGGER" "do" -p ./plan/validate/concrete/clientenv_default.cue test
+  assert_success
+
+  run "$DAGGER" "do" -p ./plan/validate/concrete/clientenv_missing.cue test
+  assert_failure
+  assert_output --partial "actions.test.site: undefined field: NONEXISTENT:"
+}
+
+@test "plan/validate/undefined" {
+  run "$DAGGER" "do" -p ./plan/validate/undefined/undefined.cue test
+  assert_failure
+  assert_output --partial 'actions.test.undefinedAction.input: undefined field: nonexistent'
+  assert_output --partial 'actions.test.undefinedDef: undefined field: #NonExistent'
+  assert_output --partial 'actions.test.filesystem.input: undefined field: "/non/existent":'
+
+  # FIXME: This is currently broken and yields an `incomplete cause disjunction`
+  # assert_output --partial 'actions.test.disjunction: undefined field: #NonExistent:'
+  refute_output --partial 'actions.test.disjunction: incomplete cause disjunction'
 }

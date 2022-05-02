@@ -69,6 +69,6 @@ dagger.#Plan & {
 		}
 
 		// Check output file in the pulled image
-		pullContent: string & pullOutputFile.contents & randomString.contents
+		pullContent: string & pullOutputFile.contents & randomString.output
 	}
 }
