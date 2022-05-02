@@ -11,12 +11,10 @@ dagger.#Plan & {
 		REGISTRY_USER: string
 		// load as a secret
 		REGISTRY_TOKEN: dagger.#Secret
-		// load as a string, using a default if not defined
-		BASE_IMAGE: string | *"registry.example.com/image"
 	}
 
 	actions: pull: docker.#Pull & {
-		source: client.env.BASE_IMAGE
+		source: "registry.example.com/image"
 		auth: {
 			username: client.env.REGISTRY_USER
 			secret:   client.env.REGISTRY_TOKEN
