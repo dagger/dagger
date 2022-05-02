@@ -45,6 +45,7 @@ var doCmd = &cobra.Command{
 
 		var (
 			lg  = logger.New()
+			tty *logger.TTYOutput
 			ctx = lg.WithContext(cmd.Context())
 		)
 
@@ -107,7 +108,7 @@ var doCmd = &cobra.Command{
 		}
 
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
-			tty, err := logger.NewTTYOutput(os.Stderr)
+			tty, err = logger.NewTTYOutput(os.Stderr)
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to initialize TTY logger")
 			}
