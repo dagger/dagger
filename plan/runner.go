@@ -24,16 +24,18 @@ type Runner struct {
 	target   cue.Path
 	s        *solver.Solver
 	tasks    sync.Map
+	dryRun   bool
 	computed *compiler.Value
 	mirror   *compiler.Value
 	l        sync.Mutex
 }
 
-func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver) *Runner {
+func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver, dryRun bool) *Runner {
 	return &Runner{
 		pctx:     pctx,
 		target:   target,
 		s:        s,
+		dryRun:   dryRun,
 		computed: compiler.NewValue(),
 		mirror:   compiler.NewValue(),
 	}
@@ -168,6 +170,11 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		// Debug: dump dependencies
 		for _, dep := range t.Dependencies() {
 			lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
+		}
+
+		if r.dryRun {
+			lg.Info().Str("state", task.StateSkipped.String()).Msg(task.StateSkipped.String())
+			return nil
 		}
 
 		start := time.Now()

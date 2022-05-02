@@ -31,13 +31,15 @@ var (
 type State int8
 
 func (s State) String() string {
-	return [...]string{"computing", "completed", "cancelled", "failed"}[s]
+	return [...]string{"computing", "skipped", "completed", "cancelled", "failed"}[s]
 }
 
 func ParseState(s string) (State, error) {
 	switch s {
 	case "computing":
 		return StateComputing, nil
+	case "skipped":
+		return StateSkipped, nil
 	case "cancelled":
 		return StateCanceled, nil
 	case "failed":
@@ -58,6 +60,7 @@ const (
 	// on how states can transition only forwards
 	// computing > completed > canceled > failed
 	StateComputing State = iota
+	StateSkipped
 	StateCompleted
 	StateCanceled
 	StateFailed
