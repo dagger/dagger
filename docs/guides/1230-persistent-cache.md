@@ -89,17 +89,49 @@ store cache in your local filesystem, so you can clean your Buildkit daemon with
 losing all your CI's cache.
 :::
 
-## Persistent cache in your local filesystem
+## Persistent cache in a remote registry
 
-To store cache in your local filesystem, you don't need much effort : just
-run `dagger do build --cache-from type=local,mode=max,dest=<output folder>`
+Buildkit can also import/export cache to a registry. This is a great way to
+share cache between your team and avoid flooding your filesystem.
+
+:::tip
+Using a registry as cache storage is more efficient than local storage because Buildkit will only re-export
+missing layers on multiple runs.
+:::
+
+To store cache in an external registry, you just need to add flags to dagger command :
+`dagger do <action> --cache-to type=registry,mode=max,ref=<registry target>/<image> --cache-from type=registry,ref=<registry target>/<image>`
 
 :::tip
 Using `mode=max` argument will cache **all** layers from intermediate
-steps, with is really useful in the context of Dagger where you will have
+steps, which is really useful in the context of Dagger where you will have
 multiple steps to execute.  
-To only store the final layer, use `mode=min`.
+To only store the final layers of the exported result, use `mode=min`.
 :::
+
+Let's first deploy a simple registry in your localhost
+
+```shell
+docker run -d -p 6000:5000 --restart=always --name cache-registry registry:2
+```
+
+Then run `dagger do build` with export cache flags.
+
+```shell
+dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cache-from type=registry,ref=localhost:5000/cache
+[✔] actions.build.container                                                 1.3s
+[✔] client.filesystem.".".read                                              0.0s
+[✔] actions.build.container.export                                          0.0s
+[✔] client.filesystem."./output".write                                      0.1s
+```
+
+:::info
+See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#registry-push-image-and-cache-separately)
+:::
+
+## Persistent cache in your local filesystem
+
+To store cache in your local filesystem, you just need to change flags values to match `type=local`.
 
 Here's an example that exports cache to a local directory at path `./storage`.
 
@@ -117,16 +149,20 @@ storage
 As shown above, new directory has been created that contains cache artifacts from the run
 
 :::caution
-If you run different action in the plan, don't forget to store cache in different
-destination, so it will be not overwritten.
+Local cache exports will overwrite anything already present in the directory,
+including any previous cache exports. Cache for distinct actions can be
+exported to different directories in order to not overwrite each other,
+but this may currently result in duplicated data if the two actions share
+any exported cache data in common.
 :::
 
 To import the cache previously stored, you can use `--cache-from type=local,src=<cache folder>`.
 
-Here's an example, using a new buildkit daemon
+Here's an example, using a new buildkit daemon running on a Docker installation
 
 ```shell
 # Down buildkit daemon
+# It throws all buildkit data
 docker container stop dagger-buildkitd && docker container rm dagger-buildkitd && docker volume rm dagger-buildkitd
 
 # Import cache on rebuild
@@ -138,50 +174,19 @@ dagger do build --cache-to type=local,mode=max,dest=storage --cache-from type=lo
 ```
 
 :::info
-In this part, we have how to keep cache in a local filesystem, if you want
+In this part, we have learned to export and import cache using a local filesystem, if you want
 to see more options on local export, look at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#local-directory-1)
-:::
-
-## Persistent cache in a remote registry
-
-Buildkit can also import/export cache to a registry. This is a great way to
-share cache between your team and avoid flooding your filesystem.
-
-:::tip
-Using a registry as cache storage is more efficient than local storage because Buildkit will only re-export
-missing layers on multiple runs.
-:::
-
-Let's first deploy a simple registry in your localhost
-
-```shell
-docker run -d -p 6000:5000 --restart=always --name cache-registry registry:2
-```
-
-Then it's not much different from local export
-
-```shell
-dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cache-from type=registry,ref=localhost:5000/cache
-[✔] actions.build.container                                                 1.3s
-[✔] client.filesystem.".".read                                              0.0s
-[✔] actions.build.container.export                                          0.0s
-[✔] client.filesystem."./output".write                                      0.1s
-```
-
-:::info
-See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#registry-push-image-and-cache-separately)
 :::
 
 ## Persistent cache in GitHub Actions
 
-Buildkit has a great integration to store cache from GitHub Action.  
-That features is really powerful with Dagger because you can cache everything that has not changes in your PR.
+Buildkit has a builtin support for storing cache with GitHub Action.  
 
-It's not much different as `local` or `registry` exports, let's integrate cache in a
-simple workflow
+This cache backend is not that different from `local` or `registry` exports, Let's integrate cache in a
+simple workflow using the one:
 
 ```yaml title=".github/workflows/build-example.cue"
-name: "Dagger export export"
+name: "Dagger Export"
 
 on:
   push:
@@ -198,10 +203,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-          
-      # Required to retrieve GitHub token    
-      - name: Expose GitHub Runtime
-        uses: crazy-max/ghaction-github-runtime@v1
       
       - name: "Run Dagger"
         uses: dagger/dagger-for-github@v2
