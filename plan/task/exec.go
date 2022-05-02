@@ -7,32 +7,75 @@ import (
 	"net"
 	"strings"
 
+	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
 
 func init() {
 	Register("Exec", func() Task { return &execTask{} })
+	Register("Start", func() Task { return &asyncExecTask{} })
+	Register("Stop", func() Task { return &stopAsyncExecTask{} })
 }
 
 type execTask struct {
 }
 
 func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	// Get input state
-	input, err := pctx.FS.FromValue(v.Lookup("input"))
+	common, err := parseCommon(pctx, v)
 	if err != nil {
 		return nil, err
 	}
-	st, err := input.State()
+	opts, err := common.runOpts()
 	if err != nil {
 		return nil, err
 	}
 
-	// Run
-	opts, err := t.getRunOpts(v, pctx)
+	// env
+	envs, err := v.Lookup("env").Fields()
+	if err != nil {
+		return nil, err
+	}
+	for _, env := range envs {
+		if plancontext.IsSecretValue(env.Value) {
+			secret, err := pctx.Secrets.FromValue(env.Value)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, llb.AddSecret(env.Label(), llb.SecretID(secret.ID()), llb.SecretAsEnv(true)))
+		} else {
+			s, err := env.Value.String()
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, llb.AddEnv(env.Label(), s))
+		}
+	}
+
+	// always run
+	always, err := v.Lookup("always").Bool()
+	if err != nil {
+		return nil, err
+	}
+	if always {
+		opts = append(opts, llb.IgnoreCache)
+	}
+
+	// marker for status events
+	// FIXME
+	args := make([]string, 0, len(common.args))
+	for _, a := range common.args {
+		args = append(args, fmt.Sprintf("%q", a))
+	}
+	opts = append(opts, withCustomName(v, "Exec [%s]", strings.Join(args, ", ")))
+
+	st, err := common.root.State()
 	if err != nil {
 		return nil, err
 	}
@@ -52,256 +95,453 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	})
 }
 
-func (t *execTask) getRunOpts(v *compiler.Value, pctx *plancontext.Context) ([]llb.RunOption, error) {
-	opts := []llb.RunOption{}
-	var cmd struct {
-		Args   []string
-		Always bool
+type asyncExecTask struct {
+}
+
+func (t *asyncExecTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+	common, err := parseCommon(pctx, v)
+	if err != nil {
+		return nil, err
+	}
+	req, err := common.containerRequest()
+	if err != nil {
+		return nil, err
 	}
 
+	// env
+	envVal, err := v.Lookup("env").Fields()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, env := range envVal {
+		s, err := env.Value.String()
+		if err != nil {
+			return nil, err
+		}
+		req.Proc.Env = append(req.Proc.Env, fmt.Sprintf("%s=%s", env.Label(), s))
+	}
+
+	// platform
+	platform := pb.PlatformFromSpec(pctx.Platform.Get())
+	req.Container.Platform = &platform
+
+	ctrID, err := s.StartContainer(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	lg := log.Ctx(ctx)
+	lg.Debug().Msgf("started async exec %s", ctrID)
+
+	// Fill result
+	if err := v.FillPath(cue.MakePath(cue.Hid("_id", pkg.DaggerPackage)), ctrID); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+type stopAsyncExecTask struct {
+}
+
+func (t *stopAsyncExecTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Hid("_id", pkg.DaggerPackage))).String()
+	if err != nil {
+		return nil, err
+	}
+
+	lg := log.Ctx(ctx)
+
+	exitCode, err := s.StopContainer(ctx, ctrID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stop async exec %s: %w", ctrID, err)
+	}
+	lg.Debug().Msgf("stopped async exec %s", ctrID)
+
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"exit": exitCode,
+	})
+}
+
+func parseCommon(pctx *plancontext.Context, v *compiler.Value) (*execCommon, error) {
+	e := &execCommon{
+		hosts: make(map[string]string),
+	}
+
+	// root
+	input, err := pctx.FS.FromValue(v.Lookup("input"))
+	if err != nil {
+		return nil, err
+	}
+	e.root = input
+
+	// args
+	var cmd struct {
+		Args []string
+	}
 	if err := v.Decode(&cmd); err != nil {
 		return nil, err
 	}
-	// args
-	opts = append(opts, llb.Args(cmd.Args))
+	e.args = cmd.Args
 
 	// workdir
 	workdir, err := v.Lookup("workdir").String()
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, llb.Dir(workdir))
+	e.workdir = workdir
 
-	// env
-	envs, err := v.Lookup("env").Fields()
+	// user
+	user, err := v.Lookup("user").String()
 	if err != nil {
 		return nil, err
 	}
+	e.user = user
 
-	for _, env := range envs {
-		if plancontext.IsSecretValue(env.Value) {
-			secret, err := pctx.Secrets.FromValue(env.Value)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, llb.AddSecret(env.Label(), llb.SecretID(secret.ID()), llb.SecretAsEnv(true)))
-		} else {
-			s, err := env.Value.String()
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, llb.AddEnv(env.Label(), s))
-		}
-	}
-
-	// always?
-	if cmd.Always {
-		// FIXME: also disables persistent cache directories
-		// There's an ongoing proposal that would fix this: https://github.com/moby/buildkit/issues/1213
-		opts = append(opts, llb.IgnoreCache)
-	}
-
+	// hosts
 	hosts, err := v.Lookup("hosts").Fields()
 	if err != nil {
 		return nil, err
 	}
 	for _, host := range hosts {
-		s, err := host.Value.String()
+		ip, err := host.Value.String()
 		if err != nil {
 			return nil, err
 		}
-
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, llb.AddExtraHost(host.Label(), net.ParseIP(s)))
+		e.hosts[host.Label()] = ip
 	}
-
-	user, err := v.Lookup("user").String()
-	if err != nil {
-		return nil, err
-	}
-	opts = append(opts, llb.User(user))
 
 	// mounts
-	mntOpts, err := t.mountAll(pctx, v.Lookup("mounts"))
+	mounts, err := v.Lookup("mounts").Fields()
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, mntOpts...)
-
-	// marker for status events
-	// FIXME
-	args := make([]string, 0, len(cmd.Args))
-	for _, a := range cmd.Args {
-		args = append(args, fmt.Sprintf("%q", a))
+	for _, mntField := range mounts {
+		if mntField.Value.Lookup("dest").IsConcreteR() != nil {
+			return nil, fmt.Errorf("mount %q is not concrete", mntField.Selector.String())
+		}
+		mnt, err := parseMount(pctx, mntField.Value)
+		if err != nil {
+			return nil, err
+		}
+		e.mounts = append(e.mounts, mnt)
 	}
-	opts = append(opts, withCustomName(v, "Exec [%s]", strings.Join(args, ", ")))
 
+	return e, nil
+}
+
+// fields that are common between sync and async execs
+type execCommon struct {
+	root    *plancontext.FS
+	args    []string
+	workdir string
+	user    string
+	hosts   map[string]string
+	mounts  []mount
+}
+
+func (e execCommon) runOpts() ([]llb.RunOption, error) {
+	opts := []llb.RunOption{
+		llb.Args(e.args),
+		llb.Dir(e.workdir),
+		llb.User(e.user),
+	}
+	for k, v := range e.hosts {
+		opts = append(opts, llb.AddExtraHost(k, net.ParseIP(v)))
+	}
+	for _, mnt := range e.mounts {
+		opt, err := mnt.runOpt()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, opt)
+	}
 	return opts, nil
 }
 
-func (t *execTask) mountAll(pctx *plancontext.Context, mounts *compiler.Value) ([]llb.RunOption, error) {
-	opts := []llb.RunOption{}
-	fields, err := mounts.Fields()
-	if err != nil {
-		return nil, err
+func (e execCommon) containerRequest() (solver.StartContainerRequest, error) {
+	req := solver.StartContainerRequest{
+		Container: client.NewContainerRequest{
+			Mounts: []client.Mount{{
+				Dest:      "/",
+				MountType: pb.MountType_BIND,
+				Ref:       e.root.Result(),
+			}},
+		},
+		Proc: client.StartRequest{
+			Args: e.args,
+			User: e.user,
+			Cwd:  e.workdir,
+		},
 	}
-	for _, mnt := range fields {
-		if mnt.Value.Lookup("dest").IsConcreteR() != nil {
-			return nil, fmt.Errorf("mount %q is not concrete", mnt.Selector.String())
-		}
 
-		dest, err := mnt.Value.Lookup("dest").String()
+	for _, mnt := range e.mounts {
+		m, err := mnt.containerMount()
 		if err != nil {
-			return nil, err
+			return req, err
 		}
-		o, err := t.mount(pctx, dest, mnt.Value)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, o)
+		req.Container.Mounts = append(req.Container.Mounts, m)
 	}
-	return opts, err
+
+	for k, v := range e.hosts {
+		req.Container.ExtraHosts = append(req.Container.ExtraHosts, &pb.HostIP{Host: k, IP: v})
+	}
+
+	return req, nil
 }
 
-func (t *execTask) mount(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
-	typ, err := mnt.Lookup("type").String()
+func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
+	dest, err := v.Lookup("dest").String()
 	if err != nil {
-		return nil, err
+		return mount{}, err
+	}
+
+	typ, err := v.Lookup("type").String()
+	if err != nil {
+		return mount{}, err
 	}
 	switch typ {
 	case "cache":
-		return t.mountCache(pctx, dest, mnt)
+		contents := v.Lookup("contents")
+
+		idValue := contents.Lookup("id")
+		if !idValue.IsConcrete() {
+			return mount{}, fmt.Errorf("cache %q is not set", v.Path().String())
+		}
+		id, err := idValue.String()
+		if err != nil {
+			return mount{}, err
+		}
+
+		concurrency, err := contents.Lookup("concurrency").String()
+		if err != nil {
+			return mount{}, err
+		}
+		var mode llb.CacheMountSharingMode
+		switch concurrency {
+		case "shared":
+			mode = llb.CacheMountShared
+		case "private":
+			mode = llb.CacheMountPrivate
+		case "locked":
+			mode = llb.CacheMountLocked
+		default:
+			return mount{}, fmt.Errorf("unknown concurrency mode %q", concurrency)
+		}
+		return mount{
+			dest: dest,
+			cacheMount: &cacheMount{
+				id:          id,
+				concurrency: mode,
+			},
+		}, nil
+
 	case "tmp":
-		return t.mountTmp(pctx, dest, mnt)
+		return mount{dest: dest, tmpMount: &tmpMount{}}, nil
+
 	case "socket":
-		return t.mountSocket(pctx, dest, mnt)
+		socket, err := pctx.Sockets.FromValue(v.Lookup("contents"))
+		if err != nil {
+			return mount{}, err
+		}
+		return mount{dest: dest, socketMount: &socketMount{id: socket.ID()}}, nil
+
 	case "fs":
-		return t.mountFS(pctx, dest, mnt)
+		mnt := mount{
+			dest:    dest,
+			fsMount: &fsMount{},
+		}
+
+		contents, err := pctx.FS.FromValue(v.Lookup("contents"))
+		if err != nil {
+			return mount{}, err
+		}
+		mnt.fsMount.contents = contents
+
+		if source := v.Lookup("source"); source.Exists() {
+			src, err := source.String()
+			if err != nil {
+				return mount{}, err
+			}
+			mnt.fsMount.source = src
+		}
+
+		if ro := v.Lookup("ro"); ro.Exists() {
+			readonly, err := ro.Bool()
+			if err != nil {
+				return mount{}, err
+			}
+			mnt.fsMount.readonly = readonly
+		}
+
+		return mnt, nil
+
 	case "secret":
-		return t.mountSecret(pctx, dest, mnt)
+		contents, err := pctx.Secrets.FromValue(v.Lookup("contents"))
+		if err != nil {
+			return mount{}, err
+		}
+
+		opts := struct {
+			UID  uint32
+			GID  uint32
+			Mask uint32
+		}{}
+		if err := v.Decode(&opts); err != nil {
+			return mount{}, err
+		}
+
+		return mount{
+			dest: dest,
+			secretMount: &secretMount{
+				id:   contents.ID(),
+				uid:  opts.UID,
+				gid:  opts.GID,
+				mask: opts.Mask,
+			},
+		}, nil
+
 	case "":
-		return nil, errors.New("no mount type specified")
+		return mount{}, errors.New("no mount type specified")
 	default:
-		return nil, fmt.Errorf("unsupported mount type %q", typ)
+		return mount{}, fmt.Errorf("unsupported mount type %q", typ)
 	}
 }
 
-func (t *execTask) mountTmp(_ *plancontext.Context, dest string, _ *compiler.Value) (llb.RunOption, error) {
-	// FIXME: handle size
-	return llb.AddMount(
-		dest,
-		llb.Scratch(),
-		llb.Tmpfs(),
-	), nil
+type mount struct {
+	dest string
+	// following is a sum type (exactly one of the fields should be non-nil)
+	cacheMount  *cacheMount
+	tmpMount    *tmpMount
+	socketMount *socketMount
+	fsMount     *fsMount
+	secretMount *secretMount
 }
 
-func (t *execTask) mountCache(_ *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
-	contents := mnt.Lookup("contents")
-
-	idValue := contents.Lookup("id")
-	if !idValue.IsConcrete() {
-		return nil, fmt.Errorf("cache %q is not set", mnt.Path().String())
-	}
-	id, err := idValue.String()
-	if err != nil {
-		return nil, err
-	}
-
-	concurrency, err := contents.Lookup("concurrency").String()
-	if err != nil {
-		return nil, err
-	}
-
-	var mode llb.CacheMountSharingMode
-	switch concurrency {
-	case "shared":
-		mode = llb.CacheMountShared
-	case "private":
-		mode = llb.CacheMountPrivate
-	case "locked":
-		mode = llb.CacheMountLocked
-	default:
-		return nil, fmt.Errorf("unknown concurrency mode %q", concurrency)
-	}
-
-	return llb.AddMount(
-		dest,
-		llb.Scratch(),
-		llb.AsPersistentCacheDir(
-			id,
-			mode,
-		),
-	), nil
-}
-
-func (t *execTask) mountFS(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
-	contents, err := pctx.FS.FromValue(mnt.Lookup("contents"))
-	if err != nil {
-		return nil, err
-	}
-
-	// possibly construct mount options for LLB from
-	var mo []llb.MountOption
-
-	// handle "path" option
-	if source := mnt.Lookup("source"); source.Exists() {
-		src, err := source.String()
+func (m mount) runOpt() (llb.RunOption, error) {
+	switch {
+	case m.cacheMount != nil:
+		return llb.AddMount(
+			m.dest,
+			llb.Scratch(),
+			llb.AsPersistentCacheDir(m.cacheMount.id, m.cacheMount.concurrency),
+		), nil
+	case m.tmpMount != nil:
+		// FIXME: handle size
+		return llb.AddMount(
+			m.dest,
+			llb.Scratch(),
+			llb.Tmpfs(),
+		), nil
+	case m.socketMount != nil:
+		return llb.AddSSHSocket(
+			llb.SSHID(m.socketMount.id),
+			llb.SSHSocketTarget(m.dest),
+		), nil
+	case m.fsMount != nil:
+		st, err := m.fsMount.contents.State()
 		if err != nil {
 			return nil, err
 		}
-		mo = append(mo, llb.SourcePath(src))
-	}
-
-	if ro := mnt.Lookup("ro"); ro.Exists() {
-		readonly, err := ro.Bool()
-		if err != nil {
-			return nil, err
+		var opts []llb.MountOption
+		if m.fsMount.source != "" {
+			opts = append(opts, llb.SourcePath(m.fsMount.source))
 		}
-		if readonly {
-			mo = append(mo, llb.Readonly)
+		if m.fsMount.readonly {
+			opts = append(opts, llb.Readonly)
 		}
+		return llb.AddMount(
+			m.dest,
+			st,
+			opts...,
+		), nil
+	case m.secretMount != nil:
+		return llb.AddSecret(
+			m.dest,
+			llb.SecretID(m.secretMount.id),
+			llb.SecretFileOpt(int(m.secretMount.uid), int(m.secretMount.gid), int(m.secretMount.mask)),
+		), nil
 	}
-
-	st, err := contents.State()
-	if err != nil {
-		return nil, err
-	}
-
-	return llb.AddMount(dest, st, mo...), nil
+	return nil, fmt.Errorf("no mount type set")
 }
 
-func (t *execTask) mountSecret(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
-	contents, err := pctx.Secrets.FromValue(mnt.Lookup("contents"))
-	if err != nil {
-		return nil, err
+func (m mount) containerMount() (client.Mount, error) {
+	switch {
+	case m.cacheMount != nil:
+		mnt := client.Mount{
+			Dest:      m.dest,
+			MountType: pb.MountType_CACHE,
+			CacheOpt: &pb.CacheOpt{
+				ID: m.cacheMount.id,
+			},
+		}
+		switch m.cacheMount.concurrency {
+		case llb.CacheMountShared:
+			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
+		case llb.CacheMountPrivate:
+			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
+		case llb.CacheMountLocked:
+			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
+		}
+		return mnt, nil
+	case m.tmpMount != nil:
+		// FIXME: handle size
+		return client.Mount{
+			Dest:      m.dest,
+			MountType: pb.MountType_TMPFS,
+		}, nil
+	case m.socketMount != nil:
+		return client.Mount{
+			Dest:      m.dest,
+			MountType: pb.MountType_SSH,
+			SSHOpt: &pb.SSHOpt{
+				ID: m.socketMount.id,
+			},
+		}, nil
+	case m.fsMount != nil:
+		return client.Mount{
+			Dest:      m.dest,
+			MountType: pb.MountType_BIND,
+			Ref:       m.fsMount.contents.Result(),
+			Selector:  m.fsMount.source,
+			Readonly:  m.fsMount.readonly,
+		}, nil
+	case m.secretMount != nil:
+		return client.Mount{
+			Dest:      m.dest,
+			MountType: pb.MountType_SECRET,
+			SecretOpt: &pb.SecretOpt{
+				ID:   m.secretMount.id,
+				Uid:  m.secretMount.uid,
+				Gid:  m.secretMount.gid,
+				Mode: m.secretMount.mask,
+			},
+		}, nil
 	}
-
-	opts := struct {
-		UID  int
-		GID  int
-		Mask int
-	}{}
-
-	if err := mnt.Decode(&opts); err != nil {
-		return nil, err
-	}
-
-	return llb.AddSecret(dest,
-		llb.SecretID(contents.ID()),
-		llb.SecretFileOpt(opts.UID, opts.GID, opts.Mask),
-	), nil
+	return client.Mount{}, fmt.Errorf("no mount type set")
 }
 
-func (t *execTask) mountSocket(pctx *plancontext.Context, dest string, mnt *compiler.Value) (llb.RunOption, error) {
-	contents, err := pctx.Sockets.FromValue(mnt.Lookup("contents"))
-	if err != nil {
-		return nil, err
-	}
+type cacheMount struct {
+	id          string
+	concurrency llb.CacheMountSharingMode
+}
 
-	return llb.AddSSHSocket(
-		llb.SSHID(contents.ID()),
-		llb.SSHSocketTarget(dest),
-	), nil
+type tmpMount struct {
+}
+
+type socketMount struct {
+	id string
+}
+
+type fsMount struct {
+	contents *plancontext.FS
+	source   string
+	readonly bool
+}
+
+type secretMount struct {
+	id   string
+	uid  uint32
+	gid  uint32
+	mask uint32
 }

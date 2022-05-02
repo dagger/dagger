@@ -27,6 +27,9 @@ type Solver struct {
 	closeCh  chan *bk.SolveStatus
 	refs     []bkgw.Reference
 	l        sync.RWMutex
+
+	containers   map[string]*container
+	containersMu sync.Mutex
 }
 
 type Opts struct {
@@ -41,9 +44,10 @@ type Opts struct {
 
 func New(opts Opts) *Solver {
 	return &Solver{
-		eventsWg: &sync.WaitGroup{},
-		closeCh:  make(chan *bk.SolveStatus),
-		opts:     opts,
+		eventsWg:   &sync.WaitGroup{},
+		closeCh:    make(chan *bk.SolveStatus),
+		opts:       opts,
+		containers: make(map[string]*container),
 	}
 }
 
@@ -74,7 +78,14 @@ func (s *Solver) NoCache() bool {
 	return s.opts.NoCache
 }
 
-func (s *Solver) Stop() {
+func (s *Solver) Stop(ctx context.Context) {
+	lg := log.Ctx(ctx)
+	for ctrID := range s.containers {
+		if _, err := s.StopContainer(ctx, ctrID); err != nil {
+			lg.Error().Err(err).Str("container", ctrID).Msg("failed to stop container")
+		}
+	}
+
 	close(s.closeCh)
 	s.eventsWg.Wait()
 	close(s.opts.Events)

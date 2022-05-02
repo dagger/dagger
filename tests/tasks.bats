@@ -41,6 +41,18 @@ setup() {
     "$DAGGER" "do" -p ./workdir.cue verify
 }
 
+@test "task: #Start #Stop" {
+    cd ./tasks/exec
+
+    "$DAGGER" "do" -p ./start_stop_exec.cue execParamsTest
+
+    run "$DAGGER" "do" --log-format=plain -l info -p ./start_stop_exec.cue basicTest
+    assert_line --partial 'actions.basicTest.start'
+    assert_line --regexp 'actions\.basicTest\.sleep \| .*taking a quick nap'
+    # order of start and sleep is variable, but Stop must be last
+    assert_line --partial --index 7 'actions.basicTest.stop'
+}
+
 @test "task: #Copy" {
     "$DAGGER" "do" -p ./tasks/copy/copy_exec.cue test
     "$DAGGER" "do" -p ./tasks/copy/copy_file.cue test

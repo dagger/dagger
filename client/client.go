@@ -235,7 +235,7 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 		})
 
 		// Close events channel
-		defer s.Stop()
+		defer s.Stop(ctx)
 
 		// Compute output overlay
 		res := bkgw.NewResult()
