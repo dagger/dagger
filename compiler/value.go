@@ -73,6 +73,23 @@ func (v *Value) ReferencePath() (*Value, cue.Path) {
 	return v.cc.Wrap(vv), p
 }
 
+func (v *Value) IsReference() bool {
+	// FIXME: this expands an expression into parts and checks if any of them are references.
+	// Use case:
+	// docker/run.cue: `rootfs: dagger.#FS & _exec.output`
+	// This was tricking reference checking into thinking it is NOT a reference.
+	// However, this approach can have false positives as well (`dagger.#FS` IS a reference on its own)
+	_, expr := v.Expr()
+	for _, i := range expr {
+		_, refPath := i.ReferencePath()
+		if len(refPath.Selectors()) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Proxy function to the underlying cue.Value
 func (v *Value) Len() cue.Value {
 	return v.val.Len()

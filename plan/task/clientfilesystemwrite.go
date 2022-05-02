@@ -22,12 +22,7 @@ type clientFilesystemWriteTask struct {
 }
 
 func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	path, err := v.Lookup("path").String()
-	if err != nil {
-		return nil, err
-	}
-
-	path, err = clientFilePath(path)
+	path, err := clientFSPath(v.Lookup("path"))
 	if err != nil {
 		return nil, err
 	}
@@ -42,6 +37,17 @@ func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Co
 func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) error {
 	lg := log.Ctx(ctx)
 	contents := v.Lookup("contents")
+
+	// FIXME: we should ideally fail when multiple writes to the same **file** are
+	// detected, to protect the user from the random behavior. Not for directories
+	// though, since it has a valid use case.
+
+	fileLock, err := clientFSLock(ctx, pctx, path)
+	if err != nil {
+		return err
+	}
+
+	defer fileLock.Unlock()
 
 	if plancontext.IsFSValue(contents) {
 		lg.Debug().Str("path", path).Msg("writing files to local directory")
