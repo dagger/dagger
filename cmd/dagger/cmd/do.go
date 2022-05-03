@@ -98,13 +98,24 @@ var doCmd = &cobra.Command{
 		}
 
 		actionFlags := getActionFlags(action)
-		actionFlags.Parse(args)
 		cmd.Flags().AddFlagSet(actionFlags)
+
+		// clear slice flags to avoid duplication
+		// https://github.com/spf13/pflag/issues/244
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if v, ok := f.Value.(pflag.SliceValue); ok {
+				v.Replace([]string{})
+			}
+		})
+
+		err = cmd.Flags().Parse(args)
 
 		if err != nil {
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
+
+		lg.Debug().Msgf("viper flags %#v", viper.AllSettings())
 
 		if err := viper.BindPFlags(cmd.Flags()); err != nil {
 			panic(err)
