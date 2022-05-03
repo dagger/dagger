@@ -133,6 +133,8 @@ Guidelines:
   - `website:` for the documentation website (i.e., the frontend code; e.g., `website: Add X link to navbar`);
   - `ci:` for internal CI specific changes (e.g., `ci: Enable X for tests`);
   - `infra:` for infrastructure changes (e.g., `infra: Enable cloudfront for X`);
+  - `fix`:  for improvements and bugfixes that do not introduce a feature (e.g., `fix: improve error message`);
+  - `feat`: for new features (e.g., `feat: implement --cache-to feature to export cache`)
 
 [^1]: See [https://www.conventionalcommits.org](https://www.conventionalcommits.org)
 
