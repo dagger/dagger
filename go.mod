@@ -3,7 +3,7 @@ module go.dagger.io/dagger
 go 1.16
 
 require (
-	cuelang.org/go v0.4.1-rc.1.0.20220106143633-60d6503d1974
+	cuelang.org/go v0.4.4-0.20220502053909-2caf6e0f648d
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/Microsoft/go-winio v0.5.2
 	github.com/containerd/console v1.0.3
@@ -37,11 +37,13 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.7.0
 	go.opentelemetry.io/otel/sdk v1.7.0
 	go.opentelemetry.io/otel/trace v1.7.0
-	golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57
+	golang.org/x/exp v0.0.0-20220428152302-39d4317da171 // indirect
+	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
-	golang.org/x/tools v0.1.8 // indirect
+	golang.org/x/tools v0.1.10 // indirect
 	google.golang.org/grpc v1.46.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
