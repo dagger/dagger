@@ -10,19 +10,6 @@ setup() {
   assert_output --partial "not found"
 }
 
-@test "plan/do: dynamic tasks - fails to find tasks" {
-  # Europa loader handles the cwd differently, therefore we need to CD into the tree at or below the parent of cue.mod
-  cd "$TESTDIR"
-  run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue test b
-  # No output because of weirdness with dynamic tasks, which causes it to fail
-  refute_output --partial "actions.test.b"
-}
-
-@test "plan/do: dynamic tasks - fails to run tasks" {
-  run "$DAGGER" "do" -p ./plan/do/dynamic_tasks.cue "test"
-  refute_output --partial 'actions.test.b.y'
-}
-
 @test "plan/do: don't run unspecified tasks" {
   run "$DAGGER" "do" -p ./plan/do/do_not_run_unspecified_tasks.cue test
   assert_output --partial "actions.test.one.script"
@@ -145,7 +132,7 @@ setup() {
   cd "$TESTDIR/plan/client/filesystem/write"
 
   mkdir -p ./out_files
-  rm -f ./out_files/*
+  rm -rf ./out_files/*
 
   # -- string --
 
@@ -162,6 +149,13 @@ setup() {
   assert [ "$(cat ./out_files/secret.txt)" = "foo-barab-oof" ]
   run ls -l "./out_files/secret.txt"
   assert_output --partial "-rw-------"
+
+  # -- exec --
+  # This test is focused on ensuring that the export doesn't cause
+  # duplicated output. Easiest to just use external grep for this
+  run sh -c '"$DAGGER" "do" --log-format=plain -l info -p ./ test exec 2>&1 | grep -c "hello world"'
+  assert_output 1
+  assert [ "$(cat ./out_files/execTest/output.txt)" = "hello world" ]
 
   rm -rf ./out_files
 }
@@ -191,16 +185,21 @@ setup() {
   export TEST_SECRET="bar"
 
   "$DAGGER" "do" -p ./plan/client/env/usage.cue test
-
 }
 
-@test "plan/client/env default" {
+@test "plan/client/env optional set" {
   cd "${TESTDIR}"
 
   export TEST_DEFAULT="hello universe"
+  export TEST_OPTIONAL="foobar"
 
-  "$DAGGER" "do" -p ./plan/client/env/default.cue test
+  "$DAGGER" "do" -p ./plan/client/env/optional.cue test set
+}
 
+@test "plan/client/env optional unset" {
+  cd "${TESTDIR}"
+
+  "$DAGGER" "do" -p ./plan/client/env/optional.cue test unset
 }
 
 @test "plan/client/env not exists" {
@@ -241,6 +240,21 @@ setup() {
   assert_output --partial "conflicting values"
 }
 
+@test "plan/outputs" {
+  cd "${TESTDIR}/plan/outputs"
+
+  run "$DAGGER" "do" -l error test empty
+  refute_output
+
+  run "$DAGGER" "do" -l error test simple
+  assert_line --regexp 'digest[\ ]+"sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"'
+
+  run "$DAGGER" "do" -l error --output-format yaml test simple
+  assert_output --partial "digest: sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
+
+  "$DAGGER" "do" -l error --output-format json test control | jq -re 'keys == ["bar", "cmd", "foo", "transf"] and .foo == .bar and .foo == .transf and .cmd == "/bin/sh"'
+}
+
 @test "plan/platform" {
 
    cd "$TESTDIR"
@@ -273,41 +287,99 @@ setup() {
    assert_output --partial "Unavailable: connection error"
 }
 
-@test "plan/concrete" {
+@test "plan/do: cache" {
+   cd "$TESTDIR"
+
+   unset ACTIONS_RUNTIME_URL
+   unset ACTIONS_RUNTIME_TOKEN
+   unset ACTIONS_CACHE_URL
+
+   export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions token"
+   unset DAGGER_CACHE_FROM
+
+   export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions token"
+   unset DAGGER_CACHE_TO
+
+   export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions cache url"
+   unset DAGGER_CACHE_FROM
+
+   export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
+   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+   assert_failure
+   assert_output --partial "missing github actions cache url"
+   unset DAGGER_CACHE_TO
+}
+
+@test "plan/validate/concrete" {
   cd "$TESTDIR"
 
-  run "$DAGGER" "do" -p ./plan/concrete/definition.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/definition.cue test
   assert_failure
   assert_output --partial '"actions.test.required" is not set'
-  assert_output --partial './plan/concrete/definition.cue'
+  assert_output --partial './plan/validate/concrete/definition.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/reference.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/reference.cue test
   assert_failure
   assert_output --partial '"actions.test._ref" is not set'
-  assert_output --partial './plan/concrete/reference.cue'
+  assert_output --partial './plan/validate/concrete/reference.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/fs.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/fs.cue test
   assert_failure
   assert_output --partial '"actions.test.required" is not set'
-  assert_output --partial './plan/concrete/fs.cue'
+  assert_output --partial './plan/validate/concrete/fs.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/task.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/task.cue test
   assert_failure
   assert_output --partial '"actions.test.path" is not set'
-  assert_output --partial './plan/concrete/task.cue'
+  assert_output --partial './plan/validate/concrete/task.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/multitype.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/multitype.cue test
   assert_failure
   assert_output --partial '"actions.test.required" is not set'
-  assert_output --partial './plan/concrete/multitype.cue'
+  assert_output --partial './plan/validate/concrete/multitype.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/docker_image.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/docker_image.cue test
   assert_failure
   assert_output --partial '"actions.test.input" is not set'
-  assert_output --partial './plan/concrete/docker_image.cue'
+  assert_output --partial './plan/validate/concrete/docker_image.cue'
 
-  run "$DAGGER" "do" -p ./plan/concrete/yarn.cue test
+  run "$DAGGER" "do" -p ./plan/validate/concrete/yarn.cue test
   assert_failure
   assert_output --partial '"actions.test.source" is not set'
-  assert_output --partial './plan/concrete/yarn.cue'
+  assert_output --partial './plan/validate/concrete/yarn.cue'
+
+  run "$DAGGER" "do" -p ./plan/validate/concrete/struct_or_other.cue test
+  assert_success
+
+  # https://github.com/dagger/dagger/issues/2363
+  run "$DAGGER" "do" -p ./plan/validate/concrete/clientenv.cue test
+  assert_success
+
+  run "$DAGGER" "do" -p ./plan/validate/concrete/clientenv_default.cue test
+  assert_success
+
+  run "$DAGGER" "do" -p ./plan/validate/concrete/clientenv_missing.cue test
+  assert_failure
+  assert_output --partial "actions.test.site: undefined field: NONEXISTENT:"
+}
+
+@test "plan/validate/undefined" {
+  run "$DAGGER" "do" -p ./plan/validate/undefined/undefined.cue test
+  assert_failure
+  assert_output --partial 'actions.test.undefinedAction.input: undefined field: nonexistent'
+  assert_output --partial 'actions.test.undefinedDef: undefined field: #NonExistent'
+  assert_output --partial 'actions.test.filesystem.input: undefined field: "/non/existent":'
+
+  # FIXME: This is currently broken and yields an `incomplete cause disjunction`
+  # assert_output --partial 'actions.test.disjunction: undefined field: #NonExistent:'
+  refute_output --partial 'actions.test.disjunction: incomplete cause disjunction'
 }

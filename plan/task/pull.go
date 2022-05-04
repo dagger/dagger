@@ -75,7 +75,7 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// Load image metadata and convert to to LLB.
 	platform := pctx.Platform.Get()
 	image, digest, err := s.ResolveImageConfig(ctx, ref.String(), llb.ResolveImageConfigOpt{
-		LogName:     vertexNamef(v, "load metadata for %s", ref.String()),
+		LogName:     resolveImageConfigLogName(v, "load metadata for %s", ref.String()),
 		Platform:    &platform,
 		ResolveMode: resolveMode.String(),
 	})

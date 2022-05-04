@@ -311,7 +311,7 @@ func loadCode(packageName string) (*compiler.Value, error) {
 		path.Join("cue.mod", "pkg"): pkg.FS,
 	}
 
-	src, err := compiler.Build("/config", sources, packageName)
+	src, err := compiler.Build(context.TODO(), "/config", sources, packageName)
 	if err != nil {
 		return nil, err
 	}

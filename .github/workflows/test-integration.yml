@@ -71,7 +71,7 @@ jobs:
         run: |
           echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
           echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'push' && github.base_ref == 'main' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Sets env vars on pull request
         run: |
@@ -83,3 +83,8 @@ jobs:
         run: |
           env
           make core-integration
+
+      - name: Print Buildkitd Logs
+        if: ${{ failure() }}
+        run: |
+          docker logs dagger-buildkitd

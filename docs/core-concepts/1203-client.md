@@ -66,6 +66,12 @@ Environment variables can be read from the local machine as strings or secrets, 
 
 ```
 
+You can provide a default value for strings, or mark any environment variable as optional so they don't fail if not defined in the host:
+
+```cue file=../tests/core-concepts/client/plans/env_optional.cue
+
+```
+
 ## Running commands
 
 Sometimes you need something more advanced that only a local command can give you:

@@ -2,7 +2,17 @@
 slug: /1010/dev-cue-package/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
+import CautionBanner from '../\_caution-banner.md'
+
 # Develop a new CUE package for Dagger
+
+<CautionBanner old="0.1" new="0.2" />
 
 This tutorial illustrates how to create new packages, manually distribute them among your applications and contribute to the Dagger stdlib packages.
 
@@ -52,6 +62,7 @@ touch cue.mod/pkg/github.com/username/gcpcloudrun/source.cue
 ```
 
 ```cue file=./tests/dev-cue-package/source.cue title="cue.mod/pkg/github.com/username/gcpcloudrun/source.cue"
+
 ```
 
 ### Running the package
@@ -60,6 +71,7 @@ Now that you've successfully created a package let's run it in a new environment
 our reusable `gcpcloudrun`:
 
 ```cue file=./tests/dev-cue-package/script.sh#L3-L16
+
 ```
 
 Run it:

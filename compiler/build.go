@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,10 +9,14 @@ import (
 	"path/filepath"
 
 	cueload "cuelang.org/go/cue/load"
+	"go.opentelemetry.io/otel"
 )
 
 // Build a cue configuration tree from the files in fs.
-func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error) {
+func Build(ctx context.Context, src string, overlays map[string]fs.FS, args ...string) (*Value, error) {
+	_, span := otel.Tracer("dagger").Start(ctx, "compiler.Build")
+	defer span.End()
+
 	c := DefaultCompiler
 
 	buildConfig := &cueload.Config{
@@ -53,22 +58,16 @@ func Build(src string, overlays map[string]fs.FS, args ...string) (*Value, error
 	if len(instances) != 1 {
 		return nil, errors.New("only one package is supported at a time")
 	}
-	for _, value := range instances {
-		if value.Err != nil {
-			return nil, Err(value.Err)
-		}
+	instance := instances[0]
+	if err := instance.Err; err != nil {
+		return nil, Err(err)
 	}
-	v, err := c.Context.BuildInstances(instances)
-	if err != nil {
+	v := c.Context.BuildInstance(instance)
+	if err := v.Err(); err != nil {
 		return nil, c.Err(err)
 	}
-	for _, value := range v {
-		if value.Err() != nil {
-			return nil, c.Err(value.Err())
-		}
+	if err := v.Validate(); err != nil {
+		return nil, c.Err(err)
 	}
-	if len(v) != 1 {
-		return nil, errors.New("internal: wrong number of values")
-	}
-	return Wrap(v[0]), nil
+	return Wrap(v), nil
 }

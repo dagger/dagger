@@ -67,7 +67,7 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 .dagger:
   extends: [.docker]
   variables:
-    DAGGER_VERSION: 0.2.7
+    DAGGER_VERSION: 0.2.8
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
@@ -104,7 +104,7 @@ build:
 
 <TabItem value="jenkins">
 
-<iframe width="800" height="450" style={{width: '100%', marginBottom: '2rem'}} src="https://youtube.com/embed/alNKzHh-PnQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"></iframe>
+<iframe width="800" height="450" style={{width: '100%', marginBottom: '2rem'}} src="https://youtube.com/embed/7u2A4etUuRY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"></iframe>
 
 With `docker` client and `dagger` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`:
 

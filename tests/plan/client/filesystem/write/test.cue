@@ -13,6 +13,7 @@ dagger.#Plan & {
 			contents:    actions.test.secret.data.output
 			permissions: 0o600
 		}
+		"out_files/execTest": write: contents: actions.test.exec.data.output
 	}
 
 	actions: {
@@ -31,6 +32,18 @@ dagger.#Plan & {
 					input:    dagger.#Scratch
 					path:     "/test"
 					contents: "foobaz"
+				}
+			}
+			exec: {
+				createOutput: core.#Exec & {
+					args: ["sh", "-c", "echo 'hello world' | tee /output.txt"]
+					input:  image.output
+					always: true
+				}
+				data: core.#Copy & {
+					input:    dagger.#Scratch
+					contents: createOutput.output
+					source:   "/output.txt"
 				}
 			}
 			secret: {

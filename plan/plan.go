@@ -28,6 +28,7 @@ type Plan struct {
 
 	context *plancontext.Context
 	source  *compiler.Value
+	final   *compiler.Value
 	action  *Action
 }
 
@@ -35,9 +36,13 @@ type Config struct {
 	Args   []string
 	With   []string
 	Target string
+	DryRun bool
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
+	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Load")
+	defer span.End()
+
 	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
 
 	_, cueModExists := pkg.GetCueModParent()
@@ -45,7 +50,11 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		return nil, fmt.Errorf("dagger project not found. Run `dagger project init`")
 	}
 
-	v, err := compiler.Build("", nil, cfg.Args...)
+	if err := pkg.EnsureCompatibility(ctx, ""); err != nil {
+		return nil, err
+	}
+
+	v, err := compiler.Build(ctx, "", nil, cfg.Args...)
 	if err != nil {
 		errstring := err.Error()
 
@@ -80,11 +89,11 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		source:  v,
 	}
 
-	if err := p.validate(); err != nil {
+	if err := p.validate(ctx); err != nil {
 		return nil, compiler.Err(err)
 	}
 
-	p.fillAction()
+	p.fillAction(ctx)
 
 	// FIXME: `platform` field temporarily disabled
 	// if err := p.configPlatform(); err != nil {
@@ -104,6 +113,10 @@ func (p *Plan) Context() *plancontext.Context {
 
 func (p *Plan) Source() *compiler.Value {
 	return p.source
+}
+
+func (p *Plan) Final() *compiler.Value {
+	return p.final
 }
 
 func (p *Plan) Action() *Action {
@@ -139,6 +152,9 @@ func (p *Plan) Action() *Action {
 
 // prepare executes the pre-run hooks of tasks
 func (p *Plan) prepare(ctx context.Context) error {
+	_, span := otel.Tracer("dagger").Start(ctx, "plan.Prepare")
+	defer span.End()
+
 	flow := cueflow.New(
 		&cueflow.Config{
 			FindHiddenTasks: true,
@@ -176,14 +192,24 @@ func (p *Plan) prepare(ctx context.Context) error {
 
 // Do executes an action in the plan
 func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Up")
+	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Do")
 	defer span.End()
 
-	r := NewRunner(p.context, path, s)
-	return r.Run(ctx, p.source)
+	r := NewRunner(p.context, path, s, p.config.DryRun)
+	final, err := r.Run(ctx, p.source)
+	if err != nil {
+		return err
+	}
+
+	p.final = final
+
+	return nil
 }
 
-func (p *Plan) fillAction() {
+func (p *Plan) fillAction(ctx context.Context) {
+	_, span := otel.Tracer("dagger").Start(ctx, "plan.FillAction")
+	defer span.End()
+
 	cfg := &cueflow.Config{
 		FindHiddenTasks: true,
 		Root:            cue.MakePath(ActionSelector),
@@ -236,6 +262,9 @@ func (p *Plan) fillAction() {
 	}
 }
 
-func (p *Plan) validate() error {
+func (p *Plan) validate(ctx context.Context) error {
+	_, span := otel.Tracer("dagger").Start(ctx, "plan.Validate")
+	defer span.End()
+
 	return isPlanConcrete(p.source, p.source)
 }

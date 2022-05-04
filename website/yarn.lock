@@ -3693,11 +3693,11 @@ cosmiconfig@^7.0.0, cosmiconfig@^7.0.1:
     yaml "^1.10.0"
 
 cross-fetch@^3.0.4:
-  version "3.1.4"
-  resolved "https://registry.yarnpkg.com/cross-fetch/-/cross-fetch-3.1.4.tgz#9723f3a3a247bf8b89039f3a380a9244e8fa2f39"
-  integrity sha512-1eAtFWdIubi6T4XPy6ei9iUFoKpUkIF971QLN8lIvvvwueI65+Nw5haMNKUwfJxabqlIIDODJKGrQ66gxC0PbQ==
+  version "3.1.5"
+  resolved "https://registry.yarnpkg.com/cross-fetch/-/cross-fetch-3.1.5.tgz#e1389f44d9e7ba767907f7af8454787952ab534f"
+  integrity sha512-lvb1SBsI0Z7GDwmuid+mU3kWVBwTVUbe7S0H52yaaAdQOXq2YktTCZdlAcNKFzE6QtRz0snpw9bNiPeOIkkQvw==
   dependencies:
-    node-fetch "2.6.1"
+    node-fetch "2.6.7"
 
 cross-spawn@^7.0.0, cross-spawn@^7.0.3:
   version "7.0.3"
@@ -3868,10 +3868,10 @@ cypress-localstorage-commands@^1.7.0:
   resolved "https://registry.yarnpkg.com/cypress-localstorage-commands/-/cypress-localstorage-commands-1.7.0.tgz#39840973de0a861d50b82f9fa548331db5973f5f"
   integrity sha512-4v4FrDRPimMStWmiGikyN7OmO2rH0MLI7DMk76dBpb9/sJqCDwa7fAHTUDx6avUEDmO7TFQFgaT3OQTr1HqasQ==
 
-cypress@9.5.4:
-  version "9.5.4"
-  resolved "https://registry.yarnpkg.com/cypress/-/cypress-9.5.4.tgz#49d9272f62eba12f2314faf29c2a865610e87550"
-  integrity sha512-6AyJAD8phe7IMvOL4oBsI9puRNOWxZjl8z1lgixJMcgJ85JJmyKeP6uqNA0dI1z14lmJ7Qklf2MOgP/xdAqJ/Q==
+cypress@9.6.0:
+  version "9.6.0"
+  resolved "https://registry.yarnpkg.com/cypress/-/cypress-9.6.0.tgz#84473b3362255fa8f5e627a596e58575c9e5320f"
+  integrity sha512-nNwt9eBQmSENamwa8LxvggXksfyzpyYaQ7lNBLgks3XZ6dPE/6BCQFBzeAyAPt/bNXfH3tKPkAyhiAZPYkWoEg==
   dependencies:
     "@cypress/request" "^2.88.10"
     "@cypress/xvfb" "^1.2.4"
@@ -6378,10 +6378,12 @@ node-emoji@^1.10.0:
   dependencies:
     lodash "^4.17.21"
 
-node-fetch@2.6.1:
-  version "2.6.1"
-  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.6.1.tgz#045bd323631f76ed2e2b55573394416b639a0052"
-  integrity sha512-V4aYg89jEoVRxRb2fJdAg8FHvI7cEyYdVAh94HH0UIK8oJxUfkjlDQN9RbMx+bEjP7+ggMiFRprSti032Oipxw==
+node-fetch@2.6.7:
+  version "2.6.7"
+  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.6.7.tgz#24de9fba827e3b4ae44dc8b20256a379160052ad"
+  integrity sha512-ZjMPFEfVx5j+y2yF35Kzx5sF7kDzxuDj6ziH4FFbOp87zKDZNx8yExJIb05OGF4Nlt9IHFIMBkRl41VdvcNdbQ==
+  dependencies:
+    whatwg-url "^5.0.0"
 
 node-forge@^1.2.0:
   version "1.3.0"
@@ -7802,10 +7804,10 @@ sass-loader@^10.1.1:
     schema-utils "^3.0.0"
     semver "^7.3.2"
 
-sass@^1.50.1:
-  version "1.50.1"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.50.1.tgz#e9b078a1748863013c4712d2466ce8ca4e4ed292"
-  integrity sha512-noTnY41KnlW2A9P8sdwESpDmo+KBNkukI1i8+hOK3footBUcohNHtdOJbckp46XO95nuvcHDDZ+4tmOnpK3hjw==
+sass@^1.51.0:
+  version "1.51.0"
+  resolved "https://registry.yarnpkg.com/sass/-/sass-1.51.0.tgz#25ea36cf819581fe1fe8329e8c3a4eaaf70d2845"
+  integrity sha512-haGdpTgywJTvHC2b91GSq+clTKGbtkkZmVAb82jZQN/wTy6qs8DdFm2lhEQbEwrY0QDRgSQ3xDurqM977C3noA==
   dependencies:
     chokidar ">=3.0.0 <4.0.0"
     immutable "^4.0.0"
@@ -8491,6 +8493,11 @@ tough-cookie@~2.5.0:
     psl "^1.1.28"
     punycode "^2.1.1"
 
+tr46@~0.0.3:
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/tr46/-/tr46-0.0.3.tgz#8184fd347dac9cdc185992f3a6622e14b9d9ab6a"
+  integrity sha1-gYT9NH2snNwYWZLzpmIuFLnZq2o=
+
 tree-kill@^1.2.2:
   version "1.2.2"
   resolved "https://registry.yarnpkg.com/tree-kill/-/tree-kill-1.2.2.tgz#4ca09a9092c88b73a7cdc5e8a01b507b0790a0cc"
@@ -8883,6 +8890,11 @@ web-namespaces@^1.0.0, web-namespaces@^1.1.2:
   resolved "https://registry.yarnpkg.com/web-namespaces/-/web-namespaces-1.1.4.tgz#bc98a3de60dadd7faefc403d1076d529f5e030ec"
   integrity sha512-wYxSGajtmoP4WxfejAPIr4l0fVh+jeMXZb08wNc0tMg6xsfZXj3cECqIK0G7ZAqUq0PP8WlMDtaOGVBTAWztNw==
 
+webidl-conversions@^3.0.0:
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/webidl-conversions/-/webidl-conversions-3.0.1.tgz#24534275e2a7bc6be7bc86611cc16ae0a5654871"
+  integrity sha1-JFNCdeKnvGvnvIZhHMFq4KVlSHE=
+
 webpack-bundle-analyzer@^4.5.0:
   version "4.5.0"
   resolved "https://registry.yarnpkg.com/webpack-bundle-analyzer/-/webpack-bundle-analyzer-4.5.0.tgz#1b0eea2947e73528754a6f9af3e91b2b6e0f79d5"
@@ -9019,6 +9031,14 @@ websocket-extensions@>=0.1.1:
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/websocket-extensions/-/websocket-extensions-0.1.4.tgz#7f8473bc839dfd87608adb95d7eb075211578a42"
   integrity sha512-OqedPIGOfsDlo31UNwYbCFMSaO9m9G/0faIHj5/dZFDMFqPTcx6UwqyOy3COEaEOg/9VsGIpdqn62W5KhoKSpg==
+
+whatwg-url@^5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/whatwg-url/-/whatwg-url-5.0.0.tgz#966454e8765462e37644d3626f6742ce8b70965d"
+  integrity sha1-lmRU6HZUYuN2RNNib2dCzotwll0=
+  dependencies:
+    tr46 "~0.0.3"
+    webidl-conversions "^3.0.0"
 
 which@^1.3.1:
   version "1.3.1"

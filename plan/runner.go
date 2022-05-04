@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"go.dagger.io/dagger/compiler"
-
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -16,36 +15,39 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 )
 
 type Runner struct {
-	pctx   *plancontext.Context
-	target cue.Path
-	s      *solver.Solver
-	tasks  sync.Map
-	mirror *compiler.Value
-	l      sync.Mutex
+	pctx     *plancontext.Context
+	target   cue.Path
+	s        *solver.Solver
+	tasks    sync.Map
+	dryRun   bool
+	computed *compiler.Value
+	mirror   *compiler.Value
+	l        sync.Mutex
 }
 
-func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver) *Runner {
+func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver, dryRun bool) *Runner {
 	return &Runner{
-		pctx:   pctx,
-		target: target,
-		s:      s,
-		mirror: compiler.NewValue(),
+		pctx:     pctx,
+		target:   target,
+		s:        s,
+		dryRun:   dryRun,
+		computed: compiler.NewValue(),
+		mirror:   compiler.NewValue(),
 	}
 }
 
-func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
+func (r *Runner) Run(ctx context.Context, src *compiler.Value) (*compiler.Value, error) {
 	if !src.LookupPath(r.target).Exists() {
-		return fmt.Errorf("%s not found", r.target.String())
+		return nil, fmt.Errorf("%s not found", r.target.String())
 	}
 
 	if err := r.update(cue.MakePath(), src); err != nil {
-		return err
+		return nil, err
 	}
 
 	flow := cueflow.New(
@@ -57,14 +59,27 @@ func (r *Runner) Run(ctx context.Context, src *compiler.Value) error {
 	)
 
 	if err := flow.Run(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
-		return nil
+		if compSrc, err := r.computed.Source(); err == nil {
+			log.Ctx(ctx).Debug().Str("computed", string(compSrc)).Msg("computed values")
+		}
+
+		final := compiler.NewValue()
+		if err := final.FillPath(cue.MakePath(), src); err != nil {
+			return nil, err
+		}
+
+		if err := final.FillPath(cue.MakePath(), r.computed); err != nil {
+			return nil, err
+		}
+
+		return final, nil
 	}
 }
 
@@ -126,15 +141,6 @@ func (r *Runner) shouldRun(p cue.Path) bool {
 	return ok
 }
 
-func taskLog(tp string, log *zerolog.Logger, t task.Task, fn func(lg zerolog.Logger)) {
-	fn(log.With().Str("task", tp).Logger())
-	// setup logger here
-	_, isDockerfileTask := t.(*task.DockerfileTask)
-	if isDockerfileTask {
-		fn(log.With().Str("task", "system").Logger())
-	}
-}
-
 func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 	v := compiler.Wrap(flowVal)
 	handler, err := task.Lookup(v)
@@ -154,20 +160,21 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 	return cueflow.RunnerFunc(func(t *cueflow.Task) error {
 		ctx := t.Context()
 		taskPath := t.Path().String()
-		lg := log.Ctx(ctx).With().Logger()
+		lg := log.Ctx(ctx).With().Str("task", taskPath).Logger()
 		ctx = lg.WithContext(ctx)
-		ctx, span := otel.Tracer("dagger").Start(ctx, fmt.Sprintf("up: %s", t.Path().String()))
+		ctx, span := otel.Tracer("dagger").Start(ctx, t.Path().String())
 		defer span.End()
 
-		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-			lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
-		})
+		lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
 
 		// Debug: dump dependencies
 		for _, dep := range t.Dependencies() {
-			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-				lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
-			})
+			lg.Debug().Str("dependency", dep.Path().String()).Msg("dependency detected")
+		}
+
+		if r.dryRun {
+			lg.Info().Str("state", task.StateSkipped.String()).Msg(task.StateSkipped.String())
+			return nil
 		}
 
 		start := time.Now()
@@ -175,23 +182,15 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		if err != nil {
 			// FIXME: this should use errdefs.IsCanceled(err)
 
-			// we don't wrap taskLog here since in some cases, actions could still be
-			// running in goroutines which will scramble outputs.
 			if strings.Contains(err.Error(), "context canceled") {
-				taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-					lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
-				})
+				lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
 			} else {
-				taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-					lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
-				})
+				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
 			}
 			return fmt.Errorf("%s: %w", t.Path().String(), compiler.Err(err))
 		}
 
-		taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-			lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
-		})
+		lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
 
 		// If the result is not concrete (e.g. empty value), there's nothing to merge.
 		if !result.IsConcrete() {
@@ -199,9 +198,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		}
 
 		if src, err := result.Source(); err == nil {
-			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-				lg.Debug().Str("result", string(src)).Msg("merging task result")
-			})
+			lg.Debug().Str("result", string(src)).Msg("merging task result")
 		}
 
 		// Mirror task result and re-scan tasks that should run.
@@ -211,9 +208,13 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		// }
 
 		if err := t.Fill(result.Cue()); err != nil {
-			taskLog(taskPath, &lg, handler, func(lg zerolog.Logger) {
-				lg.Error().Err(err).Msg("failed to fill task")
-			})
+			lg.Error().Err(err).Msg("failed to fill task")
+			return err
+		}
+
+		// Merge task value into computed
+		if err := r.computed.FillPath(t.Path(), result); err != nil {
+			lg.Error().Err(err).Msg("failed to fill computed")
 			return err
 		}
 

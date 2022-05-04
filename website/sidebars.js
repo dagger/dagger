@@ -121,7 +121,7 @@ module.exports = {
       type: "category",
       label: "Introduction",
       collapsible: true,
-      items: ["introduction/what_is", "introduction/vs"],
+      items: ["introduction/what_is", "introduction/vs_old"],
     },
     {
       type: "doc",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -23,11 +24,13 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
 	_ "github.com/moby/buildkit/client/connhelper/kubepod"         // import the kubernetes connection driver
 	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
+	"github.com/moby/buildkit/util/tracing/detect"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 
 	// docker output
+	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/util/buildkitd"
 	"go.dagger.io/dagger/util/progressui"
@@ -52,6 +55,9 @@ type Config struct {
 }
 
 func New(ctx context.Context, host string, cfg Config) (*Client, error) {
+	ctx, span := otel.Tracer("dagger").Start(ctx, "client.New")
+	defer span.End()
+
 	if host == "" {
 		host = os.Getenv("BUILDKIT_HOST")
 	}
@@ -65,8 +71,17 @@ func New(ctx context.Context, host string, cfg Config) (*Client, error) {
 	}
 	opts := []bk.ClientOpt{}
 
-	if span := trace.SpanFromContext(ctx); span != nil {
+	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		opts = append(opts, bk.WithTracerProvider(span.TracerProvider()))
+
+		exp, err := detect.Exporter()
+		if err != nil {
+			return nil, err
+		}
+
+		if td, ok := exp.(bk.TracerDelegate); ok {
+			opts = append(opts, bk.WithTracerDelegate(td))
+		}
 	}
 
 	c, err := bk.New(ctx, host, opts...)
@@ -83,7 +98,9 @@ type DoFunc func(context.Context, *solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
 func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
-	lg := log.Ctx(ctx)
+	ctx, span := otel.Tracer("dagger").Start(ctx, "client.Do")
+	defer span.End()
+
 	eg, gctx := errgroup.WithContext(ctx)
 
 	if c.cfg.TargetPlatform != nil {
@@ -99,10 +116,7 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 	// Spawn print function
 	events := make(chan *bk.SolveStatus)
 	eg.Go(func() error {
-		// Create a background context so that logging will not be cancelled
-		// with the main context.
-		dispCtx := lg.WithContext(context.Background())
-		return c.logSolveStatus(dispCtx, pctx, events)
+		return c.logSolveStatus(ctx, pctx, events)
 	})
 
 	// Spawn build function
@@ -116,6 +130,9 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 // detectPlatform tries using Buildkit's target platform;
 // if not possible, default platform will be used.
 func (c *Client) detectPlatform(ctx context.Context) (*specs.Platform, error) {
+	ctx, span := otel.Tracer("dagger").Start(ctx, "client.DetectPlatform")
+	defer span.End()
+
 	w, err := c.c.ListWorkers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error detecting platform %w", err)
@@ -147,6 +164,9 @@ func convertCacheOptionEntries(ims []bk.CacheOptionsEntry) []bkgw.CacheOptionsEn
 }
 
 func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
+	ctx, span := otel.Tracer("dagger").Start(ctx, "client.Build")
+	defer span.End()
+
 	wg := sync.WaitGroup{}
 
 	// Close output channel
@@ -215,7 +235,7 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 		})
 
 		// Close events channel
-		defer s.Stop()
+		defer s.Stop(ctx)
 
 		// Compute output overlay
 		res := bkgw.NewResult()
@@ -250,18 +270,12 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 
 func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, ch chan *bk.SolveStatus) error {
 	parseName := func(v *bk.Vertex) (string, string) {
-		// Pattern: `@name@ message`. Minimal length is len("@X@ ")
-		if len(v.Name) < 2 || !strings.HasPrefix(v.Name, "@") {
-			return "", v.Name
+		// For all cases besides resolve image config, the component is set in the progress group id
+		if v.ProgressGroup != nil {
+			return v.ProgressGroup.Id, v.Name
 		}
-
-		prefixEndPos := strings.Index(v.Name[1:], "@")
-		if prefixEndPos == -1 {
-			return "", v.Name
-		}
-
-		component := v.Name[1 : prefixEndPos+1]
-		return component, v.Name[prefixEndPos+3 : len(v.Name)]
+		// fallback to parsing the component and vertex name of out just the name
+		return task.ParseResolveImageConfigLog(v.Name)
 	}
 
 	// Just like sprintf, but redacts secrets automatically
@@ -271,12 +285,16 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 
 		s := fmt.Sprintf(format, a...)
 		for _, secret := range secrets {
-			s = strings.ReplaceAll(s, secret.PlainText(), "***")
+			if secretText := secret.PlainText(); secretText != "" {
+				s = strings.ReplaceAll(s, secretText, "***")
+			}
 		}
 		return s
 	}
 
-	return progressui.PrintSolveStatus(ctx, ch,
+	// Create a background context so that logging will not be cancelled
+	// with the main context.
+	return progressui.PrintSolveStatus(context.Background(), ch,
 		func(v *bk.Vertex, index int) {
 			component, name := parseName(v)
 			lg := log.

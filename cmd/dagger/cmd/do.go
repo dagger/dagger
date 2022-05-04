@@ -21,6 +21,11 @@ import (
 	"golang.org/x/term"
 )
 
+var experimentalFlags = []string{
+	"platform",
+	"dry-run",
+}
+
 var doCmd = &cobra.Command{
 	Use: "do ACTION [SUBACTION...]",
 	// Short: "Execute a dagger action.",
@@ -46,20 +51,23 @@ var doCmd = &cobra.Command{
 		var (
 			lg  = logger.New()
 			tty *logger.TTYOutput
-			err error
+			ctx = lg.WithContext(cmd.Context())
 		)
 
-		switch !viper.GetBool("experimental") {
-		case len(viper.GetString("platform")) > 0:
-			lg.Fatal().Err(err).Msg("--platform requires --experimental flag")
+		if !viper.GetBool("experimental") {
+			for _, f := range experimentalFlags {
+				if viper.IsSet(f) {
+					lg.Fatal().Msg(fmt.Sprintf("--%s requires --experimental flag", f))
+				}
+			}
 		}
 
 		targetPath := getTargetPath(cmd.Flags().Args())
 
-		daggerPlan, err := loadPlan(viper.GetString("plan"))
+		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
 			if viper.GetBool("help") {
-				doHelpCmd(cmd, nil, nil, nil, targetPath, nil)
+				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
 			}
 			err = fmt.Errorf("failed to load plan: %w", err)
@@ -90,13 +98,24 @@ var doCmd = &cobra.Command{
 		}
 
 		actionFlags := getActionFlags(action)
-		actionFlags.Parse(args)
 		cmd.Flags().AddFlagSet(actionFlags)
+
+		// clear slice flags to avoid duplication
+		// https://github.com/spf13/pflag/issues/244
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if v, ok := f.Value.(pflag.SliceValue); ok {
+				v.Replace([]string{})
+			}
+		})
+
+		err = cmd.Flags().Parse(args)
 
 		if err != nil {
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
+
+		lg.Debug().Msgf("viper flags %#v", viper.AllSettings())
 
 		if err := viper.BindPFlags(cmd.Flags()); err != nil {
 			panic(err)
@@ -116,9 +135,9 @@ var doCmd = &cobra.Command{
 			defer tty.Stop()
 
 			lg = lg.Output(tty)
+			ctx = lg.WithContext(ctx)
 		}
 
-		ctx := lg.WithContext(cmd.Context())
 		cl := common.NewClient(ctx)
 
 		actionFlags.VisitAll(func(flag *pflag.Flag) {
@@ -147,10 +166,25 @@ var doCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
+
+		format := viper.GetString("output-format")
+		file := viper.GetString("output")
+
+		if file != "" && tty != nil {
+			// stop tty logger because we're about to print to stdout for the outputs
+			tty.Stop()
+			lg = logger.New()
+		}
+
+		action.UpdateFinal(daggerPlan.Final())
+
+		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
+			lg.Fatal().Err(err).Msg("failed to print action outputs")
+		}
 	},
 }
 
-func loadPlan(planPath string) (*plan.Plan, error) {
+func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
 	// support only local filesystem paths
 	// even though CUE supports loading module and package names
 	absPlanPath, err := filepath.Abs(planPath)
@@ -163,9 +197,10 @@ func loadPlan(planPath string) (*plan.Plan, error) {
 		return nil, err
 	}
 
-	return plan.Load(context.Background(), plan.Config{
-		Args: []string{planPath},
-		With: viper.GetStringSlice("with"),
+	return plan.Load(ctx, plan.Config{
+		Args:   []string{planPath},
+		With:   viper.GetStringSlice("with"),
+		DryRun: viper.GetBool("dry-run"),
 	})
 }
 
@@ -284,8 +319,11 @@ func printActions(p *plan.Plan, action *plan.Action, w io.Writer, target cue.Pat
 func init() {
 	doCmd.Flags().StringArrayP("with", "w", []string{}, "")
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
+	doCmd.Flags().Bool("dry-run", false, "Dry run mode")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
+	doCmd.Flags().String("output", "", "File path to write the action's output values. Prints to stdout if empty")
+	doCmd.Flags().String("output-format", "plain", "Format for output values (plain, json, yaml)")
 	doCmd.Flags().StringArray("cache-to", []string{},
 		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
 	doCmd.Flags().StringArray("cache-from", []string{},
@@ -301,6 +339,7 @@ Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "he
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 Flags:
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
 Global Flags:
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}

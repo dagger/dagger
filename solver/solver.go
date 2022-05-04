@@ -27,6 +27,9 @@ type Solver struct {
 	closeCh  chan *bk.SolveStatus
 	refs     []bkgw.Reference
 	l        sync.RWMutex
+
+	containers   map[string]*container
+	containersMu sync.Mutex
 }
 
 type Opts struct {
@@ -41,9 +44,10 @@ type Opts struct {
 
 func New(opts Opts) *Solver {
 	return &Solver{
-		eventsWg: &sync.WaitGroup{},
-		closeCh:  make(chan *bk.SolveStatus),
-		opts:     opts,
+		eventsWg:   &sync.WaitGroup{},
+		closeCh:    make(chan *bk.SolveStatus),
+		opts:       opts,
+		containers: make(map[string]*container),
 	}
 }
 
@@ -74,7 +78,14 @@ func (s *Solver) NoCache() bool {
 	return s.opts.NoCache
 }
 
-func (s *Solver) Stop() {
+func (s *Solver) Stop(ctx context.Context) {
+	lg := log.Ctx(ctx)
+	for ctrID := range s.containers {
+		if _, err := s.StopContainer(ctx, ctrID); err != nil {
+			lg.Error().Err(err).Str("container", ctrID).Msg("failed to stop container")
+		}
+	}
+
 	close(s.closeCh)
 	s.eventsWg.Wait()
 	close(s.opts.Events)
@@ -125,6 +136,13 @@ func (s *Solver) SolveRequest(ctx context.Context, req bkgw.SolveRequest) (*bkgw
 	// makes Solve() to block until LLB graph is solved. otherwise it will
 	// return result (that you can for example use for next build) that
 	// will be evaluated on export or if you access files on it.
+	//
+	// NOTE: if a future change modifies Evaluate to not always be true anymore, we
+	// will need to ensure that Solver.Export no longer sets "ignoreLogs" to true
+	// when forwarding progress events. This is because those logs will no longer
+	// necessarily be duped from the main channel published to by Solves called here.
+	// Sample code to properly handle that can be found here:
+	// https://github.com/sipsma/dagger/commit/104e0d0393b5f707ea40448736f2e0e87fb1e4ed
 	req.Evaluate = true
 	res, err := s.opts.Gateway.Solve(ctx, req)
 	if err != nil {
@@ -182,11 +200,14 @@ func (s *Solver) Solve(ctx context.Context, st llb.State, platform specs.Platfor
 // Forward events from solver to the main events channel
 // It creates a task in the solver waiting group to be
 // sure that everything will be forward to the main channel
-func (s *Solver) forwardEvents(ch chan *bk.SolveStatus) {
+func (s *Solver) forwardEvents(ch chan *bk.SolveStatus, ignoreLogs bool) {
 	s.eventsWg.Add(1)
 	defer s.eventsWg.Done()
 
 	for event := range ch {
+		if ignoreLogs {
+			event.Logs = nil
+		}
 		s.opts.Events <- event
 	}
 }
@@ -221,7 +242,10 @@ func (s *Solver) Export(ctx context.Context, st llb.State, img *dockerfile2llb.I
 
 	// Forward this build session events to the main events channel, for logging
 	// purposes.
-	go s.forwardEvents(ch)
+	// Ignore logs sent on this channel as they will just be dupes of logs sent
+	// to the main progress channel (see #449).
+	ignoreLogs := true
+	go s.forwardEvents(ch, ignoreLogs)
 
 	return s.opts.Control.Build(ctx, opts, "", func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		res, err := c.Solve(ctx, bkgw.SolveRequest{

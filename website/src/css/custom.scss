@@ -48,10 +48,12 @@ $desktop-xl-width: 1160px;
   --ifm-color-info: #40b9bc;
   --ifm-color-warning: #ef7b1a;
   --ifm-color-danger: #be1d43;
-  --ifm-container-width-xl: 100%;
+  --ifm-container-width-xl: 990px;
   --ifm-font-color-base: var(--ifm-color-primary-dark);
-  --ifm-font-family-base: "Karla", sans-serif;
-  --ifm-font-family-title: "Montserrat", "Arial", sans-serif;
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --ifm-font-family-title: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
   --ifm-font-family-monospace: "Source Code Pro", monospace;
   --ifm-h2-font-size: 2rem;
   --ifm-leading-desktop: 1;

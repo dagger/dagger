@@ -2,7 +2,17 @@
 slug: /1007/kubernetes/
 ---
 
+<!--
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!! OLD DOCS. NOT MAINTAINED. !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-->
+
+import CautionBanner from '../\_caution-banner.md'
+
 # Deploy to Kubernetes with Dagger
+
+<CautionBanner old="0.1" new="0.2" />
 
 This tutorial illustrates how to use Dagger to build, push and deploy Docker images to Kubernetes.
 

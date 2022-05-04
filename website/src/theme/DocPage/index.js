@@ -27,7 +27,6 @@ import {
 } from '@docusaurus/theme-common';
 import Head from '@docusaurus/Head';
 import amplitude from 'amplitude-js';
-import DeprecatedVersionBanner from '../../components/DeprecatedVersionBanner';
 
 function DocPageContent({
   currentDocRoute,
@@ -172,9 +171,6 @@ function DocPage(props) {
             currentDocRoute={currentDocRoute}
             versionMetadata={versionMetadata}
             sidebarName={sidebarName}>
-            {currentDocRoute.sidebar === '0.1' && (
-            <DeprecatedVersionBanner />
-            )}
             <div data-cy="cy-doc-content">
               {renderRoutes(docRoutes, {
                 versionMetadata,

@@ -24,8 +24,8 @@ package dagger
 		}
 
 		// Access client network endpoints
-		network: [address=_#address]: _#clientNetwork & {
-			"address": address
+		network: [address=string]: _#clientNetwork & {
+			"address": _#address | *address
 		}
 
 		// Access client environment variables
@@ -56,7 +56,10 @@ _#clientFilesystemRead: {
 		// CUE type defines expected content:
 		//     string: contents of a regular file
 		//     #Secret: secure reference to the file contents
-		contents: string | #Secret @dagger(generated)
+		contents: {
+			@dagger(generated)
+			string | #Secret
+		}
 	} | {
 		// CUE type defines expected content:
 		//     #FS: contents of a directory
@@ -79,14 +82,14 @@ _#clientFilesystemWrite: {
 	path: string
 	{
 		// File contents to export (as a string or secret)
-		contents: string | #Secret @dagger(generated)
+		contents: string | #Secret
 
 		// File permissions (defaults to 0o644)
 		permissions?: int
 	} | {
 		// Filesystem contents to export
 		// Reference an #FS field produced by an action
-		contents: #FS @dagger(generated)
+		contents: #FS
 	}
 }
 
@@ -113,7 +116,10 @@ _#clientEnv: {
 	$dagger: task: _name: "ClientEnv"
 
 	// CUE type defines expected content
-	[!~"\\$dagger"]: *string | #Secret @dagger(generated)
+	[!~"\\$dagger"]: {
+		@dagger(generated)
+		*string | #Secret
+	}
 }
 
 _#clientCommand: {
@@ -136,13 +142,22 @@ _#clientCommand: {
 	env: [string]: string | #Secret
 
 	// Capture standard output (as a string or secret)
-	stdout?: *string | #Secret @dagger(generated)
+	stdout?: {
+		@dagger(generated)
+		*string | #Secret
+	}
 
 	// Capture standard error (as a string or secret)
-	stderr?: *string | #Secret @dagger(generated)
+	stderr?: {
+		@dagger(generated)
+		*string | #Secret
+	}
 
 	// Inject standard input (from a string or secret)
-	stdin?: string | #Secret @dagger(generated)
+	stdin?: {
+		@dagger(generated)
+		string | #Secret
+	}
 }
 
 _#clientPlatform: {

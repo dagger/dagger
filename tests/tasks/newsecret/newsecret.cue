@@ -13,7 +13,7 @@ dagger.#Plan & {
 
 		generate: core.#Exec & {
 			input: image.output
-			args: ["sh", "-c", "echo test > /secret"]
+			args: ["sh", "-c", "echo test > /secret && touch /emptySecret"]
 		}
 
 		load: core.#NewSecret & {
@@ -21,16 +21,29 @@ dagger.#Plan & {
 			path:  "/secret"
 		}
 
+		loadEmpty: core.#NewSecret & {
+			input: generate.output
+			path:  "/emptySecret"
+		}
+
 		verify: core.#Exec & {
 			input: image.output
-			mounts: secret: {
-				dest:     "/run/secrets/test"
-				contents: load.output
+			mounts: {
+				secret: {
+					dest:     "/run/secrets/test"
+					contents: load.output
+				}
+				emptySecret: {
+					dest:     "/run/secrets/emptyTest"
+					contents: loadEmpty.output
+				}
 			}
 			args: [
 				"sh", "-c",
 				#"""
 					test "$(cat /run/secrets/test)" = "test"
+					test "$(cat /run/secrets/emptyTest)" = ""
+					echo HELLOWORLD
 					"""#,
 			]
 		}

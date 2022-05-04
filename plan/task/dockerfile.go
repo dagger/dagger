@@ -22,12 +22,12 @@ import (
 )
 
 func init() {
-	Register("Dockerfile", func() Task { return &DockerfileTask{} })
+	Register("Dockerfile", func() Task { return &dockerfileTask{} })
 }
 
-type DockerfileTask struct{}
+type dockerfileTask struct{}
 
-func (t *DockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	auths, err := v.Lookup("auth").Fields()
 	if err != nil {
@@ -77,6 +77,7 @@ func (t *DockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 			llb.Scratch().File(
 				llb.Mkfile("/Dockerfile", 0o644, []byte(contents)),
 			),
+			withCustomName(v, "Create inline Dockerfile"),
 		)
 		if err != nil {
 			return nil, err
@@ -111,11 +112,31 @@ func (t *DockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 
 	solvedRef := ref
 	if ref != nil {
+		// get the LLB for the build specified by the Dockerfile
 		st, err := ref.ToState()
 		if err != nil {
 			return nil, err
 		}
 
+		// Override the progress group of every LLB vertex in the DAG.
+		// FIXME: this can't be done in a normal way because Buildkit doesn't currently
+		// allow overriding the metadata of DefinitionOp. See this PR and comment:
+		// https://github.com/moby/buildkit/pull/2819
+		def, err := st.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for dgst, metadata := range def.Metadata {
+			metadata.ProgressGroup = progressGroup(v)
+			def.Metadata[dgst] = metadata
+		}
+		defOp, err := llb.NewDefinitionOp(def.ToPB())
+		if err != nil {
+			return nil, err
+		}
+		st = llb.NewState(defOp.Output())
+
+		// get the result of the build
 		solvedRef, err = s.Solve(ctx, st, pctx.Platform.Get())
 		if err != nil {
 			return nil, err
@@ -138,7 +159,7 @@ func (t *DockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 	})
 }
 
-func (t *DockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
+func (t *dockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {
 	opts := map[string]string{}
 
 	if dockerfilePath := v.Lookup("dockerfile.path"); dockerfilePath.Exists() {

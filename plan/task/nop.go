@@ -15,6 +15,6 @@ func init() {
 type nopTask struct {
 }
 
-func (t *nopTask) Run(_ context.Context, _ *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	return v, nil
+func (t *nopTask) Run(_ context.Context, _ *plancontext.Context, _ *solver.Solver, _ *compiler.Value) (*compiler.Value, error) {
+	return compiler.NewValue(), nil
 }

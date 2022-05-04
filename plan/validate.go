@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"strings"
+
 	"cuelang.org/go/cue"
 	cueerrors "cuelang.org/go/cue/errors"
 	"cuelang.org/go/cue/token"
@@ -49,14 +51,30 @@ func fieldMissingErr(p *compiler.Value, field *compiler.Value) error {
 		return missingErr
 	}
 
-	return cueerrors.Wrap(cueerrors.Newf(parentPos, ""), missingErr)
+	// NOTE: THE ORDER OF WRAPPING IS IMPORTANT.
+	// Here we're wrapping the missing error with the parent position so the stack trace will be:
+	// xxx.path is not set:
+	//   cue.mod/pkg/.../def.cue:51
+	//   userfile.cue:15
+	// If we were to do it the other way around (userfile.cue first,
+	// def.cue last) then we would end up with multiple errors pointing to the
+	// same userfile position.
+	//
+	// cueerrors.Sanitize() will REMOVE errors for the same position,
+	// thus hiding the error.
+	return cueerrors.Wrap(missingErr, cueerrors.Newf(parentPos, ""))
 }
 
 func isDockerImage(v *compiler.Value) bool {
-	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind().IsAnyOf(cue.StructKind)
+	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind() == cue.StructKind
 }
 
 func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
+	// Always assume generated fields are concrete.
+	if v.HasAttr("generated") {
+		return nil
+	}
+
 	kind := v.IncompleteKind()
 	_, hasDefault := v.Default()
 
@@ -92,7 +110,7 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 		return fieldMissingErr(p, v)
 
 	// For structures, recursively call this function to check sub-fields
-	case kind.IsAnyOf(cue.StructKind):
+	case kind == cue.StructKind:
 		if !v.IsConcrete() && !hasDefault {
 			return fieldMissingErr(p, v)
 		}
@@ -101,6 +119,7 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 			return compiler.Err(err)
 		}
 
+		var errGroup cueerrors.Error
 		for it.Next() {
 			if it.IsOptional() {
 				continue
@@ -108,14 +127,19 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 			if it.Selector().IsDefinition() {
 				continue
 			}
-
-			if compiler.Wrap(it.Value()).HasAttr("generated") {
-				continue
-			}
-
 			if err := isPlanConcrete(p, compiler.Wrap(it.Value())); err != nil {
+				errGroup = cueerrors.Append(errGroup, cueerrors.Promote(err, err.Error()))
+			}
+		}
+		return errGroup
+	case kind == cue.BottomKind:
+		if err := v.Cue().Err(); err != nil {
+			// FIXME: for now only raise `undefined field` errors as `BottomKind`
+			// can raise false positives.
+			if strings.Contains(err.Error(), "undefined field: ") {
 				return err
 			}
+			return nil
 		}
 	}
 
