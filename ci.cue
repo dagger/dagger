@@ -21,11 +21,8 @@ dagger.#Plan & {
 		"**/node_modules",
 		"cmd/dagger/dagger",
 		"cmd/dagger/dagger-debug",
+		"website",
 	]
-	client: filesystem: "./": read: {
-		contents: dagger.#FS
-		exclude: ["website"]
-	}
 	client: filesystem: "./bin": write: contents: actions.build."go".output
 
 	actions: {
@@ -73,7 +70,7 @@ dagger.#Plan & {
 				}
 			}
 			docker: core.#Dockerfile & {
-				source: client.filesystem["./"].read.contents
+				source: _source
 				dockerfile: path: "Dockerfile"
 			}
 		}
