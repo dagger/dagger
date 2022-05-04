@@ -33,6 +33,7 @@ import (
 			kubeconfig: {
 				dest:     "/kubeconfig"
 				contents: kubeconfigSecret
+				uid:      1001
 			}
 			work: {
 				dest:     "/work"
