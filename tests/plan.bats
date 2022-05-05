@@ -2,6 +2,11 @@ setup() {
     load 'helpers'
 
     common_setup
+
+    # These tests generally do not benefit from caching
+    # as they only create small files
+    unset DAGGER_CACHE_FROM
+    unset DAGGER_CACHE_TO
 }
 
 @test "plan/do: action sanity checks" {
