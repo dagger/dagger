@@ -20,7 +20,7 @@ common_setup() {
         export DAGGER_CACHE_FROM="$DAGGER_CACHE_FROM-$BATS_TEST_NAME"
     fi
 
-    SOPS_AGE_KEY_FILE=~/.config/dagger/keys.txt
+    SOPS_AGE_KEY_FILE="${TESTDIR}/age_key.txt"
     export SOPS_AGE_KEY_FILE
 }
 
