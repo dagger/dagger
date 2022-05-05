@@ -69,6 +69,7 @@ module.exports = {
 	"guides/handling-outputs",
       	"guides/migrate-from-dagger-0.1",
         "guides/go-ci",
+        "guides/persistent-cache"
       ],
     },
     {
