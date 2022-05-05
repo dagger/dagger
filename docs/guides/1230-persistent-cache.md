@@ -212,7 +212,7 @@ jobs:
 ```
 
 :::warning
-To avoid invalidating cache between your PR, you can take inspiration from [Dagger ci](https://github.com/dagger/dagger/blob/v0.2.8/.github/workflows/dagger-ci.yml#L61)
+To avoid invalidating cache between your PR, you can take inspiration from [Dagger ci](https://github.com/dagger/dagger/blob/v0.2.9/.github/workflows/dagger-ci.yml#L61)
 :::
 
 :::info
