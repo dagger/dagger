@@ -21,15 +21,22 @@ dagger.#Plan & {
 		"**/node_modules",
 		"cmd/dagger/dagger",
 		"cmd/dagger/dagger-debug",
+		"website",
 	]
 	client: filesystem: "./": read: {
-		contents: dagger.#FS
-		exclude: ["website"]
+		include: [
+			"./website",
+		]
+		exclude: ["**/node_modules"]
 	}
+
 	client: filesystem: "./bin": write: contents: actions.build."go".output
 
 	actions: {
-		_source: client.filesystem["."].read.contents
+		_source:  client.filesystem["."].read.contents
+		_website: core.#Merge & {
+			inputs: [_source, client.filesystem."./".read.contents]
+		}
 
 		// FIXME: this can be removed once `go` supports built-in VCS info
 		version: {
@@ -44,7 +51,7 @@ dagger.#Plan & {
 				workdir: "/src"
 				mounts: source: {
 					dest:     "/src"
-					contents: _source
+					contents: _website.output
 				}
 
 				script: contents: #"""
@@ -58,7 +65,7 @@ dagger.#Plan & {
 
 		build: {
 			"go": go.#Build & {
-				source:  _source
+				source:  _website.output
 				package: "./cmd/dagger/"
 				os:      client.platform.os
 				arch:    client.platform.arch
@@ -73,15 +80,16 @@ dagger.#Plan & {
 				}
 			}
 			docker: core.#Dockerfile & {
-				source: client.filesystem["./"].read.contents
+				source: _source
 				dockerfile: path: "Dockerfile"
 			}
+
 		}
 
 		// Go unit tests
 		test: go.#Test & {
 			// container: image: _goImage.output
-			source:  _source
+			source:  _website.output
 			package: "./..."
 
 			command: flags: "-race": true
@@ -89,21 +97,21 @@ dagger.#Plan & {
 
 		lint: {
 			go: golangci.#Lint & {
-				source:  _source
+				source:  _website.output
 				version: "1.45"
 			}
 
 			shell: shellcheck.#Lint & {
-				source: _source
+				source: _website.output
 			}
 
 			markdown: markdownlint.#Lint & {
-				source: _source
+				source: _website.output
 				files: ["./docs", "README.md"]
 			}
 
 			"cue": cue.#Lint & {
-				source: _source
+				source: _website.output
 			}
 		}
 	}
