@@ -56,9 +56,8 @@ lint: dagger # Lint everything
 integration: core-integration universe-test doc-test # Run all integration tests
 
 .PHONY: core-integration
-core-integration: dagger-debug # Run core integration tests
-	yarn --cwd "./tests" install
-	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./tests" test
+core-integration: dagger # Run core integration tests
+	./cmd/dagger/dagger do integration
 
 # .PHONY: universe-test
 # universe-test: dagger-debug # Run universe tests
