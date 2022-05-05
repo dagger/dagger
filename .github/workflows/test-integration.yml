@@ -59,11 +59,6 @@ jobs:
           sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
           sudo chmod +x /usr/local/bin/sops
 
-      - name: "Import Dagger private key"
-        run: |
-          mkdir -p ~/.config/dagger
-          cp ./tests/age_key.txt ~/.config/dagger/keys.txt
-
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
 
