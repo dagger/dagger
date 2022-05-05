@@ -112,7 +112,7 @@ To only store the final layers of the exported result, use `mode=min`.
 Let's first deploy a simple registry in your localhost
 
 ```shell
-docker run -d -p 6000:5000 --restart=always --name cache-registry registry:2
+docker run -d -p 5000:5000 --restart=always --name cache-registry registry:2
 ```
 
 Then run `dagger do build` with export cache flags.
