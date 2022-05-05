@@ -112,10 +112,11 @@ dagger.#Plan & {
 				rm -rf cue.mod/pkg/*
 				# Install sops
 				# FIXME: should be in its own package
-				arch=amd64
-				[ "$(uname -m)" == aarch64 ] && arch="arm64"
+				curl -o /usr/bin/jq -L \
+					https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 \
+					&& chmod +x /usr/bin/jq
 				curl -o /usr/bin/sops -L \
-					https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux.${arch} \
+					https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux \
 					&& chmod +x /usr/bin/sops
 				$DAGGER_BINARY project update
 				"""#
