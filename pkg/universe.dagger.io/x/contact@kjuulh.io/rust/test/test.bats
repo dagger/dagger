@@ -4,7 +4,10 @@ setup() {
     common_setup
 }
 
-@test "rust" {
+@test "rust publish" {
     dagger "do" -p ./publish.cue test
+}
+
+@test "rust image" {
     dagger "do" -p ./image.cue test
 }
