@@ -67,7 +67,7 @@ jobs:
 
       - name: dagger do deploy
         # https://github.com/dagger/dagger-for-github
-        uses: dagger/dagger-for-github@v2
+        uses: dagger/dagger-for-github@v3
         with:
           # Use latest Dagger 0.2.x release
           version: 0.2

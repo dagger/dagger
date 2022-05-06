@@ -21,7 +21,7 @@ jobs:
 
       # You need to run `dagger project init` locally before and commit the cue.mod directory to the repository with its contents
       - name: Deploy to Netlify
-        uses: dagger/dagger-for-github@v2
+        uses: dagger/dagger-for-github@v3
         # See all options at https://github.com/dagger/dagger-for-github
         with:
           version: 0.2

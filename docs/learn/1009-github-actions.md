@@ -50,7 +50,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Dagger
-        uses: dagger/dagger-action@v1
+        uses: dagger/dagger-for-github@v3
         with:
           age-key: ${{ secrets.DAGGER_AGE_KEY }}
           args: up -e gcpcloudrun

@@ -105,7 +105,7 @@ To store cache in an external registry, you just need to add flags to dagger com
 :::tip
 Using `mode=max` argument will cache **all** layers from intermediate
 steps, which is really useful in the context of Dagger where you will have
-multiple steps to execute.  
+multiple steps to execute.
 To only store the final layers of the exported result, use `mode=min`.
 :::
 
@@ -136,10 +136,10 @@ To store cache in your local filesystem, you just need to change flags values to
 Here's an example that exports cache to a local directory at path `./storage`.
 
 ```shell
-dagger do build --cache-to type=local,mode=max,dest=storage 
+dagger do build --cache-to type=local,mode=max,dest=storage
 # ...
 
-tree storage -L 1   
+tree storage -L 1
 storage
 ├── blobs
 ├── index.json
@@ -180,7 +180,7 @@ to see more options on local export, look at [Buildkit cache documentation](http
 
 ## Persistent cache in GitHub Actions
 
-Buildkit has a builtin support for storing cache with GitHub Action.  
+Buildkit has a builtin support for storing cache with GitHub Action.
 
 This cache backend is not that different from `local` or `registry` exports, Let's integrate cache in a
 simple workflow using the one:
@@ -203,9 +203,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      
+
       - name: "Run Dagger"
-        uses: dagger/dagger-for-github@v2
+        uses: dagger/dagger-for-github@v3
         with:
           cmds: |
              do build
