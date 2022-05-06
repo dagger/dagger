@@ -6,7 +6,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
-	"universe.dagger.io/alpine"
 )
 
 // Run a python script in a container
@@ -41,16 +40,13 @@ import (
 	_mountpoint: "/run/python"
 
 	docker.#Run & {
-		command: {
-			name:   string | *"python3"
-			"args": ["\(_mountpoint)/\(script._filename)"] + args
-		}
-
 		// As a convenience, image defaults to a ready-to-use python environment
-		input: docker.#Image | *_defaultImage.output
+		_defaultImage: #Image
+		input:         *_defaultImage.output | docker.#Image
 
-		_defaultImage: alpine.#Build & {
-			packages: python: version: "3"
+		command: {
+			name:   string | *"python"
+			"args": ["\(_mountpoint)/\(script._filename)"] + args
 		}
 
 		mounts: "Python script": {
