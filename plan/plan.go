@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"cuelang.org/go/cue"
@@ -247,8 +248,12 @@ func (p *Plan) fillAction(ctx context.Context) {
 			a := prevAction.FindByPath(path)
 			if a == nil {
 				v := p.Source().LookupPath(path)
+				name := s.String()
+				if n, err := strconv.Unquote(name); err == nil {
+					name = n
+				}
 				a = &Action{
-					Name:          s.String(),
+					Name:          name,
 					Hidden:        s.PkgPath() != "",
 					Path:          path,
 					Documentation: v.DocSummary(),
