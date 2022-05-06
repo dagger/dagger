@@ -79,8 +79,9 @@ import (
 	}
 
 	output: #Image & {
-		config: input.config
-		rootfs: _copy.output
+		platform: input.platform
+		config:   input.config
+		rootfs:   _copy.output
 	}
 }
 
@@ -102,8 +103,8 @@ import (
 		secret:   dagger.#Secret
 	}
 
-	platforms: [...string]
-	target?: string
+	platform?: string
+	target?:   string
 	buildArg: [string]: string
 	label: [string]:    string
 	hosts: [string]:    string
@@ -112,7 +113,9 @@ import (
 		"source":     source
 		"auth":       auth
 		"dockerfile": dockerfile
-		"platforms":  platforms
+		if platform != _|_ {
+			"platform": platform
+		}
 		if target != _|_ {
 			"target": target
 		}
@@ -122,7 +125,8 @@ import (
 	}
 
 	output: #Image & {
-		rootfs: _build.output
-		config: _build.config
+		platform: _build.platform
+		rootfs:   _build.output
+		config:   _build.config
 	}
 }

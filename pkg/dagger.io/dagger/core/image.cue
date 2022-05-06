@@ -47,11 +47,24 @@ import (
 	// Target repository address
 	dest: #Ref
 
-	// Filesystem contents to push
-	input: dagger.#FS
-
-	// Container image config
-	config: #ImageConfig
+	{
+		// Filesystem contents to push
+		input: dagger.#FS
+		// Container image config
+		config: #ImageConfig
+		// Platform of image
+		platform?: string
+	} | {
+		// Images to push
+		inputs: [Platform=string]: {
+			// Filesystem contents to push
+			input: dagger.#FS
+			// Container image config
+			config: #ImageConfig
+			// Platform of image
+			platform: Platform
+		}
+	}
 
 	// Authentication
 	auth?: {
@@ -78,6 +91,11 @@ import (
 
 	// When to pull the image
 	resolveMode: *"default" | "forcePull" | "preferLocal"
+
+	// Platform to pull
+	// e.g "linux/arm64" or "linux/amd64"
+	// if not exists, will be filled by dagger
+	platform?: string
 
 	// Root filesystem of downloaded image
 	output: dagger.#FS @dagger(generated)
@@ -108,11 +126,15 @@ import (
 		secret:   dagger.#Secret
 	}
 
-	platforms?: [...string]
 	target?: string
 	buildArg?: [string]: string
 	label?: [string]:    string
 	hosts?: [string]:    string
+
+	// Target platform to build image in
+	// e.g "linux/arm64" or "linux/amd64"
+	// if not exists, will be filled by dagger
+	platform?: string
 
 	// Root filesystem produced
 	output: dagger.#FS @dagger(generated)

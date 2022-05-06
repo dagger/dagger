@@ -1,10 +1,11 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
-engine.#Plan & {
+dagger.#Plan & {
 	// Alpine manifest list
 	#image: "alpine:3.15.0@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300"
 
@@ -18,18 +19,18 @@ engine.#Plan & {
 	actions: {
 		for p, arch in #platforms {
 			"test-\(p)": {
-				image: engine.#Pull & {
+				image: core.#Pull & {
 					source:   #image
 					platform: p
 				}
 
-				printArch: engine.#Exec & {
+				printArch: core.#Exec & {
 					input:  image.output
 					always: true
 					args: ["/bin/sh", "-c", "uname -m >> /arch.txt"]
 				}
 
-				test: engine.#ReadFile & {
+				test: core.#ReadFile & {
 					input: printArch.output
 					path:  "/arch.txt"
 				} & {

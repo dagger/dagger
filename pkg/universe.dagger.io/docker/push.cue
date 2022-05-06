@@ -19,15 +19,33 @@ import (
 		secret:   dagger.#Secret
 	}
 
-	// Image to push
-	image: #Image
-
 	_push: core.#Push & {
 		"dest": dest
 		if auth != _|_ {
 			"auth": auth
 		}
-		input:  image.rootfs
-		config: image.config
+	}
+
+	{
+		// Image to push
+		image: #Image
+
+		_push: {
+			input:    image.rootfs
+			config:   image.config
+			platform: image.platform
+		}
+	} | {
+		// Images to push
+		images: [K=string]: #Image
+
+		_push: inputs: {
+			for _p, _image in images {
+				"\(_p)": {
+					input:  _image.rootfs
+					config: _image.config
+				}
+			}
+		}
 	}
 }

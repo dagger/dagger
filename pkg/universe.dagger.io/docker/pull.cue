@@ -20,18 +20,24 @@ import (
 		secret:   dagger.#Secret
 	}
 
+	platform?: string
+
 	_op: core.#Pull & {
 		"source":      source
 		"resolveMode": resolveMode
 		if auth != _|_ {
 			"auth": auth
 		}
+		if platform != _|_ {
+			"platform": platform
+		}
 	}
 
 	// Downloaded image
 	image: #Image & {
-		rootfs: _op.output
-		config: _op.config
+		rootfs:   _op.output
+		config:   _op.config
+		platform: _op.platform
 	}
 
 	// FIXME: compat with Build API

@@ -1,39 +1,40 @@
 package main
 
 import (
-	"dagger.io/dagger/engine"
+	"dagger.io/dagger"
+	"dagger.io/dagger/core"
 )
 
-engine.#Plan & {
-	inputs: secrets: DOCKERHUB_TOKEN: command: {
+dagger.#Plan & {
+	client: commands: sops: {
 		name: "sops"
-		args: ["exec-env", "../../secrets_sops.yaml", "echo $DOCKERHUB_TOKEN"]
+		args: ["-d", "secrets_sops.yaml"]
+		stdout: dagger.#Secret
+	}
+
+	#auth: {
+		username: "daggertest"
+		secret:   actions.sopsSecrets.output.DOCKERHUB_TOKEN.contents
 	}
 
 	#target: "daggerio/ci-test:multi-platform"
-
-	#auth: [{
-		target:   #target
-		username: "daggertest"
-		secret:   inputs.secrets.DOCKERHUB_TOKEN.contents
-	}]
 
 	#platforms: ["linux/amd64", "linux/arm64"]
 
 	actions: {
 		randomString: {
-			baseImage: engine.#Pull & {
+			baseImage: core.#Pull & {
 				source: "alpine:3.15.0@sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 			}
 
-			image: engine.#Exec & {
+			image: core.#Exec & {
 				input: baseImage.output
 				args: [
 					"sh", "-c", "echo -n $RANDOM > /output.txt",
 				]
 			}
 
-			outputFile: engine.#ReadFile & {
+			outputFile: core.#ReadFile & {
 				input: image.output
 				path:  "/output.txt"
 			}
@@ -42,8 +43,8 @@ engine.#Plan & {
 		}
 
 		for p in #platforms {
-			"image-\(p)": engine.#Dockerfile & {
-				source: engine.#Scratch
+			"image-\(p)": core.#Dockerfile & {
+				source: dagger.#Scratch
 				dockerfile: contents: #"""
 					FROM alpine
 
@@ -53,7 +54,7 @@ engine.#Plan & {
 			}
 		}
 
-		push: engine.#Push & {
+		push: core.#Push & {
 			dest: "\(#target)-\(randomString.output)"
 			inputs: {
 				for p in #platforms {
@@ -64,12 +65,12 @@ engine.#Plan & {
 		}
 
 		"test-linux-arm64": {
-			image: engine.#Pull & {
+			image: core.#Pull & {
 				source:   push.result
 				platform: "linux/arm64"
 			}
 
-			test: engine.#ReadFile & {
+			test: core.#ReadFile & {
 				input: image.output
 				path:  "/arch.txt"
 			} & {
@@ -78,12 +79,12 @@ engine.#Plan & {
 		}
 
 		"test-linux-amd64": {
-			image: engine.#Pull & {
+			image: core.#Pull & {
 				source:   push.result
 				platform: "linux/amd64"
 			}
 
-			test: engine.#ReadFile & {
+			test: core.#ReadFile & {
 				input: image.output
 				path:  "/arch.txt"
 			} & {

@@ -81,9 +81,11 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 			return nil, err
 		}
 
-		platform, err = platforms.Parse(targetPlatform)
-		if err != nil {
-			return nil, err
+		if targetPlatform != "" {
+			platform, err = platforms.Parse(targetPlatform)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -104,8 +106,9 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": fs.MarshalCUE(),
-		"digest": digest,
-		"config": ConvertImageConfig(image.Config),
+		"platform": platforms.Format(platform),
+		"output":   fs.MarshalCUE(),
+		"digest":   digest,
+		"config":   ConvertImageConfig(image.Config),
 	})
 }

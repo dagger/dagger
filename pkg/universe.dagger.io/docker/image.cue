@@ -12,6 +12,9 @@ import (
 
 	// Image config
 	config: core.#ImageConfig
+
+	// Image platform
+	platform?: string
 }
 
 // An empty container image (same as `FROM scratch` in a Dockerfile)
