@@ -6,6 +6,11 @@ import (
 )
 
 dagger.#Plan & {
+	client: commands: random: {
+		name: "sh"
+		args: ["-e", "-c", "dd if=/dev/urandom bs=16 count=1 status=none | base64"]
+	}
+
 	actions: {
 		image: core.#Pull & {
 			source: "alpine:3.15"
@@ -44,7 +49,7 @@ dagger.#Plan & {
 		// test all the various parameters that can be applied to an exec
 		execParamsTest: {
 			sharedCache: core.#CacheDir & {
-				id:          "mycache"
+				id:          "dagger-start-stop-test-\(client.commands.random.stdout)"
 				concurrency: "shared"
 			}
 
@@ -74,7 +79,6 @@ dagger.#Plan & {
 				args: [
 					"chmod", "a+rwx", "/cache",
 				]
-				always: true
 			}
 
 			startExec: core.#Start & {
@@ -135,14 +139,13 @@ dagger.#Plan & {
 					contents: sharedCache
 				}
 				args: [
-					"sh", "-e", "-c",
+					"sh", "-x", "-e", "-c",
 					#"""
-						for i in `seq 1 20`; do test -f /cache/yo || sleep 1; done
+						for i in `seq 1 20`; do test -f /cache/yo && break || sleep 1; done
 						test "$(cat /cache/yo)" = yo
-						sleep 5
+						sleep 5 # give the Start process time to exit cleanly before moving to stop below
 						"""#,
 				]
-				always: true
 			}
 
 			stop: core.#Stop & {
