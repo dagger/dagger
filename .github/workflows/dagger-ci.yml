@@ -63,7 +63,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
 
       - name: Build
-        uses: dagger/dagger-for-github@v2
+        uses: dagger/dagger-for-github@v3
         with:
           cmds: |
             do build

@@ -47,12 +47,12 @@ jobs:
       #     cp ./cmd/dagger/dagger /usr/local/bin
 
       - name: "Set up dagger"
-        uses: dagger/dagger-for-github@v2
+        uses: dagger/dagger-for-github@v3
         with:
           install-only: true
 
       - name: Lint
-        uses: dagger/dagger-for-github@v2
+        uses: dagger/dagger-for-github@v3
         with:
           cmds: |
             do lint

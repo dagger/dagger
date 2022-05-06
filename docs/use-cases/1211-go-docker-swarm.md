@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install Dagger
-        uses: dagger/dagger-action@v2
+        uses: dagger/dagger-for-github@v3
         with:
           install-only: true
 
