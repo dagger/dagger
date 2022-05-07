@@ -70,7 +70,7 @@ From the **assets** section, download the archive corresponding to your OS and A
 
 ## Option 4: Install from source
 
-You will need [Go](https://golang.org) version 1.16 or later.
+You will need [Go](https://golang.org) version 1.18 or later.
 
 1\. Clone the dagger repository
 

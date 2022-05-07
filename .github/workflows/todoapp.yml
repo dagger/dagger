@@ -6,8 +6,8 @@ on:
     # they introduce changes in the following paths:
     branches:
     paths:
-      - '.github/workflows/todoapp.yml'
-      - 'pkg/universe.dagger.io/examples/todoapp/**'
+      - ".github/workflows/todoapp.yml"
+      - "pkg/universe.dagger.io/examples/todoapp/**"
 
 env:
   # ⚠️ APP_NAME must be unique across all of Netlify ⚠️
@@ -28,7 +28,6 @@ jobs:
     name: Deploy with dagger dev
     runs-on: ubuntu-latest
     steps:
-
       - name: Clone repository
         uses: actions/checkout@v2
         # this repository has many commits,
@@ -42,7 +41,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v1
         with:
-          go-version: 1.16
+          go-version: 1.18
       - name: Build dev version of Dagger
         run: |
           make dagger
@@ -57,7 +56,6 @@ jobs:
     name: Deploy with dagger 0.2.x last release
     runs-on: ubuntu-latest
     steps:
-
       - name: Clone repository
         uses: actions/checkout@v2
         # this repository has many commits,

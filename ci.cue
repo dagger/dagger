@@ -4,8 +4,6 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
-	"universe.dagger.io/bash"
-	"universe.dagger.io/alpine"
 	"universe.dagger.io/go"
 
 	"github.com/dagger/dagger/ci/golangci"
@@ -28,31 +26,6 @@ dagger.#Plan & {
 	actions: {
 		_source: client.filesystem["."].read.contents
 
-		// FIXME: this can be removed once `go` supports built-in VCS info
-		version: {
-			_image: alpine.#Build & {
-				packages: bash: _
-				packages: curl: _
-				packages: git:  _
-			}
-
-			_revision: bash.#Run & {
-				input:   _image.output
-				workdir: "/src"
-				mounts: source: {
-					dest:     "/src"
-					contents: _source
-				}
-
-				script: contents: #"""
-					printf "$(git rev-parse --short HEAD)" > /revision
-					"""#
-				export: files: "/revision": string
-			}
-
-			output: _revision.export.files["/revision"]
-		}
-
 		build: {
 			"go": go.#Build & {
 				source:  _source
@@ -60,7 +33,7 @@ dagger.#Plan & {
 				os:      client.platform.os
 				arch:    client.platform.arch
 
-				ldflags: "-s -w -X go.dagger.io/dagger/version.Revision=\(version.output)"
+				ldflags: "-s -w"
 
 				env: {
 					CGO_ENABLED: "0"

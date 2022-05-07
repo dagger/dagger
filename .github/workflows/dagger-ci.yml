@@ -2,7 +2,7 @@ name: "Dagger CI"
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.sh"
       - "**.bash"
@@ -15,7 +15,7 @@ on:
       - "go.sum"
       - ".github/workflows/dagger-ci.yml"
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.sh"
       - "**.bash"
@@ -43,7 +43,7 @@ jobs:
       - name: "Setup Go"
         uses: actions/setup-go@v1
         with:
-          go-version: 1.16
+          go-version: 1.18
 
       # - name: "Set up dagger from source"
       #   run: |

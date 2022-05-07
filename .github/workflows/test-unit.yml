@@ -4,19 +4,19 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.go'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/test-unit.yml'
+      - "**.go"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-unit.yml"
   pull_request:
     branches: [main]
     paths:
-      - '**.go'
-      - 'Makefile'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/test-unit.yml'
+      - "**.go"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-unit.yml"
 
 jobs:
   unit-tests:
@@ -30,7 +30,7 @@ jobs:
       - name: "Setup Go"
         uses: actions/setup-go@v1
         with:
-          go-version: 1.16
+          go-version: 1.18
 
       - name: Test
         run: |

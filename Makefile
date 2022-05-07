@@ -15,18 +15,17 @@ help: # Show how to get started & what targets are available
 	@awk -F':+ |$(HELP_TARGET_DEPTH)' '/^[0-9a-zA-Z._%-]+:+.+$(HELP_TARGET_DEPTH).+$$/ { printf "$(GREEN)%-20s\033[0m %s\n", $$1, $$3 }' $(MAKEFILE_LIST) | sort
 	@echo
 
-GIT_REVISION := $(shell git rev-parse --short HEAD)
 .PHONY: dagger
 dagger: # Build a dev dagger binary
-	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w -X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
+	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
 
 .PHONY: dagger-debug
 dagger-debug: # Build a debug version of the dev dagger binary
-	go build -race -o ./cmd/dagger/dagger-debug -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
+	go build -race -o ./cmd/dagger/dagger-debug ./cmd/dagger/
 
 .PHONY: install
 install: # Install a dev dagger binary
-	go install -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger
+	go install ./cmd/dagger
 
 .PHONY: test
 test: dagger # Run all tests
