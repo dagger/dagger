@@ -81,48 +81,53 @@ dagger.#Plan & {
 		}
 
 		// Go unit tests
-		test: go.#Test & {
-			// container: image: _goImage.output
-			source:  _source
-			package: "./..."
+		test: {
+			unit: go.#Test & {
+				// container: image: _goImage.output
+				source:  _source
+				package: "./..."
 
-			command: flags: "-race": true
-		}
+				command: flags: "-race": true
+			}
 
-		integration: bats.#Bats & {
-			_daggerLinuxBin: build.go & {
-				os: "linux"
-			}
-			_testDir: core.#Subdir & {
-				input: _source
-				path:  "tests"
-			}
-			_mergeFS: core.#Merge & {
-				inputs: [
-					// directory containing integration tests
-					_testDir.output,
-					// dagger binary
-					_daggerLinuxBin.output,
-				]
-			}
-			env: DAGGER_BINARY: "/src/dagger"
-			source: _mergeFS.output
-			initScript: #"""
-				# Remove the symlinked pkgs
-				rm -rf cue.mod/pkg/*
-				# Install sops
-				# FIXME: should be in its own package
-				curl -o /usr/bin/jq -L \
-					https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 \
-					&& chmod +x /usr/bin/jq
-				curl -o /usr/bin/sops -L \
-					https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux \
-					&& chmod +x /usr/bin/sops
-				$DAGGER_BINARY project update
-				"""#
-			mounts: docker: {
-				dest:     "/var/run/docker.sock"
-				contents: client.network."unix:///var/run/docker.sock".connect
+			integration: bats.#Bats & {
+				_daggerLinuxBin: go.#Build & {
+					source:  _source
+					package: "./cmd/dagger/"
+					arch:    client.platform.arch
+					container: command: flags: "-race": true
+				}
+				_testDir: core.#Subdir & {
+					input: _source
+					path:  "tests"
+				}
+				_mergeFS: core.#Merge & {
+					inputs: [
+						// directory containing integration tests
+						_testDir.output,
+						// dagger binary
+						_daggerLinuxBin.output,
+					]
+				}
+				env: DAGGER_BINARY: "/src/dagger"
+				source: _mergeFS.output
+				initScript: #"""
+					# Remove the symlinked pkgs
+					rm -rf cue.mod/pkg/*
+					# Install sops
+					# FIXME: should be in its own package
+					curl -o /usr/bin/jq -L \
+						https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 \
+						&& chmod +x /usr/bin/jq
+					curl -o /usr/bin/sops -L \
+						https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux \
+						&& chmod +x /usr/bin/sops
+					$DAGGER_BINARY project update
+					"""#
+				mounts: docker: {
+					dest:     "/var/run/docker.sock"
+					contents: client.network."unix:///var/run/docker.sock".connect
+				}
 			}
 		}
 

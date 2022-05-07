@@ -30,7 +30,7 @@ install: # Install a dev dagger binary
 
 .PHONY: test
 test: dagger # Run all tests
-	./cmd/dagger/dagger do test
+	./cmd/dagger/dagger do test unit
 
 .PHONY: golint
 golint: dagger # Go lint
@@ -57,7 +57,7 @@ integration: core-integration universe-test doc-test # Run all integration tests
 
 .PHONY: core-integration
 core-integration: dagger # Run core integration tests
-	./cmd/dagger/dagger do integration
+	./cmd/dagger/dagger do test integration
 
 # .PHONY: universe-test
 # universe-test: dagger-debug # Run universe tests
