@@ -8,6 +8,14 @@ slug: /1223/custom-buildkit/
 
 Dagger can be configured to use an existing buildkit daemon, running either locally or remotely. This can be done using the environment variable `BUILDKIT_HOST`.
 
+To use a buildkit daemon listening on an unix domain socket (usually in `/var/run` or `/run`):
+
+```shell
+export BUILDKIT_HOST=unix:///var/run/buildkit/buildkitd.sock
+```
+
+Make sure the user running dagger has appropriate permissions (`rw`) on the socket file.
+
 To use a buildkit daemon listening on TCP port `1234` on localhost:
 
 ```shell
