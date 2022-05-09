@@ -36,7 +36,10 @@ _#base: {
 		source: dagger.#FS
 
 		// Customize docker.#Run
-		command: flags: "-f": "/manifest"
+		command: flags: {
+			"-R": *true | bool
+			"-f": "/manifest"
+		}
 
 		mounts: manifest: {
 			type:     "fs" // Resolve disjunction
@@ -50,8 +53,9 @@ _#base: {
 		url: string
 
 		// Customize docker.#Run
-		command: {
-			flags: "-f": url
+		command: flags: {
+			"-f": url
+			"-R": *true | bool
 		}
 	} | {
 		location: "kustomization"
@@ -60,10 +64,7 @@ _#base: {
 		source: dagger.#FS
 
 		// Customize docker.#Run
-		command: flags: {
-			"-k": "/manifest"
-			"-R": false
-		}
+		command: flags: "-k": "/manifest"
 
 		mounts: manifest: {
 			type:     "fs" // Resolve disjunction
@@ -81,10 +82,7 @@ _#base: {
 		input: *_baseImage.output | docker.#Image
 		command: {
 			name: action
-			flags: {
-				"--namespace": namespace
-				"-R":          *true | bool
-			}
+			flags: "--namespace": namespace
 		}
 		mounts: "kubeconfig": {
 			dest:     "/.kube/config"

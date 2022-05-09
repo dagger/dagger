@@ -9,7 +9,10 @@ import (
 dagger.#Plan & {
 	// Kubeconfig must be in current directory
 	client: {
-		filesystem: "./data/hello-pod": read: contents: dagger.#FS
+		filesystem: {
+			"./data/hello-pod": read: contents:       dagger.#FS
+			"./data/hello-kustomize": read: contents: dagger.#FS
+		}
 		commands: kubeconfig: {
 			name: "kubectl"
 			args: ["config", "view", "--raw"]
@@ -24,6 +27,9 @@ dagger.#Plan & {
 		// Alias on hello-pod
 		_helloPodSource: client.filesystem."./data/hello-pod".read.contents
 
+		// Alias on hello-kustomize
+		_helloKustomSource: client.filesystem."./data/hello-kustomize".read.contents
+
 		apply: {
 			url: kubernetes.#Apply & {
 				kubeconfig: _kubeconfig
@@ -35,6 +41,12 @@ dagger.#Plan & {
 				kubeconfig: _kubeconfig
 				location:   "directory"
 				source:     _helloPodSource
+			}
+
+			kustomize: kubernetes.#Apply & {
+				kubeconfig: _kubeconfig
+				location:   "kustomization"
+				source:     _helloKustomSource
 			}
 		}
 
@@ -56,6 +68,15 @@ dagger.#Plan & {
 
 				// Explicit dependency
 				env: APPLY_DIR: "\(test.apply.directory.success)"
+			}
+
+			kustomize: kubernetes.#Delete & {
+				kubeconfig: _kubeconfig
+				location:   "kustomization"
+				source:     _helloKustomSource
+
+				// Explicit dependency
+				env: KUSTOM_DIR: "\(test.apply.kustomize.success)"
 			}
 		}
 	}
