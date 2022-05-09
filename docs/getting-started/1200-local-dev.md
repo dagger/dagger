@@ -212,7 +212,9 @@ It becomes even more obvious when the change is not as straightforward as knowin
 
 <TabItem value="windows">
 
-From a powershell terminal, run:
+`dagger` can be installed in Windows via a install powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
+
+If you want to use the install script, from a powershell terminal, run:
 
 ```shell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
@@ -225,6 +227,19 @@ Check that `dagger` is installed correctly by opening a `Command Prompt` termina
 ```shell
 where dagger
 C:\<your home folder>\dagger.exe
+```
+
+If you have Chocolatey installed, just open a terminal and run:
+
+```shell
+choco install dagger
+```
+
+If you have Scoop installed, just open a terminal and run:
+
+```shell
+scoop bucket add main # If you don't have the main bucket added yet
+scoop install dagger
 ```
 
 Before we can build & test our example app with `dagger`, we need to have Docker running.
