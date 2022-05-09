@@ -71,6 +71,7 @@ module.exports = {
         "guides/go-ci",
         "guides/persistent-cache",
         "guides/project-file-organization",
+        "guides/making-reusable-package",
       ],
     },
     {

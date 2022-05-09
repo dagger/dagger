@@ -5,17 +5,17 @@ displayed_sidebar: "0.2"
 
 # Project file organization
 
-As time will pass, your actions will get bigger and bigger. You will feel the need to better organize your file structure by moving some parts in subfolders.
+As time will pass, your Dagger configuration will grow. You will feel the need to better organise your config by splitting it into multiple files.
 
-The easiest way, when iterating fast, is to rely on the root module.
+The simplest next step is to rely on the root module.
 
-## CUE Module
+## What is the root module?
 
 A module in CUE is any directory including a `cue.mod` folder. It makes for the prefix/root of importable packages (e.g, `universe.dagger.io` is a module)
 
 ### Anonymous module (default)
 
-The default module name is an empty string, which means it's anonymous. That's when you don't need to import other packages inside your module. It represents most cases where someone has a Dagger plan and imports everything from third-party packages, like universe.
+The default module name is an empty string, which means that it's an anonymous module. Anonymous modules are used when we don't need to import other packages. All Dagger configs start here: a plan represented by a single CUE file, e.g. `plan.cue`, which imports everything from third-party packages, like `universe.dagger.io/docker`.
 
 ### When to use a module
 
@@ -38,7 +38,7 @@ root                    // <- this is a module because it includes a cue.mod dir
 
 ### Summary
 
-Consider the root module as the URL to access the root of your project. Any subfolder inside this module needs to have Cue files with a package name equivalent to the dirname. The filename inside each folder is not important, the package name is:
+Consider the root module as the URL to access the root of your project. Any subfolder inside this module needs to have CUE files with a package name equivalent to the directory name. File names inside each directory are not important, the package name is:
 
 ```console
 $  ls
@@ -52,7 +52,7 @@ $ cat bar/anything.cue
 package bar
 ```
 
-To reference any of the code lying inside each of these packages:
+To reference CUE code from within these packages:
 
 ```cue
 import(
@@ -65,9 +65,9 @@ import(
 
 ### Project non initialized
 
-Dagger holds a way to set a module name at project initialization: `dagger project init --name <NAME>`.
+The module name can be set during project initialisation: `dagger project init --name <NAME>`.
 
-As said above, the name has to at least follow the structure of a domain: `domain.extension` or `domain.extension/project`. Email addresses are also accepted, and the referenced domain doesn't necessarly have to exist.
+As mentioned above, the module name has to at least follow the structure of a domain: `domain.extension` or `domain.extension/project`. Email addresses can also be used for the module name, and the referenced domain doesn't necessarly have to exist.
 
 In our case, let's use a fake email address, for convenience purposes:
 
@@ -149,7 +149,7 @@ import (
 }
 ```
 
-Our `#Foo` definition is just a wrapper around `bash.#Run` that prefills the `input` field with a `bash` image (`_img` key above). Please notice that the `_img` step needs to reside inside the `#Foo` scope as it needs to exist inside the `action` to be executed.
+Our `#Foo` definition is just a wrapper around `bash.#Run` that sets the input field to the `bash` image (`_img` key above). Please notice that the `_img` step needs to reside inside the `#Foo` definition so that it is available to the action context.
 
 For example, this doesn't work:
 
