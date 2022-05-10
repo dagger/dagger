@@ -278,14 +278,6 @@ setup() {
     "$DAGGER" "do" -p ./tasks/export/export.cue test
 }
 
-@test "task: #RmFile" {
-    "$DAGGER" "do" -p ./tasks/rmfile/rmfile.cue test
-}
-
-@test "task: #RmFile dir" {
-    "$DAGGER" "do" -p ./tasks/rmfile/rmdir.cue test
-}
-
-@test "task: #RmFile wildcard" {
-    "$DAGGER" "do" -p ./tasks/rmfile/rm_wildcard.cue test
+@test "task: #Rm" {
+    "$DAGGER" "do" -p ./tasks/rm/rm.cue test
 }

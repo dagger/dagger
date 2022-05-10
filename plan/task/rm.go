@@ -11,13 +11,13 @@ import (
 )
 
 func init() {
-	Register("RmFile", func() Task { return &rmFileTask{} })
+	Register("Rm", func() Task { return &rmTask{} })
 }
 
-type rmFileTask struct {
+type rmTask struct {
 }
 
-func (r *rmFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
 	if err != nil {
 		return nil, err
@@ -35,7 +35,10 @@ func (r *rmFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solv
 
 	var rmOption struct {
 		AllowWildcard bool
-		AllowNotFound bool
+
+		// FIXME(TomChv): Not correctly supported by buildkit for now
+		// See https://github.com/dagger/dagger/issues/2408#issuecomment-1122381170
+		// AllowNotFound bool
 	}
 
 	if err := v.Decode(&rmOption); err != nil {
@@ -46,7 +49,6 @@ func (r *rmFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solv
 		llb.Rm(
 			path,
 			llb.WithAllowWildcard(rmOption.AllowWildcard),
-			llb.WithAllowNotFound(rmOption.AllowNotFound),
 		),
 		withCustomName(v, "RmFile %s", path),
 	)

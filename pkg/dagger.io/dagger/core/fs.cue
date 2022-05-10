@@ -93,8 +93,8 @@ import "dagger.io/dagger"
 }
 
 // Remove file or directory from a filesystem tree
-#RmFile: {
-	$dagger: task: _name: "RmFile"
+#Rm: {
+	$dagger: task: _name: "Rm"
 
 	// Input filesystem tree
 	input: dagger.#FS
@@ -106,10 +106,6 @@ import "dagger.io/dagger"
 	// Allow wildcard selection
 	// Default to: true
 	allowWildcard: *true | bool
-
-	// Do not report error when file do not exists
-	// Default to: true
-	allowNotFound: *true | bool
 
 	// Output filesystem tree
 	output: dagger.#FS @dagger(generated)
