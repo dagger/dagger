@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/ci/markdownlint"
 	"github.com/dagger/dagger/ci/cue"
 	"github.com/dagger/dagger/ci/bats"
+	"github.com/dagger/dagger/ci/gitpod"
 )
 
 dagger.#Plan & {
@@ -146,6 +147,10 @@ dagger.#Plan & {
 			"cue": cue.#Lint & {
 				source: _source
 			}
+		}
+
+		"gitpod": gitpod.#Test & {
+			source: _source
 		}
 	}
 }

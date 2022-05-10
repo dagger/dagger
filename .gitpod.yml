@@ -1,0 +1,38 @@
+image:
+  file: .gitpod.Dockerfile
+
+ports:
+  # Docusaurus
+  # Run `gp url 3000` to get the URL
+  - port: 3000
+
+tasks:
+  # Install missing extensions, Cue and Dagger
+  # FIXME: Gitpod uses the Open VSX registry for but the following
+  #        have not been ported over yet. Once the issues are resolved
+  #        remove from this task and add to the extensions config below.
+  # https://github.com/cue-sh/vscode-cue/issues/19
+  # https://github.com/johnallen3d/vscode-cue-fmt/issues/9
+  - init: |
+      EXTDIR=/workspace/.vscode-remote/extensions
+      [[ -z $EXTDIR/cuelang.org.cue.0.0.1 ]] && git clone https://github.com/cue-sh/vscode-cue $EXTDIR/cuelang.org.cue.0.0.1
+      [[ -z $EXTDIR/johnallen3d.cue-fmt.0.0.1 ]] && git clone https://github.com/johnallen3d/vscode-cue-fmt.git $EXTDIR/johnallen3d.cue-fmt.0.0.1
+      go install -mod=readonly cuelang.org/go/cmd/cue
+      make install
+
+vscode:
+  extensions:
+    - golang.go
+    - yzhang.markdown-all-in-one
+
+gitConfig:
+  alias.st: status
+  alias.ci: commit -s
+  alias.co: checkout
+
+github:
+  prebuilds:
+    master: true
+    branches: true
+    pullRequests: true
+    addBadge: true
