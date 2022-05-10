@@ -103,13 +103,13 @@ import "dagger.io/dagger"
 	// (e.g. /file.txt or /*.txt)
 	path: string
 
-  // Allow wildcard selection
-  // Default to: true
+	// Allow wildcard selection
+	// Default to: true
 	allowWildcard: *true | bool
 
-  // Do not report error when file do not exists
-  // Default to: true
-  allowNotFound: *true | bool
+	// Do not report error when file do not exists
+	// Default to: true
+	allowNotFound: *true | bool
 
 	// Output filesystem tree
 	output: dagger.#FS @dagger(generated)
