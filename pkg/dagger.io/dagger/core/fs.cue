@@ -92,6 +92,29 @@ import "dagger.io/dagger"
 	dest: string
 }
 
+// Remove file or directory from a filesystem tree
+#RmFile: {
+	$dagger: task: _name: "RmFile"
+
+	// Input filesystem tree
+	input: dagger.#FS
+
+	// Path to delete (handle wildcard)
+	// (e.g. /file.txt or /*.txt)
+	path: string
+
+  // Allow wildcard selection
+  // Default to: true
+	allowWildcard: *true | bool
+
+  // Do not report error when file do not exists
+  // Default to: true
+  allowNotFound: *true | bool
+
+	// Output filesystem tree
+	output: dagger.#FS @dagger(generated)
+}
+
 // Merge multiple FS trees into one
 #Merge: {
 	$dagger: task: _name: "Merge"
