@@ -68,6 +68,7 @@ jobs:
 
       - name: Test
         run: |
+          export DAGGER_LOG_FORMAT=plain
           make universe-test
 
       - name: Print Buildkitd Logs

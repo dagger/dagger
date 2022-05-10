@@ -34,4 +34,5 @@ jobs:
 
       - name: Test
         run: |
+          export DAGGER_LOG_FORMAT=plain
           make test

@@ -27,6 +27,7 @@ dagger.#Plan & {
 	]
 	client: filesystem: "./bin": write: contents: actions.build."go".output
 	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
+	client: env: DAGGER_LOG_FORMAT: string | *"auto"
 
 	actions: {
 		_source: client.filesystem["."].read.contents
@@ -78,14 +79,15 @@ dagger.#Plan & {
 			}
 		}
 
-		// Go unit tests
 		test: {
+			// Go unit tests
 			unit: go.#Test & {
 				// container: image: _goImage.output
 				source:  _source
 				package: "./..."
 
 				command: flags: "-race": true
+				env: DAGGER_LOG_FORMAT: client.env.DAGGER_LOG_FORMAT
 			}
 
 			integration: bats.#Bats & {
@@ -107,7 +109,10 @@ dagger.#Plan & {
 						_daggerLinuxBin.output,
 					]
 				}
-				env: DAGGER_BINARY: "/src/dagger"
+				env: {
+					DAGGER_BINARY:     "/src/dagger"
+					DAGGER_LOG_FORMAT: client.env.DAGGER_LOG_FORMAT
+				}
 				source: _mergeFS.output
 				initScript: #"""
 					# Remove the symlinked pkgs

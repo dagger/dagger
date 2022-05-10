@@ -76,6 +76,7 @@ jobs:
 
       - name: Test
         run: |
+          export DAGGER_LOG_FORMAT=plain
           env
           make core-integration
 
