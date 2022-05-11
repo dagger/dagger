@@ -5,7 +5,7 @@ package go
 	// DEPRECATED: use packages instead
 	package: string | *null
 
-	// Packages to test
+	// Packages test
 	packages: [...string]
 
 	#Container & {
