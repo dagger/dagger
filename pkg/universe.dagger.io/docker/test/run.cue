@@ -67,6 +67,43 @@ dagger.#Plan & {
 			verify: contents: "hello world"
 		}
 
+		// Test: export a secret
+		exportSecret: {
+			run: docker.#Run & {
+				input: _image
+				command: {
+					name: "sh"
+					flags: "-c": """
+							echo test1 >> /secret1.txt
+							echo test2 >> /secret2.txt
+						"""
+				}
+				export: secrets: {
+					"/secret1.txt": _
+					"/secret2.txt": _
+				}
+			}
+
+			verify: docker.#Run & {
+				input: _image
+				command: {
+					name: "sh"
+					flags: {
+						"-e": true
+						"-c": """
+							test "$SECRET_ENV" = "test1"
+							test "$(cat /secret.txt)" = "test2"
+						"""
+					}
+				}
+				env: SECRET_ENV: run.export.secrets."/secret1.txt"
+				mounts: secrets: {
+					dest:     "/secret.txt"
+					contents: run.export.secrets."/secret2.txt"
+				}
+			}
+		}
+
 		// Test: configs overriding image defaults
 		configs: {
 			_base: docker.#Set & {
