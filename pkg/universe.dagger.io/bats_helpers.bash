@@ -7,9 +7,9 @@ common_setup() {
     #   otherwise infinite recursion when DAGGER_BINARY is not set.
     export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
 
-    # Disable telemetry
-    DAGGER_TELEMETRY_DISABLE="1"
-    export DAGGER_TELEMETRY_DISABLE
+    # Disable analytics
+    DAGGER_DISABLE_ANALYTICS="1"
+    export DAGGER_DISABLE_ANALYTICS
 
     # Force plain printing for error reporting
     DAGGER_LOG_FORMAT="plain"

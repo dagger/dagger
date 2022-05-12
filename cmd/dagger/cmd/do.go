@@ -13,11 +13,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/analytics"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/telemetry"
 	"golang.org/x/term"
 )
 
@@ -150,7 +150,7 @@ var doCmd = &cobra.Command{
 			}
 		})
 
-		doneCh := common.TrackCommand(ctx, cmd, &telemetry.Property{
+		doneCh := common.TrackCommand(ctx, cmd, &analytics.Property{
 			Name:  "action",
 			Value: targetPath.String(),
 		})

@@ -1,4 +1,4 @@
-package telemetry
+package analytics
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 
 const (
 	apiKey       = "cb9777c166aefe4b77b31f961508191c" //nolint
-	telemetryURL = "https://t.dagger.io/v1"
+	analyticsURL = "https://t.dagger.io/v1"
 )
 
 type Property struct {
@@ -46,7 +46,7 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		Str("event", eventName).
 		Logger()
 
-	if telemetryDisabled() {
+	if analyticsDisabled() {
 		return
 	}
 
@@ -106,7 +106,7 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 		return
 	}
 
-	req, err := http.NewRequest("POST", telemetryURL, b)
+	req, err := http.NewRequest("POST", analyticsURL, b)
 	if err != nil {
 		lg.Trace().Err(err).Msg("failed to prepare request")
 	}
@@ -119,17 +119,17 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		lg.Trace().Err(err).Msg("failed to send telemetry event")
+		lg.Trace().Err(err).Msg("failed to send analytics event")
 		return
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		lg.Trace().Str("status", resp.Status).Msg("telemetry request failed")
+		lg.Trace().Str("status", resp.Status).Msg("analytics request failed")
 		return
 	}
 
-	lg.Trace().Dur("duration", time.Since(start)).Msg("telemetry event")
+	lg.Trace().Dur("duration", time.Since(start)).Msg("analytics event")
 }
 
 type payload struct {
@@ -156,8 +156,8 @@ func isCI() bool {
 		os.Getenv("RUN_ID") != "" // TaskCluster, dsari
 }
 
-func telemetryDisabled() bool {
-	return os.Getenv("DAGGER_TELEMETRY_DISABLE") != "" || // dagger specific env
+func analyticsDisabled() bool {
+	return os.Getenv("DAGGER_DISABLE_ANALYTICS") != "" || // dagger specific env
 		os.Getenv("DO_NOT_TRACK") != "" // https://consoledonottrack.com/
 }
 
