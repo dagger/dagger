@@ -44,7 +44,7 @@ jobs:
       - name: "Setup Go"
         uses: actions/setup-go@v1
         with:
-          go-version: 1.16
+          go-version: 1.18
 
       - name: "Install CUE"
         run: |
@@ -61,6 +61,43 @@ jobs:
 
       - name: "Expose GitHub Runtime"
         uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Start Buildkitd and Jaeger
+        run: |
+          JAEGER_CONTAINER_NAME=dagger-jaeger-ci
+          JAEGER_VOLUME_SOURCE="${{ runner.temp }}/jaeger"
+          export OTEL_EXPORTER_JAEGER_ENDPOINT="http://localhost:14268/api/traces"
+          export JAEGER_TRACE="localhost:6831"
+          docker run \
+            --name ${JAEGER_CONTAINER_NAME} \
+            -v ${JAEGER_VOLUME_SOURCE}:/badger \
+            -e SPAN_STORAGE_TYPE=badger \
+            -e BADGER_EPHEMERAL=false \
+            -e BADGER_DIRECTORY_VALUE=/badger/data \
+            -e BADGER_DIRECTORY_KEY=/badger/key \
+            -d \
+            --net=host \
+            jaegertracing/all-in-one:1.33.0
+
+          BUILDKIT_VERSION="$(go list -m github.com/moby/buildkit | cut -d' ' -f2)"
+          BUILDKIT_CONTAINER_NAME=dagger-buildkitd-ci
+          BUILDKIT_VOLUME_NAME=dagger-buildkitd-ci
+          docker run \
+            --name ${BUILDKIT_CONTAINER_NAME} \
+            -v ${BUILDKIT_VOLUME_NAME}:/var/lib/buildkit \
+            -e OTEL_EXPORTER_JAEGER_ENDPOINT \
+            -e JAEGER_TRACE \
+            -d \
+            --net=host \
+            --privileged \
+            moby/buildkit:${BUILDKIT_VERSION} \
+            "--debug"
+
+          echo BUILDKIT_HOST="docker-container://${BUILDKIT_CONTAINER_NAME}" >> $GITHUB_ENV
+          echo BUILDKIT_CONTAINER_NAME="${BUILDKIT_CONTAINER_NAME}" >> $GITHUB_ENV
+          echo JAEGER_CONTAINER_NAME="${JAEGER_CONTAINER_NAME}" >> $GITHUB_ENV
+          echo OTEL_EXPORTER_JAEGER_ENDPOINT="${OTEL_EXPORTER_JAEGER_ENDPOINT}" >> $GITHUB_ENV
+          echo JAEGER_TRACE="${JAEGER_TRACE}" >> $GITHUB_ENV
 
       - name: Sets env vars on push to main
         run: |
@@ -81,6 +118,20 @@ jobs:
           make core-integration
 
       - name: Print Buildkitd Logs
-        if: ${{ failure() }}
+        if: always()
         run: |
-          docker logs dagger-buildkitd
+          docker logs ${BUILDKIT_CONTAINER_NAME}
+
+      - name: Stop Buildkitd and Jaeger
+        if: always()
+        run: |
+          docker stop ${BUILDKIT_CONTAINER_NAME}
+          docker stop ${JAEGER_CONTAINER_NAME}
+          sudo chown -R ${USER} ${{ runner.temp }}/jaeger
+
+      - name: Upload Jaeger Data
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: jaeger_data
+          path: ${{ runner.temp }}/jaeger
