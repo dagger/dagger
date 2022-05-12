@@ -22,6 +22,8 @@ common_setup() {
 
     SOPS_AGE_KEY_FILE="${TESTDIR}/age_key.txt"
     export SOPS_AGE_KEY_FILE
+
+    export DAGGER_TRACE_SPAN_NAME=$BATS_TEST_NAME
 }
 
 # dagger helper to execute the right binary
