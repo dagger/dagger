@@ -9,15 +9,16 @@ package dagger
 		filesystem: [path=string]: {
 			// Read data from that path
 			read?: _#clientFilesystemRead & {
-				"path": path
+				"path": string | *path
 			}
 
 			// If set, Write to that path
 			write?: _#clientFilesystemWrite & {
-				"path": path
+				"path": string | *path
 
-				// avoid race condition
-				if read != _|_ {
+				// if we read and write to the same path, under the same key,
+				// assume we want to make an update
+				if (read.path & write.path) != _|_ {
 					_after: read
 				}
 			}
@@ -80,6 +81,7 @@ _#clientFilesystemWrite: {
 
 	// Path may be absolute, or relative to client working directory
 	path: string
+
 	{
 		// File contents to export (as a string or secret)
 		contents: string | #Secret

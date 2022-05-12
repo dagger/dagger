@@ -14,23 +14,6 @@ const (
 	ScalarKind cue.Kind = cue.StringKind | cue.NumberKind | cue.BoolKind
 )
 
-func isReference(v *compiler.Value) bool {
-	// FIXME: this expands an expression into parts and checks if any of them are references.
-	// Use case:
-	// docker/run.cue: `rootfs: dagger.#FS & _exec.output`
-	// This was tricking reference checking into thinking it is NOT a reference.
-	// However, this approach can have false positives as well (`dagger.#FS` IS a reference on its own)
-	_, expr := v.Expr()
-	for _, i := range expr {
-		_, refPath := i.ReferencePath()
-		if len(refPath.Selectors()) > 0 {
-			return true
-		}
-	}
-
-	return false
-}
-
 func fieldMissingErr(p *compiler.Value, field *compiler.Value) error {
 	missingErr := cueerrors.Newf(field.Pos(), "%q is not set", field.Path().String())
 
@@ -86,7 +69,7 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 	// - Is a reference (e.g. `foo: bar`)
 	// Otherwise, abort.
 	case kind.IsAnyOf(ScalarKind):
-		if !v.IsConcrete() && !hasDefault && !isReference(v) {
+		if !v.IsConcrete() && !hasDefault && !v.IsReference() {
 			return fieldMissingErr(p, v)
 		}
 	// Core types (FS, Secret, Socket): make sure they are references, otherwise abort.
@@ -97,14 +80,14 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 		}
 
 		// For the rest, ensure they're references.
-		if isReference(v) {
+		if v.IsReference() {
 			return nil
 		}
 
 		return fieldMissingErr(p, v)
 	// Docker images: make sure the `rootfs` is a reference
 	case isDockerImage(v):
-		if isReference(v.Lookup("rootfs")) {
+		if v.Lookup("rootfs").IsReference() {
 			return nil
 		}
 		return fieldMissingErr(p, v)

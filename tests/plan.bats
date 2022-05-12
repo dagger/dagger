@@ -58,7 +58,7 @@ setup() {
   "$DAGGER" "do" -p ./plan/hello-europa test
 }
 
-@test "plan/client/filesystem/read/fs/usage" {
+@test "plan/client/filesystem/read: fs/usage" {
   cd "$TESTDIR/plan/client/filesystem/read/fs"
 
   "$DAGGER" "do" -p ./usage test valid
@@ -76,7 +76,7 @@ setup() {
   assert_output --partial 'test.json: no such file or directory'
 }
 
-@test "plan/client/filesystem/read/fs/not_exists" {
+@test "plan/client/filesystem/read: fs/not_exists" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/not_exists"
 
   run "$DAGGER" "do" -p . test
@@ -85,7 +85,7 @@ setup() {
 }
 
 
-@test "plan/client/filesystem/read/fs/invalid_fs_input" {
+@test "plan/client/filesystem/read: fs/invalid_fs_input" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/invalid_fs_input"
 
   run "$DAGGER" "do" -p . test
@@ -94,7 +94,7 @@ setup() {
 }
 
 
-@test "plan/client/filesystem/read/fs/invalid_fs_type" {
+@test "plan/client/filesystem/read: fs/invalid_fs_type" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/invalid_fs_type"
 
   run "$DAGGER" "do" -p . test
@@ -102,7 +102,7 @@ setup() {
   assert_output --partial 'rootfs" cannot be a directory'
 }
 
-@test "plan/client/filesystem/read/fs/relative" {
+@test "plan/client/filesystem/read: fs/relative" {
   cd "$TESTDIR/plan/client/filesystem/read/fs/relative"
 
   "$DAGGER" "do" -p . test valid
@@ -112,9 +112,30 @@ setup() {
   assert_output --partial 'test.log: no such file or directory'
 }
 
-@test "plan/client/filesystem/read/file" {
+@test "plan/client/filesystem/read: fs/multiple" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/multiple"
+
+  "$DAGGER" "do" -p test.cue test
+}
+
+@test "plan/client/filesystem/read: fs/dynamic" {
+  cd "$TESTDIR/plan/client/filesystem/read/fs/dynamic"
+
+  export TMP_DIR_PATH=$BATS_TEST_TMPDIR
+
+  run "$DAGGER" "do" -p fail_load.cue test
+  assert_failure
+  assert_output --partial 'not supported'
+
+  run "$DAGGER" "do" -p fail_path_exists.cue test
+  assert_failure
+  assert_output --partial 'not supported'
+}
+
+@test "plan/client/filesystem/read: file" {
   cd "$TESTDIR/plan/client/filesystem/read/file"
 
+  export TEST_FILE_PATH="test.txt"
   "$DAGGER" "do" -p . test usage
 
   run "$DAGGER" "do" -p . test concrete
@@ -122,7 +143,7 @@ setup() {
   assert_output --partial "unexpected concrete value"
 }
 
-@test "plan/client/filesystem/write fs" {
+@test "plan/client/filesystem/write: fs" {
   cd "$TESTDIR/plan/client/filesystem/write"
 
   rm -rf "./out_fs"
@@ -133,7 +154,7 @@ setup() {
   rm -rf "./out_fs"
 }
 
-@test "plan/client/filesystem/write files" {
+@test "plan/client/filesystem/write: files" {
   cd "$TESTDIR/plan/client/filesystem/write"
 
   mkdir -p ./out_files
@@ -165,11 +186,21 @@ setup() {
   rm -rf ./out_files
 }
 
-@test "plan/client/filesystem/conflict" {
+@test "plan/client/filesystem/write: multiple" {
+  export TMP_DIR=$BATS_TEST_TMPDIR
+
+  "$DAGGER" "do" -p ./plan/client/filesystem/write/multiple/test.cue test
+
+  run ls -1 "$TMP_DIR"
+  assert_output "bar.txt
+foo.txt"
+}
+
+@test "plan/client/filesystem: update" {
   cd "$TESTDIR/plan/client/filesystem/conflict"
 
   echo -n foo > test.txt
-  run "$DAGGER" "do" -p . test
+  run "$DAGGER" "do" -p ./test.cue test
   assert_line --regexp "client\.filesystem\..+\.write.+dependency=client\.filesystem\..+\.read"
 
   rm -f test.txt
