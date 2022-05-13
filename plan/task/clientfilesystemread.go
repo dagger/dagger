@@ -21,25 +21,21 @@ func init() {
 type clientFilesystemReadTask struct{}
 
 func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
-	path, err := t.parsePath(v)
+	pv := v.Lookup("path")
+	path, err := clientFSPath(pv)
 	if err != nil {
 		return err
 	}
 
-	isFS := plancontext.IsFSValue(v.Lookup("contents"))
-
-	switch pi, err := os.Stat(path); {
-	case errors.Is(err, os.ErrNotExist):
-		return fmt.Errorf("path %q does not exist", path)
-	case !pi.IsDir() && isFS:
-		return fmt.Errorf("path %q is not a directory", path)
-	case pi.IsDir() && !isFS:
-		return fmt.Errorf("path %q cannot be a directory", path)
-	case err != nil:
-		return fmt.Errorf("path %q cannot be stat'd: %w", path, err)
-	}
-
-	if isFS {
+	if plancontext.IsFSValue(v.Lookup("contents")) {
+		// attempt to detect if it's a dynamic path to give a more useful error message
+		if pv.IsReference() {
+			return fmt.Errorf("reading directories without a static path is not supported")
+		}
+		// only validate directories on load, to allow dynamic paths when possible.
+		if err := t.validatePath(path, true); err != nil {
+			return err
+		}
 		pctx.LocalDirs.Add(path)
 	}
 
@@ -47,7 +43,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 }
 
 func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	path, err := t.parsePath(v)
+	path, err := clientFSPath(v.Lookup("path"))
 	if err != nil {
 		return nil, err
 	}
@@ -62,27 +58,38 @@ func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Con
 	})
 }
 
-func (t clientFilesystemReadTask) parsePath(v *compiler.Value) (path string, err error) {
-	path, err = v.Lookup("path").String()
-	if err != nil {
-		return
+func (t clientFilesystemReadTask) validatePath(path string, isFS bool) error {
+	switch pi, err := os.Stat(path); {
+	case errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("path %q does not exist", path)
+	case !pi.IsDir() && isFS:
+		return fmt.Errorf("path %q is not a directory", path)
+	case pi.IsDir() && !isFS:
+		return fmt.Errorf("path %q cannot be a directory", path)
+	case err != nil:
+		return fmt.Errorf("cannot get info on path %q: %w", path, err)
 	}
-
-	// Keep socket paths as is (e.g., npipe)
-	if plancontext.IsSocketValue(v.Lookup("contents")) {
-		return
-	}
-
-	path, err = clientFilePath(path)
-
-	return
+	return nil
 }
 
 func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) (interface{}, error) {
 	lg := log.Ctx(ctx)
-	contents := v.Lookup("contents")
 
-	if plancontext.IsFSValue(contents) {
+	contents := v.Lookup("contents")
+	isFS := plancontext.IsFSValue(contents)
+
+	if err := t.validatePath(path, isFS); err != nil {
+		return nil, err
+	}
+
+	fileLock, err := clientFSLock(ctx, pctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer fileLock.Unlock()
+
+	if isFS {
 		lg.Debug().Str("path", path).Msg("loading local directory")
 		return t.readFS(ctx, pctx, s, v, path)
 	}

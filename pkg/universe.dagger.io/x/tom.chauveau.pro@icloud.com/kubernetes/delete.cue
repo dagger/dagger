@@ -1,9 +1,9 @@
 package kubernetes
 
-// Execute `kubectl apply` in a container
+// Execute `kubectl delete` in a container
 // See `_#base` in `./base.cue` for spec details
-#Apply: {
+#Delete: {
 	_#base & {
-		action: "apply"
+		action: "delete"
 	}
 }

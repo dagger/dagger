@@ -5,72 +5,33 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strings"
 
 	"github.com/gofrs/flock"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/pkg"
+	"go.dagger.io/dagger/version"
 )
 
-const (
-	UniverseVersionConstraint = ">= 0.1.0, < 0.2"
-)
+func InstallDagger(ctx context.Context, workspace string) ([]*Require, error) {
+	requires := make([]*Require, 0, len(pkg.ModuleRequirements))
 
-func isUniverse(repoName string) bool {
-	return strings.HasPrefix(strings.ToLower(repoName), pkg.UniverseModule)
-}
+	for module, modVersion := range pkg.ModuleRequirements {
+		name := fmt.Sprintf("%s@%s", module, version.Version)
+		constraint := fmt.Sprintf(">%s", modVersion)
+		require, err := newRequire(name, constraint)
 
-// IsUniverseLatest check that current universe is up-to-date or no
-// It returns true if universe is up-to-date, otherwise false
-// If universe was not installed from `dagger mod get`, it will
-// not compare anything.
-//
-// The latest tag is fetch from universe repo itself.
-func IsUniverseLatest(ctx context.Context, workspace string) (bool, error) {
-	modfile, err := readPath(workspace)
-	if err != nil {
-		return false, err
+		if err != nil {
+			continue
+		}
+
+		requires = append(requires, require)
 	}
 
-	req, err := newRequire(pkg.UniverseModule, UniverseVersionConstraint)
-	if err != nil {
-		return false, err
-	}
-
-	// Get current universe version
-	universe := modfile.searchInstalledRequire(req)
-	if universe == nil {
-		return false, fmt.Errorf("universe not installed")
-	}
-
-	tmpPath := path.Join(modfile.workspacePath, tmpBasePath, req.fullPath())
-	defer os.RemoveAll(tmpPath)
-
-	repo, err := clone(ctx, req, tmpPath, "", "")
-	if err != nil {
-		return false, err
-	}
-
-	// Get latest tag
-	latestTag, err := repo.latestTag(ctx, req.versionConstraint)
-	if err != nil {
-		return false, err
-	}
-
-	c, err := compareVersions(latestTag, universe.version)
-	if err != nil {
-		return false, err
-	}
-	return !(c == 1), nil
+	return requires, pkg.Vendor(ctx, workspace)
 }
 
 func Install(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
 	lg := log.Ctx(ctx)
-
-	if isUniverse(repoName) {
-		// override versionConstraint to lock the version of universe we vendor
-		versionConstraint = UniverseVersionConstraint
-	}
 
 	lg.Debug().Str("name", repoName).Msg("installing module")
 	require, err := newRequire(repoName, versionConstraint)
@@ -126,11 +87,6 @@ func InstallAll(ctx context.Context, workspace string, repoNames []string) ([]*R
 func Update(ctx context.Context, workspace, repoName, versionConstraint string) (*Require, error) {
 	lg := log.Ctx(ctx)
 
-	if isUniverse(repoName) {
-		// override versionConstraint to lock the version of universe we vendor
-		versionConstraint = UniverseVersionConstraint
-	}
-
 	lg.Debug().Str("name", repoName).Msg("updating module")
 	require, err := newRequire(repoName, versionConstraint)
 	if err != nil {
@@ -182,7 +138,8 @@ func UpdateAll(ctx context.Context, workspace string, repoNames []string) ([]*Re
 	return updatedRequires, err
 }
 
-func UpdateInstalled(ctx context.Context, workspace string) ([]*Require, error) {
+// UpdateSaved finds latest versions for external packages and vendors them.
+func UpdateSaved(ctx context.Context, workspace string) ([]*Require, error) {
 	modfile, err := readPath(workspace)
 	if err != nil {
 		return nil, err
@@ -195,6 +152,32 @@ func UpdateInstalled(ctx context.Context, workspace string) ([]*Require, error) 
 	}
 
 	return UpdateAll(ctx, workspace, repoNames)
+}
+
+// InstallSaved vendors dagger built-in packages and external packages saved in `dagger.mod`.
+func InstallSaved(ctx context.Context, workspace string) ([]*Require, error) {
+	requires, err := InstallDagger(ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	modfile, err := readPath(workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	repoNames := make([]string, 0, len(modfile.requires))
+
+	for _, require := range modfile.requires {
+		repoNames = append(repoNames, require.String())
+	}
+
+	modRequires, err := InstallAll(ctx, workspace, repoNames)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(requires, modRequires...), nil
 }
 
 func Ensure(workspace string) error {

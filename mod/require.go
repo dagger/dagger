@@ -25,8 +25,10 @@ type Require struct {
 
 func newRequire(repoName, versionConstraint string) (*Require, error) {
 	switch {
+	case strings.HasPrefix(repoName, pkg.DaggerModule):
+		return parseDaggerRepoName(pkg.DaggerModule, repoName, versionConstraint)
 	case strings.HasPrefix(repoName, pkg.UniverseModule):
-		return parseDaggerRepoName(repoName, versionConstraint)
+		return parseDaggerRepoName(pkg.UniverseModule, repoName, versionConstraint)
 	default:
 		return parseGitRepoName(repoName, versionConstraint)
 	}
@@ -52,23 +54,22 @@ func parseGitRepoName(repoName, versionConstraint string) (*Require, error) {
 	}, nil
 }
 
-var daggerRepoNameRegex = regexp.MustCompile(pkg.UniverseModule + `([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
-
-func parseDaggerRepoName(repoName, versionConstraint string) (*Require, error) {
-	repoMatches := daggerRepoNameRegex.FindStringSubmatch(repoName)
+func parseDaggerRepoName(module, repoName, versionConstraint string) (*Require, error) {
+	nameRegex := regexp.MustCompile(module + `([a-zA-Z0-9/_.-]*)@?([0-9a-zA-Z.-]*)`)
+	repoMatches := nameRegex.FindStringSubmatch(repoName)
 
 	if len(repoMatches) < 3 {
 		return nil, fmt.Errorf("issue when parsing dagger repo")
 	}
 
 	return &Require{
-		repo:              pkg.UniverseModule,
+		repo:              module,
 		path:              repoMatches[1],
 		version:           repoMatches[2],
 		versionConstraint: versionConstraint,
 
-		cloneRepo: "github.com/dagger/examples",
-		clonePath: path.Join("/helloapp", repoMatches[1]),
+		cloneRepo: "github.com/dagger/dagger",
+		clonePath: path.Join("pkg", module),
 	}, nil
 }
 

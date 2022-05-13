@@ -24,6 +24,23 @@ func (c *tempDirContext) Get(key string) string {
 	return c.store[key]
 }
 
+func (c *tempDirContext) GetOrCreate(key string) (string, error) {
+	c.l.Lock()
+	defer c.l.Unlock()
+
+	dir, ok := c.store[key]
+	if !ok {
+		tmpdir, err := os.MkdirTemp("", key)
+		if err != nil {
+			return "", err
+		}
+		dir = tmpdir
+		c.store[key] = dir
+	}
+
+	return dir, nil
+}
+
 func (c *tempDirContext) Clean() {
 	c.l.RLock()
 	defer c.l.RUnlock()

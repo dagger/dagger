@@ -27,7 +27,17 @@ dagger.#Plan & {
 	]
 	client: filesystem: "./bin": write: contents: actions.build."go".output
 	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
-	client: env: DAGGER_LOG_FORMAT: string | *"auto"
+	client: env: {
+		DAGGER_LOG_FORMAT:             string | *"auto"
+		OTEL_EXPORTER_JAEGER_ENDPOINT: string | *""
+		JAEGER_TRACE:                  string | *""
+		BUILDKIT_HOST:                 string | *""
+		DAGGER_CACHE_FROM:             string | *""
+		DAGGER_CACHE_TO:               string | *""
+		GITHUB_ACTIONS:                string | *""
+		ACTIONS_RUNTIME_TOKEN:         string | *""
+		ACTIONS_CACHE_URL:             string | *""
+	}
 
 	actions: {
 		_source: client.filesystem["."].read.contents
@@ -110,8 +120,16 @@ dagger.#Plan & {
 					]
 				}
 				env: {
-					DAGGER_BINARY:     "/src/dagger"
-					DAGGER_LOG_FORMAT: client.env.DAGGER_LOG_FORMAT
+					DAGGER_BINARY:                 "/src/dagger"
+					DAGGER_LOG_FORMAT:             client.env.DAGGER_LOG_FORMAT
+					BUILDKIT_HOST:                 client.env.BUILDKIT_HOST
+					OTEL_EXPORTER_JAEGER_ENDPOINT: client.env.OTEL_EXPORTER_JAEGER_ENDPOINT
+					JAEGER_TRACE:                  client.env.JAEGER_TRACE
+					DAGGER_CACHE_FROM:             client.env.DAGGER_CACHE_FROM
+					DAGGER_CACHE_TO:               client.env.DAGGER_CACHE_TO
+					GITHUB_ACTIONS:                client.env.GITHUB_ACTIONS
+					ACTIONS_RUNTIME_TOKEN:         client.env.ACTIONS_RUNTIME_TOKEN
+					ACTIONS_CACHE_URL:             client.env.ACTIONS_CACHE_URL
 				}
 				source: _mergeFS.output
 				initScript: #"""

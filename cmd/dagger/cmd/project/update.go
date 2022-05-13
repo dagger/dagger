@@ -1,8 +1,6 @@
 package project
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
@@ -34,21 +32,17 @@ var updateCmd = &cobra.Command{
 			lg.Fatal().Msg("dagger project not found. Run `dagger project init`")
 		}
 
-		if len(args) == 0 {
-			lg.Debug().Msg("No package specified, updating all packages")
-			pkg.Vendor(ctx, cueModPath)
-			fmt.Println("Project updated")
-			return
-		}
-
 		var update = viper.GetBool("update")
 
 		doneCh := common.TrackCommand(ctx, cmd)
 		var processedRequires []*mod.Require
 
-		if update && len(args) == 0 {
+		if !update && len(args) == 0 {
+			lg.Info().Msg("installing all packages...")
+			processedRequires, err = mod.InstallSaved(ctx, cueModPath)
+		} else if update && len(args) == 0 {
 			lg.Info().Msg("updating all installed packages...")
-			processedRequires, err = mod.UpdateInstalled(ctx, cueModPath)
+			processedRequires, err = mod.UpdateSaved(ctx, cueModPath)
 		} else if update && len(args) > 0 {
 			lg.Info().Msg("updating specified packages...")
 			processedRequires, err = mod.UpdateAll(ctx, cueModPath, args)
@@ -77,7 +71,7 @@ var updateCmd = &cobra.Command{
 func init() {
 	updateCmd.Flags().String("private-key-file", "", "Private ssh key")
 	updateCmd.Flags().String("private-key-password", "", "Private ssh key password")
-	updateCmd.Flags().BoolP("update", "u", false, "Update specified package")
+	updateCmd.Flags().BoolP("update", "u", false, "Update to latest version of specified packages")
 
 	if err := viper.BindPFlags(updateCmd.Flags()); err != nil {
 		panic(err)

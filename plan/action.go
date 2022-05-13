@@ -91,7 +91,7 @@ func (a *Action) Inputs() []Input {
 			v := compiler.Wrap(iter.Value())
 			ik := v.IncompleteKind()
 
-			if ik.IsAnyOf(ScalarKind) && !v.IsConcrete() && !isReference(v) && !v.HasAttr("generated") {
+			if ik.IsAnyOf(ScalarKind) && !v.IsConcrete() && !v.IsReference() && !v.HasAttr("generated") {
 				inputs = append(inputs, Input{
 					Name:          iter.Label(),
 					Type:          ik.String(),

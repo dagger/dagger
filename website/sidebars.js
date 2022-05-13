@@ -16,9 +16,9 @@ module.exports = {
       label: "Introduction",
       collapsible: false,
       items: [
-	      "introduction/what",
-	      "introduction/vs",
-	],
+        "introduction/what",
+        "introduction/vs",
+      ],
       link: {
         type: 'doc',
         id: 'introduction/index'
@@ -66,10 +66,12 @@ module.exports = {
         "guides/custom-buildkit",
         "guides/self-signed-certificates",
         "guides/pushing-plan-dependencies",
-	"guides/handling-outputs",
-      	"guides/migrate-from-dagger-0.1",
+        "guides/handling-outputs",
+        "guides/migrate-from-dagger-0.1",
         "guides/go-ci",
-        "guides/persistent-cache"
+        "guides/persistent-cache",
+        "guides/project-file-organization",
+        "guides/making-reusable-package",
       ],
     },
     {

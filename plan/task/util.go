@@ -2,10 +2,8 @@ package task
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
-	"github.com/mitchellh/go-homedir"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
 	"go.dagger.io/dagger/compiler"
@@ -46,14 +44,6 @@ func ParseResolveImageConfigLog(name string) (string, string) {
 
 	component := name[1 : prefixEndPos+1]
 	return component, name[prefixEndPos+3:]
-}
-
-func clientFilePath(path string) (string, error) {
-	expanded, err := homedir.Expand(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(expanded)
 }
 
 func combineConstraints(cs ...llb.ConstraintsOpt) llb.ConstraintsOpt {

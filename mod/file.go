@@ -170,23 +170,24 @@ func (f *file) install(ctx context.Context, req *Require) error {
 
 	// checkout the cloned repo to that tag, change the version in the existing requirement and
 	// replace the code in the /pkg folder
-	existing.version = req.version
 	if err = r.checkout(ctx, req.version); err != nil {
 		return err
 	}
 
-	if err = replace(req, tmpPath, destPath); err != nil {
-		return err
-	}
-
-	checksum, err := dirChecksum(destPath)
+	checksum, err := dirChecksum(tmpPath)
 	if err != nil {
 		return err
 	}
 
+	// verify checksum if same version
+	if existing.version == req.version && existing.checksum != checksum {
+		return fmt.Errorf("%s: checksum didn't match", req)
+	}
+
+	existing.version = req.version
 	existing.checksum = checksum
 
-	return nil
+	return replace(req, tmpPath, destPath)
 }
 
 func (f *file) updateToLatest(ctx context.Context, req *Require) (*Require, error) {
@@ -237,7 +238,7 @@ func (f *file) updateToLatest(ctx context.Context, req *Require) (*Require, erro
 		return nil, err
 	}
 
-	req.checksum = checksum
+	existing.checksum = checksum
 
 	return existing, nil
 }

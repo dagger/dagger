@@ -6,10 +6,17 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: {
-		"cmd.sh": read: contents:     "env"
-		"test.txt": read: contents:   string
-		"secret.txt": read: contents: dagger.#Secret
+	client: {
+		env: TEST_FILE_PATH: string
+		filesystem: {
+			"cmd.sh": read: contents:     "env"
+			"test.txt": read: contents:   string
+			"secret.txt": read: contents: dagger.#Secret
+			dynamic: read: {
+				path:     env.TEST_FILE_PATH
+				contents: string
+			}
+		}
 	}
 	actions: {
 		image: core.#Pull & {
@@ -38,6 +45,10 @@ dagger.#Plan & {
 						ls -l /run/secrets/test | grep -- "-r--------"
 						"""#,
 					]
+				}
+				dynamic: core.#Exec & {
+					input: image.output
+					args: ["test", client.filesystem.dynamic.read.contents, "=", "foo"]
 				}
 			}
 		}
