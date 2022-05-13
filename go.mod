@@ -23,6 +23,7 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
+	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/rs/zerolog v1.26.1
 	github.com/sergi/go-diff v1.2.0
 	github.com/sirupsen/logrus v1.8.1
@@ -38,6 +39,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.4.1
 	go.opentelemetry.io/otel/trace v1.4.1
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
+	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
