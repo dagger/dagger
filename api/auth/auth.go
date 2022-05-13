@@ -69,7 +69,15 @@ func Login(ctx context.Context) error {
 			`, message)))
 		requestCh <- r
 	})
-	go http.ListenAndServe(fmt.Sprintf("localhost:%d", callbackPort), nil)
+	srv := &http.Server{Addr: fmt.Sprintf("localhost:%d", callbackPort)}
+	go func() {
+		err := srv.ListenAndServe()
+		if err != http.ErrServerClosed {
+			lg.Fatal().Err(err).Msg("auth server failed")
+		}
+	}()
+
+	// go http.ListenAndServe(fmt.Sprintf("localhost:%d", callbackPort), nil)
 
 	// Generate random state
 	b := make([]byte, 32)
@@ -83,6 +91,7 @@ func Login(ctx context.Context) error {
 	}
 
 	r := <-requestCh
+	srv.Shutdown(ctx)
 
 	responseState := r.URL.Query().Get("state")
 	if state != responseState {
@@ -94,7 +103,7 @@ func Login(ctx context.Context) error {
 		return fmt.Errorf("authentication error: %s (%s)", oauthError, description)
 	}
 
-	token, err := authConfig.Exchange(context.TODO(), r.URL.Query().Get("code"))
+	token, err := authConfig.Exchange(ctx, r.URL.Query().Get("code"))
 	if err != nil {
 		return err
 	}
