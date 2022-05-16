@@ -1,6 +1,6 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: '0.2'
+displayed_sidebar: "0.2"
 ---
 
 # CI/CD in your local dev
@@ -261,6 +261,8 @@ dagger do build
 By default, git on Windows does not automatically convert posix symbolic links, which explains the extra option `core.symlinks=true` while cloning the repository.
 
 But you can also enable this once and for all in your git configuration, by running the following command from a Powershell terminal: `git config --global core.symlinks true`.
+
+If you get a `Permission denied` error on Windows, [see this guide](https://github.com/git-for-windows/git/wiki/Symbolic-Links#allowing-non-administrators-to-create-symbolic-links) with different options on how to overcome it.
 :::
 
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under a minute:
