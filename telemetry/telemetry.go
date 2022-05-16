@@ -61,6 +61,7 @@ func Track(ctx context.Context, eventName string, properties ...*Property) {
 	}
 
 	if repo != "" {
+		props["git_repository"] = repo
 		// Hash the repository URL for privacy
 		props["git_repository_hash"] = hash(repo)
 	}
