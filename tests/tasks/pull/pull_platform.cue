@@ -16,26 +16,28 @@ dagger.#Plan & {
 		"linux/s390x": "s390x"
 	}
 
-	actions: {
-		for p, arch in #platforms {
-			"test-\(p)": {
-				image: core.#Pull & {
-					source:   #image
-					platform: p
-				}
+	actions: pull: {
+		"linux/amd64": _
+		"linux/arm64": _
+		"linux/s390x": _
 
-				printArch: core.#Exec & {
-					input:  image.output
-					always: true
-					args: ["/bin/sh", "-c", "uname -m >> /arch.txt"]
-				}
+		[p=string]: {
+			image: core.#Pull & {
+				source:   #image
+				platform: p
+			}
 
-				test: core.#ReadFile & {
-					input: printArch.output
-					path:  "/arch.txt"
-				} & {
-					contents: "\(arch)\n"
-				}
+			printArch: core.#Exec & {
+				input:  image.output
+				always: true
+				args: ["/bin/sh", "-c", "uname -m | tr -d '\n' >> /arch.txt"]
+			}
+
+			verify: core.#ReadFile & {
+				input: printArch.output
+				path:  "/arch.txt"
+			} & {
+				contents: #platforms[p]
 			}
 		}
 	}
