@@ -13,11 +13,10 @@ import "dagger.io/dagger"
 	format: "json" | "yaml"
 
 	// A new secret or (map of secrets) derived from unmarshaling the input secret's plain text
-	output: _ @dagger(generated)
-
-	// FIXME: See https://github.com/cue-lang/cue/issues/1671
-	// output: dagger.#Secret | {[string]: output} @dagger(generated)
+	output: _#decodedOutput @dagger(generated)
 }
+
+_#decodedOutput: dagger.#Secret | *{[!~"\\$dagger"]: _#decodedOutput}
 
 // Create a new a secret from a filesystem tree
 #NewSecret: {
