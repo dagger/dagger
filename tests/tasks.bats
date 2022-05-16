@@ -277,3 +277,7 @@ setup() {
 @test "task: #Export" {
     "$DAGGER" "do" -p ./tasks/export/export.cue test
 }
+
+@test "task: #Rm" {
+    "$DAGGER" "do" -p ./tasks/rm/rm.cue test
+}
