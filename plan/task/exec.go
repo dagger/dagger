@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
+	"time"
 
 	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
@@ -22,6 +24,7 @@ func init() {
 	Register("Exec", func() Task { return &execTask{} })
 	Register("Start", func() Task { return &asyncExecTask{} })
 	Register("Stop", func() Task { return &stopAsyncExecTask{} })
+	Register("SendSignal", func() Task { return &sendSignalTask{} })
 }
 
 type execTask struct {
@@ -150,17 +153,44 @@ func (t *stopAsyncExecTask) Run(ctx context.Context, pctx *plancontext.Context, 
 		return nil, err
 	}
 
+	timeout, err := v.Lookup("timeout").Int64()
+	if err != nil {
+		return nil, err
+	}
+
 	lg := log.Ctx(ctx)
 
-	exitCode, err := s.StopContainer(ctx, ctrID)
+	exitCode, err := s.StopContainer(ctx, ctrID, time.Duration(timeout))
 	if err != nil {
-		return nil, fmt.Errorf("failed to stop async exec %s: %w", ctrID, err)
+		return nil, fmt.Errorf("failed to stop exec %s: %w", ctrID, err)
 	}
-	lg.Debug().Msgf("stopped async exec %s", ctrID)
+	lg.Debug().Msgf("exec %s stopped with exit code %d", ctrID, exitCode)
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"exit": exitCode,
 	})
+}
+
+type sendSignalTask struct {
+}
+
+func (t *sendSignalTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Hid("_id", pkg.DaggerPackage))).String()
+	if err != nil {
+		return nil, err
+	}
+
+	sigVal, err := v.Lookup("signal").Int64()
+	if err != nil {
+		return nil, err
+	}
+	sig := syscall.Signal(sigVal)
+
+	if err := s.SignalContainer(ctx, ctrID, sig); err != nil {
+		return nil, fmt.Errorf("failed to send signal %d to exec %s: %w", sig, ctrID, err)
+	}
+
+	return compiler.NewValue(), nil
 }
 
 func parseCommon(pctx *plancontext.Context, v *compiler.Value) (*execCommon, error) {

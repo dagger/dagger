@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/moby/buildkit/frontend/gateway/client"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
@@ -49,7 +51,24 @@ func (s *Solver) StartContainer(ctx context.Context, req StartContainerRequest) 
 	return id, nil
 }
 
-func (s *Solver) StopContainer(ctx context.Context, ctrID string) (uint8, error) {
+func (s *Solver) SignalContainer(ctx context.Context, ctrID string, sig syscall.Signal) error {
+	s.containersMu.Lock()
+	c, ok := s.containers[ctrID]
+	s.containersMu.Unlock()
+	if !ok {
+		return ContainerNotFoundError{ID: ctrID}
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stopped {
+		return ContainerAlreadyStoppedError{ID: ctrID}
+	}
+
+	return c.proc.Signal(ctx, sig)
+}
+
+func (s *Solver) StopContainer(ctx context.Context, ctrID string, timeout time.Duration) (uint8, error) {
 	s.containersMu.Lock()
 	c, ok := s.containers[ctrID]
 	s.containersMu.Unlock()
@@ -70,33 +89,21 @@ func (s *Solver) StopContainer(ctx context.Context, ctrID string) (uint8, error)
 	// the only remidiation for users is to let the container exit
 	// on its own (if possible) or to restart buildkitd.
 
-	// Releasing the container sends SIGKILL to the process.
-	// Support for sending other signals first is not implemented yet, but can be.
-	exitCode, err := getExitCode(c.ctr.Release(ctx))
-	if err != nil {
-		c.exitErr = fmt.Errorf("failed to release container: %w", err)
-		return 0, c.exitErr
-	}
-	c.exitCode = exitCode
-
-	// Wait for the process to exit. The call doesn't accept a context, so make
-	// it cancellable with a separate goroutine.
-	waitCh := make(chan error)
-	go func() {
-		defer close(waitCh)
-		// we don't need the exit code here, but we want to ignore errors due to it being set
-		if _, err := getExitCode(c.proc.Wait()); err != nil {
-			waitCh <- fmt.Errorf("failed to wait for container process: %w", err)
+	if timeout > 0 {
+		waitCh := make(chan struct{})
+		go func() {
+			defer close(waitCh)
+			c.proc.Wait()
+		}()
+		select {
+		case <-waitCh:
+		case <-time.After(timeout):
 		}
-	}()
-	select {
-	case <-ctx.Done():
-		c.exitErr = ctx.Err()
-		return c.exitCode, c.exitErr
-	case err := <-waitCh:
-		c.exitErr = err
-		return c.exitCode, c.exitErr
 	}
+
+	// Releasing the container sends SIGKILL to the process if not already dead.
+	c.exitCode, c.exitErr = getExitCode(c.ctr.Release(ctx))
+	return c.exitCode, c.exitErr
 }
 
 func getExitCode(err error) (uint8, error) {
@@ -120,4 +127,12 @@ type ContainerNotFoundError struct {
 
 func (e ContainerNotFoundError) Error() string {
 	return fmt.Sprintf("container %s not found", e.ID)
+}
+
+type ContainerAlreadyStoppedError struct {
+	ID string
+}
+
+func (e ContainerAlreadyStoppedError) Error() string {
+	return fmt.Sprintf("container %s already stopped", e.ID)
 }

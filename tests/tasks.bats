@@ -88,15 +88,22 @@ setup() {
 @test "task: #Start #Stop" {
     cd ./tasks/exec
     run "$DAGGER" "do" --log-format=plain -l info -p ./start_stop_exec.cue basicTest
+    assert_success
     assert_line --partial 'actions.basicTest.start'
     assert_line --regexp 'actions\.basicTest\.sleep \| .*taking a quick nap'
-    # order of start and sleep is variable, but Stop must be last
-    assert_line --partial --index 7 'actions.basicTest.stop'
+    # order of start and sleep is variable, but Sig and Stop must be last
+    assert_line --partial --index 7 'actions.basicTest.sig'
+    assert_line --partial --index 9 'actions.basicTest.stop'
 }
 
 @test "task: #Start #Stop params" {
     cd ./tasks/exec
     "$DAGGER" "do" -p ./start_stop_exec.cue execParamsTest
+}
+
+@test "task: #Start #Stop timeout" {
+    cd ./tasks/exec
+    "$DAGGER" "do" -p ./start_stop_exec.cue stopTimeoutTest
 }
 
 @test "task: #Copy exec" {

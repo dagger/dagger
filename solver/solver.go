@@ -81,7 +81,7 @@ func (s *Solver) NoCache() bool {
 func (s *Solver) Stop(ctx context.Context) {
 	lg := log.Ctx(ctx)
 	for ctrID := range s.containers {
-		if _, err := s.StopContainer(ctx, ctrID); err != nil {
+		if _, err := s.StopContainer(ctx, ctrID, 0); err != nil {
 			lg.Error().Err(err).Str("container", ctrID).Msg("failed to stop container")
 		}
 	}
