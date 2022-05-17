@@ -27,11 +27,16 @@ import (
 		}
 		workdir: "/src"
 		script: contents: """
+			set -ex
+
+			# Mark the /src directory as safe to use even if its owned by a different user
+			git config --global --add safe.directory /src
+
 			# Create Go cache dir
 			sudo mkdir -p /workspace/go && sudo chown gitpod:gitpod /workspace/go
 
 			# Read the shell script from config and execute it
-			yq ".tasks[0].init" .gitpod.yml | bash -
+			yq ".tasks[0].init" .gitpod.yml | bash -x -e -
 			
 			# Ensure the expected tools were installed
 			make install
