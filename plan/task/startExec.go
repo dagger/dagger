@@ -78,6 +78,11 @@ func (t *stopTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 
+	name, err := s.ContainerName(ctrID)
+	if err != nil {
+		return nil, err
+	}
+
 	timeout, err := v.Lookup("timeout").Int64()
 	if err != nil {
 		return nil, err
@@ -87,7 +92,7 @@ func (t *stopTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	exitCode, err := s.StopContainer(ctx, ctrID, time.Duration(timeout))
 	if err != nil {
-		return nil, fmt.Errorf("failed to stop exec %s: %w", ctrID, err)
+		return nil, fmt.Errorf("failed to stop %s: %w", name, err)
 	}
 	lg.Debug().Msgf("exec %s stopped with exit code %d", ctrID, exitCode)
 
@@ -105,6 +110,11 @@ func (t *sendSignalTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 		return nil, err
 	}
 
+	name, err := s.ContainerName(ctrID)
+	if err != nil {
+		return nil, err
+	}
+
 	sigVal, err := v.Lookup("signal").Int64()
 	if err != nil {
 		return nil, err
@@ -112,8 +122,9 @@ func (t *sendSignalTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 	sig := syscall.Signal(sigVal)
 
 	if err := s.SignalContainer(ctx, ctrID, sig); err != nil {
-		return nil, fmt.Errorf("failed to send signal %d to exec %s: %w", sig, ctrID, err)
+		return nil, fmt.Errorf("failed to send signal %d to %s: %w", sig, name, err)
 	}
+	log.Ctx(ctx).Debug().Msgf("sent signal %d to exec %s", sig, ctrID)
 
 	return compiler.NewValue(), nil
 }

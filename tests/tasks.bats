@@ -117,6 +117,13 @@ setup() {
     "$DAGGER" "do" -p ./start_stop_exec.cue stopTimeoutTest
 }
 
+@test "task: #Start #Stop output" {
+    cd ./tasks/exec
+    run "$DAGGER" "do" -p ./start_stop_exec.cue outputTest
+    assert_success
+    assert_line --partial 'hello from core.#Start'
+}
+
 @test "task: #Copy exec" {
     "$DAGGER" "do" -p ./tasks/copy/copy_exec.cue test
 }
