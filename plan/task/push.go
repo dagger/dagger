@@ -133,7 +133,7 @@ func (c *pushTask) pushSingleArch(ctx context.Context, pctx *plancontext.Context
 			"name": dest.String(),
 			"push": "true",
 		},
-	}, pctx.Platform.Get())
+	}, platform)
 }
 
 func (c *pushTask) pushMultiArch(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, dest reference.Named, fields []compiler.Field) (*bk.SolveResponse, error) {
