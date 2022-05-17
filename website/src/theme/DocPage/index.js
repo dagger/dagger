@@ -13,6 +13,7 @@ import {
 import SearchMetadata from '@theme/SearchMetadata';
 import amplitude from 'amplitude-js';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import {useLocation} from '@docusaurus/router';
 
 export default function DocPage(props) {
   const {versionMetadata} = props;
@@ -20,7 +21,8 @@ export default function DocPage(props) {
 
     // DocPage Swizzle
   const {siteConfig} = useDocusaurusContext();
-
+  const location = useLocation();
+  
   useEffect(() => {
       if(siteConfig.customFields.AMPLITUDE_ID) {
         var instance1 = amplitude.getInstance().init(siteConfig.customFields.AMPLITUDE_ID, null, {
