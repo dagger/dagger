@@ -27,7 +27,7 @@ dagger.#Plan & {
 				input: test.output
 				command: {
 					name: "sh"
-					args: [ "-c", """
+					args: [ "-e", "-c", """
 						test "OK" = $(cat /tmp/greeting_test.result)
 						test ! -f "/tmp/math_test.result"
 						""",
@@ -46,7 +46,7 @@ dagger.#Plan & {
 				input: test.output
 				command: {
 					name: "sh"
-					args: [ "-c", """
+					args: [ "-e", "-c", """
 						test "OK" = $(cat /tmp/greeting_test.result)
 						test "OK" = $(cat /tmp/math_test.result)
 						""",
@@ -66,7 +66,7 @@ dagger.#Plan & {
 				input: test.output
 				command: {
 					name: "sh"
-					args: [ "-c", """
+					args: [ "-e", "-c", """
 						test "OK" = $(cat /tmp/greeting_test.result)
 						test "OK" = $(cat /tmp/math_test.result)
 						""",
