@@ -15,6 +15,7 @@ import (
 	"github.com/morikuni/aec"
 	"github.com/tonistiigi/vt100"
 	"go.dagger.io/dagger/plan/task"
+	"golang.org/x/sync/errgroup"
 )
 
 type Event map[string]interface{}
@@ -113,7 +114,7 @@ func (l *Logs) Add(event Event) error {
 }
 
 type TTYOutput struct {
-	cons      console.Console
+	cons      ConsoleWriter
 	logs      *Logs
 	lineCount int
 	l         sync.RWMutex
@@ -123,17 +124,94 @@ type TTYOutput struct {
 	printCh chan struct{}
 }
 
-func NewTTYOutput(w *os.File) (*TTYOutput, error) {
+type File interface {
+	io.ReadWriteCloser
+
+	// Fd returns its file descriptor
+	Fd() uintptr
+	// Name returns its file name
+	Name() string
+}
+
+type ConsoleWriter interface {
+	io.Writer
+	Size() (WinSize, error)
+}
+
+type ConsoleAdapter struct {
+	Cons console.Console
+	F    *os.File
+}
+
+type WinSize console.WinSize
+
+func (ca ConsoleAdapter) Size() (WinSize, error) {
+	ws, err := ca.Cons.Size()
+	if err != nil {
+		return WinSize{}, err
+	}
+	s := WinSize(ws)
+	return s, nil
+}
+
+func (ca *ConsoleAdapter) Write(b []byte) (int, error) {
+	var b1, b2 []byte
+
+	b1 = append(b1, b...)
+	b2 = append(b2, b...)
+
+	var g errgroup.Group
+
+	g.Go(func() error {
+		_, err := ca.Cons.Write(b1)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	g.Go(func() error {
+		_, err := ca.F.Write(b2)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	err := g.Wait()
+	if err != nil {
+		return len(b), err
+	}
+
+	return len(b), nil
+}
+
+func NewTTYOutputConsole(w ConsoleWriter) (*TTYOutput, error) {
+	c := &TTYOutput{
+		logs: &Logs{
+			groups: make(map[string]*Group),
+		},
+		cons:    w,
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
+		printCh: make(chan struct{}, 128),
+	}
+
+	return c, nil
+}
+
+func NewTTYOutput(w File) (*TTYOutput, error) {
 	cons, err := console.ConsoleFromFile(w)
 	if err != nil {
 		return nil, err
 	}
 
+	ca := &ConsoleAdapter{Cons: cons}
+
 	c := &TTYOutput{
 		logs: &Logs{
 			groups: make(map[string]*Group),
 		},
-		cons:    cons,
+		cons:    ca,
 		stopCh:  make(chan struct{}),
 		doneCh:  make(chan struct{}),
 		printCh: make(chan struct{}, 128),
@@ -197,51 +275,55 @@ func (c *TTYOutput) print() {
 	default:
 	}
 
-	width, height := c.getSize()
+	print(&c.lineCount, c.cons, c.logs.Messages)
+}
+
+func print(lineCount *int, cons ConsoleWriter, messages []Message) {
+	width, height := getSize(cons)
 
 	// hide during re-rendering to avoid flickering
-	fmt.Fprint(c.cons, aec.Hide)
-	defer fmt.Fprint(c.cons, aec.Show)
+	fmt.Fprint(cons, aec.Hide)
+	defer fmt.Fprint(cons, aec.Show)
 
 	// rewind to the top
 	b := aec.EmptyBuilder
-	for i := 0; i < c.lineCount; i++ {
+	for i := 0; i < *lineCount; i++ {
 		b = b.Up(1)
 	}
-	fmt.Fprint(c.cons, b.ANSI)
+	fmt.Fprint(cons, b.ANSI)
 
-	linesPerGroup := c.linesPerGroup(width, height)
-	lineCount := 0
-	for _, message := range c.logs.Messages {
+	linesPerGroup := linesPerGroup(width, height, messages)
+	lnCount := 0
+	for _, message := range messages {
 		if group := message.Group; group != nil {
-			lineCount += c.printGroup(group, width, linesPerGroup)
+			lnCount += printGroup(group, width, linesPerGroup, cons)
 		} else {
-			lineCount += c.printLine(c.cons, message.Event, width)
+			lnCount += printLine(cons, message.Event, width)
 		}
 	}
 
-	if diff := c.lineCount - lineCount; diff > 0 {
+	if diff := *lineCount - lnCount; diff > 0 {
 		for i := 0; i < diff; i++ {
-			fmt.Fprintln(c.cons, strings.Repeat(" ", width))
+			fmt.Fprintln(cons, strings.Repeat(" ", width))
 		}
-		fmt.Fprint(c.cons, aec.EmptyBuilder.Up(uint(diff)).Column(0).ANSI)
+		fmt.Fprint(cons, aec.EmptyBuilder.Up(uint(diff)).Column(0).ANSI)
 	}
 
-	c.lineCount = lineCount
+	*lineCount = lnCount
 }
 
-func (c *TTYOutput) linesPerGroup(width, height int) int {
+func linesPerGroup(width, height int, messages []Message) int {
 	usedLines := 0
-	for _, message := range c.logs.Messages {
+	for _, message := range messages {
 		if group := message.Group; group != nil {
 			usedLines++
 			continue
 		}
-		usedLines += c.printLine(io.Discard, message.Event, width)
+		usedLines += printLine(io.Discard, message.Event, width)
 	}
 
 	runningGroups := 0
-	for _, message := range c.logs.Messages {
+	for _, message := range messages {
 		if group := message.Group; group != nil && group.CurrentState == task.StateComputing {
 			runningGroups++
 		}
@@ -255,7 +337,7 @@ func (c *TTYOutput) linesPerGroup(width, height int) int {
 	return linesPerGroup
 }
 
-func (c *TTYOutput) printLine(w io.Writer, event Event, width int) int {
+func printLine(w io.Writer, event Event, width int) int {
 	message := colorize.Color(fmt.Sprintf("%s %s %s%s",
 		formatTimestamp(event),
 		formatLevel(event),
@@ -277,7 +359,7 @@ func (c *TTYOutput) printLine(w io.Writer, event Event, width int) int {
 	return t.UsedHeight()
 }
 
-func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
+func printGroup(group *Group, width, maxLines int, cons ConsoleWriter) int {
 	lineCount := 0
 
 	var out string
@@ -331,7 +413,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 		}
 
 		// Print
-		fmt.Fprint(c.cons, out)
+		fmt.Fprint(cons, out)
 		lineCount++
 	}
 
@@ -358,13 +440,13 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	}
 
 	for _, event := range printEvents {
-		lineCount += c.printGroupLine(event, width)
+		lineCount += printGroupLine(event, width, cons)
 	}
 
 	return lineCount
 }
 
-func (c *TTYOutput) printGroupLine(event Event, width int) int {
+func printGroupLine(event Event, width int, cons ConsoleWriter) int {
 	message := colorize.Color(fmt.Sprintf("%s%s",
 		formatMessage(event),
 		formatFields(event),
@@ -385,19 +467,24 @@ func (c *TTYOutput) printGroupLine(event Event, width int) int {
 	message = aec.Apply(message, aec.Faint)
 
 	// Print
-	fmt.Fprint(c.cons, message)
+	fmt.Fprint(cons, message)
 
 	return 1
 }
 
 func (c *TTYOutput) getSize() (int, int) {
+	return getSize(c.cons)
+}
+
+func getSize(cons ConsoleWriter) (int, int) {
 	width := 80
 	height := 10
-	size, err := c.cons.Size()
+	size, err := cons.Size()
 	if err == nil && size.Width > 0 && size.Height > 0 {
 		width = int(size.Width)
 		height = int(size.Height)
 	}
 
 	return width, height
+
 }

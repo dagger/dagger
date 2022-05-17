@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	"cuelang.org/go/cue"
+	"github.com/containerd/console"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -145,7 +147,24 @@ var doCmd = &cobra.Command{
 		})
 
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
-			tty, err = logger.NewTTYOutput(os.Stderr)
+			f, err := ioutil.TempFile("/tmp", "dagger-console-*.log")
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to create TTY file logger")
+			}
+			defer func() {
+				err := f.Close()
+				if err != nil {
+					lg.Fatal().Err(err).Msg("failed to close TTY file logger")
+				}
+			}()
+
+			cons, err := console.ConsoleFromFile(os.Stderr)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to create TTY console")
+			}
+
+			c := logger.ConsoleAdapter{Cons: cons, F: f}
+			tty, err = logger.NewTTYOutputConsole(&c)
 			if err != nil {
 				lg.Fatal().Err(err).Msg("failed to initialize TTY logger")
 			}
