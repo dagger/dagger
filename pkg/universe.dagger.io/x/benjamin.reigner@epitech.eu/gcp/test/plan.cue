@@ -17,15 +17,17 @@ dagger.#Plan & {
 	}
 
 	actions: {
-		HelloWorld: function.#Function & {
-			"config": gcr.#Credentials & {
-				"config": gcp.#Config & {
-					serviceKey: client.filesystem."./secrets/serviceKey.json".read.contents
-					project:    client.env.GCP_PROJECT
-					region:     "europe-west3"
-					zone:       "europe-west3-b"
-				}
+		_credentials: gcr.#Credentials & {
+			"config": gcp.#Config & {
+				serviceKey: client.filesystem."./secrets/serviceKey.json".read.contents
+				project:    client.env.GCP_PROJECT
+				region:     "europe-west3"
+				zone:       "europe-west3-b"
 			}
+		}
+
+		HelloWorld: function.#Function & {
+			"config": _credentials
 			name:    "HelloWorld"
 			runtime: "go116"
 			source:  client.filesystem."./src".read.contents
