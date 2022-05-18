@@ -2,9 +2,9 @@ package test
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/gcp"
-	"universe.dagger.io/gcp/gcr"
-	"universe.dagger.io/gcp/function"
+	"universe.dagger.io/x/benjamin.reigner@epitech.eu/gcp"
+	"universe.dagger.io/x/benjamin.reigner@epitech.eu/gcp/gcr"
+	"universe.dagger.io/x/benjamin.reigner@epitech.eu/gcp/function"
 )
 
 dagger.#Plan & {

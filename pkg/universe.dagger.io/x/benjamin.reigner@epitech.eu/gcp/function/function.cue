@@ -3,7 +3,7 @@ package function
 import (
 	"dagger.io/dagger"
 	"universe.dagger.io/docker"
-	"universe.dagger.io/gcp/gcr"
+	"universe.dagger.io/x/benjamin.reigner@epitech.eu/gcp/gcr"
 )
 
 // The runtimes are copied from https://cloud.google.com/functions/docs/concepts/exec

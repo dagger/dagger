@@ -3,7 +3,7 @@ package gcr
 
 import (
 	"universe.dagger.io/docker"
-	"universe.dagger.io/gcp"
+	"universe.dagger.io/x/benjamin.reigner@epitech.eu/gcp"
 )
 
 // Credentials retriever for GCR
