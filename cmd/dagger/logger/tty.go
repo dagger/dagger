@@ -3,9 +3,9 @@ package logger
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -135,17 +135,24 @@ type File interface {
 
 type ConsoleWriter interface {
 	io.Writer
+	ConsoleSizer
+}
+
+type ConsoleSizer interface {
 	Size() (WinSize, error)
 }
 
 type ConsoleAdapter struct {
 	Cons console.Console
-	F    *os.File
+	F    File
 }
 
 type WinSize console.WinSize
 
 func (ca ConsoleAdapter) Size() (WinSize, error) {
+	if ca.Cons == nil {
+		return WinSize{}, errors.New("console adapter: console not set")
+	}
 	ws, err := ca.Cons.Size()
 	if err != nil {
 		return WinSize{}, err
@@ -472,13 +479,13 @@ func printGroupLine(event Event, width int, cons ConsoleWriter) int {
 	return 1
 }
 
-func (c *TTYOutput) getSize() (int, int) {
-	return getSize(c.cons)
-}
+func getSize(cons ConsoleSizer) (width, height int) {
+	width = 80
+	height = 10
+	if cons == nil {
+		return width, height
+	}
 
-func getSize(cons ConsoleWriter) (int, int) {
-	width := 80
-	height := 10
 	size, err := cons.Size()
 	if err == nil && size.Width > 0 && size.Height > 0 {
 		width = int(size.Width)
@@ -486,5 +493,4 @@ func getSize(cons ConsoleWriter) (int, int) {
 	}
 
 	return width, height
-
 }
