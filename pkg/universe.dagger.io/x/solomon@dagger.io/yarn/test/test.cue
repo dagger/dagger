@@ -51,14 +51,12 @@ import (
 			remote: "https://github.com/mdn/todo-react"
 			ref:    "4c1ad2bc5d50f96265693be50997c306081b0964"
 		}
-		install: #Run & {
+		install: #Install & {
 			source: pull.output
-			args: ["install"]
 		}
-		build: #Run & {
+		build: #Script & {
 			source: pull.output
-			args: ["run", "build"]
-			requires: [install.code]
+			name:   "build"
 		}
 		verify: #AssertFile & {
 			input: build.output
@@ -92,7 +90,7 @@ import (
 
 		build: #Build & {
 			source: data.contents
-			container: #input: buildImage.output
+			container: input: buildImage.output
 		}
 	}
 }
