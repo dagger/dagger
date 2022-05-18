@@ -35,6 +35,15 @@ This is very useful to get immediate feedback on an action's results.
 
 Besides the `plain` format (the default), you can also use `json` or `yaml`. JSON is particularly useful if you want to pipe a result into another process:
 
+:::tip
+For this example, ensure you have a registry on `localhost` listening on port `5042`:
+
+```shell
+➜ docker run -d -p 5042:5000 --restart=always --name localregistry registry:2`
+```
+
+:::
+
 ```cue file=../tests/guides/handling-outputs/default.cue
 ```
 
