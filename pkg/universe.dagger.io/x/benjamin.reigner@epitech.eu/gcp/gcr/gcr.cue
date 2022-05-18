@@ -11,9 +11,6 @@ import (
 	// GCP Config
 	config: gcp.#Config
 
-	// GCR registry username
-	username: "oauth2accesstoken"
-
 	_gcloud: gcp.#GCloud & {
 		"config": config
 	}
