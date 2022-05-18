@@ -235,6 +235,11 @@ setup() {
     assert_failure
 }
 
+@test "task: #DecodeSecret" {
+    "$DAGGER" "do" -p ./tasks/decodesecret/decodesecret.cue test
+    "$DAGGER" "do" -p ./tasks/decodesecret/decodesecret.cue test --format json
+}
+
 @test "task: #NewSecret" {
     run "$DAGGER" "do" -p ./tasks/newsecret/newsecret.cue verify
     assert_line --partial HELLOWORLD

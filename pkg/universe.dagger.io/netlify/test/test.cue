@@ -26,7 +26,7 @@ dagger.#Plan & {
 				format: "yaml"
 			}
 
-			token: testSecrets.output.NETLIFY_TOKEN.contents
+			token: testSecrets.output.NETLIFY_TOKEN.contents & dagger.#Secret
 
 			marker: "hello world"
 
