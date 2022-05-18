@@ -1,145 +1,146 @@
-// Yarn is a package manager for Javascript applications
+// Use [Yarn](https://yarnpkg.com) in a Dagger action
 package yarn
 
 import (
-	"strings"
-
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/bash"
-	"universe.dagger.io/docker"
 )
 
-#Build: #Run & {
-	buildDir: *"build" | string
-	script:   *"build" | string
+// Install dependencies with yarn ('yarn install')
+#Install: #Command & {
+	args: ["install"]
 }
 
-// Run a Yarn command
-#Run: {
-	// Custom name for this command.
-	// Assign an app-specific name if there are multiple apps in the same plan.
-	name: string | *""
+// Build an application with yarn ('yarn run build')
+#Build: {
+	// Name of the project being build
+	project: string | *"default"
 
 	// App source code
 	source: dagger.#FS
 
-	// Working directory to use
-	cwd: *"." | string
+	// Output of the build
+	output: dagger.#FS & script.output
 
-	// Write the contents of `environment` to this file, in the "envfile" format
-	writeEnvFile: string | *""
+	script: #Script & {
+		// Name of the yarn build script
+		name:      *"build" | string
+		"source":  source
+		"project": project
+	}
+}
 
-	// Optional: Read build output from this directory
-	// Must be relative to working directory, cwd
-	buildDir?: string
+// Run a yarn script ('yarn run <NAME>')
+#Script: {
+	// App source code
+	source: dagger.#FS
 
-	// Yarn script to run for this command.
-	script: string
+	// Yarn project
+	project: string
 
-	// Fix for shadowing issues
-	let yarnScript = script
+	// Name of the yarn script to run
+	// Example: "build"
+	name: string
 
-	// Optional arguments for the script
-	args: [...string] | *[]
+	#Command & {
+		"source":  source
+		"project": project
+		args: ["run", name]
 
-	// Secret variables
-	// FIXME: not implemented. Are they needed?
-	secrets: [string]: dagger.#Secret
-
-	container: #input: docker.#Image | *{
-		// FIXME: Yarn's version depends on Alpine's version
-		// Yarn version
-		// yarnVersion: *"=~1.22" | string
-		// FIXME: custom base image not supported
-		alpine.#Build & {
-			packages: {
-				bash: {}
-				yarn: {}
-			}
+		// Mount output directory of install command,
+		//   even though we don't need it,
+		//   to trigger an explicit dependency.
+		container: mounts: install_output: {
+			contents: install.output
+			dest:     "/tmp/yarn_install_output"
 		}
 	}
 
-	_run: docker.#Build & {
-		steps: [
-			container.#input,
-
-			docker.#Copy & {
-				dest:     "/src"
-				contents: source
-			},
-
-			bash.#Run & {
-				// FIXME: move shell script to its own file
-				script: contents: #"""
-					yarn --cwd "$YARN_CWD" install --production false
-					"""#
-
-				mounts: "yarn cache": {
-					dest:     "/cache/yarn"
-					contents: core.#CacheDir & {
-						// FIXME: are there character limitations in cache ID?
-						id: "universe.dagger.io/yarn.#Run \(name)"
-					}
-				}
-
-				env: {
-					YARN_CACHE_FOLDER: "/cache/yarn"
-					YARN_CWD:          cwd
-				}
-
-				workdir: "/src"
-			},
-
-			bash.#Run & {
-				// FIXME: move shell script to its own file
-				script: contents: #"""
-					# Create $ENVFILE_NAME file if set
-					[ -n "$ENVFILE_NAME" ] && echo "$ENVFILE" > "$ENVFILE_NAME"
-
-					opts=( $(echo $YARN_ARGS) )
-					yarn --cwd "$YARN_CWD" run "$YARN_BUILD_SCRIPT" ${opts[@]}
-					if [ ! -z "${YARN_BUILD_DIRECTORY:-}" ]; then
-						mv "$YARN_BUILD_DIRECTORY" /build
-					else
-						mkdir /build
-					fi
-					"""#
-
-				mounts: "yarn cache": {
-					dest:     "/cache/yarn"
-					contents: core.#CacheDir & {
-						// FIXME: are there character limitations in cache ID?
-						id: "universe.dagger.io/yarn.#Run \(name)"
-					}
-				}
-
-				env: {
-					YARN_BUILD_SCRIPT: yarnScript
-					YARN_ARGS:         strings.Join(args, "\n")
-					YARN_CACHE_FOLDER: "/cache/yarn"
-					YARN_CWD:          cwd
-					if buildDir != _|_ {
-						YARN_BUILD_DIRECTORY: buildDir
-					}
-					if writeEnvFile != "" {
-						ENVFILE_NAME: writeEnvFile
-						ENVFILE:      strings.Join([ for k, v in env {"\(k)=\(v)"}], "\n")
-					}
-				}
-
-				workdir: "/src"
-			},
-		]
+	install: #Install & {
+		"source":  source
+		"project": project
 	}
 
-	// The final contents of the package after run
-	_output: core.#Subdir & {
-		input: _run.output.rootfs
-		path:  "/build"
-	}
+}
 
-	output: _output.output
+// Run a yarn command (`yarn <ARGS>')
+#Command: {
+	// Source code to build
+	source: dagger.#FS
+
+	// Arguments to yarn
+	args: [...string]
+
+	// Project name, used for cache scoping
+	project: string | *"default"
+
+	// Path of the yarn script's output directory
+	// May be absolute, or relative to the workdir
+	outputDir: string | *"./build"
+
+	// Output directory
+	output: container.export.directories."/output"
+
+	// Logs produced by the yarn script
+	logs: container.export.files."/logs"
+
+	container: bash.#Run & {
+		"args": args
+
+		input:  *_image.output | _
+		_image: alpine.#Build & {
+			packages: {
+				bash: {}
+				yarn: {}
+				git: {}
+			}
+		}
+
+		workdir: "/src"
+		mounts: Source: {
+			dest:     "/src"
+			contents: source
+		}
+		script: contents: """
+			set -x
+			yarn "$@" | tee /logs
+			echo $$ > /code
+			if [ -e "$YARN_OUTPUT_FOLDER" ]; then
+				mv "$YARN_OUTPUT_FOLDER" /output
+			else
+				mkdir /output
+			fi
+			"""
+		export: {
+			directories: "/output": dagger.#FS
+			files: {
+				"/logs": string
+				"/code": string
+			}
+		}
+
+		// Setup caching
+		env: {
+			YARN_CACHE_FOLDER:  "/cache/yarn"
+			YARN_OUTPUT_FOLDER: outputDir
+		}
+		mounts: {
+			"Yarn cache": {
+				dest:     "/cache/yarn"
+				contents: core.#CacheDir & {
+					id: "\(project)-yarn"
+				}
+			}
+			"NodeJS cache": {
+				dest:     "/src/node_modules"
+				type:     "cache"
+				contents: core.#CacheDir & {
+					id: "\(project)-nodejs"
+				}
+			}
+		}
+	}
 }

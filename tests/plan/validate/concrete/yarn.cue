@@ -10,5 +10,5 @@ import (
 //    ../../cue.mod/pkg/universe.dagger.io/docker/run.cue:13:2
 
 dagger.#Plan & {
-	actions: test: yarn.#Run
+	actions: test: yarn.#Command
 }
