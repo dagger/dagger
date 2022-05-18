@@ -1,5 +1,5 @@
 ---
-slug: /1226/handling-outputs
+slug: /1228/handling-outputs
 displayed_sidebar: 0.2
 ---
 
