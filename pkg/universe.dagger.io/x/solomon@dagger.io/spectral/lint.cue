@@ -105,10 +105,14 @@ import (
 	container: docker.#Run & {
 		// Default container image can be overrided.
 		//   'spectral' must be installed and in the PATH.
-		input:              docker.#Image | *_buildDefaultImage.output
-		_buildDefaultImage: docker.#Pull & {
-			source: "stoplight/spectral"
+		input: docker.#Image
+		if input == _|_ {
+			_input: docker.#Pull & {
+				source: "stoplight/spectral"
+			}
+			input: _input.output
 		}
+
 		// Ugly hack to override the entrypoint from the default image
 		//  FIXME: how do we tuck this into the scope of the default image?
 		entrypoint: []
