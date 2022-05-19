@@ -5,19 +5,19 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/analytics"
 )
 
-// TrackCommand sends telemetry about a command execution
-func TrackCommand(ctx context.Context, cmd *cobra.Command, props ...*telemetry.Property) chan struct{} {
-	props = append([]*telemetry.Property{
+// TrackCommand sends analytics about a command execution
+func TrackCommand(ctx context.Context, cmd *cobra.Command, props ...*analytics.Property) chan struct{} {
+	props = append([]*analytics.Property{
 		{
 			Name:  "command",
 			Value: commandName(cmd),
 		},
 	}, props...)
 
-	return telemetry.TrackAsync(ctx, "Command Executed", props...)
+	return analytics.TrackAsync(ctx, "Command Executed", props...)
 }
 
 func commandName(cmd *cobra.Command) string {
