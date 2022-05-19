@@ -170,7 +170,11 @@ var doCmd = &cobra.Command{
 		format := viper.GetString("output-format")
 		file := viper.GetString("output")
 
-		if file != "" && tty != nil {
+		if format == "" && !term.IsTerminal(int(os.Stdout.Fd())) {
+			format = "json"
+		}
+
+		if file == "" && tty != nil {
 			// stop tty logger because we're about to print to stdout for the outputs
 			tty.Stop()
 			lg = logger.New()
@@ -323,7 +327,7 @@ func init() {
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
 	doCmd.Flags().String("output", "", "File path to write the action's output values. Prints to stdout if empty")
-	doCmd.Flags().String("output-format", "plain", "Format for output values (plain, json, yaml)")
+	doCmd.Flags().String("output-format", "", "Format for output values (plain, json, yaml)")
 	doCmd.Flags().StringArray("cache-to", []string{},
 		"Cache export destinations (eg. user/app:cache, type=local,dest=path/to/dir)")
 	doCmd.Flags().StringArray("cache-from", []string{},
