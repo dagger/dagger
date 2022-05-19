@@ -14,7 +14,7 @@ require (
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/gofrs/flock v0.8.1
 	github.com/google/uuid v1.3.0
-	github.com/hashicorp/go-version v1.4.0
+	github.com/hashicorp/go-version v1.5.0
 	github.com/lib/pq v1.10.0 // indirect
 	github.com/mattn/go-colorable v0.1.12
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
