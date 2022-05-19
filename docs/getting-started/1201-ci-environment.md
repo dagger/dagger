@@ -283,9 +283,7 @@ spec:
   - name: dagger-action
     value: deploy
   - name: repo-url
-    value: https://github.com/dagger/dagger.git
-  - name: app-dir
-    value: pkg/universe.dagger.io/examples/todoapp
+    value: https://github.com/dagger/todoapp.git
   - name: netlify-site-name
     value: todoapp-dagger-europa
   - name: netlify-team
