@@ -1,6 +1,6 @@
 ---
 slug: /1226/coding-style
-displayed_sidebar: '0.2'
+displayed_sidebar: "0.2"
 ---
 
 # Package Coding Style
@@ -380,4 +380,14 @@ client: _
 
 // ok if it improves understanding
 client: platform: _
+```
+
+## Format all the CUE code
+
+It's important to lint all the CUE code so it stays consistent across all packages.
+
+Thanksfully, CUE makes it very easy. [First, make sure you have the CUE binary installed on your machine](https://cuelang.org/docs/install/). Then, simply run the following command from the package directory:
+
+```shell
+cue fmt -s
 ```
