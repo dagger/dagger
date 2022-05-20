@@ -2,8 +2,6 @@
 package yarn
 
 import (
-	"strings"
-
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
@@ -11,12 +9,51 @@ import (
 	"universe.dagger.io/bash"
 )
 
-#Build: #Run & {
-	args: *["run", "build"] | _
+// Install dependencies with yarn ('yarn install')
+#Install: #Command & {
+	args: ["install"]
 }
 
-// Run a yarn command or script
-#Run: {
+// Build an application with yarn ('yarn run build')
+#Build: #Script & {
+	name: "build"
+}
+
+// Run a yarn script ('yarn run <NAME>')
+#Script: {
+	// App source code
+	source: dagger.#FS
+
+	// Yarn project
+	project: string
+
+	// Name of the yarn script to run
+	// Example: "build"
+	name: string
+
+	#Command & {
+		"source":  source
+		"project": project
+		args: ["run", name]
+
+		// Mount output directory of install command,
+		//   even though we don't need it,
+		//   to trigger an explicit dependency.
+		container: mounts: install_output: {
+			contents: install.output
+			dest:     "/tmp/yarn_install_output"
+		}
+	}
+
+	install: #Install & {
+		"source":  source
+		"project": project
+	}
+
+}
+
+// Run a yarn command (`yarn <ARGS>')
+#Command: {
 	// Source code to build
 	source: dagger.#FS
 
@@ -36,14 +73,10 @@ import (
 	// Logs produced by the yarn script
 	logs: container.export.files."/logs"
 
-	// Other actions required to run before this one
-	requires: [...string]
-
-	// Yarn exit code.
-	code: container.export.files."/code"
-
 	container: bash.#Run & {
-		input:  _image.output
+		"args": args
+
+		input:  *_image.output | _
 		_image: alpine.#Build & {
 			packages: {
 				bash: {}
@@ -52,7 +85,6 @@ import (
 			}
 		}
 
-		"args":  args
 		workdir: "/src"
 		mounts: Source: {
 			dest:     "/src"
@@ -80,7 +112,6 @@ import (
 		env: {
 			YARN_CACHE_FOLDER:  "/cache/yarn"
 			YARN_OUTPUT_FOLDER: outputDir
-			REQUIRES:           "\(strings.Join(requires, "_"))"
 		}
 		mounts: {
 			"Yarn cache": {
