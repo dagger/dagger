@@ -282,12 +282,11 @@ func (c *TTYOutput) print() {
 	default:
 	}
 
-	print(&c.lineCount, c.cons, c.logs.Messages)
+	width, height := getSize(c.cons)
+	print(&c.lineCount, width, height, c.cons, c.logs.Messages)
 }
 
-func print(lineCount *int, cons ConsoleWriter, messages []Message) {
-	width, height := getSize(cons)
-
+func print(lineCount *int, width, height int, cons io.Writer, messages []Message) {
 	// hide during re-rendering to avoid flickering
 	fmt.Fprint(cons, aec.Hide)
 	defer fmt.Fprint(cons, aec.Show)
@@ -366,7 +365,7 @@ func printLine(w io.Writer, event Event, width int) int {
 	return t.UsedHeight()
 }
 
-func printGroup(group *Group, width, maxLines int, cons ConsoleWriter) int {
+func printGroup(group *Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
 	var out string
@@ -453,7 +452,7 @@ func printGroup(group *Group, width, maxLines int, cons ConsoleWriter) int {
 	return lineCount
 }
 
-func printGroupLine(event Event, width int, cons ConsoleWriter) int {
+func printGroupLine(event Event, width int, cons io.Writer) (nbLines int) {
 	message := colorize.Color(fmt.Sprintf("%s%s",
 		formatMessage(event),
 		formatFields(event),
