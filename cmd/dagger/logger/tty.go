@@ -293,9 +293,14 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 
 	// rewind to the top
 	b := aec.EmptyBuilder
-	for i := 0; i < *lineCount; i++ {
-		b = b.Up(1)
+
+	// TODO the: check the lineCount value or change its type
+	ups := *lineCount
+	if ups < 0 {
+		ups = 1
 	}
+	b = b.Up(uint(ups))
+
 	fmt.Fprint(cons, b.ANSI)
 
 	linesPerGroup := linesPerGroup(width, height, messages)
