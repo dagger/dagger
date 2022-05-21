@@ -65,9 +65,9 @@ core-integration: dagger # Run core integration tests
 # 	DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./universe" test
 
 .PHONY: universe-test
-universe-test: dagger-debug # Run universe tests
+universe-test: dagger # Run universe tests
 	yarn --cwd "./pkg/universe.dagger.io" install
-	TESTDIR=$(UNIVERSE_TESTDIR) DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger-debug" yarn --cwd "./pkg/universe.dagger.io" test
+	TESTDIR=$(UNIVERSE_TESTDIR) DAGGER_BINARY="$(shell pwd)/cmd/dagger/dagger" yarn --cwd "./pkg/universe.dagger.io" test
 
 .PHONY: doc-test
 doc-test: dagger-debug # Test docs
