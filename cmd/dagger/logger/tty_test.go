@@ -3,9 +3,17 @@ package logger
 import (
 	"bytes"
 	"errors"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/morikuni/aec"
+	"github.com/stretchr/testify/require"
 )
 
 type mockConsole struct {
@@ -146,4 +154,44 @@ type sizerMock struct {
 
 func (s sizerMock) Size() (WinSize, error) {
 	return s.sizeFunc()
+}
+var goldenUpdate bool
+
+func init() {
+	flag.BoolVar(&goldenUpdate, "test.golden-update", false, "update golden file for tests")
+}
+
+func TestPrintLine(t *testing.T) {
+	goldenData, err := os.ReadFile("./testdata/print_line_test.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tm := time.UnixMilli(123456789)
+
+	var b bytes.Buffer
+	event := map[string]interface{}{
+		"time":    tm.Format(time.RFC3339),
+		"abc":     "ABC",
+		"level":   "5",
+		"message": "my msg",
+		"toto":    "TOTOTO",
+		"titi":    "TITITITI",
+		"tata":    "TATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATA",
+		"tete":    "TETETETE",
+	}
+
+	//  4:33PM PNC my msg    abc=ABC tata=TATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATA tete=TETETETE titi=TITITITI toto=TOTOTO
+	width := 20
+
+	n := printLine(&b, event, width)
+
+	if goldenUpdate {
+		err := os.WriteFile("./testdata/print_line_test.golden", b.Bytes(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	require.Equal(t, goldenData, b.Bytes())
+	t.Log(b.String(), event, width, n)
 }
