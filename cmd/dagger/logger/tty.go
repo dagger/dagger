@@ -286,6 +286,22 @@ func (c *TTYOutput) print() {
 	print(&c.lineCount, width, height, c.cons, c.logs.Messages)
 }
 
+func goBack(b *aec.Builder, lineCount int) *aec.Builder {
+	if lineCount < 1 {
+		lineCount = 0
+	}
+	b = b.Left(uint(lineCount))
+	return b
+}
+
+// FIXME: remove and use goBack once we make sure it works the same
+func goBackLoop(b *aec.Builder, lineCount int) *aec.Builder {
+	for i := 0; i < lineCount; i++ {
+		b = b.Left(1)
+	}
+	return b
+}
+
 func print(lineCount *int, width, height int, cons io.Writer, messages []Message) {
 	// hide during re-rendering to avoid flickering
 	fmt.Fprint(cons, aec.Hide)
@@ -294,12 +310,8 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 	// rewind to the top
 	b := aec.EmptyBuilder
 
-	// TODO the: check the lineCount value or change its type
-	ups := *lineCount
-	if ups < 0 {
-		ups = 1
-	}
-	b = b.Up(uint(ups))
+	// TODO replace by goBack, it should have same effect
+	b = goBackLoop(b, *lineCount)
 
 	fmt.Fprint(cons, b.ANSI)
 

@@ -155,6 +155,30 @@ type sizerMock struct {
 func (s sizerMock) Size() (WinSize, error) {
 	return s.sizeFunc()
 }
+
+func TestGoBack(t *testing.T) {
+	for i := -10; i < 10; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			b := aec.EmptyBuilder
+			bl := aec.EmptyBuilder
+
+			b = goBack(b, i)
+			bl = goBackLoop(bl, i)
+
+			var out, outl bytes.Buffer
+			fmt.Fprint(&out, "Hello World", b.ANSI, "Universe")
+			fmt.Fprint(&outl, "Hello World", bl.ANSI, "Universe")
+			t.Logf("\ngot: %v\nexp: %v", out.String(), outl.String())
+			// we can't just compare those as is as the goBackFor creates more characters
+			// and goBack will encode the number in the escape sequence
+			// but visually, the result is the same, the Hello World will get overwriten
+			if out.String() != outl.String() {
+				//	t.Fatalf("\ngot: %v\nexp: %v", out.Bytes(), outf.Bytes())
+			}
+		})
+	}
+}
+
 var goldenUpdate bool
 
 func init() {
