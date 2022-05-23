@@ -32,7 +32,7 @@ func parseURL(endpoint string) (string, error) {
 		)
 	}
 
-	return fmt.Sprintf("%s%s", u.Hostname(), u.Path), nil
+	return fmt.Sprintf("%s%s", u.Hostname(), strings.TrimSuffix(u.Path, ".git")), nil
 }
 
 func parseSCPLike(endpoint string) (string, bool) {

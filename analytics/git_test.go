@@ -16,6 +16,10 @@ func TestParseGit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, endpoint, "github.com/dagger/dagger")
 
+	endpoint, err = parseGitURL("https://github.com/dagger/dagger.git")
+	require.NoError(t, err)
+	require.Equal(t, endpoint, "github.com/dagger/dagger")
+
 	endpoint, err = parseGitURL("git@github.com:dagger/dagger.git")
 	require.NoError(t, err)
 	require.Equal(t, endpoint, "github.com/dagger/dagger")
