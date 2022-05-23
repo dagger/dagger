@@ -92,7 +92,6 @@ dagger.#Plan & {
 		test: {
 			// Go unit tests
 			unit: go.#Test & {
-				// container: image: _goImage.output
 				source:  _source
 				package: "./..."
 
@@ -104,12 +103,9 @@ dagger.#Plan & {
 				// Directory containing the basts files
 				path: string
 
-				_daggerLinuxBin: go.#Build & {
-					source:  _source
-					package: "./cmd/dagger/"
-					arch:    client.platform.arch
-					container: command: flags: "-race": true
-				}
+				// dagger binary
+				daggerBinary: _
+
 				_testDir: core.#Subdir & {
 					input:  _source
 					"path": path
@@ -119,7 +115,7 @@ dagger.#Plan & {
 						// directory containing integration tests
 						_testDir.output,
 						// dagger binary
-						_daggerLinuxBin.output,
+						daggerBinary.output,
 					]
 				}
 
@@ -162,15 +158,23 @@ dagger.#Plan & {
 
 			integration: {
 				core: #BatsIntegrationTest & {
-					path: "tests"
+					path:         "tests"
+					daggerBinary: go.#Build & {
+						source:  _source
+						package: "./cmd/dagger/"
+						arch:    client.platform.arch
+						container: command: flags: "-race": true
+					}
 				}
 				doc: #BatsIntegrationTest & {
-					path: "docs/learn/tests"
+					path:         "docs/learn/tests"
+					daggerBinary: build.go
 				}
 				universe: #BatsIntegrationTest & {
-					path:      "pkg"
-					testDir:   "universe.dagger.io"
-					extraArgs: "$(find . -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*')"
+					path:         "pkg"
+					daggerBinary: build.go
+					testDir:      "universe.dagger.io"
+					extraArgs:    "$(find . -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*')"
 				}
 			}
 		}
