@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -12,10 +13,9 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 )
 
-// FIXME: THIS IS A TEMPORARY TEST FILE, NEEDS TO BE REMOVED.
-var apitestCmd = &cobra.Command{
+// TODO: remove as soon as there is a higher-level integration with the API
+var apiTestCmd = &cobra.Command{
 	Use:    "_api_test",
-	Short:  "TEST COMMAND",
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
@@ -29,11 +29,17 @@ var apitestCmd = &cobra.Command{
 		lg := logger.New()
 		ctx := lg.WithContext(cmd.Context())
 
-		log.Ctx(ctx).Info().Msg("sending test request")
+		apiURL, err := url.Parse(viper.GetString("url"))
+		if err != nil {
+			panic(err)
+		}
+		apiURL.Path = "/private"
+
+		log.Ctx(ctx).Info().Msg(fmt.Sprintf("Testing %s", apiURL))
 
 		c := api.New()
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:8020/private", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL.String(), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -48,6 +54,14 @@ var apitestCmd = &cobra.Command{
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("%s", body)
+		fmt.Printf("%s\n", body)
 	},
+}
+
+func init() {
+	apiTestCmd.Flags().StringP("url", "u", "http://localhost:8020", "API base URL, e.g. https://api.dagger.io")
+
+	if err := viper.BindPFlags(docCmd.Flags()); err != nil {
+		panic(err)
+	}
 }
