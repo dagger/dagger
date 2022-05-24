@@ -37,6 +37,7 @@ dagger.#Plan & {
 		GITHUB_ACTIONS:                string | *""
 		ACTIONS_RUNTIME_TOKEN:         string | *""
 		ACTIONS_CACHE_URL:             string | *""
+		TESTDIR:                       string | *"."
 	}
 
 	actions: {
@@ -168,13 +169,14 @@ dagger.#Plan & {
 				}
 				doc: #BatsIntegrationTest & {
 					path:         "docs/learn/tests"
-					daggerBinary: build.go
+					daggerBinary: build.go & {os: "linux"}
 				}
 				universe: #BatsIntegrationTest & {
 					path:         "pkg"
-					daggerBinary: build.go
+					daggerBinary: build.go & {os: "linux"}
 					testDir:      "universe.dagger.io"
-					extraArgs:    "$(find . -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*')"
+					env: TESTDIR: client.env.TESTDIR
+					extraArgs: "$(find ${TESTDIR:-.} -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*')"
 				}
 			}
 		}
