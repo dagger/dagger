@@ -290,14 +290,13 @@ func goBack(b *aec.Builder, lineCount int) *aec.Builder {
 	if lineCount < 1 {
 		lineCount = 0
 	}
-	b = b.Left(uint(lineCount))
+	b = b.Up(uint(lineCount))
 	return b
 }
 
-// FIXME: remove and use goBack once we make sure it works the same
 func goBackLoop(b *aec.Builder, lineCount int) *aec.Builder {
 	for i := 0; i < lineCount; i++ {
-		b = b.Left(1)
+		b = b.Up(1)
 	}
 	return b
 }
@@ -310,9 +309,10 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 	// rewind to the top
 	b := aec.EmptyBuilder
 
-	// TODO replace by goBack, it should have same effect
-	b = goBackLoop(b, *lineCount)
-
+	b = goBack(b, *lineCount)
+	//for i := 0; i < *lineCount; i++ {
+	//	b = b.Up(1)
+	//}
 	fmt.Fprint(cons, b.ANSI)
 
 	linesPerGroup := linesPerGroup(width, height, messages)
