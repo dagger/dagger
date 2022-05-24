@@ -46,7 +46,7 @@ func Login(ctx context.Context) error {
 	lg.Info().Msg("logging into your dagger account")
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		lg.Error().Msg("login is only supported in interactive mode (stdout is not a terminal)")
-		lg.Error().Msg("please log from a terminal or provide an API Key for non-interactive scripts.")
+		lg.Error().Msg("please log in from a terminal")
 		return errors.New("authentication failed")
 	}
 
