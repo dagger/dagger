@@ -189,6 +189,35 @@ func TestPrintGroupLine(t *testing.T) {
 	//t.Fatalf("DBGTHE: %v\n%v\n%v\n%v", n, event, w, b.Bytes())
 }
 
+func TestPrint(t *testing.T) {
+	//var b bytes.Buffer
+	b, err := ioutil.TempFile("/tmp", time.Now().Format("2006-01-02_15h04m05_")+"test-*.out")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("too small console width", func(t *testing.T) {
+		now := time.Now()
+		msgs := []Message{
+			{
+				Event: map[string]interface{}{"abc": "ABC"},
+				Group: &Group{
+					Name:    "test",
+					Started: &now,
+				},
+			},
+		}
+		lc := 1
+
+		// fails with w=11 and group len(name)=4
+		// we need:
+		// - 4 to display "[+] "
+		// - 4 to display "test"
+		// - 4 chars to display "0.0s"
+		print(&lc, 12, 1, b, msgs)
+	})
+}
+
 func TestGoBack(t *testing.T) {
 	for i := -10; i < 10; i++ {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
