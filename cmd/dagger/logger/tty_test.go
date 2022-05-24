@@ -254,7 +254,7 @@ func TestPrintLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tm := time.UnixMilli(123456789)
+	tm := time.UnixMilli(123456789).UTC()
 
 	var b bytes.Buffer
 	event := map[string]interface{}{
