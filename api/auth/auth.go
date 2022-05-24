@@ -78,8 +78,6 @@ func Login(ctx context.Context) error {
 		}
 	}()
 
-	// go http.ListenAndServe(fmt.Sprintf("localhost:%d", callbackPort), nil)
-
 	// Generate random state
 	b := make([]byte, 32)
 	rand.Read(b)
