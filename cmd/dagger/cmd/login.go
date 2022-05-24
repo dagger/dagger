@@ -9,7 +9,7 @@ import (
 
 var loginCmd = &cobra.Command{
 	Use:    "login",
-	Short:  "Log into your dagger account",
+	Short:  "Log into your Dagger account",
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {

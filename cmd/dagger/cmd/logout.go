@@ -9,7 +9,7 @@ import (
 
 var logoutCmd = &cobra.Command{
 	Use:    "logout",
-	Short:  "Log out of your dagger account",
+	Short:  "Log out of your Dagger account",
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
