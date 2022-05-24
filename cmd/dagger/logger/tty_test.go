@@ -156,6 +156,39 @@ func (s sizerMock) Size() (WinSize, error) {
 	return s.sizeFunc()
 }
 
+func TestPrintGroupLine(t *testing.T) {
+	goldenData, err := os.ReadFile("./testdata/print_group_line_test.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tm := time.UnixMilli(123456789)
+	event := map[string]interface{}{
+		"time":    tm.Format(time.RFC3339),
+		"abc":     "ABC",
+		"level":   "5",
+		"message": "my msgmy msgmy msgmy msgmy msgmy msgmy msgmy msgmy msgmy msgmy msg",
+		"toto":    "TOTOTO",
+		"titi":    "TITITITI",
+		"tata":    "TATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATA",
+		"tete":    "TETETETE",
+	}
+
+	w := 150
+	var b bytes.Buffer
+	n := printGroupLine(event, w, &b)
+
+	if goldenUpdate {
+		err := os.WriteFile("./testdata/print_group_line_test.golden", b.Bytes(), 0o660)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	require.Equal(t, goldenData, b.Bytes())
+	require.Equal(t, 1, n)
+	//t.Fatalf("DBGTHE: %v\n%v\n%v\n%v", n, event, w, b.Bytes())
+}
+
 func TestGoBack(t *testing.T) {
 	for i := -10; i < 10; i++ {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -169,6 +202,7 @@ func TestGoBack(t *testing.T) {
 			fmt.Fprint(&out, "Hello World", b.ANSI, "Universe")
 			fmt.Fprint(&outl, "Hello World", bl.ANSI, "Universe")
 			t.Logf("\ngot: %v\nexp: %v", out.String(), outl.String())
+
 			// we can't just compare those as is as the goBackFor creates more characters
 			// and goBack will encode the number in the escape sequence
 			// but visually, the result is the same, the Hello World will get overwriten
@@ -205,13 +239,12 @@ func TestPrintLine(t *testing.T) {
 		"tete":    "TETETETE",
 	}
 
-	//  4:33PM PNC my msg    abc=ABC tata=TATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATA tete=TETETETE titi=TITITITI toto=TOTOTO
 	width := 20
 
 	n := printLine(&b, event, width)
 
 	if goldenUpdate {
-		err := os.WriteFile("./testdata/print_line_test.golden", b.Bytes(), 0)
+		err := os.WriteFile("./testdata/print_line_test.golden", b.Bytes(), 0o660)
 		if err != nil {
 			t.Fatal(err)
 		}

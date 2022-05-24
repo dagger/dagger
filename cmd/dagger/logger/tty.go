@@ -470,7 +470,16 @@ func printGroup(group *Group, width, maxLines int, cons io.Writer) int {
 }
 
 func printGroupLine(event Event, width int, cons io.Writer) (nbLines int) {
-	message := colorize.Color(fmt.Sprintf("%s%s",
+	message, nbLines := formatGroupLine(event, width)
+
+	// Print
+	fmt.Fprint(cons, message)
+
+	return nbLines
+}
+
+func formatGroupLine(event Event, width int) (message string, nbLines int) {
+	message = colorize.Color(fmt.Sprintf("%s%s",
 		formatMessage(event),
 		formatFields(event),
 	))
@@ -489,10 +498,7 @@ func printGroupLine(event Event, width int, cons io.Writer) (nbLines int) {
 	// color
 	message = aec.Apply(message, aec.Faint)
 
-	// Print
-	fmt.Fprint(cons, message)
-
-	return 1
+	return message, 1
 }
 
 func getSize(cons ConsoleSizer) (width, height int) {
