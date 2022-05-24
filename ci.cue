@@ -176,6 +176,13 @@ dagger.#Plan & {
 					daggerBinary: build.go & {os: "linux"}
 					testDir:      "universe.dagger.io"
 					env: TESTDIR: client.env.TESTDIR
+					extraArgs: "$(find ${TESTDIR:-.} -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*' -not -path '*/x/*')"
+				}
+				experimental: #BatsIntegrationTest & {
+					path:         "pkg"
+					daggerBinary: build.go & {os: "linux"}
+					testDir:      "universe.dagger.io/x"
+					env: TESTDIR: client.env.TESTDIR
 					extraArgs: "$(find ${TESTDIR:-.} -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*')"
 				}
 			}

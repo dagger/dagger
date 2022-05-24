@@ -63,6 +63,10 @@ core-integration: dagger # Run core integration tests
 universe-test: dagger # Run universe tests
 	./cmd/dagger/dagger do test integration universe
 
+.PHONY: experimental-universe-tests
+experimental-universe-tests: dagger # Run experimental universe tests
+	./cmd/dagger/dagger do test integration experimental
+
 .PHONY: doc-test
 doc-test: dagger # Test docs
 	./cmd/dagger/dagger do test integration doc

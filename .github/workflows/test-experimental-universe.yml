@@ -1,0 +1,79 @@
+name: "Test Experimental Universe"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-experimental-universe.yml"
+      - "!docs/**"
+      - "docs/tests/**"
+
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.sh"
+      - "**.bash"
+      - "**.go"
+      - "**.cue"
+      - "**.bats"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/test-experimental-universe.yml"
+      - "!docs/**"
+      - "docs/tests/**"
+
+env:
+  DAGGER_CACHE_BASE: dagger-ci-experimental-universe
+
+jobs:
+  experimental-universe-tests:
+    name: "Experimental Universe Tests - Europa"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: "Check out"
+        uses: actions/checkout@v2
+
+      - name: "Set up Go"
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.16
+
+      - name: "Install SOPS"
+        run: |
+          sudo curl -L -o /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.1/sops-v3.7.1.linux
+          sudo chmod +x /usr/local/bin/sops
+
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
+
+      - name: Sets env vars on push to main
+        run: |
+          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
+          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Sets env vars on pull request
+        run: |
+          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
+          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main type=gha,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'pull_request' }}
+
+      - name: Test
+        run: |
+          export DAGGER_LOG_FORMAT=plain
+          make experimental-universe-tests
+
+      - name: Print Buildkitd Logs
+        if: ${{ failure() }}
+        run: |
+          docker logs dagger-buildkitd
