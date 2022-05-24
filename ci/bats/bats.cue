@@ -22,9 +22,16 @@ import (
 	// Mount points for the bats container
 	mounts: [name=string]: _
 
+	// args to the bats cli
+	extraArgs: string | *""
+
+	// test directory containing bats files
+	testDir: string | *""
+
 	docker.#Build & {
 		_packages: ["yarn", "git", "docker", "curl"]
 		_batsMods: ["bats-support", "bats-assert"]
+		_workDir: "/src/\(testDir)"
 
 		steps: [
 			docker.#Pull & {
@@ -58,7 +65,7 @@ import (
 			for mod in _batsMods {
 				docker.#Run & {
 					entrypoint: []
-					workdir: "/src"
+					workdir: _workDir
 					command: {
 						name: "yarn"
 						args: ["add", mod]
@@ -69,7 +76,7 @@ import (
 			if initScript != null {
 				bash.#Run & {
 					"env":   env
-					workdir: "/src"
+					workdir: _workDir
 					script: contents: initScript
 				}
 			},
@@ -77,9 +84,9 @@ import (
 			bash.#Run & {
 				"env":    env
 				"mounts": mounts
-				workdir:  "/src"
+				workdir:  _workDir
 				script: contents: """
-					bats --jobs 4 --print-output-on-failure --verbose-run .
+					bats --jobs 4 --print-output-on-failure --verbose-run \(extraArgs) .
 					"""
 			},
 		]

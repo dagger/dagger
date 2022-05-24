@@ -7,9 +7,9 @@ common_setup() {
     #   otherwise infinite recursion when DAGGER_BINARY is not set.
     export DAGGER="${DAGGER_BINARY:-$(bash -c 'command -v dagger')}"
 
-    # Disable analytics
-    DAGGER_DISABLE_ANALYTICS="1"
-    export DAGGER_DISABLE_ANALYTICS
+    # Disable telemetry
+    DAGGER_TELEMETRY_DISABLE="1"
+    export DAGGER_TELEMETRY_DISABLE
 
     # Force plain printing for error reporting
     DAGGER_LOG_FORMAT="plain"
@@ -22,7 +22,7 @@ common_setup() {
         export DAGGER_CACHE_FROM="$DAGGER_CACHE_FROM-$BATS_TEST_NAME"
     fi
 
-    SOPS_AGE_KEY_FILE="$(dirname "${BASH_SOURCE[0]}")/../../tests/age_key.txt"
+    SOPS_AGE_KEY_FILE="$(dirname "${BASH_SOURCE[0]}")/age_key.txt"
     export SOPS_AGE_KEY_FILE
 
     # cd into the directory containing the bats file

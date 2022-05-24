@@ -37,6 +37,7 @@ dagger.#Plan & {
 		GITHUB_ACTIONS:                string | *""
 		ACTIONS_RUNTIME_TOKEN:         string | *""
 		ACTIONS_CACHE_URL:             string | *""
+		TESTDIR:                       string | *"."
 	}
 
 	actions: {
@@ -92,7 +93,6 @@ dagger.#Plan & {
 		test: {
 			// Go unit tests
 			unit: go.#Test & {
-				// container: image: _goImage.output
 				source:  _source
 				package: "./..."
 
@@ -100,54 +100,83 @@ dagger.#Plan & {
 				env: DAGGER_LOG_FORMAT: client.env.DAGGER_LOG_FORMAT
 			}
 
-			integration: bats.#Bats & {
-				_daggerLinuxBin: go.#Build & {
-					source:  _source
-					package: "./cmd/dagger/"
-					arch:    client.platform.arch
-					container: command: flags: "-race": true
-				}
+			#BatsIntegrationTest: {
+				// Directory containing the basts files
+				path: string
+
+				// dagger binary
+				daggerBinary: _
+
 				_testDir: core.#Subdir & {
-					input: _source
-					path:  "tests"
+					input:  _source
+					"path": path
 				}
 				_mergeFS: core.#Merge & {
 					inputs: [
 						// directory containing integration tests
 						_testDir.output,
 						// dagger binary
-						_daggerLinuxBin.output,
+						daggerBinary.output,
 					]
 				}
-				env: {
-					DAGGER_BINARY:                 "/src/dagger"
-					DAGGER_LOG_FORMAT:             client.env.DAGGER_LOG_FORMAT
-					BUILDKIT_HOST:                 client.env.BUILDKIT_HOST
-					OTEL_EXPORTER_JAEGER_ENDPOINT: client.env.OTEL_EXPORTER_JAEGER_ENDPOINT
-					JAEGER_TRACE:                  client.env.JAEGER_TRACE
-					DAGGER_CACHE_FROM:             client.env.DAGGER_CACHE_FROM
-					DAGGER_CACHE_TO:               client.env.DAGGER_CACHE_TO
-					GITHUB_ACTIONS:                client.env.GITHUB_ACTIONS
-					ACTIONS_RUNTIME_TOKEN:         client.env.ACTIONS_RUNTIME_TOKEN
-					ACTIONS_CACHE_URL:             client.env.ACTIONS_CACHE_URL
+
+				bats.#Bats & {
+					env: {
+						DAGGER_BINARY:                 "/src/dagger"
+						DAGGER_LOG_FORMAT:             client.env.DAGGER_LOG_FORMAT
+						BUILDKIT_HOST:                 client.env.BUILDKIT_HOST
+						OTEL_EXPORTER_JAEGER_ENDPOINT: client.env.OTEL_EXPORTER_JAEGER_ENDPOINT
+						JAEGER_TRACE:                  client.env.JAEGER_TRACE
+						DAGGER_CACHE_FROM:             client.env.DAGGER_CACHE_FROM
+						DAGGER_CACHE_TO:               client.env.DAGGER_CACHE_TO
+						GITHUB_ACTIONS:                client.env.GITHUB_ACTIONS
+						ACTIONS_RUNTIME_TOKEN:         client.env.ACTIONS_RUNTIME_TOKEN
+						ACTIONS_CACHE_URL:             client.env.ACTIONS_CACHE_URL
+					}
+					source: _mergeFS.output
+					initScript: #"""
+						set -exu
+						[ -d cue.mod/pkg/ ] && {
+							# Remove the symlinked pkgs
+							rm -rf cue.mod/pkg/*
+							$DAGGER_BINARY project update
+						}
+						# Install sops
+						# FIXME: should be in its own package
+						curl -o /usr/bin/jq -sL \
+							https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 \
+							&& chmod +x /usr/bin/jq
+						curl -o /usr/bin/sops -sL \
+							https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux \
+							&& chmod +x /usr/bin/sops
+						"""#
+					mounts: docker: {
+						dest:     "/var/run/docker.sock"
+						contents: client.network."unix:///var/run/docker.sock".connect
+					}
 				}
-				source: _mergeFS.output
-				initScript: #"""
-					# Remove the symlinked pkgs
-					rm -rf cue.mod/pkg/*
-					# Install sops
-					# FIXME: should be in its own package
-					curl -o /usr/bin/jq -L \
-						https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 \
-						&& chmod +x /usr/bin/jq
-					curl -o /usr/bin/sops -L \
-						https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux \
-						&& chmod +x /usr/bin/sops
-					$DAGGER_BINARY project update
-					"""#
-				mounts: docker: {
-					dest:     "/var/run/docker.sock"
-					contents: client.network."unix:///var/run/docker.sock".connect
+			}
+
+			integration: {
+				core: #BatsIntegrationTest & {
+					path:         "tests"
+					daggerBinary: go.#Build & {
+						source:  _source
+						package: "./cmd/dagger/"
+						arch:    client.platform.arch
+						container: command: flags: "-race": true
+					}
+				}
+				doc: #BatsIntegrationTest & {
+					path:         "docs/learn/tests"
+					daggerBinary: build.go & {os: "linux"}
+				}
+				universe: #BatsIntegrationTest & {
+					path:         "pkg"
+					daggerBinary: build.go & {os: "linux"}
+					testDir:      "universe.dagger.io"
+					env: TESTDIR: client.env.TESTDIR
+					extraArgs: "$(find ${TESTDIR:-.} -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/cue.mod/*')"
 				}
 			}
 		}
