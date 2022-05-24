@@ -194,8 +194,8 @@ func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFu
 			solver.NewSecretsStoreProvider(pctx),
 			solver.NewDockerSocketProvider(pctx),
 		},
-		CacheExports: c.cfg.CacheExports,
-		CacheImports: c.cfg.CacheImports,
+		CacheExports: pctx.CacheConfig.Exports(),
+		CacheImports: pctx.CacheConfig.Imports(),
 	}
 
 	// Call buildkit solver

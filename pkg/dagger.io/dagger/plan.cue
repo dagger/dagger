@@ -1,5 +1,9 @@
 package dagger
 
+import (
+	"strings"
+)
+
 // A special kind of program which `dagger` can execute.
 #Plan: {
 	// Access client machine
@@ -43,8 +47,123 @@ package dagger
 	// FIXME: temporarily disabled
 	// platform?: string
 
+	cache?: #CacheConfig
+
 	// Execute actions in containers
 	actions: _
+}
+
+#CacheConfig: {
+	$dagger: task: _name: "CacheConfig"
+
+	// TODO: what if we want priority... should we use a list?
+	imports?: [name=string]: {
+		type: string
+		{
+			type:     "registry"
+			ref:      string
+			asString: "type=registry,ref=\(ref)"
+		} | {
+			type:     "gha"
+			scope?:   string
+			url?:     string
+			token?:   #Secret
+			asString: "type=gha,scope=\(scope)"
+		}
+	}
+
+	export?: {
+		type: string
+		mode: *"min" | "max"
+		{
+			type:     "registry"
+			ref:      string
+			asString: "type=registry,mode=\(mode),ref=\(ref)"
+		} | {
+			type:     "gha"
+			scope?:   string
+			url?:     string
+			token?:   #Secret
+			asString: "type=gha,mode=\(mode),scope=\(scope)"
+		}
+	}
+}
+
+// TODO: move elsewhere
+#GHAConfig: {
+	// TODO: accept a generic struct that matches github event type so just that file/string can be provided instead of all these fields
+	repository:  string
+	eventName:   string
+	eventNumber: string
+	ref:         string
+	mainBranch:  string | *"main"
+	mode:        *"min" | "max"
+
+	_mainScope: "\(repository)-\(mainBranch)"
+	_prScope:   "\(repository)-\(eventNumber)"
+
+	_mainImport: "gha-\(_mainScope)": {
+		type:  "gha"
+		scope: _mainScope
+	}
+	_prImport: "gha-\(_prScope)": {
+		type:  "gha"
+		scope: _prScope
+	}
+	_mainExport: {
+		type:  "gha"
+		mode:  mode
+		scope: _mainScope
+	}
+	_prExport: {
+		type:  "gha"
+		mode:  mode
+		scope: _prScope
+	}
+
+	output: #CacheConfig & {
+		if (eventName == "push") && (ref == "refs/heads/\(mainBranch)") {
+			imports: {
+				_mainImport
+			}
+			export: _mainExport
+		}
+		if (eventName == "pull_request") {
+			imports: {
+				_mainImport
+				_prImport
+			}
+			export: _prExport
+		}
+	}
+}
+
+// TODO: better name?
+#FromCacheEnv: {
+	imports?: string
+	export?:  string
+	output:   #CacheConfig & {
+		if imports != _|_ {
+			"imports": {
+				for config in strings.Split(imports, " ") {
+					"\(config)": {
+						for kv in strings.Split(config, ",") {
+							let split = strings.Split(kv, "=")
+							"\(split[0])": split[1]
+						}
+					}
+				}
+			}
+		}
+		if export != _|_ {
+			"export": {
+				for kv in strings.Split(export, ",") {
+					let split = strings.Split(kv, "=")
+					"\(split[0])": split[1]
+				}
+			}
+		}
+	}
 }
 
 _#clientFilesystemRead: {

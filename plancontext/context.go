@@ -7,12 +7,13 @@ import (
 
 // Context holds the execution context for a plan.
 type Context struct {
-	Platform  *platformContext
-	FS        *fsContext
-	LocalDirs *localDirContext
-	TempDirs  *tempDirContext
-	Secrets   *secretContext
-	Sockets   *socketContext
+	Platform    *platformContext
+	FS          *fsContext
+	LocalDirs   *localDirContext
+	TempDirs    *tempDirContext
+	Secrets     *secretContext
+	Sockets     *socketContext
+	CacheConfig *cacheConfigContext
 }
 
 func New() *Context {
@@ -33,6 +34,7 @@ func New() *Context {
 		Sockets: &socketContext{
 			store: make(map[string]*Socket),
 		},
+		CacheConfig: &cacheConfigContext{},
 	}
 }
 

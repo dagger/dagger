@@ -14,6 +14,7 @@ common_setup() {
     export DAGGER_TELEMETRY_DISABLE
 
     export DAGGER_LOG_LEVEL="debug"
+    # TODO: this is very delicate now, probably need a better way
     if [ -n "$GITHUB_ACTIONS" ];
     then
         export DAGGER_CACHE_TO="$DAGGER_CACHE_TO-$BATS_TEST_NAME"

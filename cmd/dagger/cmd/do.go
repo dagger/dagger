@@ -138,8 +138,6 @@ var doCmd = &cobra.Command{
 			ctx = lg.WithContext(ctx)
 		}
 
-		cl := common.NewClient(ctx)
-
 		actionFlags.VisitAll(func(flag *pflag.Flag) {
 			if cmd.Flags().Changed(flag.Name) {
 				fmt.Printf("Changed: %s: %s\n", flag.Name, cmd.Flags().Lookup(flag.Name).Value.String())
@@ -150,6 +148,19 @@ var doCmd = &cobra.Command{
 			}
 		})
 
+		// get cache config
+		// TODO: only do this if cache field is set
+		cachePath := cue.MakePath(plan.CacheSelector)
+		cl := common.NewClient(ctx)
+		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
+			return daggerPlan.Do(ctx, cachePath, s)
+		})
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to get cache config")
+		}
+
+		// run action
+		cl = common.NewClient(ctx)
 		doneCh := common.TrackCommand(ctx, cmd, &analytics.Property{
 			Name:  "action",
 			Value: targetPath.String(),
@@ -158,7 +169,6 @@ var doCmd = &cobra.Command{
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
 			return daggerPlan.Do(ctx, targetPath, s)
 		})
-
 		<-doneCh
 
 		daggerPlan.Context().TempDirs.Clean()

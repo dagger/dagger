@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
@@ -32,12 +34,32 @@ dagger.#Plan & {
 		OTEL_EXPORTER_JAEGER_ENDPOINT: string | *""
 		JAEGER_TRACE:                  string | *""
 		BUILDKIT_HOST:                 string | *""
-		DAGGER_CACHE_FROM:             string | *""
-		DAGGER_CACHE_TO:               string | *""
 		GITHUB_ACTIONS:                string | *""
 		ACTIONS_RUNTIME_TOKEN:         string | *""
 		ACTIONS_CACHE_URL:             string | *""
 		TESTDIR:                       string | *"."
+
+		DAGGER_CACHE_FROM?: string
+		DAGGER_CACHE_TO?:   string
+
+		GITHUB_REPOSITORY:   string | *""
+		GITHUB_EVENT_NAME:   string | *""
+		GITHUB_EVENT_NUMBER: string | *""
+		GITHUB_REF:          string | *""
+	}
+
+	cache: dagger.#CacheConfig & {
+		(dagger.#GHAConfig & {
+			repository:  client.env.GITHUB_REPOSITORY
+			eventName:   client.env.GITHUB_EVENT_NAME
+			eventNumber: client.env.GITHUB_EVENT_NUMBER
+			ref:         client.env.GITHUB_REF
+			mode:        "max"
+		}).output
+		(dagger.#FromCacheEnv & {
+			imports: client.env.DAGGER_CACHE_FROM
+			export:  client.env.DAGGER_CACHE_TO
+		}).output
 	}
 
 	actions: {
@@ -127,11 +149,15 @@ dagger.#Plan & {
 						BUILDKIT_HOST:                 client.env.BUILDKIT_HOST
 						OTEL_EXPORTER_JAEGER_ENDPOINT: client.env.OTEL_EXPORTER_JAEGER_ENDPOINT
 						JAEGER_TRACE:                  client.env.JAEGER_TRACE
-						DAGGER_CACHE_FROM:             client.env.DAGGER_CACHE_FROM
-						DAGGER_CACHE_TO:               client.env.DAGGER_CACHE_TO
 						GITHUB_ACTIONS:                client.env.GITHUB_ACTIONS
 						ACTIONS_RUNTIME_TOKEN:         client.env.ACTIONS_RUNTIME_TOKEN
 						ACTIONS_CACHE_URL:             client.env.ACTIONS_CACHE_URL
+						if cache.imports != _|_ {
+							DAGGER_CACHE_FROM: strings.Join([ for _, v in cache.imports {v.asString}], " ")
+						}
+						if cache.export != _|_ {
+							DAGGER_CACHE_TO: cache.export.asString
+						}
 					}
 					source: _mergeFS.output
 					initScript: #"""
@@ -149,6 +175,7 @@ dagger.#Plan & {
 						curl -o /usr/bin/sops -sL \
 							https://github.com/mozilla/sops/releases/download/v3.7.2/sops-v3.7.2.linux \
 							&& chmod +x /usr/bin/sops
+						env
 						"""#
 					mounts: docker: {
 						dest:     "/var/run/docker.sock"
@@ -166,6 +193,7 @@ dagger.#Plan & {
 						arch:    client.platform.arch
 						container: command: flags: "-race": true
 					}
+					extraArgs: "--show-output-of-passing-tests -f 'task: #Merge'"
 				}
 				doc: #BatsIntegrationTest & {
 					path:         "docs/learn/tests"

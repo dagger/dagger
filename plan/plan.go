@@ -22,6 +22,7 @@ var (
 	ErrIncompatiblePlan = errors.New("attempting to load a dagger 0.1.0 project.\nPlease upgrade your config to be compatible with this version of dagger. Contact the Dagger team if you need help")
 	ActionSelector      = cue.Str("actions")
 	ClientSelector      = cue.Str("client")
+	CacheSelector       = cue.Str("cache")
 )
 
 type Plan struct {

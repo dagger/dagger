@@ -99,21 +99,10 @@ jobs:
           echo OTEL_EXPORTER_JAEGER_ENDPOINT="${OTEL_EXPORTER_JAEGER_ENDPOINT}" >> $GITHUB_ENV
           echo JAEGER_TRACE="${JAEGER_TRACE}" >> $GITHUB_ENV
 
-      - name: Sets env vars on push to main
-        run: |
-          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
-          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-      - name: Sets env vars on pull request
-        run: |
-          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
-          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main type=gha,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'pull_request' }}
-
       - name: Test
         run: |
           export DAGGER_LOG_FORMAT=plain
+          export GITHUB_EVENT_NUMBER="${{github.event.number}}"
           env
           make core-integration
 
