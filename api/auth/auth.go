@@ -27,6 +27,7 @@ const (
 
 var (
 	authConfig = &oauth2.Config{
+		// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
 		ClientID:    "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
 		RedirectURL: fmt.Sprintf("http://localhost:%d/callback", callbackPort),
 		Scopes:      []string{"openid"},
