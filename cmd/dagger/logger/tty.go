@@ -258,6 +258,8 @@ func (c *TTYOutput) Stop() {
 func (c *TTYOutput) Write(p []byte) (n int, err error) {
 	event := Event{}
 	d := json.NewDecoder(bytes.NewReader(p))
+	// FIXME decode in a loop in case the json data is a stream and not a document
+	// https://mottaquikarim.github.io/dev/posts/you-might-not-be-using-json.decoder-correctly-in-golang/
 	if err := d.Decode(&event); err != nil {
 		return n, fmt.Errorf("cannot decode event: %s", err)
 	}
