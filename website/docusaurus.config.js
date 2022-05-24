@@ -87,5 +87,6 @@ module.exports = {
     "docusaurus-plugin-sass",
     "docusaurus2-dotenv",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
+    path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
   ],
 };

@@ -50,6 +50,7 @@
     "concurrently": "^7.2.2",
     "cypress": "10.1.0",
     "cypress-localstorage-commands": "^2.1.0",
+    "node-fetch": "^3.1.1",
     "start-server-and-test": "^1.13.1"
   }
 }
