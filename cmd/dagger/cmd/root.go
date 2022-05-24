@@ -50,6 +50,9 @@ func init() {
 		docCmd,
 		doCmd,
 		project.Cmd,
+		loginCmd,
+		logoutCmd,
+		apiTestCmd,
 	)
 
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
