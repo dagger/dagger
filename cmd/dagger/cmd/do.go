@@ -148,6 +148,12 @@ var doCmd = &cobra.Command{
 			ctx = lg.WithContext(ctx)
 		}
 
+		// TODO: only enable if the user is logged in
+		mw := io.MultiWriter(lg, &logger.APIOutput{Out: os.Stderr})
+		lg = lg.Output(mw)
+		// TODO: why is this necessary?
+		ctx = lg.WithContext(ctx)
+
 		cl := common.NewClient(ctx)
 
 		actionFlags.VisitAll(func(flag *pflag.Flag) {
