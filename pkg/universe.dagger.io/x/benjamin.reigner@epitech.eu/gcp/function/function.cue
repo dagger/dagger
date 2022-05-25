@@ -36,14 +36,20 @@ import (
 			}
 		}
 		command: {
+			env: {
+				FUNCTION_NAME: _functionName
+				RUNTIME: runtime
+				REGION: config.config.region
+				PROJECT: config.config.project
+			}
 			name: "/bin/bash"
 			args: [
 				"-c",
-				#"""
-gcloud functions deploy \#(_functionName) --runtime \#(runtime) \
+				"""
+gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} \
 --source /src --trigger-http --allow-unauthenticated \
---region \#(config.config.region) --project \#(config.config.project)
-"""#,
+--region ${REGION} --project ${PROJECT}
+""",
 			]
 		}
 	}
