@@ -312,9 +312,7 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 	b := aec.EmptyBuilder
 
 	b = goBack(b, *lineCount)
-	//for i := 0; i < *lineCount; i++ {
-	//	b = b.Up(1)
-	//}
+
 	fmt.Fprint(cons, b.ANSI)
 
 	linesPerGroup := linesPerGroup(width, height, messages)

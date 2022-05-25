@@ -179,19 +179,18 @@ func TestPrintGroupLine(t *testing.T) {
 	n := printGroupLine(event, w, &b)
 
 	if goldenUpdate {
-		err := os.WriteFile("./testdata/print_group_line_test.golden", b.Bytes(), 0o660)
+		err := os.WriteFile("./testdata/print_group_line_test.golden", b.Bytes(), 0o600)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	require.Equal(t, goldenData, b.Bytes())
 	require.Equal(t, 1, n)
-	//t.Fatalf("DBGTHE: %v\n%v\n%v\n%v", n, event, w, b.Bytes())
+	// t.Fatalf("DBGTHE: %v\n%v\n%v\n%v", n, event, w, b.Bytes())
 }
 
 func TestPrint(t *testing.T) {
-	//var b bytes.Buffer
-	b, err := ioutil.TempFile("/tmp", time.Now().Format("2006-01-02_15h04m05_")+"test-*.out")
+	b, err := ioutil.TempFile("/tmp", time.Now().Format("2006-01-02_15h04m05_")+"dagger-test-*.out")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,9 +234,9 @@ func TestGoBack(t *testing.T) {
 			// we can't just compare those as is as the goBackFor creates more characters
 			// and goBack will encode the number in the escape sequence
 			// but visually, the result is the same, the Hello World will get overwriten
-			if out.String() != outl.String() {
-				//	t.Fatalf("\ngot: %v\nexp: %v", out.Bytes(), outf.Bytes())
-			}
+			// if out.String() != outl.String() {
+			// 	t.Fatalf("\ngot: %v\nexp: %v", out.Bytes(), outf.Bytes())
+			// }
 		})
 	}
 }
@@ -273,7 +272,7 @@ func TestPrintLine(t *testing.T) {
 	n := printLine(&b, event, width)
 
 	if goldenUpdate {
-		err := os.WriteFile("./testdata/print_line_test.golden", b.Bytes(), 0o660)
+		err := os.WriteFile("./testdata/print_line_test.golden", b.Bytes(), 0o600)
 		if err != nil {
 			t.Fatal(err)
 		}
