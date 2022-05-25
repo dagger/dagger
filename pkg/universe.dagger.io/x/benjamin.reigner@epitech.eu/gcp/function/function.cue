@@ -33,13 +33,13 @@ import (
 			dest:     "/src"
 			contents: source
 		}
+		env: {
+			FUNCTION_NAME: _functionName
+			RUNTIME:       runtime
+			REGION:        config.config.region
+			PROJECT:       config.config.project
+		}
 		command: {
-			env: {
-				FUNCTION_NAME: _functionName
-				RUNTIME:       runtime
-				REGION:        config.config.region
-				PROJECT:       config.config.project
-			}
 			name: "/bin/bash"
 			args: [
 				"-c",
