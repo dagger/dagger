@@ -9,6 +9,12 @@ import (
 	"universe.dagger.io/docker"
 )
 
+#Image: {
+	docker.#Pull & {
+		source: "stoplight/spectral"
+	}
+}
+
 // A linter message
 #Message: {
 	code:    string
@@ -105,13 +111,7 @@ import (
 	container: docker.#Run & {
 		// Default container image can be overrided.
 		//   'spectral' must be installed and in the PATH.
-		input: docker.#Image
-		if input == _|_ {
-			_input: docker.#Pull & {
-				source: "stoplight/spectral"
-			}
-			input: _input.output
-		}
+		input: *#Image | docker.#Image
 
 		// Ugly hack to override the entrypoint from the default image
 		//  FIXME: how do we tuck this into the scope of the default image?
