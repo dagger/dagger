@@ -5,6 +5,7 @@ import (
 	"universe.dagger.io/docker"
 )
 
+// The gcloud tool, it allows us to have a simple container with the gcloud tool and an authenticated user
 #GCloud: {
 	config:  #Config
 	version: string | *"380.0.0"
