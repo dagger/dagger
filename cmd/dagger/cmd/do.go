@@ -270,7 +270,7 @@ func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
 		return nil, err
 	}
 
-	_, err = os.Stat(absPlanPath)
+	_, err = os.Stat(planPath)
 	if err != nil {
 		return nil, err
 	}
