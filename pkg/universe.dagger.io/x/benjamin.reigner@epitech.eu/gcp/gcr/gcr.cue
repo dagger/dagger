@@ -29,6 +29,9 @@ import (
 				"printf $(gcloud auth print-access-token) > /token.txt",
 			]
 		}
+		export: secrets: {
+			"/token.txt": _
+		}
 	}
 
 	output: _run.output
