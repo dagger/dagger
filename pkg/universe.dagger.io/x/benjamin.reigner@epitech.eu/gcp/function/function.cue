@@ -26,30 +26,26 @@ import (
 	_functionName: name
 
 	docker.#Run & {
-		input: config.output
+		input:   config.output
 		always:  true
 		workdir: "/src"
-		mounts: {
-			"source": {
-				dest:     "/src"
-				contents: source
-			}
+		mounts: "source": {
+			dest:     "/src"
+			contents: source
 		}
 		command: {
 			env: {
 				FUNCTION_NAME: _functionName
-				RUNTIME: runtime
-				REGION: config.config.region
-				PROJECT: config.config.project
+				RUNTIME:       runtime
+				REGION:        config.config.region
+				PROJECT:       config.config.project
 			}
 			name: "/bin/bash"
 			args: [
 				"-c",
 				"""
-gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} \
---source /src --trigger-http --allow-unauthenticated \
---region ${REGION} --project ${PROJECT}
-""",
+					gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} --source /src --trigger-http --allow-unauthenticated --region ${REGION} --project ${PROJECT}
+					""",
 			]
 		}
 	}

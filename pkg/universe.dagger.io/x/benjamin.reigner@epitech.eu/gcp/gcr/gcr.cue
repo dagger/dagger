@@ -26,7 +26,7 @@ import (
 				"-eo",
 				"pipefail",
 				"-c",
-				"printf $(gcloud auth print-access-token) > /token.txt"
+				"printf $(gcloud auth print-access-token) > /token.txt",
 			]
 		}
 	}

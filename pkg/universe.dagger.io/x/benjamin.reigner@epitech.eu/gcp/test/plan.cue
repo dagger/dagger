@@ -18,7 +18,7 @@ dagger.#Plan & {
 
 	actions: {
 		_credentials: gcr.#Credentials & {
-			"config": gcp.#Config & {
+			config: gcp.#Config & {
 				serviceKey: client.filesystem."./secrets/serviceKey.json".read.contents
 				project:    client.env.GCP_PROJECT
 				region:     "europe-west3"
@@ -27,7 +27,7 @@ dagger.#Plan & {
 		}
 
 		HelloWorld: function.#Function & {
-			"config": _credentials
+			config:  _credentials
 			name:    "HelloWorld"
 			runtime: "go116"
 			source:  client.filesystem."./src".read.contents
