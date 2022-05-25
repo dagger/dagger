@@ -24,7 +24,7 @@ import (
 		}
 	}
 
-	_gcloud: docker.#Run & {
+	docker.#Run & {
 		env: {
 			VERSION: version
 			PROJECT: config.project
@@ -54,6 +54,4 @@ gcloud -q config set compute/zone ${ZONE}
 			]
 		}
 	}
-
-	output: _gcloud.output
 }
