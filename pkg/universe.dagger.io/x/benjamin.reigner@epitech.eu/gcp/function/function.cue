@@ -25,7 +25,7 @@ import (
 
 	_functionName: name
 
-	docker.#Run & {
+	bash.#Run & {
 		input:   config.output
 		always:  true
 		workdir: "/src"
@@ -39,14 +39,11 @@ import (
 			REGION:        config.config.region
 			PROJECT:       config.config.project
 		}
-		command: {
-			name: "/bin/bash"
-			args: [
-				"-c",
-				"""
-					gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} --source /src --trigger-http --allow-unauthenticated --region ${REGION} --project ${PROJECT}
-					""",
-			]
-		}
+		args: [
+			"-c",
+			"""
+			gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} --source /src --trigger-http --allow-unauthenticated --region ${REGION} --project ${PROJECT}
+			""",
+		]
 	}
 }

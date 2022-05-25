@@ -16,19 +16,13 @@ import (
 	}
 
 	// GCR registry secret
-	_run: docker.#Run & {
+	_run: bash.#Run & {
 		input: _gcloud.output
-		command: {
-			name: "/bin/bash"
-			args: [
-				"--noprofile",
-				"--norc",
-				"-eo",
-				"pipefail",
-				"-c",
-				"printf $(gcloud auth print-access-token) > /token.txt",
-			]
-		}
+		args: [
+			"--noprofile",
+			"-c",
+			"printf $(gcloud auth print-access-token) > /token.txt",
+		]
 		export: secrets: {
 			"/token.txt": _
 		}
