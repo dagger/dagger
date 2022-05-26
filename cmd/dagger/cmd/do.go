@@ -52,7 +52,7 @@ var doCmd = &cobra.Command{
 		}
 
 		var (
-			lg  = logger.New()
+			lg  = logger.NewWithCloud()
 			tty *logger.TTYOutput
 			ctx = lg.WithContext(cmd.Context())
 		)
@@ -144,15 +144,9 @@ var doCmd = &cobra.Command{
 			tty.Start()
 			defer tty.Stop()
 
-			lg = lg.Output(tty)
+			lg = lg.Output(logger.TeeCloud(tty))
 			ctx = lg.WithContext(ctx)
 		}
-
-		// TODO: only enable if the user is logged in
-		mw := io.MultiWriter(lg, &logger.APIOutput{Out: os.Stderr})
-		lg = lg.Output(mw)
-		// TODO: why is this necessary?
-		ctx = lg.WithContext(ctx)
 
 		cl := common.NewClient(ctx)
 
@@ -202,7 +196,7 @@ var doCmd = &cobra.Command{
 		if file == "" && tty != nil {
 			// stop tty logger because we're about to print to stdout for the outputs
 			tty.Stop()
-			lg = logger.New()
+			lg = logger.NewWithCloud()
 		}
 
 		action.UpdateFinal(daggerPlan.Final())

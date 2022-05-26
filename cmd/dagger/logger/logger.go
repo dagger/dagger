@@ -7,11 +7,13 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/mattn/go-colorable"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/api/auth"
 	"golang.org/x/term"
 )
 
@@ -25,7 +27,7 @@ func New() zerolog.Logger {
 	if !jsonLogs() {
 		logger = logger.Output(&PlainOutput{Out: colorable.NewColorableStderr()})
 	} else {
-		logger = logger.With().Timestamp().Caller().Logger()
+		logger = logger.With().Caller().Logger()
 	}
 
 	level := viper.GetString("log-level")
@@ -34,6 +36,42 @@ func New() zerolog.Logger {
 		panic(err)
 	}
 	return logger.Level(lvl)
+}
+
+func NewWithCloud() zerolog.Logger {
+	logger := zerolog.
+		New(TeeCloud(os.Stderr)).
+		With().
+		Timestamp().
+		Logger()
+
+	if jsonLogs() {
+		logger = logger.With().Caller().Logger()
+	} else {
+		logger = logger.Output(
+			TeeCloud(&PlainOutput{Out: colorable.NewColorableStderr()}),
+		)
+	}
+
+	level := viper.GetString("log-level")
+	lvl, err := zerolog.ParseLevel(level)
+	if err != nil {
+		panic(err)
+	}
+	// TODO: send all events to the cloud, regardless of the log level
+	return logger.Level(lvl)
+}
+
+func TeeCloud(w io.Writer) zerolog.LevelWriter {
+	// TODO: maybe wrap the logger - should solve the level issue too
+	if !auth.HasCredentials() {
+		return zerolog.MultiLevelWriter(w)
+	}
+
+	// TODO: reconcile Cloud1 with Cloud2
+	return zerolog.MultiLevelWriter(
+		w,
+		NewCloud2())
 }
 
 func jsonLogs() bool {
