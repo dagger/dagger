@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,8 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/telemetry/event"
 	"golang.org/x/term"
 )
 
@@ -53,6 +56,13 @@ var doCmd = &cobra.Command{
 			tty *logger.TTYOutput
 			ctx = lg.WithContext(cmd.Context())
 		)
+
+		tm := telemetry.New(telemetry.Config{
+			// FIXME: this should be conditionally enabled
+			Enable: false,
+		})
+		defer tm.Flush()
+		ctx = tm.WithContext(ctx)
 
 		if !viper.GetBool("experimental") {
 			for _, f := range experimentalFlags {
@@ -154,6 +164,10 @@ var doCmd = &cobra.Command{
 			Name:  "action",
 			Value: targetPath.String(),
 		})
+		tm.Push(ctx, event.RunStarted{
+			Action: targetPath.String(),
+			Args:   os.Args[1:],
+		})
 
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
 			return daggerPlan.Do(ctx, targetPath, s)
@@ -164,6 +178,11 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
+			tm.Push(ctx, event.RunCompleted{
+				State: event.RunCompletedStateFailed,
+				Error: err.Error(),
+			})
+
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
@@ -181,6 +200,23 @@ var doCmd = &cobra.Command{
 		}
 
 		action.UpdateFinal(daggerPlan.Final())
+
+		outputs := map[string]string{}
+		for _, f := range action.Outputs() {
+			key := f.Selector.String()
+			var value interface{}
+			if err := json.Unmarshal([]byte(f.Value.JSON().String()), &value); err != nil {
+				lg.Error().Err(err).Msg("failed to marshal output")
+				continue
+			}
+
+			outputs[key] = fmt.Sprintf("%v", value)
+		}
+
+		tm.Push(ctx, event.RunCompleted{
+			State:   event.RunCompletedStateSuccess,
+			Outputs: outputs,
+		})
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")
