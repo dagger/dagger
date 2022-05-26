@@ -237,6 +237,7 @@ func installBuildkit(ctx context.Context) error {
 		"--name", containerName,
 		"--privileged",
 		image+":"+vendoredVersion,
+		"--debug",
 	)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
