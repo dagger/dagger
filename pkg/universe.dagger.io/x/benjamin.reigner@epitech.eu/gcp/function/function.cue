@@ -25,7 +25,6 @@ import (
 
 	bash.#Run & {
 		input:   config.output
-		always:  true
 		workdir: "/src"
 		mounts: "source": {
 			dest:     "/src"
