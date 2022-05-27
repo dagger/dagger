@@ -62,7 +62,7 @@ The following core actions are available:
 | `#NewSecret`    | [secrets.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/secrets.cue) | Create a new a secret from a filesystem tree                          |
 | `#Pull`         | [image.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/image.cue)     | Download an image from a docker registry                              |
 | `#Push`         | [image.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/image.cue)     | Upload an image to a docker registry                                  |
-| `#ReadFile`     | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue)           | Read a file from a filesystem tree                                    |
+| `#ReadFile`     | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue)           | Read the contents of a UTF-8 encoded file from a filesystem tree      |
 | `#Scratch`      | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue)           | Create an empty filesystem tree                                       |
 | `#Set`          | [image.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/image.cue)     | Modify a docker image                                                 |
 | `#Source`       | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue)           | Access the source for the current CUE package                         |

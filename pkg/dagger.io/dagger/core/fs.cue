@@ -38,6 +38,8 @@ import "dagger.io/dagger"
 	output: dagger.#FS @dagger(generated)
 }
 
+// Read the contents of a UTF-8 encoded file into a CUE string. Any non-UTF-8
+// encoded content may have UTF replacement characters instead of the expected data.
 #ReadFile: {
 	$dagger: task: _name: "ReadFile"
 

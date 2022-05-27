@@ -21,9 +21,21 @@ You may need to load a local directory as a `dagger.#FS` type in your plan:
 
 ```
 
-It’s also easy to write a file locally:
+It’s also easy to write a file locally.
+
+Strings can be written to local files like this:
 
 ```cue file=../tests/core-concepts/client/plans/file.cue
+
+```
+
+:::caution
+Strings in CUE are UTF-8 encoded, so the above example should never be used when handling arbitrary binary data. There is also a limit on the size of these strings (current 16MB). The next example of exporting a `dagger.#FS` shows how to handle the export of files of arbitrary size and encoding.
+:::
+
+Files and directories (in the form of a `dagger.#FS`) can be exported to the local filesystem too:
+
+```cue file=../tests/core-concepts/client/plans/file_export.cue
 
 ```
 
