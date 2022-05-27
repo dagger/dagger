@@ -221,7 +221,7 @@ func TestPrint(t *testing.T) {
 		// - 4 to display "[+] "
 		// - 4 to display "test"
 		// - 4 chars to display "0.0s"
-		print(&lc, 12, 1, b, msgs)
+		print(&lc, 11, 1, b, msgs)
 	})
 }
 

@@ -417,7 +417,11 @@ func printGroup(group *Group, width, maxLines int, cons io.Writer) int {
 		timer := fmt.Sprintf("%3.1fs", dt)
 
 		// align
-		out += strings.Repeat(" ", width-utf8.RuneCountInString(out)-len(timer))
+		delta := width - utf8.RuneCountInString(out) - len(timer)
+		if delta > 0 {
+			out += strings.Repeat(" ", delta)
+		}
+
 		out += timer
 		out += "\n"
 
