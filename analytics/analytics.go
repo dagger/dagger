@@ -5,18 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/google/uuid"
-	"github.com/mitchellh/go-homedir"
 	"github.com/rs/zerolog/log"
+	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/version"
 )
@@ -168,26 +165,7 @@ func getDeviceID(repo string) (string, error) {
 		}
 		return "ci-" + hash(repo), nil
 	}
-	idFile, err := homedir.Expand("~/.config/dagger/cli_id")
-	if err != nil {
-		return "", err
-	}
-	id, err := os.ReadFile(idFile)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-
-		if err := os.MkdirAll(filepath.Dir(idFile), 0755); err != nil {
-			return "", err
-		}
-
-		id = []byte(uuid.New().String())
-		if err := os.WriteFile(idFile, id, 0600); err != nil {
-			return "", err
-		}
-	}
-	return string(id), nil
+	return engine.ID()
 }
 
 // hash returns the sha256 digest of the string
