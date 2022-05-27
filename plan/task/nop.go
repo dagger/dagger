@@ -15,6 +15,8 @@ func init() {
 type nopTask struct {
 }
 
-func (t *nopTask) Run(_ context.Context, _ *plancontext.Context, _ *solver.Solver, _ *compiler.Value) (*compiler.Value, error) {
-	return compiler.NewValue(), nil
+func (t *nopTask) Run(_ context.Context, _ *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"output": v.Lookup("input"),
+	})
 }

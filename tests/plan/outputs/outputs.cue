@@ -38,6 +38,12 @@ dagger.#Plan & {
 			// transformation
 			transf: strings.TrimSpace("\(foo)\n")
 
+			// non-string
+			_notString: core.#Nop & {
+				input: 42
+			}
+			int: _notString.output
+
 			// non-scalars not supported
 			config: _pull.config
 
