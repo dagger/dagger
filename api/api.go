@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/api/auth"
@@ -21,7 +22,9 @@ type Client struct {
 // New creates a new API client
 func New() *Client {
 	return &Client{
-		c:          &http.Client{},
+		c: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 		retryLogin: true,
 	}
 }
