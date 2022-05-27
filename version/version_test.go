@@ -1,25 +1,19 @@
-package version_test
+package version
 
 import (
 	"fmt"
 	"runtime"
+	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
-	"go.dagger.io/dagger/version"
+	"github.com/stretchr/testify/require"
 )
 
-var _ = Describe("Version", func() {
-	Describe("Short()", func() {
-		It("prints version and revision", func() {
-			Expect(version.Short()).To(Equal("dagger devel ()"))
-		})
-	})
-	Describe("Long()", func() {
-		It("prints version, revision, os & platform", func() {
-			longVersionOutput := fmt.Sprintf("dagger devel () %s/%s", runtime.GOOS, runtime.GOARCH)
-			Expect(version.Long()).To(Equal(longVersionOutput))
-		})
-	})
-})
+func TestShort(t *testing.T) {
+	output := Short()
+	require.Equal(t, output, "dagger devel ()")
+}
+
+func TestLong(t *testing.T) {
+	output := Long()
+	require.Equal(t, output, fmt.Sprintf("dagger devel () %s/%s", runtime.GOOS, runtime.GOARCH))
+}
