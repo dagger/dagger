@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"path"
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 )
@@ -44,7 +45,7 @@ import (
 	input:    #Image
 	contents: dagger.#FS
 	source:   string | *"/"
-	dest:     string | *"/"
+	dest:     string | *"."
 	// Optionally include certain files
 	include: [...string]
 	// Optionally exclude certain files
@@ -55,9 +56,26 @@ import (
 		"input":    input.rootfs
 		"contents": contents
 		"source":   source
-		"dest":     dest
 		"include":  include
 		"exclude":  exclude
+
+		// switch to determine core.#Copy dest
+		// if dest is an absolute path, always use it
+		// if no workdir, use / as the workdir
+		// if workdir is set, use it
+		// default to dest to catch missed logic
+		"dest": [
+			if path.IsAbs(dest, path.Unix) {
+				dest
+			},
+			if input.config.workdir == _|_ {
+				path.Join(["/", dest], path.Unix)
+			},
+			if input.config.workdir != _|_ {
+				path.Join([input.config.workdir, dest], path.Unix)
+			},
+			dest,
+		][0]
 	}
 
 	output: #Image & {
