@@ -158,23 +158,14 @@ func SetAuthHeader(ctx context.Context, req *http.Request) error {
 }
 
 func HasCredentials() bool {
-	f, err := homedir.Expand(credentialsFile)
-	if err != nil {
-		return false
-	}
-	data, err := ioutil.ReadFile(f)
-	if err != nil {
-		return false
-	}
-	token := &oauth2.Token{}
-	err = json.Unmarshal(data, token)
+	_, err := loadCredentials()
 	return err == nil
 }
 
 func loadCredentials() (*oauth2.Token, error) {
 	f, err := homedir.Expand(credentialsFile)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	data, err := ioutil.ReadFile(f)
 	if err != nil {

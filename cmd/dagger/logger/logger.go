@@ -43,11 +43,10 @@ func NewWithCloud() zerolog.Logger {
 		New(TeeCloud(os.Stderr)).
 		With().
 		Timestamp().
+		Caller().
 		Logger()
 
-	if jsonLogs() {
-		logger = logger.With().Caller().Logger()
-	} else {
+	if !jsonLogs() {
 		logger = logger.Output(
 			TeeCloud(&PlainOutput{Out: colorable.NewColorableStderr()}),
 		)
@@ -68,10 +67,9 @@ func TeeCloud(w io.Writer) zerolog.LevelWriter {
 		return zerolog.MultiLevelWriter(w)
 	}
 
-	// TODO: reconcile Cloud1 with Cloud2
 	return zerolog.MultiLevelWriter(
 		w,
-		NewCloud2())
+		NewCloud())
 }
 
 func jsonLogs() bool {
