@@ -3,9 +3,9 @@ slug: /1200/local-dev
 displayed_sidebar: "0.2"
 ---
 
-# CI/CD in your local dev
+# Build and run an app locally
 
-Everyone should be able to develop, test and run their CI/CD pipeline locally.
+Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.
 This guide shows you the Dagger way.
 Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
@@ -25,32 +25,6 @@ values={[
 ]}>
 
 <TabItem value="macos">
-
-We assume that you have [Homebrew](https://brew.sh/) installed.
-If you do, you can install `dagger` with a single command:
-
-```shell
-brew install dagger/tap/dagger
-```
-
-This installs `dagger` in:
-
-```shell
-type dagger
-# macOS ARM:
-dagger is /opt/homebrew/bin/dagger
-# macOS Intel:
-dagger is /usr/local/bin/dagger
-```
-
-If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
-
-```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.11 sh
-
-./bin/dagger version
-dagger 0.2.11 (GIT_SHA) darwin/arm64
-```
 
 Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
@@ -118,31 +92,6 @@ It becomes even more obvious when the change is not as straightforward as knowin
 
 <TabItem value="linux">
 
-The quickest way of installing `dagger` on Linux is to run the following command:
-
-```shell
-cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | sh
-```
-
-This installs `dagger` in `/usr/local/bin`:
-
-```shell
-type dagger
-dagger is /usr/local/bin/dagger
-```
-
-If you want to install dagger to a different location, `cd` where you want `./bin/dagger` in.
-
-If you want to install a specific version of `dagger`, you can run:
-
-```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.11 sh
-
-./bin/dagger version
-dagger 0.2.11 (GIT_SHA) linux/amd64
-```
-
 Before we can build, test & deploy our example app with `dagger`, we need to have Docker Engine running.
 You most likely already have Docker Engine set up.
 If not, [install Docker Engine on Linux](https://docs.docker.com/engine/install/#server) makes this easy.
@@ -207,36 +156,6 @@ It becomes even more obvious when the change is not as straightforward as knowin
 </TabItem>
 
 <TabItem value="windows">
-
-`dagger` can be installed in Windows via a install powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
-
-If you want to use the install script, from a powershell terminal, run:
-
-```shell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
-```
-
-We'll save everything under `<your home folder>/dagger`
-
-Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
-
-```shell
-where dagger
-C:\<your home folder>\dagger.exe
-```
-
-If you have Chocolatey installed, just open a terminal and run:
-
-```shell
-choco install dagger
-```
-
-If you have Scoop installed, just open a terminal and run:
-
-```shell
-scoop bucket add main # If you don't have the main bucket added yet
-scoop install dagger
-```
 
 Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
