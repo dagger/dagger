@@ -6,5 +6,5 @@ package core
 #Nop: {
 	$dagger: task: _name: "Nop"
 	input:  _
-	output: input
+	output: _ @dagger(generated)
 }

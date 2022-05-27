@@ -288,7 +288,7 @@ foo.txt"
   run "$DAGGER" "do" --output-format yaml test simple
   assert_output --partial "digest: sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 
-  "$DAGGER" "do" test control | jq -re 'keys == ["bar", "cmd", "foo", "transf"] and .foo == .bar and .foo == .transf and .cmd == "/bin/sh"'
+  "$DAGGER" "do" test control | jq -re 'keys == ["bar", "cmd", "foo", "int", "transf"] and .foo == .bar and .foo == .transf and .cmd == "/bin/sh" and .int == 42'
 }
 
 @test "plan/platform" {
