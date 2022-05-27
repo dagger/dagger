@@ -23,8 +23,6 @@ import (
 	// Directory containing the files for the cloud functions
 	source: dagger.#FS
 
-	_functionName: name
-
 	bash.#Run & {
 		input:   config.output
 		always:  true
@@ -34,7 +32,7 @@ import (
 			contents: source
 		}
 		env: {
-			FUNCTION_NAME: _functionName
+			FUNCTION_NAME: name
 			RUNTIME:       runtime
 			REGION:        config.config.region
 			PROJECT:       config.config.project
