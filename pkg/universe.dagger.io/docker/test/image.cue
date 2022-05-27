@@ -65,29 +65,21 @@ dagger.#Plan & {
 				input: myimage
 				command: name: "ls"
 				export: files: {
-					"/dagger.txt": _ & {
-						contents: "not hello from dagger"
-					}
-					"/bin/dagger": _ & {
-						contents: """
-							#!/bin/sh
-							echo -n "hello from $HELLO_FROM" > /dagger.txt
+					"/dagger.txt": "not hello from dagger"
+					"/bin/dagger": """
+						#!/bin/sh
+						echo -n "hello from $HELLO_FROM" > /dagger.txt
 
-							"""
-					}
+						"""
 				}
 			}
 			verify_cmd_is_run: docker.#Run & {
 				input: myimage
-				export: files: "/dagger.txt": _ & {
-					contents: "hello from dagger"
-				}
+				export: files: "/dagger.txt": "hello from dagger"
 			}
 			verify_env_is_overridden: docker.#Run & {
 				input: myimage
-				export: files: "/dagger.txt": _ & {
-					contents: "hello from europa"
-				}
+				export: files: "/dagger.txt": "hello from europa"
 				env: HELLO_FROM: "europa"
 			}
 
@@ -99,9 +91,7 @@ dagger.#Plan & {
 						pwd > dir.txt
 						"""#
 				}
-				export: files: "/bin/dir.txt": _ & {
-					contents: "/bin\n"
-				}
+				export: files: "/bin/dir.txt": "/bin\n"
 			}
 			verify_working_directory_is_overridden: docker.#Run & {
 				input:   myimage
@@ -112,9 +102,7 @@ dagger.#Plan & {
 						pwd > dir.txt
 						"""#
 				}
-				export: files: "/dir.txt": _ & {
-					contents: "/\n"
-				}
+				export: files: "/dir.txt": "/\n"
 			}
 		}
 	}
