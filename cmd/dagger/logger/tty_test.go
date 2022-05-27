@@ -157,36 +157,44 @@ func (s sizerMock) Size() (WinSize, error) {
 }
 
 func TestPrintGroupLine(t *testing.T) {
-	goldenData, err := os.ReadFile("./testdata/print_group_line_test.golden")
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	tm := time.UnixMilli(123456789)
 	event := map[string]interface{}{
 		"time":    tm.Format(time.RFC3339),
 		"abc":     "ABC",
 		"level":   "5",
 		"message": "my msgmy msgmy msgmy msgmy msgmy msgmy msgmy msgmy msgmy msgmy msg",
+		"tutu":    "TUTUTUTU",
 		"toto":    "TOTOTO",
 		"titi":    "TITITITI",
 		"tata":    "TATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATA",
 		"tete":    "TETETETE",
 	}
 
-	w := 150
-	var b bytes.Buffer
-	n := printGroupLine(event, w, &b)
+	for _, w := range []int{20, 200, 1000} {
+		t.Run(fmt.Sprintf("width=%d", w), func(t *testing.T) {
+			goldenFilePath := fmt.Sprintf("./testdata/print_group_line_test_w%d.golden", w)
+			width := w
 
-	if goldenUpdate {
-		err := os.WriteFile("./testdata/print_group_line_test.golden", b.Bytes(), 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
+			var b bytes.Buffer
+			n := printGroupLine(event, width, &b)
+
+			if goldenUpdate {
+				err := os.WriteFile(goldenFilePath, b.Bytes(), 0o600)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			goldenData, err := os.ReadFile(goldenFilePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			require.Equal(t, goldenData, b.Bytes())
+			require.Equal(t, 1, n)
+			// t.Fatalf("DBGTHE: %v\n%v\n%v\n%v", n, event, w, b.Bytes())
+		})
 	}
-	require.Equal(t, goldenData, b.Bytes())
-	require.Equal(t, 1, n)
-	// t.Fatalf("DBGTHE: %v\n%v\n%v\n%v", n, event, w, b.Bytes())
 }
 
 func TestPrint(t *testing.T) {
@@ -248,14 +256,8 @@ func init() {
 }
 
 func TestPrintLine(t *testing.T) {
-	goldenData, err := os.ReadFile("./testdata/print_line_test.golden")
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	tm := time.UnixMilli(123456789).UTC()
 
-	var b bytes.Buffer
 	event := map[string]interface{}{
 		"time":    tm.Format(time.RFC3339),
 		"abc":     "ABC",
@@ -267,16 +269,27 @@ func TestPrintLine(t *testing.T) {
 		"tete":    "TETETETE",
 	}
 
-	width := 20
+	for _, w := range []int{20, 200} {
+		t.Run(fmt.Sprintf("width=%d", w), func(t *testing.T) {
+			goldenFilePath := fmt.Sprintf("./testdata/print_line_test_w%d.golden", w)
+			width := w
 
-	n := printLine(&b, event, width)
+			var b bytes.Buffer
+			n := printLine(&b, event, width)
 
-	if goldenUpdate {
-		err := os.WriteFile("./testdata/print_line_test.golden", b.Bytes(), 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
+			if goldenUpdate {
+				err := os.WriteFile(goldenFilePath, b.Bytes(), 0o600)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			goldenData, err := os.ReadFile(goldenFilePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			require.Equal(t, goldenData, b.Bytes())
+			t.Log(b.String(), event, width, n)
+		})
 	}
-	require.Equal(t, goldenData, b.Bytes())
-	t.Log(b.String(), event, width, n)
 }
