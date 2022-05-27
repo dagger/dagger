@@ -85,6 +85,7 @@ module.exports = {
           { docId: "faq/always-execute", href: "1231/always-execute" },
           { docId: "faq/chain-actions", href: "1232/chain-actions" },
           { docId: "faq/default-values-cue", href: "1233/default-values-cue" },
+          { docId: "faq/core-source", href: "1240/core-source" },
         ]
       }
     },
