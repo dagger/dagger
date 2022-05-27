@@ -35,11 +35,7 @@ var versionCmd = &cobra.Command{
 	PersistentPostRun: func(*cobra.Command, []string) {},
 	Args:              cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("dagger %s (%s) %s/%s\n",
-			version.Version,
-			version.Revision,
-			runtime.GOOS, runtime.GOARCH,
-		)
+		fmt.Println(version.Long())
 
 		if check := viper.GetBool("check"); check {
 			versionFilePath, err := homedir.Expand(versionFile)

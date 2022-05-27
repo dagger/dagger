@@ -1,5 +1,10 @@
 package version
 
+import (
+	"fmt"
+	"runtime"
+)
+
 const (
 	DevelopmentVersion = "devel"
 )
@@ -12,3 +17,11 @@ var (
 	// the program at linking time.
 	Revision = ""
 )
+
+func Short() string {
+	return fmt.Sprintf("dagger %s (%s)", Version, Revision)
+}
+
+func Long() string {
+	return Short() + fmt.Sprintf(" %s/%s", runtime.GOOS, runtime.GOARCH)
+}

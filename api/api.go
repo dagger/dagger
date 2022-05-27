@@ -2,9 +2,7 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"runtime"
 
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/api/auth"
@@ -45,10 +43,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		}
 	}
 
-	req.Header.Set(
-		"User-Agent",
-		fmt.Sprintf("dagger/%s (%s)", version.Version, runtime.GOOS),
-	)
+	req.Header.Set("User-Agent", version.Long())
 
 	resp, err := c.c.Do(req)
 	if err != nil {
