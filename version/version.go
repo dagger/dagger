@@ -23,5 +23,5 @@ func Short() string {
 }
 
 func Long() string {
-	return Short() + fmt.Sprintf(" %s/%s", runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("%s %s/%s", Short(), runtime.GOOS, runtime.GOARCH)
 }
