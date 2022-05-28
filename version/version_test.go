@@ -9,11 +9,9 @@ import (
 )
 
 func TestShort(t *testing.T) {
-	output := Short()
-	require.Equal(t, output, "dagger devel ()")
+	require.Equal(t, Short(), "dagger devel ()")
 }
 
 func TestLong(t *testing.T) {
-	output := Long()
-	require.Equal(t, output, fmt.Sprintf("dagger devel () %s/%s", runtime.GOOS, runtime.GOARCH))
+	require.Equal(t, Long(), fmt.Sprintf("dagger devel () %s/%s", runtime.GOOS, runtime.GOARCH))
 }
