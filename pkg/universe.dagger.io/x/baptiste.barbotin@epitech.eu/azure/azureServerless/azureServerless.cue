@@ -23,20 +23,18 @@ import (
     // Azure storage name
     storage: name: string
 
-    // Azure functionApp name
-    functionApp: name: string
-
-    // Azure functionApp version
-    functionApp: version: string | *"4"
-
-    // Azure functionApp args
-    functionApp: args: [...string] | *[]
+    // Azure functionApp
+	functionApp: {
+		name: string
+		version: string | *"4"
+		args: [...string] | *[]
+	}
 
 	// Azure publish function args
-    publishFunction: args: [...string] | *[]
-
-	// Azure publish function sleep time before exec
-    publishFunction: sleep: string
+    publishFunction: {
+		args: [...string] | *[]
+		sleep: string
+	}
 
 	// Sleep time default value
 	if publishFunction.sleep == _|_ {
