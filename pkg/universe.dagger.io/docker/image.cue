@@ -14,6 +14,12 @@ import (
 	config: core.#ImageConfig
 }
 
+// An empty container image (same as `FROM scratch` in a Dockerfile)
+#Scratch: #Image & {
+	rootfs: dagger.#Scratch
+	config: {}
+}
+
 // A ref is an address for a remote container image
 // Examples:
 //   - "index.docker.io/dagger"
