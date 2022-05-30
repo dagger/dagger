@@ -19,8 +19,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/telemetry"
-	"go.dagger.io/dagger/telemetry/event"
+	"go.dagger.io/dagger/telemetrylite"
 	"golang.org/x/term"
 )
 
@@ -57,10 +56,7 @@ var doCmd = &cobra.Command{
 			ctx = lg.WithContext(cmd.Context())
 		)
 
-		tm := telemetry.New(telemetry.Config{
-			// FIXME: this should be conditionally enabled
-			Enable: false,
-		})
+		tm := telemetrylite.New()
 		defer tm.Flush()
 		ctx = tm.WithContext(ctx)
 
@@ -76,6 +72,7 @@ var doCmd = &cobra.Command{
 
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
+			lg.Error().Err(err).Msgf("failed to load plan")
 			if viper.GetBool("help") {
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
@@ -164,10 +161,11 @@ var doCmd = &cobra.Command{
 			Name:  "action",
 			Value: targetPath.String(),
 		})
-		tm.Push(ctx, event.RunStarted{
-			Action: targetPath.String(),
-			Args:   os.Args[1:],
-		})
+		// TODO: TelemetryLite -> Telemetry
+		// tm.Push(ctx, event.RunStarted{
+		// 	Action: targetPath.String(),
+		// 	Args:   os.Args[1:],
+		// })
 
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
 			return daggerPlan.Do(ctx, targetPath, s)
@@ -178,10 +176,11 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			tm.Push(ctx, event.RunCompleted{
-				State: event.RunCompletedStateFailed,
-				Error: err.Error(),
-			})
+			// TODO: TelemetryLite -> Telemetry
+			// tm.Push(ctx, event.RunCompleted{
+			// 	State: event.RunCompletedStateFailed,
+			// 	Error: err.Error(),
+			// })
 
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
@@ -213,10 +212,16 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
-		tm.Push(ctx, event.RunCompleted{
-			State:   event.RunCompletedStateSuccess,
-			Outputs: outputs,
-		})
+		if outputs2, err := json.Marshal(outputs); err == nil {
+			lg.Debug().RawJSON("outputs", outputs2).Send()
+		} else {
+			lg.Error().Err(err)
+		}
+		// TODO: TelemetryLite -> Telemetry
+		// tm.Push(ctx, event.RunCompleted{
+		// 	State:   event.RunCompletedStateSuccess,
+		// 	Outputs: outputs,
+		// })
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")
