@@ -19,9 +19,7 @@ import (
 	_run: bash.#Run & {
 		input: _gcloud.output
 		script: contents: "printf $(gcloud auth print-access-token) > /token.txt"
-		export: secrets: {
-			"/token.txt": _
-		}
+		export: secrets: "/token.txt": _
 	}
 
 	output: _run.output
