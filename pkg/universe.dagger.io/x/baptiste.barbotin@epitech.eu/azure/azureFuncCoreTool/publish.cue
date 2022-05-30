@@ -9,48 +9,44 @@ import (
 
 	image: docker.#Image
 
-    // Function name
+	// Function name
 	name: string
 
-    // Source directory
-    source: dagger.#FS
+	// Source directory
+	source: dagger.#FS
 
 	// Additional arguments
-    args: [...string] | *[]
+	args: [...string] | *[]
 
 	sleep: string | *"0"
 
 	publish: docker.#Build & {
 		steps: [
 			docker.#Run & {
-				"input": image
+				input: image
 			},
 			docker.#Run & {
-				"command": {
-					"name": "sleep"
-					"flags": {
-						"\(sleep)": true
-					}
+				command: {
+					name: "sleep"
+					flags: "\(sleep)": true
 				}
 			},
 			docker.#Run & {
-				"workdir": "/src"
-				"command": {
+				workdir: "/src"
+				command: {
 					"name": "func"
-					"flags": {
-						"azure": true
-						"functionapp": true
-						"publish": name
+					flags: {
+						azure:       true
+						functionapp: true
+						publish:     name
 					}
 					"args": args
 				}
-				mounts: {
-					"source": {
-						dest:     "/src"
-						contents: source
-					}
+				mounts: "source": {
+					dest:     "/src"
+					contents: source
 				}
-			}
+			},
 		]
 	}
 }

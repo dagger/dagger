@@ -44,7 +44,7 @@ import (
 					name: "sh"
 					flags: "-c": "az account set -s $AZ_SUB_ID_TOKEN"
 				}
-			}
+			},
 		]
 	}
 }

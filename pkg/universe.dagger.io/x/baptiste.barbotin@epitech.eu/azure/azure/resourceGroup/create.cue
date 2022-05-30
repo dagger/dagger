@@ -15,17 +15,17 @@ import (
 	location: string
 
 	// Additional arguments
-    args: [...string] | *[]
+	args: [...string] | *[]
 
 	_run: docker.#Run & {
-		"input": image
-		"command": {
+		input: image
+		command: {
 			"name": "az"
-			"flags": {
-				"group": true
-				"create": true
-				"-l": location
-				"-n": name
+			flags: {
+				group:  true
+				create: true
+				"-l":   location
+				"-n":   name
 			}
 			"args": args
 		}

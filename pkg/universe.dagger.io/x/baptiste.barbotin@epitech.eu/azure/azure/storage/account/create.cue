@@ -19,20 +19,19 @@ import (
 	name: string
 
 	// Additional arguments
-    args: [...string] | *[]
+	args: [...string] | *[]
 
 	_run: docker.#Run & {
-		"input": image
-		"command": {
+		input: image
+		command: {
 			"name": "az"
-			"flags": {
-				"storage": true
-				"account": true
-				"create": true
-				"-n": name
-				"-g": resourceGroup.name
-				"-l": location
-
+			flags: {
+				storage: true
+				account: true
+				create:  true
+				"-n":    name
+				"-g":    resourceGroup.name
+				"-l":    location
 			}
 			"args": args
 		}
