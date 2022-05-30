@@ -2,7 +2,7 @@ package function
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/docker"
+	"universe.dagger.io/bash"
 	"universe.dagger.io/x/benjamin.reigner@epitech.eu/gcp/gcr"
 )
 
@@ -30,17 +30,12 @@ import (
 			dest:     "/src"
 			contents: source
 		}
+		script: contents: "gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} --source /src --trigger-http --allow-unauthenticated --region ${REGION} --project ${PROJECT}"
 		env: {
 			FUNCTION_NAME: name
 			RUNTIME:       runtime
 			REGION:        config.config.region
 			PROJECT:       config.config.project
 		}
-		args: [
-			"-c",
-			"""
-			gcloud functions deploy ${FUNCTION_NAME} --runtime ${RUNTIME} --source /src --trigger-http --allow-unauthenticated --region ${REGION} --project ${PROJECT}
-			""",
-		]
 	}
 }
