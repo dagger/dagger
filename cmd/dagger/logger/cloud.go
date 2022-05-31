@@ -39,7 +39,7 @@ type LogEvent struct {
 	Level          string   `json:"level"`
 	Message        string   `json:"message,omitempty"`
 	OS             string   `json:"os"`
-	RunID          string   `json:"runId"`
+	RunID          string   `json:"run_id"`
 	State          string   `json:"state,omitempty"`
 	Task           string   `json:"task,omitempty"`
 	Time           string   `json:"time"`
@@ -57,8 +57,10 @@ func (c *Cloud) Write(p []byte) (int, error) {
 	if err := json.Unmarshal(p, &event); err != nil {
 		return 0, fmt.Errorf("cannot unmarshal event: %s", err)
 	}
+	fmt.Printf("🐟 EVENT: %#v\n", event)
 
 	jsonData, err := json.Marshal(event)
+	fmt.Printf("🐥 JSON: %#v\n", string(jsonData))
 	if err != nil {
 		return 0, fmt.Errorf("cannot marshal event: %s", err)
 	}

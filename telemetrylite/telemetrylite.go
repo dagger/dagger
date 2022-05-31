@@ -2,6 +2,7 @@ package telemetrylite
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -57,6 +58,7 @@ func (t *TelemetryLite) send() {
 		req, err := http.NewRequest(http.MethodPost, t.url, reqBody)
 		if err == nil {
 			if resp, err := t.client.Do(req.Context(), req); err == nil {
+				fmt.Printf("🐶 RESPONSE: %#v\n", resp)
 				resp.Body.Close()
 			} else {
 				// TODO: re-auth does not seem to work as expected
