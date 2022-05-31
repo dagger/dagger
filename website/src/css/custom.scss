@@ -108,6 +108,7 @@ code,
 .table-of-contents__link:hover code {
   margin: 0 1px;
   color: var(--ifm-code-color);
+
   .alert & {
     color: var(--ifm-alert-foreground-color);
   }
@@ -135,10 +136,20 @@ code,
 
     html[data-theme="dark"] & {
       color: var(--ifm-color-primary-light);
+
+      code {
+        display: inline-block;
+        // https://stackoverflow.com/questions/25762427/remove-underline-only-from-anchor-element-child
+      }
+    }
+
+    code {
+      color: var(--ifm-code-color);
     }
 
     &:hover {
       color: var(--ifm-color-primary);
+
       html[data-theme="dark"] & {
         color: var(--ifm-color-secondary);
       }
@@ -146,6 +157,7 @@ code,
 
     &:active {
       color: var(--ifm-color-info);
+
       html[data-theme="dark"] & {
         color: var(--ifm-color-info);
       }
@@ -173,6 +185,7 @@ a.menu__link[target="_blank"] {
   svg {
     display: none;
   }
+
   &:after {
     background: var(--ifm-color-primary-darker);
     mask: url("/img/Dagger_Icons_External-link.svg") no-repeat;
@@ -183,6 +196,7 @@ a.menu__link[target="_blank"] {
     height: 1.25rem;
     width: 1.25rem;
   }
+
   html[data-theme="dark"] &:after {
     background: var(--ifm-color-primary-light);
   }
@@ -248,9 +262,11 @@ h1[class^="h1Heading"] {
 .hash-link::before {
   color: var(--ifm-color-info);
 }
+
 /* navbar */
 .navbar__brand .navbar__logo {
   height: 5rem;
+
   @include desktop {
     height: var(--ifm-navbar-height);
   }
@@ -281,6 +297,7 @@ h1[class^="h1Heading"] {
 .header-github-link {
   height: 48px;
   line-height: 36px;
+
   @include desktop {
     width: 48px;
     text-indent: 9999px;
@@ -292,6 +309,7 @@ h1[class^="h1Heading"] {
 .header-github-link,
 .header-github-link:hover {
   background: url("/img/github-icon.svg") no-repeat;
+
   @include tablet {
     background-color: var(--ifm-color-primary);
   }
@@ -300,6 +318,7 @@ h1[class^="h1Heading"] {
 .header-discord-link,
 .header-discord-link:hover {
   background: url("/img/discord-icon.svg") no-repeat;
+
   @include tablet {
     background-color: var(--ifm-color-primary);
   }
@@ -319,6 +338,7 @@ a[class^="sidebarLogo"] {
   img {
     display: none !important;
   }
+
   background: url("/img/dagger-logo-dark.png") no-repeat left center;
   background-size: contain;
 
@@ -387,6 +407,7 @@ code[class^="codeBlockLines"] {
   background-color: var(--ifm-color-primary-dark) !important;
   border-radius: 0;
   margin: 0;
+
   .token-line {
     color: var(--ifm-color-primary-light) !important;
   }
@@ -419,6 +440,7 @@ button[class^="copyButton"] {
   @include tablet {
     background-color: transparent;
     color: var(--ifm-color-primary-light);
+
     // --ifm-menu-color-active: var(--ifm-color-primary-light);
     // --ifm-menu-color-background-active: var(--ifm-color-primary);
     span {
@@ -431,6 +453,7 @@ button[class^="copyButton"] {
 
 .menu__link--active:not(.menu__link--sublist) {
   font-weight: bold;
+
   @include tablet {
     background: var(--ifm-color-primary);
   }
@@ -446,12 +469,15 @@ button[class^="copyButton"] {
 
 .DocSearch-Button {
   margin-right: 2rem !important;
+
   @include desktop {
     width: 200px;
   }
+
   @include desktopWide {
     width: 350px;
   }
+
   html[data-theme="dark"] & {
     background-color: white;
   }
@@ -459,12 +485,15 @@ button[class^="copyButton"] {
 
 .DocSearch-Button {
   margin-right: 2rem !important;
+
   @media (min-width: 997px) {
     width: 200px;
   }
+
   @media (min-width: 1160px) {
     width: 350px;
   }
+
   html[data-theme="dark"] & {
     background-color: white;
   }
@@ -497,6 +526,7 @@ img[alt="github-contribute"] {
       var(--ifm-color-primary-light),
       var(--ifm-color-primary-dark)
     );
+
     .admonition-#{$name} .admonition-icon::before {
       mask: url($path);
       content: "";
