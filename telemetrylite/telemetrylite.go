@@ -2,11 +2,9 @@ package telemetrylite
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"os"
 
-	"github.com/google/uuid"
 	"go.dagger.io/dagger/api"
 	"go.dagger.io/dagger/api/auth"
 )
@@ -18,7 +16,6 @@ type TelemetryLite struct {
 	client *api.Client
 	url    string
 
-	runID   string
 	queueCh chan []byte
 	doneCh  chan struct{}
 }
@@ -28,7 +25,6 @@ func New() *TelemetryLite {
 		enable:  auth.HasCredentials(),
 		client:  api.New(),
 		url:     eventsURL(),
-		runID:   uuid.NewString(),
 		queueCh: make(chan []byte, queueSize),
 		doneCh:  make(chan struct{}),
 	}
@@ -47,7 +43,7 @@ func (t *TelemetryLite) Enable() {
 func (t *TelemetryLite) Started() {
 }
 
-func (t *TelemetryLite) Push(ctx context.Context, p []byte) {
+func (t *TelemetryLite) Push(p []byte) {
 	if t.enable {
 		t.queueCh <- p
 	}
@@ -61,7 +57,10 @@ func (t *TelemetryLite) send() {
 		req, err := http.NewRequest(http.MethodPost, t.url, reqBody)
 		if err == nil {
 			if resp, err := t.client.Do(req.Context(), req); err == nil {
-				defer resp.Body.Close()
+				resp.Body.Close()
+			} else {
+				// TODO: re-auth does not seem to work as expected
+				panic(err)
 			}
 		}
 	}
@@ -79,7 +78,7 @@ func (t *TelemetryLite) Flush() {
 func eventsURL() string {
 	url := os.Getenv("DAGGER_CLOUD_EVENTS_URL")
 	if url == "" {
-		url = "http://localhost:8020/events"
+		url = "https://api.dagger.io/events"
 	}
 	return url
 }

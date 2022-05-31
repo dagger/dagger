@@ -13,7 +13,7 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
-	"go.dagger.io/dagger/api/auth"
+	"go.dagger.io/dagger/telemetrylite"
 	"golang.org/x/term"
 )
 
@@ -38,9 +38,9 @@ func New() zerolog.Logger {
 	return logger.Level(lvl)
 }
 
-func NewWithCloud() zerolog.Logger {
+func NewWithCloud(tm *telemetrylite.TelemetryLite) zerolog.Logger {
 	logger := zerolog.
-		New(TeeCloud(os.Stderr)).
+		New(TeeCloud(tm, os.Stderr)).
 		With().
 		Timestamp().
 		Caller().
@@ -48,7 +48,7 @@ func NewWithCloud() zerolog.Logger {
 
 	if !jsonLogs() {
 		logger = logger.Output(
-			TeeCloud(&PlainOutput{Out: colorable.NewColorableStderr()}),
+			TeeCloud(tm, &PlainOutput{Out: colorable.NewColorableStderr()}),
 		)
 	}
 
@@ -61,15 +61,10 @@ func NewWithCloud() zerolog.Logger {
 	return logger.Level(lvl)
 }
 
-func TeeCloud(w io.Writer) zerolog.LevelWriter {
-	// TODO: maybe wrap the logger - should solve the level issue too
-	if !auth.HasCredentials() {
-		return zerolog.MultiLevelWriter(w)
-	}
-
+func TeeCloud(tm *telemetrylite.TelemetryLite, w io.Writer) zerolog.LevelWriter {
 	return zerolog.MultiLevelWriter(
 		w,
-		NewCloud())
+		NewCloud(tm))
 }
 
 func jsonLogs() bool {

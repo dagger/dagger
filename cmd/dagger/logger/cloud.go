@@ -1,75 +1,67 @@
 package logger
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
+	"runtime"
 
 	"github.com/google/uuid"
-	"go.dagger.io/dagger/api"
+	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/telemetrylite"
+	"go.dagger.io/dagger/version"
 )
 
 type Cloud struct {
-	client *api.Client
-	url    string
+	client *telemetrylite.TelemetryLite
 	run    string
+	engine string
 }
 
-// TODO: track at the beginning of the run, in the first action
-// - engineID
-// - DaggerVersion
-// - DaggerRevision
-// - OS
-// - Arch
-func NewCloud() *Cloud {
+func NewCloud(tm *telemetrylite.TelemetryLite) *Cloud {
+	engineID, _ := engine.ID()
+
 	return &Cloud{
-		client: api.New(),
-		url:    eventsURL(),
+		client: tm,
 		run:    uuid.NewString(),
+		engine: engineID,
 	}
 }
 
-// TODO: reconcile with analytics/analytics.go
-// TODO: follow-up https://github.com/dagger/dagger/pull/2515
 type LogEvent struct {
-	// TODO: track the starting event instead of tracking all args
-	Args     []string `json:"args"`
-	Caller   string   `json:"caller"`
-	Duration float64  `json:"duration,omitempty"`
-	Error    string   `json:"error,omitempty"`
-	Level    string   `json:"level"`
-	Message  string   `json:"message,omitempty"`
-	RunID    string   `json:"runId"`
-	State    string   `json:"state,omitempty"`
-	Task     string   `json:"task,omitempty"`
-	Time     string   `json:"time"`
+	Arch           string   `json:"arch"`
+	Args           []string `json:"args"`
+	Caller         string   `json:"caller"`
+	DaggerRevision string   `json:"daggerRevision"`
+	DaggerVersion  string   `json:"daggerVersion"`
+	Duration       float64  `json:"duration,omitempty"`
+	EngineID       string   `json:"engineId"`
+	Error          string   `json:"error,omitempty"`
+	Level          string   `json:"level"`
+	Message        string   `json:"message,omitempty"`
+	OS             string   `json:"os"`
+	RunID          string   `json:"runId"`
+	State          string   `json:"state,omitempty"`
+	Task           string   `json:"task,omitempty"`
+	Time           string   `json:"time"`
 }
 
 func (c *Cloud) Write(p []byte) (int, error) {
 	event := LogEvent{
-		RunID: c.run,
+		RunID:          c.run,
+		Arch:           runtime.GOARCH,
+		OS:             runtime.GOOS,
+		DaggerVersion:  version.Version,
+		DaggerRevision: version.Revision,
+		EngineID:       c.engine,
 	}
 	if err := json.Unmarshal(p, &event); err != nil {
 		return 0, fmt.Errorf("cannot unmarshal event: %s", err)
 	}
-	jsonData, _ := json.Marshal(event)
-	reqBody := bytes.NewBuffer(jsonData)
-	fmt.Printf("%s", reqBody)
-	req, err := http.NewRequest(http.MethodPost, c.url, reqBody)
-	if err == nil {
-		if resp, err := c.client.Do(req.Context(), req); err == nil {
-			defer resp.Body.Close()
-		}
-	}
-	return len(p), nil
-}
 
-func eventsURL() string {
-	url := os.Getenv("DAGGER_CLOUD_EVENTS_URL")
-	if url == "" {
-		url = "http://localhost:8020/events"
+	jsonData, err := json.Marshal(event)
+	if err != nil {
+		return 0, fmt.Errorf("cannot marshal event: %s", err)
 	}
-	return url
+	c.client.Push(jsonData)
+	return len(p), nil
 }

@@ -51,14 +51,12 @@ var doCmd = &cobra.Command{
 		}
 
 		var (
-			lg  = logger.NewWithCloud()
-			tty *logger.TTYOutput
+			tm  = telemetrylite.New()
+			lg  = logger.NewWithCloud(tm)
 			ctx = lg.WithContext(cmd.Context())
+			tty *logger.TTYOutput
 		)
-
-		tm := telemetrylite.New()
 		defer tm.Flush()
-		ctx = tm.WithContext(ctx)
 
 		if !viper.GetBool("experimental") {
 			for _, f := range experimentalFlags {
@@ -141,7 +139,7 @@ var doCmd = &cobra.Command{
 			tty.Start()
 			defer tty.Stop()
 
-			lg = lg.Output(logger.TeeCloud(tty))
+			lg = lg.Output(logger.TeeCloud(tm, tty))
 			ctx = lg.WithContext(ctx)
 		}
 
@@ -161,11 +159,6 @@ var doCmd = &cobra.Command{
 			Name:  "action",
 			Value: targetPath.String(),
 		})
-		// TODO: TelemetryLite -> Telemetry
-		// tm.Push(ctx, event.RunStarted{
-		// 	Action: targetPath.String(),
-		// 	Args:   os.Args[1:],
-		// })
 
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
 			return daggerPlan.Do(ctx, targetPath, s)
@@ -176,12 +169,6 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			// TODO: TelemetryLite -> Telemetry
-			// tm.Push(ctx, event.RunCompleted{
-			// 	State: event.RunCompletedStateFailed,
-			// 	Error: err.Error(),
-			// })
-
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
@@ -195,7 +182,7 @@ var doCmd = &cobra.Command{
 		if file == "" && tty != nil {
 			// stop tty logger because we're about to print to stdout for the outputs
 			tty.Stop()
-			lg = logger.NewWithCloud()
+			lg = logger.NewWithCloud(tm)
 		}
 
 		action.UpdateFinal(daggerPlan.Final())
@@ -217,11 +204,6 @@ var doCmd = &cobra.Command{
 		} else {
 			lg.Error().Err(err)
 		}
-		// TODO: TelemetryLite -> Telemetry
-		// tm.Push(ctx, event.RunCompleted{
-		// 	State:   event.RunCompletedStateSuccess,
-		// 	Outputs: outputs,
-		// })
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")
