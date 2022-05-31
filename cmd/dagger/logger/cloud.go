@@ -60,7 +60,7 @@ func (c *Cloud) Write(p []byte) (int, error) {
 	fmt.Printf("🐟 EVENT: %#v\n", event)
 
 	jsonData, err := json.Marshal(event)
-	fmt.Printf("🐥 JSON: %#v\n", string(jsonData))
+	fmt.Printf("🐔 JSON: %#v\n", string(jsonData))
 	if err != nil {
 		return 0, fmt.Errorf("cannot marshal event: %s", err)
 	}
