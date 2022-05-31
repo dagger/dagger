@@ -34,13 +34,15 @@ func (c *PlainOutput) Write(p []byte) (int, error) {
 
 	source := parseSource(event)
 
-	return fmt.Fprintln(c.Out, colorize.Color(fmt.Sprintf("%s %s %s%s%s",
+	fmt.Fprintln(c.Out, colorize.Color(fmt.Sprintf("%s %s %s%s%s",
 		formatTimestamp(event),
 		formatLevel(event),
 		formatSource(source),
 		formatMessage(event),
 		formatFields(event),
 	)))
+
+	return len(p), nil
 }
 
 func formatLevel(event map[string]interface{}) string {

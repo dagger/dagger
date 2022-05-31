@@ -19,8 +19,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/telemetry"
-	"go.dagger.io/dagger/telemetry/event"
+	"go.dagger.io/dagger/telemetrylite"
 	"golang.org/x/term"
 )
 
@@ -52,17 +51,12 @@ var doCmd = &cobra.Command{
 		}
 
 		var (
-			lg  = logger.New()
-			tty *logger.TTYOutput
+			tm  = telemetrylite.New()
+			lg  = logger.NewWithCloud(tm)
 			ctx = lg.WithContext(cmd.Context())
+			tty *logger.TTYOutput
 		)
-
-		tm := telemetry.New(telemetry.Config{
-			// FIXME: this should be conditionally enabled
-			Enable: false,
-		})
 		defer tm.Flush()
-		ctx = tm.WithContext(ctx)
 
 		if !viper.GetBool("experimental") {
 			for _, f := range experimentalFlags {
@@ -76,6 +70,7 @@ var doCmd = &cobra.Command{
 
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
+			lg.Error().Err(err).Msgf("failed to load plan")
 			if viper.GetBool("help") {
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
@@ -144,7 +139,7 @@ var doCmd = &cobra.Command{
 			tty.Start()
 			defer tty.Stop()
 
-			lg = lg.Output(tty)
+			lg = lg.Output(logger.TeeCloud(tm, tty))
 			ctx = lg.WithContext(ctx)
 		}
 
@@ -164,10 +159,6 @@ var doCmd = &cobra.Command{
 			Name:  "action",
 			Value: targetPath.String(),
 		})
-		tm.Push(ctx, event.RunStarted{
-			Action: targetPath.String(),
-			Args:   os.Args[1:],
-		})
 
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
 			return daggerPlan.Do(ctx, targetPath, s)
@@ -178,11 +169,6 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			tm.Push(ctx, event.RunCompleted{
-				State: event.RunCompletedStateFailed,
-				Error: err.Error(),
-			})
-
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
@@ -196,7 +182,7 @@ var doCmd = &cobra.Command{
 		if file == "" && tty != nil {
 			// stop tty logger because we're about to print to stdout for the outputs
 			tty.Stop()
-			lg = logger.New()
+			lg = logger.NewWithCloud(tm)
 		}
 
 		action.UpdateFinal(daggerPlan.Final())
@@ -213,10 +199,11 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
-		tm.Push(ctx, event.RunCompleted{
-			State:   event.RunCompletedStateSuccess,
-			Outputs: outputs,
-		})
+		if outputs2, err := json.Marshal(outputs); err == nil {
+			lg.Debug().RawJSON("outputs", outputs2).Send()
+		} else {
+			lg.Error().Err(err).Msg("failed to marshal outputs2")
+		}
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")
