@@ -19,7 +19,7 @@ The following core actions are available:
 | `#Diff`      | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Extract the difference between two filesystems as its own file system |
 | `#Merge`     | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Merge multiple filesystem trees                                       |
 | `#Mkdir`     | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Create a directory in a filesystem tree                               |
-| `#ReadFile`  | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Read a file from a filesystem tree                                    |
+| `#ReadFile`  | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Read the contents of a UTF-8 encoded file from a filesystem tree      |
 | `#Source`    | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Access the source for the current CUE package                         |
 | `#Subdir`    | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Read a subdirectory from a filesystem tree                            |
 | `#WriteFile` | [fs.cue](https://github.com/dagger/dagger/blob/v0.2.11/pkg/dagger.io/dagger/core/fs.cue) | Write a file to a filesystem tree                                     |
