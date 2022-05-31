@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
+	"go.dagger.io/dagger/api/auth"
 	"go.dagger.io/dagger/telemetrylite"
 	"golang.org/x/term"
 )
@@ -62,6 +63,9 @@ func NewWithCloud(tm *telemetrylite.TelemetryLite) zerolog.Logger {
 }
 
 func TeeCloud(tm *telemetrylite.TelemetryLite, w io.Writer) zerolog.LevelWriter {
+	if !auth.HasCredentials() {
+		return zerolog.MultiLevelWriter(w)
+	}
 	return zerolog.MultiLevelWriter(
 		w,
 		NewCloud(tm))
