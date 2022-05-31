@@ -39,7 +39,7 @@ type LogEvent struct {
 	Level          string   `json:"level"`
 	Message        string   `json:"message,omitempty"`
 	OS             string   `json:"os"`
-	RunID          string   `json:"run_id"`
+	RunID          string   `json:"runId"`
 	State          string   `json:"state,omitempty"`
 	Task           string   `json:"task,omitempty"`
 	Time           string   `json:"time"`
