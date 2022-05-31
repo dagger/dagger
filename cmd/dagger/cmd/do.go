@@ -202,7 +202,7 @@ var doCmd = &cobra.Command{
 		if outputs2, err := json.Marshal(outputs); err == nil {
 			lg.Debug().RawJSON("outputs", outputs2).Send()
 		} else {
-			lg.Error().Err(err)
+			lg.Error().Err(err).Msg("failed to marshal outputs2")
 		}
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
