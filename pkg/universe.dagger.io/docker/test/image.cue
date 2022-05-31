@@ -3,10 +3,14 @@ package docker
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"universe.dagger.io/alpine"
+	"universe.dagger.io/bash"
 	"universe.dagger.io/docker"
+	"universe.dagger.io/docker/cli"
 )
 
 dagger.#Plan & {
+	client: network: "unix:///var/run/docker.sock": connect: dagger.#Socket
 
 	actions: test: image: {
 
@@ -103,6 +107,37 @@ dagger.#Plan & {
 						"""#
 				}
 				export: files: "/dir.txt": "/\n"
+			}
+		}
+
+		// Test: scratch image size is 0 bytes
+		scratch: {
+			_cli: alpine.#Build & {
+				packages: {
+					bash: {}
+					"docker-cli": {}
+				}
+			}
+
+			load: cli.#Load & {
+				image: docker.#Scratch
+				host:  client.network."unix:///var/run/docker.sock".connect
+				tag:   "dagger_scratch:load"
+			}
+
+			verify_size: bash.#Run & {
+				input: _cli.output
+				mounts: docker: {
+					contents: client.network."unix:///var/run/docker.sock".connect
+					dest:     "/var/run/docker.sock"
+				}
+				env: {
+					IMAGE_NAME: load.tag
+					IMAGE_ID:   load.imageID
+					// FIXME: without this forced dependency, load.command might not run
+					DEP: "\(load.success)"
+				}
+				script: contents: "test $(docker image inspect $IMAGE_NAME -f '{{.Size}}') = 0"
 			}
 		}
 	}
