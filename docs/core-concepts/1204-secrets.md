@@ -56,7 +56,7 @@ sops: ...
 
 In addition, you can export a secret from a filesystem with [`core.#NewSecret`](https://github.com/dagger/dagger/blob/main/pkg/dagger.io/dagger/core/secrets.cue#L22-L33)
 
-This should be used carefully and sparingly, as secrets stay in cache.
+This should be used carefully and sparingly, as the source of these secrets will stay in cache.
 
 ```cue
 package main
