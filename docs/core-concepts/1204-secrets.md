@@ -9,7 +9,7 @@ displayed_sidebar: '0.2'
 
 Secrets support in Dagger allows you to utilize confidential information -- such as passwords, API keys, SSH keys, etc -- when running your Dagger Plans, _without_ exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into cache.
 
-Secrets are never merged into the CUE configuration. They are managed by the Dagger runtime, only  referenced as opaque identifiers, and can only be used by a special filesystem mount or as an environment variable designed to minimize leak risk. If you're interested in more details, these [Buildkit docs](https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/syntax.md#run---mounttypesecret) describe them in more depth.
+Secrets are never merged into the CUE configuration. They are managed by the Dagger runtime, only  referenced as opaque identifiers, and can only be used by a special filesystem mount or as an environment variable designed to minimize leak risk.
 
 ## Getting or Generating Secrets
 
