@@ -76,7 +76,7 @@ import (
 			entrypoint: []
 			cmd: []
 			workdir: "/"
-			user:    "root"
+			user:    "root:root"
 		}
 		config: input.config
 	}
