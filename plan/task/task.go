@@ -31,13 +31,13 @@ var (
 type State int8
 
 func (s State) String() string {
-	return [...]string{"computing", "skipped", "completed", "cancelled", "failed"}[s]
+	return [...]string{"running", "skipped", "completed", "cancelled", "failed"}[s]
 }
 
 func ParseState(s string) (State, error) {
 	switch s {
-	case "computing":
-		return StateComputing, nil
+	case "running":
+		return StateRunning, nil
 	case "skipped":
 		return StateSkipped, nil
 	case "cancelled":
@@ -58,8 +58,8 @@ func (s State) CanTransition(t State) bool {
 const (
 	// state order is important here since it defines the  order
 	// on how states can transition only forwards
-	// computing > completed > canceled > failed
-	StateComputing State = iota
+	// running > completed > canceled > failed
+	StateRunning State = iota
 	StateSkipped
 	StateCompleted
 	StateCanceled

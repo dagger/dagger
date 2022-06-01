@@ -91,7 +91,7 @@ func (l *Logs) Add(event Event) error {
 			group.FinalState = t
 		}
 
-		if t == task.StateComputing {
+		if t == task.StateRunning {
 			group.CurrentState = t
 			group.Members++
 			group.Completed = nil
@@ -242,7 +242,7 @@ func (c *TTYOutput) linesPerGroup(width, height int) int {
 
 	runningGroups := 0
 	for _, message := range c.logs.Messages {
-		if group := message.Group; group != nil && group.CurrentState == task.StateComputing {
+		if group := message.Group; group != nil && group.CurrentState == task.StateRunning {
 			runningGroups++
 		}
 	}
@@ -286,7 +286,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 	if group.Name != systemGroup {
 		prefix := ""
 		switch group.CurrentState {
-		case task.StateComputing:
+		case task.StateRunning:
 			prefix = "[+]"
 		case task.StateSkipped:
 			prefix = "[-]"
@@ -318,7 +318,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 
 		// color
 		switch group.CurrentState {
-		case task.StateComputing:
+		case task.StateRunning:
 			out = aec.Apply(out, aec.LightBlueF)
 		case task.StateSkipped:
 			out = aec.Apply(out, aec.LightCyanF)
@@ -337,7 +337,7 @@ func (c *TTYOutput) printGroup(group *Group, width, maxLines int) int {
 
 	printEvents := []Event{}
 	switch group.CurrentState {
-	case task.StateComputing:
+	case task.StateRunning:
 		printEvents = group.Events
 		// for computing tasks, show only last N
 		if len(printEvents) > maxLines && maxLines >= 0 {
