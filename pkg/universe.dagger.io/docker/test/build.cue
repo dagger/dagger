@@ -88,6 +88,63 @@ dagger.#Plan & {
 			}
 		}
 
+		// Test: copy respects workdir like a Dockerfile COPY
+		copyWorkdir: {
+			testFile: core.#Source & {
+				path: "./testdata"
+				include: ["Dockerfile"]
+			}
+
+			build: docker.#Build & {
+				steps: [
+					alpine.#Build,
+					docker.#Set & {
+						config: workdir: "/opt"
+					},
+					docker.#Copy & {
+						contents: testFile.output
+					},
+				]
+			}
+
+			buildNoWorkdir: docker.#Build & {
+				steps: [
+					alpine.#Build,
+					docker.#Copy & {
+						contents: testFile.output
+					},
+				]
+			}
+
+			buildWithAbsolute: docker.#Build & {
+				steps: [
+					alpine.#Build,
+					docker.#Set & {
+						config: workdir: "/opt"
+					},
+					docker.#Copy & {
+						contents: testFile.output
+						dest:     "/somenewpath"
+					},
+				]
+			}
+
+			verify: core.#ReadFile & {
+				input: build.output.rootfs
+				path:  "/opt/Dockerfile"
+			}
+
+			verifyNoWorkDir: core.#ReadFile & {
+				input: buildNoWorkdir.output.rootfs
+				path:  "/Dockerfile"
+			}
+
+			verifyWithAbsolutePath: core.#ReadFile & {
+				input: buildWithAbsolute.output.rootfs
+				path:  "/somenewpath/Dockerfile"
+			}
+		}
+
 		// Test: nested docker.#Build with 3+ levels of depth
 		// FIXME: this test currently fails.
 		nestedDeep: {
