@@ -9,18 +9,18 @@ There's a `universe.dagger.io/docker/cli` package that allows you to run docker 
 
 ## Local daemon
 
-```cue file=../plans/docker-cli-run/local.cue
+```cue file=../../plans/docker-cli-run/local.cue
 
 ```
 
 ## Remote daemon, via SSH
 
-```cue file=../plans/docker-cli-run/ssh.cue
+```cue file=../../plans/docker-cli-run/ssh.cue
 
 ```
 
 ## Remote daemon, via HTTPS
 
-```cue file=../plans/docker-cli-run/tcp.cue
+```cue file=../../plans/docker-cli-run/tcp.cue
 
 ```

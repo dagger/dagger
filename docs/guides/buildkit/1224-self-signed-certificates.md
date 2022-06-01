@@ -16,4 +16,4 @@ To run a customized Buildkit version with Docker, this can be done using the bel
 docker run --net=host -d --restart always -v $PWD/my-cert.pem:/etc/ssl/certs/my-cert.pem --name dagger-buildkitd --privileged moby/buildkit:latest
 ```
 
-To connect your Dagger client to this custom instance, [please follow these steps](../guides/1223-custom-buildkit.md)
+To connect your Dagger client to this custom instance, [please follow these steps](1223-custom-buildkit.md)
