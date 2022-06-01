@@ -21,7 +21,7 @@ import (
 
 const (
 	credentialsFile = "~/.config/dagger/credentials" // #nosec
-	authDomain      = "auth.dagger.io"
+	authDomain      = "auth.dagger.cloud"
 	callbackPort    = 38932
 )
 

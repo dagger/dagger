@@ -81,7 +81,7 @@ func (t *TelemetryLite) Flush() {
 func eventsURL() string {
 	url := os.Getenv("DAGGER_CLOUD_EVENTS_URL")
 	if url == "" {
-		url = "https://api.dagger.io/events"
+		url = "https://api.dagger.cloud/events"
 	}
 	return url
 }
