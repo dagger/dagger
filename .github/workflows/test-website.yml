@@ -20,15 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Cypress run
-        uses: cypress-io/github-action@v2
+        uses: cypress-io/github-action@v4
         env:
-          REACT_APP_CLIENT_ID: 123
-          REACT_APP_CLIENT_SECRET: 123
-          REACT_APP_DAGGER_SITE_URI: https://dagger.io
-          REACT_APP_API_PROXY_ENABLE: false
           REACT_APP_AMPLITUDE_ID: 123
         with:
-          config: chromeWebSecurity=false
+          config-file: cypress.config.js
           install-command: yarn install --silent
           start: |
             yarn start
