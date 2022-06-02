@@ -8,14 +8,14 @@ var contextKey struct{}
 
 func Ctx(ctx context.Context) *Telemetry {
 	// Return the contextual telemetry
-	if t, ok := ctx.Value(contextKey).(*Telemetry); ok {
-		return t
+	if tm, ok := ctx.Value(contextKey).(*Telemetry); ok {
+		return tm
 	}
 
 	// If not available, return a brand new *disabled* telemetry
-	return New(Config{
-		Enable: false,
-	})
+	tm := New()
+	tm.Disable()
+	return tm
 }
 
 func (t *Telemetry) WithContext(ctx context.Context) context.Context {

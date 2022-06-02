@@ -5,25 +5,17 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/google/uuid"
-	"go.dagger.io/dagger/engine"
-	"go.dagger.io/dagger/telemetrylite"
+	"go.dagger.io/dagger/telemetry"
 	"go.dagger.io/dagger/version"
 )
 
 type Cloud struct {
-	client *telemetrylite.TelemetryLite
-	run    string
-	engine string
+	tm *telemetry.Telemetry
 }
 
-func NewCloud(tm *telemetrylite.TelemetryLite) *Cloud {
-	engineID, _ := engine.ID()
-
+func NewCloud(tm *telemetry.Telemetry) *Cloud {
 	return &Cloud{
-		client: tm,
-		run:    uuid.NewString(),
-		engine: engineID,
+		tm: tm,
 	}
 }
 
@@ -47,12 +39,12 @@ type LogEvent struct {
 
 func (c *Cloud) Write(p []byte) (int, error) {
 	event := LogEvent{
-		RunID:          c.run,
+		RunID:          c.tm.RunID(),
+		EngineID:       c.tm.EngineID(),
 		Arch:           runtime.GOARCH,
 		OS:             runtime.GOOS,
 		DaggerVersion:  version.Version,
 		DaggerRevision: version.Revision,
-		EngineID:       c.engine,
 	}
 	if err := json.Unmarshal(p, &event); err != nil {
 		return 0, fmt.Errorf("cannot unmarshal event: %s", err)
@@ -64,6 +56,6 @@ func (c *Cloud) Write(p []byte) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("cannot marshal event: %s", err)
 	}
-	c.client.Push(jsonData)
+	c.tm.Write(jsonData)
 	return len(p), nil
 }
