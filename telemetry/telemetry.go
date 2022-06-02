@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 
@@ -92,12 +91,10 @@ func (t *Telemetry) send() {
 	for e := range t.queueCh {
 		reqBody := bytes.NewBuffer(e)
 		req, err := http.NewRequest(http.MethodPost, t.url, reqBody)
-		fmt.Printf("🐝 REQUEST: %#v\n", req)
 		if err != nil {
 			continue
 		}
 		if resp, err := t.client.Do(req.Context(), req); err == nil {
-			fmt.Printf("🐶 RESPONSE: %#v\n", resp)
 			resp.Body.Close()
 		} else {
 			// TODO: re-auth does not seem to work as expected
