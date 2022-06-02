@@ -5,7 +5,7 @@ displayed_sidebar: 0.2
 
 # Handling action outputs
 
-Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](../getting-started/1200-local-dev.md) finishes:
+Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](../../getting-started/1200-local-dev.md) finishes:
 
 ```shell
 ➜  APP_NAME=dagger-todo dagger do deploy
@@ -44,7 +44,7 @@ For this example, ensure you have a registry on `localhost` listening on port `5
 
 :::
 
-```cue file=../tests/guides/handling-outputs/default.cue
+```cue file=../../tests/guides/handling-outputs/default.cue
 ```
 
 ```shell
@@ -75,7 +75,7 @@ result: localhost:5042/alpine:latest@sha256:47a163eb7b572819d862b4a2c95a399829c8
 
 You're not limited to the outputs of an action because you can make your own in a wrapper action:
 
-```cue file=../tests/guides/handling-outputs/wrapper.cue
+```cue file=../../tests/guides/handling-outputs/wrapper.cue
 ```
 
 ```shell
@@ -89,13 +89,13 @@ path    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 ## Full output control
 
-Since you can only output simple values, you may find the need for a solution where you can output more complex types such as structs and lists. As showcased in the [interacting with the client](../core-concepts/1203-client.md) docs, Dagger has the ability to write into the client filesystem through the `client` API.
+Since you can only output simple values, you may find the need for a solution where you can output more complex types such as structs and lists. As showcased in the [interacting with the client](../../core-concepts/1203-client.md) docs, Dagger has the ability to write into the client filesystem through the `client` API.
 
 Using this capability we can then have full control of what to output. The downsides are that these won't print to the console (only to a file), and you won't be able to pipe directly from the `dagger` command.
 
 Let's leverage CUE's [default integrations](https://cuelang.org/docs/integrations/) and marshal a more complex value into a single `json` or `yaml` file.
 
-```cue file=../tests/guides/handling-outputs/control.cue
+```cue file=../../tests/guides/handling-outputs/control.cue
 ```
 
 ```shell
