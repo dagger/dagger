@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 )
@@ -16,12 +18,12 @@ dagger.#Plan & {
 			source: "alpine:3.15"
 		}
 
-		// test basic ordering of start exec -> sync exec -> stop exec
+		// test basic ordering of start exec -> sync exec -> signal exec -> stop exec
 		basicTest: {
 			start: core.#Start & {
 				input: image.output
 				args: [
-					"sleep", "30",
+					"sh", "-c", "trap 'kill $(jobs -p); exit 99' HUP; sleep 10 & wait",
 				]
 			}
 
@@ -37,12 +39,35 @@ dagger.#Plan & {
 				always: true
 			}
 
-			stop: core.#Stop & {
-				input: start
-				_dep:  sleep
+			sig: core.#SendSignal & {
+				input:  start
+				signal: core.SIGHUP
+				_dep:   sleep
 			}
 
-			// 137 means the process was still running and got SIGKILL
+			stop: core.#Stop & {
+				input:   start
+				timeout: time.Second
+				_dep:    sig
+			}
+
+			verify: stop.exit & 99
+		}
+
+		stopTimeoutTest: {
+			start: core.#Start & {
+				input: image.output
+				args: [
+					"sleep", "10",
+				]
+			}
+
+			stop: core.#Stop & {
+				input:   start
+				timeout: time.Second
+			}
+
+			// exit code 137 means the process was still running and got SIGKILL
 			verify: stop.exit & 137
 		}
 
