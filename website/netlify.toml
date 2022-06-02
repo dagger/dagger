@@ -1,7 +1,7 @@
 [build]
   publish = "build/"
   command = "yarn build"
-  environment = { NODE_VERSION = "16.13.1" }
+  environment = { NODE_VERSION = "16.14" }
 
 [context.production]
   ignore = "false"
