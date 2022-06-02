@@ -44,8 +44,6 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Load")
 	defer span.End()
 
-	log.Ctx(ctx).Debug().Interface("args", cfg.Args).Msg("loading plan")
-
 	_, cueModExists := pkg.GetCueModParent()
 	if !cueModExists {
 		return nil, fmt.Errorf("dagger project not found. Run `dagger project init`")

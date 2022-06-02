@@ -69,6 +69,12 @@ var doCmd = &cobra.Command{
 
 		targetPath := getTargetPath(cmd.Flags().Args())
 
+		lg.
+			Debug().
+			Str("targetAction", targetPath.String()).
+			Strs("args", os.Args[1:]).
+			Msg("running plan")
+
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
 			lg.Error().Err(err).Msgf("failed to load plan")
@@ -120,8 +126,6 @@ var doCmd = &cobra.Command{
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
-
-		lg.Debug().Msgf("viper flags %#v", viper.AllSettings())
 
 		if err := viper.BindPFlags(cmd.Flags()); err != nil {
 			panic(err)
