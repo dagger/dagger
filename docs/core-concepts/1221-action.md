@@ -79,17 +79,17 @@ There are no constraints to an action's field names or types.
 
 ### Integration
 
-Action definitions cannot be executed directly: they must be integrated into a plan.
+Action definitions cannot be executed directly: they must be integrated into a project.
 
-A plan is an execution context for actions. It specifies:
+A project is an execution context for actions. It specifies:
 
 - What actions to present to the end user
 - Dependencies between those tasks, if any
 - Interactions between the tasks and the client system, if any
 
-Actions are integrated into a plan by _merging_ their CUE definition into the plan's CUE definition.
+Actions are integrated into a project by _merging_ their CUE definition into the project's CUE definition.
 
-Here is an example of a plan:
+Here is an example of a project:
 
 ```cue
 package main
@@ -98,7 +98,7 @@ import (
     "dagger.io/dagger"
 )
 
-dagger.#Plan & {
+dagger.#Project & {
     // Say hello by writing to a file
     actions: hello: #AddHello & {
         dir: client.filesystem.".".read.contents
@@ -110,9 +110,9 @@ dagger.#Plan & {
 }
 ```
 
-Note that `#AddHello` was integrated _directly_ into the plan, whereas `core.#WriteFile` was integrated _indirectly_, by virtue of being a sub-action of `#AddHello`.
+Note that `#AddHello` was integrated _directly_ into the project, whereas `core.#WriteFile` was integrated _indirectly_, by virtue of being a sub-action of `#AddHello`.
 
-To learn more about the structure of a plan, see [it all begins with a plan](./1202-plan.md).
+To learn more about the structure of a plan, see [Anatomy of a Dagger project](./1241-project.md).
 
 ### Discovery
 

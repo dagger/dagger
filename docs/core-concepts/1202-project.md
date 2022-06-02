@@ -1,0 +1,112 @@
+---
+slug: /1202/plan
+displayed_sidebar: '0.2'
+---
+
+# It all starts with a plan
+
+## Plan structure
+
+A config declared in Dagger starts with a plan, specifically `dagger.#Plan`
+
+Within this plan we can:
+
+- interact with the `client` filesystem
+  - read files, usually the current directory as `.`
+  - write files, usually the build output as `_build`
+- read `env` variables, such as `NETLIFY_TEAM` in our example
+- declare a few `actions`, e.g. `deps`, `test` & `build`
+
+This is our **Getting Started** todoapp plan structure:
+
+```cue file=../tests/core-concepts/plan/structure.cue.fragment
+
+```
+
+When the above plan gets executed via `dagger do build`, it produces the following output:
+
+```shell
+[✔] client.filesystem.".".read                               0.0s
+[✔] actions.deps                                             1.1s
+[✔] actions.test.script                                      0.0s
+[✔] actions.test                                             0.0s
+[✔] actions.build.run.script                                 0.0s
+[✔] actions.build.run                                        0.0s
+[✔] actions.build.contents                                   0.0s
+[✔] client.filesystem."./_build".write                       0.1s
+```
+
+Since these actions have run before, they are cached and take less than 2 seconds to complete.
+
+While the names used for the actions above - `deps`, `test` & `build` - are short and descriptive,
+any other names would have worked. Put differently, action naming does not affect plan execution.
+
+Lastly, notice that even if the `deploy` action is defined, we did not run it.
+Similar to Makefile targets, we have the option of running specific actions.
+
+We ran the `dagger do build` command, which only runs the `build` action (and all its dependent actions).
+This Dagger property enables us to keep the entire CI/CD config in a single file, while keeping the integration execution separate from the deployment one.
+Separating CI & CD concerns becomes essential as our pipelines grow in complexity, and we learn about operational and security constraints specific to our systems.
+
+## Packages & imports
+
+In order to understand the correlation between actions, definitions and packages, let us focus on the following fragment from our **Getting Started** todoapp config:
+
+```cue
+package todoapp
+
+import (
+  "dagger.io/dagger"
+  "universe.dagger.io/netlify"
+)
+
+dagger.#Plan & {
+  // ...
+  actions: {
+    // ...
+    deploy: netlify.#Deploy & {
+      // ...
+    }
+  // ...
+  }
+}
+```
+
+We start by declaring the package name, `package todoapp` above.
+
+Next, we import the packages that we use in our plan.
+
+The first import is needed for the `dagger.#Plan` definition to be available.
+
+The second import is for `netlify.#Deploy` to work.
+
+:::info
+Which other imports we are missing?
+Look at all the actions in the plan structure at the top of this page.
+Now check all the available packages in [universe.dagger.io](https://github.com/dagger/dagger/tree/v0.2.11/pkg/universe.dagger.io).
+:::
+
+We now understand that the `deploy` action is the deploy definition from the netlify package, written as `deploy: netlify.#Deploy`
+
+Each definition has default values that can be modified via curly brackets. This is what that looks like in practice for our deploy action:
+
+```cue
+// ...
+deploy: netlify.#Deploy & {
+  contents: build.contents.output
+  site:     client.env.APP_NAME
+  token:    client.env.NETLIFY_TOKEN
+  team:     client.env.NETLIFY_TEAM
+}
+// ...
+```
+
+We can build complex pipelines efficiently by referencing any definition, from any package in our actions.
+This is one of the fundamental concepts that makes Dagger a powerful language for building CI/CD pipelines.
+
+If you want to learn more packages in the context of CUE, the config language used by Dagger configs, check out the [Packages](1215-what-is-cue.md#packages) section on the **What is CUE?** page.
+
+:::tip
+Now that we understand the basics of a Dagger plan, we are ready to learn more about how to interact with the client environment.
+We can read the env (including secrets), run commands, use local sockets, etc.
+:::

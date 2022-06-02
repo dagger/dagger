@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Interacting with the client
 
-`dagger.#Plan` has a `client` field that allows interaction with the local machine where the `dagger` command line client is run. You can:
+`dagger.#Project` has a `client` field that allows interaction with the local machine where the `dagger` command line client is run. You can:
 
 - Read and write files and directories;
 - Use local sockets;
@@ -15,7 +15,7 @@ displayed_sidebar: '0.2'
 
 ## Accessing the file system
 
-You may need to load a local directory as a `dagger.#FS` type in your plan:
+You may need to load a local directory as a `dagger.#FS` type in your project:
 
 ```cue file=../tests/core-concepts/client/plans/fs.cue
 

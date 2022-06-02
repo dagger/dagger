@@ -45,7 +45,7 @@ module.exports = {
       },
       items: [
         "core-concepts/action",
-        "core-concepts/plan",
+        "core-concepts/project",
         "core-concepts/client",
         "core-concepts/secrets",
         "core-concepts/what-is-cue",

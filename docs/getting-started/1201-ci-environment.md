@@ -124,7 +124,7 @@ pipeline {
     stage("do") {
       steps {
         //this example uses https://github.com/jpadams/helloworld-dagger-jenkins
-        //if you're using your own Dagger plan, substitute your action name for 'hello'
+        //if you're using your own Dagger project, substitute your action name for 'hello'
         //e.g. 'build' or 'push' or whatever you've created!
         sh '''
             dagger do hello --log-format=plain

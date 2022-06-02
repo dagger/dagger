@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # Making reusable packages
 
-Whilst splitting your plan into several files is a good idea, you will sometimes need to create standalone packages aiming to be reusable and shared. Let's explore how to do that.
+Whilst splitting your project into several files is a good idea, you will sometimes need to create standalone packages aiming to be reusable and shared. Let's explore how to do that.
 
 ## Packages, modules, and Dagger projects
 
@@ -13,15 +13,15 @@ Understanding the difference between a package, a module and a Dagger project is
 
 - **CUE Package**: directory with CUE files, each including a package definition on top, making it importable (e.g, `universe.dagger.io/docker` is a package, `universe.dagger.io/docker/cli` is another package);
 - **CUE Module**: directory with a `cue.mod` directory which makes for the prefix/root of importable packages (e.g, `universe.dagger.io` is a module);
-- **Dagger Project**: a CUE module that includes dagger plans and dependencies for running the dagger CLI.
+- **Dagger Project**: a complete Dagger configuration, loaded from a valid CUE module or package.
 
 ## End-to-End example
 
-Instead of splitting all of our files in the the same project with a module, we could directly make reusable components from our plan as standalone packages. For the sake of the exercise, we will use Github as a version control system, but it will work with any alternative.
+Instead of splitting all of our files in the the same project with a module, we could directly make reusable components from our project as standalone packages. For the sake of the exercise, we will use Github as a version control system, but it will work with any alternative.
 
 ### Create the base Dagger project
 
-First, let's start with a basic plan:
+First, let's start with a basic project:
 
 - Create the root directory
 
@@ -50,7 +50,7 @@ import (
     "dagger.io/dagger"
 )
 
-dagger.#Plan & {
+dagger.#Project & {
     actions: {
         hello: #Run & {
             script: contents: "echo \"Hello!\""
@@ -147,7 +147,7 @@ dagger.#Plan & {
 
 ### Run the project
 
-Now that we have connected all the dots, let's run our plan to see if it works:
+Now that we have connected all the dots, let's run our action to see if it works:
 
 ```console
 $ cd rootProject

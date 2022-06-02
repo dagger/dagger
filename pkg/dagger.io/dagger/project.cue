@@ -1,7 +1,8 @@
 package dagger
 
-// A special kind of program which `dagger` can execute.
-#Plan: {
+// The project is the top-level configuration for Dagger.
+// It defines a set of actions and how to run them.
+#Project: {
 	// Access client machine
 	client: {
 		// Access client filesystem
