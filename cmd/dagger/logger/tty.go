@@ -25,8 +25,8 @@ type Group struct {
 	CurrentState task.State
 	FinalState   task.State
 	Events       []Event
-	Started      *time.Time
-	Completed    *time.Time
+	Started      time.Time
+	Completed    time.Time
 	Members      int
 }
 
@@ -68,10 +68,9 @@ func (l *Logs) Add(event Event) error {
 
 	// If the group doesn't exist, create it
 	if group == nil {
-		now := time.Now()
 		group = &Group{
 			Name:    groupKey,
-			Started: &now,
+			Started: time.Now(), // the: use UTC?
 		}
 		l.groups[groupKey] = group
 		l.Messages = append(l.Messages, Message{
@@ -95,12 +94,11 @@ func (l *Logs) Add(event Event) error {
 		if t == task.StateComputing {
 			group.CurrentState = t
 			group.Members++
-			group.Completed = nil
+			group.Completed = time.Time{}
 		} else {
 			group.Members--
 			if group.Members <= 0 {
-				now := time.Now()
-				group.Completed = &now
+				group.Completed = time.Now()
 				group.CurrentState = group.FinalState
 			}
 		}
@@ -406,11 +404,11 @@ func printGroup(group *Group, width, maxLines int, cons io.Writer) int {
 		out = prefix + " " + group.Name
 
 		endTime := time.Now()
-		if group.Completed != nil {
-			endTime = *group.Completed
+		if !group.Completed.IsZero() {
+			endTime = group.Completed
 		}
 
-		dt := endTime.Sub(*group.Started).Seconds()
+		dt := endTime.Sub(group.Started).Seconds()
 		if dt < 0.05 {
 			dt = 0
 		}

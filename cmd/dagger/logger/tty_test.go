@@ -204,13 +204,13 @@ func TestPrint(t *testing.T) {
 	}
 
 	t.Run("too small console width", func(t *testing.T) {
-		now := time.Now()
+		now := time.Now().UTC()
 		msgs := []Message{
 			{
 				Event: map[string]interface{}{"abc": "ABC"},
 				Group: &Group{
 					Name:    "test",
-					Started: &now,
+					Started: now,
 				},
 			},
 		}
