@@ -86,7 +86,8 @@ html[data-theme="dark"] {
   --ifm-code-background: var(--ifm-color-primary-dark);
   --ifm-heading-color: var(--ifm-color-primary-light);
   --ifm-menu-color-background-hover: var(--ifm-color-primary);
-  --ifm-blockquote-color: var(--ifm-menu-color-background-hover);
+  --ifm-blockquote-color: var(--ifm-color-primary-light);
+  --ifm-blockquote-border-color: var(--ifm-color-primary-light);
   --ifm-color-emphasis-300: var(--ifm-menu-color-background-hover);
 }
 
