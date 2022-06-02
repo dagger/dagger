@@ -19,7 +19,7 @@ import (
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
-	"go.dagger.io/dagger/telemetrylite"
+	"go.dagger.io/dagger/telemetry"
 	"golang.org/x/term"
 )
 
@@ -51,12 +51,13 @@ var doCmd = &cobra.Command{
 		}
 
 		var (
-			tm  = telemetrylite.New()
+			tm  = telemetry.New()
 			lg  = logger.NewWithCloud(tm)
 			ctx = lg.WithContext(cmd.Context())
 			tty *logger.TTYOutput
 		)
 		defer tm.Flush()
+		ctx = tm.WithContext(ctx)
 
 		if !viper.GetBool("experimental") {
 			for _, f := range experimentalFlags {

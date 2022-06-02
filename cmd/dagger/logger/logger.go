@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/api/auth"
-	"go.dagger.io/dagger/telemetrylite"
+	"go.dagger.io/dagger/telemetry"
 	"golang.org/x/term"
 )
 
@@ -39,7 +39,7 @@ func New() zerolog.Logger {
 	return logger.Level(lvl)
 }
 
-func NewWithCloud(tm *telemetrylite.TelemetryLite) zerolog.Logger {
+func NewWithCloud(tm *telemetry.Telemetry) zerolog.Logger {
 	logger := zerolog.
 		New(TeeCloud(tm, os.Stderr)).
 		With().
@@ -62,7 +62,7 @@ func NewWithCloud(tm *telemetrylite.TelemetryLite) zerolog.Logger {
 	return logger.Level(lvl)
 }
 
-func TeeCloud(tm *telemetrylite.TelemetryLite, w io.Writer) zerolog.LevelWriter {
+func TeeCloud(tm *telemetry.Telemetry, w io.Writer) zerolog.LevelWriter {
 	if !auth.HasCredentials() {
 		return zerolog.MultiLevelWriter(w)
 	}
