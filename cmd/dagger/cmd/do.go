@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -69,12 +70,6 @@ var doCmd = &cobra.Command{
 
 		targetPath := getTargetPath(cmd.Flags().Args())
 
-		lg.
-			Debug().
-			Str("targetAction", targetPath.String()).
-			Strs("args", os.Args[1:]).
-			Msg("running plan")
-
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 		if err != nil {
 			lg.Error().Err(err).Msgf("failed to load plan")
@@ -86,6 +81,15 @@ var doCmd = &cobra.Command{
 			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
+
+		lg.
+			Debug().
+			Str("targetAction", targetPath.String()).
+			Str("plan", base64.StdEncoding.EncodeToString(
+				[]byte(fmt.Sprintf("%#v", daggerPlan.Source().Cue()))),
+			).
+			Strs("args", os.Args[1:]).
+			Msg("running plan")
 
 		action := daggerPlan.Action().FindByPath(targetPath)
 
