@@ -234,22 +234,17 @@
     "@algolia/logger-common" "4.13.0"
     "@algolia/requester-common" "4.13.0"
 
-"@amplitude/analytics-connector@1.4.2":
-  version "1.4.2"
-  resolved "https://registry.yarnpkg.com/@amplitude/analytics-connector/-/analytics-connector-1.4.2.tgz#5a87f35d014fa50cb283202d8fde78fa266712c2"
-  integrity sha512-bA9hLDobWA5HBHsdv1hI2+VmQOQ8AA4e3/YB9ng80J8NOLNN2zX/952YSf36Ns86QUm9pPCKHnYrlzMFU61X2g==
+"@amplitude/analytics-connector@1.4.3":
+  version "1.4.3"
+  resolved "https://registry.yarnpkg.com/@amplitude/analytics-connector/-/analytics-connector-1.4.3.tgz#cb9098cb8adfbd39b2c71ad71a7c758504a745a7"
+  integrity sha512-Ghu1UJn55Rn9eglF+ED7yOGXaeX3KY2qkQi9W9yqC02ItPvKfrybeVndweI1XtsiW0LvRpdA3uQEjuZEGunyLw==
   dependencies:
-    "@amplitude/ua-parser-js" "0.7.26"
+    "@amplitude/ua-parser-js" "0.7.31"
 
 "@amplitude/types@^1.6.1":
   version "1.6.1"
   resolved "https://registry.yarnpkg.com/@amplitude/types/-/types-1.6.1.tgz#ed15be42746526d6f7087bedc916734e13be56fd"
   integrity sha512-GSaNbROpG5gaoLQPo9crpCkB+BgfN7ZtK6SPJaQC2IX2xNqvfq/RZwYLhMZyNfZw/Nce0Z6lKYXCoNPyhdL26Q==
-
-"@amplitude/ua-parser-js@0.7.26":
-  version "0.7.26"
-  resolved "https://registry.yarnpkg.com/@amplitude/ua-parser-js/-/ua-parser-js-0.7.26.tgz#18d889d84d2ba90c248ab6fcd7e3dd07f1c9c86e"
-  integrity sha512-62/Rid6YQ7F2KT/5vTre41Y26ivrEoFC8lbrsJZqBKaiXMJWG0YpNv9RgxNSaZS2jPLVQgoB/FFeWxihOLfIcg==
 
 "@amplitude/ua-parser-js@0.7.31":
   version "0.7.31"
@@ -3257,12 +3252,12 @@ algoliasearch@^4.13.0:
     "@algolia/requester-node-http" "4.13.0"
     "@algolia/transporter" "4.13.0"
 
-amplitude-js@^8.18.3:
-  version "8.18.3"
-  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.18.3.tgz#cec2424f139ea5cfc4e8bbefb8e2101f027bba05"
-  integrity sha512-Qs4bspIufDZ9UcG1FLgOPoOP8qJUN/W5IoueOcmi+6u5fX+wigDNfLlbaga2sZ5/Tk6qUUWT+ZuNouLA3+2izQ==
+amplitude-js@^8.18.4:
+  version "8.18.4"
+  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.18.4.tgz#211e49c49e3e326edaff62ba83b4a2916a820136"
+  integrity sha512-Nk4ymaw9iGf1Be/fGuuH7H/QnUJceD2RYGdode8ZAApw6jHlm9QZCoYoVRrNPdgfb3yJz3P84EPh/4xM+/98/w==
   dependencies:
-    "@amplitude/analytics-connector" "1.4.2"
+    "@amplitude/analytics-connector" "1.4.3"
     "@amplitude/ua-parser-js" "0.7.31"
     "@amplitude/utils" "^1.0.5"
     "@babel/runtime" "^7.3.4"
