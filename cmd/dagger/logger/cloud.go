@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/rs/zerolog"
 	"go.dagger.io/dagger/telemetry"
 	"go.dagger.io/dagger/version"
 )
@@ -34,6 +35,7 @@ type LogEvent struct {
 	Time         string            `json:"time"`
 	Plan         string            `json:"plan,omitempty"`
 	TargetAction string            `json:"targetAction,omitempty"`
+	Event        string            `json:"event,omitempty"`
 }
 
 func (c *Cloud) Write(p []byte) (int, error) {
@@ -56,5 +58,12 @@ func (c *Cloud) Write(p []byte) (int, error) {
 		return 0, fmt.Errorf("cannot marshal event: %s", err)
 	}
 	c.tm.Write(jsonData)
+
+	// if there's a fatal event, manually call flush since otherwise the
+	// program will exit immediately
+	if event.Level == zerolog.LevelFatalValue {
+		c.tm.Flush()
+	}
+
 	return len(p), nil
 }
