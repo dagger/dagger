@@ -403,6 +403,21 @@ func statePrefix(state task.State) string {
 	return prefix
 }
 
+func groupTimer(started, completed time.Time) string {
+	endTime := time.Now()
+	if !completed.IsZero() {
+		endTime = completed
+	}
+
+	dt := endTime.Sub(started).Seconds()
+	if dt < 0.05 {
+		dt = 0
+	}
+
+	timer := fmt.Sprintf("%3.1fs", dt)
+	return timer
+}
+
 func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
@@ -411,19 +426,9 @@ func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	// want it to be displayed as an action in the output
 	if group.Name != systemGroup {
 		prefix := statePrefix(group.CurrentState)
+		timer := groupTimer(group.Started, group.Completed)
 
 		out = prefix + " " + group.Name
-
-		endTime := time.Now()
-		if !group.Completed.IsZero() {
-			endTime = group.Completed
-		}
-
-		dt := endTime.Sub(group.Started).Seconds()
-		if dt < 0.05 {
-			dt = 0
-		}
-		timer := fmt.Sprintf("%3.1fs", dt)
 
 		// align
 		delta := width - utf8.RuneCountInString(out) - len(timer)
