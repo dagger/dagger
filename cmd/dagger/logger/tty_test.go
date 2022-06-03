@@ -325,4 +325,45 @@ func TestLinesPerGroup(t *testing.T) {
 	n := linesPerGroupW(&b, w, h, msgs)
 	_ = n
 	// TODO: add test check
+
+func TestPrintGroup(t *testing.T) {
+	t.Run("too small terminal", func(t *testing.T) {
+		g := Group{
+			Name:    "grp1",
+			Started: time.Now(),
+			Events: []Event{
+				{
+					"abc": "ABC",
+				},
+				{
+					"def": "DEF",
+				},
+			},
+		}
+
+		w := 9 // TODO: with 8, it panics
+		maxL := 1
+		var b bytes.Buffer
+
+		n := printGroup(g, w, maxL, &b)
+
+		// we use a big enough vt to make sure
+		// our algo actually wraps correctly
+		vt := vt100.NewVT100(100, 1000)
+		nn, err := vt.Write(b.Bytes())
+		require.Equal(t, nn, b.Len())
+		require.NoError(t, err)
+
+		// we test with the 1st line of the output
+		ln1 := string(vt.Content[0])
+		trimmed := strings.TrimSpace(ln1)
+		trimmedLen := utf8.RuneCountInString(trimmed)
+
+		require.LessOrEqual(t, trimmedLen, w, "\ngot: %s\nexp: %s", trimmed, ln1)
+		log.Printf("%q", trimmed)
+
+		log.Printf("%d, %q", n, b.String())
+		log.Fatal()
+	})
+}
 }

@@ -317,7 +317,7 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 	lnCount := 0
 	for _, message := range messages {
 		if group := message.Group; group != nil {
-			lnCount += printGroup(group, width, linesPerGroup, cons)
+			lnCount += printGroup(*group, width, linesPerGroup, cons)
 		} else {
 			lnCount += printLine(cons, message.Event, width)
 		}
@@ -385,6 +385,7 @@ func printLine(w io.Writer, event Event, width int) int {
 }
 
 func printGroup(group *Group, width, maxLines int, cons io.Writer) int {
+func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
 	var out string
