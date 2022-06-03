@@ -293,3 +293,36 @@ func TestPrintLine(t *testing.T) {
 		})
 	}
 }
+
+func TestLinesPerGroup(t *testing.T) {
+	w, h := 10, 25
+	now := time.Now().UTC()
+	msgs := []Message{
+		{
+			Event: map[string]interface{}{"abc": "ABC"},
+			Group: &Group{
+				Name:    "test1",
+				Started: now,
+			},
+		},
+		{
+			Event: map[string]interface{}{"def": "DEF"},
+			Group: &Group{
+				Name:    "test1",
+				Started: now,
+			},
+		},
+		{
+			Event: map[string]interface{}{"ghi": "GHI"},
+			Group: &Group{
+				Name:    "test2",
+				Started: now,
+			},
+		},
+	}
+
+	var b bytes.Buffer
+	n := linesPerGroupW(&b, w, h, msgs)
+	_ = n
+	// TODO: add test check
+}

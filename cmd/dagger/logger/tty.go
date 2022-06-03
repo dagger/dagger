@@ -334,13 +334,17 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 }
 
 func linesPerGroup(width, height int, messages []Message) int {
+	return linesPerGroupW(io.Discard, width, height, messages)
+}
+
+func linesPerGroupW(w io.Writer, width, height int, messages []Message) int {
 	usedLines := 0
 	for _, message := range messages {
 		if group := message.Group; group != nil {
 			usedLines++
 			continue
 		}
-		usedLines += printLine(io.Discard, message.Event, width)
+		usedLines += printLine(w, message.Event, width)
 	}
 
 	runningGroups := 0
