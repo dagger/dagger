@@ -384,7 +384,25 @@ func printLine(w io.Writer, event Event, width int) int {
 	return t.UsedHeight()
 }
 
-func printGroup(group *Group, width, maxLines int, cons io.Writer) int {
+func statePrefix(state task.State) string {
+	var prefix string
+	switch state {
+	case task.StateComputing:
+		prefix = "[+] "
+	case task.StateSkipped:
+		prefix = "[-] "
+	case task.StateCanceled:
+		prefix = "[✗] "
+	case task.StateFailed:
+		prefix = "[✗] "
+	case task.StateCompleted:
+		prefix = "[✔] "
+	default:
+		prefix = ""
+	}
+	return prefix
+}
+
 func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
@@ -392,19 +410,7 @@ func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	// treat the "system" group as a special case as we don't
 	// want it to be displayed as an action in the output
 	if group.Name != systemGroup {
-		prefix := ""
-		switch group.CurrentState {
-		case task.StateComputing:
-			prefix = "[+]"
-		case task.StateSkipped:
-			prefix = "[-]"
-		case task.StateCanceled:
-			prefix = "[✗]"
-		case task.StateFailed:
-			prefix = "[✗]"
-		case task.StateCompleted:
-			prefix = "[✔]"
-		}
+		prefix := statePrefix(group.CurrentState)
 
 		out = prefix + " " + group.Name
 
