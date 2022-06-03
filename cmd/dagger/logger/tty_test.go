@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/morikuni/aec"
 	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/vt100"
+	"go.dagger.io/dagger/plan/task"
 )
 
 type mockConsole struct {
@@ -365,11 +365,7 @@ func TestPrintGroup(t *testing.T) {
 		trimmed := strings.TrimSpace(ln1)
 		trimmedLen := utf8.RuneCountInString(trimmed)
 
-		require.LessOrEqual(t, trimmedLen, w, "\ngot: %s\nexp: %s", trimmed, ln1)
-		log.Printf("%q", trimmed)
-
-		log.Printf("%d, %q", n, b.String())
-		//		log.Fatal()
+		require.LessOrEqual(t, trimmedLen, w, "\ngot: %q\nexp: %q\n\nn=%d\nb=%q\n", trimmed, ln1, n, b.String())
 	})
 }
 
@@ -389,6 +385,45 @@ func TestTrimMessage(t *testing.T) {
 			got := trimMessage(c.msg, c.width)
 
 			require.Equal(t, c.exp, got)
+		})
+	}
+}
+
+func termLineLen(t *testing.T, text string) int {
+	t.Helper()
+	vt := vt100.NewVT100(100, 1000)
+	_, err := vt.Write([]byte(text))
+	require.NoError(t, err)
+
+	// we test with the 1st line of the output
+	ln1 := string(vt.Content[0])
+	trimmed := strings.TrimSpace(ln1)
+	trimmedLen := utf8.RuneCountInString(trimmed)
+
+	return trimmedLen
+}
+
+func compTermLineLen(t *testing.T, exp, got string) {
+	t.Helper()
+	expLen := termLineLen(t, exp)
+	gotLen := termLineLen(t, got)
+	require.Equal(t, expLen, gotLen, "\nexp=%s\ngot=%s\n", exp, got)
+}
+
+func TestColorLine(t *testing.T) {
+	cases := []task.State{
+		task.StateComputing,
+		task.StateSkipped,
+		task.StateCompleted,
+		task.StateCanceled,
+		task.StateFailed,
+	}
+
+	text := "This is just a test"
+	for _, c := range cases {
+		t.Run(c.String(), func(t *testing.T) {
+			got := colorLine(c, text)
+			compTermLineLen(t, text, got)
 		})
 	}
 }
