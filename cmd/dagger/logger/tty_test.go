@@ -6,14 +6,18 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/morikuni/aec"
 	"github.com/stretchr/testify/require"
+	"github.com/tonistiigi/vt100"
 )
 
 type mockConsole struct {
@@ -325,6 +329,8 @@ func TestLinesPerGroup(t *testing.T) {
 	n := linesPerGroupW(&b, w, h, msgs)
 	_ = n
 	// TODO: add test check
+	//t.Error(n, b.String())
+}
 
 func TestPrintGroup(t *testing.T) {
 	t.Run("too small terminal", func(t *testing.T) {
@@ -363,7 +369,26 @@ func TestPrintGroup(t *testing.T) {
 		log.Printf("%q", trimmed)
 
 		log.Printf("%d, %q", n, b.String())
-		log.Fatal()
+		//		log.Fatal()
 	})
 }
+
+func TestTrimMessage(t *testing.T) {
+	cases := []struct {
+		width int
+		msg   string
+		exp   string
+	}{
+		{0, "testing12", ""},
+		{1, "testing12", "…"},
+		{5, "testing12", "te…"},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("width=%d", c.width), func(t *testing.T) {
+
+			got := trimMessage(c.msg, c.width)
+
+			require.Equal(t, c.exp, got)
+		})
+	}
 }

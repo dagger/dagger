@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -421,23 +422,45 @@ func groupTimer(started, completed time.Time) string {
 func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
-	var out string
 	// treat the "system" group as a special case as we don't
 	// want it to be displayed as an action in the output
 	if group.Name != systemGroup {
 		prefix := statePrefix(group.CurrentState)
+		prefixLen := utf8.RuneCountInString(prefix)
+		nameLen := utf8.RuneCountInString(group.Name)
 		timer := groupTimer(group.Started, group.Completed)
+		timerLen := utf8.RuneCountInString(timer)
 
-		out = prefix + " " + group.Name
+		padLen := width - (prefixLen + nameLen + timerLen)
 
-		// align
-		delta := width - utf8.RuneCountInString(out) - len(timer)
-		if delta > 0 {
-			out += strings.Repeat(" ", delta)
+		gName := group.Name
+		padLenAbs := int(math.Abs(float64(padLen)))
+
+		var out string
+		switch {
+		case padLen >= 0:
+			gName = trimMessage(gName, width)
+			padding := strings.Repeat(" ", padLen)
+			out = fmt.Sprintf("%s%s%s%s\n", prefix, gName, padding, timer)
+		case padLen < 0 && padLenAbs < nameLen:
+			oldLen := nameLen
+			gName = trimMessage(gName, nameLen-padLenAbs)
+			newLen := utf8.RuneCountInString(gName)
+			padding := strings.Repeat(" ", padLen+(oldLen-newLen))
+			out = fmt.Sprintf("%s%s%s%s\n", prefix, gName, padding, timer)
+		case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +timerLen:
+			gName = "…"
+			timer = ""
+			out = fmt.Sprintf("%s%s%s\n", prefix, gName, timer)
+		case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +0 /* no timer info*/ :
+			// width too small, let's just display 1 char
+			out = "…"
+		default:
+
+			panic("oops")
+			gName = trimMessage(gName, width)
+			out = fmt.Sprintf("%s%s%s\n", prefix, gName, timer)
 		}
-
-		out += timer
-		out += "\n"
 
 		// color
 		switch group.CurrentState {
@@ -496,16 +519,29 @@ func printGroupLine(event Event, width int, cons io.Writer) (nbLines int) {
 	return nbLines
 }
 
+func trimMessage(message string, width int) string {
+	if width == 0 {
+		return ""
+	}
+	s := message
+
+	for sLen := utf8.RuneCountInString(s); sLen > width; sLen = utf8.RuneCountInString(s) {
+		offset := 4
+		if sLen < 4 {
+			offset = sLen
+		}
+		s = s[0:sLen-offset] + "…"
+	}
+	return s
+}
+
 func formatGroupLine(event Event, width int) (message string, nbLines int) {
 	message = colorize.Color(fmt.Sprintf("%s%s",
 		formatMessage(event),
 		formatFields(event),
 	))
 
-	// trim
-	for utf8.RuneCountInString(message) > width {
-		message = message[0:len(message)-4] + "…"
-	}
+	message = trimMessage(message, width)
 
 	// pad
 	if delta := width - utf8.RuneCountInString(message); delta > 0 {
