@@ -471,6 +471,29 @@ func colorLine(state task.State, text string) string {
 	return colored
 }
 
+func filterShowedEvents(state task.State, events []Event, maxLines int) []Event {
+	printEvents := []Event{}
+	switch state {
+	case task.StateComputing:
+		printEvents = events
+		// for computing tasks, show only last N
+		if len(printEvents) > maxLines && maxLines >= 0 {
+			printEvents = printEvents[len(printEvents)-maxLines:]
+		}
+
+	case task.StateFailed:
+		// for failed, show all logs
+		printEvents = events
+
+	// no logs for the next states
+	case task.StateCompleted,
+		task.StateSkipped,
+		task.StateCanceled:
+		printEvents = []Event{}
+	}
+	return printEvents
+}
+
 func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
@@ -488,27 +511,7 @@ func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 		lineCount++
 	}
 
-	printEvents := []Event{}
-	switch group.CurrentState {
-	case task.StateComputing:
-		printEvents = group.Events
-		// for computing tasks, show only last N
-		if len(printEvents) > maxLines && maxLines >= 0 {
-			printEvents = printEvents[len(printEvents)-maxLines:]
-		}
-	case task.StateSkipped:
-		// for skipped tasks, don't show any logs
-		printEvents = []Event{}
-	case task.StateCanceled:
-		// for completed tasks, don't show any logs
-		printEvents = []Event{}
-	case task.StateFailed:
-		// for failed, show all logs
-		printEvents = group.Events
-	case task.StateCompleted:
-		// for completed tasks, don't show any logs
-		printEvents = []Event{}
-	}
+	printEvents := filterShowedEvents(group.CurrentState, group.Events, maxLines)
 
 	for _, event := range printEvents {
 		lineCount += printGroupLine(event, width, cons)
