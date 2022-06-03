@@ -84,6 +84,7 @@ var doCmd = &cobra.Command{
 
 		lg.
 			Debug().
+			Str("event", "planStart").
 			Str("targetAction", targetPath.String()).
 			Str("plan", base64.StdEncoding.EncodeToString(
 				[]byte(fmt.Sprintf("%#v", daggerPlan.Source().Cue()))),
@@ -178,7 +179,7 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			lg.Fatal().Err(err).Msg("failed to execute plan")
+			lg.Fatal().Str("event", "planError").Err(err).Msg("failed to execlute plan, flushing remaining events")
 		}
 
 		format := viper.GetString("output-format")
@@ -208,11 +209,11 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
-		if outputs2, err := json.Marshal(outputs); err == nil {
-			lg.Debug().RawJSON("outputs", outputs2).Send()
-		} else {
-			lg.Error().Err(err).Msg("failed to marshal outputs2")
+		rawOutputs, _ := json.Marshal(outputs)
+		if err != nil {
+			lg.Error().Err(err).Msg("failed to marshal outputs")
 		}
+		lg.Debug().Str("event", "planEnd").RawJSON("outputs", rawOutputs).Send()
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")
