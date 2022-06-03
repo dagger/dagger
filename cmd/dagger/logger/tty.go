@@ -419,6 +419,41 @@ func groupTimer(started, completed time.Time) string {
 	return timer
 }
 
+func makeLine(prefix string, text string, timer string, width int) string {
+	prefixLen := utf8.RuneCountInString(prefix)
+	textLen := utf8.RuneCountInString(text)
+	timerLen := utf8.RuneCountInString(timer)
+	padLen := width - (prefixLen + textLen + timerLen)
+	padLenAbs := int(math.Abs(float64(padLen)))
+
+	var out string
+	switch {
+	case padLen >= 0:
+		text = trimMessage(text, width)
+		padding := strings.Repeat(" ", padLen)
+		out = fmt.Sprintf("%s%s%s%s\n", prefix, text, padding, timer)
+	case padLen < 0 && padLenAbs < textLen:
+		oldLen := textLen
+		text = trimMessage(text, textLen-padLenAbs)
+		newLen := utf8.RuneCountInString(text)
+		padding := strings.Repeat(" ", padLen+(oldLen-newLen))
+		out = fmt.Sprintf("%s%s%s%s\n", prefix, text, padding, timer)
+	case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +timerLen:
+		text = "…"
+		timer = ""
+		out = fmt.Sprintf("%s%s%s\n", prefix, text, timer)
+	case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +0 /* no timer info*/ :
+		// width too small, let's just display 1 char
+		out = "…"
+	default:
+
+		panic("oops")
+		text = trimMessage(text, width)
+		out = fmt.Sprintf("%s%s%s\n", prefix, text, timer)
+	}
+	return out
+}
+
 func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
@@ -426,41 +461,8 @@ func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	// want it to be displayed as an action in the output
 	if group.Name != systemGroup {
 		prefix := statePrefix(group.CurrentState)
-		prefixLen := utf8.RuneCountInString(prefix)
-		nameLen := utf8.RuneCountInString(group.Name)
 		timer := groupTimer(group.Started, group.Completed)
-		timerLen := utf8.RuneCountInString(timer)
-
-		padLen := width - (prefixLen + nameLen + timerLen)
-
-		gName := group.Name
-		padLenAbs := int(math.Abs(float64(padLen)))
-
-		var out string
-		switch {
-		case padLen >= 0:
-			gName = trimMessage(gName, width)
-			padding := strings.Repeat(" ", padLen)
-			out = fmt.Sprintf("%s%s%s%s\n", prefix, gName, padding, timer)
-		case padLen < 0 && padLenAbs < nameLen:
-			oldLen := nameLen
-			gName = trimMessage(gName, nameLen-padLenAbs)
-			newLen := utf8.RuneCountInString(gName)
-			padding := strings.Repeat(" ", padLen+(oldLen-newLen))
-			out = fmt.Sprintf("%s%s%s%s\n", prefix, gName, padding, timer)
-		case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +timerLen:
-			gName = "…"
-			timer = ""
-			out = fmt.Sprintf("%s%s%s\n", prefix, gName, timer)
-		case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +0 /* no timer info*/ :
-			// width too small, let's just display 1 char
-			out = "…"
-		default:
-
-			panic("oops")
-			gName = trimMessage(gName, width)
-			out = fmt.Sprintf("%s%s%s\n", prefix, gName, timer)
-		}
+		out := makeLine(prefix, group.Name, timer, width)
 
 		// color
 		switch group.CurrentState {
