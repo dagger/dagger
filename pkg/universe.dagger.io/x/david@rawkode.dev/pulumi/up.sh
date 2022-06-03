@@ -38,3 +38,5 @@ case "$PULUMI_RUNTIME" in
 esac
 
 pulumi up --stack "${PULUMI_STACK}" --yes
+
+pulumi stack output -j > /outputs.json || echo '{}' > /outputs.json

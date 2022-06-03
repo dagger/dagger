@@ -2,6 +2,8 @@
 package pulumi
 
 import (
+	"encoding/json"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
@@ -40,6 +42,7 @@ import (
 	// Run Pulumi up
 	container: bash.#Run & {
 		input: *_pull_image.output | docker.#Image
+		export: files: "/outputs.json": string
 		script: {
 			_load: core.#Source & {
 				path: "."
@@ -77,4 +80,6 @@ import (
 			}
 		}
 	}
+
+	outputs: json.Unmarshal(container.export.files["/outputs.json"])
 }
