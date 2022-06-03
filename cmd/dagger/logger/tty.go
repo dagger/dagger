@@ -454,6 +454,23 @@ func makeLine(prefix string, text string, timer string, width int) string {
 	return out
 }
 
+func colorLine(state task.State, text string) string {
+	var colored string
+	switch state {
+	case task.StateComputing:
+		colored = aec.Apply(text, aec.LightBlueF)
+	case task.StateSkipped:
+		colored = aec.Apply(text, aec.LightCyanF)
+	case task.StateCanceled:
+		colored = aec.Apply(text, aec.LightYellowF)
+	case task.StateFailed:
+		colored = aec.Apply(text, aec.LightRedF)
+	case task.StateCompleted:
+		colored = aec.Apply(text, aec.LightGreenF)
+	}
+	return colored
+}
+
 func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	lineCount := 0
 
@@ -462,24 +479,12 @@ func printGroup(group Group, width, maxLines int, cons io.Writer) int {
 	if group.Name != systemGroup {
 		prefix := statePrefix(group.CurrentState)
 		timer := groupTimer(group.Started, group.Completed)
-		out := makeLine(prefix, group.Name, timer, width)
 
-		// color
-		switch group.CurrentState {
-		case task.StateComputing:
-			out = aec.Apply(out, aec.LightBlueF)
-		case task.StateSkipped:
-			out = aec.Apply(out, aec.LightCyanF)
-		case task.StateCanceled:
-			out = aec.Apply(out, aec.LightYellowF)
-		case task.StateFailed:
-			out = aec.Apply(out, aec.LightRedF)
-		case task.StateCompleted:
-			out = aec.Apply(out, aec.LightGreenF)
-		}
+		line := makeLine(prefix, group.Name, timer, width)
+		colored := colorLine(group.CurrentState, line)
 
 		// Print
-		fmt.Fprint(cons, out)
+		fmt.Fprint(cons, colored)
 		lineCount++
 	}
 
