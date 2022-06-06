@@ -106,6 +106,7 @@ func (t *Telemetry) send() {
 	defer close(t.doneCh)
 
 	for e := range t.queueCh {
+		t.log.Info().Msg(string(e))
 		reqBody := bytes.NewBuffer(e)
 		req, err := http.NewRequest(http.MethodPost, t.url, reqBody)
 		if err != nil {

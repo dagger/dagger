@@ -21,6 +21,7 @@ import (
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/telemetry/event"
 	"golang.org/x/term"
 )
 
@@ -97,6 +98,14 @@ var doCmd = &cobra.Command{
 			).
 			Strs("args", os.Args[1:]).
 			Msg("running plan")
+
+		// TODO: Remove lg.Debug()... above 👆 when the API works with 👇
+		tm.Push(ctx, event.RunStarted{
+			// TODO: replace targetPath.String() with 👇
+			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
+			Args:   os.Args[1:],
+			Plan:   fmt.Sprintf("%#v", daggerPlan.Source().Cue()),
+		})
 
 		action := daggerPlan.Action().FindByPath(targetPath)
 
@@ -185,6 +194,12 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
+			tm.Push(ctx, event.RunCompleted{
+				State: event.RunCompletedStateFailed,
+				Error: err.Error(),
+			})
+			// lg.Fatal().Err(err).Msg("failed to execute plan")
+			// TODO: Replace lg.Fatal()... below 👇 when the API works with 👆
 			lg.Fatal().Str("event", "planError").Err(err).Msg("failed to execlute plan, flushing remaining events")
 		}
 
@@ -220,6 +235,11 @@ var doCmd = &cobra.Command{
 			lg.Error().Err(err).Msg("failed to marshal outputs")
 		}
 		lg.Debug().Str("event", "planEnd").RawJSON("outputs", rawOutputs).Send()
+		// TODO: Remove lg.Debug()... above 👆 when the API works with 👇
+		tm.Push(ctx, event.RunCompleted{
+			State:   event.RunCompletedStateSuccess,
+			Outputs: outputs,
+		})
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")

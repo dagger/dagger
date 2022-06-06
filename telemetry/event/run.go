@@ -4,6 +4,7 @@ package event
 type RunStarted struct {
 	Action string   `json:"action"`
 	Args   []string `json:"args"`
+	Plan   string   `json:"plan"`
 }
 
 func (e RunStarted) EventName() string {
@@ -15,9 +16,13 @@ func (e RunStarted) EventVersion() string {
 }
 
 func (e RunStarted) Validate() error {
-	if e.Action == "" {
+	switch {
+	case e.Action == "":
 		return errEvent("Action", "cannot be empty")
+	case e.Plan == "":
+		return errEvent("Plan", "cannot be empty")
 	}
+
 	return nil
 }
 
