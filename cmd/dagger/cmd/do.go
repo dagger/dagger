@@ -27,6 +27,7 @@ import (
 var experimentalFlags = []string{
 	"platform",
 	"dry-run",
+	"telemetry-log",
 }
 
 var doCmd = &cobra.Command{
@@ -66,6 +67,11 @@ var doCmd = &cobra.Command{
 					lg.Fatal().Msg(fmt.Sprintf("--%s requires --experimental flag", f))
 				}
 			}
+		}
+
+		// Enable telemetry op logging to file
+		if viper.GetBool("telemetry-log") {
+			tm.EnableLogToFile()
 		}
 
 		targetPath := getTargetPath(cmd.Flags().Args())
@@ -358,6 +364,7 @@ func init() {
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 	doCmd.Flags().Bool("dry-run", false, "Dry run mode")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
+	doCmd.Flags().Bool("telemetry-log", false, "Send telemetry logs to file (requires experimental)")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
 	doCmd.Flags().String("output", "", "File path to write the action's output values. Prints to stdout if empty")
 	doCmd.Flags().String("output-format", "", "Format for output values (plain, json, yaml)")

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 	"go.dagger.io/dagger/api"
 	"go.dagger.io/dagger/api/auth"
 	"go.dagger.io/dagger/engine"
@@ -21,6 +23,8 @@ type Telemetry struct {
 
 	engineID string
 	runID    string
+
+	log zerolog.Logger
 
 	client  *api.Client
 	url     string
@@ -37,6 +41,8 @@ func New() *Telemetry {
 		runID:    uuid.NewString(),
 		engineID: engineID,
 
+		log: zerolog.Nop(),
+
 		client:  api.New(),
 		url:     eventsURL(),
 		queueCh: make(chan []byte, queueSize),
@@ -44,6 +50,17 @@ func New() *Telemetry {
 	}
 	go t.send()
 	return t
+}
+
+func (t *Telemetry) EnableLogToFile() {
+	lw, err := os.OpenFile(t.logFile(), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err == nil {
+		t.log = zerolog.New(lw).
+			With().
+			Timestamp().
+			Caller().
+			Logger()
+	}
 }
 
 func (t *Telemetry) Disable() {
@@ -92,15 +109,29 @@ func (t *Telemetry) send() {
 		reqBody := bytes.NewBuffer(e)
 		req, err := http.NewRequest(http.MethodPost, t.url, reqBody)
 		if err != nil {
+			t.log.Error().Err(err)
 			continue
 		}
 		if resp, err := t.client.Do(req.Context(), req); err == nil {
+			t.log.Info().Msgf("%s %db via %s → %s %s", req.Method, req.ContentLength, req.Proto, resp.Status, resp.Proto)
 			resp.Body.Close()
 		} else {
-			// TODO: re-auth does not seem to work as expected
-			panic(err)
+			// We want to log all errors and continue.
+			// If we don't, this will fail for unwanted reasons, e.g.:
+			// - if there is no internet connection
+			// - if the API is slow to respond and requests time out
+			t.log.Error().Err(err)
+			continue
 		}
 	}
+}
+
+func (t *Telemetry) logFile() string {
+	lf := os.Getenv("DAGGER_CLOUD_LOG_FILE")
+	if lf == "" {
+		lf = fmt.Sprintf("telemetry.%s.log", t.runID)
+	}
+	return lf
 }
 
 func (t *Telemetry) Flush() {
