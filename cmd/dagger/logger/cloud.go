@@ -1,12 +1,14 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"runtime"
 
 	"github.com/rs/zerolog"
 	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/telemetry/event"
 	"go.dagger.io/dagger/version"
 )
 
@@ -39,6 +41,22 @@ type LogEvent struct {
 }
 
 func (c *Cloud) Write(p []byte) (int, error) {
+	event2 := map[string]interface{}{}
+	if err := json.Unmarshal(p, &event2); err != nil {
+		return 0, fmt.Errorf("cannot unmarshal event: %s", err)
+	}
+	message, _ := event2[zerolog.MessageFieldName].(string)
+	delete(event2, zerolog.MessageFieldName)
+	level := event2[zerolog.LevelFieldName].(string)
+	delete(event2, zerolog.LevelFieldName)
+
+	c.tm.Push(context.Background(), event.LogEmitted{
+		Message: message,
+		Level:   level,
+		Fields:  event2,
+	})
+
+	// TODO: Remove LogEvent{} below 👇 when the API works with 👆
 	event := LogEvent{
 		RunID:    c.tm.RunID(),
 		EngineID: c.tm.EngineID(),
