@@ -16,7 +16,7 @@ func (e RunStarted) EventVersion() string {
 
 func (e RunStarted) Validate() error {
 	if e.Action == "" {
-		return ErrMalformedEvent
+		return errEvent("Action", "cannot be empty")
 	}
 	return nil
 }
@@ -45,7 +45,7 @@ func (e RunCompleted) EventVersion() string {
 
 func (e RunCompleted) Validate() error {
 	if e.State != RunCompletedStateSuccess && e.State != RunCompletedStateFailed {
-		return ErrMalformedEvent
+		return errEvent("State", "must have either Succeeded or Failed")
 	}
 	return nil
 }

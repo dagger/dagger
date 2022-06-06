@@ -19,11 +19,12 @@ func (e LogEmitted) EventVersion() string {
 func (e LogEmitted) Validate() error {
 	switch {
 	case e.Message == "":
-		return ErrMalformedEvent
+		return errEvent("Message", "cannot be empty")
 	case e.Level == "":
-		return ErrMalformedEvent
+		return errEvent("Level", "cannot be empty")
 	case e.Fields == nil:
-		return ErrMalformedEvent
+		return errEvent("Fields", "cannot be empty")
 	}
+
 	return nil
 }

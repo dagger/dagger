@@ -28,9 +28,9 @@ func (a ActionUpdated) EventVersion() string {
 func (a ActionUpdated) Validate() error {
 	switch {
 	case a.Name == "":
-		return ErrMalformedEvent
+		return errEvent("Name", "cannot be empty")
 	case a.State == "":
-		return ErrMalformedEvent
+		return errEvent("State", "cannot be empty")
 	}
 	return nil
 }

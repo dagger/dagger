@@ -7,9 +7,11 @@ import (
 )
 
 func TestEvent(t *testing.T) {
-	require.ErrorIs(t, New(ActionStarted{}).Validate(), ErrMalformedEvent)
+	action := ActionUpdated{
+		Name:  "test",
+		State: ActionStateRunning,
+	}
+	event := New(action)
 
-	require.NoError(t, New(ActionStarted{
-		Name: "myaction",
-	}).Validate())
+	require.NoError(t, event.Validate())
 }
