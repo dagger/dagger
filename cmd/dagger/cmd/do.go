@@ -215,10 +215,6 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
-		rawOutputs, _ := json.Marshal(outputs)
-		if err != nil {
-			lg.Error().Err(err).Msg("failed to marshal outputs")
-		}
 		tm.Push(ctx, event.RunCompleted{
 			State:   event.RunCompletedStateSuccess,
 			Outputs: outputs,
