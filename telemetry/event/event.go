@@ -19,7 +19,7 @@ type Event struct {
 	Version   string `json:"v"`
 	Timestamp int64  `json:"ts"`
 
-	Data interface{} `json:"data,omitempty"`
+	Data Properties `json:"data,omitempty"`
 
 	Engine engineProperties `json:"engine"`
 	Run    runProperties    `json:"run,omitempty"`
@@ -73,7 +73,7 @@ func (e *Event) Validate() error {
 		return err
 	}
 
-	if err := e.Data.(Properties).Validate(); err != nil {
+	if err := e.Data.Validate(); err != nil {
 		return err
 	}
 
