@@ -111,7 +111,8 @@ import (
 	container: docker.#Run & {
 		// Default container image can be overrided.
 		//   'spectral' must be installed and in the PATH.
-		input: *#Image | docker.#Image
+		_default: #Image
+		input:    *_default.output | docker.#Image
 
 		// Ugly hack to override the entrypoint from the default image
 		//  FIXME: how do we tuck this into the scope of the default image?
