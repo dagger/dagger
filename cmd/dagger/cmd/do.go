@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -89,17 +88,6 @@ var doCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		lg.
-			Debug().
-			Str("event", "planStart").
-			Str("targetAction", targetPath.String()).
-			Str("plan", base64.StdEncoding.EncodeToString(
-				[]byte(fmt.Sprintf("%#v", daggerPlan.Source().Cue()))),
-			).
-			Strs("args", os.Args[1:]).
-			Msg("running plan")
-
-		// TODO: Remove lg.Debug()... above 👆 when the API works with 👇
 		tm.Push(ctx, event.RunStarted{
 			// TODO: replace targetPath.String() with 👇
 			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
@@ -198,9 +186,7 @@ var doCmd = &cobra.Command{
 				State: event.RunCompletedStateFailed,
 				Error: err.Error(),
 			})
-			// lg.Fatal().Err(err).Msg("failed to execute plan")
-			// TODO: Replace lg.Fatal()... below 👇 when the API works with 👆
-			lg.Fatal().Str("event", "planError").Err(err).Msg("failed to execlute plan, flushing remaining events")
+			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
 		format := viper.GetString("output-format")
@@ -234,8 +220,6 @@ var doCmd = &cobra.Command{
 		if err != nil {
 			lg.Error().Err(err).Msg("failed to marshal outputs")
 		}
-		lg.Debug().Str("event", "planEnd").RawJSON("outputs", rawOutputs).Send()
-		// TODO: Remove lg.Debug()... above 👆 when the API works with 👇
 		tm.Push(ctx, event.RunCompleted{
 			State:   event.RunCompletedStateSuccess,
 			Outputs: outputs,
