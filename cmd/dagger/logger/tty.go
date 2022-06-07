@@ -446,10 +446,10 @@ func makeLine(prefix string, text string, timer string, width int) string {
 		// width too small, let's just display 1 char
 		out = "…"
 	default:
-
-		panic("oops")
-		text = trimMessage(text, width)
-		out = fmt.Sprintf("%s%s%s\n", prefix, text, timer)
+		// FIXME: use a real case
+		panic("unhandled case")
+		// text = trimMessage(text, width)
+		// out = fmt.Sprintf("%s%s%s\n", prefix, text, timer)
 	}
 	return out
 }

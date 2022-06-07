@@ -329,7 +329,7 @@ func TestLinesPerGroup(t *testing.T) {
 	n := linesPerGroupW(&b, w, h, msgs)
 	_ = n
 	// TODO: add test check
-	//t.Error(n, b.String())
+	// t.Error(n, b.String())
 }
 
 func TestPrintGroup(t *testing.T) {
@@ -381,7 +381,6 @@ func TestTrimMessage(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("width=%d", c.width), func(t *testing.T) {
-
 			got := trimMessage(c.msg, c.width)
 
 			require.Equal(t, c.exp, got)
