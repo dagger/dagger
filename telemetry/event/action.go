@@ -10,22 +10,21 @@ const (
 	ActionStateCancelled ActionState = "cancelled"
 )
 
-// ActionUpdated signals a completed action.
-type ActionUpdated struct {
+type ActionTransition struct {
 	Name  string      `json:"name"`
 	State ActionState `json:"state"`
 	Error string      `json:"error,omitempty"`
 }
 
-func (a ActionUpdated) EventName() string {
-	return "action.updated"
+func (a ActionTransition) EventName() string {
+	return "action.transition"
 }
 
-func (a ActionUpdated) EventVersion() string {
+func (a ActionTransition) EventVersion() string {
 	return eventVersion
 }
 
-func (a ActionUpdated) Validate() error {
+func (a ActionTransition) Validate() error {
 	switch {
 	case a.Name == "":
 		return errEvent("Name", "cannot be empty")
