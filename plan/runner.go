@@ -168,7 +168,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		defer span.End()
 		tm := telemetry.Ctx(ctx)
 
-		lg.Info().Str("state", task.StateRunning.String()).Msg(task.StateRunning.String())
+		lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
 		tm.Push(ctx, event.ActionUpdated{
 			Name:  taskPath,
 			State: event.ActionStateRunning,
