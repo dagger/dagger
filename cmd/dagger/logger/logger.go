@@ -58,7 +58,6 @@ func NewWithCloud(tm *telemetry.Telemetry) zerolog.Logger {
 	if err != nil {
 		panic(err)
 	}
-	// TODO: send all events to the cloud, regardless of the log level
 	return logger.Level(lvl)
 }
 
