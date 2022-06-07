@@ -89,7 +89,6 @@ var doCmd = &cobra.Command{
 		}
 
 		tm.Push(ctx, event.RunStarted{
-			// TODO: replace targetPath.String() with 👇
 			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
 			Args:   os.Args[1:],
 			Plan:   fmt.Sprintf("%#v", daggerPlan.Source().Cue()),
@@ -170,7 +169,7 @@ var doCmd = &cobra.Command{
 
 		doneCh := common.TrackCommand(ctx, cmd, &analytics.Property{
 			Name:  "action",
-			Value: targetPath.String(),
+			Value: cue.MakePath(targetPath.Selectors()[1:]...).String(),
 		})
 
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
