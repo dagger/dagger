@@ -347,7 +347,7 @@ func TestPrintGroup(t *testing.T) {
 			},
 		}
 
-		w := 9 // TODO: with 8, it panics
+		w := 8
 		maxL := 1
 		var b bytes.Buffer
 
@@ -388,7 +388,7 @@ func TestTrimMessage(t *testing.T) {
 	}
 }
 
-func termLineLen(t *testing.T, text string) int {
+func escapeLine(t *testing.T, text string) (string, int) {
 	t.Helper()
 	vt := vt100.NewVT100(100, 1000)
 	_, err := vt.Write([]byte(text))
@@ -399,14 +399,17 @@ func termLineLen(t *testing.T, text string) int {
 	trimmed := strings.TrimSpace(ln1)
 	trimmedLen := utf8.RuneCountInString(trimmed)
 
-	return trimmedLen
+	return trimmed, trimmedLen
 }
 
-func compTermLineLen(t *testing.T, exp, got string) {
+// compareTerminalLineLength compare term line length once it has been
+// interpreted (escape codes, etc)
+func compareTerminalLineLength(t *testing.T, exp, got string) {
 	t.Helper()
-	expLen := termLineLen(t, exp)
-	gotLen := termLineLen(t, got)
+	escExp, expLen := escapeLine(t, exp)
+	escGot, gotLen := escapeLine(t, got)
 	require.Equal(t, expLen, gotLen, "\nexp=%s\ngot=%s\n", exp, got)
+	require.Equal(t, escExp, escGot, "\nexp=%s\ngot=%s\n", exp, got)
 }
 
 func TestColorLine(t *testing.T) {
@@ -422,7 +425,35 @@ func TestColorLine(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.String(), func(t *testing.T) {
 			got := colorLine(c, text)
-			compTermLineLen(t, text, got)
+			compareTerminalLineLength(t, text, got)
+		})
+	}
+}
+
+func TestMakeLine(t *testing.T) {
+	cases := map[string]struct {
+		width int
+
+		prefix string
+		text   string
+		timer  string
+
+		exp string
+	}{
+		"30":           {30, "[+] ", "test mesg, test message, test message", "1.9s", "[+] test mesg, test messa…1.9s"},
+		"12+big timer": {12, "[+] ", "test", "1234.9s", "[+] …1234.9s"},
+		"12":           {12, "[+] ", "test", "1.9s", "[+] test1.9s"},
+		"11":           {11, "[+] ", "test", "1.9s", "[+] …  1.9s"},
+		"9":            {9, "[+] ", "test", "1.9s", "[+] …1.9s"},
+		"8":            {8, "[+] ", "test", "1.9s", "…"},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := makeLine(c.prefix, c.text, c.timer, c.width)
+			t.Log(got)
+
+			compareTerminalLineLength(t, c.exp, got)
 		})
 	}
 }
