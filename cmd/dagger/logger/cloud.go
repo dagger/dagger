@@ -30,7 +30,7 @@ func (c *Cloud) Write(p []byte) (int, error) {
 	level := e[zerolog.LevelFieldName].(string)
 	delete(e, zerolog.LevelFieldName)
 
-	c.tm.Push(context.Background(), event.LogEmitted{
+	c.tm.Push(context.Background(), event.Logger{
 		Message: message,
 		Level:   level,
 		Fields:  e,
