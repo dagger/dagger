@@ -1,21 +1,22 @@
 package event
 
-type Logger struct {
+// LogEmitted represents a log message
+type LogEmitted struct {
 	Message string `json:"message"`
 	Level   string `json:"level"`
 
 	Fields map[string]interface{} `json:"fields"`
 }
 
-func (e Logger) EventName() string {
+func (e LogEmitted) EventName() string {
 	return "log.emitted"
 }
 
-func (e Logger) EventVersion() string {
+func (e LogEmitted) EventVersion() string {
 	return eventVersion
 }
 
-func (e Logger) Validate() error {
+func (e LogEmitted) Validate() error {
 	switch {
 	case e.Level == "":
 		return errEvent("Level", "cannot be empty")
