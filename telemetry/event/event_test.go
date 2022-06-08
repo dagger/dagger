@@ -7,7 +7,7 @@ import (
 )
 
 func TestEvent(t *testing.T) {
-	action := ActionTransition{
+	action := ActionTransitioned{
 		Name:  "test",
 		State: ActionStateRunning,
 	}

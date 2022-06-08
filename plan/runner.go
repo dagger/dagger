@@ -169,7 +169,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		tm := telemetry.Ctx(ctx)
 
 		lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
-		tm.Push(ctx, event.ActionTransition{
+		tm.Push(ctx, event.ActionTransitioned{
 			Name:  taskPath,
 			State: event.ActionStateRunning,
 		})
@@ -190,13 +190,13 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 			// FIXME: this should use errdefs.IsCanceled(err)
 			if strings.Contains(err.Error(), "context canceled") {
 				lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
-				tm.Push(ctx, event.ActionTransition{
+				tm.Push(ctx, event.ActionTransitioned{
 					Name:  taskPath,
 					State: event.ActionStateCancelled,
 				})
 			} else {
 				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
-				tm.Push(ctx, event.ActionTransition{
+				tm.Push(ctx, event.ActionTransitioned{
 					Name:  taskPath,
 					State: event.ActionStateFailed,
 					Error: compiler.Err(err).Error(),
@@ -206,7 +206,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		}
 
 		lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
-		tm.Push(ctx, event.ActionTransition{
+		tm.Push(ctx, event.ActionTransitioned{
 			Name:  taskPath,
 			State: event.ActionStateCompleted,
 		})
