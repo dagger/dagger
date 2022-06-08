@@ -32,6 +32,8 @@ import (
 	// docker output
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
+	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/telemetry/event"
 	"go.dagger.io/dagger/util/buildkitd"
 	"go.dagger.io/dagger/util/progressui"
 
@@ -303,12 +305,33 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 				Str("task", component).
 				Logger()
 
+			tm := telemetry.Ctx(ctx)
+
+			msg := secureSprintf("#%d %s\n", index, name)
+
+			// for actions that are not part of the cueflow tree,
+			// component sometimes can return empty. We don't want
+			// to send an event in this case
+			if component != "" {
+				tm.Push(ctx, event.ActionLogged{
+					Name:    component,
+					Message: msg,
+				})
+			}
 			lg.
 				Debug().
-				Msg(secureSprintf("#%d %s\n", index, name))
+				Msg(msg)
+
+			msg = secureSprintf("#%d %s\n", index, v.Digest)
+			if component != "" {
+				tm.Push(ctx, event.ActionLogged{
+					Name:    component,
+					Message: msg,
+				})
+			}
 			lg.
 				Debug().
-				Msg(secureSprintf("#%d %s\n", index, v.Digest))
+				Msg(msg)
 		},
 		func(v *bk.Vertex, format string, a ...interface{}) {
 			component, _ := parseName(v)
@@ -319,6 +342,14 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 				Logger()
 
 			msg := secureSprintf(format, a...)
+
+			if component != "" {
+				tm := telemetry.Ctx(ctx)
+				tm.Push(ctx, event.ActionLogged{
+					Name:    component,
+					Message: msg,
+				})
+			}
 			lg.
 				Debug().
 				Msg(msg)
@@ -332,6 +363,14 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 				Logger()
 
 			msg := secureSprintf(format, a...)
+
+			if component != "" {
+				tm := telemetry.Ctx(ctx)
+				tm.Push(ctx, event.ActionLogged{
+					Name:    component,
+					Message: msg,
+				})
+			}
 			lg.
 				Info().
 				Msg(msg)

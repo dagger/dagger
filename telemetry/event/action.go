@@ -33,3 +33,23 @@ func (a ActionTransitioned) Validate() error {
 	}
 	return nil
 }
+
+type ActionLogged struct {
+	Name    string `json:"name"`
+	Message string `json:"message"`
+}
+
+func (a ActionLogged) EventName() string {
+	return "action.logged"
+}
+
+func (a ActionLogged) EventVersion() string {
+	return eventVersion
+}
+
+func (a ActionLogged) Validate() error {
+	if a.Name == "" {
+		return errEvent("Name", "cannot be empty")
+	}
+	return nil
+}
