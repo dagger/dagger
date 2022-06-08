@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,12 +20,14 @@ import (
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/telemetry/event"
 	"golang.org/x/term"
 )
 
 var experimentalFlags = []string{
 	"platform",
 	"dry-run",
+	"telemetry-log",
 }
 
 var doCmd = &cobra.Command{
@@ -68,6 +69,11 @@ var doCmd = &cobra.Command{
 			}
 		}
 
+		// Enable telemetry op logging to file
+		if viper.GetBool("telemetry-log") {
+			tm.EnableLogToFile()
+		}
+
 		targetPath := getTargetPath(cmd.Flags().Args())
 
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
@@ -82,15 +88,11 @@ var doCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		lg.
-			Debug().
-			Str("event", "planStart").
-			Str("targetAction", targetPath.String()).
-			Str("plan", base64.StdEncoding.EncodeToString(
-				[]byte(fmt.Sprintf("%#v", daggerPlan.Source().Cue()))),
-			).
-			Strs("args", os.Args[1:]).
-			Msg("running plan")
+		tm.Push(ctx, event.RunStarted{
+			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
+			Args:   os.Args[1:],
+			Plan:   fmt.Sprintf("%#v", daggerPlan.Source().Cue()),
+		})
 
 		action := daggerPlan.Action().FindByPath(targetPath)
 
@@ -167,7 +169,7 @@ var doCmd = &cobra.Command{
 
 		doneCh := common.TrackCommand(ctx, cmd, &analytics.Property{
 			Name:  "action",
-			Value: targetPath.String(),
+			Value: cue.MakePath(targetPath.Selectors()[1:]...).String(),
 		})
 
 		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
@@ -179,7 +181,11 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			lg.Fatal().Str("event", "planError").Err(err).Msg("failed to execlute plan, flushing remaining events")
+			tm.Push(ctx, event.RunCompleted{
+				State: event.RunCompletedStateFailed,
+				Error: err.Error(),
+			})
+			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
 		format := viper.GetString("output-format")
@@ -209,11 +215,10 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
-		rawOutputs, _ := json.Marshal(outputs)
-		if err != nil {
-			lg.Error().Err(err).Msg("failed to marshal outputs")
-		}
-		lg.Debug().Str("event", "planEnd").RawJSON("outputs", rawOutputs).Send()
+		tm.Push(ctx, event.RunCompleted{
+			State:   event.RunCompletedStateSuccess,
+			Outputs: outputs,
+		})
 
 		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
 			lg.Fatal().Err(err).Msg("failed to print action outputs")
@@ -358,6 +363,7 @@ func init() {
 	doCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 	doCmd.Flags().Bool("dry-run", false, "Dry run mode")
 	doCmd.Flags().Bool("no-cache", false, "Disable caching")
+	doCmd.Flags().Bool("telemetry-log", false, "Send telemetry logs to file (requires experimental)")
 	doCmd.Flags().String("platform", "", "Set target build platform (requires experimental)")
 	doCmd.Flags().String("output", "", "File path to write the action's output values. Prints to stdout if empty")
 	doCmd.Flags().String("output-format", "", "Format for output values (plain, json, yaml)")

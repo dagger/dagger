@@ -1,16 +1,12 @@
 package event
 
 import (
-	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
 
 	"go.dagger.io/dagger/version"
-)
-
-var (
-	ErrMalformedEvent = errors.New("malformed event properties")
 )
 
 const eventVersion = "2022-05-25.01"
@@ -45,15 +41,12 @@ type runProperties struct {
 
 func (e engineProperties) Validate() error {
 	switch {
-	// FIXME: not implemented
-	// case e.ID == "":
-	// 	return ErrMalformedEvent
 	case e.Version == "":
-		return ErrMalformedEvent
+		return errEvent("Version", "cannot be empty")
 	case e.OS == "":
-		return ErrMalformedEvent
+		return errEvent("OS", "cannot be empty")
 	case e.Arch == "":
-		return ErrMalformedEvent
+		return errEvent("Arch", "cannot be empty")
 	}
 	return nil
 }
@@ -67,13 +60,13 @@ type Properties interface {
 func (e *Event) Validate() error {
 	switch {
 	case e.Name == "":
-		return ErrMalformedEvent
+		return errEvent("Name", "cannot be empty")
 	case !strings.Contains(e.Name, "."):
-		return ErrMalformedEvent
+		return errEvent("Name", "must contain '.'")
 	case e.Version == "":
-		return ErrMalformedEvent
+		return errEvent("Version", "cannot be empty")
 	case e.Timestamp == 0:
-		return ErrMalformedEvent
+		return errEvent("Timestamp", "cannot be empty")
 	}
 
 	if err := e.Engine.Validate(); err != nil {
@@ -104,4 +97,8 @@ func New(props Properties) *Event {
 			Arch: runtime.GOARCH,
 		},
 	}
+}
+
+func errEvent(property string, issue string) error {
+	return fmt.Errorf("event: %s %s", property, issue)
 }

@@ -11,6 +11,8 @@ import (
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
+	"go.dagger.io/dagger/telemetry"
+	"go.dagger.io/dagger/telemetry/event"
 
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
@@ -162,10 +164,15 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		taskPath := t.Path().String()
 		lg := log.Ctx(ctx).With().Str("task", taskPath).Logger()
 		ctx = lg.WithContext(ctx)
-		ctx, span := otel.Tracer("dagger").Start(ctx, t.Path().String())
+		ctx, span := otel.Tracer("dagger").Start(ctx, taskPath)
 		defer span.End()
+		tm := telemetry.Ctx(ctx)
 
 		lg.Info().Str("state", task.StateComputing.String()).Msg(task.StateComputing.String())
+		tm.Push(ctx, event.ActionTransitioned{
+			Name:  taskPath,
+			State: event.ActionStateRunning,
+		})
 
 		// Debug: dump dependencies
 		for _, dep := range t.Dependencies() {
@@ -181,16 +188,28 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		result, err := handler.Run(ctx, r.pctx, r.s, compiler.Wrap(t.Value()))
 		if err != nil {
 			// FIXME: this should use errdefs.IsCanceled(err)
-
 			if strings.Contains(err.Error(), "context canceled") {
 				lg.Error().Dur("duration", time.Since(start)).Str("state", task.StateCanceled.String()).Msg(task.StateCanceled.String())
+				tm.Push(ctx, event.ActionTransitioned{
+					Name:  taskPath,
+					State: event.ActionStateCancelled,
+				})
 			} else {
 				lg.Error().Dur("duration", time.Since(start)).Err(compiler.Err(err)).Str("state", task.StateFailed.String()).Msg(task.StateFailed.String())
+				tm.Push(ctx, event.ActionTransitioned{
+					Name:  taskPath,
+					State: event.ActionStateFailed,
+					Error: compiler.Err(err).Error(),
+				})
 			}
 			return fmt.Errorf("%s: %w", t.Path().String(), compiler.Err(err))
 		}
 
 		lg.Info().Dur("duration", time.Since(start)).Str("state", task.StateCompleted.String()).Msg(task.StateCompleted.String())
+		tm.Push(ctx, event.ActionTransitioned{
+			Name:  taskPath,
+			State: event.ActionStateCompleted,
+		})
 
 		// If the result is not concrete (e.g. empty value), there's nothing to merge.
 		if !result.IsConcrete() {

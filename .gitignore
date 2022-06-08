@@ -43,3 +43,6 @@ ci/build
 # Local configuration
 .config
 .envrc
+
+# Telemetry log events
+telemetry.*.log
