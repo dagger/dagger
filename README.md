@@ -1,4 +1,4 @@
-# Claok
+# Cloak
 
 ## Setup
 
