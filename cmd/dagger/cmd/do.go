@@ -88,12 +88,6 @@ var doCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		tm.Push(ctx, event.RunStarted{
-			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
-			Args:   os.Args[1:],
-			Plan:   fmt.Sprintf("%#v", daggerPlan.Source().Cue()),
-		})
-
 		action := daggerPlan.Action().FindByPath(targetPath)
 
 		if action == nil {
@@ -142,6 +136,13 @@ var doCmd = &cobra.Command{
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{})
 			os.Exit(0)
 		}
+
+		// Fire "run started" event once we know there is an action to run (ie. not calling --help)
+		tm.Push(ctx, event.RunStarted{
+			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
+			Args:   os.Args[1:],
+			Plan:   fmt.Sprintf("%#v", daggerPlan.Source().Cue()),
+		})
 
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
 			tty, err = logger.NewTTYOutput(os.Stderr)
