@@ -1,0 +1,22 @@
+# General
+.DS_Store
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, build with `go test -c`
+*.test
+**/*/report.xml
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# vscode
+.vscode
+
+# intellij
+.idea
