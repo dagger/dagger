@@ -299,7 +299,7 @@ func TestPrintLine(t *testing.T) {
 }
 
 func TestLinesPerGroup(t *testing.T) {
-	w, h := 10, 25
+	width, height := 10, 25
 	now := time.Now().UTC()
 	msgs := []Message{
 		{
@@ -323,13 +323,29 @@ func TestLinesPerGroup(t *testing.T) {
 				Started: now,
 			},
 		},
+		{
+			Event: map[string]interface{}{"klm": "KLM"},
+		},
 	}
 
 	var b bytes.Buffer
-	n := linesPerGroupW(&b, w, h, msgs)
-	_ = n
-	// TODO: add test check
-	// t.Error(n, b.String())
+	n := linesPerGroupW(&b, width, height, msgs)
+
+	goldenFilePath := fmt.Sprintf("./testdata/lines_per_group_w_w%d.golden", width)
+	if goldenUpdate {
+		err := os.WriteFile(goldenFilePath, b.Bytes(), 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	goldenData, err := os.ReadFile(goldenFilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, 6, n)
+	require.Equal(t, goldenData, b.Bytes())
 }
 
 func TestPrintGroup(t *testing.T) {
