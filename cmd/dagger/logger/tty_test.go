@@ -467,7 +467,6 @@ func TestMakeLine(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			got := makeLine(c.prefix, c.text, c.timer, c.width)
-			t.Log(got)
 
 			compareTerminalLineLength(t, c.exp, got)
 		})
