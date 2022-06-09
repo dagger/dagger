@@ -8,7 +8,7 @@ displayed_sidebar: "0.2"
 Dagger Cloud is under development, but we have just released the first telemetry feature!
 
 :::tip
-Ensure you're using Dagger Engine/CLI version `0.2.16` or higher for Dagger Cloud.
+Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
 :::
 
 To take advantage of this feature, you will need to create an account by following the steps below:
