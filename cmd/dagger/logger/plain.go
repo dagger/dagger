@@ -51,23 +51,27 @@ func formatLevel(event map[string]interface{}) string {
 		level, _ = zerolog.ParseLevel(l)
 	}
 
+	fmtField := func(name, color string) string {
+		return fmt.Sprintf("[%s]%-5s[reset]", color, strings.ToUpper(name))
+	}
+
 	switch level {
 	case zerolog.TraceLevel:
-		return "[magenta]TRC[reset]"
+		return fmtField("trace", "magenta")
 	case zerolog.DebugLevel:
-		return "[yellow]DBG[reset]"
+		return fmtField("debug", "yellow")
 	case zerolog.InfoLevel:
-		return "[green]INF[reset]"
+		return fmtField("info", "green")
 	case zerolog.WarnLevel:
-		return "[red]WRN[reset]"
+		return fmtField("warn", "red")
 	case zerolog.ErrorLevel:
-		return "[red]ERR[reset]"
+		return fmtField("error", "red")
 	case zerolog.FatalLevel:
-		return "[red]FTL[reset]"
+		return fmtField("fatal", "red")
 	case zerolog.PanicLevel:
-		return "[red]PNC[reset]"
+		return fmtField("panic", "red")
 	default:
-		return "[bold]???[reset]"
+		return fmtField("???", "bold")
 	}
 }
 
