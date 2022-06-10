@@ -1,9 +1,9 @@
 ---
-slug: /1241/dagger-cloud
+slug: /1241/dagger-cloud-debugging
 displayed_sidebar: "0.2"
 ---
 
-# Dagger Cloud
+# Debugging with Dagger Cloud
 
 Dagger Cloud is under development, but we have just released the first telemetry feature!
 
