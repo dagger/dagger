@@ -20,7 +20,7 @@ import (
 		secret:   dagger.#Secret
 	}
 
-	_op: core.#Pull & {
+	_pull: core.#Pull & {
 		"source":      source
 		"resolveMode": resolveMode
 		if auth != _|_ {
@@ -30,8 +30,8 @@ import (
 
 	// Downloaded image
 	image: #Image & {
-		rootfs: _op.output
-		config: _op.config
+		rootfs: _pull.output
+		config: _pull.config
 	}
 
 	// FIXME: compat with Build API
