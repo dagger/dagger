@@ -167,10 +167,11 @@ dagger.#Plan & {
 						container: command: flags: "-race": true
 					}
 				}
-				doc: #BatsIntegrationTest & {
-					path:         "docs/learn/tests"
-					daggerBinary: build.go & {os: "linux"}
-				}
+				// FIXME: docs integration tests were never ported after the Europa release (gh issue #2592)
+				// doc: #BatsIntegrationTest & {
+				//  path:         "docs/learn/tests"
+				//  daggerBinary: build.go & {os: "linux"}
+				// }
 				universe: #BatsIntegrationTest & {
 					path:         "pkg"
 					daggerBinary: build.go & {os: "linux"}
