@@ -1,3 +1,4 @@
+//Deprecated: in favor of universe.dagger.io/alpha package
 // Use [Sam](https://docs.aws.amazon.com/serverless-application-model/index.html) in a Dagger action
 package sam
 

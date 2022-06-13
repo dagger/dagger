@@ -1,3 +1,4 @@
+//Deprecated: in favor of universe.dagger.io/alpha package
 package rawkode_kubernetes_example
 
 import (

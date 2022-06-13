@@ -1,3 +1,4 @@
+//Deprecated: in favor of universe.dagger.io/alpha package
 // Base package for Debian Linux
 package debian
 
