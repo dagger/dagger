@@ -1,5 +1,5 @@
 ---
-slug: /1241/dagger-cloud-debugging
+slug: /1241/dagger-cloud
 displayed_sidebar: "0.2"
 ---
 
