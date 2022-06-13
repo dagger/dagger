@@ -20,7 +20,7 @@ import (
 	source: dagger.#FS
 
 	// Optional arguments for the script
-	args: [...string] | *[]
+	args: [...string]
 
 	_args: args
 
