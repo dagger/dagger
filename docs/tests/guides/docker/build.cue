@@ -1,20 +1,8 @@
-package main
-
-import (
-	"dagger.io/dagger"
-	"universe.dagger.io/docker"
-)
-
 // This action builds a docker image from a python app.
-// Build steps are defined in native CUE.
 #PythonBuild: {
 	// Source code of the Python application
 	app: dagger.#FS
 
-	// Resulting container image
-	image: _build.output
-
-	// Build steps
 	_build: docker.#Build & {
 		steps: [
 			docker.#Pull & {
@@ -35,13 +23,7 @@ import (
 			},
 		]
 	}
-}
 
-// Example usage in a plan
-dagger.#Plan & {
-	client: filesystem: "./src": read: contents: dagger.#FS
-
-	actions: build: #PythonBuild & {
-		app: client.filesystem."./src".read.contents
-	}
+	// Resulting container image
+	image: _set.output
 }

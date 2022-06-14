@@ -3,11 +3,11 @@ slug: /1231/always-execute
 displayed_sidebar: '0.2'
 ---
 
-# How to always execute an action ?
+# How to always execute an action?
 
-Dagger implemented a way invalidate cache for a specific action.
+Dagger implemented a way to invalidate cache for a specific action.
 
-The `docker.#Run` and `core.#Exec` definitions have an `always` field:
+The `docker.#Run` and `core.#Exec` actions have an `always` field (which means "always run"):
 
 ```cue
 // If set to true, the cache will never be triggered for that specific action.
@@ -23,6 +23,8 @@ test: bash.#Run & {
 }
 ```
 
-:::warning
-Any dependent actions will also be retriggered
+:::caution
+
+Any dependent actions will also be retriggered.
+
 :::
