@@ -7,6 +7,12 @@ displayed_sidebar: '0.2'
 
 You can use Dagger to build container images, either by executing a Dockerfile, or specifying the build steps natively in CUE. Which method to choose depends on the requirements of your project. You can mix and match builds from both methods in the same plan.
 
+:::tip
+
+Check out the [docker package](./1241-docker.md) guide for more detailed information on the actions seen here.
+
+:::
+
 ## Executing a Dockerfile
 
 Dagger can natively load and execute Dockerfiles. This is recommended in cases where compatibility with existing Dockerfiles is more important than fully leveraging the power of CUE.

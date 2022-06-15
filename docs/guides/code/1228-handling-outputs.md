@@ -39,7 +39,7 @@ Besides the `plain` format (the default), you can also use `json` or `yaml`. JSO
 For this example, ensure you have a registry on `localhost` listening on port `5042`:
 
 ```shell
-➜ docker run -d -p 5042:5000 --restart=always --name localregistry registry:2`
+➜ docker run -d -p 5042:5000 --restart=always --name localregistry registry:2
 ```
 
 :::
@@ -79,7 +79,7 @@ You're not limited to the outputs of an action because you can make your own in 
 ```
 
 ```shell
-➜ dagger --output-format json do push
+➜ dagger do push
 [✔] actions.pull
 [✔] actions.push
 Field   Value
