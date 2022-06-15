@@ -335,10 +335,6 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 	*lineCount = lnCount
 }
 
-func linesPerGroup(width, height int, messages []Message) int {
-	return linesPerGroupW(io.Discard, width, height, messages)
-}
-
 func countLinesPerGroup(messages []Message, width int) int {
 	usedLines := 0
 	for _, message := range messages {
@@ -349,7 +345,6 @@ func countLinesPerGroup(messages []Message, width int) int {
 		// FIXME here, used printLine/printEven that would
 		// write the anonymous Group Event to the log.
 		// side effect or not, we need it somewhere.
-		// n := printEvent(w, message.Event, width)
 		_, n := formatEvent(message.Event, width)
 		usedLines += n
 	}
@@ -357,7 +352,7 @@ func countLinesPerGroup(messages []Message, width int) int {
 	return usedLines
 }
 
-func linesPerGroupW(_ io.Writer, width, height int, messages []Message) int {
+func linesPerGroup(width, height int, messages []Message) int {
 	usedLines := countLinesPerGroup(messages, width)
 	// TODO think where to print the groupless events
 

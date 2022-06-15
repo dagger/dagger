@@ -328,24 +328,9 @@ func TestLinesPerGroup(t *testing.T) {
 		},
 	}
 
-	var b bytes.Buffer
-	n := linesPerGroupW(&b, width, height, msgs)
-
-	goldenFilePath := fmt.Sprintf("./testdata/lines_per_group_w_w%d.golden", width)
-	if goldenUpdate {
-		err := os.WriteFile(goldenFilePath, b.Bytes(), 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	goldenData, err := os.ReadFile(goldenFilePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	n := linesPerGroup(width, height, msgs)
 
 	require.Equal(t, 6, n)
-	require.Equal(t, goldenData, b.Bytes())
 }
 
 func TestPrintGroup(t *testing.T) {
