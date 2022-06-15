@@ -1,3 +1,5 @@
+//go:generate stub -o ./model/netlify.gen.go
+
 package main
 
 import (
