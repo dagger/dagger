@@ -442,6 +442,7 @@ func makeLine(prefix string, text string, timer string, width int) string {
 	padLenAbs := int(math.Abs(float64(padLen)))
 
 	var out string
+	const collapsed = "…"
 	switch {
 	case padLen >= 0:
 		text = trimMessage(text, width)
@@ -454,15 +455,15 @@ func makeLine(prefix string, text string, timer string, width int) string {
 		padding := strings.Repeat(" ", padLen+(oldLen-newLen))
 		out = fmt.Sprintf("%s%s%s%s\n", prefix, text, padding, timer)
 	case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +timerLen:
-		text = "…"
+		text = collapsed
 		timer = ""
 		out = fmt.Sprintf("%s%s%s\n", prefix, text, timer)
 	case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +0 /* no timer info*/ :
 		// width too small, let's just display 1 char
-		out = "…"
+		out = collapsed
 	default:
 		// width too small, let's just display 1 char
-		out = "…"
+		out = collapsed
 	}
 	return out
 }
