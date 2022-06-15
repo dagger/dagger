@@ -25,18 +25,16 @@ const (
 	callbackPort    = 38932
 )
 
-var (
-	authConfig = &oauth2.Config{
-		// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
-		ClientID:    "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
-		RedirectURL: fmt.Sprintf("http://localhost:%d/callback", callbackPort),
-		Scopes:      []string{"openid"},
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://" + authDomain + "/authorize",
-			TokenURL: "https://" + authDomain + "/oauth/token",
-		},
-	}
-)
+var authConfig = &oauth2.Config{
+	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
+	ClientID:    "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
+	RedirectURL: fmt.Sprintf("http://localhost:%d/callback", callbackPort),
+	Scopes:      []string{"openid", "offline_access"},
+	Endpoint: oauth2.Endpoint{
+		AuthURL:  "https://" + authDomain + "/authorize",
+		TokenURL: "https://" + authDomain + "/oauth/token",
+	},
+}
 
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
@@ -188,11 +186,11 @@ func saveCredentials(token *oauth2.Token) error {
 	if err != nil {
 		panic(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(f), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
 		return err
 	}
 
-	if err := ioutil.WriteFile(f, data, 0600); err != nil {
+	if err := ioutil.WriteFile(f, data, 0o600); err != nil {
 		return err
 	}
 	return nil
