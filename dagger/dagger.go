@@ -73,9 +73,8 @@ func Do(ctx *Context, pkg, action string, payload string) (*Output, error) {
 		return nil, err
 	}
 
-	output := &Output{}
-	if err := json.Unmarshal(data, &output.data); err != nil {
-		return nil, err
+	output := &Output{
+		payload: data,
 	}
 
 	return output, nil
@@ -90,15 +89,21 @@ func (i *Input) Decode(v any) error {
 }
 
 type Output struct {
-	data any
+	payload []byte
 }
 
-func (o *Output) Set(data any) {
-	o.data = data
+func (o *Output) Raw() []byte {
+	return o.payload
 }
 
-func (o *Output) Get() any {
-	return o.data
+func (o *Output) Decode(v any) error {
+	return json.Unmarshal(o.payload, v)
+}
+
+func (o *Output) Encode(v any) error {
+	var err error
+	o.payload, err = json.Marshal(v)
+	return err
 }
 
 func Client(fn func(*Context) error) error {
@@ -177,15 +182,10 @@ func (p *Package) Serve() error {
 			return nil, err
 		}
 
-		data, err := json.Marshal(output.data)
-		if err != nil {
-			return nil, err
-		}
-
 		st := llb.
 			Scratch().
 			File(llb.Mkdir("/dagger", 0755)).
-			File(llb.Mkfile("/dagger/output.json", 0644, data))
+			File(llb.Mkfile("/dagger/output.json", 0644, output.payload))
 		def, err := st.Marshal(ctx, llb.LinuxArm64)
 		if err != nil {
 			return nil, err

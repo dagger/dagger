@@ -61,12 +61,11 @@ func Parse(path string) (*Package, error) {
 		return nil, err
 	}
 	v := cuectx.CompileBytes(f)
-	if err := v.Validate(cue.Final()); err != nil {
-		return nil, err
-	}
-
 	v = schema.LookupDef("#Schema").Unify(v)
 	if err := v.Err(); err != nil {
+		return nil, err
+	}
+	if err := v.Validate(cue.Final()); err != nil {
 		return nil, err
 	}
 

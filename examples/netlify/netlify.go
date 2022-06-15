@@ -1,22 +1,32 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/dagger/cloak/dagger"
+	"github.com/dagger/cloak/examples/netlify/model"
 )
 
+type netlify struct {
+}
+
+func (n *netlify) Deploy(ctx *dagger.Context, input *model.DeployInput) (*model.DeployOutput, error) {
+	if err := dagger.DummyRun(ctx, "echo netlify deploy"); err != nil {
+		return nil, err
+	}
+
+	domain := "dagger.io"
+	if input.Domain != "" {
+		domain = input.Domain
+	}
+
+	return &model.DeployOutput{
+		URL: fmt.Sprintf("https://%s", domain),
+	}, nil
+}
+
 func main() {
-	netlify := dagger.New()
-	netlify.Action("deploy", func(ctx *dagger.Context, input *dagger.Input) (*dagger.Output, error) {
-		if err := dagger.DummyRun(ctx, "echo netlify deploy"); err != nil {
-			return nil, err
-		}
-
-		output := &dagger.Output{}
-		output.Set(map[string]string{"url": "https://dagger.io/"})
-		return output, nil
-	})
-
-	if err := netlify.Serve(); err != nil {
+	if err := model.Serve(&netlify{}); err != nil {
 		panic(err)
 	}
 }
