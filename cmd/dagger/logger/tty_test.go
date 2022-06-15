@@ -279,7 +279,7 @@ func TestPrintLine(t *testing.T) {
 			width := w
 
 			var b bytes.Buffer
-			n := printLine(&b, event, width)
+			n := printEvent(&b, event, width)
 
 			if goldenUpdate {
 				err := os.WriteFile(goldenFilePath, b.Bytes(), 0o600)

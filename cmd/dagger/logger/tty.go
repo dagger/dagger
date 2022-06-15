@@ -320,7 +320,8 @@ func print(lineCount *int, width, height int, cons io.Writer, messages []Message
 		if group := message.Group; group != nil {
 			lnCount += printGroup(*group, width, linesPerGroup, cons)
 		} else {
-			lnCount += printLine(cons, message.Event, width)
+			// TODO do we print here the groupless event? Is it duplicate?
+			lnCount += printEvent(cons, message.Event, width)
 		}
 	}
 
@@ -338,15 +339,27 @@ func linesPerGroup(width, height int, messages []Message) int {
 	return linesPerGroupW(io.Discard, width, height, messages)
 }
 
-func linesPerGroupW(w io.Writer, width, height int, messages []Message) int {
+func countLinesPerGroup(messages []Message, width int) int {
 	usedLines := 0
 	for _, message := range messages {
 		if group := message.Group; group != nil {
 			usedLines++
 			continue
 		}
-		usedLines += printLine(w, message.Event, width)
+		// FIXME here, used printLine/printEven that would
+		// write the anonymous Group Event to the log.
+		// side effect or not, we need it somewhere.
+		// n := printEvent(w, message.Event, width)
+		_, n := formatEvent(message.Event, width)
+		usedLines += n
 	}
+
+	return usedLines
+}
+
+func linesPerGroupW(_ io.Writer, width, height int, messages []Message) int {
+	usedLines := countLinesPerGroup(messages, width)
+	// TODO think where to print the groupless events
 
 	runningGroups := 0
 	for _, message := range messages {
@@ -363,8 +376,8 @@ func linesPerGroupW(w io.Writer, width, height int, messages []Message) int {
 	return linesPerGroup
 }
 
-func printLine(w io.Writer, event Event, width int) int {
-	message := colorize.Color(fmt.Sprintf("%s %s %s%s",
+func formatEvent(event Event, width int) (message string, height int) {
+	message = colorize.Color(fmt.Sprintf("%s %s %s%s",
 		formatTimestamp(event),
 		formatLevel(event),
 		formatMessage(event),
@@ -377,12 +390,19 @@ func printLine(w io.Writer, event Event, width int) int {
 	}
 	message += "\n"
 
+	vterm := vt100.NewVT100(100, width)
+	vterm.Write([]byte(message))
+
+	return message, vterm.UsedHeight()
+}
+
+func printEvent(w io.Writer, event Event, width int) int {
+	message, height := formatEvent(event, width)
+
 	// print
 	fmt.Fprint(w, message)
 
-	t := vt100.NewVT100(100, width)
-	t.Write([]byte(message))
-	return t.UsedHeight()
+	return height
 }
 
 func statePrefix(state task.State) string {
