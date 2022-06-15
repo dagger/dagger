@@ -28,6 +28,12 @@
 # Universe experimental
 /pkg/universe.dagger.io/x/    @helderco @jpadams
 
+# Universe alpha
+/pkg/universe.dagger.io/alpha/    @helderco @jpadams
+
+# Universe beta
+/pkg/universe.dagger.io/beta/    @helderco @jpadams
+
 # Documentation Website
 # Exception: Sidebar changes use regular CODEOWNERS
 /website/                   @slumbering
