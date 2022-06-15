@@ -65,10 +65,10 @@ func (l *Logs) Add(event Event) error {
 	// Hide hidden fields (e.g. `._*`) from log group names
 	groupKey := strings.Split(source, "._")[0]
 
-	group := l.groups[groupKey]
+	group, ok := l.groups[groupKey]
 
 	// If the group doesn't exist, create it
-	if group == nil {
+	if !ok {
 		group = &Group{
 			Name:    groupKey,
 			Started: time.Now(), // the: use UTC?
