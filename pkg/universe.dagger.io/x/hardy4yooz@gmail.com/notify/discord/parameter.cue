@@ -1,3 +1,4 @@
+//Deprecated: in favor of universe.dagger.io/alpha package
 package discord
 
 // API: https://discord.com/developers/docs/resources/webhook#execute-webhook

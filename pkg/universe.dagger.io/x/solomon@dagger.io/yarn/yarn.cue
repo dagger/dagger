@@ -1,3 +1,4 @@
+//Deprecated: in favor of universe.dagger.io/alpha package
 // Use [Yarn](https://yarnpkg.com) in a Dagger action
 package yarn
 
