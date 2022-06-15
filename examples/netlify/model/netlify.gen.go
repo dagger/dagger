@@ -64,4 +64,3 @@ func Serve(impl Netlify) error {
 
 	return d.Serve()
 }
-

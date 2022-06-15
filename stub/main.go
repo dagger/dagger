@@ -1,16 +1,23 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s <file>\n", os.Args[0])
-		os.Exit(1)
+	output := flag.String("o", "", "output file")
+	flag.Parse()
+
+	args := flag.Args()
+
+	projectFile := "dagger.cue"
+	if len(args) > 0 {
+		projectFile = args[0]
 	}
-	pkg, err := Parse(os.Args[1])
+	pkg, err := Parse(projectFile)
 	if err != nil {
 		panic(err)
 	}
@@ -20,5 +27,14 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(string(gen))
+	if *output != "" {
+		if err := os.MkdirAll(filepath.Dir(*output), 0755); err != nil {
+			panic(err)
+		}
+		if err := os.WriteFile(*output, gen, 0644); err != nil {
+			panic(err)
+		}
+	} else {
+		fmt.Println(string(gen))
+	}
 }
