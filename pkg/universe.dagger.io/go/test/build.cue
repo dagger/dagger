@@ -40,5 +40,39 @@ dagger.#Plan & {
 				contents: "Hi dagger!"
 			}
 		}
+
+		customImage: {
+			build: go.#Build & {
+				source: client.filesystem."./data/hello".read.contents
+
+				_image: go.#Image & {
+					name:       "docker/library/golang"
+					repository: "public.ecr.aws"
+					version:    "1.18"
+				}
+				image: _image.output
+			}
+
+			exec: docker.#Run & {
+				input: _baseImage.output
+				command: {
+					name: "/bin/sh"
+					args: ["-c", "/bin/hello >> /output.txt"]
+				}
+				env: NAME: "dagger"
+				mounts: binary: {
+					dest:     "/bin/hello"
+					contents: build.output
+					source:   "/testgreet"
+				}
+			}
+
+			verify: core.#ReadFile & {
+				input: exec.output.rootfs
+				path:  "/output.txt"
+			} & {
+				contents: "Hi dagger!"
+			}
+		}
 	}
 }

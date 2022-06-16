@@ -2,6 +2,7 @@ package go
 
 import (
 	"dagger.io/dagger"
+	"universe.dagger.io/docker"
 )
 
 // Build a go binary
@@ -26,8 +27,12 @@ import (
 
 	env: [string]: string
 
+	// Custom go image
+	image: *#Image.output | docker.#Image
+
 	container: #Container & {
 		"source": source
+		input:    image
 		"env": {
 			env
 			if os != _|_ {
