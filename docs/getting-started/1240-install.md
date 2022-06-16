@@ -43,10 +43,10 @@ dagger is /usr/local/bin/dagger
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.11 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
 
 ./bin/dagger version
-dagger 0.2.11 (GIT_SHA) darwin/arm64
+dagger 0.2.19 (GIT_SHA) darwin/arm64
 ```
 
 </TabItem>
@@ -72,10 +72,10 @@ If you want to install dagger to a different location, `cd` where you want `./bi
 If you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.11 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
 
 ./bin/dagger version
-dagger 0.2.11 (GIT_SHA) linux/amd64
+dagger 0.2.19 (GIT_SHA) linux/amd64
 ```
 
 </TabItem>
