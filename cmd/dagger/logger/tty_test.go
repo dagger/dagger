@@ -481,3 +481,93 @@ func TestGetGroup(t *testing.T) {
 	}
 
 }
+
+func FuzzLogsAdd(f *testing.F) {
+	seedEvents := []Event{
+		{"task": "group1"},
+		{"task": "group1", "state": "completed"},
+		{"task": "actions.all.hellobis._exec", "state": "computing"},
+		{"task": "actions.all.hello._exec", "state": "skipped"},
+		{"task": "actions.all._hellobis._exec", "state": "cancelled"},
+		{"task": "actions.all.hellobis._exec", "state": "failed"},
+		{"state": "started"},
+		{"task": "actions.all._hellobis._exec", "state": "canceled"}, // bad spelled cancelled
+	}
+	for _, e := range seedEvents {
+		b, _ := json.Marshal(e)
+		f.Add(b)
+	}
+	lAdd := Logs{
+		groups: make(map[string]*Group),
+	}
+	lSplitAdd := Logs{
+		groups: make(map[string]*Group),
+	}
+	nnooww := time.Now()
+	now = func() time.Time {
+		return nnooww
+	}
+	f.Fuzz(func(t *testing.T, eventBytes []byte) {
+		event := Event{}
+		err := json.Unmarshal(eventBytes, &event)
+		if err != nil {
+			return
+		}
+		if len(event) == 0 {
+			return
+		}
+		_, ok := event[""]
+		if ok {
+			return
+		}
+		for _, v := range event {
+			if v == "" {
+				return
+			}
+		}
+
+		t.Run(fmt.Sprintf("%q", eventBytes), func(t *testing.T) {
+
+			errAdd := lAdd.oldAdd(event)
+			errSplitAdd := lSplitAdd.Add(event)
+
+			require.Equal(t, errAdd, errSplitAdd)
+			if errAdd != nil {
+				// no need to test further
+				return
+			}
+			require.Equal(t, len(lAdd.groups), len(lSplitAdd.groups))
+
+			var lAddGroupsName sort.StringSlice
+			for n := range lAdd.groups {
+				lAddGroupsName = append(lAddGroupsName, n)
+			}
+			var lSplitAddGroupsName sort.StringSlice
+			for n := range lAdd.groups {
+				lSplitAddGroupsName = append(lSplitAddGroupsName, n)
+			}
+
+			lAddGroupsName.Sort()
+			lSplitAddGroupsName.Sort()
+			require.Equal(t, lAddGroupsName, lSplitAddGroupsName)
+
+			for i := range lAdd.Messages {
+				a := lAdd.Messages[i]
+				b := lSplitAdd.Messages[i]
+
+				require.Equal(t, a.Event, b.Event)
+				if a.Group == nil && b.Group == nil {
+					return
+				}
+				require.NotNil(t, a.Group.Name)
+				require.NotNil(t, b.Group.Name)
+				require.Equal(t, a.Group.Name, b.Group.Name, "\n%+v\n%+v\n", a.Group, b.Group)
+				require.Equal(t, a.Group.Members, b.Group.Members)
+				require.Equal(t, a.Group.CurrentState, b.Group.CurrentState)
+				require.Equal(t, a.Group.FinalState, b.Group.FinalState)
+				require.Equal(t, len(a.Group.Events), len(b.Group.Events))
+				require.Equal(t, a.Group.Events, b.Group.Events)
+			}
+		})
+	})
+}
