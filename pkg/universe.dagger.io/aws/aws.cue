@@ -7,18 +7,24 @@ import (
 	"universe.dagger.io/docker"
 )
 
-#DefaultLinuxVersion: "amazonlinux:2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
-#DefaultCliVersion:   "2.4.12"
+_#DefaultLinuxName:       "amazonlinux"
+_#DefaultLinuxVersion:    "2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
+_#DefaultLinuxRepository: "index.docker.io"
+#DefaultCliVersion:       "2.4.12"
 
 // Build provides a docker.#Image with the aws cli pre-installed to Amazon Linux 2.
 // Can be customized with packages, and can be used with docker.#Run for executing custom scripts.
 // Used by default with aws.#Run
 #Build: {
 
+	name:       *_#DefaultLinuxName | string
+	repository: *_#DefaultLinuxRepository | string
+	version:    *_#DefaultLinuxVersion | string
+
 	docker.#Build & {
 		steps: [
 			docker.#Pull & {
-				source: #DefaultLinuxVersion
+				source: "\(repository)/\(name):\(version)"
 			},
 			// cache yum install separately
 			docker.#Run & {
@@ -30,7 +36,7 @@ import (
 			docker.#Run & {
 				command: {
 					name: "/scripts/install.sh"
-					args: [version]
+					args: [cliVersion]
 				}
 				mounts: scripts: {
 					dest:     "/scripts"
@@ -45,7 +51,7 @@ import (
 	}
 
 	// The version of the AWS CLI to install
-	version: string | *#DefaultCliVersion
+	cliVersion: string | *#DefaultCliVersion
 }
 
 // Credentials provides long or short-term credentials.
@@ -58,6 +64,12 @@ import (
 
 	// AWS session token (provided with temporary credentials)
 	sessionToken?: dagger.#Secret
+
+	// AWS SSO profile
+	profile?: string
+
+	// AWS Container credentials relative uri (used to automatically retrieve credentials from within AWS)
+	containerCredentialsRelativeUri?: dagger.#Secret
 }
 
 // Region provides a schema to validate acceptable region value.
@@ -71,11 +83,16 @@ import (
 	// configFile provides access to a config file, typically found in ~/.aws/config
 	configFile?: dagger.#FS
 
+	// configFolder provides access to the aws config folder, typically found in ~/.aws
+	configFolder?: dagger.#FS
+
 	// credentials provides long or short-term credentials
 	credentials: #Credentials
 
+	image: docker.#Image | *_build.output
+
 	docker.#Run & {
-		input: docker.#Image | *_build.output
+		input: image
 
 		env: {
 			// pass credentials as env vars
@@ -90,11 +107,28 @@ import (
 			if credentials.sessionToken != _|_ {
 				AWS_SESSION_TOKEN: credentials.sessionToken
 			}
+
+			if credentials.profile != _|_ {
+				AWS_PROFILE: credentials.profile
+			}
+
+			if credentials.containerCredentialsRelativeUri != _|_ {
+				AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: credentials.containerCredentialsRelativeUri
+			}
 		}
 
 		if configFile != _|_ {
-			mounts: aws: {
+			mounts: awsConfigFile: {
 				contents: configFile
+				dest:     "/aws"
+				ro:       true
+			}
+			env: AWS_CONFIG_FILE: "/aws/config"
+		}
+
+		if configFolder != _|_ {
+			mounts: awsConfigFolder: {
+				contents: configFolder
 				dest:     "/aws"
 				ro:       true
 			}
