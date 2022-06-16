@@ -11,6 +11,6 @@ Examples:
 
 When it comes to pull requests, the bigger the contribution, the earlier you should talk to maintainers to make sure you're taking the right approach and are not wasting your effort on something that will not get merged.
 
-Extensive contribution guidelines are available in the repository at `docs/guides/1227-contributing.md`, or online at:
+Extensive contribution guidelines are available in the repository at `docs/guidelines/1227-contributing.md`, or online at:
 
 [https://docs.dagger.io/1227/contributing](https://docs.dagger.io/1227/contributing)
