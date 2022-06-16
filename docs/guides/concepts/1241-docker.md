@@ -241,7 +241,7 @@ dist:   _run.export.directories."/app/dist" // dagger.#FS
 
 :::tip
 
-As in [Use *top* to match anything](../code/1226-coding-style.md#use-top-to-match-anything), the *export* fields `files`, `secrets` and `directories` are already sufficient to declare the type, so we use *top* (`_`) as a simpler alternative to this:
+As in [Use *top* to match anything](../../guidelines/1226-coding-style.md#use-top-to-match-anything), the *export* fields `files`, `secrets` and `directories` are already sufficient to declare the type, so we use *top* (`_`) as a simpler alternative to this:
 
 ```cue
     export: {
@@ -264,7 +264,7 @@ You can't export from mounts.
 
 If you need to skip the cache for a `docker.#Run`, set `always: true` (as in "always run").
 
-See [How to always execute an action?](../code/1231-always-execute.md) for more information.
+See [How to always execute an action?](../actions/1231-always-execute.md) for more information.
 
 ### `docker.#Push`
 
@@ -288,7 +288,7 @@ Another useful pattern is to save it in a `json` file in order to be consumed by
 
 :::tip
 
-If you're interested in knowing more about controling the output, check out the [Handling action outputs](../code/1228-handling-outputs.md#controlling-the-output) guide.
+If you're interested in knowing more about controling the output, check out the [Handling action outputs](../actions/1228-handling-outputs.md#controlling-the-output) guide.
 
 :::
 

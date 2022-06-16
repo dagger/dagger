@@ -188,7 +188,7 @@ run: bash.#Run & {
 ## Don’t inline scripts
 
 Avoid inlining scripts (e.g., _sh_, _py_, etc). Instead, put them in their own files
-with proper extension, and use `core.#Source` (see [When to use `core.#Source`](1240-core-source.md)) to import into CUE. This allows linting
+with proper extension, and use `core.#Source` (see [When to use `core.#Source`](../guides/actions/1240-core-source.md)) to import into CUE. This allows linting
 and avoids some limitations (script size, escaping).
 
 Some exceptions may apply (e.g., the script is really short or interpolation is
