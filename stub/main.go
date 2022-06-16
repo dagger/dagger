@@ -8,7 +8,8 @@ import (
 )
 
 func main() {
-	output := flag.String("o", "", "output file")
+	modelOutput := flag.String("m", "", "modelOutput file")
+	frontendOutput := flag.String("f", "", "modelOutput file")
 	flag.Parse()
 
 	args := flag.Args()
@@ -22,19 +23,35 @@ func main() {
 		panic(err)
 	}
 
-	gen, err := Stub(pkg)
+	modelGen, err := ModelGen(pkg)
 	if err != nil {
 		panic(err)
 	}
 
-	if *output != "" {
-		if err := os.MkdirAll(filepath.Dir(*output), 0755); err != nil {
+	if *modelOutput != "" {
+		if err := os.MkdirAll(filepath.Dir(*modelOutput), 0755); err != nil {
 			panic(err)
 		}
-		if err := os.WriteFile(*output, gen, 0644); err != nil {
+		if err := os.WriteFile(*modelOutput, modelGen, 0644); err != nil {
 			panic(err)
 		}
 	} else {
-		fmt.Println(string(gen))
+		fmt.Println(string(modelGen))
+	}
+
+	frontendGen, err := FrontendGen(pkg)
+	if err != nil {
+		panic(err)
+	}
+
+	if *frontendOutput != "" {
+		if err := os.MkdirAll(filepath.Dir(*frontendOutput), 0755); err != nil {
+			panic(err)
+		}
+		if err := os.WriteFile(*frontendOutput, frontendGen, 0644); err != nil {
+			panic(err)
+		}
+	} else {
+		fmt.Println(string(frontendGen))
 	}
 }

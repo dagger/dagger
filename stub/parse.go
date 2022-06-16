@@ -46,6 +46,7 @@ type FieldType string
 const (
 	FieldTypeString FieldType = "string"
 	FieldTypeBool   FieldType = "bool"
+	FieldTypeFS     FieldType = "core.FSOutput"
 )
 
 func Parse(path string) (*Package, error) {
@@ -61,11 +62,12 @@ func Parse(path string) (*Package, error) {
 		return nil, err
 	}
 	v := cuectx.CompileBytes(f)
-	v = schema.LookupDef("#Schema").Unify(v)
-	if err := v.Err(); err != nil {
+	if err := v.Validate(cue.Final()); err != nil {
 		return nil, err
 	}
-	if err := v.Validate(cue.Final()); err != nil {
+
+	v = schema.LookupDef("#Schema").Unify(v)
+	if err := v.Err(); err != nil {
 		return nil, err
 	}
 
@@ -118,12 +120,35 @@ func parseField(name string, v cue.Value) *Field {
 		Name: name,
 		Docs: parseDocs(v),
 	}
+	// TODO: silly hack to force "FS" rather than "Fs"
+	if name == "fs" {
+		field.Name = "FS"
+	}
 
 	switch t := v.IncompleteKind(); t {
 	case cue.StringKind:
+		if v.IsConcrete() {
+			val, err := v.String()
+			if err != nil {
+				panic(err)
+			}
+			// TODO: silly hack for now, special string that indicates an fs type
+			if val == "$daggerfs" {
+				field.Type = FieldTypeFS
+				break
+			}
+			// TODO: what is the behavior here? it's a concrete string, so it's a const, not a struct field
+		}
 		field.Type = FieldTypeString
 	case cue.BoolKind:
 		field.Type = FieldTypeBool
+	case cue.ListKind:
+		listv, ok := v.Elem()
+		if !ok {
+			panic(t)
+		}
+		listField := parseField(name, listv)
+		field.Type = "[]" + listField.Type
 	default:
 		panic(t)
 	}
