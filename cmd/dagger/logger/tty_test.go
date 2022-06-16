@@ -503,10 +503,6 @@ func FuzzLogsAdd(f *testing.F) {
 	lSplitAdd := Logs{
 		groups: make(map[string]*Group),
 	}
-	nnooww := time.Now()
-	now = func() time.Time {
-		return nnooww
-	}
 	f.Fuzz(func(t *testing.T, eventBytes []byte) {
 		event := Event{}
 		err := json.Unmarshal(eventBytes, &event)
@@ -565,7 +561,6 @@ func FuzzLogsAdd(f *testing.F) {
 				require.Equal(t, a.Group.Members, b.Group.Members)
 				require.Equal(t, a.Group.CurrentState, b.Group.CurrentState)
 				require.Equal(t, a.Group.FinalState, b.Group.FinalState)
-				require.Equal(t, len(a.Group.Events), len(b.Group.Events))
 				require.Equal(t, a.Group.Events, b.Group.Events)
 			}
 		})

@@ -68,7 +68,7 @@ func (l *Logs) getGroup(groupName string) *Group {
 	if !ok || group == nil {
 		group = &Group{
 			Name:    groupName,
-			Started: now(), // the: use UTC?
+			Started: time.Now(), // the: use UTC?
 		}
 		l.groups[groupName] = group
 		l.Messages = append(l.Messages, Message{
@@ -103,7 +103,7 @@ func updateGroupState(group Group, stateName string) (Group, error) {
 	} else {
 		group.Members--
 		if group.Members <= 0 {
-			group.Completed = now()
+			group.Completed = time.Now()
 			group.CurrentState = group.FinalState
 		}
 	}
@@ -142,10 +142,6 @@ func (l *Logs) Add(event Event) error {
 	return nil
 }
 
-var now func() time.Time = func() time.Time {
-	return time.Now()
-}
-
 // oldAdd add the event to the logs.
 // DEPRECATED: old version of the Add func
 // split in smaller func in Add.
@@ -177,7 +173,7 @@ func (l *Logs) oldAdd(event Event) error {
 	if !ok {
 		group = &Group{
 			Name:    groupKey,
-			Started: now(), // the: use UTC?
+			Started: time.Now(), // the: use UTC?
 		}
 		l.groups[groupKey] = group
 		l.Messages = append(l.Messages, Message{
@@ -205,7 +201,7 @@ func (l *Logs) oldAdd(event Event) error {
 		} else {
 			group.Members--
 			if group.Members <= 0 {
-				group.Completed = now()
+				group.Completed = time.Now()
 				group.CurrentState = group.FinalState
 			}
 		}
