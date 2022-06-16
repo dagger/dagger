@@ -22,7 +22,7 @@ type {{ $action.Name |PascalCase }}Input struct {
 	{{- range $doc := $input.Docs }}
 	// {{ $doc }}
 	{{- end }}
-	{{ $input.Name | PascalCase }} {{ $input.Type }}
+	{{ $input.Name | PascalCase }} {{ $input.Type }} `json:"{{ $input.Name }},omitempty"`
 	{{ end }}
 }
 
@@ -31,7 +31,7 @@ type {{ $action.Name | PascalCase }}Output struct {
 	{{- range $doc := $output.Docs }}
 	// {{ $doc }}
 	{{- end }}
-	{{ $output.Name | PascalCase }} {{ $output.Type }}
+	{{ $output.Name | PascalCase }} {{ $output.Type }} `json:"{{ $output.Name }},omitempty"`
 	{{ end }}
 }
 {{- end }}
