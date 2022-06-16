@@ -85,6 +85,9 @@ type Input struct {
 }
 
 func (i *Input) Decode(v any) error {
+	if len(i.payload) == 0 {
+		return nil
+	}
 	return json.Unmarshal(i.payload, v)
 }
 

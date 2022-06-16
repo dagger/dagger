@@ -13,31 +13,31 @@ type Netlify interface {
 type DeployInput struct {
 	// Name of the Netlify site
 	// Example: "my-super-site"
-	Site string
+	Site string `json:"site,omitempty"`
 
 	// Name of the Netlify team (optional)
 	// Example: "acme-inc"
 	// Default: use the Netlify account's default team
-	Team string
+	Team string `json:"team,omitempty"`
 
 	// Domain at which the site should be available (optional)
 	// If not set, Netlify will allocate one under netlify.app.
 	// Example: "www.mysupersite.tld"
-	Domain string
+	Domain string `json:"domain,omitempty"`
 
 	// Create the site if it doesn't exist
-	Create bool
+	Create bool `json:"create,omitempty"`
 }
 
 type DeployOutput struct {
 	// URL of the deployed site
-	URL string
+	URL string `json:"url,omitempty"`
 
 	// URL of the latest deployment
-	DeployURL string
+	DeployURL string `json:"deployUrl,omitempty"`
 
 	// URL for logs of the latest deployment
-	LogsURL string
+	LogsURL string `json:"logsUrl,omitempty"`
 }
 
 func Serve(impl Netlify) error {
