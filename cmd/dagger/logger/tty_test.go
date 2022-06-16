@@ -2,11 +2,13 @@ package logger
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -456,4 +458,26 @@ func TestMakeLine(t *testing.T) {
 			compareTerminalLineLength(t, c.exp, got)
 		})
 	}
+}
+
+func TestGetGroup(t *testing.T) {
+	cases := map[string]struct {
+		event Event
+
+		ok  bool
+		exp string
+	}{
+		"empty event":       {Event{}, false, systemGroup},
+		"task not a string": {Event{"task": 1}, false, systemGroup},
+		"task is a string":  {Event{"task": "group1"}, true, "group1"},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			groupName, ok := getGroupName(c.event)
+			require.Equal(t, c.ok, ok)
+			require.Equal(t, c.exp, groupName)
+		})
+	}
+
 }

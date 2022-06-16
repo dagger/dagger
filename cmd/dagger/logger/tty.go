@@ -43,7 +43,113 @@ type Logs struct {
 	l      sync.Mutex
 }
 
+func getGroupName(event Event) (string, bool) {
+	// by default, everything goes into the "system" group.
+	groupName := systemGroup
+
+	taskPath, ok := event["task"].(string)
+	if !ok {
+		return groupName, false
+	}
+
+	// if taskPath is set, we use it as the groupName
+	if ok && taskPath != "" {
+		// Hide hidden fields (e.g. `._*`) from log group names
+		groupName = strings.Split(taskPath, "._")[0]
+	}
+
+	return groupName, true
+}
+
+func (l *Logs) getGroup(groupName string) *Group {
+	// l.l should be locked
+	group, ok := l.groups[groupName]
+	// If the group doesn't exist, create it
+	if !ok || group == nil {
+		group = &Group{
+			Name:    groupName,
+			Started: now(), // the: use UTC?
+		}
+		l.groups[groupName] = group
+		l.Messages = append(l.Messages, Message{
+			Group: group,
+		})
+	}
+	return group
+}
+
+func (l *Logs) addEventMessage(event Event) {
+	// l.l should be locked
+	l.Messages = append(l.Messages, Message{
+		Event: event,
+	})
+}
+
+func updateGroupState(group Group, stateName string) (Group, error) {
+	t, err := task.ParseState(stateName)
+	if err != nil {
+		// if we can't parse state, we keep the group as-is
+		return group, err
+	}
+
+	if group.FinalState.CanTransition(t) {
+		group.FinalState = t
+	}
+
+	if t == task.StateComputing {
+		group.CurrentState = t
+		group.Members++
+		group.Completed = time.Time{}
+	} else {
+		group.Members--
+		if group.Members <= 0 {
+			group.Completed = now()
+			group.CurrentState = group.FinalState
+		}
+	}
+
+	return group, nil
+}
+
+// Add add the event to the logs.
 func (l *Logs) Add(event Event) error {
+	l.l.Lock()
+	defer l.l.Unlock()
+
+	groupName, ok := getGroupName(event)
+	if !ok {
+		l.addEventMessage(event)
+		return nil
+	}
+
+	group := l.getGroup(groupName)
+
+	// Handle state events
+	// For state events, we just want to update the group status -- no need to
+	// display anything
+	st, ok := event["state"].(string)
+	if !ok {
+		group.Events = append(group.Events, event)
+		return nil
+	}
+
+	var err error
+	*group, err = updateGroupState(*group, st)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var now func() time.Time = func() time.Time {
+	return time.Now()
+}
+
+// oldAdd add the event to the logs.
+// DEPRECATED: old version of the Add func
+// split in smaller func in Add.
+func (l *Logs) oldAdd(event Event) error {
 	l.l.Lock()
 	defer l.l.Unlock()
 
@@ -71,7 +177,7 @@ func (l *Logs) Add(event Event) error {
 	if !ok {
 		group = &Group{
 			Name:    groupKey,
-			Started: time.Now(), // the: use UTC?
+			Started: now(), // the: use UTC?
 		}
 		l.groups[groupKey] = group
 		l.Messages = append(l.Messages, Message{
@@ -99,7 +205,7 @@ func (l *Logs) Add(event Event) error {
 		} else {
 			group.Members--
 			if group.Members <= 0 {
-				group.Completed = time.Now()
+				group.Completed = now()
 				group.CurrentState = group.FinalState
 			}
 		}
