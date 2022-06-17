@@ -16,9 +16,32 @@ It can be useful to debug or test a build locally before pushing.
 
 ## Local daemon
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import BrowserOnly from '@docusaurus/BrowserOnly';
+
+<BrowserOnly>
+  {() =>
+<Tabs defaultValue={ window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix'} groupId="local-daemon">
+
+<TabItem value="unix" label="Linux/macOS">
+
 ```cue file=../../plans/docker-cli-load/local.cue
 
 ```
+
+</TabItem>
+
+<TabItem value="windows" label="Windows">
+
+```cue file=../../plans/docker-cli-load/local_windows.cue
+
+```
+
+</TabItem>
+</Tabs>
+  }
+</BrowserOnly>
 
 ## Remote daemon, via SSH
 
