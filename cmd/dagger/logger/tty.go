@@ -62,7 +62,7 @@ func getGroupName(event Event) (string, bool) {
 }
 
 func (l *Logs) getGroup(groupName string) *Group {
-	// l.l should be locked
+	// l.l should be locked already
 	group, ok := l.groups[groupName]
 	// If the group doesn't exist, create it
 	if !ok || group == nil {
@@ -79,7 +79,7 @@ func (l *Logs) getGroup(groupName string) *Group {
 }
 
 func (l *Logs) addEventMessage(event Event) {
-	// l.l should be locked
+	// l.l should be locked already
 	l.Messages = append(l.Messages, Message{
 		Event: event,
 	})
@@ -129,6 +129,7 @@ func (l *Logs) Add(event Event) error {
 	// display anything
 	st, ok := event["state"].(string)
 	if !ok {
+		// we update the group Event
 		group.Events = append(group.Events, event)
 		return nil
 	}
