@@ -5,7 +5,7 @@ import (
   "github.com/dagger/cloak/dagger"
 
   // TODO: need more generic mechanism for generating this import
-  "github.com/dagger/cloak/examples/{{ $PackageName | ToLower }}"
+  "github.com/dagger/cloak/examples/{{ $PackageName | ToLower }}/sdk/{{ $PackageName | ToLower }}"
 )
 
 func main() {
@@ -17,7 +17,7 @@ func main() {
 			return nil, err
 		}
 
-		typedOutput := {{ $PackageName | ToLower }}.{{ $action.Name | PascalCase }}(ctx, typedInput)
+		typedOutput := {{ $action.Name | PascalCase }}(ctx, typedInput)
 
 		output := &dagger.Output{}
 		if err := output.Encode(typedOutput); err != nil {

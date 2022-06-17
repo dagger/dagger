@@ -2,6 +2,8 @@
 package {{$PackageName | ToLower }}
 
 import (
+  "encoding/json"
+
   "github.com/dagger/cloak/dagger"
 
   // TODO: this needs to be generated based on which schemas are re-used in this schema
@@ -27,24 +29,24 @@ type {{ $action.Name | PascalCase }}Output struct {
     {{- range $doc := $output.Docs }}
     // {{ $doc }}
     {{- end }}
-	{{ $output.Name | ToLower }} {{ $output.Type }}
+	{{ $output.Name | PascalCase }} {{ $output.Type }}
     {{ end }}
 }
 
-{{- range $output := $action.Outputs }}
-func (a *{{ $action.Name | PascalCase }}Output) {{ $output.Name | PascalCase }}() {{ $output.Type }} {
-  return a.{{ $output.Name | ToLower }}
-}
-{{ end }}
-
 func {{ $action.Name | PascalCase }}(ctx *dagger.Context, input *{{ $action.Name | PascalCase }}Input) *{{ $action.Name | PascalCase }}Output {
-  output := &{{ $action.Name | PascalCase }}Output{}
-  if err := dagger.Do(ctx, "localhost:5555/dagger:{{ $PackageName | ToLower }}", "{{ $action.Name }}", input, output, do{{ $action.Name | PascalCase }}); err != nil {
+	rawInput, err := json.Marshal(input)
+	if err != nil {
+		panic(err)
+	}
+
+  rawOutput, err := dagger.Do(ctx, "localhost:5555/dagger:{{ $PackageName | ToLower }}", "{{ $action.Name }}", string(rawInput))
+  if err != nil {
     panic(err)
   }
+  output := &{{ $action.Name | PascalCase }}Output{}
+	if err := rawOutput.Decode(output); err != nil {
+		panic(err)
+	}
   return output
 }
-
-var _ func(ctx *dagger.Context, input *{{ $action.Name | PascalCase }}Input) *{{ $action.Name | PascalCase }}Output = do{{ $action.Name | PascalCase }}
-
 {{- end }}

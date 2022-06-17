@@ -36,9 +36,10 @@ type Action struct {
 }
 
 type Field struct {
-	Name string
-	Docs []string
-	Type FieldType
+	Name      string
+	Docs      []string
+	Type      FieldType
+	SourcePkg string
 }
 
 type FieldType string
@@ -135,6 +136,7 @@ func parseField(name string, v cue.Value) *Field {
 			// TODO: silly hack for now, special string that indicates an fs type
 			if val == "$daggerfs" {
 				field.Type = FieldTypeFS
+				field.SourcePkg = "core"
 				break
 			}
 			// TODO: what is the behavior here? it's a concrete string, so it's a const, not a struct field
