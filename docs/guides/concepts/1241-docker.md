@@ -241,7 +241,7 @@ dist:   _run.export.directories."/app/dist" // dagger.#FS
 
 :::tip
 
-As in [Use *top* to match anything](../../guidelines/1226-coding-style.md#use-top-to-match-anything), the *export* fields `files`, `secrets` and `directories` are already sufficient to declare the type, so we use *top* (`_`) as a simpler alternative to this:
+Notice how we set every export as `_` in the previous example. As in [Use *top* to match anything](../../guidelines/1226-coding-style.md#use-top-to-match-anything), the *export* fields `files`, `secrets` and `directories` are already sufficient to declare the type, so we use *top* (`_`) as a simpler alternative to this:
 
 ```cue
     export: {
@@ -256,7 +256,7 @@ As in [Use *top* to match anything](../../guidelines/1226-coding-style.md#use-to
 
 :::caution
 
-You can't export from mounts.
+You **can't export from mounts** because the underlying export actions (`core.#ReadFile`, `core.#NewSecret` and `core.#Subdir`) use the filesystem tree of the image produced by the `docker.#Run` directly (i.e., `rootfs` field of the `docker.#Image` in `output`). It doesn't include other sources like mounts.
 
 :::
 
