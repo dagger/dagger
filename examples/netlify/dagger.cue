@@ -8,7 +8,7 @@ actions: {
 	deploy: {
 		inputs: {
 			// Contents of the site
-			// contents: dagger.#FS
+			contents: "$daggerfs"
 
 			// Name of the Netlify site
 			// Example: "my-super-site"
@@ -20,15 +20,15 @@ actions: {
 			// Name of the Netlify team (optional)
 			// Example: "acme-inc"
 			// Default: use the Netlify account's default team
-			team: string | *""
+			// team: string | *""
 
 			// Domain at which the site should be available (optional)
 			// If not set, Netlify will allocate one under netlify.app.
 			// Example: "www.mysupersite.tld"
-			domain: string
+			// domain: string
 
 			// Create the site if it doesn't exist
-			create: *true | false
+			// create: *true | false
 		}
 
 		outputs: {
@@ -39,7 +39,7 @@ actions: {
 			deployUrl: string
 
 			// URL for logs of the latest deployment
-			logsUrl: string
+			// logsUrl: string
 		}
 	}
 }
