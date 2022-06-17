@@ -587,6 +587,25 @@ func FuzzLogsAdd(f *testing.F) {
 	})
 }
 
+func TestFormatGroupLine(t *testing.T) {
+	cases := map[string]struct {
+		event Event
+		width int
+		exp   string
+	}{
+		"ok":  {Event{"message": "simple message", "level": "error", "error": "does not work", "field1": "value1"}, 20, "\x1b[2m\x1b[31msimple messag… \n\x1b[0m"},
+		"ok2": {Event{"message": "simple message", "level": "error", "error": "does not work", "field1": "value1"}, 200, "\x1b[2m\x1b[31msimple message: does not work\x1b[0m    \x1b[1mfield1=value1\x1b[0m\x1b[0m                                                                                                                                     \n\x1b[0m"},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, n := formatGroupLine(c.event, c.width)
+			assert.Equal(t, c.exp, got, "%s", got)
+			assert.Equal(t, n, 1)
+		})
+	}
+}
+
 func TestTermLen(t *testing.T) {
 	n := termLen("  \x1b[2m\x1b[31mABC   some test    \x1b[0m   ", 3)
 	require.Equal(t, 17, n)
