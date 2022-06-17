@@ -291,7 +291,7 @@ execute() {
     tarball_url="${base_url}/${tarball}"
     checksum="checksums.txt"
     checksum_url="${base_url}/${checksum}"
-    bin_dir="./bin"
+    bin_dir="${BIN_DIR:-./bin}"
     binexe="dagger"
 
     tmpdir=$(mktemp -d)

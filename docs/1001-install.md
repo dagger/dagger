@@ -45,10 +45,16 @@ curl -sfL https://releases.dagger.io/dagger/install.sh | sh
 
 You now have the dagger binary in the local directory under `./bin/dagger`.
 
-You can then install it globally on your system:
+You can also install it globally on your system:
 
 ```shell
-sudo mv ./bin/dagger /usr/local/bin
+curl -sfL https://releases.dagger.io/dagger/install.sh | sudo BIN_DIR=/usr/local/bin sh
+```
+
+or
+
+```shell
+curl -sfLo install.sh https://releases.dagger.io/dagger/install.sh; sudo BIN_DIR=/usr/local/bin sh ./install.sh
 ```
 
 ## Option 2 (Windows): Run a shell script
