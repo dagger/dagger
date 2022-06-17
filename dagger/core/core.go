@@ -1,8 +1,6 @@
 package core
 
 import (
-	"sync"
-
 	"github.com/dagger/cloak/dagger"
 	"github.com/moby/buildkit/client/llb"
 )
@@ -17,55 +15,40 @@ import (
 //
 //
 
-type Image struct {
+type ImageInput struct {
 	Ref string
 }
 
-type ImageOutput interface {
-	FS() FSOutput
+type ImageOutput struct {
+	fs FSOutput
 }
 
-var _ ImageOutput = &Image{}
-
-type imageOutput struct {
-	FS FSOutput
-	// TODO: Config ImageConfig
-}
-
-func (i *Image) FS() FSOutput {
-	return i.output().FS
+func (i *ImageOutput) FS() FSOutput {
+	return i.fs
 }
 
 /* TODO:
-func (i *Image) Config() ImageConfig {}
+func (i *ImageOutput) Config() ImageConfig {}
 */
 
-type GitRepo struct {
+type GitRepoInput struct {
 	Remote string
 	Ref    string
 }
 
-type GitRepoOutput interface {
-	FS() FSOutput
+type GitRepoOutput struct {
+	fs FSOutput
 }
 
-var _ GitRepoOutput = &GitRepo{}
-
-type gitRepoOutput struct {
-	FS FSOutput
+func (g *GitRepoOutput) FS() FSOutput {
+	return g.fs
 }
 
-func (g *GitRepo) FS() FSOutput {
-	return g.output().FS
-}
-
-type Exec struct {
+type ExecInput struct {
 	Base   FSOutput
 	Dir    string
 	Args   []string
 	Mounts []Mount
-	once   sync.Once
-	memo   *execOutput
 }
 
 type Mount struct {
@@ -73,30 +56,17 @@ type Mount struct {
 	Path string
 }
 
-type ExecOutput interface {
-	FS() FSOutput
+type ExecOutput struct {
+	fs     FSOutput
+	mounts map[string]FSOutput
 }
 
-var _ ExecOutput = &Exec{}
-
-type execOutput struct {
-	FS     FSOutput
-	Mounts map[string]FSOutput
+func (e *ExecOutput) FS() FSOutput {
+	return e.fs
 }
 
-func (e *Exec) FS() FSOutput {
-	return e.outputOnce().FS
-}
-
-func (e *Exec) GetMount(path string) FSOutput {
-	return e.outputOnce().Mounts[path]
-}
-
-func (e *Exec) outputOnce() *execOutput {
-	e.once.Do(func() {
-		e.memo = e.output()
-	})
-	return e.memo
+func (e *ExecOutput) GetMount(path string) FSOutput {
+	return e.mounts[path]
 }
 
 //
@@ -131,23 +101,23 @@ func (fs FS) Evaluate(ctx *dagger.Context) error {
 
 // TODO: FS.ReadFile and similar
 
-func (i *Image) output() *imageOutput {
-	return &imageOutput{FS: FS(llb.Image(i.Ref))}
+func Image(i *ImageInput) *ImageOutput {
+	return &ImageOutput{fs: FS(llb.Image(i.Ref))}
 }
 
-func (g *GitRepo) output() *gitRepoOutput {
-	return &gitRepoOutput{FS: FS(llb.Git(g.Remote, g.Ref))}
+func GitRepo(i *GitRepoInput) *GitRepoOutput {
+	return &GitRepoOutput{fs: FS(llb.Git(i.Remote, i.Ref))}
 }
 
-func (e *Exec) output() *execOutput {
-	exec := llb.State(e.Base.fs()).Run(
-		llb.Dir(e.Dir),
-		llb.Args(e.Args),
+func Exec(i *ExecInput) *ExecOutput {
+	exec := llb.State(i.Base.fs()).Run(
+		llb.Dir(i.Dir),
+		llb.Args(i.Args),
 	)
 	out := make(map[string]FSOutput)
 	out["/"] = FS(exec.Root())
-	for _, m := range e.Mounts {
+	for _, m := range i.Mounts {
 		out[m.Path] = FS(exec.AddMount(m.Path, llb.State(m.FS.fs())))
 	}
-	return &execOutput{FS: FS(exec.Root()), Mounts: out}
+	return &ExecOutput{fs: FS(exec.Root()), mounts: out}
 }

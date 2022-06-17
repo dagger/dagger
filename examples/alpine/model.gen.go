@@ -1,47 +1,30 @@
 package alpine
 
 import (
-	"encoding/json"
-	"sync"
-
 	"github.com/dagger/cloak/dagger"
 
 	// TODO: this needs to be generated based on which schemas are re-used in this schema
 	"github.com/dagger/cloak/dagger/core"
 )
 
-type Build struct {
+type BuildInput struct {
 	Packages []string `json:"packages,omitempty"`
-
-	once sync.Once
-	memo buildOutput
 }
 
-func (a *Build) FS(ctx *dagger.Context) core.FSOutput {
-	return a.outputOnce(ctx).FS
+type BuildOutput struct {
+	fs core.FSOutput
 }
 
-type buildOutput struct {
-	FS core.FSOutput
+func (a *BuildOutput) FS() core.FSOutput {
+	return a.fs
 }
 
-type BuildOutput interface {
-	FS(ctx *dagger.Context) core.FSOutput
+func Build(ctx *dagger.Context, input *BuildInput) *BuildOutput {
+	output := &BuildOutput{}
+	if err := dagger.Do(ctx, "localhost:5555/dagger:alpine", "build", input, output, doBuild); err != nil {
+		panic(err)
+	}
+	return output
 }
 
-func (a *Build) outputOnce(ctx *dagger.Context) buildOutput {
-	a.once.Do(func() {
-		input, err := json.Marshal(a)
-		if err != nil {
-			panic(err)
-		}
-		rawOutput, err := dagger.Do(ctx, "localhost:5555/dagger:alpine", "build", string(input))
-		if err != nil {
-			panic(err)
-		}
-		if err := rawOutput.Decode(&a.memo); err != nil {
-			panic(err)
-		}
-	})
-	return a.memo
-}
+var _ func(ctx *dagger.Context, input *BuildInput) *BuildOutput = doBuild

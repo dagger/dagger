@@ -25,6 +25,10 @@ type Secret struct{}
 type Context struct {
 	ctx    context.Context
 	client bkgw.Client
+	// isFrontend being true means this context is for a frontend main, which
+	// will then trigger direct calls to action implementations rather than
+	// calling them through the frontend again
+	isFrontend bool
 }
 
 func DummyRun(ctx *Context, cmd string) error {
@@ -47,37 +51,44 @@ func DummyRun(ctx *Context, cmd string) error {
 	return nil
 }
 
-func Do(ctx *Context, pkg, action string, payload string) (*Output, error) {
+func Do[I any, O any](ctx *Context, pkg, action string, input I, output O, directCall func(*Context, I) O) error {
+	if ctx.isFrontend {
+		ctx.isFrontend = false
+		directCall(ctx, input)
+		ctx.isFrontend = true
+		return nil
+	}
+
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
 	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
 		Evaluate: true,
 		Frontend: "gateway.v0",
 		FrontendOpt: map[string]string{
 			"source":  pkg,
 			"action":  action,
-			"payload": payload,
+			"payload": string(payload),
 		},
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	ref, err := res.SingleRef()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	data, err := ref.ReadFile(ctx.ctx, bkgw.ReadRequest{
 		Filename: "/dagger/output.json",
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	output := &Output{
-		payload: data,
-	}
-
-	return output, nil
+	return json.Unmarshal(data, output)
 }
 
 type Input struct {
@@ -167,8 +178,9 @@ type Package struct {
 func (p *Package) Serve() error {
 	return grpcclient.RunFromEnvironment(appcontext.Context(), func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		dctx := &Context{
-			ctx:    ctx,
-			client: c,
+			ctx:        ctx,
+			client:     c,
+			isFrontend: true,
 		}
 
 		opts := c.BuildOpts().Opts
