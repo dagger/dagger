@@ -26,7 +26,9 @@ dagger.#Plan & {
 
 		custom: {
 			_image: go.#Image & {
-				version: "1.17"
+				name:       "docker/library/golang"
+				repository: "public.ecr.aws"
+				version:    "1.17"
 				packages: bash: _
 			}
 

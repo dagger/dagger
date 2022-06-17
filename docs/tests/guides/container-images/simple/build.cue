@@ -11,7 +11,7 @@ import (
 	// Source code of the Python application
 	app: dagger.#FS
 
-	// Container image
+	// Resulting container image
 	image: _build.output
 
 	// Build steps

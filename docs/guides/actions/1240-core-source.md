@@ -11,7 +11,7 @@ The [#Source core action](../../references/1222-core-actions-reference.md#core-a
 
 The purpose of `core.#Source` is to **enable including files with reusable packages** in a secure way.
 
-The most common example of this is writing scripts in their own file extensions, and importing in an action instead of inlining the contents of the script (see [Don't inline scripts](1226-coding-style.md#dont-inline-scripts)).
+The most common example of this is writing scripts in their own file extensions, and importing in an action instead of inlining the contents of the script (see [Don't inline scripts](../../guidelines/1226-coding-style.md#dont-inline-scripts)).
 
 For example, here's how the [netlify package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/netlify) imports the `deploy.sh` script:
 

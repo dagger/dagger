@@ -1,3 +1,4 @@
+//Deprecated: in favor of universe.dagger.io/alpha package
 // .NET operation
 package dotnet
 
