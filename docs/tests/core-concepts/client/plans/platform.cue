@@ -1,9 +1,15 @@
+package main
+
+import (
+	"dagger.io/dagger"
+	"universe.dagger.io/python"
+)
+
 dagger.#Plan & {
 	client: _
 
-	actions: build: go.#Build & {
-		os:   client.platform.os
-		arch: client.platform.arch
-		// ...
+	actions: test: python.#Run & {
+		script: contents: "print('Platform: \(client.platform.os) / \(client.platform.arch)')"
+		always: true
 	}
 }
