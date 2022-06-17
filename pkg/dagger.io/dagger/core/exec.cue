@@ -115,6 +115,10 @@ import "dagger.io/dagger"
 		uid:      int | *0
 		gid:      int | *0
 		mask:     int | *0o400
+	} | {
+		type:        "file"
+		contents:    string
+		permissions: *0o644 | int
 	}
 }
 

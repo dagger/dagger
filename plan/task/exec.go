@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"strings"
 	"syscall"
@@ -91,9 +92,9 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	}
 
 	// Fill result
-	fs := pctx.FS.New(result)
+	resultFS := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": fs.MarshalCUE(),
+		"output": resultFS.MarshalCUE(),
 		"exit":   0,
 	})
 }
@@ -147,7 +148,7 @@ func (t *asyncExecTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 type stopAsyncExecTask struct {
 }
 
-func (t *stopAsyncExecTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *stopAsyncExecTask) Run(ctx context.Context, _ *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Hid("_id", pkg.DaggerPackage))).String()
 	if err != nil {
 		return nil, err
@@ -431,6 +432,28 @@ func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 			},
 		}, nil
 
+	case "file":
+		contents, err := v.Lookup("contents").String()
+		if err != nil {
+			return mount{}, err
+		}
+
+		opts := struct {
+			Permissions uint32
+		}{}
+
+		if err := v.Decode(&opts); err != nil {
+			return mount{}, err
+		}
+
+		return mount{
+			dest: dest,
+			fileMount: &fileMount{
+				contents:    contents,
+				permissions: opts.Permissions,
+			},
+		}, nil
+
 	case "":
 		return mount{}, errors.New("no mount type specified")
 	default:
@@ -446,6 +469,7 @@ type mount struct {
 	socketMount *socketMount
 	fsMount     *fsMount
 	secretMount *secretMount
+	fileMount   *fileMount
 }
 
 func (m mount) runOpt() (llb.RunOption, error) {
@@ -490,6 +514,15 @@ func (m mount) runOpt() (llb.RunOption, error) {
 			m.dest,
 			llb.SecretID(m.secretMount.id),
 			llb.SecretFileOpt(int(m.secretMount.uid), int(m.secretMount.gid), int(m.secretMount.mask)),
+		), nil
+	case m.fileMount != nil:
+		return llb.AddMount(
+			m.dest,
+			llb.Scratch().File(llb.Mkfile(
+				"/file",
+				fs.FileMode(m.fileMount.permissions),
+				[]byte(m.fileMount.contents))),
+			llb.SourcePath("/file"),
 		), nil
 	}
 	return nil, fmt.Errorf("no mount type set")
@@ -574,4 +607,9 @@ type secretMount struct {
 	uid  uint32
 	gid  uint32
 	mask uint32
+}
+
+type fileMount struct {
+	contents    string
+	permissions uint32
 }
