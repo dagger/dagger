@@ -482,10 +482,8 @@ func formatEvent(event Event, width int) (message string, height int) {
 		formatFields(event),
 	))
 
-	// pad
-	if delta := width - utf8.RuneCountInString(message); delta > 0 {
-		message += strings.Repeat(" ", delta)
-	}
+	message = pad(message, width)
+
 	message += "\n"
 
 	vterm := vt100.NewVT100(100, width)
