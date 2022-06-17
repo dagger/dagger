@@ -381,14 +381,33 @@ func TestTrimMessage(t *testing.T) {
 		{0, "testing12", ""},
 		{1, "testing12", "…"},
 		{5, "testing12", "te…"},
+		{2, "00", "00"},
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("width=%d", c.width), func(t *testing.T) {
 			got := trimMessage(c.msg, c.width)
 
+			lGot := utf8.RuneCountInString(got)
+			lMsg := utf8.RuneCountInString(c.msg)
+
+			require.LessOrEqual(t, lGot, lMsg, "\nmsg: %v\ngot: %v\n", c.msg, got)
 			require.Equal(t, c.exp, got)
 		})
 	}
+}
+
+func FuzzTrimMessage(f *testing.F) {
+	f.Add("testing12", 0)
+	f.Add("actions.all.test", 12)
+
+	f.Fuzz(func(t *testing.T, msg string, width int) {
+		got := trimMessage(msg, width)
+
+		lGot := utf8.RuneCountInString(got)
+		lMsg := utf8.RuneCountInString(msg)
+
+		require.LessOrEqual(t, lGot, lMsg, "\nmsg: %v\ngot: %v\n", msg, got)
+	})
 }
 
 func escapeLine(t *testing.T, text string) (string, int) {

@@ -647,7 +647,7 @@ func printGroupLine(event Event, width int, cons io.Writer) (nbLines int) {
 }
 
 func trimMessage(message string, width int) string {
-	if width == 0 {
+	if width <= 0 {
 		return ""
 	}
 	s := message
