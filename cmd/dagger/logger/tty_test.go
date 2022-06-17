@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/morikuni/aec"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/vt100"
 	"go.dagger.io/dagger/plan/task"
@@ -584,4 +585,9 @@ func FuzzLogsAdd(f *testing.F) {
 			}
 		})
 	})
+}
+
+func TestTermLen(t *testing.T) {
+	n := termLen("  \x1b[2m\x1b[31mABC   some test    \x1b[0m   ", 3)
+	require.Equal(t, 17, n)
 }

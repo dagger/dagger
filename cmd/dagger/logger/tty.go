@@ -662,6 +662,32 @@ func trimMessage(message string, width int) string {
 	return s
 }
 
+func pad(message string, width int) string {
+	if delta := width - utf8.RuneCountInString(message); delta > 0 {
+		message += strings.Repeat(" ", delta)
+	}
+	return message
+}
+
+func termLen(message string, width int) int {
+	// FIXME: use more dynamic y value?
+	vterm := vt100.NewVT100(100, width)
+	vterm.Write([]byte(message))
+
+	content := vterm.Content
+	var fullMessage []rune
+	for i, line := range content {
+		for j := range line {
+			fullMessage = append(fullMessage, content[i][j])
+		}
+	}
+	// We remove the empty runes/lines that represent the empty terminal space
+	trimmed := strings.TrimRight(string(fullMessage), " ")
+	lTrimmed := utf8.RuneCountInString(trimmed)
+
+	return lTrimmed
+}
+
 func formatGroupLine(event Event, width int) (message string, nbLines int) {
 	message = colorize.Color(fmt.Sprintf("%s%s",
 		formatMessage(event),
@@ -670,10 +696,7 @@ func formatGroupLine(event Event, width int) (message string, nbLines int) {
 
 	message = trimMessage(message, width)
 
-	// pad
-	if delta := width - utf8.RuneCountInString(message); delta > 0 {
-		message += strings.Repeat(" ", delta)
-	}
+	message = pad(message, width)
 	message += "\n"
 
 	// color
