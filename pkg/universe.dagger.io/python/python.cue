@@ -39,10 +39,12 @@ import (
 	// where to mount the script inside the container
 	_mountpoint: "/run/python"
 
+	// As a convenience, image defaults to a ready-to-use python environment
+	_image: #Image
+	image:  *_image.output | docker.#Image
+
 	docker.#Run & {
-		// As a convenience, image defaults to a ready-to-use python environment
-		_defaultImage: #Image
-		input:         *_defaultImage.output | docker.#Image
+		input: image
 
 		command: {
 			name:   string | *"python"
