@@ -4,7 +4,7 @@ import (
 	"github.com/dagger/cloak/dagger"
 
 	// TODO: need more generic mechanism for generating this import
-	"github.com/dagger/cloak/examples/alpine"
+	"github.com/dagger/cloak/examples/alpine/sdk/alpine"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 			return nil, err
 		}
 
-		typedOutput := alpine.Build(ctx, typedInput)
+		typedOutput := Build(ctx, typedInput)
 
 		output := &dagger.Output{}
 		if err := output.Encode(typedOutput); err != nil {
