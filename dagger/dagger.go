@@ -51,10 +51,10 @@ func DummyRun(ctx *Context, cmd string) error {
 	return nil
 }
 
-func Do[I any, O any](ctx *Context, pkg, action string, input I, output O, directCall func(*Context, I) O) error {
+func Do[I any, O any](ctx *Context, pkg, action string, input I, output *O, directCall func(*Context, I) *O) error {
 	if ctx.isFrontend {
 		ctx.isFrontend = false
-		directCall(ctx, input)
+		*output = *directCall(ctx, input)
 		ctx.isFrontend = true
 		return nil
 	}
