@@ -1,3 +1,4 @@
+// Maintainers: tom.chauveau.pro@icloud.com
 package scaleway
 
 import (

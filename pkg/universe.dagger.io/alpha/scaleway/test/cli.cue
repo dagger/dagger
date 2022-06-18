@@ -3,7 +3,7 @@ package scaleway
 import (
 	"dagger.io/dagger"
 
-	"universe.dagger.io/x/tom.chauveau.pro@icloud.com/scaleway"
+	"universe.dagger.io/alpha/scaleway"
 )
 
 dagger.#Plan & {
