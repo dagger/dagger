@@ -6,19 +6,64 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/containerd/console"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/frontend/gateway/grpcclient"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/sync/errgroup"
 
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
 )
 
-type FS struct{}
+type FS struct {
+	// TODO: don't like this being public, but needed for core actions and for marshal
+	Def *pb.Definition `json:"def,omitempty"`
+	// ref is set lazily if Evaluate, ReadFile or similar APIs are called
+	ref bkgw.Reference
+}
+
+func (fs *FS) setRef(ctx *Context) error {
+	// TODO: singleflight
+	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
+		Definition: fs.Def,
+	})
+	if err != nil {
+		return err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return err
+	}
+	fs.ref = ref
+	return nil
+}
+
+// Evaluate synchronously instantiates the filesystem, blocking until it is created
+func (fs *FS) Evaluate(ctx *Context) error {
+	if err := fs.setRef(ctx); err != nil {
+		return err
+	}
+	// TODO: sort of silly, more efficient would be to call Solve w/ Evaluate=true when ref is nil, but
+	// need to be careful that if ref is non-nil it may or may not be lazy still server-side
+	_, err := fs.ref.StatFile(ctx.ctx, bkgw.StatRequest{Path: "."})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (fs *FS) ReadFile(ctx *Context, path string) ([]byte, error) {
+	if err := fs.setRef(ctx); err != nil {
+		return nil, err
+	}
+	return fs.ref.ReadFile(ctx.ctx, bkgw.ReadRequest{
+		Filename: path,
+	})
+}
 
 type Secret struct{}
 
@@ -47,66 +92,130 @@ func DummyRun(ctx *Context, cmd string) error {
 	return nil
 }
 
-func Do(ctx *Context, pkg, action string, payload string) (*Output, error) {
+func Marshal(ctx *Context, v any) (FS, error) {
+	var bytes []byte
+	switch v := v.(type) {
+	case string:
+		bytes = []byte(v)
+	default:
+		var err error
+		bytes, err = json.Marshal(v)
+		if err != nil {
+			return FS{}, err
+		}
+	}
+	return Solve(ctx, llb.Scratch().
+		File(llb.Mkfile("/dagger.json", 0644, bytes)))
+}
+
+func Unmarshal(ctx *Context, fs FS, v any) error {
+	bytes, err := fs.ReadFile(ctx, "/dagger.json")
+	if err != nil {
+		return err
+	}
+	switch v := v.(type) {
+	case *string:
+		*v = string(bytes)
+	default:
+		return json.Unmarshal(bytes, v)
+	}
+	return nil
+}
+
+func Solve(ctx *Context, st llb.State) (FS, error) {
+	def, err := st.Marshal(ctx.ctx) // TODO: options
+	if err != nil {
+		return FS{}, err
+	}
 	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
-		Evaluate: true,
+		Definition: def.ToPB(),
+	})
+	if err != nil {
+		return FS{}, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return FS{}, err
+	}
+	return FS{Def: def.ToPB(), ref: ref}, nil
+}
+
+func Do(ctx *Context, pkg, action string, input FS) (FS, error) {
+	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
 		Frontend: "gateway.v0",
 		FrontendOpt: map[string]string{
-			"source":  pkg,
-			"action":  action,
-			"payload": payload,
+			"source": pkg, // TODO: put these in the input?
+			"action": action,
+		},
+		FrontendInputs: map[string]*pb.Definition{"dagger": input.Def},
+	})
+	if err != nil {
+		return FS{}, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return FS{}, err
+	}
+	st, err := ref.ToState()
+	if err != nil {
+		return FS{}, err
+	}
+	def, err := st.Marshal(ctx.ctx)
+	if err != nil {
+		return FS{}, err
+	}
+	return FS{Def: def.ToPB(), ref: ref}, nil
+}
+
+// Starts an alpine shell with "fs" mounted at /output
+func Shell(ctx *Context, fs FS) error {
+	base, err := Solve(ctx, llb.Image("alpine:3.15"))
+	if err != nil {
+		return err
+	}
+
+	if err := base.Evaluate(ctx); err != nil {
+		return err
+	}
+
+	if err := fs.Evaluate(ctx); err != nil {
+		return err
+	}
+
+	ctr, err := ctx.client.NewContainer(ctx.ctx, bkgw.NewContainerRequest{
+		Mounts: []bkgw.Mount{
+			{
+				Dest:      "/",
+				Ref:       base.ref,
+				MountType: pb.MountType_BIND,
+			},
+			{
+				Dest:      "/output",
+				Ref:       fs.ref,
+				MountType: pb.MountType_BIND,
+			},
 		},
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := ref.ReadFile(ctx.ctx, bkgw.ReadRequest{
-		Filename: "/dagger/output.json",
+	proc, err := ctr.Start(ctx.ctx, bkgw.StartRequest{
+		Args:   []string{"/bin/sh"},
+		Cwd:    "/output",
+		Tty:    true,
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	output := &Output{
-		payload: data,
+	termState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		return err
 	}
-
-	return output, nil
-}
-
-type Input struct {
-	payload []byte
-}
-
-func (i *Input) Decode(v any) error {
-	if len(i.payload) == 0 {
-		return nil
-	}
-	return json.Unmarshal(i.payload, v)
-}
-
-type Output struct {
-	payload []byte
-}
-
-func (o *Output) Raw() []byte {
-	return o.payload
-}
-
-func (o *Output) Decode(v any) error {
-	return json.Unmarshal(o.payload, v)
-}
-
-func (o *Output) Encode(v any) error {
-	var err error
-	o.payload, err = json.Marshal(v)
-	return err
+	defer terminal.Restore(int(os.Stdin.Fd()), termState)
+	return proc.Wait()
 }
 
 func Client(fn func(*Context) error) error {
@@ -137,12 +246,14 @@ func Client(fn func(*Context) error) error {
 		return err
 	})
 	eg.Go(func() error {
+		/* TODO:
 		c, err := console.ConsoleFromFile(os.Stderr)
 		if err != nil {
 			return err
 		}
-
 		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", c, os.Stdout, ch)
+		*/
+		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stdout, ch)
 		for _, w := range warn {
 			fmt.Printf("=> %s\n", w.Short)
 		}
@@ -176,31 +287,31 @@ func (p *Package) Serve() error {
 		action := opts["action"]
 		fn := p.actions[action]
 
-		input := &Input{
-			payload: []byte(opts["payload"]),
+		inputStates, err := c.Inputs(ctx)
+		if err != nil {
+			return nil, err
 		}
-
-		output, err := fn(dctx, input)
+		inputState, ok := inputStates["dagger"]
+		if !ok {
+			return nil, fmt.Errorf("missing dagger frontend input")
+		}
+		inputFS, err := Solve(dctx, inputState)
 		if err != nil {
 			return nil, err
 		}
 
-		st := llb.
-			Scratch().
-			File(llb.Mkdir("/dagger", 0755)).
-			File(llb.Mkfile("/dagger/output.json", 0644, output.payload))
-		def, err := st.Marshal(ctx, llb.LinuxArm64)
+		outputFS, err := fn(dctx, inputFS)
 		if err != nil {
 			return nil, err
 		}
 
-		return c.Solve(ctx, bkgw.SolveRequest{
-			Definition: def.ToPB(),
-		})
+		res := bkgw.NewResult()
+		res.SetRef(outputFS.ref)
+		return res, nil
 	})
 }
 
-type ActionFunc func(*Context, *Input) (*Output, error)
+type ActionFunc func(ctx *Context, input FS) (FS, error)
 
 func (p *Package) Action(name string, fn ActionFunc) {
 	p.actions[name] = fn

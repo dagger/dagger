@@ -10,20 +10,13 @@ import (
 func main() {
 	d := dagger.New()
 
-	d.Action("deploy", func(ctx *dagger.Context, input *dagger.Input) (*dagger.Output, error) {
+	d.Action("deploy", func(ctx *dagger.Context, input dagger.FS) (dagger.FS, error) {
 		typedInput := &netlify.DeployInput{}
-		if err := input.Decode(typedInput); err != nil {
-			return nil, err
+		if err := dagger.Unmarshal(ctx, input, typedInput); err != nil {
+			return dagger.FS{}, err
 		}
-
 		typedOutput := Deploy(ctx, typedInput)
-
-		output := &dagger.Output{}
-		if err := output.Encode(typedOutput); err != nil {
-			return nil, err
-		}
-
-		return output, nil
+		return dagger.Marshal(ctx, typedOutput)
 	})
 
 	if err := d.Serve(); err != nil {

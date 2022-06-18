@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/dagger/cloak/dagger"
-	"github.com/dagger/cloak/dagger/core"
 	"github.com/dagger/cloak/examples/alpine/sdk/alpine"
+	"github.com/dagger/cloak/examples/core/sdk/core"
 	"github.com/dagger/cloak/examples/netlify/sdk/netlify"
 
 	"github.com/netlify/open-api/v2/go/models"
@@ -34,34 +34,32 @@ func Deploy(ctx *dagger.Context, input *netlify.DeployInput) *netlify.DeployOutp
 	}
 
 	// base image for running netlify commands
-	base := core.Exec(&core.ExecInput{
+	base := core.Exec(ctx, &core.ExecInput{
 		// NOTE: what if one of these strings was from an action input that was lazy? Need string wrapper
-		Base: alpine.Build(ctx, &alpine.BuildInput{Packages: []string{"curl", "jq", "npm"}}).FS,
+		FS:   alpine.Build(ctx, &alpine.BuildInput{Packages: []string{"curl", "jq", "npm"}}).FS,
 		Dir:  "/",
 		Args: []string{"npm", "-g", "install", "netlify-cli@8.6.21"},
 	})
 
 	// link the site
-	base = core.Exec(&core.ExecInput{
-		Base: base.FS,
+	base = core.Exec(ctx, &core.ExecInput{
+		FS:   base.FS,
 		Dir:  "/src",
 		Args: []string{"netlify", "link", "--id", site.ID},
-		Mounts: []core.Mount{{
-			FS:   input.Contents,
-			Path: "/src",
-		}},
+		Mounts: map[string]dagger.FS{
+			"/src": input.Contents,
+		},
 		// NOTE: do we need "always" here?
 	})
 
 	// deploy the site
-	base = core.Exec(&core.ExecInput{
-		Base: base.FS,
+	base = core.Exec(ctx, &core.ExecInput{
+		FS:   base.FS,
 		Dir:  "/src",
 		Args: []string{"netlify", "deploy", "--build", "--site=" + site.ID, "--prod"},
-		Mounts: []core.Mount{{
-			FS:   input.Contents,
-			Path: "/src",
-		}},
+		Mounts: map[string]dagger.FS{
+			"/src": input.Contents,
+		},
 		// NOTE: do we need "always" here?
 	})
 
