@@ -2,7 +2,7 @@ package helm
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/x/vgjm456@qq.com/helm"
+	"universe.dagger.io/alpha/kubernetes/helm"
 )
 
 dagger.#Plan & {

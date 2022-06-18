@@ -5,10 +5,13 @@ import (
 	"universe.dagger.io/docker"
 )
 
+_#DefaultNamespace: "default"
+
 #Install: {
 	// Name of your release
 	name:       string | *""
 	kubeconfig: dagger.#Secret
+	namespace:  *_#DefaultNamespace | string
 	source:     *"repository" | "URL"
 	{
 		source:     "repository"
@@ -24,7 +27,7 @@ import (
 			_script: #"""
 				helm repo add $REPO_NAME $REPOSITORY
 				helm repo update
-				helm install $NAME $REPO_NAME/$CHART $GENERATE_NAME
+				helm upgrade --install --create-namespace --namespace $NAMESPACE $NAME $REPO_NAME/$CHART $GENERATE_NAME
 				"""#
 		}
 	} | {
@@ -33,7 +36,7 @@ import (
 		run: {
 			env: "URL": URL
 			_script: #"""
-				helm install $NAME $URL $GENERATE_NAME
+				helm upgrade --install --create-namespace --namespace $NAMESPACE $NAME $URL $GENERATE_NAME
 				"""#
 		}
 	}
@@ -44,6 +47,7 @@ import (
 		env: {
 			NAME:          name
 			GENERATE_NAME: _generateName
+			NAMESPACE:     namespace
 		}
 		mounts: "/root/.kube/config": {
 			dest:     "/root/.kube/config"
