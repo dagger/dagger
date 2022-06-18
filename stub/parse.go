@@ -47,7 +47,8 @@ type FieldType string
 const (
 	FieldTypeString FieldType = "string"
 	FieldTypeBool   FieldType = "bool"
-	FieldTypeFS     FieldType = "core.FSOutput"
+	FieldTypeFS     FieldType = "dagger.FS"
+	FieldTypeMounts FieldType = "map[string]dagger.FS"
 )
 
 func Parse(path string) (*Package, error) {
@@ -67,10 +68,12 @@ func Parse(path string) (*Package, error) {
 		return nil, err
 	}
 
+	/* TODO:
 	v = schema.LookupDef("#Schema").Unify(v)
 	if err := v.Err(); err != nil {
 		return nil, err
 	}
+	*/
 
 	pkg := &Package{}
 	pkg.Name, err = v.Lookup("name").String()
@@ -83,7 +86,7 @@ func Parse(path string) (*Package, error) {
 	}
 	pkg.Docs = parseDocs(v)
 
-	actionIt, err := v.Lookup("actions").Fields()
+	actionIt, err := v.Lookup("actions").Fields(cue.All(), cue.Raw(), cue.Schema())
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +98,7 @@ func Parse(path string) (*Package, error) {
 		}
 		pkg.Actions = append(pkg.Actions, action)
 
-		inputIt, err := actionIt.Value().Lookup("inputs").Fields()
+		inputIt, err := actionIt.Value().Lookup("inputs").Fields(cue.All(), cue.Raw(), cue.Schema())
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +106,7 @@ func Parse(path string) (*Package, error) {
 			action.Inputs = append(action.Inputs, parseField(inputIt.Label(), inputIt.Value()))
 		}
 
-		outputIt, err := actionIt.Value().Lookup("outputs").Fields()
+		outputIt, err := actionIt.Value().Lookup("outputs").Fields(cue.All(), cue.Raw(), cue.Schema())
 		if err != nil {
 			return nil, err
 		}
@@ -133,10 +136,13 @@ func parseField(name string, v cue.Value) *Field {
 			if err != nil {
 				panic(err)
 			}
-			// TODO: silly hack for now, special string that indicates an fs type
+			// TODO: silly hacks, special strings that indicates certain types
 			if val == "$daggerfs" {
 				field.Type = FieldTypeFS
-				field.SourcePkg = "core"
+				break
+			}
+			if val == "$daggermounts" {
+				field.Type = FieldTypeMounts
 				break
 			}
 			// TODO: what is the behavior here? it's a concrete string, so it's a const, not a struct field
@@ -151,6 +157,7 @@ func parseField(name string, v cue.Value) *Field {
 		}
 		listField := parseField(name, listv)
 		field.Type = "[]" + listField.Type
+		// TODO: case cue.StructKind:
 	default:
 		panic(t)
 	}

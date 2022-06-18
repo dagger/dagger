@@ -5,7 +5,7 @@ WORKDIR /src
 RUN apk add --no-cache file git
 ENV GOMODCACHE /root/.cache/gocache
 RUN --mount=target=. --mount=target=/root/.cache,type=cache \
-    CGO_ENABLED=0 go build -o /out -ldflags '-s -d -w' ./examples/alpine
+    CGO_ENABLED=0 go build -o /out -ldflags '-s -d -w' ./examples/core
 
 FROM scratch
 COPY --from=build /out /entrypoint

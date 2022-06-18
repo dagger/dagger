@@ -2,12 +2,7 @@
 package {{$PackageName | ToLower }}
 
 import (
-  "encoding/json"
-
   "github.com/dagger/cloak/dagger"
-
-  // TODO: this needs to be generated based on which schemas are re-used in this schema
-  "github.com/dagger/cloak/dagger/core"
 )
 
 {{- range .Docs }}
@@ -29,22 +24,22 @@ type {{ $action.Name | PascalCase }}Output struct {
     {{- range $doc := $output.Docs }}
     // {{ $doc }}
     {{- end }}
-	{{ $output.Name | PascalCase }} {{ $output.Type }}
+	{{ $output.Name | PascalCase }} {{ $output.Type }} `json:"{{ $output.Name | ToLower }},omitempty"`
     {{ end }}
 }
 
 func {{ $action.Name | PascalCase }}(ctx *dagger.Context, input *{{ $action.Name | PascalCase }}Input) *{{ $action.Name | PascalCase }}Output {
-	rawInput, err := json.Marshal(input)
+	fsInput, err := dagger.Marshal(ctx, input)
 	if err != nil {
 		panic(err)
 	}
 
-  rawOutput, err := dagger.Do(ctx, "localhost:5555/dagger:{{ $PackageName | ToLower }}", "{{ $action.Name }}", string(rawInput))
+  fsOutput, err := dagger.Do(ctx, "localhost:5555/dagger:{{ $PackageName | ToLower }}", "{{ $action.Name }}", fsInput)
   if err != nil {
     panic(err)
   }
   output := &{{ $action.Name | PascalCase }}Output{}
-	if err := rawOutput.Decode(output); err != nil {
+	if err := dagger.Unmarshal(ctx, fsOutput, output); err != nil {
 		panic(err)
 	}
   return output
