@@ -173,8 +173,24 @@ Now that we made sure we correctly built our package, we only need to push it to
 - Tag
 - Push
 
-On another project, you will directly be able to retrieve the `personal` package using the `dagger project update url@tag` command.
+On another project, you will directly be able to retrieve your package using the `dagger project update github.com/your-username/personal@<tag>` command, where `<tag>` is a git tag in the format `vX.Y.Z`[^1] (e.g., `v0.1.0`).
 
-<u>Reminder:</u>
+[^1]: Where `X.Y.Z` is a [semantic version](https://semver.org), with *major*, *minor* and *patch* components.
 
-*The name of the repository should follow the name of the created folder and the package name (`personal` in the above example)*
+:::note Reminder
+
+The name of the repository should follow the name of the created folder and the package name (`personal` in the above example).
+
+:::
+
+:::caution
+
+Omitting `@<tag>` (same as using default branch for repository) or using a branch instead of a tag (e.g., `@main`) is not recommended because of **reproducibility** issues. If you do this you may get a *checksum didn't match* error.
+
+The reason for this is that a branch may point to different commits in time. If you use a branch as the version when you install the package, the file contents of that same "version" may change if you add commits to it by the next time you install in a clean clone (`dagger project update`). The new checksum for the files won't match the one that was commited in `dagger.sum` previously.
+
+There's an [open issue](https://github.com/dagger/dagger/issues/2502) to fix this behavior by converting the branch into a [pseudo-version](https://go.dev/ref/mod#pseudo-versions), targetting the specific commit the branch points to at the point it was added to the project or updated.
+
+Until then, it's best to avoid using branches as versions. If you really need to, the best workaround is to vendor your module (committing in `cue.mod/pkg` to git and not running `dagger project update` in CI), and re-install with `dagger project update <url>@<branch>` to update.
+
+:::

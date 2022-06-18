@@ -160,7 +160,7 @@ func (r *repo) latestTag(ctx context.Context, versionConstraint string) (string,
 	}
 
 	if len(versions) == 0 {
-		return "", fmt.Errorf("repo doesn't have any tags matching the required version")
+		return "", fmt.Errorf("repo doesn't have any tags matching a latest version (expected format: vX.Y.Z)")
 	}
 
 	sort.Sort(sort.Reverse(version.Collection(versions)))
