@@ -30,6 +30,9 @@ import (
 	// Custom go image
 	image: *#Image.output | docker.#Image
 
+	// Custom binary name
+	binaryName: *"" | string
+
 	container: #Container & {
 		"source": source
 		input:    image
@@ -50,7 +53,7 @@ import (
 				"-v":       true
 				"-tags":    tags
 				"-ldflags": ldflags
-				"-o":       "/output/"
+				"-o":       "/output/\(binaryName)"
 			}
 		}
 		export: directories: "/output": _
