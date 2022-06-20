@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # Install Dagger
 
-Install dagger on your local machine.
+Install dagger on your local machine. Then [get started using Dagger](/1200/local-dev)!
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 import BrowserOnly from '@docusaurus/BrowserOnly';
