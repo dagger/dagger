@@ -83,10 +83,8 @@ import (
 	// credentials provides long or short-term credentials
 	credentials: #Credentials
 
-	image: docker.#Image | *_build.output
-
 	docker.#Run & {
-		input: image
+		input: docker.#Image | *_build.output
 
 		env: {
 			// pass credentials as env vars
