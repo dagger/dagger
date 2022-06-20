@@ -4,11 +4,18 @@ import (
 	"universe.dagger.io/docker"
 )
 
-// Go image default version
+// Composer image default name
+_#DefaultName: "composer"
+
+// Composer image default repository
+_#DefaultRepository: "index.docker.io"
+
+// Co image default version
 _#DefaultVersion: "latest"
 
-// Build a go base image
 #Image: {
+	name:       *_#DefaultName | string
+	repository: *_#DefaultRepository | string
 	version: *_#DefaultVersion | string
 
 	packages: [pkgName=string]: version: string | *""
@@ -18,7 +25,7 @@ _#DefaultVersion: "latest"
 	docker.#Build & {
 		steps: [
 			docker.#Pull & {
-				source: "index.docker.io/composer:\(version)"
+				source: "\(repository)/\(name):\(version)"
 			},
 			for pkgName, pkg in packages {
 				docker.#Run & {
