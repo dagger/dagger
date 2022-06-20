@@ -7,24 +7,18 @@ import (
 	"universe.dagger.io/docker"
 )
 
-_#DefaultLinuxName:       "amazonlinux"
-_#DefaultLinuxVersion:    "2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
-_#DefaultLinuxRepository: "index.docker.io"
-#DefaultCliVersion:       "2.4.12"
+#DefaultLinuxVersion: "amazonlinux:2.0.20220121.0@sha256:f3a37f84f2644095e2c6f6fdf2bf4dbf68d5436c51afcfbfa747a5de391d5d62"
+#DefaultCliVersion:   "2.4.12"
 
 // Build provides a docker.#Image with the aws cli pre-installed to Amazon Linux 2.
 // Can be customized with packages, and can be used with docker.#Run for executing custom scripts.
 // Used by default with aws.#Run
 #Build: {
 
-	name:       *_#DefaultLinuxName | string
-	repository: *_#DefaultLinuxRepository | string
-	version:    *_#DefaultLinuxVersion | string
-
 	docker.#Build & {
 		steps: [
 			docker.#Pull & {
-				source: "\(repository)/\(name):\(version)"
+				source: #DefaultLinuxVersion
 			},
 			// cache yum install separately
 			docker.#Run & {
@@ -36,7 +30,7 @@ _#DefaultLinuxRepository: "index.docker.io"
 			docker.#Run & {
 				command: {
 					name: "/scripts/install.sh"
-					args: [cliVersion]
+					args: [version]
 				}
 				mounts: scripts: {
 					dest:     "/scripts"
@@ -51,7 +45,7 @@ _#DefaultLinuxRepository: "index.docker.io"
 	}
 
 	// The version of the AWS CLI to install
-	cliVersion: string | *#DefaultCliVersion
+	version: string | *#DefaultCliVersion
 }
 
 // Credentials provides long or short-term credentials.
