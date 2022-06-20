@@ -111,7 +111,7 @@ import (
 			}
 		}
 
-		if configFile != _|_ {
+		if configFile != _|_ && configFolder == _|_ {
 			mounts: awsConfigFile: {
 				contents: configFile
 				dest:     "/aws"
