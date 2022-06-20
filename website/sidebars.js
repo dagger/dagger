@@ -13,36 +13,16 @@ module.exports = {
   "0.2": [
     {
       type: "category",
-      label: "Introduction",
-      collapsible: false,
-      items: [
-        "introduction/what",
-        "introduction/vs",
-      ],
-      link: {
-        type: 'doc',
-        id: 'introduction/index'
-      },
-    },
-    {
-      type: "category",
       label: "Getting Started",
       collapsible: false,
-      link: {
-        type: 'doc',
-        id: 'getting-started/index'
-      },
-      items: ["getting-started/install", "getting-started/local-dev", "getting-started/ci-environment"],
+      collapsed: false,
+      items: ["getting-started/local-dev", "getting-started/ci-environment","introduction/what","introduction/vs","getting-started/install"],
     },
     {
       type: "category",
       label: "Core Concepts",
       collapsible: false,
       collapsed: false,
-      link: {
-        type: 'generated-index',
-        title: 'Core Concepts',
-      },
       items: [
         "core-concepts/action",
         "core-concepts/plan",

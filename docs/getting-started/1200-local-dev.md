@@ -3,12 +3,18 @@ slug: /1200/local-dev
 displayed_sidebar: "0.2"
 ---
 
-# Build and run an app locally
-
+# Build & run locally...then in CI
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.
 This guide shows you the Dagger way.
 Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
+Afterwards, we'll look at running the same [Dagger pipeline in your CI system](/1201/ci-environment).
+
+Before we can build & test our example app with `dagger`, we need to have [Dagger installed](/install) and Docker running.
+
+:::tip 
+[The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
+:::
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 import BrowserOnly from '@docusaurus/BrowserOnly';
@@ -26,7 +32,6 @@ values={[
 
 <TabItem value="macos">
 
-Before we can build & test our example app with `dagger`, we need to have Docker running.
 You most likely already have Docker set up.
 If not, [Docker Desktop](https://www.docker.com/products/docker-desktop) makes this easy.
 
