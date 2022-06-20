@@ -4,6 +4,7 @@ displayed_sidebar: "0.2"
 ---
 
 # Build & run locally...then in CI
+
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.
 This guide shows you the Dagger way.
@@ -12,7 +13,7 @@ Afterwards, we'll look at running the same [Dagger pipeline in your CI system](/
 
 Before we can build & test our example app with `dagger`, we need to have [Dagger installed](/install) and Docker running.
 
-:::tip 
+:::tip
 [The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
 :::
 

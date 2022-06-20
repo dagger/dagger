@@ -288,6 +288,4 @@ spec:
 ```
 
 </TabItem>
-
 </Tabs>
-

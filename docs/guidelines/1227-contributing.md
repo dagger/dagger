@@ -142,6 +142,8 @@ Guidelines:
 
 ### Use relative links to markdown files
 
+Link to markdown files (`[link](../foo.md)`) instead of relative URLs
+(`[link](/foo)`).
 
 The docs compiler will replace file links with relative URLs automatically.
 
