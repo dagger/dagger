@@ -18,7 +18,7 @@ To take advantage of this feature, you will need to create an account by followi
 3. After authenticating, authorize the Dagger GitHub application to finish the process.
 4. The browser window will close automatically and your CLI will be authenticated. Now,`dagger do` executions will now be listed in [Dagger Cloud](https://dagger.cloud/).
 
-Once you create an account, after running your project again, you will see in https://dagger.cloud the following for each of your runs in a single dashboard:
+Once you create an account, after running your project again, you will see in [https://dagger.cloud](https://dagger.cloud) the following for each of your runs in a single dashboard:
 
 ![Dagger Cloud run URL](/img/dagger-cloud/runs.png)
 
