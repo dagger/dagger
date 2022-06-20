@@ -5,14 +5,10 @@ displayed_sidebar: '0.2'
 
 # Integrating with your CI environment
 
-Dagger can be used with any CI environment (no migration required) and has two important advantages which make the overall experience less error-prone and more efficient:
+[Once you have Dagger running locally](/1200/local-dev), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
 
-1. You don't write YAML, you write [CUE](https://cuelang.org/) - typed configuration with built-in formatting
-2. Configuration is executed in [BuildKit](https://github.com/moby/buildkit), the execution engine at the heart of Docker
-
-This makes any CI environment with Docker pre-installed work with Dagger out of the box.
 We started with [CI environments that you told us you are using](https://github.com/dagger/dagger/discussions/1677).
-We will configure a production deployment for the same application that we covered in the previous page.
+We will configure a production deployment for the same application that we covered in the [local dev example](/1200/local-dev).
 
 :::note
 If you cannot find your CI environment below, [let us know via this GitHub discussion](https://github.com/dagger/dagger/discussions/1677).
@@ -294,3 +290,4 @@ spec:
 </TabItem>
 
 </Tabs>
+
