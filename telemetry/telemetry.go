@@ -53,7 +53,7 @@ func New() *Telemetry {
 }
 
 func (t *Telemetry) EnableLogToFile() {
-	lw, err := os.OpenFile(t.logFile(), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	lw, err := os.OpenFile(t.logFile(), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err == nil {
 		t.log = zerolog.New(lw).
 			With().
@@ -83,6 +83,10 @@ func (t *Telemetry) Push(ctx context.Context, props event.Properties) {
 	e := event.New(props)
 	e.Engine.ID = t.engineID
 	e.Run.ID = t.runID
+
+	if _, ok := props.(event.RunStarted); ok && t.enable {
+		fmt.Printf("\nDagger Cloud URL: https://dagger.cloud/runs/%s\n\n", e.Run.ID)
+	}
 
 	if err := e.Validate(); err != nil {
 		panic(err)
