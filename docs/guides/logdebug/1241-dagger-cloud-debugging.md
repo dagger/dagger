@@ -1,11 +1,11 @@
 ---
 slug: /1241/dagger-cloud
-displayed_sidebar: "0.2"
+displayed_sidebar: '0.2'
 ---
 
 # Debugging with Dagger Cloud
 
-Dagger Cloud is under development, but we have just released the first telemetry feature!
+[Dagger Cloud](https://dagger.cloud/) is under development, but we have just released the first telemetry feature!
 
 :::tip
 Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
@@ -16,9 +16,9 @@ To take advantage of this feature, you will need to create an account by followi
 1. Initiate a login process using the CLI with `dagger login`.
 2. A new window will open in the browser requesting to sign-up using GitHub.
 3. After authenticating, authorize the Dagger GitHub application to finish the process.
-4. The browser window will close automatically and your CLI will be authenticated. Now,`dagger do` executions will now be listed in Dagger Cloud.
+4. The browser window will close automatically and your CLI will be authenticated. Now,`dagger do` executions will now be listed in [Dagger Cloud](https://dagger.cloud/).
 
-Once you create an account, after running your project again, you will see the following for each of your runs in a single dashboard:
+Once you create an account, after running your project again, you will see in [https://dagger.cloud](https://dagger.cloud) the following for each of your runs in a single dashboard:
 
 ![Dagger Cloud run URL](/img/dagger-cloud/runs.png)
 
@@ -28,7 +28,7 @@ When you click on a specific run, you can see the following:
 - Shareable Run URL - A unique URL only accessible by the owner of the execution as well as some specialized Dagger engineers.
 - CUE Plans - The raw execution plan. This provides understanding about how Dagger resolved the action dependencies as well as the CUE evaluation results.
 - Actions - All the events involved in the action execution with their corresponding duration and outputs.
-- CLI Argument view -  Arguments specified in the CLI when running `dagger do <action> [flags]`.
+- CLI Argument view - Arguments specified in the CLI when running `dagger do <action> [flags]`.
 
 With this information, we’ve made it easier for you to inspect your runs with a more verbose failure output.
 
