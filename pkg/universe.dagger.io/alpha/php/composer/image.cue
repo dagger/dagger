@@ -16,7 +16,7 @@ _#DefaultVersion: "latest"
 #Image: {
 	name:       *_#DefaultName | string
 	repository: *_#DefaultRepository | string
-	version: *_#DefaultVersion | string
+	version:    *_#DefaultVersion | string
 
 	packages: [pkgName=string]: version: string | *""
 
