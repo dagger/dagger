@@ -23,30 +23,34 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	daggerSockName = "dagger-sock"
+)
+
 func newAPIServer(control *client.Client, gw bkgw.Client) *apiServer {
-	return &apiServer{
-		control: control,
-		gw:      gw,
-		refs:    make(map[string]bkgw.Reference),
-		server:  &http2.Server{},
+	s := &apiServer{
+		control:    control,
+		gw:         gw,
+		refs:       make(map[string]bkgw.Reference),
+		httpServer: &http2.Server{},
+		grpcServer: grpc.NewServer(grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor), grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor)),
 	}
+	grpc_health_v1.RegisterHealthServer(s.grpcServer, health.NewServer())
+	gwpb.RegisterLLBBridgeServer(s.grpcServer, s)
+	return s
 }
 
 type apiServer struct {
-	control *client.Client
-	gw      bkgw.Client
-	refs    map[string]bkgw.Reference
-	server  *http2.Server
+	control    *client.Client
+	gw         bkgw.Client
+	refs       map[string]bkgw.Reference
+	httpServer *http2.Server
+	grpcServer *grpc.Server
 }
 
 func (s *apiServer) serve(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	server := grpc.NewServer(grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor), grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor))
-	defer server.Stop()
-	grpc_health_v1.RegisterHealthServer(server, health.NewServer())
-	gwpb.RegisterLLBBridgeServer(server, s)
-
-	go s.server.ServeConn(conn, &http2.ServeConnOpts{Handler: server})
+	go s.httpServer.ServeConn(conn, &http2.ServeConnOpts{Handler: s.grpcServer})
 	<-ctx.Done()
 }
 
@@ -107,7 +111,7 @@ func (s *apiServer) Solve(ctx context.Context, req *gwpb.SolveRequest) (*gwpb.So
 		// TODO: generate on the fly without pulling a specific image
 		st := llb.Image(pkg).Run(
 			llb.Args([]string{"/entrypoint", "-a", action}),
-			llb.AddSSHSocket(llb.SSHID("dagger-sock"), llb.SSHSocketTarget("/dagger.sock")),
+			llb.AddSSHSocket(llb.SSHID(daggerSockName), llb.SSHSocketTarget("/dagger.sock")),
 			llb.AddMount("/inputs", input, llb.Readonly),
 			llb.ReadonlyRootFS(),
 		)
@@ -331,10 +335,11 @@ func (p *apiSocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServe
 	}
 	id := v[0]
 
-	if id == "dagger-sock" { // TODO: make a const somewhere
-		// TODO: clean up the server+client handlers once done with them
+	if id == daggerSockName {
 		serverConn, clientConn := net.Pipe()
-		go p.api.serve(context.TODO(), serverConn) // TODO: better synchronization
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go p.api.serve(ctx, serverConn) // TODO: better synchronization
 		return sshforward.Copy(context.TODO(), clientConn, stream, nil)
 	}
 

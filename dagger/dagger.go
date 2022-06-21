@@ -86,10 +86,8 @@ type String struct {
 // TODO: implement String, lazy by being stored in FS
 
 type Context struct {
-	ctx context.Context
-	// TODO: once we have our own custom API, there should only be one field, not 3
+	ctx    context.Context
 	client bkgw.Client
-	api    *apiServer
 }
 
 // TODO: rename to MarshalFS
@@ -217,7 +215,6 @@ func Client(fn func(*Context) error) error {
 			dctx := &Context{
 				ctx:    ctx,
 				client: gw,
-				api:    api,
 			}
 
 			err = fn(dctx)
