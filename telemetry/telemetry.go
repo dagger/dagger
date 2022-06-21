@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -16,7 +17,10 @@ import (
 	"go.dagger.io/dagger/telemetry/event"
 )
 
-const queueSize = 2048
+const (
+	queueSize = 2048
+	workers   = 5
+)
 
 type Telemetry struct {
 	enable bool
@@ -48,18 +52,19 @@ func New() *Telemetry {
 		queueCh: make(chan []byte, queueSize),
 		doneCh:  make(chan struct{}),
 	}
-	go t.send()
+	go t.start()
 	return t
 }
 
 func (t *Telemetry) EnableLogToFile() {
-	lw, err := os.OpenFile(t.logFile(), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	lw, err := os.OpenFile(t.logFile(), os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err == nil {
 		t.log = zerolog.New(lw).
 			With().
 			Timestamp().
 			Caller().
 			Logger()
+		t.log.Trace().Msgf("starting telemetry with queueSize [%d] and workers [%d]", queueSize, workers)
 	}
 }
 
@@ -102,9 +107,19 @@ func (t *Telemetry) Write(p []byte) {
 	}
 }
 
-func (t *Telemetry) send() {
+func (t *Telemetry) start() {
 	defer close(t.doneCh)
+	wg := &sync.WaitGroup{}
+	for w := 1; w <= workers; w++ {
+		wg.Add(1)
+		go t.send(wg)
+	}
 
+	wg.Wait()
+}
+
+func (t *Telemetry) send(wg *sync.WaitGroup) {
+	defer wg.Done()
 	for e := range t.queueCh {
 		t.log.Info().Msg(string(e))
 		reqBody := bytes.NewBuffer(e)
