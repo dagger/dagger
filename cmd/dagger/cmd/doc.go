@@ -313,7 +313,8 @@ func walkPackage(ctx context.Context, packages map[string]*Package, packageName,
 
 		// Ignore useless embedded files
 		if p == "." || d.Name() == packageName || !d.IsDir() || d.Name() == "cue.mod" ||
-			strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
+			strings.Contains(p, "cue.mod") || strings.Contains(p, "test") ||
+			strings.Contains(p, "/x/") {
 			return nil
 		}
 
@@ -324,8 +325,9 @@ func walkPackage(ctx context.Context, packages map[string]*Package, packageName,
 			return nil
 		}
 
-		lg.Info().Str("package", packageName).Str("format", format).Msg("generating doc")
-		val, err := loadCode(packageName)
+		pkgName := fmt.Sprintf("%s/%s", packageName, p)
+		lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
+		val, err := loadCode(pkgName)
 		if err != nil {
 			if strings.Contains(err.Error(), "no CUE files") {
 				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
@@ -338,7 +340,7 @@ func walkPackage(ctx context.Context, packages map[string]*Package, packageName,
 			return err
 		}
 
-		pkg := Parse(ctx, packageName, val)
+		pkg := Parse(ctx, pkgName, val)
 		packages[p] = pkg
 		return nil
 	})
@@ -355,8 +357,8 @@ func walkPackages(ctx context.Context, output, format string) {
 	lg.Info().Str("output", output).Msg("generating stdlib")
 
 	packages := map[string]*Package{}
-	// FIXME: the recursive walk is broken
-	walkPackage(ctx, packages, "dagger.io/dagger", format)
+	walkPackage(ctx, packages, "dagger.io", format)
+	walkPackage(ctx, packages, "universe.dagger.io", format)
 
 	hasSubPackages := func(name string) bool {
 		for p := range packages {
@@ -384,8 +386,6 @@ func walkPackages(ctx context.Context, output, format string) {
 		lg.Fatal().Err(err).Msg("cannot generate stdlib doc index")
 	}
 	defer index.Close()
-	// FIXME: I removed a \n character, so that markdownlint doesn't complain
-	//        about an extra newline at the end of the file.
 	fmt.Fprintf(index, "# Index\n")
 	indexKeys := []string{}
 
@@ -409,8 +409,6 @@ func walkPackages(ctx context.Context, output, format string) {
 
 	// Generate index from sorted list of packages
 	sort.Strings(indexKeys)
-	// Add a extra blank line if we have at least one package
-	// TODO: this is a hack, fixes issue with markdownlint, if we haven't generated any docs.
 	if len(indexKeys) > 0 {
 		fmt.Fprintf(index, "\n")
 	}
