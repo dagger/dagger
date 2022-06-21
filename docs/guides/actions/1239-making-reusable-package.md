@@ -17,7 +17,7 @@ Understanding the difference between a package, a module and a Dagger project is
 
 ## End-to-End example
 
-Instead of splitting all of our files in the the same project with a module, we could directly make reusable components from our plan as standalone packages. For the sake of the exercise, we will use Github as a version control system, but it will work with any alternative.
+Instead of splitting all of our files in the the same project with a module, we could directly make reusable components from our plan as standalone packages. For the sake of the exercise, we will use GitHub as a version control system, but it will work with any alternative.
 
 ### Create the base Dagger project
 
