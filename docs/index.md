@@ -3,7 +3,7 @@ slug: /
 displayed_sidebar: '0.2'
 ---
 
-# Dagger Documentation
+# Build & run locally...then in CI
 
 ```mdx-code-block
 import {Redirect} from '@docusaurus/router';
