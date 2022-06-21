@@ -40,8 +40,7 @@ type Value struct {
 type Field struct {
 	Name        string
 	Description string
-	Inputs      []Value
-	Outputs     []Value
+	Values      []Value
 }
 
 type Package struct {
@@ -51,25 +50,30 @@ type Package struct {
 	Fields      []Field
 }
 
+func parseValues(_ context.Context, field *Field, cueField *compiler.Field) error {
+	fields, err := cueField.Value.Fields()
+	if err != nil {
+		return err
+	}
+
+	for _, f := range fields {
+		if f.Value.IsConcrete() {
+			// Skip values that cannot be set (concrete)
+			continue
+		}
+		val := &Value{
+			Name:        f.Label(),
+			Type:        f.Value.IncompleteKind().String(),
+			Description: common.ValueDocOneLine(f.Value),
+		}
+		field.Values = append(field.Values, *val)
+	}
+
+	return nil
+}
+
 func Parse(ctx context.Context, packageName string, val *compiler.Value) *Package {
 	lg := log.Ctx(ctx)
-
-	// parseValues := func(field string, values []*compiler.Value) []Value {
-	// 	val := []Value{}
-
-	// 	for _, i := range values {
-	// 		v := Value{}
-	// 		v.Name = strings.TrimPrefix(
-	// 			i.Path().String(),
-	// 			field+".",
-	// 		)
-	// 		v.Type = common.FormatValue(i)
-	// 		v.Description = common.ValueDocOneLine(i)
-	// 		val = append(val, v)
-	// 	}
-
-	// 	return val
-	// }
 
 	fields, err := val.Fields(cue.Definitions(true))
 	if err != nil {
@@ -84,7 +88,8 @@ func Parse(ctx context.Context, packageName string, val *compiler.Value) *Packag
 	pkg.Description = common.ValueDocFull(val)
 
 	// Package Fields
-	for _, f := range fields {
+	for _, v := range fields {
+		f := v
 		field := Field{}
 
 		if !f.Selector.IsDefinition() {
@@ -103,6 +108,9 @@ func Parse(ctx context.Context, packageName string, val *compiler.Value) *Packag
 		field.Name = name
 		field.Description = common.ValueDocOneLine(v)
 
+		if err := parseValues(ctx, &field, &f); err != nil {
+			lg.Warn().Str("fieldName", name).Err(err).Msg("cannot get field values, ignoring field")
+		}
 		pkg.Fields = append(pkg.Fields, field)
 	}
 
@@ -149,19 +157,7 @@ func (p *Package) Text() string {
 	// Package Fields
 	for _, field := range p.Fields {
 		fmt.Fprintf(w, "\n%s.%s\n\n%s%s\n", p.ShortName, field.Name, textPadding, field.Description)
-		if len(field.Inputs) == 0 {
-			fmt.Fprintf(w, "\n%sInputs: none\n", textPadding)
-		} else {
-			fmt.Fprintf(w, "\n%sInputs:\n", textPadding)
-			printValuesText(field.Inputs)
-		}
-
-		if len(field.Outputs) == 0 {
-			fmt.Fprintf(w, "\n%sOutputs: none\n", textPadding)
-		} else {
-			fmt.Fprintf(w, "\n%sOutputs:\n", textPadding)
-			printValuesText(field.Outputs)
-		}
+		printValuesText(field.Values)
 	}
 
 	return w.String()
@@ -219,19 +215,7 @@ func (p *Package) Markdown() string {
 			fmt.Fprintf(w, "%s\n\n", mdEscape(field.Description))
 		}
 
-		fmt.Fprintf(w, "### %s Inputs\n\n", mdEscape(fieldLabel))
-		if len(field.Inputs) == 0 {
-			fmt.Fprintf(w, "_No input._\n")
-		} else {
-			printValuesMarkdown(field.Inputs)
-		}
-
-		fmt.Fprintf(w, "\n### %s Outputs\n\n", mdEscape(fieldLabel))
-		if len(field.Outputs) == 0 {
-			fmt.Fprintf(w, "_No output._\n")
-		} else {
-			printValuesMarkdown(field.Outputs)
-		}
+		printValuesMarkdown(field.Values)
 	}
 
 	return w.String()
@@ -276,7 +260,7 @@ var docCmd = &cobra.Command{
 			if len(args) > 0 {
 				lg.Warn().Str("packageName", args[0]).Msg("arg is ignored when --output is set")
 			}
-			walkStdlib(ctx, output, format)
+			walkPackages(ctx, output, format)
 			return
 		}
 
@@ -319,55 +303,60 @@ func loadCode(packageName string) (*compiler.Value, error) {
 	return src, nil
 }
 
-// walkStdlib generate whole docs from stdlib walk
-func walkStdlib(ctx context.Context, output, format string) {
+func walkPackage(ctx context.Context, packages map[string]*Package, packageName, format string) {
+	lg := log.Ctx(ctx)
+
+	err := fs.WalkDir(pkg.FS, packageName, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Ignore useless embedded files
+		if p == "." || d.Name() == packageName || !d.IsDir() || d.Name() == "cue.mod" ||
+			strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
+			return nil
+		}
+
+		p = strings.TrimPrefix(p, packageName+"/")
+
+		// Ignore tests directories
+		if d.Name() == "tests" {
+			return nil
+		}
+
+		lg.Info().Str("package", packageName).Str("format", format).Msg("generating doc")
+		val, err := loadCode(packageName)
+		if err != nil {
+			if strings.Contains(err.Error(), "no CUE files") {
+				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+				return nil
+			}
+			if strings.Contains(err.Error(), "cannot find package") {
+				lg.Warn().Str("package", p).Err(err).Msg("ignoring")
+				return nil
+			}
+			return err
+		}
+
+		pkg := Parse(ctx, packageName, val)
+		packages[p] = pkg
+		return nil
+	})
+
+	if err != nil {
+		lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
+	}
+}
+
+// walkPackages generate whole docs from stdlib walk
+func walkPackages(ctx context.Context, output, format string) {
 	lg := log.Ctx(ctx)
 
 	lg.Info().Str("output", output).Msg("generating stdlib")
 
 	packages := map[string]*Package{}
-	// TODO: Does this need to be re-worked for Europa?
-	// err := fs.WalkDir(pkg.FS, pkg.AlphaModule, func(p string, d fs.DirEntry, err error) error {
-	// 	if err != nil {
-	// 		return err
-	// 	}
-
-	// 	// Ignore useless embedded files
-	// 	if p == "." || d.Name() == pkg.AlphaModule || !d.IsDir() || d.Name() == "cue.mod" ||
-	// 		strings.Contains(p, "cue.mod") || strings.Contains(p, "tests") {
-	// 		return nil
-	// 	}
-
-	// 	p = strings.TrimPrefix(p, pkg.AlphaModule+"/")
-
-	// 	// Ignore tests directories
-	// 	if d.Name() == "tests" {
-	// 		return nil
-	// 	}
-
-	// 	pkgName := fmt.Sprintf("%s/%s", pkg.AlphaModule, p)
-	// 	lg.Info().Str("package", pkgName).Str("format", format).Msg("generating doc")
-	// 	val, err := loadCode(pkgName)
-	// 	if err != nil {
-	// 		if strings.Contains(err.Error(), "no CUE files") {
-	// 			lg.Warn().Str("package", p).Err(err).Msg("ignoring")
-	// 			return nil
-	// 		}
-	// 		if strings.Contains(err.Error(), "cannot find package") {
-	// 			lg.Warn().Str("package", p).Err(err).Msg("ignoring")
-	// 			return nil
-	// 		}
-	// 		return err
-	// 	}
-
-	// 	pkg := Parse(ctx, pkgName, val)
-	// 	packages[p] = pkg
-	// 	return nil
-	// })
-
-	// if err != nil {
-	// 	lg.Fatal().Err(err).Msg("cannot generate stdlib doc")
-	// }
+	// FIXME: the recursive walk is broken
+	walkPackage(ctx, packages, "dagger.io/dagger", format)
 
 	hasSubPackages := func(name string) bool {
 		for p := range packages {
