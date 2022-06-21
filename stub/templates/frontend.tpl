@@ -11,13 +11,13 @@ import (
 func main() {
 	d := dagger.New()
 	{{ range $action := .Actions }}
-	d.Action("{{ $action.Name }}", func(ctx *dagger.Context, input dagger.FS) (dagger.FS, error) {
+	d.Action("{{ $action.Name }}", func(ctx *dagger.Context, input []byte) ([]byte, error) {
 		typedInput := &{{ $PackageName | ToLower }}.{{ $action.Name | PascalCase }}Input{}
-		if err := dagger.Unmarshal(ctx, input, typedInput); err != nil {
-			return dagger.FS{}, err
+		if err := dagger.UnmarshalBytes(ctx, input, typedInput); err != nil {
+			return nil, err
 		}
 		typedOutput := {{ $action.Name | PascalCase }}(ctx, typedInput)
-		return dagger.Marshal(ctx, typedOutput)
+		return dagger.MarshalBytes(ctx, typedOutput)
 	})
 	{{- end }}
 

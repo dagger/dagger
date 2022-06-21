@@ -27,6 +27,11 @@ func main() {
 			panic(err)
 		}
 
+		err = output.Evaluate(ctx)
+		if err != nil {
+			panic(err)
+		}
+
 		var stringOutput string
 		if err := dagger.Unmarshal(ctx, output, &stringOutput); err != nil {
 			return err

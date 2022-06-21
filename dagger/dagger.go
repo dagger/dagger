@@ -3,6 +3,8 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 
@@ -10,11 +12,16 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/frontend/gateway/grpcclient"
+	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
+	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/appcontext"
+	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/buildkit/util/progress/progressui"
-	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
 )
@@ -65,57 +72,68 @@ func (fs *FS) ReadFile(ctx *Context, path string) ([]byte, error) {
 	})
 }
 
-type Secret struct{}
+type Secret struct {
+	id string
+}
+
+// TODO: implement Secret, it's just identified by a string id which is associated w/ the buildkit session
+
+type String struct {
+	fs   FS
+	path string
+}
+
+// TODO: implement String, lazy by being stored in FS
 
 type Context struct {
-	ctx    context.Context
+	ctx context.Context
+	// TODO: once we have our own custom API, there should only be one field, not 3
 	client bkgw.Client
+	api    *apiServer
 }
 
-func DummyRun(ctx *Context, cmd string) error {
-	st := llb.Image("alpine").Run(llb.Shlex(cmd)).Root()
-
-	def, err := st.Marshal(ctx.ctx, llb.LinuxArm64)
-	if err != nil {
-		return err
-	}
-
-	// call solve
-	_, err = ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
-		Evaluate:   true,
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
+// TODO: rename to MarshalFS
 func Marshal(ctx *Context, v any) (FS, error) {
-	var bytes []byte
-	switch v := v.(type) {
-	case string:
-		bytes = []byte(v)
-	default:
-		var err error
-		bytes, err = json.Marshal(v)
-		if err != nil {
-			return FS{}, err
-		}
+	bytes, err := MarshalBytes(ctx, v)
+	if err != nil {
+		return FS{}, err
 	}
 	return Solve(ctx, llb.Scratch().
 		File(llb.Mkfile("/dagger.json", 0644, bytes)))
 }
 
+func MarshalBytes(ctx *Context, v any) ([]byte, error) {
+	var bytes []byte
+	switch v := v.(type) {
+	case string:
+		bytes = []byte(v)
+	case []byte:
+		bytes = v
+	default:
+		var err error
+		bytes, err = json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return bytes, nil
+}
+
+// TODO: rename to UnmarshalFS
 func Unmarshal(ctx *Context, fs FS, v any) error {
 	bytes, err := fs.ReadFile(ctx, "/dagger.json")
 	if err != nil {
 		return err
 	}
+	return UnmarshalBytes(ctx, bytes, v)
+}
+
+func UnmarshalBytes(ctx *Context, bytes []byte, v any) error {
 	switch v := v.(type) {
 	case *string:
 		*v = string(bytes)
+	case *[]byte:
+		*v = bytes
 	default:
 		return json.Unmarshal(bytes, v)
 	}
@@ -142,12 +160,12 @@ func Solve(ctx *Context, st llb.State) (FS, error) {
 
 func Do(ctx *Context, pkg, action string, input FS) (FS, error) {
 	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
-		Frontend: "gateway.v0",
+		Definition: input.Def,
+		Frontend:   "dagger",
 		FrontendOpt: map[string]string{
-			"source": pkg, // TODO: put these in the input?
+			"pkg":    pkg,
 			"action": action,
 		},
-		FrontendInputs: map[string]*pb.Definition{"dagger": input.Def},
 	})
 	if err != nil {
 		return FS{}, err
@@ -156,66 +174,18 @@ func Do(ctx *Context, pkg, action string, input FS) (FS, error) {
 	if err != nil {
 		return FS{}, err
 	}
+
+	// TODO: silly that this is the only way to get the pb def, it's just not a public field, maybe fix upstream
 	st, err := ref.ToState()
 	if err != nil {
 		return FS{}, err
 	}
-	def, err := st.Marshal(ctx.ctx)
+	llbdef, err := st.Marshal(ctx.ctx)
 	if err != nil {
 		return FS{}, err
 	}
-	return FS{Def: def.ToPB(), ref: ref}, nil
-}
 
-// Starts an alpine shell with "fs" mounted at /output
-func Shell(ctx *Context, fs FS) error {
-	base, err := Solve(ctx, llb.Image("alpine:3.15"))
-	if err != nil {
-		return err
-	}
-
-	if err := base.Evaluate(ctx); err != nil {
-		return err
-	}
-
-	if err := fs.Evaluate(ctx); err != nil {
-		return err
-	}
-
-	ctr, err := ctx.client.NewContainer(ctx.ctx, bkgw.NewContainerRequest{
-		Mounts: []bkgw.Mount{
-			{
-				Dest:      "/",
-				Ref:       base.ref,
-				MountType: pb.MountType_BIND,
-			},
-			{
-				Dest:      "/output",
-				Ref:       fs.ref,
-				MountType: pb.MountType_BIND,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-	proc, err := ctr.Start(ctx.ctx, bkgw.StartRequest{
-		Args:   []string{"/bin/sh"},
-		Cwd:    "/output",
-		Tty:    true,
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	})
-	if err != nil {
-		return err
-	}
-	termState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return err
-	}
-	defer terminal.Restore(int(os.Stdin.Fd()), termState)
-	return proc.Wait()
+	return FS{Def: llbdef.ToPB(), ref: ref}, nil
 }
 
 func Client(fn func(*Context) error) error {
@@ -227,16 +197,30 @@ func Client(fn func(*Context) error) error {
 
 	ch := make(chan *bkclient.SolveStatus)
 
+	socketProvider := newAPISocketProvider()
+	secretProvider := newSecretProvider()
+	attachables := []session.Attachable{socketProvider, secretsprovider.NewSecretProvider(secretProvider)}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
-		_, err = c.Build(ctx, bkclient.SolveOpt{}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			c := &Context{
-				ctx:    ctx,
-				client: gw,
+		_, err = c.Build(ctx, bkclient.SolveOpt{Session: attachables}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+			api := newAPIServer(c, gw)
+			socketProvider.api = api // TODO: less ugly way of setting this
+
+			// TODO: redirect the gw we use to our api. This silliness will go away when we move to our own custom API
+			gw, err := grpcclient.New(ctx, nil, "", "", clientAdapter{api}, nil)
+			if err != nil {
+				return nil, err
 			}
 
-			err := fn(c)
+			dctx := &Context{
+				ctx:    ctx,
+				client: gw,
+				api:    api,
+			}
+
+			err = fn(dctx)
 			if err != nil {
 				return nil, err
 			}
@@ -246,13 +230,6 @@ func Client(fn func(*Context) error) error {
 		return err
 	})
 	eg.Go(func() error {
-		/* TODO:
-		c, err := console.ConsoleFromFile(os.Stderr)
-		if err != nil {
-			return err
-		}
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", c, os.Stdout, ch)
-		*/
 		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stdout, ch)
 		for _, w := range warn {
 			fmt.Printf("=> %s\n", w.Short)
@@ -276,42 +253,67 @@ type Package struct {
 }
 
 func (p *Package) Serve() error {
-	return grpcclient.RunFromEnvironment(appcontext.Context(), func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
+	grpcConn, err := grpc.DialContext(context.Background(), "unix:///dagger.sock",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(grpcerrors.UnaryClientInterceptor),
+		grpc.WithStreamInterceptor(grpcerrors.StreamClientInterceptor))
+	if err != nil {
+		return err
+	}
+
+	client, err := grpcclient.New(context.Background(),
+		// opts are passed through /dagger/inputs.json
+		make(map[string]string),
+
+		// TODO: not setting sessionID, if it's needed pass it here as a secret to prevent cache bust
+		"",
+
+		// product, not needed
+		"",
+
+		gwpb.NewLLBBridgeClient(grpcConn),
+
+		// TODO: worker info
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	return client.Run(appcontext.Context(), func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
 		dctx := &Context{
 			ctx:    ctx,
 			client: c,
 		}
 
-		opts := c.BuildOpts().Opts
-
-		action := opts["action"]
-		fn := p.actions[action]
-
-		inputStates, err := c.Inputs(ctx)
-		if err != nil {
-			return nil, err
+		actionName := flag.String("a", "", "name of action to invoke")
+		flag.Parse()
+		if *actionName == "" {
+			return nil, errors.New("action name required")
 		}
-		inputState, ok := inputStates["dagger"]
+		fn, ok := p.actions[*actionName]
 		if !ok {
-			return nil, fmt.Errorf("missing dagger frontend input")
+			return nil, errors.New("action not found: " + *actionName)
 		}
-		inputFS, err := Solve(dctx, inputState)
+		inputBytes, err := os.ReadFile("/inputs/dagger.json")
 		if err != nil {
 			return nil, err
 		}
 
-		outputFS, err := fn(dctx, inputFS)
+		outputBytes, err := fn(dctx, inputBytes)
+		if err != nil {
+			return nil, err
+		}
+		err = os.WriteFile("/outputs/dagger.json", outputBytes, 0644)
 		if err != nil {
 			return nil, err
 		}
 
-		res := bkgw.NewResult()
-		res.SetRef(outputFS.ref)
-		return res, nil
+		return nil, nil
 	})
 }
 
-type ActionFunc func(ctx *Context, input FS) (FS, error)
+type ActionFunc func(ctx *Context, input []byte) ([]byte, error)
 
 func (p *Package) Action(name string, fn ActionFunc) {
 	p.actions[name] = fn
