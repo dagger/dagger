@@ -89,6 +89,10 @@ func (t *Telemetry) Push(ctx context.Context, props event.Properties) {
 	e.Engine.ID = t.engineID
 	e.Run.ID = t.runID
 
+	if _, ok := props.(event.RunStarted); ok && t.enable {
+		fmt.Printf("\nDagger Cloud URL: https://dagger.cloud/runs/%s\n\n", e.Run.ID)
+	}
+
 	if err := e.Validate(); err != nil {
 		panic(err)
 	}
