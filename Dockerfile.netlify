@@ -10,4 +10,4 @@ RUN --mount=target=. --mount=target=/root/.cache,type=cache \
 FROM scratch
 COPY --from=build /out /entrypoint
 ENTRYPOINT ["/entrypoint"]
-
+LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs

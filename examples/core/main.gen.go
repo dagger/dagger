@@ -10,29 +10,29 @@ import (
 func main() {
 	d := dagger.New()
 
-	d.Action("image", func(ctx *dagger.Context, input dagger.FS) (dagger.FS, error) {
+	d.Action("image", func(ctx *dagger.Context, input []byte) ([]byte, error) {
 		typedInput := &core.ImageInput{}
-		if err := dagger.Unmarshal(ctx, input, typedInput); err != nil {
-			return dagger.FS{}, err
+		if err := dagger.UnmarshalBytes(ctx, input, typedInput); err != nil {
+			return nil, err
 		}
 		typedOutput := Image(ctx, typedInput)
-		return dagger.Marshal(ctx, typedOutput)
+		return dagger.MarshalBytes(ctx, typedOutput)
 	})
-	d.Action("git", func(ctx *dagger.Context, input dagger.FS) (dagger.FS, error) {
+	d.Action("git", func(ctx *dagger.Context, input []byte) ([]byte, error) {
 		typedInput := &core.GitInput{}
-		if err := dagger.Unmarshal(ctx, input, typedInput); err != nil {
-			return dagger.FS{}, err
+		if err := dagger.UnmarshalBytes(ctx, input, typedInput); err != nil {
+			return nil, err
 		}
 		typedOutput := Git(ctx, typedInput)
-		return dagger.Marshal(ctx, typedOutput)
+		return dagger.MarshalBytes(ctx, typedOutput)
 	})
-	d.Action("exec", func(ctx *dagger.Context, input dagger.FS) (dagger.FS, error) {
+	d.Action("exec", func(ctx *dagger.Context, input []byte) ([]byte, error) {
 		typedInput := &core.ExecInput{}
-		if err := dagger.Unmarshal(ctx, input, typedInput); err != nil {
-			return dagger.FS{}, err
+		if err := dagger.UnmarshalBytes(ctx, input, typedInput); err != nil {
+			return nil, err
 		}
 		typedOutput := Exec(ctx, typedInput)
-		return dagger.Marshal(ctx, typedOutput)
+		return dagger.MarshalBytes(ctx, typedOutput)
 	})
 
 	if err := d.Serve(); err != nil {

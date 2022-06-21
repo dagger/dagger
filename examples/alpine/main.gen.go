@@ -10,13 +10,13 @@ import (
 func main() {
 	d := dagger.New()
 
-	d.Action("build", func(ctx *dagger.Context, input dagger.FS) (dagger.FS, error) {
+	d.Action("build", func(ctx *dagger.Context, input []byte) ([]byte, error) {
 		typedInput := &alpine.BuildInput{}
-		if err := dagger.Unmarshal(ctx, input, typedInput); err != nil {
-			return dagger.FS{}, err
+		if err := dagger.UnmarshalBytes(ctx, input, typedInput); err != nil {
+			return nil, err
 		}
 		typedOutput := Build(ctx, typedInput)
-		return dagger.Marshal(ctx, typedOutput)
+		return dagger.MarshalBytes(ctx, typedOutput)
 	})
 
 	if err := d.Serve(); err != nil {
