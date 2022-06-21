@@ -1,5 +1,5 @@
 ---
-slug: /getting-started
+slug: /
 displayed_sidebar: '0.2'
 ---
 
