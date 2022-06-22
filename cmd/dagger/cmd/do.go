@@ -13,6 +13,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/format"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -265,12 +266,17 @@ var doCmd = &cobra.Command{
 func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
 	// support only local filesystem paths
 	// even though CUE supports loading module and package names
-	absPlanPath, err := filepath.Abs(planPath)
+	homedirPlanPathExpanded, err := homedir.Expand(planPath)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = os.Stat(planPath)
+	absPlanPath, err := filepath.Abs(homedirPlanPathExpanded)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = os.Stat(absPlanPath)
 	if err != nil {
 		return nil, err
 	}
