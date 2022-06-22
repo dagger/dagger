@@ -50,10 +50,6 @@ env:
     - DAGGER_LOG_FORMAT: plain
     - DAGGER_CACHE_PATH: .dagger-cache
 
-cache:
-  directories:
-    - ${HOME}/.dagger-cache
-
 services:
   - docker
 
@@ -76,10 +72,7 @@ jobs:
       before_script:
         - dagger project update
       script:
-        - |
-          dagger do --cache-from type=local,src=${DAGGER_CACHE_PATH} \
-                    --cache-to type=local,mode=max,dest=${DAGGER_CACHE_PATH} \
-                    build
+        - dagger do build
 ```
 </TabItem>
   
