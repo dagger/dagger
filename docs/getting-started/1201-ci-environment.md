@@ -20,6 +20,7 @@ import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 groupId="ci-environment"
 values={[
 {label: 'GitHub Actions', value: 'github-actions'},
+{label: 'TravisCi', value: 'travisci'},
 {label: 'CircleCI', value: 'circleci'},
 {label: 'GitLab', value: 'gitlab'},
 {label: 'Jenkins', value: 'jenkins'},
@@ -34,6 +35,54 @@ values={[
 
 </TabItem>
 
+<TabItem value="travisci">
+
+```yaml
+---
+os: linux
+arch: amd64
+dist: bionic
+language: minimal
+
+env:
+  global:
+    - DAGGER_VERSION: 0.2.19
+    - DAGGER_LOG_FORMAT: plain
+    - DAGGER_CACHE_PATH: .dagger-cache
+
+cache:
+  directories:
+    - ${HOME}/.dagger-cache
+
+services:
+  - docker
+
+install:
+  - |
+    # Installing dagger
+    cd /usr/local
+    curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
+    cd -
+
+stages:
+  - name: build
+    if: type IN (push, pull_request)
+
+jobs:
+  include:
+    - stage: build
+      env:
+        - TASK: "dagger do build"
+      before_script:
+        - dagger project update
+      script:
+        - |
+          dagger do --cache-from type=local,src=${DAGGER_CACHE_PATH} \
+                    --cache-to type=local,mode=max,dest=${DAGGER_CACHE_PATH} \
+                    build
+```
+</TabItem>
+  
 <TabItem value="circleci">
 
 If you would like us to document CircleCI next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
