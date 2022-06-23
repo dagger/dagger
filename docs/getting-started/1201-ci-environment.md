@@ -20,7 +20,7 @@ import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 groupId="ci-environment"
 values={[
 {label: 'GitHub Actions', value: 'github-actions'},
-{label: 'TravisCi', value: 'travisci'},
+{label: 'TravisCI', value: 'travisci'},
 {label: 'CircleCI', value: 'circleci'},
 {label: 'GitLab', value: 'gitlab'},
 {label: 'Jenkins', value: 'jenkins'},
