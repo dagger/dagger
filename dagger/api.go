@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 
 	apitypes "github.com/moby/buildkit/api/types"
@@ -91,13 +92,6 @@ func (s *apiServer) Solve(ctx context.Context, req *gwpb.SolveRequest) (*gwpb.So
 	if req.Frontend == "dagger" {
 		req.Frontend = ""
 
-		// in this case, the req definition is just the input for the dagger action
-		defop, err := llb.NewDefinitionOp(req.Definition)
-		if err != nil {
-			return nil, err
-		}
-		input := llb.NewState(defop)
-
 		pkg, ok := req.FrontendOpt["pkg"]
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "missing pkg")
@@ -106,7 +100,13 @@ func (s *apiServer) Solve(ctx context.Context, req *gwpb.SolveRequest) (*gwpb.So
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "missing action")
 		}
+		payload, ok := req.FrontendOpt["payload"]
+		if !ok {
+			return nil, status.Errorf(codes.InvalidArgument, "missing payload")
+		}
 		req.FrontendOpt = nil
+
+		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, []byte(payload)))
 
 		// TODO: generate on the fly without pulling a specific image
 		st := llb.Image(pkg).Run(
@@ -121,7 +121,23 @@ func (s *apiServer) Solve(ctx context.Context, req *gwpb.SolveRequest) (*gwpb.So
 		if err != nil {
 			return nil, err
 		}
-		req.Definition = outputDef.ToPB()
+		outputBytes, err := json.Marshal(outputDef.ToPB())
+		if err != nil {
+			return nil, err
+		}
+
+		resultBytes, err := json.Marshal(&Result{
+			daggerType: DaggerTypeStruct,
+			opcodes:    string(outputBytes),
+		})
+		if err != nil {
+			return nil, err
+		}
+		resultDef, err := llb.Scratch().File(llb.Mkfile("/result.json", 0644, resultBytes)).Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req.Definition = resultDef.ToPB()
 	}
 
 	res, err := s.gw.Solve(ctx, bkgw.SolveRequest{

@@ -7,6 +7,8 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/solver/pb"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -17,7 +19,18 @@ func Shell(ctx *Context, fs FS) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.Build(ctx.ctx, bkclient.SolveOpt{}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+
+	socketProvider := newAPISocketProvider()
+	secretProvider := newSecretProvider()
+	attachables := []session.Attachable{socketProvider, secretsprovider.NewSecretProvider(secretProvider)}
+
+	_, err = c.Build(ctx.ctx, bkclient.SolveOpt{Session: attachables}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		api := newAPIServer(c, gw)
+		socketProvider.api = api // TODO: less ugly way of setting this
+		dctx := &Context{
+			ctx:    ctx,
+			client: gw,
+		}
 
 		baseDef, err := llb.Image("alpine:3.15").Marshal(ctx)
 		if err != nil {
@@ -35,7 +48,7 @@ func Shell(ctx *Context, fs FS) error {
 		}
 
 		fsRes, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: fs.Def,
+			Definition: fs.Definition(dctx),
 		})
 		if err != nil {
 			return nil, err

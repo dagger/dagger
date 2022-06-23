@@ -5,26 +5,33 @@ import (
 )
 
 type BuildInput struct {
-	Packages []string `json:"packages,omitempty"`
+	Packages []dagger.String `json:"packages,omitempty"`
 }
 
 type BuildOutput struct {
-	FS dagger.FS `json:"fs,omitempty"`
+	Root dagger.FS `json:"root,omitempty"`
 }
 
-func Build(ctx *dagger.Context, input *BuildInput) *BuildOutput {
-	fsInput, err := dagger.Marshal(ctx, input)
-	if err != nil {
-		panic(err)
-	}
+type BuildResult struct {
+	res dagger.Result
+}
 
-	fsOutput, err := dagger.Do(ctx, "localhost:5555/dagger:alpine", "build", fsInput)
+func (o *BuildResult) MarshalJSON() ([]byte, error) {
+	return o.res.MarshalJSON()
+}
+
+func (o *BuildResult) UnmarshalJSON(b []byte) error {
+	return o.res.UnmarshalJSON(b)
+}
+
+func (o *BuildResult) Root() dagger.FS {
+	return o.res.GetField("root").FS()
+}
+
+func Build(ctx *dagger.Context, input *BuildInput) *BuildResult {
+	result, err := dagger.Do(ctx, "localhost:5555/dagger:alpine", "build", input)
 	if err != nil {
 		panic(err)
 	}
-	output := &BuildOutput{}
-	if err := dagger.Unmarshal(ctx, fsOutput, output); err != nil {
-		panic(err)
-	}
-	return output
+	return &BuildResult{res: *result}
 }
