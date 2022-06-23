@@ -436,6 +436,14 @@ button[class^="copyButton"] {
   padding: 3rem 0.5rem 0.5rem !important;
 }
 
+.menu > .menu__list > .menu__list-item {
+  padding-bottom: 1rem;
+}
+
+.menu__link {
+  font-weight: normal;
+}
+
 .menu__link.button {
   width: 190px;
   margin: auto;
