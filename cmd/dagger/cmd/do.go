@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -425,14 +426,23 @@ func printActions(p *plan.Plan, action *plan.Action, w io.Writer, target cue.Pat
 	tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', tabwriter.StripEscape)
 	defer tw.Flush()
 
-	for _, a := range action.Children {
-		if !a.Hidden {
-			lineParts := []string{"", a.Name, a.Documentation}
-			fmt.Fprintln(tw, strings.Join(lineParts, "\t"))
-		}
-	}
+	printAction(tw, action)
 
 	return nil
+}
+
+func printAction(tw *tabwriter.Writer, action *plan.Action, parents ...string) {
+	sort.Slice(action.Children, func(i, j int) bool {
+		return action.Children[i].Name < action.Children[j].Name
+	})
+
+	for _, a := range action.Children {
+		if !a.Hidden {
+			lineParts := []string{"", strings.Join(append(parents, a.Name), " "), a.Documentation}
+			fmt.Fprintln(tw, strings.Join(lineParts, "\t\t"))
+			printAction(tw, a, append(parents, a.Name)...)
+		}
+	}
 }
 
 func captureRunCompletedFailed(ctx context.Context, tm *telemetry.Telemetry, err error) {
