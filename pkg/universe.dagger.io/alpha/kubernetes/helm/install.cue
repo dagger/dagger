@@ -5,13 +5,13 @@ import (
 	"universe.dagger.io/docker"
 )
 
-_#defaultNamespace: "default"
+_#DefaultNamespace: "default"
 
 #Install: {
 	// Name of your release
 	name:       string | *""
 	kubeconfig: dagger.#Secret
-	namespace:  *_#defaultNamespace | string
+	namespace:  *_#DefaultNamespace | string
 	source:     *"repository" | "URL"
 	{
 		source:     "repository"
