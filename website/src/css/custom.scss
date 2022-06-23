@@ -130,6 +130,14 @@ code,
     --ifm-h3-vertical-rhythm-top: 2;
   }
 
+  .admonition {
+    a:not(.card) {
+      code {
+        color: inherit;
+      }
+    }
+  }
+
   a:not(.card) {
     font-weight: bold;
     text-decoration: underline;
@@ -137,15 +145,11 @@ code,
 
     html[data-theme="dark"] & {
       color: var(--ifm-color-primary-light);
-
-      code {
-        display: inline-block;
-        // https://stackoverflow.com/questions/25762427/remove-underline-only-from-anchor-element-child
-      }
     }
 
     code {
-      color: var(--ifm-code-color);
+      display: inline-block !important;
+      color: var(--ifm-color-primary-light);
     }
 
     &:hover {
