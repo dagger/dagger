@@ -14,17 +14,17 @@ type DeployInput struct {
 	// Example: "my-super-site"
 	// Create the site if it doesn't exist
 	// create: *true | false
-	Site string `json:"site,omitempty"`
+	Site dagger.String `json:"site,omitempty"`
 }
 
 type DeployOutput struct {
 	// URL of the deployed site
-	URL string `json:"url,omitempty"`
+	URL dagger.String `json:"url,omitempty"`
 
 	// URL of the latest deployment
 	// URL for logs of the latest deployment
 	// logsUrl: string
-	DeployURL string `json:"deployurl,omitempty"`
+	DeployURL dagger.String `json:"deployurl,omitempty"`
 }
 
 func Deploy(ctx *dagger.Context, input *DeployInput) *DeployOutput {

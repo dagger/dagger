@@ -23,7 +23,7 @@ func Deploy(ctx *dagger.Context, input *netlify.DeployInput) *netlify.DeployOutp
 		panic(err)
 	}
 	for _, s := range sites {
-		if s.Name == input.Site {
+		if s.Name == input.Site.Evaluate(ctx) {
 			site = s
 			break
 		}
@@ -36,18 +36,18 @@ func Deploy(ctx *dagger.Context, input *netlify.DeployInput) *netlify.DeployOutp
 	// base image for running netlify commands
 	base := core.Exec(ctx, &core.ExecInput{
 		// NOTE: what if one of these strings was from an action input that was lazy? Need string wrapper
-		FS:   alpine.Build(ctx, &alpine.BuildInput{Packages: []string{"curl", "jq", "npm"}}).FS,
-		Dir:  "/",
-		Args: []string{"npm", "-g", "install", "netlify-cli@8.6.21"},
+		FS:   alpine.Build(ctx, &alpine.BuildInput{Packages: dagger.ToStrings("curl", "jq", "npm")}).FS,
+		Dir:  dagger.ToString("/"),
+		Args: dagger.ToStrings("npm", "-g", "install", "netlify-cli@8.6.21"),
 	})
 
 	// link the site
 	base = core.Exec(ctx, &core.ExecInput{
 		FS:   base.FS,
-		Dir:  "/src",
-		Args: []string{"netlify", "link", "--id", site.ID},
-		Mounts: map[string]dagger.FS{
-			"/src": input.Contents,
+		Dir:  dagger.ToString("/src"),
+		Args: dagger.ToStrings("netlify", "link", "--id", site.ID),
+		Mounts: map[dagger.String]dagger.FS{
+			dagger.ToString("/src"): input.Contents,
 		},
 		// NOTE: do we need "always" here?
 	})
@@ -55,10 +55,10 @@ func Deploy(ctx *dagger.Context, input *netlify.DeployInput) *netlify.DeployOutp
 	// deploy the site
 	base = core.Exec(ctx, &core.ExecInput{
 		FS:   base.FS,
-		Dir:  "/src",
-		Args: []string{"netlify", "deploy", "--build", "--site=" + site.ID, "--prod"},
-		Mounts: map[string]dagger.FS{
-			"/src": input.Contents,
+		Dir:  dagger.ToString("/src"),
+		Args: dagger.ToStrings("netlify", "deploy", "--build", "--site="+site.ID, "--prod"),
+		Mounts: map[dagger.String]dagger.FS{
+			dagger.ToString("/src"): input.Contents,
 		},
 		// NOTE: do we need "always" here?
 	})
@@ -73,7 +73,7 @@ func Deploy(ctx *dagger.Context, input *netlify.DeployInput) *netlify.DeployOutp
 		panic(err)
 	}
 	return &netlify.DeployOutput{
-		URL:       site.URL,
-		DeployURL: site.DeployURL,
+		URL:       dagger.ToString(site.URL),
+		DeployURL: dagger.ToString(site.DeployURL),
 	}
 }

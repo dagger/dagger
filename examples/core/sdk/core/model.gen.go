@@ -5,90 +5,114 @@ import (
 )
 
 type ImageInput struct {
-	Ref string `json:"ref,omitempty"`
+	Ref dagger.String `json:"ref,omitempty"`
 }
 
 type ImageOutput struct {
 	FS dagger.FS `json:"fs,omitempty"`
 }
 
-func Image(ctx *dagger.Context, input *ImageInput) *ImageOutput {
-	fsInput, err := dagger.Marshal(ctx, input)
-	if err != nil {
-		panic(err)
-	}
+type ImageResult struct {
+	res dagger.Result
+}
 
-	fsOutput, err := dagger.Do(ctx, "localhost:5555/dagger:core", "image", fsInput)
+func (o ImageResult) MarshalJSON() ([]byte, error) {
+	return o.res.MarshalJSON()
+}
+
+func (o *ImageResult) UnmarshalJSON(b []byte) error {
+	return o.res.UnmarshalJSON(b)
+}
+
+func (o *ImageResult) FS() dagger.FS {
+	return o.res.GetField("fs").FS()
+}
+
+func Image(ctx *dagger.Context, input *ImageInput) *ImageResult {
+	result, err := dagger.Do(ctx, "localhost:5555/dagger:core", "image", input)
 	if err != nil {
 		panic(err)
 	}
-	output := &ImageOutput{}
-	if err := dagger.Unmarshal(ctx, fsOutput, output); err != nil {
-		panic(err)
-	}
-	return output
+	return &ImageResult{res: *result}
 }
 
 type GitInput struct {
-	Remote string `json:"remote,omitempty"`
+	Remote dagger.String `json:"remote,omitempty"`
 
-	Ref string `json:"ref,omitempty"`
+	Ref dagger.String `json:"ref,omitempty"`
 }
 
 type GitOutput struct {
 	FS dagger.FS `json:"fs,omitempty"`
 }
 
-func Git(ctx *dagger.Context, input *GitInput) *GitOutput {
-	fsInput, err := dagger.Marshal(ctx, input)
-	if err != nil {
-		panic(err)
-	}
+type GitResult struct {
+	res dagger.Result
+}
 
-	fsOutput, err := dagger.Do(ctx, "localhost:5555/dagger:core", "git", fsInput)
+func (o *GitResult) MarshalJSON() ([]byte, error) {
+	return o.res.MarshalJSON()
+}
+
+func (o *GitResult) UnmarshalJSON(b []byte) error {
+	return o.res.UnmarshalJSON(b)
+}
+
+func (o *GitResult) FS() dagger.FS {
+	return o.res.GetField("fs").FS()
+}
+
+func Git(ctx *dagger.Context, input *GitInput) *GitResult {
+	result, err := dagger.Do(ctx, "localhost:5555/dagger:core", "git", input)
 	if err != nil {
 		panic(err)
 	}
-	output := &GitOutput{}
-	if err := dagger.Unmarshal(ctx, fsOutput, output); err != nil {
-		panic(err)
-	}
-	return output
+	return &GitResult{res: *result}
 }
 
 type ExecInput struct {
 	FS dagger.FS `json:"fs,omitempty"`
 
-	Dir string `json:"dir,omitempty"`
+	Dir dagger.String `json:"dir,omitempty"`
 
-	Args []string `json:"args,omitempty"`
+	Args []dagger.String `json:"args,omitempty"`
 
-	// TODO: cannot figure out how to parse this in the CUE lib:
-	// mounts: [path=string]: "$daggerfs"
-	Mounts map[string]dagger.FS `json:"mounts,omitempty"`
+	// TODO: map of path->FS would be better, but dagger.String can't be a map key...
+	Mounts []Mount `json:"mounts,omitempty"`
+}
+
+type Mount struct {
+	Path dagger.String `json:"path,omitempty"`
+	FS   dagger.FS     `json:"fs,omitempty"`
 }
 
 type ExecOutput struct {
 	FS dagger.FS `json:"fs,omitempty"`
 
-	// TODO: cannot figure out how to parse this in the CUE lib:
-	// mounts: [path=string]: "$daggerfs"
-	Mounts map[string]dagger.FS `json:"mounts,omitempty"`
+	// TODO: support mounts again (need to figure out how to (de)serialize)
+	// Mounts []Mount `json:"mounts,omitempty"`
 }
 
-func Exec(ctx *dagger.Context, input *ExecInput) *ExecOutput {
-	fsInput, err := dagger.Marshal(ctx, input)
-	if err != nil {
-		panic(err)
-	}
+type ExecResult struct {
+	res dagger.Result
+}
 
-	fsOutput, err := dagger.Do(ctx, "localhost:5555/dagger:core", "exec", fsInput)
+func (o *ExecResult) MarshalJSON() ([]byte, error) {
+	return o.res.MarshalJSON()
+}
+
+func (o *ExecResult) UnmarshalJSON(b []byte) error {
+	return o.res.UnmarshalJSON(b)
+}
+
+func (o *ExecResult) FS() dagger.FS {
+	return o.res.GetField("fs").FS()
+}
+
+func Exec(ctx *dagger.Context, input *ExecInput) *ExecResult {
+	result, err := dagger.Do(ctx, "localhost:5555/dagger:core", "exec", input)
 	if err != nil {
 		panic(err)
 	}
-	output := &ExecOutput{}
-	if err := dagger.Unmarshal(ctx, fsOutput, output); err != nil {
-		panic(err)
-	}
-	return output
+	return &ExecResult{res: *result}
 }
