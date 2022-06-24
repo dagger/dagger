@@ -20,6 +20,7 @@ import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 groupId="ci-environment"
 values={[
 {label: 'GitHub Actions', value: 'github-actions'},
+{label: 'TravisCI', value: 'travisci'},
 {label: 'CircleCI', value: 'circleci'},
 {label: 'GitLab', value: 'gitlab'},
 {label: 'Jenkins', value: 'jenkins'},
@@ -30,6 +31,48 @@ values={[
 
 ```yaml file=../tests/getting-started/github-actions.yml title=".github/workflows/todoapp.yml"
 
+```
+
+</TabItem>
+
+<TabItem value="travisci">
+
+```yaml
+---
+os: linux
+arch: amd64
+dist: bionic
+language: minimal
+
+env:
+  global:
+    - DAGGER_VERSION: 0.2.19
+    - DAGGER_LOG_FORMAT: plain
+    - DAGGER_CACHE_PATH: .dagger-cache
+
+services:
+  - docker
+
+install:
+  - |
+    # Installing dagger
+    cd /usr/local
+    curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
+    cd -
+
+stages:
+  - name: build
+    if: type IN (push, pull_request)
+
+jobs:
+  include:
+    - stage: build
+      env:
+        - TASK: "dagger do build"
+      before_script:
+        - dagger project update
+      script:
+        - dagger do build
 ```
 
 </TabItem>
