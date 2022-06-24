@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"bytes"
+	"fmt"
 	"strings"
 
 	"cuelang.org/go/cue"
@@ -52,11 +54,20 @@ func isDockerImage(v *compiler.Value) bool {
 	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind() == cue.StructKind
 }
 
-func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
+func isPlanConcrete(p *compiler.Value, v *compiler.Value) (err error) {
 	// Always assume generated fields are concrete.
 	if v.HasAttr("generated") {
 		return nil
 	}
+
+	defer func() {
+		if e := recover(); e != nil {
+			cueerr := v.Cue().Err()
+			codeRaw, _ := v.Source()
+			codeLines := bytes.Split(bytes.TrimSpace(codeRaw), []byte("\n"))
+			err = fmt.Errorf("%s: %s", cueerr, codeLines[len(codeLines)-1])
+		}
+	}()
 
 	kind := v.IncompleteKind()
 	_, hasDefault := v.Default()
