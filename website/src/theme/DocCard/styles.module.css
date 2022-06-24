@@ -1,0 +1,43 @@
+.cardContainer {
+  --ifm-link-color: var(--ifm-color-emphasis-900);
+  --ifm-link-hover-color: var(--ifm-color-emphasis-700);
+  --ifm-link-hover-decoration: none;
+
+  box-shadow: none;
+  border: none;
+  transition: all var(--ifm-transition-fast) ease;
+  transition-property: border, box-shadow, color, background-color;
+  background-color: transparent;
+}
+
+
+html[data-theme="dark"] .cardContainer:hover, 
+html[data-theme="dark"] .cardContainer:hover .cardTitle
+{
+  color: var(--ifm-color-emphasis-600);
+}
+
+/* SEE HOW TO IMPLEMENT WITH DARK THEME*/
+
+.cardContainer *:last-child {
+  margin-bottom: 0;
+}
+
+.cardTitle {
+  transition: all var(--ifm-transition-fast) ease;
+  transition-property: border, box-shadow, color, background-color;
+  font-size: 1.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.cardDescription {
+  margin-left: 2rem;
+  font-size: 1rem;
+  white-space: inherit;
+
+  /* clamp */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
