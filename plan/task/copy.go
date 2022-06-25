@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/compiler"
@@ -49,10 +50,7 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 
-	var filters struct {
-		Include []string
-		Exclude []string
-	}
+	var filters copyFilters
 
 	if err := v.Decode(&filters); err != nil {
 		return nil, err
@@ -75,7 +73,7 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 			destPath,
 			opts,
 		),
-		withCustomName(v, "Copy %s %s", sourcePath, destPath),
+		withCustomName(v, "Copy %s%s %s", sourcePath, filters, destPath),
 	)
 
 	result, err := s.Solve(ctx, outputState, pctx.Platform.Get())
@@ -88,4 +86,40 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": fs.MarshalCUE(),
 	})
+}
+
+type copyFilters struct {
+	Include []string
+	Exclude []string
+}
+
+// glob like format
+// {a/b/c,a/b/d,!ignore}
+func (v copyFilters) String() string {
+	b := strings.Builder{}
+
+	c := 0
+
+	for i := range v.Include {
+		if c > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(v.Include[i])
+		c++
+	}
+
+	for i := range v.Exclude {
+		if c > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('!')
+		b.WriteString(v.Exclude[i])
+		c++
+	}
+
+	if b.Len() > 0 {
+		return "{" + b.String() + "}"
+	}
+
+	return ""
 }
