@@ -3,6 +3,8 @@ slug: /1200/local-dev
 displayed_sidebar: "0.2"
 ---
 
+import DaggerCloudCTA from '../includes/dagger-cloud-cta.md'
+
 # Build & run locally...then in CI
 
 Everyone should be able to develop, test and run their application using a local pipeline.
@@ -242,3 +244,5 @@ Now that we are comfortable with our local CI/CD loop, let us configure a remote
 The difference is that we will also deploy the build output to Netlify.
 Dagger makes this easy.
 :::
+
+<DaggerCloudCTA/>

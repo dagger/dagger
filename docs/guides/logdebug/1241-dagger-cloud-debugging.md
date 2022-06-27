@@ -9,6 +9,9 @@ displayed_sidebar: '0.2'
 
 :::tip
 Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
+
+:::tip
+Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
 :::
 
 To take advantage of this feature, you will need to create an account by following the steps below:

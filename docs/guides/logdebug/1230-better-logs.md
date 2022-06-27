@@ -3,6 +3,8 @@ slug: /1230/better-logs
 displayed_sidebar: '0.2'
 ---
 
+import DaggerCloudCTA from '../../includes/dagger-cloud-cta.md'
+
 # How can I have better logs ?
 
 Dagger exposes 2 logging format options:
@@ -21,3 +23,5 @@ You can also export these options as env variables:
 export DAGGER_LOG_FORMAT="plain"
 export DAGGER_LOG_LEVEL="debug"
 ```
+
+<DaggerCloudCTA/>
