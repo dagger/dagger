@@ -16,9 +16,7 @@ import (
 
 	container: #Container & {
 		"source": source
-		"env": {
-			env
-		}
+		"env":    env
 		command: {
 			name:   "composer"
 			"args": args
@@ -33,7 +31,9 @@ import (
 	}
 
 	// Export packages and composer files
-	output: vendor: container.export.directories."/output/vendor"
-	output: json:   container.export.files."/output/composer.json"
-	output: lock:   container.export.files."/output/composer.lock"
+	output: {
+		vendor: container.export.directories."/output/vendor"
+		json:   container.export.files."/output/composer.json"
+		lock:   container.export.files."/output/composer.lock"
+	}
 }
