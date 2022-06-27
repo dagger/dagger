@@ -227,10 +227,10 @@
     "@algolia/logger-common" "4.13.1"
     "@algolia/requester-common" "4.13.1"
 
-"@amplitude/analytics-connector@1.4.3":
-  version "1.4.3"
-  resolved "https://registry.yarnpkg.com/@amplitude/analytics-connector/-/analytics-connector-1.4.3.tgz#cb9098cb8adfbd39b2c71ad71a7c758504a745a7"
-  integrity sha512-Ghu1UJn55Rn9eglF+ED7yOGXaeX3KY2qkQi9W9yqC02ItPvKfrybeVndweI1XtsiW0LvRpdA3uQEjuZEGunyLw==
+"@amplitude/analytics-connector@1.4.4":
+  version "1.4.4"
+  resolved "https://registry.yarnpkg.com/@amplitude/analytics-connector/-/analytics-connector-1.4.4.tgz#3bed72b0b3190a4426a529473ced962892706116"
+  integrity sha512-6JcE1nxrprJt6pHqqDQb7FXRqJmFHG7KJPe0jNZaAvfll4mWKVqZu8W9IV3XiN1P+xgHIV1NN+i3PLOAZWEhXg==
   dependencies:
     "@amplitude/ua-parser-js" "0.7.31"
 
@@ -2805,12 +2805,12 @@ algoliasearch@^4.13.1:
     "@algolia/requester-node-http" "4.13.1"
     "@algolia/transporter" "4.13.1"
 
-amplitude-js@^8.18.4:
-  version "8.18.4"
-  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.18.4.tgz#211e49c49e3e326edaff62ba83b4a2916a820136"
-  integrity sha512-Nk4ymaw9iGf1Be/fGuuH7H/QnUJceD2RYGdode8ZAApw6jHlm9QZCoYoVRrNPdgfb3yJz3P84EPh/4xM+/98/w==
+amplitude-js@^8.18.5:
+  version "8.18.5"
+  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.18.5.tgz#6834dd2455a363491561762457d6a6548be5a6a1"
+  integrity sha512-s43q4qKd7kvhYESQhYvyKDKUM1PpyAyoOFFlyMuFfQHRxyeDmZRhcfzrKnOhbrLhFxSWtPc0VEeh9tajJRNe5Q==
   dependencies:
-    "@amplitude/analytics-connector" "1.4.3"
+    "@amplitude/analytics-connector" "1.4.4"
     "@amplitude/ua-parser-js" "0.7.31"
     "@amplitude/utils" "^1.0.5"
     "@babel/runtime" "^7.3.4"
