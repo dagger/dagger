@@ -23,7 +23,7 @@ import (
 	_composerCachePath: "/cache/composer"
 
 	_copy: docker.#Copy & {
-		input:    _image.output
+		input:    _image.output | docker.#Image
 		dest:     _sourcePath
 		contents: source
 		include: ["composer.json", "composer.lock", "vendor*"]
