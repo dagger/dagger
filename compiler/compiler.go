@@ -6,16 +6,25 @@ import (
 	"sync"
 
 	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/build"
 	"cuelang.org/go/cue/cuecontext"
 	cueerrors "cuelang.org/go/cue/errors"
 	cuejson "cuelang.org/go/encoding/json"
 	cueyaml "cuelang.org/go/encoding/yaml"
 )
 
-var (
-	// DefaultCompiler is the default Compiler and is used by Compile
-	DefaultCompiler = New()
-)
+type ErrorInstance struct {
+	msg      string
+	Err      error
+	Instance *build.Instance
+}
+
+func (e ErrorInstance) Error() string {
+	return e.msg
+}
+
+// DefaultCompiler is the default Compiler and is used by Compile
+var DefaultCompiler = New()
 
 func Compile(name string, src string) (*Value, error) {
 	return DefaultCompiler.Compile(name, src)
@@ -130,9 +139,22 @@ func (c *Compiler) Err(err error) error {
 	}
 
 	cfg := &cueerrors.Config{}
-	if cwd, err := os.Getwd(); err == nil {
+	if cwd, wderr := os.Getwd(); wderr == nil {
 		cfg.Cwd = cwd
 	}
 
 	return errors.New(cueerrors.Details(err, cfg))
+}
+
+func (c *Compiler) ErrInstance(err error, i *build.Instance) error {
+	if err == nil {
+		return nil
+	}
+
+	cfg := &cueerrors.Config{}
+	if cwd, wderr := os.Getwd(); wderr == nil {
+		cfg.Cwd = cwd
+	}
+
+	return &ErrorInstance{msg: cueerrors.Details(err, cfg), Instance: i, Err: err}
 }

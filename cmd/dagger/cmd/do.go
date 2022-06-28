@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,12 +12,14 @@ import (
 	"text/tabwriter"
 
 	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/format"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/analytics"
 	"go.dagger.io/dagger/cmd/dagger/cmd/common"
 	"go.dagger.io/dagger/cmd/dagger/logger"
+	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plan"
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/telemetry"
@@ -77,12 +80,47 @@ var doCmd = &cobra.Command{
 		targetPath := getTargetPath(cmd.Flags().Args())
 
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
+
+		if !viper.GetBool("help") {
+			// we send the RunStarted event regardless if `loadPlan` fails since we also want to capture
+			// and provide assistance when plan fails to evaluate
+			var plan string
+			if daggerPlan != nil {
+				plan = fmt.Sprintf("%#v", daggerPlan.Source().Cue())
+			}
+			// Fire "run started" event once we know there is an action to run (ie. not calling --help)
+			tm.Push(ctx, event.RunStarted{
+				Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
+				Args:   os.Args[1:],
+				Plan:   plan,
+			})
+		}
+
 		if err != nil {
 			lg.Error().Err(err).Msgf("failed to load plan")
+
 			if viper.GetBool("help") {
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
+			} else {
+				var instanceErr *compiler.ErrorInstance
+				rce := event.RunCompleted{
+					State: event.RunCompletedStateFailed,
+					Err:   &event.RunError{Message: err.Error()},
+					Error: err.Error(),
+				}
+
+				if errors.As(err, &instanceErr) {
+					planFiles := map[string]string{}
+					for _, f := range instanceErr.Instance.Files {
+						bfile, _ := format.Node(f)
+						planFiles[filepath.Base(f.Filename)] = string(bfile)
+					}
+					rce.Err.PlanFiles = planFiles
+				}
+				tm.Push(ctx, rce)
 			}
+
 			err = fmt.Errorf("failed to load plan: %w", err)
 			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 			os.Exit(1)
@@ -137,13 +175,6 @@ var doCmd = &cobra.Command{
 			os.Exit(0)
 		}
 
-		// Fire "run started" event once we know there is an action to run (ie. not calling --help)
-		tm.Push(ctx, event.RunStarted{
-			Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
-			Args:   os.Args[1:],
-			Plan:   fmt.Sprintf("%#v", daggerPlan.Source().Cue()),
-		})
-
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
 			tty, err = logger.NewTTYOutput(os.Stderr)
 			if err != nil {
@@ -185,6 +216,7 @@ var doCmd = &cobra.Command{
 			tm.Push(ctx, event.RunCompleted{
 				State: event.RunCompletedStateFailed,
 				Error: err.Error(),
+				Err:   &event.RunError{Message: err.Error()},
 			})
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
