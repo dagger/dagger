@@ -25,5 +25,5 @@
 	}
 
 	// Resulting container image
-	image: _set.output
+	image: _build.output
 }
