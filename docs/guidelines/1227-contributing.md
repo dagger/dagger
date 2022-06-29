@@ -78,7 +78,7 @@ We prefer small incremental changes that can be reviewed and merged quickly.
 It's OK if it takes multiple pull requests to close an issue.
 
 The idea is that each improvement should land in Dagger's main branch within a
-few hours.  The sooner we can get multiple people looking at and agreeing on a
+few hours. The sooner we can get multiple people looking at and agreeing on a
 specific change, the quicker we will have it out in a release. The quicker we
 can get these small improvementes in a Dagger release, the quicker we can get
 feedback from our users and find out what doesn't work, or what we have missed.
@@ -177,7 +177,7 @@ git push -f mybranch
 
 ### Can I use a remote development environment?
 
-Yes! The Dagger repository has Github Codespaces configuration included to help help you get started contributing directly from GitHub.
+Yes! The Dagger repository has Github Codespaces configuration included to help you get started contributing directly from GitHub.
 
 The versions of `dagger` and `cue` you are working against will be pre-installed so you can develop your packages, plans and tests with the right tools.
 
