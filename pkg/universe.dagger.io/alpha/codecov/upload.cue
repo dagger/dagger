@@ -42,11 +42,9 @@ import (
 			}
 		}
 		workdir: _sourcePath
-		mounts: {
-			"source": {
-				dest:     _sourcePath
-				contents: source
-			}
+		mounts: "source": {
+			dest:     _sourcePath
+			contents: source
 		}
 	}
 }
