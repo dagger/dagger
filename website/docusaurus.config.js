@@ -50,9 +50,9 @@ module.exports = {
       hideOnScroll: true,
     },
     algolia: {
-      apiKey: "559dcddb4378b889baa48352394616ec",
-      indexName: "Dagger_docs",
-      appId: "XSSC1LRN4S",
+      apiKey: "bffda1490c07dcce81a26a144115cc02",
+      indexName: "dagger",
+      appId: "XEIYPBWGOI",
     },
     hotjar: {
       siteId: "2541514",
