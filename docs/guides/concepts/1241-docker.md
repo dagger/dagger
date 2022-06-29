@@ -461,7 +461,7 @@ You can use these base images later in your app's own multi-stage build.
 
 ### Build arguments
 
-For build arguments, add the `buildArgs` struct:
+For build arguments, add the `buildArg` struct:
 
 ```Dockerfile title="Dockerfile"
 ARG PYTHON_VERSION
@@ -471,7 +471,7 @@ FROM python:${PYTHON_VERSION}
 ```cue
 build: docker.#Dockerfile & {
     source: client.filesystem.".".read.contents
-    buildArgs: PYTHON_VERSION: "3.9"
+    buildArg: PYTHON_VERSION: "3.9"
 }
 ```
 
