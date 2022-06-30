@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Debugging with Dagger Cloud
 
-[Dagger Cloud](https://dagger.cloud/) is under development, but we have just released the first telemetry feature!
+<p><a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> is under development, but we have just released the first telemetry feature!</p>
 
 :::tip
 Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
@@ -16,9 +16,9 @@ To take advantage of this feature, you will need to create an account by followi
 1. Initiate a login process using the CLI with `dagger login`.
 2. A new window will open in the browser requesting to sign-up using GitHub.
 3. After authenticating, authorize the Dagger GitHub application to finish the process.
-4. The browser window will close automatically and your CLI will be authenticated. Now,`dagger do` executions will now be listed in [Dagger Cloud](https://dagger.cloud/).
+4. The browser window will close automatically and your CLI will be authenticated. Now,`dagger do` executions will now be listed in <a href="https://dagger.cloud/" target="_blank" rel="external">Dagger Cloud</a>.
 
-Once you create an account, after running your project again, you will see in [https://dagger.cloud](https://dagger.cloud) the following for each of your runs in a single dashboard:
+Once you create an account, after running your project again, you will see in <a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> the following for each of your runs in a single dashboard:
 
 ![Dagger Cloud run URL](/img/dagger-cloud/runs.png)
 
