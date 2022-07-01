@@ -16,13 +16,9 @@ func (e RunStarted) EventVersion() string {
 }
 
 func (e RunStarted) Validate() error {
-	switch {
-	case e.Action == "":
+	if e.Action == "" {
 		return errEvent("Action", "cannot be empty")
-	case e.Plan == "":
-		return errEvent("Plan", "cannot be empty")
 	}
-
 	return nil
 }
 
@@ -33,10 +29,21 @@ const (
 	RunCompletedStateFailed  RunCompletedState = "failed"
 )
 
+type RunError struct {
+	Message   string            `json:"message,omitempty"`
+	PlanFiles map[string]string `json:"plan_files,omitempty"`
+}
+
 // RunCompleted represents the completion of a run
 type RunCompleted struct {
-	State   RunCompletedState `json:"state"`
-	Error   string            `json:"error,omitempty"`
+	State RunCompletedState `json:"state"`
+	// Used until Dagger 0.2.21 should be replaced by `Err` after all clients
+	// migrate. We're doing this here to prevent versioning the API and the
+	// go package for now
+	Error string `json:"error,omitempty"`
+
+	// Err should eventually replace `Error`
+	Err     *RunError         `json:"err,omitempty"`
 	Outputs map[string]string `json:"outputs,omitempty"`
 }
 

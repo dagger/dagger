@@ -62,9 +62,11 @@ func Build(ctx context.Context, src string, overlays map[string]fs.FS, args ...s
 	if err := instance.Err; err != nil {
 		return nil, Err(err)
 	}
+
 	v := c.Context.BuildInstance(instance)
+
 	if err := v.Err(); err != nil {
-		return nil, c.Err(err)
+		return nil, c.ErrInstance(err, instance)
 	}
 	if err := v.Validate(); err != nil {
 		return nil, c.Err(err)
