@@ -438,10 +438,15 @@ button[class^="copyButton"] {
 
 .menu > .menu__list > .menu__list-item {
   padding-bottom: 1rem;
-}
+ }
 
 .menu__link {
   font-weight: normal;
+}
+
+.menu__list-item-collapsible .menu__link:not(.menu__link--sublist-caret) {
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 .menu__link.button {
