@@ -26,3 +26,8 @@ status = 200
 from = "/reference"
 to = "/reference/alpine"
 status = 302
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Referrer-policy = "no-referrer-when-downgrade"
