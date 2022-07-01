@@ -121,7 +121,10 @@ var doCmd = &cobra.Command{
 				tm.Push(ctx, rce)
 			}
 
-			err = fmt.Errorf("failed to load plan: %w", err)
+			// manually flush events since otherwise they could be skipped as
+			// the program is exiting.
+			tm.Flush()
+
 			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
