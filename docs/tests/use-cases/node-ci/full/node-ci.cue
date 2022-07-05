@@ -8,14 +8,12 @@ import (
 
 dagger.#Plan & {
 	client: {
-		filesystem: {
-			"./": read: {
-				contents: dagger.#FS
-				exclude: [
-					"README.md",
-					"eden.cue",
-				]
-			}
+		filesystem: "./": read: {
+			contents: dagger.#FS
+			exclude: [
+				"README.md",
+				"eden.cue",
+			]
 		}
 		env: {
 			SONAR_LOGIN:     dagger.#Secret
@@ -104,15 +102,13 @@ dagger.#Plan & {
 			}
 		}
 
-		SCA: {
-			dependencyScanning: {
-				docker.#Run & {
-					workdir: "./src"
-					input:   build.output
-					command: {
-						name: "/bin/bash"
-						args: ["-c", "npx audit-ci --high"]
-					}
+		SCA: dependencyScanning: {
+			docker.#Run & {
+				workdir: "./src"
+				input:   build.output
+				command: {
+					name: "/bin/bash"
+					args: ["-c", "npx audit-ci --high"]
 				}
 			}
 		}
