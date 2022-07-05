@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/console"
 	"github.com/morikuni/aec"
+	"github.com/muesli/ansi"
 	"github.com/tonistiigi/vt100"
 	"go.dagger.io/dagger/plan/task"
 	"golang.org/x/sync/errgroup"
@@ -536,9 +537,9 @@ func groupTimer(started, completed time.Time) string {
 }
 
 func makeLine(prefix string, text string, timer string, width int) string {
-	prefixLen := utf8.RuneCountInString(prefix)
-	textLen := utf8.RuneCountInString(text)
-	timerLen := utf8.RuneCountInString(timer)
+	prefixLen := printSize(prefix)
+	textLen := printSize(text)
+	timerLen := printSize(timer)
 	padLen := width - (prefixLen + textLen + timerLen)
 	padLenAbs := int(math.Abs(float64(padLen)))
 
@@ -546,13 +547,13 @@ func makeLine(prefix string, text string, timer string, width int) string {
 	const collapsed = "…"
 	switch {
 	case padLen >= 0:
-		text = trimMessage(text, width)
+		text = trimRightWidth(text, width)
 		padding := strings.Repeat(" ", padLen)
 		out = fmt.Sprintf("%s%s%s%s\n", prefix, text, padding, timer)
 	case padLen < 0 && padLenAbs < textLen:
 		oldLen := textLen
-		text = trimMessage(text, textLen-padLenAbs)
-		newLen := utf8.RuneCountInString(text)
+		text = trimRightWidth(text, textLen-padLenAbs)
+		newLen := printSize(text)
 		padding := strings.Repeat(" ", padLen+(oldLen-newLen))
 		out = fmt.Sprintf("%s%s%s%s\n", prefix, text, padding, timer)
 	case padLen < 0 && padLenAbs > prefixLen+1 /* message reduced to "…" */ +timerLen:
@@ -644,13 +645,18 @@ func printGroupLine(event Event, width int, cons io.Writer) (nbLines int) {
 	return nbLines
 }
 
+func printSize(s string) int {
+	return ansi.PrintableRuneWidth(s)
+}
+
 func trimMessage(message string, width int) string {
 	if width <= 0 {
 		return ""
 	}
 	s := message
 
-	for sLen := utf8.RuneCountInString(s); sLen > width; sLen = utf8.RuneCountInString(s) {
+	for sLen := printSize(s); sLen > width; sLen = printSize(s) {
+		// TODO the: adapt the number based on the grapheme length
 		offset := 4
 		if sLen < 4 {
 			offset = sLen
@@ -661,7 +667,7 @@ func trimMessage(message string, width int) string {
 }
 
 func pad(message string, width int) string {
-	if delta := width - utf8.RuneCountInString(message); delta > 0 {
+	if delta := width - printSize(message); delta > 0 {
 		message += strings.Repeat(" ", delta)
 	}
 	return message
@@ -681,7 +687,7 @@ func termLen(message string, width int) int {
 	}
 	// We remove the empty runes/lines that represent the empty terminal space
 	trimmed := strings.TrimRight(string(fullMessage), " ")
-	lTrimmed := utf8.RuneCountInString(trimmed)
+	lTrimmed := printSize(trimmed)
 
 	return lTrimmed
 }
@@ -717,4 +723,25 @@ func getSize(cons ConsoleSizer) (width, height int) {
 	}
 
 	return width, height
+}
+
+func trimRightWidth(s string, limit int) string {
+	if limit == 0 {
+		return ""
+	}
+
+	if limit < 0 {
+		return s
+	}
+
+	for w := ansi.PrintableRuneWidth(s); w > limit; w = ansi.PrintableRuneWidth(s) {
+		s = s[:len(s)-1]
+
+		// if we removed some part of a grapheme cluster, we might get non-UTF8 string or unprintable character; skip
+		if !utf8.ValidString(s) {
+			continue
+		}
+	}
+
+	return s
 }
