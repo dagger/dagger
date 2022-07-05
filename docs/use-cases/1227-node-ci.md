@@ -74,7 +74,7 @@ It does all of this only using the Bash and Docker packages in a very simple lay
 
 There you have it, a simple yet functional CI pipeline using tools that are already available and pre-packaged. Any tool that has been packaged as either a node package or a docker container can smoothly fit into the above pipeline. Any other way of packaging tools will also be able to fit with a little tweaking. Here is the full pipeline to use as you wish. Have fun!
 
-## Full pipeline example
+### Full pipeline example
 
 ```cue file=../tests/use-cases/node-ci/full/node-ci.cue
 
