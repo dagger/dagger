@@ -1,6 +1,6 @@
 ---
 slug: /1227/node-ci
-displayed_sidebar: europa
+displayed_sidebar: '0.2'
 ---
 
 # Basic Node CI
