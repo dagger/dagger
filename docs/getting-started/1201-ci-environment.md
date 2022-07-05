@@ -139,6 +139,41 @@ build:
     ARGS: build
 ```
 
+:::caution
+`Gitlab`'s template above is using a `Docker-in-Docker` service. No UNIX socket (`/var/run/docker.sock`) will be available on the host unless you specifically mount it.
+
+The recommended way of interacting with the docker daemon using the `universe.dagger.io/docker/cli` package is to rely on the TCP connection:
+
+```cue
+package example
+
+import (
+  "dagger.io/dagger"
+
+  "universe.dagger.io/docker/cli"
+)
+
+dagger.#Plan & {
+  client: {
+    filesystem: "/certs/client": read: contents: dagger.#FS
+    env: DOCKER_PORT_2376_TCP: string
+  }
+  actions: {
+    test: cli.#Run & {
+      host:   client.env.DOCKER_PORT_2376_TCP
+      always: true
+      certs: client.filesystem."/certs/client".read.contents
+      command: {
+        name: "docker"
+        args: ["info"]
+      }
+    }
+  }
+}
+```
+
+:::
+
 </TabItem>
 
 <TabItem value="jenkins">
