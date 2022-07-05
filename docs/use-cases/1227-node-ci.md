@@ -11,14 +11,11 @@ Dagger is incredibly useful for all kinds of complex deployment and building. In
 
 The application we are building a dagger pipeline for has very simple build and publish steps.
 
-        Information on said steps, maybe an image?
-
 Where this pipeline is powerful is its use of pre-build tools to check the code every time new code is pushed. It uses the below tools to ensure the repo is up to scratch.
 
 - [ESlint](https://eslint.org/)
 - [Sonarcloud](https://sonarcloud.io/)
 - [Audit CI](https://www.npmjs.com/package/audit-ci)
-- [Gitleaks](https://github.com/zricethezav/gitleaks)
 - [License Finder](https://github.com/pivotal/LicenseFinder)
 
 It does all of this only using the Bash and Docker packages in a very simple layout.
@@ -45,7 +42,7 @@ client: {
 
 ### Set up all dependencies
 
-- Next we set up all the containers and tools we will need for the other steps. In this case it is a Node container for building the application and all the tools bundled into NPM, a Gitleaks container to run a secret detection scan and Sonarscanner for static code analysis. I do not imagine this will often be called with a dagger do command and is more useful as a pre-requisite for other actions.
+- Next we set up all the containers and tools we will need for the other steps. In this case it is a Node container for building the application and all the tools bundled into NPM and Sonarscanner for static code analysis. I do not imagine this will often be called with a dagger do command and is more useful as a pre-requisite for other actions.
 
 ```cue
 actions: {
@@ -55,18 +52,6 @@ actions: {
           steps: [
             docker.#Pull & {
               source: "index.docker.io/node"
-            },
-            docker.#Copy & {
-              contents: client.filesystem."./".read.contents
-              dest:     "./src"
-            },
-          ]
-        }
-      gitleaks:
-        docker.#Build & {
-          steps: [
-            docker.#Pull & {
-              source: "index.docker.io/zricethezav/gitleaks"
             },
             docker.#Copy & {
               contents: client.filesystem."./".read.contents
@@ -131,3 +116,54 @@ staticAnalysis: {
         }
     }
 ```
+
+### Test step
+
+- For our tests we will be using the build step output so we do not need to build the node app again. We will then simply send a npm script command to initiate both the unit and integration tests.
+
+```cue
+test: {
+      integrationTest: {
+        workdir: "./src"
+        docker.#Run & {
+          input: build.output
+          command: {
+            name: "/bin/bash"
+            args: ["-c", "npm run test:ci"]
+          }
+        }
+      }
+      unitTest: {
+        workdir: "./src"
+        docker.#Run & {
+          input: build.output
+          command: {
+            name: "/bin/bash"
+            args: ["-c", "npm run test:unit"]
+          }
+        }
+      }
+    }
+```
+
+## SCA step
+
+- Software Composition Analysis is a security step designed to look at the open source in the project and check it for known vulnerabilities. To do this we are using a node package that will scan for known vulnerabilities and fail the pipeline and report if it finds any. We use the output from the build step and simply execute the node command.
+
+```cue
+SCA: {
+      dependencyScanning: {
+        docker.#Run & {
+          workdir: "./src"
+          input:   build.output
+          command: {
+            name: "/bin/bash"
+            args: ["-c", "npx audit-ci --high"]
+          }
+        }
+      }
+```
+
+## Summary
+
+There you have it, a simple yet functional CI pipeline using tools that are already available and pre-packaged. Any tool that has been packaged as either a node package or a docker container can smoothly fit into the above pipeline. Any other way of packaging tools will also be able to fit with a little tweaking im sure. Have fun!
