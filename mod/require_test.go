@@ -27,7 +27,7 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Dagger repo with path",
-			in:   "github.com/dagger/dagger/stdlib",
+			in:   "github.com/dagger/dagger.git/stdlib",
 			want: &Require{
 				repo:    "github.com/dagger/dagger",
 				path:    "/stdlib",
@@ -36,7 +36,7 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Dagger repo with longer path",
-			in:   "github.com/dagger/dagger/stdlib/test/test",
+			in:   "github.com/dagger/dagger.git/stdlib/test/test",
 			want: &Require{
 				repo:    "github.com/dagger/dagger",
 				path:    "/stdlib/test/test",
@@ -45,7 +45,7 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Dagger repo with path and version",
-			in:   "github.com/dagger/dagger/stdlib@v0.1",
+			in:   "github.com/dagger/dagger.git/stdlib@v0.1",
 			want: &Require{
 				repo:    "github.com/dagger/dagger",
 				path:    "/stdlib",
@@ -54,7 +54,7 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Dagger repo with longer path and version tag",
-			in:   "github.com/dagger/dagger/stdlib/test/test@v0.0.1",
+			in:   "github.com/dagger/dagger.git/stdlib/test/test@v0.0.1",
 			want: &Require{
 				repo:    "github.com/dagger/dagger",
 				path:    "/stdlib/test/test",
@@ -62,7 +62,7 @@ func TestParseArgument(t *testing.T) {
 			},
 		},
 		{
-			name: "Alpha Dagger repo with path",
+			name: "Universe Dagger repo with path",
 			in:   "universe.dagger.io/gcp/gke@v0.1.0-alpha.20",
 			want: &Require{
 				repo:    "universe.dagger.io",
@@ -74,7 +74,7 @@ func TestParseArgument(t *testing.T) {
 			},
 		},
 		{
-			name: "Alpha Dagger repo",
+			name: "Universe Dagger repo",
 			in:   "universe.dagger.io@v0.1.0-alpha.23",
 			want: &Require{
 				repo:    "universe.dagger.io",
@@ -87,7 +87,7 @@ func TestParseArgument(t *testing.T) {
 		},
 		{
 			name: "Dagger repo with longer path and commit version",
-			in:   "github.com/dagger/dagger/stdlib/test/test@26a1d46d1b3c",
+			in:   "github.com/dagger/dagger.git/stdlib/test/test@26a1d46d1b3c",
 			want: &Require{
 				repo:    "github.com/dagger/dagger",
 				path:    "/stdlib/test/test",
@@ -95,34 +95,7 @@ func TestParseArgument(t *testing.T) {
 			},
 		},
 		{
-			name: "Custom git provider without folder",
-			in:   "git.blocklayer.com/dagger/test.git@main",
-			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test",
-				path:    "",
-				version: "main",
-			},
-		},
-		{
-			name: "Custom git provider with folder and version",
-			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
-			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test",
-				path:    "/test",
-				version: "v1.1.0",
-			},
-		},
-		{
-			name: "Custom git provider with folder and version",
-			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
-			want: &Require{
-				repo:    "git.blocklayer.com/dagger/test",
-				path:    "/test",
-				version: "v1.1.0",
-			},
-		},
-		{
-			name: "Custom git provider without folder",
+			name: "Custom git provider without path",
 			in:   "git.blocklayer.com/dagger/test.git",
 			want: &Require{
 				repo:    "git.blocklayer.com/dagger/test",
@@ -131,7 +104,25 @@ func TestParseArgument(t *testing.T) {
 			},
 		},
 		{
-			name: "Custom git provider with folder, no version",
+			name: "Custom git provider without path and with branch",
+			in:   "git.blocklayer.com/dagger/test@main",
+			want: &Require{
+				repo:    "git.blocklayer.com/dagger/test",
+				path:    "",
+				version: "main",
+			},
+		},
+		{
+			name: "Custom git provider with path and version",
+			in:   "git.blocklayer.com/dagger/test.git/test@v1.1.0",
+			want: &Require{
+				repo:    "git.blocklayer.com/dagger/test",
+				path:    "/test",
+				version: "v1.1.0",
+			},
+		},
+		{
+			name: "Custom git provider with path, no version",
 			in:   "git.blocklayer.com/dagger/test.git/test",
 			want: &Require{
 				repo:    "git.blocklayer.com/dagger/test",
@@ -140,7 +131,25 @@ func TestParseArgument(t *testing.T) {
 			},
 		},
 		{
-			name: "Custom git provider with custom port, folder, and version",
+			name: "Custom git provider with longer paths and version",
+			in:   "git.blocklayer.com/dagger/lib/packages/test.git/test/example@v1.1.0",
+			want: &Require{
+				repo:    "git.blocklayer.com/dagger/lib/packages/test",
+				path:    "/test/example",
+				version: "v1.1.0",
+			},
+		},
+		{
+			name: "Custom git provider with longer paths, no version",
+			in:   "git.blocklayer.com/dagger/lib/packages/test.git/test/example",
+			want: &Require{
+				repo:    "git.blocklayer.com/dagger/lib/packages/test",
+				path:    "/test/example",
+				version: "",
+			},
+		},
+		{
+			name: "Custom git provider with custom port, path, and version",
 			in:   "git.blocklayer.com:7999/ops/dagger.git/stuff/here@v5",
 			want: &Require{
 				repo:    "git.blocklayer.com:7999/ops/dagger",

@@ -17,7 +17,7 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving branch name",
 			require: Require{
-				cloneRepo: "github.com/dagger/dagger-action",
+				cloneRepo: "github.com/dagger/dagger-for-github",
 				clonePath: "",
 				version:   "main",
 			},
@@ -25,7 +25,7 @@ func TestClone(t *testing.T) {
 		{
 			name: "resolving tag",
 			require: Require{
-				cloneRepo: "github.com/dagger/dagger-action",
+				cloneRepo: "github.com/dagger/dagger-for-github",
 				clonePath: "",
 				version:   "v1.0.0",
 			},
@@ -70,7 +70,7 @@ func TestListTags(t *testing.T) {
 	ctx := context.TODO()
 
 	r, err := clone(ctx, &Require{
-		cloneRepo: "github.com/dagger/dagger-action",
+		cloneRepo: "github.com/dagger/dagger-for-github",
 		clonePath: "",
 		version:   "",
 	}, tmpDir, "", "")
@@ -98,7 +98,7 @@ func TestVersionConstraint(t *testing.T) {
 	ctx := context.TODO()
 
 	r, err := clone(ctx, &Require{
-		cloneRepo: "github.com/dagger/dagger-action",
+		cloneRepo: "github.com/dagger/dagger-for-github",
 		clonePath: "",
 		version:   "",
 	}, tmpDir, "", "")
