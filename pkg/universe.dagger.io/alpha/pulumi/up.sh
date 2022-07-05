@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -x
+set -xeo pipefail
 
 if test -v PULUMI_CONFIG_PASSPHRASE || test -v PULUMI_CONFIG_PASSPHRASE_FILE; then
   echo "PULUMI_CONFIG_PASSPHRASE is set, using a local login"
@@ -38,7 +38,7 @@ case "$PULUMI_RUNTIME" in
     ;;
 esac
 
-pulumi up --stack "${PULUMI_STACK}" --yes
+pulumi up --stack "${PULUMI_STACK}" --yes --suppress-outputs
 
 mkdir -p /output
 pulumi --stack "${PULUMI_STACK}" stack output --json --show-secrets > /output/json
