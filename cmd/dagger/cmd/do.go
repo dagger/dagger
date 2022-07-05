@@ -81,7 +81,9 @@ var doCmd = &cobra.Command{
 
 		daggerPlan, err := loadPlan(ctx, viper.GetString("plan"))
 
-		if !viper.GetBool("help") {
+		targetAction := cue.MakePath(targetPath.Selectors()[1:]...).String()
+
+		if !viper.GetBool("help") && len(targetAction) > 0 {
 			// we send the RunStarted event regardless if `loadPlan` fails since we also want to capture
 			// and provide assistance when plan fails to evaluate
 			var plan string
@@ -90,7 +92,7 @@ var doCmd = &cobra.Command{
 			}
 			// Fire "run started" event once we know there is an action to run (ie. not calling --help)
 			tm.Push(ctx, event.RunStarted{
-				Action: cue.MakePath(targetPath.Selectors()[1:]...).String(),
+				Action: targetAction,
 				Args:   os.Args[1:],
 				Plan:   plan,
 			})
