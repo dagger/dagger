@@ -18,15 +18,15 @@ help: # Show how to get started & what targets are available
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 .PHONY: dagger
 dagger: # Build a dev dagger binary
-	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w -X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
+	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
 
 .PHONY: dagger-debug
 dagger-debug: # Build a debug version of the dev dagger binary
-	go build -race -o ./cmd/dagger/dagger-debug -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger/
+	go build -race -o ./cmd/dagger/dagger-debug ./cmd/dagger/
 
 .PHONY: install
 install: # Install a dev dagger binary
-	go install -ldflags '-X go.dagger.io/dagger/version.Revision=$(GIT_REVISION)' ./cmd/dagger
+	go install ./cmd/dagger
 
 .PHONY: test
 test: dagger # Run all tests
