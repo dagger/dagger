@@ -16,7 +16,7 @@ module.exports = {
       label: "Getting Started",
       collapsible: false,
       collapsed: false,
-      items: ["getting-started/local-dev", "getting-started/ci-environment","introduction/vs","getting-started/install"],
+      items: ["getting-started/local-dev", "getting-started/ci-environment","getting-started/install"],
     },
     {
       type: "category",
@@ -99,6 +99,7 @@ module.exports = {
       items: [
         "references/core-actions-reference",
         "references/dagger-types-reference",
+		"introduction/vs",
       ],
     },
     {
