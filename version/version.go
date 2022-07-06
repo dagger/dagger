@@ -3,23 +3,34 @@ package version
 import (
 	"fmt"
 	"runtime"
+	"runtime/debug"
 )
 
 const (
 	DevelopmentVersion = "devel"
 )
 
-var (
-	// Version holds the complete version number. Filled in at linking time.
-	Version = DevelopmentVersion
+// Version holds the complete version number. Filled in at linking time.
+var Version = DevelopmentVersion
 
-	// Revision is filled with the VCS (e.g. git) revision being used to build
-	// the program at linking time.
-	Revision = ""
-)
+// Revision returns the VCS revision being used to build or empty string
+// if none.
+func Revision() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, s := range bi.Settings {
+		if s.Key == "vcs.revision" {
+			return s.Value
+		}
+	}
+
+	return ""
+}
 
 func Short() string {
-	return fmt.Sprintf("dagger %s (%s)", Version, Revision)
+	return fmt.Sprintf("dagger %s (%s)", Version, Revision())
 }
 
 func Long() string {

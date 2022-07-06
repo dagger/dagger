@@ -91,7 +91,7 @@ func New(props Properties) *Event {
 
 		Engine: engineProperties{
 			Version:  version.Version,
-			Revision: version.Revision,
+			Revision: version.Revision(),
 
 			OS:   runtime.GOOS,
 			Arch: runtime.GOARCH,

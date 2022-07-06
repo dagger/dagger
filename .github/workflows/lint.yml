@@ -37,9 +37,9 @@ jobs:
           fetch-depth: 0
 
       - name: "Set up go"
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v2
         with:
-          go-version: 1.16
+          go-version: 1.18
 
       # - name: "Set up dagger from source"
       #   run: |
