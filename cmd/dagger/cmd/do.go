@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/format"
 	"github.com/mitchellh/go-homedir"
+	"github.com/containerd/console"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -57,10 +59,11 @@ var doCmd = &cobra.Command{
 		}
 
 		var (
-			tm  = telemetry.New()
-			lg  = logger.NewWithCloud(tm)
-			ctx = lg.WithContext(cmd.Context())
-			tty *logger.TTYOutput
+			tm   = telemetry.New()
+			lg   = logger.NewWithCloud(tm)
+			ctx  = lg.WithContext(cmd.Context())
+			tty  *logger.TTYOutput
+			tty2 *logger.TTYOutputV2
 		)
 
 		if !viper.GetBool("experimental") {
@@ -181,7 +184,9 @@ var doCmd = &cobra.Command{
 			os.Exit(0)
 		}
 
-		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
+		f := viper.GetString("log-format")
+		switch {
+		case f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())):
 			tty, err = logger.NewTTYOutput(os.Stderr)
 			if err != nil {
 				captureRunCompletedFailed(ctx, tm, err)
@@ -192,6 +197,36 @@ var doCmd = &cobra.Command{
 
 			lg = lg.Output(logger.TeeCloud(tm, tty))
 			ctx = lg.WithContext(ctx)
+
+		case f == "tty2":
+			// FIXME: dolanor: remove once it's more stable/debuggable
+			f, err := ioutil.TempFile("/tmp", "dagger-console-*.log")
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to create TTY file logger")
+			}
+			defer func() {
+				err := f.Close()
+				if err != nil {
+					lg.Fatal().Err(err).Msg("failed to close TTY file logger")
+				}
+			}()
+
+			cons, err := console.ConsoleFromFile(os.Stderr)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to create TTY console")
+			}
+
+			c := logger.ConsoleAdapter{Cons: cons, F: f}
+			tty2, err = logger.NewTTYOutputConsole(&c)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to initialize TTYv2 logger")
+			}
+			tty2.Start()
+			defer tty2.Stop()
+
+			lg = lg.Output(logger.TeeCloud(tm, tty2))
+			ctx = lg.WithContext(ctx)
+
 		}
 
 		cl := common.NewClient(ctx)

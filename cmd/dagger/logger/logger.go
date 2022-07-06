@@ -78,6 +78,8 @@ func jsonLogs() bool {
 		return false
 	case "tty":
 		return false
+	case "tty2":
+		return false
 	case "auto":
 		return !term.IsTerminal(int(os.Stdout.Fd()))
 	default:
