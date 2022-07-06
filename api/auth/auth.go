@@ -40,7 +40,6 @@ var authConfig = &oauth2.Config{
 // Interactive messages are printed to w.
 func Login(ctx context.Context) error {
 	lg := log.Ctx(ctx)
-
 	lg.Info().Msg("logging into your dagger account")
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		lg.Error().Msg("login is only supported in interactive mode (stdout is not a terminal)")
@@ -50,7 +49,10 @@ func Login(ctx context.Context) error {
 
 	// oauth2 localhost handler
 	requestCh := make(chan *http.Request)
-	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+
+	m := http.NewServeMux()
+	// since Login could be called multiple times, only register /callback once
+	m.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		message := "Authentication successful!"
 
 		if oauthError := r.URL.Query().Get("error"); oauthError != "" {
@@ -68,7 +70,8 @@ func Login(ctx context.Context) error {
 			`, message)))
 		requestCh <- r
 	})
-	srv := &http.Server{Addr: fmt.Sprintf("localhost:%d", callbackPort)}
+
+	srv := &http.Server{Addr: fmt.Sprintf("localhost:%d", callbackPort), Handler: m}
 	go func() {
 		err := srv.ListenAndServe()
 		if err != http.ErrServerClosed {
