@@ -21,7 +21,7 @@
     "@mdx-js/react": "^1.6.22",
     "@svgr/webpack": "^6.2.1",
     "amplitude-js": "^8.18.5",
-    "clsx": "^1.2.0",
+    "clsx": "^1.2.1",
     "docusaurus-plugin-sass": "^0.2.2",
     "docusaurus2-dotenv": "^1.4.0",
     "file-loader": "^6.2.0",
