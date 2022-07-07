@@ -22,7 +22,7 @@ func Revision() string {
 	}
 	for _, s := range bi.Settings {
 		if s.Key == "vcs.revision" {
-			return s.Value
+			return s.Value[:9]
 		}
 	}
 
