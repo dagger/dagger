@@ -53,21 +53,28 @@ func Login(ctx context.Context) error {
 	m := http.NewServeMux()
 	// since Login could be called multiple times, only register /callback once
 	m.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		message := "Authentication successful!"
-
 		if oauthError := r.URL.Query().Get("error"); oauthError != "" {
-			message = r.URL.Query().Get("error_description")
-		}
-
-		w.Write([]byte(fmt.Sprintf(`
+			message := r.URL.Query().Get("error_description")
+			fmt.Fprintf(w, `
+				<html>
+				<head>
+				<script>window.close()</script>
+				<body>
+				%s
+				</body>
+				</html>
+				`, message)
+		} else {
+			fmt.Fprint(w, `
 			<html>
 			<head>
-			<script>window.close()</script>
+			<script>window.location.href="https://dagger.cloud/auth-success"</script>
 			<body>
-			%s
 			</body>
 			</html>
-			`, message)))
+			`)
+		}
+
 		requestCh <- r
 	})
 
