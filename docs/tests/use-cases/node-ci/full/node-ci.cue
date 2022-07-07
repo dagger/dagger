@@ -102,7 +102,7 @@ dagger.#Plan & {
 			}
 		}
 
-		SCA:
+		SCA: {
 			dependencyScanning: {
 				workdir: "./src"
 				docker.#Run & {
@@ -113,5 +113,6 @@ dagger.#Plan & {
 					}
 				}
 			}
+		}
 	}
 }
