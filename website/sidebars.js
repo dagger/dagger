@@ -114,6 +114,7 @@ module.exports = {
       },
       items: [
         "use-cases/go-docker-swarm",
+        "use-cases/node-ci"
       ],
     },
     {
