@@ -16,7 +16,6 @@ Where this pipeline is powerful is its use of pre-build tools to check the code 
 - [ESlint](https://eslint.org/)
 - [Sonarcloud](https://sonarcloud.io/)
 - [Audit CI](https://www.npmjs.com/package/audit-ci)
-- [License Finder](https://github.com/pivotal/LicenseFinder)
 
 It does all of this only using the Bash and Docker packages in a very simple layout.
 
@@ -48,7 +47,7 @@ It does all of this only using the Bash and Docker packages in a very simple lay
 
 ### Static Analysis step
 
-- In static analysis we have eslint that will go through the code and fail based on a config file that is set. We also have sonarscanner running with two variables set. The "SONAR_LOGIN" is set in Github as a secret and "GITHUB_HEAD_REF" is a built-in variable from Github set as the pull request name. This names the branch on Sonarqube/Sonarcloud.
+- In static analysis we have eslint that will go through the code and fail based on a config file that is set. We also have sonarscanner running with two variables set. The "SONAR_LOGIN" is set in Github as a secret and "GITHUB_HEAD_REF" is a built-in variable from Github set as the pull request name. This names the branch on Sonarqube/Sonarcloud. If you are using another pipeline you will need to change these as appropriate.
 
 ```cue file=../tests/use-cases/node-ci/static-analysis.cue.fragment
 
