@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -29,18 +30,31 @@ func New() *Client {
 	}
 }
 
+// global mutex across all telemetry clients.
+var m sync.Mutex
+
 // Do fires a request
 func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
 	req = req.WithContext(ctx)
 
 	// OAuth2 authentication
 	if err := auth.SetAuthHeader(ctx, req); err != nil {
-		// If we fail to refresh an access token, try to log in again.
-		c.retryLogin = false
-		err := auth.Login(ctx)
-		if err != nil {
-			return nil, err
+		// if token is invalid or expired, we should handle re-auth in sync
+		// fashion.
+		m.Lock()
+		defer m.Unlock()
+
+		// only client trying to re-auth. other waiting clients shouldn't
+		// re-trigger auth
+		if c.retryLogin {
+			// If we fail to refresh an access token, try to log in again.
+			c.retryLogin = false
+			err := auth.Login(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
+
 		if err := auth.SetAuthHeader(ctx, req); err != nil {
 			return nil, err
 		}
