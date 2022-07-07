@@ -103,10 +103,8 @@ setup() {
 
 @test "task: #Exec with HTTP proxy" {
     cd ./tasks/exec
-    export HTTPS_PROXY="https://localhost:4242/"
-    run "$DAGGER" "do" -p ./http_proxy.cue curlProxy
+    HTTPS_PROXY="https://localhost:4242/" run "$DAGGER" "do" -p ./http_proxy.cue curlProxy
     assert_failure
-    unset HTTP_PROXY
 }
 
 @test "task: #Start #Stop params" {

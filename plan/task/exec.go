@@ -298,17 +298,20 @@ func (e execCommon) runOpts() ([]llb.RunOption, error) {
 		if len(split) != 2 {
 			continue
 		}
-		key, val := strings.ToLower(split[0]), split[1]
-		switch key {
-		case "no_proxy":
+		key, val := split[0], split[1]
+		if strings.EqualFold(key, "no_proxy") {
 			proxyEnv.NoProxy = val
-		case "all_proxy":
+		}
+		if strings.EqualFold(key, "all_proxy") {
 			proxyEnv.AllProxy = val
-		case "http_proxy":
+		}
+		if strings.EqualFold(key, "http_proxy") {
 			proxyEnv.HTTPProxy = val
-		case "https_proxy":
+		}
+		if strings.EqualFold(key, "https_proxy") {
 			proxyEnv.HTTPSProxy = val
-		case "ftp_proxy":
+		}
+		if strings.EqualFold(key, "ftp_proxy") {
 			proxyEnv.FTPProxy = val
 		}
 	}
