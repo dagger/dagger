@@ -12,7 +12,6 @@ builds:
     ldflags:
       - -s -w
       - -X go.dagger.io/dagger/version.Version={{.Version}}
-      - -X go.dagger.io/dagger/version.Revision={{.ShortCommit}}
     goos:
       - linux
       - windows
