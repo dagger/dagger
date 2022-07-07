@@ -103,9 +103,9 @@ dagger.#Plan & {
 		}
 
 		SCA: dependencyScanning: {
+			workdir: "./src"
 			docker.#Run & {
-				workdir: "./src"
-				input:   build.output
+				input: build.output
 				command: {
 					name: "/bin/bash"
 					args: ["-c", "npx audit-ci --high"]
