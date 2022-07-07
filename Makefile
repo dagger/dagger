@@ -15,7 +15,6 @@ help: # Show how to get started & what targets are available
 	@awk -F':+ |$(HELP_TARGET_DEPTH)' '/^[0-9a-zA-Z._%-]+:+.+$(HELP_TARGET_DEPTH).+$$/ { printf "$(GREEN)%-20s\033[0m %s\n", $$1, $$3 }' $(MAKEFILE_LIST) | sort
 	@echo
 
-GIT_REVISION := $(shell git rev-parse --short HEAD)
 .PHONY: dagger
 dagger: # Build a dev dagger binary
 	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
