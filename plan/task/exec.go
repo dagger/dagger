@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -277,15 +278,45 @@ func (e execCommon) runOpts() ([]llb.RunOption, error) {
 		llb.Dir(e.workdir),
 		llb.User(e.user),
 	}
+
 	for k, v := range e.hosts {
 		opts = append(opts, llb.AddExtraHost(k, net.ParseIP(v)))
 	}
+
 	for _, mnt := range e.mounts {
 		opt, err := mnt.runOpt()
 		if err != nil {
 			return nil, err
 		}
 		opts = append(opts, opt)
+	}
+
+	// Handle HTTP_PROXY, HTTPS_PROXY, FTP_PROXY, etc...
+	proxyEnv := llb.ProxyEnv{}
+	for _, envVar := range os.Environ() {
+		split := strings.SplitN(envVar, "=", 2)
+		if len(split) != 2 {
+			continue
+		}
+		key, val := split[0], split[1]
+		if strings.EqualFold(key, "no_proxy") {
+			proxyEnv.NoProxy = val
+		}
+		if strings.EqualFold(key, "all_proxy") {
+			proxyEnv.AllProxy = val
+		}
+		if strings.EqualFold(key, "http_proxy") {
+			proxyEnv.HTTPProxy = val
+		}
+		if strings.EqualFold(key, "https_proxy") {
+			proxyEnv.HTTPSProxy = val
+		}
+		if strings.EqualFold(key, "ftp_proxy") {
+			proxyEnv.FTPProxy = val
+		}
+	}
+	if proxyEnv != (llb.ProxyEnv{}) {
+		opts = append(opts, llb.WithProxy(proxyEnv))
 	}
 	return opts, nil
 }

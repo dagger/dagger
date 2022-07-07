@@ -101,6 +101,12 @@ setup() {
     assert_line --partial --index 9 'actions.basicTest.stop'
 }
 
+@test "task: #Exec with HTTP proxy" {
+    cd ./tasks/exec
+    HTTPS_PROXY="https://localhost:4242/" run "$DAGGER" "do" -p ./http_proxy.cue curlProxy
+    assert_failure
+}
+
 @test "task: #Start #Stop params" {
     cd ./tasks/exec
     "$DAGGER" "do" -p ./start_stop_exec.cue execParamsTest
