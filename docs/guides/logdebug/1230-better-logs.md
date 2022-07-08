@@ -1,9 +1,9 @@
 ---
 slug: /1230/better-logs
-displayed_sidebar: '0.2'
+displayed_sidebar: "0.2"
 ---
 
-import DaggerCloudCTA from '../../includes/dagger-cloud-cta.md'
+import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md';
 
 # How can I have better logs ?
 

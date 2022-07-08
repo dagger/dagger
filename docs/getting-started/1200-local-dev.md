@@ -3,7 +3,7 @@ slug: /1200/local-dev
 displayed_sidebar: "0.2"
 ---
 
-import DaggerCloudCTA from '../includes/dagger-cloud-cta.md'
+import DaggerCloudCTA from '../includes/\_dagger-cloud-cta.md';
 
 # Build & run locally...then in CI
 
