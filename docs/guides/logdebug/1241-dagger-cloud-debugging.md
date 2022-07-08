@@ -63,3 +63,9 @@ You can find the shareable Dagger run URL by clicking on the copy icon where it 
 <br></br>
 
 ![Dagger Cloud run URL](/img/dagger-cloud/share-url.png)
+
+### How do I stop sending telemetry to Dagger Cloud?
+
+By running `dagger logout` the CLI is disconnected from Dagger Cloud.
+This will make the CLI behave as it did before this feature was introduced.
+Since Dagger Cloud is still under heavy development - accurate as of July 2022 - this is a quick way of solving unexpected integration issues.
