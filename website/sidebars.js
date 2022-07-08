@@ -24,6 +24,7 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
+        "core-concepts/vs",
         "core-concepts/action",
         "core-concepts/plan",
         "core-concepts/client",
@@ -99,7 +100,6 @@ module.exports = {
       items: [
         "references/core-actions-reference",
         "references/dagger-types-reference",
-		"introduction/vs",
       ],
     },
     {
