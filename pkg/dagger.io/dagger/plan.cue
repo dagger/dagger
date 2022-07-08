@@ -82,7 +82,7 @@ _#clientFilesystemWrite: {
 	// Path may be absolute, or relative to client working directory
 	path: string
 
-	{
+	*{
 		// File contents to export (as a string or secret)
 		contents: string | #Secret
 
