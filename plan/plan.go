@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -61,7 +62,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 
 	var cueModExists bool
 
-	if planFileInfo.IsDir() {
+	if planFileInfo.IsDir() && filepath.IsAbs(args) {
 		src, cueModExists = pkg.GetCueModParent(cfg.Args...)
 		args = "."
 	} else {
