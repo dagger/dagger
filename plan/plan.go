@@ -269,5 +269,9 @@ func (p *Plan) validate(ctx context.Context) error {
 	_, span := otel.Tracer("dagger").Start(ctx, "plan.Validate")
 	defer span.End()
 
+	if _, err := checkNestedTasks(p.source); err != nil {
+		return err
+	}
+
 	return isPlanConcrete(p.source, p.source)
 }

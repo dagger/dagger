@@ -7,6 +7,7 @@ import (
 	cueerrors "cuelang.org/go/cue/errors"
 	"cuelang.org/go/cue/token"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
 )
 
@@ -97,6 +98,7 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 		if !v.IsConcrete() && !hasDefault {
 			return fieldMissingErr(p, v)
 		}
+
 		it, err := v.Cue().Fields(cue.All())
 		if err != nil {
 			return compiler.Err(err)
@@ -128,4 +130,41 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 
 	// Ignore all other types.
 	return nil
+}
+
+func checkNestedTasks(v *compiler.Value) ([]*compiler.Value, error) {
+	if !v.Kind().IsAnyOf(cue.StructKind) {
+		return nil, nil
+	}
+
+	t, _ := task.Lookup(v)
+	isTask := t != nil
+
+	subTasks := []*compiler.Value{}
+	fields, err := v.Fields(cue.All())
+	if err != nil {
+		return nil, err
+	}
+
+	var groupErr cueerrors.Error
+	for _, field := range fields {
+		sub, err := checkNestedTasks(field.Value)
+		if err != nil {
+			groupErr = cueerrors.Append(groupErr, cueerrors.Promote(err, "nested core actions"))
+		}
+		subTasks = append(subTasks, sub...)
+	}
+
+	if isTask {
+		if len(subTasks) > 0 {
+			parentErr := cueerrors.Newf(v.Pos(), "%s", v.Path().String())
+			for _, sub := range subTasks {
+				subErr := cueerrors.Newf(sub.Pos(), "found nested core action: %s", sub.Path().String())
+				groupErr = cueerrors.Append(groupErr, cueerrors.Wrap(parentErr, subErr))
+			}
+		}
+		subTasks = append(subTasks, v)
+	}
+
+	return subTasks, groupErr
 }

@@ -19,7 +19,7 @@ package dagger
 				// if we read and write to the same path, under the same key,
 				// assume we want to make an update
 				if (read.path & write.path) != _|_ {
-					_after: read
+					_after: read.contents
 				}
 			}
 		}

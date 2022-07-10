@@ -408,6 +408,15 @@ foo.txt"
   assert_output --partial "actions.test.site: undefined field: NONEXISTENT:"
 }
 
+@test "plan/validate/nested" {
+  run "$DAGGER" "do" -p ./plan/validate/nested/nested.cue test
+  assert_failure
+  assert_output --partial 'actions.test.shallow: found nested core action: actions.test.shallow._write'
+  assert_output --partial 'actions.test.deep: found nested core action: actions.test.deep._op.write'
+  assert_output --partial 'actions.test.nested: found nested core action: actions.test.nested._copy'
+  assert_output --partial 'actions.test.nested._copy: found nested core action: actions.test.nested._copy._write'
+}
+
 @test "plan/validate/undefined" {
   run "$DAGGER" "do" -p ./plan/validate/undefined/undefined.cue test
   assert_failure

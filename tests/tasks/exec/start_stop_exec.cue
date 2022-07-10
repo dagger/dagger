@@ -42,13 +42,13 @@ dagger.#Plan & {
 			sig: core.#SendSignal & {
 				input:  start
 				signal: core.SIGHUP
-				_dep:   sleep
+				_dep:   sleep.exit
 			}
 
 			stop: core.#Stop & {
 				input:   start
 				timeout: time.Second
-				_dep:    sig
+				_dep:    sig.signal
 			}
 
 			verify: stop.exit & 99
@@ -175,7 +175,7 @@ dagger.#Plan & {
 
 			stop: core.#Stop & {
 				input: startExec
-				_dep:  syncExec
+				_dep:  syncExec.exit
 			}
 
 			verify: stop.exit & 0
