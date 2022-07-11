@@ -82,9 +82,9 @@ dagger 0.2.19 (GIT_SHA) linux/amd64
 
 <TabItem value="windows">
 
-`dagger` can be installed in Windows via a install powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
+`dagger` can be installed in Windows via an installation powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
 
-If you want to use the install script, from a powershell terminal, run:
+If you want to use the installation script, from a powershell terminal, run:
 
 ```shell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
@@ -96,7 +96,7 @@ Check that `dagger` is installed correctly by opening a `Command Prompt` termina
 
 ```shell
 where dagger
-C:\<your home folder>\dagger.exe
+C:\<your home folder>\dagger\dagger.exe
 ```
 
 If you have Chocolatey installed, just open a terminal and run:
