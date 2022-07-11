@@ -1,25 +1,25 @@
-import React, {useEffect} from 'react';
-import NotFound from '@theme/NotFound';
-import DocPageLayout from '@theme/DocPage/Layout';
+import React, { useEffect } from 'react';
 import clsx from 'clsx';
+import {HtmlClassNameProvider, ThemeClassNames} from '@docusaurus/theme-common';
 import {
-  HtmlClassNameProvider,
-  ThemeClassNames,
   docVersionSearchTag,
   DocsSidebarProvider,
   DocsVersionProvider,
   useDocRouteMetadata,
-} from '@docusaurus/theme-common';
+} from '@docusaurus/theme-common/internal';
+import DocPageLayout from '@theme/DocPage/Layout';
+import NotFound from '@theme/NotFound';
 import SearchMetadata from '@theme/SearchMetadata';
-import amplitude from 'amplitude-js';
+
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import {useLocation} from '@docusaurus/router';
+import amplitude from 'amplitude-js';
 
 export default function DocPage(props) {
   const {versionMetadata} = props;
   const currentDocRouteMetadata = useDocRouteMetadata(props);
-
-    // DocPage Swizzle
+  
+  // DocPage Swizzle
   const {siteConfig} = useDocusaurusContext();
   const location = useLocation();
   
@@ -36,7 +36,6 @@ export default function DocPage(props) {
   if (!currentDocRouteMetadata) {
     return <NotFound />;
   }
-
   const {docElement, sidebarName, sidebarItems} = currentDocRouteMetadata;
   return (
     <>

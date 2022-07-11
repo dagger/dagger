@@ -329,6 +329,10 @@ h1[class^="h1Heading"] {
   }
 }
 
+.header-github-link {
+  margin-right: 1.6rem;
+}
+
 .navbar .button svg {
   display: none;
 }
@@ -438,7 +442,7 @@ button[class^="copyButton"] {
 
 .menu > .menu__list > .menu__list-item {
   padding-bottom: 1rem;
- }
+}
 
 .menu__link {
   font-weight: normal;
