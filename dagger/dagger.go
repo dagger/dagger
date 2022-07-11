@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -27,6 +28,8 @@ import (
 type Context struct {
 	ctx    context.Context
 	client bkgw.Client
+	// TODO: should just be part of API, not here, temp hack
+	secretProvider *secretProvider
 }
 
 func Do(ctx *Context, pkg, action string, v any) (*Result, error) {
@@ -65,17 +68,21 @@ func Do(ctx *Context, pkg, action string, v any) (*Result, error) {
 	return result, nil
 }
 
-func New() *Package {
-	return &Package{
-		actions: make(map[string]ActionFunc),
+// TODO: obviously needs to be more secure, validated you are supposed to have the secret
+func ReadSecret(ctx *Context, id string) (string, error) {
+	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
+		Frontend: "read-secret",
+		FrontendOpt: map[string]string{
+			"secretID": string(id),
+		},
+	})
+	if err != nil {
+		return "", err
 	}
+	return string(res.Metadata[id]), nil
 }
 
-type Package struct {
-	actions map[string]ActionFunc
-}
-
-func (p *Package) Serve() error {
+func RunWithContext(f func(*Context) error) error {
 	grpcConn, err := grpc.DialContext(context.Background(), "unix:///dagger.sock",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(grpcerrors.UnaryClientInterceptor),
@@ -104,35 +111,53 @@ func (p *Package) Serve() error {
 	}
 
 	return client.Run(appcontext.Context(), func(ctx context.Context, c bkgw.Client) (*bkgw.Result, error) {
-		dctx := &Context{
+		err := f(&Context{
 			ctx:    ctx,
 			client: c,
+		})
+		if err != nil {
+			return nil, err
 		}
+		return nil, nil
+	})
+}
 
+func New() *Package {
+	return &Package{
+		actions: make(map[string]ActionFunc),
+	}
+}
+
+type Package struct {
+	actions map[string]ActionFunc
+}
+
+func (p *Package) Serve() error {
+	return RunWithContext(func(ctx *Context) error {
 		actionName := flag.String("a", "", "name of action to invoke")
 		flag.Parse()
 		if *actionName == "" {
-			return nil, errors.New("action name required")
+			return errors.New("action name required")
 		}
 		fn, ok := p.actions[*actionName]
 		if !ok {
-			return nil, errors.New("action not found: " + *actionName)
+			return errors.New("action not found: " + *actionName)
 		}
 		inputBytes, err := os.ReadFile("/inputs/dagger.json")
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		outputBytes, err := fn(dctx, inputBytes)
+		outputBytes, err := fn(ctx, inputBytes)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		err = os.WriteFile("/outputs/dagger.json", outputBytes, 0644)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		return nil, nil
+		return nil
 	})
 }
 
@@ -159,7 +184,13 @@ func Client(fn func(*Context) error) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, bkclient.SolveOpt{Session: attachables}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			api := newAPIServer(c, gw)
+			defer func() {
+				if r := recover(); r != nil {
+					time.Sleep(2 * time.Second) // TODO: dumb, but allows logs to fully flush
+					panic(r)
+				}
+			}()
+			api := newAPIServer(c, gw, secretProvider)
 			socketProvider.api = api // TODO: less ugly way of setting this
 
 			// TODO: redirect the gw we use to our api. This silliness will go away when we move to our own custom API
@@ -169,8 +200,9 @@ func Client(fn func(*Context) error) error {
 			}
 
 			dctx := &Context{
-				ctx:    ctx,
-				client: gw,
+				ctx:            ctx,
+				client:         gw,
+				secretProvider: secretProvider,
 			}
 
 			err = fn(dctx)

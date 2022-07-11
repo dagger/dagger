@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.2
+# syntax = docker/dockerfile:1
 
 FROM golang:1.18.2-alpine AS build
 WORKDIR /src
@@ -7,7 +7,10 @@ ENV GOMODCACHE /root/.cache/gocache
 RUN --mount=target=. --mount=target=/root/.cache,type=cache \
     CGO_ENABLED=0 go build -o /out -ldflags '-s -d -w' ./examples/netlify
 
-FROM scratch
-COPY --from=build /out /entrypoint
-ENTRYPOINT ["/entrypoint"]
+FROM alpine:3.15
+RUN apk add --no-cache bash jq
+COPY --link --from=build /out /usr/local/bin/dagger
+COPY --link ./examples/netlify/dagger.bash /dagger.bash
+ENTRYPOINT ["/usr/local/bin/dagger"]
+ENV PATH /usr/local/bin:$PATH
 LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs

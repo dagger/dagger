@@ -16,6 +16,7 @@ type DaggerType string
 const (
 	DaggerTypeFS     = "fs"
 	DaggerTypeString = "string"
+	DaggerTypeSecret = "secret"
 	DaggerTypeStruct = "struct"
 )
 
@@ -83,17 +84,18 @@ func (o Result) resolve(ctx *Context) (Result, error) {
 
 	var def pb.Definition
 	if err := json.Unmarshal([]byte(o.opcodes), &def); err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("failed to unmarshal opcodes: %v", err)
 	}
 	res, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
 		Definition: &def,
+		Evaluate:   true,
 	})
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("failed to solve during resolve: %v", err)
 	}
 	ref, err := res.SingleRef()
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("failed to get ref during resolve: %v", err)
 	}
 	bytes, err := ref.ReadFile(ctx.ctx, bkgw.ReadRequest{
 		Filename: "/dagger.json",
@@ -106,7 +108,7 @@ func (o Result) resolve(ctx *Context) (Result, error) {
 		var blob interface{}
 		// if err := json.Unmarshal(subbytes, &blob); err != nil {
 		if err := json.Unmarshal(bytes, &blob); err != nil {
-			return Result{}, err
+			return Result{}, fmt.Errorf("failed to unmarshal bytes (%s): %v", string(bytes), err)
 		}
 		m, ok := blob.(map[string]interface{})
 		if !ok {
@@ -114,7 +116,7 @@ func (o Result) resolve(ctx *Context) (Result, error) {
 		}
 		rawSubfield, ok := m[o.selector]
 		if !ok {
-			return Result{}, fmt.Errorf("no field %q in %s (%s)", o.selector, string(bytes), o.selector)
+			return Result{}, fmt.Errorf("no field %q in %+v", o.selector, m)
 		}
 		subfield, ok := rawSubfield.(map[string]interface{})
 		if !ok {
@@ -177,7 +179,7 @@ func (fs *FS) Evaluate(ctx *Context) {
 	fs.res = res
 	var def pb.Definition
 	if err := json.Unmarshal([]byte(fs.res.opcodes), &def); err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to unmarshal opcodes (%s): %v", fs.res.opcodes, err))
 	}
 	bkRes, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
 		Evaluate:   true,
@@ -303,4 +305,69 @@ func (strings Strings) Evaluate(ctx *Context) []string {
 		out = append(out, s.Evaluate(ctx))
 	}
 	return out
+}
+
+type Secret struct {
+	res   Result
+	bkRef bkgw.Reference // optional cached reference, set if result has been evaluated
+}
+
+func (s Secret) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.res)
+}
+
+func (s *Secret) UnmarshalJSON(b []byte) error {
+	var res Result
+	if err := json.Unmarshal(b, &res); err != nil {
+		return err
+	}
+	s.res = res
+	return nil
+}
+
+func (s *Secret) Evaluate(ctx *Context) string {
+	// TODO: synchronization
+	if s.bkRef == nil {
+		res, err := s.res.resolve(ctx)
+		if err != nil {
+			panic(err) // TODO?
+		}
+		s.res = res
+		var def pb.Definition
+		if err := json.Unmarshal([]byte(s.res.opcodes), &def); err != nil {
+			panic(err)
+		}
+		bkRes, err := ctx.client.Solve(ctx.ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: &def,
+		})
+		if err != nil {
+			panic(err)
+		}
+		s.bkRef, err = bkRes.SingleRef()
+		if err != nil {
+			panic(err)
+		}
+	}
+	bytes, err := s.bkRef.ReadFile(ctx.ctx, bkgw.ReadRequest{Filename: "/value"})
+	if err != nil {
+		panic(err)
+	}
+	return string(bytes)
+}
+
+// TODO: not sure if secret IDs need to be lazy like this, but doesn't really hurt and makes copy-pasting string impl easier :-)
+func SecretID(id string) Secret {
+	llbdef, err := llb.Scratch().File(llb.Mkfile("/value", 0644, []byte(id))).Marshal(context.TODO())
+	if err != nil {
+		panic(err) // TODO?
+	}
+	bytes, err := json.Marshal(llbdef.ToPB())
+	if err != nil {
+		panic(err)
+	}
+	return Secret{res: Result{
+		daggerType: DaggerTypeSecret,
+		opcodes:    string(bytes),
+	}}
 }
