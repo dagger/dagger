@@ -133,7 +133,6 @@ func (p *Package) Format(f string, theme string) string {
 	case markdownFormat:
 		out, err := glamour.Render(p.Markdown(), theme)
 		if err != nil {
-
 			return p.Markdown()
 		}
 		return out
