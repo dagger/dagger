@@ -1,15 +1,18 @@
-import React from "react";
-import clsx from "clsx";
-import Link from "@docusaurus/Link";
-import {findFirstCategoryLink, useDocById} from "@docusaurus/theme-common";
-import isInternalUrl from "@docusaurus/isInternalUrl";
-import {translate} from "@docusaurus/Translate";
-import styles from "./styles.module.css";
+import React from 'react';
+import clsx from 'clsx';
+import Link from '@docusaurus/Link';
+import {
+  findFirstCategoryLink,
+  useDocById,
+} from '@docusaurus/theme-common/internal';
+import isInternalUrl from '@docusaurus/isInternalUrl';
+import {translate} from '@docusaurus/Translate';
+import styles from './styles.module.css';
 function CardContainer({href, children}) {
   return (
     <Link
       href={href}
-      className={clsx("card margin--sm padding--sm", styles.cardContainer)}>
+      className={clsx('card margin--sm padding--sm', styles.cardContainer)}>
       {children}
     </Link>
   );
@@ -17,12 +20,12 @@ function CardContainer({href, children}) {
 function CardLayout({href, icon, title, description}) {
   return (
     <CardContainer href={href}>
-      <h2 className={clsx("text--truncate", styles.cardTitle)} title={title}>
+      <h2 className={clsx('text--truncate', styles.cardTitle)} title={title}>
         {icon} {title}
       </h2>
       {description && (
         <p
-          className={clsx("text--truncate", styles.cardDescription)}
+          className={clsx('text--truncate', styles.cardDescription)}
           title={description}>
           {description}
         </p>
@@ -43,10 +46,10 @@ function CardCategory({item}) {
       title={item.label}
       description={translate(
         {
-          message: "{count} items",
-          id: "theme.docs.DocCard.categoryDescription",
+          message: '{count} items',
+          id: 'theme.docs.DocCard.categoryDescription',
           description:
-            "The default description for a category card in the generated index about how many items this category includes",
+            'The default description for a category card in the generated index about how many items this category includes',
         },
         {count: item.items.length},
       )}
@@ -54,7 +57,7 @@ function CardCategory({item}) {
   );
 }
 function CardLink({item}) {
-  const icon = isInternalUrl(item.href) ? "📄️" : "🔗";
+  const icon = isInternalUrl(item.href) ? '📄️' : '🔗';
   const doc = useDocById(item.docId ?? undefined);
   return (
     <CardLayout
@@ -67,9 +70,9 @@ function CardLink({item}) {
 }
 export default function DocCard({item}) {
   switch (item.type) {
-    case "link":
+    case 'link':
       return <CardLink item={item} />;
-    case "category":
+    case 'category':
       return <CardCategory item={item} />;
     default:
       throw new Error(`unknown item type ${JSON.stringify(item)}`);

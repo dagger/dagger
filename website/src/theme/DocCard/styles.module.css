@@ -10,10 +10,8 @@
   background-color: transparent;
 }
 
-
-html[data-theme="dark"] .cardContainer:hover, 
-html[data-theme="dark"] .cardContainer:hover .cardTitle
-{
+html[data-theme="dark"] .cardContainer:hover,
+html[data-theme="dark"] .cardContainer:hover .cardTitle {
   color: var(--ifm-color-emphasis-600);
 }
 
