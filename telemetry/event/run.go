@@ -16,9 +16,6 @@ func (e RunStarted) EventVersion() string {
 }
 
 func (e RunStarted) Validate() error {
-	if e.Action == "" {
-		return errEvent("Action", "cannot be empty")
-	}
 	return nil
 }
 

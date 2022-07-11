@@ -61,6 +61,7 @@ var doCmd = &cobra.Command{
 			ctx = lg.WithContext(cmd.Context())
 			tty *logger.TTYOutput
 		)
+
 		defer tm.Flush()
 		ctx = tm.WithContext(ctx)
 
@@ -83,7 +84,7 @@ var doCmd = &cobra.Command{
 
 		targetAction := cue.MakePath(targetPath.Selectors()[1:]...).String()
 
-		if !viper.GetBool("help") && len(targetAction) > 0 {
+		if !viper.GetBool("help") && (err != nil || len(targetAction) > 0) {
 			// we send the RunStarted event regardless if `loadPlan` fails since we also want to capture
 			// and provide assistance when plan fails to evaluate
 			var plan string
