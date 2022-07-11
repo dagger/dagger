@@ -28,13 +28,14 @@ const (
 	daggerSockName = "dagger-sock"
 )
 
-func newAPIServer(control *client.Client, gw bkgw.Client) *apiServer {
+func newAPIServer(control *client.Client, gw bkgw.Client, sp *secretProvider) *apiServer {
 	s := &apiServer{
-		control:    control,
-		gw:         gw,
-		refs:       make(map[string]bkgw.Reference),
-		httpServer: &http2.Server{},
-		grpcServer: grpc.NewServer(grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor), grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor)),
+		control:        control,
+		gw:             gw,
+		refs:           make(map[string]bkgw.Reference),
+		httpServer:     &http2.Server{},
+		grpcServer:     grpc.NewServer(grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor), grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor)),
+		secretProvider: sp,
 	}
 	grpc_health_v1.RegisterHealthServer(s.grpcServer, health.NewServer())
 	gwpb.RegisterLLBBridgeServer(s.grpcServer, s)
@@ -42,11 +43,12 @@ func newAPIServer(control *client.Client, gw bkgw.Client) *apiServer {
 }
 
 type apiServer struct {
-	control    *client.Client
-	gw         bkgw.Client
-	refs       map[string]bkgw.Reference
-	httpServer *http2.Server
-	grpcServer *grpc.Server
+	control        *client.Client
+	gw             bkgw.Client
+	refs           map[string]bkgw.Reference
+	httpServer     *http2.Server
+	grpcServer     *grpc.Server
+	secretProvider *secretProvider
 }
 
 func (s *apiServer) serve(ctx context.Context, conn net.Conn) {
@@ -110,7 +112,7 @@ func (s *apiServer) Solve(ctx context.Context, req *gwpb.SolveRequest) (*gwpb.So
 
 		// TODO: generate on the fly without pulling a specific image
 		st := llb.Image(pkg).Run(
-			llb.Args([]string{"/entrypoint", "-a", action}),
+			llb.Args([]string{"/usr/local/bin/dagger", "-a", action}),
 			llb.AddSSHSocket(llb.SSHID(daggerSockName), llb.SSHSocketTarget("/dagger.sock")),
 			llb.AddMount("/inputs", input, llb.Readonly),
 			llb.ReadonlyRootFS(),
@@ -138,6 +140,20 @@ func (s *apiServer) Solve(ctx context.Context, req *gwpb.SolveRequest) (*gwpb.So
 			return nil, err
 		}
 		req.Definition = resultDef.ToPB()
+	}
+	// TODO:...
+	if req.Frontend == "read-secret" {
+		secretID, ok := req.FrontendOpt["secretID"]
+		if !ok {
+			return nil, status.Errorf(codes.InvalidArgument, "missing secretID")
+		}
+		val, err := s.secretProvider.GetSecret(ctx, secretID)
+		if err != nil {
+			return nil, err
+		}
+		return &gwpb.SolveResponse{
+			Result: &gwpb.Result{Metadata: map[string][]byte{secretID: val}},
+		}, nil
 	}
 
 	res, err := s.gw.Solve(ctx, bkgw.SolveRequest{

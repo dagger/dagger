@@ -1,30 +1,42 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"os"
 
 	"github.com/dagger/cloak/dagger"
-	"github.com/dagger/cloak/examples/alpine/sdk/alpine"
 )
 
 func main() {
 	err := dagger.Client(func(ctx *dagger.Context) error {
-		output := alpine.Build(ctx, &alpine.BuildInput{
-			Packages: dagger.ToStrings("bash", "curl", "jq"),
-		})
-
-		root := output.Root()
-		root.Evaluate(ctx)
-
-		bytes, err := json.Marshal(output)
+		token, err := os.ReadFile("/home/sipsma/netflify.token") // TODO:
 		if err != nil {
-			panic(err)
+			return err
 		}
+		dagger.AddSecret(ctx, "token", string(token))
 
-		fmt.Printf("%s\n", string(bytes))
+		rawOutput, err := dagger.Do(ctx, "localhost:5555/dagger:netlify", "deploy", map[string]interface{}{
+			"Site":  dagger.ToString("foobar"),
+			"Token": dagger.SecretID("token"),
+		})
+		if err != nil {
+			return err
+		}
+		output := rawOutput.GetField("fs").FS()
+		output.Evaluate(ctx)
 
-		if err := dagger.Shell(ctx, output.Root()); err != nil {
+		/*
+			root := output.Root()
+			root.Evaluate(ctx)
+
+				bytes, err := json.Marshal(output)
+				if err != nil {
+					panic(err)
+				}
+
+				fmt.Printf("%s\n", string(bytes))
+
+		*/
+		if err := dagger.Shell(ctx, output); err != nil {
 			panic(err)
 		}
 

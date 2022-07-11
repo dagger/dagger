@@ -20,3 +20,9 @@ func (p *secretProvider) GetSecret(ctx context.Context, id string) ([]byte, erro
 	}
 	return nil, secrets.ErrNotFound
 }
+
+// TODO: this only works from the client right now, should just be in the API and thus usable anywhere
+func AddSecret(ctx *Context, id, val string) {
+	// TODO: synchronization
+	ctx.secretProvider.secrets[id] = []byte(val)
+}

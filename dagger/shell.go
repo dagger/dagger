@@ -21,11 +21,11 @@ func Shell(ctx *Context, fs FS) error {
 	}
 
 	socketProvider := newAPISocketProvider()
-	secretProvider := newSecretProvider()
+	secretProvider := ctx.secretProvider
 	attachables := []session.Attachable{socketProvider, secretsprovider.NewSecretProvider(secretProvider)}
 
 	_, err = c.Build(ctx.ctx, bkclient.SolveOpt{Session: attachables}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		api := newAPIServer(c, gw)
+		api := newAPIServer(c, gw, secretProvider)
 		socketProvider.api = api // TODO: less ugly way of setting this
 		dctx := &Context{
 			ctx:    ctx,
