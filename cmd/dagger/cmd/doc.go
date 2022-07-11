@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"cuelang.org/go/cue"
+	"github.com/charmbracelet/glamour"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -29,6 +30,12 @@ const (
 	markdownFormat = "md"
 	jsonFormat     = "json"
 	textPadding    = "    "
+)
+
+const (
+	markdownThemeDefault = markdownThemeDark
+	markdownThemeLight   = "light"
+	markdownThemeDark    = "dark"
 )
 
 type Value struct {
@@ -117,14 +124,19 @@ func Parse(ctx context.Context, packageName string, val *compiler.Value) *Packag
 	return pkg
 }
 
-func (p *Package) Format(f string) string {
+func (p *Package) Format(f string, theme string) string {
 	switch f {
 	case textFormat:
 		return p.Text()
 	case jsonFormat:
 		return p.JSON()
 	case markdownFormat:
-		return p.Markdown()
+		out, err := glamour.Render(p.Markdown(), theme)
+		if err != nil {
+
+			return p.Markdown()
+		}
+		return out
 	default:
 		panic(f)
 	}
@@ -255,12 +267,19 @@ var docCmd = &cobra.Command{
 			lg.Fatal().Msg("format must be either `txt`, `md` or `json`")
 		}
 
+		theme := viper.GetString("theme")
+		if format == markdownFormat &&
+			theme != markdownThemeLight &&
+			theme != markdownThemeDark {
+			lg.Fatal().Msg("markdown theme must be either `light`, `dark` or `json`")
+		}
+
 		output := viper.GetString("output")
 		if output != "" {
 			if len(args) > 0 {
 				lg.Warn().Str("packageName", args[0]).Msg("arg is ignored when --output is set")
 			}
-			walkPackages(ctx, output, format)
+			walkPackages(ctx, output, format, theme)
 			return
 		}
 
@@ -275,7 +294,7 @@ var docCmd = &cobra.Command{
 			lg.Fatal().Err(err).Msg("cannot compile code")
 		}
 		p := Parse(ctx, packageName, val)
-		fmt.Printf("%s", p.Format(format))
+		fmt.Printf("%s", p.Format(format, theme))
 
 		<-doneCh
 	},
@@ -283,6 +302,7 @@ var docCmd = &cobra.Command{
 
 func init() {
 	docCmd.Flags().StringP("format", "f", textFormat, "Output format (txt|md)")
+	docCmd.Flags().StringP("theme", "t", markdownThemeDefault, "Output Markdown theme (light|dark)")
 	docCmd.Flags().StringP("output", "o", "", "Output directory")
 
 	if err := viper.BindPFlags(docCmd.Flags()); err != nil {
@@ -351,7 +371,7 @@ func walkPackage(ctx context.Context, packages map[string]*Package, packageName,
 }
 
 // walkPackages generate whole docs from stdlib walk
-func walkPackages(ctx context.Context, output, format string) {
+func walkPackages(ctx context.Context, output, format, theme string) {
 	lg := log.Ctx(ctx)
 
 	lg.Info().Str("output", output).Msg("generating stdlib")
@@ -404,7 +424,7 @@ func walkPackages(ctx context.Context, output, format string) {
 		defer f.Close()
 
 		indexKeys = append(indexKeys, p)
-		fmt.Fprintf(f, "%s", pkg.Format(format))
+		fmt.Fprintf(f, "%s", pkg.Format(format, theme))
 	}
 
 	// Generate index from sorted list of packages
