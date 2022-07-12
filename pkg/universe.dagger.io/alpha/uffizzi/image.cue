@@ -6,7 +6,7 @@ import (
 
 #Image: {
 	// The python version to use
-	version: *"latest" | string
+	version: *"v0.11.2" | string
 	docker.#Pull & {
 		source: "uffizzi/cli:\(version)"
 	}
