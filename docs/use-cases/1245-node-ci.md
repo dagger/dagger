@@ -1,5 +1,5 @@
 ---
-slug: /1227/node-ci
+slug: /1245/node-ci
 displayed_sidebar: '0.2'
 ---
 
