@@ -12,7 +12,6 @@ setup() {
 
 	"$DAGGER" project init ./ --name "github.com/foo/bar"
 	test -d ./cue.mod/pkg
-	test -d ./cue.mod/usr
 	test -f ./cue.mod/module.cue
 	contents=$(cat ./cue.mod/module.cue)
 	[ "$contents" == 'module: "github.com/foo/bar"' ]

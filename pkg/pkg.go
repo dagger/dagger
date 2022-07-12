@@ -276,11 +276,6 @@ func CueModInit(ctx context.Context, parentDir, module string) error {
 		}
 	}
 
-	if err := os.Mkdir(path.Join(modDir, "usr"), 0755); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			return err
-		}
-	}
 	if err := os.Mkdir(path.Join(modDir, "pkg"), 0755); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return err
