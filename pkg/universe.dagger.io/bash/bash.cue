@@ -13,14 +13,17 @@ import (
 
 // Like #Run, but with a pre-configured container image.
 #RunSimple: #Run & {
-	_simpleImage: #SimpleImage
+	_simpleImage: #Image
 	input:        _simpleImage.output
 }
 
-// Build a simple container image which can run bash
-#SimpleImage: alpine.#Build & {
+// Default simple container image which can run bash
+#Image: alpine.#Build & {
 	packages: bash: _
 }
+
+// DEPRECATED: Use bash.#Image instead
+#SimpleImage: #Image
 
 // Run a bash script in a Docker container
 //  Since this is a thin wrapper over docker.#Run, we embed it.
