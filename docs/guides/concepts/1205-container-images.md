@@ -9,7 +9,7 @@ You can use Dagger to build container images, either by executing a Dockerfile, 
 
 :::tip
 
-Check out the [docker package](./1241-docker.md) guide for more detailed information on the actions seen here.
+Check out the [docker package](./1244-docker.md) guide for more detailed information on the actions seen here.
 
 :::
 
