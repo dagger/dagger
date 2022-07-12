@@ -8,20 +8,17 @@ displayed_sidebar: '0.2'
 <p><a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> is under development, but we have just released the first telemetry feature!</p>
 
 :::tip
-Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
-
-:::tip
-Ensure you're using Dagger Engine/CLI version `0.2.18` or higher for Dagger Cloud.
+Ensure you are using `dagger` CLI version `0.2.18` or higher for Dagger Cloud.
 :::
 
-To take advantage of this feature, you will need to create an account by following the steps below:
+To take advantage of this feature, you will need to create an account by following these steps:
 
 1. Initiate a login process using the CLI with `dagger login`.
 2. A new window will open in the browser requesting to sign-up using GitHub.
 3. After authenticating, authorize the Dagger GitHub application to finish the process.
-4. The browser window will close automatically and your CLI will be authenticated. Now,`dagger do` executions will now be listed in <a href="https://dagger.cloud/" target="_blank" rel="external">Dagger Cloud</a>.
+4. The CLI is now authenticated, it's OK to close the browser window.
 
-Once you create an account, after running your project again, you will see in <a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> the following for each of your runs in a single dashboard:
+Once you complete the above, your `dagger do` executions will appear under your <a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> account, and look similar to:
 
 ![Dagger Cloud run URL](/img/dagger-cloud/runs.png)
 
@@ -50,9 +47,9 @@ Once we have your request, our team will assign a team member to review and help
 
 ## FAQ
 
-### Who can access the information in my execution URL?
+### Who can access my execution URL?
 
-The Dagger team are the only ones who can access the information in the execution URL.
+Only you & the Dagger team can access the information in the execution URL.
 
 ### What if I don’t want to open a public issue?
 
@@ -63,3 +60,9 @@ You can find the shareable Dagger run URL by clicking on the copy icon where it 
 <br></br>
 
 ![Dagger Cloud run URL](/img/dagger-cloud/share-url.png)
+
+### How do I stop sending telemetry to Dagger Cloud?
+
+By running `dagger logout` the CLI is disconnected from Dagger Cloud.
+This will make the CLI behave as it did before this feature was introduced.
+Since Dagger Cloud is still under heavy development - accurate as of July 2022 - this is a quick way of solving unexpected integration issues.
