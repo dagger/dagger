@@ -71,6 +71,20 @@ dagger.#Plan & {
 			verify: stop.exit & 137
 		}
 
+		outputTest: {
+			start: core.#Start & {
+				input: image.output
+				args: [
+					"echo", "hello from core.#Start",
+				]
+			}
+
+			stop: core.#Stop & {
+				input:   start
+				timeout: 3 * time.Second
+			}
+		}
+
 		// test all the various parameters that can be applied to an exec
 		execParamsTest: {
 			sharedCache: core.#CacheDir & {
@@ -133,7 +147,7 @@ dagger.#Plan & {
 				user:    "guest"
 				workdir: "/tmp"
 				args: [
-					"sh", "-e", "-c",
+					"sh", "-e", "-x", "-c",
 					#"""
 						test -d /fs/foo
 

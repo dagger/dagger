@@ -29,7 +29,7 @@ type Solver struct {
 	l        sync.RWMutex
 
 	containers   map[string]*container
-	containersMu sync.Mutex
+	containersMu sync.RWMutex
 }
 
 type Opts struct {
