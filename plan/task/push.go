@@ -19,7 +19,7 @@ func init() {
 type pushTask struct {
 }
 
-func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	lg := log.Ctx(ctx)
 
 	rawDest, err := v.Lookup("dest").String()
@@ -88,7 +88,7 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	imageRef := fmt.Sprintf("%s@%s", resp.ExporterResponse["image.name"], digest)
 
 	// Fill result
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"result": imageRef,
-	})
+	}, nil
 }

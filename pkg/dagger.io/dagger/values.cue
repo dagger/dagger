@@ -2,5 +2,5 @@ package dagger
 
 // An empty filesystem tree
 #Scratch: #FS & {
-	$dagger: fs: _id: null
+	$dagger: fs: id: null
 }

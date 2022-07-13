@@ -24,7 +24,7 @@ func init() {
 type execTask struct {
 }
 
-func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	common, err := parseCommon(pctx, v)
 	if err != nil {
 		return nil, err
@@ -86,10 +86,10 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	// Fill result
 	resultFS := pctx.FS.New(result)
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": resultFS.MarshalCUE(),
 		"exit":   0,
-	})
+	}, nil
 }
 
 func parseCommon(pctx *plancontext.Context, v *compiler.Value) (*execCommon, error) {

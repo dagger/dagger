@@ -9,13 +9,12 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/pkg"
 )
 
 var fsIDPath = cue.MakePath(
 	cue.Str("$dagger"),
 	cue.Str("fs"),
-	cue.Hid("_id", pkg.DaggerPackage),
+	cue.Str("id"),
 )
 
 func IsFSValue(v *compiler.Value) bool {
@@ -42,18 +41,23 @@ func (fs *FS) State() (llb.State, error) {
 	return fs.Result().ToState()
 }
 
-func (fs *FS) MarshalCUE() *compiler.Value {
-	v := compiler.NewValue()
+func (fs *FS) MarshalCUE() map[string]interface{} {
 	if fs.result == nil {
-		if err := v.FillPath(fsIDPath, nil); err != nil {
-			panic(err)
-		}
-	} else {
-		if err := v.FillPath(fsIDPath, fs.id); err != nil {
-			panic(err)
+		return map[string]interface{}{
+			"$dagger": map[string]interface{}{
+				"fs": map[string]interface{}{
+					"id": nil,
+				},
+			},
 		}
 	}
-	return v
+	return map[string]interface{}{
+		"$dagger": map[string]interface{}{
+			"fs": map[string]interface{}{
+				"id": fs.id,
+			},
+		},
+	}
 }
 
 type fsContext struct {
@@ -79,9 +83,9 @@ func (c *fsContext) FromValue(v *compiler.Value) (*FS, error) {
 	c.l.RLock()
 	defer c.l.RUnlock()
 
-	if !v.LookupPath(fsIDPath).IsConcrete() {
-		return nil, fmt.Errorf("invalid FS at path %q: FS is not set", v.Path())
-	}
+	// if !v.LookupPath(fsIDPath).IsConcrete() {
+	// 	return nil, fmt.Errorf("invalid FS at path %q: FS is not set", v.Path())
+	// }
 
 	// This is #Scratch, so we'll return an empty FS
 	if IsFSScratchValue(v) {

@@ -50,7 +50,7 @@ func (c *sourceTask) PreRun(_ context.Context, pctx *plancontext.Context, v *com
 	return nil
 }
 
-func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	lg := log.Ctx(ctx)
 
 	path, err := v.Lookup("path").AbsPath()
@@ -100,7 +100,7 @@ func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solv
 	}
 
 	fs := pctx.FS.New(result)
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": fs.MarshalCUE(),
-	})
+	}, nil
 }

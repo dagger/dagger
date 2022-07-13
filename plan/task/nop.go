@@ -9,7 +9,8 @@ import (
 )
 
 func init() {
-	Register("Nop", func() Task { return &nopTask{} })
+	// FIXME: disabled Nop because not sure how to marshal the output value below
+	// Register("Nop", func() Task { return &nopTask{} })
 }
 
 type nopTask struct {

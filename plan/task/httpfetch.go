@@ -21,7 +21,7 @@ func init() {
 type httpFetchTask struct {
 }
 
-func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	var httpFetch struct {
 		Source      string
 		Checksum    string
@@ -73,7 +73,7 @@ func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	}
 
 	fs := pctx.FS.New(result)
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": fs.MarshalCUE(),
-	})
+	}, nil
 }

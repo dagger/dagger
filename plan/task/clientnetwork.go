@@ -20,7 +20,7 @@ func init() {
 type clientNetwork struct {
 }
 
-func (t clientNetwork) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientNetwork) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	lg := log.Ctx(ctx)
 
 	addr, err := v.Lookup("address").String()
@@ -58,7 +58,7 @@ func (t clientNetwork) Run(ctx context.Context, pctx *plancontext.Context, _ *so
 
 	socket := pctx.Sockets.New(unix, npipe)
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"connect": socket.MarshalCUE(),
-	})
+	}, nil
 }

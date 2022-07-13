@@ -19,7 +19,7 @@ func init() {
 type clientEnvTask struct {
 }
 
-func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	log.Ctx(ctx).Debug().Msg("loading environment variables")
 
 	fields, err := v.Fields(cue.Optional(true))
@@ -42,7 +42,7 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *so
 		}
 	}
 
-	return compiler.NewValue().FillFields(envs)
+	return envs, nil
 }
 
 func (t clientEnvTask) getEnv(envvar string, v *compiler.Value, isOpt bool, pctx *plancontext.Context) (interface{}, error) {

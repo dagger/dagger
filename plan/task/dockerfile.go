@@ -27,7 +27,7 @@ func init() {
 
 type dockerfileTask struct{}
 
-func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	lg := log.Ctx(ctx)
 	auths, err := v.Lookup("auth").Fields()
 	if err != nil {
@@ -153,10 +153,10 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
 	}
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": pctx.FS.New(solvedRef).MarshalCUE(),
 		"config": ConvertImageConfig(image.Config),
-	})
+	}, nil
 }
 
 func (t *dockerfileTask) dockerBuildOpts(v *compiler.Value, pctx *plancontext.Context) (map[string]string, error) {

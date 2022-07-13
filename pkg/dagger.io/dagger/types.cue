@@ -7,7 +7,7 @@ package dagger
 //  - A directory containing binary artifacts
 // Rule of thumb: if it fits in a tar archive, it fits in a #FS.
 #FS: {
-	$dagger: fs: _id: string | null
+	$dagger: fs: id: string | null
 }
 
 // A reference to an external secret, for example:
@@ -17,7 +17,7 @@ package dagger
 // Secrets are never merged in the Cue tree. They can only be used
 // by a special filesystem mount designed to minimize leak risk.
 #Secret: {
-	$dagger: secret: _id: string
+	$dagger: secret: id: string
 }
 
 // A reference to a network socket, for example:
@@ -25,5 +25,5 @@ package dagger
 //  - A TCP or UDP port
 //  - A Windows named pipe
 #Socket: {
-	$dagger: socket: _id: string
+	$dagger: socket: id: string
 }

@@ -31,7 +31,7 @@ import "dagger.io/dagger"
 	// Environment variables
 	env: [key=string]: string
 
-	_id: string | null @dagger(generated)
+	id: string | null @dagger(generated)
 }
 
 // Stop an asynchronous command created by #Start by sending SIGKILL. If

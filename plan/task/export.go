@@ -37,7 +37,7 @@ func (t exportTask) PreRun(_ context.Context, pctx *plancontext.Context, v *comp
 	return nil
 }
 
-func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	lg := log.Ctx(ctx)
 
 	dir := pctx.TempDirs.Get(v.Path().String())
@@ -129,8 +129,8 @@ func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 	}
 
 	fs := pctx.FS.New(result)
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output":  fs.MarshalCUE(),
 		"imageID": imageID,
-	})
+	}, nil
 }

@@ -18,7 +18,7 @@ func init() {
 type newSecretTask struct {
 }
 
-func (t *newSecretTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *newSecretTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func (t *newSecretTask) Run(_ context.Context, pctx *plancontext.Context, _ *sol
 
 	secret := pctx.Secrets.New(plaintext)
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": secret.MarshalCUE(),
-	})
+	}, nil
 }

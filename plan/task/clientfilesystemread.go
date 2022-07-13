@@ -42,7 +42,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 	return nil
 }
 
-func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	path, err := clientFSPath(v.Lookup("path"))
 	if err != nil {
 		return nil, err
@@ -53,9 +53,9 @@ func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Con
 		return nil, err
 	}
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"contents": contents,
-	})
+	}, nil
 }
 
 func (t clientFilesystemReadTask) validatePath(path string, isFS bool) error {
@@ -112,7 +112,7 @@ func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *planco
 	return nil, fmt.Errorf("unsupported type %q", k)
 }
 
-func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) (*compiler.Value, error) {
+func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) (TaskResult, error) {
 	var dir struct {
 		Include []string
 		Exclude []string
@@ -163,7 +163,7 @@ func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.
 	return fs.MarshalCUE(), nil
 }
 
-func (t clientFilesystemReadTask) readSecret(pctx *plancontext.Context, path string) (*compiler.Value, error) {
+func (t clientFilesystemReadTask) readSecret(pctx *plancontext.Context, path string) (TaskResult, error) {
 	contents, err := t.readString(path)
 	if err != nil {
 		return nil, err

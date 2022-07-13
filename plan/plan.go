@@ -269,5 +269,6 @@ func (p *Plan) validate(ctx context.Context) error {
 	_, span := otel.Tracer("dagger").Start(ctx, "plan.Validate")
 	defer span.End()
 
-	return isPlanConcrete(p.source, p.source)
+	return nil
+	// return isPlanConcrete(p.source, p.source)
 }

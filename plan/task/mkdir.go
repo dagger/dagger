@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/fs"
 
-	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -18,7 +17,7 @@ func init() {
 type mkdirTask struct {
 }
 
-func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -71,11 +70,7 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 	// Retrieve result result filesystem
 	outputFS := pctx.FS.New(result)
 
-	// Init output
-	output := compiler.NewValue()
-
-	if err := output.FillPath(cue.ParsePath("output"), outputFS.MarshalCUE()); err != nil {
-		return nil, err
-	}
-	return output, nil
+	return TaskResult{
+		"output": outputFS.MarshalCUE(),
+	}, nil
 }

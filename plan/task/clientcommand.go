@@ -23,7 +23,7 @@ func init() {
 type clientCommandTask struct {
 }
 
-func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	var opts struct {
 		Name string
 		Args []string
@@ -123,10 +123,10 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _
 		return nil, err
 	}
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"stdout": stdoutVal,
 		"stderr": stderrVal,
-	})
+	}, nil
 }
 
 func (t clientCommandTask) getString(pctx *plancontext.Context, v *compiler.Value) (string, error) {
@@ -146,7 +146,7 @@ func (t clientCommandTask) getString(pctx *plancontext.Context, v *compiler.Valu
 	return s, nil
 }
 
-func (t clientCommandTask) readPipe(pipe *io.ReadCloser, pctx *plancontext.Context, v *compiler.Value) (*compiler.Value, error) {
+func (t clientCommandTask) readPipe(pipe *io.ReadCloser, pctx *plancontext.Context, v *compiler.Value) (interface{}, error) {
 	slurp, err := io.ReadAll(*pipe)
 	if err != nil {
 		return nil, err
@@ -154,12 +154,11 @@ func (t clientCommandTask) readPipe(pipe *io.ReadCloser, pctx *plancontext.Conte
 
 	read := string(slurp)
 	val, _ := v.Default()
-	out := compiler.NewValue()
 
 	if plancontext.IsSecretValue(val) {
 		secret := pctx.Secrets.New(read)
-		return out.Fill(secret.MarshalCUE())
+		return secret.MarshalCUE(), nil
 	}
 
-	return out.Fill(read)
+	return read, nil
 }

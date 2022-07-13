@@ -67,9 +67,10 @@ const (
 )
 
 type NewFunc func() Task
+type TaskResult map[string]interface{}
 
 type Task interface {
-	Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error)
+	Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error)
 }
 
 type PreRunner interface {

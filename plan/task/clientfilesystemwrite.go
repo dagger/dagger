@@ -21,7 +21,7 @@ func init() {
 type clientFilesystemWriteTask struct {
 }
 
-func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	path, err := clientFSPath(v.Lookup("path"))
 	if err != nil {
 		return nil, err
@@ -31,7 +31,7 @@ func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Co
 		return nil, err
 	}
 
-	return compiler.NewValue(), nil
+	return TaskResult{}, nil
 }
 
 func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) error {

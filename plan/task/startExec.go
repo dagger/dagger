@@ -11,7 +11,6 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -25,7 +24,7 @@ func init() {
 type startTask struct {
 }
 
-func (t *startTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *startTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	common, err := parseCommon(pctx, v)
 	if err != nil {
 		return nil, err
@@ -62,18 +61,16 @@ func (t *startTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 	lg := log.Ctx(ctx)
 	lg.Debug().Msgf("started exec %s", ctrID)
 
-	// Fill result
-	if err := v.FillPath(cue.MakePath(cue.Hid("_id", pkg.DaggerPackage)), ctrID); err != nil {
-		return nil, err
-	}
-	return v, nil
+	return TaskResult{
+		"id": ctrID,
+	}, nil
 }
 
 type stopTask struct {
 }
 
-func (t *stopTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Hid("_id", pkg.DaggerPackage))).String()
+func (t *stopTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
+	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Str("id"))).String()
 	if err != nil {
 		return nil, err
 	}
@@ -96,16 +93,16 @@ func (t *stopTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	}
 	lg.Debug().Msgf("exec %s stopped with exit code %d", ctrID, exitCode)
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"exit": exitCode,
-	})
+	}, nil
 }
 
 type sendSignalTask struct {
 }
 
-func (t *sendSignalTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Hid("_id", pkg.DaggerPackage))).String()
+func (t *sendSignalTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
+	ctrID, err := v.LookupPath(cue.MakePath(cue.Str("input"), cue.Str("id"))).String()
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +123,7 @@ func (t *sendSignalTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 	}
 	log.Ctx(ctx).Debug().Msgf("sent signal %d to exec %s", sig, ctrID)
 
-	return compiler.NewValue(), nil
+	return TaskResult{}, nil
 }
 
 func (e execCommon) containerRequest() (solver.StartContainerRequest, error) {

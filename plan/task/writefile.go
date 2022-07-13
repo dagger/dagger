@@ -19,7 +19,7 @@ func init() {
 type writeFileTask struct {
 }
 
-func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	var contents []byte
 	var err error
 
@@ -76,10 +76,7 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 
 	outputFS := pctx.FS.New(result)
 
-	output := compiler.NewValue()
-	if err := output.FillPath(cue.ParsePath("output"), outputFS.MarshalCUE()); err != nil {
-		return nil, err
-	}
-
-	return output, nil
+	return TaskResult{
+		"output": outputFS.MarshalCUE(),
+	}, nil
 }

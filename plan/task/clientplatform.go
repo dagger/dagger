@@ -16,9 +16,9 @@ func init() {
 type clientPlatformTask struct {
 }
 
-func (t clientPlatformTask) Run(_ context.Context, _ *plancontext.Context, _ *solver.Solver, _ *compiler.Value) (*compiler.Value, error) {
-	return compiler.NewValue().FillFields(map[string]interface{}{
+func (t clientPlatformTask) Run(_ context.Context, _ *plancontext.Context, _ *solver.Solver, _ *compiler.Value) (TaskResult, error) {
+	return TaskResult{
 		"os":   runtime.GOOS,
 		"arch": runtime.GOARCH,
-	})
+	}, nil
 }

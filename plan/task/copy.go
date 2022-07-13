@@ -16,7 +16,7 @@ func init() {
 type copyTask struct {
 }
 
-func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	var err error
 
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
@@ -85,7 +85,7 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	fs := pctx.FS.New(result)
 
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": fs.MarshalCUE(),
-	})
+	}, nil
 }

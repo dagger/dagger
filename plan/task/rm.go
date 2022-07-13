@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 
-	"cuelang.org/go/cue"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -17,7 +16,7 @@ func init() {
 type rmTask struct {
 }
 
-func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	input, err := pctx.FS.FromValue(v.Lookup("input"))
 	if err != nil {
 		return nil, err
@@ -60,10 +59,7 @@ func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.S
 
 	outputFS := pctx.FS.New(result)
 
-	output := compiler.NewValue()
-	if err := output.FillPath(cue.ParsePath("output"), outputFS.MarshalCUE()); err != nil {
-		return nil, err
-	}
-
-	return output, nil
+	return TaskResult{
+		"output": outputFS.MarshalCUE(),
+	}, nil
 }

@@ -6,14 +6,13 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/pkg"
 )
 
 var (
 	secretIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("secret"),
-		cue.Hid("_id", pkg.DaggerPackage),
+		cue.Str("id"),
 	)
 )
 
@@ -34,12 +33,14 @@ func (s *Secret) PlainText() string {
 	return s.plainText
 }
 
-func (s *Secret) MarshalCUE() *compiler.Value {
-	v := compiler.NewValue()
-	if err := v.FillPath(secretIDPath, s.id); err != nil {
-		panic(err)
+func (s *Secret) MarshalCUE() map[string]interface{} {
+	return map[string]interface{}{
+		"$dagger": map[string]interface{}{
+			"secret": map[string]interface{}{
+				"id": s.id,
+			},
+		},
 	}
-	return v
 }
 
 type secretContext struct {

@@ -6,14 +6,13 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
-	"go.dagger.io/dagger/pkg"
 )
 
 var (
 	socketIDPath = cue.MakePath(
 		cue.Str("$dagger"),
 		cue.Str("socket"),
-		cue.Hid("_id", pkg.DaggerPackage),
+		cue.Str("id"),
 	)
 )
 
@@ -40,12 +39,14 @@ func (s *Socket) NPipe() string {
 	return s.npipe
 }
 
-func (s *Socket) MarshalCUE() *compiler.Value {
-	v := compiler.NewValue()
-	if err := v.FillPath(socketIDPath, s.id); err != nil {
-		panic(err)
+func (s *Socket) MarshalCUE() map[string]interface{} {
+	return map[string]interface{}{
+		"$dagger": map[string]interface{}{
+			"socket": map[string]interface{}{
+				"id": s.id,
+			},
+		},
 	}
-	return v
 }
 
 type socketContext struct {

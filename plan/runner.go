@@ -211,22 +211,13 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 			State: event.ActionStateCompleted,
 		})
 
-		// If the result is not concrete (e.g. empty value), there's nothing to merge.
-		if !result.IsConcrete() {
-			return nil
-		}
-
-		if src, err := result.Source(); err == nil {
-			lg.Debug().Str("result", string(src)).Msg("merging task result")
-		}
-
 		// Mirror task result and re-scan tasks that should run.
 		// FIXME: This yields some structural cycle errors.
 		// if err := r.update(t.Path(), result); err != nil {
 		// 	return err
 		// }
 
-		if err := t.Fill(result.Cue()); err != nil {
+		if err := t.Fill(result); err != nil {
 			lg.Error().Err(err).Msg("failed to fill task")
 			return err
 		}

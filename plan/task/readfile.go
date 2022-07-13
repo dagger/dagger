@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 
-	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
@@ -18,7 +17,7 @@ func init() {
 type readFileTask struct {
 }
 
-func (t *readFileTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *readFileTask) Run(_ context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -37,10 +36,7 @@ func (t *readFileTask) Run(_ context.Context, pctx *plancontext.Context, _ *solv
 		return nil, fmt.Errorf("ReadFile %s: %w", path, err)
 	}
 
-	output := compiler.NewValue()
-	if err := output.FillPath(cue.ParsePath("contents"), string(contents)); err != nil {
-		return nil, err
-	}
-
-	return output, nil
+	return TaskResult{
+		"contents": string(contents),
+	}, nil
 }

@@ -19,7 +19,7 @@ func init() {
 type gitPullTask struct {
 }
 
-func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	var gitPull struct {
 		Remote     string
 		Ref        string
@@ -89,7 +89,7 @@ func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *sol
 	}
 
 	fs := pctx.FS.New(result)
-	return compiler.NewValue().FillFields(map[string]interface{}{
+	return TaskResult{
 		"output": fs.MarshalCUE(),
-	})
+	}, nil
 }

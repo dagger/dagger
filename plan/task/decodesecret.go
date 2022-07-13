@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"cuelang.org/go/cue"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plancontext"
@@ -20,7 +19,7 @@ func init() {
 type decodeSecretTask struct {
 }
 
-func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (TaskResult, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("decoding secret")
 
@@ -54,29 +53,23 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _
 		return nil, errors.New("could not unmarshal secret")
 	}
 
-	output := compiler.NewValue()
-
-	// recurse over unmarshaled to convert string values to secrets
-	var convert func(p []cue.Selector, i interface{})
-	convert = func(p []cue.Selector, i interface{}) {
+	var convert func(i interface{}) interface{}
+	convert = func(i interface{}) interface{} {
 		switch entry := i.(type) {
 		case string:
 			secret := pctx.Secrets.New(entry)
-			p = append(p, cue.ParsePath("contents").Selectors()...)
-			logPath := cue.MakePath(p[1 : len(p)-1]...)
-			lg.Debug().Str("path", logPath.String()).Str("type", "string").Msg("found secret")
-			path := cue.MakePath(p...)
-			output.FillPath(path, secret.MarshalCUE())
+			lg.Debug().Str("type", "string").Msg("found secret")
+			return secret.MarshalCUE()
 		case map[string]interface{}:
-			for k, v := range entry {
-				np := append([]cue.Selector{}, p...)
-				np = append(np, cue.ParsePath(k).Selectors()...)
-				convert(np, v)
+			for key, val := range entry {
+				entry[key] = convert(val)
 			}
+			return entry
 		}
+		return errors.New("invalid type for secret")
 	}
 
-	convert(cue.ParsePath("output").Selectors(), unmarshaled)
-
-	return output, nil
+	return TaskResult{
+		"output": convert(unmarshaled),
+	}, nil
 }
