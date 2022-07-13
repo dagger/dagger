@@ -26,11 +26,7 @@ func Shell(ctx *Context, fs FS) error {
 
 	_, err = c.Build(ctx.ctx, bkclient.SolveOpt{Session: attachables}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		api := newAPIServer(c, gw, secretProvider)
-		socketProvider.api = api // TODO: less ugly way of setting this
-		dctx := &Context{
-			ctx:    ctx,
-			client: gw,
-		}
+		socketProvider.api = api
 
 		baseDef, err := llb.Image("alpine:3.15").Marshal(ctx)
 		if err != nil {
@@ -48,7 +44,7 @@ func Shell(ctx *Context, fs FS) error {
 		}
 
 		fsRes, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: fs.Definition(dctx),
+			Definition: fs.PB,
 		})
 		if err != nil {
 			return nil, err
