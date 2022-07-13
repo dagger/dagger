@@ -145,7 +145,7 @@ func (l *LogsV2) Add(event EventV2) error {
 }
 
 // oldAdd add the event to the logs.
-// DEPRECATED: old version of the Add func
+// Deprecated: old version of the Add func
 // split in smaller func in Add.
 func (l *LogsV2) oldAdd(event EventV2) error {
 	l.l.Lock()

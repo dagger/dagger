@@ -499,7 +499,6 @@ func TestGetGroup(t *testing.T) {
 			require.Equal(t, c.exp, groupName)
 		})
 	}
-
 }
 
 func FuzzLogsAdd(f *testing.F) {
@@ -543,7 +542,6 @@ func FuzzLogsAdd(f *testing.F) {
 		}
 
 		t.Run(fmt.Sprintf("%q", eventBytes), func(t *testing.T) {
-
 			errAdd := lAdd.oldAdd(event)
 			errSplitAdd := lSplitAdd.Add(event)
 
