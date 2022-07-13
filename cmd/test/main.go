@@ -1,45 +1,37 @@
 package main
 
 import (
-	"os"
+	"encoding/json"
+	"fmt"
 
 	"github.com/dagger/cloak/dagger"
 )
 
 func main() {
 	err := dagger.Client(func(ctx *dagger.Context) error {
-		token, err := os.ReadFile("/home/sipsma/netflify.token") // TODO:
+		output, err := dagger.Do(ctx, `{alpine{build(pkgs:["curl","bash"]){fs}}}`)
 		if err != nil {
 			return err
 		}
-		dagger.AddSecret(ctx, "token", string(token))
-
-		rawOutput, err := dagger.Do(ctx, "localhost:5555/dagger:netlify", "deploy", map[string]interface{}{
-			"Site":  dagger.ToString("foobar"),
-			"Token": dagger.SecretID("token"),
-		})
+		var result dagger.AlpineResult
+		if err := json.Unmarshal([]byte(output), &result); err != nil {
+			return err
+		}
+		fsBytes, err := json.Marshal(result.Alpine.Build.FS)
 		if err != nil {
 			return err
 		}
-		output := rawOutput.GetField("fs").FS()
-		output.Evaluate(ctx)
-
-		/*
-			root := output.Root()
-			root.Evaluate(ctx)
-
-				bytes, err := json.Marshal(output)
-				if err != nil {
-					panic(err)
-				}
-
-				fmt.Printf("%s\n", string(bytes))
-
-		*/
-		if err := dagger.Shell(ctx, output); err != nil {
+		output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`, string(fsBytes)))
+		if err != nil {
+			return err
+		}
+		var evalResult dagger.EvaluateResult
+		if err := json.Unmarshal([]byte(output), &evalResult); err != nil {
+			return err
+		}
+		if err := dagger.Shell(ctx, evalResult.Evaluate); err != nil {
 			panic(err)
 		}
-
 		return nil
 	})
 	if err != nil {
