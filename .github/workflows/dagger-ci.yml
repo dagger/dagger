@@ -62,6 +62,9 @@ jobs:
           echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main type=gha,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
         if: ${{ github.event_name == 'pull_request' }}
 
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
+
       - name: Build
         run: dagger do build
         # uses: dagger/dagger-for-github@v3

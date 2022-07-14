@@ -46,6 +46,9 @@ jobs:
           make dagger
           cp ./cmd/dagger/dagger /usr/local/bin
 
+      - name: "Expose GitHub Runtime"
+        uses: crazy-max/ghaction-github-runtime@v1
+
       - name: Lint
         run: dagger do lint
         # uses: dagger/dagger-for-github@v3
