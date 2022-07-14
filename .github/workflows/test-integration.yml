@@ -29,9 +29,6 @@ on:
       - ".github/workflows/test-integration.yml"
       - "!docs/**"
 
-env:
-  DAGGER_CACHE_BASE: dagger-ci-integration
-
 jobs:
   test-integration:
     name: "Integration Tests"
@@ -48,7 +45,7 @@ jobs:
 
       - name: "Install CUE"
         run: |
-          export CUE_VERSION="$(grep cue ./go.mod | cut -d' ' -f2 | head -1 | sed -E 's/\.[[:digit:]]\.[[:alnum:]]+-[[:alnum:]]+$//')"
+          export CUE_VERSION="v$(awk -F'[v-]' '/cue/ { print $2 }' < go.mod | tail -n 1)"
           export CUE_TARBALL="cue_${CUE_VERSION}_linux_amd64.tar.gz"
           echo "Installing cue version $CUE_VERSION"
           curl -L https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/${CUE_TARBALL} | sudo tar zxf - -C /usr/local/bin
@@ -98,18 +95,6 @@ jobs:
           echo JAEGER_CONTAINER_NAME="${JAEGER_CONTAINER_NAME}" >> $GITHUB_ENV
           echo OTEL_EXPORTER_JAEGER_ENDPOINT="${OTEL_EXPORTER_JAEGER_ENDPOINT}" >> $GITHUB_ENV
           echo JAEGER_TRACE="${JAEGER_TRACE}" >> $GITHUB_ENV
-
-      - name: Sets env vars on push to main
-        run: |
-          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
-          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-      - name: Sets env vars on pull request
-        run: |
-          echo "DAGGER_CACHE_TO=type=gha,mode=max,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
-          echo "DAGGER_CACHE_FROM=type=gha,scope=${{env.DAGGER_CACHE_BASE}}-main type=gha,scope=${{env.DAGGER_CACHE_BASE}}-${{github.event.number}}" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'pull_request' }}
 
       - name: Test
         run: |
