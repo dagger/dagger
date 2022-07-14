@@ -41,21 +41,17 @@ jobs:
         with:
           go-version: 1.18
 
-      # - name: "Set up dagger from source"
-      #   run: |
-      #     make dagger
-      #     cp ./cmd/dagger/dagger /usr/local/bin
-
-      - name: "Set up dagger"
-        uses: dagger/dagger-for-github@v3
-        with:
-          install-only: true
+      - name: "Set up dagger from source"
+        run: |
+          make dagger
+          cp ./cmd/dagger/dagger /usr/local/bin
 
       - name: Lint
-        uses: dagger/dagger-for-github@v3
-        with:
-          cmds: |
-            do lint
+        run: dagger do lint
+        # uses: dagger/dagger-for-github@v3
+        # with:
+        #   cmds: |
+        #     do lint
         env:
           DAGGER_LOG_LEVEL: "debug"
           DAGGER_LOG_FORMAT: "plain"
