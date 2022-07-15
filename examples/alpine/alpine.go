@@ -47,7 +47,7 @@ func Build(ctx context.Context, input map[string]interface{}) map[string]interfa
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			panic(err)
 		}
-		fs = result["core"].(map[string]interface{})["image"].(map[string]interface{})["fs"]
+		fs = result["core"].(map[string]interface{})["exec"].(map[string]interface{})["fs"]
 	}
 
 	return map[string]interface{}{"fs": fs}

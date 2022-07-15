@@ -30,7 +30,6 @@ func Do(ctx context.Context, payload string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -56,11 +55,12 @@ func WithUnixSocketAPIClient(ctx context.Context, socketPath string) context.Con
 }
 
 func WithInMemoryAPIClient(ctx context.Context, server api.Server) context.Context {
-	serverConn, clientConn := net.Pipe()
-	go server.ServeConn(ctx, serverConn)
 	return context.WithValue(ctx, clientKey{}, &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				// TODO: not efficient, but whatever
+				serverConn, clientConn := net.Pipe()
+				go server.ServeConn(ctx, serverConn)
 				return clientConn, nil
 			},
 		},
