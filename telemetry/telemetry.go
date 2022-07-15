@@ -84,6 +84,10 @@ func (t *Telemetry) RunID() string {
 	return t.runID
 }
 
+func (t *Telemetry) SetRunID(id string) {
+	t.runID = id
+}
+
 func (t *Telemetry) Push(ctx context.Context, props event.Properties) {
 	e := event.New(props)
 	e.Engine.ID = t.engineID
@@ -155,12 +159,16 @@ func (t *Telemetry) logFile() string {
 }
 
 func (t *Telemetry) Flush() {
-	// Stop accepting new events
-	t.Disable()
-	// Flush events in queue
-	close(t.queueCh)
-	// Wait for completion
-	<-t.doneCh
+	// prevent errors when trying to flush multiple times on the same
+	// telemetry instance
+	if t.enable {
+		// Stop accepting new events
+		t.Disable()
+		// Flush events in queue
+		close(t.queueCh)
+		// Wait for completion
+		<-t.doneCh
+	}
 }
 
 func eventsURL() string {
