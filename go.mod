@@ -33,10 +33,20 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20220315205639-9ed612626da3
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f
-	go.opentelemetry.io/otel v1.8.0
-	go.opentelemetry.io/otel/exporters/jaeger v1.8.0
-	go.opentelemetry.io/otel/sdk v1.8.0
-	go.opentelemetry.io/otel/trace v1.8.0
+	// ⚠️  vvv the version of go.opentelemetry.io/otel MUST be kept in sync with BuildKit's version vvv
+	//
+	// https://github.com/moby/buildkit/blob/v0.10.3/go.mod#L62-L68
+	//
+	// Otherwise we can introduce: panics and weird behaviour:
+	// - (jaeger v1.6.0) data races https://github.com/dagger/dagger/runs/7359366602?check_suite_focus=true#step:8:1433
+	// - (jaeger v1.8.0) conflicting Schema URLs https://github.com/dagger/dagger/runs/7358945187?check_suite_focus=true#step:8:2066
+	//
+	// Possibly other issues that we don't know about yet
+	go.opentelemetry.io/otel v1.4.1
+	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
+	go.opentelemetry.io/otel/sdk v1.4.1
+	go.opentelemetry.io/otel/trace v1.4.1
+	// ⚠️  ^^^ the version of go.opentelemetry.io/otel MUST be kept in sync with BuildKit's version ^^^
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
 	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
