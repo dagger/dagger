@@ -25,8 +25,8 @@ func Start(ctx context.Context, fn func(context.Context) error) error {
 
 	ch := make(chan *bkclient.SolveStatus)
 
-	var server *api.Server
-	attachables := []session.Attachable{server}
+	var server api.Server
+	attachables := []session.Attachable{&server}
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -38,10 +38,9 @@ func Start(ctx context.Context, fn func(context.Context) error) error {
 					panic(r)
 				}
 			}()
-			api := api.NewServer(gw)
-			server = &api
+			server = api.NewServer(gw)
 
-			err = fn(dagger.WithInMemoryAPIClient(ctx, api))
+			err = fn(dagger.WithInMemoryAPIClient(ctx, server))
 			if err != nil {
 				return nil, err
 			}
