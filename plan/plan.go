@@ -40,6 +40,15 @@ type Config struct {
 	DryRun bool
 }
 
+type ErrorValidation struct {
+	Err  error
+	Plan *Plan
+}
+
+func (e ErrorValidation) Error() string {
+	return e.Err.Error()
+}
+
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Load")
 	defer span.End()
@@ -89,7 +98,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	}
 
 	if err := p.validate(ctx); err != nil {
-		return nil, compiler.Err(err)
+		return nil, &ErrorValidation{Err: compiler.Err(err), Plan: p}
 	}
 
 	p.fillAction(ctx)
