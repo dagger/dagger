@@ -46,12 +46,12 @@ func main() {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("output: %s\n", output)
-		/*
-			if err := dagger.Shell(ctx, evalResult.Evaluate); err != nil {
-				panic(err)
-			}
-		*/
+		if err := json.Unmarshal([]byte(output), &result); err != nil {
+			return err
+		}
+		if err := engine.Shell(ctx, result["evaluate"].(string)); err != nil {
+			panic(err)
+		}
 		return nil
 	})
 	if err != nil {
