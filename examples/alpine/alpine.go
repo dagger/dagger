@@ -7,7 +7,7 @@ import (
 	"github.com/dagger/cloak/dagger"
 )
 
-func Build(ctx *dagger.Context, input *dagger.AlpineBuildInput) *dagger.AlpineBuild {
+func Build(ctx *dagger.Context, input map[string]interface{}) map[string]interface{} {
 	/* TODO: update to use nice wrappers again
 	output.Root = core.Image(ctx, &core.ImageInput{
 		Ref: dagger.ToString("alpine:3.15.0"),
@@ -33,7 +33,8 @@ func Build(ctx *dagger.Context, input *dagger.AlpineBuildInput) *dagger.AlpineBu
 	fs := result.Core.Image.FS
 
 	// install each of the requested packages
-	for _, pkg := range input.Pkgs {
+	for _, pkg := range input["pkgs"].([]interface{}) {
+		pkg := pkg.(string)
 		fsBytes, err := json.Marshal(fs)
 		if err != nil {
 			panic(err)
@@ -49,5 +50,5 @@ func Build(ctx *dagger.Context, input *dagger.AlpineBuildInput) *dagger.AlpineBu
 		fs = result.Core.Exec.FS
 	}
 
-	return &dagger.AlpineBuild{FS: fs}
+	return map[string]interface{}{"fs": fs}
 }

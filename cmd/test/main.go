@@ -9,18 +9,37 @@ import (
 
 func main() {
 	err := dagger.Client(func(ctx *dagger.Context) error {
-		output, err := dagger.Do(ctx, `{alpine{build(pkgs:["curl","bash"]){fs}}}`)
+		var output string
+		var err error
+
+		_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
 		if err != nil {
 			return err
 		}
-		var result dagger.AlpineResult
+
+		/*
+			output, err = dagger.Do(ctx, tools.IntrospectionQuery)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("schema: %s\n", output)
+		*/
+
+		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["wget","zsh"]){fs}}}`)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("output: %s\n", output)
+
+		var result map[string]interface{}
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			return err
 		}
-		fsBytes, err := json.Marshal(result.Alpine.Build.FS)
+		fsBytes, err := json.Marshal(result["alpine"].(map[string]interface{})["build"].(map[string]interface{})["fs"])
 		if err != nil {
 			return err
 		}
+
 		output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`, string(fsBytes)))
 		if err != nil {
 			return err

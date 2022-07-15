@@ -9,6 +9,7 @@ RUN --mount=target=. --mount=target=/root/.cache,type=cache \
 
 FROM scratch
 COPY --from=build /out /usr/local/bin/dagger
+COPY ./examples/alpine/dagger.graphql /dagger.graphql
 ENTRYPOINT ["/usr/local/bin/dagger"]
 LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs
 
