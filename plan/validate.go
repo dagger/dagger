@@ -52,6 +52,26 @@ func isDockerImage(v *compiler.Value) bool {
 	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind() == cue.StructKind
 }
 
+// isCoreOutputReference detects if a reference is to a core output field (generated)
+func isCoreOutputReference(v *compiler.Value) bool {
+	_, expr := v.Expr()
+
+	for _, i := range expr {
+		rv, rp := i.ReferencePath()
+		sel := rp.Selectors()
+
+		for k := range sel {
+			sp := cue.MakePath(sel[0 : len(sel)-1-k]...)
+
+			if rv.LookupPath(sp).HasAttr("generated") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 	// Always assume generated fields are concrete.
 	if v.HasAttr("generated") {
@@ -117,6 +137,13 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 		return errGroup
 	case kind == cue.BottomKind:
 		if err := v.Cue().Err(); err != nil {
+			// Ignore references to core action output fields (generated).
+			// For example, with `#DecodeSecret` you can't validate in advance
+			// if the referenced field is correct since it'll only be filled during
+			// execution.
+			if isCoreOutputReference(v) {
+				return nil
+			}
 			// FIXME: for now only raise `undefined field` errors as `BottomKind`
 			// can raise false positives.
 			if strings.Contains(err.Error(), "undefined field: ") {

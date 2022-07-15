@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"cuelang.org/go/cue"
+	cueerrors "cuelang.org/go/cue/errors"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -40,18 +42,26 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 	for _, env := range envs {
-		if plancontext.IsSecretValue(env.Value) {
+		switch {
+		case plancontext.IsSecretValue(env.Value):
 			secret, err := pctx.Secrets.FromValue(env.Value)
 			if err != nil {
 				return nil, err
 			}
 			opts = append(opts, llb.AddSecret(env.Label(), llb.SecretID(secret.ID()), llb.SecretAsEnv(true)))
-		} else {
+		case env.Value.IncompleteKind() == cue.StringKind:
 			s, err := env.Value.String()
 			if err != nil {
 				return nil, err
 			}
 			opts = append(opts, llb.AddEnv(env.Label(), s))
+		default:
+			newErr := cueerrors.Newf(env.Value.Pos(), "%q is not a valid string or secret", env.Value.Path().String())
+
+			if err := env.Value.Cue().Err(); err != nil {
+				newErr = cueerrors.Wrap(newErr, err)
+			}
+			return nil, newErr
 		}
 	}
 

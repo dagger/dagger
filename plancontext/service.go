@@ -18,7 +18,7 @@ var (
 )
 
 func IsSocketValue(v *compiler.Value) bool {
-	return v.LookupPath(socketIDPath).Exists()
+	return v.IncompleteKind() == cue.StructKind && v.LookupPath(socketIDPath).Exists()
 }
 
 type Socket struct {

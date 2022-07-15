@@ -267,9 +267,22 @@ setup() {
     assert_failure
 }
 
-@test "task: #DecodeSecret" {
-    "$DAGGER" "do" -p ./tasks/decodesecret/decodesecret.cue test
-    "$DAGGER" "do" -p ./tasks/decodesecret/decodesecret.cue test --format json
+@test "task: #DecodeSecret in yaml (default)" {
+    "$DAGGER" "do" -p ./tasks/decodesecret/usage.cue test
+}
+
+@test "task: #DecodeSecret in json" {
+    "$DAGGER" "do" -p ./tasks/decodesecret/usage.cue test --format json
+}
+
+@test "task: #DecodeSecret with type unification" {
+    "$DAGGER" "do" -p ./tasks/decodesecret/type.cue test
+}
+
+@test "task: #DecodeSecret typo" {
+    run "$DAGGER" "do" -p ./tasks/decodesecret/typo.cue test
+    assert_failure
+    assert_line --partial '"actions.test.typo.env.FOO" is not a valid string or secret'
 }
 
 @test "task: #NewSecret" {

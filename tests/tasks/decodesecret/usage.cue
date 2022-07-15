@@ -41,7 +41,7 @@ dagger.#Plan & {
 			source: "alpine"
 		}
 
-		verify: core.#Exec & {
+		usage: core.#Exec & {
 			input: image.output
 
 			mounts: {

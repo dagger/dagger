@@ -18,7 +18,7 @@ var (
 )
 
 func IsSecretValue(v *compiler.Value) bool {
-	return v.LookupPath(secretIDPath).Exists()
+	return v.IncompleteKind() == cue.StructKind && v.LookupPath(secretIDPath).Exists()
 }
 
 type Secret struct {

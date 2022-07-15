@@ -19,7 +19,7 @@ var fsIDPath = cue.MakePath(
 )
 
 func IsFSValue(v *compiler.Value) bool {
-	return v.LookupPath(fsIDPath).Exists()
+	return v.IncompleteKind() == cue.StructKind && v.LookupPath(fsIDPath).Exists()
 }
 
 func IsFSScratchValue(v *compiler.Value) bool {
