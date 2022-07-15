@@ -68,6 +68,8 @@ In most cases, you'll need to pull a docker image from a docker registry in orde
 ```cue file=../../tests/guides/docker/pull.cue
 ```
 
+When pulling images from the official Docker Hub registry (`docker.io`), you can set the `DOCKERHUB_AUTH_USER` and `DOCKERHUB_AUTH_SECRET` environment variables to authenticate. This will help fix docker hub rate limit issues when pulling images unauthenticated.
+
 ### `docker.#Set`
 
 The image metadata (i.e., [image config](https://github.com/dagger/dagger/blob/main/pkg/dagger.io/dagger/core/image.cue)) can be changed with the `docker.#Set` action. It takes an `#Image` as input, configurations to change, and outputs a new image with the changed metadata. The files in the image (`dagger.#FS`) are untouched.
