@@ -1,0 +1,6 @@
+type AlpineBuild {
+	fs: FS!
+}
+type Query {
+	build(pkgs: [String]!): AlpineBuild
+}

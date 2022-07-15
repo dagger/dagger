@@ -57,7 +57,9 @@ func (s *apiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("unexpected errors: %v", result.Errors), http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(result.Data); err != nil {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(result.Data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
