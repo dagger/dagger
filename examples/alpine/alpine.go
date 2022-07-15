@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/dagger/cloak/dagger"
+	dagger "github.com/dagger/cloak/sdk/go"
 )
 
-func Build(ctx *dagger.Context, input map[string]interface{}) map[string]interface{} {
+func Build(ctx context.Context, input map[string]interface{}) map[string]interface{} {
 	/* TODO: update to use nice wrappers again
 	output.Root = core.Image(ctx, &core.ImageInput{
 		Ref: dagger.ToString("alpine:3.15.0"),
@@ -26,11 +27,11 @@ func Build(ctx *dagger.Context, input map[string]interface{}) map[string]interfa
 	if err != nil {
 		panic(err)
 	}
-	var result dagger.CoreResult
+	result := make(map[string]interface{})
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		panic(err)
 	}
-	fs := result.Core.Image.FS
+	fs := result["core"].(map[string]interface{})["image"].(map[string]interface{})["fs"]
 
 	// install each of the requested packages
 	for _, pkg := range input["pkgs"].([]interface{}) {
@@ -43,11 +44,10 @@ func Build(ctx *dagger.Context, input map[string]interface{}) map[string]interfa
 		if err != nil {
 			panic(err)
 		}
-		var result dagger.CoreResult
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			panic(err)
 		}
-		fs = result.Core.Exec.FS
+		fs = result["core"].(map[string]interface{})["image"].(map[string]interface{})["fs"]
 	}
 
 	return map[string]interface{}{"fs": fs}

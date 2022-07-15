@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/dagger/cloak/dagger"
+	"github.com/dagger/cloak/engine"
+	dagger "github.com/dagger/cloak/sdk/go"
 )
 
 func main() {
-	err := dagger.Client(func(ctx *dagger.Context) error {
+	err := engine.Start(context.Background(), func(ctx context.Context) error {
 		var output string
 		var err error
 
@@ -44,13 +46,12 @@ func main() {
 		if err != nil {
 			return err
 		}
-		var evalResult dagger.EvaluateResult
-		if err := json.Unmarshal([]byte(output), &evalResult); err != nil {
-			return err
-		}
-		if err := dagger.Shell(ctx, evalResult.Evaluate); err != nil {
-			panic(err)
-		}
+		fmt.Printf("output: %s\n", output)
+		/*
+			if err := dagger.Shell(ctx, evalResult.Evaluate); err != nil {
+				panic(err)
+			}
+		*/
 		return nil
 	})
 	if err != nil {

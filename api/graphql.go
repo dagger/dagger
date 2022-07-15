@@ -1,4 +1,4 @@
-package dagger
+package api
 
 import (
 	"context"
@@ -627,4 +627,33 @@ type Mutation {
 	if err := reloadSchemas(); err != nil {
 		panic(err)
 	}
+}
+
+type gatewayClientKey struct{}
+
+func withGatewayClient(ctx context.Context, gw bkgw.Client) context.Context {
+	return context.WithValue(ctx, gatewayClientKey{}, gw)
+}
+
+func getGatewayClient(ctx context.Context) (bkgw.Client, error) {
+	v := ctx.Value(gatewayClientKey{})
+	if v == nil {
+		return nil, fmt.Errorf("no gateway client")
+	}
+	return v.(bkgw.Client), nil
+}
+
+// TODO: feel like there's probably a better of getting this in the resolver funcs, but couldn't find it
+type payloadKey struct{}
+
+func withPayload(ctx context.Context, payload string) context.Context {
+	return context.WithValue(ctx, payloadKey{}, payload)
+}
+
+func getPayload(ctx context.Context) string {
+	v := ctx.Value(payloadKey{})
+	if v == nil {
+		return ""
+	}
+	return v.(string)
 }
