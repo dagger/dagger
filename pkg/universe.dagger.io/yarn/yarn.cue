@@ -59,9 +59,15 @@ import (
 		}
 	}
 
+	container: _
 	install: #Install & {
 		"source":  source
 		"project": project
+		// Use the same container image for the install command
+		"container": {
+			input: container.input
+			script: container.script
+		}
 	}
 
 }
