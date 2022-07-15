@@ -25,7 +25,7 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["wget","zsh"]){fs}}}`)
+		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"]){fs}}}`)
 		if err != nil {
 			return err
 		}
