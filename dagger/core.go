@@ -54,49 +54,19 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 			return FS{}, fmt.Errorf("eval errors: %+v", result.Errors)
 		}
 
-		/* TODO: debugging
-		// fmt.Printf("%T(%+v)\n", result.Data, result.Data)
-		data, ok := result.Data.(map[string]interface{})["alpine"]
-		if ok {
-			// fmt.Printf("%T(%+v)\n", data, data)
-			data, ok = data.(map[string]interface{})["build"]
-			if ok {
-				// fmt.Printf("%T(%+v)\n", data, data)
-				data, ok = data.(map[string]interface{})["fs"]
-				if ok {
-					fmt.Printf("%T(%+v)\n", data, data)
-				}
-			}
-		}
-		*/
-
 		// Extract the queried field out of the result
-		// TODO: this is hilariously hacky, only looks for "fs", there obviously has to be a better way, just don't know where the graphql parsing utils are yet
-		resultBytes, err := json.Marshal(result.Data)
+		resultMap := result.Data.(map[string]interface{})
+		req, err := parser.Parse(parser.ParseParams{Source: fs.Query})
 		if err != nil {
 			return FS{}, err
 		}
-
-		var resultMap map[string]interface{}
-		if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
-			return FS{}, err
+		field := req.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
+		for field.SelectionSet != nil {
+			resultMap = resultMap[field.Name.Value].(map[string]interface{})
+			field = field.SelectionSet.Selections[0].(*ast.Field)
 		}
-		var found bool
-		for !found {
-			if len(resultMap) != 1 {
-				return FS{}, fmt.Errorf("unhandled result: %+v", resultMap)
-			}
-			for k, v := range resultMap {
-				if k == "fs" {
-					if err := json.Unmarshal([]byte(v.(string)), &fs); err != nil {
-						return FS{}, err
-					}
-					found = true
-					break
-				} else {
-					resultMap = v.(map[string]interface{})
-				}
-			}
+		if err := json.Unmarshal([]byte(resultMap[field.Name.Value].(string)), &fs); err != nil {
+			return FS{}, err
 		}
 	}
 	return fs, nil
@@ -244,13 +214,59 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		if !shouldEval(p.Context) {
 			lazyResult := make(map[string]interface{})
-			// TODO: handle more return types, also handle nested objects
+
+			// Look at the fields being selected, make a query that's the same but with just each individual field, which will be used
+			// to lazily evaluate it
+			// NOTE: this code has only been tested on very simple cases, if it is erroring or behaving weird, it's probably just broken
+			selectedFields := make(map[string]string)
+			for _, field := range p.Info.FieldASTs[0].SelectionSet.Selections {
+				field := field.(*ast.Field)
+				// TODO: re-parsing everytime because it makes it easier to just mutably set the selections slice, should be optimized
+				req, err := parser.Parse(parser.ParseParams{Source: getPayload(p.Context)})
+				if err != nil {
+					return nil, err
+				}
+				reqSelectionSet := req.Definitions[0].(*ast.OperationDefinition).SelectionSet
+				for _, selected := range p.Info.Path.AsArray() {
+					selected := selected.(string)
+					var found bool
+					for _, reqSelection := range reqSelectionSet.Selections {
+						reqSelection := reqSelection.(*ast.Field)
+						if reqSelection.Name.Value == selected {
+							reqSelectionSet = reqSelection.SelectionSet
+							found = true
+							break
+						}
+					}
+					if !found {
+						return nil, fmt.Errorf("could not find %s in request", selected)
+					}
+				}
+				matchIndex := -1
+				for i, reqSelection := range reqSelectionSet.Selections {
+					reqSelection := reqSelection.(*ast.Field)
+					if reqSelection.Name.Value == field.Name.Value {
+						matchIndex = i
+						break
+					}
+				}
+				if matchIndex == -1 {
+					return nil, fmt.Errorf("could not find %s in request", field.Name.Value)
+				}
+				reqSelectionSet.Selections = []ast.Selection{reqSelectionSet.Selections[matchIndex]}
+				selectedFields[field.Name.Value] = printer.Print(req).(string)
+			}
+
+			// TODO: handle more scalar types, handle nested objects, handle lists, handle batched queries, etc.
 			for fieldName, field := range p.Info.ReturnType.(*graphql.Object).Fields() {
+				fieldQuery, ok := selectedFields[fieldName]
+				if !ok {
+					continue
+				}
 				if field.Type.Name() == "FS" || field.Type.Name() == "FS!" {
-					// TODO: this is extra wrong, assumes that you are querying just this fs field
-					lazyResult[fieldName] = FS{Query: getPayload(p.Context)}
+					lazyResult[fieldName] = FS{Query: fieldQuery}
 				} else {
-					lazyResult[fieldName] = struct{}{}
+					return nil, fmt.Errorf("FIXME: currently unsupported return type %s", field.Type.Name())
 				}
 			}
 			return lazyResult, nil
