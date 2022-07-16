@@ -170,3 +170,11 @@ func Shell(ctx context.Context, inputFS string) error {
 	defer terminal.Restore(int(os.Stdin.Fd()), termState)
 	return proc.Wait()
 }
+
+func RunGraphiQL(ctx context.Context, port int) error {
+	return Start(ctx, func(ctx context.Context) error {
+		gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
+		platform := ctx.Value(platformKey{}).(*specs.Platform)
+		return api.RunGraphiQLServer(ctx, port, gw, platform)
+	})
+}

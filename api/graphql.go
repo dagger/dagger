@@ -224,7 +224,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			for _, field := range p.Info.FieldASTs[0].SelectionSet.Selections {
 				field := field.(*ast.Field)
 				// TODO: re-parsing everytime because it makes it easier to just mutably set the selections slice, should be optimized
-				req, err := parser.Parse(parser.ParseParams{Source: getPayload(p.Context)})
+				req, err := parser.Parse(parser.ParseParams{Source: getPayload(p)})
 				if err != nil {
 					return nil, err
 				}
@@ -291,12 +291,12 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			llb.ReadonlyRootFS(),
 		)
 		outputMnt := st.AddMount("/outputs", llb.Scratch())
-		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p.Context)))
+		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))
 		if err != nil {
 			return nil, err
 		}
 
-		gw, err := getGatewayClient(p.Context)
+		gw, err := getGatewayClient(p)
 		if err != nil {
 			return nil, err
 		}
@@ -437,13 +437,13 @@ type Mutation {
 					"image": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 							if !shouldEval(p.Context) {
-								return Image{FS: FS{Query: getPayload(p.Context)}}, nil
+								return Image{FS: FS{Query: getPayload(p)}}, nil
 							}
 							ref, ok := p.Args["ref"].(string)
 							if !ok {
 								return nil, fmt.Errorf("invalid ref")
 							}
-							llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p.Context)))
+							llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p)))
 							if err != nil {
 								return nil, err
 							}
@@ -453,7 +453,7 @@ type Mutation {
 					"exec": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 							if !shouldEval(p.Context) {
-								return Exec{FS: FS{Query: getPayload(p.Context)}}, nil
+								return Exec{FS: FS{Query: getPayload(p)}}, nil
 							}
 							fs, ok := p.Args["fs"].(FS)
 							if !ok {
@@ -479,7 +479,7 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context, llb.Platform(getPlatform(p.Context)))
+							llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
 							if err != nil {
 								return nil, err
 							}
@@ -504,7 +504,7 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							gw, err := getGatewayClient(p.Context)
+							gw, err := getGatewayClient(p)
 							if err != nil {
 								return nil, err
 							}
@@ -547,7 +547,7 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							gw, err := getGatewayClient(p.Context)
+							gw, err := getGatewayClient(p)
 							if err != nil {
 								return nil, err
 							}
@@ -575,7 +575,7 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							gw, err := getGatewayClient(p.Context)
+							gw, err := getGatewayClient(p)
 							if err != nil {
 								return nil, err
 							}
@@ -652,8 +652,8 @@ func withGatewayClient(ctx context.Context, gw bkgw.Client) context.Context {
 	return context.WithValue(ctx, gatewayClientKey{}, gw)
 }
 
-func getGatewayClient(ctx context.Context) (bkgw.Client, error) {
-	v := ctx.Value(gatewayClientKey{})
+func getGatewayClient(p graphql.ResolveParams) (bkgw.Client, error) {
+	v := p.Context.Value(gatewayClientKey{})
 	if v == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -666,25 +666,14 @@ func withPlatform(ctx context.Context, platform *specs.Platform) context.Context
 	return context.WithValue(ctx, platformKey{}, platform)
 }
 
-func getPlatform(ctx context.Context) specs.Platform {
-	v := ctx.Value(platformKey{})
+func getPlatform(p graphql.ResolveParams) specs.Platform {
+	v := p.Context.Value(platformKey{})
 	if v == nil {
 		return platforms.DefaultSpec()
 	}
 	return *v.(*specs.Platform)
 }
 
-// TODO: feel like there's probably a better of getting this in the resolver funcs, but couldn't find it
-type payloadKey struct{}
-
-func withPayload(ctx context.Context, payload string) context.Context {
-	return context.WithValue(ctx, payloadKey{}, payload)
-}
-
-func getPayload(ctx context.Context) string {
-	v := ctx.Value(payloadKey{})
-	if v == nil {
-		return ""
-	}
-	return v.(string)
+func getPayload(p graphql.ResolveParams) string {
+	return printer.Print(p.Info.Operation).(string)
 }

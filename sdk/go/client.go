@@ -1,7 +1,9 @@
 package dagger
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -18,13 +20,11 @@ func Do(ctx context.Context, payload string) (string, error) {
 		return "", fmt.Errorf("no client in context")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://fake.invalid/graphql", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://fake.invalid/graphql", bytes.NewBufferString(payload))
 	if err != nil {
 		return "", err
 	}
-	q := req.URL.Query()
-	q.Set("payload", payload)
-	req.URL.RawQuery = q.Encode()
+	req.Header.Set("Content-Type", "application/graphql")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -42,7 +42,22 @@ func Do(ctx context.Context, payload string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(body), nil
+
+	output := map[string]interface{}{}
+	if err := json.Unmarshal(body, &output); err != nil {
+		return "", err
+	}
+	if output["errors"] != nil {
+		return "", fmt.Errorf("errors: %s", output["errors"])
+	}
+
+	// TODO: remove outer "data" field just for convenience until we have nicer helpers for reading these results
+	output = output["data"].(map[string]interface{})
+	outputBytes, err := json.Marshal(output)
+	if err != nil {
+		return "", err
+	}
+	return string(outputBytes), nil
 }
 
 func WithUnixSocketAPIClient(ctx context.Context, socketPath string) context.Context {

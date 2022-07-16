@@ -2,13 +2,12 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 
-	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/handler"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/sshforward"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -23,7 +22,21 @@ func NewServer(gw bkgw.Client, platform *specs.Platform) Server {
 		gw:       gw,
 		platform: platform,
 	}
+
 	return s
+}
+
+func RunGraphiQLServer(ctx context.Context, port int, gw bkgw.Client, platform *specs.Platform) error {
+	s := Server{
+		gw:       gw,
+		platform: platform,
+	}
+	ln, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("serving graphql on localhost:%d...\n", port)
+	return s.serve(ctx, ln)
 }
 
 type Server struct {
@@ -35,31 +48,27 @@ func (s Server) ServeConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	ch := make(chan net.Conn, 1)
 	ch <- conn
-	go (&http.Server{Handler: s}).Serve(&singleConnListener{ch})
+	go func() {
+		err := s.serve(ctx, &singleConnListener{ch: ch})
+		if err != nil {
+			// TODO: actual logging
+			fmt.Printf("error serving conn: %v\n", err)
+		}
+	}()
 	<-ctx.Done()
 }
 
-func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/graphql" {
-		http.NotFound(w, r)
-		return
-	}
-	payload := r.URL.Query().Get("payload")
-	result := graphql.Do(graphql.Params{
-		Schema:        schema,
-		RequestString: payload,
-		Context:       withPayload(withPlatform(withGatewayClient(r.Context(), s.gw), s.platform), payload),
-	})
-	if result.HasErrors() {
-		http.Error(w, fmt.Sprintf("unexpected errors: %v", result.Errors), http.StatusInternalServerError)
-		return
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(result.Data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+func (s Server) serve(ctx context.Context, l net.Listener) error {
+	return (&http.Server{
+		Handler: handler.New(&handler.Config{
+			Schema:   &schema,
+			Pretty:   true,
+			GraphiQL: true,
+		}),
+		BaseContext: func(net.Listener) context.Context {
+			return withPlatform(withGatewayClient(ctx, s.gw), s.platform)
+		},
+	}).Serve(l)
 }
 
 func (s *Server) Register(server *grpc.Server) {
