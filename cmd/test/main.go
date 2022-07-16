@@ -24,6 +24,10 @@ func main() {
 		if err != nil {
 			return err
 		}
+		_, err = dagger.Do(ctx, `mutation{import(ref:"helloworld_ts"){name}}`)
+		if err != nil {
+			return err
+		}
 
 		/*
 			output, err = dagger.Do(ctx, tools.IntrospectionQuery)
@@ -33,7 +37,8 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"]){fs}}}`)
+		// output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"]){fs}}}`)
+		output, err = dagger.Do(ctx, `{helloworld_ts{echo(message:"hi"){fs}}}`)
 		if err != nil {
 			return err
 		}
@@ -42,7 +47,8 @@ func main() {
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			return err
 		}
-		fsBytes, err := json.Marshal(result["alpine"].(map[string]interface{})["build"].(map[string]interface{})["fs"])
+		// fsBytes, err := json.Marshal(result["alpine"].(map[string]interface{})["build"].(map[string]interface{})["fs"])
+		fsBytes, err := json.Marshal(result["helloworld_ts"].(map[string]interface{})["echo"].(map[string]interface{})["fs"])
 		if err != nil {
 			return err
 		}
