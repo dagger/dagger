@@ -10,6 +10,12 @@ import (
 )
 
 func main() {
+	/*
+		if err := engine.RunGraphiQL(context.Background(), 8080); err != nil {
+			panic(err)
+		}
+	*/
+
 	err := engine.Start(context.Background(), func(ctx context.Context) error {
 		var output string
 		var err error
@@ -32,7 +38,6 @@ func main() {
 			return err
 		}
 		fmt.Printf("output: %s\n", output)
-
 		var result map[string]interface{}
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			return err
@@ -49,6 +54,7 @@ func main() {
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			return err
 		}
+
 		if err := engine.Shell(ctx, result["evaluate"].(string)); err != nil {
 			panic(err)
 		}
