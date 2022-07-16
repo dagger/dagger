@@ -1,0 +1,21 @@
+# syntax = docker/dockerfile:1.2
+
+FROM node:12-alpine AS build
+WORKDIR /app/src
+RUN apk add --no-cache file git
+COPY examples/helloworld_ts/package.json examples/helloworld_ts/yarn.lock ./
+COPY sdk/nodejs /sdk/nodejs
+RUN yarn
+COPY examples/helloworld_ts/ .
+RUN yarn build
+
+FROM node:12-alpine
+WORKDIR /app/src
+COPY examples/helloworld_ts/package.json examples/helloworld_ts/yarn.lock ./
+COPY sdk/nodejs /sdk/nodejs
+RUN yarn --production
+COPY --from=build /app/src/dist ./dist
+COPY examples/helloworld_ts/entrypoint.sh /entrypoint
+COPY examples/helloworld_ts/dagger.graphql /dagger.graphql
+ENTRYPOINT ["/entrypoint"]
+LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs
