@@ -282,13 +282,14 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		}
 		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
 		st := llb.Image(imgref).Run(
-			llb.Args([]string{"/usr/local/bin/dagger", "-a", actionName}),
+			llb.Args([]string{"/entrypoint", "-a", actionName}),
 			llb.AddSSHSocket(
 				llb.SSHID(daggerSockName),
 				llb.SSHSocketTarget("/dagger.sock"),
 			),
 			llb.AddMount("/inputs", input, llb.Readonly),
 			llb.ReadonlyRootFS(),
+			llb.AddEnv("DAGGER_ACTION", actionName),
 		)
 		outputMnt := st.AddMount("/outputs", llb.Scratch())
 		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))

@@ -8,8 +8,7 @@ RUN --mount=target=. --mount=target=/root/.cache,type=cache \
     CGO_ENABLED=0 go build -o /out -ldflags '-s -d -w' ./examples/alpine
 
 FROM scratch
-COPY --from=build /out /usr/local/bin/dagger
+COPY --from=build /out /entrypoint
 COPY ./examples/alpine/dagger.graphql /dagger.graphql
-ENTRYPOINT ["/usr/local/bin/dagger"]
+ENTRYPOINT ["/entrypoint"]
 LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs
-

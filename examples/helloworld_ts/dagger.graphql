@@ -1,0 +1,7 @@
+type Echo {
+  fs: FS!
+}
+
+type Query {
+  echo(message: String!): Echo
+}
