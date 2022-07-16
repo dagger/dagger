@@ -541,7 +541,22 @@ type Mutation {
 							if !ok {
 								return nil, fmt.Errorf("invalid fs")
 							}
-							return fs.Evaluate(p.Context)
+							fs, err := fs.Evaluate(p.Context)
+							if err != nil {
+								return nil, err
+							}
+							gw, err := getGatewayClient(p.Context)
+							if err != nil {
+								return nil, err
+							}
+							_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
+								Evaluate:   true,
+								Definition: fs.PB,
+							})
+							if err != nil {
+								return nil, err
+							}
+							return fs, nil
 						},
 					},
 					"readfile": &tools.FieldResolve{
