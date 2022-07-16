@@ -10,19 +10,24 @@ import (
 	"github.com/graphql-go/graphql"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/sshforward"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-func NewServer(gw bkgw.Client) Server {
-	s := Server{gw: gw}
+func NewServer(gw bkgw.Client, platform *specs.Platform) Server {
+	s := Server{
+		gw:       gw,
+		platform: platform,
+	}
 	return s
 }
 
 type Server struct {
-	gw bkgw.Client
+	gw       bkgw.Client
+	platform *specs.Platform
 }
 
 func (s Server) ServeConn(ctx context.Context, conn net.Conn) {
@@ -40,7 +45,7 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	result := graphql.Do(graphql.Params{
 		Schema:        schema,
 		RequestString: payload,
-		Context:       withPayload(withGatewayClient(r.Context(), s.gw), payload),
+		Context:       withPayload(withPlatform(withGatewayClient(r.Context(), s.gw), s.platform), payload),
 	})
 	if result.HasErrors() {
 		http.Error(w, fmt.Sprintf("unexpected errors: %v", result.Errors), http.StatusInternalServerError)
