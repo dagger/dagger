@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
+	"github.com/containerd/containerd/platforms"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
@@ -14,6 +15,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const (
@@ -289,7 +291,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			llb.ReadonlyRootFS(),
 		)
 		outputMnt := st.AddMount("/outputs", llb.Scratch())
-		outputDef, err := outputMnt.Marshal(p.Context)
+		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p.Context)))
 		if err != nil {
 			return nil, err
 		}
@@ -441,7 +443,7 @@ type Mutation {
 							if !ok {
 								return nil, fmt.Errorf("invalid ref")
 							}
-							llbdef, err := llb.Image(ref).Marshal(p.Context)
+							llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p.Context)))
 							if err != nil {
 								return nil, err
 							}
@@ -477,7 +479,7 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context)
+							llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context, llb.Platform(getPlatform(p.Context)))
 							if err != nil {
 								return nil, err
 							}
@@ -656,6 +658,20 @@ func getGatewayClient(ctx context.Context) (bkgw.Client, error) {
 		return nil, fmt.Errorf("no gateway client")
 	}
 	return v.(bkgw.Client), nil
+}
+
+type platformKey struct{}
+
+func withPlatform(ctx context.Context, platform *specs.Platform) context.Context {
+	return context.WithValue(ctx, platformKey{}, platform)
+}
+
+func getPlatform(ctx context.Context) specs.Platform {
+	v := ctx.Value(platformKey{})
+	if v == nil {
+		return platforms.DefaultSpec()
+	}
+	return *v.(*specs.Platform)
 }
 
 // TODO: feel like there's probably a better of getting this in the resolver funcs, but couldn't find it

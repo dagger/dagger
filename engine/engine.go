@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/api"
 	dagger "github.com/dagger/cloak/sdk/go"
 	bkclient "github.com/moby/buildkit/client"
@@ -14,6 +15,7 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/progress/progressui"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/sync/errgroup"
 
@@ -23,6 +25,11 @@ import (
 
 func Start(ctx context.Context, fn func(context.Context) error) error {
 	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", bkclient.WithFailFast())
+	if err != nil {
+		return err
+	}
+
+	platform, err := detectPlatform(ctx, c)
 	if err != nil {
 		return err
 	}
@@ -42,10 +49,11 @@ func Start(ctx context.Context, fn func(context.Context) error) error {
 					panic(r)
 				}
 			}()
-			server = api.NewServer(gw)
+			server = api.NewServer(gw, platform)
 
 			ctx = dagger.WithInMemoryAPIClient(ctx, server)
 			ctx = withGatewayClient(ctx, gw)
+			ctx = withPlatform(ctx, platform)
 			err = fn(ctx)
 			if err != nil {
 				return nil, err
@@ -74,9 +82,30 @@ func withGatewayClient(ctx context.Context, gw bkgw.Client) context.Context {
 	return context.WithValue(ctx, gatewayClientKey{}, gw)
 }
 
+type platformKey struct{}
+
+func withPlatform(ctx context.Context, platform *specs.Platform) context.Context {
+	return context.WithValue(ctx, platformKey{}, platform)
+}
+
+func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
+	w, err := c.ListWorkers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error detecting platform %w", err)
+	}
+
+	if len(w) > 0 && len(w[0].Platforms) > 0 {
+		dPlatform := w[0].Platforms[0]
+		return &dPlatform, nil
+	}
+	defaultPlatform := platforms.DefaultSpec()
+	return &defaultPlatform, nil
+}
+
 func Shell(ctx context.Context, inputFS string) error {
 	gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
-	baseDef, err := llb.Image("alpine:3.15").Marshal(ctx)
+	platform := ctx.Value(platformKey{}).(*specs.Platform)
+	baseDef, err := llb.Image("alpine:3.15").Marshal(ctx, llb.Platform(*platform))
 	if err != nil {
 		return err
 	}
