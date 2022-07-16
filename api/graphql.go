@@ -40,6 +40,7 @@ func (fs FS) ToState() (llb.State, error) {
 	return llb.NewState(defop), nil
 }
 
+// TODO: Evaluate needs to know which schema any query should be run against, put that inside FS (in a deterministic way to retain caching)
 func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 	for fs.PB == nil {
 		// TODO: guard against accidental infinite loop
