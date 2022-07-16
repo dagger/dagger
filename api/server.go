@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 
@@ -32,7 +33,9 @@ type Server struct {
 
 func (s Server) ServeConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	go (&http.Server{Handler: s}).Serve(&singleConnListener{Conn: conn})
+	ch := make(chan net.Conn, 1)
+	ch <- conn
+	go (&http.Server{Handler: s}).Serve(&singleConnListener{ch})
 	<-ctx.Done()
 }
 
@@ -90,13 +93,22 @@ func (s *Server) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
 
 // converts a pre-existing net.Conn into a net.Listener that returns the conn
 type singleConnListener struct {
-	net.Conn
+	ch chan net.Conn
 }
 
 func (l *singleConnListener) Accept() (net.Conn, error) {
-	return l.Conn, nil
+	conn, ok := <-l.ch
+	if !ok {
+		return nil, io.ErrClosedPipe
+	}
+	return conn, nil
 }
 
 func (l *singleConnListener) Addr() net.Addr {
-	return l.LocalAddr()
+	return nil
+}
+
+func (l *singleConnListener) Close() error {
+	close(l.ch)
+	return nil
 }
