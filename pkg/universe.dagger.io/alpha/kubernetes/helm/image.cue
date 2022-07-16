@@ -7,7 +7,14 @@ import (
 #Image: {
 	version: string | *"latest"
 
-	docker.#Pull & {
-		source: "index.docker.io/alpine/helm:\(version)"
+	docker.#Build & {
+		steps: [
+			docker.#Pull & {
+				source: "index.docker.io/alpine/helm:\(version)"
+			},
+			docker.#Set & {
+				config: workdir: "/workspace"
+			},
+		]
 	}
 }
