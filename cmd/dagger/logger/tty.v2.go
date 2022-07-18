@@ -456,6 +456,10 @@ func countLinesPerGroup(messages []MessageV2, width int) int {
 	return usedLines
 }
 
+// FIXME: this needs fixing
+// - messages from same group count as messages from different groups
+// - why freeLines - 2?
+// - if there are no free lines, we display 5 lines? How come?
 func linesPerGroup(width, height int, messages []MessageV2) int {
 	usedLines := countLinesPerGroup(messages, width)
 	// TODO think where to print the groupless events
@@ -463,6 +467,7 @@ func linesPerGroup(width, height int, messages []MessageV2) int {
 	runningGroups := 0
 	for _, message := range messages {
 		if group := message.GroupV2; group != nil && group.CurrentState == task.StateComputing {
+			// FIXME: what about groups that are the same name or pointer?
 			runningGroups++
 		}
 	}

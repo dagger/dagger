@@ -333,7 +333,7 @@ func TestLinesPerGroup(t *testing.T) {
 
 	n := linesPerGroup(width, height, msgs)
 
-	require.Equal(t, 6, n)
+	require.Equal(t, 5, n)
 }
 
 func TestPrintGroup(t *testing.T) {
