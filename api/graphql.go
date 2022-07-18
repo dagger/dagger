@@ -216,61 +216,18 @@ type Query {
 func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		if !shouldEval(p.Context) {
-			lazyResult := make(map[string]interface{})
-
-			// Look at the fields being selected, make a query that's the same but with just each individual field, which will be used
-			// to lazily evaluate it
-			// NOTE: this code has only been tested on very simple cases, if it is erroring or behaving weird, it's probably just broken
-			selectedFields := make(map[string]string)
-			for _, field := range p.Info.FieldASTs[0].SelectionSet.Selections {
-				field := field.(*ast.Field)
-				// TODO: re-parsing everytime because it makes it easier to just mutably set the selections slice, should be optimized
-				req, err := parser.Parse(parser.ParseParams{Source: getPayload(p)})
-				if err != nil {
-					return nil, err
-				}
-				reqSelectionSet := req.Definitions[0].(*ast.OperationDefinition).SelectionSet
-				for _, selected := range p.Info.Path.AsArray() {
-					selected := selected.(string)
-					var found bool
-					for _, reqSelection := range reqSelectionSet.Selections {
-						reqSelection := reqSelection.(*ast.Field)
-						if reqSelection.Name.Value == selected {
-							reqSelectionSet = reqSelection.SelectionSet
-							found = true
-							break
-						}
-					}
-					if !found {
-						return nil, fmt.Errorf("could not find %s in request", selected)
-					}
-				}
-				matchIndex := -1
-				for i, reqSelection := range reqSelectionSet.Selections {
-					reqSelection := reqSelection.(*ast.Field)
-					if reqSelection.Name.Value == field.Name.Value {
-						matchIndex = i
-						break
-					}
-				}
-				if matchIndex == -1 {
-					return nil, fmt.Errorf("could not find %s in request", field.Name.Value)
-				}
-				reqSelectionSet.Selections = []ast.Selection{reqSelectionSet.Selections[matchIndex]}
-				selectedFields[field.Name.Value] = printer.Print(req).(string)
+			var parentFieldNames []string
+			for _, parent := range p.Info.Path.AsArray() {
+				parentFieldNames = append(parentFieldNames, parent.(string))
 			}
-
-			// TODO: handle more scalar types, handle nested objects, handle lists, handle batched queries, etc.
-			for fieldName, field := range p.Info.ReturnType.(*graphql.Object).Fields() {
-				fieldQuery, ok := selectedFields[fieldName]
-				if !ok {
-					continue
-				}
-				if field.Type.Name() == "FS" || field.Type.Name() == "FS!" {
-					lazyResult[fieldName] = FS{Query: fieldQuery}
-				} else {
-					return nil, fmt.Errorf("FIXME: currently unsupported return type %s", field.Type.Name())
-				}
+			lazyResult, err := getLazyResult(
+				p.Info.ReturnType.(*graphql.Object),
+				p.Info.Operation.(*ast.OperationDefinition),
+				parentFieldNames,
+				p.Info.FieldASTs[0].SelectionSet,
+			)
+			if err != nil {
+				return nil, err
 			}
 			return lazyResult, nil
 		}
@@ -326,6 +283,126 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		}
 		return result, nil
 	}
+}
+
+func getLazyResult(returnObj *graphql.Object, query *ast.OperationDefinition, parentFieldNames []string, selectionSet *ast.SelectionSet) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+	for fieldName, field := range returnObj.Fields() {
+		// Check if this field actually being selected, skip if not
+		var selection *ast.Field
+		for _, s := range selectionSet.Selections {
+			s := s.(*ast.Field)
+			if s.Name.Value == fieldName {
+				selection = s
+				break
+			}
+		}
+		if selection == nil {
+			continue
+		}
+
+		// If this field is a scalar we support, fill it lazily. If it's a complex object, recurse to fill it.
+		fieldNames := make([]string, len(parentFieldNames))
+		copy(fieldNames, parentFieldNames)
+		fieldNames = append(fieldNames, fieldName)
+
+		switch fieldType := graphql.GetNullable(field.Type).(type) {
+		case *graphql.Scalar:
+			selectedQuery, err := queryWithSelections(query, fieldNames)
+			if err != nil {
+				return nil, err
+			}
+			switch fieldType.Name() {
+			case "FS":
+				result[fieldName] = FS{Query: printer.Print(selectedQuery).(string)}
+			default:
+				return nil, fmt.Errorf("FIXME: currently unsupported scalar return type %s", fieldType.Name())
+			}
+		case *graphql.Object:
+			subResult, err := getLazyResult(fieldType, query, fieldNames, selection.SelectionSet)
+			if err != nil {
+				return nil, err
+			}
+			result[fieldName] = subResult
+		// TODO: case *graphql.List:
+		default:
+			return nil, fmt.Errorf("FIXME: currently unsupported return type %s", field.Type.Name())
+		}
+	}
+	return result, nil
+}
+
+func queryWithSelections(query *ast.OperationDefinition, fieldNames []string) (*ast.OperationDefinition, error) {
+	newQuery := *query
+	var err error
+	newQuery.SelectionSet, err = filterSelectionSets(query.SelectionSet, fieldNames)
+	if err != nil {
+		return nil, err
+	}
+	return &newQuery, nil
+}
+
+func filterSelectionSets(selectionSet *ast.SelectionSet, fieldNames []string) (*ast.SelectionSet, error) {
+	selectionSet, err := copySelectionSet(selectionSet)
+	if err != nil {
+		return nil, err
+	}
+	curSelectionSet := selectionSet
+	for _, fieldName := range fieldNames {
+		newSelectionSet, err := filterSelectionSet(curSelectionSet, fieldName)
+		if err != nil {
+			return nil, err
+		}
+		curSelectionSet.Selections = newSelectionSet.Selections
+		curSelectionSet = newSelectionSet.Selections[0].(*ast.Field).SelectionSet
+	}
+	return selectionSet, nil
+}
+
+// return the selection set where the provided field is the only selection
+func filterSelectionSet(selectionSet *ast.SelectionSet, fieldName string) (*ast.SelectionSet, error) {
+	matchIndex := -1
+	for i, selection := range selectionSet.Selections {
+		selection := selection.(*ast.Field)
+		if selection.Name.Value == fieldName {
+			matchIndex = i
+			break
+		}
+	}
+	if matchIndex == -1 {
+		return nil, fmt.Errorf("could not find %s in selectionSet %s", fieldName, printer.Print(selectionSet).(string))
+	}
+	selectionSet.Selections = []ast.Selection{selectionSet.Selections[matchIndex]}
+	return selectionSet, nil
+}
+
+func copySelectionSet(selectionSet *ast.SelectionSet) (*ast.SelectionSet, error) {
+	if selectionSet == nil {
+		return nil, nil
+	}
+	var selections []ast.Selection
+	for _, selection := range selectionSet.Selections {
+		field, ok := selection.(*ast.Field)
+		if !ok {
+			return nil, fmt.Errorf("unsupported selection type %T", selection)
+		}
+		newField, err := copyField(field)
+		if err != nil {
+			return nil, err
+		}
+		selections = append(selections, newField)
+	}
+	return &ast.SelectionSet{Kind: selectionSet.Kind, Loc: selectionSet.Loc, Selections: selections}, nil
+}
+
+func copyField(field *ast.Field) (*ast.Field, error) {
+	newField := *field
+	var err error
+	newField.SelectionSet, err = copySelectionSet(field.SelectionSet)
+	if err != nil {
+		return nil, err
+	}
+	return &newField, nil
 }
 
 // TODO: shouldn't be global vars, pass through resolve context, make sure synchronization is handled, etc.

@@ -1,6 +1,6 @@
 type AlpineBuild {
-	fs: FS!
+  fs: FS!
 }
 type Query {
-	build(pkgs: [String]!): AlpineBuild
+  build(pkgs: [String]!): AlpineBuild
 }
