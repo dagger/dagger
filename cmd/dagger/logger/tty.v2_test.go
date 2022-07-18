@@ -591,15 +591,16 @@ func TestFormatGroupLine(t *testing.T) {
 		width int
 		exp   string
 	}{
-		"ok":  {EventV2{"message": "simple message", "level": "error", "error": "does not work", "field1": "value1"}, 20, "\x1b[2m\x1b[31msimple messag… \n\x1b[0m"},
-		"ok2": {EventV2{"message": "simple message", "level": "error", "error": "does not work", "field1": "value1"}, 200, "\x1b[2m\x1b[31msimple message: does not work\x1b[0m    \x1b[1mfield1=value1\x1b[0m\x1b[0m                                                                                                                                     \n\x1b[0m"},
+		"ok":  {EventV2{"message": "simple message", "level": "error", "error": "does not work", "field1": "value1"}, 20, "\x1b[2m\x1b[31msimple message: d…  \n\x1b[0m"}, // FIXME: there shouldn't be 2 space after the …
+		"ok2": {EventV2{"message": "simple message", "level": "error", "error": "does not work", "field1": "value1"}, 200, "\x1b[2m\x1b[31msimple message: does not work\x1b[0m    \x1b[1mfield1=value1\x1b[0m\x1b[0m                                                                                                                                                          \n\x1b[0m"},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			got, n := formatGroupLine(c.event, c.width)
+			require.LessOrEqual(t, printSize(got), c.width)
+			require.Equal(t, n, 1)
 			assert.Equal(t, c.exp, got, "%s", got)
-			assert.Equal(t, n, 1)
 		})
 	}
 }
