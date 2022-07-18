@@ -734,8 +734,9 @@ func trimRightWidth(s string, limit int) string {
 		return s
 	}
 
-	for w := ansi.PrintableRuneWidth(s); w > limit; w = ansi.PrintableRuneWidth(s) {
-		s = s[:len(s)-1]
+	originalSize := printSize(s)
+	for w := originalSize; w > limit; w = printSize(s) {
+		s = s[:len(s)-4]
 
 		// if we removed some part of a grapheme cluster, we might get non-UTF8 string or unprintable character; skip
 		if !utf8.ValidString(s) {

@@ -463,11 +463,11 @@ func TestMakeLine(t *testing.T) {
 
 		exp string
 	}{
-		"30":           {30, "[+] ", "test mesg, test message, test message", "1.9s", "[+] test mesg, test messa…1.9s"},
-		"12+big timer": {12, "[+] ", "test", "1234.9s", "[+] …1234.9s"},
+		"30":           {30, "[+] ", "test mesg, test message, test message", "1.9s", "[+] test mesg, test messa 1.9s"},
+		"12+big timer": {12, "[+] ", "test", "1234.9s", "[+]  1234.9s"},
 		"12":           {12, "[+] ", "test", "1.9s", "[+] test1.9s"},
-		"11":           {11, "[+] ", "test", "1.9s", "[+] …  1.9s"},
-		"9":            {9, "[+] ", "test", "1.9s", "[+] …1.9s"},
+		"11":           {11, "[+] ", "test", "1.9s", "[+]    1.9s"},
+		"9":            {9, "[+] ", "test", "1.9s", "[+]  1.9s"},
 		"8":            {8, "[+] ", "test", "1.9s", "…"},
 	}
 
