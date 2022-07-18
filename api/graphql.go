@@ -58,18 +58,24 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 		}
 
 		// Extract the queried field out of the result
-		resultMap := result.Data.(map[string]interface{})
-		req, err := parser.Parse(parser.ParseParams{Source: fs.Query})
-		if err != nil {
-			return FS{}, err
-		}
-		field := req.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
-		for field.SelectionSet != nil {
-			resultMap = resultMap[field.Name.Value].(map[string]interface{})
-			field = field.SelectionSet.Selections[0].(*ast.Field)
-		}
-		if err := json.Unmarshal([]byte(resultMap[field.Name.Value].(string)), &fs); err != nil {
-			return FS{}, err
+		switch result := result.Data.(type) {
+		case map[string]interface{}:
+			req, err := parser.Parse(parser.ParseParams{Source: fs.Query})
+			if err != nil {
+				return FS{}, err
+			}
+			field := req.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
+			for field.SelectionSet != nil {
+				result = result[field.Name.Value].(map[string]interface{})
+				field = field.SelectionSet.Selections[0].(*ast.Field)
+			}
+			if err := json.Unmarshal([]byte(result[field.Name.Value].(string)), &fs); err != nil {
+				return FS{}, err
+			}
+		case string:
+			if err := json.Unmarshal([]byte(result), &fs); err != nil {
+				return FS{}, err
+			}
 		}
 	}
 	return fs, nil
@@ -221,7 +227,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 				parentFieldNames = append(parentFieldNames, parent.(string))
 			}
 			lazyResult, err := getLazyResult(
-				p.Info.ReturnType.(*graphql.Object),
+				p.Info.ReturnType,
 				p.Info.Operation.(*ast.OperationDefinition),
 				parentFieldNames,
 				p.Info.FieldASTs[0].SelectionSet,
@@ -277,7 +283,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			return nil, err
 		}
 
-		var result map[string]interface{}
+		var result interface{}
 		if err := json.Unmarshal(outputBytes, &result); err != nil {
 			return nil, err
 		}
@@ -285,51 +291,49 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 	}
 }
 
-func getLazyResult(returnObj *graphql.Object, query *ast.OperationDefinition, parentFieldNames []string, selectionSet *ast.SelectionSet) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-	for fieldName, field := range returnObj.Fields() {
-		// Check if this field actually being selected, skip if not
-		var selection *ast.Field
-		for _, s := range selectionSet.Selections {
-			s := s.(*ast.Field)
-			if s.Name.Value == fieldName {
-				selection = s
-				break
-			}
+func getLazyResult(output graphql.Output, query *ast.OperationDefinition, parentFieldNames []string, selectionSet *ast.SelectionSet) (interface{}, error) {
+	switch outputType := graphql.GetNullable(output).(type) {
+	case *graphql.Scalar:
+		selectedQuery, err := queryWithSelections(query, parentFieldNames)
+		if err != nil {
+			return nil, err
 		}
-		if selection == nil {
-			continue
+		switch outputType.Name() {
+		case "FS":
+			return FS{Query: printer.Print(selectedQuery).(string)}, nil
+		default:
+			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
 		}
-
-		// If this field is a scalar we support, fill it lazily. If it's a complex object, recurse to fill it.
-		fieldNames := make([]string, len(parentFieldNames))
-		copy(fieldNames, parentFieldNames)
-		fieldNames = append(fieldNames, fieldName)
-
-		switch fieldType := graphql.GetNullable(field.Type).(type) {
-		case *graphql.Scalar:
-			selectedQuery, err := queryWithSelections(query, fieldNames)
-			if err != nil {
-				return nil, err
+		// TODO: case *graphql.List: (may need to model lazy list using pagination)
+	case *graphql.Object:
+		result := make(map[string]interface{})
+		for fieldName, field := range outputType.Fields() {
+			// Check if this field actually being selected, skip if not
+			var selection *ast.Field
+			for _, s := range selectionSet.Selections {
+				s := s.(*ast.Field)
+				if s.Name.Value == fieldName {
+					selection = s
+					break
+				}
 			}
-			switch fieldType.Name() {
-			case "FS":
-				result[fieldName] = FS{Query: printer.Print(selectedQuery).(string)}
-			default:
-				return nil, fmt.Errorf("FIXME: currently unsupported scalar return type %s", fieldType.Name())
+			if selection == nil {
+				continue
 			}
-		case *graphql.Object:
-			subResult, err := getLazyResult(fieldType, query, fieldNames, selection.SelectionSet)
+			// Recurse to the selected field
+			fieldNames := make([]string, len(parentFieldNames))
+			copy(fieldNames, parentFieldNames)
+			fieldNames = append(fieldNames, fieldName)
+			subResult, err := getLazyResult(field.Type, query, fieldNames, selection.SelectionSet)
 			if err != nil {
 				return nil, err
 			}
 			result[fieldName] = subResult
-		// TODO: case *graphql.List:
-		default:
-			return nil, fmt.Errorf("FIXME: currently unsupported return type %s", field.Type.Name())
 		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("FIXME: currently unsupported output type %T", output)
 	}
-	return result, nil
 }
 
 func queryWithSelections(query *ast.OperationDefinition, fieldNames []string) (*ast.OperationDefinition, error) {

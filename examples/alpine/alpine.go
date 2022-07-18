@@ -8,7 +8,7 @@ import (
 	dagger "github.com/dagger/cloak/sdk/go"
 )
 
-func Build(ctx context.Context, input map[string]interface{}) map[string]interface{} {
+func Build(ctx context.Context, input map[string]interface{}) interface{} {
 	/* TODO: update to use nice wrappers again
 	output.Root = core.Image(ctx, &core.ImageInput{
 		Ref: dagger.ToString("alpine:3.15.0"),
@@ -50,5 +50,5 @@ func Build(ctx context.Context, input map[string]interface{}) map[string]interfa
 		fs = result["core"].(map[string]interface{})["exec"].(map[string]interface{})["fs"]
 	}
 
-	return map[string]interface{}{"fs": fs}
+	return fs
 }

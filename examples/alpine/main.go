@@ -15,8 +15,7 @@ func main() {
 		if err := json.Unmarshal(input, &inputMap); err != nil {
 			return nil, err
 		}
-		outputMap := Build(ctx, inputMap)
-		return json.Marshal(outputMap)
+		return json.Marshal(Build(ctx, inputMap))
 	})
 
 	if err := d.Serve(); err != nil {
