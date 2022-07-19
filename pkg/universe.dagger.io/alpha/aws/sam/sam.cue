@@ -18,16 +18,33 @@ _destination: "/var/task"
 	config: #Config
 
 	docker.#Run & {
-		if (config.clientSocket != _|_) {
-			mounts: dkr: {
-				dest:     "/var/run/docker.sock"
-				contents: config.clientSocket
+		if (config.ciKey != _|_) {
+			env: {
+				DOCKER_HOST: config.host
+				DOCKER_TLS_VERIFY: "1"
+				DOCKER_CERT_PATH: "/certs/client"
+				AWS_ACCESS_KEY_ID: config.accessKey
+				AWS_SECRET_ACCESS_KEY: config.secretKey
+			}
+			mounts: {
+				"certs": {
+					dest: "/certs/client"
+					contents: config.certs
+				}
 			}
 		}
-		env: {
-			AWS_ACCESS_KEY_ID:     config.accessKey
-			AWS_SECRET_ACCESS_KEY: config.secretKey
+
+		if (config.ciKey == _|_) {
+			mounts: dkr: {
+				dest: "/var/run/docker.sock"
+				contents: config.clientSocket
+			}
+			env: {
+				AWS_ACCESS_KEY_ID: config.accessKey
+				AWS_SECRET_ACCESS_KEY: config.secretKey
+			}
 		}
+
 		workdir: _destination
 		command: name: "sam"
 	}
