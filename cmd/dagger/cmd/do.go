@@ -117,27 +117,8 @@ var doCmd = &cobra.Command{
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
 			} else {
-				var instanceErr *compiler.ErrorInstance
-				rce := event.RunCompleted{
-					State: event.RunCompletedStateFailed,
-					Err:   &event.RunError{Message: err.Error()},
-					Error: err.Error(),
-				}
-
-				if errors.As(err, &instanceErr) {
-					planFiles := map[string]string{}
-					for _, f := range instanceErr.Instance.Files {
-						bfile, _ := format.Node(f)
-						planFiles[filepath.Base(f.Filename)] = string(bfile)
-					}
-					rce.Err.PlanFiles = planFiles
-				}
-				tm.Push(ctx, rce)
+				captureRunCompletedFailed(ctx, tm, err)
 			}
-
-			// manually flush events since otherwise they could be skipped as
-			// the program is exiting.
-			tm.Flush()
 
 			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 			os.Exit(1)
@@ -153,6 +134,8 @@ var doCmd = &cobra.Command{
 			targetStr := strings.Join(selectorStrs, " ")
 
 			err = fmt.Errorf("action not found: %s", targetStr)
+
+			captureRunCompletedFailed(ctx, tm, err)
 			// Find closest action
 			action = daggerPlan.Action().FindClosest(targetPath)
 			if action == nil {
@@ -160,6 +143,7 @@ var doCmd = &cobra.Command{
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(1)
 			}
+
 			targetPath = action.Path
 			doHelpCmd(cmd, daggerPlan, action, nil, action.Path, []string{err.Error()})
 			os.Exit(1)
@@ -179,6 +163,7 @@ var doCmd = &cobra.Command{
 		err = cmd.Flags().Parse(args)
 
 		if err != nil {
+			captureRunCompletedFailed(ctx, tm, err)
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
@@ -195,6 +180,7 @@ var doCmd = &cobra.Command{
 		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
 			tty, err = logger.NewTTYOutput(os.Stderr)
 			if err != nil {
+				captureRunCompletedFailed(ctx, tm, err)
 				lg.Fatal().Err(err).Msg("failed to initialize TTY logger")
 			}
 			tty.Start()
@@ -230,11 +216,7 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			tm.Push(ctx, event.RunCompleted{
-				State: event.RunCompletedStateFailed,
-				Error: err.Error(),
-				Err:   &event.RunError{Message: err.Error()},
-			})
+			captureRunCompletedFailed(ctx, tm, err)
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
@@ -265,14 +247,15 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
+		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
+			captureRunCompletedFailed(ctx, tm, err)
+			lg.Fatal().Err(err).Msg("failed to print action outputs")
+		}
+
 		tm.Push(ctx, event.RunCompleted{
 			State:   event.RunCompletedStateSuccess,
 			Outputs: outputs,
 		})
-
-		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
-			lg.Fatal().Err(err).Msg("failed to print action outputs")
-		}
 	},
 }
 
@@ -406,6 +389,29 @@ func printActions(p *plan.Plan, action *plan.Action, w io.Writer, target cue.Pat
 	}
 
 	return nil
+}
+
+func captureRunCompletedFailed(ctx context.Context, tm *telemetry.Telemetry, err error) {
+	var instanceErr *compiler.ErrorInstance
+	rce := event.RunCompleted{
+		State: event.RunCompletedStateFailed,
+		Err:   &event.RunError{Message: err.Error()},
+		Error: err.Error(),
+	}
+
+	if errors.As(err, &instanceErr) {
+		planFiles := map[string]string{}
+		for _, f := range instanceErr.Instance.Files {
+			bfile, _ := format.Node(f)
+			planFiles[filepath.Base(f.Filename)] = string(bfile)
+		}
+		rce.Err.PlanFiles = planFiles
+	}
+	tm.Push(ctx, rce)
+
+	// manually flush events since otherwise they could be skipped as
+	// the program is exiting.
+	tm.Flush()
 }
 
 func init() {
