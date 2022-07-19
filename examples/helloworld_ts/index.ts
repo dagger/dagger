@@ -8,8 +8,8 @@ dagger.action("uppercase", ({ message }) => ({
 
 dagger.action("echo", async ({ message }) => {
   await dagger.do(`mutation{import(ref:"alpine"){name}}`);
-  const output = await dagger.do(`{alpine{build(pkgs:["jq"]){fs}}}`);
+  const output = await dagger.do(`{alpine{build(pkgs:["jq"])}}`);
   return {
-    fs: output.data.data.alpine.build.fs,
+    fs: output.data.data.alpine.build,
   };
 });

@@ -62,7 +62,6 @@ func (s Server) serve(ctx context.Context, l net.Listener) error {
 	return (&http.Server{
 		Handler: handler.New(&handler.Config{
 			Schema:   &schema,
-			Pretty:   true,
 			GraphiQL: true,
 		}),
 		BaseContext: func(net.Listener) context.Context {

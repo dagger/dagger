@@ -36,11 +36,7 @@ func Build(ctx context.Context, input map[string]interface{}) interface{} {
 	// install each of the requested packages
 	for _, pkg := range input["pkgs"].([]interface{}) {
 		pkg := pkg.(string)
-		fsBytes, err := json.Marshal(fs)
-		if err != nil {
-			panic(err)
-		}
-		output, err := dagger.Do(ctx, fmt.Sprintf(`{core{exec(fs:%q,args:["apk", "add", "-U", "--no-cache", %q]){fs}}}`, string(fsBytes), pkg))
+		output, err := dagger.Do(ctx, fmt.Sprintf(`{core{exec(fs:%q,args:["apk", "add", "-U", "--no-cache", %q]){fs}}}`, fs.(string), pkg))
 		if err != nil {
 			panic(err)
 		}

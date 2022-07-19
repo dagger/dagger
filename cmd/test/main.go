@@ -37,8 +37,8 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"])}}`)
-		// output, err = dagger.Do(ctx, `{helloworld_ts{echo(message:"hi"){fs}}}`)
+		// output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"])}}`)
+		output, err = dagger.Do(ctx, `{helloworld_ts{echo(message:"hi"){fs}}}`)
 		if err != nil {
 			return err
 		}
@@ -47,13 +47,10 @@ func main() {
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			return err
 		}
-		fsBytes, err := json.Marshal(result["alpine"].(map[string]interface{})["build"])
-		// fsBytes, err := json.Marshal(result["helloworld_ts"].(map[string]interface{})["echo"].(map[string]interface{})["fs"])
-		if err != nil {
-			return err
-		}
 
-		output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`, string(fsBytes)))
+		output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`,
+			// result["alpine"].(map[string]interface{})["build"].(string)))
+			result["helloworld_ts"].(map[string]interface{})["echo"].(map[string]interface{})["fs"].(string)))
 		if err != nil {
 			return err
 		}
