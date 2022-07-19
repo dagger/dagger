@@ -50,6 +50,10 @@ import (
 					git status
 
 					find . -name '*.cue' -not -path '*/cue.mod/*' -print | time xargs -n 1 -P 8 cue fmt -s
+
+					# Show modified files
+					git diff -- "*.cue"
+
 					modified="$(git status -s . | grep -e "^ M"  | grep "\.cue" | cut -d ' ' -f3 || true)"
 					test -z "$modified" || (echo -e "linting error in:\n${modified}" > /dev/stderr ; false)
 					"""#
