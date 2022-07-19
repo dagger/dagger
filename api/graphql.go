@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
@@ -105,35 +106,6 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 
 var coreSchema tools.ExecutableSchema
 
-type Image struct {
-	FS FS `json:"fs"`
-}
-
-type Exec struct {
-	FS FS `json:"fs"`
-}
-
-type Core struct {
-	Image Image `json:"image"`
-	Exec  Exec  `json:"exec"`
-}
-
-type CoreResult struct {
-	Core Core `json:"core"`
-}
-
-type EvaluateResult struct {
-	Evaluate FS `json:"evaluate"`
-}
-
-type ReadfileResult struct {
-	Readfile string `json:"readfile"`
-}
-
-type DaggerPackage struct {
-	Name string `json:"name"`
-}
-
 type evalKey struct{}
 
 func withEval(ctx context.Context) context.Context {
@@ -221,20 +193,7 @@ type Query {
 func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		if !shouldEval(p.Context) {
-			var parentFieldNames []string
-			for _, parent := range p.Info.Path.AsArray() {
-				parentFieldNames = append(parentFieldNames, parent.(string))
-			}
-			lazyResult, err := getLazyResult(
-				p.Info.ReturnType,
-				p.Info.Operation.(*ast.OperationDefinition),
-				parentFieldNames,
-				p.Info.FieldASTs[0].SelectionSet,
-			)
-			if err != nil {
-				return nil, err
-			}
-			return lazyResult, nil
+			return lazyResolve(p)
 		}
 
 		imgref := fmt.Sprintf("localhost:5555/dagger:%s", pkgName)
@@ -323,6 +282,23 @@ func getEvalResult(outputSchema graphql.Output, outputVal interface{}) (interfac
 	}
 }
 
+func lazyResolve(p graphql.ResolveParams) (interface{}, error) {
+	var parentFieldNames []string
+	for _, parent := range p.Info.Path.AsArray() {
+		parentFieldNames = append(parentFieldNames, parent.(string))
+	}
+	lazyResult, err := getLazyResult(
+		p.Info.ReturnType,
+		p.Info.Operation.(*ast.OperationDefinition),
+		parentFieldNames,
+		p.Info.FieldASTs[0].SelectionSet,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return lazyResult, nil
+}
+
 func getLazyResult(output graphql.Output, query *ast.OperationDefinition, parentFieldNames []string, selectionSet *ast.SelectionSet) (interface{}, error) {
 	switch outputType := graphql.GetNullable(output).(type) {
 	case *graphql.Scalar:
@@ -340,7 +316,7 @@ func getLazyResult(output graphql.Output, query *ast.OperationDefinition, parent
 	case *graphql.Object:
 		result := make(map[string]interface{})
 		for fieldName, field := range outputType.Fields() {
-			// Check if this field actually being selected, skip if not
+			// Check if this field is actually being selected, skip if not
 			var selection *ast.Field
 			for _, s := range selectionSet.Selections {
 				s := s.(*ast.Field)
@@ -515,13 +491,22 @@ scalar FS
 type CoreImage {
 	fs: FS!
 }
-type CoreExec {
+
+input CoreMount {
+	path: String!
 	fs: FS!
+}
+input CoreExecInput {
+	mounts: [CoreMount!]!
+	args: [String!]!
+}
+type CoreExecOutput {
+	mount(path: String!): FS
 }
 
 type Core {
 	image(ref: String!): CoreImage
-	exec(fs: FS!, args: [String]!): CoreExec
+	exec(input: CoreExecInput!): CoreExecOutput
 }
 type Query {
 	core: Core!
@@ -547,12 +532,40 @@ type Mutation {
 					},
 				},
 			},
+			"CoreExecOutput": &tools.ObjectResolver{
+				Fields: tools.FieldResolveMap{
+					"mount": &tools.FieldResolve{
+						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+							if lazyOutput, ok := p.Source.(map[string]interface{}); ok {
+								return lazyOutput["mount"], nil
+							}
+							fsOutputs, ok := p.Source.(map[string]FS)
+							if !ok {
+								return nil, fmt.Errorf("unexpected core exec source type %T", p.Source)
+							}
+							rawPath, ok := p.Args["path"]
+							if !ok {
+								return nil, fmt.Errorf("missing path argument")
+							}
+							path, ok := rawPath.(string)
+							if !ok {
+								return nil, fmt.Errorf("path argument is not a string")
+							}
+							fs, ok := fsOutputs[path]
+							if !ok {
+								return nil, fmt.Errorf("mount at path %q not found", path)
+							}
+							return fs, nil
+						},
+					},
+				},
+			},
 			"Core": &tools.ObjectResolver{
 				Fields: tools.FieldResolveMap{
 					"image": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 							if !shouldEval(p.Context) {
-								return Image{FS: FS{Query: getPayload(p)}}, nil
+								return lazyResolve(p)
 							}
 							ref, ok := p.Args["ref"].(string)
 							if !ok {
@@ -562,19 +575,48 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							return Image{FS: FS{PB: llbdef.ToPB()}}, nil
+							return map[string]interface{}{
+								"fs": FS{PB: llbdef.ToPB()},
+							}, nil
 						},
 					},
 					"exec": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 							if !shouldEval(p.Context) {
-								return Exec{FS: FS{Query: getPayload(p)}}, nil
+								return lazyResolve(p)
 							}
-							fs, ok := p.Args["fs"].(FS)
+							input, ok := p.Args["input"].(map[string]interface{})
 							if !ok {
 								return nil, fmt.Errorf("invalid fs")
 							}
-							rawArgs, ok := p.Args["args"].([]interface{})
+
+							rawMounts, ok := input["mounts"].([]interface{})
+							if !ok {
+								return nil, fmt.Errorf("invalid mounts")
+							}
+							inputMounts := make(map[string]FS)
+							for _, rawMount := range rawMounts {
+								mount, ok := rawMount.(map[string]interface{})
+								if !ok {
+									return nil, fmt.Errorf("invalid mount: %T", rawMount)
+								}
+								path, ok := mount["path"].(string)
+								if !ok {
+									return nil, fmt.Errorf("invalid mount path")
+								}
+								path = filepath.Clean(path)
+								fs, ok := mount["fs"].(FS)
+								if !ok {
+									return nil, fmt.Errorf("invalid mount fs")
+								}
+								inputMounts[path] = fs
+							}
+							rootFS, ok := inputMounts["/"]
+							if !ok {
+								return nil, fmt.Errorf("missing root fs")
+							}
+
+							rawArgs, ok := input["args"].([]interface{})
 							if !ok {
 								return nil, fmt.Errorf("invalid args")
 							}
@@ -586,19 +628,42 @@ type Mutation {
 									return nil, fmt.Errorf("invalid arg")
 								}
 							}
-							fs, err := fs.Evaluate(p.Context)
+
+							rootFS, err := rootFS.Evaluate(p.Context)
 							if err != nil {
 								return nil, err
 							}
-							fsState, err := fs.ToState()
+							state, err := rootFS.ToState()
 							if err != nil {
 								return nil, err
 							}
-							llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
-							if err != nil {
-								return nil, err
+							execState := state.Run(llb.Args(args))
+							outputStates := map[string]llb.State{
+								"/": execState.Root(),
 							}
-							return Exec{FS: FS{PB: llbdef.ToPB()}}, nil
+							for path, inputFS := range inputMounts {
+								if path == "/" {
+									continue
+								}
+								inputFS, err := inputFS.Evaluate(p.Context)
+								if err != nil {
+									return nil, err
+								}
+								inputState, err := inputFS.ToState()
+								if err != nil {
+									return nil, err
+								}
+								outputStates[path] = execState.AddMount(path, inputState)
+							}
+							fsOutputs := make(map[string]FS)
+							for path, outputState := range outputStates {
+								llbdef, err := outputState.Marshal(p.Context, llb.Platform(getPlatform(p)))
+								if err != nil {
+									return nil, err
+								}
+								fsOutputs[path] = FS{PB: llbdef.ToPB()}
+							}
+							return fsOutputs, nil
 						},
 					},
 				},
@@ -649,7 +714,9 @@ type Mutation {
 							if err := reloadSchemas(); err != nil {
 								return nil, err
 							}
-							return DaggerPackage{Name: pkgName}, nil
+							return map[string]interface{}{
+								"name": pkgName,
+							}, nil
 						},
 					},
 					"evaluate": &tools.FieldResolve{

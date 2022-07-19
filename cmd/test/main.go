@@ -37,8 +37,9 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		// output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"])}}`)
-		output, err = dagger.Do(ctx, `{helloworld_ts{echo(message:"hi"){fs}}}`)
+		// output, err = dagger.Do(ctx, `{core{image(ref:"alpine:3.15"){fs}}}`)
+		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"])}}`)
+		// output, err = dagger.Do(ctx, `{helloworld_ts{echo(message:"hi"){fs}}}`)
 		if err != nil {
 			return err
 		}
@@ -48,12 +49,35 @@ func main() {
 			return err
 		}
 
+		/*
+					output, err = dagger.Do(ctx, fmt.Sprintf(`
+			{
+			 core {
+			  exec(input: {
+			   args: ["true"],
+			   mounts: [{path:"/", fs:%q}]
+			  }) {
+					 mount(path:"/")
+			   }
+			 }
+			}`, result["core"].(map[string]interface{})["image"].(map[string]interface{})["fs"].(string)))
+					if err != nil {
+						return err
+					}
+					fmt.Printf("output: %s\n", output)
+					if err := json.Unmarshal([]byte(output), &result); err != nil {
+						return err
+					}
+		*/
+
 		output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`,
-			// result["alpine"].(map[string]interface{})["build"].(string)))
-			result["helloworld_ts"].(map[string]interface{})["echo"].(map[string]interface{})["fs"].(string)))
+			result["alpine"].(map[string]interface{})["build"].(string)))
+		// result["helloworld_ts"].(map[string]interface{})["echo"].(map[string]interface{})["fs"].(string)))
+		// result["core"].(map[string]interface{})["exec"].(map[string]interface{})["mount"].(string)))
 		if err != nil {
 			return err
 		}
+		fmt.Printf("output: %s\n", output)
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			return err
 		}
