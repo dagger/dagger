@@ -87,16 +87,27 @@ var doCmd = &cobra.Command{
 		if !viper.GetBool("help") && (err != nil || len(targetAction) > 0) {
 			// we send the RunStarted event regardless if `loadPlan` fails since we also want to capture
 			// and provide assistance when plan fails to evaluate
-			var plan string
+			var p string
+			var validationErr *plan.ErrorValidation
 			if daggerPlan != nil {
-				plan = fmt.Sprintf("%#v", daggerPlan.Source().Cue())
+				p = fmt.Sprintf("%#v", daggerPlan.Source().Cue())
+			} else if errors.As(err, &validationErr) {
+				p = fmt.Sprintf("%#v", validationErr.Plan.Source().Cue())
 			}
 			// Fire "run started" event once we know there is an action to run (ie. not calling --help)
 			tm.Push(ctx, event.RunStarted{
 				Action: targetAction,
 				Args:   os.Args[1:],
-				Plan:   plan,
+				Plan:   p,
 			})
+
+			// we need to flush events here since otherwise a "run.completed" event
+			// could arrive before the "run.started" and the run will be processed
+			// incorrectly.
+			tm.Flush()
+			rid := tm.RunID()
+			tm = telemetry.New()
+			tm.SetRunID(rid)
 		}
 
 		if err != nil {
