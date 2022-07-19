@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -121,7 +120,7 @@ func Shell(ctx context.Context, inputFS string) error {
 	}
 
 	var fs api.FS
-	if err := json.Unmarshal([]byte(inputFS), &fs); err != nil {
+	if err := fs.UnmarshalText([]byte(inputFS)); err != nil {
 		return err
 	}
 	fsRes, err := gw.Solve(ctx, bkgw.SolveRequest{

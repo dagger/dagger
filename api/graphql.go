@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -25,8 +26,37 @@ const (
 // FS is either llb representing the filesystem or a graphql query for obtaining that llb
 // This is opaque to clients; to them FS is a scalar.
 type FS struct {
-	PB    *pb.Definition `json:"pb,omitempty"`
-	Query string         `json:"query,omitempty"` // TODO: an actual graphql type would be better
+	PB    *pb.Definition
+	Query string
+}
+
+// FS encodes to the base64 encoding of its JSON representation
+func (fs FS) MarshalText() ([]byte, error) {
+	type marshalFS FS
+	jsonBytes, err := json.Marshal(marshalFS(fs))
+	if err != nil {
+		return nil, err
+	}
+	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
+	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
+	return b64Bytes, nil
+}
+
+func (fs *FS) UnmarshalText(b64Bytes []byte) error {
+	type marshalFS FS
+	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(b64Bytes)))
+	n, err := base64.StdEncoding.Decode(jsonBytes, b64Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal fs bytes: %v", err)
+	}
+	jsonBytes = jsonBytes[:n]
+	var result marshalFS
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+		return fmt.Errorf("failed to unmarshal result: %v", err)
+	}
+	fs.PB = result.PB
+	fs.Query = result.Query
+	return nil
 }
 
 func (fs FS) ToState() (llb.State, error) {
@@ -58,50 +88,19 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 		}
 
 		// Extract the queried field out of the result
-		switch result := result.Data.(type) {
-		case map[string]interface{}:
-			req, err := parser.Parse(parser.ParseParams{Source: fs.Query})
-			if err != nil {
-				return FS{}, err
-			}
-			field := req.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
-			for field.SelectionSet != nil {
-				result = result[field.Name.Value].(map[string]interface{})
-				field = field.SelectionSet.Selections[0].(*ast.Field)
-			}
-			if err := json.Unmarshal([]byte(result[field.Name.Value].(string)), &fs); err != nil {
-				return FS{}, err
-			}
-		case string:
-			if err := json.Unmarshal([]byte(result), &fs); err != nil {
-				return FS{}, err
-			}
+		resultMap := result.Data.(map[string]interface{})
+		req, err := parser.Parse(parser.ParseParams{Source: fs.Query})
+		if err != nil {
+			return FS{}, err
 		}
+		field := req.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
+		for field.SelectionSet != nil {
+			resultMap = resultMap[field.Name.Value].(map[string]interface{})
+			field = field.SelectionSet.Selections[0].(*ast.Field)
+		}
+		fs = resultMap[field.Name.Value].(FS)
 	}
 	return fs, nil
-}
-
-func (fs *FS) UnmarshalJSON(b []byte) error {
-	// support marshaling from struct or from struct serialized to string (TODO: something's weird here with the graphql serialization, probably more sane way of doing this)
-	var inner struct {
-		PB    *pb.Definition `json:"pb,omitempty"`
-		Query string         `json:"query,omitempty"`
-	}
-	if err := json.Unmarshal(b, &inner); err == nil {
-		fs.PB = inner.PB
-		fs.Query = inner.Query
-		return nil
-	}
-	var str string
-	if err := json.Unmarshal(b, &str); err != nil {
-		return err
-	}
-	if err := json.Unmarshal([]byte(str), &inner); err != nil {
-		return err
-	}
-	fs.PB = inner.PB
-	fs.Query = inner.Query
-	return nil
 }
 
 var coreSchema tools.ExecutableSchema
@@ -282,12 +281,45 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
+		var output interface{}
+		if err := json.Unmarshal(outputBytes, &output); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+		}
+		return getEvalResult(p.Info.ReturnType, output)
+	}
+}
 
-		var result interface{}
-		if err := json.Unmarshal(outputBytes, &result); err != nil {
-			return nil, err
+// wraps the result with correct scalar types so that they serialize as expected
+func getEvalResult(outputSchema graphql.Output, outputVal interface{}) (interface{}, error) {
+	switch outputType := graphql.GetNullable(outputSchema).(type) {
+	case *graphql.Scalar:
+		switch outputType.Name() {
+		case "FS":
+			var fs FS
+			outputString, ok := outputVal.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected FS scalar to be string")
+			}
+			if err := fs.UnmarshalText([]byte(outputString)); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal fs: %w", err)
+			}
+			return fs, nil
+		default:
+			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
+		}
+	case *graphql.Object:
+		result := make(map[string]interface{})
+		outputMap := outputVal.(map[string]interface{})
+		for fieldName, field := range outputType.Fields() {
+			subResult, err := getEvalResult(field.Type, outputMap[fieldName])
+			if err != nil {
+				return nil, err
+			}
+			result[fieldName] = subResult
 		}
 		return result, nil
+	default:
+		return nil, fmt.Errorf("FIXME: currently unsupported output type %T", outputSchema)
 	}
 }
 
@@ -628,7 +660,7 @@ type Mutation {
 							}
 							fs, err := fs.Evaluate(p.Context)
 							if err != nil {
-								return nil, err
+								return nil, fmt.Errorf("failed to evaluate fs: %v", err)
 							}
 							gw, err := getGatewayClient(p)
 							if err != nil {
@@ -686,34 +718,17 @@ type Mutation {
 			},
 			"FS": &tools.ScalarResolver{
 				Serialize: func(value interface{}) interface{} {
-					bytes, err := json.Marshal(value)
-					if err != nil {
-						panic(err)
-					}
-					return string(bytes)
+					return value
 				},
 				ParseValue: func(value interface{}) interface{} {
-					var fs FS
-					var input string
-					switch value := value.(type) {
-					case string:
-						input = value
-					case *string:
-						input = *value
-					default:
-						panic(fmt.Sprintf("unsupported type: %T", value))
-					}
-					if err := json.Unmarshal([]byte(input), &fs); err != nil {
-						panic(err)
-					}
-					return fs
+					return value
 				},
 				ParseLiteral: func(valueAST ast.Value) interface{} {
 					switch valueAST := valueAST.(type) {
 					case *ast.StringValue:
 						var fs FS
-						if err := json.Unmarshal([]byte(valueAST.Value), &fs); err != nil {
-							panic(err)
+						if err := fs.UnmarshalText([]byte(valueAST.Value)); err != nil {
+							panic(fmt.Errorf("failed to unmarshal fs in parse literal: %v", err))
 						}
 						return fs
 					default:
