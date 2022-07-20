@@ -20,11 +20,18 @@ func main() {
 		var output *dagger.Map
 		var err error
 
+		/*
+			_, err = dagger.Do(ctx, `mutation{import(ref:"helloworld_ts"){name}}`)
+			if err != nil {
+				return err
+			}
+		*/
+
 		_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
 		if err != nil {
 			return err
 		}
-		_, err = dagger.Do(ctx, `mutation{import(ref:"helloworld_ts"){name}}`)
+		_, err = dagger.Do(ctx, `mutation{import(ref:"graphql_ts"){name}}`)
 		if err != nil {
 			return err
 		}
@@ -37,47 +44,11 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		/*
-									input = `{
-								helloworld_ts{
-									echo(message:"curl")
-								}
-							}`
-									fmt.Printf("input: %+v\n", input)
-									output, err = dagger.Do(ctx, input)
-									if err != nil {
-										return err
-									}
-									fmt.Printf("output: %+v\n\n", output)
-
-						input = fmt.Sprintf(`{
-					helloworld_ts{
-						build(pkg:%q) {
-							fs
-						}
-					}
-				}`, "curl")
-						fmt.Printf("input: %+v\n", input)
-						output, err = dagger.Do(ctx, input)
-						if err != nil {
-							return err
-						}
-						fmt.Printf("output: %+v\n\n", output)
-
-							input = fmt.Sprintf(`mutation{readstring(str:%s)}`, output.Map("helloworld_ts").Map("build").String("test"))
-							fmt.Printf("input: %s\n", input)
-							output, err = dagger.Do(ctx, input)
-							if err != nil {
-								return err
-							}
-							fmt.Printf("output: %+v\n", output)
-
-			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("helloworld_ts").Map("build").FS("fs"))
-		*/
-
 		input = `{
-			alpine{
-				build(pkgs:["curl","git"])
+			graphql_ts{
+				echo(in:"hey"){
+					fs
+				}
 			}
 		}`
 		fmt.Printf("input: %+v\n", input)
@@ -87,7 +58,7 @@ func main() {
 		}
 		fmt.Printf("output: %+v\n\n", output)
 
-		input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("alpine").FS("build"))
+		input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
 		fmt.Printf("input: %+v\n", input)
 		output, err = dagger.Do(ctx, input)
 		if err != nil {

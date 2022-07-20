@@ -2,12 +2,12 @@ import {
   GraphQLOptions,
   ApolloServerBase,
   runHttpQuery,
-} from 'apollo-server-core';
-import { Request, Headers } from 'apollo-server-env';
+} from "apollo-server-core";
+import { Request, Headers } from "apollo-server-env";
 import * as fs from "fs";
 
-import { gql } from 'apollo-server';
-export { gql }
+import { gql } from "apollo-server";
+export { gql };
 
 export class DaggerServer extends ApolloServerBase {
   async createGraphQLServerOptions(): Promise<GraphQLOptions> {
@@ -20,14 +20,14 @@ export class DaggerServer extends ApolloServerBase {
       {
         method: "POST",
         options: () => this.createGraphQLServerOptions(),
-        query: { "query": input },
+        query: { query: input },
         request: new Request("/graphql", {
           headers: new Headers(),
           method: "POST",
         }),
       },
-      null,
-    )
+      null
+    );
 
     return graphqlResponse;
   }
@@ -35,9 +35,12 @@ export class DaggerServer extends ApolloServerBase {
   public run() {
     this.start();
 
-    const inputs = fs.readFileSync("./inputs.json", "utf8");
-    this.query(inputs).then((resp) => fs.writeFileSync("./outputs.json", resp))
+    const inputs = fs.readFileSync("/inputs/dagger.graphql", "utf8");
+    this.query(inputs).then((resp) =>
+      fs.writeFileSync(
+        "/outputs/dagger.json",
+        JSON.stringify(JSON.parse(resp).data)
+      )
+    );
   }
 }
-
-
