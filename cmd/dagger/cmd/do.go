@@ -62,9 +62,6 @@ var doCmd = &cobra.Command{
 			tty *logger.TTYOutput
 		)
 
-		defer tm.Flush()
-		ctx = tm.WithContext(ctx)
-
 		if !viper.GetBool("experimental") {
 			for _, f := range experimentalFlags {
 				if viper.IsSet(f) {
@@ -108,7 +105,13 @@ var doCmd = &cobra.Command{
 			rid := tm.RunID()
 			tm = telemetry.New()
 			tm.SetRunID(rid)
+			ctx = tm.WithContext(ctx)
+			if viper.GetBool("telemetry-log") {
+				tm.EnableLogToFile()
+			}
 		}
+
+		defer tm.Flush()
 
 		if err != nil {
 			lg.Error().Err(err).Msgf("failed to load plan")
