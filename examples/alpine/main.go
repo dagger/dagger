@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	dagger "github.com/dagger/cloak/sdk/go"
+	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 func main() {

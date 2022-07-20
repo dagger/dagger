@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/cloak/engine"
-	dagger "github.com/dagger/cloak/sdk/go"
+	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 func main() {
@@ -52,7 +52,7 @@ func main() {
 		input = fmt.Sprintf(`{
 	helloworld_ts{
 		build(pkg:%s) {
-			fs 
+			fs
 			test
 		}
 	}

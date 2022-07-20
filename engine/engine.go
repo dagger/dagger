@@ -8,7 +8,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/api"
-	dagger "github.com/dagger/cloak/sdk/go"
+	"github.com/dagger/cloak/sdk/go/dagger"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"

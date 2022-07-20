@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	dagger "github.com/dagger/cloak/sdk/go"
+	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 func Build(ctx context.Context, input dagger.Map) interface{} {
