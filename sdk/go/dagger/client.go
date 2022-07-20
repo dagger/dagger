@@ -116,6 +116,7 @@ func (m *Map) FS(key string) FS {
 	return FS(raw)
 }
 
+/* TODO: switch back to DaggerString once re-integrated with generated clients
 func (m *Map) String(key string) DaggerString {
 	raw, ok := m.Data[key]
 	if !ok {
@@ -132,6 +133,27 @@ func (m *Map) StringList(key string) []DaggerString {
 	result := make([]DaggerString, len(list))
 	for i, item := range list {
 		result[i] = DaggerString{item}
+	}
+	return result
+}
+*/
+
+func (m *Map) String(key string) string {
+	raw, ok := m.Data[key].(string)
+	if !ok {
+		panic(fmt.Errorf("invalid type for string: %T", m.Data[key]))
+	}
+	return raw
+}
+
+func (m *Map) StringList(key string) []string {
+	list, ok := m.Data[key].([]interface{})
+	if !ok {
+		panic(fmt.Errorf("invalid type for string list: %T", m.Data[key]))
+	}
+	result := make([]string, len(list))
+	for i, item := range list {
+		result[i] = item.(string)
 	}
 	return result
 }

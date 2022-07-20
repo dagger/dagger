@@ -37,44 +37,57 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		input = `{
-	helloworld_ts{
-		echo(message:"curl")
-	}
-}`
-		fmt.Printf("input: %+v\n", input)
-		output, err = dagger.Do(ctx, input)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("output: %+v\n\n", output)
-
-		input = fmt.Sprintf(`{
-	helloworld_ts{
-		build(pkg:%s) {
-			fs
-			test
-		}
-	}
-}`, output.Map("helloworld_ts").String("echo"))
-		fmt.Printf("input: %+v\n", input)
-		output, err = dagger.Do(ctx, input)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("output: %+v\n\n", output)
-
 		/*
-			input = fmt.Sprintf(`mutation{readstring(str:%s)}`, output.Map("helloworld_ts").Map("build").String("test"))
-			fmt.Printf("input: %s\n", input)
-			output, err = dagger.Do(ctx, input)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("output: %+v\n", output)
+									input = `{
+								helloworld_ts{
+									echo(message:"curl")
+								}
+							}`
+									fmt.Printf("input: %+v\n", input)
+									output, err = dagger.Do(ctx, input)
+									if err != nil {
+										return err
+									}
+									fmt.Printf("output: %+v\n\n", output)
+
+						input = fmt.Sprintf(`{
+					helloworld_ts{
+						build(pkg:%q) {
+							fs
+						}
+					}
+				}`, "curl")
+						fmt.Printf("input: %+v\n", input)
+						output, err = dagger.Do(ctx, input)
+						if err != nil {
+							return err
+						}
+						fmt.Printf("output: %+v\n\n", output)
+
+							input = fmt.Sprintf(`mutation{readstring(str:%s)}`, output.Map("helloworld_ts").Map("build").String("test"))
+							fmt.Printf("input: %s\n", input)
+							output, err = dagger.Do(ctx, input)
+							if err != nil {
+								return err
+							}
+							fmt.Printf("output: %+v\n", output)
+
+			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("helloworld_ts").Map("build").FS("fs"))
 		*/
 
-		input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("helloworld_ts").Map("build").FS("fs"))
+		input = `{
+			alpine{
+				build(pkgs:["curl","git"])
+			}
+		}`
+		fmt.Printf("input: %+v\n", input)
+		output, err = dagger.Do(ctx, input)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("output: %+v\n\n", output)
+
+		input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("alpine").FS("build"))
 		fmt.Printf("input: %+v\n", input)
 		output, err = dagger.Do(ctx, input)
 		if err != nil {
