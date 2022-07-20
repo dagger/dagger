@@ -15,7 +15,19 @@ func main() {
 		}
 	*/
 
-	err := engine.Start(context.Background(), func(ctx context.Context) error {
+	var startOpts *engine.StartOpts
+
+	/*
+		outputDir := "./output"
+		startOpts = &engine.StartOpts{
+			Export: &bkclient.ExportEntry{
+				Type:      bkclient.ExporterLocal,
+				OutputDir: outputDir,
+			},
+		}
+	*/
+
+	err := engine.Start(context.Background(), startOpts, func(ctx context.Context) (*dagger.FS, error) {
 		var input string
 		var output *dagger.Map
 		var err error
@@ -29,11 +41,11 @@ func main() {
 
 		_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		_, err = dagger.Do(ctx, `mutation{import(ref:"graphql_ts"){name}}`)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		/*
@@ -54,24 +66,26 @@ func main() {
 		fmt.Printf("input: %+v\n", input)
 		output, err = dagger.Do(ctx, input)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		fmt.Printf("output: %+v\n\n", output)
 
-		input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
-		fmt.Printf("input: %+v\n", input)
-		output, err = dagger.Do(ctx, input)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("output: %+v\n\n", output)
-
-		if err := engine.Shell(ctx, output.FS("evaluate")); err != nil {
-			panic(err)
-		}
 		/*
-		 */
-		return nil
+			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
+			fmt.Printf("input: %+v\n", input)
+			output, err = dagger.Do(ctx, input)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("output: %+v\n\n", output)
+
+				if err := engine.Shell(ctx, output.FS("evaluate")); err != nil {
+					panic(err)
+				}
+		*/
+
+		fs := output.Map("graphql_ts").Map("echo").FS("fs")
+		return &fs, nil
 	})
 	if err != nil {
 		panic(err)
