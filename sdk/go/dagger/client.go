@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/api"
 )
 
@@ -35,6 +36,14 @@ func (s DaggerString) String() string {
 }
 
 type clientKey struct{}
+
+func Client(ctx context.Context) graphql.Client {
+	client, ok := ctx.Value(clientKey{}).(*http.Client)
+	if !ok {
+		panic("no client in context")
+	}
+	return graphql.NewClient("http://fake.invalid", client)
+}
 
 func Do(ctx context.Context, payload string) (*Map, error) {
 	client, ok := ctx.Value(clientKey{}).(*http.Client)
