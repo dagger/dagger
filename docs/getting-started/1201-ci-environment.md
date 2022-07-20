@@ -106,7 +106,7 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 .dagger:
   extends: [.docker]
   variables:
-    DAGGER_VERSION: 0.2.19
+    DAGGER_VERSION: 0.2.24
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
@@ -116,11 +116,10 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
     paths:
       - ${DAGGER_CACHE_PATH}
   before_script:
-    - apk add --no-cache curl
     - |
       # install dagger
       cd /usr/local
-      curl -L https://dl.dagger.io/dagger/install.sh | sh
+      wget -O - https://dl.dagger.io/dagger/install.sh | sh
       cd -
 
       dagger version
