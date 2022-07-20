@@ -302,7 +302,12 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 
 		// TODO: remove silly if statement once all actions move to the new graphql server model
 		if pkgName == "graphql_ts" {
-			query := getQuery(p)
+			// the action doesn't know we stitch its queries under the package name, patch the query we send to here
+			queryOp := p.Info.Operation.(*ast.OperationDefinition)
+			packageSelect := queryOp.SelectionSet.Selections[0].(*ast.Field)
+			queryOp.SelectionSet.Selections = packageSelect.SelectionSet.Selections
+			query := printer.Print(queryOp).(string)
+
 			input := llb.Scratch().File(llb.Mkfile("/dagger.graphql", 0644, []byte(query)))
 			st := llb.Image(imgref).Run(
 				llb.Args([]string{"/entrypoint"}),
@@ -314,7 +319,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 				llb.ReadonlyRootFS(),
 			)
 			outputMnt := st.AddMount("/outputs", llb.Scratch())
-			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))
+			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)), llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
 			if err != nil {
 				return nil, err
 			}
@@ -343,7 +348,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			if err := json.Unmarshal(outputBytes, &output); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 			}
-			for _, parentField := range p.Info.Path.AsArray() {
+			for _, parentField := range p.Info.Path.AsArray()[1:] { // skip first field, which is the package name
 				output = output.(map[string]interface{})[parentField.(string)]
 			}
 			fmt.Printf("action %s output: %+v\n", actionName, output)
@@ -365,7 +370,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 				llb.AddEnv("DAGGER_ACTION", actionName),
 			)
 			outputMnt := st.AddMount("/outputs", llb.Scratch())
-			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))
+			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)), llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
 			if err != nil {
 				return nil, err
 			}
