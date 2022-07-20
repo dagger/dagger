@@ -300,53 +300,103 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 
 		imgref := fmt.Sprintf("localhost:5555/dagger:%s", pkgName)
 
-		inputBytes, err := json.Marshal(p.Args)
-		if err != nil {
-			return nil, err
+		// TODO: remove silly if statement once all actions move to the new graphql server model
+		if pkgName == "graphql_ts" {
+			query := getQuery(p)
+			input := llb.Scratch().File(llb.Mkfile("/dagger.graphql", 0644, []byte(query)))
+			st := llb.Image(imgref).Run(
+				llb.Args([]string{"/entrypoint"}),
+				llb.AddSSHSocket(
+					llb.SSHID(daggerSockName),
+					llb.SSHSocketTarget("/dagger.sock"),
+				),
+				llb.AddMount("/inputs", input, llb.Readonly),
+				llb.ReadonlyRootFS(),
+			)
+			outputMnt := st.AddMount("/outputs", llb.Scratch())
+			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))
+			if err != nil {
+				return nil, err
+			}
+			gw, err := getGatewayClient(p)
+			if err != nil {
+				return nil, err
+			}
+			res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: outputDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := res.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+			outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
+				Filename: "/dagger.json",
+			})
+			if err != nil {
+				return nil, err
+			}
+			var output interface{}
+			if err := json.Unmarshal(outputBytes, &output); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+			}
+			for _, parentField := range p.Info.Path.AsArray() {
+				output = output.(map[string]interface{})[parentField.(string)]
+			}
+			fmt.Printf("action %s output: %+v\n", actionName, output)
+			return output, nil
+		} else {
+			inputBytes, err := json.Marshal(p.Args)
+			if err != nil {
+				return nil, err
+			}
+			input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
+			st := llb.Image(imgref).Run(
+				llb.Args([]string{"/entrypoint", "-a", actionName}),
+				llb.AddSSHSocket(
+					llb.SSHID(daggerSockName),
+					llb.SSHSocketTarget("/dagger.sock"),
+				),
+				llb.AddMount("/inputs", input, llb.Readonly),
+				llb.ReadonlyRootFS(),
+				llb.AddEnv("DAGGER_ACTION", actionName),
+			)
+			outputMnt := st.AddMount("/outputs", llb.Scratch())
+			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))
+			if err != nil {
+				return nil, err
+			}
+			gw, err := getGatewayClient(p)
+			if err != nil {
+				return nil, err
+			}
+			res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: outputDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := res.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+			outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
+				Filename: "/dagger.json",
+			})
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("action %s output: %s\n", actionName, string(outputBytes))
+			var output interface{}
+			if err := json.Unmarshal(outputBytes, &output); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+			}
+			return output, nil
 		}
-		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
-		st := llb.Image(imgref).Run(
-			llb.Args([]string{"/entrypoint", "-a", actionName}),
-			llb.AddSSHSocket(
-				llb.SSHID(daggerSockName),
-				llb.SSHSocketTarget("/dagger.sock"),
-			),
-			llb.AddMount("/inputs", input, llb.Readonly),
-			llb.ReadonlyRootFS(),
-			llb.AddEnv("DAGGER_ACTION", actionName),
-		)
-		outputMnt := st.AddMount("/outputs", llb.Scratch())
-		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)))
-		if err != nil {
-			return nil, err
-		}
-
-		gw, err := getGatewayClient(p)
-		if err != nil {
-			return nil, err
-		}
-		res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: outputDef.ToPB(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		ref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-		outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
-			Filename: "/dagger.json",
-		})
-		if err != nil {
-			return nil, err
-		}
-		var output interface{}
-		if err := json.Unmarshal(outputBytes, &output); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
-		}
-		return output, nil
 	}
 }
 
@@ -687,13 +737,7 @@ type Mutation {
 					"exec": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 							if !shouldEval(p.Context) {
-								bytes, err := FS{Query: getPayload(p), Vars: p.Info.VariableValues}.MarshalText()
-								if err != nil {
-									return nil, err
-								}
-								return map[string]interface{}{
-									"fs": string(bytes),
-								}, nil
+								return lazyResolve(p)
 							}
 							rawFS, ok := p.Args["fs"].(string)
 							if !ok {
@@ -1060,6 +1104,6 @@ func getPlatform(p graphql.ResolveParams) specs.Platform {
 	return *v.(*specs.Platform)
 }
 
-func getPayload(p graphql.ResolveParams) string {
+func getQuery(p graphql.ResolveParams) string {
 	return printer.Print(p.Info.Operation).(string)
 }

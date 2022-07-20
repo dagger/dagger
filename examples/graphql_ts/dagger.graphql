@@ -1,7 +1,9 @@
+scalar FS
+
 type Echo {
   fs: FS!
 }
 
 type Query {
-  echo(message: String!): Echo
+  echo(in: String!): Echo
 }

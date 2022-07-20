@@ -528,7 +528,6 @@ dagger@../../sdk/nodejs/dagger:
   version "1.0.0"
   dependencies:
     "@grpc/grpc-js" "^1.6.7"
-    apollo-server-core "^3.10.0"
     axios "^0.27.2"
     google-protobuf "^3.20.1"
 
