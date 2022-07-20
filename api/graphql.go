@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
@@ -584,11 +583,16 @@ input CoreExecInput {
 type CoreExecOutput {
 	mount(path: String!): FS
 }
+type CoreExec {
+	fs: FS!
+}
 
 type Core {
 	image(ref: String!): CoreImage
-	exec(input: CoreExecInput!): CoreExecOutput
+	# exec(input: CoreExecInput!): CoreExecOutput
+	exec(fs: FS!, args: [String]!): CoreExec
 }
+
 type Query {
 	core: Core!
 }
@@ -683,109 +687,161 @@ type Mutation {
 					"exec": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 							if !shouldEval(p.Context) {
-								return lazyResolve(p)
+								bytes, err := FS{Query: getPayload(p), Vars: p.Info.VariableValues}.MarshalText()
+								if err != nil {
+									return nil, err
+								}
+								return map[string]interface{}{
+									"fs": string(bytes),
+								}, nil
 							}
-							input, ok := p.Args["input"].(map[string]interface{})
+							rawFS, ok := p.Args["fs"].(string)
 							if !ok {
 								return nil, fmt.Errorf("invalid fs")
 							}
-
-							rawMounts, ok := input["mounts"].([]interface{})
-							if !ok {
-								return nil, fmt.Errorf("invalid mounts")
+							var fs FS
+							if err := fs.UnmarshalText([]byte(rawFS)); err != nil {
+								return nil, err
 							}
-							inputMounts := make(map[string]FS)
-							for _, rawMount := range rawMounts {
-								mount, ok := rawMount.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("invalid mount: %T", rawMount)
-								}
-								path, ok := mount["path"].(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid mount path")
-								}
-								path = filepath.Clean(path)
-								fsstr, ok := mount["fs"].(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid mount fs")
-								}
-								var fs FS
-								if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
-									return nil, err
-								}
-								inputMounts[path] = fs
-							}
-							rootFS, ok := inputMounts["/"]
-							if !ok {
-								return nil, fmt.Errorf("missing root fs")
-							}
-
-							rawArgs, ok := input["args"].([]interface{})
+							rawArgs, ok := p.Args["args"].([]interface{})
 							if !ok {
 								return nil, fmt.Errorf("invalid args")
 							}
 							var args []string
-							for _, rawArg := range rawArgs {
-								/* TODO: switch back to DaggerString once re-integrated with generated clients
-								var arg DaggerString
-								if err := arg.UnmarshalAny(rawArg); err != nil {
-									return nil, fmt.Errorf("invalid arg: %w", err)
+							for _, arg := range rawArgs {
+								if arg, ok := arg.(string); ok {
+									args = append(args, arg)
+								} else {
+									return nil, fmt.Errorf("invalid arg")
 								}
-								arg, err := arg.Evaluate(p.Context)
-								if err != nil {
-									return nil, fmt.Errorf("error evaluating arg: %v", err)
-								}
-								args = append(args, *arg.Value)
-								*/
-								arg, ok := rawArg.(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid arg: %T", rawArg)
-								}
-								args = append(args, arg)
 							}
-
-							rootFS, err := rootFS.Evaluate(p.Context)
+							fs, err := fs.Evaluate(p.Context)
 							if err != nil {
 								return nil, err
 							}
-							state, err := rootFS.ToState()
+							fsState, err := fs.ToState()
 							if err != nil {
 								return nil, err
 							}
-							execState := state.Run(llb.Args(args))
-							outputStates := map[string]llb.State{
-								"/": execState.Root(),
+							llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
+							if err != nil {
+								return nil, err
 							}
-							for path, inputFS := range inputMounts {
-								if path == "/" {
-									continue
-								}
-								inputFS, err := inputFS.Evaluate(p.Context)
-								if err != nil {
-									return nil, err
-								}
-								inputState, err := inputFS.ToState()
-								if err != nil {
-									return nil, err
-								}
-								outputStates[path] = execState.AddMount(path, inputState)
+							bytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
+							if err != nil {
+								return nil, err
 							}
-							fsOutputs := make(map[string]string)
-							for path, outputState := range outputStates {
-								llbdef, err := outputState.Marshal(p.Context, llb.Platform(getPlatform(p)))
-								if err != nil {
-									return nil, err
-								}
-								fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
-								if err != nil {
-									return nil, err
-								}
-								fsOutputs[path] = string(fsbytes)
-							}
-							return fsOutputs, nil
+							return map[string]interface{}{
+								"fs": string(bytes),
+							}, nil
 						},
 					},
 				},
+				// 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				// 			if !shouldEval(p.Context) {
+				// 				return lazyResolve(p)
+				// 			}
+				// 			input, ok := p.Args["input"].(map[string]interface{})
+				// 			if !ok {
+				// 				return nil, fmt.Errorf("invalid fs")
+				// 			}
+
+				// 			rawMounts, ok := input["mounts"].([]interface{})
+				// 			if !ok {
+				// 				return nil, fmt.Errorf("invalid mounts")
+				// 			}
+				// 			inputMounts := make(map[string]FS)
+				// 			for _, rawMount := range rawMounts {
+				// 				mount, ok := rawMount.(map[string]interface{})
+				// 				if !ok {
+				// 					return nil, fmt.Errorf("invalid mount: %T", rawMount)
+				// 				}
+				// 				path, ok := mount["path"].(string)
+				// 				if !ok {
+				// 					return nil, fmt.Errorf("invalid mount path")
+				// 				}
+				// 				path = filepath.Clean(path)
+				// 				fsstr, ok := mount["fs"].(string)
+				// 				if !ok {
+				// 					return nil, fmt.Errorf("invalid mount fs")
+				// 				}
+				// 				var fs FS
+				// 				if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
+				// 					return nil, err
+				// 				}
+				// 				inputMounts[path] = fs
+				// 			}
+				// 			rootFS, ok := inputMounts["/"]
+				// 			if !ok {
+				// 				return nil, fmt.Errorf("missing root fs")
+				// 			}
+
+				// 			rawArgs, ok := input["args"].([]interface{})
+				// 			if !ok {
+				// 				return nil, fmt.Errorf("invalid args")
+				// 			}
+				// 			var args []string
+				// 			for _, rawArg := range rawArgs {
+				// 				/* TODO: switch back to DaggerString once re-integrated with generated clients
+				// 				var arg DaggerString
+				// 				if err := arg.UnmarshalAny(rawArg); err != nil {
+				// 					return nil, fmt.Errorf("invalid arg: %w", err)
+				// 				}
+				// 				arg, err := arg.Evaluate(p.Context)
+				// 				if err != nil {
+				// 					return nil, fmt.Errorf("error evaluating arg: %v", err)
+				// 				}
+				// 				args = append(args, *arg.Value)
+				// 				*/
+				// 				arg, ok := rawArg.(string)
+				// 				if !ok {
+				// 					return nil, fmt.Errorf("invalid arg: %T", rawArg)
+				// 				}
+				// 				args = append(args, arg)
+				// 			}
+
+				// 			rootFS, err := rootFS.Evaluate(p.Context)
+				// 			if err != nil {
+				// 				return nil, err
+				// 			}
+				// 			state, err := rootFS.ToState()
+				// 			if err != nil {
+				// 				return nil, err
+				// 			}
+				// 			execState := state.Run(llb.Args(args))
+				// 			outputStates := map[string]llb.State{
+				// 				"/": execState.Root(),
+				// 			}
+				// 			for path, inputFS := range inputMounts {
+				// 				if path == "/" {
+				// 					continue
+				// 				}
+				// 				inputFS, err := inputFS.Evaluate(p.Context)
+				// 				if err != nil {
+				// 					return nil, err
+				// 				}
+				// 				inputState, err := inputFS.ToState()
+				// 				if err != nil {
+				// 					return nil, err
+				// 				}
+				// 				outputStates[path] = execState.AddMount(path, inputState)
+				// 			}
+				// 			fsOutputs := make(map[string]string)
+				// 			for path, outputState := range outputStates {
+				// 				llbdef, err := outputState.Marshal(p.Context, llb.Platform(getPlatform(p)))
+				// 				if err != nil {
+				// 					return nil, err
+				// 				}
+				// 				fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
+				// 				if err != nil {
+				// 					return nil, err
+				// 				}
+				// 				fsOutputs[path] = string(fsbytes)
+				// 			}
+				// 			return fsOutputs, nil
+				// 		},
+				// 	},
+				// },
 			},
 
 			"Mutation": &tools.ObjectResolver{

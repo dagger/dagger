@@ -1,0 +1,15 @@
+query Image($ref: String!) {
+  core {
+    image(ref: $ref) {
+      fs
+    }
+  }
+}
+
+query Exec($fs: FS!, $args: [String]!) {
+  core {
+    exec(fs: $fs, args: $args) {
+      fs
+    }
+  }
+}
