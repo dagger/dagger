@@ -1,11 +1,9 @@
 package dagger
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 
@@ -46,44 +44,17 @@ func Client(ctx context.Context) graphql.Client {
 }
 
 func Do(ctx context.Context, payload string) (*Map, error) {
-	client, ok := ctx.Value(clientKey{}).(*http.Client)
-	if !ok {
-		return nil, fmt.Errorf("no client in context")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://fake.invalid/graphql", bytes.NewBufferString(payload))
-	if err != nil {
+	client := Client(ctx)
+	var resp graphql.Response
+	if err := client.MakeRequest(ctx, &graphql.Request{
+		Query: payload,
+	}, &resp); err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/graphql")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
+	if resp.Errors != nil {
+		return nil, fmt.Errorf("graphql error: %w", resp.Errors)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, string(body))
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	output := map[string]interface{}{}
-	if err := json.Unmarshal(body, &output); err != nil {
-		return nil, err
-	}
-	if output["errors"] != nil {
-		return nil, fmt.Errorf("errors: %s", output["errors"])
-	}
-
-	// TODO: remove outer "data" field just for convenience until we have nicer helpers for reading these results
-	return &Map{output["data"].(map[string]interface{})}, nil
+	return &Map{resp.Data.(map[string]interface{})}, nil
 }
 
 func WithUnixSocketAPIClient(ctx context.Context, socketPath string) context.Context {
