@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/cloak/engine"
@@ -17,7 +16,8 @@ func main() {
 	*/
 
 	err := engine.Start(context.Background(), func(ctx context.Context) error {
-		var output string
+		var input string
+		var output *dagger.Map
 		var err error
 
 		_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
@@ -37,52 +37,52 @@ func main() {
 			fmt.Printf("schema: %s\n", output)
 		*/
 
-		// output, err = dagger.Do(ctx, `{core{image(ref:"alpine:3.15"){fs}}}`)
-		output, err = dagger.Do(ctx, `{alpine{build(pkgs:["gcc","python3"])}}`)
-		// output, err = dagger.Do(ctx, `{helloworld_ts{echo(message:"hi"){fs}}}`)
+		input = `{
+	helloworld_ts{
+		echo(message:"curl")
+	}
+}`
+		fmt.Printf("input: %+v\n", input)
+		output, err = dagger.Do(ctx, input)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("output: %s\n", output)
-		var result map[string]interface{}
-		if err := json.Unmarshal([]byte(output), &result); err != nil {
+		fmt.Printf("output: %+v\n\n", output)
+
+		input = fmt.Sprintf(`{
+	helloworld_ts{
+		build(pkg:%s) {
+			fs 
+			test
+		}
+	}
+}`, output.Map("helloworld_ts").String("echo"))
+		fmt.Printf("input: %+v\n", input)
+		output, err = dagger.Do(ctx, input)
+		if err != nil {
 			return err
 		}
+		fmt.Printf("output: %+v\n\n", output)
 
 		/*
-					output, err = dagger.Do(ctx, fmt.Sprintf(`
-			{
-			 core {
-			  exec(input: {
-			   args: ["true"],
-			   mounts: [{path:"/", fs:%q}]
-			  }) {
-					 mount(path:"/")
-			   }
-			 }
-			}`, result["core"].(map[string]interface{})["image"].(map[string]interface{})["fs"].(string)))
-					if err != nil {
-						return err
-					}
-					fmt.Printf("output: %s\n", output)
-					if err := json.Unmarshal([]byte(output), &result); err != nil {
-						return err
-					}
+			input = fmt.Sprintf(`mutation{readstring(str:%s)}`, output.Map("helloworld_ts").Map("build").String("test"))
+			fmt.Printf("input: %s\n", input)
+			output, err = dagger.Do(ctx, input)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("output: %+v\n", output)
 		*/
 
-		output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`,
-			result["alpine"].(map[string]interface{})["build"].(string)))
-		// result["helloworld_ts"].(map[string]interface{})["echo"].(map[string]interface{})["fs"].(string)))
-		// result["core"].(map[string]interface{})["exec"].(map[string]interface{})["mount"].(string)))
+		input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("helloworld_ts").Map("build").FS("fs"))
+		fmt.Printf("input: %+v\n", input)
+		output, err = dagger.Do(ctx, input)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("output: %s\n", output)
-		if err := json.Unmarshal([]byte(output), &result); err != nil {
-			return err
-		}
+		fmt.Printf("output: %+v\n\n", output)
 
-		if err := engine.Shell(ctx, result["evaluate"].(string)); err != nil {
+		if err := engine.Shell(ctx, output.FS("evaluate")); err != nil {
 			panic(err)
 		}
 		return nil

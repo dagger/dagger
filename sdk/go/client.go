@@ -14,50 +14,45 @@ import (
 
 type clientKey struct{}
 
-func Do(ctx context.Context, payload string) (string, error) {
+func Do(ctx context.Context, payload string) (*Map, error) {
 	client, ok := ctx.Value(clientKey{}).(*http.Client)
 	if !ok {
-		return "", fmt.Errorf("no client in context")
+		return nil, fmt.Errorf("no client in context")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://fake.invalid/graphql", bytes.NewBufferString(payload))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/graphql")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		return "", fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, string(body))
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	output := map[string]interface{}{}
 	if err := json.Unmarshal(body, &output); err != nil {
-		return "", err
+		return nil, err
 	}
 	if output["errors"] != nil {
-		return "", fmt.Errorf("errors: %s", output["errors"])
+		return nil, fmt.Errorf("errors: %s", output["errors"])
 	}
 
 	// TODO: remove outer "data" field just for convenience until we have nicer helpers for reading these results
-	output = output["data"].(map[string]interface{})
-	outputBytes, err := json.Marshal(output)
-	if err != nil {
-		return "", err
-	}
-	return string(outputBytes), nil
+	return &Map{output["data"].(map[string]interface{})}, nil
 }
 
 func WithUnixSocketAPIClient(ctx context.Context, socketPath string) context.Context {
@@ -81,4 +76,52 @@ func WithInMemoryAPIClient(ctx context.Context, server api.Server) context.Conte
 			},
 		},
 	})
+}
+
+type Map struct {
+	Data map[string]interface{}
+}
+
+func (m *Map) Map(key string) *Map {
+	return &Map{m.Data[key].(map[string]interface{})}
+}
+
+// TODO: all these methods are silly, do a full marshal/unmarshal cycle for convenience for now
+func (m *Map) String(key string) api.DaggerString {
+	raw := m.Data[key]
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal %+v: %v", raw, err))
+	}
+	var s api.DaggerString
+	if err := json.Unmarshal(bytes, &s); err != nil {
+		panic(fmt.Errorf("failed to unmarshal dagger string during parse: %w", err))
+	}
+	return s
+}
+
+func (m *Map) FS(key string) api.FS {
+	raw := m.Data[key]
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal %+v: %v", raw, err))
+	}
+	var fs api.FS
+	if err := json.Unmarshal(bytes, &fs); err != nil {
+		panic(fmt.Errorf("failed to unmarshal fs during parse: %w", err))
+	}
+	return fs
+}
+
+func (m *Map) StringList(key string) []api.DaggerString {
+	raw := m.Data[key]
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal %+v: %v", raw, err))
+	}
+	var s []api.DaggerString
+	if err := json.Unmarshal(bytes, &s); err != nil {
+		panic(fmt.Errorf("failed to unmarshal dagger string list during parse: %w", err))
+	}
+	return s
 }

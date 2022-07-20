@@ -15,7 +15,7 @@ func main() {
 		if err := json.Unmarshal(input, &inputMap); err != nil {
 			return nil, err
 		}
-		return json.Marshal(Build(ctx, inputMap))
+		return json.Marshal(Build(ctx, dagger.Map{inputMap}))
 	})
 
 	if err := d.Serve(); err != nil {
