@@ -1,0 +1,17 @@
+scalar FS
+
+type CoreImage {
+  fs: FS!
+}
+type CoreExec {
+  fs: FS!
+}
+
+type Core {
+  image(ref: String!): CoreImage
+  exec(fs: FS!, args: [String]!): CoreExec
+}
+
+type Query {
+  core: Core!
+}
