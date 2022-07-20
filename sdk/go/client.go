@@ -12,6 +12,28 @@ import (
 	"github.com/dagger/cloak/api"
 )
 
+type FS string
+
+func (fs FS) String() string {
+	bytes, err := json.Marshal(fs)
+	if err != nil {
+		panic(err)
+	}
+	return string(bytes)
+}
+
+type DaggerString struct {
+	data any
+}
+
+func (s DaggerString) String() string {
+	bytes, err := json.Marshal(s.data)
+	if err != nil {
+		panic(err)
+	}
+	return string(bytes)
+}
+
 type clientKey struct{}
 
 func Do(ctx context.Context, payload string) (*Map, error) {
@@ -86,42 +108,30 @@ func (m *Map) Map(key string) *Map {
 	return &Map{m.Data[key].(map[string]interface{})}
 }
 
-// TODO: all these methods are silly, do a full marshal/unmarshal cycle for convenience for now
-func (m *Map) String(key string) api.DaggerString {
-	raw := m.Data[key]
-	bytes, err := json.Marshal(raw)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal %+v: %v", raw, err))
+func (m *Map) FS(key string) FS {
+	raw, ok := m.Data[key].(string)
+	if !ok {
+		panic(fmt.Errorf("invalid type for fs: %T", m.Data[key]))
 	}
-	var s api.DaggerString
-	if err := json.Unmarshal(bytes, &s); err != nil {
-		panic(fmt.Errorf("failed to unmarshal dagger string during parse: %w", err))
-	}
-	return s
+	return FS(raw)
 }
 
-func (m *Map) FS(key string) api.FS {
-	raw := m.Data[key]
-	bytes, err := json.Marshal(raw)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal %+v: %v", raw, err))
+func (m *Map) String(key string) DaggerString {
+	raw, ok := m.Data[key]
+	if !ok {
+		panic(fmt.Errorf("invalid type for string: %T", m.Data[key]))
 	}
-	var fs api.FS
-	if err := json.Unmarshal(bytes, &fs); err != nil {
-		panic(fmt.Errorf("failed to unmarshal fs during parse: %w", err))
-	}
-	return fs
+	return DaggerString{raw}
 }
 
-func (m *Map) StringList(key string) []api.DaggerString {
-	raw := m.Data[key]
-	bytes, err := json.Marshal(raw)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal %+v: %v", raw, err))
+func (m *Map) StringList(key string) []DaggerString {
+	list, ok := m.Data[key].([]interface{})
+	if !ok {
+		panic(fmt.Errorf("invalid type for string list: %T", m.Data[key]))
 	}
-	var s []api.DaggerString
-	if err := json.Unmarshal(bytes, &s); err != nil {
-		panic(fmt.Errorf("failed to unmarshal dagger string list during parse: %w", err))
+	result := make([]DaggerString, len(list))
+	for i, item := range list {
+		result[i] = DaggerString{item}
 	}
-	return s
+	return result
 }

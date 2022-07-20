@@ -29,6 +29,7 @@ const (
 type FS struct {
 	PB    *pb.Definition
 	Query string
+	Vars  map[string]interface{} // NOTE: encoding/json sorts by key so this *should* be deterministic (?)
 }
 
 // FS encodes to the base64 encoding of its JSON representation
@@ -57,6 +58,7 @@ func (fs *FS) UnmarshalText(b64Bytes []byte) error {
 	}
 	fs.PB = result.PB
 	fs.Query = result.Query
+	fs.Vars = result.Vars
 	return nil
 }
 
@@ -80,9 +82,10 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 			return FS{}, fmt.Errorf("invalid fs: missing query")
 		}
 		result := graphql.Do(graphql.Params{
-			Schema:        schema,
-			RequestString: fs.Query,
-			Context:       withEval(ctx),
+			Schema:         schema,
+			RequestString:  fs.Query,
+			Context:        withEval(ctx),
+			VariableValues: fs.Vars,
 		})
 		if result.HasErrors() {
 			return FS{}, fmt.Errorf("fs eval errors: %+v", result.Errors)
@@ -99,30 +102,44 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 			resultMap = resultMap[field.Name.Value].(map[string]interface{})
 			field = field.SelectionSet.Selections[0].(*ast.Field)
 		}
-		fs = resultMap[field.Name.Value].(FS)
+		rawFS, ok := resultMap[field.Name.Value].(string)
+		if !ok {
+			return FS{}, fmt.Errorf("invalid fs type")
+		}
+		if err := fs.UnmarshalText([]byte(rawFS)); err != nil {
+			return FS{}, err
+		}
 	}
 	return fs, nil
-}
-
-func (fs FS) String() string {
-	bytes, err := json.Marshal(fs)
-	if err != nil {
-		panic(fmt.Errorf("failed to marshal fs: %v", err))
-	}
-	return string(bytes)
 }
 
 // TODO: dedupe all the methods with equivalent in FS
 type DaggerString struct {
 	Value *string
 	Query string
+	Vars  map[string]interface{} // NOTE: encoding/json sorts by key so this *should* be deterministic (?)
 }
 
 func (s DaggerString) MarshalJSON() ([]byte, error) {
-	if s.Value != nil {
-		return json.Marshal(*s.Value)
+	a, err := s.MarshalAny()
+	if err != nil {
+		return nil, err
 	}
-	return json.Marshal([]interface{}{base64.StdEncoding.EncodeToString([]byte(s.Query))})
+	return json.Marshal(a)
+}
+
+func (s DaggerString) MarshalAny() (any, error) {
+	if s.Value != nil {
+		return s.Value, nil
+	}
+	type marshal DaggerString
+	bytes, err := json.Marshal(marshal(s))
+	if err != nil {
+		return nil, err
+	}
+	return []any{
+		base64.StdEncoding.EncodeToString(bytes),
+	}, nil
 }
 
 func (s *DaggerString) UnmarshalJSON(data []byte) error {
@@ -130,20 +147,29 @@ func (s *DaggerString) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	switch raw := raw.(type) {
+	return s.UnmarshalAny(raw)
+}
+
+func (s *DaggerString) UnmarshalAny(data any) error {
+	switch data := data.(type) {
 	case string:
-		s.Value = &raw
+		s.Value = &data
 	case []interface{}:
-		if len(raw) != 1 {
-			return fmt.Errorf("invalid dagger string: %v", raw)
+		if len(data) != 1 {
+			return fmt.Errorf("invalid dagger string: %v", data)
 		}
-		bytes, err := base64.StdEncoding.DecodeString(raw[0].(string))
+		bytes, err := base64.StdEncoding.DecodeString(data[0].(string))
 		if err != nil {
 			return err
 		}
-		s.Query = string(bytes)
+		type marshal DaggerString
+		var result marshal
+		if err := json.Unmarshal(bytes, &result); err != nil {
+			return err
+		}
+		*s = DaggerString(result)
 	default:
-		return fmt.Errorf("invalid dagger string: %T(%+v)", raw, raw)
+		return fmt.Errorf("invalid dagger string: %T(%+v)", data, data)
 	}
 	return nil
 }
@@ -154,9 +180,10 @@ func (s DaggerString) Evaluate(ctx context.Context) (DaggerString, error) {
 			return DaggerString{}, fmt.Errorf("invalid dagger string: missing query")
 		}
 		result := graphql.Do(graphql.Params{
-			Schema:        schema,
-			RequestString: s.Query,
-			Context:       withEval(ctx),
+			Schema:         schema,
+			RequestString:  s.Query,
+			Context:        withEval(ctx),
+			VariableValues: s.Vars,
 		})
 		if result.HasErrors() {
 			return DaggerString{}, fmt.Errorf("dagger string eval errors: %+v", result.Errors)
@@ -173,17 +200,11 @@ func (s DaggerString) Evaluate(ctx context.Context) (DaggerString, error) {
 			resultMap = resultMap[field.Name.Value].(map[string]interface{})
 			field = field.SelectionSet.Selections[0].(*ast.Field)
 		}
-		s = resultMap[field.Name.Value].(DaggerString)
+		if err := s.UnmarshalAny(resultMap[field.Name.Value]); err != nil {
+			return DaggerString{}, err
+		}
 	}
 	return s, nil
-}
-
-func (s DaggerString) String() string {
-	bytes, err := json.Marshal(s)
-	if err != nil {
-		panic(fmt.Errorf("failed to marshal dagger string: %v", err))
-	}
-	return string(bytes)
 }
 
 var coreSchema tools.ExecutableSchema
@@ -326,51 +347,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 		}
-		return getEvalResult(p.Info.ReturnType, output)
-	}
-}
-
-// wraps the result with correct scalar types so that they serialize as expected
-func getEvalResult(outputSchema graphql.Output, outputVal interface{}) (interface{}, error) {
-	switch outputType := graphql.GetNullable(outputSchema).(type) {
-	case *graphql.Scalar:
-		switch outputType.Name() {
-		case "FS":
-			var fs FS
-			outputString, ok := outputVal.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected FS scalar to be string")
-			}
-			if err := fs.UnmarshalText([]byte(outputString)); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal fs: %w", err)
-			}
-			return fs, nil
-		case "DaggerString":
-			outputBytes, err := json.Marshal(outputVal)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal dagger string bytes: %w", err)
-			}
-			var s DaggerString
-			if err := json.Unmarshal(outputBytes, &s); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal dagger string: %w", err)
-			}
-			return s, nil
-		default:
-			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
-		}
-	case *graphql.Object:
-		result := make(map[string]interface{})
-		outputMap := outputVal.(map[string]interface{})
-		for fieldName, field := range outputType.Fields() {
-			subResult, err := getEvalResult(field.Type, outputMap[fieldName])
-			if err != nil {
-				return nil, err
-			}
-			result[fieldName] = subResult
-		}
-		return result, nil
-	default:
-		return nil, fmt.Errorf("FIXME: currently unsupported output type %T", outputSchema)
+		return output, nil
 	}
 }
 
@@ -379,9 +356,8 @@ func lazyResolve(p graphql.ResolveParams) (interface{}, error) {
 	for _, parent := range p.Info.Path.AsArray() {
 		parentFieldNames = append(parentFieldNames, parent.(string))
 	}
-	lazyResult, err := getLazyResult(
+	lazyResult, err := getLazyResult(p,
 		p.Info.ReturnType,
-		p.Info.Operation.(*ast.OperationDefinition),
 		parentFieldNames,
 		p.Info.FieldASTs[0].SelectionSet,
 	)
@@ -391,18 +367,28 @@ func lazyResolve(p graphql.ResolveParams) (interface{}, error) {
 	return lazyResult, nil
 }
 
-func getLazyResult(output graphql.Output, query *ast.OperationDefinition, parentFieldNames []string, selectionSet *ast.SelectionSet) (interface{}, error) {
+func getLazyResult(p graphql.ResolveParams, output graphql.Output, parentFieldNames []string, selectionSet *ast.SelectionSet) (interface{}, error) {
 	switch outputType := graphql.GetNullable(output).(type) {
 	case *graphql.Scalar:
-		selectedQuery, err := queryWithSelections(query, parentFieldNames)
+		selectedQuery, err := queryWithSelections(p.Info.Operation.(*ast.OperationDefinition), parentFieldNames)
 		if err != nil {
 			return nil, err
 		}
 		switch outputType.Name() {
 		case "FS":
-			return FS{Query: printer.Print(selectedQuery).(string)}, nil
+			bytes, err := FS{
+				Query: printer.Print(selectedQuery).(string),
+				Vars:  p.Info.VariableValues,
+			}.MarshalText()
+			if err != nil {
+				return nil, err
+			}
+			return string(bytes), nil
 		case "DaggerString":
-			return DaggerString{Query: printer.Print(selectedQuery).(string)}, nil
+			return DaggerString{
+				Query: printer.Print(selectedQuery).(string),
+				Vars:  p.Info.VariableValues,
+			}.MarshalAny()
 		default:
 			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
 		}
@@ -426,7 +412,7 @@ func getLazyResult(output graphql.Output, query *ast.OperationDefinition, parent
 			fieldNames := make([]string, len(parentFieldNames))
 			copy(fieldNames, parentFieldNames)
 			fieldNames = append(fieldNames, fieldName)
-			subResult, err := getLazyResult(field.Type, query, fieldNames, selection.SelectionSet)
+			subResult, err := getLazyResult(p, field.Type, fieldNames, selection.SelectionSet)
 			if err != nil {
 				return nil, err
 			}
@@ -636,7 +622,7 @@ type Mutation {
 							if lazyOutput, ok := p.Source.(map[string]interface{}); ok {
 								return lazyOutput["mount"], nil
 							}
-							fsOutputs, ok := p.Source.(map[string]FS)
+							fsOutputs, ok := p.Source.(map[string]string)
 							if !ok {
 								return nil, fmt.Errorf("unexpected core exec source type %T", p.Source)
 							}
@@ -648,11 +634,11 @@ type Mutation {
 							if !ok {
 								return nil, fmt.Errorf("path argument is not a string")
 							}
-							fs, ok := fsOutputs[path]
+							fsstr, ok := fsOutputs[path]
 							if !ok {
 								return nil, fmt.Errorf("mount at path %q not found", path)
 							}
-							return fs, nil
+							return fsstr, nil
 						},
 					},
 				},
@@ -664,9 +650,13 @@ type Mutation {
 							if !shouldEval(p.Context) {
 								return lazyResolve(p)
 							}
-							ref, ok := p.Args["ref"].(DaggerString)
+							rawRef, ok := p.Args["ref"]
 							if !ok {
-								return nil, fmt.Errorf("invalid ref")
+								return nil, fmt.Errorf("missing ref")
+							}
+							var ref DaggerString
+							if err := ref.UnmarshalAny(rawRef); err != nil {
+								return nil, err
 							}
 							ref, err := ref.Evaluate(p.Context)
 							if err != nil {
@@ -676,10 +666,18 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
+							fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
+							if err != nil {
+								return nil, err
+							}
 							barString := "bar"
+							str, err := DaggerString{Value: &barString}.MarshalAny()
+							if err != nil {
+								return nil, err
+							}
 							return map[string]interface{}{
-								"fs":  FS{PB: llbdef.ToPB()},
-								"foo": DaggerString{Value: &barString},
+								"fs":  string(fsbytes),
+								"foo": str,
 							}, nil
 						},
 					},
@@ -708,9 +706,13 @@ type Mutation {
 									return nil, fmt.Errorf("invalid mount path")
 								}
 								path = filepath.Clean(path)
-								fs, ok := mount["fs"].(FS)
+								fsstr, ok := mount["fs"].(string)
 								if !ok {
 									return nil, fmt.Errorf("invalid mount fs")
+								}
+								var fs FS
+								if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
+									return nil, err
 								}
 								inputMounts[path] = fs
 							}
@@ -724,16 +726,16 @@ type Mutation {
 								return nil, fmt.Errorf("invalid args")
 							}
 							var args []string
-							for _, arg := range rawArgs {
-								if arg, ok := arg.(DaggerString); ok {
-									arg, err := arg.Evaluate(p.Context)
-									if err != nil {
-										return nil, fmt.Errorf("error evaluating arg: %v", err)
-									}
-									args = append(args, *arg.Value)
-								} else {
-									return nil, fmt.Errorf("invalid arg")
+							for _, rawArg := range rawArgs {
+								var arg DaggerString
+								if err := arg.UnmarshalAny(rawArg); err != nil {
+									return nil, fmt.Errorf("invalid arg: %w", err)
 								}
+								arg, err := arg.Evaluate(p.Context)
+								if err != nil {
+									return nil, fmt.Errorf("error evaluating arg: %v", err)
+								}
+								args = append(args, *arg.Value)
 							}
 
 							rootFS, err := rootFS.Evaluate(p.Context)
@@ -762,13 +764,17 @@ type Mutation {
 								}
 								outputStates[path] = execState.AddMount(path, inputState)
 							}
-							fsOutputs := make(map[string]FS)
+							fsOutputs := make(map[string]string)
 							for path, outputState := range outputStates {
 								llbdef, err := outputState.Marshal(p.Context, llb.Platform(getPlatform(p)))
 								if err != nil {
 									return nil, err
 								}
-								fsOutputs[path] = FS{PB: llbdef.ToPB()}
+								fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
+								if err != nil {
+									return nil, err
+								}
+								fsOutputs[path] = string(fsbytes)
 							}
 							return fsOutputs, nil
 						},
@@ -828,9 +834,13 @@ type Mutation {
 					},
 					"evaluate": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							fs, ok := p.Args["fs"].(FS)
+							fsstr, ok := p.Args["fs"].(string)
 							if !ok {
 								return nil, fmt.Errorf("invalid fs")
+							}
+							var fs FS
+							if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
+								return nil, err
 							}
 							fs, err := fs.Evaluate(p.Context)
 							if err != nil {
@@ -847,14 +857,22 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							return fs, nil
+							fsbytes, err := fs.MarshalText()
+							if err != nil {
+								return nil, err
+							}
+							return string(fsbytes), nil
 						},
 					},
 					"readfile": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							fs, ok := p.Args["fs"].(FS)
+							fsstr, ok := p.Args["fs"].(string)
 							if !ok {
 								return nil, fmt.Errorf("invalid fs")
+							}
+							var fs FS
+							if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
+								return nil, err
 							}
 							path, ok := p.Args["path"].(string)
 							if !ok {
@@ -890,9 +908,9 @@ type Mutation {
 					},
 					"readstring": &tools.FieldResolve{
 						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							str, ok := p.Args["str"].(DaggerString)
-							if !ok {
-								return nil, fmt.Errorf("invalid dagger string")
+							var str DaggerString
+							if err := str.UnmarshalAny(p.Args["str"]); err != nil {
+								return nil, err
 							}
 							str, err := str.Evaluate(p.Context)
 							if err != nil {
@@ -913,13 +931,9 @@ type Mutation {
 				ParseLiteral: func(valueAST ast.Value) interface{} {
 					switch valueAST := valueAST.(type) {
 					case *ast.StringValue:
-						var fs FS
-						if err := fs.UnmarshalText([]byte(valueAST.Value)); err != nil {
-							panic(fmt.Errorf("failed to unmarshal fs in parse literal: %v", err))
-						}
-						return fs
+						return valueAST.Value
 					default:
-						panic(fmt.Sprintf("unsupported type: %T", valueAST))
+						panic(fmt.Sprintf("unsupported fs type: %T", valueAST))
 					}
 				},
 			},
@@ -931,11 +945,21 @@ type Mutation {
 					return value
 				},
 				ParseLiteral: func(valueAST ast.Value) interface{} {
-					var s DaggerString
-					if err := json.Unmarshal([]byte(printer.Print(valueAST).(string)), &s); err != nil {
-						panic(fmt.Errorf("failed to unmarshal dagger string in parse literal: %v", err))
+					switch valueAST := valueAST.(type) {
+					case *ast.StringValue:
+						return valueAST.Value
+					case *ast.ListValue:
+						if len(valueAST.Values) != 1 {
+							panic(fmt.Sprintf("invalid dagger string: %+v", valueAST.Values))
+						}
+						elem, ok := valueAST.Values[0].(*ast.StringValue)
+						if !ok {
+							panic(fmt.Sprintf("invalid dagger string: %+v", valueAST.Values))
+						}
+						return []any{elem.Value}
+					default:
+						panic(fmt.Sprintf("unsupported fs type: %T", valueAST))
 					}
-					return s
 				},
 			},
 		},

@@ -22,7 +22,6 @@ dagger.action("build", async ({ pkg }) => {
       build(pkgs:[${JSON.stringify(pkg)}])
     }
   }`;
-  console.log("input: ", input);
 
   const output = await dagger.do(input);
   return {
