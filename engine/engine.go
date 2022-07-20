@@ -101,7 +101,7 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func Shell(ctx context.Context, inputFS api.FS) error {
+func Shell(ctx context.Context, inputFS dagger.FS) error {
 	gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
 	platform := ctx.Value(platformKey{}).(*specs.Platform)
 	baseDef, err := llb.Image("alpine:3.15").Marshal(ctx, llb.Platform(*platform))
@@ -119,8 +119,12 @@ func Shell(ctx context.Context, inputFS api.FS) error {
 		return err
 	}
 
+	var fs api.FS
+	if err := fs.UnmarshalText([]byte(inputFS)); err != nil {
+		return err
+	}
 	fsRes, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: inputFS.PB,
+		Definition: fs.PB,
 	})
 	if err != nil {
 		return err
