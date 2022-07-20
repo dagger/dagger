@@ -1,1 +1,0 @@
-query { echo(in: "hello world") { message } }

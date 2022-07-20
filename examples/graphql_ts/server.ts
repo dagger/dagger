@@ -2,6 +2,7 @@ import {
   GraphQLOptions,
   ApolloServerBase,
   runHttpQuery,
+  Config,
 } from "apollo-server-core";
 import { Request, Headers } from "apollo-server-env";
 import * as fs from "fs";
@@ -10,6 +11,11 @@ import { gql } from "apollo-server";
 export { gql };
 
 export class DaggerServer extends ApolloServerBase {
+  constructor(config: Config) {
+    config.typeDefs = gql(fs.readFileSync("/dagger.graphql", "utf8"));
+    super(config);
+  }
+
   async createGraphQLServerOptions(): Promise<GraphQLOptions> {
     return super.graphQLServerOptions();
   }
