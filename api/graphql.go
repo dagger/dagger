@@ -157,7 +157,11 @@ func (s *DaggerString) UnmarshalAny(data any) error {
 		if len(data) != 1 {
 			return fmt.Errorf("invalid dagger string: %v", data)
 		}
-		bytes, err := base64.StdEncoding.DecodeString(data[0].(string))
+		raw, ok := data[0].(string)
+		if !ok {
+			return fmt.Errorf("invalid dagger string: %v", data)
+		}
+		bytes, err := base64.StdEncoding.DecodeString(raw)
 		if err != nil {
 			return err
 		}
@@ -344,14 +348,18 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			if err != nil {
 				return nil, err
 			}
+			fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
 			var output interface{}
 			if err := json.Unmarshal(outputBytes, &output); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 			}
-			for _, parentField := range p.Info.Path.AsArray()[1:] { // skip first field, which is the package name
-				output = output.(map[string]interface{})[parentField.(string)]
+			for _, parentField := range append([]any{"data"}, p.Info.Path.AsArray()[1:]...) { // skip first field, which is the package name
+				outputMap, ok := output.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf("output is not a map: %+v", output)
+				}
+				output = outputMap[parentField.(string)]
 			}
-			fmt.Printf("action %s output: %+v\n", actionName, output)
 			return output, nil
 		} else {
 			inputBytes, err := json.Marshal(p.Args)
@@ -395,7 +403,6 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			if err != nil {
 				return nil, err
 			}
-			fmt.Printf("action %s output: %s\n", actionName, string(outputBytes))
 			var output interface{}
 			if err := json.Unmarshal(outputBytes, &output); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
