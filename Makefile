@@ -86,3 +86,11 @@ web: # Run the website locally
 .PHONY: todo
 todo: # Find all TODO items
 	grep -r -A 1 "TODO:" $(CURDIR)
+
+KIND_CLUSTER_NAME ?= kind-dagger
+.PHONY: kind
+kind: # Create Kind cluster
+	@echo "TODO: Maybe convert to a Dagger package: https://github.com/kubernetes-sigs/kind/issues/2833"
+	(  kind get clusters | grep -q $(KIND_CLUSTER_NAME) ) \
+	|| kind create cluster --name $(KIND_CLUSTER_NAME) --config kind-dagger.yml
+
