@@ -1,0 +1,17 @@
+{
+  "name": "helloworld-ts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "apollo-server": "^3.10.0",
+    "dagger": "../../sdk/nodejs/dagger",
+    "graphql": "^16.5.0",
+    "typescript": "^4.7.4"
+  }
+}
