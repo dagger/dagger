@@ -27,7 +27,7 @@ type StartOpts struct {
 	LocalDirs map[string]string
 }
 
-type StartCallback func(context.Context) (*dagger.FS, error)
+type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error)
 
 func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", bkclient.WithFailFast())
@@ -70,7 +70,17 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 			ctx = dagger.WithInMemoryAPIClient(ctx, server)
 			ctx = withGatewayClient(ctx, gw)
 			ctx = withPlatform(ctx, platform)
-			outputFs, err := fn(ctx)
+
+			localDirs := make(map[string]dagger.FS)
+			for localID := range solveOpts.LocalDirs {
+				clientdirRes, err := dagger.Do(ctx, fmt.Sprintf(`mutation{clientdir(id:%q)}`, localID))
+				if err != nil {
+					return nil, err
+				}
+				localDirs[localID] = dagger.FS(clientdirRes.FS("clientdir"))
+			}
+
+			outputFs, err := fn(ctx, localDirs)
 			if err != nil {
 				return nil, err
 			}
@@ -208,7 +218,7 @@ func Shell(ctx context.Context, inputFS dagger.FS) error {
 }
 
 func RunGraphiQL(ctx context.Context, port int) error {
-	return Start(ctx, nil, func(ctx context.Context) (*dagger.FS, error) {
+	return Start(ctx, nil, func(ctx context.Context, _ map[string]dagger.FS) (*dagger.FS, error) {
 		gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
 		platform := ctx.Value(platformKey{}).(*specs.Platform)
 		return nil, api.RunGraphiQLServer(ctx, port, gw, platform)

@@ -667,6 +667,7 @@ type Mutation {
 	import(ref: String!): Package
 	evaluate(fs: FS!): FS
 	readfile(fs: FS!, path: String!): String
+	clientdir(id: String!): FS
 }
 		`,
 		Resolvers: tools.ResolverMap{
@@ -1035,6 +1036,23 @@ type Mutation {
 								return nil, fmt.Errorf("failed to evaluate dagger string: %v", err)
 							}
 							return str.Value, nil
+						},
+					},
+					"clientdir": &tools.FieldResolve{
+						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+							id, ok := p.Args["id"].(string)
+							if !ok {
+								return nil, fmt.Errorf("invalid clientdir id")
+							}
+							llbdef, err := llb.Local(id).Marshal(p.Context)
+							if err != nil {
+								return nil, err
+							}
+							fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
+							if err != nil {
+								return nil, err
+							}
+							return string(fsbytes), nil
 						},
 					},
 				},
