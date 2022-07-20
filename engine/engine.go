@@ -22,7 +22,14 @@ import (
 	"github.com/moby/buildkit/client/llb"
 )
 
-func Start(ctx context.Context, fn func(context.Context) error) error {
+type StartOpts struct {
+	Export    *bkclient.ExportEntry
+	LocalDirs map[string]string
+}
+
+type StartCallback func(context.Context) (*dagger.FS, error)
+
+func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", bkclient.WithFailFast())
 	if err != nil {
 		return err
@@ -38,10 +45,20 @@ func Start(ctx context.Context, fn func(context.Context) error) error {
 	var server api.Server
 	attachables := []session.Attachable{&server}
 
+	solveOpts := bkclient.SolveOpt{
+		Session: attachables,
+	}
+	if startOpts != nil {
+		if startOpts.Export != nil {
+			solveOpts.Exports = []bkclient.ExportEntry{*startOpts.Export}
+		}
+		solveOpts.LocalDirs = startOpts.LocalDirs
+	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
-		_, err = c.Build(ctx, bkclient.SolveOpt{Session: attachables}, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			defer func() {
 				if r := recover(); r != nil {
 					time.Sleep(2 * time.Second) // TODO: dumb, but allows logs to fully flush
@@ -53,12 +70,32 @@ func Start(ctx context.Context, fn func(context.Context) error) error {
 			ctx = dagger.WithInMemoryAPIClient(ctx, server)
 			ctx = withGatewayClient(ctx, gw)
 			ctx = withPlatform(ctx, platform)
-			err = fn(ctx)
+			outputFs, err := fn(ctx)
 			if err != nil {
 				return nil, err
 			}
 
-			return bkgw.NewResult(), nil
+			var result *bkgw.Result
+			if outputFs != nil {
+				evalResult, err := dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%s)}`, outputFs))
+				if err != nil {
+					return nil, err
+				}
+				var fs api.FS
+				if err := fs.UnmarshalText([]byte(evalResult.FS("evaluate"))); err != nil {
+					return nil, err
+				}
+				res, err := gw.Solve(ctx, bkgw.SolveRequest{Evaluate: true, Definition: fs.PB})
+				if err != nil {
+					return nil, err
+				}
+				result = res
+			}
+			if result == nil {
+				result = bkgw.NewResult()
+			}
+
+			return result, nil
 		}, ch)
 		return err
 	})
@@ -171,9 +208,9 @@ func Shell(ctx context.Context, inputFS dagger.FS) error {
 }
 
 func RunGraphiQL(ctx context.Context, port int) error {
-	return Start(ctx, func(ctx context.Context) error {
+	return Start(ctx, nil, func(ctx context.Context) (*dagger.FS, error) {
 		gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
 		platform := ctx.Value(platformKey{}).(*specs.Platform)
-		return api.RunGraphiQLServer(ctx, port, gw, platform)
+		return nil, api.RunGraphiQLServer(ctx, port, gw, platform)
 	})
 }
