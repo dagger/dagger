@@ -1,10 +1,28 @@
-import { DaggerServer, gql } from "./server";
+import { DaggerServer } from "./server";
 
 const resolvers = {
   Query: {
-    echo: (_: any, args: { in: string }) => {
+    echo: async (
+      parent: any,
+      args: { in: string },
+      context: any,
+      info: any
+    ) => {
+      await context.dagger.do(`mutation{
+        import(ref:"alpine") {
+          name
+        }
+      }`);
+
+      const input = `{
+        alpine {
+          build(pkgs:["curl"])
+        }
+      }`;
+
+      const output = await context.dagger.do(input);
       return {
-        fs: "eyJQQiI6bnVsbCwiUXVlcnkiOiJ7XG4gIGFscGluZSB7XG4gICAgYnVpbGQocGtnczogW1wiY3VybFwiXSlcbiAgfVxufSIsIlZhcnMiOnt9fQ==",
+        fs: output.data.data.alpine.build,
       };
     },
   },

@@ -1,3 +1,6 @@
+import Dagger from "dagger";
+
+import { gql } from "apollo-server";
 import {
   GraphQLOptions,
   ApolloServerBase,
@@ -5,14 +8,15 @@ import {
   Config,
 } from "apollo-server-core";
 import { Request, Headers } from "apollo-server-env";
-import * as fs from "fs";
 
-import { gql } from "apollo-server";
-export { gql };
+import * as fs from "fs";
 
 export class DaggerServer extends ApolloServerBase {
   constructor(config: Config) {
     config.typeDefs = gql(fs.readFileSync("/dagger.graphql", "utf8"));
+    config.context = () => ({
+      dagger: new Dagger(),
+    });
     super(config);
   }
 
@@ -34,7 +38,6 @@ export class DaggerServer extends ApolloServerBase {
       },
       null
     );
-
     return graphqlResponse;
   }
 
@@ -43,10 +46,7 @@ export class DaggerServer extends ApolloServerBase {
 
     const inputs = fs.readFileSync("/inputs/dagger.graphql", "utf8");
     this.query(inputs).then((resp) =>
-      fs.writeFileSync(
-        "/outputs/dagger.json",
-        JSON.stringify(JSON.parse(resp).data)
-      )
+      fs.writeFileSync("/outputs/dagger.json", JSON.stringify(JSON.parse(resp)))
     );
   }
 }
