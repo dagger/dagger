@@ -2,13 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	dagger "github.com/dagger/cloak/sdk/go"
 )
 
-func Build(ctx context.Context, input map[string]interface{}) interface{} {
+func Build(ctx context.Context, input dagger.Map) interface{} {
 	/* TODO: update to use nice wrappers again
 	output.Root = core.Image(ctx, &core.ImageInput{
 		Ref: dagger.ToString("alpine:3.15.0"),
@@ -27,23 +26,24 @@ func Build(ctx context.Context, input map[string]interface{}) interface{} {
 	if err != nil {
 		panic(err)
 	}
-	result := make(map[string]interface{})
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		panic(err)
-	}
-	fs := result["core"].(map[string]interface{})["image"].(map[string]interface{})["fs"]
+	fs := output.Map("core").Map("image").FS("fs")
 
 	// install each of the requested packages
-	for _, pkg := range input["pkgs"].([]interface{}) {
-		pkg := pkg.(string)
-		output, err := dagger.Do(ctx, fmt.Sprintf(`{core{exec(input:{mounts:[{path:"/",fs:%q}],args:["apk", "add", "-U", "--no-cache", %q]}){mount(path:"/")}}}`, fs.(string), pkg))
+	for _, pkg := range input.StringList("pkgs") {
+		output, err := dagger.Do(ctx, fmt.Sprintf(`{
+			core {
+				exec(input: {
+					mounts:[{path:"/",fs:%s}],
+					args:["apk", "add", "-U", "--no-cache", %s]
+				}) {
+					mount(path:"/")
+				}
+			}
+		}`, fs, pkg))
 		if err != nil {
 			panic(err)
 		}
-		if err := json.Unmarshal([]byte(output), &result); err != nil {
-			panic(err)
-		}
-		fs = result["core"].(map[string]interface{})["exec"].(map[string]interface{})["mount"]
+		fs = output.Map("core").Map("exec").FS("mount")
 	}
 
 	return fs

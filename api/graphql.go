@@ -85,7 +85,7 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 			Context:       withEval(ctx),
 		})
 		if result.HasErrors() {
-			return FS{}, fmt.Errorf("eval errors: %+v", result.Errors)
+			return FS{}, fmt.Errorf("fs eval errors: %+v", result.Errors)
 		}
 
 		// Extract the queried field out of the result
@@ -102,6 +102,88 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 		fs = resultMap[field.Name.Value].(FS)
 	}
 	return fs, nil
+}
+
+func (fs FS) String() string {
+	bytes, err := json.Marshal(fs)
+	if err != nil {
+		panic(fmt.Errorf("failed to marshal fs: %v", err))
+	}
+	return string(bytes)
+}
+
+// TODO: dedupe all the methods with equivalent in FS
+type DaggerString struct {
+	Value *string
+	Query string
+}
+
+func (s DaggerString) MarshalJSON() ([]byte, error) {
+	if s.Value != nil {
+		return json.Marshal(*s.Value)
+	}
+	return json.Marshal([]interface{}{base64.StdEncoding.EncodeToString([]byte(s.Query))})
+}
+
+func (s *DaggerString) UnmarshalJSON(data []byte) error {
+	var raw interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	switch raw := raw.(type) {
+	case string:
+		s.Value = &raw
+	case []interface{}:
+		if len(raw) != 1 {
+			return fmt.Errorf("invalid dagger string: %v", raw)
+		}
+		bytes, err := base64.StdEncoding.DecodeString(raw[0].(string))
+		if err != nil {
+			return err
+		}
+		s.Query = string(bytes)
+	default:
+		return fmt.Errorf("invalid dagger string: %T(%+v)", raw, raw)
+	}
+	return nil
+}
+
+func (s DaggerString) Evaluate(ctx context.Context) (DaggerString, error) {
+	for s.Value == nil {
+		if s.Query == "" {
+			return DaggerString{}, fmt.Errorf("invalid dagger string: missing query")
+		}
+		result := graphql.Do(graphql.Params{
+			Schema:        schema,
+			RequestString: s.Query,
+			Context:       withEval(ctx),
+		})
+		if result.HasErrors() {
+			return DaggerString{}, fmt.Errorf("dagger string eval errors: %+v", result.Errors)
+		}
+
+		// Extract the queried field out of the result
+		resultMap := result.Data.(map[string]interface{})
+		req, err := parser.Parse(parser.ParseParams{Source: s.Query})
+		if err != nil {
+			return DaggerString{}, err
+		}
+		field := req.Definitions[0].(*ast.OperationDefinition).SelectionSet.Selections[0].(*ast.Field)
+		for field.SelectionSet != nil {
+			resultMap = resultMap[field.Name.Value].(map[string]interface{})
+			field = field.SelectionSet.Selections[0].(*ast.Field)
+		}
+		s = resultMap[field.Name.Value].(DaggerString)
+	}
+	return s, nil
+}
+
+func (s DaggerString) String() string {
+	bytes, err := json.Marshal(s)
+	if err != nil {
+		panic(fmt.Errorf("failed to marshal dagger string: %v", err))
+	}
+	return string(bytes)
 }
 
 var coreSchema tools.ExecutableSchema
@@ -263,6 +345,16 @@ func getEvalResult(outputSchema graphql.Output, outputVal interface{}) (interfac
 				return nil, fmt.Errorf("failed to unmarshal fs: %w", err)
 			}
 			return fs, nil
+		case "DaggerString":
+			outputBytes, err := json.Marshal(outputVal)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal dagger string bytes: %w", err)
+			}
+			var s DaggerString
+			if err := json.Unmarshal(outputBytes, &s); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal dagger string: %w", err)
+			}
+			return s, nil
 		default:
 			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
 		}
@@ -309,6 +401,8 @@ func getLazyResult(output graphql.Output, query *ast.OperationDefinition, parent
 		switch outputType.Name() {
 		case "FS":
 			return FS{Query: printer.Print(selectedQuery).(string)}, nil
+		case "DaggerString":
+			return DaggerString{Query: printer.Print(selectedQuery).(string)}, nil
 		default:
 			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
 		}
@@ -487,9 +581,11 @@ func init() {
 	pkgSchemas["core"] = tools.ExecutableSchema{
 		TypeDefs: `
 scalar FS
+scalar DaggerString
 
 type CoreImage {
 	fs: FS!
+	foo: DaggerString!
 }
 
 input CoreMount {
@@ -498,14 +594,14 @@ input CoreMount {
 }
 input CoreExecInput {
 	mounts: [CoreMount!]!
-	args: [String!]!
+	args: [DaggerString!]!
 }
 type CoreExecOutput {
 	mount(path: String!): FS
 }
 
 type Core {
-	image(ref: String!): CoreImage
+	image(ref: DaggerString!): CoreImage
 	exec(input: CoreExecInput!): CoreExecOutput
 }
 type Query {
@@ -520,6 +616,7 @@ type Mutation {
 	import(ref: String!): Package
 	evaluate(fs: FS!): FS
 	readfile(fs: FS!, path: String!): String
+	readstring(str: DaggerString!): String
 }
 		`,
 		Resolvers: tools.ResolverMap{
@@ -567,16 +664,22 @@ type Mutation {
 							if !shouldEval(p.Context) {
 								return lazyResolve(p)
 							}
-							ref, ok := p.Args["ref"].(string)
+							ref, ok := p.Args["ref"].(DaggerString)
 							if !ok {
 								return nil, fmt.Errorf("invalid ref")
 							}
-							llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p)))
+							ref, err := ref.Evaluate(p.Context)
+							if err != nil {
+								return nil, fmt.Errorf("error evaluating image ref: %v", err)
+							}
+							llbdef, err := llb.Image(*ref.Value).Marshal(p.Context, llb.Platform(getPlatform(p)))
 							if err != nil {
 								return nil, err
 							}
+							barString := "bar"
 							return map[string]interface{}{
-								"fs": FS{PB: llbdef.ToPB()},
+								"fs":  FS{PB: llbdef.ToPB()},
+								"foo": DaggerString{Value: &barString},
 							}, nil
 						},
 					},
@@ -622,8 +725,12 @@ type Mutation {
 							}
 							var args []string
 							for _, arg := range rawArgs {
-								if arg, ok := arg.(string); ok {
-									args = append(args, arg)
+								if arg, ok := arg.(DaggerString); ok {
+									arg, err := arg.Evaluate(p.Context)
+									if err != nil {
+										return nil, fmt.Errorf("error evaluating arg: %v", err)
+									}
+									args = append(args, *arg.Value)
 								} else {
 									return nil, fmt.Errorf("invalid arg")
 								}
@@ -781,6 +888,19 @@ type Mutation {
 							return string(outputBytes), nil
 						},
 					},
+					"readstring": &tools.FieldResolve{
+						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+							str, ok := p.Args["str"].(DaggerString)
+							if !ok {
+								return nil, fmt.Errorf("invalid dagger string")
+							}
+							str, err := str.Evaluate(p.Context)
+							if err != nil {
+								return nil, fmt.Errorf("failed to evaluate dagger string: %v", err)
+							}
+							return str.Value, nil
+						},
+					},
 				},
 			},
 			"FS": &tools.ScalarResolver{
@@ -801,6 +921,21 @@ type Mutation {
 					default:
 						panic(fmt.Sprintf("unsupported type: %T", valueAST))
 					}
+				},
+			},
+			"DaggerString": &tools.ScalarResolver{
+				Serialize: func(value interface{}) interface{} {
+					return value
+				},
+				ParseValue: func(value interface{}) interface{} {
+					return value
+				},
+				ParseLiteral: func(valueAST ast.Value) interface{} {
+					var s DaggerString
+					if err := json.Unmarshal([]byte(printer.Print(valueAST).(string)), &s); err != nil {
+						panic(fmt.Errorf("failed to unmarshal dagger string in parse literal: %v", err))
+					}
+					return s
 				},
 			},
 		},

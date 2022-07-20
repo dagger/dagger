@@ -1,7 +1,9 @@
-type Echo {
+type BuildOutput {
   fs: FS!
+  test: DaggerString!
 }
 
 type Query {
-  echo(message: String!): Echo
+  echo(message: DaggerString!): DaggerString!
+  build(pkg: DaggerString!): BuildOutput!
 }
