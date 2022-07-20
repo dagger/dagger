@@ -34,16 +34,19 @@ dagger.#Plan & {
 		}
 		upgrade: {
 			repo: helm.#Upgrade & {
-				kubeconfig: client.commands.kubeconfig.stdout
-				workspace:  client.filesystem.".".read.contents
-				name:       "test-redis-repo"
-				repo:       "https://charts.bitnami.com/bitnami"
-				chart:      "redis"
-				version:    "17.0.1"
-				namespace:  "sandbox"
-				install:    true
-				atomic:     true
-				dryrun:     true
+				kubeconfig:    client.commands.kubeconfig.stdout
+				workspace:     client.filesystem."./testdata".read.contents
+				name:          "test-redis-repo"
+				repo:          "https://charts.bitnami.com/bitnami"
+				chart:         "redis"
+				version:       "17.0.1"
+				namespace:     "sandbox"
+				install:       true
+				dryRun:        true
+				cleanupOnFail: true
+				debug:         true
+				force:         true
+				wait:          true
 				flags: ["--skip-crds"]
 				values: ["values.base.yaml", "values.staging.yaml"]
 				set: #"""
@@ -52,11 +55,12 @@ dagger.#Plan & {
 					"""#
 			}
 			chart: helm.#Upgrade & {
-				kubeconfig: client.commands.kubeconfig.stdout
-				name:       "test-redis-chart"
-				chart:      "https://charts.bitnami.com/bitnami/redis-17.0.1.tgz"
-				dryrun:     true
-				install:    true
+				kubeconfig:    client.commands.kubeconfig.stdout
+				name:          "test-redis-chart"
+				chart:         "https://charts.bitnami.com/bitnami/redis-17.0.1.tgz"
+				dryRun:        true
+				cleanupOnFail: true
+				install:       true
 				setStr: #"""
 					master.podAnnotations.n=1
 					master.podLabels.n=2

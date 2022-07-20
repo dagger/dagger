@@ -29,10 +29,16 @@ import (
 	setStr?:            string // set-string flag values
 
 	// first class flags
-	install: *false | true
-	atomic:  *false | true
-	wait:    *false | true
-	dryrun:  *false | true
+	cleanupOnFail: *false | true
+	debug:         *false | true
+	dryRun:        *false | true
+	force:         *false | true
+	install:       *false | true
+	timeout:       string | *"5m"
+	wait:          *false | true
+
+	username?: string
+	password?: dagger.#Secret
 
 	// extra args
 	flags: [...string]
@@ -44,6 +50,9 @@ import (
 	run:   docker.#Run & {
 		input: _base.output
 		entrypoint: ["helm"]
+		if workspace != _|_ {
+			workdir: "/workspace"
+		}
 		mounts: {
 			"/root/.kube/config": {
 				dest:     "/root/.kube/config"
@@ -57,6 +66,9 @@ import (
 				}
 			}
 		}
+		env: {
+			if password != _|_ {HELM_PASSWORD: password}
+		}
 		command: {
 			name: "upgrade"
 			args: list.Concat([
@@ -67,12 +79,18 @@ import (
 					if version != _|_ {"--version=\(version)"},
 					if namespace != _|_ {"--namespace=\(namespace)"},
 					if install {"--install"},
-					if atomic {"--atomic"},
+					if install && namespace != _|_ {"--create-namespace"},
 					if wait {"--wait"},
+					if wait {"--timeout=\(timeout)"},
 					for path in values {"--values=\(path)"},
 					if set != _|_ {"--set=\(strings.Join(strings.Split(set, "\n"), ","))"},
 					if setStr != _|_ {"--set-string=\(strings.Join(strings.Split(setStr, "\n"), ","))"},
-					if dryrun {"--dry-run"},
+					if debug {"--debug"},
+					if dryRun {"--dry-run"},
+					if force {"--force"},
+					if cleanupOnFail {"--cleanup-on-fail"},
+					if username != _|_ {"--username=\(username)"},
+					if password != _|_ {"--password=${HELM_PASSWORD}"},
 				],
 				flags,
 			])
