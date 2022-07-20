@@ -104,7 +104,7 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 		}
 		rawFS, ok := resultMap[field.Name.Value].(string)
 		if !ok {
-			return FS{}, fmt.Errorf("invalid fs type")
+			return FS{}, fmt.Errorf("invalid fs type %T", resultMap[field.Name.Value])
 		}
 		if err := fs.UnmarshalText([]byte(rawFS)); err != nil {
 			return FS{}, err
@@ -571,7 +571,6 @@ scalar DaggerString
 
 type CoreImage {
 	fs: FS!
-	foo: DaggerString!
 }
 
 input CoreMount {
@@ -580,14 +579,14 @@ input CoreMount {
 }
 input CoreExecInput {
 	mounts: [CoreMount!]!
-	args: [DaggerString!]!
+	args: [String!]!
 }
 type CoreExecOutput {
 	mount(path: String!): FS
 }
 
 type Core {
-	image(ref: DaggerString!): CoreImage
+	image(ref: String!): CoreImage
 	exec(input: CoreExecInput!): CoreExecOutput
 }
 type Query {
@@ -602,7 +601,6 @@ type Mutation {
 	import(ref: String!): Package
 	evaluate(fs: FS!): FS
 	readfile(fs: FS!, path: String!): String
-	readstring(str: DaggerString!): String
 }
 		`,
 		Resolvers: tools.ResolverMap{
@@ -654,6 +652,7 @@ type Mutation {
 							if !ok {
 								return nil, fmt.Errorf("missing ref")
 							}
+							/* TODO: switch back to DaggerString once re-integrated with generated clients
 							var ref DaggerString
 							if err := ref.UnmarshalAny(rawRef); err != nil {
 								return nil, err
@@ -662,7 +661,13 @@ type Mutation {
 							if err != nil {
 								return nil, fmt.Errorf("error evaluating image ref: %v", err)
 							}
-							llbdef, err := llb.Image(*ref.Value).Marshal(p.Context, llb.Platform(getPlatform(p)))
+							*/
+							ref, ok := rawRef.(string)
+							if !ok {
+								return nil, fmt.Errorf("ref is not a string")
+							}
+							// llbdef, err := llb.Image(*ref.Value).Marshal(p.Context, llb.Platform(getPlatform(p)))
+							llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p)))
 							if err != nil {
 								return nil, err
 							}
@@ -670,14 +675,8 @@ type Mutation {
 							if err != nil {
 								return nil, err
 							}
-							barString := "bar"
-							str, err := DaggerString{Value: &barString}.MarshalAny()
-							if err != nil {
-								return nil, err
-							}
 							return map[string]interface{}{
-								"fs":  string(fsbytes),
-								"foo": str,
+								"fs": string(fsbytes),
 							}, nil
 						},
 					},
@@ -727,6 +726,7 @@ type Mutation {
 							}
 							var args []string
 							for _, rawArg := range rawArgs {
+								/* TODO: switch back to DaggerString once re-integrated with generated clients
 								var arg DaggerString
 								if err := arg.UnmarshalAny(rawArg); err != nil {
 									return nil, fmt.Errorf("invalid arg: %w", err)
@@ -736,6 +736,12 @@ type Mutation {
 									return nil, fmt.Errorf("error evaluating arg: %v", err)
 								}
 								args = append(args, *arg.Value)
+								*/
+								arg, ok := rawArg.(string)
+								if !ok {
+									return nil, fmt.Errorf("invalid arg: %T", rawArg)
+								}
+								args = append(args, arg)
 							}
 
 							rootFS, err := rootFS.Evaluate(p.Context)

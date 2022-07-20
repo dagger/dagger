@@ -26,6 +26,5 @@ dagger.action("build", async ({ pkg }) => {
   const output = await dagger.do(input);
   return {
     fs: output.data.data.alpine.build,
-    test: pkg,
   };
 });

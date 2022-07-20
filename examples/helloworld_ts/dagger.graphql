@@ -1,9 +1,7 @@
 type BuildOutput {
   fs: FS!
-  test: DaggerString!
 }
 
 type Query {
-  echo(message: DaggerString!): DaggerString!
-  build(pkg: DaggerString!): BuildOutput!
+  build(pkg: String!): BuildOutput!
 }

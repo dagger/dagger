@@ -34,7 +34,7 @@ func Build(ctx context.Context, input dagger.Map) interface{} {
 			core {
 				exec(input: {
 					mounts:[{path:"/",fs:%s}],
-					args:["apk", "add", "-U", "--no-cache", %s]
+					args:["apk", "add", "-U", "--no-cache", %q]
 				}) {
 					mount(path:"/")
 				}
