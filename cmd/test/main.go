@@ -84,15 +84,17 @@ func main() {
 			*/
 
 			// input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("alpine").FS("build"))
-			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
-			fmt.Printf("input: %+v\n", input)
-			output, err = dagger.Do(ctx, input)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Printf("output: %+v\n\n", output)
+			/*
+				input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
+				fmt.Printf("input: %+v\n", input)
+				output, err = dagger.Do(ctx, input)
+				if err != nil {
+					return nil, err
+				}
+				fmt.Printf("output: %+v\n\n", output)
+			*/
 
-			if err := engine.Shell(ctx, output.FS("evaluate")); err != nil {
+			if err := engine.Shell(ctx, output.Map("graphql_ts").Map("echo").FS("fs")); err != nil {
 				panic(err)
 			}
 

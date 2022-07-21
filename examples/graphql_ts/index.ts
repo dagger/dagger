@@ -8,15 +8,9 @@ const resolvers = {
       context: any,
       info: any
     ) => {
-      await context.dagger.do(`mutation{
-        import(ref:"alpine") {
-          name
-        }
-      }`);
-
       const input = `{
         alpine {
-          build(pkgs:["curl"])
+          build(pkgs:["jq"])
         }
       }`;
 
