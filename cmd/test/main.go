@@ -90,13 +90,13 @@ func main() {
 				&graphql.Request{
 					Query: `
 						query Build($fs: FS!) {
-						graphql_ts {
-							echo(in: "foo", fs: $fs) {
-								fs
-								out
+							graphql_ts {
+								echo(in: "foo", fs: $fs) {
+									fs
+									out
+								}
 							}
-						}
-					}`,
+						}`,
 					Variables: map[string]any{
 						"fs": alpine.Alpine.Build,
 					},
