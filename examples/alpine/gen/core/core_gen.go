@@ -79,7 +79,6 @@ func (v *__ImageInput) GetRef() string { return v.Ref }
 
 func Exec(
 	ctx context.Context,
-	client graphql.Client,
 	fs dagger.FS,
 	args []string,
 ) (*ExecResponse, error) {
@@ -100,6 +99,12 @@ query Exec ($fs: FS!, $args: [String]!) {
 		},
 	}
 	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var data ExecResponse
 	resp := &graphql.Response{Data: &data}
@@ -115,7 +120,6 @@ query Exec ($fs: FS!, $args: [String]!) {
 
 func Image(
 	ctx context.Context,
-	client graphql.Client,
 	ref string,
 ) (*ImageResponse, error) {
 	req := &graphql.Request{
@@ -134,6 +138,12 @@ query Image ($ref: String!) {
 		},
 	}
 	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var data ImageResponse
 	resp := &graphql.Response{Data: &data}

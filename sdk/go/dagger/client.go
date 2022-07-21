@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,16 +36,19 @@ func (s DaggerString) String() string {
 
 type clientKey struct{}
 
-func Client(ctx context.Context) graphql.Client {
+func Client(ctx context.Context) (graphql.Client, error) {
 	client, ok := ctx.Value(clientKey{}).(*http.Client)
 	if !ok {
-		panic("no client in context")
+		return nil, errors.New("no dagger client in context")
 	}
-	return graphql.NewClient("http://fake.invalid", client)
+	return graphql.NewClient("http://fake.invalid", client), nil
 }
 
 func Do(ctx context.Context, payload string) (*Map, error) {
-	client := Client(ctx)
+	client, err := Client(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var resp graphql.Response
 	if err := client.MakeRequest(ctx, &graphql.Request{
 		Query: payload,

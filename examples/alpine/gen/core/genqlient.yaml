@@ -7,3 +7,4 @@ package: core
 bindings:
   FS:
     type: github.com/dagger/cloak/sdk/go/dagger.FS
+client_getter: github.com/dagger/cloak/sdk/go/dagger.Client

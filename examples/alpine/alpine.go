@@ -11,7 +11,7 @@ type Alpine struct{}
 
 func (r *Alpine) Build(ctx context.Context, pkgs []string) (dagger.FS, error) {
 	// start with Alpine base
-	output, err := core.Image(ctx, dagger.Client(ctx), "alpine:3.15")
+	output, err := core.Image(ctx, "alpine:3.15")
 	if err != nil {
 		return dagger.FS(""), err
 	}
@@ -20,7 +20,7 @@ func (r *Alpine) Build(ctx context.Context, pkgs []string) (dagger.FS, error) {
 
 	// install each of the requested packages
 	for _, pkg := range pkgs {
-		output, err := core.Exec(ctx, dagger.Client(ctx), fs, []string{"apk", "add", "-U", "--no-cache", pkg})
+		output, err := core.Exec(ctx, fs, []string{"apk", "add", "-U", "--no-cache", pkg})
 		if err != nil {
 			return dagger.FS(""), err
 		}
