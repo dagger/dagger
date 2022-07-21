@@ -58,7 +58,7 @@ require (
 )
 
 require (
-	github.com/dagger/daggerlsp v0.3.1
+	github.com/dagger/daggerlsp v0.3.2
 	github.com/tliron/kutil v0.1.61
 )
 
@@ -124,7 +124,6 @@ require (
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20220608084003-fc78c767cd6a // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
-	github.com/smacker/go-tree-sitter v0.0.0-20220628134258-ac06e95cfa11 // indirect
 	github.com/sourcegraph/jsonrpc2 v0.1.0 // indirect
 	github.com/spf13/afero v1.8.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
