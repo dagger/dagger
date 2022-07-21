@@ -1,24 +1,19 @@
+//go:generate go run github.com/Khan/genqlient ./gen/core/genqlient.yaml
+//go:generate go run github.com/99designs/gqlgen generate
+
 package main
 
 import (
 	"context"
-	"encoding/json"
 
-	"github.com/dagger/cloak/sdk/go/dagger"
+	"github.com/dagger/cloak/examples/alpine/gen/alpine/generated"
 )
 
+type Resolver struct{}
+
+func (r *Resolver) Query() generated.QueryResolver { return &Alpine{} }
+
 func main() {
-	d := dagger.New()
-
-	d.Action("build", func(ctx context.Context, input []byte) ([]byte, error) {
-		inputMap := make(map[string]interface{})
-		if err := json.Unmarshal(input, &inputMap); err != nil {
-			return nil, err
-		}
-		return json.Marshal(Build(ctx, dagger.Map{inputMap}))
-	})
-
-	if err := d.Serve(); err != nil {
-		panic(err)
-	}
+	schema := generated.NewExecutableSchema(generated.Config{Resolvers: &Resolver{}})
+	Serve(context.Background(), schema)
 }
