@@ -34,9 +34,8 @@ type GraphQLRequest struct {
 // FS is either llb representing the filesystem or a graphql query for obtaining that llb
 // This is opaque to clients; to them FS is a scalar.
 type FS struct {
-	PB    *pb.Definition
-	Query string
-	Vars  map[string]interface{} // NOTE: encoding/json sorts by key so this *should* be deterministic (?)
+	PB *pb.Definition
+	GraphQLRequest
 }
 
 // FS encodes to the base64 encoding of its JSON representation
@@ -64,8 +63,7 @@ func (fs *FS) UnmarshalText(b64Bytes []byte) error {
 		return fmt.Errorf("failed to unmarshal result: %v", err)
 	}
 	fs.PB = result.PB
-	fs.Query = result.Query
-	fs.Vars = result.Vars
+	fs.GraphQLRequest = result.GraphQLRequest
 	return nil
 }
 
@@ -92,7 +90,8 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 			Schema:         schema,
 			RequestString:  fs.Query,
 			Context:        withEval(ctx),
-			VariableValues: fs.Vars,
+			VariableValues: fs.Variables,
+			OperationName:  fs.OperationName,
 		})
 		if result.HasErrors() {
 			return FS{}, fmt.Errorf("fs eval errors: %+v", result.Errors)
@@ -123,8 +122,7 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 // TODO: dedupe all the methods with equivalent in FS
 type DaggerString struct {
 	Value *string
-	Query string
-	Vars  map[string]interface{} // NOTE: encoding/json sorts by key so this *should* be deterministic (?)
+	GraphQLRequest
 }
 
 func (s DaggerString) MarshalJSON() ([]byte, error) {
@@ -194,7 +192,8 @@ func (s DaggerString) Evaluate(ctx context.Context) (DaggerString, error) {
 			Schema:         schema,
 			RequestString:  s.Query,
 			Context:        withEval(ctx),
-			VariableValues: s.Vars,
+			VariableValues: s.Variables,
+			OperationName:  s.OperationName,
 		})
 		if result.HasErrors() {
 			return DaggerString{}, fmt.Errorf("dagger string eval errors: %+v", result.Errors)
@@ -317,14 +316,11 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		packageSelect := queryOp.SelectionSet.Selections[0].(*ast.Field)
 		queryOp.SelectionSet.Selections = packageSelect.SelectionSet.Selections
 
-		requestOpts := GraphQLRequest{
-			Query:     printer.Print(queryOp).(string),
-			Variables: p.Info.VariableValues,
-		}
-		if queryOp.Name != nil {
-			requestOpts.OperationName = queryOp.Name.Value
-		}
-		inputBytes, err := json.Marshal(requestOpts)
+		inputBytes, err := json.Marshal(GraphQLRequest{
+			Query:         printer.Print(queryOp).(string),
+			Variables:     p.Info.VariableValues,
+			OperationName: getOperationName(p),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -408,8 +404,11 @@ func getLazyResult(p graphql.ResolveParams, output graphql.Output, parentFieldNa
 		switch outputType.Name() {
 		case "FS":
 			bytes, err := FS{
-				Query: printer.Print(selectedQuery).(string),
-				Vars:  p.Info.VariableValues,
+				GraphQLRequest: GraphQLRequest{
+					Query:         printer.Print(selectedQuery).(string),
+					Variables:     p.Info.VariableValues,
+					OperationName: getOperationName(p),
+				},
 			}.MarshalText()
 			if err != nil {
 				return nil, err
@@ -417,8 +416,11 @@ func getLazyResult(p graphql.ResolveParams, output graphql.Output, parentFieldNa
 			return string(bytes), nil
 		case "DaggerString":
 			return DaggerString{
-				Query: printer.Print(selectedQuery).(string),
-				Vars:  p.Info.VariableValues,
+				GraphQLRequest: GraphQLRequest{
+					Query:         printer.Print(selectedQuery).(string),
+					Variables:     p.Info.VariableValues,
+					OperationName: getOperationName(p),
+				},
 			}.MarshalAny()
 		default:
 			return nil, fmt.Errorf("FIXME: currently unsupported scalar output type %s", outputType.Name())
@@ -1106,4 +1108,12 @@ func getPlatform(p graphql.ResolveParams) specs.Platform {
 
 func getQuery(p graphql.ResolveParams) string {
 	return printer.Print(p.Info.Operation).(string)
+}
+
+func getOperationName(p graphql.ResolveParams) string {
+	name := p.Info.Operation.(*ast.OperationDefinition).Name
+	if name == nil {
+		return ""
+	}
+	return name.Value
 }
