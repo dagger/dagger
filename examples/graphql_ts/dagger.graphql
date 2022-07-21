@@ -2,6 +2,7 @@ scalar FS
 
 type Echo {
   fs: FS!
+  out: String
 }
 
 type Query {
