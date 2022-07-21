@@ -11,9 +11,9 @@ import (
 // Fetch a Config from Doppler
 #FetchConfig: {
 	// Doppler can be configured by a `doppler.yaml` file.
-	// If you have one in your directory, you can pass it through with
-	// core.#ReadFile.output
-	configFile?: string
+	// If you pass a core.#Source, we'll read the `doppler.yaml`
+	// file from it.
+	configDirectory?: core.#Source
 
 	// Doppler can be configured by a combination of project and config (environment)
 	// You can provide these as strings
@@ -35,20 +35,43 @@ import (
 
 		env: DOPPLER_TOKEN: apiToken
 
+		if configDirectory != _|_ {
+			mounts: "Doppler Config": {
+				contents: configDirectory.output
+				dest:     "/src"
+			}
+		}
+
+		if project != _|_ {
+			env: DOPPLER_PROJECT: project
+		}
+
+		if config != _|_ {
+			env: DOPPLER_CONFIG: config
+		}
+
+		workdir: "/src"
 		entrypoint: ["ash"]
 		command: {
 			name: "-c"
-			args: ["doppler secrets --json > /fetched-secrets.json"]
+			args: ["mkdir -p /output && doppler setup --no-save-token --no-interactive && doppler secrets --json > /output/secrets.json"]
 		}
 	}
 
-	_newSecret: core.#NewSecret & {
+	_dopplerOutput: core.#Subdir & {
 		input: _fetchSecrets.export.rootfs
-		path:  "/fetched-secrets.json"
+		path:  "/output"
 	}
 
-	output: core.#DecodeSecret & {
-		input:  _newSecret.output
+	_dopplerOutputSecrets: core.#NewSecret & {
+		input: _dopplerOutput.output
+		path:  "secrets.json"
+	}
+
+	_decodeSecret: core.#DecodeSecret & {
+		input:  _dopplerOutputSecrets.output
 		format: "json"
 	}
+
+	output: _decodeSecret.output
 }
