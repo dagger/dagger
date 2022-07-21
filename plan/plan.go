@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -53,7 +55,20 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Load")
 	defer span.End()
 
-	_, cueModExists := pkg.GetCueModParent()
+	planFileInfo, _ := os.Stat(cfg.Args[0])
+
+	src := ""
+	args := cfg.Args[0]
+
+	var cueModExists bool
+
+	if planFileInfo.IsDir() && filepath.IsAbs(args) {
+		src, cueModExists = pkg.GetCueModParent(cfg.Args...)
+		args = "."
+	} else {
+		_, cueModExists = pkg.GetCueModParent()
+	}
+
 	if !cueModExists {
 		return nil, fmt.Errorf("dagger project not found. Run `dagger project init`")
 	}
@@ -62,7 +77,7 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		return nil, err
 	}
 
-	v, err := compiler.Build(ctx, "", nil, cfg.Args...)
+	v, err := compiler.Build(ctx, src, nil, args)
 	if err != nil {
 		errstring := err.Error()
 

@@ -224,9 +224,14 @@ func extractModules(dest string) error {
 }
 
 // GetCueModParent traverses the directory tree up through ancestors looking for a cue.mod folder
-func GetCueModParent() (string, bool) {
+func GetCueModParent(args ...string) (string, bool) {
 	cwd, _ := os.Getwd()
 	parentDir := cwd
+
+	if len(args) == 1 {
+		parentDir = args[0]
+	}
+
 	found := false
 
 	for {
