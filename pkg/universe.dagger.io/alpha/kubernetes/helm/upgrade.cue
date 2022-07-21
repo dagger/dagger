@@ -9,39 +9,68 @@ import (
 )
 
 #Upgrade: {
-	// the kubeconfig file content
+	// The kubeconfig file content
 	kubeconfig: dagger.#Secret
 
-	// optionally mount a workspace,
-	// useful to read values files from
+	// Optionally mount a workspace,
+	// useful to read values files
+	// or a local chart
 	workspace?: dagger.#FS
 
 	// base settings
-	name:       string // the name of the release
-	chart:      string // the chart to use
-	repo?:      string // the repo url
-	version?:   string // the version to use, if set
-	namespace?: string // the namespace to deploy in, if set
+
+	// The name of the release
+	name:       string
+	// The chart to use
+	chart:      string
+	// Chart repository url where to locate the requested chart
+	repo?:      string
+	// Specify a version constraint for the chart version to use.
+	// This constraint can be a specific tag (e.g. 1.1.1) or it may reference a
+	// Valid range (e.g. ^2.0.0). If this is not specified, the latest version is used
+	version?:   string
+	// The kubernetes namespace
+	namespace?: string 
 
 	// values
-	values: [...string] // list of path to values files
-	set?:               string // set flag values
-	setString?:         string // set-string flag values
+
+	// Specify values in a YAML file or a URL (can specify multiple)
+	values: [...string]
+	// Set values (can specify multiple or separate values with commas or newline)
+	set?:               string
+	// set STRING values (can specify multiple or separate values with commas or newline)
+	setString?:         string
 
 	// first class flags
-	cleanupOnFail: *false | true
-	debug:         *false | true
-	dryRun:        *false | true
-	force:         *false | true
-	install:       *false | true
-	timeout?:      string
-	wait:          *false | true
-	atomic:        *false | true
 
+	// Enable verbose output
+	debug:         *false | true
+
+	// If set, upgrade process rolls back changes made in case of failed upgrade.
+	// The --wait flag will be set automatically if --atomic is used
+	atomic:        *false | true
+	// allow deletion of new resources created in this upgrade when upgrade fails
+	cleanupOnFail: *false | true
+	// Simulate an upgrade
+	dryRun:        *false | true
+	// Force resource updates through a replacement strategy
+	force:         *false | true
+	// If a release by this name doesn't already exist, run an install
+	install:       *false | true
+	// Time to wait for any individual Kubernetes operation (like Jobs for hooks) (default 5m0s)
+	timeout?:      string
+	// if set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment, 
+	// StatefulSet, or ReplicaSet are in a ready state before marking the release as successful. 
+	// It will wait for as long as --timeout
+	wait:          *false | true
+
+	// Chart repository username where to locate the requested chart
 	username?: string
+	// Chart repository password where to locate the requested chart
 	password?: dagger.#Secret
 
-	// extra args
+	// Extra flags that are passed to the helm upgrade command. Use it
+	// for anything that is not covered by the struct fields
 	flags: [...string]
 
 	// used to avoid name clashes
