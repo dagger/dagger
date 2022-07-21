@@ -19,16 +19,19 @@ func main() {
 
 	/*
 		outputDir := "./output"
-		startOpts = &engine.StartOpts{
+	*/
+
+	startOpts = &engine.StartOpts{
+		/*
 			Export: &bkclient.ExportEntry{
 				Type:      bkclient.ExporterLocal,
 				OutputDir: outputDir,
 			},
-			LocalDirs: map[string]string{
-				"input": "./input",
-			},
-		}
-	*/
+		*/
+		LocalDirs: map[string]string{
+			".": ".",
+		},
+	}
 
 	err := engine.Start(context.Background(), startOpts,
 		func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error) {
@@ -37,20 +40,20 @@ func main() {
 			var err error
 
 			/*
-				_, err = dagger.Do(ctx, `mutation{import(ref:"helloworld_ts"){name}}`)
+					_, err = dagger.Do(ctx, `mutation{import(ref:"helloworld_ts"){name}}`)
+					if err != nil {
+						return err
+					}
+
+				_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
 				if err != nil {
-					return err
+					return nil, err
+				}
+				_, err = dagger.Do(ctx, `mutation{import(ref:"graphql_ts"){name}}`)
+				if err != nil {
+					return nil, err
 				}
 			*/
-
-			_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
-			if err != nil {
-				return nil, err
-			}
-			_, err = dagger.Do(ctx, `mutation{import(ref:"graphql_ts"){name}}`)
-			if err != nil {
-				return nil, err
-			}
 
 			/*
 				output, err = dagger.Do(ctx, tools.IntrospectionQuery)
@@ -60,13 +63,14 @@ func main() {
 				fmt.Printf("schema: %s\n", output)
 			*/
 
-			input = `{
-	graphql_ts{
-		echo(in:"hey"){
-			fs
-		}
+			input = fmt.Sprintf(`{
+	core{
+		dockerfile(
+			context: %s, 
+			dockerfileName: "Dockerfile.alpine",
+		)
 	}
-}`
+}`, localDirs["."])
 			fmt.Printf("input: %+v\n", input)
 			output, err = dagger.Do(ctx, input)
 			if err != nil {
@@ -76,7 +80,7 @@ func main() {
 
 			/*
 			 */
-			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
+			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("core").FS("dockerfile"))
 			fmt.Printf("input: %+v\n", input)
 			output, err = dagger.Do(ctx, input)
 			if err != nil {
