@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
@@ -99,7 +100,7 @@ func main() {
 
 			if err := engine.Shell(ctx, output.Map("graphql_ts").Map("echo").FS("fs")); err != nil {
 				// if err := engine.Shell(ctx, output.Map("alpine").FS("build")); err != nil {
-				panic(err)
+				return nil, err
 			}
 
 			// fs := output.Map("graphql_ts").Map("echo").FS("fs")
@@ -108,7 +109,8 @@ func main() {
 			return nil, nil
 		})
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -116,7 +118,7 @@ func importAlpine(ctx context.Context, cwd dagger.FS) {
 	input := fmt.Sprintf(`{
 		core{
 			dockerfile(
-				context: %s, 
+				context: %s,
 				dockerfileName: "Dockerfile.alpine",
 			)
 		}
@@ -155,7 +157,7 @@ func importTS(ctx context.Context, cwd dagger.FS) {
 	input := fmt.Sprintf(`{
 		core{
 			dockerfile(
-				context: %s, 
+				context: %s,
 				dockerfileName: "Dockerfile.graphql_ts",
 			)
 		}
