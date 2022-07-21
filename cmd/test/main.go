@@ -37,10 +37,6 @@ func main() {
 
 	err := engine.Start(context.Background(), startOpts,
 		func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error) {
-			var input string
-			var output *dagger.Map
-			var err error
-
 			/*
 				output, err = dagger.Do(ctx, tools.IntrospectionQuery)
 				if err != nil {
@@ -55,58 +51,74 @@ func main() {
 			importLocal(ctx, localDirs["."], "graphql_ts", "Dockerfile.graphql_ts")
 			// importImage(ctx, "graphql_ts", "localhost:5555/dagger:graphql_ts")
 
-			input = fmt.Sprintf(`{
-					alpine{
-						build(
-							pkgs: ["curl","jq"],
-						)
-					}
-				}`)
-			fmt.Printf("input: %+v\n", input)
-			alpine, err := dagger.Do(ctx, input)
+			cl, err := dagger.Client(ctx)
+			if err != nil {
+				panic(err)
+			}
+			alpine := struct {
+				Alpine struct {
+					Build dagger.FS
+				}
+			}{}
+			err = cl.MakeRequest(ctx,
+				&graphql.Request{
+					Query: `{
+						alpine{
+							build(
+								pkgs: ["curl","jq"],
+							)
+						}
+					}`,
+				},
+				&graphql.Response{Data: &alpine},
+			)
 			if err != nil {
 				return nil, err
 			}
+
 			fmt.Printf("output: %+v\n\n", alpine)
 
-			/*
-			 */
-			input = fmt.Sprintf(`{
-					graphql_ts{
-						echo(in:"foo",fs:%q) {
-							fs
-							out
-						}
+			graphql_ts := struct {
+				GraphQLTS struct {
+					Echo struct {
+						FS  dagger.FS
+						Out string
 					}
-				}`, alpine.Map("alpine").FS("build"))
-			fmt.Printf("input: %+v\n", input)
-			output, err = dagger.Do(ctx, input)
+				} `json:"graphql_ts"`
+			}{}
+			err = cl.MakeRequest(ctx,
+				&graphql.Request{
+					Query: `
+						query Build($fs: FS!) {
+						graphql_ts {
+							echo(in: "foo", fs: $fs) {
+								fs
+								out
+							}
+						}
+					}`,
+					Variables: map[string]any{
+						"fs": alpine.Alpine.Build,
+					},
+				},
+				&graphql.Response{Data: &graphql_ts},
+			)
 			if err != nil {
 				return nil, err
 			}
-			fmt.Printf("output: %+v\n\n", output)
 
-			fmt.Printf("a string: %s\n", output.Map("graphql_ts").Map("echo").String("out"))
+			fmt.Printf("output: %+v\n\n", graphql_ts)
 
-			// input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("alpine").FS("build"))
-			/*
-				input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
-				fmt.Printf("input: %+v\n", input)
-				output, err = dagger.Do(ctx, input)
-				if err != nil {
-					return nil, err
-				}
-				fmt.Printf("output: %+v\n\n", output)
-			*/
+			fmt.Printf("a string: %s\n", graphql_ts.GraphQLTS.Echo.Out)
 
-			// if err := engine.Shell(ctx, output.Map("graphql_ts").Map("echo").FS("fs")); err != nil {
-			if err := engine.Shell(ctx, alpine.Map("alpine").FS("build")); err != nil {
+			// if err := engine.Shell(ctx, graphql_ts.GraphQLTS.Echo.FS); err != nil {
+			// 	return nil, err
+			// }
+
+			if err := engine.Shell(ctx, alpine.Alpine.Build); err != nil {
 				return nil, err
 			}
 
-			// fs := output.Map("graphql_ts").Map("echo").FS("fs")
-			// fs := localDirs["input"]
-			// return &fs, nil
 			return nil, nil
 		})
 	if err != nil {
