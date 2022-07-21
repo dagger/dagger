@@ -18,3 +18,4 @@ updates:
       interval: "daily"
     labels:
       - "kind/dependencies"
+      - "area/website"
