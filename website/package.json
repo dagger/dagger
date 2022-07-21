@@ -16,8 +16,8 @@
     "ci": "start-server-and-test 'yarn start-server' '3000|3001' 'yarn run cypress run'"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.0.0-beta.22",
-    "@docusaurus/preset-classic": "^2.0.0-beta.22",
+    "@docusaurus/core": "^2.0.0-rc.1",
+    "@docusaurus/preset-classic": "^2.0.0-rc.1",
     "@mdx-js/react": "^1.6.22",
     "@svgr/webpack": "^6.2.1",
     "amplitude-js": "^8.18.5",
