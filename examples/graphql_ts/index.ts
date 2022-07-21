@@ -1,13 +1,18 @@
 import { DaggerServer } from "./server";
+import * as fs from "fs";
 
 const resolvers = {
   Query: {
     echo: async (
       parent: any,
-      args: { in: string },
+      args: { in: string; fs: string },
       context: any,
       info: any
     ) => {
+      fs.readdirSync("/mnt/fs").forEach((file) => {
+        console.log("look: ", file);
+      });
+
       const input = `{
         alpine {
           build(pkgs:["jq"])

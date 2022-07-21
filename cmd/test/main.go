@@ -54,13 +54,29 @@ func main() {
 			importTS(ctx, localDirs["."])
 
 			input = fmt.Sprintf(`{
-				graphql_ts{
-					echo(in:"foo") {
-						fs
-						out
+					alpine{
+						build(
+							pkgs: ["curl","jq"],
+						)
 					}
-				}
-			}`)
+				}`)
+			fmt.Printf("input: %+v\n", input)
+			output, err = dagger.Do(ctx, input)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("output: %+v\n\n", output)
+
+			/*
+			 */
+			input = fmt.Sprintf(`{
+					graphql_ts{
+						echo(in:"foo",fs:%s) {
+							fs
+							out
+						}
+					}
+				}`, output.Map("alpine").FS("build"))
 			fmt.Printf("input: %+v\n", input)
 			output, err = dagger.Do(ctx, input)
 			if err != nil {
@@ -69,22 +85,6 @@ func main() {
 			fmt.Printf("output: %+v\n\n", output)
 
 			fmt.Printf("a string: %s\n", output.Map("graphql_ts").Map("echo").String("out"))
-
-			/*
-				input = fmt.Sprintf(`{
-					alpine{
-						build(
-							pkgs: ["curl","jq"],
-						)
-					}
-				}`)
-				fmt.Printf("input: %+v\n", input)
-				output, err = dagger.Do(ctx, input)
-				if err != nil {
-					return nil, err
-				}
-				fmt.Printf("output: %+v\n\n", output)
-			*/
 
 			// input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("alpine").FS("build"))
 			/*
@@ -98,6 +98,7 @@ func main() {
 			*/
 
 			if err := engine.Shell(ctx, output.Map("graphql_ts").Map("echo").FS("fs")); err != nil {
+				// if err := engine.Shell(ctx, output.Map("alpine").FS("build")); err != nil {
 				panic(err)
 			}
 
