@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/api"
 	"github.com/dagger/cloak/sdk/go/dagger"
@@ -71,13 +72,33 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 			ctx = withGatewayClient(ctx, gw)
 			ctx = withPlatform(ctx, platform)
 
+			cl, err := dagger.Client(ctx)
+			if err != nil {
+				return nil, err
+			}
+
 			localDirs := make(map[string]dagger.FS)
 			for localID := range solveOpts.LocalDirs {
-				clientdirRes, err := dagger.Do(ctx, fmt.Sprintf(`mutation{clientdir(id:%q)}`, localID))
+				res := struct {
+					ClientDir dagger.FS
+				}{}
+				err = cl.MakeRequest(ctx,
+					&graphql.Request{
+						Query: `
+							mutation ClientDir($id: String!) {
+								clientdir(id: $id)
+							}`,
+						Variables: map[string]any{
+							"id": localID,
+						},
+					},
+					&graphql.Response{Data: &res},
+				)
 				if err != nil {
 					return nil, err
 				}
-				localDirs[localID] = dagger.FS(clientdirRes.FS("clientdir"))
+
+				localDirs[localID] = dagger.FS(res.ClientDir)
 			}
 
 			outputFs, err := fn(ctx, localDirs)
@@ -87,12 +108,27 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 
 			var result *bkgw.Result
 			if outputFs != nil {
-				evalResult, err := dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`, outputFs))
+				data := struct {
+					Evaluate dagger.FS
+				}{}
+				err = cl.MakeRequest(ctx,
+					&graphql.Request{
+						Query: `
+							mutation Evaluate($fs: FS!) {
+								evaluate(fs: $fs)
+							}`,
+						Variables: map[string]any{
+							"fs": outputFs,
+						},
+					},
+					&graphql.Response{Data: &data},
+				)
 				if err != nil {
 					return nil, err
 				}
+
 				var fs api.FS
-				if err := fs.UnmarshalText([]byte(evalResult.FS("evaluate"))); err != nil {
+				if err := fs.UnmarshalText([]byte(data.Evaluate)); err != nil {
 					return nil, err
 				}
 				res, err := gw.Solve(ctx, bkgw.SolveRequest{Evaluate: true, Definition: fs.PB})
