@@ -1,4 +1,4 @@
-package main
+package dagger
 
 import (
 	"context"
@@ -7,40 +7,27 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/executor"
-	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
-	ctx = dagger.WithUnixSocketAPIClient(ctx, "/dagger.sock")
+	ctx = WithUnixSocketAPIClient(ctx, "/dagger.sock")
 	ctx = graphql.StartOperationTrace(ctx)
 
-	start := graphql.Now()
-
-	// input, err := os.Open("inputs.json")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// var params *graphql.RawParams
-	// dec := json.NewDecoder(input)
-	// dec.UseNumber()
-	// if err := dec.Decode(&params); err != nil {
-	// 	panic(err)
-	// 	// w.WriteHeader(http.StatusBadRequest)
-	// 	// writeJsonErrorf(w, "json body could not be decoded: "+err.Error())
-	// 	// return
-	// }
-	// params.Headers = r.Header
-
-	query, err := os.ReadFile("/inputs/dagger.json")
+	input, err := os.Open("/inputs/dagger.json")
 	if err != nil {
 		panic(err)
 	}
 
-	params := &graphql.RawParams{}
-	if err := json.Unmarshal(query, params); err != nil {
+	var params *graphql.RawParams
+	dec := json.NewDecoder(input)
+	dec.UseNumber()
+	start := graphql.Now()
+	if err := dec.Decode(&params); err != nil {
 		panic(err)
+		// 	// w.WriteHeader(http.StatusBadRequest)
+		// 	// writeJsonErrorf(w, "json body could not be decoded: "+err.Error())
+		// 	// return
 	}
-
 	params.ReadTime = graphql.TraceTiming{
 		Start: start,
 		End:   graphql.Now(),

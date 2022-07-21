@@ -87,7 +87,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 
 			var result *bkgw.Result
 			if outputFs != nil {
-				evalResult, err := dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%s)}`, outputFs))
+				evalResult, err := dagger.Do(ctx, fmt.Sprintf(`mutation{evaluate(fs:%q)}`, outputFs))
 				if err != nil {
 					return nil, err
 				}
