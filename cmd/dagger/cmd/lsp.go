@@ -6,13 +6,13 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 
-	// Required to use LSP logger and make it works
+	// Required to use LSP logger
 	_ "github.com/tliron/kutil/logging/simple"
 )
 
 var lspCmd = &cobra.Command{
 	Use:    "lsp",
-	Short:  "Run Dagger LSP Server",
+	Short:  "Run Dagger CUE Language Server",
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	PreRun: func(cmd *cobra.Command, args []string) {
@@ -27,9 +27,9 @@ var lspCmd = &cobra.Command{
 
 		s := server.New(server.PROD)
 
-		lg.Info().Msg("Launch language server")
+		lg.Info().Msg("Running Dagger CUE Language Server")
 		if err := s.Run(); err != nil {
-			lg.Fatal().Err(err).Msg("could not launch Dagger LSP server")
+			lg.Fatal().Err(err).Msg("could not start Dagger Language Server")
 		}
 	},
 }
