@@ -1,5 +1,3 @@
-//go:generate go run github.com/Khan/genqlient ./gen/core/genqlient.yaml
-
 package main
 
 import (
@@ -9,17 +7,19 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
-func Build(ctx context.Context, input dagger.Map) interface{} {
+type Alpine struct{}
+
+func (r *Alpine) Build(ctx context.Context, pkgs []string) (dagger.FS, error) {
 	// start with Alpine base
 	output, err := core.Image(ctx, dagger.Client(ctx), "alpine:3.15")
 	if err != nil {
-		panic(err)
+		return dagger.FS(""), err
 	}
 
 	fs := output.Core.Image.Fs
 
 	// install each of the requested packages
-	for _, pkg := range input.StringList("pkgs") {
+	for _, pkg := range pkgs {
 		output, err := core.Exec(ctx, dagger.Client(ctx), fs, []string{"apk", "add", "-U", "--no-cache", pkg})
 		if err != nil {
 			panic(err)
@@ -27,5 +27,5 @@ func Build(ctx context.Context, input dagger.Map) interface{} {
 		fs = output.Core.Exec.Fs
 	}
 
-	return fs
+	return fs, nil
 }

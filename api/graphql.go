@@ -305,7 +305,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		imgref := fmt.Sprintf("localhost:5555/dagger:%s", pkgName)
 
 		// TODO: remove silly if statement once all actions move to the new graphql server model
-		if pkgName == "graphql_ts" {
+		if pkgName == "graphql_ts" || pkgName == "alpine" {
 			// the action doesn't know we stitch its queries under the package name, patch the query we send to here
 			queryOp := p.Info.Operation.(*ast.OperationDefinition)
 			packageSelect := queryOp.SelectionSet.Selections[0].(*ast.Field)

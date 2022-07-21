@@ -1,3 +1,10 @@
+scalar FS
+
+# FIXME: Code generation breaks without at least one type defined
+type Dummy {
+  foo: String!
+}
+
 type Query {
   build(pkgs: [String!]): FS!
 }
