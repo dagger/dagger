@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
@@ -188,6 +189,18 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			llb.AddMount("/inputs", input, llb.Readonly),
 			llb.ReadonlyRootFS(),
 		)
+
+		// TODO: /mnt should maybe be configurable?
+		for path, fs := range collectFSPaths(p.Args, "/mnt", make(map[string]FS)) {
+			fsState, err := fs.ToState()
+			if err != nil {
+				return nil, err
+			}
+			// TODO: it should be possible for this to be read-write and outputtable by the action; the
+			// only question is how to expose that ability in a non-confusing way, just needs more thought
+			st.AddMount(path, fsState, llb.Readonly)
+		}
+
 		outputMnt := st.AddMount("/outputs", llb.Scratch())
 		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)), llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
 		if err != nil {
@@ -228,6 +241,24 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		}
 		return output, nil
 	}
+}
+
+func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]FS) map[string]FS {
+	switch arg := arg.(type) {
+	case FS:
+		// TODO: make sure there can't be any shenanigans with args named e.g. ../../../foo/bar
+		fsPaths[curPath] = arg
+	case map[string]interface{}:
+		for k, v := range arg {
+			fsPaths = collectFSPaths(v, filepath.Join(curPath, k), fsPaths)
+		}
+	case []interface{}:
+		for i, v := range arg {
+			// TODO: path format technically works but weird as hell, gotta be a better way
+			fsPaths = collectFSPaths(v, fmt.Sprintf("%s/%d", curPath, i), fsPaths)
+		}
+	}
+	return fsPaths
 }
 
 type daggerPackage struct {
@@ -346,7 +377,6 @@ type Package {
 
 type Mutation {
 	import(name: String!, fs: FS!): Package
-	# evaluate(fs: FS!): FS
 	readfile(fs: FS!, path: String!): String
 	clientdir(id: String!): FS
 }
@@ -419,12 +449,8 @@ type Mutation {
 								if err != nil {
 									return nil, err
 								}
-								fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
-								if err != nil {
-									return nil, err
-								}
 								return map[string]interface{}{
-									"fs": string(fsbytes),
+									"fs": FS{PB: llbdef.ToPB()},
 								}, nil
 							},
 						},
@@ -433,13 +459,9 @@ type Mutation {
 								if !shouldEval(p.Context) {
 									return lazyResolve(p)
 								}
-								rawFS, ok := p.Args["fs"].(string)
+								fs, ok := p.Args["fs"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
-								}
-								var fs FS
-								if err := fs.UnmarshalText([]byte(rawFS)); err != nil {
-									return nil, err
 								}
 								rawArgs, ok := p.Args["args"].([]interface{})
 								if !ok {
@@ -465,12 +487,8 @@ type Mutation {
 								if err != nil {
 									return nil, err
 								}
-								bytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
-								if err != nil {
-									return nil, err
-								}
 								return map[string]interface{}{
-									"fs": string(bytes),
+									"fs": FS{PB: llbdef.ToPB()},
 								}, nil
 							},
 						},
@@ -480,13 +498,9 @@ type Mutation {
 									return lazyResolve(p)
 								}
 
-								rawFS, ok := p.Args["context"].(string)
+								fs, ok := p.Args["context"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid context")
-								}
-								var fs FS
-								if err := fs.UnmarshalText([]byte(rawFS)); err != nil {
-									return nil, err
 								}
 
 								var dockerfileName string
@@ -538,12 +552,7 @@ type Mutation {
 								if err != nil {
 									return nil, err
 								}
-								fs = FS{PB: llbdef.ToPB()}
-								fsbytes, err := fs.MarshalText()
-								if err != nil {
-									return nil, err
-								}
-								return string(fsbytes), nil
+								return FS{PB: llbdef.ToPB()}, nil
 							},
 						},
 					},
@@ -664,13 +673,9 @@ type Mutation {
 									return nil, fmt.Errorf("invalid package name")
 								}
 
-								fsstr, ok := p.Args["fs"].(string)
+								fs, ok := p.Args["fs"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
-								}
-								var fs FS
-								if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
-									return nil, err
 								}
 								fs, err := fs.Evaluate(p.Context)
 								if err != nil {
@@ -712,26 +717,18 @@ type Mutation {
 									return nil, err
 								}
 
-								fsbytes, err := fs.MarshalText()
-								if err != nil {
-									return nil, err
-								}
 								// TODO: also return schema probably
 								return map[string]interface{}{
 									"name": pkgName,
-									"fs":   string(fsbytes),
+									"fs":   fs,
 								}, nil
 							},
 						},
 						"evaluate": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								fsstr, ok := p.Args["fs"].(string)
+								fs, ok := p.Args["fs"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
-								}
-								var fs FS
-								if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
-									return nil, err
 								}
 								fs, err := fs.Evaluate(p.Context)
 								if err != nil {
@@ -748,22 +745,14 @@ type Mutation {
 								if err != nil {
 									return nil, err
 								}
-								fsbytes, err := fs.MarshalText()
-								if err != nil {
-									return nil, err
-								}
-								return string(fsbytes), nil
+								return fs, nil
 							},
 						},
 						"readfile": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								fsstr, ok := p.Args["fs"].(string)
+								fs, ok := p.Args["fs"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
-								}
-								var fs FS
-								if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
-									return nil, err
 								}
 								path, ok := p.Args["path"].(string)
 								if !ok {
@@ -820,28 +809,48 @@ type Mutation {
 								if err != nil {
 									return nil, err
 								}
-								fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
-								if err != nil {
-									return nil, err
-								}
-								return string(fsbytes), nil
+								return FS{PB: llbdef.ToPB()}, nil
 							},
 						},
 					},
 				},
 				"FS": &tools.ScalarResolver{
 					Serialize: func(value interface{}) interface{} {
-						return value
+						switch v := value.(type) {
+						case FS:
+							fsbytes, err := v.MarshalText()
+							if err != nil {
+								panic(err)
+							}
+							return string(fsbytes)
+						case string:
+							return v
+						default:
+							panic(fmt.Sprintf("unexpected fs type %T", v))
+						}
 					},
 					ParseValue: func(value interface{}) interface{} {
-						return value
+						switch v := value.(type) {
+						case string:
+							var fs FS
+							if err := fs.UnmarshalText([]byte(v)); err != nil {
+								panic(err)
+							}
+							return fs
+						default:
+							panic(fmt.Sprintf("unexpected fs value type %T", v))
+						}
 					},
 					ParseLiteral: func(valueAST ast.Value) interface{} {
 						switch valueAST := valueAST.(type) {
 						case *ast.StringValue:
-							return valueAST.Value
+							var fs FS
+							if err := fs.UnmarshalText([]byte(valueAST.Value)); err != nil {
+								panic(err)
+							}
+							return fs
 						default:
-							panic(fmt.Sprintf("unsupported fs type: %T", valueAST))
+							panic(fmt.Sprintf("unexpected fs literal type: %T", valueAST))
 						}
 					},
 				},

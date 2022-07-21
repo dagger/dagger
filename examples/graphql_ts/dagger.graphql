@@ -1,10 +1,10 @@
 scalar FS
 
 type Echo {
-  fs: FS!
   out: String
+  fs: FS!
 }
 
 type Query {
-  echo(in: String!): Echo
+  echo(in: String!, fs: FS!): Echo
 }
