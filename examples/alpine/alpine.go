@@ -22,7 +22,7 @@ func (r *Alpine) Build(ctx context.Context, pkgs []string) (dagger.FS, error) {
 	for _, pkg := range pkgs {
 		output, err := core.Exec(ctx, dagger.Client(ctx), fs, []string{"apk", "add", "-U", "--no-cache", pkg})
 		if err != nil {
-			panic(err)
+			return dagger.FS(""), err
 		}
 		fs = output.Core.Exec.Fs
 	}
