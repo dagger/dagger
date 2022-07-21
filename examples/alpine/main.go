@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/dagger/cloak/examples/alpine/gen/alpine/generated"
+	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 type Resolver struct{}
@@ -15,5 +16,5 @@ func (r *Resolver) Query() generated.QueryResolver { return &Alpine{} }
 
 func main() {
 	schema := generated.NewExecutableSchema(generated.Config{Resolvers: &Resolver{}})
-	Serve(context.Background(), schema)
+	dagger.Serve(context.Background(), schema)
 }

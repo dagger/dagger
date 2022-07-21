@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
@@ -48,11 +49,11 @@ func main() {
 				fmt.Printf("schema: %s\n", output)
 			*/
 
-			// importAlpineFromImage(ctx)
-			importAlpine(ctx, localDirs["."])
+			importLocal(ctx, localDirs["."], "alpine", "Dockerfile.alpine")
+			// importImage(ctx, "alpine", "localhost:5555/dagger:alpine")
 
-			// importTSFromImage(ctx)
-			importTS(ctx, localDirs["."])
+			importLocal(ctx, localDirs["."], "graphql_ts", "Dockerfile.graphql_ts")
+			// importImage(ctx, "graphql_ts", "localhost:5555/dagger:graphql_ts")
 
 			input = fmt.Sprintf(`{
 					alpine{
@@ -72,7 +73,7 @@ func main() {
 			 */
 			input = fmt.Sprintf(`{
 					graphql_ts{
-						echo(in:"foo",fs:%s) {
+						echo(in:"foo",fs:%q) {
 							fs
 							out
 						}
@@ -114,80 +115,109 @@ func main() {
 	}
 }
 
-func importAlpine(ctx context.Context, cwd dagger.FS) {
-	input := fmt.Sprintf(`{
-		core{
-			dockerfile(
-				context: %s,
-				dockerfileName: "Dockerfile.alpine",
-			)
-		}
-	}`, cwd)
-	output, err := dagger.Do(ctx, input)
+func importLocal(ctx context.Context, cwd dagger.FS, name string, dockerfile string) {
+	cl, err := dagger.Client(ctx)
 	if err != nil {
 		panic(err)
 	}
-	_, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"alpine",fs:%s){name}}`,
-		output.Map("core").FS("dockerfile")))
+	data := struct {
+		Core struct {
+			Dockerfile dagger.FS
+		}
+	}{}
+	resp := &graphql.Response{Data: &data}
+	err = cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query Dockerfile($context: FS!, $dockerfile: String!) {
+				core{
+					dockerfile(
+						context: $context,
+						dockerfileName: $dockerfile,
+					)
+				}
+			}`,
+			Variables: map[string]any{
+				"context":    cwd,
+				"dockerfile": dockerfile,
+			},
+		},
+		resp,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	err = cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			mutation Import($name: String!, $fs: FS!) {
+				import(name: $name, fs: $fs) {
+						name
+				}
+			}`,
+			Variables: map[string]any{
+				"name": name,
+				"fs":   data.Core.Dockerfile,
+			},
+		},
+		&graphql.Response{},
+	)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func importAlpineFromImage(ctx context.Context) {
-	input := `{
-		core{
-			image(ref:"localhost:5555/dagger:alpine") {
-				fs
+func importImage(ctx context.Context, name string, ref string) {
+	cl, err := dagger.Client(ctx)
+	if err != nil {
+		panic(err)
+	}
+	data := struct {
+		Core struct {
+			Image struct {
+				FS dagger.FS
 			}
 		}
-	}`
-	output, err := dagger.Do(ctx, input)
+	}{}
+	resp := &graphql.Response{Data: &data}
+	err = cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query Image($ref: String!) {
+				core{
+					image(ref: $ref) {
+						fs
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"ref": ref,
+			},
+		},
+		resp,
+	)
 	if err != nil {
 		panic(err)
 	}
-	_, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"alpine",fs:%s){name}}`,
-		output.Map("core").Map("image").FS("fs")))
-	if err != nil {
-		panic(err)
-	}
-}
 
-func importTS(ctx context.Context, cwd dagger.FS) {
-	input := fmt.Sprintf(`{
-		core{
-			dockerfile(
-				context: %s,
-				dockerfileName: "Dockerfile.graphql_ts",
-			)
-		}
-	}`, cwd)
-	output, err := dagger.Do(ctx, input)
+	err = cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			mutation Import($name: String!, $fs: FS!) {
+				import(name: $name, fs: $fs) {
+						name
+				}
+			}`,
+			Variables: map[string]any{
+				"name": name,
+				"fs":   data.Core.Image.FS,
+			},
+		},
+		&graphql.Response{},
+	)
 	if err != nil {
 		panic(err)
 	}
-	output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"graphql_ts",fs:%s){fs}}`,
-		output.Map("core").FS("dockerfile")))
-	if err != nil {
-		panic(err)
-	}
-}
 
-func importTSFromImage(ctx context.Context) {
-	input := `{
-		core{
-			image(ref:"localhost:5555/dagger:graphql_ts") {
-				fs
-			}
-		}
-	}`
-	output, err := dagger.Do(ctx, input)
-	if err != nil {
-		panic(err)
-	}
-	_, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"graphql_ts",fs:%s){name}}`,
-		output.Map("core").Map("image").FS("fs")))
-	if err != nil {
-		panic(err)
-	}
 }
