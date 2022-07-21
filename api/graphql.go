@@ -23,6 +23,14 @@ const (
 	daggerSockName = "dagger-sock"
 )
 
+// Mirrors handler.RequestOptions, but includes omitempty for better compatibility
+// with other servers like apollo (which don't seem to like "operationName": "").
+type GraphQLRequest struct {
+	Query         string                 `json:"query,omitempty"`
+	Variables     map[string]interface{} `json:"variables,omitempty"`
+	OperationName string                 `json:"operationName,omitempty"`
+}
+
 // FS is either llb representing the filesystem or a graphql query for obtaining that llb
 // This is opaque to clients; to them FS is a scalar.
 type FS struct {
@@ -304,111 +312,73 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 
 		imgref := fmt.Sprintf("localhost:5555/dagger:%s", pkgName)
 
-		// TODO: remove silly if statement once all actions move to the new graphql server model
-		if pkgName == "graphql_ts" || pkgName == "alpine" {
-			// the action doesn't know we stitch its queries under the package name, patch the query we send to here
-			queryOp := p.Info.Operation.(*ast.OperationDefinition)
-			packageSelect := queryOp.SelectionSet.Selections[0].(*ast.Field)
-			queryOp.SelectionSet.Selections = packageSelect.SelectionSet.Selections
-			query := printer.Print(queryOp).(string)
+		// the action doesn't know we stitch its queries under the package name, patch the query we send to here
+		queryOp := p.Info.Operation.(*ast.OperationDefinition)
+		packageSelect := queryOp.SelectionSet.Selections[0].(*ast.Field)
+		queryOp.SelectionSet.Selections = packageSelect.SelectionSet.Selections
 
-			input := llb.Scratch().File(llb.Mkfile("/dagger.graphql", 0644, []byte(query)))
-			st := llb.Image(imgref).Run(
-				llb.Args([]string{"/entrypoint"}),
-				llb.AddSSHSocket(
-					llb.SSHID(daggerSockName),
-					llb.SSHSocketTarget("/dagger.sock"),
-				),
-				llb.AddMount("/inputs", input, llb.Readonly),
-				llb.ReadonlyRootFS(),
-			)
-			outputMnt := st.AddMount("/outputs", llb.Scratch())
-			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)), llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
-			if err != nil {
-				return nil, err
-			}
-			gw, err := getGatewayClient(p)
-			if err != nil {
-				return nil, err
-			}
-			res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: outputDef.ToPB(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			ref, err := res.SingleRef()
-			if err != nil {
-				return nil, err
-			}
-			outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
-				Filename: "/dagger.json",
-			})
-			if err != nil {
-				return nil, err
-			}
-			fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
-			var output interface{}
-			if err := json.Unmarshal(outputBytes, &output); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
-			}
-			for _, parentField := range append([]any{"data"}, p.Info.Path.AsArray()[1:]...) { // skip first field, which is the package name
-				outputMap, ok := output.(map[string]interface{})
-				if !ok {
-					return nil, fmt.Errorf("output is not a map: %+v", output)
-				}
-				output = outputMap[parentField.(string)]
-			}
-			return output, nil
-		} else {
-			inputBytes, err := json.Marshal(p.Args)
-			if err != nil {
-				return nil, err
-			}
-			input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
-			st := llb.Image(imgref).Run(
-				llb.Args([]string{"/entrypoint", "-a", actionName}),
-				llb.AddSSHSocket(
-					llb.SSHID(daggerSockName),
-					llb.SSHSocketTarget("/dagger.sock"),
-				),
-				llb.AddMount("/inputs", input, llb.Readonly),
-				llb.ReadonlyRootFS(),
-				llb.AddEnv("DAGGER_ACTION", actionName),
-			)
-			outputMnt := st.AddMount("/outputs", llb.Scratch())
-			outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)), llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
-			if err != nil {
-				return nil, err
-			}
-			gw, err := getGatewayClient(p)
-			if err != nil {
-				return nil, err
-			}
-			res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: outputDef.ToPB(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			ref, err := res.SingleRef()
-			if err != nil {
-				return nil, err
-			}
-			outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
-				Filename: "/dagger.json",
-			})
-			if err != nil {
-				return nil, err
-			}
-			var output interface{}
-			if err := json.Unmarshal(outputBytes, &output); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
-			}
-			return output, nil
+		requestOpts := GraphQLRequest{
+			Query:     printer.Print(queryOp).(string),
+			Variables: p.Info.VariableValues,
 		}
+		if queryOp.Name != nil {
+			requestOpts.OperationName = queryOp.Name.Value
+		}
+		inputBytes, err := json.Marshal(requestOpts)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("requesting %s\n", string(inputBytes))
+
+		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
+		st := llb.Image(imgref).Run(
+			llb.Args([]string{"/entrypoint"}),
+			llb.AddSSHSocket(
+				llb.SSHID(daggerSockName),
+				llb.SSHSocketTarget("/dagger.sock"),
+			),
+			llb.AddMount("/inputs", input, llb.Readonly),
+			llb.ReadonlyRootFS(),
+		)
+		outputMnt := st.AddMount("/outputs", llb.Scratch())
+		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(getPlatform(p)), llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
+		if err != nil {
+			return nil, err
+		}
+		gw, err := getGatewayClient(p)
+		if err != nil {
+			return nil, err
+		}
+		res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: outputDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+		outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
+			Filename: "/dagger.json",
+		})
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
+		var output interface{}
+		if err := json.Unmarshal(outputBytes, &output); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+		}
+		for _, parentField := range append([]any{"data"}, p.Info.Path.AsArray()[1:]...) { // skip first field, which is the package name
+			outputMap, ok := output.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("output is not a map: %+v", output)
+			}
+			output = outputMap[parentField.(string)]
+		}
+		return output, nil
 	}
 }
 

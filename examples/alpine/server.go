@@ -31,13 +31,14 @@ func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
 	// }
 	// params.Headers = r.Header
 
-	query, err := os.ReadFile("/inputs/dagger.graphql")
+	query, err := os.ReadFile("/inputs/dagger.json")
 	if err != nil {
 		panic(err)
 	}
 
-	params := &graphql.RawParams{
-		Query: string(query),
+	params := &graphql.RawParams{}
+	if err := json.Unmarshal(query, params); err != nil {
+		panic(err)
 	}
 
 	params.ReadTime = graphql.TraceTiming{
