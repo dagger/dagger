@@ -32,40 +32,32 @@ dagger.#Plan & {
 				kubeconfig: client.commands.kubeconfig.stdout
 			}
 		}
-		upgrade: {
-			repo: helm.#Upgrade & {
-				kubeconfig:    client.commands.kubeconfig.stdout
-				workspace:     client.filesystem."./testdata".read.contents
-				name:          "test-redis-repo"
-				repo:          "https://charts.bitnami.com/bitnami"
-				chart:         "redis"
-				version:       "17.0.1"
-				namespace:     "sandbox"
-				install:       true
-				dryRun:        true
-				cleanupOnFail: true
-				debug:         true
-				force:         true
-				wait:          true
-				flags: ["--skip-crds"]
-				values: ["values.base.yaml", "values.staging.yaml"]
-				set: #"""
-					auth.enabled=false
-					master.disableCommands={}
-					"""#
-			}
-			chart: helm.#Upgrade & {
-				kubeconfig:    client.commands.kubeconfig.stdout
-				name:          "test-redis-chart"
-				chart:         "https://charts.bitnami.com/bitnami/redis-17.0.1.tgz"
-				dryRun:        true
-				cleanupOnFail: true
-				install:       true
-				setStr: #"""
-					master.podAnnotations.n=1
-					master.podLabels.n=2
-					"""#
-			}
+		upgrade: helm.#Upgrade & {
+			kubeconfig:    client.commands.kubeconfig.stdout
+			workspace:     client.filesystem."./testdata".read.contents
+			name:          "redis"
+			repo:          "https://charts.bitnami.com/bitnami"
+			chart:         "redis"
+			version:       "17.0.1"
+			namespace:     "dagger-helm-upgrade-test"
+			atomic:        true
+			install:       true
+			cleanupOnFail: true
+			debug:         true
+			force:         true
+			wait:          true
+			timeout:       "2m"
+			flags: ["--skip-crds", "--description='Dagger Test Run'"]
+			values: ["values.base.yaml", "values.staging.yaml"]
+			set: #"""
+				architecture=standalone
+				auth.enabled=false
+				commonLabels.dagger\.io/set=val
+				"""#
+			setString: #"""
+				master.podAnnotations.n=1
+				master.podLabels.n=2
+				"""#
 		}
 	}
 }

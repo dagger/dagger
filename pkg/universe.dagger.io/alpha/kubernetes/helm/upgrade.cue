@@ -26,7 +26,7 @@ import (
 	// values
 	values: [...string] // list of path to values files
 	set?:               string // set flag values
-	setStr?:            string // set-string flag values
+	setString?:         string // set-string flag values
 
 	// first class flags
 	cleanupOnFail: *false | true
@@ -36,6 +36,7 @@ import (
 	install:       *false | true
 	timeout:       string | *"5m"
 	wait:          *false | true
+	atomic:        *false | true
 
 	username?: string
 	password?: dagger.#Secret
@@ -80,11 +81,12 @@ import (
 					if namespace != _|_ {"--namespace=\(namespace)"},
 					if install {"--install"},
 					if install && namespace != _|_ {"--create-namespace"},
+					if atomic {"--atomic"},
 					if wait {"--wait"},
 					if wait {"--timeout=\(timeout)"},
 					for path in values {"--values=\(path)"},
 					if set != _|_ {"--set=\(strings.Join(strings.Split(set, "\n"), ","))"},
-					if setStr != _|_ {"--set-string=\(strings.Join(strings.Split(setStr, "\n"), ","))"},
+					if setString != _|_ {"--set-string=\(strings.Join(strings.Split(setString, "\n"), ","))"},
 					if debug {"--debug"},
 					if dryRun {"--dry-run"},
 					if force {"--force"},
