@@ -12,57 +12,55 @@ import (
 	// The kubeconfig file content
 	kubeconfig: dagger.#Secret
 
-	// Optionally mount a workspace,
-	// useful to read values files
-	// or a local chart
+	// Optionally mount a workspace, useful to read valuesfiles or a local chart
 	workspace?: dagger.#FS
 
 	// base settings
 
 	// The name of the release
-	name:       string
+	name: string
 	// The chart to use
-	chart:      string
+	chart: string
 	// Chart repository url where to locate the requested chart
-	repo?:      string
+	repo?: string
 	// Specify a version constraint for the chart version to use.
 	// This constraint can be a specific tag (e.g. 1.1.1) or it may reference a
 	// Valid range (e.g. ^2.0.0). If this is not specified, the latest version is used
-	version?:   string
+	version?: string
 	// The kubernetes namespace
-	namespace?: string 
+	namespace?: string
 
 	// values
 
 	// Specify values in a YAML file or a URL (can specify multiple)
 	values: [...string]
-	// Set values (can specify multiple or separate values with commas or newline)
-	set?:               string
-	// set STRING values (can specify multiple or separate values with commas or newline)
-	setString?:         string
+	// Set values (can specify multiple or separate values with commas or newlines)
+	set?: string
+	// set STRING values (can specify multiple or separate values with commas or newlines)
+	setString?: string
 
 	// first class flags
 
 	// Enable verbose output
-	debug:         *false | true
+	debug: *false | true
 
 	// If set, upgrade process rolls back changes made in case of failed upgrade.
 	// The --wait flag will be set automatically if --atomic is used
-	atomic:        *false | true
+	atomic: *false | true
 	// allow deletion of new resources created in this upgrade when upgrade fails
 	cleanupOnFail: *false | true
 	// Simulate an upgrade
-	dryRun:        *false | true
+	dryRun: *false | true
 	// Force resource updates through a replacement strategy
-	force:         *false | true
+	force: *false | true
 	// If a release by this name doesn't already exist, run an install
-	install:       *false | true
+	install: *false | true
 	// Time to wait for any individual Kubernetes operation (like Jobs for hooks) (default 5m0s)
-	timeout?:      string
-	// if set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment, 
-	// StatefulSet, or ReplicaSet are in a ready state before marking the release as successful. 
+	timeout?: string
+	// if set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment,
+	// StatefulSet, or ReplicaSet are in a ready state before marking the release as successful.
 	// It will wait for as long as --timeout
-	wait:          *false | true
+	wait: *false | true
 
 	// Chart repository username where to locate the requested chart
 	username?: string
