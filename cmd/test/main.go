@@ -62,11 +62,11 @@ func main() {
 					}
 				}`)
 			fmt.Printf("input: %+v\n", input)
-			output, err = dagger.Do(ctx, input)
+			alpine, err := dagger.Do(ctx, input)
 			if err != nil {
 				return nil, err
 			}
-			fmt.Printf("output: %+v\n\n", output)
+			fmt.Printf("output: %+v\n\n", alpine)
 
 			/*
 			 */
@@ -77,7 +77,7 @@ func main() {
 							out
 						}
 					}
-				}`, output.Map("alpine").FS("build"))
+				}`, alpine.Map("alpine").FS("build"))
 			fmt.Printf("input: %+v\n", input)
 			output, err = dagger.Do(ctx, input)
 			if err != nil {
@@ -98,8 +98,8 @@ func main() {
 				fmt.Printf("output: %+v\n\n", output)
 			*/
 
-			if err := engine.Shell(ctx, output.Map("graphql_ts").Map("echo").FS("fs")); err != nil {
-				// if err := engine.Shell(ctx, output.Map("alpine").FS("build")); err != nil {
+			// if err := engine.Shell(ctx, output.Map("graphql_ts").Map("echo").FS("fs")); err != nil {
+			if err := engine.Shell(ctx, alpine.Map("alpine").FS("build")); err != nil {
 				return nil, err
 			}
 
