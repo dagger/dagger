@@ -34,7 +34,7 @@ import (
 	dryRun:        *false | true
 	force:         *false | true
 	install:       *false | true
-	timeout:       string | *"5m"
+	timeout?:      string
 	wait:          *false | true
 	atomic:        *false | true
 
@@ -83,7 +83,7 @@ import (
 					if install && namespace != _|_ {"--create-namespace"},
 					if atomic {"--atomic"},
 					if wait {"--wait"},
-					if wait {"--timeout=\(timeout)"},
+					if timeout != _|_ {"--timeout=\(timeout)"},
 					for path in values {"--values=\(path)"},
 					if set != _|_ {"--set=\(strings.Join(strings.Split(set, "\n"), ","))"},
 					if setString != _|_ {"--set-string=\(strings.Join(strings.Split(setString, "\n"), ","))"},
