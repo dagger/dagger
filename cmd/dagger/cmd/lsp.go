@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 
+	// Required to use LSP logger and make it works
 	_ "github.com/tliron/kutil/logging/simple"
 )
 
