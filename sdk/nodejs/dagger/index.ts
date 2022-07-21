@@ -8,7 +8,6 @@ class Dagger {
 
   constructor() {
     this.client = axios.create({
-      // baseURL: "http://localhost",
       socketPath: "/dagger.sock",
       timeout: 15e3,
     });
