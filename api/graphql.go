@@ -14,6 +14,7 @@ import (
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/printer"
 	"github.com/moby/buildkit/client/llb"
+	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -625,6 +626,7 @@ type Core {
 	image(ref: String!): CoreImage
 	# exec(input: CoreExecInput!): CoreExecOutput
 	exec(fs: FS!, args: [String]!): CoreExec
+	dockerfile(context: FS!, dockerfileName: String): FS!
 }
 
 type Query {
@@ -763,6 +765,78 @@ type Mutation {
 							return map[string]interface{}{
 								"fs": string(bytes),
 							}, nil
+						},
+					},
+					"dockerfile": &tools.FieldResolve{
+						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+							if !shouldEval(p.Context) {
+								return lazyResolve(p)
+							}
+
+							rawFS, ok := p.Args["context"].(string)
+							if !ok {
+								return nil, fmt.Errorf("invalid context")
+							}
+							var fs FS
+							if err := fs.UnmarshalText([]byte(rawFS)); err != nil {
+								return nil, err
+							}
+
+							var dockerfileName string
+							rawDockerfileName, ok := p.Args["dockerfileName"]
+							if ok {
+								dockerfileName, ok = rawDockerfileName.(string)
+								if !ok {
+									return nil, fmt.Errorf("invalid dockerfile name: %+v", rawDockerfileName)
+								}
+							}
+
+							fs, err := fs.Evaluate(p.Context)
+							if err != nil {
+								return nil, err
+							}
+							gw, err := getGatewayClient(p)
+							if err != nil {
+								return nil, err
+							}
+
+							opts := map[string]string{
+								"platform": platforms.Format(getPlatform(p)),
+							}
+							inputs := map[string]*pb.Definition{
+								dockerfilebuilder.DefaultLocalNameContext:    fs.PB,
+								dockerfilebuilder.DefaultLocalNameDockerfile: fs.PB,
+							}
+							if dockerfileName != "" {
+								opts["filename"] = dockerfileName
+							}
+							res, err := gw.Solve(p.Context, bkgw.SolveRequest{
+								Frontend:       "dockerfile.v0",
+								FrontendOpt:    opts,
+								FrontendInputs: inputs,
+							})
+							if err != nil {
+								return nil, err
+							}
+
+							bkref, err := res.SingleRef()
+							if err != nil {
+								return nil, err
+							}
+							st, err := bkref.ToState()
+							if err != nil {
+								return nil, err
+							}
+							llbdef, err := st.Marshal(p.Context, llb.Platform(getPlatform(p)))
+							if err != nil {
+								return nil, err
+							}
+							fs = FS{PB: llbdef.ToPB()}
+							fsbytes, err := fs.MarshalText()
+							if err != nil {
+								return nil, err
+							}
+							return string(fsbytes), nil
 						},
 					},
 				},
