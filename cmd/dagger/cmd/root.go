@@ -52,6 +52,7 @@ func init() {
 		project.Cmd,
 		loginCmd,
 		logoutCmd,
+		lspCmd,
 	)
 
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
