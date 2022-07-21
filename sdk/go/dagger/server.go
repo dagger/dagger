@@ -3,10 +3,12 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/executor"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
@@ -15,7 +17,7 @@ func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
 
 	input, err := os.Open("/inputs/dagger.json")
 	if err != nil {
-		panic(err)
+		writeErrorf("unable to open request file: %v", err)
 	}
 
 	var params *graphql.RawParams
@@ -23,10 +25,8 @@ func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
 	dec.UseNumber()
 	start := graphql.Now()
 	if err := dec.Decode(&params); err != nil {
-		panic(err)
-		// 	// w.WriteHeader(http.StatusBadRequest)
-		// 	// writeJsonErrorf(w, "json body could not be decoded: "+err.Error())
-		// 	// return
+		writeErrorf("json body could not be decoded: %v", err)
+		return
 	}
 	params.ReadTime = graphql.TraceTiming{
 		Start: start,
@@ -36,7 +36,6 @@ func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
 	exec := executor.New(schema)
 	rc, ocErr := exec.CreateOperationContext(ctx, params)
 	if err != nil {
-		// w.WriteHeader(statusFor(err))
 		resp := exec.DispatchError(graphql.WithOperationContext(ctx, rc), ocErr)
 		writeResponse(resp)
 		return
@@ -54,4 +53,8 @@ func writeResponse(response *graphql.Response) {
 	if err := os.WriteFile("/outputs/dagger.json", output, 0644); err != nil {
 		panic(err)
 	}
+}
+
+func writeErrorf(format string, args ...interface{}) {
+	writeResponse(&graphql.Response{Errors: gqlerror.List{{Message: fmt.Sprintf(format, args...)}}})
 }
