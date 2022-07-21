@@ -6,9 +6,7 @@ import (
 )
 
 dagger.#Plan & {
-	client: {
-		env: DOPPLER_TOKEN: dagger.#Secret
-	}
+	client: env: DOPPLER_TOKEN: dagger.#Secret
 
 	actions: test: doppler.#FetchSecrets & {
 		project:  "cicd-test"

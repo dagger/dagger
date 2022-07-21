@@ -24,7 +24,7 @@ import (
 	apiToken: dagger.#Secret
 
 	// Steps
-	imageName: string | *"dopplerhq/cli:latest"
+	imageName: string | *"dopplerhq/cli:3"
 
 	_pullImage: docker.#Pull & {
 		source: imageName
