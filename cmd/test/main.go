@@ -40,22 +40,6 @@ func main() {
 			var err error
 
 			/*
-					_, err = dagger.Do(ctx, `mutation{import(ref:"helloworld_ts"){name}}`)
-					if err != nil {
-						return err
-					}
-
-				_, err = dagger.Do(ctx, `mutation{import(ref:"alpine"){name}}`)
-				if err != nil {
-					return nil, err
-				}
-				_, err = dagger.Do(ctx, `mutation{import(ref:"graphql_ts"){name}}`)
-				if err != nil {
-					return nil, err
-				}
-			*/
-
-			/*
 				output, err = dagger.Do(ctx, tools.IntrospectionQuery)
 				if err != nil {
 					return err
@@ -63,14 +47,19 @@ func main() {
 				fmt.Printf("schema: %s\n", output)
 			*/
 
+			// importAlpineFromImage(ctx)
+			importAlpine(ctx, localDirs["."])
+
+			// importTSFromImage(ctx)
+			importTS(ctx, localDirs["."])
+
 			input = fmt.Sprintf(`{
-	core{
-		dockerfile(
-			context: %s, 
-			dockerfileName: "Dockerfile.alpine",
-		)
-	}
-}`, localDirs["."])
+				graphql_ts{
+					echo(in:"foo") {
+						fs
+					}
+				}
+			}`)
 			fmt.Printf("input: %+v\n", input)
 			output, err = dagger.Do(ctx, input)
 			if err != nil {
@@ -79,8 +68,23 @@ func main() {
 			fmt.Printf("output: %+v\n\n", output)
 
 			/*
-			 */
-			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("core").FS("dockerfile"))
+				input = fmt.Sprintf(`{
+					alpine{
+						build(
+							pkgs: ["curl","jq"],
+						)
+					}
+				}`)
+				fmt.Printf("input: %+v\n", input)
+				output, err = dagger.Do(ctx, input)
+				if err != nil {
+					return nil, err
+				}
+				fmt.Printf("output: %+v\n\n", output)
+			*/
+
+			// input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("alpine").FS("build"))
+			input = fmt.Sprintf(`mutation{evaluate(fs:%s)}`, output.Map("graphql_ts").Map("echo").FS("fs"))
 			fmt.Printf("input: %+v\n", input)
 			output, err = dagger.Do(ctx, input)
 			if err != nil {
@@ -97,6 +101,84 @@ func main() {
 			// return &fs, nil
 			return nil, nil
 		})
+	if err != nil {
+		panic(err)
+	}
+}
+
+func importAlpine(ctx context.Context, cwd dagger.FS) {
+	input := fmt.Sprintf(`{
+		core{
+			dockerfile(
+				context: %s, 
+				dockerfileName: "Dockerfile.alpine",
+			)
+		}
+	}`, cwd)
+	output, err := dagger.Do(ctx, input)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"alpine",fs:%s){name}}`,
+		output.Map("core").FS("dockerfile")))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func importAlpineFromImage(ctx context.Context) {
+	input := `{
+		core{
+			image(ref:"localhost:5555/dagger:alpine") {
+				fs
+			}
+		}
+	}`
+	output, err := dagger.Do(ctx, input)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"alpine",fs:%s){name}}`,
+		output.Map("core").Map("image").FS("fs")))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func importTS(ctx context.Context, cwd dagger.FS) {
+	input := fmt.Sprintf(`{
+		core{
+			dockerfile(
+				context: %s, 
+				dockerfileName: "Dockerfile.graphql_ts",
+			)
+		}
+	}`, cwd)
+	output, err := dagger.Do(ctx, input)
+	if err != nil {
+		panic(err)
+	}
+	output, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"graphql_ts",fs:%s){fs}}`,
+		output.Map("core").FS("dockerfile")))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func importTSFromImage(ctx context.Context) {
+	input := `{
+		core{
+			image(ref:"localhost:5555/dagger:graphql_ts") {
+				fs
+			}
+		}
+	}`
+	output, err := dagger.Do(ctx, input)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dagger.Do(ctx, fmt.Sprintf(`mutation{import(name:"graphql_ts",fs:%s){name}}`,
+		output.Map("core").Map("image").FS("fs")))
 	if err != nil {
 		panic(err)
 	}
