@@ -9,6 +9,10 @@ import (
 )
 
 #Upgrade: {
+	// The image to use when running the action.
+	// Must contains the helm binary. Defaults to alpine/helm
+	image: *#Image.output | docker.#Image
+
 	// The kubeconfig file content
 	kubeconfig: dagger.#Secret
 
@@ -74,9 +78,8 @@ import (
 	// used to avoid name clashes
 	let releaseName = name
 
-	_base: #Image
-	run:   docker.#Run & {
-		input: _base.output
+	run: docker.#Run & {
+		input: image
 		entrypoint: ["helm"]
 		if workspace != _|_ {
 			workdir: "/workspace"
