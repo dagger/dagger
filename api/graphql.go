@@ -308,7 +308,6 @@ func init() {
 		Schema: tools.ExecutableSchema{
 			TypeDefs: `
 scalar FS
-scalar DaggerString
 
 type CoreImage {
 	fs: FS!
@@ -347,7 +346,7 @@ type Package {
 
 type Mutation {
 	import(name: String!, fs: FS!): Package
-	evaluate(fs: FS!): FS
+	# evaluate(fs: FS!): FS
 	readfile(fs: FS!, path: String!): String
 	clientdir(id: String!): FS
 }

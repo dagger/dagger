@@ -57,6 +57,7 @@ func main() {
 				graphql_ts{
 					echo(in:"foo") {
 						fs
+						out
 					}
 				}
 			}`)
@@ -66,6 +67,8 @@ func main() {
 				return nil, err
 			}
 			fmt.Printf("output: %+v\n\n", output)
+
+			fmt.Printf("a string: %s\n", output.Map("graphql_ts").Map("echo").String("out"))
 
 			/*
 				input = fmt.Sprintf(`{

@@ -17,6 +17,7 @@ const resolvers = {
       const output = await context.dagger.do(input);
       return {
         fs: output.data.data.alpine.build,
+        out: args.in,
       };
     },
   },
