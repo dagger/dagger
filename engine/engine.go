@@ -24,8 +24,11 @@ import (
 )
 
 type StartOpts struct {
-	Export    *bkclient.ExportEntry
+	Export *bkclient.ExportEntry
+	// TODO: All these fields can in theory be more dynamic, added after Start is called, but that requires
+	// varying levels of effort (secrets are easy, local dirs are hard unless we patch upstream buildkit)
 	LocalDirs map[string]string
+	Secrets   map[string]string
 }
 
 type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error)
@@ -44,10 +47,8 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	ch := make(chan *bkclient.SolveStatus)
 
 	var server api.Server
-	attachables := []session.Attachable{&server}
-
 	solveOpts := bkclient.SolveOpt{
-		Session: attachables,
+		Session: []session.Attachable{&server},
 	}
 	if startOpts != nil {
 		if startOpts.Export != nil {
@@ -66,7 +67,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 					panic(r)
 				}
 			}()
-			server = api.NewServer(gw, platform)
+			server = api.NewServer(gw, platform, startOpts.Secrets)
 
 			ctx = dagger.WithInMemoryAPIClient(ctx, server)
 			ctx = withGatewayClient(ctx, gw)

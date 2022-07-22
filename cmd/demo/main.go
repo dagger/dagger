@@ -9,18 +9,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/cloak/cmd/demo/gen/alpine"
 	"github.com/dagger/cloak/cmd/demo/gen/core"
 	"github.com/dagger/cloak/cmd/demo/gen/netlify"
-	"github.com/dagger/cloak/cmd/demo/gen/yarn"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+const netlifyTokenID = "netlify-token"
+
 func main() {
 	startOpts := &engine.StartOpts{
 		LocalDirs: map[string]string{
-			".": ".",
+			".":   ".",
+			"src": "./examples/todoapp",
+		},
+		Secrets: map[string]string{
+			netlifyTokenID: os.Getenv("NETLIFY_AUTH_TOKEN"),
 		},
 		/*
 			Export: &client.ExportEntry{
@@ -36,29 +40,25 @@ func main() {
 			importLocal(ctx, localDirs["."], "netlify", "Dockerfile.netlify")
 			importLocal(ctx, localDirs["."], "yarn", "Dockerfile.yarn")
 
-			base, err := alpine.Build(ctx, []string{"jq", "curl"})
-			if err != nil {
-				return nil, err
-			}
-
-			netlifyOutput, err := netlify.Deploy(ctx, base.Alpine.Build, "site", "token")
+			// TODO: llb.copy local dir so when its mounted it doesn't cause cache invalidation
+			netlifyOutput, err := netlify.Deploy(ctx, localDirs["src"], "test-cloak-netlify-deploy", netlifyTokenID)
 			if err != nil {
 				return nil, err
 			}
 
 			fmt.Printf("%+v\n", netlifyOutput.Netlify.Deploy)
 
-			yarnOutput, err := yarn.Script(ctx, base.Alpine.Build, "somescript")
-			if err != nil {
-				return nil, err
-			}
-
-			fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
-
 			/*
-				if err := engine.Shell(ctx, output.Alpine.Build); err != nil {
+				yarnOutput, err := yarn.Script(ctx, base.Alpine.Build, "somescript")
+				if err != nil {
 					return nil, err
 				}
+
+				fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
+
+					if err := engine.Shell(ctx, output.Alpine.Build); err != nil {
+						return nil, err
+					}
 			*/
 
 			return nil, nil

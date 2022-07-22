@@ -21,7 +21,6 @@ func (v *DeployNetlify) GetDeploy() DeployNetlifyDeploy { return v.Deploy }
 type DeployNetlifyDeploy struct {
 	Url       string `json:"url"`
 	DeployUrl string `json:"deployUrl"`
-	LogsUrl   string `json:"logsUrl"`
 }
 
 // GetUrl returns DeployNetlifyDeploy.Url, and is useful for accessing the field via an interface.
@@ -29,9 +28,6 @@ func (v *DeployNetlifyDeploy) GetUrl() string { return v.Url }
 
 // GetDeployUrl returns DeployNetlifyDeploy.DeployUrl, and is useful for accessing the field via an interface.
 func (v *DeployNetlifyDeploy) GetDeployUrl() string { return v.DeployUrl }
-
-// GetLogsUrl returns DeployNetlifyDeploy.LogsUrl, and is useful for accessing the field via an interface.
-func (v *DeployNetlifyDeploy) GetLogsUrl() string { return v.LogsUrl }
 
 // DeployResponse is returned by Deploy on success.
 type DeployResponse struct {
@@ -44,15 +40,15 @@ func (v *DeployResponse) GetNetlify() DeployNetlify { return v.Netlify }
 // __DeployInput is used internally by genqlient
 type __DeployInput struct {
 	Contents dagger.FS `json:"contents"`
-	Site     string    `json:"site"`
+	SiteName string    `json:"siteName"`
 	Token    string    `json:"token"`
 }
 
 // GetContents returns __DeployInput.Contents, and is useful for accessing the field via an interface.
 func (v *__DeployInput) GetContents() dagger.FS { return v.Contents }
 
-// GetSite returns __DeployInput.Site, and is useful for accessing the field via an interface.
-func (v *__DeployInput) GetSite() string { return v.Site }
+// GetSiteName returns __DeployInput.SiteName, and is useful for accessing the field via an interface.
+func (v *__DeployInput) GetSiteName() string { return v.SiteName }
 
 // GetToken returns __DeployInput.Token, and is useful for accessing the field via an interface.
 func (v *__DeployInput) GetToken() string { return v.Token }
@@ -60,25 +56,24 @@ func (v *__DeployInput) GetToken() string { return v.Token }
 func Deploy(
 	ctx context.Context,
 	contents dagger.FS,
-	site string,
+	siteName string,
 	token string,
 ) (*DeployResponse, error) {
 	req := &graphql.Request{
 		OpName: "Deploy",
 		Query: `
-query Deploy ($contents: FS!, $site: String!, $token: String!) {
+query Deploy ($contents: FS!, $siteName: String!, $token: String!) {
 	netlify {
-		deploy(contents: $contents, site: $site, token: $token) {
+		deploy(contents: $contents, siteName: $siteName, token: $token) {
 			url
 			deployUrl
-			logsUrl
 		}
 	}
 }
 `,
 		Variables: &__DeployInput{
 			Contents: contents,
-			Site:     site,
+			SiteName: siteName,
 			Token:    token,
 		},
 	}
