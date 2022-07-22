@@ -46,7 +46,7 @@ dagger.#Plan & {
 				source: client.filesystem."./data/hello".read.contents
 
 				_image: go.#Image & {
-					version: "1.17"
+					version: "1.18"
 				}
 				image: _image.output
 			}
@@ -77,7 +77,7 @@ dagger.#Plan & {
 				source: client.filesystem."./data/hello".read.contents
 
 				_image: go.#Image & {
-					version: "1.17"
+					version: "1.18"
 				}
 				image:      _image.output
 				binaryName: "greeter"
