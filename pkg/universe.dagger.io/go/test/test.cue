@@ -67,8 +67,9 @@ dagger.#Plan & {
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
-						test "OK" = $(cat /tmp/greeting_test.result)
+						# when *packages* is set, *package* will be ignored. *math* will be selected'
 						test "OK" = $(cat /tmp/math_test.result)
+						test ! -f "/tmp/greeting_test.result"
 						""",
 					]
 				}
