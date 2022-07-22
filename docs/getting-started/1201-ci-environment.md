@@ -206,7 +206,7 @@ dagger.#Plan & {
 
 With `docker` client and `dagger` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`:
 
-```groovy
+```groovy title="Jenkinsfile"
 pipeline {
   agent { label 'dagger' }
   
