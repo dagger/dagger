@@ -1,33 +1,35 @@
-import { DaggerServer } from "@dagger.io/dagger";
+import { client, DaggerServer, gql } from "@dagger.io/dagger";
 import * as fs from "fs";
 
 const resolvers = {
   Query: {
     echo: async (
-      parent: any,
+      _: any,
       args: { in: string; fs: string },
-      context: any,
-      info: any
     ) => {
       fs.readdirSync("/mnt/fs").forEach((file) => {
         console.log("look: ", file);
       });
 
-      const input = `{
+      const query = gql`{
         alpine {
           build(pkgs:["jq"])
         }
       }`;
 
-      const output = await context.dagger.do(input);
+      const data = await client.request(query);
+
       return {
-        fs: output.data.data.alpine.build,
+        fs: data.alpine.build,
         out: args.in,
       };
     },
   },
 };
 
-const server = new DaggerServer({ resolvers });
+const server = new DaggerServer({
+  typeDefs: gql(fs.readFileSync("/dagger.graphql", "utf8")),
+  resolvers
+})
 
 server.run();
