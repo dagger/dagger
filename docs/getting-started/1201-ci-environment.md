@@ -110,7 +110,7 @@ workflows:
 
 <TabItem value="gitlab">
 
-```yaml
+```yaml title=".gitlab-ci.yml"
 .docker:
   image: docker:${DOCKER_VERSION}-git
   services:
