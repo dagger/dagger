@@ -1,4 +1,4 @@
-import { DaggerServer } from "./server";
+import { DaggerServer } from "@dagger.io/dagger";
 import * as fs from "fs";
 
 const resolvers = {

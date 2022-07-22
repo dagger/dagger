@@ -1,5 +1,5 @@
 {
-  "name": "helloworld-ts",
+  "name": "graphql_ts",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -9,9 +9,7 @@
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {
-    "apollo-server": "^3.10.0",
-    "dagger": "../../sdk/nodejs/dagger",
-    "graphql": "^16.5.0",
+    "@dagger.io/dagger": "../../sdk/nodejs/dagger",
     "typescript": "^4.7.4"
   }
 }

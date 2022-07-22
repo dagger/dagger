@@ -1,5 +1,3 @@
-import Dagger from "dagger";
-
 import { gql } from "apollo-server";
 import {
   GraphQLOptions,
@@ -8,6 +6,7 @@ import {
   Config,
 } from "apollo-server-core";
 import { Request, Headers } from "apollo-server-env";
+import { Client } from "./client";
 
 import * as fs from "fs";
 
@@ -15,7 +14,7 @@ export class DaggerServer extends ApolloServerBase {
   constructor(config: Config) {
     config.typeDefs = gql(fs.readFileSync("/dagger.graphql", "utf8"));
     config.context = () => ({
-      dagger: new Dagger(),
+      dagger: new Client(),
     });
     super(config);
   }
