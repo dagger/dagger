@@ -1,7 +1,0 @@
-type BuildOutput {
-  fs: FS!
-}
-
-type Query {
-  build(pkg: String!): BuildOutput!
-}

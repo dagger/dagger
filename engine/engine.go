@@ -108,27 +108,8 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 
 			var result *bkgw.Result
 			if outputFs != nil {
-				data := struct {
-					Evaluate dagger.FS
-				}{}
-				err = cl.MakeRequest(ctx,
-					&graphql.Request{
-						Query: `
-							mutation Evaluate($fs: FS!) {
-								evaluate(fs: $fs)
-							}`,
-						Variables: map[string]any{
-							"fs": outputFs,
-						},
-					},
-					&graphql.Response{Data: &data},
-				)
-				if err != nil {
-					return nil, err
-				}
-
 				var fs api.FS
-				if err := fs.UnmarshalText([]byte(data.Evaluate)); err != nil {
+				if err := fs.UnmarshalText([]byte(*outputFs)); err != nil {
 					return nil, err
 				}
 				res, err := gw.Solve(ctx, bkgw.SolveRequest{Evaluate: true, Definition: fs.PB})

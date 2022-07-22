@@ -1,0 +1,28 @@
+query Image($ref: String!) {
+  core {
+    image(ref: $ref) {
+      fs
+    }
+  }
+}
+
+query Exec($fs: FS!, $args: [String]!) {
+  core {
+    exec(fs: $fs, args: $args) {
+      fs
+    }
+  }
+}
+
+query Dockerfile($context: FS!, $dockerfileName: String!) {
+  core {
+    dockerfile(context: $context, dockerfileName: $dockerfileName)
+  }
+}
+
+mutation Import($name: String!, $fs: FS!) {
+  import(name: $name, fs: $fs) {
+    name
+    fs
+  }
+}

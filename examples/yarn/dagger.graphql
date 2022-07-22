@@ -1,0 +1,5 @@
+scalar FS
+
+type Query {
+  script(source: FS!, name: String): FS!
+}
