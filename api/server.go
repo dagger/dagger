@@ -26,7 +26,7 @@ func NewServer(gw bkgw.Client, platform *specs.Platform) Server {
 	return s
 }
 
-func RunGraphiQLServer(ctx context.Context, port int, gw bkgw.Client, platform *specs.Platform) error {
+func ListenAndServe(ctx context.Context, port int, gw bkgw.Client, platform *specs.Platform) error {
 	s := Server{
 		gw:       gw,
 		platform: platform,
@@ -35,7 +35,7 @@ func RunGraphiQLServer(ctx context.Context, port int, gw bkgw.Client, platform *
 	if err != nil {
 		return err
 	}
-	fmt.Printf("serving graphql on localhost:%d...\n", port)
+	fmt.Printf("serving graphql on http://localhost:%d\n", port)
 	return s.serve(ctx, ln)
 }
 
@@ -61,8 +61,9 @@ func (s Server) ServeConn(ctx context.Context, conn net.Conn) {
 func (s Server) serve(ctx context.Context, l net.Listener) error {
 	return (&http.Server{
 		Handler: handler.New(&handler.Config{
-			Schema:   &schema,
-			GraphiQL: true,
+			Schema:     &schema,
+			Playground: true,
+			GraphiQL:   false,
 		}),
 		BaseContext: func(net.Listener) context.Context {
 			return withPlatform(withGatewayClient(ctx, s.gw), s.platform)
