@@ -46,9 +46,7 @@ dagger.#Plan & {
 				source: client.filesystem."./data/hello".read.contents
 
 				_image: go.#Image & {
-					name:       "docker/library/golang"
-					repository: "public.ecr.aws"
-					version:    "1.18"
+					version: "1.18"
 				}
 				image: _image.output
 			}
@@ -79,9 +77,7 @@ dagger.#Plan & {
 				source: client.filesystem."./data/hello".read.contents
 
 				_image: go.#Image & {
-					name:       "docker/library/golang"
-					repository: "public.ecr.aws"
-					version:    "1.18"
+					version: "1.18"
 				}
 				image:      _image.output
 				binaryName: "greeter"
