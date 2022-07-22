@@ -1,3 +1,3 @@
 #!/bin/sh
 
-node /app/src/dist/index.js
+node --unhandled-rejections=strict /app/src/dist/index.js

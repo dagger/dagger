@@ -172,7 +172,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("requesting %s\n", string(inputBytes))
+		// fmt.Printf("requesting %s\n", string(inputBytes))
 
 		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
 
@@ -187,6 +187,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 				llb.SSHSocketTarget("/dagger.sock"),
 			),
 			llb.AddMount("/inputs", input, llb.Readonly),
+			llb.AddMount("/tmp", llb.Scratch(), llb.Tmpfs()),
 			llb.ReadonlyRootFS(),
 		)
 
@@ -196,9 +197,9 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 			if err != nil {
 				return nil, err
 			}
-			// TODO: it should be possible for this to be read-write and outputtable by the action; the
-			// only question is how to expose that ability in a non-confusing way, just needs more thought
-			st.AddMount(path, fsState, llb.Readonly)
+			// TODO: it should be possible for this to be outputtable by the action; the only question
+			// is how to expose that ability in a non-confusing way, just needs more thought
+			st.AddMount(path, fsState, llb.ForceNoOutput)
 		}
 
 		outputMnt := st.AddMount("/outputs", llb.Scratch())
@@ -379,6 +380,7 @@ type Mutation {
 	import(name: String!, fs: FS!): Package
 	readfile(fs: FS!, path: String!): String
 	clientdir(id: String!): FS
+	readsecret(id: String!): String
 }
 		`,
 			Resolvers: tools.ResolverMap{
@@ -786,17 +788,21 @@ type Mutation {
 								return string(outputBytes), nil
 							},
 						},
-						"readstring": &tools.FieldResolve{
+						"readsecret": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								var str DaggerString
-								if err := str.UnmarshalAny(p.Args["str"]); err != nil {
-									return nil, err
+								id, ok := p.Args["id"].(string)
+								if !ok {
+									return nil, fmt.Errorf("invalid secret id")
 								}
-								str, err := str.Evaluate(p.Context)
-								if err != nil {
-									return nil, fmt.Errorf("failed to evaluate dagger string: %v", err)
+								secrets := getSecrets(p)
+								if secrets == nil {
+									return nil, fmt.Errorf("no secrets")
 								}
-								return str.Value, nil
+								secret, ok := secrets[id]
+								if !ok {
+									return nil, fmt.Errorf("no secret with id %s", id)
+								}
+								return secret, nil
 							},
 						},
 						"clientdir": &tools.FieldResolve{
@@ -914,6 +920,20 @@ func getPlatform(p graphql.ResolveParams) specs.Platform {
 		return platforms.DefaultSpec()
 	}
 	return *v.(*specs.Platform)
+}
+
+type secretsKey struct{}
+
+func withSecrets(ctx context.Context, secrets map[string]string) context.Context {
+	return context.WithValue(ctx, secretsKey{}, secrets)
+}
+
+func getSecrets(p graphql.ResolveParams) map[string]string {
+	v := p.Context.Value(secretsKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(map[string]string)
 }
 
 func getQuery(p graphql.ResolveParams) string {

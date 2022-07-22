@@ -1,24 +1,27 @@
 # syntax = docker/dockerfile:1
 
-FROM node:14-alpine AS build
+FROM node:16-alpine AS build
+ENV YARN_CACHE_FOLDER /cache/yarn
 WORKDIR /app/src
 RUN apk add --no-cache file git
 COPY --link examples/netlify/package.json examples/netlify/yarn.lock ./
 COPY --link sdk/nodejs /sdk/nodejs
-RUN yarn --cwd /sdk/nodejs/dagger
-RUN yarn --cwd /sdk/nodejs/dagger build
-RUN yarn
+RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --cwd /sdk/nodejs/dagger
+RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --cwd /sdk/nodejs/dagger build
+RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn
 COPY --link examples/netlify/ .
-RUN yarn upgrade dagger
-RUN yarn build
+RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn upgrade dagger
+RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn build
 
-FROM node:14-alpine
+FROM node:16-alpine
+ENV YARN_CACHE_FOLDER /cache/yarn
 WORKDIR /app/src
 COPY --link --from=build /app/src/package.json /app/src/yarn.lock ./
 COPY --link --from=build /sdk/nodejs /sdk/nodejs
-RUN yarn --production
+RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --production
 COPY --link --from=build /app/src/dist ./dist
 COPY --link examples/netlify/entrypoint.sh /entrypoint
 COPY --link examples/netlify/dagger.graphql /dagger.graphql
 ENTRYPOINT ["/entrypoint"]
+ENV PATH $PATH:/app/src/node_modules/.bin
 LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs

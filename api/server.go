@@ -9,18 +9,22 @@ import (
 
 	"github.com/graphql-go/handler"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/session/secrets"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/session/sshforward"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-func NewServer(gw bkgw.Client, platform *specs.Platform) Server {
+func NewServer(gw bkgw.Client, platform *specs.Platform, secrets map[string]string) Server {
 	s := Server{
 		gw:       gw,
 		platform: platform,
+		secrets:  secrets,
 	}
 
 	return s
@@ -42,6 +46,7 @@ func ListenAndServe(ctx context.Context, port int, gw bkgw.Client, platform *spe
 type Server struct {
 	gw       bkgw.Client
 	platform *specs.Platform
+	secrets  map[string]string
 }
 
 func (s Server) ServeConn(ctx context.Context, conn net.Conn) {
@@ -66,13 +71,33 @@ func (s Server) serve(ctx context.Context, l net.Listener) error {
 			GraphiQL:   false,
 		}),
 		BaseContext: func(net.Listener) context.Context {
-			return withPlatform(withGatewayClient(ctx, s.gw), s.platform)
+			ctx := withGatewayClient(ctx, s.gw)
+			ctx = withPlatform(ctx, s.platform)
+			ctx = withSecrets(ctx, s.secrets)
+			return ctx
 		},
 	}).Serve(l)
 }
 
 func (s *Server) Register(server *grpc.Server) {
+	secrets.RegisterSecretsServer(server, s)
 	sshforward.RegisterSSHServer(server, s)
+}
+
+func (s *Server) GetSecret(ctx context.Context, req *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
+	if s.secrets == nil {
+		return nil, status.Errorf(codes.NotFound, "no secrets")
+	}
+	v, ok := s.secrets[req.ID]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "no secret for id %s", req.ID)
+	}
+	if l := len(v); l > secretsprovider.MaxSecretSize {
+		return nil, errors.Errorf("invalid secret size %d", l)
+	}
+	return &secrets.GetSecretResponse{
+		Data: []byte(v),
+	}, nil
 }
 
 func (s *Server) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {

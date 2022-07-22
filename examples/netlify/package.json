@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "build": "tsc"
   },
@@ -10,6 +11,15 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@dagger.io/dagger": "../../sdk/nodejs/dagger",
+    "@types/execa": "^2.0.0",
+    "execa": "^6.1.0",
+    "netlify": "^12.0.0",
+    "netlify-cli": "^10.11.0",
     "typescript": "^4.7.4"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.30.7",
+    "@typescript-eslint/parser": "^5.30.7",
+    "eslint": "^8.20.0"
   }
 }
