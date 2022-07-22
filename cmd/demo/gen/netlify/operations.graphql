@@ -1,0 +1,9 @@
+query Deploy($contents: FS!, $site: String!, $token: String!) {
+  netlify {
+    deploy(contents: $contents, site: $site, token: $token) {
+      url
+      deployUrl
+      logsUrl
+    }
+  }
+}

@@ -1,0 +1,11 @@
+scalar FS
+
+type Deploy {
+  url: String!
+  deployUrl: String!
+  logsUrl: String!
+}
+
+type Query {
+  deploy(contents: FS!, site: String, token: String): Deploy!
+}
