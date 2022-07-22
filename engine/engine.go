@@ -234,10 +234,10 @@ func Shell(ctx context.Context, inputFS dagger.FS) error {
 	return proc.Wait()
 }
 
-func RunGraphiQL(ctx context.Context, port int) error {
+func ListenAndServe(ctx context.Context, port int) error {
 	return Start(ctx, nil, func(ctx context.Context, _ map[string]dagger.FS) (*dagger.FS, error) {
 		gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
 		platform := ctx.Value(platformKey{}).(*specs.Platform)
-		return nil, api.RunGraphiQLServer(ctx, port, gw, platform)
+		return nil, api.ListenAndServe(ctx, port, gw, platform)
 	})
 }
