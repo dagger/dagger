@@ -10,9 +10,14 @@ import { Client } from "./client";
 
 import * as fs from "fs";
 
-export class DaggerServer extends ApolloServerBase {
+export interface DaggerContext {
+  dagger: Client
+}
+
+export class DaggerServer<
+  ContextFunctionParams = DaggerContext,
+  > extends ApolloServerBase<ContextFunctionParams> {
   constructor(config: Config) {
-    config.typeDefs = gql(fs.readFileSync("/dagger.graphql", "utf8"));
     config.context = () => ({
       dagger: new Client(),
     });
@@ -20,11 +25,12 @@ export class DaggerServer extends ApolloServerBase {
   }
 
   async createGraphQLServerOptions(): Promise<GraphQLOptions> {
-    return super.graphQLServerOptions();
+    const contextParams: DaggerContext = { dagger: new Client() };
+    return super.graphQLServerOptions(contextParams);
   }
 
   private async query(input: Record<string, any>): Promise<string> {
-    const { graphqlResponse, responseInit } = await runHttpQuery(
+    const { graphqlResponse } = await runHttpQuery(
       [],
       {
         method: "POST",

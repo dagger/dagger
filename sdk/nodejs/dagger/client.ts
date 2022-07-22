@@ -1,4 +1,18 @@
 import axios, { AxiosInstance } from "axios";
+import { buildAxiosFetch } from "@lifeomic/axios-fetch";
+import { GraphQLClient, gql } from 'graphql-request'
+
+import { Response } from 'node-fetch';
+// @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
+global.Response = Response;
+
+export const client = new GraphQLClient('http://fake.invalid/graphql', {
+  fetch: buildAxiosFetch(axios.create({
+    socketPath: "/dagger.sock",
+    timeout: 15e3,
+  })),
+})
+
 
 export class Client {
   private client: AxiosInstance;
