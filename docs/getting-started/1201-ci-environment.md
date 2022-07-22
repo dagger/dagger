@@ -79,7 +79,33 @@ jobs:
 
 <TabItem value="circleci">
 
-If you would like us to document CircleCI next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
+```yaml title=".circleci/config.yml"
+version: 2.1
+
+jobs:
+  install-and-run-dagger:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: "20.10.14"
+      - run:
+          name: "Install Dagger"
+          command: |
+            cd /usr/local
+            wget -O - https://dl.dagger.io/dagger/install.sh | sudo sh
+            cd -
+      - run:
+          name: "Run Dagger"
+          command: |
+            dagger do build --log-format plain
+
+workflows:
+  dagger-workflow:
+    jobs:
+      - install-and-run-dagger
+```
 
 </TabItem>
 
