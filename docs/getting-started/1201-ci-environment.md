@@ -38,7 +38,6 @@ values={[
 <TabItem value="travisci">
 
 ```yaml title=".travis.yml"
----
 os: linux
 arch: amd64
 dist: bionic
