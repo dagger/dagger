@@ -10,7 +10,7 @@ import (
 
 #Upgrade: {
 	// The image to use when running the action.
-	// Must contains the helm binary. Defaults to alpine/helm
+	// Must contain the helm binary. Defaults to alpine/helm
 	image: *#Image.output | docker.#Image
 
 	// The kubeconfig file content
@@ -38,9 +38,13 @@ import (
 
 	// Specify values in a YAML file or a URL (can specify multiple)
 	values: [...string]
-	// Set values (can specify multiple or separate values with commas or newlines)
+	// Set values seperated by newline or comma. i.e.:
+	// set: #"""
+	//  global.image=daggerio/dagger
+	//  podAnnotations.dagger\.io/action=enabled
+	//  """#
 	set?: string
-	// set STRING values (can specify multiple or separate values with commas or newlines)
+	// set STRING values seperated by newline or comma (same as set)
 	setString?: string
 
 	// first class flags
@@ -61,7 +65,7 @@ import (
 	install: *false | true
 	// Time to wait for any individual Kubernetes operation (like Jobs for hooks) (default 5m0s)
 	timeout?: string
-	// if set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment,
+	// If set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment,
 	// StatefulSet, or ReplicaSet are in a ready state before marking the release as successful.
 	// It will wait for as long as --timeout
 	wait: *false | true
