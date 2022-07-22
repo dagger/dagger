@@ -237,7 +237,7 @@ pipeline {
 
 <TabItem value="tekton">
 
-```yaml
+```yaml title="tekton/tasks/todo-app.yaml"
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
