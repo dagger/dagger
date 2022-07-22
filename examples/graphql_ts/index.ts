@@ -1,5 +1,6 @@
 import { client, DaggerServer, gql } from "@dagger.io/dagger";
 import * as fs from "fs";
+import { getSdk } from "./gen/alpine/alpine";
 
 const resolvers = {
   Query: {
@@ -7,20 +8,22 @@ const resolvers = {
       _: any,
       args: { in: string; fs: string },
     ) => {
-      fs.readdirSync("/mnt/fs").forEach((file) => {
-        console.log("look: ", file);
-      });
-
+      // By hand
       const query = gql`{
         alpine {
           build(pkgs:["jq"])
         }
       }`;
-
       const data = await client.request(query);
+      console.log("alpine build", data.alpine.build);
+
+
+      // With codegen
+      const alpine = getSdk(client);
+      const image = await alpine.Build({ pkgs: ["jq", "curl"] })
 
       return {
-        fs: data.alpine.build,
+        fs: image.alpine.build,
         out: args.in,
       };
     },

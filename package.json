@@ -3,6 +3,5 @@
     "workspaces": [
         "./sdk/nodejs/dagger",
         "./examples/graphql_ts"
-    ],
-    "version": "0.0.0"
+    ]
 }

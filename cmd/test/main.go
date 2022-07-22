@@ -111,13 +111,13 @@ func main() {
 
 			fmt.Printf("a string: %s\n", graphql_ts.GraphQLTS.Echo.Out)
 
-			// if err := engine.Shell(ctx, graphql_ts.GraphQLTS.Echo.FS); err != nil {
-			// 	return nil, err
-			// }
-
-			if err := engine.Shell(ctx, alpine.Alpine.Build); err != nil {
+			if err := engine.Shell(ctx, graphql_ts.GraphQLTS.Echo.FS); err != nil {
 				return nil, err
 			}
+
+			// if err := engine.Shell(ctx, alpine.Alpine.Build); err != nil {
+			// 	return nil, err
+			// }
 
 			return nil, nil
 		})
