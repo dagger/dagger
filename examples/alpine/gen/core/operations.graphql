@@ -6,10 +6,10 @@ query Image($ref: String!) {
   }
 }
 
-query Exec($fs: FS!, $args: [String]!) {
+query Exec($input: CoreExecInput!) {
   core {
-    exec(fs: $fs, args: $args) {
-      fs
+    exec(input: $input) {
+      root
     }
   }
 }

@@ -352,18 +352,16 @@ input CoreMount {
 input CoreExecInput {
 	mounts: [CoreMount!]!
 	args: [String!]!
-}
-type CoreExecOutput {
-	mount(path: String!): FS
+	workdir: String
 }
 type CoreExec {
-	fs: FS!
+	root: FS!
+	getMount(path: String!): FS!
 }
 
 type Core {
 	image(ref: String!): CoreImage
-	# exec(input: CoreExecInput!): CoreExecOutput
-	exec(fs: FS!, args: [String]!): CoreExec
+	exec(input: CoreExecInput!): CoreExec
 	dockerfile(context: FS!, dockerfileName: String): FS!
 }
 
@@ -393,30 +391,27 @@ type Mutation {
 						},
 					},
 				},
-				"CoreExecOutput": &tools.ObjectResolver{
+				"CoreExec": &tools.ObjectResolver{
 					Fields: tools.FieldResolveMap{
-						"mount": &tools.FieldResolve{
+						"getMount": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								if lazyOutput, ok := p.Source.(map[string]interface{}); ok {
-									return lazyOutput["mount"], nil
-								}
-								fsOutputs, ok := p.Source.(map[string]string)
+								parent, ok := p.Source.(map[string]interface{})
 								if !ok {
-									return nil, fmt.Errorf("unexpected core exec source type %T", p.Source)
+									return nil, fmt.Errorf("unexpected core exec parent type %T", p.Source)
 								}
-								rawPath, ok := p.Args["path"]
+								mounts, ok := parent["mounts"].(map[string]FS)
 								if !ok {
-									return nil, fmt.Errorf("missing path argument")
+									return nil, fmt.Errorf("unexpected core exec mounts type %T", parent["mounts"])
 								}
-								path, ok := rawPath.(string)
+								path, ok := p.Args["path"].(string)
 								if !ok {
-									return nil, fmt.Errorf("path argument is not a string")
+									return nil, fmt.Errorf("invalid path argument")
 								}
-								fsstr, ok := fsOutputs[path]
+								fs, ok := mounts[path]
 								if !ok {
 									return nil, fmt.Errorf("mount at path %q not found", path)
 								}
-								return fsstr, nil
+								return fs, nil
 							},
 						},
 					},
@@ -432,21 +427,10 @@ type Mutation {
 								if !ok {
 									return nil, fmt.Errorf("missing ref")
 								}
-								/* TODO: switch back to DaggerString once re-integrated with generated clients
-								var ref DaggerString
-								if err := ref.UnmarshalAny(rawRef); err != nil {
-									return nil, err
-								}
-								ref, err := ref.Evaluate(p.Context)
-								if err != nil {
-									return nil, fmt.Errorf("error evaluating image ref: %v", err)
-								}
-								*/
 								ref, ok := rawRef.(string)
 								if !ok {
 									return nil, fmt.Errorf("ref is not a string")
 								}
-								// llbdef, err := llb.Image(*ref.Value).Marshal(p.Context, llb.Platform(getPlatform(p)))
 								llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p)))
 								if err != nil {
 									return nil, err
@@ -461,11 +445,17 @@ type Mutation {
 								if !shouldEval(p.Context) {
 									return lazyResolve(p)
 								}
-								fs, ok := p.Args["fs"].(FS)
+								input, ok := p.Args["input"].(map[string]interface{})
 								if !ok {
-									return nil, fmt.Errorf("invalid fs")
+									return nil, fmt.Errorf("invalid exec input: %+v", p.Args["input"])
 								}
-								rawArgs, ok := p.Args["args"].([]interface{})
+
+								workdir, ok := input["workdir"].(string)
+								if !ok {
+									workdir = ""
+								}
+
+								rawArgs, ok := input["args"].([]interface{})
 								if !ok {
 									return nil, fmt.Errorf("invalid args")
 								}
@@ -477,20 +467,58 @@ type Mutation {
 										return nil, fmt.Errorf("invalid arg")
 									}
 								}
-								fs, err := fs.Evaluate(p.Context)
+
+								rawMounts, ok := input["mounts"].([]interface{})
+								if !ok {
+									return nil, fmt.Errorf("invalid mounts")
+								}
+								mounts := map[string]FS{}
+								for _, rawMount := range rawMounts {
+									mount, ok := rawMount.(map[string]interface{})
+									if !ok {
+										return nil, fmt.Errorf("invalid mount")
+									}
+									path, ok := mount["path"].(string)
+									if !ok {
+										return nil, fmt.Errorf("invalid mount path")
+									}
+									fs, ok := mount["fs"].(FS)
+									if !ok {
+										return nil, fmt.Errorf("invalid mount fs")
+									}
+									mounts[path] = fs
+								}
+								root, ok := mounts["/"]
+								if !ok {
+									return nil, fmt.Errorf("missing root mount")
+								}
+								rootState, err := root.ToState()
 								if err != nil {
 									return nil, err
 								}
-								fsState, err := fs.ToState()
-								if err != nil {
-									return nil, err
+								execState := rootState.Run(llb.Args(args), llb.Dir(workdir))
+								for path, mount := range mounts {
+									if path == "/" {
+										continue
+									}
+									state, err := mount.ToState()
+									if err != nil {
+										return nil, err
+									}
+									state = execState.AddMount(path, state)
+									llbdef, err := state.Marshal(p.Context, llb.Platform(getPlatform(p)))
+									if err != nil {
+										return nil, err
+									}
+									mounts[path] = FS{PB: llbdef.ToPB()}
 								}
-								llbdef, err := fsState.Run(llb.Args(args)).Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
+								llbdef, err := execState.Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
 								if err != nil {
 									return nil, err
 								}
 								return map[string]interface{}{
-									"fs": FS{PB: llbdef.ToPB()},
+									"root":   FS{PB: llbdef.ToPB()},
+									"mounts": mounts,
 								}, nil
 							},
 						},
@@ -558,111 +586,6 @@ type Mutation {
 							},
 						},
 					},
-					// 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					// 			if !shouldEval(p.Context) {
-					// 				return lazyResolve(p)
-					// 			}
-					// 			input, ok := p.Args["input"].(map[string]interface{})
-					// 			if !ok {
-					// 				return nil, fmt.Errorf("invalid fs")
-					// 			}
-
-					// 			rawMounts, ok := input["mounts"].([]interface{})
-					// 			if !ok {
-					// 				return nil, fmt.Errorf("invalid mounts")
-					// 			}
-					// 			inputMounts := make(map[string]FS)
-					// 			for _, rawMount := range rawMounts {
-					// 				mount, ok := rawMount.(map[string]interface{})
-					// 				if !ok {
-					// 					return nil, fmt.Errorf("invalid mount: %T", rawMount)
-					// 				}
-					// 				path, ok := mount["path"].(string)
-					// 				if !ok {
-					// 					return nil, fmt.Errorf("invalid mount path")
-					// 				}
-					// 				path = filepath.Clean(path)
-					// 				fsstr, ok := mount["fs"].(string)
-					// 				if !ok {
-					// 					return nil, fmt.Errorf("invalid mount fs")
-					// 				}
-					// 				var fs FS
-					// 				if err := fs.UnmarshalText([]byte(fsstr)); err != nil {
-					// 					return nil, err
-					// 				}
-					// 				inputMounts[path] = fs
-					// 			}
-					// 			rootFS, ok := inputMounts["/"]
-					// 			if !ok {
-					// 				return nil, fmt.Errorf("missing root fs")
-					// 			}
-
-					// 			rawArgs, ok := input["args"].([]interface{})
-					// 			if !ok {
-					// 				return nil, fmt.Errorf("invalid args")
-					// 			}
-					// 			var args []string
-					// 			for _, rawArg := range rawArgs {
-					// 				/* TODO: switch back to DaggerString once re-integrated with generated clients
-					// 				var arg DaggerString
-					// 				if err := arg.UnmarshalAny(rawArg); err != nil {
-					// 					return nil, fmt.Errorf("invalid arg: %w", err)
-					// 				}
-					// 				arg, err := arg.Evaluate(p.Context)
-					// 				if err != nil {
-					// 					return nil, fmt.Errorf("error evaluating arg: %v", err)
-					// 				}
-					// 				args = append(args, *arg.Value)
-					// 				*/
-					// 				arg, ok := rawArg.(string)
-					// 				if !ok {
-					// 					return nil, fmt.Errorf("invalid arg: %T", rawArg)
-					// 				}
-					// 				args = append(args, arg)
-					// 			}
-
-					// 			rootFS, err := rootFS.Evaluate(p.Context)
-					// 			if err != nil {
-					// 				return nil, err
-					// 			}
-					// 			state, err := rootFS.ToState()
-					// 			if err != nil {
-					// 				return nil, err
-					// 			}
-					// 			execState := state.Run(llb.Args(args))
-					// 			outputStates := map[string]llb.State{
-					// 				"/": execState.Root(),
-					// 			}
-					// 			for path, inputFS := range inputMounts {
-					// 				if path == "/" {
-					// 					continue
-					// 				}
-					// 				inputFS, err := inputFS.Evaluate(p.Context)
-					// 				if err != nil {
-					// 					return nil, err
-					// 				}
-					// 				inputState, err := inputFS.ToState()
-					// 				if err != nil {
-					// 					return nil, err
-					// 				}
-					// 				outputStates[path] = execState.AddMount(path, inputState)
-					// 			}
-					// 			fsOutputs := make(map[string]string)
-					// 			for path, outputState := range outputStates {
-					// 				llbdef, err := outputState.Marshal(p.Context, llb.Platform(getPlatform(p)))
-					// 				if err != nil {
-					// 					return nil, err
-					// 				}
-					// 				fsbytes, err := FS{PB: llbdef.ToPB()}.MarshalText()
-					// 				if err != nil {
-					// 					return nil, err
-					// 				}
-					// 				fsOutputs[path] = string(fsbytes)
-					// 			}
-					// 			return fsOutputs, nil
-					// 		},
-					// 	},
-					// },
 				},
 
 				"Mutation": &tools.ObjectResolver{

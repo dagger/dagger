@@ -4,12 +4,18 @@ import { NetlifyAPI } from "netlify";
 import { execa } from "execa";
 
 import * as fs from "fs";
+import * as path from "path";
 
 const resolvers = {
   Query: {
     deploy: async (
       parent: any,
-      args: { contents: string; siteName: string; token: string }
+      args: {
+        contents: string;
+        subdir: string;
+        siteName: string;
+        token: string;
+      }
     ) => {
       // TODO: should be set from Dockerfile ENV, just not propagated by dagger server yet
       process.env["PATH"] = "/app/src/node_modules/.bin:" + process.env["PATH"];
@@ -40,10 +46,12 @@ const resolvers = {
         });
       }
 
+      const srcDir = path.join("/mnt/contents", args.subdir);
+
       await execa("netlify", ["link", "--id", site.id], {
         stdout: "inherit",
         stderr: "inherit",
-        cwd: "/mnt/contents",
+        cwd: srcDir,
       });
 
       await execa(
@@ -52,7 +60,7 @@ const resolvers = {
         {
           stdout: "inherit",
           stderr: "inherit",
-          cwd: "/mnt/contents",
+          cwd: srcDir,
         }
       );
 

@@ -7,5 +7,10 @@ type Deploy {
 }
 
 type Query {
-  deploy(contents: FS!, siteName: String, token: String): Deploy!
+  deploy(
+    contents: FS!
+    subdir: String
+    siteName: String
+    token: String
+  ): Deploy!
 }

@@ -20,11 +20,14 @@ func (r *Alpine) Build(ctx context.Context, pkgs []string) (dagger.FS, error) {
 
 	// install each of the requested packages
 	for _, pkg := range pkgs {
-		output, err := core.Exec(ctx, fs, []string{"apk", "add", "-U", "--no-cache", pkg})
+		output, err := core.Exec(ctx, core.CoreExecInput{
+			Mounts: []core.CoreMount{{Path: "/", Fs: fs}},
+			Args:   []string{"apk", "add", "-U", "--no-cache", pkg},
+		})
 		if err != nil {
 			return dagger.FS(""), err
 		}
-		fs = output.Core.Exec.Fs
+		fs = output.Core.Exec.Root
 	}
 
 	return fs, nil

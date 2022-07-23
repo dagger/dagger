@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/cloak/cmd/demo/gen/core"
 	"github.com/dagger/cloak/cmd/demo/gen/netlify"
+	"github.com/dagger/cloak/cmd/demo/gen/yarn"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
@@ -40,25 +41,24 @@ func main() {
 			importLocal(ctx, localDirs["."], "netlify", "Dockerfile.netlify")
 			importLocal(ctx, localDirs["."], "yarn", "Dockerfile.yarn")
 
-			// TODO: llb.copy local dir so when its mounted it doesn't cause cache invalidation
-			netlifyOutput, err := netlify.Deploy(ctx, localDirs["src"], "test-cloak-netlify-deploy", netlifyTokenID)
+			// TODO: llb.copy local dirs so when its mounted it doesn't cause cache invalidation
+
+			yarnOutput, err := yarn.Script(ctx, localDirs["src"], "build")
 			if err != nil {
 				return nil, err
 			}
+			fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
 
+			netlifyOutput, err := netlify.Deploy(ctx, yarnOutput.Yarn.Script, "build", "test-cloak-netlify-deploy", netlifyTokenID)
+			if err != nil {
+				return nil, err
+			}
 			fmt.Printf("%+v\n", netlifyOutput.Netlify.Deploy)
 
 			/*
-				yarnOutput, err := yarn.Script(ctx, base.Alpine.Build, "somescript")
-				if err != nil {
+				if err := engine.Shell(ctx, yarnOutput.Yarn.Script); err != nil {
 					return nil, err
 				}
-
-				fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
-
-					if err := engine.Shell(ctx, output.Alpine.Build); err != nil {
-						return nil, err
-					}
 			*/
 
 			return nil, nil
