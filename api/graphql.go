@@ -435,6 +435,17 @@ type Mutation {
 								if err != nil {
 									return nil, err
 								}
+								gw, err := getGatewayClient(p)
+								if err != nil {
+									return nil, err
+								}
+								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
+									Evaluate:   true,
+									Definition: llbdef.ToPB(),
+								})
+								if err != nil {
+									return nil, err
+								}
 								return map[string]interface{}{
 									"fs": FS{PB: llbdef.ToPB()},
 								}, nil
@@ -497,6 +508,10 @@ type Mutation {
 									return nil, err
 								}
 								execState := rootState.Run(llb.Args(args), llb.Dir(workdir))
+								gw, err := getGatewayClient(p)
+								if err != nil {
+									return nil, err
+								}
 								for path, mount := range mounts {
 									if path == "/" {
 										continue
@@ -510,9 +525,23 @@ type Mutation {
 									if err != nil {
 										return nil, err
 									}
+									_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
+										Evaluate:   true,
+										Definition: llbdef.ToPB(),
+									})
+									if err != nil {
+										return nil, err
+									}
 									mounts[path] = FS{PB: llbdef.ToPB()}
 								}
 								llbdef, err := execState.Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
+								if err != nil {
+									return nil, err
+								}
+								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
+									Evaluate:   true,
+									Definition: llbdef.ToPB(),
+								})
 								if err != nil {
 									return nil, err
 								}
@@ -649,30 +678,6 @@ type Mutation {
 								}, nil
 							},
 						},
-						"evaluate": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								fs, ok := p.Args["fs"].(FS)
-								if !ok {
-									return nil, fmt.Errorf("invalid fs")
-								}
-								fs, err := fs.Evaluate(p.Context)
-								if err != nil {
-									return nil, fmt.Errorf("failed to evaluate fs: %v", err)
-								}
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
-								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
-									Evaluate:   true,
-									Definition: fs.PB,
-								})
-								if err != nil {
-									return nil, err
-								}
-								return fs, nil
-							},
-						},
 						"readfile": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 								fs, ok := p.Args["fs"].(FS)
@@ -780,31 +785,6 @@ type Mutation {
 							return fs
 						default:
 							panic(fmt.Sprintf("unexpected fs literal type: %T", valueAST))
-						}
-					},
-				},
-				"DaggerString": &tools.ScalarResolver{
-					Serialize: func(value interface{}) interface{} {
-						return value
-					},
-					ParseValue: func(value interface{}) interface{} {
-						return value
-					},
-					ParseLiteral: func(valueAST ast.Value) interface{} {
-						switch valueAST := valueAST.(type) {
-						case *ast.StringValue:
-							return valueAST.Value
-						case *ast.ListValue:
-							if len(valueAST.Values) != 1 {
-								panic(fmt.Sprintf("invalid dagger string: %+v", valueAST.Values))
-							}
-							elem, ok := valueAST.Values[0].(*ast.StringValue)
-							if !ok {
-								panic(fmt.Sprintf("invalid dagger string: %+v", valueAST.Values))
-							}
-							return []any{elem.Value}
-						default:
-							panic(fmt.Sprintf("unsupported fs type: %T", valueAST))
 						}
 					},
 				},

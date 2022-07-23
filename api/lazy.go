@@ -321,3 +321,56 @@ func (fs FS) Evaluate(ctx context.Context) (FS, error) {
 	}
 	return fs, nil
 }
+
+/*
+	"evaluate": &tools.FieldResolve{
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			fs, ok := p.Args["fs"].(FS)
+			if !ok {
+				return nil, fmt.Errorf("invalid fs")
+			}
+			fs, err := fs.Evaluate(p.Context)
+			if err != nil {
+				return nil, fmt.Errorf("failed to evaluate fs: %v", err)
+			}
+			gw, err := getGatewayClient(p)
+			if err != nil {
+				return nil, err
+			}
+			_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: fs.PB,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return fs, nil
+		},
+	},
+
+				"DaggerString": &tools.ScalarResolver{
+					Serialize: func(value interface{}) interface{} {
+						return value
+					},
+					ParseValue: func(value interface{}) interface{} {
+						return value
+					},
+					ParseLiteral: func(valueAST ast.Value) interface{} {
+						switch valueAST := valueAST.(type) {
+						case *ast.StringValue:
+							return valueAST.Value
+						case *ast.ListValue:
+							if len(valueAST.Values) != 1 {
+								panic(fmt.Sprintf("invalid dagger string: %+v", valueAST.Values))
+							}
+							elem, ok := valueAST.Values[0].(*ast.StringValue)
+							if !ok {
+								panic(fmt.Sprintf("invalid dagger string: %+v", valueAST.Values))
+							}
+							return []any{elem.Value}
+						default:
+							panic(fmt.Sprintf("unsupported fs type: %T", valueAST))
+						}
+					},
+				},
+*/

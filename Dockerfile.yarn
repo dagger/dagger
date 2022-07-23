@@ -23,4 +23,3 @@ COPY --link --from=build /app/src/dist ./dist
 COPY --link examples/yarn/entrypoint.sh /entrypoint
 COPY --link examples/yarn/dagger.graphql /dagger.graphql
 ENTRYPOINT ["/entrypoint"]
-LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs
