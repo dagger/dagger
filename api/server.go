@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/secrets"
@@ -69,6 +70,11 @@ func (s Server) serve(ctx context.Context, l net.Listener) error {
 			Schema:     &schema,
 			Playground: true,
 			GraphiQL:   false,
+			ResultCallbackFn: func(ctx context.Context, params *graphql.Params, result *graphql.Result, body []byte) {
+				if result.Errors != nil {
+					fmt.Printf("RETURNING ERRORS: %+v\n", result.Errors)
+				}
+			},
 		}),
 		BaseContext: func(net.Listener) context.Context {
 			ctx := withGatewayClient(ctx, s.gw)
