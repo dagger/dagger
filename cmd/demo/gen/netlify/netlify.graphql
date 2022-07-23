@@ -7,7 +7,12 @@ type Deploy {
 }
 
 type Netlify {
-  deploy(contents: FS!, siteName: String, token: String): Deploy!
+  deploy(
+    contents: FS!
+    subdir: String
+    siteName: String
+    token: String
+  ): Deploy!
 }
 
 type Query {

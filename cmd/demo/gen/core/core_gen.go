@@ -9,6 +9,32 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+type CoreExecInput struct {
+	Mounts  []CoreMount `json:"mounts"`
+	Args    []string    `json:"args"`
+	Workdir string      `json:"workdir"`
+}
+
+// GetMounts returns CoreExecInput.Mounts, and is useful for accessing the field via an interface.
+func (v *CoreExecInput) GetMounts() []CoreMount { return v.Mounts }
+
+// GetArgs returns CoreExecInput.Args, and is useful for accessing the field via an interface.
+func (v *CoreExecInput) GetArgs() []string { return v.Args }
+
+// GetWorkdir returns CoreExecInput.Workdir, and is useful for accessing the field via an interface.
+func (v *CoreExecInput) GetWorkdir() string { return v.Workdir }
+
+type CoreMount struct {
+	Path string    `json:"path"`
+	Fs   dagger.FS `json:"fs"`
+}
+
+// GetPath returns CoreMount.Path, and is useful for accessing the field via an interface.
+func (v *CoreMount) GetPath() string { return v.Path }
+
+// GetFs returns CoreMount.Fs, and is useful for accessing the field via an interface.
+func (v *CoreMount) GetFs() dagger.FS { return v.Fs }
+
 // DockerfileCore includes the requested fields of the GraphQL type Core.
 type DockerfileCore struct {
 	Dockerfile dagger.FS `json:"dockerfile"`
@@ -35,11 +61,11 @@ func (v *ExecCore) GetExec() ExecCoreExec { return v.Exec }
 
 // ExecCoreExec includes the requested fields of the GraphQL type CoreExec.
 type ExecCoreExec struct {
-	Fs dagger.FS `json:"fs"`
+	Root dagger.FS `json:"root"`
 }
 
-// GetFs returns ExecCoreExec.Fs, and is useful for accessing the field via an interface.
-func (v *ExecCoreExec) GetFs() dagger.FS { return v.Fs }
+// GetRoot returns ExecCoreExec.Root, and is useful for accessing the field via an interface.
+func (v *ExecCoreExec) GetRoot() dagger.FS { return v.Root }
 
 // ExecResponse is returned by Exec on success.
 type ExecResponse struct {
@@ -107,15 +133,11 @@ func (v *__DockerfileInput) GetDockerfileName() string { return v.DockerfileName
 
 // __ExecInput is used internally by genqlient
 type __ExecInput struct {
-	Fs   dagger.FS `json:"fs"`
-	Args []string  `json:"args"`
+	Input CoreExecInput `json:"input"`
 }
 
-// GetFs returns __ExecInput.Fs, and is useful for accessing the field via an interface.
-func (v *__ExecInput) GetFs() dagger.FS { return v.Fs }
-
-// GetArgs returns __ExecInput.Args, and is useful for accessing the field via an interface.
-func (v *__ExecInput) GetArgs() []string { return v.Args }
+// GetInput returns __ExecInput.Input, and is useful for accessing the field via an interface.
+func (v *__ExecInput) GetInput() CoreExecInput { return v.Input }
 
 // __ImageInput is used internally by genqlient
 type __ImageInput struct {
@@ -178,23 +200,21 @@ query Dockerfile ($context: FS!, $dockerfileName: String!) {
 
 func Exec(
 	ctx context.Context,
-	fs dagger.FS,
-	args []string,
+	input CoreExecInput,
 ) (*ExecResponse, error) {
 	req := &graphql.Request{
 		OpName: "Exec",
 		Query: `
-query Exec ($fs: FS!, $args: [String]!) {
+query Exec ($input: CoreExecInput!) {
 	core {
-		exec(fs: $fs, args: $args) {
-			fs
+		exec(input: $input) {
+			root
 		}
 	}
 }
 `,
 		Variables: &__ExecInput{
-			Fs:   fs,
-			Args: args,
+			Input: input,
 		},
 	}
 	var err error

@@ -1,6 +1,16 @@
-query Deploy($contents: FS!, $siteName: String!, $token: String!) {
+query Deploy(
+  $contents: FS!
+  $subdir: String
+  $siteName: String!
+  $token: String!
+) {
   netlify {
-    deploy(contents: $contents, siteName: $siteName, token: $token) {
+    deploy(
+      contents: $contents
+      subdir: $subdir
+      siteName: $siteName
+      token: $token
+    ) {
       url
       deployUrl
     }

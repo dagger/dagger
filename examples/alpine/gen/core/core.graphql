@@ -4,12 +4,23 @@ type CoreImage {
   fs: FS!
 }
 type CoreExec {
+  root: FS!
+  getMount(path: String!): FS!
+}
+
+input CoreMount {
+  path: String!
   fs: FS!
+}
+input CoreExecInput {
+  mounts: [CoreMount!]!
+  args: [String!]!
+  workdir: String
 }
 
 type Core {
   image(ref: String!): CoreImage
-  exec(fs: FS!, args: [String]!): CoreExec
+  exec(input: CoreExecInput!): CoreExec
 }
 
 type Query {

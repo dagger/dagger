@@ -3,13 +3,24 @@ scalar FS
 type CoreImage {
   fs: FS!
 }
-type CoreExec {
+
+input CoreMount {
+  path: String!
   fs: FS!
+}
+input CoreExecInput {
+  mounts: [CoreMount!]!
+  args: [String!]!
+  workdir: String
+}
+type CoreExec {
+  root: FS!
+  getMount(path: String!): FS!
 }
 
 type Core {
   image(ref: String!): CoreImage
-  exec(fs: FS!, args: [String]!): CoreExec
+  exec(input: CoreExecInput!): CoreExec
   dockerfile(context: FS!, dockerfileName: String): FS!
 }
 
