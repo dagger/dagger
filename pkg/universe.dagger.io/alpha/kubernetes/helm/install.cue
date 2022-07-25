@@ -10,7 +10,7 @@ _#defaultNamespace: "default"
 #Install: {
 	// The image to use when running the action.
 	// Must contain the helm binary. Defaults to alpine/helm
-	image: *#Image.output | docker.#Image
+	image: *#Image | docker.#Image
 
 	// Name of your release
 	name:       string | *""
@@ -46,7 +46,7 @@ _#defaultNamespace: "default"
 	}
 
 	run: docker.#Run & {
-		input: image
+		input: image.output
 		env: {
 			NAME:          name
 			GENERATE_NAME: _generateName
