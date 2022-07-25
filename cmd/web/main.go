@@ -6,29 +6,41 @@ import (
 	"os"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/dagger/cloak/cmd/web/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [package ...]\n", os.Args[0])
+	f := "./dagger.yaml"
+	if len(os.Args) > 1 {
+		f = os.Args[1]
+	}
+	cfg, err := config.ParseFile(f)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	packages := os.Args[1:]
 
 	startOpts := &engine.StartOpts{
-		LocalDirs: map[string]string{
-			".": ".",
-		},
+		LocalDirs: make(map[string]string),
+	}
+	for _, action := range cfg.Actions {
+		if action.Local != "" {
+			startOpts.LocalDirs[action.Local] = action.Local
+		}
 	}
 
-	err := engine.Start(context.Background(), startOpts,
+	err = engine.Start(context.Background(), startOpts,
 		func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error) {
-			for _, pkg := range packages {
-				importLocal(ctx, localDirs["."], pkg, "Dockerfile."+pkg)
+			for name, action := range cfg.Actions {
+				switch {
+				case action.Local != "":
+					importLocal(ctx, localDirs[action.Local], name, action.Dockerfile)
+				case action.Image != "":
+					importImage(ctx, name, action.Image)
+				}
 			}
-
 			return nil, engine.ListenAndServe(ctx, 8080)
 		})
 	if err != nil {
