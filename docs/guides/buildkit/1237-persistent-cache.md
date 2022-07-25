@@ -126,7 +126,7 @@ dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cac
 ```
 
 :::info
-See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#registry-push-image-and-cache-separately)
+See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.3/README.md#registry-push-image-and-cache-separately)
 :::
 
 ## Persistent cache in your local filesystem
@@ -175,7 +175,7 @@ dagger do build --cache-to type=local,mode=max,dest=storage --cache-from type=lo
 
 :::info
 In this part, we have learned to export and import cache using a local filesystem, if you want
-to see more options on local export, look at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#local-directory-1)
+to see more options on local export, look at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.3/README.md#local-directory-1)
 :::
 
 ## Persistent cache in GitHub Actions
@@ -212,9 +212,9 @@ jobs:
 ```
 
 :::warning
-To avoid invalidating cache between your PR, you can take inspiration from [Dagger ci](https://github.com/dagger/dagger/blob/v0.2.19/.github/workflows/dagger-ci.yml#L61)
+To avoid invalidating cache between your PR, you can take inspiration from [dagger-ci.yml](https://github.com/dagger/dagger/blob/v0.2.25/.github/workflows/dagger-ci.yml#L61) GitHub Actions workflow.
 :::
 
 :::info
-See more options on GitHub export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.1/README.md#github-actions-cache-experimental)
+See more options on GitHub export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.3/README.md#github-actions-cache-experimental)
 :::

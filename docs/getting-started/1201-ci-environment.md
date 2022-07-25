@@ -45,7 +45,7 @@ language: minimal
 
 env:
   global:
-    - DAGGER_VERSION: 0.2.19
+    - DAGGER_VERSION: 0.2.25
     - DAGGER_LOG_FORMAT: plain
     - DAGGER_CACHE_PATH: .dagger-cache
 
@@ -131,7 +131,7 @@ workflows:
 .dagger:
   extends: [.docker]
   variables:
-    DAGGER_VERSION: 0.2.24
+    DAGGER_VERSION: 0.2.25
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
