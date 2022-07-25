@@ -14,7 +14,7 @@ func TestGreeting(t *testing.T) {
 	if expect != value {
 		t.Fatalf("Hello(%s) = '%s', expected '%s'", name, value, expect)
 	}
-	err := testutil.OKResultFile("/tmp/greeting_test.result")
+	_, err := testutil.OKResultFile("test-greeting-*", "greeting_test.result")
 	if err != nil {
 		t.Fatalf("can not create test result file: %v", err)
 	}

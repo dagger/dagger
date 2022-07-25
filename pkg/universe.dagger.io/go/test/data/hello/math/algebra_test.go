@@ -13,7 +13,7 @@ func TestAdd(t *testing.T) {
 		t.Fatalf("expected 3, exected %d", got)
 	}
 
-	err := testutil.OKResultFile("/tmp/math_test.result")
+	_, err := testutil.OKResultFile("test-math-*", "math_test.result")
 	if err != nil {
 		t.Fatalf("can not create test result file: %v", err)
 	}

@@ -24,12 +24,16 @@ dagger.#Plan & {
 			}
 
 			verify: docker.#Run & {
-				input: test.output
+				input:  test.output
+				always: true
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
-						test "OK" = $(cat /tmp/greeting_test.result)
-						test ! -f "/tmp/math_test.result"
+						echo "========== START"
+						find /tmp/
+						echo "========== DONE"
+						test "OK" = $(cat /tmp/test-greeting-*/greeting_test.result)
+						test ! -f "/tmp/test-math-*/math_test.result"
 						""",
 					]
 				}
@@ -43,12 +47,17 @@ dagger.#Plan & {
 			}
 
 			verify: docker.#Run & {
-				input: test.output
+				input:  test.output
+				always: true
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
-						test "OK" = $(cat /tmp/greeting_test.result)
-						test "OK" = $(cat /tmp/math_test.result)
+						echo "========== START"
+						find /tmp/
+
+						echo "========== DONE"
+						test "OK" = $(cat /tmp/test-greeting-*/greeting_test.result)
+						test "OK" = $(cat /tmp/test-math-*/math_test.result)
 						""",
 					]
 				}
@@ -63,13 +72,17 @@ dagger.#Plan & {
 			}
 
 			verify: docker.#Run & {
-				input: test.output
+				input:  test.output
+				always: true
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
+						echo "========== START"
+						find /tmp/
+						echo "========== DONE"
 						# when *packages* is set, *package* will be ignored. *math* will be selected'
-						test "OK" = $(cat /tmp/math_test.result)
-						test ! -f "/tmp/greeting_test.result"
+						test "OK" = $(cat /tmp/test-math-*/math_test.result)
+						test ! -f "/tmp/test-greeting-*/greeting_test.result"
 						""",
 					]
 				}

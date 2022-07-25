@@ -2,21 +2,27 @@ package testutil
 
 import (
 	"fmt"
-	"log"
 	"os"
+	"path/filepath"
 )
 
-func OKResultFile(filename string) error {
-	// first, we clean a file if it exists in the first place
-	err := os.Remove(filename)
+func OKResultFile(tmpDirPrefix, filename string) (string, error) {
+	tmpDir, err := os.MkdirTemp("/tmp", tmpDirPrefix)
 	if err != nil {
-		log.Printf("could not clean up test result file '%s': %v", filename, err)
+		return "", fmt.Errorf("can not create test temp dir: %w", err)
 	}
 
+	// first, we clean a file if it exists in the first place
+	//err := os.Remove(filename)
+	//if err != nil {
+	//	log.Printf("could not clean up test result file '%s': %v", filename, err)
+	//}
+
 	var f *os.File
-	f, err = os.Create(filename)
+	testFile := filepath.Join(tmpDir, filename)
+	f, err = os.Create(testFile)
 	if err != nil {
-		return fmt.Errorf("can not create test result file: %w", err)
+		return "", fmt.Errorf("can not create test result file: %w", err)
 	}
 	defer func() {
 		err = f.Close()
@@ -27,9 +33,9 @@ func OKResultFile(filename string) error {
 
 	_, err = f.Write([]byte("OK"))
 	if err != nil {
-		return fmt.Errorf("can not write test result file: %w", err)
+		return "", fmt.Errorf("can not write test result file: %w", err)
 	}
 
 	// can be set by the deferred f.Close()
-	return err
+	return testFile, err
 }
