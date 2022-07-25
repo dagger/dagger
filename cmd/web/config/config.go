@@ -9,6 +9,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/sdk/go/dagger"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
 )
 
@@ -60,22 +61,28 @@ func (c *Config) LocalDirs() map[string]string {
 }
 
 func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FS) error {
+	var eg errgroup.Group
 	for name, action := range c.Actions {
-		switch {
-		case action.Local != "":
-			err := importLocal(ctx, name, localDirs[action.Local], action.Dockerfile)
-			if err != nil {
-				return fmt.Errorf("error importing %s: %w", name, err)
+		name := name
+		action := action
+		eg.Go(func() error {
+			switch {
+			case action.Local != "":
+				err := importLocal(ctx, name, localDirs[action.Local], action.Dockerfile)
+				if err != nil {
+					return fmt.Errorf("error importing %s: %w", name, err)
+				}
+			case action.Image != "":
+				err := importImage(ctx, name, action.Image)
+				if err != nil {
+					return fmt.Errorf("error importing %s: %w", name, err)
+				}
 			}
-		case action.Image != "":
-			err := importImage(ctx, name, action.Image)
-			if err != nil {
-				return fmt.Errorf("error importing %s: %w", name, err)
-			}
-		}
+			return nil
+		})
 	}
 
-	return nil
+	return eg.Wait()
 }
 
 func importLocal(ctx context.Context, name string, cwd dagger.FS, dockerfile string) error {
