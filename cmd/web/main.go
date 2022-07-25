@@ -32,7 +32,7 @@ func main() {
 	}
 
 	err = engine.Start(context.Background(), startOpts,
-		func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error) {
+		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
 			for name, action := range cfg.Actions {
 				switch {
 				case action.Local != "":
