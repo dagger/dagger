@@ -1,0 +1,40 @@
+scalar FS
+
+type CoreImage {
+  fs: FS!
+}
+
+input CoreMount {
+  path: String!
+  fs: FS!
+}
+input CoreExecInput {
+  mounts: [CoreMount!]!
+  args: [String!]!
+  workdir: String
+}
+type CoreExec {
+  root: FS!
+  getMount(path: String!): FS!
+}
+
+type Core {
+  image(ref: String!): CoreImage
+  exec(input: CoreExecInput!): CoreExec
+  dockerfile(context: FS!, dockerfileName: String): FS!
+}
+
+type Query {
+  core: Core!
+}
+
+type Package {
+  name: String!
+  fs: FS!
+}
+
+type Mutation {
+  import(name: String!, fs: FS!): Package
+  readfile(fs: FS!, path: String!): String
+  clientdir(id: String!): FS
+}

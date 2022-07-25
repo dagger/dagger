@@ -1,58 +1,76 @@
+//go:generate go run github.com/Khan/genqlient ./gen/todoapp/genqlient.yaml
 package main
 
-// import (
-// 	"fmt"
-// 	"os"
+import (
+	"context"
+	"fmt"
+	"os"
 
-// 	"github.com/dagger/cloak/dagger"
-// )
+	"github.com/dagger/cloak/cmd/cloak/gen/core"
+	"github.com/dagger/cloak/cmd/cloak/gen/todoapp"
+	"github.com/dagger/cloak/engine"
+	"github.com/dagger/cloak/sdk/go/dagger"
+)
 
-// func main() {
-// 	if len(os.Args) < 3 {
-// 		fmt.Fprintf(os.Stderr, "Usage: %s <pkg> <action> [<payload>]\n", os.Args[0])
-// 		os.Exit(1)
-// 	}
-// 	pkg, action, payload := os.Args[1], os.Args[2], ""
-// 	if len(os.Args) > 3 {
-// 		payload = os.Args[3]
-// 	}
-// 	err := dagger.Client(func(ctx *dagger.Context) error {
-// 		payload, err := dagger.Marshal(ctx, payload)
-// 		if err != nil {
-// 			panic(err)
-// 		}
+const netlifyTokenID = "netlify-token"
 
-// 		output, err := dagger.Do(ctx, pkg, action, payload)
-// 		if err != nil {
-// 			panic(err)
-// 		}
+// TODO: convert to cli wrapper
+func main() {
+	netlifyToken := os.Getenv("NETLIFY_AUTH_TOKEN")
+	if netlifyToken == "" {
+		fmt.Fprintf(os.Stderr, "missing %s environment variable\n", "NETLIFY_AUTH_TOKEN")
+		os.Exit(1)
+	}
 
-// 		err = output.Evaluate(ctx)
-// 		if err != nil {
-// 			panic(err)
-// 		}
+	startOpts := &engine.StartOpts{
+		LocalDirs: map[string]string{
+			".":   ".",
+			"src": "./examples/todoapp/app",
+		},
+		Secrets: map[string]string{
+			netlifyTokenID: os.Getenv("NETLIFY_AUTH_TOKEN"),
+		},
+	}
 
-// 		var stringOutput string
-// 		if err := dagger.Unmarshal(ctx, output, &stringOutput); err != nil {
-// 			return err
-// 		}
-// 		fmt.Printf("%s\n", stringOutput)
+	err := engine.Start(context.Background(), startOpts,
+		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
+			importLocal(ctx, localDirs["."], "alpine", "Dockerfile.alpine")
+			importLocal(ctx, localDirs["."], "netlify", "Dockerfile.netlify")
+			importLocal(ctx, localDirs["."], "yarn", "Dockerfile.yarn")
+			importLocal(ctx, localDirs["."], "todoapp", "Dockerfile.todoapp")
 
-// 		// NOTE: interesting use for dynamic-ish data here to get an FS from any output:
-// 		type fsOutput struct {
-// 			FS dagger.FS `json:"fs,omitempty"`
-// 		}
-// 		var fs fsOutput
-// 		if err := dagger.Unmarshal(ctx, output, &fs); err == nil {
-// 			if err := dagger.Shell(ctx, fs.FS); err != nil {
-// 				panic(err)
-// 			}
-// 		}
+			output, err := todoapp.Deploy(ctx, localDirs["src"], secrets[netlifyTokenID])
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("%+v\n", output.Todoapp)
 
-// 		return nil
-// 	})
-// 	if err != nil {
-// 		panic(err)
-// 	}
+			return nil, nil
+		})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-// }
+func importLocal(ctx context.Context, cwd dagger.FS, pkgName string, dockerfile string) {
+	output, err := core.Dockerfile(ctx, cwd, dockerfile)
+	if err != nil {
+		panic(err)
+	}
+	_, err = core.Import(ctx, pkgName, output.Core.Dockerfile)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func importImage(ctx context.Context, pkgName string, ref string) {
+	output, err := core.Image(ctx, ref)
+	if err != nil {
+		panic(err)
+	}
+	_, err = core.Import(ctx, pkgName, output.Core.Image.Fs)
+	if err != nil {
+		panic(err)
+	}
+}

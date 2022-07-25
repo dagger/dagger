@@ -783,11 +783,15 @@ type Mutation {
 								if !ok {
 									return nil, fmt.Errorf("invalid clientdir id")
 								}
+								gw, err := getGatewayClient(p)
+								if err != nil {
+									return nil, err
+								}
 								llbdef, err := llb.Local(
 									id,
-									// TODO: better shared key hint and session
+									// TODO: better shared key hint?
 									llb.SharedKeyHint(id),
-									llb.SessionID(id),
+									llb.SessionID(gw.BuildOpts().SessionID),
 								).Marshal(p.Context)
 								if err != nil {
 									return nil, err

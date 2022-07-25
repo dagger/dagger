@@ -26,7 +26,7 @@ const resolvers = {
             {
               core {
                 exec(input: {
-                  args: ["yarn", "install"],
+                  args: ["yarn", "install"], 
                   mounts: [
                     {path: "/", fs: "${base}"},
                     {path: "/src", fs: "${args.source}"},

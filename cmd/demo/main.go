@@ -2,6 +2,7 @@
 //go:generate go run github.com/Khan/genqlient ./gen/alpine/genqlient.yaml
 //go:generate go run github.com/Khan/genqlient ./gen/netlify/genqlient.yaml
 //go:generate go run github.com/Khan/genqlient ./gen/yarn/genqlient.yaml
+//go:generate go run github.com/Khan/genqlient ./gen/todoapp/genqlient.yaml
 package main
 
 import (
@@ -28,7 +29,7 @@ func main() {
 	startOpts := &engine.StartOpts{
 		LocalDirs: map[string]string{
 			".":   ".",
-			"src": "./examples/todoapp",
+			"src": "./examples/todoapp/app",
 		},
 		Secrets: map[string]string{
 			netlifyTokenID: os.Getenv("NETLIFY_AUTH_TOKEN"),
@@ -46,8 +47,15 @@ func main() {
 			importLocal(ctx, localDirs["."], "alpine", "Dockerfile.alpine")
 			importLocal(ctx, localDirs["."], "netlify", "Dockerfile.netlify")
 			importLocal(ctx, localDirs["."], "yarn", "Dockerfile.yarn")
+			importLocal(ctx, localDirs["."], "todoapp", "Dockerfile.todoapp")
 
-			// TODO: llb.copy local dirs so when its mounted it doesn't cause cache invalidation
+			/*
+				output, err := todoapp.Deploy(ctx, localDirs["src"], secrets[netlifyTokenID])
+				if err != nil {
+					return nil, err
+				}
+				fmt.Printf("%+v\n", output.Todoapp)
+			*/
 
 			yarnOutput, err := yarn.Script(ctx, localDirs["src"], "build")
 			if err != nil {

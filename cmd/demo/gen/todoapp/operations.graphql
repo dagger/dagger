@@ -1,0 +1,20 @@
+query Build($src: FS!) {
+  todoapp {
+    build(src: $src)
+  }
+}
+
+query Test($src: FS!) {
+  todoapp {
+    test(src: $src)
+  }
+}
+
+query Deploy($src: FS!, $token: String) {
+  todoapp {
+    deploy(src: $src, token: $token) {
+      url
+      deployUrl
+    }
+  }
+}
