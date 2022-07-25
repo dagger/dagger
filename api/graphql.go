@@ -207,6 +207,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
+
 		gw, err := getGatewayClient(p)
 		if err != nil {
 			return nil, err
@@ -228,7 +229,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
+		// fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
 		var output interface{}
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
@@ -363,6 +364,7 @@ type Core {
 	image(ref: String!): CoreImage
 	exec(input: CoreExecInput!): CoreExec
 	dockerfile(context: FS!, dockerfileName: String): FS!
+	copy(src: FS!, srcPath: String, dst: FS, dstPath: String): FS!
 }
 
 type Query {
@@ -571,10 +573,6 @@ type Mutation {
 									}
 								}
 
-								fs, err := fs.Evaluate(p.Context)
-								if err != nil {
-									return nil, err
-								}
 								gw, err := getGatewayClient(p)
 								if err != nil {
 									return nil, err
@@ -614,6 +612,60 @@ type Mutation {
 								return FS{PB: llbdef.ToPB()}, nil
 							},
 						},
+						"copy": &tools.FieldResolve{
+							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+								if !shouldEval(p.Context) {
+									return lazyResolve(p)
+								}
+								src, ok := p.Args["src"].(FS)
+								if !ok {
+									return nil, fmt.Errorf("invalid copy src")
+								}
+								srcPath, ok := p.Args["srcPath"].(string)
+								if !ok {
+									srcPath = "/"
+								}
+								dst, ok := p.Args["dst"].(FS)
+								if !ok {
+									dst = FS{}
+								}
+								dstPath, ok := p.Args["dstPath"].(string)
+								if !ok {
+									dstPath = "/"
+								}
+								srcState, err := src.ToState()
+								if err != nil {
+									return nil, err
+								}
+								var dstState llb.State
+								if dst.PB != nil {
+									dstState, err = dst.ToState()
+									if err != nil {
+										return nil, err
+									}
+								} else {
+									dstState = llb.Scratch()
+								}
+								llbdef, err := dstState.File(
+									llb.Copy(srcState, srcPath, dstPath),
+								).Marshal(p.Context, llb.Platform(getPlatform(p)))
+								if err != nil {
+									return nil, err
+								}
+								gw, err := getGatewayClient(p)
+								if err != nil {
+									return nil, err
+								}
+								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
+									Evaluate:   true,
+									Definition: llbdef.ToPB(),
+								})
+								if err != nil {
+									return nil, err
+								}
+								return FS{PB: llbdef.ToPB()}, nil
+							},
+						},
 					},
 				},
 
@@ -630,10 +682,6 @@ type Mutation {
 								fs, ok := p.Args["fs"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
-								}
-								fs, err := fs.Evaluate(p.Context)
-								if err != nil {
-									return nil, fmt.Errorf("failed to evaluate fs: %v", err)
 								}
 
 								gw, err := getGatewayClient(p)
@@ -688,10 +736,6 @@ type Mutation {
 								if !ok {
 									return nil, fmt.Errorf("invalid path")
 								}
-								fs, err := fs.Evaluate(p.Context)
-								if err != nil {
-									return nil, err
-								}
 								gw, err := getGatewayClient(p)
 								if err != nil {
 									return nil, err
@@ -739,7 +783,12 @@ type Mutation {
 								if !ok {
 									return nil, fmt.Errorf("invalid clientdir id")
 								}
-								llbdef, err := llb.Local(id).Marshal(p.Context)
+								llbdef, err := llb.Local(
+									id,
+									// TODO: better shared key hint and session
+									llb.SharedKeyHint(id),
+									llb.SessionID(id),
+								).Marshal(p.Context)
 								if err != nil {
 									return nil, err
 								}
