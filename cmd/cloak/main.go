@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 
@@ -14,19 +16,43 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+type kvInput map[string]string
+
+func (i kvInput) String() string {
+	return fmt.Sprintf("%+v", map[string]string(i))
+}
+
+func (i kvInput) Set(value string) error {
+	kvs := strings.Split(value, ",")
+	for _, kv := range kvs {
+		split := strings.SplitN(kv, "=", 2)
+		i[split[0]] = split[1]
+	}
+	return nil
+}
+
 func main() {
+	localDirs := kvInput{}
+	flag.Var(&localDirs, "local-dirs", "local directories to import")
+
+	secrets := kvInput{}
+	flag.Var(&secrets, "secrets", "secrets to import")
+
+	flag.Parse()
+
 	cfg, err := config.ParseFile("./dagger.yaml")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	localDirs := cfg.LocalDirs()
-	// TODO: read this from cli flags
-	localDirs["src"] = "../../examples/todoapp/app"
+	for name, dir := range cfg.LocalDirs() {
+		localDirs[name] = dir
+	}
 
 	startOpts := &engine.StartOpts{
 		LocalDirs: localDirs,
+		Secrets:   secrets,
 	}
 
 	err = engine.Start(context.Background(), startOpts,
@@ -44,6 +70,10 @@ func main() {
 			for name, fs := range localDirs {
 				// TODO: need better naming convention
 				vars["local_"+name] = fs
+			}
+			for name, fs := range secrets {
+				// TODO: need better naming convention
+				vars["secret_"+name] = fs
 			}
 
 			cl, err := dagger.Client(ctx)
