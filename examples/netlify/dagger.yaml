@@ -1,0 +1,4 @@
+actions:
+  netlify:
+    local: ../..
+    dockerfile: Dockerfile.netlify

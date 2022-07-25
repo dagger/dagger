@@ -1,4 +1,3 @@
-//go:generate go run github.com/Khan/genqlient ./gen/todoapp/genqlient.yaml
 package main
 
 import (
@@ -38,9 +37,12 @@ func main() {
 	secrets := kvInput{}
 	flag.Var(&secrets, "secrets", "secrets to import")
 
+	var configFile string
+	flag.StringVar(&configFile, "f", "./dagger.yaml", "config file")
+
 	flag.Parse()
 
-	cfg, err := config.ParseFile("./dagger.yaml")
+	cfg, err := config.ParseFile(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

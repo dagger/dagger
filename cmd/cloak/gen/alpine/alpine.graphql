@@ -1,9 +1,0 @@
-scalar FS
-
-type Alpine {
-  build(pkgs: [String!]!): FS!
-}
-
-type Query {
-  alpine: Alpine!
-}

@@ -1,0 +1,7 @@
+actions:
+  alpine:
+    local: ../..
+    dockerfile: Dockerfile.alpine
+  yarn:
+    local: ../..
+    dockerfile: Dockerfile.yarn
