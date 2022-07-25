@@ -47,7 +47,7 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
-			fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
+			// fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
 
 			netlifyOutput, err := netlify.Deploy(ctx, yarnOutput.Yarn.Script, "build", "test-cloak-netlify-deploy", netlifyTokenID)
 			if err != nil {

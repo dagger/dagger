@@ -83,6 +83,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				res := struct {
 					ClientDir dagger.FS
 				}{}
+				resp := &graphql.Response{Data: &res}
 				err = cl.MakeRequest(ctx,
 					&graphql.Request{
 						Query: `
@@ -93,13 +94,44 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 							"id": localID,
 						},
 					},
-					&graphql.Response{Data: &res},
+					resp,
 				)
 				if err != nil {
 					return nil, err
 				}
+				if len(resp.Errors) > 0 {
+					return nil, resp.Errors
+				}
 
-				localDirs[localID] = dagger.FS(res.ClientDir)
+				// copy to scratch to avoid making the buildkit's snapshot of the local dir immutable,
+				// which makes it unable to reused, which in turn creates cache invalidations
+				copyRes := struct {
+					Core struct {
+						Copy dagger.FS
+					}
+				}{}
+				resp = &graphql.Response{Data: &copyRes}
+				err = cl.MakeRequest(ctx,
+					&graphql.Request{
+						Query: `
+							query Copy($src: FS!) {
+								core {
+									copy(src: $src)
+								}
+							}`,
+						Variables: map[string]any{
+							"src": res.ClientDir,
+						},
+					},
+					resp,
+				)
+				if err != nil {
+					return nil, err
+				}
+				if len(resp.Errors) > 0 {
+					return nil, resp.Errors
+				}
+				localDirs[localID] = copyRes.Core.Copy
 			}
 
 			outputFs, err := fn(ctx, localDirs)

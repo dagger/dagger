@@ -16,7 +16,7 @@ const resolvers = {
           `
         )
         .then((result: any) => result.alpine.build);
-      console.log("base: ", base);
+      // console.log("base: ", base);
 
       // TODO: get output of commands
       // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
@@ -38,7 +38,7 @@ const resolvers = {
           `
         )
         .then((result: any) => result.core.exec.getMount);
-      console.log("yarnInstall: ", yarnInstall);
+      // console.log("yarnInstall: ", yarnInstall);
 
       const yarnRun = await client
         .request(
@@ -58,7 +58,7 @@ const resolvers = {
           `
         )
         .then((result: any) => result.core.exec.getMount);
-      console.log("yarnRun: ", yarnRun);
+      // console.log("yarnRun: ", yarnRun);
 
       return yarnRun;
     },
