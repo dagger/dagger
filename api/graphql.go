@@ -792,6 +792,8 @@ type Mutation {
 									// TODO: better shared key hint?
 									llb.SharedKeyHint(id),
 									llb.SessionID(gw.BuildOpts().SessionID),
+									// FIXME: should not be hardcoded
+									llb.ExcludePatterns([]string{"**/node_modules"}),
 								).Marshal(p.Context)
 								if err != nil {
 									return nil, err
