@@ -17,4 +17,9 @@ func TestAdd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("can not create test result file: %v", err)
 	}
+
+	err = testutil.FindTmp()
+	if err != nil {
+		t.Fatalf("can not check tmp files: %v", err)
+	}
 }

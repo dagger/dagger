@@ -18,22 +18,22 @@ dagger.#Plan & {
 		}
 
 		withPackage: {
-			test: go.#Test & {
+			wptest: go.#Test & {
 				source:  _src
 				package: "./greeting"
 			}
 
 			verify: docker.#Run & {
-				input:  test.output
+				input:  wptest.output
 				always: true
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
 						echo "========== START"
-						find /tmp/
+						find ~/test/
 						echo "========== DONE"
-						test "OK" = $(cat /tmp/test-greeting-*/greeting_test.result)
-						test ! -f "/tmp/test-math-*/math_test.result"
+						test "OK" = $(cat ~/test/test-greeting-*/greeting_test.result)
+						test ! -f "~/test/test-math-*/math_test.result"
 						""",
 					]
 				}
@@ -41,23 +41,22 @@ dagger.#Plan & {
 		}
 
 		withPackages: {
-			test: go.#Test & {
+			wpstest: go.#Test & {
 				source: _src
 				packages: ["./greeting", "./math"]
 			}
 
 			verify: docker.#Run & {
-				input:  test.output
+				input:  wpstest.output
 				always: true
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
 						echo "========== START"
-						find /tmp/
-
+						find ~/test/
 						echo "========== DONE"
-						test "OK" = $(cat /tmp/test-greeting-*/greeting_test.result)
-						test "OK" = $(cat /tmp/test-math-*/math_test.result)
+						test "OK" = $(cat ~/test/test-greeting-*/greeting_test.result)
+						test "OK" = $(cat ~/test/test-math-*/math_test.result)
 						""",
 					]
 				}
@@ -65,24 +64,24 @@ dagger.#Plan & {
 		}
 
 		withBoth: {
-			test: go.#Test & {
+			wbtest: go.#Test & {
 				source:  _src
 				package: "./greeting"
 				packages: ["./math"]
 			}
 
 			verify: docker.#Run & {
-				input:  test.output
+				input:  wbtest.output
 				always: true
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
 						echo "========== START"
-						find /tmp/
+						find ~/test/
 						echo "========== DONE"
 						# when *packages* is set, *package* will be ignored. *math* will be selected'
-						test "OK" = $(cat /tmp/test-math-*/math_test.result)
-						test ! -f "/tmp/test-greeting-*/greeting_test.result"
+						test "OK" = $(cat ~/test/test-math-*/math_test.result)
+						test ! -f "~/test/test-greeting-*/greeting_test.result"
 						""",
 					]
 				}
