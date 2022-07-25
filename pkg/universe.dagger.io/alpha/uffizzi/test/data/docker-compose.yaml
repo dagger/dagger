@@ -1,0 +1,43 @@
+version: "3"
+
+x-uffizzi:
+  ingress:
+    service: wiki
+    port: 3000
+  continuous_previews:
+    deploy_preview_when_image_tag_is_created: true
+    delete_preview_after: 24h
+
+services:
+  db:
+    image: postgres:11-alpine
+    environment:
+      POSTGRES_DB: wiki
+      POSTGRES_PASSWORD: wikijsrocks
+      POSTGRES_USER: wikijs
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+
+  wiki:
+    image: ghcr.io/requarks/wiki:2
+    depends_on:
+      - db
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: wikijs
+      DB_PASS: wikijsrocks
+      DB_NAME: wiki
+    restart: unless-stopped
+    ports:
+      - "3000"
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+
+
