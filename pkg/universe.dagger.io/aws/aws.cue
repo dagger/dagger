@@ -41,7 +41,7 @@ import (
 	}
 
 	_scripts: core.#Source & {
-		path: "_scripts"
+		path: "scripts"
 	}
 
 	// The version of the AWS CLI to install
