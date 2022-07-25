@@ -19,6 +19,12 @@ import (
 const netlifyTokenID = "netlify-token"
 
 func main() {
+	netlifyToken := os.Getenv("NETLIFY_AUTH_TOKEN")
+	if netlifyToken == "" {
+		fmt.Fprintf(os.Stderr, "missing %s environment variable\n", "NETLIFY_AUTH_TOKEN")
+		os.Exit(1)
+	}
+
 	startOpts := &engine.StartOpts{
 		LocalDirs: map[string]string{
 			".":   ".",
@@ -36,7 +42,7 @@ func main() {
 	}
 
 	err := engine.Start(context.Background(), startOpts,
-		func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error) {
+		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
 			importLocal(ctx, localDirs["."], "alpine", "Dockerfile.alpine")
 			importLocal(ctx, localDirs["."], "netlify", "Dockerfile.netlify")
 			importLocal(ctx, localDirs["."], "yarn", "Dockerfile.yarn")
@@ -49,7 +55,7 @@ func main() {
 			}
 			// fmt.Printf("%+v\n", yarnOutput.Yarn.Script)
 
-			netlifyOutput, err := netlify.Deploy(ctx, yarnOutput.Yarn.Script, "build", "test-cloak-netlify-deploy", netlifyTokenID)
+			netlifyOutput, err := netlify.Deploy(ctx, yarnOutput.Yarn.Script, "build", "test-cloak-netlify-deploy", secrets[netlifyTokenID])
 			if err != nil {
 				return nil, err
 			}

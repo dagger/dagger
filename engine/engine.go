@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"time"
@@ -31,7 +33,7 @@ type StartOpts struct {
 	Secrets   map[string]string
 }
 
-type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS) (*dagger.FS, error)
+type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error)
 
 func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", bkclient.WithFailFast())
@@ -67,7 +69,17 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 					panic(r)
 				}
 			}()
-			server = api.NewServer(gw, platform, startOpts.Secrets)
+
+			secrets := make(map[string]string)
+			secretIDToKey := make(map[string]string)
+			for k, v := range startOpts.Secrets {
+				hashkey := sha256.Sum256([]byte(v))
+				hashVal := hex.EncodeToString(hashkey[:])
+				secrets[hashVal] = v
+				secretIDToKey[k] = hashVal
+			}
+
+			server = api.NewServer(gw, platform, secrets)
 
 			ctx = dagger.WithInMemoryAPIClient(ctx, server)
 			ctx = withGatewayClient(ctx, gw)
@@ -134,7 +146,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				localDirs[localID] = copyRes.Core.Copy
 			}
 
-			outputFs, err := fn(ctx, localDirs)
+			outputFs, err := fn(ctx, localDirs, secretIDToKey)
 			if err != nil {
 				return nil, err
 			}
@@ -268,7 +280,7 @@ func Shell(ctx context.Context, inputFS dagger.FS) error {
 }
 
 func ListenAndServe(ctx context.Context, port int) error {
-	return Start(ctx, nil, func(ctx context.Context, _ map[string]dagger.FS) (*dagger.FS, error) {
+	return Start(ctx, nil, func(ctx context.Context, _ map[string]dagger.FS, _ map[string]string) (*dagger.FS, error) {
 		gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
 		platform := ctx.Value(platformKey{}).(*specs.Platform)
 		return nil, api.ListenAndServe(ctx, port, gw, platform)
