@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -40,6 +41,9 @@ func main() {
 	var configFile string
 	flag.StringVar(&configFile, "f", "./dagger.yaml", "config file")
 
+	var queryFile string
+	flag.StringVar(&queryFile, "q", "", "query file")
+
 	flag.Parse()
 
 	cfg, err := config.ParseFile(configFile)
@@ -57,14 +61,25 @@ func main() {
 		Secrets:   secrets,
 	}
 
+	var inBytes []byte
+	if queryFile != "" {
+		inBytes, err = os.ReadFile(queryFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		inBytes, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	var result []byte
 	err = engine.Start(context.Background(), startOpts,
 		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
 			if err := cfg.Import(ctx, localDirs); err != nil {
-				return nil, err
-			}
-
-			inBytes, err := io.ReadAll(os.Stdin)
-			if err != nil {
 				return nil, err
 			}
 
@@ -97,10 +112,17 @@ func main() {
 			if len(resp.Errors) > 0 {
 				return nil, resp.Errors
 			}
+
+			result, err = json.MarshalIndent(res, "", "    ")
+			if err != nil {
+				return nil, err
+			}
 			return nil, nil
 		})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Printf("%s\n", result)
 }
