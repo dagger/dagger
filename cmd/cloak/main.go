@@ -32,6 +32,9 @@ func (i kvInput) Set(value string) error {
 }
 
 func main() {
+	vars := kvInput{}
+	flag.Var(&vars, "set", "set query variables")
+
 	localDirs := kvInput{}
 	flag.Var(&localDirs, "local-dirs", "local directories to import")
 
@@ -44,7 +47,19 @@ func main() {
 	var queryFile string
 	flag.StringVar(&queryFile, "q", "", "query file")
 
+	var operation string
+	flag.StringVar(&operation, "op", "", "operation to execute")
+
 	flag.Parse()
+
+	for name, fs := range localDirs {
+		// TODO: need better naming convention
+		vars["local_"+name] = fs
+	}
+	for name, fs := range secrets {
+		// TODO: need better naming convention
+		vars["secret_"+name] = fs
+	}
 
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {
@@ -83,16 +98,6 @@ func main() {
 				return nil, err
 			}
 
-			vars := map[string]any{}
-			for name, fs := range localDirs {
-				// TODO: need better naming convention
-				vars["local_"+name] = fs
-			}
-			for name, fs := range secrets {
-				// TODO: need better naming convention
-				vars["secret_"+name] = fs
-			}
-
 			cl, err := dagger.Client(ctx)
 			if err != nil {
 				return nil, err
@@ -103,6 +108,7 @@ func main() {
 				&graphql.Request{
 					Query:     string(inBytes),
 					Variables: vars,
+					OpName:    operation,
 				},
 				resp,
 			)
