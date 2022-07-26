@@ -369,6 +369,7 @@ type Core {
 
 type Query {
 	core: Core!
+	source: Source!
 }
 
 type Package {
@@ -382,6 +383,19 @@ type Mutation {
 	clientdir(id: String!): FS
 	readsecret(id: String!): String
 }
+
+
+type Source {
+	image(ref: String!): Filesystem!
+	git(remote: String!, ref: String): Filesystem!
+}
+
+type Filesystem {
+	id: ID!
+	exec(args: [String!]): Filesystem!
+	dockerfile(name: String): Filesystem!
+	file(path: String!): String
+}
 		`,
 			Resolvers: tools.ResolverMap{
 				"Query": &tools.ObjectResolver{
@@ -391,8 +405,18 @@ type Mutation {
 								return struct{}{}, nil
 							},
 						},
+						"source": &tools.FieldResolve{
+							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+								return struct{}{}, nil
+							},
+						},
 					},
 				},
+
+				// FIXME: chaining experiment
+				"Source":     sourceResolver,
+				"Filesystem": filesystemResolver,
+
 				"CoreExec": &tools.ObjectResolver{
 					Fields: tools.FieldResolveMap{
 						"getMount": &tools.FieldResolve{
