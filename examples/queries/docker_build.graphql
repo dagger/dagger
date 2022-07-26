@@ -1,7 +1,7 @@
 {
   source {
     git(remote: "github.com/moby/buildkit") {
-      dockerfile {
+      dockerbuild(dockerfile: "Dockerfile") {
         exec(args: ["sh", "-c", "buildctl --help > /out.txt"]) {
           file(path: "/out.txt")
         }

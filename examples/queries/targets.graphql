@@ -1,7 +1,7 @@
 query build {
   source {
     git(remote: "github.com/dagger/dagger") {
-      dockerfile {
+      dockerbuild {
         id
       }
     }

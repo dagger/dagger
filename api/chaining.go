@@ -196,7 +196,7 @@ var filesystemResolver = &tools.ObjectResolver{
 			},
 		},
 
-		"dockerfile": &tools.FieldResolve{
+		"dockerbuild": &tools.FieldResolve{
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				filesystem := p.Source.(*Filesystem)
 				def, err := filesystem.ToDefinition()
@@ -204,14 +204,7 @@ var filesystemResolver = &tools.ObjectResolver{
 					return nil, err
 				}
 
-				var dockerfileName string
-				rawDockerfileName, ok := p.Args["name"]
-				if ok {
-					dockerfileName, ok = rawDockerfileName.(string)
-					if !ok {
-						return nil, fmt.Errorf("invalid dockerfile name: %+v", rawDockerfileName)
-					}
-				}
+				dockerfileName, _ := p.Args["dockerfile"].(string)
 
 				gw, err := getGatewayClient(p)
 				if err != nil {
