@@ -10,7 +10,7 @@
 Simple alpine example (output will just be the encoded FS bytes for now, need to add export+shell util to `cloak` CLI):
 
 ```console
-go run cmd/cloak/main.go -f examples/alpine/dagger.yaml <<'EOF'
+go run $(pwd)/cmd/cloak query -f examples/alpine/dagger.yaml <<'EOF'
 {alpine{build(pkgs:["jq","curl"])}}
 EOF
 ```
@@ -18,13 +18,13 @@ EOF
 Yarn build:
 
 ```console
-go run cmd/cloak/main.go -f examples/yarn/dagger.yaml -q examples/yarn/operations.graphql --op Script --local-dir source=examples/todoapp/app --set name=build
+go run $(pwd)/cmd/cloak query -f examples/yarn/dagger.yaml -q examples/yarn/operations.graphql --op Script --local-dir source=examples/todoapp/app --set name=build
 ```
 
 TODOApp deploy:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/ts/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
+go run $(pwd)/cmd/cloak query -f examples/todoapp/ts/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
 query Build($src: FS!, $token: String!) {
     todoapp{deploy(src: $src, token: $token){url}}
 }
