@@ -89,7 +89,7 @@ Say we are creating a new Go package called `foo` that will have a single action
    1. Copy the existing `alpine` package to a new directory for the new package:
       - `cp -r examples/alpine examples/foo`
    1. `cd examples/foo`
-   1. `rm -rf alpine.go gen/alpine`
+   1. `rm -rf alpine.go gen`
    1. Open `gqlgen.yml` and replace every occurence of `alpine` with `foo`
       - This configures the code generation tool we use to create implementation stubs
    1. Open `dagger.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
@@ -102,13 +102,10 @@ Say we are creating a new Go package called `foo` that will have a single action
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
    1. Setup client stub configuration for each of your dependencies
-      - This is by far the ugliest part right now, desperately needs more automation
-      - For each of the dependencies you declared in `dagger.yaml` that wasn't your own package (i.e. `foo`):
-        - Create a directory `gen/<pkgname>`
-        - Declare the schema in `gen/<pkgname>/<pkgname>.graphql`.
-          - Note that in this case, you need use a slightly different format as now all the actions are not directly under `Query`. See for example `gen/core/core.graphql` where `Query` has `core: Core!` and `type Core` is where the actual actions are defined.
-        - Create a file `gen/<pkgname>/operations.graphql`, put an operation for each action from the package you want to call. See `gen/core/operations.graphql` as a reference.
-        - Create a file `gen/<pkgname>/genqclient.yaml` based on `gen/core/genqlient.yaml`, replacing the word `core` with `<pkgname>`
+      - `go run $(pwd)/../../cmd/cloak -f dagger.yaml generate --output-dir gen`
+        - This will parse your `dagger.yaml` and export `schema.graphql` and `operation.graphql` into a subdir under `gen/` for each of your dependencies (plus `core`)
+      - For each of the dependencies
+        - Create a file `gen/<pkgname>/genqclient.yaml` based on `../alpinegen/core/genqlient.yaml`, replacing the word `core` with `<pkgname>`
         - Add a `//go:generate` directive to the top of `main.go` in the form:
           - `//go:generate go run github.com/Khan/genqlient ./gen/<pkgname>/genqlient.yaml`
 1. Generate client stubs and implementation stubs
