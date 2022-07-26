@@ -1,11 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
 var (
-	configFile     string
+	configFile string
+
 	queryFile      string
 	operation      string
 	queryVarsInput []string
@@ -13,12 +17,17 @@ var (
 	secretsInput   []string
 
 	generateOutpuDir string
+
+	devServerPort int
 )
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "f", "./dagger.yaml", "config file")
-	rootCmd.AddCommand(queryCmd)
-	rootCmd.AddCommand(generateCmd)
+	rootCmd.AddCommand(
+		queryCmd,
+		generateCmd,
+		devCmd,
+	)
 
 	queryCmd.PersistentFlags().StringVarP(&queryFile, "query", "q", "", "query file")
 	queryCmd.PersistentFlags().StringVarP(&operation, "op", "o", "", "operation to execute")
@@ -27,6 +36,8 @@ func init() {
 	queryCmd.PersistentFlags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 
 	generateCmd.PersistentFlags().StringVar(&generateOutpuDir, "output-dir", "./", "output directory")
+
+	devCmd.PersistentFlags().IntVarP(&devServerPort, "port", "p", 8080, "dev server port")
 }
 
 var rootCmd = &cobra.Command{
@@ -43,6 +54,14 @@ var generateCmd = &cobra.Command{
 	Run: Generate,
 }
 
+var devCmd = &cobra.Command{
+	Use: "dev",
+	Run: Dev,
+}
+
 func main() {
-	rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
