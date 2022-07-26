@@ -147,10 +147,6 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				localDirs[localID] = copyRes.Core.Copy
 			}
 
-			if startOpts.DevServer != 0 {
-				server.ListenAndServe(ctx, startOpts.DevServer)
-			}
-
 			if fn == nil {
 				return nil, nil
 			}
@@ -174,6 +170,12 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 			}
 			if result == nil {
 				result = bkgw.NewResult()
+			}
+
+			if startOpts.DevServer != 0 {
+				if err := server.ListenAndServe(ctx, startOpts.DevServer); err != nil {
+					return nil, err
+				}
 			}
 
 			return result, nil
