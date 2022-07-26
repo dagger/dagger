@@ -62,7 +62,7 @@ func (fs *FS) UnmarshalText(b64Bytes []byte) error {
 	jsonBytes = jsonBytes[:n]
 	var result marshalFS
 	if err := json.Unmarshal(jsonBytes, &result); err != nil {
-		return fmt.Errorf("failed to unmarshal result: %v", err)
+		return fmt.Errorf("failed to unmarshal result: %v: %s", err, string(jsonBytes))
 	}
 	fs.PB = result.PB
 	fs.GraphQLRequest = result.GraphQLRequest

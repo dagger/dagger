@@ -15,12 +15,18 @@ go run cmd/cloak/main.go -f examples/alpine/dagger.yaml <<'EOF'
 EOF
 ```
 
-TODOApp deploy example:
+TODOApp build:
+
+```console
+go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -local-dirs src=examples/todoapp/app -q examples/todoapp/operations.graphql -op Build
+```
+
+TODOApp deploy:
 
 ```console
 go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -local-dirs src=examples/todoapp/app -secrets token="$NETLIFY_AUTH_TOKEN" <<'EOF'
-query Build($local_src: FS!, $secret_token: String!) {
-    todoapp{deploy(src: $local_src, token: $secret_token){url}}
+query Build($src: FS!, $token: String!) {
+    todoapp{deploy(src: $src, token: $token){url}}
 }
 EOF
 ```
@@ -41,9 +47,9 @@ TODO:
 
 TODO: automate and simplify the below
 
-Say we are creating a new Typescript package called `foo` that will have a single action `bar`.
-
 TODO: these instructions currently skip client stub generation for dependencies because the raw graphql interface is okay enough. See `examples/graphql_ts` for example use of generated client stubs.
+
+Say we are creating a new Typescript package called `foo` that will have a single action `bar`.
 
 1. Setup the Dockerfile used to build the package
    1. From the root of the repo, run `cp Dockerfile.todoapp Dockerfile.foo`

@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.2
+# syntax = docker/dockerfile:1
 
 FROM golang:1.18.2-alpine AS build
 WORKDIR /src
@@ -8,7 +8,6 @@ RUN --mount=target=. --mount=target=/root/.cache,type=cache \
     CGO_ENABLED=0 go build -o /out -ldflags '-s -d -w' ./examples/alpine
 
 FROM scratch
-COPY --from=build /out /entrypoint
-COPY ./examples/alpine/dagger.graphql /dagger.graphql
+COPY --link --from=build /out /entrypoint
+COPY --link ./examples/alpine/dagger.graphql /dagger.graphql
 ENTRYPOINT ["/entrypoint"]
-LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs
