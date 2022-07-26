@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
@@ -31,23 +32,19 @@ func NewServer(gw bkgw.Client, platform *specs.Platform, secrets map[string]stri
 	return s
 }
 
-func ListenAndServe(ctx context.Context, port int, gw bkgw.Client, platform *specs.Platform) error {
-	s := Server{
-		gw:       gw,
-		platform: platform,
-	}
-	ln, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
-	if err != nil {
-		return err
-	}
-	fmt.Printf("serving graphql on http://localhost:%d\n", port)
-	return s.serve(ctx, ln)
-}
-
 type Server struct {
 	gw       bkgw.Client
 	platform *specs.Platform
 	secrets  map[string]string
+}
+
+func (s Server) ListenAndServe(ctx context.Context, port int) error {
+	ln, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "serving graphql on http://localhost:%d\n", port)
+	return s.serve(ctx, ln)
 }
 
 func (s Server) ServeConn(ctx context.Context, conn net.Conn) {

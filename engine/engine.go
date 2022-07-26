@@ -31,6 +31,7 @@ type StartOpts struct {
 	// varying levels of effort (secrets are easy, local dirs are hard unless we patch upstream buildkit)
 	LocalDirs map[string]string
 	Secrets   map[string]string
+	DevServer int
 }
 
 type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error)
@@ -144,6 +145,14 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 					return nil, resp.Errors
 				}
 				localDirs[localID] = copyRes.Core.Copy
+			}
+
+			if startOpts.DevServer != 0 {
+				server.ListenAndServe(ctx, startOpts.DevServer)
+			}
+
+			if fn == nil {
+				return nil, nil
 			}
 
 			outputFs, err := fn(ctx, localDirs, secretIDToKey)
@@ -277,12 +286,4 @@ func Shell(ctx context.Context, inputFS dagger.FS) error {
 	}
 	defer terminal.Restore(int(os.Stdin.Fd()), termState)
 	return proc.Wait()
-}
-
-func ListenAndServe(ctx context.Context, port int) error {
-	return Start(ctx, &StartOpts{}, func(ctx context.Context, _ map[string]dagger.FS, _ map[string]string) (*dagger.FS, error) {
-		gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
-		platform := ctx.Value(platformKey{}).(*specs.Platform)
-		return nil, api.ListenAndServe(ctx, port, gw, platform)
-	})
 }

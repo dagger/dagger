@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/cloak/cmd/dev/config"
 	"github.com/dagger/cloak/engine"
-	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
 func main() {
@@ -24,15 +23,10 @@ func main() {
 	startOpts := &engine.StartOpts{
 		LocalDirs: cfg.LocalDirs(),
 		Secrets:   make(map[string]string),
+		DevServer: 8080,
 	}
 
-	err = engine.Start(context.Background(), startOpts,
-		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
-			if err := cfg.Import(ctx, localDirs); err != nil {
-				return nil, err
-			}
-			return nil, engine.ListenAndServe(ctx, 8080)
-		})
+	err = engine.Start(context.Background(), startOpts, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
