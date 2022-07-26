@@ -3,7 +3,7 @@
 ## Dagger Quickstart Templates
 Use/modify these examples to get going quickly!
 
-```
+
 └── templates
     ├── docker
     │   ├── alpine
@@ -18,4 +18,4 @@ Use/modify these examples to get going quickly!
         └── yarn
             ├── bash
             └── universe
-```
+
