@@ -35,6 +35,22 @@ func (v *CoreMount) GetPath() string { return v.Path }
 // GetFs returns CoreMount.Fs, and is useful for accessing the field via an interface.
 func (v *CoreMount) GetFs() dagger.FS { return v.Fs }
 
+// DockerfileCore includes the requested fields of the GraphQL type Core.
+type DockerfileCore struct {
+	Dockerfile dagger.FS `json:"dockerfile"`
+}
+
+// GetDockerfile returns DockerfileCore.Dockerfile, and is useful for accessing the field via an interface.
+func (v *DockerfileCore) GetDockerfile() dagger.FS { return v.Dockerfile }
+
+// DockerfileResponse is returned by Dockerfile on success.
+type DockerfileResponse struct {
+	Core DockerfileCore `json:"core"`
+}
+
+// GetCore returns DockerfileResponse.Core, and is useful for accessing the field via an interface.
+func (v *DockerfileResponse) GetCore() DockerfileCore { return v.Core }
+
 // ExecCore includes the requested fields of the GraphQL type Core.
 type ExecCore struct {
 	Exec ExecCoreExec `json:"exec"`
@@ -83,6 +99,38 @@ type ImageResponse struct {
 // GetCore returns ImageResponse.Core, and is useful for accessing the field via an interface.
 func (v *ImageResponse) GetCore() ImageCore { return v.Core }
 
+// ImportImportPackage includes the requested fields of the GraphQL type Package.
+type ImportImportPackage struct {
+	Name string    `json:"name"`
+	Fs   dagger.FS `json:"fs"`
+}
+
+// GetName returns ImportImportPackage.Name, and is useful for accessing the field via an interface.
+func (v *ImportImportPackage) GetName() string { return v.Name }
+
+// GetFs returns ImportImportPackage.Fs, and is useful for accessing the field via an interface.
+func (v *ImportImportPackage) GetFs() dagger.FS { return v.Fs }
+
+// ImportResponse is returned by Import on success.
+type ImportResponse struct {
+	Import ImportImportPackage `json:"import"`
+}
+
+// GetImport returns ImportResponse.Import, and is useful for accessing the field via an interface.
+func (v *ImportResponse) GetImport() ImportImportPackage { return v.Import }
+
+// __DockerfileInput is used internally by genqlient
+type __DockerfileInput struct {
+	Context        dagger.FS `json:"context"`
+	DockerfileName string    `json:"dockerfileName"`
+}
+
+// GetContext returns __DockerfileInput.Context, and is useful for accessing the field via an interface.
+func (v *__DockerfileInput) GetContext() dagger.FS { return v.Context }
+
+// GetDockerfileName returns __DockerfileInput.DockerfileName, and is useful for accessing the field via an interface.
+func (v *__DockerfileInput) GetDockerfileName() string { return v.DockerfileName }
+
 // __ExecInput is used internally by genqlient
 type __ExecInput struct {
 	Input CoreExecInput `json:"input"`
@@ -98,6 +146,57 @@ type __ImageInput struct {
 
 // GetRef returns __ImageInput.Ref, and is useful for accessing the field via an interface.
 func (v *__ImageInput) GetRef() string { return v.Ref }
+
+// __ImportInput is used internally by genqlient
+type __ImportInput struct {
+	Name string    `json:"name"`
+	Fs   dagger.FS `json:"fs"`
+}
+
+// GetName returns __ImportInput.Name, and is useful for accessing the field via an interface.
+func (v *__ImportInput) GetName() string { return v.Name }
+
+// GetFs returns __ImportInput.Fs, and is useful for accessing the field via an interface.
+func (v *__ImportInput) GetFs() dagger.FS { return v.Fs }
+
+func Dockerfile(
+	ctx context.Context,
+	context dagger.FS,
+	dockerfileName string,
+) (*DockerfileResponse, error) {
+	req := &graphql.Request{
+		OpName: "Dockerfile",
+		Query: `
+query Dockerfile ($context: FS!, $dockerfileName: String!) {
+	core {
+		dockerfile(context: $context, dockerfileName: $dockerfileName)
+	}
+}
+`,
+		Variables: &__DockerfileInput{
+			Context:        context,
+			DockerfileName: dockerfileName,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data DockerfileResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
 
 func Exec(
 	ctx context.Context,
@@ -166,6 +265,46 @@ query Image ($ref: String!) {
 	}
 
 	var data ImageResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func Import(
+	ctx context.Context,
+	name string,
+	fs dagger.FS,
+) (*ImportResponse, error) {
+	req := &graphql.Request{
+		OpName: "Import",
+		Query: `
+mutation Import ($name: String!, $fs: FS!) {
+	import(name: $name, fs: $fs) {
+		name
+		fs
+	}
+}
+`,
+		Variables: &__ImportInput{
+			Name: name,
+			Fs:   fs,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data ImportResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(

@@ -1,4 +1,4 @@
-schema: ./core.graphql
+schema: ./schema.graphql
 operations:
   - "./operations.graphql"
 generated: ./core_gen.go
