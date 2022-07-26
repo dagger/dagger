@@ -5,9 +5,9 @@
 1. Ensure `dagger-buildkitd` is running (invoke dagger if needed)
    - TODO: should port code from dagger for setting this up automatically to here in cloak
 
-## Invoking
+## Basic Invoking
 
-Simple alpine example (no output other than progress logs yet, need another flag in cloak cli):
+Simple alpine example (output will just be the encoded FS bytes for now, need to add export+shell util to `cloak` CLI):
 
 ```console
 go run cmd/cloak/main.go -f examples/alpine/dagger.yaml <<'EOF'
