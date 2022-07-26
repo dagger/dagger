@@ -11,7 +11,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 
-	"github.com/dagger/cloak/cmd/web/config"
+	"github.com/dagger/cloak/cmd/dev/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
