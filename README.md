@@ -27,7 +27,50 @@ EOF
 
 ## Development
 
+### Invoking Actions
+
+#### With Cloak CLI
+
+TODO:
+
+#### With Embedded Go SDK
+
+TODO:
+
+### Creating a new Typescript action
+
+TODO: automate and simplify the below
+
+Say we are creating a new Typescript package called `foo` that will have a single action `bar`.
+
+TODO: these instructions currently skip client stub generation for dependencies because the raw graphql interface is okay enough. See `examples/graphql_ts` for example use of generated client stubs.
+
+1. Setup the Dockerfile used to build the package
+   1. From the root of the repo, run `cp Dockerfile.todoapp Dockerfile.foo`
+   1. Open `Dockerfile.foo` and change occurences of `examples/todoapp` to `examples/foo`
+1. Setup the package configuration
+   1. Copy the existing `todoapp` package to a new directory for the new package:
+      - `cp -r examples/todoapp examples/foo`
+   1. `cd examples/foo`
+   1. `rm -rf app node_modules yarn.lock`
+   1. Open `package.json`, replace occurences of `todoapp` with `foo`
+   1. Open `dagger.graphql`, replace the existing `build`, `test` and `deploy` fields under `Query` with one field per action you want to implement
+      - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
+      - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
+   1. Open up `dagger.yaml`
+      - This is where you declare your own package in addition to dependencies of your package. Declaring packages here makes them available to be called by your action implementation in addition to telling cloak how to build them.
+      - Packages are declared by specifying how they are built. Currently, we just use Dockerfiles for everything, but in theory this should be much more flexible.
+      - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `Dockerfile.alpine` to `Dockerfile.foo`
+      - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
+      - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
+1. Implement your action by editing `index.ts`
+   - Replace each of the existing `build`, `test` and `deploy` fields under `resolver.Query` with one implementation for each action.
+   - The `args` parameter is an object with a field for each of the input args to your action (as defined in `dagger.graphql`
+   - The `FS` type will be of type `string` (as that's the representation of the `FS` scalar type in our graphql schema at the moment)
+
 ### Creating a new Go package
+
+TODO: automate and simplify the below
 
 Say we are creating a new Go package called `foo` that will have a single action `bar`.
 
@@ -38,15 +81,15 @@ Say we are creating a new Go package called `foo` that will have a single action
    1. Copy the existing `alpine` package to a new directory for the new package:
       - `cp -r examples/alpine examples/foo`
    1. `cd examples/foo`
-   1. `rm alpine.go`
-   1. `rm -rf gen/alpine`
+   1. `rm -rf alpine.go gen/alpine`
    1. Open `gqlgen.yml` and replace every occurence of `alpine` with `foo`
       - This configures the code generation tool we use to create implementation stubs
    1. Open `dagger.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
    1. Open up `dagger.yaml`
-      - This is where dependencies for your package are declared. Declaring packages here makes them available to be called by your action implementation.
+      - This is where you declare your own package in addition to dependencies of your package. Declaring packages here makes them available to be called by your action implementation in addition to telling cloak how to build them.
+      - Packages are declared by specifying how they are built. Currently, we just use Dockerfiles for everything, but in theory this should be much more flexible.
       - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `Dockerfile.alpine` to `Dockerfile.foo`
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
@@ -67,14 +110,6 @@ Say we are creating a new Go package called `foo` that will have a single action
 1. Implement your action by replacing the panic in `foo.go` with the actual implementation.
    - When you need to call a dependency, import it from under `gen/<pkgname>`
 
-### Creating a new Typescript action
-
-TODO:
-
 ### Modifying Core
 
-TODO:
-
-### Invoking+Debugging Actions
-
-TODO:
+TODO: document, currently just see `api/graphql.go` for existing core action implementations and schema definition.
