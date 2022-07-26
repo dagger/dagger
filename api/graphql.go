@@ -393,7 +393,7 @@ type Source {
 type Filesystem {
 	id: ID!
 	exec(args: [String!]): Filesystem!
-	dockerfile(name: String): Filesystem!
+	dockerbuild(dockerfile: String): Filesystem!
 	file(path: String!): String
 }
 		`,

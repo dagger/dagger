@@ -7,7 +7,7 @@
 - [git.graphql](./git.graphql): Reading a file from git
   - `cloak -q ./git.graphql | jq -r .source.git.file`
 - [docker_build.graphql](./docker_build.graphql): Builds and executes buildkit from git
-  - `cloak -q ./docker_build.graphql | jq -r .source.git.dockerfile.exec.file`
+  - `cloak -q ./docker_build.graphql | jq -r .source.git.dockerbuild.exec.file`
 - [params.graphql](./params.graphql)
   - `cloak -q ./params.graphql | jq -r .source.git.file`
   - `cloak -q ./params.graphql -set version=v0.1.0 | jq -r .source.git.file`
