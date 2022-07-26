@@ -62,7 +62,7 @@ Say we are creating a new Typescript package called `foo` that will have a singl
    1. `cd examples/foo`
    1. `rm -rf app node_modules yarn.lock`
    1. Open `package.json`, replace occurences of `todoapp` with `foo`
-   1. Open `dagger.graphql`, replace the existing `build`, `test` and `deploy` fields under `Query` with one field per action you want to implement
+   1. Open `schema.graphql`, replace the existing `build`, `test` and `deploy` fields under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
    1. Open up `dagger.yaml`
@@ -73,7 +73,7 @@ Say we are creating a new Typescript package called `foo` that will have a singl
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
 1. Implement your action by editing `index.ts`
    - Replace each of the existing `build`, `test` and `deploy` fields under `resolver.Query` with one implementation for each action.
-   - The `args` parameter is an object with a field for each of the input args to your action (as defined in `dagger.graphql`
+   - The `args` parameter is an object with a field for each of the input args to your action (as defined in `schema.graphql`
    - The `FS` type will be of type `string` (as that's the representation of the `FS` scalar type in our graphql schema at the moment)
 
 ### Creating a new Go package
@@ -92,7 +92,7 @@ Say we are creating a new Go package called `foo` that will have a single action
    1. `rm -rf alpine.go gen`
    1. Open `gqlgen.yml` and replace every occurence of `alpine` with `foo`
       - This configures the code generation tool we use to create implementation stubs
-   1. Open `dagger.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
+   1. Open `schema.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
    1. Open up `dagger.yaml`

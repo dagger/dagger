@@ -21,7 +21,7 @@ COPY --link --from=build /sdk/nodejs /sdk/nodejs
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --production
 COPY --link --from=build /app/src/dist ./dist
 COPY --link examples/netlify/entrypoint.sh /entrypoint
-COPY --link examples/netlify/dagger.graphql /dagger.graphql
+COPY --link examples/netlify/schema.graphql /schema.graphql
 COPY --link examples/netlify/operations.graphql /operations.graphql
 ENTRYPOINT ["/entrypoint"]
 ENV PATH $PATH:/app/src/node_modules/.bin

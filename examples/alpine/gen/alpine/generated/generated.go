@@ -143,7 +143,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 }
 
 var sources = []*ast.Source{
-	{Name: "../../../dagger.graphql", Input: `scalar FS
+	{Name: "../../../schema.graphql", Input: `scalar FS
 
 # FIXME: Code generation breaks without at least one type defined
 type Dummy {

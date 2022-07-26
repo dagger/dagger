@@ -66,7 +66,7 @@ const resolvers = {
 };
 
 const server = new DaggerServer({
-  typeDefs: gql(fs.readFileSync("/dagger.graphql", "utf8")),
+  typeDefs: gql(fs.readFileSync("/schema.graphql", "utf8")),
   resolvers,
 });
 
