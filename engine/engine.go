@@ -172,9 +172,9 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 		return err
 	})
 	eg.Go(func() error {
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stdout, ch)
+		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stderr, ch)
 		for _, w := range warn {
-			fmt.Printf("=> %s\n", w.Short)
+			fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
 		}
 		return err
 	})
