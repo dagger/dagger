@@ -18,13 +18,13 @@ EOF
 Yarn build:
 
 ```console
-go run cmd/cloak/main.go -f examples/yarn/dagger.yaml -q examples/yarn/operations.graphql -op Script -local-dirs source=examples/todoapp/app -set name=build
+go run cmd/cloak/main.go -f examples/yarn/dagger.yaml -q examples/yarn/operations.graphql --op Script --local-dir source=examples/todoapp/app --set name=build
 ```
 
 TODOApp deploy:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -local-dirs src=examples/todoapp/app -secrets token="$NETLIFY_AUTH_TOKEN" <<'EOF'
+go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
 query Build($src: FS!, $token: String!) {
     todoapp{deploy(src: $src, token: $token){url}}
 }

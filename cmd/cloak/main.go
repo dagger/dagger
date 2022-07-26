@@ -3,60 +3,61 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/spf13/cobra"
 
 	"github.com/dagger/cloak/cmd/dev/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
-type kvInput map[string]string
+var (
+	configFile     string
+	queryFile      string
+	operation      string
+	queryVarsInput []string
+	localDirsInput []string
+	secretsInput   []string
+)
 
-func (i kvInput) String() string {
-	return fmt.Sprintf("%+v", map[string]string(i))
+func init() {
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "f", "./dagger.yaml", "config file")
+	rootCmd.PersistentFlags().StringVarP(&queryFile, "query", "q", "", "query file")
+	rootCmd.PersistentFlags().StringVarP(&operation, "op", "o", "", "operation to execute")
+	rootCmd.PersistentFlags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
+	rootCmd.PersistentFlags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
+	rootCmd.PersistentFlags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 }
 
-func (i kvInput) Set(value string) error {
-	kvs := strings.Split(value, ",")
+func getKVInput(kvs []string) map[string]string {
+	m := make(map[string]string)
+	fmt.Printf("kvs: %v\n", kvs)
 	for _, kv := range kvs {
 		split := strings.SplitN(kv, "=", 2)
-		i[split[0]] = split[1]
+		m[split[0]] = split[1]
 	}
-	return nil
+	return m
 }
 
-func main() {
-	vars := kvInput{}
-	flag.Var(&vars, "set", "set query variables")
+var rootCmd = &cobra.Command{
+	Run: Run,
+}
 
-	localDirs := kvInput{}
-	flag.Var(&localDirs, "local-dirs", "local directories to import")
-
-	secrets := kvInput{}
-	flag.Var(&secrets, "secrets", "secrets to import")
-
-	var configFile string
-	flag.StringVar(&configFile, "f", "./dagger.yaml", "config file")
-
-	var queryFile string
-	flag.StringVar(&queryFile, "q", "", "query file")
-
-	var operation string
-	flag.StringVar(&operation, "op", "", "operation to execute")
-
-	flag.Parse()
-
+func Run(cmd *cobra.Command, args []string) {
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	vars := getKVInput(queryVarsInput)
+	localDirs := getKVInput(localDirsInput)
+	secrets := getKVInput(secretsInput)
 
 	for name, dir := range cfg.LocalDirs() {
 		localDirs[name] = dir
@@ -129,4 +130,8 @@ func main() {
 	}
 
 	fmt.Printf("%s\n", result)
+}
+
+func main() {
+	rootCmd.Execute()
 }
