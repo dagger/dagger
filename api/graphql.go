@@ -229,7 +229,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
+		// fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
 		var output interface{}
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
@@ -339,72 +339,7 @@ func init() {
 	daggerPackages["core"] = daggerPackage{
 		Name: "core",
 		Schema: tools.ExecutableSchema{
-			TypeDefs: `
-scalar FS
-
-type CoreImage {
-	fs: FS!
-}
-
-input CoreMount {
-	path: String!
-	fs: FS!
-}
-input CoreExecInput {
-	mounts: [CoreMount!]!
-	args: [String!]!
-	workdir: String
-}
-type CoreExec {
-	root: FS!
-	getMount(path: String!): FS!
-}
-
-type Core {
-	image(ref: String!): CoreImage
-	exec(input: CoreExecInput!): CoreExec
-	dockerfile(context: FS!, dockerfileName: String): FS!
-	copy(src: FS!, srcPath: String, dst: FS, dstPath: String): FS!
-}
-
-type Query {
-	core: Core!
-	source: Source!
-}
-
-type Package {
-	name: String!
-	fs: FS!
-	schema: String!
-	operations: String!
-}
-
-type Mutation {
-	import(name: String!, fs: FS!): Package
-	readfile(fs: FS!, path: String!): String
-	clientdir(id: String!): FS
-	readsecret(id: String!): String
-}
-
-type Exec {
-	fs: Filesystem!
-	stdout: String
-	stderr: String
-	exitCode: Int
-}
-
-type Source {
-	image(ref: String!): Filesystem!
-	git(remote: String!, ref: String): Filesystem!
-}
-
-type Filesystem {
-	id: ID!
-	exec(args: [String!]): Exec!
-	dockerbuild(dockerfile: String): Filesystem!
-	file(path: String!): String
-}
-		`,
+			TypeDefs: coreSchema,
 			Resolvers: tools.ResolverMap{
 				"Query": &tools.ObjectResolver{
 					Fields: tools.FieldResolveMap{
@@ -712,6 +647,14 @@ type Filesystem {
 									return nil, fmt.Errorf("invalid package name")
 								}
 
+								if pkgName == "core" {
+									return map[string]interface{}{
+										"name":       pkgName,
+										"schema":     daggerPackages["core"].Schema.TypeDefs.(string),
+										"operations": coreOperations,
+									}, nil
+								}
+
 								fs, ok := p.Args["fs"].(FS)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
@@ -762,7 +705,6 @@ type Filesystem {
 								parsedSchema := parsed.TypeDefs.(string)
 								parsedSchema = "scalar FS\n\n" + parsedSchema
 
-								// TODO: also return schema probably
 								return map[string]interface{}{
 									"name":       pkgName,
 									"fs":         fs,
@@ -891,6 +833,105 @@ type Filesystem {
 		panic(err)
 	}
 }
+
+const coreSchema = `
+scalar FS
+
+type CoreImage {
+	fs: FS!
+}
+
+input CoreMount {
+	path: String!
+	fs: FS!
+}
+input CoreExecInput {
+	mounts: [CoreMount!]!
+	args: [String!]!
+	workdir: String
+}
+type CoreExec {
+	root: FS!
+	getMount(path: String!): FS!
+}
+
+type Core {
+	image(ref: String!): CoreImage
+	exec(input: CoreExecInput!): CoreExec
+	dockerfile(context: FS!, dockerfileName: String): FS!
+	copy(src: FS!, srcPath: String, dst: FS, dstPath: String): FS!
+}
+
+type Query {
+	core: Core!
+	source: Source!
+}
+
+type Package {
+	name: String!
+	fs: FS
+	schema: String!
+	operations: String!
+}
+
+type Mutation {
+	import(name: String!, fs: FS): Package
+	readfile(fs: FS!, path: String!): String
+	clientdir(id: String!): FS
+	readsecret(id: String!): String
+}
+
+type Exec {
+	fs: Filesystem!
+	stdout: String
+	stderr: String
+	exitCode: Int
+}
+
+type Source {
+	image(ref: String!): Filesystem!
+	git(remote: String!, ref: String): Filesystem!
+}
+
+type Filesystem {
+	id: ID!
+	exec(args: [String!]): Exec!
+	dockerbuild(dockerfile: String): Filesystem!
+	file(path: String!): String
+}
+`
+
+// TODO: add the rest of the operations
+const coreOperations = `
+query Image($ref: String!) {
+  core {
+    image(ref: $ref) {
+      fs
+    }
+  }
+}
+
+query Exec($input: CoreExecInput!) {
+  core {
+    exec(input: $input) {
+      root
+    }
+  }
+}
+
+query Dockerfile($context: FS!, $dockerfileName: String!) {
+  core {
+    dockerfile(context: $context, dockerfileName: $dockerfileName)
+  }
+}
+
+mutation Import($name: String!, $fs: FS!) {
+  import(name: $name, fs: $fs) {
+    name
+    fs
+  }
+}
+`
 
 type gatewayClientKey struct{}
 
