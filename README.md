@@ -11,6 +11,8 @@ Use/modify these examples to get going quickly!
 - java
   - gradle
   - maven
+- go
+  - [universe](https://github.com/dagger/examples/tree/main/templates/go/universe)
 - nodejs
   - npm
     - [bash](https://github.com/dagger/examples/tree/main/templates/nodejs/npm/bash)
