@@ -14,7 +14,7 @@ Use/modify these examples to get going quickly!
     │   └── maven
     └── nodejs
         ├── npm
-        │   └── bash
+        │   └── [bash](https://github.com/dagger/examples/tree/main/templates/nodejs/npm/bash)
         └── yarn
             ├── bash
             └── universe
