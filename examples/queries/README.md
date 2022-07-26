@@ -2,7 +2,7 @@
 
 - [simple.graphql](./simple.graphql): Simple example of alpine+curl
   - `cloak -q ./simple.graphql`
-- [multi.graphql](./simple.graphql): Parallel operations
+- [multi.graphql](./multi.graphql): Parallel operations
   - `cloak -q ./multi.graphql`
 - [git.graphql](./git.graphql): Reading a file from git
   - `cloak -q ./git.graphql | jq -r .source.git.file`
