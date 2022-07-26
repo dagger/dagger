@@ -11,14 +11,14 @@ Simple alpine example (no output other than progress logs yet, need another flag
 
 ```console
 go run cmd/cloak/main.go -f examples/alpine/dagger.yaml <<'EOF'
-{alpine{build(pkgs:["jq"])}}
+{alpine{build(pkgs:["jq","curl"])}}
 EOF
 ```
 
-TODOApp build:
+Yarn build:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -local-dirs src=examples/todoapp/app -q examples/todoapp/operations.graphql -op Build
+go run cmd/cloak/main.go -f examples/yarn/dagger.yaml -q examples/yarn/operations.graphql -op Script -local-dirs source=examples/todoapp/app -set name=build
 ```
 
 TODOApp deploy:
