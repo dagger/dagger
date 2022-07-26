@@ -3,17 +3,27 @@ package event
 type ActionState string
 
 const (
-	ActionStateRunning   ActionState = "running"
-	ActionStateSkipped   ActionState = "skipped"
-	ActionStateCompleted ActionState = "completed"
-	ActionStateFailed    ActionState = "failed"
-	ActionStateCancelled ActionState = "cancelled"
+	ActionStateRunning     ActionState = "running"
+	ActionStateSkipped     ActionState = "skipped"
+	ActionStateCompleted   ActionState = "completed"
+	ActionStateFailed      ActionState = "failed"
+	ActionStateCancelled   ActionState = "cancelled"
+	ActionStateCacheUpdate ActionState = "cache-update"
+)
+
+type ActionCacheStatus string
+
+const (
+	ActionCacheStatusNone    ActionCacheStatus = "none"
+	ActionCacheStatusPartial ActionCacheStatus = "partial"
+	ActionCacheStatusCached  ActionCacheStatus = "cached"
 )
 
 type ActionTransitioned struct {
-	Name  string      `json:"name"`
-	State ActionState `json:"state"`
-	Error string      `json:"error,omitempty"`
+	Name        string            `json:"name"`
+	State       ActionState       `json:"state"`
+	Error       string            `json:"error,omitempty"`
+	CacheStatus ActionCacheStatus `json:"cache_status,omitempty"`
 }
 
 func (a ActionTransitioned) EventName() string {
