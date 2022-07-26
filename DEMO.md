@@ -69,7 +69,7 @@ go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/ope
 1. Run same command as before:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run cmd/cloak/main.go -f examples/todoapp/ts/dagger.yaml -q examples/todoapp/ts/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp at the new URL.

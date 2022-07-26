@@ -22,6 +22,16 @@ type Action struct {
 	Local      string `yaml:"local,omitempty"`
 	Image      string `yaml:"image,omitempty"`
 	Dockerfile string `yaml:"dockerfile,omitempty"`
+	schema     string
+	operations string
+}
+
+func (a *Action) GetSchema() string {
+	return a.schema
+}
+
+func (a *Action) GetOperations() string {
+	return a.operations
 }
 
 func ParseFile(f string) (*Config, error) {
@@ -68,15 +78,19 @@ func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FS) err
 		eg.Go(func() error {
 			switch {
 			case action.Local != "":
-				err := importLocal(ctx, name, localDirs[action.Local], action.Dockerfile)
+				schema, operations, err := importLocal(ctx, name, localDirs[action.Local], action.Dockerfile)
 				if err != nil {
 					return fmt.Errorf("error importing %s: %w", name, err)
 				}
+				action.schema = schema
+				action.operations = operations
 			case action.Image != "":
-				err := importImage(ctx, name, action.Image)
+				schema, operations, err := importImage(ctx, name, action.Image)
 				if err != nil {
 					return fmt.Errorf("error importing %s: %w", name, err)
 				}
+				action.schema = schema
+				action.operations = operations
 			}
 			return nil
 		})
@@ -85,10 +99,10 @@ func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FS) err
 	return eg.Wait()
 }
 
-func importLocal(ctx context.Context, name string, cwd dagger.FS, dockerfile string) error {
+func importLocal(ctx context.Context, name string, cwd dagger.FS, dockerfile string) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	data := struct {
 		Core struct {
@@ -115,15 +129,15 @@ func importLocal(ctx context.Context, name string, cwd dagger.FS, dockerfile str
 		resp,
 	)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	return importFS(ctx, name, data.Core.Dockerfile)
 }
 
-func importImage(ctx context.Context, name string, ref string) error {
+func importImage(ctx context.Context, name string, ref string) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	data := struct {
 		Core struct {
@@ -150,23 +164,32 @@ func importImage(ctx context.Context, name string, ref string) error {
 		resp,
 	)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	return importFS(ctx, name, data.Core.Image.FS)
 }
 
-func importFS(ctx context.Context, name string, fs dagger.FS) error {
+func importFS(ctx context.Context, name string, fs dagger.FS) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
-	return cl.MakeRequest(ctx,
+	data := struct {
+		Import struct {
+			Schema     string
+			Operations string
+		}
+	}{}
+	resp := &graphql.Response{Data: &data}
+
+	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
 			mutation Import($name: String!, $fs: FS!) {
 				import(name: $name, fs: $fs) {
-						name
+						schema
+						operations
 				}
 			}`,
 			Variables: map[string]any{
@@ -174,6 +197,10 @@ func importFS(ctx context.Context, name string, fs dagger.FS) error {
 				"fs":   fs,
 			},
 		},
-		&graphql.Response{},
+		resp,
 	)
+	if err != nil {
+		return "", "", err
+	}
+	return data.Import.Schema, data.Import.Operations, nil
 }

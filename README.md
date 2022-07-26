@@ -24,7 +24,7 @@ go run cmd/cloak/main.go -f examples/yarn/dagger.yaml -q examples/yarn/operation
 TODOApp deploy:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
+go run cmd/cloak/main.go -f examples/todoapp/ts/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
 query Build($src: FS!, $token: String!) {
     todoapp{deploy(src: $src, token: $token){url}}
 }

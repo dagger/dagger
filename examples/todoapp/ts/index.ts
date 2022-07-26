@@ -4,6 +4,9 @@ import * as fs from "fs";
 
 const resolvers = {
   Query: {
+    /*
+     * Build the todoapp
+     */
     build: async (parent: any, args: { src: string }) => {
       return await client
         .request(
@@ -17,6 +20,10 @@ const resolvers = {
         )
         .then((result: any) => result.yarn.script);
     },
+
+    /*
+     * Test the todoapp
+     */
     test: async (parent: any, args: { src: string }) => {
       return await client
         .request(
@@ -30,6 +37,10 @@ const resolvers = {
         )
         .then((result: any) => result.yarn.script);
     },
+
+    /*
+     * Build and test the todoapp, if those pass then deploy it to Netlify
+     */
     deploy: async (parent: any, args: { src: string; token: string }) => {
       const built = await Promise.all([
         client

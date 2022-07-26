@@ -1,0 +1,11 @@
+scalar FS
+
+
+
+type Yarn {
+	script(source: FS!, name: String): FS!
+}
+type Query {
+	yarn: Yarn!
+}
+	
