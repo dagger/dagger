@@ -7,6 +7,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 1. Ensure `dagger-buildkitd` is running (quickly invoke dagger if needed)
 1. Ensure that packages are already cached so that you don't have to wait a long time at the first command for various yarn packages to download
    - TODO: add a command for doing this (`cloak import -f dagger.yaml`?)
+1. Export `NETLIFY_AUTH_TOKEN` env
 
 ## 1. Background
 
@@ -26,11 +27,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 Run:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -local-dirs src=examples/todoapp/app -secrets token="$NETLIFY_AUTH_TOKEN" <<'EOF'
-query Build($local_src: FS!, $secret_token: String!) {
-    todoapp{deploy(src: $local_src, token: $secret_token){url}}
-}
-EOF
+go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/operations.graphql -op Deploy -local-dirs src=examples/todoapp/app -secrets token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp.
@@ -38,7 +35,7 @@ EOF
 ## 3. Action Implementations
 
 1. The command above executed an action from the TODOApp package.
-1. Open up `examples/todoapp/index.ts` and `examples/todoapp/dagger.graphql`
+1. Open up `examples/todoapp/index.ts` and `examples/todoapp/dagger.graphql` and `examples/todoapp/operations.graphql`
 1. Show the action implementations, explain mapping of args in typescript to `dagger.graphql`.
 
 ### 3.1 Yarn Action
@@ -72,11 +69,7 @@ EOF
 1. Run same command as before:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -local-dirs src=examples/todoapp/app -secrets token="$NETLIFY_AUTH_TOKEN" <<'EOF'
-query Build($local_src: FS!, $secret_token: String!) {
-    todoapp{deploy(src: $local_src, token: $secret_token){url}}
-}
-EOF
+go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/operations.graphql -op Deploy -local-dirs src=examples/todoapp/app -secrets token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp at the new URL.
