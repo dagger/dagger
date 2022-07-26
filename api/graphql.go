@@ -384,6 +384,12 @@ type Mutation {
 	readsecret(id: String!): String
 }
 
+type Exec {
+	fs: Filesystem!
+	stdout: String
+	stderr: String
+	exitCode: Int
+}
 
 type Source {
 	image(ref: String!): Filesystem!
@@ -392,7 +398,7 @@ type Source {
 
 type Filesystem {
 	id: ID!
-	exec(args: [String!]): Filesystem!
+	exec(args: [String!]): Exec!
 	dockerbuild(dockerfile: String): Filesystem!
 	file(path: String!): String
 }
@@ -416,6 +422,7 @@ type Filesystem {
 				// FIXME: chaining experiment
 				"Source":     sourceResolver,
 				"Filesystem": filesystemResolver,
+				"Exec":       execResolver,
 
 				"CoreExec": &tools.ObjectResolver{
 					Fields: tools.FieldResolveMap{
