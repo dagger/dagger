@@ -33,6 +33,9 @@ func Generate(cmd *cobra.Command, args []string) {
 				if err := os.MkdirAll(subdir, 0755); err != nil {
 					return nil, err
 				}
+				if err := os.WriteFile(filepath.Join(subdir, ".gitattributes"), []byte("** linguist-generated=true"), 0644); err != nil {
+					return nil, err
+				}
 				schemaPath := filepath.Join(subdir, "schema.graphql")
 				if err := os.WriteFile(schemaPath, []byte(act.GetSchema()), 0644); err != nil {
 					return nil, err
