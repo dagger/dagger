@@ -1,6 +1,6 @@
 {
   source {
-    git(remote: "github.com/moby/buildkit", ref: "v0.10.3") {
+    git(remote: "github.com/moby/buildkit") {
       dockerfile {
         exec(args: ["sh", "-c", "buildctl --help > /out.txt"]) {
           file(path: "/out.txt")
