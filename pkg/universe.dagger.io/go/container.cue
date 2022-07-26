@@ -16,20 +16,23 @@ import (
 	source: dagger.#FS
 
 	// Use go image
-	_image: #Image
+	image: *#Image | docker.#Image
 
 	_sourcePath:     "/src"
 	_modCachePath:   "/root/.cache/go-mod"
 	_buildCachePath: "/root/.cache/go-build"
 
+	_copy: docker.#Copy & {
+		input:    image.output
+		dest:     _sourcePath
+		contents: source
+	}
+
 	docker.#Run & {
-		input:   *_image.output | docker.#Image
+		input: _copy.output
+
 		workdir: _sourcePath
 		mounts: {
-			"source": {
-				dest:     _sourcePath
-				contents: source
-			}
 			"go mod cache": {
 				contents: core.#CacheDir & {
 					id: "\(name)_mod"
