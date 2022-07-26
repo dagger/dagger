@@ -18,6 +18,6 @@ COPY --link --from=build /sdk/nodejs /sdk/nodejs
 RUN yarn --production
 COPY --link --from=build /app/src/dist ./dist
 COPY --link examples/graphql_ts/entrypoint.sh /entrypoint
-COPY --link examples/graphql_ts/dagger.graphql /dagger.graphql
+COPY --link examples/graphql_ts/schema.graphql /schema.graphql
 ENTRYPOINT ["/entrypoint"]
 LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs

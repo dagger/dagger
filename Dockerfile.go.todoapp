@@ -9,6 +9,6 @@ RUN --mount=target=. --mount=target=/root/.cache,type=cache \
 
 FROM scratch
 COPY --link --from=build /out /entrypoint
-COPY --link ./examples/todoapp/go/dagger.graphql /dagger.graphql
+COPY --link ./examples/todoapp/go/schema.graphql /schema.graphql
 COPY --link ./examples/todoapp/go/operations.graphql /operations.graphql
 ENTRYPOINT ["/entrypoint"]

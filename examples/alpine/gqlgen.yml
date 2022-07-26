@@ -1,6 +1,6 @@
 # Where are all the schema files located? globs are supported eg  src/**/*.graphqls
 schema:
-  - dagger.graphql
+  - schema.graphql
 
 # Where should the generated server code go?
 exec:

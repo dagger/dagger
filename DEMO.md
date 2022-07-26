@@ -27,7 +27,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 Run:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml -q examples/todoapp/go/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp.
@@ -35,27 +35,27 @@ go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/ope
 ## 3. Action Implementations
 
 1. The command above executed an action from the TODOApp package.
-1. Open up `examples/todoapp/index.ts` and `examples/todoapp/dagger.graphql` and `examples/todoapp/operations.graphql`
-1. Show the action implementations, explain mapping of args in typescript to `dagger.graphql`.
+1. Open up `examples/todoapp/go/todoapp.go` and `examples/todoapp/go/schema.graphql` and `examples/todoapp/go/operations.graphql`
+1. Show the action implementations, explain mapping of args in typescript to `schema.graphql`.
 
 ### 3.1 Yarn Action
 
 1. Mention that todoapp is just calling out to the separate `yarn` action in build+test, now going to go look at that one
-1. Open up `examples/yarn/index.ts` and `examples/yarn/dagger.graphql`
+1. Open up `examples/yarn/index.ts` and `examples/yarn/schema.graphql`
 1. Go over how it is calling out to the `yarn` CLI via core.Exec.
    - `core` is a built-in package, always available to any action.
 
 ### 3.2 Alpine Action
 
 1. Note that `yarn` calls out to `alpine` to create an image with the `yarn` cli present.
-1. Open up `examples/alpine/alpine.go` and `examples/alpine/dagger.graphql`
+1. Open up `examples/alpine/alpine.go` and `examples/alpine/schema.graphql`
 1. Note that this action is implemented in Go.
    - However, the same schema format is used to define it as other actions we've seen. This enables it to be called from Typescript as easily as any other language.
 1. Briefly show how Alpine action works; just uses `core` actions to install the provided packages.
 
 ### 3.3 Netlify Action
 
-1. Go back to `examples/todoapp/index.ts`
+1. Go back to `examples/todoapp/go/todoapp.go`
 1. Show how the deploy action calls build and test in parallel with one another before moving onto the actual deploy.
 1. Note that it calls out to the `netlify` action to do the deployment
 1. Open up `examples/netlify/index.ts`
@@ -64,12 +64,12 @@ go run cmd/cloak/main.go -f examples/todoapp/dagger.yaml -q examples/todoapp/ope
 ## 4. Modifying an Action
 
 1. Now we're going to try a simple modification to the TODOApp actions.
-1. Go back to `examples/todoapp/index.ts`
+1. Go back to `examples/todoapp/go/todoapp.go`
 1. Change the site name constant to something different.
 1. Run same command as before:
 
 ```console
-go run cmd/cloak/main.go -f examples/todoapp/ts/dagger.yaml -q examples/todoapp/ts/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml -q examples/todoapp/go/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp at the new URL.
@@ -81,10 +81,10 @@ TODO: this is kind of lame, immediate question will likely be "can I make the si
 TODO: not ready to be part of a demo for a user quite yet (DX is still too rough, too much copy-pasting schemas, need a bit more automation)
 Dream goal is something like:
 
-1. User starts with empty directory. Creates `dagger.graphql` either from scratch or from a template.
-1. User fills out actions they'd like to implement in `dagger.graphql` in addition to declaring which other actions they want to use in their implementation (aka their dependencies)
-   - (This assumes we have migrated `dagger.yaml` to be directives in `dagger.graphql`)
+1. User starts with empty directory. Creates `schema.graphql` either from scratch or from a template.
+1. User fills out actions they'd like to implement in `schema.graphql` in addition to declaring which other actions they want to use in their implementation (aka their dependencies)
+   - (This assumes we have migrated `dagger.yaml` to be directives in `schema.graphql`)
    - Declaring dependencies could be optional too, can have whole universe imported by default if not declared or similar DX sugar.
-1. User runs a command that reads `dagger.graphql` and outputs to a local directory all dependency schemas, client stubs for calling the dependencies and implementation stubs that the user can fill out to implement their action.
+1. User runs a command that reads `schema.graphql` and outputs to a local directory all dependency schemas, client stubs for calling the dependencies and implementation stubs that the user can fill out to implement their action.
 1. User fills in implementations.
 1. User can now call their action with the CLI interface (or from an embedded SDK for more advanced use cases)

@@ -676,7 +676,7 @@ func init() {
 									return nil, err
 								}
 								schemaBytes, err := bkref.ReadFile(p.Context, bkgw.ReadRequest{
-									Filename: "/dagger.graphql",
+									Filename: "/schema.graphql",
 								})
 								if err != nil {
 									return nil, err

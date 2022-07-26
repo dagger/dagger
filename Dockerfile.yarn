@@ -21,6 +21,6 @@ COPY --link --from=build /sdk/nodejs /sdk/nodejs
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --production
 COPY --link --from=build /app/src/dist ./dist
 COPY --link examples/yarn/entrypoint.sh /entrypoint
-COPY --link examples/yarn/dagger.graphql /dagger.graphql
+COPY --link examples/yarn/schema.graphql /schema.graphql
 COPY --link examples/yarn/operations.graphql /operations.graphql
 ENTRYPOINT ["/entrypoint"]
