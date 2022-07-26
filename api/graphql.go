@@ -807,18 +807,13 @@ type Filesystem {
 								if !ok {
 									return nil, fmt.Errorf("invalid clientdir id")
 								}
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
 								llbdef, err := llb.Local(
 									id,
 									// TODO: better shared key hint?
 									llb.SharedKeyHint(id),
-									llb.SessionID(gw.BuildOpts().SessionID),
 									// FIXME: should not be hardcoded
 									llb.ExcludePatterns([]string{"**/node_modules"}),
-								).Marshal(p.Context)
+								).Marshal(p.Context, llb.LocalUniqueID(id))
 								if err != nil {
 									return nil, err
 								}
