@@ -2,18 +2,12 @@
 
 ## Setup
 
-```console
-# The following shouldn't be needed anymore as they are now built on-the-fly when the package is imported. Preserved here if you want to test package builds independently.
-docker run -d -p 5555:5000 --name registry registry:2
-
-docker build -f ./Dockerfile.alpine -t localhost:5555/dagger:alpine . && docker push localhost:5555/dagger:alpine
-
-yarn --cwd ./sdk/nodejs/dagger build && yarn --cwd examples/graphql_ts upgrade dagger && yarn --cwd examples/graphql_ts build && docker build -f ./Dockerfile.graphql_ts -t localhost:5555/dagger:graphql_ts . && docker push localhost:5555/dagger:graphql_ts
-```
+1. Ensure `dagger-buildkitd` is running (invoke dagger if needed)
+   - TODO: should port code from dagger for setting this up automatically to here in cloak
 
 ## Invoking
 
-Simple alpine example (no output yet, need another flag in cloak cli):
+Simple alpine example (no output other than progress logs yet, need another flag in cloak cli):
 
 ```console
 go run cmd/cloak/main.go -f examples/alpine/dagger.yaml <<'EOF'
@@ -30,3 +24,57 @@ query Build($local_src: FS!, $secret_token: String!) {
 }
 EOF
 ```
+
+## Development
+
+### Creating a new Go package
+
+Say we are creating a new Go package called `foo` that will have a single action `bar`.
+
+1. Setup the Dockerfile used to build the package
+   1. From the root of the repo, run `cp Dockerfile.alpine Dockerfile.foo`
+   1. Open `Dockerfile.foo` and change occurences of `examples/alpine` to `examples/foo`
+1. Setup the package configuration
+   1. Copy the existing `alpine` package to a new directory for the new package:
+      - `cp -r examples/alpine examples/foo`
+   1. `cd examples/foo`
+   1. `rm alpine.go`
+   1. `rm -rf gen/alpine`
+   1. Open `gqlgen.yml` and replace every occurence of `alpine` with `foo`
+      - This configures the code generation tool we use to create implementation stubs
+   1. Open `dagger.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
+      - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
+      - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
+   1. Open up `dagger.yaml`
+      - This is where dependencies for your package are declared. Declaring packages here makes them available to be called by your action implementation.
+      - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `Dockerfile.alpine` to `Dockerfile.foo`
+      - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
+      - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
+   1. Setup client stub configuration for each of your dependencies
+      - This is by far the ugliest part right now, desperately needs more automation
+      - For each of the dependencies you declared in `dagger.yaml` that wasn't your own package (i.e. `foo`):
+        - Create a directory `gen/<pkgname>`
+        - Declare the schema in `gen/<pkgname>/<pkgname>.graphql`.
+          - Note that in this case, you need use a slightly different format as now all the actions are not directly under `Query`. See for example `gen/core/core.graphql` where `Query` has `core: Core!` and `type Core` is where the actual actions are defined.
+        - Create a file `gen/<pkgname>/operations.graphql`, put an operation for each action from the package you want to call. See `gen/core/operations.graphql` as a reference.
+        - Create a file `gen/<pkgname>/genqclient.yaml` based on `gen/core/genqlient.yaml`, replacing the word `core` with `<pkgname>`
+        - Add a `//go:generate` directive to the top of `main.go` in the form:
+          - `//go:generate go run github.com/Khan/genqlient ./gen/<pkgname>/genqlient.yaml`
+1. Generate client stubs and implementation stubs
+   - From `examples/foo`, run `go generate main.go`
+   - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to helpers for your implementation under `gen/<foo>`
+   - Additionally, there should now be a `foo.go` file with a stub implementation.
+1. Implement your action by replacing the panic in `foo.go` with the actual implementation.
+   - When you need to call a dependency, import it from under `gen/<pkgname>`
+
+### Creating a new Typescript action
+
+TODO:
+
+### Modifying Core
+
+TODO:
+
+### Invoking+Debugging Actions
+
+TODO:

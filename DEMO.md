@@ -20,8 +20,8 @@ This is a demo meant for external users. They are assumed to have general knowle
 ## 2. TODOApp Deploy
 
 1. For the demo, let's say we have a website we'd like to deploy, the TODOApp.
-1. We want to use Dagger to setup some basic CI steps: build, test and deploy. Deploy, specifically, should ensure that the app has been built+tested successfully prior to deployment.
-1. We'll start by running the deploy step and then dive into what actually happened.
+1. We are using Dagger to setup some basic CI steps: build, test and deploy. Deploy, specifically, should ensure that the app has been built+tested successfully prior to deployment.
+1. Let's start by running the deploy action and then dive into what actually happened.
 
 Run:
 
