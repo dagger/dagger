@@ -1,0 +1,10 @@
+schema: ./schema.graphql
+operations:
+  - "./operations.graphql"
+generated: ./todoapp_gen.go
+# needed since it doesn't match the directory name:
+package: todoapp
+bindings:
+  FS:
+    type: github.com/dagger/cloak/sdk/go/dagger.FS
+client_getter: github.com/dagger/cloak/sdk/go/dagger.Client

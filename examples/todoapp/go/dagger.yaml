@@ -1,13 +1,13 @@
 actions:
   alpine:
-    local: ../..
+    local: ../../..
     dockerfile: Dockerfile.alpine
   yarn:
-    local: ../..
+    local: ../../..
     dockerfile: Dockerfile.yarn
   netlify:
-    local: ../..
+    local: ../../..
     dockerfile: Dockerfile.netlify
   todoapp:
-    local: ../..
-    dockerfile: Dockerfile.todoapp
+    local: ../../..
+    dockerfile: Dockerfile.go.todoapp

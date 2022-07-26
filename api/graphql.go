@@ -229,7 +229,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
-		// fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
+		fmt.Printf("%s.%s output: %s\n", pkgName, actionName, string(outputBytes))
 		var output interface{}
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
@@ -375,6 +375,8 @@ type Query {
 type Package {
 	name: String!
 	fs: FS!
+	schema: String!
+	operations: String!
 }
 
 type Mutation {
@@ -730,13 +732,13 @@ type Filesystem {
 								if err != nil {
 									return nil, err
 								}
-								outputBytes, err := bkref.ReadFile(p.Context, bkgw.ReadRequest{
+								schemaBytes, err := bkref.ReadFile(p.Context, bkgw.ReadRequest{
 									Filename: "/dagger.graphql",
 								})
 								if err != nil {
 									return nil, err
 								}
-								parsed, err := parseSchema(pkgName, string(outputBytes))
+								parsed, err := parseSchema(pkgName, string(schemaBytes))
 								if err != nil {
 									return nil, err
 								}
@@ -745,15 +747,27 @@ type Filesystem {
 									FS:     fs,
 									Schema: *parsed,
 								}
+								operationsBytes, err := bkref.ReadFile(p.Context, bkgw.ReadRequest{
+									Filename: "/operations.graphql",
+								})
+								if err != nil {
+									return nil, err
+								}
 
 								if err := reloadSchemas(); err != nil {
 									return nil, err
 								}
 
+								// TODO: hacks: include the FS scalar in the schema so it's valid in isolation
+								parsedSchema := parsed.TypeDefs.(string)
+								parsedSchema = "scalar FS\n\n" + parsedSchema
+
 								// TODO: also return schema probably
 								return map[string]interface{}{
-									"name": pkgName,
-									"fs":   fs,
+									"name":       pkgName,
+									"fs":         fs,
+									"schema":     parsedSchema,
+									"operations": string(operationsBytes),
 								}, nil
 							},
 						},

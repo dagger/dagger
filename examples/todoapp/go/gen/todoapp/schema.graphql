@@ -1,0 +1,17 @@
+scalar FS
+
+
+type Deploy {
+  url: String!
+  deployUrl: String!
+  logsUrl: String
+}
+type Todoapp {
+	build(src: FS!): FS!
+test(src: FS!): FS!
+deploy(src: FS!, token: String): Deploy!
+}
+type Query {
+	todoapp: Todoapp!
+}
+	
