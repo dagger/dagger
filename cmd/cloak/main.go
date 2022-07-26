@@ -52,15 +52,6 @@ func main() {
 
 	flag.Parse()
 
-	for name, fs := range localDirs {
-		// TODO: need better naming convention
-		vars["local_"+name] = fs
-	}
-	for name, fs := range secrets {
-		// TODO: need better naming convention
-		vars["secret_"+name] = fs
-	}
-
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -96,6 +87,13 @@ func main() {
 		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
 			if err := cfg.Import(ctx, localDirs); err != nil {
 				return nil, err
+			}
+
+			for name, fs := range localDirs {
+				vars[name] = string(fs)
+			}
+			for name, id := range secrets {
+				vars[name] = id
 			}
 
 			cl, err := dagger.Client(ctx)

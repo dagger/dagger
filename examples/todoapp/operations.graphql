@@ -1,0 +1,32 @@
+query Build($src: FS!) {
+  todoapp {
+    build(src: $src)
+  }
+}
+
+query Test($src: FS!) {
+  todoapp {
+    test(src: $src)
+  }
+}
+
+query Deploy($src: FS!, $token: String!) {
+  todoapp {
+    deploy(src: $src, token: $token) {
+      url
+      deployUrl
+    }
+  }
+}
+
+# TODO: an experiment with defining simple actions using pure graphql
+query DirectBuild($src: FS!) {
+  yarn {
+    script(source: $src, name: "build")
+  }
+}
+query DirectTest($src: FS!) {
+  yarn {
+    script(source: $src, name: "test")
+  }
+}
