@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/cloak/shim"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
@@ -35,6 +37,31 @@ func (f *Filesystem) ToState() (llb.State, error) {
 		return llb.State{}, err
 	}
 	return llb.NewState(defop), nil
+}
+
+func (f *Filesystem) ReadFile(ctx context.Context, gw bkgw.Client, path string) ([]byte, error) {
+	def, err := f.ToDefinition()
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := gw.Solve(ctx, bkgw.SolveRequest{
+		Definition: def,
+	})
+	if err != nil {
+		return nil, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+		Filename: path,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return outputBytes, nil
 }
 
 func newFilesystem(def *llb.Definition) *Filesystem {
@@ -143,9 +170,25 @@ var filesystemResolver = &tools.ObjectResolver{
 						return nil, fmt.Errorf("invalid arg")
 					}
 				}
-				st = st.Run(llb.Args(args)).Root()
 
-				llbdef, err := st.Marshal(p.Context, llb.Platform(getPlatform(p)))
+				shim, err := shim.Build(p.Context, gw, getPlatform(p))
+				if err != nil {
+					return nil, err
+				}
+
+				runOpt := []llb.RunOption{
+					llb.Args(append([]string{"/_shim"}, args...)),
+					llb.AddMount("/_shim", shim, llb.SourcePath("/_shim")),
+				}
+
+				execState := st.Run(runOpt...)
+
+				metadataDef, err := execState.AddMount("/dagger", llb.Scratch()).Marshal(p.Context, llb.Platform(getPlatform(p)))
+				if err != nil {
+					return nil, err
+				}
+
+				llbdef, err := execState.Marshal(p.Context, llb.Platform(getPlatform(p)))
 				if err != nil {
 					return nil, err
 				}
@@ -157,16 +200,15 @@ var filesystemResolver = &tools.ObjectResolver{
 					return nil, err
 				}
 
-				return newFilesystem(llbdef), nil
+				return map[string]interface{}{
+					"fs":       newFilesystem(llbdef),
+					"metadata": newFilesystem(metadataDef),
+				}, nil
 			},
 		},
 		"file": &tools.FieldResolve{
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				filesystem := p.Source.(*Filesystem)
-				def, err := filesystem.ToDefinition()
-				if err != nil {
-					return nil, err
-				}
+				fs := p.Source.(*Filesystem)
 
 				path, ok := p.Args["path"].(string)
 				if !ok {
@@ -176,23 +218,12 @@ var filesystemResolver = &tools.ObjectResolver{
 				if err != nil {
 					return nil, err
 				}
-				res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
-					Definition: def,
-				})
+
+				output, err := fs.ReadFile(p.Context, gw, path)
 				if err != nil {
 					return nil, err
 				}
-				ref, err := res.SingleRef()
-				if err != nil {
-					return nil, err
-				}
-				outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
-					Filename: path,
-				})
-				if err != nil {
-					return nil, err
-				}
-				return string(outputBytes), nil
+				return string(output), nil
 			},
 		},
 
@@ -245,6 +276,64 @@ var filesystemResolver = &tools.ObjectResolver{
 				}
 
 				return newFilesystem(llbdef), nil
+			},
+		},
+	},
+}
+
+var execResolver = &tools.ObjectResolver{
+	Fields: tools.FieldResolveMap{
+		"stdout": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				exec := p.Source.(map[string]interface{})
+				fs := exec["metadata"].(*Filesystem)
+
+				gw, err := getGatewayClient(p)
+				if err != nil {
+					return nil, err
+				}
+
+				output, err := fs.ReadFile(p.Context, gw, "/stdout")
+				if err != nil {
+					return nil, err
+				}
+				return string(output), nil
+			},
+		},
+		"stderr": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				exec := p.Source.(map[string]interface{})
+				fs := exec["metadata"].(*Filesystem)
+
+				gw, err := getGatewayClient(p)
+				if err != nil {
+					return nil, err
+				}
+
+				output, err := fs.ReadFile(p.Context, gw, "/stderr")
+				if err != nil {
+					return nil, err
+				}
+				return string(output), nil
+			},
+		},
+
+		"exitCode": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				exec := p.Source.(map[string]interface{})
+				fs := exec["metadata"].(*Filesystem)
+
+				gw, err := getGatewayClient(p)
+				if err != nil {
+					return nil, err
+				}
+
+				output, err := fs.ReadFile(p.Context, gw, "/exitCode")
+				if err != nil {
+					return nil, err
+				}
+
+				return strconv.Atoi(string(output))
 			},
 		},
 	},

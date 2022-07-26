@@ -2,8 +2,12 @@
   source {
     image(ref: "alpine") {
       exec(args: ["apk", "add", "curl"]) {
-        exec(args: ["curl", "https://github.com/", "-o", "/tmp/foo"]) {
-          file(path: "/tmp/foo")
+        fs {
+          exec(args: ["curl", "https://github.com/", "-o", "/tmp/foo"]) {
+            fs {
+              file(path: "/tmp/foo")
+            }
+          }
         }
       }
     }
