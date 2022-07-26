@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/cmd/dev/config"
+	"github.com/dagger/cloak/cmd/cloak/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
