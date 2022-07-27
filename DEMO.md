@@ -6,7 +6,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 
 1. Ensure `dagger-buildkitd` is running (quickly invoke dagger if needed)
 1. Ensure that packages are already cached so that you don't have to wait a long time at the first command for various yarn packages to download
-   - TODO: add a command for doing this (`cloak import -f dagger.yaml`?)
+   - TODO: add a command for doing this (`cloak import -c dagger.yaml`?)
 1. Export `NETLIFY_AUTH_TOKEN` env
 
 ## 1. Background
@@ -27,7 +27,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 Run:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run $(pwd)/cmd/cloak query -c examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp.
@@ -69,7 +69,7 @@ go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml --op Deploy --l
 1. Run same command as before:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run $(pwd)/cmd/cloak query -c examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp at the new URL.
