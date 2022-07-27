@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dagger/cloak/tracing"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +46,9 @@ var rootCmd = &cobra.Command{
 }
 
 func main() {
+	closer := tracing.Init()
+	defer closer.Close()
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

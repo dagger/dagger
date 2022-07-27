@@ -10,6 +10,7 @@ import (
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/cloak/tracing"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
@@ -324,8 +325,9 @@ type Query {
 
 	var err error
 	schema, err = tools.MakeExecutableSchema(tools.ExecutableSchema{
-		TypeDefs:  typeDefs,
-		Resolvers: resolvers,
+		TypeDefs:   typeDefs,
+		Resolvers:  resolvers,
+		Extensions: []graphql.Extension{&tracing.GraphQLTracer{}},
 	})
 	if err != nil {
 		return err

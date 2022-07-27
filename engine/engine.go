@@ -37,7 +37,21 @@ type StartOpts struct {
 type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error)
 
 func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
-	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", bkclient.WithFailFast())
+	opts := []bkclient.ClientOpt{
+		bkclient.WithFailFast(),
+		// bkclient.WithTracerProvider(otel.GetTracerProvider()),
+	}
+
+	// exp, err := detect.Exporter()
+	// if err != nil {
+	// 	return err
+	// }
+
+	// if td, ok := exp.(bkclient.TracerDelegate); ok {
+	// 	opts = append(opts, bkclient.WithTracerDelegate(td))
+	// }
+
+	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", opts...)
 	if err != nil {
 		return err
 	}
