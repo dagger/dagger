@@ -9,7 +9,7 @@ Use/modify these examples to get going quickly!
   - dockerfile
   - multistage
 - java
-  - gradle
+  - [gradle](https://github.com/dagger/examples/tree/main/templates/java/gradle)
   - maven
 - go
   - [universe](https://github.com/dagger/examples/tree/main/templates/go/universe)
