@@ -12,6 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var generateCmd = &cobra.Command{
+	Use: "generate",
+	Run: Generate,
+}
+
 func Generate(cmd *cobra.Command, args []string) {
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {

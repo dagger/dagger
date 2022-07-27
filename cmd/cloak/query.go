@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Khan/genqlient/graphql"
@@ -13,7 +14,13 @@ import (
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh/terminal"
 )
+
+var queryCmd = &cobra.Command{
+	Use: "query",
+	Run: Query,
+}
 
 func Query(cmd *cobra.Command, args []string) {
 	cfg, err := config.ParseFile(configFile)
@@ -35,14 +42,24 @@ func Query(cmd *cobra.Command, args []string) {
 		Secrets:   secrets,
 	}
 
+	// Use the provided query file if specified
+	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
+	// Finally, default to reading from operations.graphql next to dagger.yaml
+	isTerminal := terminal.IsTerminal(int(os.Stdin.Fd()))
+	if queryFile == "" && isTerminal {
+		queryFile = filepath.Join(filepath.Dir(configFile), "operations.graphql")
+	}
+
 	var inBytes []byte
 	if queryFile != "" {
+		// use the provided query file if specified
 		inBytes, err = os.ReadFile(queryFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
+		// otherwise, if stdin is a pipe or other non-tty thing, read from it
 		inBytes, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
