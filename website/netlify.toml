@@ -11,7 +11,7 @@
 
 [[redirects]]
   # Embargoes compliance. DO NOT REMOVE
-  conditions = {Country = ["CU", "IR", "KP", "SY", "UA"]}
+  conditions = {Country = ["CU", "IR", "KP", "SY", "UA-43"]}
   from = "/*"
   to = "/restricted"
   status = 302
