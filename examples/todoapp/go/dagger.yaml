@@ -7,7 +7,7 @@ actions:
     dockerfile: examples/yarn/Dockerfile
   netlify:
     local: ../../..
-    dockerfile: examples/netlify/Dockerfile
+    dockerfile: examples/netlify/go/Dockerfile
   todoapp:
     local: ../../..
     dockerfile: examples/todoapp/go/Dockerfile

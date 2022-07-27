@@ -104,6 +104,7 @@ Say we are creating a new Go package called `foo` that will have a single action
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
    1. Setup client stub configuration for each of your dependencies
+      - Open `main.go`, remove the imports, remove the `Resolver` struct and method, and comment out the lines of code in the `main` func.
       - `cloak generate --output-dir gen`
         - This will parse your `dagger.yaml` and export `schema.graphql` and `operation.graphql` into a subdir under `gen/` for each of your dependencies (plus `core`)
       - For each of the dependencies
@@ -114,6 +115,7 @@ Say we are creating a new Go package called `foo` that will have a single action
    - From `examples/foo`, run `go generate main.go`
    - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to helpers for your implementation under `gen/<foo>`
    - Additionally, there should now be a `foo.go` file with a stub implementation.
+   - Uncomment the code in `main.go`, add an import for `github.com/dagger/cloak/examples/foo/gen/foo/generated`
 1. Implement your action by replacing the panic in `foo.go` with the actual implementation.
    - When you need to call a dependency, import it from under `gen/<pkgname>`
 

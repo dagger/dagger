@@ -1,4 +1,0 @@
-actions:
-  netlify:
-    local: ../..
-    dockerfile: examples/netlify/Dockerfile
