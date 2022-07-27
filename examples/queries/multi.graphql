@@ -3,18 +3,16 @@
     image(ref: "alpine") {
       exec(args: ["apk", "add", "curl"]) {
         fs {
-          github: exec(
-            args: ["curl", "https://github.com/", "-o", "/tmp/foo"]
-          ) {
+          dagger: exec(args: ["curl", "https://dagger.io/", "-o", "/out"]) {
+            stderr
             fs {
-              file(path: "/tmp/foo")
+              file(path: "/out", lines: 1)
             }
           }
-          dagger: exec(
-            args: ["curl", "https://dagger.com/", "-o", "/tmp/foo"]
-          ) {
+          gh: exec(args: ["curl", "-L", "https://github.com/", "-o", "/out"]) {
+            stderr
             fs {
-              file(path: "/tmp/foo")
+              file(path: "/out", lines: 1)
             }
           }
         }

@@ -883,8 +883,8 @@ type Mutation {
 
 type Exec {
 	fs: Filesystem!
-	stdout: String
-	stderr: String
+	stdout(lines: Int): String
+	stderr(lines: Int): String
 	exitCode: Int
 }
 
@@ -897,7 +897,7 @@ type Filesystem {
 	id: ID!
 	exec(args: [String!]): Exec!
 	dockerbuild(dockerfile: String): Filesystem!
-	file(path: String!): String
+	file(path: String!, lines: Int): String
 }
 `
 
