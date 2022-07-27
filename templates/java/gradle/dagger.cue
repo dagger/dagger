@@ -9,7 +9,13 @@ import (
 )
 
 dagger.#Plan & {
-	client: filesystem: "./build": write: contents: actions.build.gradle.export.directories."/build"
+	// Write the output of the gradle build to the client dev machine
+	client: {
+		filesystem: {
+			"./build": write: contents: actions.build.gradle.export.directories."/build"
+		}
+	}
+
 	actions: {
 		build: {
 			// core.#Source lets you access a file system tree (dagger.#FS)
@@ -18,34 +24,37 @@ dagger.#Plan & {
 			checkoutCode: core.#Source & {
 				path: "."
 			}
-			// Building an alpine image with gradle and bash installed
+			// Build an alpine image with gradle and bash installed
 			base: alpine.#Build & {
 				packages: {
 					"gradle": _
 					"bash":   _
 				}
 			}
-
+			// Pull image with OpenJDK from Docker Hub
 			jdk: docker.#Pull & {
 				source: "eclipse-temurin:11"
 			}
+			// User docker.#Run to export openjdk dir from jdk container
 			javaHome: docker.#Run & {
 				input: jdk.output
 				export: {
 					directories: "/opt/java/openjdk": _
 				}
 			}
+			// Copy the openjdk contents to the alpine gradle image
 			copyJava: docker.#Copy & {
 				input:    base.output
 				contents: javaHome.export.directories."/opt/java/openjdk"
 			}
+			// Finally copy the source code into the image
 			image: docker.#Copy & {
 				input:    copyJava.output
 				contents: checkoutCode.output
 			}
-
 			// Runs a bash script in the input container
 			// in this case `gradle build` (or `gradlew`)
+			// export the /build directory to write to client machine
 			gradle: bash.#Run & {
 				input: image.output
 				script: contents: """
