@@ -53,22 +53,20 @@ TODO: these instructions currently skip client stub generation for dependencies 
 
 Say we are creating a new Typescript package called `foo` that will have a single action `bar`.
 
-1. Setup the Dockerfile used to build the package
-   1. From the root of the repo, run `cp Dockerfile.todoapp Dockerfile.foo`
-   1. Open `Dockerfile.foo` and change occurences of `examples/todoapp` to `examples/foo`
 1. Setup the package configuration
-   1. Copy the existing `todoapp` package to a new directory for the new package:
-      - `cp -r examples/todoapp examples/foo`
+   1. Copy the existing `yarn` package to a new directory for the new package:
+      - `cp -r examples/yarn examples/foo`
    1. `cd examples/foo`
    1. `rm -rf app node_modules yarn.lock`
-   1. Open `package.json`, replace occurences of `todoapp` with `foo`
+   1. Open `Dockerfile` and change occurences of `examples/yarn` to `examples/foo`
+   1. Open `package.json`, replace occurences of `dagger-yarn` with `foo`
    1. Open `schema.graphql`, replace the existing `build`, `test` and `deploy` fields under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
    1. Open up `dagger.yaml`
       - This is where you declare your own package in addition to dependencies of your package. Declaring packages here makes them available to be called by your action implementation in addition to telling cloak how to build them.
       - Packages are declared by specifying how they are built. Currently, we just use Dockerfiles for everything, but in theory this should be much more flexible.
-      - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `Dockerfile.alpine` to `Dockerfile.foo`
+      - Replacing the existing `yarn` key under `actions` with `foo`; similarly change `examples/yarn/Dockerfile` to `examples/foo/Dockerfile`
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
 1. Implement your action by editing `index.ts`
@@ -82,14 +80,12 @@ TODO: automate and simplify the below
 
 Say we are creating a new Go package called `foo` that will have a single action `bar`.
 
-1. Setup the Dockerfile used to build the package
-   1. From the root of the repo, run `cp Dockerfile.alpine Dockerfile.foo`
-   1. Open `Dockerfile.foo` and change occurences of `examples/alpine` to `examples/foo`
 1. Setup the package configuration
    1. Copy the existing `alpine` package to a new directory for the new package:
       - `cp -r examples/alpine examples/foo`
    1. `cd examples/foo`
    1. `rm -rf alpine.go gen`
+   1. Open `Dockerfile` and change occurences of `examples/alpine` to `examples/foo`
    1. Open `gqlgen.yml` and replace every occurence of `alpine` with `foo`
       - This configures the code generation tool we use to create implementation stubs
    1. Open `schema.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
@@ -98,7 +94,7 @@ Say we are creating a new Go package called `foo` that will have a single action
    1. Open up `dagger.yaml`
       - This is where you declare your own package in addition to dependencies of your package. Declaring packages here makes them available to be called by your action implementation in addition to telling cloak how to build them.
       - Packages are declared by specifying how they are built. Currently, we just use Dockerfiles for everything, but in theory this should be much more flexible.
-      - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `Dockerfile.alpine` to `Dockerfile.foo`
+      - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `examples/alpine/Dockerfile` to `examples/foo/Dockerfile`
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
    1. Setup client stub configuration for each of your dependencies
