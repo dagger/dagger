@@ -51,6 +51,13 @@ Once we have your request, our team will assign a team member to review and help
 
 Only you & the Dagger team can access the information in the execution URL.
 
+### What information gets sent to Dagger Cloud?
+
+Dagger Cloud only collects **run specific metadata** from your Dagger executions. This currently includes your main plan definition **without** imported packages, execution logs and
+non-secret outputs. This informaton is only accessible by the Dagger user who triggered the execution and can't be shared with anyone else.
+
+We don't collect or send any sensitive information like source code, secrets, env variables or private packages to our servers.
+
 ### What if I don’t want to open a public issue?
 
 A public issue is the best way for us to communicate since it helps us track the completion of your request, but you can always reach out to us on Discord directly if you don’t want to open an issue. When you reach out to us, please share your Dagger run URL, so we can troubleshoot the issue as quickly as possible.
