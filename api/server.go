@@ -65,6 +65,7 @@ func (s Server) serve(ctx context.Context, l net.Listener) error {
 	return (&http.Server{
 		Handler: handler.New(&handler.Config{
 			Schema:     &schema,
+			Pretty:     true,
 			Playground: true,
 			GraphiQL:   false,
 			ResultCallbackFn: func(ctx context.Context, params *graphql.Params, result *graphql.Result, body []byte) {

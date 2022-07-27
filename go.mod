@@ -14,6 +14,10 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.0.0
 	github.com/vektah/gqlparser/v2 v2.4.6
+	go.opentelemetry.io/otel v1.8.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.8.0
+	go.opentelemetry.io/otel/sdk v1.8.0
+	go.opentelemetry.io/otel/trace v1.8.0
 	golang.org/x/crypto v0.0.0-20211202192323-5770296d904e
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	google.golang.org/grpc v1.45.0
@@ -26,6 +30,7 @@ require (
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/alexflint/go-arg v1.4.2 // indirect
 	github.com/alexflint/go-scalar v1.0.0 // indirect
+	github.com/cenkalti/backoff/v4 v4.1.2 // indirect
 	github.com/containerd/console v1.0.3 // indirect
 	github.com/containerd/continuity v0.2.3-0.20220330195504-d132b287edc8 // indirect
 	github.com/containerd/ttrpc v1.1.0 // indirect
@@ -36,7 +41,7 @@ require (
 	github.com/docker/docker v20.10.7+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/go-logr/logr v1.2.2 // indirect
+	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofrs/flock v0.7.3 // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
@@ -62,10 +67,10 @@ require (
 	github.com/urfave/cli/v2 v2.8.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.29.0 // indirect
-	go.opentelemetry.io/otel v1.4.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.4.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.4.1 // indirect
-	go.opentelemetry.io/otel/sdk v1.4.1 // indirect
-	go.opentelemetry.io/otel/trace v1.4.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.4.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.4.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f // indirect
