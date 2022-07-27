@@ -7,6 +7,8 @@
 2. Build `cloak` and make sure it's in your PATH
    - `go build ./cmd/cloak`
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`
+   - Alternative: create a bash alias like `alias cloak="go run /absolute/path/to/the/cloak/repo/cmd/cloak"`
+     - This results in cloak rebuilding every time in case you are making lots of changes to it
 
 ## Basic Invoking
 
