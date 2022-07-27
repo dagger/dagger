@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/dagger/daggerlsp/server"
+	"github.com/dagger/cuelsp/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/logger"
@@ -11,7 +11,7 @@ import (
 )
 
 var lspCmd = &cobra.Command{
-	Use:    "lsp",
+	Use:    "cuelsp",
 	Short:  "Run Dagger CUE Language Server",
 	Hidden: true,
 	Args:   cobra.NoArgs,
@@ -25,7 +25,10 @@ var lspCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		lg := logger.New()
 
-		s := server.New(server.PROD)
+		s, err := server.New(server.WithMode(server.ModeProd))
+		if err != nil {
+			lg.Fatal().Err(err).Msg("could not init Dagger Language Server")
+		}
 
 		lg.Info().Msg("Running Dagger CUE Language Server")
 		if err := s.Run(); err != nil {
