@@ -44,6 +44,9 @@ func ParseFile(f string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	if cfg.Actions == nil {
+		cfg.Actions = make(map[string]*Action)
+	}
 
 	for _, action := range cfg.Actions {
 		if action.Local != "" {
