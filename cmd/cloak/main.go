@@ -44,21 +44,6 @@ var rootCmd = &cobra.Command{
 	Use: "cloak",
 }
 
-var queryCmd = &cobra.Command{
-	Use: "query",
-	Run: Query,
-}
-
-var generateCmd = &cobra.Command{
-	Use: "generate",
-	Run: Generate,
-}
-
-var devCmd = &cobra.Command{
-	Use: "dev",
-	Run: Dev,
-}
-
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

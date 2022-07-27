@@ -27,7 +27,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 Run:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml -q examples/todoapp/go/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp.
@@ -69,7 +69,7 @@ go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml -q examples/tod
 1. Run same command as before:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml -q examples/todoapp/go/operations.graphql --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+go run $(pwd)/cmd/cloak query -f examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp at the new URL.

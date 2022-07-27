@@ -18,7 +18,7 @@ EOF
 Yarn build:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/yarn/dagger.yaml -q examples/yarn/operations.graphql --op Script --local-dir source=examples/todoapp/app --set name=build
+go run $(pwd)/cmd/cloak query -f examples/yarn/dagger.yaml --local-dir source=examples/todoapp/app --set name=build
 ```
 
 TODOApp deploy:

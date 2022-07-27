@@ -11,6 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var devCmd = &cobra.Command{
+	Use: "dev",
+	Run: Dev,
+}
+
 func Dev(cmd *cobra.Command, args []string) {
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {

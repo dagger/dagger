@@ -12,5 +12,5 @@
   - `cloak query -q ./params.graphql | jq -r .source.git.file`
   - `cloak query -q ./params.graphql -set version=v0.1.0 | jq -r .source.git.file`
 - [targets.graphql](./targets.graphql)
-  - `cloak query -q ./targets.graphql -op test`
-  - `cloak query -q ./targets.graphql -op build`
+  - `cloak query -q ./targets.graphql --op test`
+  - `cloak query -q ./targets.graphql --op build`
