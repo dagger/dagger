@@ -10,7 +10,7 @@
 Simple alpine example (output will just be the encoded FS bytes for now, need to add export+shell util to `cloak` CLI):
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/alpine/dagger.yaml <<'EOF'
+go run $(pwd)/cmd/cloak query -c examples/alpine/dagger.yaml <<'EOF'
 {alpine{build(pkgs:["jq","curl"])}}
 EOF
 ```
@@ -18,13 +18,13 @@ EOF
 Yarn build:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/yarn/dagger.yaml --local-dir source=examples/todoapp/app --set name=build
+go run $(pwd)/cmd/cloak query -c examples/yarn/dagger.yaml --local-dir source=examples/todoapp/app --set name=build
 ```
 
 TODOApp deploy:
 
 ```console
-go run $(pwd)/cmd/cloak query -f examples/todoapp/ts/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
+go run $(pwd)/cmd/cloak query -c examples/todoapp/ts/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
 query Build($src: FS!, $token: String!) {
     todoapp{deploy(src: $src, token: $token){url}}
 }
@@ -98,7 +98,7 @@ Say we are creating a new Go package called `foo` that will have a single action
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
    1. Setup client stub configuration for each of your dependencies
-      - `go run $(pwd)/../../cmd/cloak -f dagger.yaml generate --output-dir gen`
+      - `go run $(pwd)/../../cmd/cloak -c dagger.yaml generate --output-dir gen`
         - This will parse your `dagger.yaml` and export `schema.graphql` and `operation.graphql` into a subdir under `gen/` for each of your dependencies (plus `core`)
       - For each of the dependencies
         - Create a file `gen/<pkgname>/genqclient.yaml` based on `../alpinegen/core/genqlient.yaml`, replacing the word `core` with `<pkgname>`

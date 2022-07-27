@@ -22,22 +22,22 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "f", "./dagger.yaml", "config file")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "./dagger.yaml", "config file")
 	rootCmd.AddCommand(
 		queryCmd,
 		generateCmd,
 		devCmd,
 	)
 
-	queryCmd.PersistentFlags().StringVarP(&queryFile, "query", "q", "", "query file")
-	queryCmd.PersistentFlags().StringVarP(&operation, "op", "o", "", "operation to execute")
-	queryCmd.PersistentFlags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
-	queryCmd.PersistentFlags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
-	queryCmd.PersistentFlags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
+	queryCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
+	queryCmd.Flags().StringVarP(&operation, "op", "o", "", "operation to execute")
+	queryCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
+	queryCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
+	queryCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 
-	generateCmd.PersistentFlags().StringVar(&generateOutpuDir, "output-dir", "./", "output directory")
+	generateCmd.Flags().StringVar(&generateOutpuDir, "output-dir", "./", "output directory")
 
-	devCmd.PersistentFlags().IntVarP(&devServerPort, "port", "p", 8080, "dev server port")
+	devCmd.Flags().IntVarP(&devServerPort, "port", "p", 8080, "dev server port")
 }
 
 var rootCmd = &cobra.Command{
