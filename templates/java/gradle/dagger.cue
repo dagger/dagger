@@ -53,15 +53,17 @@ dagger.#Plan & {
 				contents: checkoutCode.output
 			}
 			// Runs a bash script in the input container
-			// in this case `gradle build` (or `gradle wrapper`, `gradlew`
-			// for more control over gradle version for build, etc)
+			// in this case `gradle wrapper`, `gradlew...`
+			// for more control over gradle version for build, etc.
+			// Simple `gradle build` can be used instead, just invert commments #
 			// export the /build directory to write to client machine
 			gradle: bash.#Run & {
 				input: image.output
 				script: contents: """
-					gradle build
-					#gradle wrapper
-					#./gradlew build
+					#gradle build
+					gradle wrapper --gradle-version 7.5
+					./gradlew build
+					./gradlew run
 					"""
 				export: directories: "/build": _
 			}
