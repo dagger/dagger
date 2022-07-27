@@ -175,6 +175,7 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		}
 		// fmt.Printf("requesting %s\n", string(inputBytes))
 
+		// TODO: inputs should also include the versions of all deps so that if a dep changes, this runs again too
 		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
 
 		fsState, err := daggerPackages[pkgName].FS.ToState()
@@ -917,6 +918,14 @@ query Exec($input: CoreExecInput!) {
   core {
     exec(input: $input) {
       root
+    }
+  }
+}
+
+query ExecGetMount($input: CoreExecInput!, $mountPath: String!) {
+  core {
+    exec(input: $input) {
+      getMount(path: $mountPath)
     }
   }
 }

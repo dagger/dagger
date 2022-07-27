@@ -1,0 +1,42 @@
+
+query Image($ref: String!) {
+  core {
+    image(ref: $ref) {
+      fs
+    }
+  }
+}
+
+query Exec($input: CoreExecInput!) {
+  core {
+    exec(input: $input) {
+      root
+    }
+  }
+}
+
+query ExecGetMount($input: CoreExecInput!, $mountPath: String!) {
+  core {
+    exec(input: $input) {
+      getMount(path: $mountPath)
+    }
+  }
+}
+
+query Dockerfile($context: FS!, $dockerfileName: String!) {
+  core {
+    dockerfile(context: $context, dockerfileName: $dockerfileName)
+  }
+}
+
+mutation Import($name: String!, $fs: FS!) {
+  import(name: $name, fs: $fs) {
+    name
+    schema
+    operations
+  }
+}
+
+mutation ReadSecret($id: String!) {
+  readsecret(id: $id)
+}

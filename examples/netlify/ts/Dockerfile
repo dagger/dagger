@@ -4,12 +4,12 @@ FROM node:16-alpine AS build
 ENV YARN_CACHE_FOLDER /cache/yarn
 WORKDIR /app/src
 RUN apk add --no-cache file git
-COPY --link examples/netlify/package.json examples/netlify/yarn.lock ./
+COPY --link examples/netlify/ts/package.json examples/netlify/ts/yarn.lock ./
 COPY --link sdk/nodejs /sdk/nodejs
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --cwd /sdk/nodejs/dagger
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --cwd /sdk/nodejs/dagger build
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn
-COPY --link examples/netlify/ .
+COPY --link examples/netlify/ts/ .
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn upgrade dagger
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn build
 
@@ -20,8 +20,8 @@ COPY --link --from=build /app/src/package.json /app/src/yarn.lock ./
 COPY --link --from=build /sdk/nodejs /sdk/nodejs
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --production
 COPY --link --from=build /app/src/dist ./dist
-COPY --link examples/netlify/schema.graphql /schema.graphql
-COPY --link examples/netlify/operations.graphql /operations.graphql
+COPY --link examples/netlify/ts/schema.graphql /schema.graphql
+COPY --link examples/netlify/ts/operations.graphql /operations.graphql
 ENV PATH $PATH:/app/src/node_modules/.bin
 COPY <<EOF /entrypoint
 #!/bin/sh
