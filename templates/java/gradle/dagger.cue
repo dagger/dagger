@@ -9,7 +9,7 @@ import (
 )
 
 dagger.#Plan & {
-	// Write the output of the gradle build to the client dev machine
+	//Write the output of the gradle build to the client dev machine
 	client: {
 		filesystem: {
 			"./build": write: contents: actions.build.gradle.export.directories."/build"
@@ -53,13 +53,15 @@ dagger.#Plan & {
 				contents: checkoutCode.output
 			}
 			// Runs a bash script in the input container
-			// in this case `gradle build` (or `gradlew`)
+			// in this case `gradle build` (or `gradle wrapper`, `gradlew`
+			// for more control over gradle version for build, etc)
 			// export the /build directory to write to client machine
 			gradle: bash.#Run & {
 				input: image.output
 				script: contents: """
 					gradle build
-					# gradlew
+					#gradle wrapper
+					#./gradlew build
 					"""
 				export: directories: "/build": _
 			}
