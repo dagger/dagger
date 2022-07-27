@@ -3,10 +3,8 @@
     image(ref: "alpine") {
       exec(args: ["apk", "add", "curl"]) {
         fs {
-          exec(args: ["curl", "https://github.com/", "-o", "/tmp/foo"]) {
-            fs {
-              file(path: "/tmp/foo")
-            }
+          exec(args: ["curl", "https://dagger.io/"]) {
+            stdout(lines: 1)
           }
         }
       }

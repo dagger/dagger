@@ -1,7 +1,7 @@
 query ($version: String) {
   source {
     git(remote: "github.com/dagger/dagger", ref: $version) {
-      readme: file(path: "/README.md")
+      file(path: "/README.md")
     }
   }
 }

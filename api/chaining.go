@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
 	"github.com/containerd/containerd/platforms"
@@ -223,7 +224,8 @@ var filesystemResolver = &tools.ObjectResolver{
 				if err != nil {
 					return nil, err
 				}
-				return string(output), nil
+
+				return truncate(string(output), p.Args), nil
 			},
 		},
 
@@ -297,7 +299,8 @@ var execResolver = &tools.ObjectResolver{
 				if err != nil {
 					return nil, err
 				}
-				return string(output), nil
+
+				return truncate(string(output), p.Args), nil
 			},
 		},
 		"stderr": &tools.FieldResolve{
@@ -314,7 +317,8 @@ var execResolver = &tools.ObjectResolver{
 				if err != nil {
 					return nil, err
 				}
-				return string(output), nil
+
+				return truncate(string(output), p.Args), nil
 			},
 		},
 
@@ -337,4 +341,16 @@ var execResolver = &tools.ObjectResolver{
 			},
 		},
 	},
+}
+
+func truncate(s string, args map[string]interface{}) string {
+	if lines, ok := args["lines"].(int); ok {
+		l := strings.SplitN(s, "\n", lines+1)
+		if lines > len(l) {
+			lines = len(l)
+		}
+		return strings.Join(l[0:lines], "\n")
+	}
+
+	return s
 }
