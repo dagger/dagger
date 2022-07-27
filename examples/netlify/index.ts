@@ -1,4 +1,6 @@
 import { client, DaggerServer, gql } from "@dagger.io/dagger";
+import { getSdk } from "./gen/core/core.js";
+const core = getSdk(client);
 
 import { NetlifyAPI } from "netlify";
 import { execa } from "execa";
@@ -21,13 +23,9 @@ const resolvers = {
       process.env["PATH"] = "/app/src/node_modules/.bin:" + process.env["PATH"];
       process.env["HOME"] = "/tmp";
 
-      const token = await client
-        .request(
-          gql`mutation{
-            readsecret(id:"${args.token}")
-          }`
-        )
-        .then((result: any) => result.readsecret);
+      const token = await core
+        .ReadSecret({ id: args.token })
+        .then((res) => res.readsecret);
       process.env["NETLIFY_AUTH_TOKEN"] = token;
 
       const netlifyClient = new NetlifyAPI(token);

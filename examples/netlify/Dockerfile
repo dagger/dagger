@@ -20,9 +20,12 @@ COPY --link --from=build /app/src/package.json /app/src/yarn.lock ./
 COPY --link --from=build /sdk/nodejs /sdk/nodejs
 RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --production
 COPY --link --from=build /app/src/dist ./dist
-COPY --link examples/netlify/entrypoint.sh /entrypoint
 COPY --link examples/netlify/schema.graphql /schema.graphql
 COPY --link examples/netlify/operations.graphql /operations.graphql
-ENTRYPOINT ["/entrypoint"]
 ENV PATH $PATH:/app/src/node_modules/.bin
-LABEL moby.buildkit.frontend.caps=moby.buildkit.frontend.inputs
+COPY <<EOF /entrypoint
+#!/bin/sh
+node --unhandled-rejections=strict /app/src/dist/index.js
+EOF
+RUN chmod +x /entrypoint
+ENTRYPOINT ["/entrypoint"]

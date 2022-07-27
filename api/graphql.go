@@ -880,7 +880,7 @@ type Mutation {
 	import(name: String!, fs: FS): Package
 	readfile(fs: FS!, path: String!): String
 	clientdir(id: String!): FS
-	readsecret(id: String!): String
+	readsecret(id: String!): String!
 }
 
 type Exec {
@@ -930,8 +930,13 @@ query Dockerfile($context: FS!, $dockerfileName: String!) {
 mutation Import($name: String!, $fs: FS!) {
   import(name: $name, fs: $fs) {
     name
-    fs
+    schema
+    operations
   }
+}
+
+mutation ReadSecret($id: String!) {
+  readsecret(id: $id)
 }
 `
 
