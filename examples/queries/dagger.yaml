@@ -1,18 +1,17 @@
 actions:
   # alpine:
   #   local: ../..
-  #   dockerfile: Dockerfile.alpine
+  #   dockerfile: examples/alpine/Dockerfile
   # yarn:
   #   local: ../..
-  #   dockerfile: Dockerfile.yarn
+  #   dockerfile: examples/yarn/Dockerfile
   # netlify:
   #   local: ../..
-  #   dockerfile: Dockerfile.netlify
-
+  #   dockerfile: examples/netlify/Dockerfile
   # Registry
   # alpine:
   #   image: localhost:5555/dagger:alpine
   # Git (not yet supported)
   # netlify:
   #   git: https://github.com/dagger/cloak.git
-  #   dockerfile: Dockerfile.netlify
+  #   dockerfile: examples/netlify/Dockerfile
