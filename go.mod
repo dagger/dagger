@@ -58,7 +58,7 @@ require (
 )
 
 require (
-	github.com/dagger/daggerlsp v0.3.2
+	github.com/dagger/cuelsp v0.3.3
 	github.com/tliron/kutil v0.1.61
 )
 
