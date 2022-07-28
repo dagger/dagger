@@ -1,4 +1,5 @@
 scalar FS
+scalar Secret
 
 type Deploy {
   url: String!
@@ -11,6 +12,6 @@ type Query {
     contents: FS!
     subdir: String
     siteName: String
-    token: String
+    token: Secret!
   ): Deploy!
 }

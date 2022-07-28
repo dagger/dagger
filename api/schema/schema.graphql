@@ -1,4 +1,5 @@
 scalar FS
+scalar Secret
 
 type CoreImage {
   fs: FS!
@@ -41,7 +42,7 @@ type Mutation {
   import(name: String!, fs: FS): Package
   readfile(fs: FS!, path: String!): String
   clientdir(id: String!): FS
-  readsecret(id: String!): String!
+  readsecret(input: Secret!): String!
 }
 
 type Exec {

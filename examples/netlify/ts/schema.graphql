@@ -1,4 +1,5 @@
 scalar FS
+scalar Secret
 
 "Netlify Deployment"
 type Deploy {
@@ -21,6 +22,6 @@ type Query {
     "Name of the Netlify site"
     siteName: String
     "Netlify API token"
-    token: String
+    token: Secret!
   ): Deploy!
 }

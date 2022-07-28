@@ -6,21 +6,25 @@ WORKDIR /app/src
 RUN apk add --no-cache file git
 COPY --link examples/yarn/package.json examples/yarn/yarn.lock ./
 COPY --link sdk/nodejs /sdk/nodejs
-RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --cwd /sdk/nodejs/dagger
-RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --cwd /sdk/nodejs/dagger build
-RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn
+RUN --mount=type=cache,target=/cache/yarn,id=yarn,sharing=locked yarn --cwd /sdk/nodejs/dagger
+RUN --mount=type=cache,target=/cache/yarn,id=yarn,sharing=locked yarn --cwd /sdk/nodejs/dagger build
+RUN --mount=type=cache,target=/cache/yarn,id=yarn,sharing=locked yarn
 COPY --link examples/yarn/ .
-RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn upgrade dagger
-RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn build
+RUN --mount=type=cache,target=/cache/yarn,id=yarn,sharing=locked yarn upgrade dagger
+RUN --mount=type=cache,target=/cache/yarn,id=yarn,sharing=locked yarn build
 
 FROM node:16-alpine
 ENV YARN_CACHE_FOLDER /cache/yarn
 WORKDIR /app/src
 COPY --link --from=build /app/src/package.json /app/src/yarn.lock ./
 COPY --link --from=build /sdk/nodejs /sdk/nodejs
-RUN --mount=type=cache,target=/cache/yarn,id=yarn yarn --production
+RUN --mount=type=cache,target=/cache/yarn,id=yarn,sharing=locked yarn --production
 COPY --link --from=build /app/src/dist ./dist
-COPY --link examples/yarn/entrypoint.sh /entrypoint
 COPY --link examples/yarn/schema.graphql /schema.graphql
 COPY --link examples/yarn/operations.graphql /operations.graphql
+COPY <<EOF /entrypoint
+#!/bin/sh
+node --unhandled-rejections=strict /app/src/dist/index.js
+EOF
+RUN chmod +x /entrypoint
 ENTRYPOINT ["/entrypoint"]

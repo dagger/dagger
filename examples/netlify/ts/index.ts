@@ -1,4 +1,4 @@
-import { client, DaggerServer, gql } from "@dagger.io/dagger";
+import { client, DaggerServer, gql, FS, Secret } from "@dagger.io/dagger";
 import { getSdk } from "./gen/core/core.js";
 const core = getSdk(client);
 
@@ -13,10 +13,10 @@ const resolvers = {
     deploy: async (
       parent: any,
       args: {
-        contents: string;
+        contents: FS;
         subdir: string;
         siteName: string;
-        token: string;
+        token: Secret;
       }
     ) => {
       // TODO: should be set from Dockerfile ENV, just not propagated by dagger server yet
@@ -24,7 +24,7 @@ const resolvers = {
       process.env["HOME"] = "/tmp";
 
       const token = await core
-        .ReadSecret({ id: args.token })
+        .ReadSecret({ input: args.token })
         .then((res) => res.readsecret);
       process.env["NETLIFY_AUTH_TOKEN"] = token;
 

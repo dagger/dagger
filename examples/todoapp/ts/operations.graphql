@@ -10,7 +10,7 @@ query Test($src: FS!) {
   }
 }
 
-query Deploy($src: FS!, $token: String!) {
+query Deploy($src: FS!, $token: Secret!) {
   todoapp {
     deploy(src: $src, token: $token) {
       url

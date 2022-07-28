@@ -1,15 +1,41 @@
 scalar FS
+scalar Secret
 
-
+"""Netlify Deployment"""
 type Deploy {
+  
+  """Production URL of the deployed site"""
   url: String!
+  
+  """Unique URL for this deployment"""
   deployUrl: String!
+  
+  """Deployment Logs"""
   logsUrl: String
 }
+
+"Netlify Action"
 type Netlify {
-	deploy(contents: FS!, subdir: String, siteName: String, token: String): Deploy!
+	
+"""Deploy a site to Netlify"""
+deploy(
+  
+  """Contents of the site"""
+  contents: FS!
+  
+  """Sub-directory to deploy"""
+  subdir: String
+  
+  """Name of the Netlify site"""
+  siteName: String
+  
+  """Netlify API token"""
+  token: Secret!
+): Deploy!
 }
+
 type Query {
+	"Netlify Action"
 	netlify: Netlify!
 }
 	

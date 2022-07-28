@@ -1,4 +1,3 @@
-
 query Image($ref: String!) {
   core {
     image(ref: $ref) {
@@ -15,6 +14,14 @@ query Exec($input: CoreExecInput!) {
   }
 }
 
+query ExecGetMount($input: CoreExecInput!, $mountPath: String!) {
+  core {
+    exec(input: $input) {
+      getMount(path: $mountPath)
+    }
+  }
+}
+
 query Dockerfile($context: FS!, $dockerfileName: String!) {
   core {
     dockerfile(context: $context, dockerfileName: $dockerfileName)
@@ -25,10 +32,10 @@ mutation Import($name: String!, $fs: FS!) {
   import(name: $name, fs: $fs) {
     name
     schema
-		operations
+    operations
   }
 }
 
-mutation ReadSecret($id: String!) {
-  readsecret(id: $id)
+mutation ReadSecret($input: Secret!) {
+  readsecret(input: $input)
 }

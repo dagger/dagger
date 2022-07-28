@@ -79,15 +79,15 @@ func (v *__BuildInput) GetSrc() dagger.FS { return v.Src }
 
 // __DeployInput is used internally by genqlient
 type __DeployInput struct {
-	Src   dagger.FS `json:"src"`
-	Token string    `json:"token"`
+	Src   dagger.FS     `json:"src"`
+	Token dagger.Secret `json:"token"`
 }
 
 // GetSrc returns __DeployInput.Src, and is useful for accessing the field via an interface.
 func (v *__DeployInput) GetSrc() dagger.FS { return v.Src }
 
 // GetToken returns __DeployInput.Token, and is useful for accessing the field via an interface.
-func (v *__DeployInput) GetToken() string { return v.Token }
+func (v *__DeployInput) GetToken() dagger.Secret { return v.Token }
 
 // __TestInput is used internally by genqlient
 type __TestInput struct {
@@ -137,12 +137,12 @@ query Build ($src: FS!) {
 func Deploy(
 	ctx context.Context,
 	src dagger.FS,
-	token string,
+	token dagger.Secret,
 ) (*DeployResponse, error) {
 	req := &graphql.Request{
 		OpName: "Deploy",
 		Query: `
-query Deploy ($src: FS!, $token: String!) {
+query Deploy ($src: FS!, $token: Secret!) {
 	todoapp {
 		deploy(src: $src, token: $token) {
 			url

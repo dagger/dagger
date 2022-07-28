@@ -2,7 +2,7 @@ query Deploy(
   $contents: FS!
   $subdir: String
   $siteName: String
-  $token: String
+  $token: Secret!
 ) {
   netlify {
     deploy(

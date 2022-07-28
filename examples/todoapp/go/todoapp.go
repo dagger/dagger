@@ -32,7 +32,7 @@ func (r *queryResolver) Test(ctx context.Context, src dagger.FS) (dagger.FS, err
 	return output.Yarn.Script, nil
 }
 
-func (r *queryResolver) Deploy(ctx context.Context, src dagger.FS, token *string) (*model.Deploy, error) {
+func (r *queryResolver) Deploy(ctx context.Context, src dagger.FS, token dagger.Secret) (*model.Deploy, error) {
 	// run build and test in parallel
 	var eg errgroup.Group
 	var buildOutput *todoapp.BuildResponse
@@ -50,7 +50,7 @@ func (r *queryResolver) Deploy(ctx context.Context, src dagger.FS, token *string
 	}
 
 	// if build+test succeeded, deploy
-	deployOutput, err := netlify.Deploy(ctx, buildOutput.Todoapp.Build, "build", "test-cloak-netlify-deploy", *token)
+	deployOutput, err := netlify.Deploy(ctx, buildOutput.Todoapp.Build, "build", "test-cloak-netlify-deploy", token)
 	if err != nil {
 		return nil, err
 	}

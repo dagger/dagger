@@ -209,11 +209,11 @@ func (v *__ImportInput) GetFs() dagger.FS { return v.Fs }
 
 // __ReadSecretInput is used internally by genqlient
 type __ReadSecretInput struct {
-	Id string `json:"id"`
+	Input dagger.Secret `json:"input"`
 }
 
-// GetId returns __ReadSecretInput.Id, and is useful for accessing the field via an interface.
-func (v *__ReadSecretInput) GetId() string { return v.Id }
+// GetInput returns __ReadSecretInput.Input, and is useful for accessing the field via an interface.
+func (v *__ReadSecretInput) GetInput() dagger.Secret { return v.Input }
 
 func Dockerfile(
 	ctx context.Context,
@@ -416,17 +416,17 @@ mutation Import ($name: String!, $fs: FS!) {
 
 func ReadSecret(
 	ctx context.Context,
-	id string,
+	input dagger.Secret,
 ) (*ReadSecretResponse, error) {
 	req := &graphql.Request{
 		OpName: "ReadSecret",
 		Query: `
-mutation ReadSecret ($id: String!) {
-	readsecret(id: $id)
+mutation ReadSecret ($input: Secret!) {
+	readsecret(input: $input)
 }
 `,
 		Variables: &__ReadSecretInput{
-			Id: id,
+			Input: input,
 		},
 	}
 	var err error

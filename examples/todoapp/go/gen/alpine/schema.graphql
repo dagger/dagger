@@ -1,13 +1,17 @@
 scalar FS
-
+scalar Secret
 
 type Dummy {
   foo: String!
 }
+
+""
 type Alpine {
 	build(pkgs: [String!]): FS!
 }
+
 type Query {
+	""
 	alpine: Alpine!
 }
 	

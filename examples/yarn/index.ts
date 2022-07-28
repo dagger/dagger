@@ -1,9 +1,9 @@
-import { client, DaggerServer, gql } from "@dagger.io/dagger";
+import { client, DaggerServer, gql, FS } from "@dagger.io/dagger";
 import * as fs from "fs";
 
 const resolvers = {
   Query: {
-    script: async (parent: any, args: { source: string; name: string }) => {
+    script: async (parent: any, args: { source: FS; name: string }) => {
       // TODO: update to use generated client instead of raw queries
       const base = await client
         .request(

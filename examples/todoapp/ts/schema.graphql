@@ -1,4 +1,5 @@
 scalar FS
+scalar Secret
 
 type Deploy {
   url: String!
@@ -9,5 +10,5 @@ type Deploy {
 type Query {
   build(src: FS!): FS!
   test(src: FS!): FS!
-  deploy(src: FS!, token: String): Deploy!
+  deploy(src: FS!, token: Secret!): Deploy!
 }

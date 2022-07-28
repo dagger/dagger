@@ -1,4 +1,4 @@
-import { client, DaggerServer, gql } from "@dagger.io/dagger";
+import { client, DaggerServer, gql, Secret, FS } from "@dagger.io/dagger";
 
 import * as fs from "fs";
 
@@ -7,7 +7,7 @@ const resolvers = {
     /*
      * Build the todoapp
      */
-    build: async (parent: any, args: { src: string }) => {
+    build: async (parent: any, args: { src: FS }) => {
       return await client
         .request(
           gql`
@@ -24,7 +24,7 @@ const resolvers = {
     /*
      * Test the todoapp
      */
-    test: async (parent: any, args: { src: string }) => {
+    test: async (parent: any, args: { src: FS }) => {
       return await client
         .request(
           gql`
@@ -41,7 +41,7 @@ const resolvers = {
     /*
      * Build and test the todoapp, if those pass then deploy it to Netlify
      */
-    deploy: async (parent: any, args: { src: string; token: string }) => {
+    deploy: async (parent: any, args: { src: FS; token: Secret }) => {
       const built = await Promise.all([
         client
           .request(

@@ -36,6 +36,6 @@ mutation Import($name: String!, $fs: FS!) {
   }
 }
 
-mutation ReadSecret($id: String!) {
-  readsecret(id: $id)
+mutation ReadSecret($input: Secret!) {
+  readsecret(input: $input)
 }

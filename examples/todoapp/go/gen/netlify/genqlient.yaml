@@ -7,4 +7,6 @@ package: netlify
 bindings:
   FS:
     type: github.com/dagger/cloak/sdk/go/dagger.FS
+  Secret:
+    type: github.com/dagger/cloak/sdk/go/dagger.Secret
 client_getter: github.com/dagger/cloak/sdk/go/dagger.Client
