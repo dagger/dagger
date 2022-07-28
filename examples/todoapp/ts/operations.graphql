@@ -18,15 +18,3 @@ query Deploy($src: FS!, $token: Secret!) {
     }
   }
 }
-
-# TODO: an experiment with defining simple actions using pure graphql
-query DirectBuild($src: FS!) {
-  yarn {
-    script(source: $src, name: "build")
-  }
-}
-query DirectTest($src: FS!) {
-  yarn {
-    script(source: $src, name: "test")
-  }
-}

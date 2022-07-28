@@ -1,0 +1,16 @@
+overwrite: true
+schema: "./gen/netlify/schema.graphql"
+documents:
+  - "./gen/netlify/operations.graphql"
+generates:
+  ./gen/netlify/netlify.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typescript-graphql-request
+      - add:
+          content: "import { FS, Secret } from '@dagger.io/dagger'"
+    config:
+      scalars:
+        FS: FS
+        Secret: Secret

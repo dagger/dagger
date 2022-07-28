@@ -1,0 +1,11 @@
+query Build($src: FS!) {
+  todoapp {
+    build(src: $src)
+  }
+}
+
+query Test($src: FS!) {
+  todoapp {
+    test(src: $src)
+  }
+}

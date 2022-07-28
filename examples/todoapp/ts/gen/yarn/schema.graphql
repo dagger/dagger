@@ -1,0 +1,15 @@
+scalar FS
+scalar Secret
+
+
+
+""
+type Yarn {
+	script(source: FS!, name: String): FS!
+}
+
+type Query {
+	""
+	yarn: Yarn!
+}
+	

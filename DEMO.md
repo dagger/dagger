@@ -61,7 +61,7 @@ cloak query -c examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examp
 1. Go back to `examples/todoapp/go/todoapp.go`
 1. Show how the deploy action calls build and test in parallel with one another before moving onto the actual deploy.
 1. Note that it calls out to the `netlify` action to do the deployment
-1. Open up `examples/netlify/index.ts`
+1. Open up `examples/netlify/go/netlify.go`
 1. Note that in this case, rather than calling out to `core.Exec`, we are running code directly in the action, with a combination of client libraries and shelling out to the netlify CLI when necessary
 
 ## 4. Modifying an Action
