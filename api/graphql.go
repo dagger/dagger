@@ -125,9 +125,13 @@ func parseSchema(pkgName string, typeDefs string) (*tools.ExecutableSchema, erro
 
 	var actions []string
 	var otherObjects []string
+	var actionDoc string
 	for _, def := range doc.Definitions {
 		if def, ok := def.(*ast.ObjectDefinition); ok {
 			if def.Name.Value == "Query" {
+				if def.Description != nil {
+					actionDoc = def.Description.Value
+				}
 				for _, field := range def.Fields {
 					actions = append(actions, printer.Print(field).(string))
 					resolverMap[capName].(*tools.ObjectResolver).Fields[field.Name.Value] = &tools.FieldResolve{
@@ -143,13 +147,25 @@ func parseSchema(pkgName string, typeDefs string) (*tools.ExecutableSchema, erro
 	return &tools.ExecutableSchema{
 		TypeDefs: fmt.Sprintf(`
 %s
+
+%q
 type %s {
 	%s
 }
+
 type Query {
+	%q
 	%s: %s!
 }
-	`, strings.Join(otherObjects, "\n"), capName, strings.Join(actions, "\n"), pkgName, capName),
+	`,
+			strings.Join(otherObjects, "\n"),
+			actionDoc,
+			capName,
+			strings.Join(actions, "\n"),
+			actionDoc,
+			pkgName,
+			capName,
+		),
 		Resolvers: resolverMap,
 	}, nil
 }
@@ -173,7 +189,6 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err != nil {
 			return nil, err
 		}
-		// fmt.Printf("requesting %s\n", string(inputBytes))
 
 		// TODO: inputs should also include the versions of all deps so that if a dep changes, this runs again too
 		input := llb.Scratch().File(llb.Mkfile("/dagger.json", 0644, inputBytes))
