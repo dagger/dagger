@@ -5,7 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "generate": "graphql-codegen --config gen/yarn/codegen.yml && graphql-codegen --config gen/todoapp/codegen.yml && graphql-codegen --config gen/netlify/codegen.yml"
   },
   "author": "",
   "license": "Apache-2.0",
@@ -16,6 +17,12 @@
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.30.7",
     "@typescript-eslint/parser": "^5.30.7",
-    "eslint": "^8.20.0"
+    "eslint": "^8.20.0",
+    "@graphql-codegen/add": "^3.2.0",
+    "@graphql-codegen/cli": "2.9.1",
+    "@graphql-codegen/typescript": "2.7.2",
+    "@graphql-codegen/typescript-graphql-request": "^4.5.2",
+    "@graphql-codegen/typescript-operations": "^2.5.2",
+    "@graphql-codegen/typescript-resolvers": "2.7.2"
   }
 }

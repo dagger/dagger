@@ -1,0 +1,16 @@
+overwrite: true
+schema: "./gen/yarn/schema.graphql"
+documents:
+  - "./gen/yarn/operations.graphql"
+generates:
+  ./gen/yarn/yarn.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typescript-graphql-request
+      - add:
+          content: "import { FS, Secret } from '@dagger.io/dagger'"
+    config:
+      scalars:
+        FS: FS
+        Secret: Secret

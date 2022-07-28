@@ -1,0 +1,16 @@
+overwrite: true
+schema: "./gen/todoapp/schema.graphql"
+documents:
+  - "./gen/todoapp/operations.graphql"
+generates:
+  ./gen/todoapp/todoapp.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typescript-graphql-request
+      - add:
+          content: "import { FS, Secret } from '@dagger.io/dagger'"
+    config:
+      scalars:
+        FS: FS
+        Secret: Secret
