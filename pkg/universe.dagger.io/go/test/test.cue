@@ -21,6 +21,7 @@ dagger.#Plan & {
 			wptest: go.#Test & {
 				source:  _src
 				package: "./greeting"
+				name:    "wptest"
 			}
 
 			verify: docker.#Run & {
@@ -29,9 +30,6 @@ dagger.#Plan & {
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
-						echo "========== START"
-						find ~/test/
-						echo "========== DONE"
 						test "OK" = $(cat ~/test/test-greeting-*/greeting_test.result)
 						test ! -f "~/test/test-math-*/math_test.result"
 						""",
@@ -44,6 +42,7 @@ dagger.#Plan & {
 			wpstest: go.#Test & {
 				source: _src
 				packages: ["./greeting", "./math"]
+				name: "wpstest"
 			}
 
 			verify: docker.#Run & {
@@ -52,9 +51,6 @@ dagger.#Plan & {
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
-						echo "========== START"
-						find ~/test/
-						echo "========== DONE"
 						test "OK" = $(cat ~/test/test-greeting-*/greeting_test.result)
 						test "OK" = $(cat ~/test/test-math-*/math_test.result)
 						""",
@@ -68,6 +64,7 @@ dagger.#Plan & {
 				source:  _src
 				package: "./greeting"
 				packages: ["./math"]
+				name: "wbtest"
 			}
 
 			verify: docker.#Run & {
@@ -76,9 +73,6 @@ dagger.#Plan & {
 				command: {
 					name: "sh"
 					args: [ "-e", "-c", """
-						echo "========== START"
-						find ~/test/
-						echo "========== DONE"
 						# when *packages* is set, *package* will be ignored. *math* will be selected'
 						test "OK" = $(cat ~/test/test-math-*/math_test.result)
 						test ! -f "~/test/test-greeting-*/greeting_test.result"
