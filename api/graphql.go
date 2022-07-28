@@ -10,6 +10,7 @@ import (
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
 	"github.com/containerd/containerd/platforms"
+	coreschema "github.com/dagger/cloak/api/schema"
 	"github.com/dagger/cloak/tracing"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
@@ -357,7 +358,7 @@ func init() {
 	daggerPackages["core"] = daggerPackage{
 		Name: "core",
 		Schema: tools.ExecutableSchema{
-			TypeDefs: coreSchema,
+			TypeDefs: coreschema.Schema,
 			Resolvers: tools.ResolverMap{
 				"Query": &tools.ObjectResolver{
 					Fields: tools.FieldResolveMap{
@@ -669,7 +670,7 @@ func init() {
 									return map[string]interface{}{
 										"name":       pkgName,
 										"schema":     daggerPackages["core"].Schema.TypeDefs.(string),
-										"operations": coreOperations,
+										"operations": coreschema.Operations,
 									}, nil
 								}
 
@@ -851,118 +852,6 @@ func init() {
 		panic(err)
 	}
 }
-
-const coreSchema = `
-scalar FS
-
-type CoreImage {
-	fs: FS!
-}
-
-input CoreMount {
-	path: String!
-	fs: FS!
-}
-input CoreExecInput {
-	mounts: [CoreMount!]!
-	args: [String!]!
-	workdir: String
-}
-type CoreExec {
-	root: FS!
-	getMount(path: String!): FS!
-}
-
-type Core {
-	image(ref: String!): CoreImage
-	exec(input: CoreExecInput!): CoreExec
-	dockerfile(context: FS!, dockerfileName: String): FS!
-	copy(src: FS!, srcPath: String, dst: FS, dstPath: String): FS!
-}
-
-type Query {
-	core: Core!
-	source: Source!
-}
-
-type Package {
-	name: String!
-	fs: FS
-	schema: String!
-	operations: String!
-}
-
-type Mutation {
-	import(name: String!, fs: FS): Package
-	readfile(fs: FS!, path: String!): String
-	clientdir(id: String!): FS
-	readsecret(id: String!): String!
-}
-
-type Exec {
-	fs: Filesystem!
-	stdout(lines: Int): String
-	stderr(lines: Int): String
-	exitCode: Int
-}
-
-type Source {
-	image(ref: String!): Filesystem!
-	git(remote: String!, ref: String): Filesystem!
-}
-
-type Filesystem {
-	id: ID!
-	exec(args: [String!]): Exec!
-	dockerbuild(dockerfile: String): Filesystem!
-	file(path: String!, lines: Int): String
-}
-`
-
-// TODO: add the rest of the operations
-const coreOperations = `
-query Image($ref: String!) {
-  core {
-    image(ref: $ref) {
-      fs
-    }
-  }
-}
-
-query Exec($input: CoreExecInput!) {
-  core {
-    exec(input: $input) {
-      root
-    }
-  }
-}
-
-query ExecGetMount($input: CoreExecInput!, $mountPath: String!) {
-  core {
-    exec(input: $input) {
-      getMount(path: $mountPath)
-    }
-  }
-}
-
-query Dockerfile($context: FS!, $dockerfileName: String!) {
-  core {
-    dockerfile(context: $context, dockerfileName: $dockerfileName)
-  }
-}
-
-mutation Import($name: String!, $fs: FS!) {
-  import(name: $name, fs: $fs) {
-    name
-    schema
-    operations
-  }
-}
-
-mutation ReadSecret($id: String!) {
-  readsecret(id: $id)
-}
-`
 
 type gatewayClientKey struct{}
 
