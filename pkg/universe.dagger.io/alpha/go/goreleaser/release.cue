@@ -12,7 +12,7 @@ import (
 	source: dagger.#FS
 
 	// Custom GoReleaser image
-	image: #Image
+	customImage: #Image
 
 	// Don't publish or announce the release
 	dryRun: bool | *false
@@ -23,7 +23,7 @@ import (
 	go.#Container & {
 		name:     "goreleaser"
 		"source": source
-		"image":  image.output
+		image:    customImage.output
 
 		entrypoint: [] // Support images that does not set goreleaser as the entrypoint
 		command: {
