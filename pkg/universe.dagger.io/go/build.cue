@@ -38,7 +38,7 @@ import (
 
 	container: #Container & {
 		"source": source
-		input:    image
+		"image":  image
 		"env": {
 			env
 			if os != _|_ {

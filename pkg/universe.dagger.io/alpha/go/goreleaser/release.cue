@@ -23,7 +23,7 @@ import (
 	go.#Container & {
 		name:     "goreleaser"
 		"source": source
-		input:    image.output
+		"image":  image.output
 
 		entrypoint: [] // Support images that does not set goreleaser as the entrypoint
 		command: {

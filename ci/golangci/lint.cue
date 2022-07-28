@@ -24,7 +24,7 @@ import (
 
 	go.#Container & {
 		"source": source
-		input:    _image.output
+		image:    _image.output
 		command: {
 			name: "golangci-lint"
 			flags: {
