@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
 	"github.com/containerd/containerd/platforms"
@@ -288,6 +289,7 @@ type daggerPackage struct {
 }
 
 // TODO: shouldn't be global vars, pass through resolve context, make sure synchronization is handled, etc.
+var schemaLock sync.RWMutex
 var schema graphql.Schema
 var daggerPackages map[string]daggerPackage
 
@@ -660,6 +662,8 @@ func init() {
 					Fields: tools.FieldResolveMap{
 						"import": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+								schemaLock.Lock()
+								defer schemaLock.Unlock()
 								// TODO: make sure not duped
 								pkgName, ok := p.Args["name"].(string)
 								if !ok {
@@ -720,9 +724,9 @@ func init() {
 									return nil, err
 								}
 
-								// TODO: hacks: include the FS scalar in the schema so it's valid in isolation
+								// TODO: hacks: include the FS+Secret scalar in the schema so it's valid in isolation
 								parsedSchema := parsed.TypeDefs.(string)
-								parsedSchema = "scalar FS\n\n" + parsedSchema
+								parsedSchema = "scalar FS\nscalar Secret\n" + parsedSchema
 
 								return map[string]interface{}{
 									"name":       pkgName,
@@ -768,7 +772,7 @@ func init() {
 						},
 						"readsecret": &tools.FieldResolve{
 							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								id, ok := p.Args["id"].(string)
+								id, ok := p.Args["input"].(string)
 								if !ok {
 									return nil, fmt.Errorf("invalid secret id")
 								}
@@ -841,6 +845,32 @@ func init() {
 							return fs
 						default:
 							panic(fmt.Sprintf("unexpected fs literal type: %T", valueAST))
+						}
+					},
+				},
+				"Secret": &tools.ScalarResolver{
+					Serialize: func(value interface{}) interface{} {
+						switch v := value.(type) {
+						case string:
+							return v
+						default:
+							panic(fmt.Sprintf("unexpected secret type %T", v))
+						}
+					},
+					ParseValue: func(value interface{}) interface{} {
+						switch v := value.(type) {
+						case string:
+							return v
+						default:
+							panic(fmt.Sprintf("unexpected secret value type %T: %+v", v, v))
+						}
+					},
+					ParseLiteral: func(valueAST ast.Value) interface{} {
+						switch valueAST := valueAST.(type) {
+						case *ast.StringValue:
+							return valueAST.Value
+						default:
+							panic(fmt.Sprintf("unexpected secret literal type: %T", valueAST))
 						}
 					},
 				},

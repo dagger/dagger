@@ -39,10 +39,10 @@ func (v *DeployResponse) GetNetlify() DeployNetlify { return v.Netlify }
 
 // __DeployInput is used internally by genqlient
 type __DeployInput struct {
-	Contents dagger.FS `json:"contents"`
-	Subdir   string    `json:"subdir"`
-	SiteName string    `json:"siteName"`
-	Token    string    `json:"token"`
+	Contents dagger.FS     `json:"contents"`
+	Subdir   string        `json:"subdir"`
+	SiteName string        `json:"siteName"`
+	Token    dagger.Secret `json:"token"`
 }
 
 // GetContents returns __DeployInput.Contents, and is useful for accessing the field via an interface.
@@ -55,19 +55,19 @@ func (v *__DeployInput) GetSubdir() string { return v.Subdir }
 func (v *__DeployInput) GetSiteName() string { return v.SiteName }
 
 // GetToken returns __DeployInput.Token, and is useful for accessing the field via an interface.
-func (v *__DeployInput) GetToken() string { return v.Token }
+func (v *__DeployInput) GetToken() dagger.Secret { return v.Token }
 
 func Deploy(
 	ctx context.Context,
 	contents dagger.FS,
 	subdir string,
 	siteName string,
-	token string,
+	token dagger.Secret,
 ) (*DeployResponse, error) {
 	req := &graphql.Request{
 		OpName: "Deploy",
 		Query: `
-query Deploy ($contents: FS!, $subdir: String, $siteName: String, $token: String) {
+query Deploy ($contents: FS!, $subdir: String, $siteName: String, $token: Secret!) {
 	netlify {
 		deploy(contents: $contents, subdir: $subdir, siteName: $siteName, token: $token) {
 			url

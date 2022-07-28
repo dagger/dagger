@@ -11,6 +11,7 @@ import (
 )
 
 type FS string
+type Secret string
 
 type clientKey struct{}
 

@@ -45,6 +45,11 @@ func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
 }
 
 func writeResponse(response *graphql.Response) {
+	if response.Errors != nil {
+		fmt.Printf("%v\n", response.Errors)
+		os.Exit(1)
+	}
+
 	output, err := json.Marshal(response)
 	if err != nil {
 		panic(err)

@@ -85,7 +85,7 @@
   dependencies:
     xss "^1.0.8"
 
-"@dagger.io/dagger@../../sdk/nodejs/dagger":
+"@dagger.io/dagger@../../../sdk/nodejs/dagger":
   version "1.0.0"
   dependencies:
     "@lifeomic/axios-fetch" "^3.0.0"

@@ -21,8 +21,8 @@ import (
 
 type Resolver struct{}
 
-func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FS, subdir *string, siteName *string, token *string) (*model.Deploy, error) {
-	readSecretOutput, err := core.ReadSecret(ctx, *token)
+func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FS, subdir *string, siteName *string, token dagger.Secret) (*model.Deploy, error) {
+	readSecretOutput, err := core.ReadSecret(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret: %w", err)
 	}

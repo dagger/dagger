@@ -1,3 +1,4 @@
+import { FS, Secret } from '@dagger.io/dagger'
 import { GraphQLClient } from 'graphql-request';
 import * as Dom from 'graphql-request/dist/types.dom';
 import gql from 'graphql-tag';
@@ -13,7 +14,8 @@ export type Scalars = {
   Boolean: boolean;
   Int: number;
   Float: number;
-  FS: any;
+  FS: FS;
+  Secret: Secret;
 };
 
 export type Core = {
@@ -144,7 +146,7 @@ export type MutationReadfileArgs = {
 
 
 export type MutationReadsecretArgs = {
-  id: Scalars['String'];
+  input: Scalars['Secret'];
 };
 
 export type Package = {
@@ -183,14 +185,22 @@ export type ImageQueryVariables = Exact<{
 }>;
 
 
-export type ImageQuery = { __typename?: 'Query', core: { __typename?: 'Core', image?: { __typename?: 'CoreImage', fs: any } | null } };
+export type ImageQuery = { __typename?: 'Query', core: { __typename?: 'Core', image?: { __typename?: 'CoreImage', fs: FS } | null } };
 
 export type ExecQueryVariables = Exact<{
   input: CoreExecInput;
 }>;
 
 
-export type ExecQuery = { __typename?: 'Query', core: { __typename?: 'Core', exec?: { __typename?: 'CoreExec', root: any } | null } };
+export type ExecQuery = { __typename?: 'Query', core: { __typename?: 'Core', exec?: { __typename?: 'CoreExec', root: FS } | null } };
+
+export type ExecGetMountQueryVariables = Exact<{
+  input: CoreExecInput;
+  mountPath: Scalars['String'];
+}>;
+
+
+export type ExecGetMountQuery = { __typename?: 'Query', core: { __typename?: 'Core', exec?: { __typename?: 'CoreExec', getMount: FS } | null } };
 
 export type DockerfileQueryVariables = Exact<{
   context: Scalars['FS'];
@@ -198,7 +208,7 @@ export type DockerfileQueryVariables = Exact<{
 }>;
 
 
-export type DockerfileQuery = { __typename?: 'Query', core: { __typename?: 'Core', dockerfile: any } };
+export type DockerfileQuery = { __typename?: 'Query', core: { __typename?: 'Core', dockerfile: FS } };
 
 export type ImportMutationVariables = Exact<{
   name: Scalars['String'];
@@ -209,7 +219,7 @@ export type ImportMutationVariables = Exact<{
 export type ImportMutation = { __typename?: 'Mutation', import?: { __typename?: 'Package', name: string, schema: string, operations: string } | null };
 
 export type ReadSecretMutationVariables = Exact<{
-  id: Scalars['String'];
+  input: Scalars['Secret'];
 }>;
 
 
@@ -234,6 +244,15 @@ export const ExecDocument = gql`
   }
 }
     `;
+export const ExecGetMountDocument = gql`
+    query ExecGetMount($input: CoreExecInput!, $mountPath: String!) {
+  core {
+    exec(input: $input) {
+      getMount(path: $mountPath)
+    }
+  }
+}
+    `;
 export const DockerfileDocument = gql`
     query Dockerfile($context: FS!, $dockerfileName: String!) {
   core {
@@ -251,8 +270,8 @@ export const ImportDocument = gql`
 }
     `;
 export const ReadSecretDocument = gql`
-    mutation ReadSecret($id: String!) {
-  readsecret(id: $id)
+    mutation ReadSecret($input: Secret!) {
+  readsecret(input: $input)
 }
     `;
 
@@ -268,6 +287,9 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     },
     Exec(variables: ExecQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<ExecQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<ExecQuery>(ExecDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Exec', 'query');
+    },
+    ExecGetMount(variables: ExecGetMountQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<ExecGetMountQuery> {
+      return withWrapper((wrappedRequestHeaders) => client.request<ExecGetMountQuery>(ExecGetMountDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'ExecGetMount', 'query');
     },
     Dockerfile(variables: DockerfileQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<DockerfileQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<DockerfileQuery>(DockerfileDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Dockerfile', 'query');

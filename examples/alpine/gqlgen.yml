@@ -68,3 +68,6 @@ models:
   FS:
     model:
       - github.com/dagger/cloak/sdk/go/dagger.FS
+  Secret:
+    model:
+      - github.com/dagger/cloak/sdk/go/dagger.Secret

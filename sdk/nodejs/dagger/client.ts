@@ -34,3 +34,38 @@ export class Client {
     return response;
   }
 }
+
+export class FS {
+  serial: string;
+  constructor(serial: string) {
+    this.serial = serial;
+  }
+  toString(): string {
+    return this.serial;
+  }
+  toJSON(): string {
+    return this.serial;
+  }
+}
+
+export class Secret {
+  serial: string;
+  constructor(serial: string) {
+    this.serial = serial;
+  }
+  toString(): string {
+    return this.serial;
+  }
+  toJSON(): string {
+    return this.serial;
+  }
+}
+//
+//
+//
+//
+//
+//
+//
+//
+//

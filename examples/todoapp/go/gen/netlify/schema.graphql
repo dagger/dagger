@@ -1,15 +1,19 @@
 scalar FS
-
+scalar Secret
 
 type Deploy {
   url: String!
   deployUrl: String!
   logsUrl: String
 }
+
+""
 type Netlify {
-	deploy(contents: FS!, subdir: String, siteName: String, token: String): Deploy!
+	deploy(contents: FS!, subdir: String, siteName: String, token: Secret!): Deploy!
 }
+
 type Query {
+	""
 	netlify: Netlify!
 }
 	

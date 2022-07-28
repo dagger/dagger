@@ -1,4 +1,5 @@
 scalar FS
+scalar Secret
 
 type Query {
   script(source: FS!, name: String): FS!

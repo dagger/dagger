@@ -10,7 +10,7 @@
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {
-    "@dagger.io/dagger": "../../sdk/nodejs/dagger",
+    "@dagger.io/dagger": "../../../sdk/nodejs/dagger",
     "typescript": "^4.7.4"
   },
   "devDependencies": {

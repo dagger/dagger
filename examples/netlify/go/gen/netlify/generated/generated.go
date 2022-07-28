@@ -51,12 +51,12 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Deploy func(childComplexity int, contents dagger.FS, subdir *string, siteName *string, token *string) int
+		Deploy func(childComplexity int, contents dagger.FS, subdir *string, siteName *string, token dagger.Secret) int
 	}
 }
 
 type QueryResolver interface {
-	Deploy(ctx context.Context, contents dagger.FS, subdir *string, siteName *string, token *string) (*model.Deploy, error)
+	Deploy(ctx context.Context, contents dagger.FS, subdir *string, siteName *string, token dagger.Secret) (*model.Deploy, error)
 }
 
 type executableSchema struct {
@@ -105,7 +105,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.Deploy(childComplexity, args["contents"].(dagger.FS), args["subdir"].(*string), args["siteName"].(*string), args["token"].(*string)), true
+		return e.complexity.Query.Deploy(childComplexity, args["contents"].(dagger.FS), args["subdir"].(*string), args["siteName"].(*string), args["token"].(dagger.Secret)), true
 
 	}
 	return 0, false
@@ -160,6 +160,7 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 
 var sources = []*ast.Source{
 	{Name: "../../../schema.graphql", Input: `scalar FS
+scalar Secret
 
 type Deploy {
   url: String!
@@ -172,7 +173,7 @@ type Query {
     contents: FS!
     subdir: String
     siteName: String
-    token: String
+    token: Secret!
   ): Deploy!
 }
 `, BuiltIn: false},
@@ -228,10 +229,10 @@ func (ec *executionContext) field_Query_deploy_args(ctx context.Context, rawArgs
 		}
 	}
 	args["siteName"] = arg2
-	var arg3 *string
+	var arg3 dagger.Secret
 	if tmp, ok := rawArgs["token"]; ok {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("token"))
-		arg3, err = ec.unmarshalOString2ᚖstring(ctx, tmp)
+		arg3, err = ec.unmarshalNSecret2githubᚗcomᚋdaggerᚋcloakᚋsdkᚋgoᚋdaggerᚐSecret(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
@@ -421,7 +422,7 @@ func (ec *executionContext) _Query_deploy(ctx context.Context, field graphql.Col
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Deploy(rctx, fc.Args["contents"].(dagger.FS), fc.Args["subdir"].(*string), fc.Args["siteName"].(*string), fc.Args["token"].(*string))
+		return ec.resolvers.Query().Deploy(rctx, fc.Args["contents"].(dagger.FS), fc.Args["subdir"].(*string), fc.Args["siteName"].(*string), fc.Args["token"].(dagger.Secret))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2838,6 +2839,22 @@ func (ec *executionContext) unmarshalNFS2githubᚗcomᚋdaggerᚋcloakᚋsdkᚋg
 }
 
 func (ec *executionContext) marshalNFS2githubᚗcomᚋdaggerᚋcloakᚋsdkᚋgoᚋdaggerᚐFS(ctx context.Context, sel ast.SelectionSet, v dagger.FS) graphql.Marshaler {
+	res := graphql.MarshalString(string(v))
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
+func (ec *executionContext) unmarshalNSecret2githubᚗcomᚋdaggerᚋcloakᚋsdkᚋgoᚋdaggerᚐSecret(ctx context.Context, v interface{}) (dagger.Secret, error) {
+	tmp, err := graphql.UnmarshalString(v)
+	res := dagger.Secret(tmp)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNSecret2githubᚗcomᚋdaggerᚋcloakᚋsdkᚋgoᚋdaggerᚐSecret(ctx context.Context, sel ast.SelectionSet, v dagger.Secret) graphql.Marshaler {
 	res := graphql.MarshalString(string(v))
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
