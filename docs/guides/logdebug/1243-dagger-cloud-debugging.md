@@ -54,7 +54,7 @@ Only you & the Dagger team can access the information in the execution URL.
 ### What information gets sent to Dagger Cloud?
 
 Dagger Cloud only collects **run specific metadata** from your Dagger executions. This currently includes your main plan definition **without** imported packages, execution logs and
-non-secret outputs. This informaton is only accessible by the Dagger user who triggered the execution and can't be shared with anyone else.
+non-secret outputs. This informaton is only accessible by the Dagger user who triggered the execution and can't be shared with anyone outside of the Dagger support team.
 
 We don't collect or send any sensitive information like source code, secrets, env variables or private packages to our servers.
 
