@@ -14,8 +14,8 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/format"
-	"github.com/mitchellh/go-homedir"
 	"github.com/containerd/console"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
