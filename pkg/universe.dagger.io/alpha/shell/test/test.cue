@@ -5,7 +5,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
-	"universe.dagger.io/shell"
+	"universe.dagger.io/alpha/shell"
 )
 
 dagger.#Plan & {
@@ -37,6 +37,7 @@ dagger.#Plan & {
 
 			run: shell.#Run & {
 				input: _image
+				shell: "bash"
 				export: files: "/out.txt": _
 				script: {
 					directory: dir
@@ -50,6 +51,7 @@ dagger.#Plan & {
 		runString: {
 			run: shell.#Run & {
 				input: _image
+				shell: "bash"
 				export: files: "/output.txt": _
 				script: contents: "echo 'Hello, inlined world!' > /output.txt"
 			}

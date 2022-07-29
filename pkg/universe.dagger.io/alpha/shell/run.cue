@@ -8,7 +8,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
-	"universe.dagger.io/alpine"
 )
 
 // Like #Run, but with a pre-configured container image.
@@ -19,7 +18,7 @@ import (
 
 // Default simple container image which can run a shell
 #Image: docker.#Pull & {
-	source: #Ref | *"alpine:latest"
+	source: docker.#Ref | *"alpine:latest"
 }
 
 // Run a shell script in a Docker container
