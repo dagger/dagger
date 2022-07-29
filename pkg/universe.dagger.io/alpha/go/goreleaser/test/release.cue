@@ -19,7 +19,8 @@ dagger.#Plan & {
 
 		customImage: build: goreleaser.#Release & {
 			source: client.filesystem."./data/hello".read.contents
-			image:  goreleaser.#Image & {
+
+			customImage: goreleaser.#Image & {
 				tag: "v1.9.2"
 			}
 

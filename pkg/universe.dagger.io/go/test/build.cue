@@ -3,6 +3,7 @@ package go
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+
 	"universe.dagger.io/go"
 	"universe.dagger.io/docker"
 	"universe.dagger.io/alpine"
@@ -31,13 +32,49 @@ dagger.#Plan & {
 					contents: build.output
 					source:   "/testgreet"
 				}
+				export: files: "/output.txt": string & "Hi dagger!"
 			}
+		}
 
-			verify: core.#ReadFile & {
-				input: exec.output.rootfs
-				path:  "/output.txt"
-			} & {
-				contents: "Hi dagger!"
+		withPackage: {
+			build: go.#Build & {
+				source:  client.filesystem."./data/hello".read.contents
+				package: "."
+			}
+			exec: docker.#Run & {
+				input: _baseImage.output
+				command: {
+					name: "/bin/sh"
+					args: ["-c", "/bin/hello >> /output.txt"]
+				}
+				env: NAME: "dagger"
+				mounts: binary: {
+					dest:     "/bin/hello"
+					contents: build.output
+					source:   "/testgreet"
+				}
+				export: files: "/output.txt": string & "Hi dagger!"
+			}
+		}
+
+		withPackages: {
+			build: go.#Build & {
+				source: client.filesystem."./data/hello".read.contents
+				packages: ["."]
+			}
+			exec: docker.#Run & {
+				input: _baseImage.output
+				command: {
+					name: "/bin/sh"
+					args: ["-c", "/bin/hello >> /output.txt"]
+				}
+				env: NAME: "dagger"
+				mounts: binary: {
+					dest:     "/bin/hello"
+					contents: build.output
+					source:   "/testgreet"
+				}
+				export: files: "/output.txt": string & "Hi dagger!"
 			}
 		}
 
