@@ -13,24 +13,25 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 
 	openAPIClient "github.com/go-openapi/runtime/client"
-	"github.com/netlify/open-api/v2/go/models"
-	"github.com/netlify/open-api/v2/go/plumbing/operations"
-	"github.com/netlify/open-api/v2/go/porcelain"
+	netlifyModel "github.com/netlify/open-api/v2/go/models"
+	netlifyOps "github.com/netlify/open-api/v2/go/plumbing/operations"
+	netlify "github.com/netlify/open-api/v2/go/porcelain"
 	netlifycontext "github.com/netlify/open-api/v2/go/porcelain/context"
 )
 
 type Resolver struct{}
 
 func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FS, subdir *string, siteName *string, token dagger.Secret) (*model.Deploy, error) {
+	// Setup Auth
 	readSecretOutput, err := core.ReadSecret(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret: %w", err)
 	}
 	ctx = netlifycontext.WithAuthInfo(ctx, openAPIClient.BearerToken(readSecretOutput.Readsecret))
 
-	// get the site metadata
-	var site *models.Site
-	sites, err := porcelain.Default.ListSites(ctx, &operations.ListSitesParams{Context: ctx})
+	// Get the site metadata
+	var site *netlifyModel.Site
+	sites, err := netlify.Default.ListSites(ctx, &netlifyOps.ListSitesParams{Context: ctx})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sites: %w", err)
 	}
@@ -40,8 +41,10 @@ func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FS, subdir *
 			break
 		}
 	}
+
+	// If the site doesn't exist already, create it
 	if site == nil {
-		site, err = porcelain.Default.CreateSite(ctx, &models.SiteSetup{Site: models.Site{
+		site, err = netlify.Default.CreateSite(ctx, &netlifyModel.SiteSetup{Site: netlifyModel.Site{
 			Name: *siteName,
 		}}, false)
 		if err != nil {
@@ -49,18 +52,19 @@ func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FS, subdir *
 		}
 	}
 
+	// Deploy the site contents
 	deployDir := "/mnt/contents" // TODO: add sugar to dagger.FS for this
 	if subdir != nil {
 		deployDir = filepath.Join(deployDir, *subdir)
 	}
-	deploy, err := porcelain.Default.DeploySite(ctx, porcelain.DeployOptions{
+	deploy, err := netlify.Default.DeploySite(ctx, netlify.DeployOptions{
 		SiteID: site.ID,
 		Dir:    deployDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to deploy site: %w", err)
 	}
-	_, err = porcelain.Default.WaitUntilDeployLive(ctx, deploy)
+	_, err = netlify.Default.WaitUntilDeployLive(ctx, deploy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for deploy: %w", err)
 	}
