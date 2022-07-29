@@ -4,7 +4,6 @@ import * as fs from "fs";
 const resolvers = {
   Query: {
     script: async (parent: any, args: { source: FS; name: string }) => {
-      // TODO: update to use generated client instead of raw queries
       const base = await client
         .request(
           gql`
@@ -18,7 +17,6 @@ const resolvers = {
         .then((result: any) => result.alpine.build);
       // console.log("base: ", base);
 
-      // TODO: get output of commands
       // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
       const yarnInstall = await client
         .request(
