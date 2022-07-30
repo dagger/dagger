@@ -1,4 +1,4 @@
-import { FS, Secret } from '@dagger.io/dagger'
+import { FSID, SecretID } from '@dagger.io/dagger'
 import { GraphQLClient } from 'graphql-request';
 import * as Dom from 'graphql-request/dist/types.dom';
 import gql from 'graphql-tag';
@@ -14,35 +14,33 @@ export type Scalars = {
   Boolean: boolean;
   Int: number;
   Float: number;
-  FS: FS;
-  Secret: Secret;
+  FSID: FSID;
+  SecretID: SecretID;
 };
 
 export type Core = {
   __typename?: 'Core';
-  copy: Scalars['FS'];
-  dockerfile: Scalars['FS'];
-  exec?: Maybe<CoreExec>;
-  image?: Maybe<CoreImage>;
+  clientdir: Filesystem;
+  filesystem: Filesystem;
+  git: Filesystem;
+  image: Filesystem;
+  secret: Scalars['String'];
 };
 
 
-export type CoreCopyArgs = {
-  dst?: InputMaybe<Scalars['FS']>;
-  dstPath?: InputMaybe<Scalars['String']>;
-  src: Scalars['FS'];
-  srcPath?: InputMaybe<Scalars['String']>;
+export type CoreClientdirArgs = {
+  id: Scalars['String'];
 };
 
 
-export type CoreDockerfileArgs = {
-  context: Scalars['FS'];
-  dockerfileName?: InputMaybe<Scalars['String']>;
+export type CoreFilesystemArgs = {
+  id: Scalars['FSID'];
 };
 
 
-export type CoreExecArgs = {
-  input: CoreExecInput;
+export type CoreGitArgs = {
+  ref?: InputMaybe<Scalars['String']>;
+  remote: Scalars['String'];
 };
 
 
@@ -50,39 +48,23 @@ export type CoreImageArgs = {
   ref: Scalars['String'];
 };
 
-export type CoreExec = {
-  __typename?: 'CoreExec';
-  getMount: Scalars['FS'];
-  root: Scalars['FS'];
-};
 
-
-export type CoreExecGetMountArgs = {
-  path: Scalars['String'];
-};
-
-export type CoreExecInput = {
-  args: Array<Scalars['String']>;
-  mounts: Array<CoreMount>;
-  workdir?: InputMaybe<Scalars['String']>;
-};
-
-export type CoreImage = {
-  __typename?: 'CoreImage';
-  fs: Scalars['FS'];
-};
-
-export type CoreMount = {
-  fs: Scalars['FS'];
-  path: Scalars['String'];
+export type CoreSecretArgs = {
+  id: Scalars['SecretID'];
 };
 
 export type Exec = {
   __typename?: 'Exec';
   exitCode?: Maybe<Scalars['Int']>;
   fs: Filesystem;
+  mount: Filesystem;
   stderr?: Maybe<Scalars['String']>;
   stdout?: Maybe<Scalars['String']>;
+};
+
+
+export type ExecMountArgs = {
+  path: Scalars['String'];
 };
 
 
@@ -95,12 +77,18 @@ export type ExecStdoutArgs = {
   lines?: InputMaybe<Scalars['Int']>;
 };
 
+export type ExecInput = {
+  args: Array<Scalars['String']>;
+  mounts?: InputMaybe<Array<MountInput>>;
+  workdir?: InputMaybe<Scalars['String']>;
+};
+
 export type Filesystem = {
   __typename?: 'Filesystem';
   dockerbuild: Filesystem;
   exec: Exec;
   file?: Maybe<Scalars['String']>;
-  id: Scalars['ID'];
+  id: Scalars['FSID'];
 };
 
 
@@ -110,7 +98,7 @@ export type FilesystemDockerbuildArgs = {
 
 
 export type FilesystemExecArgs = {
-  args?: InputMaybe<Array<Scalars['String']>>;
+  input: ExecInput;
 };
 
 
@@ -119,39 +107,25 @@ export type FilesystemFileArgs = {
   path: Scalars['String'];
 };
 
-export type Mutation = {
-  __typename?: 'Mutation';
-  clientdir?: Maybe<Scalars['FS']>;
-  import?: Maybe<Package>;
-  readfile?: Maybe<Scalars['String']>;
-  readsecret: Scalars['String'];
+export type MountInput = {
+  fs: Scalars['FSID'];
+  path: Scalars['String'];
 };
 
-
-export type MutationClientdirArgs = {
-  id: Scalars['String'];
+export type Mutation = {
+  __typename?: 'Mutation';
+  import?: Maybe<Package>;
 };
 
 
 export type MutationImportArgs = {
-  fs?: InputMaybe<Scalars['FS']>;
+  fs?: InputMaybe<Scalars['FSID']>;
   name: Scalars['String'];
-};
-
-
-export type MutationReadfileArgs = {
-  fs: Scalars['FS'];
-  path: Scalars['String'];
-};
-
-
-export type MutationReadsecretArgs = {
-  input: Scalars['Secret'];
 };
 
 export type Package = {
   __typename?: 'Package';
-  fs?: Maybe<Scalars['FS']>;
+  fs?: Maybe<Filesystem>;
   name: Scalars['String'];
   operations: Scalars['String'];
   schema: Scalars['String'];
@@ -160,24 +134,6 @@ export type Package = {
 export type Query = {
   __typename?: 'Query';
   core: Core;
-  source: Source;
-};
-
-export type Source = {
-  __typename?: 'Source';
-  git: Filesystem;
-  image: Filesystem;
-};
-
-
-export type SourceGitArgs = {
-  ref?: InputMaybe<Scalars['String']>;
-  remote: Scalars['String'];
-};
-
-
-export type SourceImageArgs = {
-  ref: Scalars['String'];
 };
 
 export type ImageQueryVariables = Exact<{
@@ -185,93 +141,92 @@ export type ImageQueryVariables = Exact<{
 }>;
 
 
-export type ImageQuery = { __typename?: 'Query', core: { __typename?: 'Core', image?: { __typename?: 'CoreImage', fs: FS } | null } };
+export type ImageQuery = { __typename?: 'Query', core: { __typename?: 'Core', image: { __typename?: 'Filesystem', id: FSID } } };
 
 export type ExecQueryVariables = Exact<{
-  input: CoreExecInput;
+  fsid: Scalars['FSID'];
+  input: ExecInput;
 }>;
 
 
-export type ExecQuery = { __typename?: 'Query', core: { __typename?: 'Core', exec?: { __typename?: 'CoreExec', root: FS } | null } };
+export type ExecQuery = { __typename?: 'Query', core: { __typename?: 'Core', filesystem: { __typename?: 'Filesystem', exec: { __typename?: 'Exec', fs: { __typename?: 'Filesystem', id: FSID } } } } };
 
 export type ExecGetMountQueryVariables = Exact<{
-  input: CoreExecInput;
-  mountPath: Scalars['String'];
+  fsid: Scalars['FSID'];
+  input: ExecInput;
+  getPath: Scalars['String'];
 }>;
 
 
-export type ExecGetMountQuery = { __typename?: 'Query', core: { __typename?: 'Core', exec?: { __typename?: 'CoreExec', getMount: FS } | null } };
+export type ExecGetMountQuery = { __typename?: 'Query', core: { __typename?: 'Core', filesystem: { __typename?: 'Filesystem', exec: { __typename?: 'Exec', mount: { __typename?: 'Filesystem', id: FSID } } } } };
 
 export type DockerfileQueryVariables = Exact<{
-  context: Scalars['FS'];
+  context: Scalars['FSID'];
   dockerfileName: Scalars['String'];
 }>;
 
 
-export type DockerfileQuery = { __typename?: 'Query', core: { __typename?: 'Core', dockerfile: FS } };
+export type DockerfileQuery = { __typename?: 'Query', core: { __typename?: 'Core', filesystem: { __typename?: 'Filesystem', dockerbuild: { __typename?: 'Filesystem', id: FSID } } } };
 
-export type ImportMutationVariables = Exact<{
-  name: Scalars['String'];
-  fs: Scalars['FS'];
+export type SecretQueryVariables = Exact<{
+  id: Scalars['SecretID'];
 }>;
 
 
-export type ImportMutation = { __typename?: 'Mutation', import?: { __typename?: 'Package', name: string, schema: string, operations: string } | null };
-
-export type ReadSecretMutationVariables = Exact<{
-  input: Scalars['Secret'];
-}>;
-
-
-export type ReadSecretMutation = { __typename?: 'Mutation', readsecret: string };
+export type SecretQuery = { __typename?: 'Query', core: { __typename?: 'Core', secret: string } };
 
 
 export const ImageDocument = gql`
     query Image($ref: String!) {
   core {
     image(ref: $ref) {
-      fs
+      id
     }
   }
 }
     `;
 export const ExecDocument = gql`
-    query Exec($input: CoreExecInput!) {
+    query Exec($fsid: FSID!, $input: ExecInput!) {
   core {
-    exec(input: $input) {
-      root
+    filesystem(id: $fsid) {
+      exec(input: $input) {
+        fs {
+          id
+        }
+      }
     }
   }
 }
     `;
 export const ExecGetMountDocument = gql`
-    query ExecGetMount($input: CoreExecInput!, $mountPath: String!) {
+    query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
   core {
-    exec(input: $input) {
-      getMount(path: $mountPath)
+    filesystem(id: $fsid) {
+      exec(input: $input) {
+        mount(path: $getPath) {
+          id
+        }
+      }
     }
   }
 }
     `;
 export const DockerfileDocument = gql`
-    query Dockerfile($context: FS!, $dockerfileName: String!) {
+    query Dockerfile($context: FSID!, $dockerfileName: String!) {
   core {
-    dockerfile(context: $context, dockerfileName: $dockerfileName)
+    filesystem(id: $context) {
+      dockerbuild(dockerfile: $dockerfileName) {
+        id
+      }
+    }
   }
 }
     `;
-export const ImportDocument = gql`
-    mutation Import($name: String!, $fs: FS!) {
-  import(name: $name, fs: $fs) {
-    name
-    schema
-    operations
+export const SecretDocument = gql`
+    query Secret($id: SecretID!) {
+  core {
+    secret(id: $id)
   }
-}
-    `;
-export const ReadSecretDocument = gql`
-    mutation ReadSecret($input: Secret!) {
-  readsecret(input: $input)
 }
     `;
 
@@ -294,11 +249,8 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     Dockerfile(variables: DockerfileQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<DockerfileQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<DockerfileQuery>(DockerfileDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Dockerfile', 'query');
     },
-    Import(variables: ImportMutationVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<ImportMutation> {
-      return withWrapper((wrappedRequestHeaders) => client.request<ImportMutation>(ImportDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Import', 'mutation');
-    },
-    ReadSecret(variables: ReadSecretMutationVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<ReadSecretMutation> {
-      return withWrapper((wrappedRequestHeaders) => client.request<ReadSecretMutation>(ReadSecretDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'ReadSecret', 'mutation');
+    Secret(variables: SecretQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<SecretQuery> {
+      return withWrapper((wrappedRequestHeaders) => client.request<SecretQuery>(SecretDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Secret', 'query');
     }
   };
 }

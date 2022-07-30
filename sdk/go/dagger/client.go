@@ -10,8 +10,24 @@ import (
 	"github.com/dagger/cloak/api"
 )
 
-type FS string
-type Secret string
+type SecretID string
+
+type FSID string
+
+type Filesystem struct {
+	ID          FSID        `json:"id"`
+	Exec        *Exec       `json:"exec"`
+	Dockerbuild *Filesystem `json:"dockerbuild"`
+	File        *string     `json:"file"`
+}
+
+type Exec struct {
+	Fs       *Filesystem `json:"fs"`
+	Stdout   *string     `json:"stdout"`
+	Stderr   *string     `json:"stderr"`
+	ExitCode *int        `json:"exitCode"`
+	Mount    *Filesystem `json:"mount"`
+}
 
 type clientKey struct{}
 

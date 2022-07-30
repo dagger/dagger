@@ -1,11 +1,15 @@
 package main
 
 import (
+	_ "embed"
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	coreschema "github.com/dagger/cloak/api/schema"
 	"github.com/dagger/cloak/cmd/cloak/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
@@ -24,32 +28,63 @@ func Generate(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	switch sdkType {
+	case "go":
+		if err := generateGoImplStub(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "":
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unknown sdk type %s\n", sdkType)
+		os.Exit(1)
+	}
+
 	startOpts := &engine.StartOpts{
 		LocalDirs: cfg.LocalDirs(),
 	}
 	err = engine.Start(context.Background(), startOpts,
-		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
+		func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error) {
 			if err := cfg.Import(ctx, localDirs); err != nil {
-				return nil, err
+				return "", err
 			}
 			for name, act := range cfg.Actions {
-				subdir := filepath.Join(generateOutpuDir, name)
+				subdir := filepath.Join(generateOutputDir, "gen", name)
 				if err := os.MkdirAll(subdir, 0755); err != nil {
-					return nil, err
+					return "", err
 				}
 				if err := os.WriteFile(filepath.Join(subdir, ".gitattributes"), []byte("** linguist-generated=true"), 0644); err != nil {
-					return nil, err
+					return "", err
 				}
 				schemaPath := filepath.Join(subdir, "schema.graphql")
-				if err := os.WriteFile(schemaPath, []byte(act.GetSchema()), 0644); err != nil {
-					return nil, err
+
+				// TODO: ugly hack to make each schema/operation work independently when referencing core types
+				fullSchema := act.GetSchema()
+				if name != "core" {
+					// TODO:(sipsma) extreme hack to trim the leading Query/Mutation, which causes conflicts, fix asap
+					fullSchema = fullSchema + "\n\n" + strings.Join(strings.Split(coreschema.Schema, "\n")[6:], "\n")
+				}
+
+				if err := os.WriteFile(schemaPath, []byte(fullSchema), 0644); err != nil {
+					return "", err
 				}
 				operationsPath := filepath.Join(subdir, "operations.graphql")
 				if err := os.WriteFile(operationsPath, []byte(act.GetOperations()), 0644); err != nil {
-					return nil, err
+					return "", err
+				}
+
+				switch sdkType {
+				case "go":
+					if err := generateGoClientStubs(subdir); err != nil {
+						return "", err
+					}
+				case "":
+				default:
+					fmt.Fprintf(os.Stderr, "Error: unknown sdk type %s\n", sdkType)
+					os.Exit(1)
 				}
 			}
-			return nil, nil
+			return "", nil
 		},
 	)
 	if err != nil {

@@ -34,7 +34,7 @@ type StartOpts struct {
 	DevServer int
 }
 
-type StartCallback func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error)
+type StartCallback func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error)
 
 func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	opts := []bkclient.ClientOpt{
@@ -105,17 +105,25 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				return nil, err
 			}
 
-			localDirs := make(map[string]dagger.FS)
+			localDirs := make(map[string]dagger.FSID)
 			for localID := range solveOpts.LocalDirs {
 				res := struct {
-					ClientDir dagger.FS
+					Core struct {
+						ClientDir struct {
+							Id dagger.FSID
+						}
+					}
 				}{}
 				resp := &graphql.Response{Data: &res}
 				err = cl.MakeRequest(ctx,
 					&graphql.Request{
 						Query: `
-							mutation ClientDir($id: String!) {
-								clientdir(id: $id)
+							query ClientDir($id: String!) {
+								core {
+									clientdir(id: $id) {
+										id
+									}
+								}
 							}`,
 						Variables: map[string]any{
 							"id": localID,
@@ -129,36 +137,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				if len(resp.Errors) > 0 {
 					return nil, resp.Errors
 				}
-
-				// copy to scratch to avoid making the buildkit's snapshot of the local dir immutable,
-				// which makes it unable to reused, which in turn creates cache invalidations
-				copyRes := struct {
-					Core struct {
-						Copy dagger.FS
-					}
-				}{}
-				resp = &graphql.Response{Data: &copyRes}
-				err = cl.MakeRequest(ctx,
-					&graphql.Request{
-						Query: `
-							query Copy($src: FS!) {
-								core {
-									copy(src: $src)
-								}
-							}`,
-						Variables: map[string]any{
-							"src": res.ClientDir,
-						},
-					},
-					resp,
-				)
-				if err != nil {
-					return nil, err
-				}
-				if len(resp.Errors) > 0 {
-					return nil, resp.Errors
-				}
-				localDirs[localID] = copyRes.Core.Copy
+				localDirs[localID] = res.Core.ClientDir.Id
 			}
 
 			if fn == nil {
@@ -171,12 +150,12 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 			}
 
 			var result *bkgw.Result
-			if outputFs != nil {
-				var fs api.FS
-				if err := fs.UnmarshalText([]byte(*outputFs)); err != nil {
+			if outputFs != "" {
+				pbdef, err := (&api.Filesystem{ID: api.FSID(outputFs)}).ToDefinition()
+				if err != nil {
 					return nil, err
 				}
-				res, err := gw.Solve(ctx, bkgw.SolveRequest{Evaluate: true, Definition: fs.PB})
+				res, err := gw.Solve(ctx, bkgw.SolveRequest{Evaluate: true, Definition: pbdef})
 				if err != nil {
 					return nil, err
 				}
@@ -235,7 +214,7 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func Shell(ctx context.Context, inputFS dagger.FS) error {
+func Shell(ctx context.Context, inputFS dagger.FSID) error {
 	gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
 	platform := ctx.Value(platformKey{}).(*specs.Platform)
 	baseDef, err := llb.Image("alpine:3.15").Marshal(ctx, llb.Platform(*platform))
@@ -253,12 +232,12 @@ func Shell(ctx context.Context, inputFS dagger.FS) error {
 		return err
 	}
 
-	var fs api.FS
-	if err := fs.UnmarshalText([]byte(inputFS)); err != nil {
+	pbdef, err := (&api.Filesystem{ID: api.FSID(inputFS)}).ToDefinition()
+	if err != nil {
 		return err
 	}
 	fsRes, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: fs.PB,
+		Definition: pbdef,
 	})
 	if err != nil {
 		return err

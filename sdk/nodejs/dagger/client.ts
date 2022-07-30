@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from "axios";
 import { buildAxiosFetch } from "@lifeomic/axios-fetch";
-import { GraphQLClient, gql } from "graphql-request";
+import { GraphQLClient } from "graphql-request";
 
 import { Response } from "node-fetch";
 // @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
@@ -35,7 +35,7 @@ export class Client {
   }
 }
 
-export class FS {
+export class FSID {
   serial: string;
   constructor(serial: string) {
     this.serial = serial;
@@ -48,7 +48,7 @@ export class FS {
   }
 }
 
-export class Secret {
+export class SecretID {
   serial: string;
   constructor(serial: string) {
     this.serial = serial;
@@ -60,12 +60,3 @@ export class Secret {
     return this.serial;
   }
 }
-//
-//
-//
-//
-//
-//
-//
-//
-//

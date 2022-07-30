@@ -1,4 +1,4 @@
-import { FS, Secret } from '@dagger.io/dagger'
+import { FSID, SecretID } from '@dagger.io/dagger'
 import { GraphQLClient } from 'graphql-request';
 import * as Dom from 'graphql-request/dist/types.dom';
 import gql from 'graphql-tag';
@@ -14,48 +14,142 @@ export type Scalars = {
   Boolean: boolean;
   Int: number;
   Float: number;
-  FS: FS;
-  Secret: Secret;
+  FSID: FSID;
+  SecretID: SecretID;
 };
 
-/** Netlify Deployment */
+export type Core = {
+  __typename?: 'Core';
+  clientdir: Filesystem;
+  filesystem: Filesystem;
+  git: Filesystem;
+  image: Filesystem;
+  secret: Scalars['String'];
+};
+
+
+export type CoreClientdirArgs = {
+  id: Scalars['String'];
+};
+
+
+export type CoreFilesystemArgs = {
+  id: Scalars['FSID'];
+};
+
+
+export type CoreGitArgs = {
+  ref?: InputMaybe<Scalars['String']>;
+  remote: Scalars['String'];
+};
+
+
+export type CoreImageArgs = {
+  ref: Scalars['String'];
+};
+
+
+export type CoreSecretArgs = {
+  id: Scalars['SecretID'];
+};
+
 export type Deploy = {
   __typename?: 'Deploy';
-  /** Unique URL for this deployment */
   deployUrl: Scalars['String'];
-  /** Deployment Logs */
   logsUrl?: Maybe<Scalars['String']>;
-  /** Production URL of the deployed site */
   url: Scalars['String'];
 };
 
-/** Netlify Action */
+export type Exec = {
+  __typename?: 'Exec';
+  exitCode?: Maybe<Scalars['Int']>;
+  fs: Filesystem;
+  mount: Filesystem;
+  stderr?: Maybe<Scalars['String']>;
+  stdout?: Maybe<Scalars['String']>;
+};
+
+
+export type ExecMountArgs = {
+  path: Scalars['String'];
+};
+
+
+export type ExecStderrArgs = {
+  lines?: InputMaybe<Scalars['Int']>;
+};
+
+
+export type ExecStdoutArgs = {
+  lines?: InputMaybe<Scalars['Int']>;
+};
+
+export type ExecInput = {
+  args: Array<Scalars['String']>;
+  mounts?: InputMaybe<Array<MountInput>>;
+  workdir?: InputMaybe<Scalars['String']>;
+};
+
+export type Filesystem = {
+  __typename?: 'Filesystem';
+  dockerbuild: Filesystem;
+  exec: Exec;
+  file?: Maybe<Scalars['String']>;
+  id: Scalars['FSID'];
+};
+
+
+export type FilesystemDockerbuildArgs = {
+  dockerfile?: InputMaybe<Scalars['String']>;
+};
+
+
+export type FilesystemExecArgs = {
+  input: ExecInput;
+};
+
+
+export type FilesystemFileArgs = {
+  lines?: InputMaybe<Scalars['Int']>;
+  path: Scalars['String'];
+};
+
+export type MountInput = {
+  fs: Scalars['FSID'];
+  path: Scalars['String'];
+};
+
 export type Netlify = {
   __typename?: 'Netlify';
-  /** Deploy a site to Netlify */
   deploy: Deploy;
 };
 
 
-/** Netlify Action */
 export type NetlifyDeployArgs = {
-  contents: Scalars['FS'];
+  contents: Scalars['FSID'];
   siteName?: InputMaybe<Scalars['String']>;
   subdir?: InputMaybe<Scalars['String']>;
-  token: Scalars['Secret'];
+  token: Scalars['SecretID'];
+};
+
+export type Package = {
+  __typename?: 'Package';
+  fs?: Maybe<Filesystem>;
+  name: Scalars['String'];
+  operations: Scalars['String'];
+  schema: Scalars['String'];
 };
 
 export type Query = {
   __typename?: 'Query';
-  /** Netlify Action */
   netlify: Netlify;
 };
 
 export type DeployQueryVariables = Exact<{
-  contents: Scalars['FS'];
+  contents: Scalars['FSID'];
   subdir?: InputMaybe<Scalars['String']>;
   siteName?: InputMaybe<Scalars['String']>;
-  token: Scalars['Secret'];
+  token: Scalars['SecretID'];
 }>;
 
 
@@ -63,7 +157,7 @@ export type DeployQuery = { __typename?: 'Query', netlify: { __typename?: 'Netli
 
 
 export const DeployDocument = gql`
-    query Deploy($contents: FS!, $subdir: String, $siteName: String, $token: Secret!) {
+    query Deploy($contents: FSID!, $subdir: String, $siteName: String, $token: SecretID!) {
   netlify {
     deploy(contents: $contents, subdir: $subdir, siteName: $siteName, token: $token) {
       url

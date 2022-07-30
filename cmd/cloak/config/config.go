@@ -75,7 +75,7 @@ func (c *Config) LocalDirs() map[string]string {
 	return localDirs
 }
 
-func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FS) error {
+func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FSID) error {
 	var eg errgroup.Group
 	for name, action := range c.Actions {
 		name := name
@@ -111,26 +111,31 @@ func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FS) err
 	return eg.Wait()
 }
 
-func importLocal(ctx context.Context, name string, cwd dagger.FS, dockerfile string) (schema, operations string, err error) {
+func importLocal(ctx context.Context, name string, cwd dagger.FSID, dockerfile string) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
 		return "", "", err
 	}
 	data := struct {
 		Core struct {
-			Dockerfile dagger.FS
+			Filesystem struct {
+				Dockerbuild struct {
+					Id dagger.FSID
+				}
+			}
 		}
 	}{}
 	resp := &graphql.Response{Data: &data}
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			query Dockerfile($context: FS!, $dockerfile: String!) {
+			query Dockerfile($context: FSID!, $dockerfile: String!) {
 				core {
-					dockerfile(
-						context: $context,
-						dockerfileName: $dockerfile,
-					)
+					filesystem(id: $context) {
+						dockerbuild(dockerfile: $dockerfile) {
+							id
+						}
+					}
 				}
 			}`,
 			Variables: map[string]any{
@@ -143,7 +148,7 @@ func importLocal(ctx context.Context, name string, cwd dagger.FS, dockerfile str
 	if err != nil {
 		return "", "", err
 	}
-	return importFS(ctx, name, data.Core.Dockerfile)
+	return importFS(ctx, name, data.Core.Filesystem.Dockerbuild.Id)
 }
 
 func importImage(ctx context.Context, name string, ref string) (schema, operations string, err error) {
@@ -154,7 +159,7 @@ func importImage(ctx context.Context, name string, ref string) (schema, operatio
 	data := struct {
 		Core struct {
 			Image struct {
-				FS dagger.FS
+				Id dagger.FSID
 			}
 		}
 	}{}
@@ -165,7 +170,7 @@ func importImage(ctx context.Context, name string, ref string) (schema, operatio
 			query Image($ref: String!) {
 				core {
 					image(ref: $ref) {
-						fs
+						id
 					}
 				}
 			}`,
@@ -178,10 +183,10 @@ func importImage(ctx context.Context, name string, ref string) (schema, operatio
 	if err != nil {
 		return "", "", err
 	}
-	return importFS(ctx, name, data.Core.Image.FS)
+	return importFS(ctx, name, data.Core.Image.Id)
 }
 
-func importFS(ctx context.Context, name string, fs dagger.FS) (schema, operations string, err error) {
+func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
 		return "", "", err
@@ -198,7 +203,7 @@ func importFS(ctx context.Context, name string, fs dagger.FS) (schema, operation
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			mutation Import($name: String!, $fs: FS!) {
+			mutation Import($name: String!, $fs: FSID!) {
 				import(name: $name, fs: $fs) {
 						schema
 						operations

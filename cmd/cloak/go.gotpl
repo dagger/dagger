@@ -1,0 +1,59 @@
+{{ reserveImport "context"  }}
+{{ reserveImport "fmt"  }}
+{{ reserveImport "io"  }}
+{{ reserveImport "strconv"  }}
+{{ reserveImport "time"  }}
+{{ reserveImport "sync"  }}
+{{ reserveImport "errors"  }}
+{{ reserveImport "bytes"  }}
+
+{{ reserveImport "github.com/vektah/gqlparser/v2" }}
+{{ reserveImport "github.com/vektah/gqlparser/v2/ast" }}
+{{ reserveImport "github.com/99designs/gqlgen/graphql" }}
+{{ reserveImport "github.com/99designs/gqlgen/graphql/introspection" }}
+
+{{ reserveImport	"github.com/dagger/cloak/sdk/go/dagger" }}
+
+{{ $root := . }}
+
+{{ if .HasRoot }}
+	type {{.ResolverType}} struct {}
+{{ end }}
+
+{{ range $resolver := .Resolvers -}}
+    // {{ $resolver.Comment }}
+	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
+		{{ $resolver.Implementation }}
+	}
+
+{{ end }}
+
+{{ range $object := .Objects -}}
+	// {{ucFirst $object.Name}} returns {{ $object.ResolverInterface | ref }} implementation.
+	func (r *{{$.ResolverType}}) {{ucFirst $object.Name}}() *{{lcFirst $object.Name}}{{ucFirst $.ResolverType}} { return &{{lcFirst $object.Name}}{{ucFirst $.ResolverType}}{r} }
+{{ end }}
+
+{{ range $object := .Objects -}}
+	type {{lcFirst $object.Name}}{{ucFirst $.ResolverType}} struct { *{{$.ResolverType}} }
+{{ end }}
+
+
+
+func main() {
+	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error) {
+  {{ range $resolver := .Resolvers -}}
+  "{{$resolver.Field.GoFieldName}}": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+    var err error
+    fc.Args, err = (&executionContext{}).{{$resolver.Field.ArgsFunc}}(rctx, fc.Args)
+    if err != nil {
+      return nil, err
+    }
+    obj, ok := fc.ParentResult.({{$root.ShortTypeName $resolver.Field.Object.Reference.String}})
+    _ = ok
+    _ = obj
+    qr := &queryResolver{}
+    return qr.{{$resolver.Field.ShortInvocation}}
+  },
+  {{ end }}
+  })
+}

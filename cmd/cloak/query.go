@@ -69,9 +69,9 @@ func Query(cmd *cobra.Command, args []string) {
 
 	var result []byte
 	err = engine.Start(context.Background(), startOpts,
-		func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
+		func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error) {
 			if err := cfg.Import(ctx, localDirs); err != nil {
-				return nil, err
+				return "", err
 			}
 
 			for name, fs := range localDirs {
@@ -83,7 +83,7 @@ func Query(cmd *cobra.Command, args []string) {
 
 			cl, err := dagger.Client(ctx)
 			if err != nil {
-				return nil, err
+				return "", err
 			}
 			res := make(map[string]interface{})
 			resp := &graphql.Response{Data: &res}
@@ -96,17 +96,17 @@ func Query(cmd *cobra.Command, args []string) {
 				resp,
 			)
 			if err != nil {
-				return nil, err
+				return "", err
 			}
 			if len(resp.Errors) > 0 {
-				return nil, resp.Errors
+				return "", resp.Errors
 			}
 
 			result, err = json.MarshalIndent(res, "", "    ")
 			if err != nil {
-				return nil, err
+				return "", err
 			}
-			return nil, nil
+			return "", nil
 		})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

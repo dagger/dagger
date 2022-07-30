@@ -17,7 +17,8 @@ var (
 	localDirsInput []string
 	secretsInput   []string
 
-	generateOutpuDir string
+	generateOutputDir string
+	sdkType           string // TODO: enum?
 
 	devServerPort int
 )
@@ -36,7 +37,8 @@ func init() {
 	queryCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
 	queryCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 
-	generateCmd.Flags().StringVar(&generateOutpuDir, "output-dir", "./", "output directory")
+	generateCmd.Flags().StringVar(&generateOutputDir, "output-dir", "./", "output directory")
+	generateCmd.Flags().StringVar(&sdkType, "sdk", "", "sdk type to generate code for ('go', 'ts', etc.)")
 
 	devCmd.Flags().IntVarP(&devServerPort, "port", "p", 8080, "dev server port")
 }

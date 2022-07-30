@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -18,9 +17,7 @@ import (
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/printer"
 	"github.com/moby/buildkit/client/llb"
-	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -28,77 +25,25 @@ const (
 	daggerSockName = "dagger-sock"
 )
 
-// Mirrors handler.RequestOptions, but includes omitempty for better compatibility
-// with other servers like apollo (which don't seem to like "operationName": "").
-type GraphQLRequest struct {
-	Query         string                 `json:"query,omitempty"`
-	Variables     map[string]interface{} `json:"variables,omitempty"`
-	OperationName string                 `json:"operationName,omitempty"`
-}
-
-// FS is either llb representing the filesystem or a graphql query for obtaining that llb
-// This is opaque to clients; to them FS is a scalar.
-type FS struct {
-	PB *pb.Definition
-	GraphQLRequest
-}
-
-// FS encodes to the base64 encoding of its JSON representation
-func (fs FS) MarshalText() ([]byte, error) {
-	type marshalFS FS
-	jsonBytes, err := json.Marshal(marshalFS(fs))
-	if err != nil {
-		return nil, err
-	}
-	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
-	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
-	return b64Bytes, nil
-}
-
-func (fs *FS) UnmarshalText(b64Bytes []byte) error {
-	type marshalFS FS
-	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(b64Bytes)))
-	n, err := base64.StdEncoding.Decode(jsonBytes, b64Bytes)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal fs bytes: %v", err)
-	}
-	jsonBytes = jsonBytes[:n]
-	var result marshalFS
-	if err := json.Unmarshal(jsonBytes, &result); err != nil {
-		return fmt.Errorf("failed to unmarshal result: %v: %s", err, string(jsonBytes))
-	}
-	fs.PB = result.PB
-	fs.GraphQLRequest = result.GraphQLRequest
-	return nil
-}
-
-func (fs FS) ToState() (llb.State, error) {
-	if fs.PB == nil {
-		return llb.State{}, fmt.Errorf("FS is not evaluated")
-	}
-	defop, err := llb.NewDefinitionOp(fs.PB)
-	if err != nil {
-		return llb.State{}, err
-	}
-	return llb.NewState(defop), nil
-}
-
 /*
 	type AlpineBuild {
 		fs: FS!
 	}
+
 	type Query {
 		build(pkgs: [String]!): AlpineBuild
 	}
 
-	converts to:
+converts to:
 
 	type AlpineBuild {
 		fs: FS!
 	}
+
 	type Alpine {
 		build(pkgs: [String]!): AlpineBuild
 	}
+
 	type Query {
 		alpine: Alpine!
 	}
@@ -174,20 +119,13 @@ type Query {
 
 func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
-		if !shouldEval(p.Context) {
-			return lazyResolve(p)
+		pathArray := p.Info.Path.AsArray()
+		lastPath := pathArray[len(pathArray)-1]
+		inputMap := map[string]interface{}{
+			"object": lastPath.(string),
+			"args":   p.Args,
 		}
-
-		// the action doesn't know we stitch its queries under the package name, patch the query we send to here
-		queryOp := p.Info.Operation.(*ast.OperationDefinition)
-		packageSelect := queryOp.SelectionSet.Selections[0].(*ast.Field)
-		queryOp.SelectionSet.Selections = packageSelect.SelectionSet.Selections
-
-		inputBytes, err := json.Marshal(GraphQLRequest{
-			Query:         printer.Print(queryOp).(string),
-			Variables:     p.Info.VariableValues,
-			OperationName: getOperationName(p),
-		})
+		inputBytes, err := json.Marshal(inputMap)
 		if err != nil {
 			return nil, err
 		}
@@ -211,8 +149,8 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		)
 
 		// TODO: /mnt should maybe be configurable?
-		for path, fs := range collectFSPaths(p.Args, "/mnt", make(map[string]FS)) {
-			fsState, err := fs.ToState()
+		for path, fsid := range collectFSPaths(p.Args, "/mnt", make(map[string]FSID)) {
+			fsState, err := (&Filesystem{ID: fsid}).ToState()
 			if err != nil {
 				return nil, err
 			}
@@ -253,20 +191,13 @@ func actionFieldToResolver(pkgName, actionName string) graphql.FieldResolveFn {
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 		}
-		for _, parentField := range append([]any{"data"}, p.Info.Path.AsArray()[1:]...) { // skip first field, which is the package name
-			outputMap, ok := output.(map[string]interface{})
-			if !ok {
-				return nil, fmt.Errorf("output is not a map: %+v", output)
-			}
-			output = outputMap[parentField.(string)]
-		}
 		return output, nil
 	}
 }
 
-func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]FS) map[string]FS {
+func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]FSID) map[string]FSID {
 	switch arg := arg.(type) {
-	case FS:
+	case FSID:
 		// TODO: make sure there can't be any shenanigans with args named e.g. ../../../foo/bar
 		fsPaths[curPath] = arg
 	case map[string]interface{}:
@@ -284,7 +215,7 @@ func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]FS) map[
 
 type daggerPackage struct {
 	Name   string
-	FS     FS
+	FS     *Filesystem
 	Schema tools.ExecutableSchema
 }
 
@@ -369,294 +300,13 @@ func init() {
 								return struct{}{}, nil
 							},
 						},
-						"source": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								return struct{}{}, nil
-							},
-						},
 					},
 				},
 
 				// FIXME: chaining experiment
-				"Source":     sourceResolver,
+				"Core":       coreResolver,
 				"Filesystem": filesystemResolver,
 				"Exec":       execResolver,
-
-				"CoreExec": &tools.ObjectResolver{
-					Fields: tools.FieldResolveMap{
-						"getMount": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								parent, ok := p.Source.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("unexpected core exec parent type %T", p.Source)
-								}
-								mounts, ok := parent["mounts"].(map[string]FS)
-								if !ok {
-									return nil, fmt.Errorf("unexpected core exec mounts type %T", parent["mounts"])
-								}
-								path, ok := p.Args["path"].(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid path argument")
-								}
-								fs, ok := mounts[path]
-								if !ok {
-									return nil, fmt.Errorf("mount at path %q not found", path)
-								}
-								return fs, nil
-							},
-						},
-					},
-				},
-				"Core": &tools.ObjectResolver{
-					Fields: tools.FieldResolveMap{
-						"image": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								if !shouldEval(p.Context) {
-									return lazyResolve(p)
-								}
-								rawRef, ok := p.Args["ref"]
-								if !ok {
-									return nil, fmt.Errorf("missing ref")
-								}
-								ref, ok := rawRef.(string)
-								if !ok {
-									return nil, fmt.Errorf("ref is not a string")
-								}
-								llbdef, err := llb.Image(ref).Marshal(p.Context, llb.Platform(getPlatform(p)))
-								if err != nil {
-									return nil, err
-								}
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
-								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
-									Evaluate:   true,
-									Definition: llbdef.ToPB(),
-								})
-								if err != nil {
-									return nil, err
-								}
-								return map[string]interface{}{
-									"fs": FS{PB: llbdef.ToPB()},
-								}, nil
-							},
-						},
-						"exec": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								if !shouldEval(p.Context) {
-									return lazyResolve(p)
-								}
-								input, ok := p.Args["input"].(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("invalid exec input: %+v", p.Args["input"])
-								}
-
-								workdir, ok := input["workdir"].(string)
-								if !ok {
-									workdir = ""
-								}
-
-								rawArgs, ok := input["args"].([]interface{})
-								if !ok {
-									return nil, fmt.Errorf("invalid args")
-								}
-								var args []string
-								for _, arg := range rawArgs {
-									if arg, ok := arg.(string); ok {
-										args = append(args, arg)
-									} else {
-										return nil, fmt.Errorf("invalid arg")
-									}
-								}
-
-								rawMounts, ok := input["mounts"].([]interface{})
-								if !ok {
-									return nil, fmt.Errorf("invalid mounts")
-								}
-								mounts := map[string]FS{}
-								for _, rawMount := range rawMounts {
-									mount, ok := rawMount.(map[string]interface{})
-									if !ok {
-										return nil, fmt.Errorf("invalid mount")
-									}
-									path, ok := mount["path"].(string)
-									if !ok {
-										return nil, fmt.Errorf("invalid mount path")
-									}
-									fs, ok := mount["fs"].(FS)
-									if !ok {
-										return nil, fmt.Errorf("invalid mount fs")
-									}
-									mounts[path] = fs
-								}
-								root, ok := mounts["/"]
-								if !ok {
-									return nil, fmt.Errorf("missing root mount")
-								}
-								rootState, err := root.ToState()
-								if err != nil {
-									return nil, err
-								}
-								execState := rootState.Run(llb.Args(args), llb.Dir(workdir))
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
-								for path, mount := range mounts {
-									if path == "/" {
-										continue
-									}
-									state, err := mount.ToState()
-									if err != nil {
-										return nil, err
-									}
-									state = execState.AddMount(path, state)
-									llbdef, err := state.Marshal(p.Context, llb.Platform(getPlatform(p)))
-									if err != nil {
-										return nil, err
-									}
-									_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
-										Evaluate:   true,
-										Definition: llbdef.ToPB(),
-									})
-									if err != nil {
-										return nil, err
-									}
-									mounts[path] = FS{PB: llbdef.ToPB()}
-								}
-								llbdef, err := execState.Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
-								if err != nil {
-									return nil, err
-								}
-								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
-									Evaluate:   true,
-									Definition: llbdef.ToPB(),
-								})
-								if err != nil {
-									return nil, err
-								}
-								return map[string]interface{}{
-									"root":   FS{PB: llbdef.ToPB()},
-									"mounts": mounts,
-								}, nil
-							},
-						},
-						"dockerfile": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								if !shouldEval(p.Context) {
-									return lazyResolve(p)
-								}
-
-								fs, ok := p.Args["context"].(FS)
-								if !ok {
-									return nil, fmt.Errorf("invalid context")
-								}
-
-								var dockerfileName string
-								rawDockerfileName, ok := p.Args["dockerfileName"]
-								if ok {
-									dockerfileName, ok = rawDockerfileName.(string)
-									if !ok {
-										return nil, fmt.Errorf("invalid dockerfile name: %+v", rawDockerfileName)
-									}
-								}
-
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
-
-								opts := map[string]string{
-									"platform": platforms.Format(getPlatform(p)),
-								}
-								inputs := map[string]*pb.Definition{
-									dockerfilebuilder.DefaultLocalNameContext:    fs.PB,
-									dockerfilebuilder.DefaultLocalNameDockerfile: fs.PB,
-								}
-								if dockerfileName != "" {
-									opts["filename"] = dockerfileName
-								}
-								res, err := gw.Solve(p.Context, bkgw.SolveRequest{
-									Frontend:       "dockerfile.v0",
-									FrontendOpt:    opts,
-									FrontendInputs: inputs,
-								})
-								if err != nil {
-									return nil, err
-								}
-
-								bkref, err := res.SingleRef()
-								if err != nil {
-									return nil, err
-								}
-								st, err := bkref.ToState()
-								if err != nil {
-									return nil, err
-								}
-								llbdef, err := st.Marshal(p.Context, llb.Platform(getPlatform(p)))
-								if err != nil {
-									return nil, err
-								}
-								return FS{PB: llbdef.ToPB()}, nil
-							},
-						},
-						"copy": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								if !shouldEval(p.Context) {
-									return lazyResolve(p)
-								}
-								src, ok := p.Args["src"].(FS)
-								if !ok {
-									return nil, fmt.Errorf("invalid copy src")
-								}
-								srcPath, ok := p.Args["srcPath"].(string)
-								if !ok {
-									srcPath = "/"
-								}
-								dst, ok := p.Args["dst"].(FS)
-								if !ok {
-									dst = FS{}
-								}
-								dstPath, ok := p.Args["dstPath"].(string)
-								if !ok {
-									dstPath = "/"
-								}
-								srcState, err := src.ToState()
-								if err != nil {
-									return nil, err
-								}
-								var dstState llb.State
-								if dst.PB != nil {
-									dstState, err = dst.ToState()
-									if err != nil {
-										return nil, err
-									}
-								} else {
-									dstState = llb.Scratch()
-								}
-								llbdef, err := dstState.File(
-									llb.Copy(srcState, srcPath, dstPath),
-								).Marshal(p.Context, llb.Platform(getPlatform(p)))
-								if err != nil {
-									return nil, err
-								}
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
-								_, err = gw.Solve(context.Background(), bkgw.SolveRequest{
-									Evaluate:   true,
-									Definition: llbdef.ToPB(),
-								})
-								if err != nil {
-									return nil, err
-								}
-								return FS{PB: llbdef.ToPB()}, nil
-							},
-						},
-					},
-				},
 
 				"Mutation": &tools.ObjectResolver{
 					Fields: tools.FieldResolveMap{
@@ -678,9 +328,14 @@ func init() {
 									}, nil
 								}
 
-								fs, ok := p.Args["fs"].(FS)
+								fsid, ok := p.Args["fs"].(FSID)
 								if !ok {
 									return nil, fmt.Errorf("invalid fs")
+								}
+								fs := &Filesystem{ID: fsid}
+								pbdef, err := fs.ToDefinition()
+								if err != nil {
+									return nil, err
 								}
 
 								gw, err := getGatewayClient(p)
@@ -689,7 +344,7 @@ func init() {
 								}
 								res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
 									Evaluate:   true,
-									Definition: fs.PB,
+									Definition: pbdef,
 								})
 								if err != nil {
 									return nil, err
@@ -724,9 +379,7 @@ func init() {
 									return nil, err
 								}
 
-								// TODO: hacks: include the FS+Secret scalar in the schema so it's valid in isolation
 								parsedSchema := parsed.TypeDefs.(string)
-								parsedSchema = "scalar FS\nscalar Secret\n" + parsedSchema
 
 								return map[string]interface{}{
 									"name":       pkgName,
@@ -736,119 +389,9 @@ func init() {
 								}, nil
 							},
 						},
-						"readfile": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								fs, ok := p.Args["fs"].(FS)
-								if !ok {
-									return nil, fmt.Errorf("invalid fs")
-								}
-								path, ok := p.Args["path"].(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid path")
-								}
-								gw, err := getGatewayClient(p)
-								if err != nil {
-									return nil, err
-								}
-								res, err := gw.Solve(context.Background(), bkgw.SolveRequest{
-									Evaluate:   true,
-									Definition: fs.PB,
-								})
-								if err != nil {
-									return nil, err
-								}
-								ref, err := res.SingleRef()
-								if err != nil {
-									return nil, err
-								}
-								outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
-									Filename: path,
-								})
-								if err != nil {
-									return nil, err
-								}
-								return string(outputBytes), nil
-							},
-						},
-						"readsecret": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								id, ok := p.Args["input"].(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid secret id")
-								}
-								secrets := getSecrets(p)
-								if secrets == nil {
-									return nil, fmt.Errorf("no secrets")
-								}
-								secret, ok := secrets[id]
-								if !ok {
-									return nil, fmt.Errorf("no secret with id %s", id)
-								}
-								return secret, nil
-							},
-						},
-						"clientdir": &tools.FieldResolve{
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								id, ok := p.Args["id"].(string)
-								if !ok {
-									return nil, fmt.Errorf("invalid clientdir id")
-								}
-								llbdef, err := llb.Local(
-									id,
-									// TODO: better shared key hint?
-									llb.SharedKeyHint(id),
-									// FIXME: should not be hardcoded
-									llb.ExcludePatterns([]string{"**/node_modules"}),
-								).Marshal(p.Context, llb.LocalUniqueID(id))
-								if err != nil {
-									return nil, err
-								}
-								return FS{PB: llbdef.ToPB()}, nil
-							},
-						},
 					},
 				},
-				"FS": &tools.ScalarResolver{
-					Serialize: func(value interface{}) interface{} {
-						switch v := value.(type) {
-						case FS:
-							fsbytes, err := v.MarshalText()
-							if err != nil {
-								panic(err)
-							}
-							return string(fsbytes)
-						case string:
-							return v
-						default:
-							panic(fmt.Sprintf("unexpected fs type %T", v))
-						}
-					},
-					ParseValue: func(value interface{}) interface{} {
-						switch v := value.(type) {
-						case string:
-							var fs FS
-							if err := fs.UnmarshalText([]byte(v)); err != nil {
-								panic(err)
-							}
-							return fs
-						default:
-							panic(fmt.Sprintf("unexpected fs value type %T", v))
-						}
-					},
-					ParseLiteral: func(valueAST ast.Value) interface{} {
-						switch valueAST := valueAST.(type) {
-						case *ast.StringValue:
-							var fs FS
-							if err := fs.UnmarshalText([]byte(valueAST.Value)); err != nil {
-								panic(err)
-							}
-							return fs
-						default:
-							panic(fmt.Sprintf("unexpected fs literal type: %T", valueAST))
-						}
-					},
-				},
-				"Secret": &tools.ScalarResolver{
+				"SecretID": &tools.ScalarResolver{
 					Serialize: func(value interface{}) interface{} {
 						switch v := value.(type) {
 						case string:
@@ -871,6 +414,32 @@ func init() {
 							return valueAST.Value
 						default:
 							panic(fmt.Sprintf("unexpected secret literal type: %T", valueAST))
+						}
+					},
+				},
+				"FSID": &tools.ScalarResolver{
+					Serialize: func(value interface{}) interface{} {
+						switch v := value.(type) {
+						case FSID, string:
+							return v
+						default:
+							panic(fmt.Sprintf("unexpected fsid type %T", v))
+						}
+					},
+					ParseValue: func(value interface{}) interface{} {
+						switch v := value.(type) {
+						case string:
+							return FSID(v)
+						default:
+							panic(fmt.Sprintf("unexpected fsid value type %T: %+v", v, v))
+						}
+					},
+					ParseLiteral: func(valueAST ast.Value) interface{} {
+						switch valueAST := valueAST.(type) {
+						case *ast.StringValue:
+							return FSID(valueAST.Value)
+						default:
+							panic(fmt.Sprintf("unexpected fsid literal type: %T", valueAST))
 						}
 					},
 				},

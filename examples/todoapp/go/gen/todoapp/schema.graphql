@@ -1,5 +1,3 @@
-scalar FS
-scalar Secret
 
 type Deploy {
   url: String!
@@ -9,9 +7,9 @@ type Deploy {
 
 ""
 type Todoapp {
-	build(src: FS!): FS!
-test(src: FS!): FS!
-deploy(src: FS!, token: Secret!): Deploy!
+	build(src: FSID!): Filesystem!
+test(src: FSID!): Filesystem!
+deploy(src: FSID!, token: SecretID!): Deploy!
 }
 
 type Query {
@@ -19,3 +17,48 @@ type Query {
 	todoapp: Todoapp!
 }
 	
+
+
+scalar SecretID
+scalar FSID
+
+type Package {
+  name: String!
+  fs: Filesystem
+  schema: String!
+  operations: String!
+}
+
+type Exec {
+  fs: Filesystem!
+  stdout(lines: Int): String
+  stderr(lines: Int): String
+  exitCode: Int
+  mount(path: String!): Filesystem!
+}
+
+type Core {
+  filesystem(id: FSID!): Filesystem!
+  image(ref: String!): Filesystem!
+  git(remote: String!, ref: String): Filesystem!
+  clientdir(id: String!): Filesystem!
+  secret(id: SecretID!): String!
+}
+
+input MountInput {
+  path: String!
+  fs: FSID!
+}
+
+input ExecInput {
+  args: [String!]!
+  mounts: [MountInput!]
+  workdir: String
+}
+
+type Filesystem {
+  id: FSID!
+  exec(input: ExecInput!): Exec!
+  dockerbuild(dockerfile: String): Filesystem!
+  file(path: String!, lines: Int): String
+}
