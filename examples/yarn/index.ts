@@ -1,70 +1,74 @@
-import { client, DaggerServer, gql, FS } from "@dagger.io/dagger";
-import * as fs from "fs";
+import { client, DaggerServer, gql, FSID } from "@dagger.io/dagger";
 
 const resolvers = {
-  Query: {
-    script: async (parent: any, args: { source: FS; name: string }) => {
-      const base = await client
-        .request(
-          gql`
-            {
-              alpine {
-                build(pkgs: ["yarn", "git"])
+  Script: async (args: { source: FSID; name: string }) => {
+    const base = await client
+      .request(
+        gql`
+          {
+            alpine {
+              build(pkgs: ["yarn", "git"]) {
+                id
               }
             }
-          `
-        )
-        .then((result: any) => result.alpine.build);
-      // console.log("base: ", base);
+          }
+        `
+      )
+      .then((result: any) => result.alpine.build);
+    // console.log("base: ", base);
 
-      // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
-      const yarnInstall = await client
-        .request(
-          gql`
-            {
-              core {
-                exec(input: {
-                  args: ["yarn", "install"], 
-                  mounts: [
-                    {path: "/", fs: "${base}"},
-                    {path: "/src", fs: "${args.source}"},
-                  ],
-                  workdir: "/src",
-                }) { getMount(path: "/src") }
-              }
-            }
-          `
-        )
-        .then((result: any) => result.core.exec.getMount);
-      // console.log("yarnInstall: ", yarnInstall);
-
-      const yarnRun = await client
-        .request(
-          gql`
+    // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
+    const yarnInstall = await client
+      .request(
+        gql`
             {
               core {
-                exec(input: {
-                  args: ["yarn", "run", "${args.name}"],
-                  mounts: [
-                    {path: "/", fs: "${base}"},
-                    {path: "/src", fs: "${yarnInstall}"},
-                  ],
-                  workdir: "/src",
-                }) { getMount(path: "/src") }
+                filesystem(id: "${base.id}") {
+                  exec(input: {
+                    args: ["yarn", "install"], 
+                    mounts: [{path: "/src", fs: "${args.source}"}],
+                    workdir: "/src",
+                  }) {
+                    mount(path: "/src") {
+                      id
+                    }
+                  }
+                }
               }
             }
           `
-        )
-        .then((result: any) => result.core.exec.getMount);
-      // console.log("yarnRun: ", yarnRun);
+      )
+      .then((result: any) => result.core.filesystem.exec.mount);
+    // console.log("yarnInstall: ", yarnInstall);
 
-      return yarnRun;
-    },
+    const yarnRun = await client
+      .request(
+        gql`
+            {
+              core {
+                filesystem(id: "${base.id}") {
+                  exec(input: {
+                    args: ["yarn", "run", "${args.name}"],
+                    mounts: [{path: "/src", fs: "${yarnInstall.id}"}],
+                    workdir: "/src",
+                  }) {
+                    mount(path: "/src") {
+                      id
+                    }
+                  }
+                }
+              }
+            }
+          `
+      )
+      .then((result: any) => result.core.filesystem.exec.mount);
+    // console.log("yarnInstall: ", yarnInstall);
+
+    return yarnRun;
   },
 };
 
 const server = new DaggerServer({
-  typeDefs: gql(fs.readFileSync("/schema.graphql", "utf8")),
   resolvers,
 });
 

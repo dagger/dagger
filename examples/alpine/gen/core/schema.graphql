@@ -1,65 +1,50 @@
-
-scalar FS
-
-type CoreImage {
-	fs: FS!
-}
-
-input CoreMount {
-	path: String!
-	fs: FS!
-}
-input CoreExecInput {
-	mounts: [CoreMount!]!
-	args: [String!]!
-	workdir: String
-}
-type CoreExec {
-	root: FS!
-	getMount(path: String!): FS!
-}
-
-type Core {
-	image(ref: String!): CoreImage
-	exec(input: CoreExecInput!): CoreExec
-	dockerfile(context: FS!, dockerfileName: String): FS!
-	copy(src: FS!, srcPath: String, dst: FS, dstPath: String): FS!
-}
-
 type Query {
-	core: Core!
-	source: Source!
+  core: Core!
 }
+type Mutation {
+  import(name: String!, fs: FSID): Package
+}
+
+scalar SecretID
+scalar FSID
 
 type Package {
-	name: String!
-	fs: FS
-	schema: String!
-	operations: String!
-}
-
-type Mutation {
-	import(name: String!, fs: FS): Package
-	readfile(fs: FS!, path: String!): String
-	clientdir(id: String!): FS
-	readsecret(id: String!): String
+  name: String!
+  fs: Filesystem
+  schema: String!
+  operations: String!
 }
 
 type Exec {
-	fs: Filesystem!
-	stdout: String
-	stderr: String
-	exitCode: Int
+  fs: Filesystem!
+  stdout(lines: Int): String
+  stderr(lines: Int): String
+  exitCode: Int
+  mount(path: String!): Filesystem!
 }
 
-type Source {
-	image(ref: String!): Filesystem!
-	git(remote: String!, ref: String): Filesystem!
+type Core {
+  filesystem(id: FSID!): Filesystem!
+  image(ref: String!): Filesystem!
+  git(remote: String!, ref: String): Filesystem!
+  clientdir(id: String!): Filesystem!
+  secret(id: SecretID!): String!
+}
+
+input MountInput {
+  path: String!
+  fs: FSID!
+}
+
+input ExecInput {
+  args: [String!]!
+  mounts: [MountInput!]
+  workdir: String
 }
 
 type Filesystem {
-	id: ID!
-	exec(args: [String!]): Exec!
-	dockerbuild(dockerfile: String): Filesystem!
-	file(path: String!): String
+  id: FSID!
+  exec(input: ExecInput!): Exec!
+  dockerbuild(dockerfile: String): Filesystem!
+  file(path: String!, lines: Int): String
 }

@@ -1,16 +1,20 @@
-query Build($src: FS!) {
+query Build($src: FSID!) {
   todoapp {
-    build(src: $src)
+    build(src: $src) {
+      id
+    }
   }
 }
 
-query Test($src: FS!) {
+query Test($src: FSID!) {
   todoapp {
-    test(src: $src)
+    test(src: $src) {
+      id
+    }
   }
 }
 
-query Deploy($src: FS!, $token: Secret!) {
+query Deploy($src: FSID!, $token: SecretID!) {
   todoapp {
     deploy(src: $src, token: $token) {
       url

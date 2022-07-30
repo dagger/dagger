@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,16 +18,24 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 )
 
+type FSID string
+
 type Filesystem struct {
-	ID string `json:"id"`
+	ID FSID `json:"id"`
 }
 
 func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
-	var fs FS
-	if err := fs.UnmarshalText([]byte(f.ID)); err != nil {
-		return nil, err
+	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(f.ID)))
+	n, err := base64.StdEncoding.Decode(jsonBytes, []byte(f.ID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal fs bytes: %v", err)
 	}
-	return fs.PB, nil
+	jsonBytes = jsonBytes[:n]
+	var result pb.Definition
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result: %v: %s", err, string(jsonBytes))
+	}
+	return &result, nil
 }
 
 func (f *Filesystem) ToState() (llb.State, error) {
@@ -66,18 +76,28 @@ func (f *Filesystem) ReadFile(ctx context.Context, gw bkgw.Client, path string) 
 }
 
 func newFilesystem(def *llb.Definition) *Filesystem {
-	fs := FS{PB: def.ToPB()}
-	fsbytes, err := fs.MarshalText()
+	jsonBytes, err := json.Marshal(def.ToPB())
 	if err != nil {
 		panic(err)
 	}
+	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
+	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
 	return &Filesystem{
-		ID: string(fsbytes),
+		ID: FSID(b64Bytes),
 	}
 }
 
-var sourceResolver = &tools.ObjectResolver{
+var coreResolver = &tools.ObjectResolver{
 	Fields: tools.FieldResolveMap{
+		"filesystem": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				id, ok := p.Args["id"].(FSID)
+				if !ok {
+					return nil, fmt.Errorf("missing id")
+				}
+				return &Filesystem{ID: id}, nil
+			},
+		},
 		"image": &tools.FieldResolve{
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				rawRef, ok := p.Args["ref"]
@@ -141,6 +161,48 @@ var sourceResolver = &tools.ObjectResolver{
 				return newFilesystem(llbdef), nil
 			},
 		},
+
+		"clientdir": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				id, ok := p.Args["id"].(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid clientdir id")
+				}
+				// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
+				// which makes it unable to reused, which in turn creates cache invalidations
+				// TODO: this should be optional, the above issue can also be avoided w/ readonly
+				// mount when possible
+				llbdef, err := llb.Scratch().File(llb.Copy(llb.Local(
+					id,
+					// TODO: better shared key hint?
+					llb.SharedKeyHint(id),
+					// FIXME: should not be hardcoded
+					llb.ExcludePatterns([]string{"**/node_modules"}),
+				), "/", "/")).Marshal(p.Context, llb.LocalUniqueID(id))
+				if err != nil {
+					return nil, err
+				}
+				return newFilesystem(llbdef), nil
+			},
+		},
+
+		"secret": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				id, ok := p.Args["id"].(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid secret id")
+				}
+				secrets := getSecrets(p)
+				if secrets == nil {
+					return nil, fmt.Errorf("no secrets")
+				}
+				secret, ok := secrets[id]
+				if !ok {
+					return nil, fmt.Errorf("no secret with id %s", id)
+				}
+				return secret, nil
+			},
+		},
 	},
 }
 
@@ -153,13 +215,38 @@ var filesystemResolver = &tools.ObjectResolver{
 					return nil, err
 				}
 
-				filesystem := p.Source.(*Filesystem)
-				st, err := filesystem.ToState()
+				fs, ok := p.Source.(*Filesystem)
+				if !ok {
+					// TODO: when returned by user actions, Filesystem is just a map[string]interface{}, need to fix, hack for now:
+					m, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("invalid source")
+					}
+					id, ok := m["id"].(string)
+					if !ok {
+						return nil, fmt.Errorf("invalid source")
+					}
+					fs = &Filesystem{
+						ID: FSID(id),
+					}
+				}
+
+				st, err := fs.ToState()
 				if err != nil {
 					return nil, err
 				}
 
-				rawArgs, ok := p.Args["args"].([]interface{})
+				input, ok := p.Args["input"].(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf("invalid input")
+				}
+
+				workdir, ok := input["workdir"].(string)
+				if !ok {
+					workdir = ""
+				}
+
+				rawArgs, ok := input["args"].([]interface{})
 				if !ok {
 					return nil, fmt.Errorf("invalid args")
 				}
@@ -172,6 +259,26 @@ var filesystemResolver = &tools.ObjectResolver{
 					}
 				}
 
+				mounts := map[string]*Filesystem{}
+				rawMounts, ok := input["mounts"].([]interface{})
+				if ok {
+					for _, rawMount := range rawMounts {
+						mount, ok := rawMount.(map[string]interface{})
+						if !ok {
+							return nil, fmt.Errorf("invalid mount")
+						}
+						path, ok := mount["path"].(string)
+						if !ok {
+							return nil, fmt.Errorf("invalid mount path")
+						}
+						fsid, ok := mount["fs"].(FSID)
+						if !ok {
+							return nil, fmt.Errorf("invalid mount fsid")
+						}
+						mounts[path] = &Filesystem{ID: FSID(fsid)}
+					}
+				}
+
 				shim, err := shim.Build(p.Context, gw, getPlatform(p))
 				if err != nil {
 					return nil, err
@@ -180,6 +287,7 @@ var filesystemResolver = &tools.ObjectResolver{
 				runOpt := []llb.RunOption{
 					llb.Args(append([]string{"/_shim"}, args...)),
 					llb.AddMount("/_shim", shim, llb.SourcePath("/_shim")),
+					llb.Dir(workdir),
 				}
 
 				execState := st.Run(runOpt...)
@@ -189,7 +297,15 @@ var filesystemResolver = &tools.ObjectResolver{
 					return nil, err
 				}
 
-				llbdef, err := execState.Marshal(p.Context, llb.Platform(getPlatform(p)))
+				for path, mount := range mounts {
+					state, err := mount.ToState()
+					if err != nil {
+						return nil, err
+					}
+					_ = execState.AddMount(path, state)
+				}
+
+				llbdef, err := execState.Root().Marshal(p.Context, llb.Platform(getPlatform(p)))
 				if err != nil {
 					return nil, err
 				}
@@ -201,15 +317,38 @@ var filesystemResolver = &tools.ObjectResolver{
 					return nil, err
 				}
 
+				for path := range mounts {
+					mountDef, err := execState.GetMount(path).Marshal(p.Context, llb.Platform(getPlatform(p)))
+					if err != nil {
+						return nil, err
+					}
+					mounts[path] = newFilesystem(mountDef)
+				}
+
 				return map[string]interface{}{
 					"fs":       newFilesystem(llbdef),
 					"metadata": newFilesystem(metadataDef),
+					"mounts":   mounts,
 				}, nil
 			},
 		},
 		"file": &tools.FieldResolve{
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				fs := p.Source.(*Filesystem)
+			Resolve: func(p graphql.ResolveParams) (r interface{}, rerr error) {
+				fs, ok := p.Source.(*Filesystem)
+				if !ok {
+					// TODO: when returned by user actions, Filesystem is just a map[string]interface{}, need to fix, hack for now:
+					m, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("invalid source type: %T", p.Source)
+					}
+					id, ok := m["id"].(string)
+					if !ok {
+						return nil, fmt.Errorf("invalid source id: %T %v", p.Source, p.Source)
+					}
+					fs = &Filesystem{
+						ID: FSID(id),
+					}
+				}
 
 				path, ok := p.Args["path"].(string)
 				if !ok {
@@ -222,7 +361,7 @@ var filesystemResolver = &tools.ObjectResolver{
 
 				output, err := fs.ReadFile(p.Context, gw, path)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to read file: %v", err)
 				}
 
 				return truncate(string(output), p.Args), nil
@@ -231,8 +370,23 @@ var filesystemResolver = &tools.ObjectResolver{
 
 		"dockerbuild": &tools.FieldResolve{
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				filesystem := p.Source.(*Filesystem)
-				def, err := filesystem.ToDefinition()
+				fs, ok := p.Source.(*Filesystem)
+				if !ok {
+					// TODO: when returned by user actions, Filesystem is just a map[string]interface{}, need to fix, hack for now:
+					m, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("invalid source")
+					}
+					id, ok := m["id"].(string)
+					if !ok {
+						return nil, fmt.Errorf("invalid source")
+					}
+					fs = &Filesystem{
+						ID: FSID(id),
+					}
+				}
+
+				def, err := fs.ToDefinition()
 				if err != nil {
 					return nil, err
 				}
@@ -338,6 +492,25 @@ var execResolver = &tools.ObjectResolver{
 				}
 
 				return strconv.Atoi(string(output))
+			},
+		},
+
+		"mount": &tools.FieldResolve{
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				exec := p.Source.(map[string]interface{})
+				mounts, ok := exec["mounts"].(map[string]*Filesystem)
+				if !ok {
+					return nil, fmt.Errorf("invalid source mounts")
+				}
+				path, ok := p.Args["path"].(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid path")
+				}
+				mnt, ok := mounts[path]
+				if !ok {
+					return nil, fmt.Errorf("missing mount path")
+				}
+				return mnt, nil
 			},
 		},
 	},

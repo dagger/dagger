@@ -1,4 +1,4 @@
-import { FS, Secret } from '@dagger.io/dagger'
+import { FSID, SecretID } from '@dagger.io/dagger'
 import { GraphQLClient } from 'graphql-request';
 import * as Dom from 'graphql-request/dist/types.dom';
 import gql from 'graphql-tag';
@@ -14,8 +14,43 @@ export type Scalars = {
   Boolean: boolean;
   Int: number;
   Float: number;
-  FS: FS;
-  Secret: Secret;
+  FSID: FSID;
+  SecretID: SecretID;
+};
+
+export type Core = {
+  __typename?: 'Core';
+  clientdir: Filesystem;
+  filesystem: Filesystem;
+  git: Filesystem;
+  image: Filesystem;
+  secret: Scalars['String'];
+};
+
+
+export type CoreClientdirArgs = {
+  id: Scalars['String'];
+};
+
+
+export type CoreFilesystemArgs = {
+  id: Scalars['FSID'];
+};
+
+
+export type CoreGitArgs = {
+  ref?: InputMaybe<Scalars['String']>;
+  remote: Scalars['String'];
+};
+
+
+export type CoreImageArgs = {
+  ref: Scalars['String'];
+};
+
+
+export type CoreSecretArgs = {
+  id: Scalars['SecretID'];
 };
 
 export type Deploy = {
@@ -25,6 +60,73 @@ export type Deploy = {
   url: Scalars['String'];
 };
 
+export type Exec = {
+  __typename?: 'Exec';
+  exitCode?: Maybe<Scalars['Int']>;
+  fs: Filesystem;
+  mount: Filesystem;
+  stderr?: Maybe<Scalars['String']>;
+  stdout?: Maybe<Scalars['String']>;
+};
+
+
+export type ExecMountArgs = {
+  path: Scalars['String'];
+};
+
+
+export type ExecStderrArgs = {
+  lines?: InputMaybe<Scalars['Int']>;
+};
+
+
+export type ExecStdoutArgs = {
+  lines?: InputMaybe<Scalars['Int']>;
+};
+
+export type ExecInput = {
+  args: Array<Scalars['String']>;
+  mounts?: InputMaybe<Array<MountInput>>;
+  workdir?: InputMaybe<Scalars['String']>;
+};
+
+export type Filesystem = {
+  __typename?: 'Filesystem';
+  dockerbuild: Filesystem;
+  exec: Exec;
+  file?: Maybe<Scalars['String']>;
+  id: Scalars['FSID'];
+};
+
+
+export type FilesystemDockerbuildArgs = {
+  dockerfile?: InputMaybe<Scalars['String']>;
+};
+
+
+export type FilesystemExecArgs = {
+  input: ExecInput;
+};
+
+
+export type FilesystemFileArgs = {
+  lines?: InputMaybe<Scalars['Int']>;
+  path: Scalars['String'];
+};
+
+export type MountInput = {
+  fs: Scalars['FSID'];
+  path: Scalars['String'];
+};
+
+export type Package = {
+  __typename?: 'Package';
+  fs?: Maybe<Filesystem>;
+  name: Scalars['String'];
+  operations: Scalars['String'];
+  schema: Scalars['String'];
+};
+
 export type Query = {
   __typename?: 'Query';
   todoapp: Todoapp;
@@ -32,53 +134,75 @@ export type Query = {
 
 export type Todoapp = {
   __typename?: 'Todoapp';
-  build: Scalars['FS'];
+  build: Filesystem;
   deploy: Deploy;
-  test: Scalars['FS'];
+  test: Filesystem;
 };
 
 
 export type TodoappBuildArgs = {
-  src: Scalars['FS'];
+  src: Scalars['FSID'];
 };
 
 
 export type TodoappDeployArgs = {
-  src: Scalars['FS'];
-  token: Scalars['Secret'];
+  src: Scalars['FSID'];
+  token: Scalars['SecretID'];
 };
 
 
 export type TodoappTestArgs = {
-  src: Scalars['FS'];
+  src: Scalars['FSID'];
 };
 
 export type BuildQueryVariables = Exact<{
-  src: Scalars['FS'];
+  src: Scalars['FSID'];
 }>;
 
 
-export type BuildQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', build: FS } };
+export type BuildQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', build: { __typename?: 'Filesystem', id: FSID } } };
 
 export type TestQueryVariables = Exact<{
-  src: Scalars['FS'];
+  src: Scalars['FSID'];
 }>;
 
 
-export type TestQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', test: FS } };
+export type TestQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', test: { __typename?: 'Filesystem', id: FSID } } };
+
+export type DeployQueryVariables = Exact<{
+  src: Scalars['FSID'];
+  token: Scalars['SecretID'];
+}>;
+
+
+export type DeployQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', deploy: { __typename?: 'Deploy', url: string, deployUrl: string } } };
 
 
 export const BuildDocument = gql`
-    query Build($src: FS!) {
+    query Build($src: FSID!) {
   todoapp {
-    build(src: $src)
+    build(src: $src) {
+      id
+    }
   }
 }
     `;
 export const TestDocument = gql`
-    query Test($src: FS!) {
+    query Test($src: FSID!) {
   todoapp {
-    test(src: $src)
+    test(src: $src) {
+      id
+    }
+  }
+}
+    `;
+export const DeployDocument = gql`
+    query Deploy($src: FSID!, $token: SecretID!) {
+  todoapp {
+    deploy(src: $src, token: $token) {
+      url
+      deployUrl
+    }
   }
 }
     `;
@@ -95,6 +219,9 @@ export function getSdk(client: GraphQLClient, withWrapper: SdkFunctionWrapper = 
     },
     Test(variables: TestQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<TestQuery> {
       return withWrapper((wrappedRequestHeaders) => client.request<TestQuery>(TestDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Test', 'query');
+    },
+    Deploy(variables: DeployQueryVariables, requestHeaders?: Dom.RequestInit["headers"]): Promise<DeployQuery> {
+      return withWrapper((wrappedRequestHeaders) => client.request<DeployQuery>(DeployDocument, variables, {...requestHeaders, ...wrappedRequestHeaders}), 'Deploy', 'query');
     }
   };
 }

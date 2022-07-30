@@ -1,29 +1,47 @@
-
 query Image($ref: String!) {
   core {
     image(ref: $ref) {
-      fs
+      id
     }
   }
 }
 
-query Exec($input: CoreExecInput!) {
+query Exec($fsid: FSID!, $input: ExecInput!) {
   core {
-    exec(input: $input) {
-      root
+    filesystem(id: $fsid) {
+      exec(input: $input) {
+        fs {
+          id
+        }
+      }
     }
   }
 }
 
-query Dockerfile($context: FS!, $dockerfileName: String!) {
+query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
   core {
-    dockerfile(context: $context, dockerfileName: $dockerfileName)
+    filesystem(id: $fsid) {
+      exec(input: $input) {
+        mount(path: $getPath) {
+          id
+        }
+      }
+    }
   }
 }
 
-mutation Import($name: String!, $fs: FS!) {
-  import(name: $name, fs: $fs) {
-    name
-    fs
+query Dockerfile($context: FSID!, $dockerfileName: String!) {
+  core {
+    filesystem(id: $context) {
+      dockerbuild(dockerfile: $dockerfileName) {
+        id
+      }
+    }
+  }
+}
+
+query Secret($id: SecretID!) {
+  core {
+    secret(id: $id)
   }
 }

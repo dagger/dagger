@@ -5,61 +5,67 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/99designs/gqlgen/graphql/executor"
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"strings"
 )
 
-func Serve(ctx context.Context, schema graphql.ExecutableSchema) {
-	ctx = WithUnixSocketAPIClient(ctx, "/dagger.sock")
-	ctx = graphql.StartOperationTrace(ctx)
-
-	input, err := os.Open("/inputs/dagger.json")
-	if err != nil {
-		writeErrorf("unable to open request file: %v", err)
-	}
-
-	var params *graphql.RawParams
-	dec := json.NewDecoder(input)
-	dec.UseNumber()
-	start := graphql.Now()
-	if err := dec.Decode(&params); err != nil {
-		writeErrorf("json body could not be decoded: %v", err)
-		return
-	}
-	params.ReadTime = graphql.TraceTiming{
-		Start: start,
-		End:   graphql.Now(),
-	}
-
-	exec := executor.New(schema)
-	rc, ocErr := exec.CreateOperationContext(ctx, params)
-	if err != nil {
-		resp := exec.DispatchError(graphql.WithOperationContext(ctx, rc), ocErr)
-		writeResponse(resp)
-		return
-	}
-	responses, ctx := exec.DispatchOperation(ctx, rc)
-	writeResponse(responses(ctx))
+// TODO: this just makes it easier to align with the default gql codgen code,
+// in longer term we will rely less on that and don't have to be tied to this structure
+type ArgsInput struct {
+	Args         map[string]interface{}
+	ParentResult interface{}
 }
 
-func writeResponse(response *graphql.Response) {
-	if response.Errors != nil {
-		fmt.Printf("%v\n", response.Errors)
-		os.Exit(1)
+func Serve(ctx context.Context, resolvers map[string]func(context.Context, ArgsInput) (interface{}, error)) {
+	ctx = WithUnixSocketAPIClient(ctx, "/dagger.sock")
+
+	inputBytes, err := os.ReadFile("/inputs/dagger.json")
+	if err != nil {
+		writeErrorf(fmt.Errorf("unable to open request file: %w", err))
+	}
+	input := make(map[string]interface{}) // TODO: actual type
+	if err := json.Unmarshal(inputBytes, &input); err != nil {
+		writeErrorf(fmt.Errorf("unable to parse request file: %w", err))
 	}
 
-	output, err := json.Marshal(response)
+	object, ok := input["object"].(string)
+	if !ok {
+		writeErrorf(fmt.Errorf("unexpected object: %T %v", input["object"], input["object"]))
+	}
+	// capitalize first letter
+	object = strings.ToUpper(string([]rune(object)[0])) + string([]rune(object)[1:])
+
+	resolver, ok := resolvers[object]
+	if !ok {
+		writeErrorf(fmt.Errorf("missing result for: %s", object))
+	}
+
+	args, ok := input["args"].(map[string]interface{})
+	if !ok {
+		writeErrorf(fmt.Errorf("unexpected args: %T %v", input["args"], input["args"]))
+	}
+
+	result, err := resolver(ctx, ArgsInput{Args: args})
 	if err != nil {
-		panic(err)
+		writeErrorf(fmt.Errorf("unexpected error: %w", err))
+	}
+	if err := writeResult(result); err != nil {
+		writeErrorf(fmt.Errorf("unable to write result: %w", err))
+	}
+}
+
+func writeResult(result interface{}) error {
+	output, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("unable to marshal response: %v", err)
 	}
 
 	if err := os.WriteFile("/outputs/dagger.json", output, 0644); err != nil {
-		panic(err)
+		return fmt.Errorf("unable to write response file: %v", err)
 	}
+	return nil
 }
 
-func writeErrorf(format string, args ...interface{}) {
-	writeResponse(&graphql.Response{Errors: gqlerror.List{{Message: fmt.Sprintf(format, args...)}}})
+func writeErrorf(err error) {
+	fmt.Println(err.Error())
+	os.Exit(1)
 }

@@ -1,8 +1,8 @@
 query Deploy(
-  $contents: FS!
+  $contents: FSID!
   $subdir: String
   $siteName: String
-  $token: Secret!
+  $token: SecretID!
 ) {
   netlify {
     deploy(

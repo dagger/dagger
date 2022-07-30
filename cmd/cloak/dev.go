@@ -29,11 +29,11 @@ func Dev(cmd *cobra.Command, args []string) {
 		DevServer: devServerPort,
 	}
 
-	err = engine.Start(context.Background(), startOpts, func(ctx context.Context, localDirs map[string]dagger.FS, secrets map[string]string) (*dagger.FS, error) {
+	err = engine.Start(context.Background(), startOpts, func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error) {
 		if err := cfg.Import(ctx, localDirs); err != nil {
-			return nil, err
+			return "", err
 		}
-		return nil, nil
+		return "", nil
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

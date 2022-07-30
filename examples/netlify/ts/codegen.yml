@@ -9,8 +9,8 @@ generates:
       - typescript-operations
       - typescript-graphql-request
       - add:
-          content: "import { FS, Secret } from '@dagger.io/dagger'"
+          content: "import { FSID, SecretID } from '@dagger.io/dagger'"
     config:
       scalars:
-        FS: FS
-        Secret: Secret
+        FSID: FSID
+        SecretID: SecretID
