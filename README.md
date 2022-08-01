@@ -3,6 +3,8 @@
 ## Dagger Quickstart Templates
 Use/modify these examples to get going quickly!
 
+If you'd like to see a new template, make a PR or add your vote to this discussion. Thank you!
+https://github.com/dagger/dagger/discussions/2874
 
 - docker
   - alpine
