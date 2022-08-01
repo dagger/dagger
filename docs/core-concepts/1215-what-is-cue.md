@@ -269,3 +269,67 @@ Packages in CUE allow us to write _modular_, _reusable_, and _composable_ code. 
 CUE has a number of [builtin packages](https://pkg.go.dev/cuelang.org/go/pkg) such as `strings`, `regexp`, `math`, and many more. These builtin packages are already available to CUE without the need to download or install anything else. Third-party packages are those that are placed within the `cue.mod/pkg/` folder and start with a fully qualified domain such as `universe.dagger.io`.
 
 In the last few examples we&rsquo;ve included an `import` statement to load the builtin `strings` package. In the tutorials and other examples you will notice that other packages from `universe.dagger.io` will be imported and used.
+
+## Cue Patterns
+
+Below are the most common Cue patterns being used in Dagger. You can play with them in the [playground](https://cuelang.org/play/?id=mfAIAXR-uEs#cue@export@cue)
+
+### Template syntax
+
+```cue
+flags: [string]: string | bool
+```
+
+In above example, `flags` is a template whose key is a string (`[string]`), and whose value is either a string or a bool (`string | bool`).
+
+A valid use of that template would be:
+
+```cue
+flags: {
+    "--foo": "bar:
+    "baz": true
+}
+```
+
+### List syntax
+
+```cue
+args: [...string]
+```
+
+In above example, `args` is an open ended list of strings (`[...string]`). The list doesn't have a static size (`...`), and the `string]` creates a type assertion: only strings are accepted in this list.
+
+A valid declaration of that list would be:
+
+```cue
+args: ["foo", "bar", "baz"]
+```
+
+Lists can be queried by their indexes. `myarg: args[1]` would compute, at runtime, to `myarg: "bar"`.
+
+### String interpolation
+
+String interpolation helps to add the value of a key into a string, while trying to cast it to a `string` type:
+
+```cue
+hello: "Hello \(myarg)" // even if `myarg` is not a string
+```
+
+The string interpolation done via the `\(myarg)` key, and would compute to `hello: "Hello bar"`.
+
+As shown in [avoid string interpolation](https://docs.dagger.io/1226/coding-style#avoid-interpolation), you should avoid using them as much as possible, as the cue evaluator sometimes gets lost with the cast.
+
+### Non-interpolated string
+
+A non interpolated string is safer to use, regarding the cue evaluator:
+
+```cue
+hello2: "Hello " + (myarg)
+```
+
+The non interpolated string is computed via the `(myarg)` part, and would compute to `hello2: "Hello bar"`.
+
+The difference between the two is the order of events in the evaluation, and the non-cast:
+
+1. `(myarg)` is equivalent to: get the value of the `myarg` key, as well as the type of the `myarg` key. Do not try to do any cast.
+2. Append `1` to `"Hello"`, if this is a string. Otherwise, fail.
