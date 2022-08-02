@@ -157,11 +157,16 @@ more](https://docusaurus.io/docs/markdown-features/links).
 
 ## FAQ
 
-To run all linters, from the repository root, run:
 ### How to run linters locally?
 
 ```shell
+# From the repository root, run all linters:
 dagger do lint
+
+# Only run a specific linter:
+dagger do lint markdown
+
+# Look inside the ci.cue file to see all available linters
 ```
 
 ### How to re-run all GitHub Actions jobs?
