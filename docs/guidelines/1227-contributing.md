@@ -140,21 +140,25 @@ Guidelines:
 
 ## Docs
 
-### Use relative links to markdown files
+### Use relative file paths for links
 
-Link to markdown files (`[link](../foo.md)`) instead of relative URLs
-(`[link](/foo)`).
+Instead of using URLs to link to a doc page, use relative file paths instead:
 
-The docs compiler will replace file links with relative URLs automatically.
+```markdown
+❌ This is [a problematic link](/doc-url).
 
-This is to avoid broken links. If a file gets renamed, the compiler will
-catch broken links and throw an error. Relative URLs get broken unnoticed.
+✅ This is [a good link](../relative-doc-file-path.md).
+```
+
+The docs compiler will replace file links with URLs automatically. This helps
+prevent broken internal links. If a file gets renamed, the compiler will catch
+broken links and throw an error. [Learn
+more](https://docusaurus.io/docs/markdown-features/links).
 
 ## FAQ
 
-### How to run the linter locally
-
 To run all linters, from the repository root, run:
+### How to run linters locally?
 
 ```shell
 dagger do lint
