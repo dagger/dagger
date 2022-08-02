@@ -259,6 +259,30 @@ run: python.#Run & {
 }
 ```
 
+However, they are required when doing shell style line continuation. This is mostly encountered in Dockerfiles and in shell scripts.
+
+```cue
+//bad
+phpBuild: docker.#Dockerfile & {
+    dockerfile: contents: """
+        FROM ubuntu:18.04 as PHP
+        ENV DEBIAN_FRONTEND noninteractive
+        RUN apt-get update && apt-get install -y \
+        nano \
+        """
+}
+
+//good
+phpBuild: docker.#Dockerfile & {
+    dockerfile: contents: #"""
+        FROM ubuntu:18.04 as PHP
+        ENV DEBIAN_FRONTEND noninteractive
+        RUN apt-get update && apt-get install -y \
+        nano \
+        """#
+}
+```
+
 ## Favor disjunctions over _if_ conditions
 
 ```cue
