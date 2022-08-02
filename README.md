@@ -3,7 +3,7 @@
 Welcome to Project Cloak, an experimental project by the Dagger team, currently in early access for a small group of testers. As part of Project Cloak, you will get access to the following: 
 
 - Early access to the [Project Cloak repository](https://github.com/dagger/cloak)
-- Early access to the Project Cloak community channel on Discord: #cloak-early-access
+- Early access to the Project Cloak community channel on Discord: #project-cloak
 - Our eternal gratitude for trying unfinished software and contributing precious feedback. 
 - Dagger swag :) (Miranda will reach out directly when the ordering site is ready)
 
@@ -19,7 +19,7 @@ We appreciate any participation in the project, including:
 - Sharing feedback of any kind
 - Going through documentation and tutorials, and telling us how it went
 - Opening github issues to report bugs and request features
-- Contributing code and documentation (FIXME: license and possible contributor agreement)
+- Contributing code and documentation 
 - Suggesting people to invite to the Project Cloak Early Access program
 
 # Let's Get Started!
