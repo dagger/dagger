@@ -173,7 +173,7 @@ dagger do lint markdown
 
 There isn't a button that Dagger contributors can click in their fork that will
 re-run all GitHub Actions jobs. See issue
-[#1669](https://github.com/dagger/dagger/issues/1169) for more context.
+[#1169](https://github.com/dagger/dagger/issues/1169) for more context.
 
 The current workaround is to re-create the last commit:
 
