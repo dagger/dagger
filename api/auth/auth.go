@@ -31,8 +31,9 @@ var authConfig = &oauth2.Config{
 	RedirectURL: fmt.Sprintf("http://localhost:%d/callback", callbackPort),
 	Scopes:      []string{"openid", "offline_access"},
 	Endpoint: oauth2.Endpoint{
-		AuthURL:  "https://" + authDomain + "/authorize",
-		TokenURL: "https://" + authDomain + "/oauth/token",
+		AuthURL:       "https://" + authDomain + "/authorize",
+		TokenURL:      "https://" + authDomain + "/oauth/token",
+		DeviceAuthURL: "https://" + authDomain + "/oauth/device/code",
 	},
 }
 
@@ -86,33 +87,50 @@ func Login(ctx context.Context) error {
 		}
 	}()
 
+	var token *oauth2.Token
+
 	// Generate random state
 	b := make([]byte, 32)
 	rand.Read(b)
 	state := hex.EncodeToString(b)
 
 	tokenURL := authConfig.AuthCodeURL(state)
-	lg.Info().Msgf("opening %s", tokenURL)
+	lg.Info().Msgf("attempting to open %s", tokenURL)
 	if err := browser.OpenURL(tokenURL); err != nil {
-		return err
-	}
+		lg.Error().Msg("could not open browser, attempting device auth flow")
+		da, err := authConfig.AuthDevice(ctx)
+		if err != nil {
+			return err
+		}
 
-	r := <-requestCh
-	srv.Shutdown(ctx)
+		// setting interval to 1s since Auth0 doesn't honor the default one
+		da.Interval = 1
+		lg.Info().Msgf("visit the following link to authorize this CLI instance: %s", da.VerificationURIComplete)
 
-	responseState := r.URL.Query().Get("state")
-	if state != responseState {
-		return fmt.Errorf("corrupted login challenge (%q != %q)", state, responseState)
-	}
+		// use a moderate interval, the `Poll` method below will do a backoff
+		// in case the server returns an error to slow down.
+		token, err = authConfig.Poll(ctx, da)
+		if err != nil {
+			return err
+		}
+	} else {
+		r := <-requestCh
+		srv.Shutdown(ctx)
 
-	if oauthError := r.URL.Query().Get("error"); oauthError != "" {
-		description := r.URL.Query().Get("error_description")
-		return fmt.Errorf("authentication error: %s (%s)", oauthError, description)
-	}
+		responseState := r.URL.Query().Get("state")
+		if state != responseState {
+			return fmt.Errorf("corrupted login challenge (%q != %q)", state, responseState)
+		}
 
-	token, err := authConfig.Exchange(ctx, r.URL.Query().Get("code"))
-	if err != nil {
-		return err
+		if oauthError := r.URL.Query().Get("error"); oauthError != "" {
+			description := r.URL.Query().Get("error_description")
+			return fmt.Errorf("authentication error: %s (%s)", oauthError, description)
+		}
+
+		token, err = authConfig.Exchange(ctx, r.URL.Query().Get("code"))
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := saveCredentials(token); err != nil {
