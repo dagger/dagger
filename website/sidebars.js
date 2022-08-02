@@ -31,6 +31,7 @@ module.exports = {
         "core-concepts/secrets",
         "core-concepts/what-is-cue",
         "core-concepts/dagger-fs",
+        "core-concepts/docker",
       ],
     },
     {

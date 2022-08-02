@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # The docker package
 
-The `universe.dagger.io` module is meant to provide higher level abstractions on top of [core actions](../../references/1222-core-actions-reference.md). Of these, the `universe.dagger.io/docker` package provides a general base for building and running docker images.
+The `universe.dagger.io` module is meant to provide higher level abstractions on top of [core actions](../references/1222-core-actions-reference.md). Of these, the `universe.dagger.io/docker` package provides a general base for building and running docker images.
 
 Let's explore what you can do with this package.
 
@@ -17,7 +17,7 @@ There's multiple packages that use this general `docker` package, and build on t
 
 ## `docker.#Image`
 
-While [core actions](../../references/1222-core-actions-reference.md) handle the file system tree and metadata separately, at the center of the `docker` package is the `#Image` structure which packs both in the same field:
+While [core actions](../references/1222-core-actions-reference.md) handle the file system tree and metadata separately, at the center of the `docker` package is the `#Image` structure which packs both in the same field:
 
 ```cue
 // A container image
@@ -42,7 +42,7 @@ If you need an empty image (no files, empty metadata), you can use `docker.#Scra
 
 Let's go through the common example of building an image just so we cover every action. More detailed explanations will follow, just refer back to the example for context.
 
-```cue file=../../tests/guides/docker/base.cue
+```cue file=../tests/guides/docker/base.cue
 ```
 
 :::tip
@@ -57,7 +57,7 @@ For this example, ensure you have a registry on `localhost` listening on port `5
 
 :::tip
 
-You can see more examples in the [Building container images](./1205-container-images.md) guide.
+You can see more examples in the [Building container images](../guides/concepts/1205-container-images.md) guide.
 
 :::
 
@@ -65,7 +65,7 @@ You can see more examples in the [Building container images](./1205-container-im
 
 In most cases, you'll need to pull a docker image from a docker registry in order to work on top of it with dagger. Authentication is supported via a simple `username` and `secret` combination, although these credentials can be fetched through more complex means (see the [AWS package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/aws) for an example).
 
-```cue file=../../tests/guides/docker/pull.cue
+```cue file=../tests/guides/docker/pull.cue
 ```
 
 When pulling images from the official Docker Hub registry (`docker.io`), you can set the `DOCKERHUB_AUTH_USER` and `DOCKERHUB_AUTH_SECRET` environment variables to authenticate. This will help fix docker hub rate limit issues when pulling images unauthenticated.
@@ -107,7 +107,7 @@ docker.#Set & {
 
 ### `docker.#Copy`
 
-This action copies a file system tree ([`dagger.#FS`](../../references/1234-dagger-types-reference.md)) into an image. You can select source and destination paths and include/exclude patterns.
+This action copies a file system tree ([`dagger.#FS`](../references/1234-dagger-types-reference.md)) into an image. You can select source and destination paths and include/exclude patterns.
 
 By default, the destination path is relative to the working directory if defined in the image metadata. If not, the default is root (i.e., `/`). The source path always defaults to the root of the file system tree to copy (from `contents`).
 
@@ -197,23 +197,23 @@ cmd: ["bash", "--norc", "-e", "-u", "-o", "pipefail", "/run.sh", "-l", "debug"]
 
 Unlike the image metadata, `docker.#Run` environment variables support `dagger.#Secret` values as well as strings. It's a very simple way to access a secret from a command.
 
-You can read more on this in [Using secrets in a `docker.#Run`](../../core-concepts/1204-secrets.md#in-a-dockerrun).
+You can read more on this in [Using secrets in a `docker.#Run`](./1204-secrets.md#in-a-dockerrun).
 
 #### Mounts
 
 The following mount types are available:
 
-- Secret ([example](../../core-concepts/1204-secrets.md#in-a-dockerrun))
+- Secret ([example](./1204-secrets.md#in-a-dockerrun))
 - cache
 - temporary directory
 - directory
-- network socket ([example](../../core-concepts/1203-client.md#using-a-local-socket))
+- network socket ([example](./1203-client.md#using-a-local-socket))
 
 Always specify `contents` and `dest` fields.
 
 The type of the mount is inferred from the value of the `contents` field:
 
-```cue file=../../tests/guides/docker/mounts.cue
+```cue file=../tests/guides/docker/mounts.cue
 ```
 
 <!--FIXME: create separate guide on using mounts and link here-->
@@ -243,7 +243,7 @@ dist:   _run.export.directories."/app/dist" // dagger.#FS
 
 :::tip
 
-Notice how we set every export as `_` in the previous example. As in [Use *top* to match anything](../../guidelines/1226-coding-style.md#use-top-to-match-anything), the *export* fields `files`, `secrets` and `directories` are already sufficient to declare the type, so we use *top* (`_`) as a simpler alternative to this:
+Notice how we set every export as `_` in the previous example. As in [Use *top* to match anything](../guidelines/1226-coding-style.md#use-top-to-match-anything), the *export* fields `files`, `secrets` and `directories` are already sufficient to declare the type, so we use *top* (`_`) as a simpler alternative to this:
 
 ```cue
     export: {
@@ -266,7 +266,7 @@ You **can't export from mounts** because the underlying export actions (`core.#R
 
 If you need to skip the cache for a `docker.#Run`, set `always: true` (as in "always run").
 
-See [How to always execute an action?](../actions/1231-always-execute.md) for more information.
+See [How to always execute an action?](../guides/actions/1231-always-execute.md) for more information.
 
 ### `docker.#Push`
 
@@ -290,7 +290,7 @@ Another useful pattern is to save it in a `json` file in order to be consumed by
 
 :::tip
 
-If you're interested in knowing more about controling the output, check out the [Handling action outputs](../actions/1228-handling-outputs.md#controlling-the-output) guide.
+If you're interested in knowing more about controling the output, check out the [Handling action outputs](../guides/actions/1228-handling-outputs.md#controlling-the-output) guide.
 
 :::
 
@@ -304,14 +304,14 @@ The `docker.#Build` action is a convenience for building a docker image, so you'
 
 It takes care of hooking the outputs to the inputs, and to make up names for their fields. See the difference from the previous section's example on the `#PythonBuild` action:
 
-```cue file=../../tests/guides/docker/build.cue
+```cue file=../tests/guides/docker/build.cue
 ```
 
 Notice the difference of using a [list](https://cuelang.org/docs/tutorials/tour/types/lists/) here instead of a [struct](https://cuelang.org/docs/tutorials/tour/types/optional/), so don't forget your commas.
 
 :::tip
 
-There's a guide specifically for [Building container images](../concepts/1205-container-images.md), with more examples.
+There's a guide specifically for [Building container images](../guides/concepts/1205-container-images.md), with more examples.
 
 :::
 
@@ -412,7 +412,7 @@ You're encouraged to build your images using CUE, but sometimes you need compati
 
 In this example, let's assume you have a `Dockerfile` in your current directory:
 
-```cue file=../../tests/guides/docker/dockerfile.cue
+```cue file=../tests/guides/docker/dockerfile.cue
 ```
 
 If it has a different name, it can be specified as well:
@@ -438,7 +438,7 @@ build: docker.#Dockerfile & {
 
 :::tip
 
-Check the [Building container images](../concepts/1205-container-images.md#executing-a-dockerfile) guide for more on how to embed `Dockerfile` instructions directly in CUE.
+Check the [Building container images](../guides/concepts/1205-container-images.md#executing-a-dockerfile) guide for more on how to embed `Dockerfile` instructions directly in CUE.
 
 :::
 
@@ -446,17 +446,17 @@ Check the [Building container images](../concepts/1205-container-images.md#execu
 
 Like `docker.#Pull` and `docker.#Push` there's also support for authentication, but unlike those, multiple registries can be defined because a `Dockerfile` can use images from multiple places (e.g., `FROM`, `COPY --from`).
 
-```cue file=../../tests/guides/docker/dockerfile_auth.cue
+```cue file=../tests/guides/docker/dockerfile_auth.cue
 ```
 
 ### Target
 
 You can build a single named build stage in a multi-stage build. This is useful to have a single `Dockerfile` declare multiple base images to publish, like *build* and *run* images.
 
-```Dockerfile title="Dockerfile" file=../../tests/guides/docker/Dockerfile
+```Dockerfile title="Dockerfile" file=../tests/guides/docker/Dockerfile
 ```
 
-```cue title="dagger.cue" file=../../tests/guides/docker/dockerfile_target.cue
+```cue title="dagger.cue" file=../tests/guides/docker/dockerfile_target.cue
 ```
 
 You can use these base images later in your app's own multi-stage build.
@@ -483,5 +483,5 @@ There's a `universe.dagger.io/docker/cli` sub-package to interact directly with 
 
 Refer to these actions' specific guides for more information:
 
-- `cli.#Load` - [Loading an image into a docker engine](../docker/1216-docker-cli-load.md)
-- `cli.#Run` - [Running commands with the docker binary](../docker/1217-docker-cli-run.md)
+- `cli.#Load` - [Loading an image into a docker engine](../guides/docker/1216-docker-cli-load.md)
+- `cli.#Run` - [Running commands with the docker binary](../guides/docker/1217-docker-cli-run.md)

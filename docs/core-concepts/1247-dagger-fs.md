@@ -91,7 +91,7 @@ Sometimes you need an empty filesystem. For example, to start a minimal image bu
 
 :::
 
-[Learn more about the docker package](../guides/concepts/1244-docker.md)
+[Learn more about the docker package](./1244-docker.md)
 
 ## Moving filesystems between actions
 
