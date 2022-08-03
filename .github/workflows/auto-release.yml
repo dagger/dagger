@@ -106,11 +106,14 @@ jobs:
         # https://github.com/mislav/bump-homebrew-formula-action
         uses: mislav/bump-homebrew-formula-action@v2
         with:
+          download-url: https://github.com/dagger/dagger.git
           formula-name: dagger
           tag-name: ${{ steps.next_release_version.outputs.value }}
           commit-message: |
             {{formulaName}} {{version}}
 
-            Created by ${{ github.server_url }}/${{ github.repository }}/runs/${{ github.run_id }}
+            Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            If there is problem with this PR, [open an issue](https://github.com/dagger/dagger/issues/new). The right people will be automatically notified.
         env:
           COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
