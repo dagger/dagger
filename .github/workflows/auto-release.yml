@@ -92,3 +92,19 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
+
+      # Open a https://github.com/Homebrew/homebrew-core PR to update the bottled formula after we release.
+      # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
+      # - https://github.com/Homebrew/homebrew-core/pull/105746#issuecomment-1190522063
+      # - https://github.com/dagger/dagger/issues/2823#issuecomment-1190792261
+      - name: "Update homebrew-core formula"
+        # https://github.com/mislav/bump-homebrew-formula-action
+        uses: mislav/bump-homebrew-formula-action@v2
+        with:
+          formula-name: dagger
+          commit-message: |
+            {{formulaName}} {{version}}
+
+            Created by ${{ github.server_url }}/${{ github.repository }}/runs/${{ github.run_id }}
+        env:
+          COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
