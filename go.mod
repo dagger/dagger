@@ -61,7 +61,7 @@ require (
 require github.com/google/go-cmp v0.5.8
 
 require (
-	github.com/dagger/cuelsp v0.3.3
+	github.com/dagger/cuelsp v0.3.4
 	github.com/tliron/kutil v0.1.61
 )
 
