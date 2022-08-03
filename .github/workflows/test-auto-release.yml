@@ -39,5 +39,7 @@ jobs:
             {{formulaName}} {{version}}
 
             Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            If there is problem with this PR, [open an issue](https://github.com/dagger/dagger/issues/new). The right people will be automatically notified.
         env:
           COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
