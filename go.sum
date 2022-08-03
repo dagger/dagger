@@ -501,8 +501,8 @@ github.com/d2g/dhcp4server v0.0.0-20181031114812-7d4a0a7f59a5/go.mod h1:Eo87+Kg/
 github.com/d2g/hardwareaddr v0.0.0-20190221164911-e7d9fbe030e4/go.mod h1:bMl4RjIciD2oAxI7DmWRx6gbeqrkoLqv3MV0vzNad+I=
 github.com/dagger/cue v0.4.1-rc.1.0.20220121023213-66df011a52c2 h1:L2vtsG/SF/VOcVGcjS1hoZl8SpgX97TBVuezKc0eUqA=
 github.com/dagger/cue v0.4.1-rc.1.0.20220121023213-66df011a52c2/go.mod h1:P09/R4UfAEzLkV9DXxwlxQnIZbkaT4uIhiEgs6Vsz2Q=
-github.com/dagger/cuelsp v0.3.3 h1:gwfPdKUXpywGDYYka5p4Av5Z19GfwK93iRctMq7Iu50=
-github.com/dagger/cuelsp v0.3.3/go.mod h1:wd3dc66JuSwRM4kMY9iIO+r93nf4FfxTsSoPU/LzjRI=
+github.com/dagger/cuelsp v0.3.4 h1:bAdB2w5KLsDsQR5OO0t/xAK11lAKg3UP4cbYMUZWM48=
+github.com/dagger/cuelsp v0.3.4/go.mod h1:wd3dc66JuSwRM4kMY9iIO+r93nf4FfxTsSoPU/LzjRI=
 github.com/dagger/oauth2 v0.0.0-20220802193326-c4e3911df5f5 h1:+6T7CKaEBGSlsOCaXvXP2eUbTRRLFZ6GGyx3Bp3+gXc=
 github.com/dagger/oauth2 v0.0.0-20220802193326-c4e3911df5f5/go.mod h1:h4gKUeWbJ4rQPri7E0u6Gs4e9Ri2zaLxzw5DI5XGrYg=
 github.com/daixiang0/gci v0.2.9/go.mod h1:+4dZ7TISfSmqfAGv59ePaHfNzgGtIkHAhhdKggP1JAc=
