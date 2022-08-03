@@ -31,7 +31,7 @@
     "react-dom": "^17.0.1",
     "react-social-login-buttons": "^3.6.1",
     "remark-code-import": "^0.4.0",
-    "sass": "^1.54.0",
+    "sass": "^1.54.1",
     "url-loader": "^4.1.1"
   },
   "browserslist": {
