@@ -112,6 +112,6 @@ jobs:
           commit-message: |
             {{formulaName}} {{version}}
 
-            Created by ${{ github.server_url }}/${{ github.repository }}/runs/${{ github.run_id }}
+            Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         env:
           COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
