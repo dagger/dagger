@@ -106,6 +106,7 @@ jobs:
         # https://github.com/mislav/bump-homebrew-formula-action
         uses: mislav/bump-homebrew-formula-action@v2
         with:
+          download-url: https://github.com/dagger/dagger.git
           formula-name: dagger
           tag-name: ${{ steps.next_release_version.outputs.value }}
           commit-message: |
