@@ -14,6 +14,9 @@ _destination: "/var/task"
 	source: "index.docker.io/amazon/aws-sam-cli-build-image-provided@sha256:56ba3e64d305d11379dc1bc0196d9b9b411c0b7dacb3f5dd6ecdffc55b6f2958"
 }
 
+// DEPRECATED: Use sam.#Image instead
+#DefaultImage: #Image
+
 // Executes the sam command
 #Sam: {
 	// Default AWS Sam Docker image
