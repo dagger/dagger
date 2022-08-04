@@ -23,7 +23,7 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "./dagger.yaml", "config file")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "./cloak.yaml", "config file")
 	rootCmd.AddCommand(
 		queryCmd,
 		generateCmd,

@@ -9,7 +9,7 @@ This is a demo meant for external users. They are assumed to have general knowle
    - `go build ./cmd/cloak`
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`
 3. Ensure that packages are already cached so that you don't have to wait a long time at the first command for various yarn packages to download
-   - TODO: add a command for doing this (`cloak import -c dagger.yaml`?)
+   - TODO: add a command for doing this (`cloak import -c cloak.yaml`?)
 4. Export `NETLIFY_AUTH_TOKEN` env
 
 ## 1. Background
@@ -30,7 +30,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 Run:
 
 ```console
-cloak query -c examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+cloak query -c examples/todoapp/go/cloak.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp.
@@ -72,7 +72,7 @@ cloak query -c examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examp
 1. Run same command as before:
 
 ```console
-cloak query -c examples/todoapp/go/dagger.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+cloak query -c examples/todoapp/go/cloak.yaml --op Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 1. Click on the output URL, show the TODOApp at the new URL.
@@ -86,7 +86,7 @@ Dream goal is something like:
 
 1. User starts with empty directory. Creates `schema.graphql` either from scratch or from a template.
 1. User fills out actions they'd like to implement in `schema.graphql` in addition to declaring which other actions they want to use in their implementation (aka their dependencies)
-   - (This assumes we have migrated `dagger.yaml` to be directives in `schema.graphql`)
+   - (This assumes we have migrated `cloak.yaml` to be directives in `schema.graphql`)
    - Declaring dependencies could be optional too, can have whole universe imported by default if not declared or similar DX sugar.
 1. User runs a command that reads `schema.graphql` and outputs to a local directory all dependency schemas, client stubs for calling the dependencies and implementation stubs that the user can fill out to implement their action.
 1. User fills in implementations.
