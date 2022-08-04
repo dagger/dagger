@@ -37,8 +37,7 @@ values={[
 
 <TabItem value="travisci">
 
-```yaml
----
+```yaml title=".travis.yml"
 os: linux
 arch: amd64
 dist: bionic
@@ -46,7 +45,7 @@ language: minimal
 
 env:
   global:
-    - DAGGER_VERSION: 0.2.19
+    - DAGGER_VERSION: 0.2.25
     - DAGGER_LOG_FORMAT: plain
     - DAGGER_CACHE_PATH: .dagger-cache
 
@@ -79,13 +78,39 @@ jobs:
 
 <TabItem value="circleci">
 
-If you would like us to document CircleCI next, vote for it here: [dagger#1677](https://github.com/dagger/dagger/discussions/1677)
+```yaml title=".circleci/config.yml"
+version: 2.1
+
+jobs:
+  install-and-run-dagger:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: "20.10.14"
+      - run:
+          name: "Install Dagger"
+          command: |
+            cd /usr/local
+            wget -O - https://dl.dagger.io/dagger/install.sh | sudo sh
+            cd -
+      - run:
+          name: "Run Dagger"
+          command: |
+            dagger do build --log-format plain
+
+workflows:
+  dagger-workflow:
+    jobs:
+      - install-and-run-dagger
+```
 
 </TabItem>
 
 <TabItem value="gitlab">
 
-```yaml
+```yaml title=".gitlab-ci.yml"
 .docker:
   image: docker:${DOCKER_VERSION}-git
   services:
@@ -106,7 +131,7 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
 .dagger:
   extends: [.docker]
   variables:
-    DAGGER_VERSION: 0.2.19
+    DAGGER_VERSION: 0.2.25
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
@@ -116,11 +141,10 @@ If you would like us to document CircleCI next, vote for it here: [dagger#1677](
     paths:
       - ${DAGGER_CACHE_PATH}
   before_script:
-    - apk add --no-cache curl
     - |
       # install dagger
       cd /usr/local
-      curl -L https://dl.dagger.io/dagger/install.sh | sh
+      wget -O - https://dl.dagger.io/dagger/install.sh | sh
       cd -
 
       dagger version
@@ -182,7 +206,7 @@ dagger.#Plan & {
 
 With `docker` client and `dagger` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`:
 
-```groovy
+```groovy title="Jenkinsfile"
 pipeline {
   agent { label 'dagger' }
   
@@ -213,7 +237,7 @@ pipeline {
 
 <TabItem value="tekton">
 
-```yaml
+```yaml title="tekton/tasks/todo-app.yaml"
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:

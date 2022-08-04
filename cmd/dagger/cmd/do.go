@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/format"
+	"github.com/containerd/console"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -56,14 +59,12 @@ var doCmd = &cobra.Command{
 		}
 
 		var (
-			tm  = telemetry.New()
-			lg  = logger.NewWithCloud(tm)
-			ctx = lg.WithContext(cmd.Context())
-			tty *logger.TTYOutput
+			tm   = telemetry.New()
+			lg   = logger.NewWithCloud(tm)
+			ctx  = lg.WithContext(cmd.Context())
+			tty  *logger.TTYOutput
+			tty2 *logger.TTYOutputV2
 		)
-
-		defer tm.Flush()
-		ctx = tm.WithContext(ctx)
 
 		if !viper.GetBool("experimental") {
 			for _, f := range experimentalFlags {
@@ -108,7 +109,13 @@ var doCmd = &cobra.Command{
 			rid := tm.RunID()
 			tm = telemetry.New()
 			tm.SetRunID(rid)
+			ctx = tm.WithContext(ctx)
+			if viper.GetBool("telemetry-log") {
+				tm.EnableLogToFile()
+			}
 		}
+
+		defer tm.Flush()
 
 		if err != nil {
 			lg.Error().Err(err).Msgf("failed to load plan")
@@ -117,27 +124,8 @@ var doCmd = &cobra.Command{
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(0)
 			} else {
-				var instanceErr *compiler.ErrorInstance
-				rce := event.RunCompleted{
-					State: event.RunCompletedStateFailed,
-					Err:   &event.RunError{Message: err.Error()},
-					Error: err.Error(),
-				}
-
-				if errors.As(err, &instanceErr) {
-					planFiles := map[string]string{}
-					for _, f := range instanceErr.Instance.Files {
-						bfile, _ := format.Node(f)
-						planFiles[filepath.Base(f.Filename)] = string(bfile)
-					}
-					rce.Err.PlanFiles = planFiles
-				}
-				tm.Push(ctx, rce)
+				captureRunCompletedFailed(ctx, tm, err)
 			}
-
-			// manually flush events since otherwise they could be skipped as
-			// the program is exiting.
-			tm.Flush()
 
 			doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 			os.Exit(1)
@@ -153,6 +141,8 @@ var doCmd = &cobra.Command{
 			targetStr := strings.Join(selectorStrs, " ")
 
 			err = fmt.Errorf("action not found: %s", targetStr)
+
+			captureRunCompletedFailed(ctx, tm, err)
 			// Find closest action
 			action = daggerPlan.Action().FindClosest(targetPath)
 			if action == nil {
@@ -160,6 +150,7 @@ var doCmd = &cobra.Command{
 				doHelpCmd(cmd, nil, nil, nil, targetPath, []string{err.Error()})
 				os.Exit(1)
 			}
+
 			targetPath = action.Path
 			doHelpCmd(cmd, daggerPlan, action, nil, action.Path, []string{err.Error()})
 			os.Exit(1)
@@ -179,6 +170,7 @@ var doCmd = &cobra.Command{
 		err = cmd.Flags().Parse(args)
 
 		if err != nil {
+			captureRunCompletedFailed(ctx, tm, err)
 			doHelpCmd(cmd, daggerPlan, action, actionFlags, targetPath, []string{err.Error()})
 			os.Exit(1)
 		}
@@ -192,9 +184,12 @@ var doCmd = &cobra.Command{
 			os.Exit(0)
 		}
 
-		if f := viper.GetString("log-format"); f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())) {
+		f := viper.GetString("log-format")
+		switch {
+		case f == "tty" || f == "auto" && term.IsTerminal(int(os.Stdout.Fd())):
 			tty, err = logger.NewTTYOutput(os.Stderr)
 			if err != nil {
+				captureRunCompletedFailed(ctx, tm, err)
 				lg.Fatal().Err(err).Msg("failed to initialize TTY logger")
 			}
 			tty.Start()
@@ -202,6 +197,36 @@ var doCmd = &cobra.Command{
 
 			lg = lg.Output(logger.TeeCloud(tm, tty))
 			ctx = lg.WithContext(ctx)
+
+		case f == "tty2":
+			// FIXME: dolanor: remove once it's more stable/debuggable
+			f, err := ioutil.TempFile("/tmp", "dagger-console-*.log")
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to create TTY file logger")
+			}
+			defer func() {
+				err := f.Close()
+				if err != nil {
+					lg.Fatal().Err(err).Msg("failed to close TTY file logger")
+				}
+			}()
+
+			cons, err := console.ConsoleFromFile(os.Stderr)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to create TTY console")
+			}
+
+			c := logger.ConsoleAdapter{Cons: cons, F: f}
+			tty2, err = logger.NewTTYOutputConsole(&c)
+			if err != nil {
+				lg.Fatal().Err(err).Msg("failed to initialize TTYv2 logger")
+			}
+			tty2.Start()
+			defer tty2.Stop()
+
+			lg = lg.Output(logger.TeeCloud(tm, tty2))
+			ctx = lg.WithContext(ctx)
+
 		}
 
 		cl := common.NewClient(ctx)
@@ -230,11 +255,7 @@ var doCmd = &cobra.Command{
 		daggerPlan.Context().TempDirs.Clean()
 
 		if err != nil {
-			tm.Push(ctx, event.RunCompleted{
-				State: event.RunCompletedStateFailed,
-				Error: err.Error(),
-				Err:   &event.RunError{Message: err.Error()},
-			})
+			captureRunCompletedFailed(ctx, tm, err)
 			lg.Fatal().Err(err).Msg("failed to execute plan")
 		}
 
@@ -265,21 +286,27 @@ var doCmd = &cobra.Command{
 			outputs[key] = fmt.Sprintf("%v", value)
 		}
 
+		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
+			captureRunCompletedFailed(ctx, tm, err)
+			lg.Fatal().Err(err).Msg("failed to print action outputs")
+		}
+
 		tm.Push(ctx, event.RunCompleted{
 			State:   event.RunCompletedStateSuccess,
 			Outputs: outputs,
 		})
-
-		if err := plan.PrintOutputs(action.Outputs(), format, file); err != nil {
-			lg.Fatal().Err(err).Msg("failed to print action outputs")
-		}
 	},
 }
 
 func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
 	// support only local filesystem paths
 	// even though CUE supports loading module and package names
-	absPlanPath, err := filepath.Abs(planPath)
+	homedirPlanPathExpanded, err := homedir.Expand(planPath)
+	if err != nil {
+		return nil, err
+	}
+
+	absPlanPath, err := filepath.Abs(homedirPlanPathExpanded)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +433,29 @@ func printActions(p *plan.Plan, action *plan.Action, w io.Writer, target cue.Pat
 	}
 
 	return nil
+}
+
+func captureRunCompletedFailed(ctx context.Context, tm *telemetry.Telemetry, err error) {
+	var instanceErr *compiler.ErrorInstance
+	rce := event.RunCompleted{
+		State: event.RunCompletedStateFailed,
+		Err:   &event.RunError{Message: err.Error()},
+		Error: err.Error(),
+	}
+
+	if errors.As(err, &instanceErr) {
+		planFiles := map[string]string{}
+		for _, f := range instanceErr.Instance.Files {
+			bfile, _ := format.Node(f)
+			planFiles[filepath.Base(f.Filename)] = string(bfile)
+		}
+		rce.Err.PlanFiles = planFiles
+	}
+	tm.Push(ctx, rce)
+
+	// manually flush events since otherwise they could be skipped as
+	// the program is exiting.
+	tm.Flush()
 }
 
 func init() {

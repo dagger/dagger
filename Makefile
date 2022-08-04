@@ -12,7 +12,7 @@ HELP_TARGET_DEPTH ?= \#
 .PHONY: help
 help: # Show how to get started & what targets are available
 	@printf "This is a list of all the make targets that you can run, e.g. $(BOLD)make dagger$(NORMAL) - or $(BOLD)m dagger$(NORMAL)\n\n"
-	@awk -F':+ |$(HELP_TARGET_DEPTH)' '/^[0-9a-zA-Z._%-]+:+.+$(HELP_TARGET_DEPTH).+$$/ { printf "$(GREEN)%-20s\033[0m %s\n", $$1, $$3 }' $(MAKEFILE_LIST) | sort
+	@awk -F':+ |$(HELP_TARGET_DEPTH)' '/^[0-9a-zA-Z._%-\/~]+:+.+$(HELP_TARGET_DEPTH).+$$/ { printf "$(GREEN)%-30s\033[0m %s\n", $$1, $$3 }' $(MAKEFILE_LIST) | sort
 	@echo
 
 .PHONY: dagger
@@ -86,3 +86,20 @@ web: # Run the website locally
 .PHONY: todo
 todo: # Find all TODO items
 	grep -r -A 1 "TODO:" $(CURDIR)
+
+KIND_CLUSTER_NAME ?= kind-dagger
+.PHONY: kind
+kind: # Create Kind cluster
+	@echo "TODO: Maybe convert to a Dagger package: https://github.com/kubernetes-sigs/kind/issues/2833"
+	(  kind get clusters | grep -q $(KIND_CLUSTER_NAME) ) \
+	|| kind create cluster --name $(KIND_CLUSTER_NAME) --config kind-dagger.yml
+
+define extract_correct_cue_version_from_go_mod
+$$(awk -F'[v-]' '/cue/ { print $$2 }' < $(CURDIR)/go.mod | tail -n 1)
+endef
+.PHONY: _cue_version
+_cue_version:
+	  echo "v$(extract_correct_cue_version_from_go_mod)"
+
+~/go/bin/cue: # Install the right CUE version
+	go install cuelang.org/go/cmd/cue@v$(extract_correct_cue_version_from_go_mod)

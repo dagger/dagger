@@ -52,6 +52,27 @@ sops: ...
 
 ```
 
+When you pass a file (JSON/YAML) to be encrypted by SOPS, only the values will be encrypted. Follow the steps below to encrypt a `.yaml` file with SOPS and [age](https://github.com/FiloSottile/age):
+
+1.Create an `age` key
+
+```shell
+$ age-keygen -o key.txt
+Public key: age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+```
+
+2.Use the public key to encrypt the keys in you yaml file using `sops`.
+
+```shell
+sops -e --age age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p unencryted_secrets_sops.yaml  > secrets_sops.yaml
+```
+
+3.Edit the `secrets_sops.yaml` using `sops`
+
+```shell
+sops secrets_sops.yaml
+```
+
 ### Exported from Filesystem
 
 In addition, you can export a secret from a filesystem with [`core.#NewSecret`](https://github.com/dagger/dagger/blob/main/pkg/dagger.io/dagger/core/secrets.cue#L22-L33)

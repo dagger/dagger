@@ -52,10 +52,8 @@ jobs:
           running-workflow-name: "Bump version, tag & release"
           allowed-conclusions: success
 
-      - name: "Create next release tag"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SEMVER_BUMP: ${{ github.event.inputs.release_type }}
+      - name: "Generate next release version"
+        id: next_release_version
         run: |
           if [[ -n "${{ github.event.inputs.release_version }}" ]]
           then
@@ -66,11 +64,18 @@ jobs:
             # Rather than installing it on every run, we commit it locally so that we have everything we need locally
             # wget https://raw.githubusercontent.com/fsaintjacques/semver-tool/3.3.0/src/semver
             # https://github.com/fsaintjacques/semver-tool
-            next_release_version="v$(./semver bump ${SEMVER_BUMP:=patch}  $previous_release_version)"
+            next_release_version="v$(./semver bump ${SEMVER_BUMP:=patch} $previous_release_version)"
           fi
           echo "NEXT RELEASE VERSION: $next_release_version"
+          printf "::set-output name=%s::%s\n" value "$next_release_version"
+
+      - name: "Create next release tag"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMVER_BUMP: ${{ github.event.inputs.release_type }}
+        run: |
           gh api -X POST /repos/:owner/:repo/git/refs \
-            --field ref="refs/tags/$next_release_version" \
+            --field ref="refs/tags/${{ steps.next_release_version.outputs.value }}" \
             --field sha="$GITHUB_SHA"
 
       - name: "Fetch new tag"
@@ -92,3 +97,23 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
+
+      # Open a https://github.com/Homebrew/homebrew-core PR to update the bottled formula after we release.
+      # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
+      # - https://github.com/Homebrew/homebrew-core/pull/105746#issuecomment-1190522063
+      # - https://github.com/dagger/dagger/issues/2823#issuecomment-1190792261
+      - name: "Update homebrew-core formula"
+        # https://github.com/mislav/bump-homebrew-formula-action
+        uses: mislav/bump-homebrew-formula-action@v2
+        with:
+          download-url: https://github.com/dagger/dagger.git
+          formula-name: dagger
+          tag-name: ${{ steps.next_release_version.outputs.value }}
+          commit-message: |
+            {{formulaName}} {{version}}
+
+            Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            If there is problem with this PR, [open an issue](https://github.com/dagger/dagger/issues/new). The right people will be automatically notified.
+        env:
+          COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}

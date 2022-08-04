@@ -11,8 +11,8 @@ dagger.#Plan & {
 
 	actions: {
 		test: go.#Test & {
-			source:  client.filesystem."./hello".read.contents
-			package: "./..."
+			source: client.filesystem."./hello".read.contents
+			packages: ["./..."]
 		}
 
 		build: go.#Build & {

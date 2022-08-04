@@ -13,6 +13,13 @@ setup() {
     "$DAGGER" "do" -p ./tasks/pull/pull_auth.cue pull
 }
 
+@test "task: #Pull auth env" {
+    export DOCKERHUB_AUTH_USER=foo DOCKERHUB_AUTH_PASSWORD=bar
+    run "$DAGGER" "do" -p ./tasks/pull/pull_auth_env.cue pull
+    assert_failure
+    assert_line --partial 'failed to fetch oauth token: unexpected status: 401 Unauthorized'
+}
+
 @test "task: #Push" {
     "$DAGGER" "do" -p ./tasks/push/push.cue pullOutputFile
 }

@@ -280,6 +280,25 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 		return task.ParseResolveImageConfigLog(v.Name)
 	}
 
+	getCacheStatus := func(acs event.ActionCacheStatus, isCached bool) event.ActionCacheStatus {
+		switch acs {
+		case "", event.ActionCacheStatusNone:
+			if isCached {
+				return event.ActionCacheStatusCached
+			}
+			return event.ActionCacheStatusNone
+		case event.ActionCacheStatusPartial:
+			// if it's already partial, noting to do here.
+			return event.ActionCacheStatusPartial
+		case event.ActionCacheStatusCached:
+			if !isCached {
+				return event.ActionCacheStatusPartial
+			}
+			return event.ActionCacheStatusCached
+		}
+		return event.ActionCacheStatusNone
+	}
+
 	// Just like sprintf, but redacts secrets automatically
 	secureSprintf := func(format string, a ...interface{}) string {
 		// Load a fresh copy of secrets (since they can be dynamically added).
@@ -294,9 +313,11 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 		return s
 	}
 
+	cacheStatus := map[string]event.ActionCacheStatus{}
+
 	// Create a background context so that logging will not be cancelled
 	// with the main context.
-	return progressui.PrintSolveStatus(context.Background(), ch,
+	err := progressui.PrintSolveStatus(context.Background(), ch,
 		func(v *bk.Vertex, index int) {
 			component, name := parseName(v)
 			lg := log.
@@ -344,6 +365,10 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 			msg := secureSprintf(format, a...)
 
 			if component != "" {
+				// group by visible actions similar to the tty logger.
+				groupKey := strings.Split(component, "._")[0]
+				cacheStatus[groupKey] = getCacheStatus(cacheStatus[groupKey], v.Cached)
+
 				tm := telemetry.Ctx(ctx)
 				tm.Push(ctx, event.ActionLogged{
 					Name:    component,
@@ -376,4 +401,14 @@ func (c *Client) logSolveStatus(ctx context.Context, pctx *plancontext.Context, 
 				Msg(msg)
 		},
 	)
+
+	for k, v := range cacheStatus {
+		tm := telemetry.Ctx(ctx)
+		tm.Push(ctx, event.ActionTransitioned{
+			Name:        k,
+			State:       event.ActionStateCacheUpdate,
+			CacheStatus: v,
+		})
+	}
+	return err
 }

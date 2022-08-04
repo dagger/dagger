@@ -139,3 +139,30 @@ Once the end user has discovered the action that they need, they can execute it 
 ```bash
 dagger do hello
 ```
+
+#### Example
+
+Given this representative CUE plan:
+
+```cue
+dagger.#Plan & {
+    actions: {
+        build: {...}
+        deploy: {
+            local: {...}
+            cloud: {...}
+        }
+    }
+}
+```
+
+Running:
+
+- `dagger do build` will run the `build` action
+- `dagger do deploy` will run both the `local` and `cloud` actions
+- `dagger do deploy local` will run the `local` subaction
+- `dagger do deploy cloud` will run the `cloud` subaction
+
+If you specify the key path to an action regrouping several subactions, all of the subactions will run. When you specify the key path to a single action/subaction, only one will run.
+
+There is no depth limit to the key path you specify: it can be useful for debugging purposes.
