@@ -13,6 +13,6 @@ package terraform
 		cmd: "import"
 
 		// Adding the `address` and `id` as positional arguments 
-		cmdArgs: ["\(address)", "\(id)"]
+		cmdArgs: [address, id]
 	}
 }
