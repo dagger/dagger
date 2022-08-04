@@ -49,13 +49,13 @@ EOF
 Yarn build:
 
 ```console
-cloak query -c examples/yarn/dagger.yaml --local-dir source=examples/todoapp/app --set name=build
+cloak query -c examples/yarn/cloak.yaml --local-dir source=examples/todoapp/app --set name=build
 ```
 
 TODOApp deploy:
 
 ```console
-cloak query -c examples/todoapp/ts/dagger.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
+cloak query -c examples/todoapp/ts/cloak.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
 query Build($src: FS!, $token: String!) {
     todoapp{deploy(src: $src, token: $token){url}}
 }
@@ -94,7 +94,7 @@ Say we are creating a new Typescript package called `foo` that will have a singl
    1. Open `schema.graphql`, replace the existing `build`, `test` and `deploy` fields under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
-   1. Open up `dagger.yaml`
+   1. Open up `cloak.yaml`
       - This is where you declare your own package in addition to dependencies of your package. Declaring packages here makes them available to be called by your action implementation in addition to telling cloak how to build them.
       - Packages are declared by specifying how they are built. Currently, we just use Dockerfiles for everything, but in theory this should be much more flexible.
       - Replacing the existing `yarn` key under `actions` with `foo`; similarly change `examples/yarn/Dockerfile` to `examples/foo/Dockerfile`
@@ -122,7 +122,7 @@ Say we are creating a new Go package called `foo` that will have a single action
    1. Open `schema.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
-   1. Open up `dagger.yaml`
+   1. Open up `cloak.yaml`
       - This is where you declare your own package in addition to dependencies of your package. Declaring packages here makes them available to be called by your action implementation in addition to telling cloak how to build them.
       - Packages are declared by specifying how they are built. Currently, we just use Dockerfiles for everything, but in theory this should be much more flexible.
       - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `examples/alpine/Dockerfile` to `examples/foo/Dockerfile`
@@ -131,7 +131,7 @@ Say we are creating a new Go package called `foo` that will have a single action
    1. Setup client stub configuration for each of your dependencies
       - Open `main.go`, remove the imports, remove the `Resolver` struct and method, and comment out the lines of code in the `main` func.
       - `cloak generate --output-dir gen`
-        - This will parse your `dagger.yaml` and export `schema.graphql` and `operation.graphql` into a subdir under `gen/` for each of your dependencies (plus `core`)
+        - This will parse your `cloak.yaml` and export `schema.graphql` and `operation.graphql` into a subdir under `gen/` for each of your dependencies (plus `core`)
       - For each of the dependencies
         - Create a file `gen/<pkgname>/genqclient.yaml` based on `../alpinegen/core/genqlient.yaml`, replacing the word `core` with `<pkgname>`
         - Add a `//go:generate` directive to the top of `main.go` in the form:

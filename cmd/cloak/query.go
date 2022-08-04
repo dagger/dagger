@@ -44,7 +44,7 @@ func Query(cmd *cobra.Command, args []string) {
 
 	// Use the provided query file if specified
 	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
-	// Finally, default to reading from operations.graphql next to dagger.yaml
+	// Finally, default to reading from operations.graphql next to cloak.yaml
 	isTerminal := terminal.IsTerminal(int(os.Stdin.Fd()))
 	if queryFile == "" && isTerminal {
 		queryFile = filepath.Join(filepath.Dir(configFile), "operations.graphql")
