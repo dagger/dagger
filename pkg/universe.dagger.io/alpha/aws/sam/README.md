@@ -42,8 +42,8 @@ This is a the plan for a `.zip archives` function.
 package myAwesomeSamPackage
 
 import (
-    "dagger.io/dagger
-    "universe.dagger.io/x/munichbughunter@gmail.com/sam
+    "dagger.io/dagger"
+    "universe.dagger.io/alpha/aws/sam"
 )
 
 dagger.#Plan & {
@@ -96,8 +96,8 @@ In case of building a docker image we have to define the docker socket and we do
 package myAwesomeSamPackage
 
 import (
-    "dagger.io/dagger
-    "universe.dagger.io/x/munichbughunter@gmail.com/sam
+    "dagger.io/dagger"
+    "universe.dagger.io/alpha/aws/sam"
 )
 
 dagger.#Plan & {
@@ -217,8 +217,8 @@ First we have to change the plan itself to use `tcp-socket` if it is executed in
 package myAwesomeSamPackage
 
 import (
-    "dagger.io/dagger
-    "universe.dagger.io/x/munichbughunter@gmail.com/sam
+    "dagger.io/dagger"
+    "universe.dagger.io/alpha/aws/sam"
 )
 
 dagger.#Plan & {
@@ -342,7 +342,7 @@ If you trigger the pipeline this should build your sam function and deploy every
 
 ## :handshake: Contributing
 
-If you have a specific need, don't hesitate to write an [issue](https://github.com/munichbughunter/dagger) or create a [pull request]((https://github.com/munichbughunter/dagger/pulls)) on our repository! :rocket:
+If you have a specific need, don't hesitate to write an [issue](https://github.com/munichbughunter/dagger) or you plan to contribute please follow [this really helpful guilde](https://docs.dagger.io/1227/contributing/)! :rocket:
 
 See the workflow below to contribute.
 

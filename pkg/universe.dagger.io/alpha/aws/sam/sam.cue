@@ -56,7 +56,7 @@ _destination: "/var/task"
 // Builds a serverless application as docker image, which includes the base operating system, runtime, and extensions, in addition to your application code and its dependencies
 #Build: {
 	// Sam configuration
-	config:   #Config
+	config: #Config
 
 	// Source code
 	fileTree: dagger.#FS
@@ -80,7 +80,7 @@ _destination: "/var/task"
 // Builds a serverless application as .zip file archive, which contains your application code and its dependencies
 #Package: {
 	// Sam configuration
-	config:   #Config
+	config: #Config
 
 	// Source code
 	fileTree: dagger.#FS
