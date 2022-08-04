@@ -25,6 +25,18 @@ Composite Actions are actions made of other actions. Dagger supports arbitrary n
 
 One consequence of arbitrary nesting is that Dagger doesn't need to distinguish between "pipelines" and "steps": everything is an action. Some actions are just more complex and powerful than others. This is a defining feature of Dagger.
 
+### Universe packages
+
+Universe packages are ready-to-use composite actions with embedded domain logic.
+
+They are abstractions on top of other actions, aiming to:
+
+1. Promote code reusability
+2. Enforce good practices
+3. Abstract complexity
+
+For example, the [netlify](https://github.com/dagger/dagger/blob/v0.2.28/pkg/universe.dagger.io/netlify/netlify.cue) package is based on the [docker](https://github.com/dagger/dagger/blob/v0.2.28/pkg/universe.dagger.io/docker/build.cue) and the [bash](https://github.com/dagger/dagger/blob/v0.2.28/pkg/universe.dagger.io/bash/bash.cue) actions. It is a composite action that we rely on internally whenever we need to deploy code on this platform.
+
 ## Lifecycle of an Action
 
 A composite action's lifecycle has 4 stages:
@@ -36,7 +48,7 @@ A composite action's lifecycle has 4 stages:
 
 ### Definition
 
-A new action is _defined_ in a declarative template called a [CUE definition](https://cuetorials.com/overview/foundations/#definitions). This definition describes the action's inputs, outputs, sub-actions, and the wiring between them.
+A new action is _defined_ in a declarative template called a [CUE definition](https://cuetorials.com/overview/foundations/#definitions). This definition describes the action's inputs, outputs and its domain logic.
 
 Here is an example of a simple action definition:
 
@@ -67,13 +79,13 @@ import (
 }
 ```
 
-Note that this action includes one sub-action: `core.#WriteFile`. An action can incorporate any number of sub-actions.
-
-Also note the free-form structure: an action definition is not structured by a rigid schema. It is simply a CUE struct with fields of various types.
+Note the free-form structure: an action definition is not structured by a rigid schema. It is simply a CUE struct with fields of various types.
 
 - "inputs" are simply fields which are not complete, and therefore can receive an external value at integration. For example, `dir` and `name` are inputs.
 - "outputs" are simply fields which produce a value that can be referenced externally at integration. For example, `result` is an output.
-- "sub-actions" are simply fields which contain another action definition. For example, `write` is a sub-action.
+- The "domain logic" is implemented via the wiring of any number of sub-actions. Sub-actions are pre-existing core actions, universe packages or any composite actions containing parts of the domain logic.
+
+For example, this composite action includes one sub-action: `core.#WriteFile`, at the heart of the domain logic of `#AddHello`, and referenced by the `write` field.
 
 There are no constraints to an action's field names or types.
 
@@ -160,9 +172,9 @@ Running:
 
 - `dagger do build` will run the `build` action
 - `dagger do deploy` will run both the `local` and `cloud` actions
-- `dagger do deploy local` will run the `local` subaction
-- `dagger do deploy cloud` will run the `cloud` subaction
+- `dagger do deploy local` will run the `local` sub-action
+- `dagger do deploy cloud` will run the `cloud` sub-action
 
-If you specify the key path to an action regrouping several subactions, all of the subactions will run. When you specify the key path to a single action/subaction, only one will run.
+If you specify the key path to an action regrouping several sub-actions, all of the sub-actions will run. When you specify the key path to a single action/sub-action, only one will run.
 
 There is no depth limit to the key path you specify: it can be useful for debugging purposes.
