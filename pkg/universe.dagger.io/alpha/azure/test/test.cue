@@ -2,9 +2,7 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/core"
 	"universe.dagger.io/docker"
-	"universe.dagger.io/docker/cli"
 	"universe.dagger.io/alpha/azure/auth"
 	aksauth "universe.dagger.io/alpha/azure/aks/auth"
 )
@@ -15,8 +13,8 @@ dagger.#Plan & {
 		AAD_SERVICE_PRINCIPAL_CLIENT_ID:     string
 		AAD_SERVICE_PRINCIPAL_CLIENT_SECRET: dagger.#Secret
 		AKS_SUSCRIPTION_ID:                  string
-		AKS_CLUSTER:                         string
-		AKS_RESOURCEGROUP:                   string
+		AKS_RESOURCE_GROUP:                  string
+		AKS_NAME:                            string
 	}
 
 	let sp = {
@@ -27,8 +25,8 @@ dagger.#Plan & {
 
 	let cl = {
 		subscriptionId: client.env.AKS_SUSCRIPTION_ID
-		resourceGroup:  client.env.AKS_RESOURCEGROUP
-		name:           client.env.AKS_CLUSTER
+		resourceGroup:  client.env.AKS_RESOURCE_GROUP
+		name:           client.env.AKS_NAME
 	}
 
 	actions: {
@@ -49,7 +47,7 @@ dagger.#Plan & {
 			cluster:          cl
 		}
 
-		// check if the config can be used to 
+		// check if the config can be used to
 		// list all resources in the default namespace
 		test: docker.#Run & {
 			_img: docker.#Pull & {

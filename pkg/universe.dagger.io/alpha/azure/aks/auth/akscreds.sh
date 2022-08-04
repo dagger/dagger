@@ -4,14 +4,23 @@ set -eu
 
 : "${KUBECONFIG:=$HOME/.kube/config}"
 
+__usage="Usage:
+  aks-get-credentials [-a] [-f format] [-o path]
+Flags:
+  -a    fetch admin credentials instead of user credentials
+  -f    format of the kubeconfig. Possible values: 'azure', 'exec' . Defaults to 'exec'
+  -o    write the kubeconfig to the specified path. Writes to stdout, if not specified or set to '-'
+  -h    show this help message
+Environment Variables:
+  AKS_SUSCRIPTION_ID                      the subscription id of the cluster
+  AKS_RESOURCE_GROUP                      the resource group of the cluster
+  AKS_NAME                                the name of the cluster
+  AZURE_TENANT_ID                         the tenant id of the servicel principal
+  AAD_SERVICE_PRINCIPAL_CLIENT_ID         the client id (application id) of the service principal
+  AAD_SERVICE_PRINCIPAL_CLIENT_SECRET     the client secret value of the service principal"
+
 helptext() {
-    echo >&2 "Usage:"
-    echo >&2 "  aks-get-credentials [-a] [-f format] [-o path]"
-    echo >&2 "Flags:"
-    echo >&2 "  -a    fetch admin credentials instead of user credentials"
-    echo >&2 "  -f    format of the kubeconfig. Possible values: 'azure', 'exec' . Defaults to 'exec'"
-    echo >&2 "  -o    write the kubeconfig to the specified path. Writes to stdout, if not specified or set to '-'"
-    echo >&2 "  -h    show this help message"
+    echo >&2 "$__usage"
 }
 
 # write the file to output.
@@ -64,9 +73,9 @@ get_credentials() {
 
     # key value pair url parts
     subscription="subscriptions/$AKS_SUSCRIPTION_ID"
-    resource_group="resourceGroups/$AKS_RESOURCEGROUP"
+    resource_group="resourceGroups/$AKS_RESOURCE_GROUP"
     provider="providers/Microsoft.ContainerService"
-    resource="managedClusters/$AKS_CLUSTER"
+    resource="managedClusters/$AKS_NAME"
 
     # the endpoint is the first arg
     credentials_endpoint="$1"
@@ -84,11 +93,17 @@ get_credentials() {
     url="$base/$subscription/$resource_group/$provider/$resource/$credentials_endpoint?api-version=$api_version&format=$format_param"
 
     # make the api call to get the kubeconfig
+    config="$(mktemp)"
+    touch "$config"
+    # shellcheck disable=SC2064
+    trap "rm -f $config" EXIT INT HUP
+
     curl -fsSL --request POST --url "$url" \
         --header "Authorization: Bearer $access_token" \
         --header "Content-type: application/json" \
-        --header "Content-Length: 0" |
-        jq -r '.kubeconfigs[0].value | @base64d'
+        --header "Content-Length: 0" >"$config"
+
+    jq -r '.kubeconfigs[0].value | @base64d' "$config"
 }
 
 #

@@ -2,17 +2,21 @@
 
 set -eu
 
-helptext() {
-    echo >&2 "Usage:"
-    echo >&2 "  azlogin [-s <scope>] [-r <resource>]"
-    echo >&2 "Flags:"
-    echo >&2 "  -r    set the resource for the token (defaults to 'https://management.azure.com/', if -s and -r are not set"
-    echo >&2 "  -s    set the scope for the token"
-    echo >&2 "  -h    show this help message"
-    echo >&2 "Environment Variables:"
-    echo >&2 "  AZLOGIN_RESOURCE    set the resource"
-    echo >&2 "  AZLOGIN_SCOPE       set the scope"
+__usage="Usage:
+  azlogin [-s <scope>] [-r <resource>]
+Flags:
+  -r    set the resource for the token (defaults to 'https://management.azure.com/', if -s and -r are not set
+  -s    set the scope for the token
+  -h    show this help message
+Environment Variables:
+  AZLOGIN_RESOURCE                        set the resource
+  AZLOGIN_SCOPE                           set the scope
+  AZURE_TENANT_ID                         the tenant id of the servicel principal
+  AAD_SERVICE_PRINCIPAL_CLIENT_ID         the client id (application id) of the service principal
+  AAD_SERVICE_PRINCIPAL_CLIENT_SECRET     the client secret value of the service principal"
 
+helptext() {
+    echo >&2 "$__usage"
 }
 
 # for the generic request 'resource=https://management.azure.com/' is used
@@ -65,6 +69,12 @@ else
     fi
 fi
 
+token="$(mktemp)"
+touch token.json
+# shellcheck disable=SC2064
+trap "rm -f $token" EXIT INT HUP
+
 curl -fsSL --request POST "https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/token" \
-    --header "Content-Type: application/x-www-form-urlencoded" --data "$query" |
-    jq -r '.access_token'
+    --header "Content-Type: application/x-www-form-urlencoded" --data "$query" >"$token"
+
+jq -r '.access_token' "$token"

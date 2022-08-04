@@ -54,8 +54,8 @@ import (
 			AAD_SERVICE_PRINCIPAL_CLIENT_ID:     servicePrincipal.id
 			AAD_SERVICE_PRINCIPAL_CLIENT_SECRET: servicePrincipal.secret
 			AKS_SUSCRIPTION_ID:                  cluster.subscriptionId
-			AKS_RESOURCEGROUP:                   cluster.resourceGroup
-			AKS_CLUSTER:                         cluster.name
+			AKS_RESOURCE_GROUP:                  cluster.resourceGroup
+			AKS_NAME:                            cluster.name
 		}
 		export: secrets: "/kubeconfig": _
 	}
