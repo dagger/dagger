@@ -1,20 +1,23 @@
 # Project Cloak
 
-Welcome to Project Cloak, an experimental project by the Dagger team, currently in early access for a small group of testers. As part of Project Cloak, you will get access to the following: 
+Project Cloak is an experimental project to add multi-language support to Dagger.
+
+## Alpha Software Warning
+
+Cloak is alpha-quality software and is still under active development. It is not a finished product! 
+You will certainly encounter bugs, confusing behavior, and incomplete documentation. Please tell us everything!
+
+## Early Access
+
+Project Cloak is currently in early access for a small group of testers. Early Access includes the following:
 
 - Early access to the [Project Cloak repository](https://github.com/dagger/cloak)
 - Early access to the Project Cloak community channel on Discord: #project-cloak
 - Our eternal gratitude for trying unfinished software and contributing precious feedback. 
-- Dagger swag :) (Miranda will reach out directly when the ordering site is ready)
-
-### Remember: Project Cloak is not yet a finished product.
-It is still under active development and you will certainly encounter bugs, confusing behavior, and incomplete documentation. Please tell us everything!
-
-- You're a beginner, and need a specific doc to explain something? [That's valuable feedback.](https://github.com/dagger/cloak/issues/new)
-- You're an expert who spotted an inaccuracy? [Valuable feedback!](https://github.com/dagger/cloak/issues/new)
-- A command failed, and you're not sure if it's your fault or ours? [Valuable feedback!](https://github.com/dagger/cloak/issues/new)
+- Sweet Dagger swag :)
 
 We appreciate any participation in the project, including:
+
 - Asking and answering questions on the Discord channel
 - Sharing feedback of any kind
 - Going through documentation and tutorials, and telling us how it went
@@ -22,9 +25,7 @@ We appreciate any participation in the project, including:
 - Contributing code and documentation 
 - Suggesting people to invite to the Project Cloak Early Access program
 
-# Let's Get Started!
-
-## Setup
+## Getting Started
 
 1. Ensure `dagger-buildkitd` is running (invoke dagger if needed)
    - TODO: should port code from dagger for setting this up automatically to here in cloak
