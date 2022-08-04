@@ -4,7 +4,7 @@ Project Cloak is an experimental project to add multi-language support to Dagger
 
 ## Alpha Software Warning
 
-Cloak is alpha-quality software and is still under active development. It is not a finished product! 
+Cloak is alpha-quality software and is still under active development. It is not a finished product!
 You will certainly encounter bugs, confusing behavior, and incomplete documentation. Please tell us everything!
 
 ## Early Access
@@ -13,7 +13,7 @@ Project Cloak is currently in early access for a small group of testers. Early A
 
 - Early access to the [Project Cloak repository](https://github.com/dagger/cloak)
 - Early access to the Project Cloak community channel on Discord: #project-cloak
-- Our eternal gratitude for trying unfinished software and contributing precious feedback. 
+- Our eternal gratitude for trying unfinished software and contributing precious feedback.
 - Sweet Dagger swag :)
 
 We appreciate any participation in the project, including:
@@ -22,7 +22,7 @@ We appreciate any participation in the project, including:
 - Sharing feedback of any kind
 - Going through documentation and tutorials, and telling us how it went
 - Opening github issues to report bugs and request features
-- Contributing code and documentation 
+- Contributing code and documentation
 - Suggesting people to invite to the Project Cloak Early Access program
 
 ## Getting Started
@@ -80,7 +80,7 @@ TODO: document more, but the idea here is that you can also write your own `main
 
 TODO: automate and simplify the below
 
-TODO: these instructions currently skip client stub generation for dependencies because the raw graphql interface is okay enough. See `examples/graphql_ts` for example use of generated client stubs.
+TODO: add instructions for client stub generation (these instructions work w/ raw graphql queries right now)
 
 Say we are creating a new Typescript package called `foo` that will have a single action `bar`.
 
@@ -101,24 +101,22 @@ Say we are creating a new Typescript package called `foo` that will have a singl
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
 1. Implement your action by editing `index.ts`
-   - Replace each of the existing `build`, `test` and `deploy` fields under `resolver.Query` with one implementation for each action.
+   - Replace each of the existing `Script` field under `const resolver` with an implementation for your action (or add multiple fields if implementing multiple actions).
    - The `args` parameter is an object with a field for each of the input args to your action (as defined in `schema.graphql`
-   - The `FS` type will be of type `string` (as that's the representation of the `FS` scalar type in our graphql schema at the moment)
+   - You should use `FSID` when accepting a filesystem as an input
 
 ### Creating a new Go package
-
-TODO: automate and simplify the below
 
 Say we are creating a new Go package called `foo` that will have a single action `bar`.
 
 1. Setup the package configuration
-   1. Copy the existing `alpine` package to a new directory for the new package:
-      - `cp -r examples/alpine examples/foo`
+   1. Starting from the root of the cloak repo, make a new directory for your action:
+      - `mkdir -p examples/foo`
    1. `cd examples/foo`
-   1. `rm -rf alpine.go gen`
-   1. Open `Dockerfile` and change occurences of `examples/alpine` to `examples/foo`
-   1. Open `gqlgen.yml` and replace every occurence of `alpine` with `foo`
-      - This configures the code generation tool we use to create implementation stubs
+   1. Setup the Dockerfile that will build your action
+      - `cp ../alpine/Dockerfile .`
+      - Open `Dockerfile` and change occurences of `examples/alpine` to `examples/foo`
+      - TODO: this is boilerplate that will go away soon
    1. Open `schema.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
       - This is where the schema for the actions in your package is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
@@ -128,21 +126,12 @@ Say we are creating a new Go package called `foo` that will have a single action
       - Replacing the existing `alpine` key under `actions` with `foo`; similarly change `examples/alpine/Dockerfile` to `examples/foo/Dockerfile`
       - Add similar entries for each of the packages you want to be able to call from your actions. They all follow the same format right now
       - The only package you don't need to declare a dependency on is `core`, it's inherently always a dep
-   1. Setup client stub configuration for each of your dependencies
-      - Open `main.go`, remove the imports, remove the `Resolver` struct and method, and comment out the lines of code in the `main` func.
-      - `cloak generate --output-dir gen`
-        - This will parse your `cloak.yaml` and export `schema.graphql` and `operation.graphql` into a subdir under `gen/` for each of your dependencies (plus `core`)
-      - For each of the dependencies
-        - Create a file `gen/<pkgname>/genqclient.yaml` based on `../alpinegen/core/genqlient.yaml`, replacing the word `core` with `<pkgname>`
-        - Add a `//go:generate` directive to the top of `main.go` in the form:
-          - `//go:generate go run github.com/Khan/genqlient ./gen/<pkgname>/genqlient.yaml`
 1. Generate client stubs and implementation stubs
-   - From `examples/foo`, run `go generate main.go`
-   - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to helpers for your implementation under `gen/<foo>`
-   - Additionally, there should now be a `foo.go` file with a stub implementation.
-   - Uncomment the code in `main.go`, add an import for `github.com/dagger/cloak/examples/foo/gen/foo/generated`
-1. Implement your action by replacing the panic in `foo.go` with the actual implementation.
-   - When you need to call a dependency, import it from under `gen/<pkgname>`
+   - From `examples/foo`, run `cloak generate --output-dir=. --sdk=go`
+   - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to helpers for your implementation under `gen/foo`
+   - Additionally, there should now be a `main.go` file with a stub implementations.
+1. Implement your action by replacing the panics in `main.go` with the actual implementation.
+   - When you need to call a dependency, import it from paths like `github.com/dagger/cloak/examples/foo/gen/<dependency pkgname>`
 
 ### Modifying Core
 
