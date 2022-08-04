@@ -9,14 +9,15 @@ import (
 _destination: "/var/task"
 
 // AWS Sam image
-#DefaultImage: docker.#Pull & {
-	source: "amazon/aws-sam-cli-build-image-provided:latest"
+// https://hub.docker.com/r/amazon/aws-sam-cli-build-image-provided/tags
+#Image: docker.#Pull & {
+	source: "index.docker.io/amazon/aws-sam-cli-build-image-provided@sha256:56ba3e64d305d11379dc1bc0196d9b9b411c0b7dacb3f5dd6ecdffc55b6f2958"
 }
 
 // Executes the sam command
 #Sam: {
-	// Default AWS Sam docker image
-	_defaultImage: #DefaultImage
+	// Default AWS Sam Docker image
+	_defaultImage: #Image
 	input:         docker.#Image | *_defaultImage.output
 
 	// Sam configuration
@@ -63,7 +64,7 @@ _destination: "/var/task"
 
 	_run: docker.#Build & {
 		steps: [
-			#DefaultImage,
+			#Image,
 			docker.#Copy & {
 				contents: fileTree
 				dest:     _destination
@@ -87,7 +88,7 @@ _destination: "/var/task"
 
 	_package: docker.#Build & {
 		steps: [
-			#DefaultImage,
+			#Image,
 			docker.#Copy & {
 				contents: fileTree
 				dest:     _destination
