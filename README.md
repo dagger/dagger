@@ -37,16 +37,24 @@ We appreciate any participation in the project, including:
 
 ## Basic Invoking
 
-Simple alpine example (output will just be the encoded FS bytes for now, need to add export+shell util to `cloak` CLI):
+Simple alpine example:
 
 ```console
 cd ./examples/alpine
 cloak query <<'EOF'
-{alpine{build(pkgs:["jq","curl"]){id}}}
+{
+  alpine{
+    build(pkgs:["curl"]) {
+      exec(input: {args:["curl", "https://dagger.io"]}) {
+        stdout(lines: 1)
+      }
+    }
+  }
+}
 EOF
 ```
 
-Yarn build:
+Yarn build (output will just be encoded fs bytes for now, need to add export or shell util to cloak CLI interface):
 
 ```console
 cloak query -c examples/yarn/cloak.yaml --local-dir source=examples/todoapp/app --set name=build
@@ -55,11 +63,8 @@ cloak query -c examples/yarn/cloak.yaml --local-dir source=examples/todoapp/app 
 TODOApp deploy:
 
 ```console
-cloak query -c examples/todoapp/ts/cloak.yaml --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN" <<'EOF'
-query Build($src: FS!, $token: String!) {
-    todoapp{deploy(src: $src, token: $token){url}}
-}
-EOF
+cd ./examples/todoapp/ts
+cloak query --op Deploy --local-dir src=../app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 ## Development
