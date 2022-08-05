@@ -16,12 +16,13 @@ import (
 type Config struct {
 	Path    string             `yaml:"-,omitempty"`
 	Actions map[string]*Action `yaml:"actions,omitempty"`
+	Context string             `yaml:"context,omitempty"`
 }
 
 type Action struct {
 	Local      string `yaml:"local,omitempty"`
-	Context    string `yaml:"context,omitempty"`
 	Image      string `yaml:"image,omitempty"`
+	Context    string `yaml:"context,omitempty"`
 	schema     string
 	operations string
 }
@@ -49,17 +50,12 @@ func ParseFile(f string) (*Config, error) {
 	}
 
 	for _, action := range cfg.Actions {
-		switch {
-		case action.Image != "":
-		default:
-			action.Local, err = filepath.Abs(filepath.Join(filepath.Dir(f), action.Local))
-			if err != nil {
-				return nil, err
+		if action.Local != "" {
+			if action.Context == "" {
+				action.Context = cfg.Context
 			}
-			action.Context, err = filepath.Abs(filepath.Join(filepath.Dir(f), action.Context))
-			if err != nil {
-				return nil, err
-			}
+			action.Context = filepath.Join(filepath.Dir(f), action.Context)
+			action.Local = filepath.Join(cfg.Context, action.Local)
 		}
 	}
 	// implicitly include core in every import
@@ -107,11 +103,7 @@ func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FSID) e
 				action.schema = schema
 				action.operations = operations
 			case action.Local != "":
-				relpath, err := filepath.Rel(action.Context, action.Local)
-				if err != nil {
-					return fmt.Errorf("error importing %s: %w", name, err)
-				}
-				dockerfile := path.Join(relpath, "Dockerfile")
+				dockerfile := path.Join(action.Local, "Dockerfile")
 				schema, operations, err := importLocal(ctx, name, localDirs[action.Context], dockerfile)
 				if err != nil {
 					return fmt.Errorf("error importing %s: %w", name, err)

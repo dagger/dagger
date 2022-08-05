@@ -1,6 +1,6 @@
+context: ../..
 actions:
   alpine:
-    local: ../alpine
-    context: ../..
+    local: examples/alpine
   yarn:
-    context: ../..
+    local: examples/yarn
