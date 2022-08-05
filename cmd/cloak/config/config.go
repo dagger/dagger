@@ -20,8 +20,8 @@ type Config struct {
 
 type Action struct {
 	Local      string `yaml:"local,omitempty"`
+	Context    string `yaml:"context,omitempty"`
 	Image      string `yaml:"image,omitempty"`
-	Dockerfile string `yaml:"dockerfile,omitempty"`
 	schema     string
 	operations string
 }
@@ -49,8 +49,17 @@ func ParseFile(f string) (*Config, error) {
 	}
 
 	for _, action := range cfg.Actions {
-		if action.Local != "" {
-			action.Local = path.Join(filepath.Dir(f), action.Local)
+		switch {
+		case action.Image != "":
+		default:
+			action.Local, err = filepath.Abs(filepath.Join(filepath.Dir(f), action.Local))
+			if err != nil {
+				return nil, err
+			}
+			action.Context, err = filepath.Abs(filepath.Join(filepath.Dir(f), action.Context))
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	// implicitly include core in every import
@@ -68,9 +77,10 @@ func ParseFile(f string) (*Config, error) {
 func (c *Config) LocalDirs() map[string]string {
 	localDirs := make(map[string]string)
 	for _, action := range c.Actions {
-		if action.Local != "" {
-			localDirs[action.Local] = action.Local
+		if action.Local == "" {
+			continue
 		}
+		localDirs[action.Context] = action.Context
 	}
 	return localDirs
 }
@@ -89,15 +99,20 @@ func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FSID) e
 				}
 				action.schema = schema
 				action.operations = operations
-			case action.Local != "":
-				schema, operations, err := importLocal(ctx, name, localDirs[action.Local], action.Dockerfile)
+			case action.Image != "":
+				schema, operations, err := importImage(ctx, name, action.Image)
 				if err != nil {
 					return fmt.Errorf("error importing %s: %w", name, err)
 				}
 				action.schema = schema
 				action.operations = operations
-			case action.Image != "":
-				schema, operations, err := importImage(ctx, name, action.Image)
+			case action.Local != "":
+				relpath, err := filepath.Rel(action.Context, action.Local)
+				if err != nil {
+					return fmt.Errorf("error importing %s: %w", name, err)
+				}
+				dockerfile := path.Join(relpath, "Dockerfile")
+				schema, operations, err := importLocal(ctx, name, localDirs[action.Context], dockerfile)
 				if err != nil {
 					return fmt.Errorf("error importing %s: %w", name, err)
 				}

@@ -1,4 +1,3 @@
 actions:
   alpine:
-    local: ../..
-    dockerfile: examples/alpine/Dockerfile
+    context: ../..

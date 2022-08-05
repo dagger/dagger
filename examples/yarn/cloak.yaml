@@ -1,7 +1,6 @@
 actions:
   alpine:
-    local: ../..
-    dockerfile: examples/alpine/Dockerfile
+    local: ../alpine
+    context: ../..
   yarn:
-    local: ../..
-    dockerfile: examples/yarn/Dockerfile
+    context: ../..

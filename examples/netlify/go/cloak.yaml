@@ -1,4 +1,3 @@
 actions:
   netlify:
-    local: ../../..
-    dockerfile: examples/netlify/go/Dockerfile
+    context: ../../..

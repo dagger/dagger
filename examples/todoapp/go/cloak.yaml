@@ -1,13 +1,12 @@
 actions:
   alpine:
-    local: ../../..
-    dockerfile: examples/alpine/Dockerfile
+    local: ../../alpine
+    context: ../../..
   yarn:
-    local: ../../..
-    dockerfile: examples/yarn/Dockerfile
+    local: ../../yarn
+    context: ../../..
   netlify:
-    local: ../../..
-    dockerfile: examples/netlify/go/Dockerfile
+    local: ../../netlify/go
+    context: ../../..
   todoapp:
-    local: ../../..
-    dockerfile: examples/todoapp/go/Dockerfile
+    context: ../../..
