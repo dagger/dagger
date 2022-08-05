@@ -1,13 +1,13 @@
 actions:
-   alpine:
-     local: ../..
-     dockerfile: examples/alpine/Dockerfile
+  alpine:
+    local: ../alpine
+    context: ../..
   # yarn:
-  #   local: ../..
-  #   dockerfile: examples/yarn/Dockerfile
+  #   local: ../yarn
+  #   context: ../..
   # netlify:
-  #   local: ../..
-  #   dockerfile: examples/netlify/ts/Dockerfile
+  #   local: ../netlify/ts
+  #   context: ../..
   # # Registry
   # alpine:
   #   image: localhost:5555/dagger:alpine
