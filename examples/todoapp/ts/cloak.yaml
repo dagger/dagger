@@ -1,4 +1,3 @@
-context: ../../..
 actions:
   alpine:
     local: examples/alpine
@@ -8,3 +7,4 @@ actions:
     local: examples/netlify/ts
   todoapp:
     local: examples/todoapp/ts
+context: ../../..
