@@ -7,3 +7,4 @@ actions:
     local: examples/netlify/ts
   todoapp:
     local: examples/todoapp/ts
+context: .
