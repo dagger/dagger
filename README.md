@@ -42,7 +42,7 @@ Simple alpine example (output will just be the encoded FS bytes for now, need to
 ```console
 cd ./examples/alpine
 cloak query <<'EOF'
-{alpine{build(pkgs:["jq","curl"])}}
+{alpine{build(pkgs:["jq","curl"]){id}}}
 EOF
 ```
 
