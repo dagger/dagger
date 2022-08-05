@@ -78,8 +78,13 @@ docs: dagger # Generate docs
 mdlint: # Markdown lint for web
 	@markdownlint ./docs README.md
 
+.PHONY: web_redirects
+web_redirects:
+	# Generate netlify _redirects
+	find ./docs/ -path "*/*-*.md" | xargs grep -h slug | cut -d ' ' -f2 | awk -F '/' 'NF>2{print "/"$$2"/*",$$0,307}' > ./website/static/_redirects
+
 .PHONY: web
-web: # Run the website locally
+web: web_redirects # Run the website locally
 	yarn --cwd "./website" install
 	yarn --cwd "./website" start
 
