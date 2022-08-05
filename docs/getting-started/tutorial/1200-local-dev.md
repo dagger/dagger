@@ -1,13 +1,13 @@
 ---
 slug: /1200/local-dev
-displayed_sidebar: '0.2'
+displayed_sidebar: "0.2"
 ---
 
-import DaggerCloudCTA from '../includes/\_dagger-cloud-cta.md';
+import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md'
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 
-# Build & run locally...then in CI
+# Build, run and test locally
 
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.

@@ -1,9 +1,9 @@
 ---
 slug: /1201/ci-environment
-displayed_sidebar: '0.2'
+displayed_sidebar: "0.2"
 ---
 
-# Integrating with your CI environment
+# Integrate with your CI environment
 
 [Once you have Dagger running locally](/1200/local-dev), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
 
@@ -29,7 +29,7 @@ values={[
 
 <TabItem value="github-actions">
 
-```yaml file=../tests/getting-started/github-actions.yml title=".github/workflows/todoapp.yml"
+```yaml file=../../tests/getting-started/github-actions.yml title=".github/workflows/todoapp.yml"
 
 ```
 
@@ -119,14 +119,14 @@ workflows:
     # See https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#docker-in-docker-with-tls-enabled-in-the-docker-executor
     DOCKER_HOST: tcp://docker:2376
 
-    DOCKER_TLS_VERIFY: '1'
-    DOCKER_TLS_CERTDIR: '/certs'
-    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_CERT_PATH: "/certs/client"
 
     # Faster than the default, apparently
     DOCKER_DRIVER: overlay2
 
-    DOCKER_VERSION: '20.10'
+    DOCKER_VERSION: "20.10"
 
 .dagger:
   extends: [.docker]
@@ -135,7 +135,7 @@ workflows:
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
-    ARGS: ''
+    ARGS: ""
   cache:
     key: dagger-${CI_JOB_NAME}
     paths:
@@ -209,7 +209,7 @@ With `docker` client and `dagger` installed on your Jenkins agent, a Docker host
 ```groovy title="Jenkinsfile"
 pipeline {
   agent { label 'dagger' }
-  
+
   environment {
     //https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials
     //DH_CREDS              = credentials('jenkins-dockerhub-creds')
@@ -246,118 +246,117 @@ spec:
   description: |
     Execute a dagger action from a git repo.
   params:
-  - name: dagger-version
-    type: string
-    description: The dagger version to run.
-  - name: dagger-action
-    type: string
-    description: The dagger action to execute.
-  - name: repo-url
-    type: string
-    description: The git repository URL to clone from.
-  - name: app-dir
-    type: string
-    description: The path to access the app dagger codebase within the repository.
-  - name: netlify-site-name
-    type: string
-    description: The Netlify site name. Unique value among Netlify sites.
-  - name: netlify-team
-    type: string
-    description: The Netlify team to deploy to.
+    - name: dagger-version
+      type: string
+      description: The dagger version to run.
+    - name: dagger-action
+      type: string
+      description: The dagger action to execute.
+    - name: repo-url
+      type: string
+      description: The git repository URL to clone from.
+    - name: app-dir
+      type: string
+      description: The path to access the app dagger codebase within the repository.
+    - name: netlify-site-name
+      type: string
+      description: The Netlify site name. Unique value among Netlify sites.
+    - name: netlify-team
+      type: string
+      description: The Netlify team to deploy to.
   workspaces:
-  - name: shared-data
-    description: |
-      This workspace will receive the cloned git repo and be passed
-      to the next Task.
+    - name: shared-data
+      description: |
+        This workspace will receive the cloned git repo and be passed
+        to the next Task.
 
   tasks:
-
-  - name: fetch-repo
-    taskRef:
-      name: git-clone
-    workspaces:
-    - name: output
-      workspace: shared-data
-    params:
-    - name: url
-      value: $(params.repo-url)
-    - name: revision
-      value: $(params.dagger-version)
-
-  - name: dagger-do
-    runAfter: ["fetch-repo"]  # Wait until the clone is done before deploying the app.
-    workspaces:
-    - name: source
-      workspace: shared-data
-    params:
-      - name: dagger-version
-        value: $(params.dagger-version)
-      - name: dagger-action
-        value: $(params.dagger-action)
-      - name: app-dir
-        value: $(params.app-dir)
-      - name: netlify-site-name
-        value: $(params.netlify-site-name)
-      - name: netlify-team
-        value: $(params.netlify-team)
-    taskSpec:
+    - name: fetch-repo
+      taskRef:
+        name: git-clone
       workspaces:
-      - name: source
+        - name: output
+          workspace: shared-data
       params:
-      - name: dagger-version
-      - name: dagger-action
-      - name: app-dir
-      - name: netlify-site-name
-      - name: netlify-team
-      steps:
-      - image: docker:20.10.13
-        name: run-dagger-action
-        workingDir: "$(workspaces.source.path)/$(params.app-dir)"
-        script: |
-          #!/usr/bin/env sh
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.dagger-version)
 
-          # Install dagger
-          # Could be removed by using an official muli-arch dagger.io image
-          arch=$(uname -m)
-          case $arch in
-            x86_64) arch="amd64" ;;
-            aarch64) arch="arm64" ;;
-          esac
+    - name: dagger-do
+      runAfter: ["fetch-repo"] # Wait until the clone is done before deploying the app.
+      workspaces:
+        - name: source
+          workspace: shared-data
+      params:
+        - name: dagger-version
+          value: $(params.dagger-version)
+        - name: dagger-action
+          value: $(params.dagger-action)
+        - name: app-dir
+          value: $(params.app-dir)
+        - name: netlify-site-name
+          value: $(params.netlify-site-name)
+        - name: netlify-team
+          value: $(params.netlify-team)
+      taskSpec:
+        workspaces:
+          - name: source
+        params:
+          - name: dagger-version
+          - name: dagger-action
+          - name: app-dir
+          - name: netlify-site-name
+          - name: netlify-team
+        steps:
+          - image: docker:20.10.13
+            name: run-dagger-action
+            workingDir: "$(workspaces.source.path)/$(params.app-dir)"
+            script: |
+              #!/usr/bin/env sh
 
-          wget -c https://github.com/dagger/dagger/releases/download/$(params.dagger-version)/dagger_$(params.dagger-version)_linux_${arch}.tar.gz  -O - |  \
-          tar zxf - -C /usr/local/bin
+              # Install dagger
+              # Could be removed by using an official muli-arch dagger.io image
+              arch=$(uname -m)
+              case $arch in
+                x86_64) arch="amd64" ;;
+                aarch64) arch="arm64" ;;
+              esac
 
-          dagger version
-          dagger do $(params.dagger-action)
+              wget -c https://github.com/dagger/dagger/releases/download/$(params.dagger-version)/dagger_$(params.dagger-version)_linux_${arch}.tar.gz  -O - |  \
+              tar zxf - -C /usr/local/bin
 
-        env:
-          - name: APP_NAME
-            value: $(params.netlify-site-name)
-          - name: NETLIFY_TEAM
-            value: $(params.netlify-team)
-          - name: DAGGER_LOG_FORMAT
-            value: plain
-          # Get one from https://app.netlify.com/user/applications/personal
-          # and save it as a generic kubernetes secret
-          - name: NETLIFY_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: netlify
-                key: token
-        volumeMounts:
-        - mountPath: /var/run/
-          name: dind-socket
-      sidecars:
-        - image: docker:20.10.13-dind
-          name: server
-          securityContext:
-            privileged: true
-          volumeMounts:
-          - mountPath: /var/run/
-            name: dind-socket
-      volumes:
-      - name: dind-socket
-        emptyDir: {}
+              dagger version
+              dagger do $(params.dagger-action)
+
+            env:
+              - name: APP_NAME
+                value: $(params.netlify-site-name)
+              - name: NETLIFY_TEAM
+                value: $(params.netlify-team)
+              - name: DAGGER_LOG_FORMAT
+                value: plain
+              # Get one from https://app.netlify.com/user/applications/personal
+              # and save it as a generic kubernetes secret
+              - name: NETLIFY_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: netlify
+                    key: token
+            volumeMounts:
+              - mountPath: /var/run/
+                name: dind-socket
+        sidecars:
+          - image: docker:20.10.13-dind
+            name: server
+            securityContext:
+              privileged: true
+            volumeMounts:
+              - mountPath: /var/run/
+                name: dind-socket
+        volumes:
+          - name: dind-socket
+            emptyDir: {}
 ---
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
@@ -367,26 +366,25 @@ spec:
   pipelineRef:
     name: dagger
   workspaces:
-  - name: shared-data
-    volumeClaimTemplate:
-      spec:
-        accessModes:
-        - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
+    - name: shared-data
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
   params:
-  - name: dagger-version
-    value: v0.2.6
-  - name: dagger-action
-    value: deploy
-  - name: repo-url
-    value: https://github.com/dagger/todoapp.git
-  - name: netlify-site-name
-    value: todoapp-dagger-europa
-  - name: netlify-team
-    value: dagger
-
+    - name: dagger-version
+      value: v0.2.6
+    - name: dagger-action
+      value: deploy
+    - name: repo-url
+      value: https://github.com/dagger/todoapp.git
+    - name: netlify-site-name
+      value: todoapp-dagger-europa
+    - name: netlify-team
+      value: dagger
 ```
 
 </TabItem>

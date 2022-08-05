@@ -81,7 +81,7 @@ mdlint: # Markdown lint for web
 .PHONY: web_redirects
 web_redirects:
 	# Generate netlify _redirects
-	find ./docs/ -path "*/*-*.md" | xargs grep -h slug | cut -d ' ' -f2 | awk -F '/' 'NF>2{print "/"$$2"/*",$$0,307}' > ./website/static/_redirects
+	find ./docs/ -path "*/*-*.md*" | xargs grep -h slug | cut -d ' ' -f2 | awk -F '/' 'NF>2{print "/"$$2"/*",$$0,307}' > ./website/static/_redirects
 
 .PHONY: web
 web: web_redirects # Run the website locally

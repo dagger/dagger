@@ -7,7 +7,7 @@ import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md';
 
 # Handling action outputs
 
-Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](../../getting-started/1200-local-dev.md) finishes:
+Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](/1200/local-dev) finishes:
 
 ```shell
 ➜  APP_NAME=dagger-todo dagger do deploy

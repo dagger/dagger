@@ -1,0 +1,58 @@
+@use "../custom";
+
+.tutorialCard {
+  border: 1px solid var(--ifm-color-primary-darker);
+  display: flex;
+  flex-wrap: wrap;
+  background-color: var(--ifm-color-primary-darker);
+  color: var(--ifm-color-primary-light) !important;
+  text-decoration: none !important;
+  box-shadow: 4px 4px 0px #40b9bc;
+  padding: 5%;
+  gap: 20px;
+
+  transition: all 0.3s ease-in-out;
+
+  html[data-theme="dark"] & {
+    background-color: var(--ifm-color-primary-light);
+    &:hover {
+      box-shadow: 4px 4px 0px 0px var(--ifm-color-primary);
+    }
+    p,
+    h4 {
+      color: var(--ifm-color-primary-darker) !important;
+    }
+
+    a div {
+      background-color: var(--ifm-color-primary-darker);
+      color: var(--ifm-color-primary-light);
+    }
+  }
+
+  img {
+    background-color: var(--ifm-color-primary-light);
+    width: 270px;
+    max-width: 270px;
+    object-fit: contain;
+  }
+
+  &:hover {
+    box-shadow: 4px 4px 0px 0px var(--ifm-color-primary);
+  }
+
+  div {
+    flex: 1 1 220px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    p {
+      font-size: 0.8rem;
+    }
+
+    div {
+      min-width: fit-content;
+      width: 50%;
+    }
+  }
+}

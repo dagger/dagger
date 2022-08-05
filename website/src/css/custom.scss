@@ -1,7 +1,14 @@
 @use "sass:meta";
+$mobile-width: 480px;
 $tablet-width: 996px;
 $desktop-width: 997px;
 $desktop-xl-width: 1160px;
+
+@mixin mobile {
+  @media (max-width: #{$mobile-width}) {
+    @content;
+  }
+}
 
 @mixin tablet {
   @media (max-width: #{$tablet-width}) {
@@ -48,8 +55,10 @@ $desktop-xl-width: 1160px;
   --ifm-color-info: #40b9bc;
   --ifm-color-warning: #ef7b1a;
   --ifm-color-danger: #be1d43;
+  --ifm-color-grey: #858495;
+  --ifm-color-grey-light: #a6a5b7;
   --ifm-container-width-xl: 990px;
-  --ifm-font-color-base: var(--ifm-color-primary-dark);
+  --ifm-font-color-base: var(--ifm-color-primary-darker);
   --ifm-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
   --ifm-font-family-title: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -63,12 +72,15 @@ $desktop-xl-width: 1160px;
   --ifm-menu-color-active: var(--ifm-color-primary-dark);
   --ifm-menu-color-background-hover: #fdf9d7;
   --ifm-menu-color-background-active: var(--ifm-menu-color-background-hover);
-  --ifm-navbar-height: 6rem;
+  --ifm-navbar-height: 96px;
   --ifm-navbar-background-color: var(--ifm-color-primary-dark);
   --ifm-navbar-padding-vertical: 0;
   --ifm-pagination-nav-border-radius: 0;
   --ifm-pre-padding: 2rem;
   --ifm-toc-link-color: var(--ifm-color-primary-dark);
+  --ifm-box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.75);
+  --ifm-box-shadow-light: 0px 4px 20px rgba(0, 0, 0, 0.3);
+  --ifm-border-radius: 20px;
 }
 
 html[data-theme="dark"] {
@@ -89,6 +101,8 @@ html[data-theme="dark"] {
   --ifm-blockquote-color: var(--ifm-color-primary-light);
   --ifm-blockquote-border-color: var(--ifm-color-primary-light);
   --ifm-color-emphasis-300: var(--ifm-menu-color-background-hover);
+  --ifm-box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.5);
+  --ifm-breadcrumb-item-background-active: var(--ifm-color-primary);
 }
 
 /* global */
@@ -97,6 +111,11 @@ h1,
 h2,
 h3 {
   font-family: var(--ifm-font-family-title);
+}
+
+h1 {
+  font-weight: 700;
+  font-size: 48px;
 }
 
 h2 {
@@ -183,7 +202,9 @@ code,
 p {
   font-size: 18px;
   font-weight: 400;
-  line-height: 24px;
+  line-height: 21px;
+  font-family: var(--ifm-font-family-base);
+  letter-spacing: 0.5px; //styleName: Body 1;
 }
 
 a.menu__link[target="_blank"] {
@@ -270,7 +291,14 @@ h1[class^="h1Heading"] {
 
 /* navbar */
 .navbar__brand .navbar__logo {
-  height: 5rem;
+  display: flex;
+  height: 100%;
+  align-items: center;
+  align-content: center;
+
+  img {
+    height: 6rem;
+  }
 
   @include desktop {
     height: var(--ifm-navbar-height);
@@ -298,14 +326,58 @@ h1[class^="h1Heading"] {
   margin: 0 0.75rem;
 }
 
-.header-discord-link,
+.header-searchbar {
+  button {
+    margin: 0px !important;
+  }
+}
+
+.header-discord-link {
+  display: flex;
+  height: 40px;
+  margin: 0px;
+
+  a {
+    background-color: var(--ifm-color-secondary) !important;
+    border-radius: 20px;
+    font-weight: bold;
+    transition-property: transform;
+    transition: 0.1s ease-in;
+    padding: 0px 20px;
+    display: flex;
+    text-decoration: none;
+
+    html[data-theme="dark"] & {
+      color: var(--ifm-color-primary-darker);
+    }
+
+    span {
+      margin-left: 5px;
+      display: flex;
+      align-items: center;
+    }
+  }
+
+  a:hover {
+    transform: scale(1.05);
+  }
+
+  > span {
+    margin-left: 10px;
+    border-right: 1px solid white;
+  }
+
+  @include tablet {
+    display: none;
+  }
+}
+
 .header-github-link {
   height: 48px;
-  line-height: 36px;
 
   @include desktop {
     width: 48px;
-    text-indent: 9999px;
+    text-indent: 40px;
     white-space: nowrap;
     overflow: hidden;
   }
@@ -320,8 +392,10 @@ h1[class^="h1Heading"] {
   }
 }
 
-.header-discord-link,
-.header-discord-link:hover {
+.header-discord-link div,
+.header-discord-link:hover div {
+  height: 35px;
+  width: 35px;
   background: url("/img/discord-icon.svg") no-repeat;
 
   @include tablet {
@@ -354,6 +428,14 @@ a[class^="sidebarLogo"] {
   html[data-theme="dark"] & {
     background: url("/img/dagger-logo.png") no-repeat left center;
     background-size: contain;
+  }
+}
+
+/* breadcrumbs */
+
+.breadcrumbs__link {
+  html[data-theme="dark"] & {
+    color: white !important;
   }
 }
 
@@ -444,7 +526,7 @@ button[class^="copyButton"] {
   padding-bottom: 1rem;
 }
 
-.menu__link {
+.menu__list-item {
   font-weight: normal;
 }
 
@@ -485,6 +567,12 @@ button[class^="copyButton"] {
   @include tablet {
     color: var(--ifm-color-primary-light);
   }
+}
+
+li.theme-doc-sidebar-item-link-level-1,
+li.theme-doc-sidebar-item-link-level-1:active {
+  font-size: 1.2rem;
+  font-weight: 800;
 }
 
 /* docsearch */
@@ -567,3 +655,9 @@ img[alt="github-contribute"] {
   $caution: "/img/Dagger_Icons_Caution.svg",
   $danger: "/img/Dagger_Icons_Danger.svg"
 );
+
+/* Utils */
+
+.margin--vertical-md {
+  margin: 50px 0px;
+}

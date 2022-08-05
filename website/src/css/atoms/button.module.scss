@@ -1,0 +1,37 @@
+.button {
+  align-self: flex-end;
+  border-radius: 100px;
+  width: 100%;
+  padding: 0.5rem;
+  max-width: 300px;
+  transition: transform 0.2s ease;
+
+  html[data-theme="dark"] & {
+    background-color: var(--ifm-color-primary-light);
+    color: var(--ifm-color-primary-darker);
+  }
+
+  /* font */
+  font-style: normal;
+  font-weight: bold;
+  font-size: 1rem;
+  text-align: center;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+}
+
+.anchor {
+  text-decoration: none !important;
+}
+
+.button.light {
+  background-color: var(--ifm-color-secondary);
+  color: var(--ifm-color-primary-darker);
+}
+
+.button.dark {
+  background-color: var(--ifm-color-primary-darker);
+  color: var(--ifm-color-primary-light);
+}
