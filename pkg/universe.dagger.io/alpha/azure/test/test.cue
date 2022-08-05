@@ -35,13 +35,15 @@ dagger.#Plan & {
 		aksAuth:   aksauth.#Image
 
 		// check if the token can be fetched (token is not used as of now)
-		token: auth.#GetToken & {
+		token: auth.#AccessToken & {
+			debug:            true
 			scope:            "https://vault.azure.net/.default"
 			servicePrincipal: sp
 		}
 
 		// get a kubeconfig with admin crdentials
 		kubeconfig: aksauth.#GetCredentials & {
+			debug:            true
 			admin:            true
 			servicePrincipal: sp
 			cluster:          cl

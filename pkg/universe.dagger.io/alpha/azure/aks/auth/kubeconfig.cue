@@ -3,10 +3,14 @@ package auth
 import (
 	"dagger.io/dagger"
 	"universe.dagger.io/docker"
+	"universe.dagger.io/alpha/azure/auth"
 )
 
 #GetCredentials: {
 	_img: #Image
+
+	// enable debug output
+	debug: *false | true
 
 	// Get admin cedentials, if true
 	// otherwise user credentials
@@ -35,28 +39,36 @@ import (
 	}
 
 	// the output contains the kubeconfig as secretr
-	output: _run.export.secrets."/kubeconfig"
+	output: _run.creds.export.secrets."/kubeconfig"
 
-	_run: docker.#Run & {
-		input: _img.output
-		command: {
-			name: "akscreds"
-			args: [
-				if admin {"-a"},
-				"-f",
-				format,
-				"-o",
-				"/kubeconfig",
-			]
+	_run: {
+		let sp = servicePrincipal
+		let d = debug
+		token: auth.#AccessToken & {
+			servicePrincipal: sp
+			debug:            d
 		}
-		env: {
-			AZURE_TENANT_ID:                     servicePrincipal.tenantId
-			AAD_SERVICE_PRINCIPAL_CLIENT_ID:     servicePrincipal.id
-			AAD_SERVICE_PRINCIPAL_CLIENT_SECRET: servicePrincipal.secret
-			AKS_SUSCRIPTION_ID:                  cluster.subscriptionId
-			AKS_RESOURCE_GROUP:                  cluster.resourceGroup
-			AKS_NAME:                            cluster.name
+		creds: docker.#Run & {
+			input: _img.output
+			command: {
+				name: "akscreds"
+				args: [
+					if admin {"-a"},
+					"-f",
+					format,
+					"-o",
+					"/kubeconfig",
+				]
+			}
+			env: {
+				AAD_ACCESS_TOKEN:   token.output
+				AKS_SUSCRIPTION_ID: cluster.subscriptionId
+				AKS_RESOURCE_GROUP: cluster.resourceGroup
+				AKS_NAME:           cluster.name
+				AZURE_DEBUG:        [ if debug {"1"}, "0"][0]
+
+			}
+			export: secrets: "/kubeconfig": _
 		}
-		export: secrets: "/kubeconfig": _
 	}
 }

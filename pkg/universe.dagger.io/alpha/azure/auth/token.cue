@@ -5,8 +5,10 @@ import (
 	"universe.dagger.io/docker"
 )
 
-#GetToken: {
+#AccessToken: {
 	_img: #Image
+
+	debug: *false | true
 
 	// The resource to get the token for
 	// default to https://management.azure.com/
@@ -38,6 +40,7 @@ import (
 			AZURE_TENANT_ID:                     servicePrincipal.tenantId
 			AAD_SERVICE_PRINCIPAL_CLIENT_ID:     servicePrincipal.id
 			AAD_SERVICE_PRINCIPAL_CLIENT_SECRET: servicePrincipal.secret
+			AZURE_DEBUG:                         [ if debug {"1"}, "0"][0]
 		}
 		export: secrets: "/token": _
 	}

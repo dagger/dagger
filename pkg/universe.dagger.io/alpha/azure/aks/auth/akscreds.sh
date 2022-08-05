@@ -3,6 +3,7 @@
 set -eu
 
 : "${KUBECONFIG:=$HOME/.kube/config}"
+: "${AZURE_DEBUG:=0}"
 
 __usage="Usage:
   aks-get-credentials [-a] [-f format] [-o path]
@@ -12,12 +13,10 @@ Flags:
   -o    write the kubeconfig to the specified path. Writes to stdout, if not specified or set to '-'
   -h    show this help message
 Environment Variables:
+  AAD_ACCESS_TOKEN                        the access token to use
   AKS_SUSCRIPTION_ID                      the subscription id of the cluster
   AKS_RESOURCE_GROUP                      the resource group of the cluster
-  AKS_NAME                                the name of the cluster
-  AZURE_TENANT_ID                         the tenant id of the servicel principal
-  AAD_SERVICE_PRINCIPAL_CLIENT_ID         the client id (application id) of the service principal
-  AAD_SERVICE_PRINCIPAL_CLIENT_SECRET     the client secret value of the service principal"
+  AKS_NAME                                the name of the cluster"
 
 helptext() {
     echo >&2 "$__usage"
@@ -61,6 +60,11 @@ done
 
 shift $((OPTIND - 1))
 
+# enable debug mode, if set
+if [ "$AZURE_DEBUG" = "1" ]; then
+    debug="1"
+fi
+
 get_credentials() {
 
     # the bearer token is the second arg
@@ -94,26 +98,26 @@ get_credentials() {
 
     # make the api call to get the kubeconfig
     config="$(mktemp)"
-    touch "$config"
     # shellcheck disable=SC2064
     trap "rm -f $config" EXIT INT HUP
+
+    if [ "$AZURE_DEBUG" = "1" ]; then
+        echo >&2 "AKS Get Credentials Request..."
+        echo >&2 "URL: $url"
+    fi
 
     curl -fsSL --request POST --url "$url" \
         --header "Authorization: Bearer $access_token" \
         --header "Content-type: application/json" \
-        --header "Content-Length: 0" >"$config"
+        --header "Content-Length: 0" -o "$config" ${debug+-v} 1>&2
 
     jq -r '.kubeconfigs[0].value | @base64d' "$config"
 }
 
-#
-# get the token
-token="$(azlogin)"
-
 # get the kubeconfig
 if [ "$output" = "-" ]; then
-    get_credentials "$endpoint" "$token"
+    get_credentials "$endpoint" "$AAD_ACCESS_TOKEN"
 else
-    get_credentials "$endpoint" "$token" >"$output"
+    get_credentials "$endpoint" "$AAD_ACCESS_TOKEN" >"$output"
     chmod 600 "$output"
 fi

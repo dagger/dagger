@@ -2,6 +2,8 @@
 
 set -eu
 
+: "${AZURE_DEBUG:=0}"
+
 __usage="Usage:
   azlogin [-s <scope>] [-r <resource>]
 Flags:
@@ -48,6 +50,11 @@ done
 
 shift $((OPTIND - 1))
 
+# enable debug mode, if set
+if [ "$AZURE_DEBUG" = "1" ]; then
+    debug="1"
+fi
+
 # query params
 grant_type="grant_type=client_credentials"
 client_id="client_id=$AAD_SERVICE_PRINCIPAL_CLIENT_ID"
@@ -70,11 +77,15 @@ else
 fi
 
 token="$(mktemp)"
-touch token.json
 # shellcheck disable=SC2064
 trap "rm -f $token" EXIT INT HUP
 
+if [ "$AZURE_DEBUG" = "1" ]; then
+    echo >&2 "Azure Login token Request..."
+    echo >&2 "Query: $query"
+fi
+
 curl -fsSL --request POST "https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/token" \
-    --header "Content-Type: application/x-www-form-urlencoded" --data "$query" >"$token"
+    --header "Content-Type: application/x-www-form-urlencoded" --data "$query" -o "$token" ${debug+-v} 1>&2
 
 jq -r '.access_token' "$token"
