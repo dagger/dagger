@@ -1,3 +1,4 @@
+context: ../../..
 actions:
   netlify:
-    context: ../../..
+    local: examples/netlify/go

@@ -1,3 +1,4 @@
+context: ../..
 actions:
   alpine:
-    context: ../..
+    local: examples/alpine

@@ -1,12 +1,10 @@
+context: ../../..
 actions:
   alpine:
-    local: ../../alpine
-    context: ../../..
+    local: examples/alpine
   yarn:
-    local: ../../yarn
-    context: ../../..
+    local: examples/yarn
   netlify:
-    local: ../../netlify/go
-    context: ../../..
+    local: examples/netlify/go
   todoapp:
-    context: ../../..
+    local: examples/todoapp/go
