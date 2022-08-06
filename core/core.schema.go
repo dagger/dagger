@@ -21,6 +21,7 @@ func (r *coreSchema) Schema() string {
 	type Core {
 		image(ref: String!): Filesystem!
 		git(remote: String!, ref: String): Filesystem!
+		clientdir(id: String!): Filesystem!
 	}
 	`
 }
@@ -31,7 +32,9 @@ func (r *coreSchema) Resolvers() router.Resolvers {
 			"core": r.Core,
 		},
 		"Core": router.ObjectResolver{
-			"image": r.Image,
+			"image":     r.Image,
+			"git":       r.Git,
+			"clientdir": r.ClientDir,
 		},
 	}
 }
@@ -55,4 +58,20 @@ func (r *coreSchema) Git(p graphql.ResolveParams) (any, error) {
 	return r.Solve(p.Context, st)
 }
 
-var _ router.ExecutableSchema = &coreSchema{}
+func (r *coreSchema) ClientDir(p graphql.ResolveParams) (any, error) {
+	id := p.Args["id"].(string)
+
+	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
+	// which makes it unable to reused, which in turn creates cache invalidations
+	// TODO: this should be optional, the above issue can also be avoided w/ readonly
+	// mount when possible
+	st := llb.Scratch().File(llb.Copy(llb.Local(
+		id,
+		// TODO: better shared key hint?
+		llb.SharedKeyHint(id),
+		// FIXME: should not be hardcoded
+		llb.ExcludePatterns([]string{"**/node_modules"}),
+	), "/", "/"))
+
+	return r.Solve(p.Context, st)
+}
