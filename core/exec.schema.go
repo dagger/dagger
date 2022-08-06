@@ -55,9 +55,10 @@ func (s *execSchema) Schema() string {
 		workdir: String
 	}
 
-	extend type Filesystem {
-		exec(input: ExecInput!): Exec!
-	}
+	# FIXME: broken
+	# extend type Filesystem {
+	# 	exec(input: ExecInput!): Exec!
+	# }
 	`
 }
 

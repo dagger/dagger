@@ -18,8 +18,12 @@ func New(gw bkgw.Client, platform specs.Platform) []router.ExecutableSchema {
 	return []router.ExecutableSchema{
 		&rootSchema{base},
 		&coreSchema{base},
+
 		&filesystemSchema{base},
 		&execSchema{base},
+		&dockerBuildSchema{base},
+
+		&secretSchema{base},
 	}
 }
 

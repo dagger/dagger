@@ -46,20 +46,12 @@ func (s *filesystemSchema) Schema() string {
 	return `
 	scalar FSID
 
-	input MountInput {
-		path: String!
-		fs: FSID!
-	}
-
-	input ExecInput {
-		args: [String!]!
-		mounts: [MountInput!]
-		workdir: String
-	}
-
 	type Filesystem {
 		id: FSID!
 		file(path: String!, lines: Int): String
+
+		# FIXME: this should be in execSchema. However, removing this results in an error:
+		# failed to resolve all type definitions: [Core Query Filesystem Exec]
 		exec(input: ExecInput!): Exec!
 	}
 
