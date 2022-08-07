@@ -25,6 +25,15 @@ import (
 	// The name of the AWS CloudFormation stack
 	stackName: *null | string
 
-	// The client socket if we wanna build a docker image
+	// The client socket if we wanna build a docker image locally
 	clientSocket?: dagger.#Socket
+
+	// The docker tcp host - you need that for building docker images in a ci environment
+	host?: string
+
+	// The docker certs path. When you run in DinD-Service it is /certs/client by default
+	certs?: dagger.#FS
+
+	// The ciKey indicates if you run in a ci pipeline or locally
+	ciKey?: string
 }
