@@ -1,0 +1,197 @@
+@use "./custom";
+
+.mainCards {
+  margin: 30px 0px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 30px;
+
+  @include custom.mobile {
+    gap: 20px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 300px;
+    width: 48%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    padding: 5%;
+
+    box-shadow: 4px 4px 0px 0px rgba(64, 185, 188, 1);
+    background-color: var(--ifm-color-primary-darker);
+    background-size: 155%;
+    background-position: left 50% bottom 20%;
+
+    color: var(--ifm-color-primary-light);
+
+    html[data-theme="dark"] & {
+      color: var(--ifm-color-primary-darker);
+      background-color: var(--ifm-color-primary-light);
+
+      h5 {
+        color: var(--ifm-color-primary-darker);
+      }
+
+      a div {
+        background-color: var(--ifm-color-primary-darker);
+        color: var(--ifm-color-primary-light);
+      }
+    }
+
+    & h5 {
+      font-size: 1.25rem;
+    }
+
+    & span {
+      font-size: 0.8rem;
+    }
+
+    & a {
+      margin: 20px 0px 0px 0px;
+      text-decoration: none;
+    }
+
+    @include custom.mobile {
+      width: 100%;
+    }
+  }
+}
+
+hr {
+  border: 1px solid #0d0c1b;
+  margin: 50px 0px;
+}
+
+.button {
+  align-self: flex-end;
+  background-color: var(--ifm-color-primary-darker);
+  border-radius: 100px;
+  color: var(--ifm-color-primary-light);
+  margin: 20px 0px 0px 0px;
+  padding: 0.5rem;
+  transition: transform 0.2s ease;
+
+  /* font */
+  font-family: "Source Code Pro";
+  font-style: normal;
+  font-weight: 800;
+  font-size: 1rem;
+  text-decoration: none;
+  text-align: center;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+}
+
+.infoCard {
+  flex-wrap: nowrap;
+  margin-top: 40px;
+  padding: 40px;
+  background: #f6f5ff;
+  & h2 {
+    font-weight: 700;
+  }
+  & li {
+    font-size: 1rem;
+    font-weight: normal;
+  }
+
+  html[data-theme="dark"] & {
+    background-color: var(--ifm-color-primary);
+  }
+
+  > img {
+    margin: 40px auto;
+    max-width: 500px;
+    object-fit: contain;
+  }
+
+  & a {
+    display: flex;
+    width: fit-content;
+    justify-content: flex-start;
+    & img {
+      transition: all 0.2s ease;
+      width: 30px;
+      margin-right: 12px;
+    }
+  }
+
+  & a:hover {
+    & img {
+      transform: translateX(5px);
+    }
+  }
+}
+
+.index {
+  margin-top: 20px;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+  justify-content: center;
+
+  > :nth-child(3) {
+    grid-column: 1/3;
+  }
+}
+
+a.linkCTA {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: fit-content;
+  justify-content: flex-start;
+  & img {
+    transition: all 0.2s ease;
+    width: 30px;
+    height: 30px;
+    margin-right: 12px;
+  }
+
+  &:hover {
+    & img {
+      transform: translateX(5px);
+    }
+  }
+}
+
+.relatedContent {
+  padding: 0.8rem 0.5rem 1rem 1rem;
+  grid-column: 1/3;
+
+  & ul {
+    list-style: none;
+    padding: 1rem;
+    margin: 0;
+  }
+
+  & li span {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+
+    & img {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+    }
+  }
+
+  & li a {
+    margin-left: 1rem;
+
+    /* font */
+    text-decoration: none !important;
+    font-size: 1rem;
+    color: var(--ifm-color-grey) !important;
+  }
+
+  & li a:hover {
+    color: var(--ifm-color-primary) !important;
+  }
+}

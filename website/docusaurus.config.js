@@ -15,7 +15,7 @@ module.exports = {
     "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap",
   ],
   customFields: {
-    AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID
+    AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID,
   },
   themeConfig: {
     sidebarCollapsed: false,
@@ -31,20 +31,21 @@ module.exports = {
         {
           type: "search",
           position: "right",
+          className: "header-searchbar",
         },
         {
           position: "right",
-          label: "Discord",
-          href: "https://discord.gg/ufnyBtc8uY",
-          className: "header-discord-link",
-          "aria-label": "Discord community",
-        },
-        {
-          position: "right",
-          label: "Github",
+          // label: "Github",
           href: "https://github.com/dagger/dagger",
           className: "header-github-link hide-target-icon",
           "aria-label": "GitHub repository",
+        },
+        {
+          position: "right",
+          type: "html",
+          value:
+            "<a href='https://discord.gg/ufnyBtc8uY'><div></div><span>Ask for help</span></a><span>a</span>",
+          className: "header-discord-link",
         },
       ],
       hideOnScroll: true,
@@ -80,6 +81,7 @@ module.exports = {
         theme: {
           customCss: require.resolve("./src/css/custom.scss"),
         },
+        blog: false,
       },
     ],
   ],
