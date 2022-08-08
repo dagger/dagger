@@ -5,6 +5,12 @@ import (
 	"universe.dagger.io/docker"
 )
 
+#ServicePrincipal: {
+	tenantId:     string
+	clientId:     string
+	clientSecret: dagger.#Secret
+}
+
 #AccessToken: {
 	_img: #Image
 
@@ -19,11 +25,7 @@ import (
 	scope: string | *""
 
 	// The service principal used to get the token
-	servicePrincipal: {
-		tenantId: string
-		id:       string
-		secret:   dagger.#Secret
-	}
+	servicePrincipal: #ServicePrincipal
 
 	// The output contains the token in a secret
 	output: _run.export.secrets."/token"
@@ -38,8 +40,8 @@ import (
 			AZLOGIN_RESOURCE:                    resource
 			AZLOGIN_SCOPE:                       scope
 			AZURE_TENANT_ID:                     servicePrincipal.tenantId
-			AAD_SERVICE_PRINCIPAL_CLIENT_ID:     servicePrincipal.id
-			AAD_SERVICE_PRINCIPAL_CLIENT_SECRET: servicePrincipal.secret
+			AAD_SERVICE_PRINCIPAL_CLIENT_ID:     servicePrincipal.clientId
+			AAD_SERVICE_PRINCIPAL_CLIENT_SECRET: servicePrincipal.clientSecret
 			AZURE_DEBUG:                         [ if debug {"1"}, "0"][0]
 		}
 		export: secrets: "/token": _
