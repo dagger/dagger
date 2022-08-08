@@ -134,7 +134,11 @@ module.exports = {
         description:
           "See how others are using Dagger for their CI/CD pipelines. This includes integrating with CI environments.",
       },
-      items: ["use-cases/go-docker-swarm", "use-cases/node-ci"],
+      items: [
+        "use-cases/go-docker-swarm",
+        "use-cases/node-ci",
+        "use-cases/aws-sam",
+      ],
     },
     {
       type: "link",

@@ -286,7 +286,7 @@ A valid use of that template would be:
 
 ```cue
 flags: {
-    "--foo": "bar:
+    "--foo": "bar"
     "baz": true
 }
 ```
