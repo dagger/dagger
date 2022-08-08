@@ -67,6 +67,7 @@ module.exports = {
       "@docusaurus/preset-classic",
       {
         docs: {
+          breadcrumbs: false,
           path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/edit/main/website",

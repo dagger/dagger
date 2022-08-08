@@ -396,19 +396,19 @@ Azure Pipelines do not currently support a native task; however, it is still pos
 
 To use Dagger on Mac or Linux hosted agent you can use the following pipeline file.
 
-```yaml file=../tests/getting-started/azure-pipelines.yml title="azure-pipelines.yml"
+```yaml file=../../tests/getting-started/azure-pipelines.yml title="azure-pipelines.yml"
 
 ```
 
 Since you cannot use the `install.sh` script on a Windows hosted agent, you will need to update the install task to:
 
 ```yaml
-  - task: ChocolateyCommand@0
-    inputs:
-      command: 'install'
-      installPackageId: 'dagger'
-      installPackageVersion: '$(DAGGER_VERSION)'
-    displayName: Install Dagger $(DAGGER_VERSION)
+- task: ChocolateyCommand@0
+  inputs:
+    command: "install"
+    installPackageId: "dagger"
+    installPackageVersion: "$(DAGGER_VERSION)"
+  displayName: Install Dagger $(DAGGER_VERSION)
 ```
 
 </TabItem>
