@@ -12,7 +12,7 @@ You will certainly encounter bugs, confusing behavior, and incomplete documentat
 Project Cloak is currently in early access for a small group of testers. Early Access includes the following:
 
 - Early access to the [Project Cloak repository](https://github.com/dagger/cloak)
-- Early access to the Project Cloak community channel on Discord: #project-cloak
+- Early access to the Project Cloak community channel on Discord: #cloak
 - Our eternal gratitude for trying unfinished software and contributing precious feedback.
 - Sweet Dagger swag :)
 
