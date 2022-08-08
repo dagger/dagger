@@ -9,9 +9,15 @@ import (
 )
 
 #Upgrade: {
+	_base: #Image
+
 	// The image to use when running the action.
 	// Must contain the helm binary. Defaults to alpine/helm
-	image: *#Image | docker.#Image
+	image: *_base.output | docker.#Image
+
+	// Additional environment variables which are available in the
+	// shell helm is executed in. Useful to set secrets
+	env: [string]: string | dagger.#Secret
 
 	// The kubeconfig file content
 	kubeconfig: dagger.#Secret
@@ -79,12 +85,12 @@ import (
 	// for anything that is not covered by the struct fields
 	flags: [...string]
 
-	// used to avoid name clashes
-	let releaseName = name
-
 	run: docker.#Run & {
-		input: image.output
-		entrypoint: ["helm"]
+		// should probably run always since oftentimes
+		// there a re no changes visible to dagger,
+		// but a new release should be rolled out
+		always: true
+		input:  image
 		if workspace != _|_ {
 			workdir: "/workspace"
 		}
@@ -101,14 +107,12 @@ import (
 				}
 			}
 		}
-		env: {
-			if password != _|_ {HELM_PASSWORD: password}
-		}
-		command: {
-			name: "upgrade"
-			args: list.Concat([
+		_cmd:  strings.Join(
+			list.Concat([
 				[
-					releaseName,
+					"helm",
+					"upgrade",
+					name,
 					chart,
 					if repo != _|_ {"--repo=\(repo)"},
 					if version != _|_ {"--version=\(version)"},
@@ -125,11 +129,30 @@ import (
 					if dryRun {"--dry-run"},
 					if force {"--force"},
 					if cleanupOnFail {"--cleanup-on-fail"},
-					if username != _|_ {"--username=\(username)"},
-					if password != _|_ {"--password=${HELM_PASSWORD}"},
 				],
 				flags,
-			])
+			]),
+			" ")
+		"env": env & {
+			HELM_CHART: chart
+			if password != _|_ {HELM_PASSWORD: password}
+			if username != _|_ {HELM_USERNAME: username}
 		}
+		entrypoint: ["sh", "-c"]
+		command: name: #"""
+            # if there is no password, run the command
+            if [ -z "$HELM_PASSWORD" ] || [ -z "$HELM_USERNAME" ]; then
+                \#(_cmd)
+                exit 0
+            fi
+            # otherwise check if we need to login to the registry or
+            # pass the credentials to the command
+            if [ "${HELM_CHART%%/*}" = "oci:" ]; then
+                echo "$HELM_PASSWORD" | helm registry login "$(echo "$HELM_CHART" | cut -d/ -f3)" --username "$HELM_USERNAME" --password-stdin
+                \#(_cmd)
+            else
+                \#(_cmd) --username "$HELM_USERNAME" --password "$HELM_PASSWORD"
+            fi
+            """#
 	}
 }
