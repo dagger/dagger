@@ -1,7 +1,7 @@
-**Extension**
+## Extension
 A schema + associated resolvers that can be loaded into Cloak at runtime to add new functionality beyond the core API.
 
-**Resolver**
+## Resolver
 An implementation of one field of a schema. When Cloak is evaluating a query, it needs to run code to calculate the values
 being requested; we call this "invoking a resolver". When an extension is loaded, each field in the extension's schema
 that takes args must be associated with a resolver.
@@ -14,11 +14,11 @@ Resolvers have access to the Cloak API during execution, which enables them to i
 - TODO: mention complications of cases where fields w/ no args can be resolvers; what a "trivial resolver" is in graphql parlence, etc.
 - TODO: this is the closest thing to what we used to call an "action". Should we still call it an action instead of resolver?
 
-**Dependency**
+## Dependency
 Resolvers can declare a list of extensions they depend on; that list determines the schema presented to the resolver by Cloak at the time the resolver
 is executed.
 
-**Runtime**
+## Runtime
 The part of a resolver that serves as an interface between the Cloak server and the code or other artifacts that
 implement the actual functionality of the extension. Runtimes implement the "runtime protocol", which defines how inputs
 are provided to a resolver and how outputs are provided back to the Cloak server.
@@ -27,7 +27,7 @@ It is up to each runtime implementation to determine how the inputs are converte
 
 - TODO: document the runtime protocol in detail.
 
-**Stubber**
+## Stubber
 A tool used when developing resolvers that generates:
 
 1. Implementation skeletons for the runtime being used by the resolver
@@ -45,7 +45,7 @@ The output of a stubber is a filesystem that will be exported to the developer's
 
 - TODO: should this be split up into two subtypes of stubber: one for impl, one for native clients?
 
-**SDK**
+## SDK
 An Extension used to create other extensions. For example, if the Go SDK Extension is loaded, a schema like this may become available:
 
 ```graphql
@@ -93,7 +93,7 @@ Where the `source` arg is just a filesytem containing a `Makefile` and the retur
 - TODO: It's not yet incredibly clear how to model extensions that make use of multiple runtimes (i.e. an extension that has resolvers that use Go and resolvers that use Bash). Should be possible with some tweaks, but need to figure those out.
 - TODO: the use of `extend` doesn't make sense here by itself, need to explore where SDK tools like the stubber and runtimes get stitched into the overall schema. It may make sense to use graphql interfaces here?
 
-**Host Client**
+## Host Client
 The initiator of queries to Cloak (the root of a DAG). These can currently be split into a few subtypes:
 
 - Direct graphql queries (i.e. with `curl`, a `GraphiQL` web console, etc.)
@@ -103,7 +103,7 @@ The initiator of queries to Cloak (the root of a DAG). These can currently be sp
 
 - TODO: I hate this name, but "client" by itself is too ambiguous with the concept of a graphql client. Need to come up with something better
 
-**Provisioner**
+## Provisioner
 
 Code which can either identify an existing daggerd or provision a new one.
 
