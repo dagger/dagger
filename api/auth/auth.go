@@ -31,6 +31,7 @@ var authConfig = &oauth2.Config{
 	RedirectURL: fmt.Sprintf("http://localhost:%d/callback", callbackPort),
 	Scopes:      []string{"openid", "offline_access"},
 	Endpoint: oauth2.Endpoint{
+		AuthStyle:     oauth2.AuthStyleInParams,
 		AuthURL:       "https://" + authDomain + "/authorize",
 		TokenURL:      "https://" + authDomain + "/oauth/token",
 		DeviceAuthURL: "https://" + authDomain + "/oauth/device/code",
@@ -104,7 +105,6 @@ func Login(ctx context.Context) error {
 		}
 
 		// setting interval to 1s since Auth0 doesn't honor the default one
-		da.Interval = 1
 		lg.Info().Msgf("visit the following link to authorize this CLI instance: %s", da.VerificationURIComplete)
 
 		// use a moderate interval, the `Poll` method below will do a backoff
