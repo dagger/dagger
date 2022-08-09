@@ -5,12 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
-	"time"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/api"
+	"github.com/dagger/cloak/core"
+	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -78,13 +82,6 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			defer func() {
-				if r := recover(); r != nil {
-					time.Sleep(2 * time.Second) // TODO: dumb, but allows logs to fully flush
-					panic(r)
-				}
-			}()
-
 			secrets := make(map[string]string)
 			secretIDToKey := make(map[string]string)
 			for k, v := range startOpts.Secrets {
@@ -94,11 +91,16 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				secretIDToKey[k] = hashVal
 			}
 
-			server = api.NewServer(gw, platform, secrets)
+			router := router.New()
+			if err := router.Add(core.New(router, gw, *platform)...); err != nil {
+				return nil, err
+			}
 
-			ctx = dagger.WithInMemoryAPIClient(ctx, server)
-			ctx = withGatewayClient(ctx, gw)
-			ctx = withPlatform(ctx, platform)
+			// server = api.NewServer(gw, platform, secrets)
+
+			ctx = withInMemoryAPIClient(ctx, router)
+			// ctx = withGatewayClient(ctx, gw)
+			// ctx = withPlatform(ctx, platform)
 
 			cl, err := dagger.Client(ctx)
 			if err != nil {
@@ -166,9 +168,8 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 			}
 
 			if startOpts.DevServer != 0 {
-				if err := server.ListenAndServe(ctx, startOpts.DevServer); err != nil {
-					return nil, err
-				}
+				http.Handle("/", router)
+				return nil, http.ListenAndServe(fmt.Sprintf(":%d", startOpts.DevServer), nil)
 			}
 
 			return result, nil
@@ -188,16 +189,48 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	return nil
 }
 
-type gatewayClientKey struct{}
+func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.Context {
+	return dagger.WithHTTPClient(ctx, &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				// TODO: not efficient, but whatever
+				serverConn, clientConn := net.Pipe()
 
-func withGatewayClient(ctx context.Context, gw bkgw.Client) context.Context {
-	return context.WithValue(ctx, gatewayClientKey{}, gw)
+				go func() {
+					l := &singleConnListener{conn: serverConn}
+
+					srv := &http.Server{
+						Handler: router,
+					}
+					srv.Serve(l)
+				}()
+
+				return clientConn, nil
+			},
+		},
+	})
 }
 
-type platformKey struct{}
+// converts a pre-existing net.Conn into a net.Listener that returns the conn
+type singleConnListener struct {
+	conn net.Conn
+}
 
-func withPlatform(ctx context.Context, platform *specs.Platform) context.Context {
-	return context.WithValue(ctx, platformKey{}, platform)
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	if l.conn == nil {
+		return nil, io.ErrClosedPipe
+	}
+	c := l.conn
+	l.conn = nil
+	return c, nil
+}
+
+func (l *singleConnListener) Addr() net.Addr {
+	return nil
+}
+
+func (l *singleConnListener) Close() error {
+	return nil
 }
 
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
@@ -214,10 +247,8 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func Shell(ctx context.Context, inputFS dagger.FSID) error {
-	gw := ctx.Value(gatewayClientKey{}).(bkgw.Client)
-	platform := ctx.Value(platformKey{}).(*specs.Platform)
-	baseDef, err := llb.Image("alpine:3.15").Marshal(ctx, llb.Platform(*platform))
+func Shell(ctx context.Context, gw bkgw.Client, platform specs.Platform, inputFS dagger.FSID) error {
+	baseDef, err := llb.Image("alpine:3.15").Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return err
 	}
