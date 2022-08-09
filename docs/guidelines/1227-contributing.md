@@ -193,3 +193,20 @@ The versions of `dagger` and `cue` you are working against will be pre-installed
 You will also have basic syntax highlighting and formatting for CUE in Visual Studio Code via pre-installed extensions.
 
 Support for other platforms, such as Gitpod, may be added if there is demand. Visit the [developer experience](https://github.com/dagger/dagger/discussions/2052) discussion on GitHub to show your interest.
+
+### How can I add my secrets to the `tests/secrets_sops.yaml` ?
+
+To add a secret called `SECRET_SECRET` to the tests/secrets_sops.yaml:
+
+Ensure that you have sops installed: https://github.com/mozilla/sops
+
+Run the following from the root of your local repo fork:
+
+```shell
+cd tests
+export SOPS_AGE_KEY_FILE="$(git rev-parse --show-toplevel)/tests/age_key.txt"
+sops secrets_sops.yaml
+# add SECRET_SECRET with the relevant value
+# save the secrets_sops.yaml file
+```
+Please note that anyone will be able to read the `SECRET_SECRET` value by following the steps above warning
