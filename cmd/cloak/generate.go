@@ -45,7 +45,7 @@ func Generate(cmd *cobra.Command, args []string) {
 	}
 	err = engine.Start(context.Background(), startOpts,
 		func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error) {
-			if err := cfg.Import(ctx, localDirs); err != nil {
+			if err := cfg.LoadExtensions(ctx, localDirs); err != nil {
 				return "", err
 			}
 			for name, act := range cfg.Actions {

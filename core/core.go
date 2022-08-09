@@ -10,16 +10,17 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func New(gw bkgw.Client, platform specs.Platform) []router.ExecutableSchema {
+func New(r *router.Router, gw bkgw.Client, platform specs.Platform) []router.ExecutableSchema {
 	base := &baseSchema{
+		router:   r,
 		gw:       gw,
 		platform: platform,
 	}
 	return []router.ExecutableSchema{
-		&rootSchema{base},
 		&coreSchema{base},
 
 		&filesystemSchema{base},
+		&extensionSchema{base},
 		&execSchema{base},
 		&dockerBuildSchema{base},
 
@@ -28,6 +29,7 @@ func New(gw bkgw.Client, platform specs.Platform) []router.ExecutableSchema {
 }
 
 type baseSchema struct {
+	router   *router.Router
 	gw       bkgw.Client
 	platform specs.Platform
 }

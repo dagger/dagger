@@ -81,27 +81,28 @@ func (c *Config) LocalDirs() map[string]string {
 	return localDirs
 }
 
-func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FSID) error {
+func (c *Config) LoadExtensions(ctx context.Context, localDirs map[string]dagger.FSID) error {
 	var eg errgroup.Group
 	for name, action := range c.Actions {
 		name := name
 		action := action
 		eg.Go(func() error {
 			switch {
-			case name == "core":
-				schema, operations, err := importCore(ctx)
-				if err != nil {
-					return fmt.Errorf("error importing %s: %w", name, err)
-				}
-				action.schema = schema
-				action.operations = operations
-			case action.Image != "":
-				schema, operations, err := importImage(ctx, name, action.Image)
-				if err != nil {
-					return fmt.Errorf("error importing %s: %w", name, err)
-				}
-				action.schema = schema
-				action.operations = operations
+			// FIXME
+			// case name == "core":
+			// 	schema, operations, err := importCore(ctx)
+			// 	if err != nil {
+			// 		return fmt.Errorf("error importing %s: %w", name, err)
+			// 	}
+			// 	action.schema = schema
+			// 	action.operations = operations
+			// case action.Image != "":
+			// 	schema, operations, err := importImage(ctx, name, action.Image)
+			// 	if err != nil {
+			// 		return fmt.Errorf("error importing %s: %w", name, err)
+			// 	}
+			// 	action.schema = schema
+			// 	action.operations = operations
 			case action.Local != "":
 				dockerfile := path.Join(action.Local, "Dockerfile")
 				schema, operations, err := importLocal(ctx, name, localDirs[action.Context], dockerfile)
@@ -200,25 +201,30 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	}
 
 	data := struct {
-		Import struct {
-			Schema     string
-			Operations string
+		Filesystem struct {
+			LoadExtension struct {
+				Schema     string
+				Operations string
+			}
 		}
 	}{}
 	resp := &graphql.Response{Data: &data}
 
+	// FIXME: operations
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			mutation Import($name: String!, $fs: FSID!) {
-				import(name: $name, fs: $fs) {
-						schema
-						operations
+			query LoadExtension($fs: FSID!) {
+				core {
+					filesystem(id: $fs) {
+						loadExtension {
+							schema
+						}
+					}
 				}
 			}`,
 			Variables: map[string]any{
-				"name": name,
-				"fs":   fs,
+				"fs": fs,
 			},
 		},
 		resp,
@@ -226,7 +232,7 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	if err != nil {
 		return "", "", err
 	}
-	return data.Import.Schema, data.Import.Operations, nil
+	return data.Filesystem.LoadExtension.Schema, data.Filesystem.LoadExtension.Operations, nil
 }
 
 // technically, core doesn't need to be imported, but this allows us to get its schema+operations
