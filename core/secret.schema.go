@@ -61,5 +61,9 @@ func (r *secretSchema) Resolvers() router.Resolvers {
 }
 
 func (r *secretSchema) Secret(p graphql.ResolveParams) (any, error) {
-	panic("FIXME")
+	plaintext, err := r.secretStore.GetSecret(p.Context, p.Args["id"].(string))
+	if err != nil {
+		return nil, err
+	}
+	return string(plaintext), nil
 }

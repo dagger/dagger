@@ -2,8 +2,6 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -16,9 +14,11 @@ import (
 	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/sdk/go/dagger"
+	"github.com/dagger/cloak/secret"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -41,6 +41,10 @@ type StartOpts struct {
 type StartCallback func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error)
 
 func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
+	if startOpts == nil {
+		startOpts = &StartOpts{}
+	}
+
 	opts := []bkclient.ClientOpt{
 		bkclient.WithFailFast(),
 		// bkclient.WithTracerProvider(otel.GetTracerProvider()),
@@ -67,40 +71,33 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 
 	ch := make(chan *bkclient.SolveStatus)
 
-	var server api.Server
+	secretStore := secret.NewStore()
+	secretMapping := make(map[string]string)
+	for key, plaintext := range startOpts.Secrets {
+		secretMapping[key] = secretStore.AddSecret(ctx, []byte(plaintext))
+	}
+
 	solveOpts := bkclient.SolveOpt{
-		Session: []session.Attachable{&server},
+		Session: []session.Attachable{
+			secretsprovider.NewSecretProvider(secretStore),
+		},
 	}
-	if startOpts != nil {
-		if startOpts.Export != nil {
-			solveOpts.Exports = []bkclient.ExportEntry{*startOpts.Export}
-		}
-		solveOpts.LocalDirs = startOpts.LocalDirs
+	if startOpts.Export != nil {
+		solveOpts.Exports = []bkclient.ExportEntry{*startOpts.Export}
 	}
+	solveOpts.LocalDirs = startOpts.LocalDirs
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			secrets := make(map[string]string)
-			secretIDToKey := make(map[string]string)
-			for k, v := range startOpts.Secrets {
-				hashkey := sha256.Sum256([]byte(v))
-				hashVal := hex.EncodeToString(hashkey[:])
-				secrets[hashVal] = v
-				secretIDToKey[k] = hashVal
-			}
-
 			router := router.New()
-			if err := router.Add(core.New(router, gw, *platform)...); err != nil {
+			coreAPI := core.New(router, secretStore, gw, *platform)
+			if err := router.Add(coreAPI...); err != nil {
 				return nil, err
 			}
 
-			// server = api.NewServer(gw, platform, secrets)
-
 			ctx = withInMemoryAPIClient(ctx, router)
-			// ctx = withGatewayClient(ctx, gw)
-			// ctx = withPlatform(ctx, platform)
 
 			cl, err := dagger.Client(ctx)
 			if err != nil {
@@ -146,7 +143,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 				return nil, nil
 			}
 
-			outputFs, err := fn(ctx, localDirs, secretIDToKey)
+			outputFs, err := fn(ctx, localDirs, secretMapping)
 			if err != nil {
 				return nil, err
 			}
