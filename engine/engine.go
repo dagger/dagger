@@ -13,7 +13,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/api"
 	"github.com/dagger/cloak/core"
-	"github.com/dagger/cloak/remoteschema"
+	"github.com/dagger/cloak/extension"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/dagger/cloak/secret"
@@ -84,7 +84,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
-			remoteschema.NewProxy(router),
+			extension.NewAPIProxy(router),
 		},
 	}
 	if startOpts.Export != nil {

@@ -1,4 +1,4 @@
-package remoteschema
+package extension
 
 import (
 	"context"
@@ -16,27 +16,27 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var _ session.Attachable = &Proxy{}
+var _ session.Attachable = &APIProxy{}
 
-type Proxy struct {
+type APIProxy struct {
 	router *router.Router
 }
 
-func NewProxy(router *router.Router) *Proxy {
-	return &Proxy{
+func NewAPIProxy(router *router.Router) *APIProxy {
+	return &APIProxy{
 		router: router,
 	}
 }
 
-func (p *Proxy) Register(server *grpc.Server) {
+func (p *APIProxy) Register(server *grpc.Server) {
 	sshforward.RegisterSSHServer(server, p)
 }
 
-func (p *Proxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
+func (p *APIProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
 	return &sshforward.CheckAgentResponse{}, nil
 }
 
-func (p *Proxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
+func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
 	opts, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return status.Errorf(codes.Internal, "no metadata in context")

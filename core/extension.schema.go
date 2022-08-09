@@ -2,7 +2,7 @@ package core
 
 import (
 	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/remoteschema"
+	"github.com/dagger/cloak/extension"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 )
@@ -43,7 +43,7 @@ func (r *extensionSchema) LoadExtension(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	schema, err := remoteschema.Load(p.Context, r.gw, r.platform, obj)
+	schema, err := extension.Load(p.Context, r.gw, r.platform, obj)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-package remoteschema
+package extension
 
 import (
 	"context"
