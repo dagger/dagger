@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/api"
 	"github.com/dagger/cloak/core"
+	"github.com/dagger/cloak/remoteschema"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/dagger/cloak/secret"
@@ -70,6 +71,8 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 		return err
 	}
 
+	router := router.New()
+
 	ch := make(chan *bkclient.SolveStatus)
 
 	secretStore := secret.NewStore()
@@ -81,6 +84,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
+			remoteschema.NewProxy(router),
 		},
 	}
 	if startOpts.Export != nil {
@@ -92,7 +96,6 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			router := router.New()
 			coreAPI := core.New(router, secretStore, gw, *platform)
 			if err := router.Add(coreAPI...); err != nil {
 				return nil, err
