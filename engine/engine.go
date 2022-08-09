@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
@@ -165,8 +166,7 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 			}
 
 			if startOpts.DevServer != 0 {
-				http.Handle("/", router)
-				return nil, http.ListenAndServe(fmt.Sprintf(":%d", startOpts.DevServer), nil)
+				return nil, http.ListenAndServe(fmt.Sprintf(":%d", startOpts.DevServer), router)
 			}
 
 			return result, nil
@@ -199,7 +199,7 @@ func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.C
 					srv := &http.Server{
 						Handler: router,
 					}
-					srv.Serve(l)
+					_ = srv.Serve(l)
 				}()
 
 				return clientConn, nil
@@ -211,9 +211,13 @@ func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.C
 // converts a pre-existing net.Conn into a net.Listener that returns the conn
 type singleConnListener struct {
 	conn net.Conn
+	l    sync.Mutex
 }
 
 func (l *singleConnListener) Accept() (net.Conn, error) {
+	l.l.Lock()
+	defer l.l.Unlock()
+
 	if l.conn == nil {
 		return nil, io.ErrClosedPipe
 	}
