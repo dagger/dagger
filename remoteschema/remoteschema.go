@@ -51,6 +51,7 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, fs *file
 	}
 	s := &remoteSchema{
 		gw:        gw,
+		fs:        fs,
 		platform:  platform,
 		sdl:       string(sdl),
 		resolvers: router.Resolvers{},
@@ -76,16 +77,29 @@ func (s *remoteSchema) parse() error {
 		return err
 	}
 	for _, def := range doc.Definitions {
-		obj, ok := def.(*ast.ObjectDefinition)
-		if !ok {
+		var obj *ast.ObjectDefinition
+
+		if def, ok := def.(*ast.ObjectDefinition); ok {
+			obj = def
+		}
+
+		if def, ok := def.(*ast.TypeExtensionDefinition); ok {
+			obj = def.Definition
+		}
+
+		if obj == nil {
 			continue
 		}
+
 		objResolver := router.ObjectResolver{}
 		s.resolvers[obj.Name.Value] = objResolver
 		for _, field := range obj.Fields {
-			fmt.Printf("%s ==> resolve\n", field.Name.Value)
 			// FIXME: This heuristic currently assigns a resolver to every field expecting arguments.
 			if len(field.Arguments) == 0 {
+				// FIXME
+				objResolver[field.Name.Value] = func(p graphql.ResolveParams) (any, error) {
+					return struct{}{}, nil
+				}
 				continue
 			}
 			objResolver[field.Name.Value] = s.resolve
@@ -97,6 +111,7 @@ func (s *remoteSchema) parse() error {
 func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	pathArray := p.Info.Path.AsArray()
 	lastPath := pathArray[len(pathArray)-1]
+
 	inputMap := map[string]interface{}{
 		"object": lastPath.(string),
 		"args":   p.Args,
