@@ -30,7 +30,7 @@ _#DefaultLogLevel: "off"
 	withinCmdArgs: [...string]
 
 	// Terraform workspace
-	workspace: string | *"default"
+	workspace?: string
 
 	// Data directory (i.e. ./.terraform)
 	dataDir: string | *".terraform"
@@ -52,7 +52,9 @@ _#DefaultLogLevel: "off"
 
 	// Joins user and internal environment variables
 	_thisEnv: env & withinEnv & {
-		TF_WORKSPACE:     workspace
+		if workspace != _|_ {
+			TF_WORKSPACE: workspace
+		}
 		TF_DATA_DIR:      dataDir
 		TF_LOG:           logLevel
 		TF_LOG_PATH:      logPath
