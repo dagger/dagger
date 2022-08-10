@@ -77,8 +77,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			coreAPI := core.New(router, secretStore, gw, *platform)
-			if err := router.Add(coreAPI...); err != nil {
+			coreAPI, err := core.New(router, secretStore, gw, *platform)
+			if err != nil {
+				return nil, err
+			}
+			if err := router.Add(coreAPI); err != nil {
 				return nil, err
 			}
 

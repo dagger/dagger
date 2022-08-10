@@ -27,3 +27,23 @@ type ScalarResolver struct {
 }
 
 func (ScalarResolver) __resolver() {}
+
+var _ ExecutableSchema = &staticSchema{}
+
+type staticSchema struct {
+	schema     string
+	operations string
+	resolvers  Resolvers
+}
+
+func (s *staticSchema) Schema() string {
+	return s.schema
+}
+
+func (s *staticSchema) Operations() string {
+	return s.operations
+}
+
+func (s *staticSchema) Resolvers() Resolvers {
+	return s.resolvers
+}
