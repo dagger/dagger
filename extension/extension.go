@@ -108,6 +108,13 @@ func (s *remoteSchema) parse() error {
 			// FIXME: This heuristic currently assigns a resolver to every field expecting arguments.
 			if len(field.Arguments) == 0 {
 				objResolver[field.Name.Value] = func(p graphql.ResolveParams) (any, error) {
+					parent := make(map[string]interface{})
+					if err := convertArg(p.Source, &parent); err != nil {
+						return nil, err
+					}
+					if v, ok := parent[p.Info.FieldName]; ok {
+						return v, nil
+					}
 					return struct{}{}, nil
 				}
 				continue
@@ -210,4 +217,13 @@ func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesyst
 		}
 	}
 	return fsPaths
+}
+
+// TODO:(sipsma) put in shared util? this is duped with core package
+func convertArg(arg any, dest any) error {
+	marshalled, err := json.Marshal(arg)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(marshalled, dest)
 }
