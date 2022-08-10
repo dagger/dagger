@@ -58,6 +58,47 @@ dagger.#Plan & {
 				id:      "aabbccdd-eeff-0011-2233-445566778899"
 			}
 		}
+
+		workspaceWorkflow: {
+			init: terraform.#Init & {
+				source: tfImportSource.output
+			}
+
+			workspaceNew: terraform.#Workspace & {
+				source: init.output
+				subCmd: "new"
+				name:   "TEST_WORKSPACE"
+			}
+
+			workspaceList: terraform.#Workspace & {
+				source: workspaceNew.output
+				subCmd: "list"
+			}
+
+			workspaceShow: terraform.#Workspace & {
+				source: workspaceNew.output
+				subCmd: "show"
+				name:   "TEST_WORKSPACE"
+			}
+
+			workspaceShowNoSubCmd: terraform.#Workspace & {
+				source: workspaceNew.output
+				subCmd: "show"
+			}
+
+			workspaceSelect: terraform.#Workspace & {
+				source: workspaceNew.output
+				subCmd: "select"
+				name:   "default"
+			}
+
+			workspaceDelete: terraform.#Workspace & {
+				source: workspaceSelect.output
+				subCmd: "delete"
+				name:   "TEST_WORKSPACE"
+			}
+		}
+
 	}
 }
 
