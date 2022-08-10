@@ -1,4 +1,4 @@
-actions:
+extensions:
   netlify:
     local: examples/netlify/go
 context: ../../..
