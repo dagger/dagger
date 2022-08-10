@@ -1,14 +1,18 @@
-type Deploy {
-  url: String!
-  deployUrl: String!
-  logsUrl: String
+extend type Query {
+  netlify: Netlify!
 }
 
-type Query {
+type Netlify {
   deploy(
     contents: FSID!
     subdir: String
     siteName: String
     token: SecretID!
   ): Deploy!
+}
+
+type Deploy {
+  url: String!
+  deployUrl: String!
+  logsUrl: String
 }

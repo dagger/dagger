@@ -112,6 +112,17 @@ export type MountInput = {
   path: Scalars['String'];
 };
 
+export type Mutation = {
+  __typename?: 'Mutation';
+  import?: Maybe<Package>;
+};
+
+
+export type MutationImportArgs = {
+  fs?: InputMaybe<Scalars['FSID']>;
+  name: Scalars['String'];
+};
+
 export type Package = {
   __typename?: 'Package';
   fs?: Maybe<Filesystem>;
@@ -122,6 +133,7 @@ export type Package = {
 
 export type Query = {
   __typename?: 'Query';
+  core: Core;
   yarn: Yarn;
 };
 
