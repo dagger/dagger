@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
@@ -10,10 +11,14 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 )
 
+func init() {
+	core.Register("dockerbuild", func(base *core.BaseSchema) router.ExecutableSchema { return &dockerBuildSchema{base} })
+}
+
 var _ router.ExecutableSchema = &dockerBuildSchema{}
 
 type dockerBuildSchema struct {
-	*baseSchema
+	*core.BaseSchema
 }
 
 func (s *dockerBuildSchema) Schema() string {
@@ -58,7 +63,7 @@ func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 	}
 
 	opts := map[string]string{
-		"platform": platforms.Format(r.platform),
+		"platform": platforms.Format(r.Platform),
 	}
 	if dockerfile, ok := p.Args["dockerfile"].(string); ok {
 		opts["filename"] = dockerfile
@@ -67,7 +72,7 @@ func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 		dockerfilebuilder.DefaultLocalNameContext:    def,
 		dockerfilebuilder.DefaultLocalNameDockerfile: def,
 	}
-	res, err := r.gw.Solve(p.Context, bkgw.SolveRequest{
+	res, err := r.Gateway.Solve(p.Context, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
@@ -85,5 +90,5 @@ func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	return filesystem.FromState(p.Context, st, r.platform)
+	return filesystem.FromState(p.Context, st, r.Platform)
 }

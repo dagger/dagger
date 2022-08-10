@@ -3,11 +3,16 @@ package core
 import (
 	"fmt"
 
+	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/extension"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 )
+
+func init() {
+	core.Register("extension", func(base *core.BaseSchema) router.ExecutableSchema { return &extensionSchema{base} })
+}
 
 type Extension struct {
 	Name       string
@@ -18,7 +23,7 @@ type Extension struct {
 var _ router.ExecutableSchema = &extensionSchema{}
 
 type extensionSchema struct {
-	*baseSchema
+	*core.BaseSchema
 }
 
 func (s *extensionSchema) Schema() string {
@@ -62,12 +67,12 @@ func (r *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 
 	name := p.Args["name"].(string)
 
-	schema, err := extension.Load(p.Context, r.gw, r.platform, obj)
+	schema, err := extension.Load(p.Context, r.Gateway, r.Platform, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.router.Add(name, schema); err != nil {
+	if err := r.Router.Add(name, schema); err != nil {
 		return nil, err
 	}
 
@@ -81,7 +86,7 @@ func (r *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 func (r *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
 	name := p.Args["name"].(string)
 
-	schema := r.router.Get(name)
+	schema := r.Router.Get(name)
 	if schema == nil {
 		return nil, fmt.Errorf("extension %q not found", name)
 	}

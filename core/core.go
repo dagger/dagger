@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync"
 
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
@@ -11,38 +12,45 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+var (
+	registeredSchemas sync.Map
+)
+
+type RegisterFunc func(*BaseSchema) router.ExecutableSchema
+
+func Register(name string, fn RegisterFunc) {
+	registeredSchemas.Store(name, fn)
+}
+
 func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform specs.Platform) (router.ExecutableSchema, error) {
-	base := &baseSchema{
-		router:      r,
-		secretStore: secretStore,
-		gw:          gw,
-		platform:    platform,
+	base := &BaseSchema{
+		Router:      r,
+		SecretStore: secretStore,
+		Gateway:     gw,
+		Platform:    platform,
 	}
-	return router.Merge(
-		&coreSchema{base},
-
-		&filesystemSchema{base},
-		&extensionSchema{base},
-		&execSchema{base},
-		&dockerBuildSchema{base},
-
-		&secretSchema{base},
-	)
+	schemas := []router.ExecutableSchema{}
+	registeredSchemas.Range(func(key, value any) bool {
+		fn := value.(RegisterFunc)
+		schemas = append(schemas, fn(base))
+		return true
+	})
+	return router.Merge(schemas...)
 }
 
-type baseSchema struct {
-	router      *router.Router
-	secretStore *secret.Store
-	gw          bkgw.Client
-	platform    specs.Platform
+type BaseSchema struct {
+	Router      *router.Router
+	SecretStore *secret.Store
+	Gateway     bkgw.Client
+	Platform    specs.Platform
 }
 
-func (r *baseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*filesystem.Filesystem, error) {
-	def, err := st.Marshal(ctx, append([]llb.ConstraintsOpt{llb.Platform(r.platform)}, marshalOpts...)...)
+func (r *BaseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*filesystem.Filesystem, error) {
+	def, err := st.Marshal(ctx, append([]llb.ConstraintsOpt{llb.Platform(r.Platform)}, marshalOpts...)...)
 	if err != nil {
 		return nil, err
 	}
-	_, err = r.gw.Solve(ctx, bkgw.SolveRequest{
+	_, err = r.Gateway.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: def.ToPB(),
 	})
