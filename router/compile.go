@@ -2,6 +2,7 @@ package router
 
 import (
 	tools "github.com/bhoriuchi/graphql-go-tools"
+	"github.com/dagger/cloak/tracing"
 	"github.com/graphql-go/graphql"
 )
 
@@ -32,8 +33,9 @@ func compile(s ExecutableSchema) (*graphql.Schema, error) {
 	}
 
 	schema, err := tools.MakeExecutableSchema(tools.ExecutableSchema{
-		TypeDefs:  s.Schema(),
-		Resolvers: typeResolvers,
+		TypeDefs:   s.Schema(),
+		Resolvers:  typeResolvers,
+		Extensions: []graphql.Extension{&tracing.GraphQLTracer{}},
 	})
 	if err != nil {
 		return nil, err
