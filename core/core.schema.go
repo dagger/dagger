@@ -73,5 +73,5 @@ func (r *coreSchema) ClientDir(p graphql.ResolveParams) (any, error) {
 		llb.ExcludePatterns([]string{"**/node_modules"}),
 	), "/", "/"))
 
-	return r.Solve(p.Context, st)
+	return r.Solve(p.Context, st, llb.LocalUniqueID(id))
 }
