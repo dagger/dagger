@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/dagger/cloak/core/filesystem"
+	"github.com/dagger/cloak/core/shim"
 	"github.com/dagger/cloak/router"
-	"github.com/dagger/cloak/shim"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
 )
