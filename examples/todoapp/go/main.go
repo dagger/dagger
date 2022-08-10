@@ -60,7 +60,7 @@ type todoappResolver struct{}
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
 
-		"Build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+		"Todoapp.build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
 			var err error
 
@@ -80,7 +80,7 @@ func main() {
 			)
 		},
 
-		"Test": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+		"Todoapp.test": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
 			var err error
 
@@ -100,7 +100,7 @@ func main() {
 			)
 		},
 
-		"Deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+		"Todoapp.deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
 			var err error
 

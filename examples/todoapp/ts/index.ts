@@ -8,47 +8,49 @@ const yarn = yarnSdk(client);
 const self = todoappSdk(client);
 
 const resolvers = {
-  /*
-   * Build the todoapp
-   */
-  Build: async (args: { src: FSID }) => {
-    return await yarn
-      .Script({
-        source: args.src,
-        name: "build",
-      })
-      .then((res: any) => res.yarn.script);
-  },
+  Todoapp: {
+    /*
+     * Build the todoapp
+     */
+    build: async (args: { src: FSID }) => {
+      return await yarn
+        .Script({
+          source: args.src,
+          name: "build",
+        })
+        .then((res: any) => res.yarn.script);
+    },
 
-  /*
-   * Test the todoapp
-   */
-  Test: async (args: { src: FSID }) => {
-    return await yarn
-      .Script({
-        source: args.src,
-        name: "test",
-      })
-      .then((res: any) => res.yarn.script);
-  },
+    /*
+     * Test the todoapp
+     */
+    test: async (args: { src: FSID }) => {
+      return await yarn
+        .Script({
+          source: args.src,
+          name: "test",
+        })
+        .then((res: any) => res.yarn.script);
+    },
 
-  /*
-   * Build and test the todoapp, if those pass then deploy it to Netlify
-   */
-  Deploy: async (args: { src: FSID; token: SecretID }) => {
-    const built = await Promise.all([
-      self.Build({ src: args.src }).then((res: any) => res.todoapp.build),
-      self.Test({ src: args.src }).then((res: any) => res.todoapp.test),
-    ]).then((results: any) => results[0]);
+    /*
+     * Build and test the todoapp, if those pass then deploy it to Netlify
+     */
+    deploy: async (args: { src: FSID; token: SecretID }) => {
+      const built = await Promise.all([
+        self.Build({ src: args.src }).then((res: any) => res.todoapp.build),
+        self.Test({ src: args.src }).then((res: any) => res.todoapp.test),
+      ]).then((results: any) => results[0]);
 
-    return await netlify
-      .Deploy({
-        contents: built.id,
-        subdir: "build",
-        siteName: "test-cloak-netlify-deploy",
-        token: args.token,
-      })
-      .then((res: any) => res.netlify.deploy);
+      return await netlify
+        .Deploy({
+          contents: built.id,
+          subdir: "build",
+          siteName: "test-cloak-netlify-deploy",
+          token: args.token,
+        })
+        .then((res: any) => res.netlify.deploy);
+    },
   },
 };
 

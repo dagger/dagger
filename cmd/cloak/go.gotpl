@@ -34,7 +34,7 @@ func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error) {
   {{ range $resolver := .Resolvers -}}
     {{if $resolver.Field.ArgsFunc}}
-      "{{$resolver.Field.GoFieldName}}": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+      "{{$resolver.Field.Object.Name}}.{{lcFirst $resolver.Field.GoFieldName}}": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
         var bytes []byte
         var err error
 

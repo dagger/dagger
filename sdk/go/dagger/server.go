@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 )
 
 // TODO: this just makes it easier to align with the default gql codgen code,
@@ -27,16 +26,14 @@ func Serve(ctx context.Context, resolvers map[string]func(context.Context, ArgsI
 		writeErrorf(fmt.Errorf("unable to parse request file: %w", err))
 	}
 
-	object, ok := input["object"].(string)
+	resolverName, ok := input["resolver"].(string)
 	if !ok {
-		writeErrorf(fmt.Errorf("unexpected object: %T %v", input["object"], input["object"]))
+		writeErrorf(fmt.Errorf("unexpected resolver: %T %v", input["resolver"], input["resolver"]))
 	}
-	// capitalize first letter
-	object = strings.ToUpper(string([]rune(object)[0])) + string([]rune(object)[1:])
 
-	resolver, ok := resolvers[object]
+	resolver, ok := resolvers[resolverName]
 	if !ok {
-		writeErrorf(fmt.Errorf("missing result for: %s", object))
+		writeErrorf(fmt.Errorf("missing resolver for: %s", resolverName))
 	}
 
 	args, ok := input["args"].(map[string]interface{})

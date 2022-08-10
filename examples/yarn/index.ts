@@ -1,26 +1,27 @@
 import { client, DaggerServer, gql, FSID } from "@dagger.io/dagger";
 
 const resolvers = {
-  Script: async (args: { source: FSID; name: string }) => {
-    const base = await client
-      .request(
-        gql`
-          {
-            alpine {
-              build(pkgs: ["yarn", "git"]) {
-                id
+  Yarn: {
+    script: async (args: { source: FSID; name: string }) => {
+      const base = await client
+        .request(
+          gql`
+            {
+              alpine {
+                build(pkgs: ["yarn", "git"]) {
+                  id
+                }
               }
             }
-          }
-        `
-      )
-      .then((result: any) => result.alpine.build);
-    // console.log("base: ", base);
+          `
+        )
+        .then((result: any) => result.alpine.build);
+      // console.log("base: ", base);
 
-    // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
-    const yarnInstall = await client
-      .request(
-        gql`
+      // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
+      const yarnInstall = await client
+        .request(
+          gql`
             {
               core {
                 filesystem(id: "${base.id}") {
@@ -37,13 +38,13 @@ const resolvers = {
               }
             }
           `
-      )
-      .then((result: any) => result.core.filesystem.exec.mount);
-    // console.log("yarnInstall: ", yarnInstall);
+        )
+        .then((result: any) => result.core.filesystem.exec.mount);
+      // console.log("yarnInstall: ", yarnInstall);
 
-    const yarnRun = await client
-      .request(
-        gql`
+      const yarnRun = await client
+        .request(
+          gql`
             {
               core {
                 filesystem(id: "${base.id}") {
@@ -60,11 +61,12 @@ const resolvers = {
               }
             }
           `
-      )
-      .then((result: any) => result.core.filesystem.exec.mount);
-    // console.log("yarnInstall: ", yarnInstall);
+        )
+        .then((result: any) => result.core.filesystem.exec.mount);
+      // console.log("yarnInstall: ", yarnInstall);
 
-    return yarnRun;
+      return yarnRun;
+    },
   },
 };
 

@@ -85,7 +85,7 @@ type netlifyResolver struct{}
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
 
-		"Deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+		"Netlify.deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
 			var err error
 
