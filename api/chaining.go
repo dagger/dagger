@@ -10,7 +10,7 @@ import (
 
 	tools "github.com/bhoriuchi/graphql-go-tools"
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/cloak/shim"
+	"github.com/dagger/cloak/core/shim"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
