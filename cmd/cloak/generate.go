@@ -56,7 +56,7 @@ func Generate(cmd *cobra.Command, args []string) {
 		if err := cfg.LoadExtensions(ctx, localDirs); err != nil {
 			return err
 		}
-		for name, act := range cfg.Actions {
+		for name, ext := range cfg.Extensions {
 			subdir := filepath.Join(generateOutputDir, "gen", name)
 			if err := os.MkdirAll(subdir, 0755); err != nil {
 				return err
@@ -67,7 +67,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			schemaPath := filepath.Join(subdir, "schema.graphql")
 
 			// TODO: ugly hack to make each schema/operation work independently when referencing core types
-			fullSchema := act.GetSchema()
+			fullSchema := ext.GetSchema()
 			if name != "core" {
 				fullSchema = coreschema.Schema + "\n\n" + fullSchema
 			}
@@ -76,7 +76,7 @@ func Generate(cmd *cobra.Command, args []string) {
 				return err
 			}
 			operationsPath := filepath.Join(subdir, "operations.graphql")
-			if err := os.WriteFile(operationsPath, []byte(act.GetOperations()), 0644); err != nil {
+			if err := os.WriteFile(operationsPath, []byte(ext.GetOperations()), 0644); err != nil {
 				return err
 			}
 
