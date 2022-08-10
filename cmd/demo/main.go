@@ -26,7 +26,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	startOpts := &engine.StartOpts{
+	startOpts := &engine.Config{
 		LocalDirs: map[string]string{
 			".":   ".",
 			"src": "./examples/todoapp/app",
