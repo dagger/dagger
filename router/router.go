@@ -1,6 +1,8 @@
 package router
 
 import (
+	"io"
+	"net"
 	"net/http"
 	"sync"
 
@@ -58,4 +60,38 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.l.RUnlock()
 
 	h.ServeHTTP(w, req)
+}
+
+func (r *Router) ServeConn(conn net.Conn) error {
+	l := &singleConnListener{
+		conn: conn,
+	}
+
+	return http.Serve(l, r)
+}
+
+// converts a pre-existing net.Conn into a net.Listener that returns the conn
+type singleConnListener struct {
+	conn net.Conn
+	l    sync.Mutex
+}
+
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	l.l.Lock()
+	defer l.l.Unlock()
+
+	if l.conn == nil {
+		return nil, io.ErrClosedPipe
+	}
+	c := l.conn
+	l.conn = nil
+	return c, nil
+}
+
+func (l *singleConnListener) Addr() net.Addr {
+	return nil
+}
+
+func (l *singleConnListener) Close() error {
+	return nil
 }

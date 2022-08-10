@@ -3,11 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
-	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
@@ -23,7 +21,9 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/moby/buildkit/util/tracing/detect"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/sync/errgroup"
 
@@ -49,17 +49,17 @@ func Start(ctx context.Context, startOpts *StartOpts, fn StartCallback) error {
 
 	opts := []bkclient.ClientOpt{
 		bkclient.WithFailFast(),
-		// bkclient.WithTracerProvider(otel.GetTracerProvider()),
+		bkclient.WithTracerProvider(otel.GetTracerProvider()),
 	}
 
-	// exp, err := detect.Exporter()
-	// if err != nil {
-	// 	return err
-	// }
+	exp, err := detect.Exporter()
+	if err != nil {
+		return err
+	}
 
-	// if td, ok := exp.(bkclient.TracerDelegate); ok {
-	// 	opts = append(opts, bkclient.WithTracerDelegate(td))
-	// }
+	if td, ok := exp.(bkclient.TracerDelegate); ok {
+		opts = append(opts, bkclient.WithTracerDelegate(td))
+	}
 
 	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", opts...)
 	if err != nil {
@@ -197,44 +197,13 @@ func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.C
 				serverConn, clientConn := net.Pipe()
 
 				go func() {
-					l := &singleConnListener{conn: serverConn}
-
-					srv := &http.Server{
-						Handler: router,
-					}
-					_ = srv.Serve(l)
+					_ = router.ServeConn(serverConn)
 				}()
 
 				return clientConn, nil
 			},
 		},
 	})
-}
-
-// converts a pre-existing net.Conn into a net.Listener that returns the conn
-type singleConnListener struct {
-	conn net.Conn
-	l    sync.Mutex
-}
-
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	l.l.Lock()
-	defer l.l.Unlock()
-
-	if l.conn == nil {
-		return nil, io.ErrClosedPipe
-	}
-	c := l.conn
-	l.conn = nil
-	return c, nil
-}
-
-func (l *singleConnListener) Addr() net.Addr {
-	return nil
-}
-
-func (l *singleConnListener) Close() error {
-	return nil
 }
 
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
