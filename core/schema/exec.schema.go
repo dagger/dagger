@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/core/shim"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
 )
+
+func init() {
+	core.Register("exec", func(base *core.BaseSchema) router.ExecutableSchema { return &execSchema{base} })
+}
 
 type Exec struct {
 	FS       *filesystem.Filesystem
@@ -31,7 +36,7 @@ type ExecInput struct {
 var _ router.ExecutableSchema = &filesystemSchema{}
 
 type execSchema struct {
-	*baseSchema
+	*core.BaseSchema
 }
 
 func (s *execSchema) Schema() string {
@@ -114,7 +119,7 @@ func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	shim, err := shim.Build(p.Context, r.gw, r.platform)
+	shim, err := shim.Build(p.Context, r.Gateway, r.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -150,14 +155,14 @@ func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), r.platform)
+	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), r.Platform)
 	if err != nil {
 		return nil, err
 	}
 
 	mounts := map[string]*filesystem.Filesystem{}
 	for _, mount := range input.Mounts {
-		mountFS, err := filesystem.FromState(p.Context, execState.GetMount(mount.Path), r.platform)
+		mountFS, err := filesystem.FromState(p.Context, execState.GetMount(mount.Path), r.Platform)
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +178,7 @@ func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
 
 func (r *execSchema) stdout(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, r.gw, "/stdout")
+	output, err := obj.Metadata.ReadFile(p.Context, r.Gateway, "/stdout")
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +188,7 @@ func (r *execSchema) stdout(p graphql.ResolveParams) (any, error) {
 
 func (r *execSchema) stderr(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, r.gw, "/stderr")
+	output, err := obj.Metadata.ReadFile(p.Context, r.Gateway, "/stderr")
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +198,7 @@ func (r *execSchema) stderr(p graphql.ResolveParams) (any, error) {
 
 func (r *execSchema) exitCode(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, r.gw, "/exitCode")
+	output, err := obj.Metadata.ReadFile(p.Context, r.Gateway, "/exitCode")
 	if err != nil {
 		return nil, err
 	}

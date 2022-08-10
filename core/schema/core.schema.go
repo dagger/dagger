@@ -1,15 +1,20 @@
 package core
 
 import (
+	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
 )
 
+func init() {
+	core.Register("core", func(base *core.BaseSchema) router.ExecutableSchema { return &coreSchema{base} })
+}
+
 var _ router.ExecutableSchema = &coreSchema{}
 
 type coreSchema struct {
-	*baseSchema
+	*core.BaseSchema
 }
 
 func (r *coreSchema) Schema() string {

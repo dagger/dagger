@@ -3,11 +3,16 @@ package core
 import (
 	"fmt"
 
+	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 )
+
+func init() {
+	core.Register("filesystem", func(base *core.BaseSchema) router.ExecutableSchema { return &filesystemSchema{base} })
+}
 
 var fsIDResolver = router.ScalarResolver{
 	Serialize: func(value any) any {
@@ -39,7 +44,7 @@ var fsIDResolver = router.ScalarResolver{
 var _ router.ExecutableSchema = &filesystemSchema{}
 
 type filesystemSchema struct {
-	*baseSchema
+	*core.BaseSchema
 }
 
 func (s *filesystemSchema) Schema() string {
@@ -89,7 +94,7 @@ func (r *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
 
 	path := p.Args["path"].(string)
 
-	output, err := obj.ReadFile(p.Context, r.gw, path)
+	output, err := obj.ReadFile(p.Context, r.Gateway, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
