@@ -198,6 +198,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 				}
 			}{}
 			resp := &graphql.Response{Data: &res}
+
 			err := cl.MakeRequest(ctx,
 				&graphql.Request{
 					Query: `

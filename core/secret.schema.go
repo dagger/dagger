@@ -3,15 +3,10 @@ package core
 import (
 	"fmt"
 
-	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 )
-
-func init() {
-	core.Register("secret", func(base *core.BaseSchema) router.ExecutableSchema { return &secretSchema{base} })
-}
 
 var secretIDResolver = router.ScalarResolver{
 	Serialize: func(value interface{}) interface{} {
@@ -43,7 +38,7 @@ var secretIDResolver = router.ScalarResolver{
 var _ router.ExecutableSchema = &secretSchema{}
 
 type secretSchema struct {
-	*core.BaseSchema
+	*baseSchema
 }
 
 func (s *secretSchema) Schema() string {
@@ -78,7 +73,7 @@ func (r *secretSchema) Resolvers() router.Resolvers {
 }
 
 func (r *secretSchema) secret(p graphql.ResolveParams) (any, error) {
-	plaintext, err := r.SecretStore.GetSecret(p.Context, p.Args["id"].(string))
+	plaintext, err := r.secretStore.GetSecret(p.Context, p.Args["id"].(string))
 	if err != nil {
 		return nil, err
 	}
@@ -87,5 +82,5 @@ func (r *secretSchema) secret(p graphql.ResolveParams) (any, error) {
 
 func (r *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
 	plaintext := p.Args["plaintext"].(string)
-	return r.SecretStore.AddSecret(p.Context, []byte(plaintext)), nil
+	return r.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
 }
