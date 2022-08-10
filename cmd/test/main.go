@@ -17,13 +17,13 @@ func main() {
 		}
 	*/
 
-	var startOpts *engine.StartOpts
+	var startOpts *engine.Config
 
 	/*
 		outputDir := "./output"
 	*/
 
-	startOpts = &engine.StartOpts{
+	startOpts = &engine.Config{
 		/*
 			Export: &bkclient.ExportEntry{
 				Type:      bkclient.ExporterLocal,

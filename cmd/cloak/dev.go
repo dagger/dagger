@@ -23,17 +23,25 @@ func Dev(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	startOpts := &engine.StartOpts{
+	startOpts := &engine.Config{
 		LocalDirs: cfg.LocalDirs(),
-		Secrets:   make(map[string]string),
 		DevServer: devServerPort,
 	}
 
-	err = engine.Start(context.Background(), startOpts, func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error) {
-		if err := cfg.LoadExtensions(ctx, localDirs); err != nil {
-			return "", err
+	err = engine.Start(context.Background(), startOpts, func(ctx context.Context) error {
+		cl, err := dagger.Client(ctx)
+		if err != nil {
+			return err
 		}
-		return "", nil
+
+		localDirs, err := loadLocalDirs(ctx, cl, cfg.LocalDirs())
+		if err != nil {
+			return err
+		}
+		if err := cfg.LoadExtensions(ctx, localDirs); err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
