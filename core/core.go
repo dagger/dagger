@@ -37,8 +37,8 @@ type baseSchema struct {
 	platform    specs.Platform
 }
 
-func (r *baseSchema) Solve(ctx context.Context, st llb.State) (*filesystem.Filesystem, error) {
-	def, err := st.Marshal(ctx, llb.Platform(r.platform))
+func (r *baseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*filesystem.Filesystem, error) {
+	def, err := st.Marshal(ctx, append([]llb.ConstraintsOpt{llb.Platform(r.platform)}, marshalOpts...)...)
 	if err != nil {
 		return nil, err
 	}
