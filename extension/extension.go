@@ -128,11 +128,11 @@ func (s *remoteSchema) parse() error {
 func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	pathArray := p.Info.Path.AsArray()
 	name := fmt.Sprintf("%+v", pathArray)
-	lastPath := pathArray[len(pathArray)-1]
 
+	resolverName := fmt.Sprintf("%s.%s", p.Info.ParentType.Name(), p.Info.FieldName)
 	inputMap := map[string]interface{}{
-		"object": lastPath.(string),
-		"args":   p.Args,
+		"resolver": resolverName,
+		"args":     p.Args,
 	}
 	inputBytes, err := json.Marshal(inputMap)
 	if err != nil {

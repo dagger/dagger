@@ -17,11 +17,13 @@ export class DaggerServer {
   public run() {
     const input = JSON.parse(fs.readFileSync("/inputs/dagger.json", "utf8"));
 
-    var obj: string = input.object;
-    if (obj === undefined) {
-      throw new Error("No object found in input");
+    var resolverName: string = input.resolver;
+    if (resolverName === undefined) {
+      throw new Error("No resolverName found in input");
     }
-    obj = obj.charAt(0).toUpperCase() + obj.slice(1);
+    const nameSplit = resolverName.split(".");
+    const objName = nameSplit[0];
+    const fieldName = nameSplit[1];
 
     const args = input.args;
     if (args === undefined) {
@@ -30,8 +32,7 @@ export class DaggerServer {
 
     (async () =>
       // TODO: handle parent, context, info
-      await this.resolvers[obj](args).then((result: any) => {
-        console.log(result);
+      await this.resolvers[objName][fieldName](args).then((result: any) => {
         if (result === undefined) {
           result = {};
         }

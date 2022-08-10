@@ -38,7 +38,7 @@ type alpineResolver struct{}
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
 
-		"Build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+		"Alpine.build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
 			var err error
 
