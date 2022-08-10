@@ -11,14 +11,14 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform specs.Platform) []router.ExecutableSchema {
+func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform specs.Platform) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:      r,
 		secretStore: secretStore,
 		gw:          gw,
 		platform:    platform,
 	}
-	return []router.ExecutableSchema{
+	return router.Merge(
 		&coreSchema{base},
 
 		&filesystemSchema{base},
@@ -27,7 +27,7 @@ func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform s
 		&dockerBuildSchema{base},
 
 		&secretSchema{base},
-	}
+	)
 }
 
 type baseSchema struct {

@@ -38,7 +38,12 @@ func (r *Router) Add(schemas ...ExecutableSchema) error {
 	newSchemas := append([]ExecutableSchema{}, r.schemas...)
 	newSchemas = append(newSchemas, schemas...)
 
-	s, err := Stitch(newSchemas)
+	merged, err := Merge(newSchemas...)
+	if err != nil {
+		return err
+	}
+
+	s, err := compile(merged)
 	if err != nil {
 		return err
 	}
