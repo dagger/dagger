@@ -11,7 +11,7 @@ import (
 )
 
 type Router struct {
-	schemas []ExecutableSchema
+	schemas map[string]ExecutableSchema
 
 	s *graphql.Schema
 	h *handler.Handler
@@ -20,23 +20,26 @@ type Router struct {
 
 func New() *Router {
 	r := &Router{
-		s: &graphql.Schema{},
+		schemas: make(map[string]ExecutableSchema),
 	}
 
-	if err := r.Add(&rootSchema{}); err != nil {
+	if err := r.Add("root", &rootSchema{}); err != nil {
 		panic(err)
 	}
 
 	return r
 }
 
-func (r *Router) Add(schemas ...ExecutableSchema) error {
+func (r *Router) Add(name string, schema ExecutableSchema) error {
 	r.l.Lock()
 	defer r.l.Unlock()
 
 	// Copy the current schemas and append new schemas
-	newSchemas := append([]ExecutableSchema{}, r.schemas...)
-	newSchemas = append(newSchemas, schemas...)
+	newSchemas := []ExecutableSchema{}
+	for _, s := range r.schemas {
+		newSchemas = append(newSchemas, s)
+	}
+	newSchemas = append(newSchemas, schema)
 
 	merged, err := Merge(newSchemas...)
 	if err != nil {
@@ -49,7 +52,7 @@ func (r *Router) Add(schemas ...ExecutableSchema) error {
 	}
 
 	// Atomic swap
-	r.schemas = newSchemas
+	r.schemas[name] = schema
 	r.s = s
 	r.h = handler.New(&handler.Config{
 		Schema:     s,
@@ -57,6 +60,13 @@ func (r *Router) Add(schemas ...ExecutableSchema) error {
 		Playground: true,
 	})
 	return nil
+}
+
+func (r *Router) Get(name string) ExecutableSchema {
+	r.l.RLock()
+	defer r.l.RUnlock()
+
+	return r.schemas[name]
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
