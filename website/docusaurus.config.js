@@ -35,7 +35,18 @@ module.exports = {
         },
         {
           position: "right",
-          // label: "Github",
+          to: "https://dagger.io/blog",
+          label: "Blog",
+          className: "navbar-blog-link",
+        },
+        {
+          position: "right",
+          type: "html",
+          value: "<span></span>",
+          className: "navbar-items-separator",
+        },
+        {
+          position: "right",
           href: "https://github.com/dagger/dagger",
           className: "header-github-link hide-target-icon",
           "aria-label": "GitHub repository",
@@ -44,8 +55,14 @@ module.exports = {
           position: "right",
           type: "html",
           value:
-            "<a href='https://discord.gg/ufnyBtc8uY'><div></div><span>Ask for help</span></a><span>a</span>",
+            "<a href='https://discord.gg/ufnyBtc8uY'><div></div><span>Ask for help</span></a>",
           className: "header-discord-link",
+        },
+        {
+          position: "right",
+          type: "html",
+          value: "<span></span>",
+          className: "navbar-items-separator",
         },
       ],
       hideOnScroll: true,
