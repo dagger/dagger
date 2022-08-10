@@ -55,8 +55,8 @@ export type CoreSecretArgs = {
 
 export type Deploy = {
   __typename?: 'Deploy';
-  deployUrl: Scalars['String'];
-  logsUrl?: Maybe<Scalars['String']>;
+  deployURL: Scalars['String'];
+  logsURL?: Maybe<Scalars['String']>;
   url: Scalars['String'];
 };
 
@@ -165,7 +165,7 @@ export type DeployQueryVariables = Exact<{
 }>;
 
 
-export type DeployQuery = { __typename?: 'Query', netlify: { __typename?: 'Netlify', deploy: { __typename?: 'Deploy', url: string, deployUrl: string } } };
+export type DeployQuery = { __typename?: 'Query', netlify: { __typename?: 'Netlify', deploy: { __typename?: 'Deploy', url: string, deployURL: string } } };
 
 
 export const DeployDocument = gql`
@@ -173,7 +173,7 @@ export const DeployDocument = gql`
   netlify {
     deploy(contents: $contents, subdir: $subdir, siteName: $siteName, token: $token) {
       url
-      deployUrl
+      deployURL
     }
   }
 }

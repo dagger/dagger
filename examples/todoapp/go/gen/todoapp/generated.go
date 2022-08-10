@@ -44,14 +44,14 @@ func (v *DeployTodoapp) GetDeploy() DeployTodoappDeployDeployURLs { return v.Dep
 // DeployTodoappDeployDeployURLs includes the requested fields of the GraphQL type DeployURLs.
 type DeployTodoappDeployDeployURLs struct {
 	Url       string `json:"url"`
-	DeployUrl string `json:"deployUrl"`
+	DeployURL string `json:"deployURL"`
 }
 
 // GetUrl returns DeployTodoappDeployDeployURLs.Url, and is useful for accessing the field via an interface.
 func (v *DeployTodoappDeployDeployURLs) GetUrl() string { return v.Url }
 
-// GetDeployUrl returns DeployTodoappDeployDeployURLs.DeployUrl, and is useful for accessing the field via an interface.
-func (v *DeployTodoappDeployDeployURLs) GetDeployUrl() string { return v.DeployUrl }
+// GetDeployURL returns DeployTodoappDeployDeployURLs.DeployURL, and is useful for accessing the field via an interface.
+func (v *DeployTodoappDeployDeployURLs) GetDeployURL() string { return v.DeployURL }
 
 // TestResponse is returned by Test on success.
 type TestResponse struct {
@@ -148,7 +148,7 @@ query Deploy ($src: FSID!, $token: SecretID!) {
 	todoapp {
 		deploy(src: $src, token: $token) {
 			url
-			deployUrl
+			deployURL
 		}
 	}
 }

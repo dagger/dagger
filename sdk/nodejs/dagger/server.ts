@@ -30,13 +30,20 @@ export class DaggerServer {
       throw new Error("No args found in input");
     }
 
+    const parent = input.parent;
+    if (parent !== undefined) {
+      args.parent = parent;
+    }
+
     (async () =>
-      // TODO: handle parent, context, info
-      await this.resolvers[objName][fieldName](args).then((result: any) => {
-        if (result === undefined) {
-          result = {};
+      // TODO: handle context, info?
+      await this.resolvers[objName][fieldName](args, parent).then(
+        (result: any) => {
+          if (result === undefined) {
+            result = {};
+          }
+          fs.writeFileSync("/outputs/dagger.json", JSON.stringify(result));
         }
-        fs.writeFileSync("/outputs/dagger.json", JSON.stringify(result));
-      }))();
+      ))();
   }
 }

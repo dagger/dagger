@@ -68,6 +68,11 @@ const resolvers = {
       return yarnRun;
     },
   },
+  Query: {
+    yarn: async () => {
+      return {};
+    },
+  },
 };
 
 const server = new DaggerServer({

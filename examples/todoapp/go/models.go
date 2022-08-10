@@ -16,8 +16,8 @@ type Core struct {
 
 type DeployURLs struct {
 	URL       string  `json:"url"`
-	DeployURL string  `json:"deployUrl"`
-	LogsURL   *string `json:"logsUrl"`
+	DeployURL string  `json:"deployURL"`
+	LogsURL   *string `json:"logsURL"`
 }
 
 type ExecInput struct {

@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
-func (r *alpineResolver) Build(ctx context.Context, pkgs []string) (*dagger.Filesystem, error) {
+func (r *alpineResolver) Build(ctx context.Context, obj *Alpine, pkgs []string) (*dagger.Filesystem, error) {
 	// start with Alpine base
 	output, err := core.Image(ctx, "alpine:3.15")
 	if err != nil {
@@ -33,14 +33,22 @@ func (r *alpineResolver) Build(ctx context.Context, pkgs []string) (*dagger.File
 	return fs, nil
 }
 
+func (r *queryResolver) Alpine(ctx context.Context) (*Alpine, error) {
+
+	return new(Alpine), nil
+
+}
+
 type alpineResolver struct{}
+type queryResolver struct{}
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
-
 		"Alpine.build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
+			_ = bytes
 			var err error
+			_ = err
 
 			var pkgs []string
 
@@ -52,10 +60,29 @@ func main() {
 				return nil, err
 			}
 
+			obj := new(Alpine)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
 			return (&alpineResolver{}).Build(ctx,
+
+				obj,
 
 				pkgs,
 			)
+		},
+		"Query.alpine": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			return (&queryResolver{}).Alpine(ctx)
 		},
 	})
 }

@@ -1,50 +1,80 @@
-type Query {
-  core: Core!
-}
-type Mutation {
-  import(name: String!, fs: FSID): Package
-}
 
-scalar SecretID
-scalar FSID
+	extend type Query {
+		core: Core!
+	}
 
-type Package {
-  name: String!
-  fs: Filesystem
-  schema: String!
-  operations: String!
-}
+	type Core {
+		image(ref: String!): Filesystem!
+		git(remote: String!, ref: String): Filesystem!
+		clientdir(id: String!): Filesystem!
+	}
+	
 
-type Exec {
-  fs: Filesystem!
-  stdout(lines: Int): String
-  stderr(lines: Int): String
-  exitCode: Int
-  mount(path: String!): Filesystem!
-}
+	scalar FSID
 
-type Core {
-  filesystem(id: FSID!): Filesystem!
-  image(ref: String!): Filesystem!
-  git(remote: String!, ref: String): Filesystem!
-  clientdir(id: String!): Filesystem!
-  secret(id: SecretID!): String!
-}
+	type Filesystem {
+		id: FSID!
+		file(path: String!, lines: Int): String
 
-input MountInput {
-  path: String!
-  fs: FSID!
-}
+		# FIXME: this should be in execSchema. However, removing this results in an error:
+		# failed to resolve all type definitions: [Core Query Filesystem Exec]
+		exec(input: ExecInput!): Exec!
+	}
 
-input ExecInput {
-  args: [String!]!
-  mounts: [MountInput!]
-  workdir: String
-}
+	extend type Core {
+		filesystem(id: FSID!): Filesystem!
+	}
+	
 
-type Filesystem {
-  id: FSID!
-  exec(input: ExecInput!): Exec!
-  dockerbuild(dockerfile: String): Filesystem!
-  file(path: String!, lines: Int): String
-}
+	type Extension {
+		name: String!
+		schema: String!
+		operations: String!
+	}
+
+	extend type Filesystem {
+		loadExtension(name: String!): Extension!
+	}
+
+	extend type Core {
+		extension(name: String!): Extension!
+	}
+	
+
+	type Exec {
+		fs: Filesystem!
+		stdout(lines: Int): String
+		stderr(lines: Int): String
+		exitCode: Int
+		mount(path: String!): Filesystem!
+	}
+
+	input MountInput {
+		path: String!
+		fs: FSID!
+	}
+
+	input ExecInput {
+		args: [String!]!
+		mounts: [MountInput!]
+		workdir: String
+	}
+
+	# FIXME: broken
+	# extend type Filesystem {
+	# 	exec(input: ExecInput!): Exec!
+	# }
+	
+
+	extend type Filesystem {
+		dockerbuild(dockerfile: String): Filesystem!
+	}
+	
+
+	scalar SecretID
+
+	extend type Core {
+		secret(id: SecretID!): String!
+		addSecret(plaintext: String!): SecretID!
+	}
+	

@@ -18,7 +18,7 @@ query Deploy($src: FSID!, $token: SecretID!) {
   todoapp {
     deploy(src: $src, token: $token) {
       url
-      deployUrl
+      deployURL
     }
   }
 }

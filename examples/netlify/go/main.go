@@ -17,7 +17,7 @@ import (
 	netlifycontext "github.com/netlify/open-api/v2/go/porcelain/context"
 )
 
-func (r *netlifyResolver) Deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*Deploy, error) {
+func (r *netlifyResolver) Deploy(ctx context.Context, obj *Netlify, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*Deploy, error) {
 	// Setup Auth
 	readSecretOutput, err := core.Secret(ctx, token)
 	if err != nil {
@@ -80,14 +80,101 @@ func (r *netlifyResolver) Deploy(ctx context.Context, contents dagger.FSID, subd
 	}, nil
 }
 
+func (r *deployResolver) URL(ctx context.Context, obj *Deploy) (string, error) {
+
+	return obj.URL, nil
+
+}
+
+func (r *deployResolver) DeployURL(ctx context.Context, obj *Deploy) (string, error) {
+
+	return obj.DeployURL, nil
+
+}
+
+func (r *deployResolver) LogsURL(ctx context.Context, obj *Deploy) (*string, error) {
+
+	return obj.LogsURL, nil
+
+}
+
+func (r *queryResolver) Netlify(ctx context.Context) (*Netlify, error) {
+
+	return new(Netlify), nil
+
+}
+
+type deployResolver struct{}
 type netlifyResolver struct{}
+type queryResolver struct{}
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
+		"Deploy.url": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
 
+			obj := new(Deploy)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
+			return (&deployResolver{}).URL(ctx,
+
+				obj,
+			)
+		},
+		"Deploy.deployURL": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			obj := new(Deploy)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
+			return (&deployResolver{}).DeployURL(ctx,
+
+				obj,
+			)
+		},
+		"Deploy.logsURL": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			obj := new(Deploy)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
+			return (&deployResolver{}).LogsURL(ctx,
+
+				obj,
+			)
+		},
 		"Netlify.deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
+			_ = bytes
 			var err error
+			_ = err
 
 			var contents dagger.FSID
 
@@ -129,7 +216,18 @@ func main() {
 				return nil, err
 			}
 
+			obj := new(Netlify)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
 			return (&netlifyResolver{}).Deploy(ctx,
+
+				obj,
 
 				contents,
 
@@ -139,6 +237,14 @@ func main() {
 
 				token,
 			)
+		},
+		"Query.netlify": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			return (&queryResolver{}).Netlify(ctx)
 		},
 	})
 }

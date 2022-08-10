@@ -1,33 +1,39 @@
 
-query Image($ref: String!) {
-  core {
-    image(ref: $ref) {
-      id
-    }
-  }
-}
-query Exec($fsid: FSID!, $input: ExecInput!) {
-  core {
-    filesystem(id: $fsid) {
-      exec(input: $input) {
-        fs {
-          id
-        }
-      }
-    }
-  }
-}
-query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
-  core {
-    filesystem(id: $fsid) {
-      exec(input: $input) {
-        mount(path: $getPath) {
-          id
-        }
-      }
-    }
-  }
-}
+	query Image($ref: String!) {
+		core {
+			image(ref: $ref) {
+				id
+			}
+		}
+	}
+	
+
+
+
+	query Exec($fsid: FSID!, $input: ExecInput!) {
+		core {
+			filesystem(id: $fsid) {
+				exec(input: $input) {
+					fs {
+						id
+					}
+				}
+			}
+		}
+	}
+	query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
+		core {
+			filesystem(id: $fsid) {
+				exec(input: $input) {
+					mount(path: $getPath) {
+						id
+					}
+				}
+			}
+		}
+	}
+	
+
 query Dockerfile($context: FSID!, $dockerfileName: String!) {
   core {
     filesystem(id: $context) {
@@ -37,9 +43,11 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
     }
   }
 }
-query Secret($id: SecretID!) {
-  core {
-    secret(id: $id)
-  }
-}
+	
+
+	query Secret($id: SecretID!) {
+		core {
+			secret(id: $id)
+		}
+	}
 	

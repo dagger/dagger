@@ -55,8 +55,8 @@ export type CoreSecretArgs = {
 
 export type DeployUrLs = {
   __typename?: 'DeployURLs';
-  deployUrl: Scalars['String'];
-  logsUrl?: Maybe<Scalars['String']>;
+  deployURL: Scalars['String'];
+  logsURL?: Maybe<Scalars['String']>;
   url: Scalars['String'];
 };
 
@@ -187,7 +187,7 @@ export type DeployQueryVariables = Exact<{
 }>;
 
 
-export type DeployQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', deploy: { __typename?: 'DeployURLs', url: string, deployUrl: string } } };
+export type DeployQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', deploy: { __typename?: 'DeployURLs', url: string, deployURL: string } } };
 
 
 export const BuildDocument = gql`
@@ -213,7 +213,7 @@ export const DeployDocument = gql`
   todoapp {
     deploy(src: $src, token: $token) {
       url
-      deployUrl
+      deployURL
     }
   }
 }
