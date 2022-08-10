@@ -104,7 +104,6 @@ func Login(ctx context.Context) error {
 			return err
 		}
 
-		// setting interval to 1s since Auth0 doesn't honor the default one
 		lg.Info().Msgf("visit the following link to authorize this CLI instance: %s", da.VerificationURIComplete)
 
 		// use a moderate interval, the `Poll` method below will do a backoff
