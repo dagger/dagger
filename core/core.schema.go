@@ -41,28 +41,28 @@ func (r *coreSchema) Operations() string {
 func (r *coreSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
-			"core": r.Core,
+			"core": r.core,
 		},
 		"Core": router.ObjectResolver{
-			"image":     r.Image,
-			"git":       r.Git,
-			"clientdir": r.ClientDir,
+			"image":     r.image,
+			"git":       r.git,
+			"clientdir": r.clientdir,
 		},
 	}
 }
 
-func (r *coreSchema) Core(p graphql.ResolveParams) (any, error) {
+func (r *coreSchema) core(p graphql.ResolveParams) (any, error) {
 	return struct{}{}, nil
 }
 
-func (r *coreSchema) Image(p graphql.ResolveParams) (any, error) {
+func (r *coreSchema) image(p graphql.ResolveParams) (any, error) {
 	ref := p.Args["ref"].(string)
 
 	st := llb.Image(ref)
 	return r.Solve(p.Context, st)
 }
 
-func (r *coreSchema) Git(p graphql.ResolveParams) (any, error) {
+func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
 	remote := p.Args["remote"].(string)
 	ref, _ := p.Args["ref"].(string)
 
@@ -70,7 +70,7 @@ func (r *coreSchema) Git(p graphql.ResolveParams) (any, error) {
 	return r.Solve(p.Context, st)
 }
 
-func (r *coreSchema) ClientDir(p graphql.ResolveParams) (any, error) {
+func (r *coreSchema) clientdir(p graphql.ResolveParams) (any, error) {
 	id := p.Args["id"].(string)
 
 	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,

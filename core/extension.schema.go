@@ -38,12 +38,12 @@ func (s *extensionSchema) Operations() string {
 func (r *extensionSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"loadExtension": r.LoadExtension,
+			"loadExtension": r.loadExtension,
 		},
 	}
 }
 
-func (r *extensionSchema) LoadExtension(p graphql.ResolveParams) (any, error) {
+func (r *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err

@@ -41,12 +41,12 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
 func (r *dockerBuildSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"dockerbuild": r.DockerBuild,
+			"dockerbuild": r.dockerbuild,
 		},
 	}
 }
 
-func (r *dockerBuildSchema) DockerBuild(p graphql.ResolveParams) (any, error) {
+func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err
