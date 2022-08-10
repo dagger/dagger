@@ -1,18 +1,15 @@
 package main
 
-// THIS CODE IS A STARTING POINT ONLY. IT WILL NOT BE UPDATED WITH SCHEMA CHANGES.
-
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/cloak/examples/alpine/gen/core"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
-type Resolver struct{}
-
-func (r *queryResolver) Build(ctx context.Context, pkgs []string) (*dagger.Filesystem, error) {
+func (r *alpineResolver) Build(ctx context.Context, pkgs []string) (*dagger.Filesystem, error) {
 	// start with Alpine base
 	output, err := core.Image(ctx, "alpine:3.15")
 	if err != nil {
@@ -36,24 +33,29 @@ func (r *queryResolver) Build(ctx context.Context, pkgs []string) (*dagger.Files
 	return fs, nil
 }
 
-// Query returns QueryResolver implementation.
-func (r *Resolver) Query() *queryResolver { return &queryResolver{r} }
-
-type queryResolver struct{ *Resolver }
+type alpineResolver struct{}
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
-		"Build": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+
+		"Build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
 			var err error
-			fc.Args, err = (&executionContext{}).field_Query_build_args(rctx, fc.Args)
+
+			var pkgs []string
+
+			bytes, err = json.Marshal(fc.Args["pkgs"])
 			if err != nil {
 				return nil, err
 			}
-			obj, ok := fc.ParentResult.(struct{})
-			_ = ok
-			_ = obj
-			qr := &queryResolver{}
-			return qr.Query().Build(rctx, fc.Args["pkgs"].([]string))
+			if err := json.Unmarshal(bytes, &pkgs); err != nil {
+				return nil, err
+			}
+
+			return (&alpineResolver{}).Build(ctx,
+
+				pkgs,
+			)
 		},
 	})
 }

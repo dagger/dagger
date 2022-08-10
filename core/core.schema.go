@@ -26,6 +26,18 @@ func (r *coreSchema) Schema() string {
 	`
 }
 
+func (r *coreSchema) Operations() string {
+	return `
+	query Image($ref: String!) {
+		core {
+			image(ref: $ref) {
+				id
+			}
+		}
+	}
+	`
+}
+
 func (r *coreSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{

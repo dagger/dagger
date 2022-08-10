@@ -35,23 +35,23 @@ func (v *DeployResponse) GetTodoapp() DeployTodoapp { return v.Todoapp }
 
 // DeployTodoapp includes the requested fields of the GraphQL type Todoapp.
 type DeployTodoapp struct {
-	Deploy DeployTodoappDeploy `json:"deploy"`
+	Deploy DeployTodoappDeployDeployURLs `json:"deploy"`
 }
 
 // GetDeploy returns DeployTodoapp.Deploy, and is useful for accessing the field via an interface.
-func (v *DeployTodoapp) GetDeploy() DeployTodoappDeploy { return v.Deploy }
+func (v *DeployTodoapp) GetDeploy() DeployTodoappDeployDeployURLs { return v.Deploy }
 
-// DeployTodoappDeploy includes the requested fields of the GraphQL type Deploy.
-type DeployTodoappDeploy struct {
+// DeployTodoappDeployDeployURLs includes the requested fields of the GraphQL type DeployURLs.
+type DeployTodoappDeployDeployURLs struct {
 	Url       string `json:"url"`
 	DeployUrl string `json:"deployUrl"`
 }
 
-// GetUrl returns DeployTodoappDeploy.Url, and is useful for accessing the field via an interface.
-func (v *DeployTodoappDeploy) GetUrl() string { return v.Url }
+// GetUrl returns DeployTodoappDeployDeployURLs.Url, and is useful for accessing the field via an interface.
+func (v *DeployTodoappDeployDeployURLs) GetUrl() string { return v.Url }
 
-// GetDeployUrl returns DeployTodoappDeploy.DeployUrl, and is useful for accessing the field via an interface.
-func (v *DeployTodoappDeploy) GetDeployUrl() string { return v.DeployUrl }
+// GetDeployUrl returns DeployTodoappDeployDeployURLs.DeployUrl, and is useful for accessing the field via an interface.
+func (v *DeployTodoappDeployDeployURLs) GetDeployUrl() string { return v.DeployUrl }
 
 // TestResponse is returned by Test on success.
 type TestResponse struct {

@@ -1,3 +1,7 @@
-type Query {
+extend type Query {
+  yarn: Yarn!
+}
+
+type Yarn {
   script(source: FSID!, name: String): Filesystem!
 }

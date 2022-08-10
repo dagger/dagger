@@ -1,7 +1,7 @@
-type Alpine {
-  build(pkgs: [String!]): Filesystem!
-}
-
 extend type Query {
   alpine: Alpine!
+}
+
+type Alpine {
+  build(pkgs: [String!]): Filesystem!
 }

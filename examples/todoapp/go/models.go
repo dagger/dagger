@@ -14,7 +14,7 @@ type Core struct {
 	Secret     string             `json:"secret"`
 }
 
-type Deploy struct {
+type DeployURLs struct {
 	URL       string  `json:"url"`
 	DeployURL string  `json:"deployUrl"`
 	LogsURL   *string `json:"logsUrl"`
@@ -36,4 +36,10 @@ type Package struct {
 	Fs         *dagger.Filesystem `json:"fs"`
 	Schema     string             `json:"schema"`
 	Operations string             `json:"operations"`
+}
+
+type Todoapp struct {
+	Build  *dagger.Filesystem `json:"build"`
+	Test   *dagger.Filesystem `json:"test"`
+	Deploy *DeployURLs        `json:"deploy"`
 }

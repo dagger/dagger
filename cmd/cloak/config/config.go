@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Khan/genqlient/graphql"
+	coreschema "github.com/dagger/cloak/api/schema"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
@@ -88,14 +89,13 @@ func (c *Config) LoadExtensions(ctx context.Context, localDirs map[string]dagger
 		action := action
 		eg.Go(func() error {
 			switch {
-			// FIXME
-			// case name == "core":
-			// 	schema, operations, err := importCore(ctx)
-			// 	if err != nil {
-			// 		return fmt.Errorf("error importing %s: %w", name, err)
-			// 	}
-			// 	action.schema = schema
-			// 	action.operations = operations
+			case name == "core":
+				schema, operations, err := importCore(ctx)
+				if err != nil {
+					return fmt.Errorf("error importing %s: %w", name, err)
+				}
+				action.schema = schema
+				action.operations = operations
 			// case action.Image != "":
 			// 	schema, operations, err := importImage(ctx, name, action.Image)
 			// 	if err != nil {
@@ -201,16 +201,17 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	}
 
 	data := struct {
-		Filesystem struct {
-			LoadExtension struct {
-				Schema     string
-				Operations string
+		Core struct {
+			Filesystem struct {
+				LoadExtension struct {
+					Schema     string
+					Operations string
+				}
 			}
 		}
 	}{}
 	resp := &graphql.Response{Data: &data}
 
-	// FIXME: operations
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
@@ -219,6 +220,7 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 					filesystem(id: $fs) {
 						loadExtension {
 							schema
+							operations
 						}
 					}
 				}
@@ -232,38 +234,54 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	if err != nil {
 		return "", "", err
 	}
-	return data.Filesystem.LoadExtension.Schema, data.Filesystem.LoadExtension.Operations, nil
+	return data.Core.Filesystem.LoadExtension.Schema, data.Core.Filesystem.LoadExtension.Operations, nil
 }
 
-// technically, core doesn't need to be imported, but this allows us to get its schema+operations
 func importCore(ctx context.Context) (schema, operations string, err error) {
-	cl, err := dagger.Client(ctx)
-	if err != nil {
-		return "", "", err
-	}
-
-	data := struct {
-		Import struct {
-			Schema     string
-			Operations string
-		}
-	}{}
-	resp := &graphql.Response{Data: &data}
-
-	err = cl.MakeRequest(ctx,
-		&graphql.Request{
-			Query: `
-			mutation Import {
-				import(name: "core") {
-						schema
-						operations
-				}
-			}`,
-		},
-		resp,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	return data.Import.Schema, data.Import.Operations, nil
+	// TODO:(sipsma) this should retrieved from the api
+	return coreschema.Schema, `
+query Image($ref: String!) {
+  core {
+    image(ref: $ref) {
+      id
+    }
+  }
+}
+query Exec($fsid: FSID!, $input: ExecInput!) {
+  core {
+    filesystem(id: $fsid) {
+      exec(input: $input) {
+        fs {
+          id
+        }
+      }
+    }
+  }
+}
+query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
+  core {
+    filesystem(id: $fsid) {
+      exec(input: $input) {
+        mount(path: $getPath) {
+          id
+        }
+      }
+    }
+  }
+}
+query Dockerfile($context: FSID!, $dockerfileName: String!) {
+  core {
+    filesystem(id: $context) {
+      dockerbuild(dockerfile: $dockerfileName) {
+        id
+      }
+    }
+  }
+}
+query Secret($id: SecretID!) {
+  core {
+    secret(id: $id)
+  }
+}
+	`, nil
 }

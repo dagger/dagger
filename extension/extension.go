@@ -18,6 +18,7 @@ import (
 
 const (
 	schemaPath     = "/schema.graphql"
+	operationsPath = "/operations.graphql"
 	entrypointPath = "/entrypoint"
 
 	daggerSockName = "dagger-sock"
@@ -40,8 +41,9 @@ type remoteSchema struct {
 	fs       *filesystem.Filesystem
 	platform specs.Platform
 
-	sdl       string
-	resolvers router.Resolvers
+	sdl        string
+	operations string
+	resolvers  router.Resolvers
 }
 
 func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, fs *filesystem.Filesystem) (router.ExecutableSchema, error) {
@@ -49,12 +51,17 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, fs *file
 	if err != nil {
 		return nil, err
 	}
+	operations, err := fs.ReadFile(ctx, gw, operationsPath)
+	if err != nil {
+		return nil, err
+	}
 	s := &remoteSchema{
-		gw:        gw,
-		fs:        fs,
-		platform:  platform,
-		sdl:       string(sdl),
-		resolvers: router.Resolvers{},
+		gw:         gw,
+		fs:         fs,
+		platform:   platform,
+		sdl:        string(sdl),
+		operations: string(operations),
+		resolvers:  router.Resolvers{},
 	}
 	if err := s.parse(); err != nil {
 		return nil, err
@@ -65,6 +72,10 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, fs *file
 
 func (s *remoteSchema) Schema() string {
 	return s.sdl
+}
+
+func (s *remoteSchema) Operations() string {
+	return s.operations
 }
 
 func (s *remoteSchema) Resolvers() router.Resolvers {
@@ -96,7 +107,6 @@ func (s *remoteSchema) parse() error {
 		for _, field := range obj.Fields {
 			// FIXME: This heuristic currently assigns a resolver to every field expecting arguments.
 			if len(field.Arguments) == 0 {
-				// FIXME
 				objResolver[field.Name.Value] = func(p graphql.ResolveParams) (any, error) {
 					return struct{}{}, nil
 				}
@@ -110,6 +120,7 @@ func (s *remoteSchema) parse() error {
 
 func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	pathArray := p.Info.Path.AsArray()
+	name := fmt.Sprintf("%+v", pathArray)
 	lastPath := pathArray[len(pathArray)-1]
 
 	inputMap := map[string]interface{}{
@@ -151,8 +162,7 @@ func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	}
 
 	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-	outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(s.platform))
-	// , llb.WithCustomName(fmt.Sprintf("%s.%s", pkgName, actionName)))
+	outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(s.platform), llb.WithCustomName(name))
 	if err != nil {
 		return nil, err
 	}

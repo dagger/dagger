@@ -1,17 +1,9 @@
-
-
-
-""
-type Yarn {
-	script(source: FSID!, name: String): Filesystem!
-}
-
 type Query {
-	""
-	yarn: Yarn!
+  core: Core!
 }
-	
-
+type Mutation {
+  import(name: String!, fs: FSID): Package
+}
 
 scalar SecretID
 scalar FSID
@@ -55,4 +47,13 @@ type Filesystem {
   exec(input: ExecInput!): Exec!
   dockerbuild(dockerfile: String): Filesystem!
   file(path: String!, lines: Int): String
+}
+
+
+extend type Query {
+  yarn: Yarn!
+}
+
+type Yarn {
+  script(source: FSID!, name: String): Filesystem!
 }
