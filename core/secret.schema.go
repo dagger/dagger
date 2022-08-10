@@ -66,13 +66,13 @@ func (r *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,
 		"Core": router.ObjectResolver{
-			"secret":    r.Secret,
-			"addSecret": r.AddSecret,
+			"secret":    r.secret,
+			"addSecret": r.addSecret,
 		},
 	}
 }
 
-func (r *secretSchema) Secret(p graphql.ResolveParams) (any, error) {
+func (r *secretSchema) secret(p graphql.ResolveParams) (any, error) {
 	plaintext, err := r.secretStore.GetSecret(p.Context, p.Args["id"].(string))
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (r *secretSchema) Secret(p graphql.ResolveParams) (any, error) {
 	return string(plaintext), nil
 }
 
-func (r *secretSchema) AddSecret(p graphql.ResolveParams) (any, error) {
+func (r *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
 	plaintext := p.Args["plaintext"].(string)
 	return r.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
 }
