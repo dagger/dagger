@@ -41,7 +41,14 @@ func Serve(ctx context.Context, resolvers map[string]func(context.Context, ArgsI
 		writeErrorf(fmt.Errorf("unexpected args: %T %v", input["args"], input["args"]))
 	}
 
-	result, err := resolver(ctx, ArgsInput{Args: args})
+	argsInput := ArgsInput{Args: args}
+
+	parent, ok := input["parent"]
+	if ok {
+		argsInput.ParentResult = parent
+	}
+
+	result, err := resolver(ctx, argsInput)
 	if err != nil {
 		writeErrorf(fmt.Errorf("unexpected error: %w", err))
 	}

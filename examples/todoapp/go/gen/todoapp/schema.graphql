@@ -62,6 +62,6 @@ type Todoapp {
 
 type DeployURLs {
   url: String!
-  deployUrl: String!
-  logsUrl: String
+  deployURL: String!
+  logsURL: String
 }

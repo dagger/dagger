@@ -105,20 +105,6 @@ func (s *remoteSchema) parse() error {
 		objResolver := router.ObjectResolver{}
 		s.resolvers[obj.Name.Value] = objResolver
 		for _, field := range obj.Fields {
-			// FIXME: This heuristic currently assigns a resolver to every field expecting arguments.
-			if len(field.Arguments) == 0 {
-				objResolver[field.Name.Value] = func(p graphql.ResolveParams) (any, error) {
-					parent := make(map[string]interface{})
-					if err := convertArg(p.Source, &parent); err != nil {
-						return nil, err
-					}
-					if v, ok := parent[p.Info.FieldName]; ok {
-						return v, nil
-					}
-					return struct{}{}, nil
-				}
-				continue
-			}
 			objResolver[field.Name.Value] = s.resolve
 		}
 	}
@@ -133,6 +119,7 @@ func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	inputMap := map[string]interface{}{
 		"resolver": resolverName,
 		"args":     p.Args,
+		"parent":   p.Source,
 	}
 	inputBytes, err := json.Marshal(inputMap)
 	if err != nil {

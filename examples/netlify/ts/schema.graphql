@@ -13,6 +13,6 @@ type Netlify {
 
 type Deploy {
   url: String!
-  deployUrl: String!
-  logsUrl: String
+  deployURL: String!
+  logsURL: String
 }

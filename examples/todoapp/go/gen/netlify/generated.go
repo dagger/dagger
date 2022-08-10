@@ -20,14 +20,14 @@ func (v *DeployNetlify) GetDeploy() DeployNetlifyDeploy { return v.Deploy }
 // DeployNetlifyDeploy includes the requested fields of the GraphQL type Deploy.
 type DeployNetlifyDeploy struct {
 	Url       string `json:"url"`
-	DeployUrl string `json:"deployUrl"`
+	DeployURL string `json:"deployURL"`
 }
 
 // GetUrl returns DeployNetlifyDeploy.Url, and is useful for accessing the field via an interface.
 func (v *DeployNetlifyDeploy) GetUrl() string { return v.Url }
 
-// GetDeployUrl returns DeployNetlifyDeploy.DeployUrl, and is useful for accessing the field via an interface.
-func (v *DeployNetlifyDeploy) GetDeployUrl() string { return v.DeployUrl }
+// GetDeployURL returns DeployNetlifyDeploy.DeployURL, and is useful for accessing the field via an interface.
+func (v *DeployNetlifyDeploy) GetDeployURL() string { return v.DeployURL }
 
 // DeployResponse is returned by Deploy on success.
 type DeployResponse struct {
@@ -71,7 +71,7 @@ query Deploy ($contents: FSID!, $subdir: String, $siteName: String, $token: Secr
 	netlify {
 		deploy(contents: $contents, subdir: $subdir, siteName: $siteName, token: $token) {
 			url
-			deployUrl
+			deployURL
 		}
 	}
 }

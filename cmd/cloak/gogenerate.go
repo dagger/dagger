@@ -111,29 +111,34 @@ func (p plugin) GenerateCode(data *codegen.Data) error {
 
 	typesByName := make(map[string]types.Type)
 	for _, o := range data.Objects {
-		if o.BuiltIn || o.IsReserved() {
+		if o.Name == "Query" {
+			// only include fields under query from the current schema, not any external imported ones like `core`
+			var queryFields []*codegen.Field
+			for _, f := range o.Fields {
+				if !f.TypeReference.Definition.BuiltIn {
+					queryFields = append(queryFields, f)
+				}
+			}
+			o.Fields = queryFields
+		} else if o.BuiltIn || o.IsReserved() {
 			continue
 		}
 		var hasResolvers bool
 		for _, f := range o.Fields {
-			if !f.IsReserved() && len(f.Args) > 0 {
+			if !f.IsReserved() {
 				hasResolvers = true
 			}
 		}
 		if !hasResolvers {
 			continue
 		}
-		o.Root = true
 		file.Objects = append(file.Objects, o)
 		typesByName[o.Reference().String()] = o.Reference()
 		for _, f := range o.Fields {
-			if len(f.Args) == 0 {
-				continue
-			}
-
 			f.MethodHasContext = true
-			resolver := Resolver{o, f, "", `panic("not implemented")`}
+			resolver := Resolver{o, f, "", ""}
 			file.Resolvers = append(file.Resolvers, &resolver)
+			typesByName[f.TypeReference.GO.String()] = f.TypeReference.GO
 			for _, arg := range f.Args {
 				typesByName[arg.TypeReference.GO.String()] = arg.TypeReference.GO
 			}
@@ -167,8 +172,8 @@ type ResolverBuild struct {
 
 func (r ResolverBuild) ShortTypeName(name string) string {
 	shortName := templates.CurrentImports.LookupType(r.typesByName[name])
-	if shortName == "*<nil>" {
-		shortName = "struct{}"
+	if shortName == "*<nil>" || shortName == "<nil>" {
+		return ""
 	}
 	return shortName
 }
@@ -179,8 +184,8 @@ func (r ResolverBuild) PointedToShortTypeName(name string) string {
 		return ""
 	}
 	shortName := templates.CurrentImports.LookupType(t.Elem())
-	if shortName == "*<nil>" {
-		shortName = "struct{}"
+	if shortName == "*<nil>" || shortName == "<nil>" {
+		return ""
 	}
 	return shortName
 }

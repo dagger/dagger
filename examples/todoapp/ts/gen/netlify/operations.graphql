@@ -12,7 +12,7 @@ query Deploy(
       token: $token
     ) {
       url
-      deployUrl
+      deployURL
     }
   }
 }

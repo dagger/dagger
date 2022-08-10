@@ -20,7 +20,19 @@
 {{ range $resolver := .Resolvers -}}
     // {{ $resolver.Comment }}
 	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
-		{{ $resolver.Implementation }}
+    {{ if $resolver.Object.Root }}
+      {{ $type := $root.ShortTypeName $resolver.Field.TypeReference.GO.String}}
+      {{ $pointedType := $root.PointedToShortTypeName $resolver.Field.TypeReference.GO.String}}
+      {{if $pointedType}}
+      return new({{$pointedType}}), nil
+      {{else if $type}}
+      return *new({{$type}}), nil
+      {{else}}
+      return nil, nil
+      {{end}}
+    {{else}}
+      return obj.{{$resolver.Field.GoFieldName}}, nil
+    {{end}}
 	}
 
 {{ end }}
@@ -33,30 +45,47 @@
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error) {
   {{ range $resolver := .Resolvers -}}
-    {{if $resolver.Field.ArgsFunc}}
-      "{{$resolver.Field.Object.Name}}.{{lcFirst $resolver.Field.GoFieldName}}": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+      "{{$resolver.Field.Object.Name}}.{{goPrivate $resolver.Field.GoFieldName}}": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
         var bytes []byte
+        _ = bytes
         var err error
+        _ = err
 
-        {{ range $arg := $resolver.Field.Args }}
-        {{ $type := $root.ShortTypeName $arg.TypeReference.GO.String}}
-        {{ $pointedType := $root.PointedToShortTypeName $arg.TypeReference.GO.String}}
+        {{if $resolver.Field.ArgsFunc}}
+          {{ range $arg := $resolver.Field.Args }}
+          {{ $type := $root.ShortTypeName $arg.TypeReference.GO.String}}
+          {{ $pointedType := $root.PointedToShortTypeName $arg.TypeReference.GO.String}}
 
-        {{if $pointedType}}
-        var {{$arg.VarName}} {{$pointedType}}
-        {{else}}
-        var {{$arg.VarName}} {{$type}}
+          {{if $pointedType}}
+          var {{$arg.VarName}} {{$pointedType}}
+          {{else}}
+          var {{$arg.VarName}} {{$type}}
+          {{end}}
+          bytes, err = json.Marshal(fc.Args["{{$arg.VarName}}"])
+          if err != nil {
+            return nil, err
+          }
+          if err := json.Unmarshal(bytes, &{{$arg.VarName}}); err != nil {
+            return nil, err
+          }
+          {{ end }}
         {{end}}
-        bytes, err = json.Marshal(fc.Args["{{$arg.VarName}}"])
+
+        {{if not $resolver.Object.Root}}
+        obj := new({{ $root.PointedToShortTypeName $resolver.Object.Reference.String }})
+        bytes, err = json.Marshal(fc.ParentResult)
         if err != nil {
           return nil, err
         }
-        if err := json.Unmarshal(bytes, &{{$arg.VarName}}); err != nil {
+        if err := json.Unmarshal(bytes, obj); err != nil {
           return nil, err
         }
-        {{ end }}
+        {{end}}
 
         return (&{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}{}).{{$resolver.Field.GoFieldName}}(ctx, 
+        {{if not $resolver.Object.Root}}
+        obj,
+        {{end}}
         {{ range $arg := $resolver.Field.Args }}
         {{ $pointedType := $root.PointedToShortTypeName $arg.TypeReference.GO.String}}
         {{if $pointedType}}
@@ -67,7 +96,6 @@ func main() {
         {{ end }}
         )
       },
-    {{end}}
   {{ end }}
   })
 }

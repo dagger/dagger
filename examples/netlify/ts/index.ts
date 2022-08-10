@@ -61,8 +61,24 @@ const resolvers = {
       site = await netlifyClient.getSite({ site_id: site.id });
       return {
         url: site.url,
-        deployUrl: site.deploy_url,
+        deployURL: site.deploy_url,
       };
+    },
+  },
+  Query: {
+    netlify: async () => {
+      return {};
+    },
+  },
+  Deploy: {
+    url: async (args: any, parent: any) => {
+      return parent.url;
+    },
+    deployURL: async (args: any, parent: any) => {
+      return parent.deployURL;
+    },
+    logsURL: async (args: any, parent: any) => {
+      return parent.logsURL;
     },
   },
 };
