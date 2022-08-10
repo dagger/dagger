@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"net/http"
 	"sync"
 
 	"github.com/dagger/cloak/router"
@@ -52,12 +51,7 @@ func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error 
 
 	serverConn, clientConn := net.Pipe()
 	go func() {
-		l := &singleConnListener{conn: serverConn}
-
-		srv := http.Server{
-			Handler: p.router,
-		}
-		_ = srv.Serve(l)
+		_ = p.router.ServeConn(serverConn)
 	}()
 	return sshforward.Copy(context.TODO(), clientConn, stream, nil)
 }
