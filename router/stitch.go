@@ -16,6 +16,7 @@ func Stitch(schemas []ExecutableSchema) (*graphql.Schema, error) {
 	typeResolvers := tools.ResolverMap{}
 	for _, s := range schemas {
 		for name, resolver := range s.Resolvers() {
+
 			switch resolver := resolver.(type) {
 			case ObjectResolver:
 				obj, ok := typeResolvers[name].(*tools.ObjectResolver)

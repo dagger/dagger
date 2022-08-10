@@ -1,17 +1,9 @@
-
-
-
-""
-type Alpine {
-	build(pkgs: [String!]): Filesystem!
-}
-
 type Query {
-	""
-	alpine: Alpine!
+  core: Core!
 }
-	
-
+type Mutation {
+  import(name: String!, fs: FSID): Package
+}
 
 scalar SecretID
 scalar FSID
@@ -55,4 +47,13 @@ type Filesystem {
   exec(input: ExecInput!): Exec!
   dockerbuild(dockerfile: String): Filesystem!
   file(path: String!, lines: Int): String
+}
+
+
+extend type Query {
+  alpine: Alpine!
+}
+
+type Alpine {
+  build(pkgs: [String!]): Filesystem!
 }

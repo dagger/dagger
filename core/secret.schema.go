@@ -52,6 +52,16 @@ func (s *secretSchema) Schema() string {
 	`
 }
 
+func (s *secretSchema) Operations() string {
+	return `
+	query Secret($id: SecretID!) {
+		core {
+			secret(id: $id)
+		}
+	}
+	`
+}
+
 func (r *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,

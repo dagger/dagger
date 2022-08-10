@@ -24,6 +24,20 @@ func (s *dockerBuildSchema) Schema() string {
 	`
 }
 
+func (s *dockerBuildSchema) Operations() string {
+	return `
+query Dockerfile($context: FSID!, $dockerfileName: String!) {
+  core {
+    filesystem(id: $context) {
+      dockerbuild(dockerfile: $dockerfileName) {
+        id
+      }
+    }
+  }
+}
+	`
+}
+
 func (r *dockerBuildSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{

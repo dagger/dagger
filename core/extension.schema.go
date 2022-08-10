@@ -8,7 +8,8 @@ import (
 )
 
 type Extension struct {
-	Schema string
+	Schema     string
+	Operations string
 }
 
 var _ router.ExecutableSchema = &extensionSchema{}
@@ -21,12 +22,17 @@ func (s *extensionSchema) Schema() string {
 	return `
 	type Extension {
 		schema: String!
+		operations: String!
 	}
 
 	extend type Filesystem {
 		loadExtension: Extension!
 	}
 	`
+}
+
+func (s *extensionSchema) Operations() string {
+	return ""
 }
 
 func (r *extensionSchema) Resolvers() router.Resolvers {
@@ -53,6 +59,7 @@ func (r *extensionSchema) LoadExtension(p graphql.ResolveParams) (any, error) {
 	}
 
 	return &Extension{
-		Schema: schema.Schema(),
+		Schema:     schema.Schema(),
+		Operations: schema.Operations(),
 	}, nil
 }

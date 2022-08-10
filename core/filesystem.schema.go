@@ -61,6 +61,10 @@ func (s *filesystemSchema) Schema() string {
 	`
 }
 
+func (s *filesystemSchema) Operations() string {
+	return ""
+}
+
 func (r *filesystemSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"FSID": fsIDResolver,

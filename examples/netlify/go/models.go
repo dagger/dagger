@@ -31,6 +31,10 @@ type MountInput struct {
 	Fs   dagger.FSID `json:"fs"`
 }
 
+type Netlify struct {
+	Deploy *Deploy `json:"deploy"`
+}
+
 type Package struct {
 	Name       string             `json:"name"`
 	Fs         *dagger.Filesystem `json:"fs"`

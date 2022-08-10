@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"strings"
 
 	"context"
 	"fmt"
@@ -70,8 +69,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			// TODO: ugly hack to make each schema/operation work independently when referencing core types
 			fullSchema := act.GetSchema()
 			if name != "core" {
-				// TODO:(sipsma) extreme hack to trim the leading Query/Mutation, which causes conflicts, fix asap
-				fullSchema = fullSchema + "\n\n" + strings.Join(strings.Split(coreschema.Schema, "\n")[6:], "\n")
+				fullSchema = coreschema.Schema + "\n\n" + fullSchema
 			}
 
 			if err := os.WriteFile(schemaPath, []byte(fullSchema), 0644); err != nil {

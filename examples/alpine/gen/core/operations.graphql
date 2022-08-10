@@ -1,3 +1,4 @@
+
 query Image($ref: String!) {
   core {
     image(ref: $ref) {
@@ -5,7 +6,6 @@ query Image($ref: String!) {
     }
   }
 }
-
 query Exec($fsid: FSID!, $input: ExecInput!) {
   core {
     filesystem(id: $fsid) {
@@ -17,7 +17,6 @@ query Exec($fsid: FSID!, $input: ExecInput!) {
     }
   }
 }
-
 query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
   core {
     filesystem(id: $fsid) {
@@ -29,7 +28,6 @@ query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
     }
   }
 }
-
 query Dockerfile($context: FSID!, $dockerfileName: String!) {
   core {
     filesystem(id: $context) {
@@ -39,9 +37,9 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
     }
   }
 }
-
 query Secret($id: SecretID!) {
   core {
     secret(id: $id)
   }
 }
+	

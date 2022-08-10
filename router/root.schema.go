@@ -10,6 +10,10 @@ func (r *rootSchema) Schema() string {
 	`
 }
 
+func (r *rootSchema) Operations() string {
+	return ""
+}
+
 func (r *rootSchema) Resolvers() Resolvers {
 	return Resolvers{}
 }

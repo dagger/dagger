@@ -6,6 +6,7 @@ import (
 
 type ExecutableSchema interface {
 	Schema() string
+	Operations() string
 	Resolvers() Resolvers
 }
 

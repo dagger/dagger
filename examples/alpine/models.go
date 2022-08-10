@@ -6,6 +6,10 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+type Alpine struct {
+	Build *dagger.Filesystem `json:"build"`
+}
+
 type Core struct {
 	Filesystem *dagger.Filesystem `json:"filesystem"`
 	Image      *dagger.Filesystem `json:"image"`
