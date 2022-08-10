@@ -47,6 +47,17 @@ func (s *secretSchema) Schema() string {
 
 	extend type Core {
 		secret(id: SecretID!): String!
+		addSecret(plaintext: String!): SecretID!
+	}
+	`
+}
+
+func (s *secretSchema) Operations() string {
+	return `
+	query Secret($id: SecretID!) {
+		core {
+			secret(id: $id)
+		}
 	}
 	`
 }
@@ -55,11 +66,21 @@ func (r *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,
 		"Core": router.ObjectResolver{
-			"secret": r.Secret,
+			"secret":    r.secret,
+			"addSecret": r.addSecret,
 		},
 	}
 }
 
-func (r *secretSchema) Secret(p graphql.ResolveParams) (any, error) {
-	panic("FIXME")
+func (r *secretSchema) secret(p graphql.ResolveParams) (any, error) {
+	plaintext, err := r.secretStore.GetSecret(p.Context, p.Args["id"].(string))
+	if err != nil {
+		return nil, err
+	}
+	return string(plaintext), nil
+}
+
+func (r *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
+	plaintext := p.Args["plaintext"].(string)
+	return r.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
 }

@@ -1,21 +1,17 @@
 package main
 
-// THIS CODE IS A STARTING POINT ONLY. IT WILL NOT BE UPDATED WITH SCHEMA CHANGES.
-
 import (
 	"context"
-
-	"github.com/dagger/cloak/sdk/go/dagger"
-	"golang.org/x/sync/errgroup"
+	"encoding/json"
 
 	"github.com/dagger/cloak/examples/todoapp/go/gen/netlify"
 	"github.com/dagger/cloak/examples/todoapp/go/gen/todoapp"
 	"github.com/dagger/cloak/examples/todoapp/go/gen/yarn"
+	"github.com/dagger/cloak/sdk/go/dagger"
+	"golang.org/x/sync/errgroup"
 )
 
-type Resolver struct{}
-
-func (r *queryResolver) Build(ctx context.Context, src dagger.FSID) (*dagger.Filesystem, error) {
+func (r *todoappResolver) Build(ctx context.Context, src dagger.FSID) (*dagger.Filesystem, error) {
 	output, err := yarn.Script(ctx, src, "build")
 	if err != nil {
 		return nil, err
@@ -23,7 +19,7 @@ func (r *queryResolver) Build(ctx context.Context, src dagger.FSID) (*dagger.Fil
 	return &output.Yarn.Script, nil
 }
 
-func (r *queryResolver) Test(ctx context.Context, src dagger.FSID) (*dagger.Filesystem, error) {
+func (r *todoappResolver) Test(ctx context.Context, src dagger.FSID) (*dagger.Filesystem, error) {
 	output, err := yarn.Script(ctx, src, "test")
 	if err != nil {
 		return nil, err
@@ -31,7 +27,7 @@ func (r *queryResolver) Test(ctx context.Context, src dagger.FSID) (*dagger.File
 	return &output.Yarn.Script, nil
 }
 
-func (r *queryResolver) Deploy(ctx context.Context, src dagger.FSID, token dagger.SecretID) (*Deploy, error) {
+func (r *todoappResolver) Deploy(ctx context.Context, src dagger.FSID, token dagger.SecretID) (*DeployURLs, error) {
 	// run build and test in parallel
 	var eg errgroup.Group
 	var buildOutput *todoapp.BuildResponse
@@ -53,54 +49,87 @@ func (r *queryResolver) Deploy(ctx context.Context, src dagger.FSID, token dagge
 	if err != nil {
 		return nil, err
 	}
-	return &Deploy{
+	return &DeployURLs{
 		URL:       deployOutput.Netlify.Deploy.Url,
 		DeployURL: deployOutput.Netlify.Deploy.DeployUrl,
 	}, nil
 }
 
-// Query returns QueryResolver implementation.
-func (r *Resolver) Query() *queryResolver { return &queryResolver{r} }
-
-type queryResolver struct{ *Resolver }
+type todoappResolver struct{}
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
-		"Build": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+
+		"Todoapp.build": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
 			var err error
-			fc.Args, err = (&executionContext{}).field_Query_build_args(rctx, fc.Args)
+
+			var src dagger.FSID
+
+			bytes, err = json.Marshal(fc.Args["src"])
 			if err != nil {
 				return nil, err
 			}
-			obj, ok := fc.ParentResult.(struct{})
-			_ = ok
-			_ = obj
-			qr := &queryResolver{}
-			return qr.Query().Build(rctx, fc.Args["src"].(dagger.FSID))
+			if err := json.Unmarshal(bytes, &src); err != nil {
+				return nil, err
+			}
+
+			return (&todoappResolver{}).Build(ctx,
+
+				src,
+			)
 		},
-		"Test": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+
+		"Todoapp.test": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
 			var err error
-			fc.Args, err = (&executionContext{}).field_Query_test_args(rctx, fc.Args)
+
+			var src dagger.FSID
+
+			bytes, err = json.Marshal(fc.Args["src"])
 			if err != nil {
 				return nil, err
 			}
-			obj, ok := fc.ParentResult.(struct{})
-			_ = ok
-			_ = obj
-			qr := &queryResolver{}
-			return qr.Query().Test(rctx, fc.Args["src"].(dagger.FSID))
+			if err := json.Unmarshal(bytes, &src); err != nil {
+				return nil, err
+			}
+
+			return (&todoappResolver{}).Test(ctx,
+
+				src,
+			)
 		},
-		"Deploy": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+
+		"Todoapp.deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
 			var err error
-			fc.Args, err = (&executionContext{}).field_Query_deploy_args(rctx, fc.Args)
+
+			var src dagger.FSID
+
+			bytes, err = json.Marshal(fc.Args["src"])
 			if err != nil {
 				return nil, err
 			}
-			obj, ok := fc.ParentResult.(struct{})
-			_ = ok
-			_ = obj
-			qr := &queryResolver{}
-			return qr.Query().Deploy(rctx, fc.Args["src"].(dagger.FSID), fc.Args["token"].(dagger.SecretID))
+			if err := json.Unmarshal(bytes, &src); err != nil {
+				return nil, err
+			}
+
+			var token dagger.SecretID
+
+			bytes, err = json.Marshal(fc.Args["token"])
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, &token); err != nil {
+				return nil, err
+			}
+
+			return (&todoappResolver{}).Deploy(ctx,
+
+				src,
+
+				token,
+			)
 		},
 	})
 }

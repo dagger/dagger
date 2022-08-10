@@ -1,9 +1,8 @@
 package main
 
-// THIS CODE IS A STARTING POINT ONLY. IT WILL NOT BE UPDATED WITH SCHEMA CHANGES.
-
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,9 +17,7 @@ import (
 	netlifycontext "github.com/netlify/open-api/v2/go/porcelain/context"
 )
 
-type Resolver struct{}
-
-func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*Deploy, error) {
+func (r *netlifyResolver) Deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*Deploy, error) {
 	// Setup Auth
 	readSecretOutput, err := core.Secret(ctx, token)
 	if err != nil {
@@ -83,24 +80,65 @@ func (r *queryResolver) Deploy(ctx context.Context, contents dagger.FSID, subdir
 	}, nil
 }
 
-// Query returns QueryResolver implementation.
-func (r *Resolver) Query() *queryResolver { return &queryResolver{r} }
-
-type queryResolver struct{ *Resolver }
+type netlifyResolver struct{}
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
-		"Deploy": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+
+		"Netlify.deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
 			var err error
-			fc.Args, err = (&executionContext{}).field_Query_deploy_args(rctx, fc.Args)
+
+			var contents dagger.FSID
+
+			bytes, err = json.Marshal(fc.Args["contents"])
 			if err != nil {
 				return nil, err
 			}
-			obj, ok := fc.ParentResult.(struct{})
-			_ = ok
-			_ = obj
-			qr := &queryResolver{}
-			return qr.Query().Deploy(rctx, fc.Args["contents"].(dagger.FSID), fc.Args["subdir"].(*string), fc.Args["siteName"].(*string), fc.Args["token"].(dagger.SecretID))
+			if err := json.Unmarshal(bytes, &contents); err != nil {
+				return nil, err
+			}
+
+			var subdir string
+
+			bytes, err = json.Marshal(fc.Args["subdir"])
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, &subdir); err != nil {
+				return nil, err
+			}
+
+			var siteName string
+
+			bytes, err = json.Marshal(fc.Args["siteName"])
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, &siteName); err != nil {
+				return nil, err
+			}
+
+			var token dagger.SecretID
+
+			bytes, err = json.Marshal(fc.Args["token"])
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, &token); err != nil {
+				return nil, err
+			}
+
+			return (&netlifyResolver{}).Deploy(ctx,
+
+				contents,
+
+				&subdir,
+
+				&siteName,
+
+				token,
+			)
 		},
 	})
 }

@@ -61,23 +61,27 @@ func (s *filesystemSchema) Schema() string {
 	`
 }
 
+func (s *filesystemSchema) Operations() string {
+	return ""
+}
+
 func (r *filesystemSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"FSID": fsIDResolver,
 		"Core": router.ObjectResolver{
-			"filesystem": r.Filesystem,
+			"filesystem": r.filesystem,
 		},
 		"Filesystem": router.ObjectResolver{
-			"file": r.File,
+			"file": r.file,
 		},
 	}
 }
 
-func (r *filesystemSchema) Filesystem(p graphql.ResolveParams) (any, error) {
+func (r *filesystemSchema) filesystem(p graphql.ResolveParams) (any, error) {
 	return filesystem.New(p.Args["id"].(filesystem.FSID)), nil
 }
 
-func (r *filesystemSchema) File(p graphql.ResolveParams) (any, error) {
+func (r *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err

@@ -53,8 +53,8 @@ export type CoreSecretArgs = {
   id: Scalars['SecretID'];
 };
 
-export type Deploy = {
-  __typename?: 'Deploy';
+export type DeployUrLs = {
+  __typename?: 'DeployURLs';
   deployUrl: Scalars['String'];
   logsUrl?: Maybe<Scalars['String']>;
   url: Scalars['String'];
@@ -119,6 +119,17 @@ export type MountInput = {
   path: Scalars['String'];
 };
 
+export type Mutation = {
+  __typename?: 'Mutation';
+  import?: Maybe<Package>;
+};
+
+
+export type MutationImportArgs = {
+  fs?: InputMaybe<Scalars['FSID']>;
+  name: Scalars['String'];
+};
+
 export type Package = {
   __typename?: 'Package';
   fs?: Maybe<Filesystem>;
@@ -129,13 +140,14 @@ export type Package = {
 
 export type Query = {
   __typename?: 'Query';
+  core: Core;
   todoapp: Todoapp;
 };
 
 export type Todoapp = {
   __typename?: 'Todoapp';
   build: Filesystem;
-  deploy: Deploy;
+  deploy: DeployUrLs;
   test: Filesystem;
 };
 
@@ -175,7 +187,7 @@ export type DeployQueryVariables = Exact<{
 }>;
 
 
-export type DeployQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', deploy: { __typename?: 'Deploy', url: string, deployUrl: string } } };
+export type DeployQuery = { __typename?: 'Query', todoapp: { __typename?: 'Todoapp', deploy: { __typename?: 'DeployURLs', url: string, deployUrl: string } } };
 
 
 export const BuildDocument = gql`

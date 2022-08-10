@@ -1,11 +1,15 @@
-type Deploy {
+extend type Query {
+  todoapp: Todoapp!
+}
+
+type Todoapp {
+  build(src: FSID!): Filesystem!
+  test(src: FSID!): Filesystem!
+  deploy(src: FSID!, token: SecretID!): DeployURLs!
+}
+
+type DeployURLs {
   url: String!
   deployUrl: String!
   logsUrl: String
-}
-
-type Query {
-  build(src: FSID!): Filesystem!
-  test(src: FSID!): Filesystem!
-  deploy(src: FSID!, token: SecretID!): Deploy!
 }

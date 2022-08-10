@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/cmd/cloak/config"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/sync/errgroup"
 )
 
 var queryCmd = &cobra.Command{
@@ -23,6 +25,7 @@ var queryCmd = &cobra.Command{
 }
 
 func Query(cmd *cobra.Command, args []string) {
+	ctx := context.Background()
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -37,9 +40,8 @@ func Query(cmd *cobra.Command, args []string) {
 		localDirs[name] = dir
 	}
 
-	startOpts := &engine.StartOpts{
+	startOpts := &engine.Config{
 		LocalDirs: localDirs,
-		Secrets:   secrets,
 	}
 
 	// Use the provided query file if specified
@@ -68,46 +70,55 @@ func Query(cmd *cobra.Command, args []string) {
 	}
 
 	var result []byte
-	err = engine.Start(context.Background(), startOpts,
-		func(ctx context.Context, localDirs map[string]dagger.FSID, secrets map[string]string) (dagger.FSID, error) {
-			if err := cfg.Import(ctx, localDirs); err != nil {
-				return "", err
-			}
+	err = engine.Start(ctx, startOpts, func(ctx context.Context) error {
+		cl, err := dagger.Client(ctx)
+		if err != nil {
+			return err
+		}
 
-			for name, fs := range localDirs {
-				vars[name] = string(fs)
-			}
-			for name, id := range secrets {
-				vars[name] = id
-			}
+		localDirMapping, err := loadLocalDirs(ctx, cl, localDirs)
+		if err != nil {
+			return err
+		}
+		for name, id := range localDirMapping {
+			vars[name] = string(id)
+		}
 
-			cl, err := dagger.Client(ctx)
-			if err != nil {
-				return "", err
-			}
-			res := make(map[string]interface{})
-			resp := &graphql.Response{Data: &res}
-			err = cl.MakeRequest(ctx,
-				&graphql.Request{
-					Query:     string(inBytes),
-					Variables: vars,
-					OpName:    operation,
-				},
-				resp,
-			)
-			if err != nil {
-				return "", err
-			}
-			if len(resp.Errors) > 0 {
-				return "", resp.Errors
-			}
+		secretMapping, err := loadSecrets(ctx, cl, secrets)
+		if err != nil {
+			return err
+		}
+		for name, id := range secretMapping {
+			vars[name] = string(id)
+		}
 
-			result, err = json.MarshalIndent(res, "", "    ")
-			if err != nil {
-				return "", err
-			}
-			return "", nil
-		})
+		if err := cfg.LoadExtensions(ctx, localDirMapping); err != nil {
+			return err
+		}
+
+		res := make(map[string]interface{})
+		resp := &graphql.Response{Data: &res}
+		err = cl.MakeRequest(ctx,
+			&graphql.Request{
+				Query:     string(inBytes),
+				Variables: vars,
+				OpName:    operation,
+			},
+			resp,
+		)
+		if err != nil {
+			return err
+		}
+		if len(resp.Errors) > 0 {
+			return resp.Errors
+		}
+
+		result, err = json.MarshalIndent(res, "", "    ")
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -123,4 +134,99 @@ func getKVInput(kvs []string) map[string]string {
 		m[split[0]] = split[1]
 	}
 	return m
+}
+
+func loadSecrets(ctx context.Context, cl graphql.Client, secrets map[string]string) (map[string]dagger.SecretID, error) {
+	var eg errgroup.Group
+	var l sync.Mutex
+
+	mapping := map[string]dagger.SecretID{}
+	for name, value := range secrets {
+		name := name
+		value := value
+
+		eg.Go(func() error {
+			res := struct {
+				Core struct {
+					AddSecret dagger.SecretID
+				}
+			}{}
+			resp := &graphql.Response{Data: &res}
+
+			err := cl.MakeRequest(ctx,
+				&graphql.Request{
+					Query: `
+						query AddSecret($plaintext: String!) {
+							core {
+								addSecret(plaintext: $plaintext)
+							}
+						}
+				`,
+					Variables: map[string]any{
+						"plaintext": value,
+					},
+				},
+				resp,
+			)
+			if err != nil {
+				return err
+			}
+			l.Lock()
+			mapping[name] = res.Core.AddSecret
+			l.Unlock()
+
+			return nil
+		})
+	}
+
+	return mapping, eg.Wait()
+}
+
+func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]string) (map[string]dagger.FSID, error) {
+	var eg errgroup.Group
+	var l sync.Mutex
+
+	mapping := map[string]dagger.FSID{}
+	for localID := range localDirs {
+		localID := localID
+		eg.Go(func() error {
+			res := struct {
+				Core struct {
+					Clientdir struct {
+						Id dagger.FSID
+					}
+				}
+			}{}
+			resp := &graphql.Response{Data: &res}
+
+			err := cl.MakeRequest(ctx,
+				&graphql.Request{
+					Query: `
+						query ClientDir($id: String!) {
+							core {
+								clientdir(id: $id) {
+									id
+								}
+							}
+						}
+					`,
+					Variables: map[string]any{
+						"id": localID,
+					},
+				},
+				resp,
+			)
+			if err != nil {
+				return err
+			}
+
+			l.Lock()
+			mapping[localID] = res.Core.Clientdir.Id
+			l.Unlock()
+
+			return nil
+		})
+	}
+
+	return mapping, eg.Wait()
 }

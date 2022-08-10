@@ -6,6 +6,7 @@
 {{ reserveImport "sync"  }}
 {{ reserveImport "errors"  }}
 {{ reserveImport "bytes"  }}
+{{ reserveImport "encoding/json"  }}
 
 {{ reserveImport "github.com/vektah/gqlparser/v2" }}
 {{ reserveImport "github.com/vektah/gqlparser/v2/ast" }}
@@ -16,10 +17,6 @@
 
 {{ $root := . }}
 
-{{ if .HasRoot }}
-	type {{.ResolverType}} struct {}
-{{ end }}
-
 {{ range $resolver := .Resolvers -}}
     // {{ $resolver.Comment }}
 	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
@@ -29,31 +26,48 @@
 {{ end }}
 
 {{ range $object := .Objects -}}
-	// {{ucFirst $object.Name}} returns {{ $object.ResolverInterface | ref }} implementation.
-	func (r *{{$.ResolverType}}) {{ucFirst $object.Name}}() *{{lcFirst $object.Name}}{{ucFirst $.ResolverType}} { return &{{lcFirst $object.Name}}{{ucFirst $.ResolverType}}{r} }
+	type {{lcFirst $object.Name}}{{ucFirst $.ResolverType}} struct {}
 {{ end }}
-
-{{ range $object := .Objects -}}
-	type {{lcFirst $object.Name}}{{ucFirst $.ResolverType}} struct { *{{$.ResolverType}} }
-{{ end }}
-
 
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error) {
   {{ range $resolver := .Resolvers -}}
-  "{{$resolver.Field.GoFieldName}}": func(rctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
-    var err error
-    fc.Args, err = (&executionContext{}).{{$resolver.Field.ArgsFunc}}(rctx, fc.Args)
-    if err != nil {
-      return nil, err
-    }
-    obj, ok := fc.ParentResult.({{$root.ShortTypeName $resolver.Field.Object.Reference.String}})
-    _ = ok
-    _ = obj
-    qr := &queryResolver{}
-    return qr.{{$resolver.Field.ShortInvocation}}
-  },
+    {{if $resolver.Field.ArgsFunc}}
+      "{{$resolver.Field.Object.Name}}.{{lcFirst $resolver.Field.GoFieldName}}": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+        var bytes []byte
+        var err error
+
+        {{ range $arg := $resolver.Field.Args }}
+        {{ $type := $root.ShortTypeName $arg.TypeReference.GO.String}}
+        {{ $pointedType := $root.PointedToShortTypeName $arg.TypeReference.GO.String}}
+
+        {{if $pointedType}}
+        var {{$arg.VarName}} {{$pointedType}}
+        {{else}}
+        var {{$arg.VarName}} {{$type}}
+        {{end}}
+        bytes, err = json.Marshal(fc.Args["{{$arg.VarName}}"])
+        if err != nil {
+          return nil, err
+        }
+        if err := json.Unmarshal(bytes, &{{$arg.VarName}}); err != nil {
+          return nil, err
+        }
+        {{ end }}
+
+        return (&{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}{}).{{$resolver.Field.GoFieldName}}(ctx, 
+        {{ range $arg := $resolver.Field.Args }}
+        {{ $pointedType := $root.PointedToShortTypeName $arg.TypeReference.GO.String}}
+        {{if $pointedType}}
+        &{{$arg.VarName}},
+        {{else}}
+        {{$arg.VarName}},
+        {{end}}
+        {{ end }}
+        )
+      },
+    {{end}}
   {{ end }}
   })
 }

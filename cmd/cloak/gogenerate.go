@@ -6,7 +6,6 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/99designs/gqlgen/api"
 	"github.com/99designs/gqlgen/codegen"
@@ -23,7 +22,7 @@ var tmpl string
 // TODO: abstract into an interface once support added for more langs (make pluggable, etc.)
 func generateGoImplStub() error {
 	cfg := gqlconfig.DefaultConfig()
-	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(filepath.Dir(configFile), "generated.go"), Package: "main"}
+	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(filepath.Dir(configFile), "_deleteme.go"), Package: "main"}
 	cfg.SchemaFilename = gqlconfig.StringList{filepath.Join(filepath.Dir(configFile), "schema.graphql")}
 	cfg.Model = gqlconfig.PackageConfig{
 		Filename: filepath.Join(generateOutputDir, "models.go"),
@@ -55,12 +54,14 @@ func generateGoImplStub() error {
 			},
 		},
 	}
+
 	if err := gqlconfig.CompleteConfig(cfg); err != nil {
 		return fmt.Errorf("error completing config: %w", err)
 	}
 	if err := api.Generate(cfg, api.AddPlugin(plugin{mainPath: filepath.Join(generateOutputDir, "main.go")})); err != nil {
 		return fmt.Errorf("error generating code: %w", err)
 	}
+	_ = os.Remove(cfg.Exec.Filename)
 	return nil
 }
 
@@ -97,39 +98,45 @@ type plugin struct {
 }
 
 func (plugin) Name() string {
-	// TODO: better name
-	return "test"
+	return "cloakgen"
 }
 
 func (plugin) InjectSourceEarly() *ast.Source {
 	// TODO: shouldn't rely on embedded schema from that package in this separate binary
-	// TODO:(sipsma) extreme hack to trim the leading Query/Mutation, which causes conflicts, fix asap
-	schema := strings.Join(strings.Split(coreschema.Schema, "\n")[6:], "\n")
-	return &ast.Source{BuiltIn: true, Input: schema}
+	return &ast.Source{BuiltIn: true, Input: coreschema.Schema}
 }
 
 func (p plugin) GenerateCode(data *codegen.Data) error {
 	file := File{}
 
-	if _, err := os.Stat(data.Config.Resolver.Filename); err == nil {
-		// file already exists and we dont support updating resolvers with layout = single so just return
-		return nil
-	}
-
 	typesByName := make(map[string]types.Type)
 	for _, o := range data.Objects {
-		if o.HasResolvers() {
-			file.Objects = append(file.Objects, o)
+		if o.BuiltIn || o.IsReserved() {
+			continue
 		}
+		var hasResolvers bool
 		for _, f := range o.Fields {
-			f := f
-			if !f.IsResolver {
+			if !f.IsReserved() && len(f.Args) > 0 {
+				hasResolvers = true
+			}
+		}
+		if !hasResolvers {
+			continue
+		}
+		o.Root = true
+		file.Objects = append(file.Objects, o)
+		typesByName[o.Reference().String()] = o.Reference()
+		for _, f := range o.Fields {
+			if len(f.Args) == 0 {
 				continue
 			}
 
+			f.MethodHasContext = true
 			resolver := Resolver{o, f, "", `panic("not implemented")`}
 			file.Resolvers = append(file.Resolvers, &resolver)
-			typesByName[f.Object.Reference().String()] = f.Object.Reference()
+			for _, arg := range f.Args {
+				typesByName[arg.TypeReference.GO.String()] = arg.TypeReference.GO
+			}
 		}
 	}
 
@@ -142,9 +149,7 @@ func (p plugin) GenerateCode(data *codegen.Data) error {
 	}
 
 	return templates.Render(templates.Options{
-		// PackageName: data.Config.Resolver.Package,
 		PackageName: "main",
-		FileNotice:  `// THIS CODE IS A STARTING POINT ONLY. IT WILL NOT BE UPDATED WITH SCHEMA CHANGES.`,
 		Filename:    p.mainPath,
 		Data:        resolverBuild,
 		Packages:    data.Config.Packages,
@@ -162,6 +167,18 @@ type ResolverBuild struct {
 
 func (r ResolverBuild) ShortTypeName(name string) string {
 	shortName := templates.CurrentImports.LookupType(r.typesByName[name])
+	if shortName == "*<nil>" {
+		shortName = "struct{}"
+	}
+	return shortName
+}
+
+func (r ResolverBuild) PointedToShortTypeName(name string) string {
+	t, ok := r.typesByName[name].(*types.Pointer)
+	if !ok {
+		return ""
+	}
+	shortName := templates.CurrentImports.LookupType(t.Elem())
 	if shortName == "*<nil>" {
 		shortName = "struct{}"
 	}

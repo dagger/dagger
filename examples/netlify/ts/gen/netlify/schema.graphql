@@ -1,21 +1,9 @@
-
-type Deploy {
-  url: String!
-  deployUrl: String!
-  logsUrl: String
-}
-
-""
-type Netlify {
-	deploy(contents: FSID!, subdir: String, siteName: String, token: SecretID!): Deploy!
-}
-
 type Query {
-	""
-	netlify: Netlify!
+  core: Core!
 }
-	
-
+type Mutation {
+  import(name: String!, fs: FSID): Package
+}
 
 scalar SecretID
 scalar FSID
@@ -59,4 +47,24 @@ type Filesystem {
   exec(input: ExecInput!): Exec!
   dockerbuild(dockerfile: String): Filesystem!
   file(path: String!, lines: Int): String
+}
+
+
+extend type Query {
+  netlify: Netlify!
+}
+
+type Netlify {
+  deploy(
+    contents: FSID!
+    subdir: String
+    siteName: String
+    token: SecretID!
+  ): Deploy!
+}
+
+type Deploy {
+  url: String!
+  deployUrl: String!
+  logsUrl: String
 }

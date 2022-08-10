@@ -81,7 +81,7 @@ func (c *Config) LocalDirs() map[string]string {
 	return localDirs
 }
 
-func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FSID) error {
+func (c *Config) LoadExtensions(ctx context.Context, localDirs map[string]dagger.FSID) error {
 	var eg errgroup.Group
 	for name, action := range c.Actions {
 		name := name
@@ -90,13 +90,6 @@ func (c *Config) Import(ctx context.Context, localDirs map[string]dagger.FSID) e
 			switch {
 			case name == "core":
 				schema, operations, err := importCore(ctx)
-				if err != nil {
-					return fmt.Errorf("error importing %s: %w", name, err)
-				}
-				action.schema = schema
-				action.operations = operations
-			case action.Image != "":
-				schema, operations, err := importImage(ctx, name, action.Image)
 				if err != nil {
 					return fmt.Errorf("error importing %s: %w", name, err)
 				}
@@ -158,41 +151,6 @@ func importLocal(ctx context.Context, name string, cwd dagger.FSID, dockerfile s
 	return importFS(ctx, name, data.Core.Filesystem.Dockerbuild.Id)
 }
 
-func importImage(ctx context.Context, name string, ref string) (schema, operations string, err error) {
-	cl, err := dagger.Client(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	data := struct {
-		Core struct {
-			Image struct {
-				Id dagger.FSID
-			}
-		}
-	}{}
-	resp := &graphql.Response{Data: &data}
-	err = cl.MakeRequest(ctx,
-		&graphql.Request{
-			Query: `
-			query Image($ref: String!) {
-				core {
-					image(ref: $ref) {
-						id
-					}
-				}
-			}`,
-			Variables: map[string]any{
-				"ref": ref,
-			},
-		},
-		resp,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	return importFS(ctx, name, data.Core.Image.Id)
-}
-
 func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
@@ -200,9 +158,13 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	}
 
 	data := struct {
-		Import struct {
-			Schema     string
-			Operations string
+		Core struct {
+			Filesystem struct {
+				LoadExtension struct {
+					Schema     string
+					Operations string
+				}
+			}
 		}
 	}{}
 	resp := &graphql.Response{Data: &data}
@@ -210,15 +172,19 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			mutation Import($name: String!, $fs: FSID!) {
-				import(name: $name, fs: $fs) {
-						schema
-						operations
+			query LoadExtension($fs: FSID!, $name: String!) {
+				core {
+					filesystem(id: $fs) {
+						loadExtension(name: $name) {
+							schema
+							operations
+						}
+					}
 				}
 			}`,
 			Variables: map[string]any{
-				"name": name,
 				"fs":   fs,
+				"name": name,
 			},
 		},
 		resp,
@@ -226,10 +192,9 @@ func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operati
 	if err != nil {
 		return "", "", err
 	}
-	return data.Import.Schema, data.Import.Operations, nil
+	return data.Core.Filesystem.LoadExtension.Schema, data.Core.Filesystem.LoadExtension.Operations, nil
 }
 
-// technically, core doesn't need to be imported, but this allows us to get its schema+operations
 func importCore(ctx context.Context) (schema, operations string, err error) {
 	cl, err := dagger.Client(ctx)
 	if err != nil {
@@ -237,9 +202,11 @@ func importCore(ctx context.Context) (schema, operations string, err error) {
 	}
 
 	data := struct {
-		Import struct {
-			Schema     string
-			Operations string
+		Core struct {
+			Extension struct {
+				Schema     string
+				Operations string
+			}
 		}
 	}{}
 	resp := &graphql.Response{Data: &data}
@@ -247,10 +214,12 @@ func importCore(ctx context.Context) (schema, operations string, err error) {
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			mutation Import {
-				import(name: "core") {
+			query {
+				core {
+					extension(name: "core") {
 						schema
 						operations
+					}
 				}
 			}`,
 		},
@@ -259,5 +228,5 @@ func importCore(ctx context.Context) (schema, operations string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return data.Import.Schema, data.Import.Operations, nil
+	return data.Core.Extension.Schema, data.Core.Extension.Operations, nil
 }

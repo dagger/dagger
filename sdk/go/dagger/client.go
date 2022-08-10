@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/api"
 )
 
 type SecretID string
@@ -39,24 +38,15 @@ func Client(ctx context.Context) (graphql.Client, error) {
 	return graphql.NewClient("http://fake.invalid", client), nil
 }
 
+func WithHTTPClient(ctx context.Context, c *http.Client) context.Context {
+	return context.WithValue(ctx, clientKey{}, c)
+}
+
 func WithUnixSocketAPIClient(ctx context.Context, socketPath string) context.Context {
-	return context.WithValue(ctx, clientKey{}, &http.Client{
+	return WithHTTPClient(ctx, &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				return net.Dial("unix", socketPath)
-			},
-		},
-	})
-}
-
-func WithInMemoryAPIClient(ctx context.Context, server api.Server) context.Context {
-	return context.WithValue(ctx, clientKey{}, &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				// TODO: not efficient, but whatever
-				serverConn, clientConn := net.Pipe()
-				go server.ServeConn(ctx, serverConn)
-				return clientConn, nil
 			},
 		},
 	})
