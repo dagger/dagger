@@ -12,7 +12,6 @@ import (
 	gqlconfig "github.com/99designs/gqlgen/codegen/config"
 	"github.com/99designs/gqlgen/codegen/templates"
 	"github.com/Khan/genqlient/generate"
-	coreschema "github.com/dagger/cloak/api/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -20,7 +19,7 @@ import (
 var tmpl string
 
 // TODO: abstract into an interface once support added for more langs (make pluggable, etc.)
-func generateGoImplStub() error {
+func generateGoImplStub(coreSchema string) error {
 	cfg := gqlconfig.DefaultConfig()
 	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(filepath.Dir(configFile), "_deleteme.go"), Package: "main"}
 	cfg.SchemaFilename = gqlconfig.StringList{filepath.Join(filepath.Dir(configFile), "schema.graphql")}
@@ -58,7 +57,10 @@ func generateGoImplStub() error {
 	if err := gqlconfig.CompleteConfig(cfg); err != nil {
 		return fmt.Errorf("error completing config: %w", err)
 	}
-	if err := api.Generate(cfg, api.AddPlugin(plugin{mainPath: filepath.Join(generateOutputDir, "main.go")})); err != nil {
+	if err := api.Generate(cfg, api.AddPlugin(plugin{
+		mainPath:   filepath.Join(generateOutputDir, "main.go"),
+		coreSchema: coreSchema,
+	})); err != nil {
 		return fmt.Errorf("error generating code: %w", err)
 	}
 	_ = os.Remove(cfg.Exec.Filename)
@@ -94,16 +96,16 @@ func generateGoClientStubs(subdir string) error {
 }
 
 type plugin struct {
-	mainPath string
+	mainPath   string
+	coreSchema string
 }
 
 func (plugin) Name() string {
 	return "cloakgen"
 }
 
-func (plugin) InjectSourceEarly() *ast.Source {
-	// TODO: shouldn't rely on embedded schema from that package in this separate binary
-	return &ast.Source{BuiltIn: true, Input: coreschema.Schema}
+func (p plugin) InjectSourceEarly() *ast.Source {
+	return &ast.Source{BuiltIn: true, Input: p.coreSchema}
 }
 
 func (p plugin) GenerateCode(data *codegen.Data) error {
