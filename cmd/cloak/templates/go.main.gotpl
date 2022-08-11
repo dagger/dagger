@@ -1,0 +1,38 @@
+{{ reserveImport "context"  }}
+{{ reserveImport "fmt"  }}
+{{ reserveImport "io"  }}
+{{ reserveImport "strconv"  }}
+{{ reserveImport "time"  }}
+{{ reserveImport "sync"  }}
+{{ reserveImport "errors"  }}
+{{ reserveImport "bytes"  }}
+{{ reserveImport "encoding/json"  }}
+
+{{ reserveImport "github.com/vektah/gqlparser/v2" }}
+{{ reserveImport "github.com/vektah/gqlparser/v2/ast" }}
+{{ reserveImport "github.com/99designs/gqlgen/graphql" }}
+{{ reserveImport "github.com/99designs/gqlgen/graphql/introspection" }}
+
+{{ reserveImport	"github.com/dagger/cloak/sdk/go/dagger" }}
+
+{{ $root := . }}
+
+{{ range $resolver := .Resolvers -}}
+    // {{ $resolver.Comment }}
+	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
+    {{ if $resolver.Object.Root }}
+      {{ $type := $root.ShortTypeName $resolver.Field.TypeReference.GO.String}}
+      {{ $pointedType := $root.PointedToShortTypeName $resolver.Field.TypeReference.GO.String}}
+      {{if $pointedType}}
+      return new({{$pointedType}}), nil
+      {{else if $type}}
+      return *new({{$type}}), nil
+      {{else}}
+      return nil, nil
+      {{end}}
+    {{else}}
+      return obj.{{$resolver.Field.GoFieldName}}, nil
+    {{end}}
+	}
+
+{{ end }}
