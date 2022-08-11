@@ -2,9 +2,7 @@ package extension
 
 import (
 	"context"
-	"io"
 	"net"
-	"sync"
 
 	"github.com/dagger/cloak/router"
 	"github.com/moby/buildkit/session"
@@ -54,31 +52,4 @@ func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error 
 		_ = p.router.ServeConn(serverConn)
 	}()
 	return sshforward.Copy(context.TODO(), clientConn, stream, nil)
-}
-
-// FIXME
-// converts a pre-existing net.Conn into a net.Listener that returns the conn
-type singleConnListener struct {
-	conn net.Conn
-	l    sync.Mutex
-}
-
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	l.l.Lock()
-	defer l.l.Unlock()
-
-	if l.conn == nil {
-		return nil, io.ErrClosedPipe
-	}
-	c := l.conn
-	l.conn = nil
-	return c, nil
-}
-
-func (l *singleConnListener) Addr() net.Addr {
-	return nil
-}
-
-func (l *singleConnListener) Close() error {
-	return nil
 }
