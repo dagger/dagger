@@ -54,6 +54,9 @@ jobs:
 
       - name: "Generate next release version"
         id: next_release_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMVER_BUMP: ${{ github.event.inputs.release_type }}
         run: |
           if [[ -n "${{ github.event.inputs.release_version }}" ]]
           then
@@ -72,7 +75,6 @@ jobs:
       - name: "Create next release tag"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SEMVER_BUMP: ${{ github.event.inputs.release_type }}
         run: |
           gh api -X POST /repos/:owner/:repo/git/refs \
             --field ref="refs/tags/${{ steps.next_release_version.outputs.value }}" \
