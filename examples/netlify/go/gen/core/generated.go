@@ -10,7 +10,11 @@ import (
 )
 
 // DockerfileCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
 type DockerfileCore struct {
+	// Look up a filesystem by its ID
 	Filesystem dagger.Filesystem `json:"filesystem"`
 }
 
@@ -19,6 +23,7 @@ func (v *DockerfileCore) GetFilesystem() dagger.Filesystem { return v.Filesystem
 
 // DockerfileResponse is returned by Dockerfile on success.
 type DockerfileResponse struct {
+	// Core API
 	Core DockerfileCore `json:"core"`
 }
 
@@ -26,7 +31,11 @@ type DockerfileResponse struct {
 func (v *DockerfileResponse) GetCore() DockerfileCore { return v.Core }
 
 // ExecCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
 type ExecCore struct {
+	// Look up a filesystem by its ID
 	Filesystem dagger.Filesystem `json:"filesystem"`
 }
 
@@ -34,7 +43,11 @@ type ExecCore struct {
 func (v *ExecCore) GetFilesystem() dagger.Filesystem { return v.Filesystem }
 
 // ExecGetMountCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
 type ExecGetMountCore struct {
+	// Look up a filesystem by its ID
 	Filesystem dagger.Filesystem `json:"filesystem"`
 }
 
@@ -43,6 +56,7 @@ func (v *ExecGetMountCore) GetFilesystem() dagger.Filesystem { return v.Filesyst
 
 // ExecGetMountResponse is returned by ExecGetMount on success.
 type ExecGetMountResponse struct {
+	// Core API
 	Core ExecGetMountCore `json:"core"`
 }
 
@@ -50,9 +64,13 @@ type ExecGetMountResponse struct {
 func (v *ExecGetMountResponse) GetCore() ExecGetMountCore { return v.Core }
 
 type ExecInput struct {
-	Args    []string     `json:"args"`
-	Mounts  []MountInput `json:"mounts"`
-	Workdir string       `json:"workdir"`
+	// Command to execute
+	// Example: ["echo", "hello, world!"]
+	Args []string `json:"args"`
+	// Transient filesystem mounts
+	Mounts []MountInput `json:"mounts"`
+	// Working directory
+	Workdir string `json:"workdir"`
 }
 
 // GetArgs returns ExecInput.Args, and is useful for accessing the field via an interface.
@@ -66,6 +84,7 @@ func (v *ExecInput) GetWorkdir() string { return v.Workdir }
 
 // ExecResponse is returned by Exec on success.
 type ExecResponse struct {
+	// Core API
 	Core ExecCore `json:"core"`
 }
 
@@ -73,7 +92,11 @@ type ExecResponse struct {
 func (v *ExecResponse) GetCore() ExecCore { return v.Core }
 
 // ImageCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
 type ImageCore struct {
+	// Fetch an OCI image
 	Image dagger.Filesystem `json:"image"`
 }
 
@@ -82,6 +105,7 @@ func (v *ImageCore) GetImage() dagger.Filesystem { return v.Image }
 
 // ImageResponse is returned by Image on success.
 type ImageResponse struct {
+	// Core API
 	Core ImageCore `json:"core"`
 }
 
@@ -89,18 +113,24 @@ type ImageResponse struct {
 func (v *ImageResponse) GetCore() ImageCore { return v.Core }
 
 type MountInput struct {
-	Path string      `json:"path"`
-	Fs   dagger.FSID `json:"fs"`
+	// filesystem to mount
+	Fs dagger.FSID `json:"fs"`
+	// path at which the filesystem will be mounted
+	Path string `json:"path"`
 }
-
-// GetPath returns MountInput.Path, and is useful for accessing the field via an interface.
-func (v *MountInput) GetPath() string { return v.Path }
 
 // GetFs returns MountInput.Fs, and is useful for accessing the field via an interface.
 func (v *MountInput) GetFs() dagger.FSID { return v.Fs }
 
+// GetPath returns MountInput.Path, and is useful for accessing the field via an interface.
+func (v *MountInput) GetPath() string { return v.Path }
+
 // SecretCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
 type SecretCore struct {
+	// Look up a secret by ID
 	Secret string `json:"secret"`
 }
 
@@ -109,6 +139,7 @@ func (v *SecretCore) GetSecret() string { return v.Secret }
 
 // SecretResponse is returned by Secret on success.
 type SecretResponse struct {
+	// Core API
 	Core SecretCore `json:"core"`
 }
 
