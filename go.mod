@@ -17,8 +17,8 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/vektah/gqlparser/v2 v2.4.6
 	go.opentelemetry.io/otel v1.9.0
-	go.opentelemetry.io/otel/exporters/jaeger v1.8.0
-	go.opentelemetry.io/otel/sdk v1.8.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.9.0
+	go.opentelemetry.io/otel/sdk v1.9.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 	google.golang.org/grpc v1.48.0
