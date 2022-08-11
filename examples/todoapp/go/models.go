@@ -6,12 +6,22 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+// Core API
 type Core struct {
+	// Fetch an OCI image
+	Image *dagger.Filesystem `json:"image"`
+	// Fetch a git repository
+	Git *dagger.Filesystem `json:"git"`
+	// Fetch a client directory
+	Clientdir *dagger.Filesystem `json:"clientdir"`
+	// Look up a filesystem by its ID
 	Filesystem *dagger.Filesystem `json:"filesystem"`
-	Image      *dagger.Filesystem `json:"image"`
-	Git        *dagger.Filesystem `json:"git"`
-	Clientdir  *dagger.Filesystem `json:"clientdir"`
-	Secret     string             `json:"secret"`
+	// Look up an extension by name
+	Extension *Extension `json:"extension"`
+	// Look up a secret by ID
+	Secret string `json:"secret"`
+	// Add a secret
+	AddSecret dagger.SecretID `json:"addSecret"`
 }
 
 type DeployURLs struct {
@@ -21,21 +31,29 @@ type DeployURLs struct {
 }
 
 type ExecInput struct {
-	Args    []string      `json:"args"`
-	Mounts  []*MountInput `json:"mounts"`
-	Workdir *string       `json:"workdir"`
+	// Command to execute
+	// Example: ["echo", "hello, world!"]
+	Args []string `json:"args"`
+	// Transient filesystem mounts
+	Mounts []*MountInput `json:"mounts"`
+	// Working directory
+	Workdir *string `json:"workdir"`
+}
+
+type Extension struct {
+	// name of the extension
+	Name string `json:"name"`
+	// schema of the extension
+	Schema string `json:"schema"`
+	// operations for this extension
+	Operations string `json:"operations"`
 }
 
 type MountInput struct {
-	Path string      `json:"path"`
-	Fs   dagger.FSID `json:"fs"`
-}
-
-type Package struct {
-	Name       string             `json:"name"`
-	Fs         *dagger.Filesystem `json:"fs"`
-	Schema     string             `json:"schema"`
-	Operations string             `json:"operations"`
+	// filesystem to mount
+	Fs dagger.FSID `json:"fs"`
+	// path at which the filesystem will be mounted
+	Path string `json:"path"`
 }
 
 type Todoapp struct {

@@ -18,8 +18,9 @@
 {{ $root := . }}
 
 {{ range $resolver := .Resolvers -}}
+  {{if not $resolver.HasArgs}}
     // {{ $resolver.Comment }}
-	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
+	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{goPrivate $resolver.Field.GoFieldName}}{{ $resolver.MethodSignature }} {
     {{ if $resolver.Object.Root }}
       {{ $type := $root.ShortTypeName $resolver.Field.TypeReference.GO.String}}
       {{ $pointedType := $root.PointedToShortTypeName $resolver.Field.TypeReference.GO.String}}
@@ -34,7 +35,7 @@
       return obj.{{$resolver.Field.GoFieldName}}, nil
     {{end}}
 	}
-
+  {{end}}
 {{ end }}
 
 {{ range $object := .Objects -}}
@@ -71,7 +72,7 @@ func main() {
           {{ end }}
         {{end}}
 
-        {{if not $resolver.Object.Root}}
+        {{if $resolver.IncludeParentObject}}
         obj := new({{ $root.PointedToShortTypeName $resolver.Object.Reference.String }})
         bytes, err = json.Marshal(fc.ParentResult)
         if err != nil {
@@ -82,8 +83,8 @@ func main() {
         }
         {{end}}
 
-        return (&{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}{}).{{$resolver.Field.GoFieldName}}(ctx, 
-        {{if not $resolver.Object.Root}}
+        return (&{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}{}).{{goPrivate $resolver.Field.GoFieldName}}(ctx, 
+        {{if $resolver.IncludeParentObject}}
         obj,
         {{end}}
         {{ range $arg := $resolver.Field.Args }}
