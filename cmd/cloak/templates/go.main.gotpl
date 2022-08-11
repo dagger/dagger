@@ -20,7 +20,7 @@
 {{ range $resolver := .Resolvers -}}
   {{if $resolver.HasArgs}}
     // {{ $resolver.Comment }}
-	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
+	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.MethodSignature }} {
     {{ if $resolver.Object.Root }}
       {{ $type := $root.ShortTypeName $resolver.Field.TypeReference.GO.String}}
       {{ $pointedType := $root.PointedToShortTypeName $resolver.Field.TypeReference.GO.String}}
