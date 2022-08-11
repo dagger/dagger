@@ -15,8 +15,11 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-//go:embed go.gotpl
-var tmpl string
+//go:embed templates/go.main.gotpl
+var mainTmpl string
+
+//go:embed templates/go.generated.gotpl
+var generatedTmpl string
 
 // TODO: abstract into an interface once support added for more langs (make pluggable, etc.)
 func generateGoImplStub(coreSchema string) error {
@@ -58,8 +61,9 @@ func generateGoImplStub(coreSchema string) error {
 		return fmt.Errorf("error completing config: %w", err)
 	}
 	if err := api.Generate(cfg, api.AddPlugin(plugin{
-		mainPath:   filepath.Join(generateOutputDir, "main.go"),
-		coreSchema: coreSchema,
+		mainPath:      filepath.Join(generateOutputDir, "main.go"),
+		generatedPath: filepath.Join(generateOutputDir, "generated.go"),
+		coreSchema:    coreSchema,
 	})); err != nil {
 		return fmt.Errorf("error generating code: %w", err)
 	}
@@ -96,8 +100,9 @@ func generateGoClientStubs(subdir string) error {
 }
 
 type plugin struct {
-	mainPath   string
-	coreSchema string
+	mainPath      string
+	generatedPath string
+	coreSchema    string
 }
 
 func (plugin) Name() string {
@@ -155,13 +160,27 @@ func (p plugin) GenerateCode(data *codegen.Data) error {
 		typesByName:  typesByName,
 	}
 
-	return templates.Render(templates.Options{
+	if err := templates.Render(templates.Options{
 		PackageName: "main",
 		Filename:    p.mainPath,
 		Data:        resolverBuild,
 		Packages:    data.Config.Packages,
-		Template:    tmpl,
-	})
+		Template:    mainTmpl,
+	}); err != nil {
+		return err
+	}
+
+	if err := templates.Render(templates.Options{
+		PackageName: "main",
+		Filename:    p.generatedPath,
+		Data:        resolverBuild,
+		Packages:    data.Config.Packages,
+		Template:    generatedTmpl,
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type ResolverBuild struct {
