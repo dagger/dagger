@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	coreschema "github.com/dagger/cloak/api/schema"
 	"github.com/dagger/cloak/cmd/cloak/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
@@ -24,18 +23,6 @@ func Generate(cmd *cobra.Command, args []string) {
 	cfg, err := config.ParseFile(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	switch sdkType {
-	case "go":
-		if err := generateGoImplStub(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-	case "":
-	default:
-		fmt.Fprintf(os.Stderr, "Error: unknown sdk type %s\n", sdkType)
 		os.Exit(1)
 	}
 
@@ -56,6 +43,17 @@ func Generate(cmd *cobra.Command, args []string) {
 		if err := cfg.LoadExtensions(ctx, localDirs); err != nil {
 			return err
 		}
+
+		switch sdkType {
+		case "go":
+			if err := generateGoImplStub(cfg.Extensions["core"].GetSchema()); err != nil {
+				return err
+			}
+		case "":
+		default:
+			return fmt.Errorf("unknown sdk type %s", sdkType)
+		}
+
 		for name, ext := range cfg.Extensions {
 			subdir := filepath.Join(generateOutputDir, "gen", name)
 			if err := os.MkdirAll(subdir, 0755); err != nil {
@@ -66,10 +64,10 @@ func Generate(cmd *cobra.Command, args []string) {
 			}
 			schemaPath := filepath.Join(subdir, "schema.graphql")
 
-			// TODO: ugly hack to make each schema/operation work independently when referencing core types
 			fullSchema := ext.GetSchema()
 			if name != "core" {
-				fullSchema = coreschema.Schema + "\n\n" + fullSchema
+				// TODO:(sipsma) ugly hack to make each schema/operation work independently when referencing core types.
+				fullSchema = cfg.Extensions["core"].GetSchema() + "\n\n" + fullSchema
 			}
 
 			if err := os.WriteFile(schemaPath, []byte(fullSchema), 0644); err != nil {
