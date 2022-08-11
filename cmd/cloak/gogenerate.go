@@ -225,3 +225,7 @@ type Resolver struct {
 	Comment        string
 	Implementation string
 }
+
+func (r *Resolver) HasArgs() bool {
+	return len(r.Field.Args) > 0
+}

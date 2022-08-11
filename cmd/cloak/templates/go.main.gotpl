@@ -18,6 +18,7 @@
 {{ $root := . }}
 
 {{ range $resolver := .Resolvers -}}
+  {{if $resolver.HasArgs}}
     // {{ $resolver.Comment }}
 	func (r *{{lcFirst $resolver.Object.Name}}{{ucFirst $.ResolverType}}) {{$resolver.Field.GoFieldName}}{{ $resolver.Field.ShortResolverDeclaration }} {
     {{ if $resolver.Object.Root }}
@@ -31,8 +32,8 @@
       return nil, nil
       {{end}}
     {{else}}
-      return obj.{{$resolver.Field.GoFieldName}}, nil
+      panic("implement me")
     {{end}}
 	}
-
+  {{end}}
 {{ end }}
