@@ -229,3 +229,29 @@ type Resolver struct {
 func (r *Resolver) HasArgs() bool {
 	return len(r.Field.Args) > 0
 }
+
+func (r *Resolver) IncludeParentObject() bool {
+	return !r.HasArgs() && !r.Object.Root
+}
+
+func (r *Resolver) MethodSignature() string {
+	if r.Object.Kind == ast.InputObject {
+		return fmt.Sprintf("(ctx context.Context, obj %s, data %s) error",
+			templates.CurrentImports.LookupType(r.Object.Reference()),
+			templates.CurrentImports.LookupType(r.Field.TypeReference.GO),
+		)
+	}
+
+	res := "(ctx context.Context"
+
+	if r.IncludeParentObject() {
+		res += fmt.Sprintf(", obj %s", templates.CurrentImports.LookupType(r.Object.Reference()))
+	}
+	for _, arg := range r.Field.Args {
+		res += fmt.Sprintf(", %s %s", arg.VarName, templates.CurrentImports.LookupType(arg.TypeReference.GO))
+	}
+
+	result := templates.CurrentImports.LookupType(r.Field.TypeReference.GO)
+	res += fmt.Sprintf(") (%s, error)", result)
+	return res
+}
