@@ -46,16 +46,28 @@ func (s *filesystemSchema) Schema() string {
 	return `
 	scalar FSID
 
+	"""
+	A reference to a filesystem tree.
+	For example:
+	 - The root filesystem of a container
+	 - A source code repository
+	 - A directory containing binary artifacts
+	Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+	"""
 	type Filesystem {
 		id: FSID!
+
+		"read a file at path"
 		file(path: String!, lines: Int): String
 
 		# FIXME: this should be in execSchema. However, removing this results in an error:
 		# failed to resolve all type definitions: [Core Query Filesystem Exec]
+		"execute a command inside this filesystem"
 		exec(input: ExecInput!): Exec!
 	}
 
 	extend type Core {
+		"Look up a filesystem by its ID"
 		filesystem(id: FSID!): Filesystem!
 	}
 	`

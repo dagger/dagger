@@ -24,16 +24,23 @@ type extensionSchema struct {
 func (s *extensionSchema) Schema() string {
 	return `
 	type Extension {
+		"name of the extension"
 		name: String!
+
+		"schema of the extension"
 		schema: String!
+
+		"operations for this extension"
 		operations: String!
 	}
 
 	extend type Filesystem {
+		"load an extension into the API"
 		loadExtension(name: String!): Extension!
 	}
 
 	extend type Core {
+		"Look up an extension by name"
 		extension(name: String!): Extension!
 	}
 	`

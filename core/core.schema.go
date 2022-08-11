@@ -15,12 +15,19 @@ type coreSchema struct {
 func (r *coreSchema) Schema() string {
 	return `
 	extend type Query {
+		"Core API"
 		core: Core!
 	}
 
+	"Core API"
 	type Core {
+		"Fetch an OCI image"
 		image(ref: String!): Filesystem!
+
+		"Fetch a git repository"
 		git(remote: String!, ref: String): Filesystem!
+
+		"Fetch a client directory"
 		clientdir(id: String!): Filesystem!
 	}
 	`

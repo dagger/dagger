@@ -46,7 +46,10 @@ func (s *secretSchema) Schema() string {
 	scalar SecretID
 
 	extend type Core {
+		"Look up a secret by ID"
 		secret(id: SecretID!): String!
+
+		"Add a secret"
 		addSecret(plaintext: String!): SecretID!
 	}
 	`
