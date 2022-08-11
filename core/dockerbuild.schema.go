@@ -19,6 +19,7 @@ type dockerBuildSchema struct {
 func (s *dockerBuildSchema) Schema() string {
 	return `
 	extend type Filesystem {
+		"docker build using this filesystem as context"
 		dockerbuild(dockerfile: String): Filesystem!
 	}
 	`

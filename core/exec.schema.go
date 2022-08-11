@@ -37,26 +37,47 @@ type execSchema struct {
 func (s *execSchema) Schema() string {
 	return `
 	type Exec {
+		"Modified filesystem"
 		fs: Filesystem!
+
+		"stdout of the command"
 		stdout(lines: Int): String
+
+		"stderr of the command"
 		stderr(lines: Int): String
+
+		"Exit code of the command"
 		exitCode: Int
+
+		"Modified mounted filesystem"
 		mount(path: String!): Filesystem!
 	}
 
 	input MountInput {
-		path: String!
+		"filesystem to mount"
 		fs: FSID!
+
+		"path at which the filesystem will be mounted"
+		path: String!
 	}
 
 	input ExecInput {
+		"""
+		Command to execute
+		Example: ["echo", "hello, world!"]
+		"""
 		args: [String!]!
+
+		"Transient filesystem mounts"
 		mounts: [MountInput!]
+
+		"Working directory"
 		workdir: String
 	}
 
 	# FIXME: broken
 	# extend type Filesystem {
+	#	"execute a command inside this filesystem"
 	# 	exec(input: ExecInput!): Exec!
 	# }
 	`
