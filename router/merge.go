@@ -30,7 +30,6 @@ func Merge(schemas ...ExecutableSchema) (ExecutableSchema, error) {
 	merged.resolvers = Resolvers{}
 	for _, s := range schemas {
 		for name, resolver := range s.Resolvers() {
-
 			switch resolver := resolver.(type) {
 			case ObjectResolver:
 				var objResolver ObjectResolver

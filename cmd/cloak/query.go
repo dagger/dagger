@@ -193,7 +193,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 			res := struct {
 				Core struct {
 					Clientdir struct {
-						Id dagger.FSID
+						ID dagger.FSID
 					}
 				}
 			}{}
@@ -221,7 +221,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 			}
 
 			l.Lock()
-			mapping[localID] = res.Core.Clientdir.Id
+			mapping[localID] = res.Core.Clientdir.ID
 			l.Unlock()
 
 			return nil

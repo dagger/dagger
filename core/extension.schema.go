@@ -50,18 +50,18 @@ func (s *extensionSchema) Operations() string {
 	return ""
 }
 
-func (r *extensionSchema) Resolvers() router.Resolvers {
+func (s *extensionSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"loadExtension": r.loadExtension,
+			"loadExtension": s.loadExtension,
 		},
 		"Core": router.ObjectResolver{
-			"extension": r.extension,
+			"extension": s.extension,
 		},
 	}
 }
 
-func (r *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
+func (s *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err
@@ -69,12 +69,12 @@ func (r *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 
 	name := p.Args["name"].(string)
 
-	schema, err := extension.Load(p.Context, r.gw, r.platform, obj)
+	schema, err := extension.Load(p.Context, s.gw, s.platform, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.router.Add(name, schema); err != nil {
+	if err := s.router.Add(name, schema); err != nil {
 		return nil, err
 	}
 
@@ -85,10 +85,10 @@ func (r *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 	}, nil
 }
 
-func (r *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
+func (s *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
 	name := p.Args["name"].(string)
 
-	schema := r.router.Get(name)
+	schema := s.router.Get(name)
 	if schema == nil {
 		return nil, fmt.Errorf("extension %q not found", name)
 	}

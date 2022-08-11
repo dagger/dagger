@@ -88,7 +88,7 @@ func generateGoClientStubs(subdir string) error {
 		return err
 	}
 	for filename, content := range generated {
-		if err := os.WriteFile(filename, content, 0644); err != nil {
+		if err := os.WriteFile(filename, content, 0600); err != nil {
 			return err
 		}
 	}
