@@ -15,8 +15,8 @@ import (
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/term"
 )
 
 var queryCmd = &cobra.Command{
@@ -47,7 +47,7 @@ func Query(cmd *cobra.Command, args []string) {
 	// Use the provided query file if specified
 	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
 	// Finally, default to reading from operations.graphql next to cloak.yaml
-	isTerminal := terminal.IsTerminal(int(os.Stdin.Fd()))
+	isTerminal := term.IsTerminal(int(os.Stdin.Fd()))
 	if queryFile == "" && isTerminal {
 		queryFile = filepath.Join(filepath.Dir(configFile), "operations.graphql")
 	}
