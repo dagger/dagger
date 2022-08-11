@@ -3,11 +3,13 @@ package core
 import (
 	"testing"
 
-	"github.com/dagger/cloak/core/integration/testutil"
+	"github.com/dagger/cloak/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCoreImage(t *testing.T) {
+	t.Parallel()
+
 	res := struct {
 		Core struct {
 			Image struct {
@@ -16,19 +18,21 @@ func TestCoreImage(t *testing.T) {
 		}
 	}{}
 
-	testutil.Query(t,
+	err := testutil.Query(
 		`{
 			core {
 				image(ref: "alpine:3.16.2") {
 					file(path: "/etc/alpine-release")
 				}
 			}
-		}`, nil, &res)
-
+		}`, &res, nil)
+	require.NoError(t, err)
 	require.Equal(t, res.Core.Image.File, "3.16.2\n")
 }
 
 func TestCoreGit(t *testing.T) {
+	t.Parallel()
+
 	res := struct {
 		Core struct {
 			Git struct {
@@ -37,14 +41,14 @@ func TestCoreGit(t *testing.T) {
 		}
 	}{}
 
-	testutil.Query(t,
+	err := testutil.Query(
 		`{
 			core {
 				git(remote: "github.com/dagger/dagger") {
 					file(path: "README.md")
 				}
 			}
-		}`, nil, &res)
-
+		}`, &res, nil)
+	require.NoError(t, err)
 	require.Contains(t, res.Core.Git.File, "dagger")
 }

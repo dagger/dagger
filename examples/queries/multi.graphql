@@ -1,19 +1,15 @@
 {
-  source {
+  core {
     image(ref: "alpine") {
-      exec(args: ["apk", "add", "curl"]) {
+      exec(input: { args: ["apk", "add", "curl"] }) {
         fs {
-          dagger: exec(args: ["curl", "https://dagger.io/", "-o", "/out"]) {
+          dagger: exec(input: { args: ["curl", "https://dagger.io/"] }) {
             stderr
-            fs {
-              file(path: "/out", lines: 1)
-            }
+            stdout(lines: 1)
           }
-          gh: exec(args: ["curl", "-L", "https://github.com/", "-o", "/out"]) {
+          github: exec(input: { args: ["curl", "-L", "https://github.com/"] }) {
             stderr
-            fs {
-              file(path: "/out", lines: 1)
-            }
+            stdout(lines: 10)
           }
         }
       }
