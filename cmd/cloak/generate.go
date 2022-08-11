@@ -59,7 +59,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			if err := os.MkdirAll(subdir, 0755); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(subdir, ".gitattributes"), []byte("** linguist-generated=true"), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(subdir, ".gitattributes"), []byte("** linguist-generated=true"), 0600); err != nil {
 				return err
 			}
 			schemaPath := filepath.Join(subdir, "schema.graphql")
@@ -70,11 +70,11 @@ func Generate(cmd *cobra.Command, args []string) {
 				fullSchema = cfg.Extensions["core"].GetSchema() + "\n\n" + fullSchema
 			}
 
-			if err := os.WriteFile(schemaPath, []byte(fullSchema), 0644); err != nil {
+			if err := os.WriteFile(schemaPath, []byte(fullSchema), 0600); err != nil {
 				return err
 			}
 			operationsPath := filepath.Join(subdir, "operations.graphql")
-			if err := os.WriteFile(operationsPath, []byte(ext.GetOperations()), 0644); err != nil {
+			if err := os.WriteFile(operationsPath, []byte(ext.GetOperations()), 0600); err != nil {
 				return err
 			}
 

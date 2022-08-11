@@ -110,21 +110,21 @@ func (s *execSchema) Operations() string {
 	`
 }
 
-func (r *execSchema) Resolvers() router.Resolvers {
+func (s *execSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"exec": r.exec,
+			"exec": s.exec,
 		},
 		"Exec": router.ObjectResolver{
-			"stdout":   r.stdout,
-			"stderr":   r.stderr,
-			"exitCode": r.exitCode,
-			"mount":    r.mount,
+			"stdout":   s.stdout,
+			"stderr":   s.stderr,
+			"exitCode": s.exitCode,
+			"mount":    s.mount,
 		},
 	}
 }
 
-func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
+func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	shim, err := shim.Build(p.Context, r.gw, r.platform)
+	shim, err := shim.Build(p.Context, s.gw, s.platform)
 	if err != nil {
 		return nil, err
 	}
@@ -166,19 +166,19 @@ func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		_ = execState.AddMount(mount.Path, state)
 	}
 
-	fs, err := r.Solve(p.Context, execState.Root())
+	fs, err := s.Solve(p.Context, execState.Root())
 	if err != nil {
 		return nil, err
 	}
 
-	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), r.platform)
+	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), s.platform)
 	if err != nil {
 		return nil, err
 	}
 
 	mounts := map[string]*filesystem.Filesystem{}
 	for _, mount := range input.Mounts {
-		mountFS, err := filesystem.FromState(p.Context, execState.GetMount(mount.Path), r.platform)
+		mountFS, err := filesystem.FromState(p.Context, execState.GetMount(mount.Path), s.platform)
 		if err != nil {
 			return nil, err
 		}
@@ -192,9 +192,9 @@ func (r *execSchema) exec(p graphql.ResolveParams) (any, error) {
 	}, nil
 }
 
-func (r *execSchema) stdout(p graphql.ResolveParams) (any, error) {
+func (s *execSchema) stdout(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, r.gw, "/stdout")
+	output, err := obj.Metadata.ReadFile(p.Context, s.gw, "/stdout")
 	if err != nil {
 		return nil, err
 	}
@@ -202,9 +202,9 @@ func (r *execSchema) stdout(p graphql.ResolveParams) (any, error) {
 	return truncate(string(output), p.Args), nil
 }
 
-func (r *execSchema) stderr(p graphql.ResolveParams) (any, error) {
+func (s *execSchema) stderr(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, r.gw, "/stderr")
+	output, err := obj.Metadata.ReadFile(p.Context, s.gw, "/stderr")
 	if err != nil {
 		return nil, err
 	}
@@ -212,9 +212,9 @@ func (r *execSchema) stderr(p graphql.ResolveParams) (any, error) {
 	return truncate(string(output), p.Args), nil
 }
 
-func (r *execSchema) exitCode(p graphql.ResolveParams) (any, error) {
+func (s *execSchema) exitCode(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, r.gw, "/exitCode")
+	output, err := obj.Metadata.ReadFile(p.Context, s.gw, "/exitCode")
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (r *execSchema) exitCode(p graphql.ResolveParams) (any, error) {
 	return strconv.Atoi(string(output))
 }
 
-func (r *execSchema) mount(p graphql.ResolveParams) (any, error) {
+func (s *execSchema) mount(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
 	path := p.Args["path"].(string)
 

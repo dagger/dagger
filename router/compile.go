@@ -9,7 +9,6 @@ import (
 func compile(s ExecutableSchema) (*graphql.Schema, error) {
 	typeResolvers := tools.ResolverMap{}
 	for name, resolver := range s.Resolvers() {
-
 		switch resolver := resolver.(type) {
 		case ObjectResolver:
 			obj := &tools.ObjectResolver{

@@ -21,7 +21,7 @@ type Store struct {
 }
 
 func (p *Store) AddSecret(ctx context.Context, value []byte) string {
-	hash := sha256.Sum256([]byte(value))
+	hash := sha256.Sum256(value)
 	id := hex.EncodeToString(hash[:])
 	p.secrets[id] = value
 	return id

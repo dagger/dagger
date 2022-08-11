@@ -205,12 +205,3 @@ func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesyst
 	}
 	return fsPaths
 }
-
-// TODO:(sipsma) put in shared util? this is duped with core package
-func convertArg(arg any, dest any) error {
-	marshalled, err := json.Marshal(arg)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(marshalled, dest)
-}

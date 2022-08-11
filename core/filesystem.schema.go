@@ -77,23 +77,23 @@ func (s *filesystemSchema) Operations() string {
 	return ""
 }
 
-func (r *filesystemSchema) Resolvers() router.Resolvers {
+func (s *filesystemSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"FSID": fsIDResolver,
 		"Core": router.ObjectResolver{
-			"filesystem": r.filesystem,
+			"filesystem": s.filesystem,
 		},
 		"Filesystem": router.ObjectResolver{
-			"file": r.file,
+			"file": s.file,
 		},
 	}
 }
 
-func (r *filesystemSchema) filesystem(p graphql.ResolveParams) (any, error) {
+func (s *filesystemSchema) filesystem(p graphql.ResolveParams) (any, error) {
 	return filesystem.New(p.Args["id"].(filesystem.FSID)), nil
 }
 
-func (r *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
+func (s *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func (r *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
 
 	path := p.Args["path"].(string)
 
-	output, err := obj.ReadFile(p.Context, r.gw, path)
+	output, err := obj.ReadFile(p.Context, s.gw, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}

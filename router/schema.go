@@ -13,12 +13,12 @@ type ExecutableSchema interface {
 type Resolvers map[string]Resolver
 
 type Resolver interface {
-	__resolver()
+	_resolver()
 }
 
 type ObjectResolver map[string]graphql.FieldResolveFn
 
-func (ObjectResolver) __resolver() {}
+func (ObjectResolver) _resolver() {}
 
 type ScalarResolver struct {
 	Serialize    graphql.SerializeFn
@@ -26,7 +26,7 @@ type ScalarResolver struct {
 	ParseLiteral graphql.ParseLiteralFn
 }
 
-func (ScalarResolver) __resolver() {}
+func (ScalarResolver) _resolver() {}
 
 var _ ExecutableSchema = &staticSchema{}
 

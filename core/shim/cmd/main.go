@@ -13,10 +13,10 @@ const (
 	exitCodePath = "/dagger/exitCode"
 )
 
-func main() {
+func run() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
-		os.Exit(1)
+		return 1
 	}
 	name := os.Args[1]
 	args := []string{}
@@ -47,12 +47,16 @@ func main() {
 		exitCode = 1
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			exitCode = exiterr.ExitCode()
-			os.Exit(exiterr.ExitCode())
 		}
 	}
 
-	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0644); err != nil {
+	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0600); err != nil {
 		panic(err)
 	}
-	os.Exit(exitCode)
+
+	return exitCode
+}
+
+func main() {
+	os.Exit(run())
 }

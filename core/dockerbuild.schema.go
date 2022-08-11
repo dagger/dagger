@@ -39,15 +39,15 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
 	`
 }
 
-func (r *dockerBuildSchema) Resolvers() router.Resolvers {
+func (s *dockerBuildSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"dockerbuild": r.dockerbuild,
+			"dockerbuild": s.dockerbuild,
 		},
 	}
 }
 
-func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
+func (s *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 	}
 
 	opts := map[string]string{
-		"platform": platforms.Format(r.platform),
+		"platform": platforms.Format(s.platform),
 	}
 	if dockerfile, ok := p.Args["dockerfile"].(string); ok {
 		opts["filename"] = dockerfile
@@ -68,7 +68,7 @@ func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 		dockerfilebuilder.DefaultLocalNameContext:    def,
 		dockerfilebuilder.DefaultLocalNameDockerfile: def,
 	}
-	res, err := r.gw.Solve(p.Context, bkgw.SolveRequest{
+	res, err := s.gw.Solve(p.Context, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
@@ -86,5 +86,5 @@ func (r *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	return filesystem.FromState(p.Context, st, r.platform)
+	return filesystem.FromState(p.Context, st, s.platform)
 }

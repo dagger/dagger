@@ -120,7 +120,7 @@ func importLocal(ctx context.Context, name string, cwd dagger.FSID, dockerfile s
 		Core struct {
 			Filesystem struct {
 				Dockerbuild struct {
-					Id dagger.FSID
+					ID dagger.FSID
 				}
 			}
 		}
@@ -148,7 +148,7 @@ func importLocal(ctx context.Context, name string, cwd dagger.FSID, dockerfile s
 	if err != nil {
 		return "", "", err
 	}
-	return importFS(ctx, name, data.Core.Filesystem.Dockerbuild.Id)
+	return importFS(ctx, name, data.Core.Filesystem.Dockerbuild.ID)
 }
 
 func importFS(ctx context.Context, name string, fs dagger.FSID) (schema, operations string, err error) {

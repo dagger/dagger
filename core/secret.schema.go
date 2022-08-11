@@ -65,26 +65,26 @@ func (s *secretSchema) Operations() string {
 	`
 }
 
-func (r *secretSchema) Resolvers() router.Resolvers {
+func (s *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,
 		"Core": router.ObjectResolver{
-			"secret":    r.secret,
-			"addSecret": r.addSecret,
+			"secret":    s.secret,
+			"addSecret": s.addSecret,
 		},
 	}
 }
 
-func (r *secretSchema) secret(p graphql.ResolveParams) (any, error) {
+func (s *secretSchema) secret(p graphql.ResolveParams) (any, error) {
 	id := p.Args["id"].(string)
-	plaintext, err := r.secretStore.GetSecret(p.Context, id)
+	plaintext, err := s.secretStore.GetSecret(p.Context, id)
 	if err != nil {
 		return nil, fmt.Errorf("secret %s: %w", id, err)
 	}
 	return string(plaintext), nil
 }
 
-func (r *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
+func (s *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
 	plaintext := p.Args["plaintext"].(string)
-	return r.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
+	return s.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
 }

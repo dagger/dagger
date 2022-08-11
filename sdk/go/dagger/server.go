@@ -63,7 +63,7 @@ func writeResult(result interface{}) error {
 		return fmt.Errorf("unable to marshal response: %v", err)
 	}
 
-	if err := os.WriteFile("/outputs/dagger.json", output, 0644); err != nil {
+	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
 		return fmt.Errorf("unable to write response file: %v", err)
 	}
 	return nil
