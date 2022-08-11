@@ -153,11 +153,10 @@ func (p plugin) GenerateCode(data *codegen.Data) error {
 	}
 
 	resolverBuild := &ResolverBuild{
-		File:         &file,
-		PackageName:  "main",
-		ResolverType: "Resolver",
-		HasRoot:      true,
-		typesByName:  typesByName,
+		File:        &file,
+		PackageName: "main",
+		HasRoot:     true,
+		typesByName: typesByName,
 	}
 
 	if err := templates.Render(templates.Options{
@@ -171,11 +170,12 @@ func (p plugin) GenerateCode(data *codegen.Data) error {
 	}
 
 	if err := templates.Render(templates.Options{
-		PackageName: "main",
-		Filename:    p.generatedPath,
-		Data:        resolverBuild,
-		Packages:    data.Config.Packages,
-		Template:    generatedTmpl,
+		PackageName:     "main",
+		Filename:        p.generatedPath,
+		Data:            resolverBuild,
+		Packages:        data.Config.Packages,
+		Template:        generatedTmpl,
+		GeneratedHeader: true,
 	}); err != nil {
 		return err
 	}
