@@ -1,5 +1,5 @@
 query build {
-  source {
+  core {
     git(remote: "github.com/dagger/dagger") {
       dockerbuild {
         id
@@ -9,7 +9,7 @@ query build {
 }
 
 query test {
-  source {
+  core {
     git(remote: "github.com/dagger/dagger") {
       file(path: "README.md")
     }

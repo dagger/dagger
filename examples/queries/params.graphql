@@ -1,5 +1,5 @@
 query ($version: String) {
-  source {
+  core {
     git(remote: "github.com/dagger/dagger", ref: $version) {
       file(path: "/README.md")
     }
