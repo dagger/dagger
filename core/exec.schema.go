@@ -36,6 +36,7 @@ type execSchema struct {
 
 func (s *execSchema) Schema() string {
 	return `
+	"Command execution"
 	type Exec {
 		"Modified filesystem"
 		fs: Filesystem!

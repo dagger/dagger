@@ -23,6 +23,7 @@ type extensionSchema struct {
 
 func (s *extensionSchema) Schema() string {
 	return `
+	"Extension representation"
 	type Extension {
 		"name of the extension"
 		name: String!
