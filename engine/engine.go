@@ -96,6 +96,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			}
 
 			if startOpts.DevServer != 0 {
+				fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", startOpts.DevServer)
 				return nil, http.ListenAndServe(fmt.Sprintf(":%d", startOpts.DevServer), router)
 			}
 

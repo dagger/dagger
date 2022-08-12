@@ -55,7 +55,6 @@ func ParseFile(f string) (*Config, error) {
 				ext.Context = cfg.Context
 			}
 			ext.Context = filepath.Join(filepath.Dir(f), ext.Context)
-			ext.Local = filepath.Join(cfg.Context, ext.Local)
 		}
 	}
 	// implicitly include core in every import
