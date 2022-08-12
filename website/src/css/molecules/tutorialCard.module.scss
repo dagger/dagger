@@ -15,9 +15,7 @@
 
   html[data-theme="dark"] & {
     background-color: var(--ifm-color-primary-light);
-    &:hover {
-      box-shadow: 4px 4px 0px 0px var(--ifm-color-primary);
-    }
+
     p,
     h4 {
       color: var(--ifm-color-primary-darker) !important;
@@ -36,10 +34,6 @@
     object-fit: contain;
   }
 
-  &:hover {
-    box-shadow: 4px 4px 0px 0px var(--ifm-color-primary);
-  }
-
   div {
     flex: 1 1 220px;
     display: flex;
@@ -53,6 +47,10 @@
     div {
       min-width: fit-content;
       width: 50%;
+    }
+
+    h4 {
+      font-size: 1.2rem;
     }
   }
 }
