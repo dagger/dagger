@@ -65,22 +65,6 @@ const resolvers = {
       };
     },
   },
-  Query: {
-    netlify: async () => {
-      return {};
-    },
-  },
-  Deploy: {
-    url: async (args: any, parent: any) => {
-      return parent.url;
-    },
-    deployURL: async (args: any, parent: any) => {
-      return parent.deployURL;
-    },
-    logsURL: async (args: any, parent: any) => {
-      return parent.logsURL;
-    },
-  },
 };
 
 const server = new DaggerServer({ resolvers });

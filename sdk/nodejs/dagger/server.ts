@@ -31,19 +31,28 @@ export class DaggerServer {
     }
 
     const parent = input.parent;
-    if (parent !== undefined) {
-      args.parent = parent;
-    }
 
+    let objectResolvers = this.resolvers[objName];
+    if (!objectResolvers) {
+      objectResolvers = {};
+    }
+    let resolver = objectResolvers[fieldName];
+    if (!resolver) {
+      // default to the graphql trivial resolver implementation
+      resolver = async (_: any, parent: any) => {
+        if (parent === null || parent === undefined) {
+          return {};
+        }
+        return parent[fieldName];
+      };
+    }
     (async () =>
       // TODO: handle context, info?
-      await this.resolvers[objName][fieldName](args, parent).then(
-        (result: any) => {
-          if (result === undefined) {
-            result = {};
-          }
-          fs.writeFileSync("/outputs/dagger.json", JSON.stringify(result));
+      await resolver(args, parent).then((result: any) => {
+        if (result === undefined) {
+          result = {};
         }
-      ))();
+        fs.writeFileSync("/outputs/dagger.json", JSON.stringify(result));
+      }))();
   }
 }
