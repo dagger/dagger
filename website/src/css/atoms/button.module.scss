@@ -2,7 +2,7 @@
   align-self: flex-end;
   border-radius: 100px;
   width: 100%;
-  padding: 0.5rem;
+  padding: 0.5rem 1.5rem;
   max-width: 300px;
   transition: transform 0.2s ease;
 
@@ -23,7 +23,9 @@
 }
 
 .anchor {
+  display: block;
   text-decoration: none !important;
+  width: fit-content;
 }
 
 .button.light {
