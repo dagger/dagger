@@ -52,22 +52,6 @@ const resolvers = {
         .then((res: any) => res.netlify.deploy);
     },
   },
-  Query: {
-    todoapp: async () => {
-      return {};
-    },
-  },
-  DeployURLs: {
-    url: async (args: any, parent: any) => {
-      return parent.url;
-    },
-    deployURL: async (args: any, parent: any) => {
-      return parent.deployURL;
-    },
-    logsURL: async (args: any, parent: any) => {
-      return parent.logsURL;
-    },
-  },
 };
 
 const server = new DaggerServer({ resolvers });
