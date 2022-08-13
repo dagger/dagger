@@ -6,13 +6,16 @@ import (
 	"universe.dagger.io/go"
 )
 
+// Like #ReleaseBase, but with a pre-configured container image.
+#Release: #ReleaseBase & {
+	_image: #Image
+	image:  _image.output
+}
+
 // Release Go binaries using GoReleaser
-#Release: {
+#ReleaseBase: {
 	// Source code
 	source: dagger.#FS
-
-	// Custom GoReleaser image
-	customImage: #Image
 
 	// Don't publish or announce the release
 	dryRun: bool | *false
@@ -23,7 +26,6 @@ import (
 	go.#Container & {
 		name:     "goreleaser"
 		"source": source
-		image:    customImage.output
 
 		entrypoint: [] // Support images that does not set goreleaser as the entrypoint
 		command: {
