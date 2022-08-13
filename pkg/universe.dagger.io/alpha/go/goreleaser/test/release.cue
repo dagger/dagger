@@ -17,12 +17,13 @@ dagger.#Plan & {
 			snapshot: true
 		}
 
-		customImage: build: goreleaser.#Release & {
+		customImage: build: goreleaser.#ReleaseBase & {
 			source: client.filesystem."./data/hello".read.contents
 
-			customImage: goreleaser.#Image & {
+			_image: goreleaser.#Image & {
 				tag: "v1.9.2"
 			}
+			image: _image.output
 
 			dryRun:   true
 			snapshot: true
