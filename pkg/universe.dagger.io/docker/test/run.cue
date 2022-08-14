@@ -94,11 +94,11 @@ dagger.#Plan & {
 						echo -n hello world >> /usr/test/output.txt
 						"""#
 				}
-				export: directories: "test": _
+				export: directories: test: _
 			}
 
 			verify: core.#ReadFile & {
-				input: run.export.directories."test"
+				input: run.export.directories.test
 				path:  "/output.txt"
 			}
 			verify: contents: "hello world"
