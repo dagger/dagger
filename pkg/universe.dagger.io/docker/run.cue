@@ -104,10 +104,10 @@ import (
 	_workDirRelativePath: {
 		_path: string
 		if path.IsAbs(_path) {
-			"path": _path
+			path: _path
 		}
 		if !path.IsAbs(_path) {
-			"path": path.Join([_config.output.workdir, _path])
+			path: path.Join([_config.output.workdir, _path])
 		}
 	}
 
