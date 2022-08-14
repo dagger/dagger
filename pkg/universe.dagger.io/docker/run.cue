@@ -2,6 +2,7 @@ package docker
 
 import (
 	"list"
+	"path"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
@@ -100,6 +101,16 @@ import (
 		}
 	}
 
+	_workDirRelativePath: {
+		_path: string
+		if path.IsAbs(_path) {
+			"path": _path
+		}
+		if !path.IsAbs(_path) {
+			"path": path.Join([_config.output.workdir, _path])
+		}
+	}
+
 	// Output fields
 	{
 		// Has the command completed?
@@ -119,14 +130,14 @@ import (
 
 		export: {
 			rootfs: _exec.output
-			files: [path=string]: string
+			files: [p=string]: string
 			_files: {
-				for path, _ in files {
-					"\(path)": {
+				for p, _ in files {
+					"\(p)": {
 						contents: string & _read.contents
-						_read:    core.#ReadFile & {
-							input:  _exec.output
-							"path": path
+						_read:    core.#ReadFile & _workDirRelativePath & {
+							input: _exec.output
+							_path: p
 						}
 					}
 				}
@@ -135,36 +146,36 @@ import (
 				files: "\(path)": output.contents
 			}
 
-			directories: [path=string]: dagger.#FS
+			directories: [p=string]: dagger.#FS
 			_directories: {
-				for path, _ in directories {
-					"\(path)": {
+				for p, _ in directories {
+					"\(p)": {
 						contents: dagger.#FS & _subdir.output
-						_subdir:  core.#Subdir & {
-							input:  _exec.output
-							"path": path
+						_subdir:  core.#Subdir & _workDirRelativePath & {
+							input: _exec.output
+							_path: p
 						}
 					}
 				}
 			}
-			for path, output in _directories {
-				directories: "\(path)": output.contents
+			for p, output in _directories {
+				directories: "\(p)": output.contents
 			}
 
-			secrets: [path=string]: dagger.#Secret
+			secrets: [p=string]: dagger.#Secret
 			_secrets: {
-				for path, _ in secrets {
-					"\(path)": {
+				for p, _ in secrets {
+					"\(p)": {
 						contents: dagger.#Secret & _read.output
-						_read:    core.#NewSecret & {
-							input:  _exec.output
-							"path": path
+						_read:    core.#NewSecret & _workDirRelativePath & {
+							input: _exec.output
+							_path: p
 						}
 					}
 				}
 			}
-			for path, output in _secrets {
-				secrets: "\(path)": output.contents
+			for p, output in _secrets {
+				secrets: "\(p)": output.contents
 			}
 		}
 	}
