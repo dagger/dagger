@@ -27,7 +27,7 @@ test: "hello world"
 
 // We concretise our definition and assign key test to value defined in 
 // outer key test
-// This will produce a shodowing 
+// This will produce a shadowing 
 shadow: #Def & {
    test: test
 }
