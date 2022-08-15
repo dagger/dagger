@@ -17,7 +17,8 @@ import (
 	env: [string]: string
 
 	// Bats version
-	version: *"1.6.0" | string
+	version: *"1.7.0" | string
+	// https://github.com/bats-core/bats-core/releases
 
 	// Mount points for the bats container
 	mounts: [name=string]: _

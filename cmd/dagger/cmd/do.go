@@ -347,6 +347,10 @@ func doHelpCmd(cmd *cobra.Command, daggerPlan *plan.Plan, action *plan.Action, a
 			selectorStrs = append(selectorStrs, selector.String())
 		}
 		targetStr := strings.Join(selectorStrs, " ")
+		if targetStr == "" {
+			targetStr = "<action> [subaction...]"
+		}
+
 		fmt.Printf("Usage: \n  dagger do %s [flags]\n\n", targetStr)
 		if actionFlags != nil {
 			fmt.Println("Options")
@@ -359,7 +363,7 @@ func doHelpCmd(cmd *cobra.Command, daggerPlan *plan.Plan, action *plan.Action, a
 			})
 		}
 	} else {
-		fmt.Println("Usage: \n  dagger do [flags]")
+		fmt.Println("Usage: \n  dagger do <action> [subaction...] [flags]")
 	}
 
 	var err error

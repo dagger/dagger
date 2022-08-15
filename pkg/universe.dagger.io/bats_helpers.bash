@@ -16,11 +16,6 @@ common_setup() {
     export DAGGER_LOG_FORMAT
 
     export DAGGER_LOG_LEVEL="debug"
-    if [ -n "$GITHUB_ACTIONS" ];
-    then
-        export DAGGER_CACHE_TO="$DAGGER_CACHE_TO-$BATS_TEST_NAME"
-        export DAGGER_CACHE_FROM="$DAGGER_CACHE_FROM-$BATS_TEST_NAME"
-    fi
 
     SOPS_AGE_KEY_FILE="$(dirname "${BASH_SOURCE[0]}")/age_key.txt"
     export SOPS_AGE_KEY_FILE
