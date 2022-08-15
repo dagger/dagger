@@ -9,6 +9,12 @@ setup() {
     unset DAGGER_CACHE_TO
 }
 
+@test "plan/do: action flags help output" {
+  run "$DAGGER" "do" -p ./plan/do/actions.cue
+  assert_success
+  assert_output --partial "<action> [flags]"
+}
+
 @test "plan/do: action sanity checks" {
   run "$DAGGER" "do" -p ./plan/do/actions.cue not exist
   assert_failure
