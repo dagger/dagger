@@ -12,7 +12,7 @@ setup() {
 @test "plan/do: action flags help output" {
   run "$DAGGER" "do" -p ./plan/do/actions.cue
   assert_success
-  assert_output --partial "<action> [flags]"
+  assert_output --partial "<action> [subaction...] [flags]"
 }
 
 @test "plan/do: action sanity checks" {
