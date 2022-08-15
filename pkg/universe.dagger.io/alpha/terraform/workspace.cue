@@ -11,9 +11,6 @@ package terraform
 	// The `name` of the specified Terraform `workspace` to perform the `subCmd` action on
 	name?: string
 
-	// The Version of Terraform cli to use
-	version?: string
-
 	#Run & {
 		// Terraform `workspace` command
 		cmd: "workspace"
@@ -26,7 +23,5 @@ package terraform
 		if name == _|_ {
 			cmdArgs: [subCmd]
 		}
-
-		"version": version
 	}
 }

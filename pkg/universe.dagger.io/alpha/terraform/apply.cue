@@ -1,29 +1,21 @@
 package terraform
 
 // Run `terraform apply`
-#Apply: {
+#Apply: #Run & {
+	// Terraform `apply` command
+	cmd: "apply"
 
-	// The Version of Terraform cli to use
-	version?: string
+	// Internal pre-defined arguments for `terraform apply`
+	withinCmdArgs: [
+		if autoApprove {
+			"-auto-approve"
+		},
+		planFile,
+	]
 
-	#Run & {
-		// Terraform `apply` command
-		cmd: "apply"
+	// Flag to indicate whether or not to auto-approve (i.e. -auto-approve flag)
+	autoApprove: bool | *true
 
-		// Internal pre-defined arguments for `terraform apply`
-		withinCmdArgs: [
-			if autoApprove {
-				"-auto-approve"
-			},
-			planFile,
-		]
-
-		// Flag to indicate whether or not to auto-approve (i.e. -auto-approve flag)
-		autoApprove: bool | *true
-
-		// Path to a Terraform plan file
-		planFile: string | *_#DefaultPlanFile
-
-		"version": version
-	}
+	// Path to a Terraform plan file
+	planFile: string | *_#DefaultPlanFile
 }

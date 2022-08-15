@@ -6,9 +6,6 @@ import (
 	"universe.dagger.io/alpha/terraform"
 )
 
-// Set a terraform version for testing specific version of terraform
-_#TerraformVersion: "1.2.6"
-
 dagger.#Plan & {
 	actions: test: {
 		tfSource: core.#Source & {
@@ -103,38 +100,52 @@ dagger.#Plan & {
 		}
 
 		versionWorkflow: {
+			// Set a terraform version for testing specific version of terraform
+			terraformVersion?: string
+
 			init: terraform.#Init & {
-				source:  tfSource.output
-				version: _#TerraformVersion
+				source: tfSource.output
+				if terraformVersion != _|_ {
+					version: terraformVersion
+				}
 			}
 
 			workspaceNew: terraform.#Workspace & {
-				source:  init.output
-				subCmd:  "new"
-				name:    "TEST_WORKSPACE"
-				version: _#TerraformVersion
+				source: init.output
+				subCmd: "new"
+				name:   "TEST_WORKSPACE"
+				if terraformVersion != _|_ {
+					version: terraformVersion
+				}
 			}
 
 			plan: terraform.#Plan & {
-				source:  init.output
-				version: _#TerraformVersion
+				source: init.output
+				if terraformVersion != _|_ {
+					version: terraformVersion
+				}
+
 			}
 
 			apply: terraform.#Apply & {
-				always:  true
-				source:  plan.output
-				version: _#TerraformVersion
+				always: true
+				source: plan.output
+				if terraformVersion != _|_ {
+					version: terraformVersion
+				}
 			}
 
 			verify: #AssertFileRegex & {
 				input: apply.output
 				path:  "terraform.tfstate"
-				regex: "1\\.2\\.6"
+				regex: string | *"1\\.2\\.7"
 			}
 
 			destroy: terraform.#Destroy & {
-				source:  apply.output
-				version: _#TerraformVersion
+				source: apply.output
+				if terraformVersion != _|_ {
+					version: terraformVersion
+				}
 			}
 		}
 
