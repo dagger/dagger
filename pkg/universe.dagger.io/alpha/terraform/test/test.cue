@@ -3,9 +3,11 @@ package terraform
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-
 	"universe.dagger.io/alpha/terraform"
 )
+
+// Set a terraform version for testing specific version of terraform
+_#TerraformVersion: "1.2.6"
 
 dagger.#Plan & {
 	actions: test: {
@@ -48,6 +50,7 @@ dagger.#Plan & {
 
 			// TODO assert out.txt doesn't exist
 		}
+
 		importWorkflow: {
 			init: terraform.#Init & {
 				source: tfImportSource.output
@@ -99,6 +102,42 @@ dagger.#Plan & {
 			}
 		}
 
+		versionWorkflow: {
+			init: terraform.#Init & {
+				source:  tfSource.output
+				version: _#TerraformVersion
+			}
+
+			workspaceNew: terraform.#Workspace & {
+				source:  init.output
+				subCmd:  "new"
+				name:    "TEST_WORKSPACE"
+				version: _#TerraformVersion
+			}
+
+			plan: terraform.#Plan & {
+				source:  init.output
+				version: _#TerraformVersion
+			}
+
+			apply: terraform.#Apply & {
+				always:  true
+				source:  plan.output
+				version: _#TerraformVersion
+			}
+
+			verify: #AssertFileRegex & {
+				input: apply.output
+				path:  "terraform.tfstate"
+				regex: "1\\.2\\.6"
+			}
+
+			destroy: terraform.#Destroy & {
+				source:  apply.output
+				version: _#TerraformVersion
+			}
+		}
+
 	}
 }
 
@@ -115,6 +154,24 @@ dagger.#Plan & {
 
 	actual: _read.contents
 
+	// Assertion
+	contents: actual
+}
+
+// Make an assertion on the contents of a file
+#AssertFileRegex: {
+	input: dagger.#FS
+	path:  string
+	regex: string
+
+	_read: core.#ReadFile & {
+		"input": input
+		"path":  path
+	}
+
+	actual: _read.contents
+
+	contents: =~regex
 	// Assertion
 	contents: actual
 }

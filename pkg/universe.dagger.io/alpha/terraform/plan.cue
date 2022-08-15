@@ -4,13 +4,21 @@ package terraform
 _#DefaultPlanFile: "./out.tfplan"
 
 // Run `terraform plan`
-#Plan: #Run & {
-	// Terraform `plan` command
-	cmd: "plan"
+#Plan: {
 
-	// Internal pre-defined arguments for `terraform plan`
-	withinCmdArgs: ["-out=\(planFile)"]
+	// The Version of Terraform cli to use
+	version?: string
 
-	// Path to a Terraform plan file
-	planFile: string | *_#DefaultPlanFile
+	#Run & {
+		// Terraform `plan` command
+		cmd: "plan"
+
+		// Internal pre-defined arguments for `terraform plan`
+		withinCmdArgs: ["-out=\(planFile)"]
+
+		// Path to a Terraform plan file
+		planFile: string | *_#DefaultPlanFile
+
+		"version": version
+	}
 }
