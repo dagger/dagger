@@ -198,7 +198,7 @@ Support for other platforms, such as Gitpod, may be added if there is demand. Vi
 
 To add a secret called `SECRET_SECRET` to the tests/secrets_sops.yaml:
 
-Ensure that you have sops installed: https://github.com/mozilla/sops
+Ensure that you have [SOPS](https://github.com/mozilla/sops) installed.
 
 Run the following from the root of your local repo fork:
 
@@ -209,4 +209,5 @@ sops secrets_sops.yaml
 # add SECRET_SECRET with the relevant value
 # save the secrets_sops.yaml file
 ```
+
 Please note that anyone will be able to read the `SECRET_SECRET` value by following the steps above warning
