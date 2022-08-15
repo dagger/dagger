@@ -130,14 +130,14 @@ import (
 
 		export: {
 			rootfs: _exec.output
-			files: [p=string]: string
+			files: [path=string]: string
 			_files: {
-				for p, _ in files {
-					"\(p)": {
+				for path, _ in files {
+					"\(path)": {
 						contents: string & _read.contents
 						_read:    core.#ReadFile & _workDirRelativePath & {
 							input: _exec.output
-							_path: p
+							_path: path
 						}
 					}
 				}
@@ -146,36 +146,36 @@ import (
 				files: "\(path)": output.contents
 			}
 
-			directories: [p=string]: dagger.#FS
+			directories: [path=string]: dagger.#FS
 			_directories: {
-				for p, _ in directories {
-					"\(p)": {
+				for path, _ in directories {
+					"\(path)": {
 						contents: dagger.#FS & _subdir.output
 						_subdir:  core.#Subdir & _workDirRelativePath & {
 							input: _exec.output
-							_path: p
+							_path: path
 						}
 					}
 				}
 			}
-			for p, output in _directories {
-				directories: "\(p)": output.contents
+			for path, output in _directories {
+				directories: "\(path)": output.contents
 			}
 
-			secrets: [p=string]: dagger.#Secret
+			secrets: [path=string]: dagger.#Secret
 			_secrets: {
-				for p, _ in secrets {
-					"\(p)": {
+				for path, _ in secrets {
+					"\(path)": {
 						contents: dagger.#Secret & _read.output
 						_read:    core.#NewSecret & _workDirRelativePath & {
 							input: _exec.output
-							_path: p
+							_path: path
 						}
 					}
 				}
 			}
-			for p, output in _secrets {
-				secrets: "\(p)": output.contents
+			for path, output in _secrets {
+				secrets: "\(path)": output.contents
 			}
 		}
 	}
