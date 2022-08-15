@@ -10,8 +10,9 @@ import (
 
 dagger.#Plan & {
 	actions: test: {
-		_goImg: docker.#Pull & {
-			source: "index.docker.io/golang:1.18-alpine"
+		_imgRef: "index.docker.io/golang:1.18-alpine"
+		_goImg:  docker.#Pull & {
+			source: _imgRef
 		}
 
 		simple: {
@@ -72,6 +73,31 @@ dagger.#Plan & {
 							go env GOPATH | grep '\(_customGopath)'
 							echo $PATH | grep -E '^\(_customGoroot)/bin:|:\(_customGoroot)/bin:'
 							echo $PATH | grep -E '^\(_customGopath)/bin:|:\(_customGopath)/bin:'
+						"""]
+				}
+			}
+		}
+
+		ref: {
+			_build: docker.#Build & {
+				steps: [
+					alpine.#Build & {},
+					go.#Configure & {
+						ref: _imgRef
+					},
+				]
+			}
+			verify: docker.#Run & {
+				input: _build.output
+				command: {
+					name: "/bin/sh"
+					args: ["-c", """
+							set -e
+							go version | grep "1.18"
+							go env GOROOT | grep '\(go.#DefaultGoEnvs.GOROOT)'
+							go env GOPATH | grep '\(go.#DefaultGoEnvs.GOPATH)'
+							echo $PATH | grep -E '^\(go.#DefaultGoEnvs.GOROOT)/bin:|:\(go.#DefaultGoEnvs.GOROOT)/bin:'
+							echo $PATH | grep -E '^\(go.#DefaultGoEnvs.GOPATH)/bin:|:\(go.#DefaultGoEnvs.GOPATH)/bin:'
 						"""]
 				}
 			}
