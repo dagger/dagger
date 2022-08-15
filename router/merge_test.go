@@ -7,7 +7,7 @@ import (
 )
 
 func TestMergeObjects(t *testing.T) {
-	merged, err := Merge(
+	merged, err := Merge("",
 		&staticSchema{
 			schema: `
 			type TypeA {
@@ -61,7 +61,7 @@ func TestMergeObjects(t *testing.T) {
 }
 
 func TestMergeFieldExtend(t *testing.T) {
-	merged, err := Merge(
+	merged, err := Merge("",
 		&staticSchema{
 			schema: `
 			type TypeA {
@@ -100,7 +100,7 @@ func TestMergeFieldExtend(t *testing.T) {
 }
 
 func TestMergeFieldConflict(t *testing.T) {
-	_, err := Merge(
+	_, err := Merge("",
 		&staticSchema{
 			schema: `
 			type TypeA {
@@ -133,7 +133,7 @@ func TestMergeFieldConflict(t *testing.T) {
 }
 
 func TestMergeTypeConflict(t *testing.T) {
-	_, err := Merge(
+	_, err := Merge("",
 		&staticSchema{
 			schema: `
 			type TypeA {
@@ -160,7 +160,7 @@ func TestMergeTypeConflict(t *testing.T) {
 }
 
 func TestMergeScalars(t *testing.T) {
-	merged, err := Merge(
+	merged, err := Merge("",
 		&staticSchema{
 			schema: `
 			scalar TypeA
@@ -189,7 +189,7 @@ func TestMergeScalars(t *testing.T) {
 }
 
 func TestMergeScalarConflict(t *testing.T) {
-	_, err := Merge(
+	_, err := Merge("",
 		&staticSchema{
 			schema: `scalar TypeA`,
 			resolvers: Resolvers{

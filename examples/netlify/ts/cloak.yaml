@@ -1,4 +1,1 @@
-extensions:
-  netlify:
-    local: examples/netlify/ts
-context: ../../..
+name: "netlify"

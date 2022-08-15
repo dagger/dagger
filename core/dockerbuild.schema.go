@@ -16,6 +16,10 @@ type dockerBuildSchema struct {
 	*baseSchema
 }
 
+func (s *dockerBuildSchema) Name() string {
+	return "dockerbuild"
+}
+
 func (s *dockerBuildSchema) Schema() string {
 	return `
 	extend type Filesystem {
@@ -45,6 +49,10 @@ func (s *dockerBuildSchema) Resolvers() router.Resolvers {
 			"dockerbuild": s.dockerbuild,
 		},
 	}
+}
+
+func (s *dockerBuildSchema) Dependencies() []router.ExecutableSchema {
+	return nil
 }
 
 func (s *dockerBuildSchema) dockerbuild(p graphql.ResolveParams) (any, error) {

@@ -34,6 +34,10 @@ type execSchema struct {
 	*baseSchema
 }
 
+func (s *execSchema) Name() string {
+	return "core"
+}
+
 func (s *execSchema) Schema() string {
 	return `
 	"Command execution"
@@ -123,6 +127,10 @@ func (s *execSchema) Resolvers() router.Resolvers {
 			"mount":    s.mount,
 		},
 	}
+}
+
+func (s *execSchema) Dependencies() []router.ExecutableSchema {
+	return nil
 }
 
 func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {

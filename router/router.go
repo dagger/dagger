@@ -23,14 +23,14 @@ func New() *Router {
 		schemas: make(map[string]ExecutableSchema),
 	}
 
-	if err := r.Add("root", &rootSchema{}); err != nil {
+	if err := r.Add(&rootSchema{}); err != nil {
 		panic(err)
 	}
 
 	return r
 }
 
-func (r *Router) Add(name string, schema ExecutableSchema) error {
+func (r *Router) Add(schema ExecutableSchema) error {
 	r.l.Lock()
 	defer r.l.Unlock()
 
@@ -39,9 +39,19 @@ func (r *Router) Add(name string, schema ExecutableSchema) error {
 	for _, s := range r.schemas {
 		newSchemas = append(newSchemas, s)
 	}
-	newSchemas = append(newSchemas, schema)
+	// skip adding schema if it has already been added
+	if _, ok := r.schemas[schema.Name()]; !ok {
+		newSchemas = append(newSchemas, schema)
+		r.schemas[schema.Name()] = schema
+	}
+	for _, dep := range schema.Dependencies() {
+		if _, ok := r.schemas[dep.Name()]; !ok {
+			newSchemas = append(newSchemas, dep)
+			r.schemas[dep.Name()] = dep
+		}
+	}
 
-	merged, err := Merge(newSchemas...)
+	merged, err := Merge("", newSchemas...)
 	if err != nil {
 		return err
 	}
@@ -52,7 +62,6 @@ func (r *Router) Add(name string, schema ExecutableSchema) error {
 	}
 
 	// Atomic swap
-	r.schemas[name] = schema
 	r.s = s
 	r.h = handler.New(&handler.Config{
 		Schema:     s,

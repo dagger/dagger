@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	configFile string
+	projectFile    string
+	projectContext string
 
 	queryFile      string
-	operation      string
 	queryVarsInput []string
 	localDirsInput []string
 	secretsInput   []string
@@ -24,23 +24,23 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "./cloak.yaml", "config file")
+	rootCmd.PersistentFlags().StringVarP(&projectContext, "context", "c", ".", "project context")
+	rootCmd.PersistentFlags().StringVarP(&projectFile, "project", "p", "./cloak.yaml", "project config file")
 	rootCmd.AddCommand(
-		queryCmd,
+		doCmd,
 		generateCmd,
 		devCmd,
 	)
 
-	queryCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
-	queryCmd.Flags().StringVarP(&operation, "op", "o", "", "operation to execute")
-	queryCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
-	queryCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
-	queryCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
+	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
+	doCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
+	doCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
+	doCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 
 	generateCmd.Flags().StringVar(&generateOutputDir, "output-dir", "./", "output directory")
 	generateCmd.Flags().StringVar(&sdkType, "sdk", "", "sdk type to generate code for ('go', 'ts', etc.)")
 
-	devCmd.Flags().IntVarP(&devServerPort, "port", "p", 8080, "dev server port")
+	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
 }
 
 var rootCmd = &cobra.Command{

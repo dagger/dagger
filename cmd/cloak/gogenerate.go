@@ -12,6 +12,7 @@ import (
 	gqlconfig "github.com/99designs/gqlgen/codegen/config"
 	"github.com/99designs/gqlgen/codegen/templates"
 	"github.com/Khan/genqlient/generate"
+	"github.com/dagger/cloak/core"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -21,11 +22,11 @@ var mainTmpl string
 //go:embed templates/go.generated.gotpl
 var generatedTmpl string
 
-// TODO: abstract into an interface once support added for more langs (make pluggable, etc.)
-func generateGoImplStub(coreSchema string) error {
+func generateGoImplStub(ext, coreExt *core.Extension) error {
 	cfg := gqlconfig.DefaultConfig()
-	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(filepath.Dir(configFile), "_deleteme.go"), Package: "main"}
-	cfg.SchemaFilename = gqlconfig.StringList{filepath.Join(filepath.Dir(configFile), "schema.graphql")}
+	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(filepath.Dir(projectFile), "_deleteme.go"), Package: "main"}
+	cfg.SchemaFilename = nil
+	cfg.Sources = []*ast.Source{{Name: "schema.graphql", Input: ext.Schema}}
 	cfg.Model = gqlconfig.PackageConfig{
 		Filename: filepath.Join(generateOutputDir, "models.go"),
 		Package:  "main",
@@ -60,14 +61,14 @@ func generateGoImplStub(coreSchema string) error {
 	if err := gqlconfig.CompleteConfig(cfg); err != nil {
 		return fmt.Errorf("error completing config: %w", err)
 	}
+	defer os.Remove(cfg.Exec.Filename)
 	if err := api.Generate(cfg, api.AddPlugin(plugin{
 		mainPath:      filepath.Join(generateOutputDir, "main.go"),
 		generatedPath: filepath.Join(generateOutputDir, "generated.go"),
-		coreSchema:    coreSchema,
+		coreSchema:    coreExt.Schema,
 	})); err != nil {
 		return fmt.Errorf("error generating code: %w", err)
 	}
-	_ = os.Remove(cfg.Exec.Filename)
 	return nil
 }
 

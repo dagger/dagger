@@ -42,6 +42,10 @@ type filesystemSchema struct {
 	*baseSchema
 }
 
+func (s *filesystemSchema) Name() string {
+	return "filesystem"
+}
+
 func (s *filesystemSchema) Schema() string {
 	return `
 	scalar FSID
@@ -89,6 +93,10 @@ func (s *filesystemSchema) Resolvers() router.Resolvers {
 			"file": s.file,
 		},
 	}
+}
+
+func (s *filesystemSchema) Dependencies() []router.ExecutableSchema {
+	return nil
 }
 
 func (s *filesystemSchema) filesystem(p graphql.ResolveParams) (any, error) {

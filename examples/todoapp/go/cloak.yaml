@@ -1,10 +1,5 @@
+name: "todoapp"
 extensions:
-  alpine:
-    local: examples/alpine
-  yarn:
-    local: examples/yarn
-  netlify:
-    local: examples/netlify/go
-  todoapp:
-    local: examples/todoapp/go
-context: ../../..
+  - local: ../../alpine/cloak.yaml
+  - local: ../../yarn/cloak.yaml
+  - local: ../../netlify/go/cloak.yaml

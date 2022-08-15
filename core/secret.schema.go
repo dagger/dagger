@@ -41,6 +41,10 @@ type secretSchema struct {
 	*baseSchema
 }
 
+func (s *secretSchema) Name() string {
+	return "secret"
+}
+
 func (s *secretSchema) Schema() string {
 	return `
 	scalar SecretID
@@ -73,6 +77,10 @@ func (s *secretSchema) Resolvers() router.Resolvers {
 			"addSecret": s.addSecret,
 		},
 	}
+}
+
+func (s *secretSchema) Dependencies() []router.ExecutableSchema {
+	return nil
 }
 
 func (s *secretSchema) secret(p graphql.ResolveParams) (any, error) {
