@@ -2,7 +2,7 @@ package docker
 
 import (
 	"list"
-	"path"
+	stdpath "path"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
@@ -103,11 +103,11 @@ import (
 
 	_workDirRelativePath: {
 		_path: string
-		if path.IsAbs(_path) {
+		if stdpath.IsAbs(_path) {
 			path: _path
 		}
-		if !path.IsAbs(_path) {
-			path: path.Join([_config.output.workdir, _path])
+		if !stdpath.IsAbs(_path) {
+			path: stdpath.Join([_config.output.workdir, _path])
 		}
 	}
 
