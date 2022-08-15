@@ -14,6 +14,9 @@ _#DefaultLogLevel: "off"
 
 // Run `terraform CMD`
 #Run: {
+	// Terraform version
+	version?: string
+
 	// Terraform source code
 	source: dagger.#FS
 
@@ -64,11 +67,14 @@ _#DefaultLogLevel: "off"
 
 	// Hashicorp Terraform container
 	container: #input: docker.#Image | #Image
-
 	// Run command within a container
 	_run: docker.#Build & {
 		steps: [
-			container.#input,
+			container.#input & {
+				if version != _|_ {
+					"version": version
+				}
+			},
 			docker.#Copy & {
 				dest:     "/src"
 				contents: source

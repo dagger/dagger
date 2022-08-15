@@ -5,7 +5,7 @@ import (
 )
 
 // Terraform image default version
-_#DefaultVersion: "1.1.8"
+_#DefaultVersion: "1.2.7"
 
 // Terraform base image
 #Image: {
@@ -15,7 +15,7 @@ _#DefaultVersion: "1.1.8"
 	docker.#Build & {
 		steps: [
 			docker.#Pull & {
-				source: "hashicorp/terraform:\(version)"
+				source: "hashicorp/terraform:" + version
 			},
 		]
 	}
