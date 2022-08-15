@@ -42,7 +42,7 @@ The Dagger container API defines the following types:
 
 This package contains examples of complete Dagger configurations, including the result of following tutorials in the documentations.
 
-For example, [the todoapp example](./examples/todoapp) corresponds to the [Getting Started tutorial](https://docs.dagger.io/1003/get-started/)
+For example, [the todoapp example](https://github.com/dagger/todoapp) corresponds to the [Getting Started tutorial](https://docs.dagger.io/1003/get-started/)
 
 ## Coding Style
 
