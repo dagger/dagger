@@ -194,20 +194,24 @@ You will also have basic syntax highlighting and formatting for CUE in Visual St
 
 Support for other platforms, such as Gitpod, may be added if there is demand. Visit the [developer experience](https://github.com/dagger/dagger/discussions/2052) discussion on GitHub to show your interest.
 
-### How can I add my secrets to the `tests/secrets_sops.yaml` ?
+### How can I add a new secret for integration tests?
 
-To add a secret called `SECRET_SECRET` to the tests/secrets_sops.yaml:
+1/4. Ensure that you have [SOPS](https://github.com/mozilla/sops) installed.
 
-Ensure that you have [SOPS](https://github.com/mozilla/sops) installed.
-
-Run the following from the root of your local repo fork:
+2/4. Run the following from the top-level of your local repository fork:
 
 ```shell
 cd tests
-export SOPS_AGE_KEY_FILE="$(git rev-parse --show-toplevel)/tests/age_key.txt"
+export SOPS_AGE_KEY_FILE="$PWD/age_key.txt"
 sops secrets_sops.yaml
-# add SECRET_SECRET with the relevant value
-# save the secrets_sops.yaml file
+# Add a new secret with the correct value
+# Use one of the existing ones as an example
 ```
 
-Please note that anyone will be able to read the `SECRET_SECRET` value by following the steps above warning
+3/4. Save the `tests/secrets_sops.yaml` file.
+
+4/4. Commit and push the changes.
+
+:::warning
+Please note that anyone will be able to read all secrets stored in `tests/secrets_sops.yaml` by following the steps above.
+:::
