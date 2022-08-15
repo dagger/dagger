@@ -1,14 +1,14 @@
 package main
 
 import (
-	_ "embed"
-
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/cloak/cmd/cloak/config"
+	"github.com/Khan/genqlient/graphql"
+	"github.com/dagger/cloak/core"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
@@ -20,33 +20,37 @@ var generateCmd = &cobra.Command{
 }
 
 func Generate(cmd *cobra.Command, args []string) {
-	cfg, err := config.ParseFile(configFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	localDirs := map[string]string{
+		projectContextLocalName: projectContext,
+	}
+	startOpts := &engine.Config{
+		LocalDirs: localDirs,
 	}
 
-	startOpts := &engine.Config{
-		LocalDirs: cfg.LocalDirs(),
-	}
-	err = engine.Start(context.Background(), startOpts, func(ctx context.Context) error {
+	err := engine.Start(context.Background(), startOpts, func(ctx context.Context) error {
 		cl, err := dagger.Client(ctx)
 		if err != nil {
 			return err
 		}
 
-		localDirs, err := loadLocalDirs(ctx, cl, cfg.LocalDirs())
+		localDirs, err := loadLocalDirs(ctx, cl, localDirs)
 		if err != nil {
 			return err
 		}
 
-		if err := cfg.LoadExtensions(ctx, localDirs); err != nil {
+		project, err := loadProject(ctx, cl, localDirs[projectContextLocalName])
+		if err != nil {
+			return err
+		}
+
+		coreExt, err := loadCore(ctx, cl)
+		if err != nil {
 			return err
 		}
 
 		switch sdkType {
 		case "go":
-			if err := generateGoImplStub(cfg.Extensions["core"].GetSchema()); err != nil {
+			if err := generateGoImplStub(project, coreExt); err != nil {
 				return err
 			}
 		case "":
@@ -54,8 +58,8 @@ func Generate(cmd *cobra.Command, args []string) {
 			return fmt.Errorf("unknown sdk type %s", sdkType)
 		}
 
-		for name, ext := range cfg.Extensions {
-			subdir := filepath.Join(generateOutputDir, "gen", name)
+		for _, dep := range project.Dependencies {
+			subdir := filepath.Join(generateOutputDir, "gen", dep.Name)
 			if err := os.MkdirAll(subdir, 0755); err != nil {
 				return err
 			}
@@ -64,17 +68,13 @@ func Generate(cmd *cobra.Command, args []string) {
 			}
 			schemaPath := filepath.Join(subdir, "schema.graphql")
 
-			fullSchema := ext.GetSchema()
-			if name != "core" {
-				// TODO:(sipsma) ugly hack to make each schema/operation work independently when referencing core types.
-				fullSchema = cfg.Extensions["core"].GetSchema() + "\n\n" + fullSchema
-			}
-
+			// TODO:(sipsma) ugly hack to make each schema/operation work independently when referencing core types.
+			fullSchema := coreExt.Schema + "\n\n" + dep.Schema
 			if err := os.WriteFile(schemaPath, []byte(fullSchema), 0600); err != nil {
 				return err
 			}
 			operationsPath := filepath.Join(subdir, "operations.graphql")
-			if err := os.WriteFile(operationsPath, []byte(ext.GetOperations()), 0600); err != nil {
+			if err := os.WriteFile(operationsPath, []byte(dep.Operations), 0600); err != nil {
 				return err
 			}
 
@@ -96,4 +96,76 @@ func Generate(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID) (*core.Extension, error) {
+	res := struct {
+		Core struct {
+			Filesystem struct {
+				LoadExtension core.Extension
+			}
+		}
+	}{}
+	resp := &graphql.Response{Data: &res}
+
+	err := cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query LoadExtension($fs: FSID!, $configPath: String!) {
+				core {
+					filesystem(id: $fs) {
+						loadExtension(configPath: $configPath) {
+							name
+							schema
+							operations
+							dependencies {
+								name
+								schema
+								operations
+							}
+						}
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"fs":         contextFS,
+				"configPath": projectFile,
+			},
+		},
+		resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res.Core.Filesystem.LoadExtension, nil
+}
+
+func loadCore(ctx context.Context, cl graphql.Client) (*core.Extension, error) {
+	data := struct {
+		Core struct {
+			Extension core.Extension
+		}
+	}{}
+	resp := &graphql.Response{Data: &data}
+
+	err := cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query {
+				core {
+					extension(name: "core") {
+						name
+						schema
+						operations
+					}
+				}
+			}`,
+		},
+		resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &data.Core.Extension, nil
 }

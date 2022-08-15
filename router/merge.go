@@ -12,8 +12,8 @@ var (
 	ErrMergeScalarConflict = errors.New("scalar re-defined")
 )
 
-func Merge(schemas ...ExecutableSchema) (ExecutableSchema, error) {
-	merged := &staticSchema{}
+func Merge(name string, schemas ...ExecutableSchema) (ExecutableSchema, error) {
+	merged := &staticSchema{name: name}
 
 	defs := []string{}
 	for _, r := range schemas {

@@ -10,15 +10,21 @@ import (
 )
 
 type Extension struct {
-	Name       string
-	Schema     string
-	Operations string
+	Name         string
+	Schema       string
+	Operations   string
+	Dependencies []*Extension
+	schema       *extension.RemoteSchema // internal-only, for convenience in `install` resolver
 }
 
 var _ router.ExecutableSchema = &extensionSchema{}
 
 type extensionSchema struct {
 	*baseSchema
+}
+
+func (s *extensionSchema) Name() string {
+	return "extension"
 }
 
 func (s *extensionSchema) Schema() string {
@@ -29,15 +35,21 @@ func (s *extensionSchema) Schema() string {
 		name: String!
 
 		"schema of the extension"
-		schema: String!
+		schema: String
 
 		"operations for this extension"
-		operations: String!
+		operations: String
+
+		"dependencies for this extension"
+		dependencies: [Extension!]
+
+		"install the extension, stitching its schema into the API"
+		install: Filesystem!
 	}
 
 	extend type Filesystem {
 		"load an extension into the API"
-		loadExtension(name: String!): Extension!
+		loadExtension(configPath: String!): Extension!
 	}
 
 	extend type Core {
@@ -59,7 +71,28 @@ func (s *extensionSchema) Resolvers() router.Resolvers {
 		"Core": router.ObjectResolver{
 			"extension": s.extension,
 		},
+		"Extension": router.ObjectResolver{
+			"install": s.install,
+		},
 	}
+}
+
+func (s *extensionSchema) Dependencies() []router.ExecutableSchema {
+	return nil
+}
+
+func (s *extensionSchema) install(p graphql.ResolveParams) (any, error) {
+	obj := p.Source.(*Extension)
+	executableSchema, err := obj.schema.Compile(p.Context)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.router.Add(executableSchema); err != nil {
+		return nil, err
+	}
+
+	return executableSchema.RuntimeFS(), nil
 }
 
 func (s *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
@@ -68,22 +101,13 @@ func (s *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	name := p.Args["name"].(string)
-
-	schema, err := extension.Load(p.Context, s.gw, s.platform, obj)
+	configPath := p.Args["configPath"].(string)
+	schema, err := extension.Load(p.Context, s.gw, s.platform, obj, configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.router.Add(name, schema); err != nil {
-		return nil, err
-	}
-
-	return &Extension{
-		Name:       name,
-		Schema:     schema.Schema(),
-		Operations: schema.Operations(),
-	}, nil
+	return remoteSchemaToExtension(schema), nil
 }
 
 func (s *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
@@ -94,9 +118,32 @@ func (s *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
 		return nil, fmt.Errorf("extension %q not found", name)
 	}
 
-	return &Extension{
-		Name:       name,
+	return routerSchemaToExtension(schema), nil
+}
+
+// TODO: guard against infinite recursion
+func routerSchemaToExtension(schema router.ExecutableSchema) *Extension {
+	ext := &Extension{
+		Name:       schema.Name(),
 		Schema:     schema.Schema(),
 		Operations: schema.Operations(),
-	}, nil
+	}
+	for _, dep := range schema.Dependencies() {
+		ext.Dependencies = append(ext.Dependencies, routerSchemaToExtension(dep))
+	}
+	return ext
+}
+
+// TODO: guard against infinite recursion
+func remoteSchemaToExtension(schema *extension.RemoteSchema) *Extension {
+	ext := &Extension{
+		Name:       schema.Name(),
+		Schema:     schema.Schema(),
+		Operations: schema.Operations(),
+		schema:     schema,
+	}
+	for _, dep := range schema.Dependencies() {
+		ext.Dependencies = append(ext.Dependencies, remoteSchemaToExtension(dep))
+	}
+	return ext
 }

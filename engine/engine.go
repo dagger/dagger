@@ -81,7 +81,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			if err != nil {
 				return nil, err
 			}
-			if err := router.Add("core", coreAPI); err != nil {
+			if err := router.Add(coreAPI); err != nil {
 				return nil, err
 			}
 

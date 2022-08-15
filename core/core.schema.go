@@ -12,6 +12,10 @@ type coreSchema struct {
 	*baseSchema
 }
 
+func (r *coreSchema) Name() string {
+	return "core"
+}
+
 func (r *coreSchema) Schema() string {
 	return `
 	extend type Query {
@@ -56,6 +60,10 @@ func (r *coreSchema) Resolvers() router.Resolvers {
 			"clientdir": r.clientdir,
 		},
 	}
+}
+
+func (r *coreSchema) Dependencies() []router.ExecutableSchema {
+	return nil
 }
 
 func (r *coreSchema) core(p graphql.ResolveParams) (any, error) {

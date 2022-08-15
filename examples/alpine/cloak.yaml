@@ -1,4 +1,1 @@
-extensions:
-  alpine:
-    local: examples/alpine
-context: ../..
+name: "alpine"

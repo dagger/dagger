@@ -1,10 +1,6 @@
+name: "examples"
 extensions:
-  alpine:
-    local: examples/alpine
-  yarn:
-    local: examples/yarn
-  netlify:
-    local: examples/netlify/ts
-  todoapp:
-    local: examples/todoapp/ts
-context: .
+  - local: examples/alpine/cloak.yaml
+  - local: examples/yarn/cloak.yaml
+  - local: examples/netlify/go/cloak.yaml
+  - local: examples/todoapp/go/cloak.yaml

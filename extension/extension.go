@@ -5,14 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
+	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -34,58 +38,137 @@ const (
 	outputFile      = "/dagger.json"
 )
 
-var _ router.ExecutableSchema = &remoteSchema{}
+// RemoteSchema holds the schema, operations and other project configuration
+// of an extension, but has not yet been "compiled" with an SDK to an executable
+// extension. This allows obtaining the project metadata without necessarily
+// being able to build it yet.
+type RemoteSchema struct {
+	gw         bkgw.Client
+	platform   specs.Platform
+	projectFS  *filesystem.Filesystem
+	configPath string
 
-type remoteSchema struct {
-	gw       bkgw.Client
-	fs       *filesystem.Filesystem
-	platform specs.Platform
-
-	sdl        string
-	operations string
-	resolvers  router.Resolvers
+	name         string
+	sdl          string
+	operations   string
+	dependencies []*RemoteSchema
 }
 
-func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, fs *filesystem.Filesystem) (router.ExecutableSchema, error) {
-	sdl, err := fs.ReadFile(ctx, gw, schemaPath)
+func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, projectFS *filesystem.Filesystem, configPath string) (*RemoteSchema, error) {
+	cloakCfgBytes, err := projectFS.ReadFile(ctx, gw, configPath)
 	if err != nil {
 		return nil, err
 	}
-	operations, err := fs.ReadFile(ctx, gw, operationsPath)
+	cloakCfg, err := ParseConfig(cloakCfgBytes)
 	if err != nil {
 		return nil, err
 	}
-	s := &remoteSchema{
+
+	// schema and operations are both optional, ignore file not found errors
+	sdl, err := projectFS.ReadFile(ctx, gw, filepath.Join(filepath.Dir(configPath), schemaPath))
+	if err != nil && !isGatewayFileNotFound(err) {
+		return nil, err
+	}
+	operations, err := projectFS.ReadFile(ctx, gw, filepath.Join(filepath.Dir(configPath), operationsPath))
+	if err != nil && !isGatewayFileNotFound(err) {
+		return nil, err
+	}
+
+	// verify the schema is valid
+	if len(sdl) > 0 {
+		if _, err := parser.Parse(parser.ParseParams{Source: sdl}); err != nil {
+			return nil, err
+		}
+	}
+
+	s := &RemoteSchema{
 		gw:         gw,
-		fs:         fs,
 		platform:   platform,
+		projectFS:  projectFS,
+		configPath: configPath,
+		name:       cloakCfg.Name,
 		sdl:        string(sdl),
 		operations: string(operations),
-		resolvers:  router.Resolvers{},
 	}
-	if err := s.parse(); err != nil {
-		return nil, err
+
+	for _, ext := range cloakCfg.Extensions {
+		// TODO:(sipsma) support more than just Local
+		if ext.Local != "" {
+			depConfigPath := filepath.Join(filepath.Dir(configPath), ext.Local)
+			depSchema, err := Load(ctx, gw, platform, projectFS, depConfigPath)
+			if err != nil {
+				return nil, err
+			}
+			s.dependencies = append(s.dependencies, depSchema)
+		}
 	}
 
 	return s, nil
 }
 
-func (s *remoteSchema) Schema() string {
+func (s *RemoteSchema) Name() string {
+	return s.name
+}
+
+func (s *RemoteSchema) Schema() string {
 	return s.sdl
 }
 
-func (s *remoteSchema) Operations() string {
+func (s *RemoteSchema) Operations() string {
 	return s.operations
 }
 
-func (s *remoteSchema) Resolvers() router.Resolvers {
-	return s.resolvers
+func (s *RemoteSchema) Dependencies() []*RemoteSchema {
+	return s.dependencies
 }
 
-func (s *remoteSchema) parse() error {
+func (s RemoteSchema) Compile(ctx context.Context) (*CompiledRemoteSchema, error) {
+	// TODO:(sipsma) hardcoding use of a "dockerfile sdk", should obviously be generalized
+	def, err := s.projectFS.ToDefinition()
+	if err != nil {
+		return nil, err
+	}
+
+	opts := map[string]string{
+		"platform": platforms.Format(s.platform),
+		"filename": filepath.Join(filepath.Dir(s.configPath), "Dockerfile"),
+	}
+	inputs := map[string]*pb.Definition{
+		dockerfilebuilder.DefaultLocalNameContext:    def,
+		dockerfilebuilder.DefaultLocalNameDockerfile: def,
+	}
+	res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
+		Frontend:       "dockerfile.v0",
+		FrontendOpt:    opts,
+		FrontendInputs: inputs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	bkref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	st, err := bkref.ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	fs, err := filesystem.FromState(ctx, st, s.platform)
+	if err != nil {
+		return nil, err
+	}
+
+	compiled := &CompiledRemoteSchema{
+		RemoteSchema: s,
+		runtimeFS:    fs,
+		resolvers:    router.Resolvers{},
+	}
+
 	doc, err := parser.Parse(parser.ParseParams{Source: s.sdl})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, def := range doc.Definitions {
 		var obj *ast.ObjectDefinition
@@ -103,15 +186,49 @@ func (s *remoteSchema) parse() error {
 		}
 
 		objResolver := router.ObjectResolver{}
-		s.resolvers[obj.Name.Value] = objResolver
+		compiled.resolvers[obj.Name.Value] = objResolver
 		for _, field := range obj.Fields {
-			objResolver[field.Name.Value] = s.resolve
+			objResolver[field.Name.Value] = compiled.resolve
 		}
 	}
-	return nil
+
+	for _, dep := range s.dependencies {
+		// TODO:(sipsma) deduplicate recompiling same dep (current behavior is O(really bad))
+		// TODO: also guard against infinite recursion
+		depCompiled, err := dep.Compile(ctx)
+		if err != nil {
+			return nil, err
+		}
+		compiled.dependencies = append(compiled.dependencies, depCompiled)
+	}
+
+	return compiled, nil
 }
 
-func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
+// CompiledRemoteSchema is the compiled version of RemoteSchema where the
+// SDK has built the input project FS into an executable extension.
+type CompiledRemoteSchema struct {
+	RemoteSchema
+	runtimeFS    *filesystem.Filesystem
+	dependencies []router.ExecutableSchema
+	resolvers    router.Resolvers
+}
+
+var _ router.ExecutableSchema = &CompiledRemoteSchema{}
+
+func (s *CompiledRemoteSchema) Resolvers() router.Resolvers {
+	return s.resolvers
+}
+
+func (s *CompiledRemoteSchema) Dependencies() []router.ExecutableSchema {
+	return s.dependencies
+}
+
+func (s *CompiledRemoteSchema) RuntimeFS() *filesystem.Filesystem {
+	return s.runtimeFS
+}
+
+func (s *CompiledRemoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	pathArray := p.Info.Path.AsArray()
 	name := fmt.Sprintf("%+v", pathArray)
 
@@ -127,7 +244,7 @@ func (s *remoteSchema) resolve(p graphql.ResolveParams) (any, error) {
 	}
 	input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
 
-	fsState, err := s.fs.ToState()
+	fsState, err := s.runtimeFS.ToState()
 	if err != nil {
 		return nil, err
 	}
@@ -204,4 +321,13 @@ func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesyst
 		}
 	}
 	return fsPaths
+}
+
+func isGatewayFileNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	// TODO:(sipsma) the underlying error type doesn't appear to be passed over grpc
+	// from buildkit, so we have to resort to nasty substring checking, need a better way
+	return strings.Contains(err.Error(), "no such file or directory")
 }

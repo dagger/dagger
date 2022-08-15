@@ -1,6 +1,3 @@
+name: "yarn"
 extensions:
-  alpine:
-    local: examples/alpine
-  yarn:
-    local: examples/yarn
-context: ../..
+  - local: ../alpine/cloak.yaml

@@ -5,9 +5,11 @@ import (
 )
 
 type ExecutableSchema interface {
+	Name() string
 	Schema() string
 	Operations() string
 	Resolvers() Resolvers
+	Dependencies() []ExecutableSchema
 }
 
 type Resolvers map[string]Resolver
@@ -31,9 +33,15 @@ func (ScalarResolver) _resolver() {}
 var _ ExecutableSchema = &staticSchema{}
 
 type staticSchema struct {
-	schema     string
-	operations string
-	resolvers  Resolvers
+	name         string
+	schema       string
+	operations   string
+	resolvers    Resolvers
+	dependencies []ExecutableSchema
+}
+
+func (s *staticSchema) Name() string {
+	return s.name
 }
 
 func (s *staticSchema) Schema() string {
@@ -46,4 +54,8 @@ func (s *staticSchema) Operations() string {
 
 func (s *staticSchema) Resolvers() Resolvers {
 	return s.resolvers
+}
+
+func (s *staticSchema) Dependencies() []ExecutableSchema {
+	return s.dependencies
 }

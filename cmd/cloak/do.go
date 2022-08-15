@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/cmd/cloak/config"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
@@ -19,26 +17,28 @@ import (
 	"golang.org/x/term"
 )
 
-var queryCmd = &cobra.Command{
-	Use: "query",
-	Run: Query,
+const (
+	projectContextLocalName = ".projectContext"
+)
+
+var doCmd = &cobra.Command{
+	Use:  "do",
+	Run:  Do,
+	Args: cobra.MaximumNArgs(1), // operation can be specified
 }
 
-func Query(cmd *cobra.Command, args []string) {
+func Do(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	cfg, err := config.ParseFile(configFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	var operation string
+	if len(args) > 0 {
+		operation = args[0]
 	}
 
 	vars := getKVInput(queryVarsInput)
-	localDirs := getKVInput(localDirsInput)
 	secrets := getKVInput(secretsInput)
 
-	for name, dir := range cfg.LocalDirs() {
-		localDirs[name] = dir
-	}
+	localDirs := getKVInput(localDirsInput)
+	localDirs[projectContextLocalName] = projectContext
 
 	startOpts := &engine.Config{
 		LocalDirs: localDirs,
@@ -46,31 +46,26 @@ func Query(cmd *cobra.Command, args []string) {
 
 	// Use the provided query file if specified
 	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
-	// Finally, default to reading from operations.graphql next to cloak.yaml
-	isTerminal := term.IsTerminal(int(os.Stdin.Fd()))
-	if queryFile == "" && isTerminal {
-		queryFile = filepath.Join(filepath.Dir(configFile), "operations.graphql")
-	}
-
-	var inBytes []byte
+	// Finally, default to the operations returned by the loadExtension query
+	var operations string
 	if queryFile != "" {
-		// use the provided query file if specified
-		inBytes, err = os.ReadFile(queryFile)
+		inBytes, err := os.ReadFile(queryFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-	} else {
-		// otherwise, if stdin is a pipe or other non-tty thing, read from it
-		inBytes, err = io.ReadAll(os.Stdin)
+		operations = string(inBytes)
+	} else if !term.IsTerminal(int(os.Stdin.Fd())) {
+		inBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+		operations = string(inBytes)
 	}
 
 	var result []byte
-	err = engine.Start(ctx, startOpts, func(ctx context.Context) error {
+	err := engine.Start(ctx, startOpts, func(ctx context.Context) error {
 		cl, err := dagger.Client(ctx)
 		if err != nil {
 			return err
@@ -81,6 +76,9 @@ func Query(cmd *cobra.Command, args []string) {
 			return err
 		}
 		for name, id := range localDirMapping {
+			if name == projectContextLocalName {
+				continue
+			}
 			vars[name] = string(id)
 		}
 
@@ -92,15 +90,19 @@ func Query(cmd *cobra.Command, args []string) {
 			vars[name] = string(id)
 		}
 
-		if err := cfg.LoadExtensions(ctx, localDirMapping); err != nil {
+		defaultOperations, err := installProject(ctx, cl, localDirMapping[projectContextLocalName])
+		if err != nil {
 			return err
+		}
+		if operations == "" {
+			operations = defaultOperations
 		}
 
 		res := make(map[string]interface{})
 		resp := &graphql.Response{Data: &res}
 		err = cl.MakeRequest(ctx,
 			&graphql.Request{
-				Query:     string(inBytes),
+				Query:     operations,
 				Variables: vars,
 				OpName:    operation,
 			},
@@ -134,6 +136,47 @@ func getKVInput(kvs []string) map[string]string {
 		m[split[0]] = split[1]
 	}
 	return m
+}
+
+func installProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID) (operations string, rerr error) {
+	res := struct {
+		Core struct {
+			Filesystem struct {
+				LoadExtension struct {
+					Operations string
+				}
+			}
+		}
+	}{}
+	resp := &graphql.Response{Data: &res}
+
+	err := cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query LoadExtension($fs: FSID!, $configPath: String!) {
+				core {
+					filesystem(id: $fs) {
+						loadExtension(configPath: $configPath) {
+							install {
+								id
+							}
+							operations
+						}
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"fs":         contextFS,
+				"configPath": projectFile,
+			},
+		},
+		resp,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return res.Core.Filesystem.LoadExtension.Operations, nil
 }
 
 func loadSecrets(ctx context.Context, cl graphql.Client, secrets map[string]string) (map[string]dagger.SecretID, error) {
