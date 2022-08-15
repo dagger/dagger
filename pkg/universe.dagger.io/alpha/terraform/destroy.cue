@@ -1,25 +1,17 @@
 package terraform
 
 // Run `terraform destroy`
-#Destroy: {
+#Destroy: #Run & {
+	// Terraform `destroy` command
+	cmd: "destroy"
 
-	// The Version of Terraform cli to use
-	version?: string
+	// Internal pre-defined arguments for `terraform destroy`
+	withinCmdArgs: [
+		if autoApprove {
+			"-auto-approve"
+		},
+	]
 
-	#Run & {
-		// Terraform `destroy` command
-		cmd: "destroy"
-
-		// Internal pre-defined arguments for `terraform destroy`
-		withinCmdArgs: [
-			if autoApprove {
-				"-auto-approve"
-			},
-		]
-
-		// Flag to indicate whether or not to auto-approve (i.e. -auto-approve flag)
-		autoApprove: bool | *true
-
-		"version": version
-	}
+	// Flag to indicate whether or not to auto-approve (i.e. -auto-approve flag)
+	autoApprove: bool | *true
 }

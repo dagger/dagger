@@ -15,7 +15,8 @@ _#DefaultLogLevel: "off"
 // Run `terraform CMD`
 #Run: {
 	// Terraform version
-	version?: string
+	version: string | *"1.2.7"
+	// https://www.terraform.io/downloads
 
 	// Terraform source code
 	source: dagger.#FS
@@ -71,9 +72,7 @@ _#DefaultLogLevel: "off"
 	_run: docker.#Build & {
 		steps: [
 			container.#input & {
-				if version != _|_ {
-					"version": version
-				}
+				"version": version
 			},
 			docker.#Copy & {
 				dest:     "/src"
