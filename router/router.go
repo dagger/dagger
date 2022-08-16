@@ -39,7 +39,9 @@ func (r *Router) Add(schema ExecutableSchema) error {
 	for _, s := range r.schemas {
 		newSchemas = append(newSchemas, s)
 	}
-	// skip adding schema if it has already been added
+	// Skip adding schema if it has already been added, higher callers
+	// are expected to handle checks that schemas with the same name are
+	// actually equivalent
 	if _, ok := r.schemas[schema.Name()]; !ok {
 		newSchemas = append(newSchemas, schema)
 		r.schemas[schema.Name()] = schema
