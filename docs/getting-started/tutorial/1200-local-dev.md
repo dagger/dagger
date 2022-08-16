@@ -42,7 +42,7 @@ With Docker running, we are ready to download our example app and run its CI/CD 
 ```shell
 git clone https://github.com/dagger/todoapp
 cd todoapp
-
+dagger project update
 dagger do build
 ```
 
@@ -108,7 +108,7 @@ With Docker Engine running, we are ready to download our example app and run its
 ```shell
 git clone https://github.com/dagger/todoapp
 cd todoapp
-
+dagger project update
 dagger do build
 ```
 
@@ -173,6 +173,7 @@ Still in your `Command Prompt` terminal:
 ```shell
 git clone https://github.com/dagger/todoapp
 cd todoapp
+dagger project update
 dagger do build
 ```
 
