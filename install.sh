@@ -295,9 +295,9 @@ install_completion() {
     # FIXME: make it work with other distribution: use $XDG_DATA_DIRS?
     #
     # the && true will get us user complain about their setup, we want that for now to make it work everywhere
-    ${binexe} completion bash > /usr/share/bash-completion/completions/dagger && true
-    ${binexe} completion zsh  > /usr/share/zsh/functions/Completion/dagger    && true
-    ${binexe} completion fish > /usr/share/fish/vendor_completions.d/dagger   && true
+    ${binexe} completion bash > /usr/share/bash-completion/completions/dagger    && true
+    ${binexe} completion zsh  > /usr/share/zsh/vendor-completions/_dagger        && true
+    ${binexe} completion fish > /usr/share/fish/vendor_completions.d/dagger.fish && true
 
 }
 
