@@ -112,9 +112,9 @@ func Load(ctx context.Context, cfg Config) (*Plan, error) {
 		source:  v,
 	}
 
-	if err := p.validate(ctx); err != nil {
-		return nil, &ErrorValidation{Err: compiler.Err(err), Plan: p}
-	}
+	// if err := p.validate(ctx); err != nil {
+	// 	return nil, &ErrorValidation{Err: compiler.Err(err), Plan: p}
+	// }
 
 	p.fillAction(ctx)
 

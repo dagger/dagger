@@ -119,7 +119,7 @@ import (
 
 		export: {
 			rootfs: _exec.output
-			files: [path=string]: string
+			files: [string]: string
 			_files: {
 				for path, _ in files {
 					"\(path)": {
@@ -135,7 +135,7 @@ import (
 				files: "\(path)": output.contents
 			}
 
-			directories: [path=string]: dagger.#FS
+			directories: [string]: dagger.#FS
 			_directories: {
 				for path, _ in directories {
 					"\(path)": {
@@ -151,7 +151,7 @@ import (
 				directories: "\(path)": output.contents
 			}
 
-			secrets: [path=string]: dagger.#Secret
+			secrets: [string]: dagger.#Secret
 			_secrets: {
 				for path, _ in secrets {
 					"\(path)": {

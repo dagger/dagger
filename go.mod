@@ -3,7 +3,7 @@ module go.dagger.io/dagger
 go 1.18
 
 require (
-	cuelang.org/go v0.4.3
+	cuelang.org/go v0.4.4-0.20220815180243-e187f9fe5d45
 	github.com/KromDaniel/jonson v0.0.0-20180630143114-d2f9c3c389db
 	github.com/Microsoft/go-winio v0.5.2
 	github.com/charmbracelet/glamour v0.5.0
@@ -148,7 +148,6 @@ require (
 	golang.org/x/net v0.0.0-20220708220712-1185a9018129 // indirect
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220616135557-88e70c0c3a90 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
@@ -158,7 +157,7 @@ require (
 )
 
 replace (
-	cuelang.org/go => github.com/dagger/cue v0.4.1-rc.1.0.20220121023213-66df011a52c2
+	// cuelang.org/go => /Users/joel/src/cue/cue
 	github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220121014307-40bb9831756f+incompatible
 	golang.org/x/oauth2 => github.com/dagger/oauth2 v0.0.0-20220802193326-c4e3911df5f5
 )
