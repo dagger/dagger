@@ -2,6 +2,7 @@ package docker
 
 import (
 	"list"
+	stdpath "path"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
@@ -100,6 +101,16 @@ import (
 		}
 	}
 
+	_workDirRelativePath: {
+		_path: string
+		if stdpath.IsAbs(_path) {
+			path: _path
+		}
+		if !stdpath.IsAbs(_path) {
+			path: stdpath.Join([_config.output.workdir, _path])
+		}
+	}
+
 	// Output fields
 	{
 		// Has the command completed?
@@ -124,9 +135,9 @@ import (
 				for path, _ in files {
 					"\(path)": {
 						contents: string & _read.contents
-						_read:    core.#ReadFile & {
-							input:  _exec.output
-							"path": path
+						_read:    core.#ReadFile & _workDirRelativePath & {
+							input: _exec.output
+							_path: path
 						}
 					}
 				}
@@ -140,9 +151,9 @@ import (
 				for path, _ in directories {
 					"\(path)": {
 						contents: dagger.#FS & _subdir.output
-						_subdir:  core.#Subdir & {
-							input:  _exec.output
-							"path": path
+						_subdir:  core.#Subdir & _workDirRelativePath & {
+							input: _exec.output
+							_path: path
 						}
 					}
 				}
@@ -156,9 +167,9 @@ import (
 				for path, _ in secrets {
 					"\(path)": {
 						contents: dagger.#Secret & _read.output
-						_read:    core.#NewSecret & {
-							input:  _exec.output
-							"path": path
+						_read:    core.#NewSecret & _workDirRelativePath & {
+							input: _exec.output
+							_path: path
 						}
 					}
 				}

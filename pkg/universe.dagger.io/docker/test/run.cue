@@ -46,6 +46,21 @@ dagger.#Plan & {
 			}
 		}
 
+		// Test: export a file relative to workdir
+		exportRelativeFile: {
+			run: docker.#Run & {
+				input:   _image
+				workdir: "/usr"
+				command: {
+					name: "sh"
+					flags: "-c": #"""
+						echo -n hello world >> /usr/output.txt
+						"""#
+				}
+				export: files: "output.txt": string & "hello world"
+			}
+		}
+
 		// Test: export a directory
 		exportDirectory: {
 			run: docker.#Run & {
@@ -62,6 +77,28 @@ dagger.#Plan & {
 
 			verify: core.#ReadFile & {
 				input: run.export.directories."/test"
+				path:  "/output.txt"
+			}
+			verify: contents: "hello world"
+		}
+
+		// Test: export a directory relative to workdir
+		exportRelativeDirectory: {
+			run: docker.#Run & {
+				input:   _image
+				workdir: "/usr"
+				command: {
+					name: "sh"
+					flags: "-c": #"""
+						mkdir -p /usr/test
+						echo -n hello world >> /usr/test/output.txt
+						"""#
+				}
+				export: directories: test: _
+			}
+
+			verify: core.#ReadFile & {
+				input: run.export.directories.test
 				path:  "/output.txt"
 			}
 			verify: contents: "hello world"
@@ -100,6 +137,44 @@ dagger.#Plan & {
 				mounts: secrets: {
 					dest:     "/secret.txt"
 					contents: run.export.secrets."/secret2.txt"
+				}
+			}
+		}
+
+		// Test: export a secret relative to workDir
+		exportRelativeSecret: {
+			run: docker.#Run & {
+				input:   _image
+				workdir: "/usr"
+				command: {
+					name: "sh"
+					flags: "-c": """
+							echo test1 >> /usr/secret1.txt
+							echo test2 >> /usr/secret2.txt
+						"""
+				}
+				export: secrets: {
+					"secret1.txt": _
+					"secret2.txt": _
+				}
+			}
+
+			verify: docker.#Run & {
+				input: _image
+				command: {
+					name: "sh"
+					flags: {
+						"-e": true
+						"-c": """
+							test "$SECRET_ENV" = "test1"
+							test "$(cat /usr/secret.txt)" = "test2"
+						"""
+					}
+				}
+				env: SECRET_ENV: run.export.secrets."secret1.txt"
+				mounts: secrets: {
+					dest:     "/usr/secret.txt"
+					contents: run.export.secrets."secret2.txt"
 				}
 			}
 		}
