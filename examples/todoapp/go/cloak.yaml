@@ -1,5 +1,4 @@
 name: "todoapp"
 extensions:
-  - local: ../../alpine/cloak.yaml
   - local: ../../yarn/cloak.yaml
   - local: ../../netlify/go/cloak.yaml
