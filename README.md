@@ -40,8 +40,7 @@ We appreciate any participation in the project, including:
 Simple alpine example:
 
 ```console
-cd ./examples/alpine
-cloak query <<'EOF'
+cloak -p examples/alpine/cloak.yaml do <<'EOF'
 {
   alpine{
     build(pkgs:["curl"]) {
@@ -57,14 +56,13 @@ EOF
 Yarn build (output will just be encoded fs bytes for now, need to add export or shell util to cloak CLI interface):
 
 ```console
-cloak query -c examples/yarn/cloak.yaml --local-dir source=examples/todoapp/app --set name=build
+cloak -p examples/yarn/cloak.yaml do --local-dir source=examples/todoapp/app --set name=build
 ```
 
 TODOApp deploy:
 
 ```console
-cd ./examples/todoapp/ts
-cloak query --op Deploy --local-dir src=../app --secret token="$NETLIFY_AUTH_TOKEN"
+cloak -p examples/todoapp/ts/cloak.yaml do Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 ## Development
@@ -96,19 +94,19 @@ Say we are creating a new extension, written in Typescript, called `foo` that wi
    1. `rm -rf app node_modules yarn.lock`
    1. Open `Dockerfile` and change occurences of `examples/yarn` to `examples/foo`
    1. Open `package.json`, replace occurences of `dagger-yarn` with `foo`
-   1. Open `schema.graphql`, replace the existing `build`, `test` and `deploy` fields under `Query` with one field per action you want to implement
+   1. Open `schema.graphql`, replace the existing `build`, `test` and `deploy` fields under `Yarn` with one field per action you want to implement. Replace all occurences of `Yarn` with `Foo`.
       - This is where the schema for the actions in your extension is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
    1. Open up `cloak.yaml`
       - This is where you declare your extension, and other extensions that it depends on. All extensions declared in this file will be built, loaded, and available to be called from your own extension.
       - Currently, cloak builds extensions by looking for a Dockerfile in the extension source directory. In the future we will offer more flexibility in how extensions can be built.
-      - Replace the existing `yarn` key under `extensions` with `foo`; similarly change `examples/yarn/Dockerfile` to `examples/foo/Dockerfile`
+      - Replace the existing `name: "yarn"` with `name: "foo"`; similarly change `examples/yarn/Dockerfile` to `examples/foo/Dockerfile`
       - Add similar entries for each of the extensions you want to be able to call from your extensions. They all follow the same format right now
       - You don't need to declare `core` as a dependency: it is built-in and always available to all extensions.
 1. Implement your action by editing `index.ts`
-   - Replace each of the existing `Script` field under `const resolver` with an implementation for your action (or add multiple fields if implementing multiple actions).
+   - Replace the existing `Yarn` field under `const resolver` with `Foo`. Also replace the existing `script` field with an implementation for your action (or add multiple fields if implementing multiple actions).
    - The `args` parameter is an object with a field for each of the input args to your action (as defined in `schema.graphql`
-   - You should use `FSID` when accepting a filesystem as an input
+   - You should use `FSID` when accepting a filesystem as an input, `SecretID` (also imported from `@dagger.io/dagger`) when accepting a secret as input.
 
 ### Creating a new extension in Go
 
@@ -118,11 +116,8 @@ Say we are creating a new Dagger extension, written in Go, called `foo` that wil
    1. Starting from the root of the cloak repo, make a new directory for your action:
       - `mkdir -p examples/foo`
    1. `cd examples/foo`
-   1. Setup the Dockerfile that will build your action
-      - `cp ../alpine/Dockerfile .`
-      - Open `Dockerfile` and change occurences of `examples/alpine` to `examples/foo`
-      - TODO: this is boilerplate that will go away soon
-   1. Open `schema.graphql`, replace the existing `build` field under `Query` with one field per action you want to implement
+   1. `cp ../alpine/Dockerfile .`
+   1. Open `schema.graphql`, replace the existing `build` field under `Alpine` with one field per action you want to implement. Replace all occurences of `Alpine` with `Foo`.
       - This is where the schema for the actions in your extension is configured. Feel free to add more complex output/input types as needed
       - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
    1. Open up `cloak.yaml`
@@ -131,10 +126,9 @@ Say we are creating a new Dagger extension, written in Go, called `foo` that wil
       - Replace the existing `alpine` key under `extensions` with `foo`; similarly change `examples/alpine/Dockerfile` to `examples/foo/Dockerfile`
       - Add similar entries for each of the extensions you want to be able to call from your actions. They all follow the same format right now
       - You don't need to declare `core` as a dependency: it is built-in and always available to all extensions.
-      
 1. Generate client stubs and implementation stubs
    - From `examples/foo`, run `cloak generate --output-dir=. --sdk=go`
-   - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to helpers for your implementation under `gen/foo`
+   - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to structures for needed types in `models.go` and some auto-generated boilerplate that makes your code invokable in `generated.go`
    - Additionally, there should now be a `main.go` file with a stub implementations.
 1. Implement your action by replacing the panics in `main.go` with the actual implementation.
    - When you need to call a dependency, import it from paths like `github.com/dagger/cloak/examples/foo/gen/<dependency pkgname>`

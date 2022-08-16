@@ -43,13 +43,12 @@ _Andrea runs through his demo w/ graphiql_
 ## 4. Invoking Cloak
 
 ```console
-cd examples/todoapp/go
-cloak query --op Deploy --local-dir src=../app --secret token="$NETLIFY_AUTH_TOKEN"
+cloak -p examples/todoapp/go/cloak.yaml do Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
 ```
 
 - `--local-dir` maps `src` arg to the local app dir
 - `--secret` maps `token` arg to my env var
 
 1. Show command running, mention that cached because it was run previously, show deployed website
-1. Open up `../app/src/components/Form.js`, modify `What needs to be done?` to `What needs to be done???????!!!!!!`
+1. Open up `examples/todoapp/app/src/components/Form.js`, modify `What needs to be done?` to `What needs to be done???????!!!!!!`
 1. Re-run command, show that changes were picked up automatically.
