@@ -15,7 +15,7 @@ _#DefaultLogLevel: "off"
 // Run `terraform CMD`
 #Run: {
 	// Terraform version
-	version: string | *"1.2.7"
+	version?: string
 	// https://www.terraform.io/downloads
 
 	// Terraform source code
@@ -66,14 +66,15 @@ _#DefaultLogLevel: "off"
 		TF_INPUT:         "0"
 	}
 
-	// Hashicorp Terraform container
-	container: #input: docker.#Image | #Image
+	container: #input: docker.#Image | #Image & {
+		if version != _|_ {
+			"version": version
+		}
+	}
 	// Run command within a container
 	_run: docker.#Build & {
 		steps: [
-			container.#input & {
-				"version": version
-			},
+			container.#input,
 			docker.#Copy & {
 				dest:     "/src"
 				contents: source
