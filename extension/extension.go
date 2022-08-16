@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/core/filesystem"
@@ -18,6 +19,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -122,87 +124,104 @@ func (s *RemoteSchema) Dependencies() []*RemoteSchema {
 	return s.dependencies
 }
 
-func (s RemoteSchema) Compile(ctx context.Context) (*CompiledRemoteSchema, error) {
-	// TODO:(sipsma) hardcoding use of a "dockerfile sdk", should obviously be generalized
-	def, err := s.projectFS.ToDefinition()
-	if err != nil {
-		return nil, err
-	}
+func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRemoteSchema, l *sync.RWMutex, sf *singleflight.Group) (*CompiledRemoteSchema, error) {
+	res, err, _ := sf.Do(s.name, func() (interface{}, error) {
+		// if we have already compiled a schema with this name, return it
+		// TODO:(sipsma) should check that schema is actually the same, error out if not
+		l.RLock()
+		cached, ok := cache[s.name]
+		l.RUnlock()
+		if ok {
+			return cached, nil
+		}
 
-	opts := map[string]string{
-		"platform": platforms.Format(s.platform),
-		"filename": filepath.Join(filepath.Dir(s.configPath), "Dockerfile"),
-	}
-	inputs := map[string]*pb.Definition{
-		dockerfilebuilder.DefaultLocalNameContext:    def,
-		dockerfilebuilder.DefaultLocalNameDockerfile: def,
-	}
-	res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
+		// TODO:(sipsma) hardcoding use of a "dockerfile sdk", should obviously be generalized
+		def, err := s.projectFS.ToDefinition()
+		if err != nil {
+			return nil, err
+		}
+
+		opts := map[string]string{
+			"platform": platforms.Format(s.platform),
+			"filename": filepath.Join(filepath.Dir(s.configPath), "Dockerfile"),
+		}
+		inputs := map[string]*pb.Definition{
+			dockerfilebuilder.DefaultLocalNameContext:    def,
+			dockerfilebuilder.DefaultLocalNameDockerfile: def,
+		}
+		res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		bkref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+		st, err := bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
+
+		fs, err := filesystem.FromState(ctx, st, s.platform)
+		if err != nil {
+			return nil, err
+		}
+
+		compiled := &CompiledRemoteSchema{
+			RemoteSchema: s,
+			runtimeFS:    fs,
+			resolvers:    router.Resolvers{},
+		}
+
+		doc, err := parser.Parse(parser.ParseParams{Source: s.sdl})
+		if err != nil {
+			return nil, err
+		}
+		for _, def := range doc.Definitions {
+			var obj *ast.ObjectDefinition
+
+			if def, ok := def.(*ast.ObjectDefinition); ok {
+				obj = def
+			}
+
+			if def, ok := def.(*ast.TypeExtensionDefinition); ok {
+				obj = def.Definition
+			}
+
+			if obj == nil {
+				continue
+			}
+
+			objResolver := router.ObjectResolver{}
+			compiled.resolvers[obj.Name.Value] = objResolver
+			for _, field := range obj.Fields {
+				objResolver[field.Name.Value] = compiled.resolve
+			}
+		}
+
+		for _, dep := range s.dependencies {
+			// TODO:(sipsma) guard against infinite recursion
+			depCompiled, err := dep.Compile(ctx, cache, l, sf)
+			if err != nil {
+				return nil, err
+			}
+			compiled.dependencies = append(compiled.dependencies, depCompiled)
+		}
+
+		l.Lock()
+		cache[s.name] = compiled
+		l.Unlock()
+		return compiled, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	bkref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	st, err := bkref.ToState()
-	if err != nil {
-		return nil, err
-	}
-
-	fs, err := filesystem.FromState(ctx, st, s.platform)
-	if err != nil {
-		return nil, err
-	}
-
-	compiled := &CompiledRemoteSchema{
-		RemoteSchema: s,
-		runtimeFS:    fs,
-		resolvers:    router.Resolvers{},
-	}
-
-	doc, err := parser.Parse(parser.ParseParams{Source: s.sdl})
-	if err != nil {
-		return nil, err
-	}
-	for _, def := range doc.Definitions {
-		var obj *ast.ObjectDefinition
-
-		if def, ok := def.(*ast.ObjectDefinition); ok {
-			obj = def
-		}
-
-		if def, ok := def.(*ast.TypeExtensionDefinition); ok {
-			obj = def.Definition
-		}
-
-		if obj == nil {
-			continue
-		}
-
-		objResolver := router.ObjectResolver{}
-		compiled.resolvers[obj.Name.Value] = objResolver
-		for _, field := range obj.Fields {
-			objResolver[field.Name.Value] = compiled.resolve
-		}
-	}
-
-	for _, dep := range s.dependencies {
-		// TODO:(sipsma) deduplicate recompiling same dep (current behavior is O(really bad))
-		// TODO: also guard against infinite recursion
-		depCompiled, err := dep.Compile(ctx)
-		if err != nil {
-			return nil, err
-		}
-		compiled.dependencies = append(compiled.dependencies, depCompiled)
-	}
-
-	return compiled, nil
+	return res.(*CompiledRemoteSchema), nil
 }
 
 // CompiledRemoteSchema is the compiled version of RemoteSchema where the

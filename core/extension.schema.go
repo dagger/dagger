@@ -2,11 +2,13 @@ package core
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/extension"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
+	"golang.org/x/sync/singleflight"
 )
 
 type Extension struct {
@@ -21,6 +23,9 @@ var _ router.ExecutableSchema = &extensionSchema{}
 
 type extensionSchema struct {
 	*baseSchema
+	compiledSchemas map[string]*extension.CompiledRemoteSchema
+	l               sync.RWMutex
+	sf              singleflight.Group
 }
 
 func (s *extensionSchema) Name() string {
@@ -83,7 +88,8 @@ func (s *extensionSchema) Dependencies() []router.ExecutableSchema {
 
 func (s *extensionSchema) install(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Extension)
-	executableSchema, err := obj.schema.Compile(p.Context)
+
+	executableSchema, err := obj.schema.Compile(p.Context, s.compiledSchemas, &s.l, &s.sf)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +127,7 @@ func (s *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
 	return routerSchemaToExtension(schema), nil
 }
 
-// TODO: guard against infinite recursion
+// TODO:(sipsma) guard against infinite recursion
 func routerSchemaToExtension(schema router.ExecutableSchema) *Extension {
 	ext := &Extension{
 		Name:       schema.Name(),
@@ -134,7 +140,7 @@ func routerSchemaToExtension(schema router.ExecutableSchema) *Extension {
 	return ext
 }
 
-// TODO: guard against infinite recursion
+// TODO:(sipsma) guard against infinite recursion
 func remoteSchemaToExtension(schema *extension.RemoteSchema) *Extension {
 	ext := &Extension{
 		Name:       schema.Name(),

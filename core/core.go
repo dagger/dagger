@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/cloak/core/filesystem"
+	"github.com/dagger/cloak/extension"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/secret"
 	"github.com/moby/buildkit/client/llb"
@@ -22,7 +23,7 @@ func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform s
 		&coreSchema{base},
 
 		&filesystemSchema{base},
-		&extensionSchema{base},
+		&extensionSchema{baseSchema: base, compiledSchemas: make(map[string]*extension.CompiledRemoteSchema)},
 		&execSchema{base},
 		&dockerBuildSchema{base},
 
