@@ -285,6 +285,22 @@ tarball() {
     echo "$name"
 }
 
+install_completion() {
+    # discovery of currently used shell is too error prone, I install all of them
+    # - echo $SHELL rarely works
+    # - echo $0 doesn't work if you use the script as the runner
+    # - echo $$ to get the pid of the process sometimes fail as well
+
+    # This should work on debian derived distributions
+    # FIXME: make it work with other distribution: use $XDG_DATA_DIRS?
+    #
+    # the && true will get us user complain about their setup, we want that for now to make it work everywhere
+    ${binexe} completion bash > /usr/share/bash-completion/completions/dagger && true
+    ${binexe} completion zsh  > /usr/share/zsh/functions/Completion/dagger    && true
+    ${binexe} completion fish > /usr/share/fish/vendor_completions.d/dagger   && true
+
+}
+
 execute() {
     base_url="$(base_url)"
     tarball="$(tarball)"
@@ -303,6 +319,7 @@ execute() {
     (cd "${tmpdir}" && untar "${tarball}")
     test ! -d "${bin_dir}" && install -d "${bin_dir}"
     install "${srcdir}/${binexe}" "${bin_dir}"
+    install_completion
     log_info "installed ${bin_dir}/${binexe}"
     rm -rf "${tmpdir}"
 }
