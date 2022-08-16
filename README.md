@@ -127,7 +127,7 @@ Say we are creating a new Dagger extension, written in Go, called `foo` that wil
       - Add similar entries for each of the extensions you want to be able to call from your actions. They all follow the same format right now
       - You don't need to declare `core` as a dependency: it is built-in and always available to all extensions.
 1. Generate client stubs and implementation stubs
-   - From `examples/foo`, run `cloak generate --output-dir=. --sdk=go`
+   - From `examples/foo`, run `cloak --context=../.. -p examples/foo/cloak.yaml generate --output-dir=. --sdk=go`
    - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to structures for needed types in `models.go` and some auto-generated boilerplate that makes your code invokable in `generated.go`
    - Additionally, there should now be a `main.go` file with a stub implementations.
 1. Implement your action by replacing the panics in `main.go` with the actual implementation.
