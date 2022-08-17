@@ -21,7 +21,7 @@ Using Dagger, software teams can develop powerful CICD pipelines with minimal ef
 
 [Documentation website](https://docs.dagger.io/)
 
-## Releases 
+## Releases
 
 We release a new version every Tuesday. You can find out more about our latest release [here](https://github.com/dagger/dagger/releases).
 
