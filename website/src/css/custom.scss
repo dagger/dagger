@@ -57,6 +57,7 @@ $desktop-xl-width: 1160px;
   --ifm-color-danger: #be1d43;
   --ifm-color-grey: #858495;
   --ifm-color-grey-light: #a6a5b7;
+  --ifm-color-grey-dark: #4b4b5a;
   --ifm-container-width-xl: 990px;
   --ifm-font-color-base: var(--ifm-color-primary-darker);
   --ifm-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -107,6 +108,10 @@ html[data-theme="dark"] {
 }
 
 /* global */
+
+* {
+  --webkit-font-smoothing: antialiased;
+}
 
 h1,
 h2,
@@ -349,10 +354,10 @@ h1[class^="h1Heading"] {
   align-items: center;
 
   a {
-    background-color: var(--ifm-color-secondary) !important;
+    background-color: var(--ifm-color-secondary);
     border-radius: 20px;
     font-weight: bold;
-    transition-property: transform;
+    transition-property: background-color;
     transition: 0.1s ease-in;
     padding: 2px 20px;
     display: flex;
@@ -370,7 +375,7 @@ h1[class^="h1Heading"] {
   }
 
   a:hover {
-    transform: scale(1.05);
+    background-color: var(--ifm-color-primary-light);
   }
 
   & div,

@@ -4,10 +4,10 @@
   width: 100%;
   padding: 0.5rem 1.5rem;
   max-width: 300px;
-  transition: transform 0.2s ease;
+  transition: all 0.2s ease;
 
   html[data-theme="dark"] & {
-    background-color: var(--ifm-color-primary-light);
+    background-color: var(--ifm-color-secondary);
     color: var(--ifm-color-primary-darker);
   }
 
@@ -16,10 +16,6 @@
   font-weight: bold;
   font-size: 1rem;
   text-align: center;
-
-  &:hover {
-    transform: scale(1.05);
-  }
 }
 
 .anchor {
@@ -31,9 +27,22 @@
 .button.light {
   background-color: var(--ifm-color-secondary);
   color: var(--ifm-color-primary-darker);
+
+  &:hover {
+    background-color: var(--ifm-color-primary-light);
+  }
 }
 
 .button.dark {
   background-color: var(--ifm-color-primary-darker);
   color: var(--ifm-color-primary-light);
+
+  &:hover {
+    background-color: var(--ifm-color-grey-dark);
+  }
+
+  html[data-theme="dark"] &:hover {
+    background-color: var(--ifm-color-primary-light);
+    color: var(--ifm-color-primary-darker);
+  }
 }

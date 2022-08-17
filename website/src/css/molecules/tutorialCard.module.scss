@@ -24,6 +24,10 @@
     a div {
       background-color: var(--ifm-color-primary-darker);
       color: var(--ifm-color-primary-light);
+
+      &:hover {
+        background-color: var(--ifm-color-grey-dark);
+      }
     }
   }
 
@@ -38,7 +42,7 @@
     flex: 1 1 220px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: center;
 
     p {
       font-size: 0.8rem;

@@ -35,9 +35,15 @@
         color: var(--ifm-color-primary-darker);
       }
 
+      /* Card Button */
+
       a div {
         background-color: var(--ifm-color-primary-darker);
         color: var(--ifm-color-primary-light);
+
+        &:hover {
+          background-color: var(--ifm-color-grey-dark);
+        }
       }
     }
 
