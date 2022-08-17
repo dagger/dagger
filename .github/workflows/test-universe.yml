@@ -33,7 +33,7 @@ jobs:
   universe-europa-tests:
     name: "Universe Tests - Europa"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: "Check out"
         uses: actions/checkout@v2
