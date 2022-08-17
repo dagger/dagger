@@ -3,6 +3,7 @@ package terraform
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
+	"universe.dagger.io/docker"
 	"universe.dagger.io/alpha/terraform"
 )
 
@@ -149,6 +150,47 @@ dagger.#Plan & {
 			}
 		}
 
+		imageWorkflow: {
+			// Set a terraform version for testing specific version of terraform
+			_image: docker.#Pull & {
+				source: "hashicorp/terraform:1.2.7"
+			}
+
+			init: terraform.#Init & {
+				container: #input: _image.output
+				source: tfSource.output
+			}
+
+			workspaceNew: terraform.#Workspace & {
+				container: #input: _image.output
+				source: init.output
+				subCmd: "new"
+				name:   "TEST_WORKSPACE"
+			}
+
+			plan: terraform.#Plan & {
+				container: #input: _image.output
+				source: init.output
+			}
+
+			apply: terraform.#Apply & {
+				container: #input: _image.output
+				always: true
+				source: plan.output
+			}
+
+			verify: #AssertFileRegex & {
+				input: apply.output
+				path:  "terraform.tfstate"
+				regex: "1\\.2\\.7"
+			}
+
+			destroy: terraform.#Destroy & {
+				container: #input: _image.output
+				source: apply.output
+				container: #input: _image.output
+			}
+		}
 	}
 }
 
