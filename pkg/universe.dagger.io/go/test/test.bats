@@ -19,3 +19,7 @@ setup() {
 @test "go test" {
     dagger "do" -p ./test.cue test
 }
+
+@test "configure go" {
+    dagger "do" -p ./configure.cue test
+}
