@@ -34,10 +34,16 @@ dagger.#Plan & {
 				source: plan.output
 			}
 
-			verify: #AssertFile & {
+			verifyOutput: #AssertFile & {
 				input:    apply.output
 				path:     "./out.txt"
 				contents: "Hello, world!"
+			}
+
+			verifyDefaultVersion: #AssertFileRegex & {
+				input: apply.output
+				path:  "terraform.tfstate"
+				regex: string | *"1\\.2\\.7"
 			}
 		}
 
@@ -105,48 +111,25 @@ dagger.#Plan & {
 			terraformVersion?: string
 
 			init: terraform.#Init & {
-				source: tfSource.output
-				if terraformVersion != _|_ {
-					version: terraformVersion
-				}
-			}
-
-			workspaceNew: terraform.#Workspace & {
-				source: init.output
-				subCmd: "new"
-				name:   "TEST_WORKSPACE"
-				if terraformVersion != _|_ {
-					version: terraformVersion
-				}
+				source:  tfSource.output
+				version: "1.2.6"
 			}
 
 			plan: terraform.#Plan & {
-				source: init.output
-				if terraformVersion != _|_ {
-					version: terraformVersion
-				}
-
+				source:  init.output
+				version: "1.2.6"
 			}
 
 			apply: terraform.#Apply & {
-				always: true
-				source: plan.output
-				if terraformVersion != _|_ {
-					version: terraformVersion
-				}
+				always:  true
+				source:  plan.output
+				version: "1.2.6"
 			}
 
 			verify: #AssertFileRegex & {
 				input: apply.output
 				path:  "terraform.tfstate"
-				regex: string | *"1\\.2\\.7"
-			}
-
-			destroy: terraform.#Destroy & {
-				source: apply.output
-				if terraformVersion != _|_ {
-					version: terraformVersion
-				}
+				regex: string | *"1\\.2\\.6"
 			}
 		}
 
