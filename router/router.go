@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"sync"
 
 	"github.com/graphql-go/graphql"
@@ -35,23 +36,14 @@ func (r *Router) Add(schema ExecutableSchema) error {
 	defer r.l.Unlock()
 
 	// Copy the current schemas and append new schemas
+	r.add(schema)
 	newSchemas := []ExecutableSchema{}
 	for _, s := range r.schemas {
 		newSchemas = append(newSchemas, s)
 	}
-	// Skip adding schema if it has already been added, higher callers
-	// are expected to handle checks that schemas with the same name are
-	// actually equivalent
-	if _, ok := r.schemas[schema.Name()]; !ok {
-		newSchemas = append(newSchemas, schema)
-		r.schemas[schema.Name()] = schema
-	}
-	for _, dep := range schema.Dependencies() {
-		if _, ok := r.schemas[dep.Name()]; !ok {
-			newSchemas = append(newSchemas, dep)
-			r.schemas[dep.Name()] = dep
-		}
-	}
+	sort.Slice(newSchemas, func(i, j int) bool {
+		return newSchemas[i].Name() < newSchemas[j].Name()
+	})
 
 	merged, err := Merge("", newSchemas...)
 	if err != nil {
@@ -71,6 +63,22 @@ func (r *Router) Add(schema ExecutableSchema) error {
 		Playground: true,
 	})
 	return nil
+}
+
+func (r *Router) add(schema ExecutableSchema) {
+	// Skip adding schema if it has already been added, higher callers
+	// are expected to handle checks that schemas with the same name are
+	// actually equivalent
+	_, ok := r.schemas[schema.Name()]
+	if ok {
+		return
+	}
+
+	r.schemas[schema.Name()] = schema
+	for _, dep := range schema.Dependencies() {
+		// TODO:(sipsma) guard against infinite recursion
+		r.add(dep)
+	}
 }
 
 func (r *Router) Get(name string) ExecutableSchema {
