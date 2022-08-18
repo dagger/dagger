@@ -50,7 +50,12 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			lg.Fatal().Err(err).Msg("failed to initialize project")
 		}
-		fmt.Println("Project initialized! To install dagger packages, run `dagger project update`")
+
+		if dir == "." {
+			fmt.Println("Project initialized! To install dagger packages, run `dagger project update`")
+		} else {
+			fmt.Printf("Project initialized in \"%s\"! To install dagger packages, go to subfolder \"%s\" and run \"dagger project update\"", dir, dir)
+		}
 	},
 }
 
