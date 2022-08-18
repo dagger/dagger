@@ -1,91 +1,208 @@
-# Anatomy of a Dagger project
+# Introduction to Dagger
 
-## Overview
+## What is Dagger?
 
-Dagger helps software teams automate their workflows, so that they can spend less time on repetitive tasks, and more on building.
+Dagger is an automation platform for modern software projects.
 
-Any software project can adopt Dagger by following these steps:
+Software builders use Dagger to automate their workflows, so that they can spend less time fixing artisanal scripts, and more time building.
 
-1. Add a `dagger.yaml` file to the project directory
-2. Program one or more workflows, in a supported language
-3. Run the workflow from the CLI or on Play With Dagger
+## Why Dagger?
 
+The business of building software involves various workflows: build, lint, test, generate docs, deploy, release etc. Each workflow is composed of many inter-connected tasks, and must be run frequently. Orchestrating these workflows manually is too time-consuming, so instead they are automated with scripts.
 
-## Workflows
+As the project evolves, these scripts tend to cause problems: they stop working, become very slow, or can't be touched because the person who wrote them has left.
 
-Configuration key: `workflows`.
+Dagger fixes this problem by making it easy to simplify and modularize existing scripts; and gradually replacing them completely with a modern API and complete developer toolbox.
 
-Workflows are simple programs which automate various parts of software delivery. A typical project may have workflows such as "build", "test", "deploy" or "lint".
+## How it works
 
-Workflows are designed to be portable, familiar, simple,operator-friendly and safe.
+### The Dagger API
 
-* *Portable*: workflows are run in containers, so they can be used without modification in most development and CI environments.
+The Dagger API is a graphql-compatible API for composing and running powerful pipelines with minimal effort. By relying on the Dagger API to do the heavy lifting, one can write a small script that orchestrates a complex workflow, knowing that it will run in a secure and scalable way out of the box, and can easily be changed later as needed.
 
-* *Familiar*: writing a workflow does not require learning a new programming language: there are SDKs for Bash, Go and Typescript, with more planned.
+### API extensions
 
-* *Simple*: most of the heavy lifting is done by the Dagger API and its extensions. Workflows act as  specialized clients, orchestrating API calls in the backend and presenting a user interface in the frontend.
+Developers can write an *API extensions* to add new capabilities to the Dagger API.
+ 
+API extensions are the killer feature of Dagger. They ensure that as a workflow grows and evolves, it can remain simple and small, by *breaking up its logic into reusable components*. 
 
-* *Operator-friendly*: just like regular tools, workflows can read files, lookup environment variables and execute commands on the operator's system. This makes them easy to integrate with minimal disruption.
+API extensions are fully sandboxed, so they can be safely shared and reused between projects.
 
-* *Safe*: unlike regular tools, workflows are fully sandboxed by default. Each access to the operator's system must be explicitly requested and allowed.
+Client workflows may depend on extensions, and extensions may depend on other extensions.
+
+## Using Dagger
+
+There are 4 dimensions to using Dagger:
+
+1. Writing a workflow
+2. Running a workflow
+3. Exploring the API
+4. Writing an API extension
 
 ### Writing a workflow
 
-*FIXME*
+In Dagger, a workflow is simply software that calls the Dagger API.
+
+A workflow can be written in any programming language; and written *very easily* in any language for which a Dagger SDK is available. Currently Dagger provides SDKs for Bash, Go and Typescript.
+
+The main benefit of using a Dagger SDK is:
+
+1. To facilitate the initialization of the engine
+2. To generate client code that hides graphql queries behind a more familiar API
+
+A workflow may declare a dependency on API extensions, using the `dependencies` configuration key.
+
+```mermaid
+graph LR;
+
+  dev((workflow developer))
+  sdk["SDK (Go, Typescript, Bash)"]
+  
+  subgraph "project directory"
+    projectFile[cloak.yaml]
+	subgraph workflows
+		workflow1["'build'"]
+		workflow2["'test'"]
+		workflow3["'deploy'"]
+		style workflow2 stroke-dasharray: 5 5
+		style workflow3 stroke-dasharray: 5 5
+	end
+  end
+
+  dev -. writes workflow logic .-> workflow1
+  dev -. runs .-> sdk
+  sdk -. generates client stubs .-> workflow1
+  dev -. writes workflow configuration .-> projectFile
+```
 
 ### Running a workflow
 
-Workflows can be run by the CLI with `dagger do NAME`.
+Since a workflow is just a regular program that happens to call the Dagger API, there is nothing special about running a workflow: just run your code the way you usually would.
 
-In Play With Dagger, workflows are run by selecting the workflow, filling its parameters, and clicking "run".
-
-
-## API extensions
-
-The Dagger API is a graphql-compatible API for composing and running powerful pipelines with minimal effort.
-
-Developers can write *API extensions* to add new capabilities to the Dagger API. Extensions may be private to a project, or imported as dependencies by other projects.
-
-### Using an API extension from a workflow
-
-A workflow may declare a dependency on API extensions, using the `dependencies` key. Note that each workflow must declare its own dependencies.
+This makes Dagger very easy to embed in existing projects with minimal disruption.
 
 When a workflow is run, it simply queries the Dagger API in the usual way: all extension types are loaded and available to be queried.
 
+
+```mermaid
+graph LR;
+
+operator((workflow operator)) -. runs .-> workflow1 & workflow2 & workflow3
+subgraph "Host OS"
+	subgraph "project directory"
+		projectFile[cloak.yaml]
+		subgraph workflows
+			workflow1["'build'"]
+			workflow2["'test'"]
+			workflow3["'deploy'"]
+		end
+	end
+	cli[Dagger CLI]
+
+
+	  cli & workflow1 & workflow2 & workflow3 -. graphql queries .-> api
+
+
+	api --> io
+	subgraph engine
+	io[Host I/O]
+	api((Dagger API)) --> yarn & netlify & git & oci & vercel & alpine
+	
+	yarn & netlify & git & oci & vercel & alpine -.-> api
+		subgraph extensions
+				yarn[Yarn]
+				netlify[Netlify]
+				git[Git]
+				oci[OCI]
+				vercel[Vercel]
+				alpine[Alpine Linux]
+		end
+	end
+end
+  ```
+
+## Exploring the API
+
+Any graphql-compatible client may be used to interact directly with the API. This is most useful for experimentation or running one-off pipelines.
+
+```mermaid
+graph LR;
+
+operator((workflow operator))
+subgraph "Host OS"
+	cli[Dagger CLI]
+	curl[curl]
+	browser[web browser]
+    playground[API playground]
+
+
+	subgraph engine
+		io[Host I/O]
+		api((Dagger API))
+		subgraph extensions
+				yarn[Yarn]
+				netlify[Netlify]
+				git[Git]
+				oci[OCI]
+				vercel[Vercel]
+				alpine[Alpine Linux]
+		end
+
+		
+	end
+end
+
+operator -. runs .-> cli & curl & browser
+api --> yarn & netlify & git & oci & vercel & alpine
+api --> io
+yarn & netlify & git & oci & vercel & alpine -.-> api
+cli & curl -. graphql queries .-> api
+browser -. runs .-> playground -. graphql queries .-> api
+```
+
+
 ### Writing an API extension
 
-The same SDK can be used to write workflows and API extensions. See the documentation for your SDK of choice.
+Signs that it may be time to write an extension:
 
-A few important differences between workflows and API extensions:
+* Your workflow is growing larger and more complex, and is becoming harder to develop
+* The same logic is duplicated across workflows, and there's no practical way to share it
 
-* Workflows may access the operator's system; API extensions may not. Extensions are fully sandboxed to make them as safely reusable as possible.
+Writing an extension is more advanced than writing a workflow, because in addition to being a GraphQL client, it must also implement some parts of a GraphQL *server*. However, Dagger SDKs greatly simplify the process, and after learning a few basic GraphQL concepts, it is quite fun.
 
-* Extensions may be used as a dependency; workflows may not. Workflows are meant for direct use by a human operator, and wrapping them in software is not recommended. If a workflow contains logic that you wish to share with another workflow, it may be time to split out that logic into an extension, and have both workflows query it.
+Just like workflows, extensions can be written in any language; and written *easily* with a Dagger SDK.
+
+Note that unlike workflows, extensions are fully sandboxed and cannot access the host system.
 
 ## Project File examples
 
-### Todo App (simple)
+### Todo App (the hard way, no extensions)
 
 ```yaml
 workflows:
 	build: 
-		# Note: sdk is optional, auto-discovered if omitted
-		source: build.sh
-		dependencies:
-			- yarn
-		privileges:
-			workdir: true
+		source: ./workflows/build
+		sdk: bash
 	deploy:
 		source: ./workflows/deploy
 		sdk: go
-		sdk_settings:
-			flags: -v
-		privileges:
-			workdir: true
-			env:
-				- NETLIFY_TOKEN
-			commands:
-				- aws
+``
+
+### Todo App (with extensions)
+
+```yaml
+workflows:
+	build: 
+		source: ./workflows/build
+		sdk: bash
+		dependencies:
+			- yarn
+	deploy:
+		source: ./workflows/deploy
+		sdk: go
+		dependencies:
+			- yarn
+			- netlify
 ```
 
 ### Todo App (advanced)
