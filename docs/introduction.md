@@ -1,10 +1,15 @@
-# Introduction to Dagger
+# Introduction to Dagger/Cloak
 
 ## What is Dagger?
 
 Dagger is an automation platform for modern software projects.
 
 Software builders use Dagger to automate their workflows, so that they can spend less time fixing artisanal scripts, and more time building.
+
+## What is Cloak?
+
+Cloak is the codename of the future 0.3 release of Dagger. It is still in development. In this documentation, the terms "Cloak" and "Dagger"
+are used interchangeably.
 
 ## Why Dagger?
 
@@ -170,9 +175,11 @@ Signs that it may be time to write an extension:
 
 Writing an extension is more advanced than writing a workflow, because in addition to being a GraphQL client, it must also implement some parts of a GraphQL *server*. However, Dagger SDKs greatly simplify the process, and after learning a few basic GraphQL concepts, it is quite fun.
 
-Just like workflows, extensions can be written in any language; and written *easily* with a Dagger SDK.
+* Just like workflows, extensions can be written in any language; and written *easily* with a Dagger SDK.
 
-Note that unlike workflows, extensions are fully sandboxed and cannot access the host system.
+* Unlike workflows, extensions are fully sandboxed and cannot access the host system.
+
+[Learn more about writing extensions](writing_extensions.md)
 
 ## Project File examples
 
@@ -217,21 +224,14 @@ In this version of Todo App, custom build and deployment logic has been moved in
 workflows:
 	build: 
 		source: build.sh
-		privileges:
-			workdir: true
+		sdk: bash
 	deploy:
 		source: deploy.sh
-		privileges:
-			workdir: true
-			env:
-				- NETLIFY_TOKEN
-			commands:
-				- aws
+		sdk: bash
 
 extensions:
 	-
 		source: ./dagger/extensions
-		# SDK also optional here
 		sdk: go
 		dependencies:
 			- yarn

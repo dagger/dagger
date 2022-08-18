@@ -1,6 +1,6 @@
-# Runtime Protocol
+# Extension Runtime Protocol
 
-A Runtime is the bridge between the Dagger GraphQL server and executable programs implementing an extension. On a high-level, it is responsible for:
+An Extension Runtime is the bridge between the Dagger GraphQL server and executable programs implementing an extension. On a high-level, it is responsible for:
 
 1. Receiving input from the Dagger server intended for resolving a single field in a GraphQL query.
 1. Based on that input, executing code that implements the resolver for that field.
