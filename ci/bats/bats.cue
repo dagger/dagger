@@ -87,7 +87,7 @@ import (
 				"mounts": mounts
 				workdir:  _workDir
 				script: contents: """
-					bats --jobs 4 --print-output-on-failure --verbose-run \(extraArgs) .
+					bats --print-output-on-failure --verbose-run \(extraArgs) .
 					"""
 			},
 		]

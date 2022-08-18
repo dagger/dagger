@@ -3,7 +3,7 @@ package terraform
 import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
-
+	"universe.dagger.io/docker"
 	"universe.dagger.io/alpha/terraform"
 )
 
@@ -34,10 +34,16 @@ dagger.#Plan & {
 				source: plan.output
 			}
 
-			verify: #AssertFile & {
+			verifyOutput: #AssertFile & {
 				input:    apply.output
 				path:     "./out.txt"
 				contents: "Hello, world!"
+			}
+
+			verifyDefaultVersion: #AssertFileRegex & {
+				input: apply.output
+				path:  "terraform.tfstate"
+				regex: string | *"1\\.2\\.7"
 			}
 		}
 
@@ -48,6 +54,7 @@ dagger.#Plan & {
 
 			// TODO assert out.txt doesn't exist
 		}
+
 		importWorkflow: {
 			init: terraform.#Init & {
 				source: tfImportSource.output
@@ -99,6 +106,74 @@ dagger.#Plan & {
 			}
 		}
 
+		versionWorkflow: {
+			// Set a terraform version for testing specific version of terraform
+			terraformVersion?: string
+
+			init: terraform.#Init & {
+				source:  tfSource.output
+				version: "1.2.6"
+			}
+
+			plan: terraform.#Plan & {
+				source:  init.output
+				version: "1.2.6"
+			}
+
+			apply: terraform.#Apply & {
+				always:  true
+				source:  plan.output
+				version: "1.2.6"
+			}
+
+			verify: #AssertFileRegex & {
+				input: apply.output
+				path:  "terraform.tfstate"
+				regex: string | *"1\\.2\\.6"
+			}
+		}
+
+		imageWorkflow: {
+			// Set a terraform version for testing specific version of terraform
+			_image: docker.#Pull & {
+				source: "hashicorp/terraform:1.2.7"
+			}
+
+			init: terraform.#Init & {
+				container: #input: _image.output
+				source: tfSource.output
+			}
+
+			workspaceNew: terraform.#Workspace & {
+				container: #input: _image.output
+				source: init.output
+				subCmd: "new"
+				name:   "TEST_WORKSPACE"
+			}
+
+			plan: terraform.#Plan & {
+				container: #input: _image.output
+				source: init.output
+			}
+
+			apply: terraform.#Apply & {
+				container: #input: _image.output
+				always: true
+				source: plan.output
+			}
+
+			verify: #AssertFileRegex & {
+				input: apply.output
+				path:  "terraform.tfstate"
+				regex: "1\\.2\\.7"
+			}
+
+			destroy: terraform.#Destroy & {
+				container: #input: _image.output
+				source: apply.output
+				container: #input: _image.output
+			}
+		}
 	}
 }
 
@@ -115,6 +190,24 @@ dagger.#Plan & {
 
 	actual: _read.contents
 
+	// Assertion
+	contents: actual
+}
+
+// Make an assertion on the contents of a file
+#AssertFileRegex: {
+	input: dagger.#FS
+	path:  string
+	regex: string
+
+	_read: core.#ReadFile & {
+		"input": input
+		"path":  path
+	}
+
+	actual: _read.contents
+
+	contents: =~regex
 	// Assertion
 	contents: actual
 }

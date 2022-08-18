@@ -23,6 +23,5 @@ package terraform
 		if name == _|_ {
 			cmdArgs: [subCmd]
 		}
-
 	}
 }
