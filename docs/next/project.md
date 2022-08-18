@@ -119,7 +119,7 @@ subgraph "Host OS"
 		end
 	end
 end
-  ```
+```
 
 ## Exploring the API
 
@@ -186,7 +186,7 @@ workflows:
 	deploy:
 		source: ./workflows/deploy
 		sdk: go
-``
+```
 
 ### Todo App (with extensions)
 
