@@ -6,10 +6,15 @@ import (
 	"universe.dagger.io/alpine"
 	"universe.dagger.io/docker"
 	"universe.dagger.io/bash"
+
+	"github.com/dagger/dagger/ci/git"
 )
 
 #Lint: {
 	source: dagger.#FS
+
+	// update git worktree source
+	_source: git.#Worktree & {"source": source}
 
 	docker.#Build & {
 		steps: [
@@ -20,8 +25,8 @@ import (
 			},
 
 			docker.#Copy & {
-				contents: source
-				"source": "go.mod"
+				contents: _source.output
+				source:   "go.mod"
 				dest:     "go.mod"
 			},
 
@@ -38,7 +43,7 @@ import (
 
 			// CACHE: copy only *.cue files
 			docker.#Copy & {
-				contents: source
+				contents: _source.output
 				include: [".git", "*.cue", "**/*.cue"]
 				dest: "/cue"
 			},

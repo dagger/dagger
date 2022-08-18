@@ -5,6 +5,8 @@ import (
 
 	"universe.dagger.io/docker"
 	"universe.dagger.io/go"
+
+	"github.com/dagger/dagger/ci/git"
 )
 
 // Lint using golangci-lint
@@ -22,9 +24,12 @@ import (
 		source: "golangci/golangci-lint:v\(version)"
 	}
 
-	go.#Container & {
-		"source": source
-		image:    _image.output
+	// update git worktree source
+	_source: git.#Worktree & {"source": source}
+
+	run: go.#Container & {
+		source: _source.output
+		image:  _image.output
 		command: {
 			name: "golangci-lint"
 			flags: {
