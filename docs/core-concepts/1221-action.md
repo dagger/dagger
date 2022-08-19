@@ -1,6 +1,7 @@
 ---
 slug: /1221/action
-displayed_sidebar: '0.2'
+displayed_sidebar: "0.2"
+pagination_prev: getting-started/how-it-works
 ---
 
 # Dagger Actions
