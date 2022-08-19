@@ -1,57 +1,161 @@
 # Project Cloak demo v2
 
+## Outline
+
+In this demo we follow a bottom-up learning path: start from the low-level
+concepts, then add abstractions.
+
+Pros: leads to better understanding of "how it all works"
+Cons: start with doing it "the hard way", the easy way is at the end
+
+1. Write a basic workflow the hard way: typescript, raw queries, no extensions
+2. Write a basic workflow the easy way: simplify by using an extension
+3. Write an intermediate workflow: go, client stubs, several extensions
+4. Move intermediate workflow to an extension
+5. Write a new extension
+
+
+## Scenario
+
 I want to improve the automation on my project: todoapp.
 
 Why?
 
 * See all my workflows in one place
-* Auto*caching makes everything faster
+* Auto-caching makes everything faster
 * Same behavior on everyone's machines
 * Reuse workflows between dev and CI
 * I can run expensive workflows on remote workers
 
-## 1. Checkout my project repository
+### 1. Writing a basic workflow, the hard way
+
+For my first workflow, I choose something simple that would benefit from running in Dagger: my yarn build.
+
+Checkout the project repository:
 
 ```bash
 git clone ssh://git@github.com/dagger/todoapp
 ```
 
-## 2. Write my first workflow: build
+Create a new directory for the build workflow:
 
-    [SCENARIO: typescript with raw gql]
+```bash
+mkdir -p todoapp/workflows/build
+```
 
-* Create project file `dagger.yaml`:
-  
-            ```yaml
-            workflows:
-                build:
-                    source: ./workflows
-                    sdk: typescript
-            ```
+Write the workflow configuration file to `todoapp/workflows/build/cloak.yaml`:
 
-  [P2: sdk is implicit via auto-discovery]
+```yaml
+sdk: typescript
+```
 
-* Create workflow directory `workflows`
+Write the workflow implementation to `todoapp/workflows/build/index.ts`:
 
-* Write workflow implementation `workflows/index.ts`
-  
-    ```typescript
-    ??? FIXME
-    ```
+FIXME: this is the easy way, expand to "the hard way" by removing yarn dependency
 
-* Write extra files for SDK
-  * package.json [P2: make package.json optional]
-  * tsconfig.json [P2: make tsconfig.json optional]
+```typescript
+// Build todoapp, the hard way
+import { client, gql, getKey } from "@dagger.io/dagger";
 
-* Run `dagger do` : shows new workflow in help message
-  
-* Run `dagger do build`: it works! Running my workflow
-  
-    [P2 bundle buildkit so I don't have to run it separately]
+// Install yarn in a container
+// FIXME: do it the hard way, no alpine package
+const base = await client.request(gql`
+  {
+    alpine {
+      build(pkgs: ["yarn", "git"]) {
+        id
+      }
+    }
+  }
+`)
+.then((result: any) => result.alpine.build)
 
-* Run `dagger do build` again: it's super fast because of caching
+// Load app source code from working directory
+const source = await client.request(gql`
+  {
+    host {
+      workdir {
+        id
+      }
+    }
+  }
+`)
+.then((result: any) => result.host.workdir.id)
 
-## 3. Simplify my workflow by using an EXTENSION
+// Run 'yarn install'
+const sourceWithDeps = await client.request(gql`
+  {
+    core {
+      filesystem(id: "${base.id}") {
+        exec(input: {
+          args: ["yarn", "install"], 
+          mounts: [{path: "/src", fs: "${source}"}],
+          workdir: "/src",
+        }) {
+          mount(path: "/src") {
+            id
+          }
+        }
+      }
+    }
+  }
+`)
+.then((result: any) => result.core.filesystem.exec.mount);
+
+// Run 'yarn run build'
+const sourceWithBuild = await client.request(gql`
+  {
+    core {
+      filesystem(id: "${base.id}") {
+        exec(input: {
+          args: ["yarn", "run", "build"],
+          mounts: [{path: "/src", fs: "${sourceWithDeps.id}"}],
+          workdir: "/src",
+        }) {
+          mount(path: "/src") {
+            id
+          }
+        }
+      }
+    }
+  }
+`)
+.then((result: any) => result.core.filesystem.exec.mount);
+```
+
+Write a typescript package file to `todoapp/workflows/build/package.json`:
+
+```json
+FIXME
+```
+
+And another file to `todoapp/workflows/build/tsconfig.json`:
+
+```json
+FIXME
+```
+
+Use the Dagger SDK to generate the rest of the code:
+
+```bash
+cloak -p todoapp/workflows/build generate
+```
+
+Run the workflow:
+
+FIXME
+
+It works! My workflow is running
+
+Run it again:
+
+FIXME
+
+It's super fast because of caching.
+
+### 2. Writing a basic workflow the easy way, using an extension
+
+FIXME: clean up
 
   * Add yarn extension in my workflow dependencies `dagger.yaml`
     [P1 dependencies can be loaded from "fake universe", actually a configurable local directory]
@@ -60,7 +164,7 @@ git clone ssh://git@github.com/dagger/todoapp
   * Simplify `index.ts`
   * Run `dagger do`: it works again!
 
-## 4. Write my second workflow: deploy
+### 3. Writing an intermediate workflow
 
   * Add `deploy` workflow in `dagger.yaml`
   * Write workflow implementation in `workflows/index.ts`
@@ -71,8 +175,13 @@ git clone ssh://git@github.com/dagger/todoapp
   * Run again with extra parameters
     * [P2: support passing parameters to workflow]
     * [P1: consensus on how paramters will be passed to workflows in the future]
-  
 
-## 5. Write my own extension: vercel!
+### 4. Moving a workflow to an extension
 
-[P2: implement a working vercel extension]
+FIXME
+
+### 5. Writing a new extension
+
+FIXME
+
+Vercel!
