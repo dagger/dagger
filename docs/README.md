@@ -29,12 +29,12 @@ This will install all dependencies, start the docs web server locally and open [
 ```
 
 1. From the `docs` dir, run `./new.sh my-doc-title`
-This will create a new Markdown file for the new doc page with a random ID, e.g `docs/f1a2c-my-doc-title.md`
+   This will create a new Markdown file for the new doc page with a random ID, e.g `docs/f1a2c-my-doc-title.md`
 
 2. After executing the `./new.sh` command, make sure to previsualize the new doc by running the `make web` command from the root directory. This will trigger `docusaurus start`, [creating a local dev server](https://docusaurus.io/docs/cli#docusaurus-start-sitedir).  
-`make web` **is required** when creating a new doc because it exports a new `_redirects` file, located in `/website/static/_redirects`. This is a configuration file that maps the docs ID with their respective filename, so every doc can also be reached with only the UUID in the URL.  
-Try it out and you'll see how `https://docs.dagger.io/1247` redirects to `https://docs.dagger.io/1247/dagger-fs`  
-Don't worry if the redirection doesn't work in your new doc, as it's a server-side implementation that will only take effect in production. Just make sure it has the same format as the rest of the mappings in the `_redirects` file.
+   `make web` **is required** when creating a new doc because it exports a new `_redirects` file, located in `/website/static/_redirects`. This is a configuration file that maps the docs ID with their respective filename, so every doc can also be reached with only the UUID in the URL.  
+   Try it out and you'll see how `https://docs.dagger.io/1247` redirects to `https://docs.dagger.io/1247/dagger-fs`  
+   Don't worry if the redirection doesn't work in your new doc, as it's a server-side implementation that will only take effect in production. Just make sure it has the same format as the rest of the mappings in the `_redirects` file.
 
 3. Once created and previsualized, run `npx docusaurus build` from the `/website` directory. This command verifies no links are broken when parsing markdown, among other things, so it's a good way to "test" your new doc.
 
@@ -42,6 +42,11 @@ This new doc will not be added to the navigation.
 We prefer to keep the organisation of doc pages, and writing them separate.
 For the time being - 2022 Q1 - the focus is on writing self-contained doc content.
 Don't worry about where to fit this content, it's enough to keep this in mind: [Writing effective documentation](https://www.youtube.com/watch?v=R6zeikbTgVc&t=19s).
+
+## Debugging
+
+A [debug plugin](https://docusaurus.io/docs/api/plugins/@docusaurus/plugin-debug) is available at `http://localhost:3000/__docusaurus/debug`.  
+This is a great resource to help you solve common problems that show up in your terminal when starting a local dev server.
 
 ## What else should I keep in mind as I add new doc pages?
 
