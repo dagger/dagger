@@ -1,1 +1,3 @@
-name: "alpine"
+name: alpine
+sources:
+  - path: .

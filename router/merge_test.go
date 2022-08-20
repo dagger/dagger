@@ -7,38 +7,38 @@ import (
 )
 
 func TestMergeObjects(t *testing.T) {
-	merged, err := Merge("",
-		&staticSchema{
-			schema: `
+	merged, err := MergeExecutableSchemas("",
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			type TypeA {
 				fieldA: String
 			}
 			`,
-			operations: `
+			Operations: `
 			query QueryA {}
 			`,
-			resolvers: Resolvers{
+			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
 				},
 			},
-		},
+		}),
 
-		&staticSchema{
-			schema: `
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			type TypeB {
 				fieldB: String
 			}
 			`,
-			operations: `
+			Operations: `
 			query QueryB {}
 			`,
-			resolvers: Resolvers{
+			Resolvers: Resolvers{
 				"TypeB": ObjectResolver{
 					"fieldB": nil,
 				},
 			},
-		},
+		}),
 	)
 	require.NoError(t, err)
 
@@ -61,34 +61,34 @@ func TestMergeObjects(t *testing.T) {
 }
 
 func TestMergeFieldExtend(t *testing.T) {
-	merged, err := Merge("",
-		&staticSchema{
-			schema: `
+	merged, err := MergeExecutableSchemas("",
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			type TypeA {
 				fieldA: String
 			}
 			`,
-			operations: ``,
-			resolvers: Resolvers{
+			Operations: ``,
+			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
 				},
 			},
-		},
+		}),
 
-		&staticSchema{
-			schema: `
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			extend Type A {
 				fieldB: String
 			}
 			`,
-			operations: ``,
-			resolvers: Resolvers{
+			Operations: ``,
+			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldB": nil,
 				},
 			},
-		},
+		}),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, merged)
@@ -100,84 +100,84 @@ func TestMergeFieldExtend(t *testing.T) {
 }
 
 func TestMergeFieldConflict(t *testing.T) {
-	_, err := Merge("",
-		&staticSchema{
-			schema: `
+	_, err := MergeExecutableSchemas("",
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			type TypeA {
 				fieldA: String
 			}
 			`,
-			operations: ``,
-			resolvers: Resolvers{
+			Operations: ``,
+			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
 				},
 			},
-		},
+		}),
 
-		&staticSchema{
-			schema: `
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			extend TypeA {
 				fieldA: String
 			}
 			`,
-			operations: ``,
-			resolvers: Resolvers{
+			Operations: ``,
+			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
 				},
 			},
-		},
+		}),
 	)
 	require.ErrorIs(t, err, ErrMergeFieldConflict)
 }
 
 func TestMergeTypeConflict(t *testing.T) {
-	_, err := Merge("",
-		&staticSchema{
-			schema: `
+	_, err := MergeExecutableSchemas("",
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			type TypeA {
 				fieldA: String
 			}
 			`,
-			resolvers: Resolvers{
+			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
 				},
 			},
-		},
+		}),
 
-		&staticSchema{
-			schema: `
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			scalar TypeA
 			`,
-			resolvers: Resolvers{
+			Resolvers: Resolvers{
 				"TypeA": ScalarResolver{},
 			},
-		},
+		}),
 	)
 	require.ErrorIs(t, err, ErrMergeTypeConflict)
 }
 
 func TestMergeScalars(t *testing.T) {
-	merged, err := Merge("",
-		&staticSchema{
-			schema: `
+	merged, err := MergeExecutableSchemas("",
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			scalar TypeA
 			`,
-			resolvers: Resolvers{
+			Resolvers: Resolvers{
 				"TypeA": ScalarResolver{},
 			},
-		},
+		}),
 
-		&staticSchema{
-			schema: `
+		StaticSchema(StaticSchemaParams{
+			Schema: `
 			scalar TypeB
 			`,
-			resolvers: Resolvers{
+			Resolvers: Resolvers{
 				"TypeB": ScalarResolver{},
 			},
-		},
+		}),
 	)
 	require.NoError(t, err)
 
@@ -189,20 +189,20 @@ func TestMergeScalars(t *testing.T) {
 }
 
 func TestMergeScalarConflict(t *testing.T) {
-	_, err := Merge("",
-		&staticSchema{
-			schema: `scalar TypeA`,
-			resolvers: Resolvers{
+	_, err := MergeExecutableSchemas("",
+		StaticSchema(StaticSchemaParams{
+			Schema: `scalar TypeA`,
+			Resolvers: Resolvers{
 				"TypeA": ScalarResolver{},
 			},
-		},
+		}),
 
-		&staticSchema{
-			schema: `scalar TypeA`,
-			resolvers: Resolvers{
+		StaticSchema(StaticSchemaParams{
+			Schema: `scalar TypeA`,
+			Resolvers: Resolvers{
 				"TypeA": ScalarResolver{},
 			},
-		},
+		}),
 	)
 	require.ErrorIs(t, err, ErrMergeScalarConflict)
 }

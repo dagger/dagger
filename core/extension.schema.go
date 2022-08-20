@@ -49,11 +49,11 @@ func (s *extensionSchema) Schema() string {
 		dependencies: [Extension!]
 
 		"install the extension, stitching its schema into the API"
-		install: Filesystem!
+		install: Boolean!
 	}
 
 	extend type Filesystem {
-		"load an extension into the API"
+		"load an extension's metadata"
 		loadExtension(configPath: String!): Extension!
 	}
 
@@ -98,7 +98,7 @@ func (s *extensionSchema) install(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	return executableSchema.RuntimeFS(), nil
+	return true, nil
 }
 
 func (s *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {

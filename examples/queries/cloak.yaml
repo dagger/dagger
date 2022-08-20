@@ -1,15 +1,10 @@
-extensions:
-  alpine:
-    local: examples/alpine
-  # yarn:
-  #   local: examples/yarn
-  # netlify:
-  #   local: examples/netlify/ts
-  # # Registry
-  # alpine:
-  #   image: localhost:5555/dagger:alpine
+dependencies:
+  - local: examples/alpine
+  - local: examples/yarn
+  - local: examples/netlify/ts
+  # Registry (not yet supported)
+  # - image: localhost:5555/dagger:alpine
   # # Git (not yet supported)
-  # netlify:
-  #   git: https://github.com/dagger/cloak.git
-  #   dockerfile: examples/netlify/Dockerfile
-context: ../..
+  # - git: https://github.com/dagger/cloak.git
+  # # Dockerfile (not yet supported)
+  # - dockerfile: examples/netlify/Dockerfile

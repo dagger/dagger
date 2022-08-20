@@ -1,1 +1,3 @@
-name: "netlify"
+name: netlify
+sources:
+  - path: .

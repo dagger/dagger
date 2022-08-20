@@ -1,5 +1,6 @@
-name: "todoapp"
-extensions:
-  - local: ../../alpine/cloak.yaml
+name: todoapp
+sources:
+  - path: .
+dependencies:
   - local: ../../yarn/cloak.yaml
   - local: ../../netlify/ts/cloak.yaml

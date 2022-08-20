@@ -4,10 +4,14 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-type ExecutableSchema interface {
+type LoadedSchema interface {
 	Name() string
 	Schema() string
 	Operations() string
+}
+
+type ExecutableSchema interface {
+	LoadedSchema
 	Resolvers() Resolvers
 	Dependencies() []ExecutableSchema
 }
@@ -30,32 +34,40 @@ type ScalarResolver struct {
 
 func (ScalarResolver) _resolver() {}
 
+type StaticSchemaParams struct {
+	Name         string
+	Schema       string
+	Operations   string
+	Resolvers    Resolvers
+	Dependencies []ExecutableSchema
+}
+
+func StaticSchema(p StaticSchemaParams) ExecutableSchema {
+	return &staticSchema{p}
+}
+
 var _ ExecutableSchema = &staticSchema{}
 
 type staticSchema struct {
-	name         string
-	schema       string
-	operations   string
-	resolvers    Resolvers
-	dependencies []ExecutableSchema
+	StaticSchemaParams
 }
 
 func (s *staticSchema) Name() string {
-	return s.name
+	return s.StaticSchemaParams.Name
 }
 
 func (s *staticSchema) Schema() string {
-	return s.schema
+	return s.StaticSchemaParams.Schema
 }
 
 func (s *staticSchema) Operations() string {
-	return s.operations
+	return s.StaticSchemaParams.Operations
 }
 
 func (s *staticSchema) Resolvers() Resolvers {
-	return s.resolvers
+	return s.StaticSchemaParams.Resolvers
 }
 
 func (s *staticSchema) Dependencies() []ExecutableSchema {
-	return s.dependencies
+	return s.StaticSchemaParams.Dependencies
 }

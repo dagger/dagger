@@ -45,7 +45,7 @@ func (r *Router) Add(schema ExecutableSchema) error {
 		return newSchemas[i].Name() < newSchemas[j].Name()
 	})
 
-	merged, err := Merge("", newSchemas...)
+	merged, err := MergeExecutableSchemas("", newSchemas...)
 	if err != nil {
 		return err
 	}
