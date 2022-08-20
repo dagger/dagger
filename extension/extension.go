@@ -40,64 +40,71 @@ const (
 	outputFile      = "/dagger.json"
 )
 
-// RemoteSchema holds the schema, operations and other project configuration
-// of an extension, but has not yet been "compiled" with an SDK to an executable
-// extension. This allows obtaining the project metadata without necessarily
+// RemoteSchema holds the schema, operations and other configuration of an
+// extension, but has not yet been "compiled" with an SDK to an executable
+// extension. This allows obtaining the extension metadata without necessarily
 // being able to build it yet.
 type RemoteSchema struct {
 	gw         bkgw.Client
 	platform   specs.Platform
-	projectFS  *filesystem.Filesystem
+	contextFS  *filesystem.Filesystem
 	configPath string
 
-	name         string
-	sdl          string
-	operations   string
+	router.LoadedSchema
 	dependencies []*RemoteSchema
 }
 
-func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, projectFS *filesystem.Filesystem, configPath string) (*RemoteSchema, error) {
-	cloakCfgBytes, err := projectFS.ReadFile(ctx, gw, configPath)
+func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string) (*RemoteSchema, error) {
+	cfgBytes, err := contextFS.ReadFile(ctx, gw, configPath)
 	if err != nil {
 		return nil, err
 	}
-	cloakCfg, err := ParseConfig(cloakCfgBytes)
+	cfg, err := ParseConfig(cfgBytes)
 	if err != nil {
 		return nil, err
-	}
-
-	// schema and operations are both optional, ignore file not found errors
-	sdl, err := projectFS.ReadFile(ctx, gw, filepath.Join(filepath.Dir(configPath), schemaPath))
-	if err != nil && !isGatewayFileNotFound(err) {
-		return nil, err
-	}
-	operations, err := projectFS.ReadFile(ctx, gw, filepath.Join(filepath.Dir(configPath), operationsPath))
-	if err != nil && !isGatewayFileNotFound(err) {
-		return nil, err
-	}
-
-	// verify the schema is valid
-	if len(sdl) > 0 {
-		if _, err := parser.Parse(parser.ParseParams{Source: sdl}); err != nil {
-			return nil, err
-		}
 	}
 
 	s := &RemoteSchema{
 		gw:         gw,
 		platform:   platform,
-		projectFS:  projectFS,
+		contextFS:  contextFS,
 		configPath: configPath,
-		name:       cloakCfg.Name,
-		sdl:        string(sdl),
-		operations: string(operations),
 	}
 
-	for _, ext := range cloakCfg.Extensions {
-		// TODO:(sipsma) support more than just Local
-		if ext.Local != "" {
-			depConfigPath := filepath.Join(filepath.Dir(configPath), ext.Local)
-			depSchema, err := Load(ctx, gw, platform, projectFS, depConfigPath)
+	var sourceSchemas []router.LoadedSchema
+	for _, src := range cfg.Sources {
+		sdl, err := contextFS.ReadFile(ctx, gw, filepath.Join(
+			filepath.Dir(configPath),
+			src.Path,
+			schemaPath,
+		))
+		if err != nil && !isGatewayFileNotFound(err) {
+			return nil, err
+		}
+
+		operations, err := contextFS.ReadFile(ctx, gw, filepath.Join(
+			filepath.Dir(configPath),
+			src.Path,
+			operationsPath,
+		))
+		if err != nil && !isGatewayFileNotFound(err) {
+			return nil, err
+		}
+
+		sourceSchemas = append(sourceSchemas, router.StaticSchema(router.StaticSchemaParams{
+			Schema:     string(sdl),
+			Operations: string(operations),
+		}))
+	}
+	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
+
+	for _, dep := range cfg.Dependencies {
+		switch {
+		case dep.Local != "":
+			depConfigPath := filepath.Join(filepath.Dir(configPath), dep.Local)
+			// TODO:(sipsma) guard against infinite recursion
+			// TODO:(sipsma) deduplicate load of same dependencies (same as compile)
+			depSchema, err := Load(ctx, gw, platform, contextFS, depConfigPath)
 			if err != nil {
 				return nil, err
 			}
@@ -108,35 +115,23 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, projectF
 	return s, nil
 }
 
-func (s *RemoteSchema) Name() string {
-	return s.name
-}
-
-func (s *RemoteSchema) Schema() string {
-	return s.sdl
-}
-
-func (s *RemoteSchema) Operations() string {
-	return s.operations
-}
-
 func (s *RemoteSchema) Dependencies() []*RemoteSchema {
 	return s.dependencies
 }
 
 func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRemoteSchema, l *sync.RWMutex, sf *singleflight.Group) (*CompiledRemoteSchema, error) {
-	res, err, _ := sf.Do(s.name, func() (interface{}, error) {
+	res, err, _ := sf.Do(s.Name(), func() (interface{}, error) {
 		// if we have already compiled a schema with this name, return it
 		// TODO:(sipsma) should check that schema is actually the same, error out if not
 		l.RLock()
-		cached, ok := cache[s.name]
+		cached, ok := cache[s.Name()]
 		l.RUnlock()
 		if ok {
 			return cached, nil
 		}
 
 		// TODO:(sipsma) hardcoding use of a "dockerfile sdk", should obviously be generalized
-		def, err := s.projectFS.ToDefinition()
+		def, err := s.contextFS.ToDefinition()
 		if err != nil {
 			return nil, err
 		}
@@ -153,6 +148,7 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			Frontend:       "dockerfile.v0",
 			FrontendOpt:    opts,
 			FrontendInputs: inputs,
+			Evaluate:       true,
 		})
 		if err != nil {
 			return nil, err
@@ -167,18 +163,17 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			return nil, err
 		}
 
-		fs, err := filesystem.FromState(ctx, st, s.platform)
+		runtimeFS, err := filesystem.FromState(ctx, st, s.platform)
 		if err != nil {
 			return nil, err
 		}
 
 		compiled := &CompiledRemoteSchema{
 			RemoteSchema: s,
-			runtimeFS:    fs,
 			resolvers:    router.Resolvers{},
 		}
 
-		doc, err := parser.Parse(parser.ParseParams{Source: s.sdl})
+		doc, err := parser.Parse(parser.ParseParams{Source: s.Schema()})
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +195,7 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			objResolver := router.ObjectResolver{}
 			compiled.resolvers[obj.Name.Value] = objResolver
 			for _, field := range obj.Fields {
-				objResolver[field.Name.Value] = compiled.resolve
+				objResolver[field.Name.Value] = compiled.resolver(runtimeFS)
 			}
 		}
 
@@ -214,7 +209,7 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 		}
 
 		l.Lock()
-		cache[s.name] = compiled
+		cache[s.Name()] = compiled
 		l.Unlock()
 		return compiled, nil
 	})
@@ -225,10 +220,9 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 }
 
 // CompiledRemoteSchema is the compiled version of RemoteSchema where the
-// SDK has built the input project FS into an executable extension.
+// SDK has built its input into an executable extension.
 type CompiledRemoteSchema struct {
 	RemoteSchema
-	runtimeFS    *filesystem.Filesystem
 	dependencies []router.ExecutableSchema
 	resolvers    router.Resolvers
 }
@@ -243,81 +237,79 @@ func (s *CompiledRemoteSchema) Dependencies() []router.ExecutableSchema {
 	return s.dependencies
 }
 
-func (s *CompiledRemoteSchema) RuntimeFS() *filesystem.Filesystem {
-	return s.runtimeFS
-}
+func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		pathArray := p.Info.Path.AsArray()
+		name := fmt.Sprintf("%+v", pathArray)
 
-func (s *CompiledRemoteSchema) resolve(p graphql.ResolveParams) (any, error) {
-	pathArray := p.Info.Path.AsArray()
-	name := fmt.Sprintf("%+v", pathArray)
-
-	resolverName := fmt.Sprintf("%s.%s", p.Info.ParentType.Name(), p.Info.FieldName)
-	inputMap := map[string]interface{}{
-		"resolver": resolverName,
-		"args":     p.Args,
-		"parent":   p.Source,
-	}
-	inputBytes, err := json.Marshal(inputMap)
-	if err != nil {
-		return nil, err
-	}
-	input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
-
-	fsState, err := s.runtimeFS.ToState()
-	if err != nil {
-		return nil, err
-	}
-
-	st := fsState.Run(
-		llb.Args([]string{entrypointPath}),
-		llb.AddSSHSocket(
-			llb.SSHID(daggerSockName),
-			llb.SSHSocketTarget(daggerSockPath),
-		),
-		llb.AddMount(inputMountPath, input, llb.Readonly),
-		llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
-		llb.ReadonlyRootFS(),
-	)
-
-	// TODO: /mnt should maybe be configurable?
-	for path, fsid := range collectFSPaths(p.Args, fsMountPath, nil) {
-		fs := filesystem.New(fsid)
-		fsState, err := fs.ToState()
+		resolverName := fmt.Sprintf("%s.%s", p.Info.ParentType.Name(), p.Info.FieldName)
+		inputMap := map[string]interface{}{
+			"resolver": resolverName,
+			"args":     p.Args,
+			"parent":   p.Source,
+		}
+		inputBytes, err := json.Marshal(inputMap)
 		if err != nil {
 			return nil, err
 		}
-		// TODO: it should be possible for this to be outputtable by the action; the only question
-		// is how to expose that ability in a non-confusing way, just needs more thought
-		st.AddMount(path, fsState, llb.ForceNoOutput)
-	}
+		input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
 
-	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-	outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(s.platform), llb.WithCustomName(name))
-	if err != nil {
-		return nil, err
-	}
+		fsState, err := runtimeFS.ToState()
+		if err != nil {
+			return nil, err
+		}
 
-	res, err := s.gw.Solve(p.Context, bkgw.SolveRequest{
-		Definition: outputDef.ToPB(),
-	})
-	if err != nil {
-		return nil, err
+		st := fsState.Run(
+			llb.Args([]string{entrypointPath}),
+			llb.AddSSHSocket(
+				llb.SSHID(daggerSockName),
+				llb.SSHSocketTarget(daggerSockPath),
+			),
+			llb.AddMount(inputMountPath, input, llb.Readonly),
+			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
+			llb.ReadonlyRootFS(),
+		)
+
+		// TODO: /mnt should maybe be configurable?
+		for path, fsid := range collectFSPaths(p.Args, fsMountPath, nil) {
+			fs := filesystem.New(fsid)
+			fsState, err := fs.ToState()
+			if err != nil {
+				return nil, err
+			}
+			// TODO: it should be possible for this to be outputtable by the action; the only question
+			// is how to expose that ability in a non-confusing way, just needs more thought
+			st.AddMount(path, fsState, llb.ForceNoOutput)
+		}
+
+		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
+		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(s.platform), llb.WithCustomName(name))
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := s.gw.Solve(p.Context, bkgw.SolveRequest{
+			Definition: outputDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+		outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
+			Filename: outputFile,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var output interface{}
+		if err := json.Unmarshal(outputBytes, &output); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+		}
+		return output, nil
 	}
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
-		Filename: outputFile,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var output interface{}
-	if err := json.Unmarshal(outputBytes, &output); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal output: %w", err)
-	}
-	return output, nil
 }
 
 func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesystem.FSID) map[string]filesystem.FSID {

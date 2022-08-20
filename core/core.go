@@ -19,7 +19,7 @@ func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform s
 		gw:          gw,
 		platform:    platform,
 	}
-	return router.Merge("core",
+	return router.MergeExecutableSchemas("core",
 		&coreSchema{base},
 
 		&filesystemSchema{base},

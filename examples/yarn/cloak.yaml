@@ -1,3 +1,5 @@
-name: "yarn"
-extensions:
+name: yarn
+sources:
+  - path: .
+dependencies:
   - local: ../alpine/cloak.yaml

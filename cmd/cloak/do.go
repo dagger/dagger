@@ -157,9 +157,7 @@ func installProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSI
 				core {
 					filesystem(id: $fs) {
 						loadExtension(configPath: $configPath) {
-							install {
-								id
-							}
+							install
 							operations
 						}
 					}

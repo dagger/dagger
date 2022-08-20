@@ -3,12 +3,17 @@ package extension
 import "gopkg.in/yaml.v2"
 
 type Config struct {
-	// TODO: support for codedir not in root, multiple code dirs, location of schema files, etc.
-	Name       string `yaml:"name"`
-	Extensions []*struct {
-		// TODO: placeholder, currently only support extensions in other local dirs, should be much more flexible
-		Local string `yaml:"local,omitempty"`
-	} `yaml:"extensions,omitempty"`
+	Name         string        `yaml:"name"`
+	Dependencies []*Dependency `yaml:"dependencies,omitempty"`
+	Sources      []*Source     `yaml:"sources,omitempty"`
+}
+
+type Source struct {
+	Path string `yaml:"path"`
+}
+
+type Dependency struct {
+	Local string `yaml:"local,omitempty"`
 }
 
 func ParseConfig(data []byte) (*Config, error) {
