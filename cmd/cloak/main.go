@@ -41,6 +41,7 @@ func init() {
 	generateCmd.Flags().StringVar(&sdkType, "sdk", "", "sdk type to generate code for ('go', 'ts', etc.)")
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
+	devCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
 }
 
 var rootCmd = &cobra.Command{

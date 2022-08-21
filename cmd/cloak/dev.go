@@ -16,9 +16,8 @@ var devCmd = &cobra.Command{
 }
 
 func Dev(cmd *cobra.Command, args []string) {
-	localDirs := map[string]string{
-		projectContextLocalName: projectContext,
-	}
+	localDirs := getKVInput(localDirsInput)
+	localDirs[projectContextLocalName] = projectContext
 	startOpts := &engine.Config{
 		LocalDirs: localDirs,
 		DevServer: devServerPort,
