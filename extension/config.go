@@ -10,6 +10,7 @@ type Config struct {
 
 type Source struct {
 	Path string `yaml:"path"`
+	SDK  string `yaml:"sdk"`
 }
 
 type Dependency struct {

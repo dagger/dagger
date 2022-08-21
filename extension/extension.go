@@ -8,16 +8,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
-	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/singleflight"
 )
@@ -52,6 +49,7 @@ type RemoteSchema struct {
 
 	router.LoadedSchema
 	dependencies []*RemoteSchema
+	sources      []*Source
 }
 
 func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string) (*RemoteSchema, error) {
@@ -69,6 +67,7 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		platform:   platform,
 		contextFS:  contextFS,
 		configPath: configPath,
+		sources:    cfg.Sources,
 	}
 
 	var sourceSchemas []router.LoadedSchema
@@ -130,72 +129,55 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			return cached, nil
 		}
 
-		// TODO:(sipsma) hardcoding use of a "dockerfile sdk", should obviously be generalized
-		def, err := s.contextFS.ToDefinition()
-		if err != nil {
-			return nil, err
-		}
-
-		opts := map[string]string{
-			"platform": platforms.Format(s.platform),
-			"filename": filepath.Join(filepath.Dir(s.configPath), "Dockerfile"),
-		}
-		inputs := map[string]*pb.Definition{
-			dockerfilebuilder.DefaultLocalNameContext:    def,
-			dockerfilebuilder.DefaultLocalNameDockerfile: def,
-		}
-		res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
-			Frontend:       "dockerfile.v0",
-			FrontendOpt:    opts,
-			FrontendInputs: inputs,
-			Evaluate:       true,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		bkref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-		st, err := bkref.ToState()
-		if err != nil {
-			return nil, err
-		}
-
-		runtimeFS, err := filesystem.FromState(ctx, st, s.platform)
-		if err != nil {
-			return nil, err
-		}
-
 		compiled := &CompiledRemoteSchema{
 			RemoteSchema: s,
 			resolvers:    router.Resolvers{},
 		}
 
-		doc, err := parser.Parse(parser.ParseParams{Source: s.Schema()})
-		if err != nil {
-			return nil, err
-		}
-		for _, def := range doc.Definitions {
-			var obj *ast.ObjectDefinition
-
-			if def, ok := def.(*ast.ObjectDefinition); ok {
-				obj = def
+		for _, src := range s.sources {
+			var runtimeFS *filesystem.Filesystem
+			var err error
+			switch src.SDK {
+			case "go":
+				runtimeFS, err = goRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
+			case "ts":
+				runtimeFS, err = tsRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
+			case "dockerfile":
+				runtimeFS, err = dockerfileRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
+			default:
+				return nil, fmt.Errorf("unknown sdk %q", src.SDK)
+			}
+			if err != nil {
+				return nil, err
+			}
+			if err := runtimeFS.Evaluate(ctx, s.gw); err != nil {
+				return nil, err
 			}
 
-			if def, ok := def.(*ast.TypeExtensionDefinition); ok {
-				obj = def.Definition
+			doc, err := parser.Parse(parser.ParseParams{Source: s.Schema()})
+			if err != nil {
+				return nil, err
 			}
+			for _, def := range doc.Definitions {
+				var obj *ast.ObjectDefinition
 
-			if obj == nil {
-				continue
-			}
+				if def, ok := def.(*ast.ObjectDefinition); ok {
+					obj = def
+				}
 
-			objResolver := router.ObjectResolver{}
-			compiled.resolvers[obj.Name.Value] = objResolver
-			for _, field := range obj.Fields {
-				objResolver[field.Name.Value] = compiled.resolver(runtimeFS)
+				if def, ok := def.(*ast.TypeExtensionDefinition); ok {
+					obj = def.Definition
+				}
+
+				if obj == nil {
+					continue
+				}
+
+				objResolver := router.ObjectResolver{}
+				compiled.resolvers[obj.Name.Value] = objResolver
+				for _, field := range obj.Fields {
+					objResolver[field.Name.Value] = compiled.resolver(runtimeFS)
+				}
 			}
 		}
 
