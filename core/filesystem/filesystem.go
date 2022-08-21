@@ -44,6 +44,18 @@ func (f *Filesystem) ToState() (llb.State, error) {
 	return llb.NewState(defop), nil
 }
 
+func (f *Filesystem) Evaluate(ctx context.Context, gw bkgw.Client) error {
+	def, err := f.ToDefinition()
+	if err != nil {
+		return err
+	}
+	_, err = gw.Solve(ctx, bkgw.SolveRequest{
+		Definition: def,
+		Evaluate:   true,
+	})
+	return err
+}
+
 func (f *Filesystem) ReadFile(ctx context.Context, gw bkgw.Client, path string) ([]byte, error) {
 	def, err := f.ToDefinition()
 	if err != nil {
