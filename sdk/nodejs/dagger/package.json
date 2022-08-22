@@ -6,10 +6,11 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.0",
-    "apollo-server": "^3.10.0",
     "axios": "^0.27.2",
     "graphql": "^16.5.0",
-    "graphql-request": "^4.3.0"
+    "graphql-request": "^4.3.0",
+    "graphql-tag": "^2.12.6",
+    "node-fetch": "^3.2.10"
   },
   "scripts": {
     "build": "tsc"
