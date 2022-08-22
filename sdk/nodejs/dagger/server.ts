@@ -1,4 +1,4 @@
-import { Client } from "./client";
+import type { Client } from "./client.js";
 
 import * as fs from "fs";
 
