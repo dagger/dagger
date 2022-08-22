@@ -70,8 +70,8 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		sources:    cfg.Sources,
 	}
 
-	var sourceSchemas []router.LoadedSchema
-	for _, src := range cfg.Sources {
+	sourceSchemas := make([]router.LoadedSchema, len(cfg.Sources))
+	for i, src := range cfg.Sources {
 		sdl, err := contextFS.ReadFile(ctx, gw, filepath.Join(
 			filepath.Dir(configPath),
 			src.Path,
@@ -90,16 +90,15 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 			return nil, err
 		}
 
-		sourceSchemas = append(sourceSchemas, router.StaticSchema(router.StaticSchemaParams{
+		sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
 			Schema:     string(sdl),
 			Operations: string(operations),
-		}))
+		})
 	}
 	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
 
 	for _, dep := range cfg.Dependencies {
-		switch {
-		case dep.Local != "":
+		if dep.Local != "" {
 			depConfigPath := filepath.Join(filepath.Dir(configPath), dep.Local)
 			// TODO:(sipsma) guard against infinite recursion
 			// TODO:(sipsma) deduplicate load of same dependencies (same as compile)
