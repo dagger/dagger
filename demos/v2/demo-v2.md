@@ -43,13 +43,19 @@ Create a new directory for the build workflow:
 mkdir -p todoapp/workflows/build
 ```
 
-Write the workflow configuration file to `todoapp/workflows/build/cloak.yaml`:
+With the help of the API sandbox, let's write the workflow configuration file to `todoapp/workflows/build/cloak.yaml`:
 
 ```yaml
 sdk: typescript
 ```
 
-Write the workflow implementation to `todoapp/workflows/build/index.ts`:
+Let's open the API sandbox to figure out what to write in our workflow:
+
+```bash
+cloak dev
+```
+
+With the help of the API sandbox, we can write the workflow implementation to `todoapp/workflows/build/index.ts`:
 
 FIXME: this is the easy way, expand to "the hard way" by removing yarn dependency
 
@@ -121,6 +127,8 @@ const sourceWithBuild = await client.request(gql`
   }
 `)
 .then((result: any) => result.core.filesystem.exec.mount);
+
+// FIXME: write result to workdir
 ```
 
 Write a typescript package file to `todoapp/workflows/build/package.json`:
@@ -143,28 +151,144 @@ cloak -p todoapp/workflows/build generate
 
 Run the workflow:
 
-FIXME
+```bash
+FIXME.
+```
 
 It works! My workflow is running
 
 Run it again:
 
+```bash
 FIXME
+```
 
-It's super fast because of caching.
+My workflow is now running in containers.
+It's super fast because of caching, portable, and easy to scale.
 
 ### 2. Writing a basic workflow the easy way, using an extension
 
-FIXME: clean up
+Let's make our workflow simpler by using a crucial feature of Dagger: *API extensions*. Most of our code just tells cloak to 1) build a container with yarn installed, and 2) execute that container in a certain way. What if we the Dagger API already knew how to do that? That's what API extensions are for.
 
-  * Add yarn extension in my workflow dependencies `dagger.yaml`
-    [P1 dependencies can be loaded from "fake universe", actually a configurable local directory]
-    
-  * Craft new, simpler queries in interactive sandbox
-  * Simplify `index.ts`
-  * Run `dagger do`: it works again!
+Add a dependency to the yarn extension in your workflow configuration file, and write it to `todoapp/workflows/build/cloak.yaml`:
+
+```yaml
+sdk: typescript
+dependencies:
+  -
+    source: git
+    remote: ssh://git@github.com/dagger/cloak
+    ref: main
+    path: examples/yarn/ts
+```
+
+*Note: since the cloak repository is still private, make sure your machine is correctly configured with ssh access*
+
+*FIXME: cloak does not yet support transient dependencies. Since `yarn` currently depends on `alpine`, that dependency needs to be added also.*
+
+
+Relaunch the API sandbox to explore new available API queries:
+
+```bash
+cloak dev
+```
+
+Edit the workflow implementation to use the yarn extension in our API calls. Note that the implementation is now much shorter:
+
+```typescript
+// Build todoapp, the hard way
+import { client, gql, getKey } from "@dagger.io/dagger";
+
+// Load app source code from working directory
+const source = await client.request(gql`
+  {
+    host {
+      workdir {
+        id
+      }
+    }
+  }
+`)
+.then((result: any) => result.host.workdir.id)
+
+// Run yarn build script
+const build = await client.request(gql`
+{
+  yarn {
+    project(source: ${source.id}) {
+      script (name: "build") {
+        run {
+          output
+        }
+      }
+    }
+  }
+}
+`)
+.then({result: any} => result.yarn.project.script.run.output)
+
+// FIXME: write result to workdir
+```
+
+Run the workflow:
+
+```bash
+FIXME.
+```
+
+It works! My simplified workflow is running.
+
+Run it again:
+
+```bash
+FIXME
+```
 
 ### 3. Writing an intermediate workflow
+
+Let's write a second workflow.
+
+* We'll use our understanding of extensions to build something more ambitious: deploying a live staging environment of our app.
+* We'll use Yarn to build, and Netlify to deploy.
+* This time we will use Go.
+* We will show another convenient feature of Dagger SDKs: auto-generated client libraries. This is a nice-to-have in typescript, but mandatory in Go for a pleasant developer experience.
+
+Create a new workflow directory:
+
+```bash
+mkdir -p todoapp/workflows/deploy
+```
+
+Write a new configuration file, with the required dependencies, to `todoapp/workflows/deploy/cloak.yaml`:
+
+```yaml
+sdk: go
+dependencies:
+-
+    source: git
+    remote: ssh://git@github.com/dagger/cloak
+    ref: main
+    path: examples/yarn/ts
+-
+    source: git
+    remote: ssh://git@github.com/dagger/cloak
+    ref: main
+    path: examples/netlify/ts
+```
+
+Open the API sandbox:
+
+```bash
+cloak dev
+```
+
+Write a new workflow implementation to `todoapp/workflows/deploy/main.go`:
+
+```go
+package main
+
+// FIXME
+```
 
   * Add `deploy` workflow in `dagger.yaml`
   * Write workflow implementation in `workflows/index.ts`
