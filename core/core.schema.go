@@ -10,6 +10,7 @@ var _ router.ExecutableSchema = &coreSchema{}
 
 type coreSchema struct {
 	*baseSchema
+	sshAuthSockID string
 }
 
 func (r *coreSchema) Name() string {
@@ -81,7 +82,11 @@ func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
 	remote := p.Args["remote"].(string)
 	ref, _ := p.Args["ref"].(string)
 
-	st := llb.Git(remote, ref)
+	var opts []llb.GitOption
+	if r.sshAuthSockID != "" {
+		opts = append(opts, llb.MountSSHSock(r.sshAuthSockID))
+	}
+	st := llb.Git(remote, ref, opts...)
 	return r.Solve(p.Context, st)
 }
 

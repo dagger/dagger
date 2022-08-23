@@ -64,10 +64,24 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 	router := router.New()
 	secretStore := secret.NewStore()
+
+	socketProviders := MergedSocketProviders{
+		extension.DaggerSockName: extension.NewAPIProxy(router),
+	}
+	var sshAuthSockID string
+	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {
+		sshAuthHandler, err := sshAuthSockHandler()
+		if err != nil {
+			return err
+		}
+		// using env key as the socket ID too for now
+		sshAuthSockID = sshAuthSockEnv
+		socketProviders[sshAuthSockID] = sshAuthHandler
+	}
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
-			extension.NewAPIProxy(router),
+			socketProviders,
 		},
 	}
 	solveOpts.LocalDirs = startOpts.LocalDirs
@@ -77,7 +91,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			coreAPI, err := core.New(router, secretStore, gw, *platform)
+			coreAPI, err := core.New(router, secretStore, sshAuthSockID, gw, *platform)
 			if err != nil {
 				return nil, err
 			}
