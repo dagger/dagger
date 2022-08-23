@@ -14,6 +14,51 @@ Cons: start with doing it "the hard way", the easy way is at the end
 4. Move intermediate workflow to an extension
 5. Write a new extension
 
+## Open questions
+
+Some parts of the demo are under discussion. Resolving these discussions may cause the demo scenario to change.
+
+### Bottom-up or top-down?
+
+* *bottom-up*: start by showing fundamentals, then gradually add features which simplify the experience.
+* *top-down*: start with the simplest example possible, using many features, then gradually explain how each feature works under the hood.
+
+At the moment this demo is *bottom-up*: first we write a workflow "the hard way"; then we add an extension; then client-generated stubs; etc. 
+
+It can be adapted to a top-down flow, by swapping steps 1 and 2.
+
+### Project-centric or workflow-centric?
+
+*Project-centric*:
+  * One config file at the root of a project (eg. todoapp)
+  * All the project's workflows, extensions and dependencies are defined in one file
+  * Cloak API allows access to project directory, ie `host { projectDirectory { read, write }}`.
+  * Project dir is automatically set and not configurable
+  * A project may import other projects as dependencies. Dependencies' extensions are loaded
+  * Dependencies may be declared globally for the project, or independently for each workflow and extension. 
+
+*Workflow-centric*
+  * One directory per workflow, each with its own config file (eg "build", "deploy")
+  * One directory per extension, each with its own config file (eg "netlify", "yarn")
+  * No first class project concept
+  * Cloak API allows access to workdir, ie `host { workdir { read, write }}`.
+  * User is responsible for setting correct workdir. Defaults to client workdir, can be overridden with `CLOAK_WORKDIR` environment variable
+  * A workflow may import extensions. Extensions may import extensions.
+
+At the moment this demo assumes a *workflow-centric* design.
+
+Pros:
+* Simpler config files
+* One directory = one self-contained component which dagger can build and run
+* Less concepts (no first-class project)
+* Simpler dependency system (1 dependency = 1 directory + 1 config file)
+* Generally less magic
+
+Cons:
+* More config files
+* No familiar "drop one file in your project and go" UX, similar to docker compose, docker build, waypoint etc.
+* Project directory is not magically available, requires more user intervention
+* Can't load multiple related extensions in one dependency: must either merge into one extension, or (if using different SDKs) import each individually
 
 ## Scenario
 
@@ -61,74 +106,86 @@ FIXME: this is the easy way, expand to "the hard way" by removing yarn dependenc
 
 ```typescript
 // Build todoapp, the hard way
-import { client, gql, getKey } from "@dagger.io/dagger";
+import { gql, Engine } from "@dagger.io/dagger";
 
-// Install yarn in a container
-// FIXME: do it the hard way, no alpine package
-const base = await client.request(gql`
-  {
-    alpine {
-      build(pkgs: ["yarn", "git"]) {
-        id
+new Engine().run(async (client: GraphQLClient) => {
+  // 1. Load app source code from working directory
+  const source = await client.request(gql`
+    {
+      host {
+        workdir {
+          read {
+            id
+          }
+        }
       }
     }
-  }
-`)
-.then((result: any) => result.alpine.build)
+  `)
+  .then((result: any) => result.host.workdir)
 
-// Load app source code from working directory
-const source = await client.request(gql`
+  // 2. Install yarn in a container
+  // FIXME: do it the hard way, no alpine package
+  const base = await client.request(gql`
+    {
+      alpine {
+        build(pkgs: ["yarn", "git"]) {
+          id
+        }
+      }
+    }
+  `)
+  .then((result: any) => result.alpine.build)
+
+  // 3. Run 'yarn install' in a container
+  const sourceWithDeps = await client.request(gql`
+    {
+      core {
+        filesystem(id: "${base.id}") {
+          exec(input: {
+            args: ["yarn", "install"], 
+            mounts: [{path: "/src", fs: "${source.id}"}],
+            workdir: "/src",
+          }) {
+            mount(path: "/src") {
+              id
+            }
+          }
+        }
+      }
+    }
+  `)
+  .then((result: any) => result.core.filesystem.exec.mount);
+
+  // 4. Run 'yarn run build' in a container
+  const sourceWithBuild = await client.request(gql`
+    {
+      core {
+        filesystem(id: "${base.id}") {
+          exec(input: {
+            args: ["yarn", "run", "build"],
+            mounts: [{path: "/src", fs: "${sourceWithDeps.id}"}],
+            workdir: "/src",
+          }) {
+            mount(path: "/src") {
+              id
+            }
+          }
+        }
+      }
+    }
+  `)
+  .then((result: any) => result.core.filesystem.exec.mount);
+
+  // 5. write the result back to workdir
+  client.request(gql`
   {
     host {
       workdir {
-        id
+        write(contents: ${sourceWithBuild.id})
       }
     }
   }
-`)
-.then((result: any) => result.host.workdir.id)
-
-// Run 'yarn install'
-const sourceWithDeps = await client.request(gql`
-  {
-    core {
-      filesystem(id: "${base.id}") {
-        exec(input: {
-          args: ["yarn", "install"], 
-          mounts: [{path: "/src", fs: "${source}"}],
-          workdir: "/src",
-        }) {
-          mount(path: "/src") {
-            id
-          }
-        }
-      }
-    }
-  }
-`)
-.then((result: any) => result.core.filesystem.exec.mount);
-
-// Run 'yarn run build'
-const sourceWithBuild = await client.request(gql`
-  {
-    core {
-      filesystem(id: "${base.id}") {
-        exec(input: {
-          args: ["yarn", "run", "build"],
-          mounts: [{path: "/src", fs: "${sourceWithDeps.id}"}],
-          workdir: "/src",
-        }) {
-          mount(path: "/src") {
-            id
-          }
-        }
-      }
-    }
-  }
-`)
-.then((result: any) => result.core.filesystem.exec.mount);
-
-// FIXME: write result to workdir
+  `)
 ```
 
 Write a typescript package file to `todoapp/workflows/build/package.json`:
@@ -149,7 +206,7 @@ Use the Dagger SDK to generate the rest of the code:
 cloak -p todoapp/workflows/build generate
 ```
 
-Run the workflow:
+Run the workflow (FIXME: how??)
 
 ```bash
 FIXME.
@@ -197,37 +254,49 @@ Edit the workflow implementation to use the yarn extension in our API calls. Not
 
 ```typescript
 // Build todoapp, the hard way
-import { client, gql, getKey } from "@dagger.io/dagger";
+import { gql, Engine } from "@dagger.io/dagger";
 
-// Load app source code from working directory
-const source = await client.request(gql`
-  {
-    host {
-      workdir {
-        id
+new Engine().run(async (client: GraphQLClient) => {
+
+  // 1. Load app source code from working directory
+  const source = await client.request(gql`
+    {
+      host {
+        workdir {
+          id
+        }
       }
     }
-  }
-`)
-.then((result: any) => result.host.workdir.id)
+  `)
+  .then((result: any) => result.host.workdir)
 
-// Run yarn build script
-const build = await client.request(gql`
-{
-  yarn {
-    project(source: ${source.id}) {
-      script (name: "build") {
-        run {
-          output
+  // 2. Run yarn build script
+  const build = await client.request(gql`
+  {
+    yarn {
+      project(source: "${source.id}") {
+        script (name: "build") {
+          run {
+            output
+          }
         }
       }
     }
   }
-}
-`)
-.then({result: any} => result.yarn.project.script.run.output)
+  `)
+  .then({result: any} => result.yarn.project.script.run.output)
 
-// FIXME: write result to workdir
+  // 3. Write build result to workdir
+  await client.request(gql`
+  {
+    host {
+      workdir {
+        write(contents: "${build.id}")
+      }
+    }
+  }
+  `)
+})
 ```
 
 Run the workflow:
@@ -263,17 +332,20 @@ Write a new configuration file, with the required dependencies, to `todoapp/work
 
 ```yaml
 sdk: go
-dependencies:
--
-    source: git
-    remote: ssh://git@github.com/dagger/cloak
-    ref: main
-    path: examples/yarn/ts
--
-    source: git
-    remote: ssh://git@github.com/dagger/cloak
-    ref: main
-    path: examples/netlify/ts
+workflows:
+  deploy:
+    source: ./..
+    dependencies:
+    -
+        source: git
+        remote: ssh://git@github.com/dagger/cloak
+        ref: main
+        path: examples/yarn/ts
+    -
+        source: git
+        remote: ssh://git@github.com/dagger/cloak
+        ref: main
+        path: examples/netlify/ts
 ```
 
 Open the API sandbox:
@@ -287,8 +359,33 @@ Write a new workflow implementation to `todoapp/workflows/deploy/main.go`:
 ```go
 package main
 
+import (
+  "os"
+)
+
 // FIXME
+
+token, exists := os.Environ["NETLIFY_TOKEN"]
 ```
+
+Build and run your workflow:
+
+```bash
+# FIXME: how to pass the correct workdir?
+(
+  cd todoapp
+  go run workflows/deploy
+)
+```
+
+```bash
+CLOAK_WORKDIR=$(pwd)/todoapp go run ./todoapp/workflows/deploy
+```
+
+
+It worked!
+
+
 
   * Add `deploy` workflow in `dagger.yaml`
   * Write workflow implementation in `workflows/index.ts`
@@ -302,7 +399,7 @@ package main
 
 ### 4. Moving a workflow to an extension
 
-FIXME
+```FIXME```
 
 ### 5. Writing a new extension
 
