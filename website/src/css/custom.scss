@@ -346,6 +346,12 @@ h1[class^="h1Heading"] {
   color: white;
 }
 
+/* Hamburger Button */
+
+.navbar__toggle {
+  color: white;
+}
+
 .header-discord-link {
   display: flex;
   height: 40px;
@@ -603,6 +609,10 @@ li.theme-doc-sidebar-item-link-level-1:active {
 .DocSearch-Button {
   margin-right: 2rem !important;
 
+  svg.DocSearch-Search-Icon {
+    color: black;
+  }
+
   @include desktop {
     width: 200px;
     position: absolute;
@@ -615,7 +625,25 @@ li.theme-doc-sidebar-item-link-level-1:active {
   }
 
   html[data-theme="dark"] & {
-    background-color: white;
+    background-color: var(--ifm-color-primary-light);
+
+    kbd.DocSearch-Button-Key {
+      color: var(--ifm-color-primary-light);
+    }
+  }
+
+  html[data-theme="dark"] &:hover .DocSearch-Button-Placeholder,
+  html[data-theme="dark"] &:active .DocSearch-Button-Placeholder {
+    color: var(--ifm-color-primary-dark);
+  }
+}
+
+.DocSearch--active {
+  html[data-theme="dark"] & {
+    .DocSearch-Hit-source,
+    .DocSearch-Cancel {
+      color: rgb(190, 195, 201);
+    }
   }
 }
 
