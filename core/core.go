@@ -23,7 +23,11 @@ func New(r *router.Router, secretStore *secret.Store, sshAuthSockID string, gw b
 		&coreSchema{base, sshAuthSockID},
 
 		&filesystemSchema{base},
-		&extensionSchema{baseSchema: base, compiledSchemas: make(map[string]*extension.CompiledRemoteSchema)},
+		&extensionSchema{
+			baseSchema:      base,
+			compiledSchemas: make(map[string]*extension.CompiledRemoteSchema),
+			sshAuthSockID:   sshAuthSockID,
+		},
 		&execSchema{base},
 		&dockerBuildSchema{base},
 

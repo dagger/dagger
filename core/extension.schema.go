@@ -26,6 +26,7 @@ type extensionSchema struct {
 	compiledSchemas map[string]*extension.CompiledRemoteSchema
 	l               sync.RWMutex
 	sf              singleflight.Group
+	sshAuthSockID   string
 }
 
 func (s *extensionSchema) Name() string {
@@ -108,7 +109,7 @@ func (s *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
 	}
 
 	configPath := p.Args["configPath"].(string)
-	schema, err := extension.Load(p.Context, s.gw, s.platform, obj, configPath)
+	schema, err := extension.Load(p.Context, s.gw, s.platform, obj, configPath, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
