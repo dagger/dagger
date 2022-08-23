@@ -79,6 +79,9 @@ module.exports = {
     colorMode: {
       defaultMode: "light",
     },
+    posthog: {
+      apiKey: "phc_hqwS484sDJhTnrPCANTyWX48nKL3AEucgf6w0czQtQi",
+    }
   },
   presets: [
     [
@@ -106,6 +109,7 @@ module.exports = {
   plugins: [
     "docusaurus-plugin-sass",
     "docusaurus2-dotenv",
+    "posthog-docusaurus",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
     path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
   ],
