@@ -24,7 +24,7 @@ const (
 	operationsPath = "/operations.graphql"
 	entrypointPath = "/entrypoint"
 
-	daggerSockName = "dagger-sock"
+	DaggerSockName = "dagger-sock"
 	daggerSockPath = "/dagger.sock"
 
 	fsMountPath  = "/mnt"
@@ -243,7 +243,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
 			llb.AddSSHSocket(
-				llb.SSHID(daggerSockName),
+				llb.SSHID(DaggerSockName),
 				llb.SSHSocketTarget(daggerSockPath),
 			),
 			llb.AddMount(inputMountPath, input, llb.Readonly),

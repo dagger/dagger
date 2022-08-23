@@ -43,13 +43,14 @@ func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error 
 		return status.Errorf(codes.Internal, "no sshid in metadata")
 	}
 	id := v[0]
-	if id != daggerSockName {
-		return status.Errorf(codes.Internal, "no api connection for id %s", id)
+
+	if id == DaggerSockName {
+		serverConn, clientConn := net.Pipe()
+		go func() {
+			_ = p.router.ServeConn(serverConn)
+		}()
+		return sshforward.Copy(context.TODO(), clientConn, stream, nil)
 	}
 
-	serverConn, clientConn := net.Pipe()
-	go func() {
-		_ = p.router.ServeConn(serverConn)
-	}()
-	return sshforward.Copy(context.TODO(), clientConn, stream, nil)
+	return status.Errorf(codes.Internal, "no api connection for id %s", id)
 }

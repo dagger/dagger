@@ -12,7 +12,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform specs.Platform) (router.ExecutableSchema, error) {
+func New(r *router.Router, secretStore *secret.Store, sshAuthSockID string, gw bkgw.Client, platform specs.Platform) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:      r,
 		secretStore: secretStore,
@@ -20,7 +20,7 @@ func New(r *router.Router, secretStore *secret.Store, gw bkgw.Client, platform s
 		platform:    platform,
 	}
 	return router.MergeExecutableSchemas("core",
-		&coreSchema{base},
+		&coreSchema{base, sshAuthSockID},
 
 		&filesystemSchema{base},
 		&extensionSchema{baseSchema: base, compiledSchemas: make(map[string]*extension.CompiledRemoteSchema)},
