@@ -3,7 +3,7 @@ module github.com/dagger/cloak
 go 1.18
 
 require (
-	github.com/99designs/gqlgen v0.17.14
+	github.com/99designs/gqlgen v0.17.15
 	github.com/Khan/genqlient v0.5.0
 	github.com/bhoriuchi/graphql-go-tools v1.0.0
 	github.com/containerd/containerd v1.6.8
