@@ -13,7 +13,8 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 
-import Templates from "../../website/src/components/molecules/templates.js";
+import CodeBlock from "@theme/CodeBlock";
+import styles from "../../website/src/css/install.module.scss";
 import TutorialCard from "../../website/src/components/molecules/tutorialCard.js";
 import Button from "../../website/src/components/atoms/button.js";
 
@@ -155,6 +156,30 @@ Our templates are a great way to quickly see Dagger in action with a particular 
 If you want to dig into the details of how Dagger works, we recommend you read our Concepts section.
 
 <Button label="How It Works" docPath="f44rm/how-it-works" />
+
+export const Templates = ({ templates }) => {
+  return (
+    <div className={styles.templates}>
+      {templates.map((x, index) => (
+        <div className={styles.templateCard}>
+          <div className={styles.templateInfo}>
+            <img
+              src={`/img/getting-started/install-dagger/${x.imgFilename}`}
+            ></img>
+            <a href={x.url}>{x.label}</a>
+          </div>
+          <CodeBlock>
+            git clone {x.url}
+            {`\n`}
+            cd {x.dir}
+            {`\n`}
+            {x.cmd}
+          </CodeBlock>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export const data = {
   templates: [
