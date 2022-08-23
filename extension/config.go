@@ -14,7 +14,14 @@ type Source struct {
 }
 
 type Dependency struct {
-	Local string `yaml:"local,omitempty"`
+	Local string     `yaml:"local,omitempty"`
+	Git   *GitSource `yaml:"git,omitempty"`
+}
+
+type GitSource struct {
+	Remote string `yaml:"remote,omitempty"`
+	Ref    string `yaml:"ref,omitempty"`
+	Path   string `yaml:"path,omitempty"`
 }
 
 func ParseConfig(data []byte) (*Config, error) {

@@ -52,7 +52,7 @@ type RemoteSchema struct {
 	sources      []*Source
 }
 
-func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string) (*RemoteSchema, error) {
+func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string, sshAuthSockID string) (*RemoteSchema, error) {
 	cfgBytes, err := contextFS.ReadFile(ctx, gw, configPath)
 	if err != nil {
 		return nil, err
@@ -97,12 +97,28 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 	}
 	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
 
+	// TODO:(sipsma) guard against infinite recursion
+	// TODO:(sipsma) deduplicate load of same dependencies (same as compile)
 	for _, dep := range cfg.Dependencies {
-		if dep.Local != "" {
+		// TODO:(sipsma) ensure only one source is specified
+		switch {
+		case dep.Local != "":
 			depConfigPath := filepath.Join(filepath.Dir(configPath), dep.Local)
-			// TODO:(sipsma) guard against infinite recursion
-			// TODO:(sipsma) deduplicate load of same dependencies (same as compile)
-			depSchema, err := Load(ctx, gw, platform, contextFS, depConfigPath)
+			depSchema, err := Load(ctx, gw, platform, contextFS, depConfigPath, sshAuthSockID)
+			if err != nil {
+				return nil, err
+			}
+			s.dependencies = append(s.dependencies, depSchema)
+		case dep.Git != nil:
+			var opts []llb.GitOption
+			if sshAuthSockID != "" {
+				opts = append(opts, llb.MountSSHSock(sshAuthSockID))
+			}
+			gitFS, err := filesystem.FromState(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), platform)
+			if err != nil {
+				return nil, err
+			}
+			depSchema, err := Load(ctx, gw, platform, gitFS, dep.Git.Path, sshAuthSockID)
 			if err != nil {
 				return nil, err
 			}
