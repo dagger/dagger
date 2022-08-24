@@ -285,20 +285,37 @@ tarball() {
     echo "$name"
 }
 
-install_completion() {
-    # discovery of currently used shell is too error prone, I install all of them
-    # - echo $SHELL rarely works
-    # - echo $0 doesn't work if you use the script as the runner
-    # - echo $$ to get the pid of the process sometimes fail as well
+install_shell_completion() {
+    echo "
+${binexe} has built-in shell completion. This is how you can install it for:
 
-    # This should work on debian derived distributions
-    # FIXME: make it work with other distribution: use $XDG_DATA_DIRS?
-    #
-    # the && true will get us user complain about their setup, we want that for now to make it work everywhere
-    ${binexe} completion bash > /usr/share/bash-completion/completions/dagger    && true
-    ${binexe} completion zsh  > /usr/share/zsh/vendor-completions/_dagger        && true
-    ${binexe} completion fish > /usr/share/fish/vendor_completions.d/dagger.fish && true
+  BASH:
 
+    1. Ensure that you install bash-completion using your package manager.
+
+    2. Add this line to your ~/.bash_profile:
+
+      eval \"\$(${binexe} completion bash)\"
+
+  ZSH:
+
+    1. Generate a _dagger completion script and write it to a file within your \$FPATH, e.g.:
+
+      ${binexe} completion zsh > /usr/local/share/zsh/site-functions/_dagger
+
+    2. Ensure that the following is present in your ~/.zshrc:
+
+      autoload -U compinit
+      compinit -i
+
+    zsh version 5.7 or later is recommended.
+
+  FISH:
+
+    1. Generate a dagger.fish completion script and write it to a file within fish completions, e.g.:
+
+      ${binexe} completion fish > ~/.config/fish/completions/dagger.fish
+    "
 }
 
 execute() {
@@ -319,7 +336,8 @@ execute() {
     (cd "${tmpdir}" && untar "${tarball}")
     test ! -d "${bin_dir}" && install -d "${bin_dir}"
     install "${srcdir}/${binexe}" "${bin_dir}"
-    install_completion
+    log_debug "display shell completion instructions"
+    install_shell_completion
     log_info "installed ${bin_dir}/${binexe}"
     rm -rf "${tmpdir}"
 }
