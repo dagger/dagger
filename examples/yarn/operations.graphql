@@ -1,6 +1,6 @@
-query Script($source: FSID!, $name: String!) {
+query Script($source: FSID!, $runArgs: [String!]) {
   yarn {
-    script(source: $source, name: $name) {
+    script(source: $source, runArgs: $runArgs) {
       id
     }
   }

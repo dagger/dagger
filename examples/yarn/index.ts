@@ -2,7 +2,7 @@ import { client, DaggerServer, gql, FSID } from "@dagger.io/dagger";
 
 const resolvers = {
   Yarn: {
-    script: async (args: { source: FSID; name: string }) => {
+    script: async (args: { source: FSID; runArgs: Array<string> }) => {
       const base = await client
         .request(
           gql`
@@ -42,6 +42,7 @@ const resolvers = {
         .then((result: any) => result.core.filesystem.exec.mount);
       // console.log("yarnInstall: ", yarnInstall);
 
+      const cmd = JSON.stringify(["yarn", "run", ...args.runArgs]);
       const yarnRun = await client
         .request(
           gql`
@@ -49,7 +50,7 @@ const resolvers = {
               core {
                 filesystem(id: "${base.id}") {
                   exec(input: {
-                    args: ["yarn", "run", "${args.name}"],
+                    args: ${cmd},
                     mounts: [{path: "/src", fs: "${yarnInstall.id}"}],
                     workdir: "/src",
                   }) {
