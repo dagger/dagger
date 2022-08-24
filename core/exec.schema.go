@@ -85,7 +85,7 @@ func (s *execSchema) Schema() string {
 		"""
 		args: [String!]!
 
-		"Transient filesystem mounts"
+		"Filesystem mounts"
 		mounts: [MountInput!]
 
 		"Working directory"
