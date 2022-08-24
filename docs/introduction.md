@@ -28,7 +28,7 @@ The Dagger API is a graphql-compatible API for composing and running powerful pi
 ### API extensions
 
 Developers can write an *API extensions* to add new capabilities to the Dagger API.
- 
+
 API extensions are the killer feature of Dagger. They ensure that as a workflow grows and evolves, it can remain simple and small, by *breaking up its logic into reusable components*. 
 
 API extensions are fully sandboxed, so they can be safely shared and reused between projects.
@@ -187,29 +187,29 @@ Writing an extension is more advanced than writing a workflow, because in additi
 
 ```yaml
 workflows:
-	build: 
-		source: ./workflows/build
-		sdk: bash
-	deploy:
-		source: ./workflows/deploy
-		sdk: go
+  build:
+    source: ./workflows/build
+    sdk: bash
+  deploy:
+    source: ./workflows/deploy
+    sdk: go
 ```
 
 ### Todo App (with extensions)
 
 ```yaml
 workflows:
-	build: 
-		source: ./workflows/build
-		sdk: bash
-		dependencies:
-			- yarn
-	deploy:
-		source: ./workflows/deploy
-		sdk: go
-		dependencies:
-			- yarn
-			- netlify
+  build:
+    source: ./workflows/build
+    sdk: bash
+    dependencies:
+      - yarn
+  deploy:
+    source: ./workflows/deploy
+    sdk: go
+    dependencies:
+      - yarn
+      - netlify
 ```
 
 ### Todo App (advanced)
@@ -222,21 +222,20 @@ In this version of Todo App, custom build and deployment logic has been moved in
 
 ```yaml
 workflows:
-	build: 
-		source: build.sh
-		sdk: bash
-	deploy:
-		source: deploy.sh
-		sdk: bash
+  build:
+    source: build.sh
+    sdk: bash
+  deploy:
+    source: deploy.sh
+    sdk: bash
 
 extensions:
-	-
-		source: ./dagger/extensions
-		sdk: go
-		dependencies:
-			- yarn
-			- netlify
-			- aws/s3
+  - source: ./dagger/extensions
+    sdk: go
+    dependencies:
+      - yarn
+      - netlify
+      - aws/s3
 ```
 
 ### Netlify extension
@@ -247,10 +246,8 @@ Note that this project combines two extensions. If it is used as a dependency, b
 
 ```yaml
 extensions:
-	-
-		source: ./ts
-		sdk: typescript
-	-
-		source: ./go
-		sdk: go
+  - source: ./ts
+    sdk: typescript
+  - source: ./go
+    sdk: go
 ```
