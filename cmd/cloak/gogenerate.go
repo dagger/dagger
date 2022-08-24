@@ -24,6 +24,7 @@ var generatedTmpl string
 
 func generateGoImplStub(ext, coreExt *core.Extension) error {
 	cfg := gqlconfig.DefaultConfig()
+	cfg.SkipModTidy = true
 	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(projectContext, filepath.Dir(projectFile), "_deleteme.go"), Package: "main"}
 	cfg.SchemaFilename = nil
 	cfg.Sources = []*ast.Source{{Input: ext.Schema}}

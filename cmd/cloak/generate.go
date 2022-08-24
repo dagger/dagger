@@ -58,7 +58,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			return fmt.Errorf("unknown sdk type %s", sdkType)
 		}
 
-		for _, dep := range project.Dependencies {
+		for _, dep := range append(project.Dependencies, coreExt) {
 			subdir := filepath.Join(generateOutputDir, "gen", dep.Name)
 			if err := os.MkdirAll(subdir, 0755); err != nil {
 				return err
@@ -69,7 +69,10 @@ func Generate(cmd *cobra.Command, args []string) {
 			schemaPath := filepath.Join(subdir, "schema.graphql")
 
 			// TODO:(sipsma) ugly hack to make each schema/operation work independently when referencing core types.
-			fullSchema := coreExt.Schema + "\n\n" + dep.Schema
+			fullSchema := dep.Schema
+			if dep.Name != "core" {
+				fullSchema = coreExt.Schema + "\n\n" + fullSchema
+			}
 			if err := os.WriteFile(schemaPath, []byte(fullSchema), 0600); err != nil {
 				return err
 			}
