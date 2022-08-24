@@ -8,7 +8,7 @@ const resolvers = {
           gql`
             {
               alpine {
-                build(pkgs: ["yarn", "git"]) {
+                build(pkgs: ["yarn", "git", "openssh-client"]) {
                   id
                 }
               }
