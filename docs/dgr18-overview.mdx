@@ -29,14 +29,12 @@ If something is missing or you think could be improved, [ask for support](https:
 <MainCards />
 
 <TutorialCard
-  img="/img/dagger-planning_astronaute.webp"
+  img="/img/dagger-planning_astronaute.png"
   title="✨ Tutorial: Test your CI locally ✨"
   description="In this quick tutorial you'll learn how to build, test and deploy your pipeline locally and then integrate it in your own CI environment."
   buttonLabel="Let's Build!"
   url="1200/local-dev"
-/>              
-
-<Index />
+/>
 
 export const MainCards = ({ children }) => (
   <div className={styles.mainCards}>
@@ -66,7 +64,7 @@ export const MainCard = ({ title, description, buttonLabel, docPath }) => (
 export const InfoCard = () => (
   <div className={styles.infoCard}>
     <h2>Where does Dagger fit?</h2>
-    <img src={`/img/docker-compatible-runtime.webp`} />
+    <img src={`/img/docker-compatible-runtime.png`} />
     <div>
       <ul>
         <li>Give your developers parity between dev and CI environments</li>

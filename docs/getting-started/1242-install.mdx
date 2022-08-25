@@ -13,7 +13,8 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 
-import Templates from "../../website/src/components/molecules/templates.js";
+import CodeBlock from "@theme/CodeBlock";
+import styles from "../../website/src/css/install.module.scss";
 import TutorialCard from "../../website/src/components/molecules/tutorialCard.js";
 import Button from "../../website/src/components/atoms/button.js";
 
@@ -135,7 +136,7 @@ If you are not sure if Dagger fits your pipeline, browse or search for topics re
 ### Follow Our Tutorial
 
 <TutorialCard
-  img="/img/dagger-planning_astronaute.webp"
+  img="/img/dagger-planning_astronaute.png"
   title="✨ Tutorial: Test your CI locally ✨"
   description="In this quick tutorial you'll learn how to build, test and deploy your pipeline locally and then integrate it in your own CI environment."
   buttonLabel="Let's Build!"
@@ -146,7 +147,23 @@ If you are not sure if Dagger fits your pipeline, browse or search for topics re
 
 Our templates are a great way to quickly see Dagger in action with a particular stack like Node.js or Go. After installing Dagger, you can check out the code and run templates right away. For more depth, try out the tutorial!
 
-<Templates templates={data.templates} />
+<div className={styles.templates}>
+   {data.templates.map((x, index) => (
+     <div className={styles.templateCard}>
+       <div className={styles.templateInfo}>
+         <img src={`/img/getting-started/install-dagger/${x.imgFilename}`} />
+         <a href={x.url}>{x.label}</a>
+       </div>
+       <CodeBlock>
+         git clone {x.url}
+         {`\n`}
+         cd {x.dir}
+         {`\n`}
+         {x.cmd}
+       </CodeBlock>
+     </div>
+   ))}
+ </div>
 
 ---
 
