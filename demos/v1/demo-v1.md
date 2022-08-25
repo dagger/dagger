@@ -5,6 +5,7 @@ This is a demo meant for external users. They are assumed to have general knowle
 ## 0. Setup
 
 1. Ensure `dagger-buildkitd` is running (quickly invoke dagger if needed)
+   - `docker run --privileged --name dagger-buildkitd --restart=always -d moby/buildkit:v0.10.3`
 2. Build `cloak` and make sure it's in your PATH
    - `go build ./cmd/cloak`
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`

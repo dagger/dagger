@@ -2,8 +2,8 @@
 
 ## Install
 
-1. Ensure `dagger-buildkitd` is running (invoke dagger if needed)
-   - TODO: should port code from dagger for setting this up automatically to here in cloak
+1. Ensure `dagger-buildkitd` is running. The following command will start it if not already running:
+   - `docker run --privileged --name dagger-buildkitd --restart=always -d moby/buildkit:v0.10.3`
 2. Build `cloak` and make sure it's in your PATH
    - `go build ./cmd/cloak`
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`
@@ -53,7 +53,6 @@ TODO: document more, but see `Invoking` section above for some examples and `cmd
 TODO: document more, but the idea here is that you can also write your own `main.go` that, similar to `cmd/cloak/main.go`, calls `engine.Start` and then do anything you want from there with the full power of Go rather than being limited to the CLI interface of `cloak`. Eventually, this embedding use case should be possible from any of our supported languages (e.g. Typescript).
 
 - A (slightly outdated) example of this can be found in `cmd/demo/main.go`
-
 
 ### Modifying Core
 
