@@ -1,4 +1,11 @@
-@use "../custom";
+@use "./custom";
+
+.cardGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 20px;
+}
 
 .card {
   display: flex;
@@ -68,40 +75,4 @@
 
 .fullWidth {
   width: 100% !important;
-}
-
-.relatedContent {
-  padding: 0.8rem 0.5rem 1rem 1rem;
-  grid-column: 1/3;
-
-  & ul {
-    list-style: none;
-    padding: 1rem;
-    margin: 0;
-  }
-
-  & li span {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-
-    & img {
-      width: 20px;
-      height: 20px;
-      margin: 0;
-    }
-  }
-
-  & li a {
-    margin-left: 1rem;
-
-    /* font */
-    text-decoration: none !important;
-    font-size: 1rem;
-    color: var(--ifm-color-grey) !important;
-  }
-
-  & li a:hover {
-    color: var(--ifm-color-primary) !important;
-  }
 }
