@@ -43,7 +43,7 @@ func init() {
 
 	for _, d := range bi.Deps {
 		if d.Path == "github.com/moby/buildkit" {
-			vendoredVersion = d.Version
+			vendoredVersion = d.Version + "-rootless"
 			break
 		}
 	}
