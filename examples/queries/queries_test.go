@@ -4,9 +4,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dagger/cloak/testutil"
+	"github.com/dagger/cloak/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	if err := testutil.SetupBuildkitd(); err != nil {
+		panic(err)
+	}
+}
 
 type testOpts struct {
 	opts *testutil.QueryOptions

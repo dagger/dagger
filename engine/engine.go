@@ -12,6 +12,7 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/core"
+	"github.com/dagger/cloak/internal/buildkitd"
 	"github.com/dagger/cloak/project"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/sdk/go/dagger"
@@ -22,12 +23,8 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
-	"github.com/moby/buildkit/util/tracing/detect"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
-
-	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
 )
 
 const (
@@ -61,21 +58,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts = &Config{}
 	}
 
-	opts := []bkclient.ClientOpt{
-		bkclient.WithFailFast(),
-		bkclient.WithTracerProvider(otel.GetTracerProvider()),
-	}
-
-	exp, err := detect.Exporter()
-	if err != nil {
-		return err
-	}
-
-	if td, ok := exp.(bkclient.TracerDelegate); ok {
-		opts = append(opts, bkclient.WithTracerDelegate(td))
-	}
-
-	c, err := bkclient.New(ctx, "docker-container://dagger-buildkitd", opts...)
+	c, err := buildkitd.Client(ctx)
 	if err != nil {
 		return err
 	}

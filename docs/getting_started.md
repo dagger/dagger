@@ -2,8 +2,9 @@
 
 ## Install
 
-1. Ensure `dagger-buildkitd` is running. The following command will start it if not already running:
-   - `docker run --privileged --name dagger-buildkitd --restart=always -d moby/buildkit:v0.10.3`
+1. Setup BuildKitd
+   - If you have `docker` installed locally and no `BUILDKIT_HOST` env var, `buildkitd` will be started automatically for you when you invoke `cloak`.
+   - Otherwise, you can use the `BUILDKIT_HOST` env var to point to a running `buildkitd`. [More information here](https://docs.dagger.io/1223/custom-buildkit/).
 2. Build `cloak` and make sure it's in your PATH
    - `go build ./cmd/cloak`
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`
