@@ -3,9 +3,15 @@ package core
 import (
 	"testing"
 
-	"github.com/dagger/cloak/testutil"
+	"github.com/dagger/cloak/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	if err := testutil.SetupBuildkitd(); err != nil {
+		panic(err)
+	}
+}
 
 func TestCoreImage(t *testing.T) {
 	t.Parallel()

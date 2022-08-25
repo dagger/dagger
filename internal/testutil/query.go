@@ -2,9 +2,11 @@ package testutil
 
 import (
 	"context"
+	"os"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/engine"
+	"github.com/dagger/cloak/internal/buildkitd"
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
@@ -65,5 +67,14 @@ func addSecrets(ctx context.Context, cl graphql.Client, opts *QueryOptions) erro
 		}
 		opts.Variables[name] = addSecret.Core.AddSecret
 	}
+	return nil
+}
+
+func SetupBuildkitd() error {
+	host, err := buildkitd.StartGoModBuildkitd(context.Background())
+	if err != nil {
+		return err
+	}
+	os.Setenv("BUILDKIT_HOST", host)
 	return nil
 }
