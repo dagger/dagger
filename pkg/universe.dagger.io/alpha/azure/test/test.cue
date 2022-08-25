@@ -18,9 +18,9 @@ dagger.#Plan & {
 	}
 
 	let sp = {
-		tenantId: client.env.AZURE_TENANT_ID
-		id:       client.env.AAD_SERVICE_PRINCIPAL_CLIENT_ID
-		secret:   client.env.AAD_SERVICE_PRINCIPAL_CLIENT_SECRET
+		tenantId:     client.env.AZURE_TENANT_ID
+		clientId:     client.env.AAD_SERVICE_PRINCIPAL_CLIENT_ID
+		clientSecret: client.env.AAD_SERVICE_PRINCIPAL_CLIENT_SECRET
 	}
 
 	let cl = {
