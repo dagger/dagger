@@ -147,7 +147,25 @@ If you are not sure if Dagger fits your pipeline, browse or search for topics re
 
 Our templates are a great way to quickly see Dagger in action with a particular stack like Node.js or Go. After installing Dagger, you can check out the code and run templates right away. For more depth, try out the tutorial!
 
-<Templates templates={data.templates} />
+<div className={styles.templates}>
+   {data.templates.map((x, index) => (
+     <div className={styles.templateCard}>
+       <div className={styles.templateInfo}>
+         <img
+           src={`/img/getting-started/install-dagger/${x.imgFilename}`}
+         ></img>
+         <a href={x.url}>{x.label}</a>
+       </div>
+       <CodeBlock>
+         git clone {x.url}
+         {`\n`}
+         cd {x.dir}
+         {`\n`}
+         {x.cmd}
+       </CodeBlock>
+     </div>
+   ))}
+ </div>
 
 ---
 
@@ -156,30 +174,6 @@ Our templates are a great way to quickly see Dagger in action with a particular 
 If you want to dig into the details of how Dagger works, we recommend you read our Concepts section.
 
 <Button label="How It Works" docPath="f44rm/how-it-works" />
-
-export const Templates = ({ templates }) => {
-  return (
-    <div className={styles.templates}>
-      {templates.map((x, index) => (
-        <div className={styles.templateCard}>
-          <div className={styles.templateInfo}>
-            <img
-              src={`/img/getting-started/install-dagger/${x.imgFilename}`}
-            ></img>
-            <a href={x.url}>{x.label}</a>
-          </div>
-          <CodeBlock>
-            git clone {x.url}
-            {`\n`}
-            cd {x.dir}
-            {`\n`}
-            {x.cmd}
-          </CodeBlock>
-        </div>
-      ))}
-    </div>
-  );
-};
 
 export const data = {
   templates: [
