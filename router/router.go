@@ -93,6 +93,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h := r.h
 	r.l.RUnlock()
 
+	defer func() {
+		if v := recover(); v != nil {
+			msg := "Internal Server Error"
+			switch v := v.(type) {
+			case error:
+				msg = v.Error()
+			case string:
+				msg = v
+			}
+			http.Error(w, msg, http.StatusInternalServerError)
+		}
+	}()
 	h.ServeHTTP(w, req)
 }
 
