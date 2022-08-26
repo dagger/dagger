@@ -26,7 +26,7 @@ type GitSource struct {
 
 func ParseConfig(data []byte) (*Config, error) {
 	cfg := Config{}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.UnmarshalStrict(data, &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
