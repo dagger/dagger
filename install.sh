@@ -293,9 +293,10 @@ ${binexe} has built-in shell completion. This is how you can install it for:
 
     1. Ensure that you install bash-completion using your package manager.
 
-    2. Add this line to your ~/.bash_profile:
+    2. Add dagger completion to your personal bash completions dir
 
-      eval \"\$(${binexe} completion bash)\"
+      mkdir -p $XDG_DATA_HOME/bash-completion/completions
+      ${binexe} completion bash > $XDG_DATA_HOME/bash-completion/completions/dagger
 
   ZSH:
 
