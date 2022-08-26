@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/pkg/errors"
 )
 
 type Exec struct {
@@ -22,12 +23,19 @@ type MountInput struct {
 	FS   filesystem.FSID
 }
 
+type CacheMountInput struct {
+	Name        string
+	SharingMode string // TODO:(sipsma) switch to enum
+	Path        string
+}
+
 type ExecInput struct {
-	Args      []string
-	Mounts    []MountInput
-	Workdir   string
-	Env       []ExecEnvInput
-	SecretEnv []ExecSecretEnvInput
+	Args        []string
+	Mounts      []MountInput
+	CacheMounts []CacheMountInput
+	Workdir     string
+	Env         []ExecEnvInput
+	SecretEnv   []ExecSecretEnvInput
 }
 
 type ExecEnvInput struct {
@@ -78,6 +86,17 @@ func (s *execSchema) Schema() string {
 		path: String!
 	}
 
+	input CacheMountInput {
+		"Cache mount name"
+		name: String!
+
+		"Cache mount sharing mode (TODO: switch to enum)"
+		sharingMode: String!
+
+		"path at which the cache will be mounted"
+		path: String!
+	}
+
 	input ExecInput {
 		"""
 		Command to execute
@@ -87,6 +106,9 @@ func (s *execSchema) Schema() string {
 
 		"Filesystem mounts"
 		mounts: [MountInput!]
+
+		"Cached mounts"
+		cacheMounts: [CacheMountInput!]
 
 		"Working directory"
 		workdir: String
@@ -185,6 +207,24 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		llb.Args(append([]string{"/_shim"}, input.Args...)),
 		llb.AddMount("/_shim", shim, llb.SourcePath("/_shim")),
 		llb.Dir(input.Workdir),
+	}
+	for _, cacheMount := range input.CacheMounts {
+		var sharingMode llb.CacheMountSharingMode
+		switch cacheMount.SharingMode {
+		case "shared":
+			sharingMode = llb.CacheMountShared
+		case "private":
+			sharingMode = llb.CacheMountPrivate
+		case "locked":
+			sharingMode = llb.CacheMountLocked
+		default:
+			return nil, errors.Errorf("invalid cache mount sharing mode %q", cacheMount.SharingMode)
+		}
+		runOpt = append(runOpt, llb.AddMount(
+			cacheMount.Path,
+			llb.Scratch(),
+			llb.AsPersistentCacheDir(cacheMount.Name, sharingMode),
+		))
 	}
 
 	for _, env := range input.Env {
