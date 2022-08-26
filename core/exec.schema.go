@@ -23,9 +23,21 @@ type MountInput struct {
 }
 
 type ExecInput struct {
-	Args    []string
-	Mounts  []MountInput
-	Workdir string
+	Args      []string
+	Mounts    []MountInput
+	Workdir   string
+	Env       []ExecEnvInput
+	SecretEnv []ExecSecretEnvInput
+}
+
+type ExecEnvInput struct {
+	Name  string
+	Value string
+}
+
+type ExecSecretEnvInput struct {
+	Name string
+	Id   string // TODO:(sipsma) stronger type
 }
 
 var _ router.ExecutableSchema = &filesystemSchema{}
@@ -78,6 +90,26 @@ func (s *execSchema) Schema() string {
 
 		"Working directory"
 		workdir: String
+
+		"Env vars"
+		env: [ExecEnvInput!]
+
+		"Secret env vars"
+		secretEnv: [ExecSecretEnvInput!]
+	}
+
+	input ExecEnvInput {
+		"Env var name"
+		name: String!
+		"Env var value"
+		value: String!
+	}
+
+	input ExecSecretEnvInput {
+		"Env var name"
+		name: String!
+		"Secret env var value"
+		id: SecretID!
 	}
 
 	# FIXME: broken
@@ -153,6 +185,13 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		llb.Args(append([]string{"/_shim"}, input.Args...)),
 		llb.AddMount("/_shim", shim, llb.SourcePath("/_shim")),
 		llb.Dir(input.Workdir),
+	}
+
+	for _, env := range input.Env {
+		runOpt = append(runOpt, llb.AddEnv(env.Name, env.Value))
+	}
+	for _, secretEnv := range input.SecretEnv {
+		runOpt = append(runOpt, llb.AddSecret(secretEnv.Name, llb.SecretID(secretEnv.Id), llb.SecretAsEnv(true)))
 	}
 
 	st, err := obj.ToState()
