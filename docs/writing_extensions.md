@@ -13,12 +13,14 @@ This document explains how to write an API extension for Dagger/cloak.
 
 ### Extension
 
-A schema + associated resolvers that can be loaded into Cloak at runtime to add new functionality beyond the core API.
+A GraphQL [schema](https://graphql.org/learn/schema/#gatsby-focus-wrapper) + associated [resolvers](https://graphql.org/learn/execution/#root-fields-resolvers) that can be loaded into Cloak at runtime to add new functionality beyond the core API.
+
+N.B.: a resolver is basically a HTTP Handler for a resource
 
 ### Extension Runtime
 
-The part of a resolver that serves as an interface between the Cloak server and the code or other artifacts that
-implement the actual functionality of the extension. Runtimes implement the "runtime protocol", which defines how inputs
+The runtime is the part of a resolver that implement the actual functionality of the extension. It serves as an interface between the Cloak server and the code or other artifacts.
+Runtimes implement the "runtime protocol", which defines how inputs
 are provided to a resolver and how outputs are provided back to the Cloak server.
 
 It is up to each runtime implementation to determine how the inputs are converted to outputs.
@@ -48,7 +50,7 @@ being requested; we call this "invoking a resolver". When an extension is loaded
 that takes args must be associated with a resolver.
 
 Resolvers are provided to Cloak in the form of a Filesystem+ImageConfig pair. The entrypoint of the image config is expected
-to be an executable that implements the "runtime protocol".
+to be an executable that implements the [Runtime Protocol](extension_runtime_protocol.md)
 
 Resolvers have access to the Cloak API during execution, which enables them to invoke other resolvers as needed.
 
