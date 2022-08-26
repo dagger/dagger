@@ -29,6 +29,8 @@ const resolvers = {
                     args: ["yarn", "install"], 
                     mounts: [{path: "/src", fs: "${args.source}"}],
                     workdir: "/src",
+                    env: {name: "YARN_CACHE_FOLDER", value: "/cache"},
+                    cacheMounts:{name:"yarn", path:"/cache", sharingMode:"locked"},
                   }) {
                     mount(path: "/src") {
                       id
@@ -53,6 +55,8 @@ const resolvers = {
                     args: ${cmd},
                     mounts: [{path: "/src", fs: "${yarnInstall.id}"}],
                     workdir: "/src",
+                    env: {name: "YARN_CACHE_FOLDER", value: "/cache"},
+                    cacheMounts:{name:"yarn", path:"/cache", sharingMode:"locked"},
                   }) {
                     mount(path: "/src") {
                       id
