@@ -3,7 +3,7 @@ module github.com/dagger/cloak
 go 1.18
 
 require (
-	github.com/99designs/gqlgen v0.17.15
+	github.com/99designs/gqlgen v0.17.16
 	github.com/Khan/genqlient v0.5.0
 	github.com/bhoriuchi/graphql-go-tools v1.0.0
 	github.com/containerd/containerd v1.6.8
@@ -15,7 +15,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/spf13/cobra v1.5.0
 	github.com/stretchr/testify v1.8.0
-	github.com/vektah/gqlparser/v2 v2.4.8
+	github.com/vektah/gqlparser/v2 v2.5.0
 	go.opentelemetry.io/otel v1.9.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.9.0
 	go.opentelemetry.io/otel/sdk v1.9.0
