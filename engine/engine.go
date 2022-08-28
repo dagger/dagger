@@ -16,6 +16,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/moby/buildkit/util/tracing/detect"
@@ -82,6 +83,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
+			authprovider.NewDockerAuthProvider(os.Stderr),
 		},
 	}
 	solveOpts.LocalDirs = startOpts.LocalDirs
