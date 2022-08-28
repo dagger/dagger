@@ -14,7 +14,7 @@ package main
 import (
     "dagger.io/dagger"
     "dagger.io/dagger/core"
-    "universe.dagger.io/jreleaser"
+    "universe.dagger.io/alpha/jreleaser"
 )
 
 dagger.#Plan & {
@@ -44,7 +44,7 @@ package main
 import (
     "dagger.io/dagger"
     "dagger.io/dagger/core"
-    "universe.dagger.io/jreleaser"
+    "universe.dagger.io/alpha/jreleaser"
 )
 
 dagger.#Plan & {
