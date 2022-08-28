@@ -5,6 +5,7 @@
     "strict": true,
     "outDir": "./dist",
     "esModuleInterop": true,
+    "module": "ESNext",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "node",
