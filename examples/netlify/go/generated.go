@@ -9,96 +9,36 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
-func (r *deploy) url(ctx context.Context, obj *Deploy) (string, error) {
-
-	return obj.URL, nil
-
-}
-
-func (r *deploy) deployURL(ctx context.Context, obj *Deploy) (string, error) {
-
-	return obj.DeployURL, nil
-
-}
-
-func (r *deploy) logsURL(ctx context.Context, obj *Deploy) (*string, error) {
-
-	return obj.LogsURL, nil
-
-}
-
 func (r *query) netlify(ctx context.Context) (*Netlify, error) {
 
 	return new(Netlify), nil
 
 }
 
-type deploy struct{}
+func (r *siteURLs) url(ctx context.Context, obj *SiteURLs) (string, error) {
+
+	return obj.URL, nil
+
+}
+
+func (r *siteURLs) deployURL(ctx context.Context, obj *SiteURLs) (string, error) {
+
+	return obj.DeployURL, nil
+
+}
+
+func (r *siteURLs) logsURL(ctx context.Context, obj *SiteURLs) (*string, error) {
+
+	return obj.LogsURL, nil
+
+}
+
 type netlify struct{}
 type query struct{}
+type siteURLs struct{}
 
 func main() {
 	dagger.Serve(context.Background(), map[string]func(context.Context, dagger.ArgsInput) (interface{}, error){
-		"Deploy.url": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
-			var bytes []byte
-			_ = bytes
-			var err error
-			_ = err
-
-			obj := new(Deploy)
-			bytes, err = json.Marshal(fc.ParentResult)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.Unmarshal(bytes, obj); err != nil {
-				return nil, err
-			}
-
-			return (&deploy{}).url(ctx,
-
-				obj,
-			)
-		},
-		"Deploy.deployURL": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
-			var bytes []byte
-			_ = bytes
-			var err error
-			_ = err
-
-			obj := new(Deploy)
-			bytes, err = json.Marshal(fc.ParentResult)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.Unmarshal(bytes, obj); err != nil {
-				return nil, err
-			}
-
-			return (&deploy{}).deployURL(ctx,
-
-				obj,
-			)
-		},
-		"Deploy.logsURL": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
-			var bytes []byte
-			_ = bytes
-			var err error
-			_ = err
-
-			obj := new(Deploy)
-			bytes, err = json.Marshal(fc.ParentResult)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.Unmarshal(bytes, obj); err != nil {
-				return nil, err
-			}
-
-			return (&deploy{}).logsURL(ctx,
-
-				obj,
-			)
-		},
 		"Netlify.deploy": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
 			var bytes []byte
 			_ = bytes
@@ -163,6 +103,66 @@ func main() {
 			_ = err
 
 			return (&query{}).netlify(ctx)
+		},
+		"SiteURLs.url": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			obj := new(SiteURLs)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
+			return (&siteURLs{}).url(ctx,
+
+				obj,
+			)
+		},
+		"SiteURLs.deployURL": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			obj := new(SiteURLs)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
+			return (&siteURLs{}).deployURL(ctx,
+
+				obj,
+			)
+		},
+		"SiteURLs.logsURL": func(ctx context.Context, fc dagger.ArgsInput) (interface{}, error) {
+			var bytes []byte
+			_ = bytes
+			var err error
+			_ = err
+
+			obj := new(SiteURLs)
+			bytes, err = json.Marshal(fc.ParentResult)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(bytes, obj); err != nil {
+				return nil, err
+			}
+
+			return (&siteURLs{}).logsURL(ctx,
+
+				obj,
+			)
 		},
 	})
 }

@@ -6,6 +6,15 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+type CacheMountInput struct {
+	// Cache mount name
+	Name string `json:"name"`
+	// Cache mount sharing mode (TODO: switch to enum)
+	SharingMode string `json:"sharingMode"`
+	// path at which the cache will be mounted
+	Path string `json:"path"`
+}
+
 // Core API
 type Core struct {
 	// Fetch an OCI image
@@ -16,37 +25,65 @@ type Core struct {
 	Clientdir *dagger.Filesystem `json:"clientdir"`
 	// Look up a filesystem by its ID
 	Filesystem *dagger.Filesystem `json:"filesystem"`
-	// Look up an extension by name
-	Extension *Extension `json:"extension"`
+	// Look up a project by name
+	Project *Project `json:"project"`
 	// Look up a secret by ID
 	Secret string `json:"secret"`
 	// Add a secret
 	AddSecret dagger.SecretID `json:"addSecret"`
 }
 
-type Deploy struct {
-	URL       string  `json:"url"`
-	DeployURL string  `json:"deployURL"`
-	LogsURL   *string `json:"logsURL"`
+type ExecEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Env var value
+	Value string `json:"value"`
 }
 
 type ExecInput struct {
 	// Command to execute
 	// Example: ["echo", "hello, world!"]
 	Args []string `json:"args"`
-	// Transient filesystem mounts
+	// Filesystem mounts
 	Mounts []*MountInput `json:"mounts"`
+	// Cached mounts
+	CacheMounts []*CacheMountInput `json:"cacheMounts"`
 	// Working directory
 	Workdir *string `json:"workdir"`
+	// Env vars
+	Env []*ExecEnvInput `json:"env"`
+	// Secret env vars
+	SecretEnv []*ExecSecretEnvInput `json:"secretEnv"`
 }
 
-type Extension struct {
-	// name of the extension
+type ExecSecretEnvInput struct {
+	// Env var name
 	Name string `json:"name"`
-	// schema of the extension
-	Schema string `json:"schema"`
-	// operations for this extension
-	Operations string `json:"operations"`
+	// Secret env var value
+	ID dagger.SecretID `json:"id"`
+}
+
+// Extension representation
+type Extension struct {
+	// path to the extension source in the project filesystem
+	Path string `json:"path"`
+	// schema associated with the extension
+	Schema *string `json:"schema"`
+	// operations associated with the extension
+	Operations *string `json:"operations"`
+	// sdk of the source
+	Sdk string `json:"sdk"`
+}
+
+// TODO move these to their own file
+type Host struct {
+	Workdir *LocalDir `json:"workdir"`
+}
+
+// TODO move these to their own file
+type LocalDir struct {
+	Read  *dagger.Filesystem `json:"read"`
+	Write bool               `json:"write"`
 }
 
 type MountInput struct {
@@ -57,5 +94,41 @@ type MountInput struct {
 }
 
 type Netlify struct {
-	Deploy *Deploy `json:"deploy"`
+	Deploy *SiteURLs `json:"deploy"`
+}
+
+// Project representation
+type Project struct {
+	// name of the project
+	Name string `json:"name"`
+	// merged schema of the project's sources (if any)
+	Schema *string `json:"schema"`
+	// merged operations of the project's sources (if any)
+	Operations *string `json:"operations"`
+	// extensions for this project
+	Extensions []*Extension `json:"extensions"`
+	// workflows for this project
+	Workflows []*Workflow `json:"workflows"`
+	// dependencies for this project
+	Dependencies []*Project `json:"dependencies"`
+	// install the project, stitching its schema into the API
+	Install bool `json:"install"`
+}
+
+type SiteURLs struct {
+	URL       string  `json:"url"`
+	DeployURL string  `json:"deployURL"`
+	LogsURL   *string `json:"logsURL"`
+}
+
+// Workflow representation
+type Workflow struct {
+	// path to the workflow source in the project filesystem
+	Path string `json:"path"`
+	// schema associated with the workflow
+	Schema *string `json:"schema"`
+	// operations associated with the workflow
+	Operations *string `json:"operations"`
+	// sdk of the source
+	Sdk string `json:"sdk"`
 }

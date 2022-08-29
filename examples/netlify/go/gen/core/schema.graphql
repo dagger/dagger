@@ -2,6 +2,9 @@
 	extend type Query {
 		"Core API"
 		core: Core!
+
+		"TODO doc"
+		host: Host!
 	}
 
 	"Core API"
@@ -15,16 +18,29 @@
 		"Fetch a client directory"
 		clientdir(id: String!): Filesystem!
 	}
+
+	"TODO move these to their own file"
+	type Host {
+		workdir: LocalDir!
+	}
+
+	"TODO move these to their own file"
+	type LocalDir {
+		read: Filesystem!
+		write(contents: FSID!): Boolean!
+	}
 	
 
 	scalar FSID
 
 	"""
 	A reference to a filesystem tree.
+
 	For example:
 	 - The root filesystem of a container
 	 - A source code repository
 	 - A directory containing binary artifacts
+
 	Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
 	"""
 	type Filesystem {
@@ -45,28 +61,72 @@
 	}
 	
 
-	type Extension {
-		"name of the extension"
+	"Project representation"
+	type Project {
+		"name of the project"
 		name: String!
 
-		"schema of the extension"
-		schema: String!
+		"merged schema of the project's sources (if any)"
+		schema: String
 
-		"operations for this extension"
-		operations: String!
+		"merged operations of the project's sources (if any)"
+		operations: String
+
+		"extensions for this project"
+		extensions: [Extension!]
+
+		"workflows for this project"
+		workflows: [Workflow!]
+
+		"dependencies for this project"
+		dependencies: [Project!]
+
+		"install the project, stitching its schema into the API"
+		install: Boolean!
+	}
+
+	"Extension representation"
+	type Extension {
+		"path to the extension source in the project filesystem"
+		path: String!
+
+		"schema associated with the extension"
+		schema: String
+
+		"operations associated with the extension"
+		operations: String
+
+		"sdk of the source"
+		sdk: String!
+	}
+
+	"Workflow representation"
+	type Workflow {
+		"path to the workflow source in the project filesystem"
+		path: String!
+
+		"schema associated with the workflow"
+		schema: String
+
+		"operations associated with the workflow"
+		operations: String
+
+		"sdk of the source"
+		sdk: String!
 	}
 
 	extend type Filesystem {
-		"load an extension into the API"
-		loadExtension(name: String!): Extension!
+		"load a project's metadata"
+		loadProject(configPath: String!): Project!
 	}
 
 	extend type Core {
-		"Look up an extension by name"
-		extension(name: String!): Extension!
+		"Look up a project by name"
+		project(name: String!): Project!
 	}
 	
 
+	"Command execution"
 	type Exec {
 		"Modified filesystem"
 		fs: Filesystem!
@@ -92,6 +152,17 @@
 		path: String!
 	}
 
+	input CacheMountInput {
+		"Cache mount name"
+		name: String!
+
+		"Cache mount sharing mode (TODO: switch to enum)"
+		sharingMode: String!
+
+		"path at which the cache will be mounted"
+		path: String!
+	}
+
 	input ExecInput {
 		"""
 		Command to execute
@@ -99,11 +170,34 @@
 		"""
 		args: [String!]!
 
-		"Transient filesystem mounts"
+		"Filesystem mounts"
 		mounts: [MountInput!]
+
+		"Cached mounts"
+		cacheMounts: [CacheMountInput!]
 
 		"Working directory"
 		workdir: String
+
+		"Env vars"
+		env: [ExecEnvInput!]
+
+		"Secret env vars"
+		secretEnv: [ExecSecretEnvInput!]
+	}
+
+	input ExecEnvInput {
+		"Env var name"
+		name: String!
+		"Env var value"
+		value: String!
+	}
+
+	input ExecSecretEnvInput {
+		"Env var name"
+		name: String!
+		"Secret env var value"
+		id: SecretID!
 	}
 
 	# FIXME: broken
