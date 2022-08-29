@@ -16,3 +16,7 @@ type SiteURLs {
   deployURL: String!
   logsURL: String
 }
+
+extend type Filesystem {
+  netlifyDeploy(subdir: String, siteName: String, token: SecretID!): SiteURLs!
+}
