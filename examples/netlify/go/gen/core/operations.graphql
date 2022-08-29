@@ -6,6 +6,22 @@
 			}
 		}
 	}
+	query Workdir() {
+		host {
+			workdir {
+				read {
+					id
+				}
+			}
+		}
+	}
+	query WriteWorkdir($contents: FSID!) {
+		host {
+			workdir {
+				write(contents: $contents)
+			}
+		}
+	}
 	
 
 
@@ -48,6 +64,11 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
 	query Secret($id: SecretID!) {
 		core {
 			secret(id: $id)
+		}
+	}
+	query AddSecret($plaintext: String!) {
+		core {
+			addSecret(plaintext: $plaintext)
 		}
 	}
 	

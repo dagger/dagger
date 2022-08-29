@@ -9,6 +9,45 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+// AddSecretCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
+type AddSecretCore struct {
+	// Add a secret
+	AddSecret dagger.SecretID `json:"addSecret"`
+}
+
+// GetAddSecret returns AddSecretCore.AddSecret, and is useful for accessing the field via an interface.
+func (v *AddSecretCore) GetAddSecret() dagger.SecretID { return v.AddSecret }
+
+// AddSecretResponse is returned by AddSecret on success.
+type AddSecretResponse struct {
+	// Core API
+	Core AddSecretCore `json:"core"`
+}
+
+// GetCore returns AddSecretResponse.Core, and is useful for accessing the field via an interface.
+func (v *AddSecretResponse) GetCore() AddSecretCore { return v.Core }
+
+type CacheMountInput struct {
+	// Cache mount name
+	Name string `json:"name"`
+	// Cache mount sharing mode (TODO: switch to enum)
+	SharingMode string `json:"sharingMode"`
+	// path at which the cache will be mounted
+	Path string `json:"path"`
+}
+
+// GetName returns CacheMountInput.Name, and is useful for accessing the field via an interface.
+func (v *CacheMountInput) GetName() string { return v.Name }
+
+// GetSharingMode returns CacheMountInput.SharingMode, and is useful for accessing the field via an interface.
+func (v *CacheMountInput) GetSharingMode() string { return v.SharingMode }
+
+// GetPath returns CacheMountInput.Path, and is useful for accessing the field via an interface.
+func (v *CacheMountInput) GetPath() string { return v.Path }
+
 // DockerfileCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
 //
@@ -42,6 +81,19 @@ type ExecCore struct {
 // GetFilesystem returns ExecCore.Filesystem, and is useful for accessing the field via an interface.
 func (v *ExecCore) GetFilesystem() dagger.Filesystem { return v.Filesystem }
 
+type ExecEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Env var value
+	Value string `json:"value"`
+}
+
+// GetName returns ExecEnvInput.Name, and is useful for accessing the field via an interface.
+func (v *ExecEnvInput) GetName() string { return v.Name }
+
+// GetValue returns ExecEnvInput.Value, and is useful for accessing the field via an interface.
+func (v *ExecEnvInput) GetValue() string { return v.Value }
+
 // ExecGetMountCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
 //
@@ -67,10 +119,16 @@ type ExecInput struct {
 	// Command to execute
 	// Example: ["echo", "hello, world!"]
 	Args []string `json:"args"`
-	// Transient filesystem mounts
+	// Filesystem mounts
 	Mounts []MountInput `json:"mounts"`
+	// Cached mounts
+	CacheMounts []CacheMountInput `json:"cacheMounts"`
 	// Working directory
 	Workdir string `json:"workdir"`
+	// Env vars
+	Env []ExecEnvInput `json:"env"`
+	// Secret env vars
+	SecretEnv []ExecSecretEnvInput `json:"secretEnv"`
 }
 
 // GetArgs returns ExecInput.Args, and is useful for accessing the field via an interface.
@@ -79,8 +137,17 @@ func (v *ExecInput) GetArgs() []string { return v.Args }
 // GetMounts returns ExecInput.Mounts, and is useful for accessing the field via an interface.
 func (v *ExecInput) GetMounts() []MountInput { return v.Mounts }
 
+// GetCacheMounts returns ExecInput.CacheMounts, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetCacheMounts() []CacheMountInput { return v.CacheMounts }
+
 // GetWorkdir returns ExecInput.Workdir, and is useful for accessing the field via an interface.
 func (v *ExecInput) GetWorkdir() string { return v.Workdir }
+
+// GetEnv returns ExecInput.Env, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetEnv() []ExecEnvInput { return v.Env }
+
+// GetSecretEnv returns ExecInput.SecretEnv, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetSecretEnv() []ExecSecretEnvInput { return v.SecretEnv }
 
 // ExecResponse is returned by Exec on success.
 type ExecResponse struct {
@@ -90,6 +157,19 @@ type ExecResponse struct {
 
 // GetCore returns ExecResponse.Core, and is useful for accessing the field via an interface.
 func (v *ExecResponse) GetCore() ExecCore { return v.Core }
+
+type ExecSecretEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Secret env var value
+	Id dagger.SecretID `json:"id"`
+}
+
+// GetName returns ExecSecretEnvInput.Name, and is useful for accessing the field via an interface.
+func (v *ExecSecretEnvInput) GetName() string { return v.Name }
+
+// GetId returns ExecSecretEnvInput.Id, and is useful for accessing the field via an interface.
+func (v *ExecSecretEnvInput) GetId() dagger.SecretID { return v.Id }
 
 // ImageCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
@@ -146,6 +226,76 @@ type SecretResponse struct {
 // GetCore returns SecretResponse.Core, and is useful for accessing the field via an interface.
 func (v *SecretResponse) GetCore() SecretCore { return v.Core }
 
+// WorkdirHost includes the requested fields of the GraphQL type Host.
+// The GraphQL type's documentation follows.
+//
+// TODO move these to their own file
+type WorkdirHost struct {
+	Workdir WorkdirHostWorkdirLocalDir `json:"workdir"`
+}
+
+// GetWorkdir returns WorkdirHost.Workdir, and is useful for accessing the field via an interface.
+func (v *WorkdirHost) GetWorkdir() WorkdirHostWorkdirLocalDir { return v.Workdir }
+
+// WorkdirHostWorkdirLocalDir includes the requested fields of the GraphQL type LocalDir.
+// The GraphQL type's documentation follows.
+//
+// TODO move these to their own file
+type WorkdirHostWorkdirLocalDir struct {
+	Read dagger.Filesystem `json:"read"`
+}
+
+// GetRead returns WorkdirHostWorkdirLocalDir.Read, and is useful for accessing the field via an interface.
+func (v *WorkdirHostWorkdirLocalDir) GetRead() dagger.Filesystem { return v.Read }
+
+// WorkdirResponse is returned by Workdir on success.
+type WorkdirResponse struct {
+	// TODO doc
+	Host WorkdirHost `json:"host"`
+}
+
+// GetHost returns WorkdirResponse.Host, and is useful for accessing the field via an interface.
+func (v *WorkdirResponse) GetHost() WorkdirHost { return v.Host }
+
+// WriteWorkdirHost includes the requested fields of the GraphQL type Host.
+// The GraphQL type's documentation follows.
+//
+// TODO move these to their own file
+type WriteWorkdirHost struct {
+	Workdir WriteWorkdirHostWorkdirLocalDir `json:"workdir"`
+}
+
+// GetWorkdir returns WriteWorkdirHost.Workdir, and is useful for accessing the field via an interface.
+func (v *WriteWorkdirHost) GetWorkdir() WriteWorkdirHostWorkdirLocalDir { return v.Workdir }
+
+// WriteWorkdirHostWorkdirLocalDir includes the requested fields of the GraphQL type LocalDir.
+// The GraphQL type's documentation follows.
+//
+// TODO move these to their own file
+type WriteWorkdirHostWorkdirLocalDir struct {
+	Write bool `json:"write"`
+}
+
+// GetWrite returns WriteWorkdirHostWorkdirLocalDir.Write, and is useful for accessing the field via an interface.
+func (v *WriteWorkdirHostWorkdirLocalDir) GetWrite() bool { return v.Write }
+
+// WriteWorkdirResponse is returned by WriteWorkdir on success.
+type WriteWorkdirResponse struct {
+	// TODO doc
+	Host WriteWorkdirHost `json:"host"`
+}
+
+// GetHost returns WriteWorkdirResponse.Host, and is useful for accessing the field via an interface.
+func (v *WriteWorkdirResponse) GetHost() WriteWorkdirHost { return v.Host }
+
+// __AddSecretInput is used internally by genqlient
+type __AddSecretInput struct {
+	Plaintext string `json:"plaintext"`
+}
+
+// GetPlaintext returns __AddSecretInput.Plaintext, and is useful for accessing the field via an interface.
+func (v *__AddSecretInput) GetPlaintext() string { return v.Plaintext }
+
 // __DockerfileInput is used internally by genqlient
 type __DockerfileInput struct {
 	Context        dagger.FSID `json:"context"`
@@ -201,6 +351,51 @@ type __SecretInput struct {
 
 // GetId returns __SecretInput.Id, and is useful for accessing the field via an interface.
 func (v *__SecretInput) GetId() dagger.SecretID { return v.Id }
+
+// __WriteWorkdirInput is used internally by genqlient
+type __WriteWorkdirInput struct {
+	Contents dagger.FSID `json:"contents"`
+}
+
+// GetContents returns __WriteWorkdirInput.Contents, and is useful for accessing the field via an interface.
+func (v *__WriteWorkdirInput) GetContents() dagger.FSID { return v.Contents }
+
+func AddSecret(
+	ctx context.Context,
+	plaintext string,
+) (*AddSecretResponse, error) {
+	req := &graphql.Request{
+		OpName: "AddSecret",
+		Query: `
+query AddSecret ($plaintext: String!) {
+	core {
+		addSecret(plaintext: $plaintext)
+	}
+}
+`,
+		Variables: &__AddSecretInput{
+			Plaintext: plaintext,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data AddSecretResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
 
 func Dockerfile(
 	ctx context.Context,
@@ -402,6 +597,82 @@ query Secret ($id: SecretID!) {
 	}
 
 	var data SecretResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func Workdir(
+	ctx context.Context,
+) (*WorkdirResponse, error) {
+	req := &graphql.Request{
+		OpName: "Workdir",
+		Query: `
+query Workdir {
+	host {
+		workdir {
+			read {
+				id
+			}
+		}
+	}
+}
+`,
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data WorkdirResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func WriteWorkdir(
+	ctx context.Context,
+	contents dagger.FSID,
+) (*WriteWorkdirResponse, error) {
+	req := &graphql.Request{
+		OpName: "WriteWorkdir",
+		Query: `
+query WriteWorkdir ($contents: FSID!) {
+	host {
+		workdir {
+			write(contents: $contents)
+		}
+	}
+}
+`,
+		Variables: &__WriteWorkdirInput{
+			Contents: contents,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data WriteWorkdirResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(

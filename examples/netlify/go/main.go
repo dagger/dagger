@@ -16,7 +16,7 @@ import (
 	netlifycontext "github.com/netlify/open-api/v2/go/porcelain/context"
 )
 
-func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*Deploy, error) {
+func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
 	// Setup Auth
 	readSecretOutput, err := core.Secret(ctx, token)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *stri
 		return nil, fmt.Errorf("failed to wait for deploy: %w", err)
 	}
 
-	return &Deploy{
+	return &SiteURLs{
 		URL:       deploy.URL,
 		DeployURL: deploy.DeployURL,
 	}, nil
