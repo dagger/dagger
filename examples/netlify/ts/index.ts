@@ -74,12 +74,22 @@ const resolvers = {
       },
       parent: { id: FSID }
     ) => {
-      return resolvers.Netlify.deploy({
-        contents: parent.id,
-        subdir: args.subdir,
-        siteName: args.siteName,
-        token: args.token,
-      });
+      // FIXME:(sipsma) should be able to just direct invoke self, but won't have /mnt/contents.
+      // Need a fix server-side to mount any FSID fields from parent.
+      return client
+        .request(
+          gql`
+            {
+              netlify {
+                deploy(contents: "${parent.id}", subdir: "${args.subdir}", siteName: "${args.siteName}", token: "${args.token}") {
+                  url
+                  deployURL
+                }
+              }
+            }
+          `
+        )
+        .then((res: any) => res.netlify.deploy);
     },
   },
 };
