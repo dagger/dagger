@@ -52,5 +52,4 @@ func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error 
 		_ = p.router.ServeConn(serverConn)
 	}()
 	return sshforward.Copy(context.TODO(), clientConn, stream, nil)
-
 }

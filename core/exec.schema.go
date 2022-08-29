@@ -45,7 +45,7 @@ type ExecEnvInput struct {
 
 type ExecSecretEnvInput struct {
 	Name string
-	Id   string // TODO:(sipsma) stronger type
+	ID   string `json:"id"` // TODO:(sipsma) stronger type
 }
 
 var _ router.ExecutableSchema = &filesystemSchema{}
@@ -231,7 +231,7 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		runOpt = append(runOpt, llb.AddEnv(env.Name, env.Value))
 	}
 	for _, secretEnv := range input.SecretEnv {
-		runOpt = append(runOpt, llb.AddSecret(secretEnv.Name, llb.SecretID(secretEnv.Id), llb.SecretAsEnv(true)))
+		runOpt = append(runOpt, llb.AddSecret(secretEnv.Name, llb.SecretID(secretEnv.ID), llb.SecretAsEnv(true)))
 	}
 
 	st, err := obj.ToState()
