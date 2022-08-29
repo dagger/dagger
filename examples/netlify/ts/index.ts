@@ -65,6 +65,23 @@ const resolvers = {
       };
     },
   },
+  Filesystem: {
+    netlifyDeploy: async (
+      args: {
+        subdir: string;
+        siteName: string;
+        token: SecretID;
+      },
+      parent: { id: FSID }
+    ) => {
+      return resolvers.Netlify.deploy({
+        contents: parent.id,
+        subdir: args.subdir,
+        siteName: args.siteName,
+        token: args.token,
+      });
+    },
+  },
 };
 
 const server = new DaggerServer({ resolvers });
