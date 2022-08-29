@@ -16,7 +16,8 @@ const resolvers = {
       token: SecretID;
     }) => {
       // TODO: should be set from Dockerfile ENV, just not propagated by dagger server yet
-      process.env["PATH"] = "/app/src/node_modules/.bin:" + process.env["PATH"];
+      process.env["PATH"] =
+        "/src/examples/netlify/ts/node_modules/.bin:" + process.env["PATH"];
       process.env["HOME"] = "/tmp";
 
       const token = await core
