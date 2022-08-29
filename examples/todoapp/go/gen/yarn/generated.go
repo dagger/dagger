@@ -27,35 +27,35 @@ func (v *ScriptYarn) GetScript() dagger.Filesystem { return v.Script }
 
 // __ScriptInput is used internally by genqlient
 type __ScriptInput struct {
-	Source dagger.FSID `json:"source"`
-	Name   string      `json:"name"`
+	Source  dagger.FSID `json:"source"`
+	RunArgs []string    `json:"runArgs"`
 }
 
 // GetSource returns __ScriptInput.Source, and is useful for accessing the field via an interface.
 func (v *__ScriptInput) GetSource() dagger.FSID { return v.Source }
 
-// GetName returns __ScriptInput.Name, and is useful for accessing the field via an interface.
-func (v *__ScriptInput) GetName() string { return v.Name }
+// GetRunArgs returns __ScriptInput.RunArgs, and is useful for accessing the field via an interface.
+func (v *__ScriptInput) GetRunArgs() []string { return v.RunArgs }
 
 func Script(
 	ctx context.Context,
 	source dagger.FSID,
-	name string,
+	runArgs []string,
 ) (*ScriptResponse, error) {
 	req := &graphql.Request{
 		OpName: "Script",
 		Query: `
-query Script ($source: FSID!, $name: String!) {
+query Script ($source: FSID!, $runArgs: [String!]) {
 	yarn {
-		script(source: $source, name: $name) {
+		script(source: $source, runArgs: $runArgs) {
 			id
 		}
 	}
 }
 `,
 		Variables: &__ScriptInput{
-			Source: source,
-			Name:   name,
+			Source:  source,
+			RunArgs: runArgs,
 		},
 	}
 	var err error

@@ -9,6 +9,24 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+type CacheMountInput struct {
+	// Cache mount name
+	Name string `json:"name"`
+	// Cache mount sharing mode (TODO: switch to enum)
+	SharingMode string `json:"sharingMode"`
+	// path at which the cache will be mounted
+	Path string `json:"path"`
+}
+
+// GetName returns CacheMountInput.Name, and is useful for accessing the field via an interface.
+func (v *CacheMountInput) GetName() string { return v.Name }
+
+// GetSharingMode returns CacheMountInput.SharingMode, and is useful for accessing the field via an interface.
+func (v *CacheMountInput) GetSharingMode() string { return v.SharingMode }
+
+// GetPath returns CacheMountInput.Path, and is useful for accessing the field via an interface.
+func (v *CacheMountInput) GetPath() string { return v.Path }
+
 // DockerfileCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
 //
@@ -42,6 +60,19 @@ type ExecCore struct {
 // GetFilesystem returns ExecCore.Filesystem, and is useful for accessing the field via an interface.
 func (v *ExecCore) GetFilesystem() dagger.Filesystem { return v.Filesystem }
 
+type ExecEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Env var value
+	Value string `json:"value"`
+}
+
+// GetName returns ExecEnvInput.Name, and is useful for accessing the field via an interface.
+func (v *ExecEnvInput) GetName() string { return v.Name }
+
+// GetValue returns ExecEnvInput.Value, and is useful for accessing the field via an interface.
+func (v *ExecEnvInput) GetValue() string { return v.Value }
+
 // ExecGetMountCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
 //
@@ -67,10 +98,16 @@ type ExecInput struct {
 	// Command to execute
 	// Example: ["echo", "hello, world!"]
 	Args []string `json:"args"`
-	// Transient filesystem mounts
+	// Filesystem mounts
 	Mounts []MountInput `json:"mounts"`
+	// Cached mounts
+	CacheMounts []CacheMountInput `json:"cacheMounts"`
 	// Working directory
 	Workdir string `json:"workdir"`
+	// Env vars
+	Env []ExecEnvInput `json:"env"`
+	// Secret env vars
+	SecretEnv []ExecSecretEnvInput `json:"secretEnv"`
 }
 
 // GetArgs returns ExecInput.Args, and is useful for accessing the field via an interface.
@@ -79,8 +116,17 @@ func (v *ExecInput) GetArgs() []string { return v.Args }
 // GetMounts returns ExecInput.Mounts, and is useful for accessing the field via an interface.
 func (v *ExecInput) GetMounts() []MountInput { return v.Mounts }
 
+// GetCacheMounts returns ExecInput.CacheMounts, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetCacheMounts() []CacheMountInput { return v.CacheMounts }
+
 // GetWorkdir returns ExecInput.Workdir, and is useful for accessing the field via an interface.
 func (v *ExecInput) GetWorkdir() string { return v.Workdir }
+
+// GetEnv returns ExecInput.Env, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetEnv() []ExecEnvInput { return v.Env }
+
+// GetSecretEnv returns ExecInput.SecretEnv, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetSecretEnv() []ExecSecretEnvInput { return v.SecretEnv }
 
 // ExecResponse is returned by Exec on success.
 type ExecResponse struct {
@@ -90,6 +136,19 @@ type ExecResponse struct {
 
 // GetCore returns ExecResponse.Core, and is useful for accessing the field via an interface.
 func (v *ExecResponse) GetCore() ExecCore { return v.Core }
+
+type ExecSecretEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Secret env var value
+	Id dagger.SecretID `json:"id"`
+}
+
+// GetName returns ExecSecretEnvInput.Name, and is useful for accessing the field via an interface.
+func (v *ExecSecretEnvInput) GetName() string { return v.Name }
+
+// GetId returns ExecSecretEnvInput.Id, and is useful for accessing the field via an interface.
+func (v *ExecSecretEnvInput) GetId() dagger.SecretID { return v.Id }
 
 // ImageCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
