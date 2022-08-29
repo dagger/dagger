@@ -35,7 +35,7 @@ func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
 func (f *Filesystem) ToState() (llb.State, error) {
 	def, err := f.ToDefinition()
 	if err != nil {
-		return llb.State{}, nil
+		return llb.State{}, err
 	}
 	defop, err := llb.NewDefinitionOp(def)
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 func (r *todoapp) build(ctx context.Context, src dagger.FSID) (*dagger.Filesystem, error) {
-	output, err := yarn.Script(ctx, src, "build")
+	output, err := yarn.Script(ctx, src, []string{"build"})
 	if err != nil {
 		return nil, err
 	}
@@ -18,7 +18,7 @@ func (r *todoapp) build(ctx context.Context, src dagger.FSID) (*dagger.Filesyste
 }
 
 func (r *todoapp) test(ctx context.Context, src dagger.FSID) (*dagger.Filesystem, error) {
-	output, err := yarn.Script(ctx, src, "test")
+	output, err := yarn.Script(ctx, src, []string{"test"})
 	if err != nil {
 		return nil, err
 	}

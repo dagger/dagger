@@ -6,6 +6,15 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+type CacheMountInput struct {
+	// Cache mount name
+	Name string `json:"name"`
+	// Cache mount sharing mode (TODO: switch to enum)
+	SharingMode string `json:"sharingMode"`
+	// path at which the cache will be mounted
+	Path string `json:"path"`
+}
+
 // Core API
 type Core struct {
 	// Fetch an OCI image
@@ -30,23 +39,48 @@ type DeployURLs struct {
 	LogsURL   *string `json:"logsURL"`
 }
 
+type ExecEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Env var value
+	Value string `json:"value"`
+}
+
 type ExecInput struct {
 	// Command to execute
 	// Example: ["echo", "hello, world!"]
 	Args []string `json:"args"`
-	// Transient filesystem mounts
+	// Filesystem mounts
 	Mounts []*MountInput `json:"mounts"`
+	// Cached mounts
+	CacheMounts []*CacheMountInput `json:"cacheMounts"`
 	// Working directory
 	Workdir *string `json:"workdir"`
+	// Env vars
+	Env []*ExecEnvInput `json:"env"`
+	// Secret env vars
+	SecretEnv []*ExecSecretEnvInput `json:"secretEnv"`
 }
 
+type ExecSecretEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+	// Secret env var value
+	ID dagger.SecretID `json:"id"`
+}
+
+// Extension representation
 type Extension struct {
 	// name of the extension
 	Name string `json:"name"`
 	// schema of the extension
-	Schema string `json:"schema"`
+	Schema *string `json:"schema"`
 	// operations for this extension
-	Operations string `json:"operations"`
+	Operations *string `json:"operations"`
+	// dependencies for this extension
+	Dependencies []*Extension `json:"dependencies"`
+	// install the extension, stitching its schema into the API
+	Install bool `json:"install"`
 }
 
 type MountInput struct {

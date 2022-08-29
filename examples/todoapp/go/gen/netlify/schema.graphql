@@ -21,10 +21,12 @@
 
 	"""
 	A reference to a filesystem tree.
+
 	For example:
 	 - The root filesystem of a container
 	 - A source code repository
 	 - A directory containing binary artifacts
+
 	Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
 	"""
 	type Filesystem {
@@ -45,20 +47,27 @@
 	}
 	
 
+	"Extension representation"
 	type Extension {
 		"name of the extension"
 		name: String!
 
 		"schema of the extension"
-		schema: String!
+		schema: String
 
 		"operations for this extension"
-		operations: String!
+		operations: String
+
+		"dependencies for this extension"
+		dependencies: [Extension!]
+
+		"install the extension, stitching its schema into the API"
+		install: Boolean!
 	}
 
 	extend type Filesystem {
-		"load an extension into the API"
-		loadExtension(name: String!): Extension!
+		"load an extension's metadata"
+		loadExtension(configPath: String!): Extension!
 	}
 
 	extend type Core {
@@ -67,6 +76,7 @@
 	}
 	
 
+	"Command execution"
 	type Exec {
 		"Modified filesystem"
 		fs: Filesystem!
@@ -92,6 +102,17 @@
 		path: String!
 	}
 
+	input CacheMountInput {
+		"Cache mount name"
+		name: String!
+
+		"Cache mount sharing mode (TODO: switch to enum)"
+		sharingMode: String!
+
+		"path at which the cache will be mounted"
+		path: String!
+	}
+
 	input ExecInput {
 		"""
 		Command to execute
@@ -99,11 +120,34 @@
 		"""
 		args: [String!]!
 
-		"Transient filesystem mounts"
+		"Filesystem mounts"
 		mounts: [MountInput!]
+
+		"Cached mounts"
+		cacheMounts: [CacheMountInput!]
 
 		"Working directory"
 		workdir: String
+
+		"Env vars"
+		env: [ExecEnvInput!]
+
+		"Secret env vars"
+		secretEnv: [ExecSecretEnvInput!]
+	}
+
+	input ExecEnvInput {
+		"Env var name"
+		name: String!
+		"Env var value"
+		value: String!
+	}
+
+	input ExecSecretEnvInput {
+		"Env var name"
+		name: String!
+		"Secret env var value"
+		id: SecretID!
 	}
 
 	# FIXME: broken
@@ -140,10 +184,10 @@ type Netlify {
     subdir: String
     siteName: String
     token: SecretID!
-  ): Deploy!
+  ): SiteURLs!
 }
 
-type Deploy {
+type SiteURLs {
   url: String!
   deployURL: String!
   logsURL: String

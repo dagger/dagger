@@ -16,7 +16,7 @@ const resolvers = {
       return await yarn
         .Script({
           source: args.src,
-          name: "build",
+          runArgs: ["build"],
         })
         .then((res: any) => res.yarn.script);
     },
@@ -28,7 +28,7 @@ const resolvers = {
       return await yarn
         .Script({
           source: args.src,
-          name: "test",
+          runArgs: ["test"],
         })
         .then((res: any) => res.yarn.script);
     },

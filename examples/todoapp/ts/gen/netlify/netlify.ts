@@ -18,121 +18,269 @@ export type Scalars = {
   SecretID: SecretID;
 };
 
+export type CacheMountInput = {
+  /** Cache mount name */
+  name: Scalars['String'];
+  /** path at which the cache will be mounted */
+  path: Scalars['String'];
+  /** Cache mount sharing mode (TODO: switch to enum) */
+  sharingMode: Scalars['String'];
+};
+
+/** Core API */
 export type Core = {
   __typename?: 'Core';
+  /** Add a secret */
+  addSecret: Scalars['SecretID'];
+  /** Fetch a client directory */
   clientdir: Filesystem;
+  /** Look up an extension by name */
+  extension: Extension;
+  /** Look up a filesystem by its ID */
   filesystem: Filesystem;
+  /** Fetch a git repository */
   git: Filesystem;
+  /** Fetch an OCI image */
   image: Filesystem;
+  /** Look up a secret by ID */
   secret: Scalars['String'];
 };
 
 
+/** Core API */
+export type CoreAddSecretArgs = {
+  plaintext: Scalars['String'];
+};
+
+
+/** Core API */
 export type CoreClientdirArgs = {
   id: Scalars['String'];
 };
 
 
+/** Core API */
+export type CoreExtensionArgs = {
+  name: Scalars['String'];
+};
+
+
+/** Core API */
 export type CoreFilesystemArgs = {
   id: Scalars['FSID'];
 };
 
 
+/** Core API */
 export type CoreGitArgs = {
   ref?: InputMaybe<Scalars['String']>;
   remote: Scalars['String'];
 };
 
 
+/** Core API */
 export type CoreImageArgs = {
   ref: Scalars['String'];
 };
 
 
+/** Core API */
 export type CoreSecretArgs = {
   id: Scalars['SecretID'];
 };
 
-export type Deploy = {
-  __typename?: 'Deploy';
-  deployURL: Scalars['String'];
-  logsURL?: Maybe<Scalars['String']>;
-  url: Scalars['String'];
-};
-
+/** Command execution */
 export type Exec = {
   __typename?: 'Exec';
+  /** Exit code of the command */
   exitCode?: Maybe<Scalars['Int']>;
+  /** Modified filesystem */
   fs: Filesystem;
+  /** Modified mounted filesystem */
   mount: Filesystem;
+  /** stderr of the command */
   stderr?: Maybe<Scalars['String']>;
+  /** stdout of the command */
   stdout?: Maybe<Scalars['String']>;
 };
 
 
+/** Command execution */
 export type ExecMountArgs = {
   path: Scalars['String'];
 };
 
 
+/** Command execution */
 export type ExecStderrArgs = {
   lines?: InputMaybe<Scalars['Int']>;
 };
 
 
+/** Command execution */
 export type ExecStdoutArgs = {
   lines?: InputMaybe<Scalars['Int']>;
 };
 
+export type ExecEnvInput = {
+  /** Env var name */
+  name: Scalars['String'];
+  /** Env var value */
+  value: Scalars['String'];
+};
+
 export type ExecInput = {
+  /**
+   * Command to execute
+   * Example: ["echo", "hello, world!"]
+   */
   args: Array<Scalars['String']>;
+  /** Cached mounts */
+  cacheMounts?: InputMaybe<Array<CacheMountInput>>;
+  /** Env vars */
+  env?: InputMaybe<Array<ExecEnvInput>>;
+  /** Filesystem mounts */
   mounts?: InputMaybe<Array<MountInput>>;
+  /** Secret env vars */
+  secretEnv?: InputMaybe<Array<ExecSecretEnvInput>>;
+  /** Working directory */
   workdir?: InputMaybe<Scalars['String']>;
 };
 
+export type ExecSecretEnvInput = {
+  /** Secret env var value */
+  id: Scalars['SecretID'];
+  /** Env var name */
+  name: Scalars['String'];
+};
+
+/** Extension representation */
+export type Extension = {
+  __typename?: 'Extension';
+  /** dependencies for this extension */
+  dependencies?: Maybe<Array<Extension>>;
+  /** install the extension, stitching its schema into the API */
+  install: Scalars['Boolean'];
+  /** name of the extension */
+  name: Scalars['String'];
+  /** operations for this extension */
+  operations?: Maybe<Scalars['String']>;
+  /** schema of the extension */
+  schema?: Maybe<Scalars['String']>;
+};
+
+/**
+ * A reference to a filesystem tree.
+ *
+ * For example:
+ *  - The root filesystem of a container
+ *  - A source code repository
+ *  - A directory containing binary artifacts
+ *
+ * Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+ */
 export type Filesystem = {
   __typename?: 'Filesystem';
+  /** docker build using this filesystem as context */
   dockerbuild: Filesystem;
+  /** execute a command inside this filesystem */
   exec: Exec;
+  /** read a file at path */
   file?: Maybe<Scalars['String']>;
   id: Scalars['FSID'];
+  /** load an extension's metadata */
+  loadExtension: Extension;
+  netlifyDeploy: SiteUrLs;
 };
 
 
+/**
+ * A reference to a filesystem tree.
+ *
+ * For example:
+ *  - The root filesystem of a container
+ *  - A source code repository
+ *  - A directory containing binary artifacts
+ *
+ * Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+ */
 export type FilesystemDockerbuildArgs = {
   dockerfile?: InputMaybe<Scalars['String']>;
 };
 
 
+/**
+ * A reference to a filesystem tree.
+ *
+ * For example:
+ *  - The root filesystem of a container
+ *  - A source code repository
+ *  - A directory containing binary artifacts
+ *
+ * Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+ */
 export type FilesystemExecArgs = {
   input: ExecInput;
 };
 
 
+/**
+ * A reference to a filesystem tree.
+ *
+ * For example:
+ *  - The root filesystem of a container
+ *  - A source code repository
+ *  - A directory containing binary artifacts
+ *
+ * Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+ */
 export type FilesystemFileArgs = {
   lines?: InputMaybe<Scalars['Int']>;
   path: Scalars['String'];
 };
 
+
+/**
+ * A reference to a filesystem tree.
+ *
+ * For example:
+ *  - The root filesystem of a container
+ *  - A source code repository
+ *  - A directory containing binary artifacts
+ *
+ * Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+ */
+export type FilesystemLoadExtensionArgs = {
+  configPath: Scalars['String'];
+};
+
+
+/**
+ * A reference to a filesystem tree.
+ *
+ * For example:
+ *  - The root filesystem of a container
+ *  - A source code repository
+ *  - A directory containing binary artifacts
+ *
+ * Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+ */
+export type FilesystemNetlifyDeployArgs = {
+  siteName?: InputMaybe<Scalars['String']>;
+  subdir?: InputMaybe<Scalars['String']>;
+  token: Scalars['SecretID'];
+};
+
 export type MountInput = {
+  /** filesystem to mount */
   fs: Scalars['FSID'];
+  /** path at which the filesystem will be mounted */
   path: Scalars['String'];
-};
-
-export type Mutation = {
-  __typename?: 'Mutation';
-  import?: Maybe<Package>;
-};
-
-
-export type MutationImportArgs = {
-  fs?: InputMaybe<Scalars['FSID']>;
-  name: Scalars['String'];
 };
 
 export type Netlify = {
   __typename?: 'Netlify';
-  deploy: Deploy;
+  deploy: SiteUrLs;
 };
 
 
@@ -143,18 +291,18 @@ export type NetlifyDeployArgs = {
   token: Scalars['SecretID'];
 };
 
-export type Package = {
-  __typename?: 'Package';
-  fs?: Maybe<Filesystem>;
-  name: Scalars['String'];
-  operations: Scalars['String'];
-  schema: Scalars['String'];
-};
-
 export type Query = {
   __typename?: 'Query';
+  /** Core API */
   core: Core;
   netlify: Netlify;
+};
+
+export type SiteUrLs = {
+  __typename?: 'SiteURLs';
+  deployURL: Scalars['String'];
+  logsURL?: Maybe<Scalars['String']>;
+  url: Scalars['String'];
 };
 
 export type DeployQueryVariables = Exact<{
@@ -165,7 +313,7 @@ export type DeployQueryVariables = Exact<{
 }>;
 
 
-export type DeployQuery = { __typename?: 'Query', netlify: { __typename?: 'Netlify', deploy: { __typename?: 'Deploy', url: string, deployURL: string } } };
+export type DeployQuery = { __typename?: 'Query', netlify: { __typename?: 'Netlify', deploy: { __typename?: 'SiteURLs', url: string, deployURL: string } } };
 
 
 export const DeployDocument = gql`
