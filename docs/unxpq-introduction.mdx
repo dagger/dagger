@@ -60,29 +60,28 @@ The main benefit of using a Dagger SDK is:
 1. To facilitate the initialization of the engine
 2. To generate client code that hides graphql queries behind a more familiar API
 
-A workflow may declare a dependency on API extensions, using the `dependencies` configuration key.
+A workflow may declare a dependency on API extensions, using the `dependencies` configuration key inside `cloak.yaml`.
 
 ```mermaid
 graph LR;
 
-    dev((workflow developer))
-    sdk["SDK (Go, Typescript, Bash)"]
-    
-    subgraph "project directory"
-        projectFile[cloak.yaml]
-    subgraph workflows
-        workflow1["'build'"]
-        workflow2["'test'"]
-        workflow3["'deploy'"]
-        style workflow2 stroke-dasharray: 5 5
-        style workflow3 stroke-dasharray: 5 5
-    end
-    end
+  dev((workflow developer))
+  sdk["SDK (Go, Typescript, Bash)"]
+  subgraph "project directory"
+    projectFile[cloak.yaml]
+  subgraph workflows
+    workflow1["'build'"]
+    workflow2["'test'"]
+    workflow3["'deploy'"]
+    style workflow2 stroke-dasharray: 5 5
+    style workflow3 stroke-dasharray: 5 5
+  end
+  end
 
-    dev -. writes workflow logic .-> workflow1
-    dev -. runs .-> sdk
-    sdk -. generates client stubs .-> workflow1
-  dev -. writes workflow configuration .-> projectFile
+  dev -. 1. writes workflow configuration .-> projectFile
+  dev -. 2. writes workflow logic .-> workflow1
+  dev -. 3. runs .-> sdk
+  sdk -. generates client stubs .-> workflow1
 ```
 
 ### Running a workflow
@@ -96,7 +95,7 @@ When a workflow is run, it simply queries the Dagger API in the usual way: all e
 ```mermaid
 graph LR;
 
-operator((workflow operator)) -. runs .-> workflow1 & workflow2 & workflow3
+operator{workflow operator} -. runs .-> workflow1 & workflow2 & workflow3
 subgraph "Host OS"
     subgraph "project directory"
         projectFile[cloak.yaml]
@@ -116,7 +115,7 @@ subgraph "Host OS"
     subgraph engine
     io[Host I/O]
     api((Dagger API)) --> yarn & netlify & git & oci & vercel & alpine
-    
+
     yarn & netlify & git & oci & vercel & alpine -.-> api
         subgraph extensions
                 yarn[Yarn]
@@ -137,7 +136,7 @@ Any graphql-compatible client may be used to interact directly with the API. Thi
 ```mermaid
 graph LR;
 
-operator((workflow operator))
+operator{workflow operator}
 subgraph "Host OS"
     cli[Dagger CLI]
     curl[curl]
@@ -157,7 +156,7 @@ subgraph "Host OS"
                 alpine[Alpine Linux]
         end
 
-        
+
     end
 end
 
