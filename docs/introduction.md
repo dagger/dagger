@@ -29,7 +29,7 @@ The Dagger API is a graphql-compatible API for composing and running powerful pi
 
 Developers can write an *API extensions* to add new capabilities to the Dagger API.
 
-API extensions are the killer feature of Dagger. They ensure that as a workflow grows and evolves, it can remain simple and small, by *breaking up its logic into reusable components*. 
+API extensions are the killer feature of Dagger. They ensure that as a workflow grows and evolves, it can remain simple and small, by *breaking up its logic into reusable components*.
 
 API extensions are fully sandboxed, so they can be safely shared and reused between projects.
 
@@ -60,23 +60,23 @@ A workflow may declare a dependency on API extensions, using the `dependencies` 
 ```mermaid
 graph LR;
 
-  dev((workflow developer))
-  sdk["SDK (Go, Typescript, Bash)"]
-  
-  subgraph "project directory"
-    projectFile[cloak.yaml]
-	subgraph workflows
-		workflow1["'build'"]
-		workflow2["'test'"]
-		workflow3["'deploy'"]
-		style workflow2 stroke-dasharray: 5 5
-		style workflow3 stroke-dasharray: 5 5
-	end
-  end
+    dev((workflow developer))
+    sdk["SDK (Go, Typescript, Bash)"]
+    
+    subgraph "project directory"
+        projectFile[cloak.yaml]
+    subgraph workflows
+        workflow1["'build'"]
+        workflow2["'test'"]
+        workflow3["'deploy'"]
+        style workflow2 stroke-dasharray: 5 5
+        style workflow3 stroke-dasharray: 5 5
+    end
+    end
 
-  dev -. writes workflow logic .-> workflow1
-  dev -. runs .-> sdk
-  sdk -. generates client stubs .-> workflow1
+    dev -. writes workflow logic .-> workflow1
+    dev -. runs .-> sdk
+    sdk -. generates client stubs .-> workflow1
   dev -. writes workflow configuration .-> projectFile
 ```
 
@@ -88,41 +88,40 @@ This makes Dagger very easy to embed in existing projects with minimal disruptio
 
 When a workflow is run, it simply queries the Dagger API in the usual way: all extension types are loaded and available to be queried.
 
-
 ```mermaid
 graph LR;
 
 operator((workflow operator)) -. runs .-> workflow1 & workflow2 & workflow3
 subgraph "Host OS"
-	subgraph "project directory"
-		projectFile[cloak.yaml]
-		subgraph workflows
-			workflow1["'build'"]
-			workflow2["'test'"]
-			workflow3["'deploy'"]
-		end
-	end
-	cli[Dagger CLI]
+    subgraph "project directory"
+        projectFile[cloak.yaml]
+        subgraph workflows
+            workflow1["'build'"]
+            workflow2["'test'"]
+            workflow3["'deploy'"]
+        end
+    end
+    cli[Dagger CLI]
 
 
-	  cli & workflow1 & workflow2 & workflow3 -. graphql queries .-> api
+      cli & workflow1 & workflow2 & workflow3 -. graphql queries .-> api
 
 
-	api --> io
-	subgraph engine
-	io[Host I/O]
-	api((Dagger API)) --> yarn & netlify & git & oci & vercel & alpine
-	
-	yarn & netlify & git & oci & vercel & alpine -.-> api
-		subgraph extensions
-				yarn[Yarn]
-				netlify[Netlify]
-				git[Git]
-				oci[OCI]
-				vercel[Vercel]
-				alpine[Alpine Linux]
-		end
-	end
+    api --> io
+    subgraph engine
+    io[Host I/O]
+    api((Dagger API)) --> yarn & netlify & git & oci & vercel & alpine
+    
+    yarn & netlify & git & oci & vercel & alpine -.-> api
+        subgraph extensions
+                yarn[Yarn]
+                netlify[Netlify]
+                git[Git]
+                oci[OCI]
+                vercel[Vercel]
+                alpine[Alpine Linux]
+        end
+    end
 end
 ```
 
@@ -135,26 +134,26 @@ graph LR;
 
 operator((workflow operator))
 subgraph "Host OS"
-	cli[Dagger CLI]
-	curl[curl]
-	browser[web browser]
+    cli[Dagger CLI]
+    curl[curl]
+    browser[web browser]
     playground[API playground]
 
 
-	subgraph engine
-		io[Host I/O]
-		api((Dagger API))
-		subgraph extensions
-				yarn[Yarn]
-				netlify[Netlify]
-				git[Git]
-				oci[OCI]
-				vercel[Vercel]
-				alpine[Alpine Linux]
-		end
+    subgraph engine
+        io[Host I/O]
+        api((Dagger API))
+        subgraph extensions
+                yarn[Yarn]
+                netlify[Netlify]
+                git[Git]
+                oci[OCI]
+                vercel[Vercel]
+                alpine[Alpine Linux]
+        end
 
-		
-	end
+        
+    end
 end
 
 operator -. runs .-> cli & curl & browser
@@ -164,7 +163,6 @@ yarn & netlify & git & oci & vercel & alpine -.-> api
 cli & curl -. graphql queries .-> api
 browser -. runs .-> playground -. graphql queries .-> api
 ```
-
 
 ### Writing an API extension
 
@@ -242,7 +240,7 @@ extensions:
 
 Here we imagine the source code of the "netlify" extension with some types implemented in Go, and others in Typescript (probably not a good idea).
 
-Note that this project combines two extensions. If it is used as a dependency, both extensions will be included. 
+Note that this project combines two extensions. If it is used as a dependency, both extensions will be included.
 
 ```yaml
 extensions:

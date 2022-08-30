@@ -24,6 +24,6 @@ Say we are creating a new extension, written in Typescript, called `foo` that wi
 
 TODO: add instructions for client stub generation (these instructions work w/ raw graphql queries right now)
 
-# Writing a Workflow in Typescript
+## Writing a Workflow in Typescript
 
 TODO: document this more, current example can be found in `examples/todoapp/app/workflows` (and the "deploy" script in the package.json of the parent directory)
