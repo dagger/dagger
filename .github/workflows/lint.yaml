@@ -44,3 +44,8 @@ jobs:
 
           # Optional: if set to true then the action don't cache or restore ~/.cache/go-build.
           # skip-build-cache: true
+      - name: "Lint markdown"
+        uses: avto-dev/markdown-lint@v1
+        with:
+          config: ".markdownlint.yaml"
+          args: ./docs README.md
