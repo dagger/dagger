@@ -279,6 +279,23 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 			st.AddMount(path, fsState, llb.ForceNoOutput)
 		}
 
+		// Mount in the parent type if it is a Filesystem
+		// FIXME:(sipsma) got to be a better way than string matching parent type... But not easy
+		// to just use go type matching because the parent result may be a Filesystem struct or
+		// an untyped map[string]interface{}.
+		if p.Info.ParentType.Name() == "Filesystem" {
+			obj, err := filesystem.FromSource(p.Source)
+			if err != nil {
+				return nil, err
+			}
+			fsState, err := obj.ToState()
+			if err != nil {
+				return nil, err
+			}
+			// FIXME:(sipsma) not a good place to hardcode mounting this in, same as mounting in resolver args
+			st.AddMount("/mnt/.parent", fsState, llb.ForceNoOutput)
+		}
+
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
 		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(s.platform), llb.WithCustomName(name))
 		if err != nil {
