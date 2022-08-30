@@ -16,6 +16,7 @@ Say we are creating a new Dagger extension, written in Go, called `foo` that wil
    1. Create a new file called `cloak.yaml`
       - This is where you declare your extension, and other extensions that it depends on. All extensions declared in this file will be built, loaded, and available to be called from your own extension.
       - Create the file in the following format:
+
       ```yaml
       name: foo
       sources:
@@ -25,10 +26,11 @@ Say we are creating a new Dagger extension, written in Go, called `foo` that wil
         - local: ../../<dependencyA>/cloak.yaml
         - local: ../../<dependencyB>/cloak.yaml
       ```
+
       - `<dependencyX>` should be replaced with the directory of the extension you want a dependency on. `core` does not need to be declared as a dependency; it is implicitly included. If your only dependency is `core`, then you can just skip the `dependencies:` key entirely.
-1. Generate client stubs and implementation stubs
+2. Generate client stubs and implementation stubs
    - From `examples/foo`, run `cloak --context=../.. -p examples/foo/cloak.yaml generate --output-dir=. --sdk=go`
    - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to structures for needed types in `models.go` and some auto-generated boilerplate that makes your code invokable in `generated.go`
    - Additionally, there should now be a `main.go` file with a stub implementations.
-1. Implement your action by replacing the panics in `main.go` with the actual implementation.
+3. Implement your action by replacing the panics in `main.go` with the actual implementation.
    - When you need to call a dependency, import it from paths like `github.com/dagger/cloak/examples/foo/gen/<dependency pkgname>`
