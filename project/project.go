@@ -48,9 +48,10 @@ type RemoteSchema struct {
 	configPath string
 
 	router.LoadedSchema
-	dependencies []*RemoteSchema
-	scripts      []*Script
-	extensions   []*Extension
+	dependencies  []*RemoteSchema
+	scripts       []*Script
+	extensions    []*Extension
+	sshAuthSockID string
 }
 
 func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string, sshAuthSockID string) (*RemoteSchema, error) {
@@ -64,12 +65,13 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 	}
 
 	s := &RemoteSchema{
-		gw:         gw,
-		platform:   platform,
-		contextFS:  contextFS,
-		configPath: configPath,
-		scripts:    cfg.Scripts,
-		extensions: cfg.Extensions,
+		gw:            gw,
+		platform:      platform,
+		contextFS:     contextFS,
+		configPath:    configPath,
+		scripts:       cfg.Scripts,
+		extensions:    cfg.Extensions,
+		sshAuthSockID: sshAuthSockID,
 	}
 
 	var sourceSchemas []router.LoadedSchema
@@ -166,9 +168,9 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			var err error
 			switch src.SDK {
 			case "go":
-				runtimeFS, err = goRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
+				runtimeFS, err = goRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw, s.sshAuthSockID)
 			case "ts":
-				runtimeFS, err = tsRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
+				runtimeFS, err = tsRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw, s.sshAuthSockID)
 			case "dockerfile":
 				runtimeFS, err = dockerfileRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
 			default:

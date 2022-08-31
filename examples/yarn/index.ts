@@ -18,6 +18,7 @@ const resolvers = {
         .then((result: any) => result.alpine.build);
 
       // NOTE: running install and then run is a great example of how explicit dependencies are no longer an issue
+      // FIXME:(sipsma) need a better solution than just disabling ssh host key checking
       const yarnInstall = await client
         .request(
           gql`
@@ -28,8 +29,12 @@ const resolvers = {
                     args: ["yarn", "install"], 
                     mounts: [{path: "/src", fs: "${args.source}"}],
                     workdir: "/src",
-                    env: {name: "YARN_CACHE_FOLDER", value: "/cache"},
+                    env: [
+                      {name: "YARN_CACHE_FOLDER", value: "/cache"}
+                      {name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no"}
+                    ],
                     cacheMounts:{name:"yarn", path:"/cache", sharingMode:"locked"},
+                    sshAuthSock: "/ssh-agent"
                   }) {
                     mount(path: "/src") {
                       id
@@ -53,8 +58,12 @@ const resolvers = {
                     args: ${cmd},
                     mounts: [{path: "/src", fs: "${yarnInstall.id}"}],
                     workdir: "/src",
-                    env: {name: "YARN_CACHE_FOLDER", value: "/cache"},
+                    env: [
+                      {name: "YARN_CACHE_FOLDER", value: "/cache"},
+                      {name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no"}
+                    ],
                     cacheMounts:{name:"yarn", path:"/cache", sharingMode:"locked"},
+                    sshAuthSock: "/ssh-agent"
                   }) {
                     mount(path: "/src") {
                       id

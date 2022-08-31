@@ -11,20 +11,30 @@ import (
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/util/sshutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // TODO:(sipsma) SDKs should be pluggable extensions, not hardcoded LLB here. The implementation here is a temporary bridge from the previous hardcoded Dockerfiles to the sdk-as-extension model.
 
-func goRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client) (*filesystem.Filesystem, error) {
+func goRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client, sshAuthSockID string) (*filesystem.Filesystem, error) {
 	contextState, err := contextFS.ToState()
 	if err != nil {
 		return nil, err
 	}
 	workdir := "/src"
+	addSSHKnownHosts, err := withGithubSSHKnownHosts()
+	if err != nil {
+		return nil, err
+	}
 	return filesystem.FromState(ctx,
 		llb.Image("golang:1.18.2-alpine", llb.WithMetaResolver(gw)).
-			Run(llb.Shlex(`apk add --no-cache file git`)).Root().
+			Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root().
+			// FIXME:(sipsma) should be generalized to support any private go repo
+			File(llb.Mkfile("/root/.gitconfig", 0644, []byte(`
+[url "ssh://git@github.com/dagger/cloak"]
+  insteadOf = https://github.com/dagger/cloak
+`))).
 			Run(llb.Shlex(
 				fmt.Sprintf(
 					`go build -o /entrypoint -ldflags '-s -d -w' %s`,
@@ -39,88 +49,63 @@ func goRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, s
 					llb.Scratch(),
 					llb.AsPersistentCacheDir("gomodcache", llb.CacheMountShared),
 				),
+				// FIXME:(sipsma) should be generalized to support any private go repo
+				llb.AddEnv("GOPRIVATE", "github.com/dagger/cloak"),
+				llb.AddSSHSocket(
+					llb.SSHID(sshAuthSockID),
+					llb.SSHSocketTarget("/ssh-agent.sock"),
+				),
+				llb.AddEnv("SSH_AUTH_SOCK", "/ssh-agent.sock"),
+				addSSHKnownHosts,
 			).Root(),
 		p,
 	)
 }
 
-func tsRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client) (*filesystem.Filesystem, error) {
+func tsRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client, sshAuthSockID string) (*filesystem.Filesystem, error) {
 	contextState, err := contextFS.ToState()
 	if err != nil {
 		return nil, err
 	}
-	base := llb.Image("node:16-alpine", llb.WithMetaResolver(gw))
-	build := base.
-		Run(llb.Shlex(`apk add --no-cache file git`)).Root().
-		File(llb.Mkdir("/app/src", 0755, llb.WithParents(true))).
-		File(llb.Mkdir("/sdk", 0755, llb.WithParents(true))).
-		File(llb.Copy(contextState, filepath.Join(filepath.Dir(cfgPath), sourcePath, "package.json"), "/app/src/package.json")).
-		File(llb.Copy(contextState, filepath.Join(filepath.Dir(cfgPath), sourcePath, "yarn.lock"), "/app/src/yarn.lock")).
-		File(llb.Copy(contextState, "sdk/nodejs", "/sdk/nodejs")).
-		Run(llb.Shlex(`yarn --cwd /sdk/nodejs/dagger`),
-			llb.Dir("/app/src"),
-			llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-			llb.AddMount(
-				"/cache/yarn",
-				llb.Scratch(),
-				llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-			),
-		).Root().
-		Run(llb.Shlex(`yarn --cwd /sdk/nodejs/dagger build`),
-			llb.Dir("/app/src"),
-			llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-			llb.AddMount(
-				"/cache/yarn",
-				llb.Scratch(),
-				llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-			),
-		).Root().
-		Run(llb.Shlex(`yarn`),
-			llb.Dir("/app/src"),
-			llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-			llb.AddMount(
-				"/cache/yarn",
-				llb.Scratch(),
-				llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-			),
-		).Root().
-		File(llb.Copy(contextState, filepath.Join(filepath.Dir(cfgPath), sourcePath), "/app/src/", &llb.CopyInfo{CopyDirContentsOnly: true})).
-		Run(llb.Shlex(`yarn upgrade dagger`),
-			llb.Dir("/app/src"),
-			llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-			llb.AddMount(
-				"/cache/yarn",
-				llb.Scratch(),
-				llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-			),
-		).Root().
-		Run(llb.Shlex(`yarn build`),
-			llb.Dir("/app/src"),
-			llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-			llb.AddMount(
-				"/cache/yarn",
-				llb.Scratch(),
-				llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-			),
-		).Root()
+
+	ctrSrcPath := filepath.Join("/src", filepath.Dir(cfgPath), sourcePath)
+
+	addSSHKnownHosts, err := withGithubSSHKnownHosts()
+	if err != nil {
+		return nil, err
+	}
+	baseRunOpts := withRunOpts(
+		llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
+		llb.AddMount(
+			"/cache/yarn",
+			llb.Scratch(),
+			llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
+		),
+		llb.AddSSHSocket(
+			llb.SSHID(sshAuthSockID),
+			llb.SSHSocketTarget("/ssh-agent.sock"),
+		),
+		llb.AddEnv("SSH_AUTH_SOCK", "/ssh-agent.sock"),
+		addSSHKnownHosts,
+	)
+
 	return filesystem.FromState(ctx,
-		base.
-			File(llb.Mkdir("/app/src", 0755, llb.WithParents(true))).
-			File(llb.Mkdir("/sdk", 0755, llb.WithParents(true))).
-			File(llb.Copy(build, "/app/src/package.json", "/app/src/package.json")).
-			File(llb.Copy(build, "/app/src/yarn.lock", "/app/src/yarn.lock")).
-			File(llb.Copy(build, "/sdk/nodejs", "/sdk/nodejs")).
-			Run(llb.Shlex(`yarn --production`),
-				llb.Dir("/app/src"),
-				llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-				llb.AddMount(
-					"/cache/yarn",
-					llb.Scratch(),
-					llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-				),
-			).Root().
-			File(llb.Copy(build, "/app/src/dist", "/app/src/")).
-			File(llb.Mkfile("/entrypoint", 0755, []byte("#!/bin/sh\nnode --unhandled-rejections=strict /app/src/dist/index.js"))),
+		llb.Merge([]llb.State{
+			llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
+				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
+			llb.Scratch().
+				File(llb.Copy(contextState, "/", "/src")),
+		}).
+			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn install'`, ctrSrcPath)), baseRunOpts).
+			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn build'`, ctrSrcPath)), baseRunOpts).
+			File(llb.Mkfile(
+				"/entrypoint",
+				0755,
+				[]byte(fmt.Sprintf(
+					"#!/bin/sh\nset -e; cd %s && node --unhandled-rejections=strict dist/index.js",
+					ctrSrcPath,
+				)),
+			)),
 		p,
 	)
 }
@@ -158,4 +143,34 @@ func dockerfileRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cf
 	}
 
 	return filesystem.FromState(ctx, st, p)
+}
+
+type runOptionFunc func(*llb.ExecInfo)
+
+func (fn runOptionFunc) SetRunOption(ei *llb.ExecInfo) {
+	fn(ei)
+}
+
+func withRunOpts(runOpts ...llb.RunOption) llb.RunOption {
+	return runOptionFunc(func(ei *llb.ExecInfo) {
+		for _, runOpt := range runOpts {
+			runOpt.SetRunOption(ei)
+		}
+	})
+}
+
+func withGithubSSHKnownHosts() (llb.RunOption, error) {
+	knownHosts, err := sshutil.SSHKeyScan("github.com")
+	if err != nil {
+		return nil, err
+	}
+
+	return withRunOpts(
+		llb.AddMount("/tmp/known_hosts",
+			llb.Scratch().File(llb.Mkfile("known_hosts", 0600, []byte(knownHosts))),
+			llb.SourcePath("/known_hosts"),
+			llb.ForceNoOutput,
+		),
+		llb.AddEnv("GIT_SSH_COMMAND", "ssh -o UserKnownHostsFile=/tmp/known_hosts"),
+	), nil
 }
