@@ -66,9 +66,4 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
 			secret(id: $id)
 		}
 	}
-	query AddSecret($plaintext: String!) {
-		core {
-			addSecret(plaintext: $plaintext)
-		}
-	}
 	

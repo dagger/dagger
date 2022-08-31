@@ -2,6 +2,9 @@
 	extend type Query {
 		"Core API"
 		core: Core!
+
+		"Host API"
+		host: Host!
 	}
 
 	"Core API"
@@ -11,9 +14,24 @@
 
 		"Fetch a git repository"
 		git(remote: String!, ref: String): Filesystem!
+	}
+
+	"Interactions with the user's host filesystem"
+	type Host {
+		"Fetch the client's workdir"
+		workdir: LocalDir!
 
 		"Fetch a client directory"
-		clientdir(id: String!): Filesystem!
+		dir(id: String!): LocalDir!
+	}
+
+	"A directory on the user's host filesystem"
+	type LocalDir {
+		"Read the contents of the directory"
+		read: Filesystem!
+
+		"Write the provided filesystem to the directory"
+		write(contents: FSID!): Boolean!
 	}
 	
 
@@ -21,10 +39,12 @@
 
 	"""
 	A reference to a filesystem tree.
+
 	For example:
 	 - The root filesystem of a container
 	 - A source code repository
 	 - A directory containing binary artifacts
+
 	Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
 	"""
 	type Filesystem {
@@ -45,28 +65,66 @@
 	}
 	
 
-	type Extension {
-		"name of the extension"
+	"A set of scripts and/or extensions"
+	type Project {
+		"name of the project"
 		name: String!
 
-		"schema of the extension"
+		"schema provided by the project"
+		schema: String
+
+		"operations provided by the project"
+		operations: String
+
+		"extensions in this project"
+		extensions: [Extension!]!
+
+		"scripts in this project"
+		scripts: [Script!]!
+
+		"other projects with schema this project depends on"
+		dependencies: [Project!]
+
+		"install the project's schema"
+		install: Boolean!
+	}
+
+	"A schema extension provided by a project"
+	type Extension {
+		"path to the extension's code within the project's filesystem"
+		path: String!
+
+		"schema contributed to the project by this extension"
 		schema: String!
 
-		"operations for this extension"
-		operations: String!
+		"operations contributed to the project by this extension (if any)"
+		operations: String
+
+		"sdk used to generate code for and/or execute this extension"
+		sdk: String!
+	}
+
+	"An executable script that uses the project's dependencies and/or extensions"
+	type Script {
+		"path to the script's code within the project's filesystem"
+		path: String!
+
+		"sdk used to generate code for and/or execute this script"
+		sdk: String!
 	}
 
 	extend type Filesystem {
-		"load an extension into the API"
-		loadExtension(name: String!): Extension!
+		"load a project's metadata"
+		loadProject(configPath: String!): Project!
 	}
 
 	extend type Core {
-		"Look up an extension by name"
-		extension(name: String!): Extension!
+		"Look up a project by name"
+		project(name: String!): Project!
 	}
 	
 
+	"Command execution"
 	type Exec {
 		"Modified filesystem"
 		fs: Filesystem!
@@ -92,6 +150,17 @@
 		path: String!
 	}
 
+	input CacheMountInput {
+		"Cache mount name"
+		name: String!
+
+		"Cache mount sharing mode (TODO: switch to enum)"
+		sharingMode: String!
+
+		"path at which the cache will be mounted"
+		path: String!
+	}
+
 	input ExecInput {
 		"""
 		Command to execute
@@ -99,11 +168,37 @@
 		"""
 		args: [String!]!
 
-		"Transient filesystem mounts"
+		"Filesystem mounts"
 		mounts: [MountInput!]
+
+		"Cached mounts"
+		cacheMounts: [CacheMountInput!]
 
 		"Working directory"
 		workdir: String
+
+		"Env vars"
+		env: [ExecEnvInput!]
+
+		"Secret env vars"
+		secretEnv: [ExecSecretEnvInput!]
+
+		"Include the host's ssh agent socket in the exec at the provided path"
+		sshAuthSock: String
+	}
+
+	input ExecEnvInput {
+		"Env var name"
+		name: String!
+		"Env var value"
+		value: String!
+	}
+
+	input ExecSecretEnvInput {
+		"Env var name"
+		name: String!
+		"Secret env var value"
+		id: SecretID!
 	}
 
 	# FIXME: broken
@@ -140,10 +235,10 @@ type Netlify {
     subdir: String
     siteName: String
     token: SecretID!
-  ): Deploy!
+  ): SiteURLs!
 }
 
-type Deploy {
+type SiteURLs {
   url: String!
   deployURL: String!
   logsURL: String

@@ -3,7 +3,7 @@
 		"Core API"
 		core: Core!
 
-		"TODO doc"
+		"Host API"
 		host: Host!
 	}
 
@@ -14,19 +14,23 @@
 
 		"Fetch a git repository"
 		git(remote: String!, ref: String): Filesystem!
+	}
+
+	"Interactions with the user's host filesystem"
+	type Host {
+		"Fetch the client's workdir"
+		workdir: LocalDir!
 
 		"Fetch a client directory"
-		clientdir(id: String!): Filesystem!
+		dir(id: String!): LocalDir!
 	}
 
-	"TODO move these to their own file"
-	type Host {
-		workdir: LocalDir!
-	}
-
-	"TODO move these to their own file"
+	"A directory on the user's host filesystem"
 	type LocalDir {
+		"Read the contents of the directory"
 		read: Filesystem!
+
+		"Write the provided filesystem to the directory"
 		write(contents: FSID!): Boolean!
 	}
 	
@@ -61,57 +65,51 @@
 	}
 	
 
-	"Project representation"
+	"A set of scripts and/or extensions"
 	type Project {
 		"name of the project"
 		name: String!
 
-		"merged schema of the project's sources (if any)"
+		"schema provided by the project"
 		schema: String
 
-		"merged operations of the project's sources (if any)"
+		"operations provided by the project"
 		operations: String
 
-		"extensions for this project"
-		extensions: [Extension!]
+		"extensions in this project"
+		extensions: [Extension!]!
 
-		"workflows for this project"
-		workflows: [Workflow!]
+		"scripts in this project"
+		scripts: [Script!]!
 
-		"dependencies for this project"
+		"other projects with schema this project depends on"
 		dependencies: [Project!]
 
-		"install the project, stitching its schema into the API"
+		"install the project's schema"
 		install: Boolean!
 	}
 
-	"Extension representation"
+	"A schema extension provided by a project"
 	type Extension {
-		"path to the extension source in the project filesystem"
+		"path to the extension's code within the project's filesystem"
 		path: String!
 
-		"schema associated with the extension"
-		schema: String
+		"schema contributed to the project by this extension"
+		schema: String!
 
-		"operations associated with the extension"
+		"operations contributed to the project by this extension (if any)"
 		operations: String
 
-		"sdk of the source"
+		"sdk used to generate code for and/or execute this extension"
 		sdk: String!
 	}
 
-	"Workflow representation"
-	type Workflow {
-		"path to the workflow source in the project filesystem"
+	"An executable script that uses the project's dependencies and/or extensions"
+	type Script {
+		"path to the script's code within the project's filesystem"
 		path: String!
 
-		"schema associated with the workflow"
-		schema: String
-
-		"operations associated with the workflow"
-		operations: String
-
-		"sdk of the source"
+		"sdk used to generate code for and/or execute this script"
 		sdk: String!
 	}
 
@@ -184,6 +182,9 @@
 
 		"Secret env vars"
 		secretEnv: [ExecSecretEnvInput!]
+
+		"Include the host's ssh agent socket in the exec at the provided path"
+		sshAuthSock: String
 	}
 
 	input ExecEnvInput {

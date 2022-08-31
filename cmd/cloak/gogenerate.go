@@ -22,7 +22,22 @@ var mainTmpl string
 //go:embed templates/go.generated.gotpl
 var generatedTmpl string
 
-func generateGoImplStub(generateOutputDir, schema string, coreProj *core.Project) error {
+func generateGoScriptStub(generateOutputDir string) error {
+	mainFile := filepath.Join(generateOutputDir, "main.go")
+	if _, err := os.Stat(mainFile); os.IsNotExist(err) {
+		if err := os.WriteFile(filepath.Join(mainFile), []byte(scriptMain), 0644); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	} else {
+		fmt.Printf("%s already exists, skipping generation\n", mainFile)
+	}
+
+	return nil
+}
+
+func generateGoExtensionStub(generateOutputDir, schema string, coreProj *core.Project) error {
 	cfg := gqlconfig.DefaultConfig()
 	cfg.SkipModTidy = false
 	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(generateOutputDir, "_deleteme.go"), Package: "main"}
@@ -168,14 +183,16 @@ func (p plugin) GenerateCode(data *codegen.Data) error {
 		typesByName: typesByName,
 	}
 
-	if err := templates.Render(templates.Options{
-		PackageName: "main",
-		Filename:    p.mainPath,
-		Data:        resolverBuild,
-		Packages:    data.Config.Packages,
-		Template:    mainTmpl,
-	}); err != nil {
-		return err
+	if p.mainPath != "" {
+		if err := templates.Render(templates.Options{
+			PackageName: "main",
+			Filename:    p.mainPath,
+			Data:        resolverBuild,
+			Packages:    data.Config.Packages,
+			Template:    mainTmpl,
+		}); err != nil {
+			return err
+		}
 	}
 
 	if err := templates.Render(templates.Options{
@@ -264,3 +281,19 @@ func (r *Resolver) MethodSignature() string {
 	res += fmt.Sprintf(") (%s, error)", result)
 	return res
 }
+
+const scriptMain = `package main
+
+import (
+  "context"
+  "github.com/dagger/cloak/engine"
+)
+
+func main() {
+  if err := engine.Start(context.Background(), &engine.Config{}, func(ctx engine.Context) error {
+    panic("implement me")
+  }); err != nil {
+    panic(err)
+  }
+}
+`
