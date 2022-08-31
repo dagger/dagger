@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/extension"
+	"github.com/dagger/cloak/project"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/secret"
 	bkclient "github.com/moby/buildkit/client"
@@ -39,9 +39,9 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&coreSchema{base, params.SSHAuthSockID, params.WorkdirID},
 
 		&filesystemSchema{base},
-		&extensionSchema{
+		&projectSchema{
 			baseSchema:      base,
-			compiledSchemas: make(map[string]*extension.CompiledRemoteSchema),
+			compiledSchemas: make(map[string]*project.CompiledRemoteSchema),
 			sshAuthSockID:   params.SSHAuthSockID,
 		},
 		&execSchema{base},

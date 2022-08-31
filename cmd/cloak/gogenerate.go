@@ -22,12 +22,12 @@ var mainTmpl string
 //go:embed templates/go.generated.gotpl
 var generatedTmpl string
 
-func generateGoImplStub(ext, coreExt *core.Extension) error {
+func generateGoImplStub(generateOutputDir, schema string, coreProj *core.Project) error {
 	cfg := gqlconfig.DefaultConfig()
-	cfg.SkipModTidy = true
-	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(workdir, filepath.Dir(configPath), "_deleteme.go"), Package: "main"}
+	cfg.SkipModTidy = false
+	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(generateOutputDir, "_deleteme.go"), Package: "main"}
 	cfg.SchemaFilename = nil
-	cfg.Sources = []*ast.Source{{Input: ext.Schema}}
+	cfg.Sources = []*ast.Source{{Input: schema}}
 	cfg.Model = gqlconfig.PackageConfig{
 		Filename: filepath.Join(generateOutputDir, "models.go"),
 		Package:  "main",
@@ -63,10 +63,17 @@ func generateGoImplStub(ext, coreExt *core.Extension) error {
 		return fmt.Errorf("error completing config: %w", err)
 	}
 	defer os.Remove(cfg.Exec.Filename)
+
+	mainPath := filepath.Join(generateOutputDir, "main.go")
+	if _, err := os.Stat(mainPath); err == nil {
+		fmt.Printf("%s already exists, skipping generation\n", mainPath)
+		mainPath = ""
+	}
+
 	if err := api.Generate(cfg, api.AddPlugin(plugin{
-		mainPath:      filepath.Join(generateOutputDir, "main.go"),
+		mainPath:      mainPath,
 		generatedPath: filepath.Join(generateOutputDir, "generated.go"),
-		coreSchema:    coreExt.Schema,
+		coreSchema:    coreProj.Schema,
 	})); err != nil {
 		return fmt.Errorf("error generating code: %w", err)
 	}

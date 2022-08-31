@@ -31,13 +31,7 @@ EOF
 Yarn build (output will just be encoded fs bytes for now, need to add export or shell util to cloak CLI interface):
 
 ```console
-cloak -p examples/yarn/cloak.yaml do --local-dir source=examples/todoapp/app --set runArgs=build
-```
-
-TODOApp deploy:
-
-```console
-cloak -p examples/todoapp/ts/cloak.yaml do Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"
+cloak -p examples/yarn/cloak.yaml do --local-dir source=sdk/nodejs/dagger --set runArgs=build
 ```
 
 ## Development
