@@ -47,9 +47,6 @@ func Generate(cmd *cobra.Command, args []string) {
 				if err := generateGoExtensionStub(generateOutputDir, s.Schema, coreProj); err != nil {
 					return err
 				}
-			case "":
-			default:
-				fmt.Printf("unhandled sdk type for extension stub %s\n", s.SDK)
 			}
 		}
 
@@ -63,9 +60,6 @@ func Generate(cmd *cobra.Command, args []string) {
 				if err := generateGoScriptStub(generateOutputDir); err != nil {
 					return err
 				}
-			case "":
-			default:
-				fmt.Printf("unhandled sdk type for script stub %s\n", s.SDK)
 			}
 		}
 
@@ -105,9 +99,6 @@ func generateClients(proj, coreProj *core.Project, generateOutputDir, sdk string
 			if err := generateGoClientStubs(subdir); err != nil {
 				return err
 			}
-		case "":
-		default:
-			fmt.Printf("unhandled sdk type for client stub %s\n", sdk)
 		}
 	}
 
@@ -136,9 +127,6 @@ func generateClients(proj, coreProj *core.Project, generateOutputDir, sdk string
 			if err := generateGoClientStubs(subdir); err != nil {
 				return err
 			}
-		case "":
-		default:
-			fmt.Printf("unhandled sdk type for client stub %s\n", sdk)
 		}
 	}
 	return nil
