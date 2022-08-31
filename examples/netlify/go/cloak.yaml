@@ -1,4 +1,4 @@
 name: netlify
-sources:
+extensions:
   - path: .
     sdk: go

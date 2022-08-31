@@ -1,16 +1,27 @@
-package extension
+package project
 
 import "gopkg.in/yaml.v2"
 
 type Config struct {
 	Name         string        `yaml:"name"`
 	Dependencies []*Dependency `yaml:"dependencies,omitempty"`
-	Sources      []*Source     `yaml:"sources,omitempty"`
+	Scripts      []*Script     `yaml:"scripts,omitempty"`
+	Extensions   []*Extension  `yaml:"extensions,omitempty"`
 }
 
-type Source struct {
+type Script struct {
 	Path string `yaml:"path"`
 	SDK  string `yaml:"sdk"`
+}
+
+type Extension struct {
+	Path string `yaml:"path"`
+	SDK  string `yaml:"sdk"`
+	// schema+operations are currently internal only (set by
+	// reading schema.graphql and operations.graphql), but
+	// could be public in future
+	Schema     string `yaml:"-"`
+	Operations string `yaml:"-"`
 }
 
 type Dependency struct {

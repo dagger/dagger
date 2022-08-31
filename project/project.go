@@ -1,4 +1,4 @@
-package extension
+package project
 
 import (
 	"context"
@@ -49,7 +49,8 @@ type RemoteSchema struct {
 
 	router.LoadedSchema
 	dependencies []*RemoteSchema
-	sources      []*Source
+	scripts      []*Script
+	extensions   []*Extension
 }
 
 func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string, sshAuthSockID string) (*RemoteSchema, error) {
@@ -67,33 +68,36 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		platform:   platform,
 		contextFS:  contextFS,
 		configPath: configPath,
-		sources:    cfg.Sources,
+		scripts:    cfg.Scripts,
+		extensions: cfg.Extensions,
 	}
 
-	sourceSchemas := make([]router.LoadedSchema, len(cfg.Sources))
-	for i, src := range cfg.Sources {
+	var sourceSchemas []router.LoadedSchema
+	for _, ext := range cfg.Extensions {
 		sdl, err := contextFS.ReadFile(ctx, gw, filepath.Join(
 			filepath.Dir(configPath),
-			src.Path,
+			ext.Path,
 			schemaPath,
 		))
-		if err != nil && !isGatewayFileNotFound(err) {
+		if err != nil {
 			return nil, err
 		}
+		ext.Schema = string(sdl)
 
 		operations, err := contextFS.ReadFile(ctx, gw, filepath.Join(
 			filepath.Dir(configPath),
-			src.Path,
+			ext.Path,
 			operationsPath,
 		))
 		if err != nil && !isGatewayFileNotFound(err) {
 			return nil, err
 		}
+		ext.Operations = string(operations)
 
-		sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
-			Schema:     string(sdl),
-			Operations: string(operations),
-		})
+		sourceSchemas = append(sourceSchemas, router.StaticSchema(router.StaticSchemaParams{
+			Schema:     ext.Schema,
+			Operations: ext.Operations,
+		}))
 	}
 	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
 
@@ -133,6 +137,14 @@ func (s *RemoteSchema) Dependencies() []*RemoteSchema {
 	return s.dependencies
 }
 
+func (s *RemoteSchema) Scripts() []*Script {
+	return s.scripts
+}
+
+func (s *RemoteSchema) Extensions() []*Extension {
+	return s.extensions
+}
+
 func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRemoteSchema, l *sync.RWMutex, sf *singleflight.Group) (*CompiledRemoteSchema, error) {
 	res, err, _ := sf.Do(s.Name(), func() (interface{}, error) {
 		// if we have already compiled a schema with this name, return it
@@ -149,7 +161,7 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			resolvers:    router.Resolvers{},
 		}
 
-		for _, src := range s.sources {
+		for _, src := range s.extensions {
 			var runtimeFS *filesystem.Filesystem
 			var err error
 			switch src.SDK {

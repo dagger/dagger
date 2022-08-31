@@ -6,12 +6,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/core"
-	"github.com/dagger/cloak/extension"
+	"github.com/dagger/cloak/project"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/dagger/cloak/secret"
@@ -30,7 +31,8 @@ import (
 )
 
 const (
-	workdirID = "__cloak_workdir" // FIXME:(sipsma) just hoping users don't try to use this as a directory id themselves, not robust
+	workdirID     = "__cloak_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
+	cloakYamlName = "cloak.yaml"
 )
 
 type Config struct {
@@ -47,7 +49,9 @@ type Context struct {
 	Client     graphql.Client
 	Operations string
 	LocalDirs  map[string]dagger.FSID
-	Extension  *core.Extension
+	Project    *core.Project
+	Workdir    string
+	ConfigPath string
 }
 
 type StartCallback func(Context) error
@@ -81,11 +85,40 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
+	// FIXME:(sipsma) use viper to get env support automatically
+	if startOpts.Workdir == "" {
+		if v, ok := os.LookupEnv("CLOAK_WORKDIR"); ok {
+			startOpts.Workdir = v
+		}
+	}
+	if startOpts.ConfigPath == "" {
+		if v, ok := os.LookupEnv("CLOAK_CONFIG"); ok {
+			startOpts.ConfigPath = v
+		}
+	}
+
+	if startOpts.Workdir == "" && startOpts.ConfigPath == "" {
+		configAbsPath, err := findConfig()
+		if err != nil {
+			return err
+		}
+		startOpts.Workdir = filepath.Dir(configAbsPath)
+		startOpts.ConfigPath = "./" + cloakYamlName
+	} else if startOpts.Workdir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		startOpts.Workdir = cwd
+	} else if startOpts.ConfigPath == "" {
+		startOpts.ConfigPath = "./" + cloakYamlName
+	}
+
 	router := router.New()
 	secretStore := secret.NewStore()
 
 	socketProviders := MergedSocketProviders{
-		extension.DaggerSockName: extension.NewAPIProxy(router),
+		project.DaggerSockName: project.NewAPIProxy(router),
 	}
 	var sshAuthSockID string
 	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {
@@ -135,7 +168,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			ctx = withInMemoryAPIClient(ctx, router)
 			engineCtx := Context{
-				Context: ctx,
+				Context:    ctx,
+				Workdir:    startOpts.Workdir,
+				ConfigPath: startOpts.ConfigPath,
 			}
 
 			engineCtx.Client, err = dagger.Client(ctx)
@@ -148,18 +183,18 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			if !startOpts.SkipInstall {
-				defaultOperations, err := installExtension(
-					ctx,
-					engineCtx.Client,
-					engineCtx.LocalDirs[workdirID],
-					startOpts.ConfigPath,
-				)
-				if err != nil {
-					return nil, err
-				}
-				engineCtx.Operations = defaultOperations
+			engineCtx.Project, err = loadProject(
+				ctx,
+				engineCtx.Client,
+				engineCtx.LocalDirs[workdirID],
+				startOpts.ConfigPath,
+				!startOpts.SkipInstall,
+			)
+			if err != nil {
+				return nil, err
 			}
+
+			engineCtx.Operations = engineCtx.Project.Operations
 
 			if fn == nil {
 				return nil, nil
@@ -275,31 +310,52 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 	return mapping, eg.Wait()
 }
 
-func installExtension(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, configPath string) (operations string, rerr error) {
+func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, configPath string, doInstall bool) (*core.Project, error) {
 	res := struct {
 		Core struct {
 			Filesystem struct {
-				LoadExtension struct {
-					Operations string
-				}
+				LoadProject core.Project
 			}
 		}
 	}{}
 	resp := &graphql.Response{Data: &res}
 
+	var install string
+	if doInstall {
+		install = "install"
+	}
+
 	err := cl.MakeRequest(ctx,
 		&graphql.Request{
-			Query: `
-			query LoadExtension($fs: FSID!, $configPath: String!) {
+			// FIXME:(sipsma) toggling install is extremely weird here, need better way
+			Query: fmt.Sprintf(`
+			query LoadProject($fs: FSID!, $configPath: String!) {
 				core {
 					filesystem(id: $fs) {
-						loadExtension(configPath: $configPath) {
-							install
+						loadProject(configPath: $configPath) {
+							name
+							schema
 							operations
+							extensions {
+								path
+								schema
+								operations
+								sdk
+							}
+							scripts {
+								path
+								sdk
+							}
+							dependencies {
+								name
+								schema
+								operations
+							}
+							%s
 						}
 					}
 				}
-			}`,
+			}`, install),
 			Variables: map[string]any{
 				"fs":         contextFS,
 				"configPath": configPath,
@@ -308,8 +364,29 @@ func installExtension(ctx context.Context, cl graphql.Client, contextFS dagger.F
 		resp,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	return &res.Core.Filesystem.LoadProject, nil
+}
+
+func findConfig() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
 		return "", err
 	}
 
-	return res.Core.Filesystem.LoadExtension.Operations, nil
+	for {
+		configPath := filepath.Join(wd, cloakYamlName)
+		// FIXME:(sipsma) decide how to handle symlinks
+		if _, err := os.Stat(configPath); err == nil {
+			return configPath, nil
+		}
+
+		if wd == "/" {
+			return "", fmt.Errorf("no %s found", cloakYamlName)
+		}
+
+		wd = filepath.Dir(wd)
+	}
 }

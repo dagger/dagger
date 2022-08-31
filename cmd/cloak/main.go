@@ -17,15 +17,12 @@ var (
 	localDirsInput []string
 	secretsInput   []string
 
-	generateOutputDir string
-	sdkType           string // TODO: enum?
-
 	devServerPort int
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into cloak")
-	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "./cloak.yaml", "project config file")
+	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into cloak")
+	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
 	rootCmd.AddCommand(
 		doCmd,
 		generateCmd,
@@ -36,9 +33,6 @@ func init() {
 	doCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
 	doCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
 	doCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
-
-	generateCmd.Flags().StringVar(&generateOutputDir, "output-dir", "./", "output directory")
-	generateCmd.Flags().StringVar(&sdkType, "sdk", "", "sdk type to generate code for ('go', 'ts', etc.)")
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
 	devCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")

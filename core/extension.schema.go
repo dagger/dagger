@@ -5,90 +5,122 @@ import (
 	"sync"
 
 	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/extension"
+	"github.com/dagger/cloak/project"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"golang.org/x/sync/singleflight"
 )
 
-type Extension struct {
+type Project struct {
 	Name         string
 	Schema       string
 	Operations   string
-	Dependencies []*Extension
-	schema       *extension.RemoteSchema // internal-only, for convenience in `install` resolver
+	Dependencies []*Project
+	Scripts      []*project.Script
+	Extensions   []*project.Extension
+	schema       *project.RemoteSchema // internal-only, for convenience in `install` resolver
 }
 
-var _ router.ExecutableSchema = &extensionSchema{}
+var _ router.ExecutableSchema = &projectSchema{}
 
-type extensionSchema struct {
+type projectSchema struct {
 	*baseSchema
-	compiledSchemas map[string]*extension.CompiledRemoteSchema
+	compiledSchemas map[string]*project.CompiledRemoteSchema
 	l               sync.RWMutex
 	sf              singleflight.Group
 	sshAuthSockID   string
 }
 
-func (s *extensionSchema) Name() string {
-	return "extension"
+func (s *projectSchema) Name() string {
+	return "project"
 }
 
-func (s *extensionSchema) Schema() string {
+func (s *projectSchema) Schema() string {
 	return `
-	"Extension representation"
-	type Extension {
-		"name of the extension"
+	"A set of scripts and/or extensions"
+	type Project {
+		"name of the project"
 		name: String!
 
-		"schema of the extension"
+		"schema provided by the project"
 		schema: String
 
-		"operations for this extension"
+		"operations provided by the project"
 		operations: String
 
-		"dependencies for this extension"
-		dependencies: [Extension!]
+		"extensions in this project"
+		extensions: [Extension!]!
 
-		"install the extension, stitching its schema into the API"
+		"scripts in this project"
+		scripts: [Script!]!
+
+		"other projects with schema this project depends on"
+		dependencies: [Project!]
+
+		"install the project's schema"
 		install: Boolean!
 	}
 
+	"A schema extension provided by a project"
+	type Extension {
+		"path to the extension's code within the project's filesystem"
+		path: String!
+
+		"schema contributed to the project by this extension"
+		schema: String!
+
+		"operations contributed to the project by this extension (if any)"
+		operations: String
+
+		"sdk used to generate code for and/or execute this extension"
+		sdk: String!
+	}
+
+	"An executable script that uses the project's dependencies and/or extensions"
+	type Script {
+		"path to the script's code within the project's filesystem"
+		path: String!
+
+		"sdk used to generate code for and/or execute this script"
+		sdk: String!
+	}
+
 	extend type Filesystem {
-		"load an extension's metadata"
-		loadExtension(configPath: String!): Extension!
+		"load a project's metadata"
+		loadProject(configPath: String!): Project!
 	}
 
 	extend type Core {
-		"Look up an extension by name"
-		extension(name: String!): Extension!
+		"Look up a project by name"
+		project(name: String!): Project!
 	}
 	`
 }
 
-func (s *extensionSchema) Operations() string {
+func (s *projectSchema) Operations() string {
 	return ""
 }
 
-func (s *extensionSchema) Resolvers() router.Resolvers {
+func (s *projectSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"loadExtension": s.loadExtension,
+			"loadProject": s.loadProject,
 		},
 		"Core": router.ObjectResolver{
-			"extension": s.extension,
+			"project": s.project,
 		},
-		"Extension": router.ObjectResolver{
+		"Project": router.ObjectResolver{
 			"install": s.install,
 		},
 	}
 }
 
-func (s *extensionSchema) Dependencies() []router.ExecutableSchema {
+func (s *projectSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *extensionSchema) install(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Extension)
+func (s *projectSchema) install(p graphql.ResolveParams) (any, error) {
+	obj := p.Source.(*Project)
 
 	executableSchema, err := obj.schema.Compile(p.Context, s.compiledSchemas, &s.l, &s.sf)
 	if err != nil {
@@ -102,55 +134,58 @@ func (s *extensionSchema) install(p graphql.ResolveParams) (any, error) {
 	return true, nil
 }
 
-func (s *extensionSchema) loadExtension(p graphql.ResolveParams) (any, error) {
+func (s *projectSchema) loadProject(p graphql.ResolveParams) (any, error) {
 	obj, err := filesystem.FromSource(p.Source)
 	if err != nil {
 		return nil, err
 	}
 
 	configPath := p.Args["configPath"].(string)
-	schema, err := extension.Load(p.Context, s.gw, s.platform, obj, configPath, s.sshAuthSockID)
+	schema, err := project.Load(p.Context, s.gw, s.platform, obj, configPath, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
 
-	return remoteSchemaToExtension(schema), nil
+	return remoteSchemaToProject(schema), nil
 }
 
-func (s *extensionSchema) extension(p graphql.ResolveParams) (any, error) {
+func (s *projectSchema) project(p graphql.ResolveParams) (any, error) {
 	name := p.Args["name"].(string)
 
 	schema := s.router.Get(name)
 	if schema == nil {
-		return nil, fmt.Errorf("extension %q not found", name)
+		return nil, fmt.Errorf("project %q not found", name)
 	}
 
-	return routerSchemaToExtension(schema), nil
+	return routerSchemaToProject(schema), nil
 }
 
 // TODO:(sipsma) guard against infinite recursion
-func routerSchemaToExtension(schema router.ExecutableSchema) *Extension {
-	ext := &Extension{
+func routerSchemaToProject(schema router.ExecutableSchema) *Project {
+	ext := &Project{
 		Name:       schema.Name(),
 		Schema:     schema.Schema(),
 		Operations: schema.Operations(),
+		//FIXME:(sipsma) Scripts, Extensions are not exposed on router.ExecutableSchema yet
 	}
 	for _, dep := range schema.Dependencies() {
-		ext.Dependencies = append(ext.Dependencies, routerSchemaToExtension(dep))
+		ext.Dependencies = append(ext.Dependencies, routerSchemaToProject(dep))
 	}
 	return ext
 }
 
 // TODO:(sipsma) guard against infinite recursion
-func remoteSchemaToExtension(schema *extension.RemoteSchema) *Extension {
-	ext := &Extension{
+func remoteSchemaToProject(schema *project.RemoteSchema) *Project {
+	ext := &Project{
 		Name:       schema.Name(),
 		Schema:     schema.Schema(),
 		Operations: schema.Operations(),
+		Scripts:    schema.Scripts(),
+		Extensions: schema.Extensions(),
 		schema:     schema,
 	}
 	for _, dep := range schema.Dependencies() {
-		ext.Dependencies = append(ext.Dependencies, remoteSchemaToExtension(dep))
+		ext.Dependencies = append(ext.Dependencies, remoteSchemaToProject(dep))
 	}
 	return ext
 }
