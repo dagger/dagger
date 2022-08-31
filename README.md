@@ -27,7 +27,7 @@ We appreciate any participation in the project, including:
 
 ## Documentation
 
-* [Introduction](docs/introduction.md)
-* [Getting Started](docs/getting_started.md)
-* [Writing Extensions](docs/writing_extensions.md)
-* [Operator Manual](docs/operator_manual.md)
+- [Introduction](docs/introduction.md)
+- [Getting Started](docs/getting_started.md)
+- [Writing Extensions](docs/writing_extensions.md)
+- [Operator Manual](docs/operator_manual.md)
