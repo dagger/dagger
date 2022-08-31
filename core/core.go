@@ -44,7 +44,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 			compiledSchemas: make(map[string]*project.CompiledRemoteSchema),
 			sshAuthSockID:   params.SSHAuthSockID,
 		},
-		&execSchema{base},
+		&execSchema{base, params.SSHAuthSockID},
 		&dockerBuildSchema{base},
 
 		&secretSchema{base},

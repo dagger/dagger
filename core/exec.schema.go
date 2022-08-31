@@ -36,6 +36,7 @@ type ExecInput struct {
 	Workdir     string
 	Env         []ExecEnvInput
 	SecretEnv   []ExecSecretEnvInput
+	SSHAuthSock string `json:"sshAuthSock,omitempty"`
 }
 
 type ExecEnvInput struct {
@@ -52,6 +53,7 @@ var _ router.ExecutableSchema = &filesystemSchema{}
 
 type execSchema struct {
 	*baseSchema
+	sshAuthSockID string
 }
 
 func (s *execSchema) Name() string {
@@ -118,6 +120,9 @@ func (s *execSchema) Schema() string {
 
 		"Secret env vars"
 		secretEnv: [ExecSecretEnvInput!]
+
+		"Include the host's ssh agent socket in the exec at the provided path"
+		sshAuthSock: String
 	}
 
 	input ExecEnvInput {
@@ -232,6 +237,17 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 	}
 	for _, secretEnv := range input.SecretEnv {
 		runOpt = append(runOpt, llb.AddSecret(secretEnv.Name, llb.SecretID(secretEnv.ID), llb.SecretAsEnv(true)))
+	}
+
+	// FIXME:(sipsma) this should be generalized when support for service sockets are added, not hardcoded into the schema
+	if input.SSHAuthSock != "" {
+		runOpt = append(runOpt,
+			llb.AddSSHSocket(
+				llb.SSHID(s.sshAuthSockID),
+				llb.SSHSocketTarget(input.SSHAuthSock),
+			),
+			llb.AddEnv("SSH_AUTH_SOCK", input.SSHAuthSock),
+		)
 	}
 
 	st, err := obj.ToState()
