@@ -7,26 +7,42 @@ import (
 	"github.com/dagger/cloak/extension"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/secret"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func New(r *router.Router, secretStore *secret.Store, sshAuthSockID string, gw bkgw.Client, platform specs.Platform) (router.ExecutableSchema, error) {
+type InitializeArgs struct {
+	Router        *router.Router
+	SecretStore   *secret.Store
+	SSHAuthSockID string
+	WorkdirID     string
+	Gateway       bkgw.Client
+	BKClient      *bkclient.Client
+	SolveOpts     bkclient.SolveOpt
+	SolveCh       chan *bkclient.SolveStatus
+	Platform      specs.Platform
+}
+
+func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
-		router:      r,
-		secretStore: secretStore,
-		gw:          gw,
-		platform:    platform,
+		router:      params.Router,
+		secretStore: params.SecretStore,
+		gw:          params.Gateway,
+		bkClient:    params.BKClient,
+		solveOpts:   params.SolveOpts,
+		solveCh:     params.SolveCh,
+		platform:    params.Platform,
 	}
 	return router.MergeExecutableSchemas("core",
-		&coreSchema{base, sshAuthSockID},
+		&coreSchema{base, params.SSHAuthSockID, params.WorkdirID},
 
 		&filesystemSchema{base},
 		&extensionSchema{
 			baseSchema:      base,
 			compiledSchemas: make(map[string]*extension.CompiledRemoteSchema),
-			sshAuthSockID:   sshAuthSockID,
+			sshAuthSockID:   params.SSHAuthSockID,
 		},
 		&execSchema{base},
 		&dockerBuildSchema{base},
@@ -39,6 +55,9 @@ type baseSchema struct {
 	router      *router.Router
 	secretStore *secret.Store
 	gw          bkgw.Client
+	bkClient    *bkclient.Client
+	solveOpts   bkclient.SolveOpt
+	solveCh     chan *bkclient.SolveStatus
 	platform    specs.Platform
 }
 
