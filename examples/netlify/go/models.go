@@ -21,8 +21,6 @@ type Core struct {
 	Image *dagger.Filesystem `json:"image"`
 	// Fetch a git repository
 	Git *dagger.Filesystem `json:"git"`
-	// Fetch a client directory
-	Clientdir *dagger.Filesystem `json:"clientdir"`
 	// Look up a filesystem by its ID
 	Filesystem *dagger.Filesystem `json:"filesystem"`
 	// Look up a project by name
@@ -54,6 +52,8 @@ type ExecInput struct {
 	Env []*ExecEnvInput `json:"env"`
 	// Secret env vars
 	SecretEnv []*ExecSecretEnvInput `json:"secretEnv"`
+	// Include the host's ssh agent socket in the exec at the provided path
+	SSHAuthSock *string `json:"sshAuthSock"`
 }
 
 type ExecSecretEnvInput struct {
@@ -63,27 +63,32 @@ type ExecSecretEnvInput struct {
 	ID dagger.SecretID `json:"id"`
 }
 
-// Extension representation
+// A schema extension provided by a project
 type Extension struct {
-	// path to the extension source in the project filesystem
+	// path to the extension's code within the project's filesystem
 	Path string `json:"path"`
-	// schema associated with the extension
-	Schema *string `json:"schema"`
-	// operations associated with the extension
+	// schema contributed to the project by this extension
+	Schema string `json:"schema"`
+	// operations contributed to the project by this extension (if any)
 	Operations *string `json:"operations"`
-	// sdk of the source
+	// sdk used to generate code for and/or execute this extension
 	Sdk string `json:"sdk"`
 }
 
-// TODO move these to their own file
+// Interactions with the user's host filesystem
 type Host struct {
+	// Fetch the client's workdir
 	Workdir *LocalDir `json:"workdir"`
+	// Fetch a client directory
+	Dir *LocalDir `json:"dir"`
 }
 
-// TODO move these to their own file
+// A directory on the user's host filesystem
 type LocalDir struct {
-	Read  *dagger.Filesystem `json:"read"`
-	Write bool               `json:"write"`
+	// Read the contents of the directory
+	Read *dagger.Filesystem `json:"read"`
+	// Write the provided filesystem to the directory
+	Write bool `json:"write"`
 }
 
 type MountInput struct {
@@ -97,38 +102,34 @@ type Netlify struct {
 	Deploy *SiteURLs `json:"deploy"`
 }
 
-// Project representation
+// A set of scripts and/or extensions
 type Project struct {
 	// name of the project
 	Name string `json:"name"`
-	// merged schema of the project's sources (if any)
+	// schema provided by the project
 	Schema *string `json:"schema"`
-	// merged operations of the project's sources (if any)
+	// operations provided by the project
 	Operations *string `json:"operations"`
-	// extensions for this project
+	// extensions in this project
 	Extensions []*Extension `json:"extensions"`
-	// workflows for this project
-	Workflows []*Workflow `json:"workflows"`
-	// dependencies for this project
+	// scripts in this project
+	Scripts []*Script `json:"scripts"`
+	// other projects with schema this project depends on
 	Dependencies []*Project `json:"dependencies"`
-	// install the project, stitching its schema into the API
+	// install the project's schema
 	Install bool `json:"install"`
+}
+
+// An executable script that uses the project's dependencies and/or extensions
+type Script struct {
+	// path to the script's code within the project's filesystem
+	Path string `json:"path"`
+	// sdk used to generate code for and/or execute this script
+	Sdk string `json:"sdk"`
 }
 
 type SiteURLs struct {
 	URL       string  `json:"url"`
 	DeployURL string  `json:"deployURL"`
 	LogsURL   *string `json:"logsURL"`
-}
-
-// Workflow representation
-type Workflow struct {
-	// path to the workflow source in the project filesystem
-	Path string `json:"path"`
-	// schema associated with the workflow
-	Schema *string `json:"schema"`
-	// operations associated with the workflow
-	Operations *string `json:"operations"`
-	// sdk of the source
-	Sdk string `json:"sdk"`
 }
