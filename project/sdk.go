@@ -51,11 +51,7 @@ func goRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, s
 				),
 				// FIXME:(sipsma) should be generalized to support any private go repo
 				llb.AddEnv("GOPRIVATE", "github.com/dagger/cloak"),
-				llb.AddSSHSocket(
-					llb.SSHID(sshAuthSockID),
-					llb.SSHSocketTarget("/ssh-agent.sock"),
-				),
-				llb.AddEnv("SSH_AUTH_SOCK", "/ssh-agent.sock"),
+				withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 				addSSHKnownHosts,
 			).Root(),
 		p,
@@ -81,11 +77,7 @@ func tsRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, s
 			llb.Scratch(),
 			llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
 		),
-		llb.AddSSHSocket(
-			llb.SSHID(sshAuthSockID),
-			llb.SSHSocketTarget("/ssh-agent.sock"),
-		),
-		llb.AddEnv("SSH_AUTH_SOCK", "/ssh-agent.sock"),
+		withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 		addSSHKnownHosts,
 	)
 
@@ -148,7 +140,9 @@ func dockerfileRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cf
 type runOptionFunc func(*llb.ExecInfo)
 
 func (fn runOptionFunc) SetRunOption(ei *llb.ExecInfo) {
-	fn(ei)
+	if fn != nil {
+		fn(ei)
+	}
 }
 
 func withRunOpts(runOpts ...llb.RunOption) llb.RunOption {
@@ -157,6 +151,19 @@ func withRunOpts(runOpts ...llb.RunOption) llb.RunOption {
 			runOpt.SetRunOption(ei)
 		}
 	})
+}
+
+func withSSHAuthSock(id, path string) llb.RunOption {
+	if id == "" {
+		return runOptionFunc(nil)
+	}
+	return withRunOpts(
+		llb.AddSSHSocket(
+			llb.SSHID(id),
+			llb.SSHSocketTarget(path),
+		),
+		llb.AddEnv("SSH_AUTH_SOCK", path),
+	)
 }
 
 func withGithubSSHKnownHosts() (llb.RunOption, error) {
