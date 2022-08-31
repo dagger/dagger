@@ -1,36 +1,190 @@
-# Writing a new extension in Go
+# Writing a new project with Go
 
-Say we are creating a new Dagger extension, written in Go, called `foo` that will have a single action `bar`.
+Say we are creating a new project called `foo`. It will have
 
-1. Setup the extension configuration
-   1. Starting from the root of the cloak repo, make a new directory for your action:
-      - `mkdir -p examples/foo`
-   1. `cd examples/foo`
-   1. `cp ../alpine/schema.graphql ../alpine/operations.graphql .`
-   1. Open `schema.graphql`, replace the existing `build` field under `Alpine` with one field per action you want to implement. Replace all occurences of `Alpine` with `Foo`.
-      - This is where the schema for the actions in your extension is configured. Feel free to add more complex output/input types as needed
-      - If you want `foo` to just have a single action `bar`, you just need a field for `bar` (with appropriate input and output types).
-   1. Open `operations.graphql`, make similar updates as those to `schema.graphql`
-      - This file defines operations available to clients (such as the cloak CLI or generated code clients).
-      - In most cases, this file is easy to derive from `schema.graphql`; we thus expect to be able to autogenerate it for many cases and make its creation optional in the long term.
-   1. Create a new file called `cloak.yaml`
-      - This is where you declare your extension, and other extensions that it depends on. All extensions declared in this file will be built, loaded, and available to be called from your own extension.
-      - Create the file in the following format:
+1. A single extension, written in Go, the extends the schema with an action called `bar`.
+1. A script, also written in Go, that can call the extension (and any other project dependencies)
 
-      ```yaml
-      name: foo
-      sources:
-        - path: .
-          sdk: go
-      dependencies:
-        - local: ../../<dependencyA>/cloak.yaml
-        - local: ../../<dependencyB>/cloak.yaml
-      ```
+## Setup the project configuration
 
-      - `<dependencyX>` should be replaced with the directory of the extension you want a dependency on. `core` does not need to be declared as a dependency; it is implicitly included. If your only dependency is `core`, then you can just skip the `dependencies:` key entirely.
-2. Generate client stubs and implementation stubs
-   - From `examples/foo`, run `cloak --context=../.. -p examples/foo/cloak.yaml generate --output-dir=. --sdk=go`
-   - Now you should see client stubs for each of your dependencies under `gen/<pkgname>` in addition to structures for needed types in `models.go` and some auto-generated boilerplate that makes your code invokable in `generated.go`
-   - Additionally, there should now be a `main.go` file with a stub implementations.
-3. Implement your action by replacing the panics in `main.go` with the actual implementation.
-   - When you need to call a dependency, import it from paths like `github.com/dagger/cloak/examples/foo/gen/<dependency pkgname>`
+1. Enter a go module directory for your project (`go mod init <module name>` if one doesn't exist)
+1. Configure go to use the private cloak git repo (this will go away once the repo is made public)
+
+   - If not already set, this command will update your `~/.gitconfig` with a rule that tells git to use ssh instead of https for the cloak repo:
+
+     - `git config --global --add url.ssh://git@github.com/dagger/cloak.insteadOf https://github.com/dagger/cloak`
+
+   - Then run the following commands to setup the rest of the required dependencies
+
+     ```console
+     export GOPRIVATE=github.com/dagger/cloak
+     go get github.com/dagger/cloak@main
+     go get github.com/99designs/gqlgen
+     go get github.com/Khan/genqlient
+     # This is needed to fix a transitive dependency issue (`sirupsen` vs. `Sirupsen`...)
+     go mod edit -replace=github.com/docker/docker=github.com/docker/docker@v20.10.3-0.20220414164044-61404de7df1a+incompatible
+     ```
+
+1. In order to pull cloak dependencies and build the extension in this example, cloak will need pull the private repo from a container running in the engine.
+
+   - Setting up an ssh-agent with credentials that can pull the `dagger/cloak` will cover all these cases and is recommended for now.
+     - Github has [documentation on setting this up for various platforms](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent).
+     - Be sure that the `SSH_AUTH_SOCK` variable is set in your current terminal (running `eval "$(ssh-agent -s)"` will typically take care of that)
+     - Without this, you may get error messages containing `no ssh handler for id default`
+   - Alternatively, if you don't have to pull any cloak dependencies (e.g. your `dependencies` key in `cloak.yaml` is empty), you can avoid the need to setup ssh
+
+1. Create a new file called `cloak.yaml`
+
+   - This is where you declare your project, and other project that it depends on. All extensions declared in this file will be built, loaded, and available to be called when the project is loaded into cloak.
+   - Create the file in the following format:
+
+   ```yaml
+   name: foo
+   scripts:
+     - path: script
+       sdk: go
+   dependencies:
+     - git:
+         remote: git@github.com:dagger/cloak.git
+         ref: main
+         path: examples/yarn/cloak.yaml
+     - git:
+         remote: git@github.com:dagger/cloak.git
+         ref: main
+         path: examples/netlify/go/cloak.yaml
+   ```
+
+   - The dependencies are optional and just examples, feel free to change as needed.
+   - `core` does not need to be explicitly declared as a dependency; it is implicitly included. If your only dependency is `core`, then you can just skip the `dependencies:` key entirely.
+
+## Create your script
+
+### Generate initial script code
+
+1. From the directory containing `cloak.yaml` (or any subdirectory thereof), run `cloak generate`
+1. You should now see:
+
+   - A `script/main.go` file
+   - A `script/gen/` directory containing autogenerated clients for any dependencies you've declared (or just `core` if you have no other deps)
+
+1. NOTE: if you re-run `cloak generate` in the future, it will refuse to overwrite your existing `main.go` file if it exists (in order to not clobber your work). For now, if you update your schema you won't get new autogenerated skeletons for it unless you temporarily rename your `main.go` file. We intend to make this less tedious with future SDK updates.
+
+### Implement the script
+
+1. Edit `script/main.go`, replacing the `panic("implement me")` with your actual implementation.
+1. When you need to call a dependency declared in `cloak.yaml`, you can import the client from `<your module>/script/gen/<dependency>`
+1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project.
+
+### Invoke your script
+
+1. If this is the first time running it, you may need a `go mod tidy` to apply the previous go mod commands
+1. The simplest way to invoke is to execute `go run script/main.go`
+
+## Create your extension
+
+Update your `cloak.yaml` to include a new `extensions` key:
+
+```yaml
+name: foo
+scripts:
+  - path: script
+    sdk: go
+extensions:
+  - path: ext
+    sdk: go
+dependencies:
+  - git:
+      remote: git@github.com:dagger/cloak.git
+      ref: main
+      path: examples/yarn/cloak.yaml
+  - git:
+      remote: git@github.com:dagger/cloak.git
+      ref: main
+      path: examples/netlify/go/cloak.yaml
+```
+
+### Create schema and operation files
+
+- Create a new file `ext/schema.graphql`, which will define the new APIs implemented by your extension and vended by your project.
+
+  - Example contents for a single `bar` action:
+
+    ```graphql
+    extend type Query {
+      foo: Foo!
+    }
+
+    type Foo {
+      bar(in: String!): String!
+    }
+    ```
+
+  - Also see other examples:
+    - [alpine](../examples/alpine/schema.graphql)
+    - [netlify](../examples/netlify/go/schema.graphql)
+  - NOTE: this step may become optional in the future if code-first schemas are supported
+
+- Create a new file `ext/operations.graphql`. This file will determine which functions are included in code-generated client stubs (for scripts or other projects that depend on this extension).
+
+  - This file is optional if you don't need code-generated clients to call your extension (and instead just rely on raw graphql queries)
+  - Example contents for a single `Bar` query:
+
+    ```graphql
+    query Bar($in: String!) {
+      foo {
+        bar(in: $in)
+      }
+    }
+    ```
+
+  - Also see other examples:
+    - [alpine](../examples/alpine/operations.graphql)
+    - [netlify](../examples/netlify/go/operations.graphql)
+  - NOTE: In most cases, this file is easy to derive from `schema.graphql`; we thus expect to be able to autogenerate it for many cases and make its creation optional in the long term.
+
+### Generate initial extension code
+
+1. From any project directory (that is, the directory containing `cloak.yaml` or any subdirectory thereof), run `cloak generate`
+
+   - NOTE: this currently occasionally fails with an error similar to `unable to find type: github.com/99designs/gqlgen/graphql.Boolean`. If this happens, re-run:
+
+     ```console
+     go get github.com/99designs/gqlgen
+     go get github.com/Khan/genqlient
+     ```
+
+1. You should now see:
+   - A `ext/main.go` file
+   - A `ext/gen/` directory containing autogenerated clients for any dependencies you've declared (or just `core` if you have no other deps)
+   - Some autogenerated boilerplate: structures for needed types in `models.go` and some runtime code that makes your extension invokable in the containerized cloak engine in `generated.go`
+1. NOTE: this has the same behavior as scripts in that `cloak generate` will refuse to overwrite any existing `main.go` file (mentioned above)
+
+### Implement the extension
+
+1. Edit `ext/main.go`, replacing occurences of `panic("implement me")` with the implementation of your extension's actions.
+1. When you need to call a dependency declared in `cloak.yaml`, you can import the client from `<your module>/ext/gen/<dependency>`
+1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the cloak engine.
+1. Some examples:
+   - [alpine](../examples/alpine/main.go)
+   - [netlify](../examples/netlify/go/main.go)
+
+### Invoke your extension
+
+1. One simple way to verify your extension builds and can be invoked is via the graphql playground.
+   - Just run `cloak dev` from any directory in your project and navigate to `localhost:8080` in your browser (may need [an SSH tunnel](https://www.ssh.com/academy/ssh/tunneling-example) if on a remote host)
+     - you can use the `--port` flag to override the port if needed
+   - Click the "Docs" tab on the right to see the schemas available, including your extension and any dependencies.
+   - You can submit queries by writing them on the left-side pane and clicking the play button in the middle
+1. You can also use the cloak CLI, e.g.
+
+   ```console
+   cloak do <<'EOF'
+   {
+     foo {
+       bar(in: "in")
+     }
+   }
+   EOF
+   ```
+
+1. Finally, you should now be able to invoke your extension from your script too. When you ran `cloak generate` most recently, it should have also populated your script's `gen/` dir with clients for your extension too.

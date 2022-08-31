@@ -31,7 +31,7 @@ EOF
 Yarn build (output will just be encoded fs bytes for now, need to add export or shell util to cloak CLI interface):
 
 ```console
-cloak -p examples/yarn/cloak.yaml do --local-dir source=sdk/nodejs/dagger --set runArgs=build
+cloak -p examples/yarn/cloak.yaml do --local-dir source=. --set runArgs=build
 ```
 
 ## Development
