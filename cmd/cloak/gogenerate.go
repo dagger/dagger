@@ -24,13 +24,16 @@ var generatedTmpl string
 
 func generateGoScriptStub(generateOutputDir string) error {
 	mainFile := filepath.Join(generateOutputDir, "main.go")
-	if _, err := os.Stat(mainFile); os.IsNotExist(err) {
-		if err := os.WriteFile(filepath.Join(mainFile), []byte(scriptMain), 0644); err != nil {
+	_, err := os.Stat(mainFile)
+	switch {
+	case os.IsNotExist(err):
+		// #nosec G306
+		if err := os.WriteFile(mainFile, []byte(scriptMain), 0644); err != nil {
 			return err
 		}
-	} else if err != nil {
+	case err != nil:
 		return err
-	} else {
+	default:
 		fmt.Printf("%s already exists, skipping generation\n", mainFile)
 	}
 

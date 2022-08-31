@@ -143,7 +143,7 @@ func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
 }
 
 type localDir struct {
-	Id string
+	ID string `json:"id"`
 }
 
 func (r *coreSchema) workdir(p graphql.ResolveParams) (any, error) {
@@ -163,14 +163,14 @@ func (r *coreSchema) localDirRead(p graphql.ResolveParams) (any, error) {
 	// TODO: this should be optional, the above issue can also be avoided w/ readonly
 	// mount when possible
 	st := llb.Scratch().File(llb.Copy(llb.Local(
-		obj.Id,
+		obj.ID,
 		// TODO: better shared key hint?
-		llb.SharedKeyHint(obj.Id),
+		llb.SharedKeyHint(obj.ID),
 		// FIXME: should not be hardcoded
 		llb.ExcludePatterns([]string{"**/node_modules"}),
 	), "/", "/"))
 
-	return r.Solve(p.Context, st, llb.LocalUniqueID(obj.Id))
+	return r.Solve(p.Context, st, llb.LocalUniqueID(obj.ID))
 }
 
 // FIXME:(sipsma) have to make a new session to do a local export, need either gw support for exports or actually working session sharing to keep it all in the same session

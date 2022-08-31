@@ -97,20 +97,21 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		}
 	}
 
-	if startOpts.Workdir == "" && startOpts.ConfigPath == "" {
+	switch {
+	case startOpts.Workdir == "" && startOpts.ConfigPath == "":
 		configAbsPath, err := findConfig()
 		if err != nil {
 			return err
 		}
 		startOpts.Workdir = filepath.Dir(configAbsPath)
 		startOpts.ConfigPath = "./" + cloakYamlName
-	} else if startOpts.Workdir == "" {
+	case startOpts.Workdir == "":
 		cwd, err := os.Getwd()
 		if err != nil {
 			return err
 		}
 		startOpts.Workdir = cwd
-	} else if startOpts.ConfigPath == "" {
+	case startOpts.ConfigPath == "":
 		startOpts.ConfigPath = "./" + cloakYamlName
 	}
 
@@ -269,7 +270,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 				Host struct {
 					Dir struct {
 						Read struct {
-							Id dagger.FSID
+							ID dagger.FSID `json:"id"`
 						}
 					}
 				}
@@ -300,7 +301,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 			}
 
 			l.Lock()
-			mapping[localID] = res.Host.Dir.Read.Id
+			mapping[localID] = res.Host.Dir.Read.ID
 			l.Unlock()
 
 			return nil
