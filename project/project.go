@@ -74,8 +74,8 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		sshAuthSockID: sshAuthSockID,
 	}
 
-	var sourceSchemas []router.LoadedSchema
-	for _, ext := range cfg.Extensions {
+	sourceSchemas := make([]router.LoadedSchema, len(cfg.Extensions))
+	for i, ext := range cfg.Extensions {
 		sdl, err := contextFS.ReadFile(ctx, gw, filepath.Join(
 			filepath.Dir(configPath),
 			ext.Path,
@@ -96,10 +96,10 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		}
 		ext.Operations = string(operations)
 
-		sourceSchemas = append(sourceSchemas, router.StaticSchema(router.StaticSchemaParams{
+		sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
 			Schema:     ext.Schema,
 			Operations: ext.Operations,
-		}))
+		})
 	}
 	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
 

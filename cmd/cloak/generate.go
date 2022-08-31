@@ -42,8 +42,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			if err := generateClients(ctx.Project, coreProj, generateOutputDir, s.SDK); err != nil {
 				return err
 			}
-			switch s.SDK {
-			case "go":
+			if s.SDK == "go" {
 				if err := generateGoExtensionStub(generateOutputDir, s.Schema, coreProj); err != nil {
 					return err
 				}
@@ -55,8 +54,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			if err := generateClients(ctx.Project, coreProj, generateOutputDir, s.SDK); err != nil {
 				return err
 			}
-			switch s.SDK {
-			case "go":
+			if s.SDK == "go" {
 				if err := generateGoScriptStub(generateOutputDir); err != nil {
 					return err
 				}
@@ -94,8 +92,7 @@ func generateClients(proj, coreProj *core.Project, generateOutputDir, sdk string
 			return err
 		}
 
-		switch sdk {
-		case "go":
+		if sdk == "go" {
 			if err := generateGoClientStubs(subdir); err != nil {
 				return err
 			}
@@ -122,8 +119,7 @@ func generateClients(proj, coreProj *core.Project, generateOutputDir, sdk string
 			return err
 		}
 
-		switch sdk {
-		case "go":
+		if sdk == "go" {
 			if err := generateGoClientStubs(subdir); err != nil {
 				return err
 			}
