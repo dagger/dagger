@@ -1,7 +1,0 @@
-name: todoapp
-sources:
-  - path: .
-    sdk: go
-dependencies:
-  - local: ../../yarn/cloak.yaml
-  - local: ../../netlify/go/cloak.yaml

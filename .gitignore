@@ -21,3 +21,5 @@ stub/stub
 
 # intellij
 .idea
+
+node_modules

@@ -9,27 +9,6 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
-// AddSecretCore includes the requested fields of the GraphQL type Core.
-// The GraphQL type's documentation follows.
-//
-// Core API
-type AddSecretCore struct {
-	// Add a secret
-	AddSecret dagger.SecretID `json:"addSecret"`
-}
-
-// GetAddSecret returns AddSecretCore.AddSecret, and is useful for accessing the field via an interface.
-func (v *AddSecretCore) GetAddSecret() dagger.SecretID { return v.AddSecret }
-
-// AddSecretResponse is returned by AddSecret on success.
-type AddSecretResponse struct {
-	// Core API
-	Core AddSecretCore `json:"core"`
-}
-
-// GetCore returns AddSecretResponse.Core, and is useful for accessing the field via an interface.
-func (v *AddSecretResponse) GetCore() AddSecretCore { return v.Core }
-
 type CacheMountInput struct {
 	// Cache mount name
 	Name string `json:"name"`
@@ -129,6 +108,8 @@ type ExecInput struct {
 	Env []ExecEnvInput `json:"env"`
 	// Secret env vars
 	SecretEnv []ExecSecretEnvInput `json:"secretEnv"`
+	// Include the host's ssh agent socket in the exec at the provided path
+	SshAuthSock string `json:"sshAuthSock"`
 }
 
 // GetArgs returns ExecInput.Args, and is useful for accessing the field via an interface.
@@ -148,6 +129,9 @@ func (v *ExecInput) GetEnv() []ExecEnvInput { return v.Env }
 
 // GetSecretEnv returns ExecInput.SecretEnv, and is useful for accessing the field via an interface.
 func (v *ExecInput) GetSecretEnv() []ExecSecretEnvInput { return v.SecretEnv }
+
+// GetSshAuthSock returns ExecInput.SshAuthSock, and is useful for accessing the field via an interface.
+func (v *ExecInput) GetSshAuthSock() string { return v.SshAuthSock }
 
 // ExecResponse is returned by Exec on success.
 type ExecResponse struct {
@@ -229,8 +213,9 @@ func (v *SecretResponse) GetCore() SecretCore { return v.Core }
 // WorkdirHost includes the requested fields of the GraphQL type Host.
 // The GraphQL type's documentation follows.
 //
-// TODO move these to their own file
+// Interactions with the user's host filesystem
 type WorkdirHost struct {
+	// Fetch the client's workdir
 	Workdir WorkdirHostWorkdirLocalDir `json:"workdir"`
 }
 
@@ -240,8 +225,9 @@ func (v *WorkdirHost) GetWorkdir() WorkdirHostWorkdirLocalDir { return v.Workdir
 // WorkdirHostWorkdirLocalDir includes the requested fields of the GraphQL type LocalDir.
 // The GraphQL type's documentation follows.
 //
-// TODO move these to their own file
+// A directory on the user's host filesystem
 type WorkdirHostWorkdirLocalDir struct {
+	// Read the contents of the directory
 	Read dagger.Filesystem `json:"read"`
 }
 
@@ -250,7 +236,7 @@ func (v *WorkdirHostWorkdirLocalDir) GetRead() dagger.Filesystem { return v.Read
 
 // WorkdirResponse is returned by Workdir on success.
 type WorkdirResponse struct {
-	// TODO doc
+	// Host API
 	Host WorkdirHost `json:"host"`
 }
 
@@ -260,8 +246,9 @@ func (v *WorkdirResponse) GetHost() WorkdirHost { return v.Host }
 // WriteWorkdirHost includes the requested fields of the GraphQL type Host.
 // The GraphQL type's documentation follows.
 //
-// TODO move these to their own file
+// Interactions with the user's host filesystem
 type WriteWorkdirHost struct {
+	// Fetch the client's workdir
 	Workdir WriteWorkdirHostWorkdirLocalDir `json:"workdir"`
 }
 
@@ -271,8 +258,9 @@ func (v *WriteWorkdirHost) GetWorkdir() WriteWorkdirHostWorkdirLocalDir { return
 // WriteWorkdirHostWorkdirLocalDir includes the requested fields of the GraphQL type LocalDir.
 // The GraphQL type's documentation follows.
 //
-// TODO move these to their own file
+// A directory on the user's host filesystem
 type WriteWorkdirHostWorkdirLocalDir struct {
+	// Write the provided filesystem to the directory
 	Write bool `json:"write"`
 }
 
@@ -281,20 +269,12 @@ func (v *WriteWorkdirHostWorkdirLocalDir) GetWrite() bool { return v.Write }
 
 // WriteWorkdirResponse is returned by WriteWorkdir on success.
 type WriteWorkdirResponse struct {
-	// TODO doc
+	// Host API
 	Host WriteWorkdirHost `json:"host"`
 }
 
 // GetHost returns WriteWorkdirResponse.Host, and is useful for accessing the field via an interface.
 func (v *WriteWorkdirResponse) GetHost() WriteWorkdirHost { return v.Host }
-
-// __AddSecretInput is used internally by genqlient
-type __AddSecretInput struct {
-	Plaintext string `json:"plaintext"`
-}
-
-// GetPlaintext returns __AddSecretInput.Plaintext, and is useful for accessing the field via an interface.
-func (v *__AddSecretInput) GetPlaintext() string { return v.Plaintext }
 
 // __DockerfileInput is used internally by genqlient
 type __DockerfileInput struct {
@@ -359,43 +339,6 @@ type __WriteWorkdirInput struct {
 
 // GetContents returns __WriteWorkdirInput.Contents, and is useful for accessing the field via an interface.
 func (v *__WriteWorkdirInput) GetContents() dagger.FSID { return v.Contents }
-
-func AddSecret(
-	ctx context.Context,
-	plaintext string,
-) (*AddSecretResponse, error) {
-	req := &graphql.Request{
-		OpName: "AddSecret",
-		Query: `
-query AddSecret ($plaintext: String!) {
-	core {
-		addSecret(plaintext: $plaintext)
-	}
-}
-`,
-		Variables: &__AddSecretInput{
-			Plaintext: plaintext,
-		},
-	}
-	var err error
-	var client graphql.Client
-
-	client, err = dagger.Client(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var data AddSecretResponse
-	resp := &graphql.Response{Data: &data}
-
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
-	)
-
-	return &data, err
-}
 
 func Dockerfile(
 	ctx context.Context,

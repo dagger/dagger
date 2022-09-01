@@ -1,7 +1,0 @@
-name: todoapp
-sources:
-  - path: .
-    sdk: ts
-dependencies:
-  - local: ../../yarn/cloak.yaml
-  - local: ../../netlify/ts/cloak.yaml

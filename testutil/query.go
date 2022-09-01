@@ -24,17 +24,12 @@ func Query(query string, res any, opts *QueryOptions) error {
 	if opts.Secrets == nil {
 		opts.Secrets = make(map[string]string)
 	}
-	return engine.Start(context.Background(), nil, func(ctx context.Context) error {
-		cl, err := dagger.Client(ctx)
-		if err != nil {
+	return engine.Start(context.Background(), nil, func(ctx engine.Context) error {
+		if err := addSecrets(ctx, ctx.Client, opts); err != nil {
 			return err
 		}
 
-		if err := addSecrets(ctx, cl, opts); err != nil {
-			return err
-		}
-
-		return cl.MakeRequest(ctx,
+		return ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query:     query,
 				Variables: opts.Variables,

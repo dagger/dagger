@@ -30,4 +30,6 @@ We appreciate any participation in the project, including:
 - [Introduction](docs/introduction.md)
 - [Getting Started](docs/getting_started.md)
 - [Writing Extensions](docs/writing_extensions.md)
+  - [Writing an extension in Go](docs/writing_extensions_go.md)
+  - [Writing an extension in Javascript/Typescript](docs/writing_extensions_nodejs.md)
 - [Operator Manual](docs/operator_manual.md)

@@ -17,10 +17,6 @@ import (
 	"golang.org/x/term"
 )
 
-const (
-	projectContextLocalName = ".projectContext"
-)
-
 var doCmd = &cobra.Command{
 	Use:  "do",
 	Run:  Do,
@@ -38,10 +34,11 @@ func Do(cmd *cobra.Command, args []string) {
 	secrets := getKVInput(secretsInput)
 
 	localDirs := getKVInput(localDirsInput)
-	localDirs[projectContextLocalName] = projectContext
 
 	startOpts := &engine.Config{
-		LocalDirs: localDirs,
+		LocalDirs:  localDirs,
+		Workdir:    workdir,
+		ConfigPath: configPath,
 	}
 
 	// Use the provided query file if specified
@@ -65,24 +62,12 @@ func Do(cmd *cobra.Command, args []string) {
 	}
 
 	var result []byte
-	err := engine.Start(ctx, startOpts, func(ctx context.Context) error {
-		cl, err := dagger.Client(ctx)
-		if err != nil {
-			return err
-		}
-
-		localDirMapping, err := loadLocalDirs(ctx, cl, localDirs)
-		if err != nil {
-			return err
-		}
-		for name, id := range localDirMapping {
-			if name == projectContextLocalName {
-				continue
-			}
+	err := engine.Start(ctx, startOpts, func(ctx engine.Context) error {
+		for name, id := range ctx.LocalDirs {
 			vars[name] = string(id)
 		}
 
-		secretMapping, err := loadSecrets(ctx, cl, secrets)
+		secretMapping, err := loadSecrets(ctx, ctx.Client, secrets)
 		if err != nil {
 			return err
 		}
@@ -90,17 +75,13 @@ func Do(cmd *cobra.Command, args []string) {
 			vars[name] = string(id)
 		}
 
-		defaultOperations, err := installProject(ctx, cl, localDirMapping[projectContextLocalName])
-		if err != nil {
-			return err
-		}
 		if operations == "" {
-			operations = defaultOperations
+			operations = ctx.Operations
 		}
 
 		res := make(map[string]interface{})
 		resp := &graphql.Response{Data: &res}
-		err = cl.MakeRequest(ctx,
+		err = ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query:     operations,
 				Variables: vars,
@@ -136,45 +117,6 @@ func getKVInput(kvs []string) map[string]string {
 		m[split[0]] = split[1]
 	}
 	return m
-}
-
-func installProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID) (operations string, rerr error) {
-	res := struct {
-		Core struct {
-			Filesystem struct {
-				LoadExtension struct {
-					Operations string
-				}
-			}
-		}
-	}{}
-	resp := &graphql.Response{Data: &res}
-
-	err := cl.MakeRequest(ctx,
-		&graphql.Request{
-			Query: `
-			query LoadExtension($fs: FSID!, $configPath: String!) {
-				core {
-					filesystem(id: $fs) {
-						loadExtension(configPath: $configPath) {
-							install
-							operations
-						}
-					}
-				}
-			}`,
-			Variables: map[string]any{
-				"fs":         contextFS,
-				"configPath": projectFile,
-			},
-		},
-		resp,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	return res.Core.Filesystem.LoadExtension.Operations, nil
 }
 
 func loadSecrets(ctx context.Context, cl graphql.Client, secrets map[string]string) (map[string]dagger.SecretID, error) {
@@ -214,55 +156,6 @@ func loadSecrets(ctx context.Context, cl graphql.Client, secrets map[string]stri
 			}
 			l.Lock()
 			mapping[name] = res.Core.AddSecret
-			l.Unlock()
-
-			return nil
-		})
-	}
-
-	return mapping, eg.Wait()
-}
-
-func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]string) (map[string]dagger.FSID, error) {
-	var eg errgroup.Group
-	var l sync.Mutex
-
-	mapping := map[string]dagger.FSID{}
-	for localID := range localDirs {
-		localID := localID
-		eg.Go(func() error {
-			res := struct {
-				Core struct {
-					Clientdir struct {
-						ID dagger.FSID
-					}
-				}
-			}{}
-			resp := &graphql.Response{Data: &res}
-
-			err := cl.MakeRequest(ctx,
-				&graphql.Request{
-					Query: `
-						query ClientDir($id: String!) {
-							core {
-								clientdir(id: $id) {
-									id
-								}
-							}
-						}
-					`,
-					Variables: map[string]any{
-						"id": localID,
-					},
-				},
-				resp,
-			)
-			if err != nil {
-				return err
-			}
-
-			l.Lock()
-			mapping[localID] = res.Core.Clientdir.ID
 			l.Unlock()
 
 			return nil

@@ -11,23 +11,23 @@ import (
 
 // DeployNetlify includes the requested fields of the GraphQL type Netlify.
 type DeployNetlify struct {
-	Deploy DeployNetlifyDeploy `json:"deploy"`
+	Deploy DeployNetlifyDeploySiteURLs `json:"deploy"`
 }
 
 // GetDeploy returns DeployNetlify.Deploy, and is useful for accessing the field via an interface.
-func (v *DeployNetlify) GetDeploy() DeployNetlifyDeploy { return v.Deploy }
+func (v *DeployNetlify) GetDeploy() DeployNetlifyDeploySiteURLs { return v.Deploy }
 
-// DeployNetlifyDeploy includes the requested fields of the GraphQL type Deploy.
-type DeployNetlifyDeploy struct {
+// DeployNetlifyDeploySiteURLs includes the requested fields of the GraphQL type SiteURLs.
+type DeployNetlifyDeploySiteURLs struct {
 	Url       string `json:"url"`
 	DeployURL string `json:"deployURL"`
 }
 
-// GetUrl returns DeployNetlifyDeploy.Url, and is useful for accessing the field via an interface.
-func (v *DeployNetlifyDeploy) GetUrl() string { return v.Url }
+// GetUrl returns DeployNetlifyDeploySiteURLs.Url, and is useful for accessing the field via an interface.
+func (v *DeployNetlifyDeploySiteURLs) GetUrl() string { return v.Url }
 
-// GetDeployURL returns DeployNetlifyDeploy.DeployURL, and is useful for accessing the field via an interface.
-func (v *DeployNetlifyDeploy) GetDeployURL() string { return v.DeployURL }
+// GetDeployURL returns DeployNetlifyDeploySiteURLs.DeployURL, and is useful for accessing the field via an interface.
+func (v *DeployNetlifyDeploySiteURLs) GetDeployURL() string { return v.DeployURL }
 
 // DeployResponse is returned by Deploy on success.
 type DeployResponse struct {

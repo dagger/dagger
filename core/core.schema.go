@@ -1,9 +1,14 @@
 package core
 
 import (
+	"context"
+
+	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 )
 
 var _ router.ExecutableSchema = &coreSchema{}
@@ -11,6 +16,7 @@ var _ router.ExecutableSchema = &coreSchema{}
 type coreSchema struct {
 	*baseSchema
 	sshAuthSockID string
+	workdirID     string
 }
 
 func (r *coreSchema) Name() string {
@@ -22,6 +28,9 @@ func (r *coreSchema) Schema() string {
 	extend type Query {
 		"Core API"
 		core: Core!
+
+		"Host API"
+		host: Host!
 	}
 
 	"Core API"
@@ -31,9 +40,24 @@ func (r *coreSchema) Schema() string {
 
 		"Fetch a git repository"
 		git(remote: String!, ref: String): Filesystem!
+	}
+
+	"Interactions with the user's host filesystem"
+	type Host {
+		"Fetch the client's workdir"
+		workdir: LocalDir!
 
 		"Fetch a client directory"
-		clientdir(id: String!): Filesystem!
+		dir(id: String!): LocalDir!
+	}
+
+	"A directory on the user's host filesystem"
+	type LocalDir {
+		"Read the contents of the directory"
+		read: Filesystem!
+
+		"Write the provided filesystem to the directory"
+		write(contents: FSID!): Boolean!
 	}
 	`
 }
@@ -47,6 +71,22 @@ func (r *coreSchema) Operations() string {
 			}
 		}
 	}
+	query Workdir() {
+		host {
+			workdir {
+				read {
+					id
+				}
+			}
+		}
+	}
+	query WriteWorkdir($contents: FSID!) {
+		host {
+			workdir {
+				write(contents: $contents)
+			}
+		}
+	}
 	`
 }
 
@@ -54,11 +94,19 @@ func (r *coreSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
 			"core": r.core,
+			"host": r.host,
 		},
 		"Core": router.ObjectResolver{
-			"image":     r.image,
-			"git":       r.git,
-			"clientdir": r.clientdir,
+			"image": r.image,
+			"git":   r.git,
+		},
+		"Host": router.ObjectResolver{
+			"workdir": r.workdir,
+			"dir":     r.dir,
+		},
+		"LocalDir": router.ObjectResolver{
+			"read":  r.localDirRead,
+			"write": r.localDirWrite,
 		},
 	}
 }
@@ -68,6 +116,10 @@ func (r *coreSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (r *coreSchema) core(p graphql.ResolveParams) (any, error) {
+	return struct{}{}, nil
+}
+
+func (r *coreSchema) host(p graphql.ResolveParams) (any, error) {
 	return struct{}{}, nil
 }
 
@@ -90,20 +142,59 @@ func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
 	return r.Solve(p.Context, st)
 }
 
-func (r *coreSchema) clientdir(p graphql.ResolveParams) (any, error) {
+type localDir struct {
+	ID string `json:"id"`
+}
+
+func (r *coreSchema) workdir(p graphql.ResolveParams) (any, error) {
+	return localDir{r.workdirID}, nil
+}
+
+func (r *coreSchema) dir(p graphql.ResolveParams) (any, error) {
 	id := p.Args["id"].(string)
+	return localDir{id}, nil
+}
+
+func (r *coreSchema) localDirRead(p graphql.ResolveParams) (any, error) {
+	obj := p.Source.(localDir)
 
 	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
 	// which makes it unable to reused, which in turn creates cache invalidations
 	// TODO: this should be optional, the above issue can also be avoided w/ readonly
 	// mount when possible
 	st := llb.Scratch().File(llb.Copy(llb.Local(
-		id,
+		obj.ID,
 		// TODO: better shared key hint?
-		llb.SharedKeyHint(id),
+		llb.SharedKeyHint(obj.ID),
 		// FIXME: should not be hardcoded
 		llb.ExcludePatterns([]string{"**/node_modules"}),
 	), "/", "/"))
 
-	return r.Solve(p.Context, st, llb.LocalUniqueID(id))
+	return r.Solve(p.Context, st, llb.LocalUniqueID(obj.ID))
+}
+
+// FIXME:(sipsma) have to make a new session to do a local export, need either gw support for exports or actually working session sharing to keep it all in the same session
+func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
+	fsid := p.Args["contents"].(filesystem.FSID)
+	fs := filesystem.Filesystem{ID: fsid}
+	fsDef, err := fs.ToDefinition()
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE: be careful to not overwrite any values from original shared r.solveOpts (i.e. with append).
+	solveOpts := r.solveOpts
+	solveOpts.Exports = []bkclient.ExportEntry{{
+		Type:      bkclient.ExporterLocal,
+		OutputDir: solveOpts.LocalDirs[r.workdirID],
+	}}
+	if _, err := r.bkClient.Build(p.Context, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: fsDef,
+		})
+	}, r.solveCh); err != nil {
+		return nil, err
+	}
+	return true, nil
 }
