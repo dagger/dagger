@@ -13,9 +13,7 @@ This document explains how to write an API extension for Dagger/cloak.
 
 ### Extension
 
-A GraphQL [schema](https://graphql.org/learn/schema/#gatsby-focus-wrapper) + associated [resolvers](https://graphql.org/learn/execution/#root-fields-resolvers) that can be loaded into Cloak at runtime to add new functionality beyond the core API.
-
-N.B.: a resolver is basically a HTTP Handler for a resource
+A schema + associated resolvers that can be loaded into Cloak at runtime to add new functionality beyond the core API.
 
 ### Extension Runtime
 
