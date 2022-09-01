@@ -31,7 +31,7 @@ Say we are creating a new project called `foo`. It will have
      - Github has [documentation on setting this up for various platforms](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent).
      - Be sure that the `SSH_AUTH_SOCK` variable is set in your current terminal (running `eval "$(ssh-agent -s)"` will typically take care of that)
      - Without this, you may get error messages containing `no ssh handler for id default`
-   - Alternatively, if you don't have to pull any cloak dependencies (e.g. your `dependencies` key in `cloak.yaml` is empty), you can avoid the need to setup ssh
+   - Alternatively, if you don't have to pull any cloak dependencies (e.g. your `dependencies` key in `cloak.yaml` is empty), you can avoid the need to setup ssh-agent by vendoring your dependencies (`go mod vendor`)
 
 1. Create a new file called `cloak.yaml`
 
