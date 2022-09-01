@@ -5,8 +5,10 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 
+	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 )
@@ -58,9 +60,7 @@ func (r *Router) Add(schema ExecutableSchema) error {
 	// Atomic swap
 	r.s = s
 	r.h = handler.New(&handler.Config{
-		Schema:     s,
-		Pretty:     true,
-		Playground: true,
+		Schema: s,
 	})
 	return nil
 }
@@ -89,6 +89,14 @@ func (r *Router) Get(name string) ExecutableSchema {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Serve GraphiQL for text/html (e.g. browser) requests
+	// FIXME: Split into /query (API) and / (graphiql) rather than serving depending on content type.
+	acceptHeader := req.Header.Get("Accept")
+	if !strings.Contains(acceptHeader, "application/json") && strings.Contains(acceptHeader, "text/html") {
+		playground.Handler("Cloak Dev", "/").ServeHTTP(w, req)
+		return
+	}
+
 	r.l.RLock()
 	h := r.h
 	r.l.RUnlock()
@@ -105,6 +113,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 	}()
+
 	h.ServeHTTP(w, req)
 }
 
