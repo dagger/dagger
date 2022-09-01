@@ -18,6 +18,12 @@ var generateCmd = &cobra.Command{
 }
 
 func Generate(cmd *cobra.Command, args []string) {
+	configPath, err := getCloakYAMLFilePath(getConfigFS(configPath))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	startOpts := &engine.Config{
 		Workdir:     workdir,
 		ConfigPath:  configPath,

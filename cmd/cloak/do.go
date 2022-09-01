@@ -30,6 +30,12 @@ func Do(cmd *cobra.Command, args []string) {
 		operation = args[0]
 	}
 
+	configPath, err := getCloakYAMLFilePath(getConfigFS(configPath))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	vars := getKVInput(queryVarsInput)
 	secrets := getKVInput(secretsInput)
 
@@ -62,7 +68,7 @@ func Do(cmd *cobra.Command, args []string) {
 	}
 
 	var result []byte
-	err := engine.Start(ctx, startOpts, func(ctx engine.Context) error {
+	err = engine.Start(ctx, startOpts, func(ctx engine.Context) error {
 		for name, id := range ctx.LocalDirs {
 			vars[name] = string(id)
 		}
