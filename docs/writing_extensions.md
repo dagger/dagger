@@ -19,7 +19,7 @@ N.B.: a resolver is basically a HTTP Handler for a resource
 
 ### Extension Runtime
 
-The runtime is the part of a resolver that implement the actual functionality of the extension. It serves as an interface between the Cloak server and the code or other artifacts.
+The runtime serves as an interface between the Cloak server and the code or other artifacts that actually implement the actual functionality.
 Runtimes implement the "runtime protocol", which defines how inputs
 are provided to a resolver and how outputs are provided back to the Cloak server.
 
