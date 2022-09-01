@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/core/shim"
@@ -203,15 +204,16 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	shim, err := shim.Build(p.Context, s.gw, s.platform)
+	shimSt, err := shim.Build(p.Context, s.gw, s.platform)
 	if err != nil {
 		return nil, err
 	}
 
 	runOpt := []llb.RunOption{
-		llb.Args(append([]string{"/_shim"}, input.Args...)),
-		llb.AddMount("/_shim", shim, llb.SourcePath("/_shim")),
+		llb.Args(append([]string{shim.Path}, input.Args...)),
+		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
 		llb.Dir(input.Workdir),
+		llb.WithCustomName(strings.Join(input.Args, " ")),
 	}
 	for _, cacheMount := range input.CacheMounts {
 		var sharingMode llb.CacheMountSharingMode
@@ -272,7 +274,9 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 
 	fs, err := s.Solve(p.Context, execState.Root())
 	if err != nil {
-		return nil, err
+		// clean up shim from error messages
+		cleanErr := strings.ReplaceAll(err.Error(), shim.Path+" ", "")
+		return nil, errors.New(cleanErr)
 	}
 
 	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), s.platform)
