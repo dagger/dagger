@@ -32,10 +32,10 @@ scope="${AZLOGIN_SCOPE:-}"
 while getopts r:s:h o; do
     case "$o" in
     r)
-        resource="resource=$OPTARG"
+        resource="$OPTARG"
         ;;
     s)
-        scope="scope=$OPTARG"
+        scope="$OPTARG"
         ;;
     h)
         helptext
@@ -69,10 +69,10 @@ if [ -z "$resource" ] && [ -z "$scope" ]; then
     query="$query&$default_resource"
 else
     if [ -n "$resource" ]; then
-        query="$query&$resource"
+        query="$query&resource=$resource"
     fi
     if [ -n "$scope" ]; then
-        query="$query&$scope"
+        query="$query&scope=$scope"
     fi
 fi
 
