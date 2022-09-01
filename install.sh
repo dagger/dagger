@@ -285,6 +285,40 @@ tarball() {
     echo "$name"
 }
 
+install_shell_completion() {
+    echo "
+${binexe} has built-in shell completion. This is how you can install it for:
+
+  BASH:
+
+    1. Ensure that you install bash-completion using your package manager.
+
+    2. Add dagger completion to your personal bash completions dir
+
+      mkdir -p $XDG_DATA_HOME/bash-completion/completions
+      ${binexe} completion bash > $XDG_DATA_HOME/bash-completion/completions/dagger
+
+  ZSH:
+
+    1. Generate a _dagger completion script and write it to a file within your \$FPATH, e.g.:
+
+      ${binexe} completion zsh > /usr/local/share/zsh/site-functions/_dagger
+
+    2. Ensure that the following is present in your ~/.zshrc:
+
+      autoload -U compinit
+      compinit -i
+
+    zsh version 5.7 or later is recommended.
+
+  FISH:
+
+    1. Generate a dagger.fish completion script and write it to a file within fish completions, e.g.:
+
+      ${binexe} completion fish > ~/.config/fish/completions/dagger.fish
+    "
+}
+
 execute() {
     base_url="$(base_url)"
     tarball="$(tarball)"
@@ -303,6 +337,8 @@ execute() {
     (cd "${tmpdir}" && untar "${tarball}")
     test ! -d "${bin_dir}" && install -d "${bin_dir}"
     install "${srcdir}/${binexe}" "${bin_dir}"
+    log_debug "display shell completion instructions"
+    install_shell_completion
     log_info "installed ${bin_dir}/${binexe}"
     rm -rf "${tmpdir}"
 }
