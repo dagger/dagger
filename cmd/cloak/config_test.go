@@ -29,7 +29,6 @@ func TestGetConfigFSFile(t *testing.T) {
 			require.Equal(t, c.content, string(b))
 		})
 	}
-
 }
 
 func TestGetConfigFSDir(t *testing.T) {
@@ -66,7 +65,6 @@ func TestGetConfigFSDir(t *testing.T) {
 			require.True(t, found)
 		})
 	}
-
 }
 
 func TestGetCloakYAMLFilePath(t *testing.T) {
