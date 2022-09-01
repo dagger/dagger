@@ -19,6 +19,8 @@ var cmd embed.FS
 
 var state llb.State
 
+const Path = "/_shim"
+
 func init() {
 	entries, err := fs.ReadDir(cmd, "cmd")
 	if err != nil {
