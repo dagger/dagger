@@ -1558,7 +1558,7 @@
     "@docsearch/css" "3.1.1"
     algoliasearch "^4.0.0"
 
-"@docusaurus/core@2.1.0", "@docusaurus/core@^2.0.1":
+"@docusaurus/core@2.1.0", "@docusaurus/core@^2.1.0":
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/@docusaurus/core/-/core-2.1.0.tgz#4aedc306f4c4cd2e0491b641bf78941d4b480ab6"
   integrity sha512-/ZJ6xmm+VB9Izbn0/s6h6289cbPy2k4iYFwWDhjiLsVqwa/Y0YBBcXvStfaHccudUC3OfP+26hMk7UCjc50J6Q==
@@ -4327,6 +4327,13 @@ dns-packet@^5.2.2:
   dependencies:
     "@leichtgewicht/ip-codec" "^2.0.1"
 
+docusaurus-plugin-image-zoom@^0.1.1:
+  version "0.1.1"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-image-zoom/-/docusaurus-plugin-image-zoom-0.1.1.tgz#f5e16ae568f7b74e8a357ee67ea7922521f64539"
+  integrity sha512-cJXo5TKh9OR1gE4B5iS5ovLWYYDFwatqRm00iXFPOaShZG99l5tgkDKgbQPAwSL9wg4I+wz3aMwkOtDhMIpKDQ==
+  dependencies:
+    medium-zoom "^1.0.6"
+
 docusaurus-plugin-sass@^0.2.2:
   version "0.2.2"
   resolved "https://registry.yarnpkg.com/docusaurus-plugin-sass/-/docusaurus-plugin-sass-0.2.2.tgz#9b7f8c6fbe833677064ec05b09b98d90b50be324"
@@ -6686,6 +6693,11 @@ media-typer@0.3.0:
   version "0.3.0"
   resolved "https://registry.yarnpkg.com/media-typer/-/media-typer-0.3.0.tgz#8710d7af0aa626f8fffa1ce00168545263255748"
   integrity sha1-hxDXrwqmJvj/+hzgAWhUUmMlV0g=
+
+medium-zoom@^1.0.6:
+  version "1.0.6"
+  resolved "https://registry.yarnpkg.com/medium-zoom/-/medium-zoom-1.0.6.tgz#9247f21ca9313d8bbe9420aca153a410df08d027"
+  integrity sha512-UdiUWfvz9fZMg1pzf4dcuqA0W079o0mpqbTnOz5ip4VGYX96QjmbM+OgOU/0uOzAytxC0Ny4z+VcYQnhdifimg==
 
 mem@^4.0.0:
   version "4.3.0"
