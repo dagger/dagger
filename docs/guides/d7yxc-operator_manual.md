@@ -1,3 +1,8 @@
+---
+slug: /d7yxc/operator_manual
+displayed_sidebar: '0.3'
+---
+
 # Cloak operator manual
 
 ## Overview

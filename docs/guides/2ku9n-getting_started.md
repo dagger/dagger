@@ -1,3 +1,8 @@
+---
+slug: /2ku9n/getting_started
+displayed_sidebar: '0.3'
+---
+
 # Getting started with Cloak
 
 ## Install
