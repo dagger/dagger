@@ -1,3 +1,8 @@
+---
+slug: /y0yh0/writing_extensions_go
+displayed_sidebar: '0.3'
+---
+
 # Writing a new project with Go
 
 Say we are creating a new project called `foo`. It will have
@@ -120,8 +125,8 @@ dependencies:
     ```
 
   - Also see other examples:
-    - [alpine](../examples/alpine/schema.graphql)
-    - [netlify](../examples/netlify/go/schema.graphql)
+    - [alpine](https://github.com/dagger/cloak/blob/main/examples/alpine/schema.graphql)
+    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/go/schema.graphql)
   - NOTE: this step may become optional in the future if code-first schemas are supported
 
 - Create a new file `ext/operations.graphql`. This file will determine which functions are included in code-generated client stubs (for scripts or other projects that depend on this extension).
@@ -138,8 +143,8 @@ dependencies:
     ```
 
   - Also see other examples:
-    - [alpine](../examples/alpine/operations.graphql)
-    - [netlify](../examples/netlify/go/operations.graphql)
+    - [alpine](https://github.com/dagger/cloak/blob/main/examples/alpine/operations.graphql)
+    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/go/operations.graphql)
   - NOTE: In most cases, this file is easy to derive from `schema.graphql`; we thus expect to be able to autogenerate it for many cases and make its creation optional in the long term.
 
 ### Generate initial extension code
@@ -165,8 +170,8 @@ dependencies:
 1. When you need to call a dependency declared in `cloak.yaml`, you can import the client from `<your module>/ext/gen/<dependency>`
 1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the cloak engine.
 1. Some examples:
-   - [alpine](../examples/alpine/main.go)
-   - [netlify](../examples/netlify/go/main.go)
+   - [alpine](https://github.com/dagger/cloak/blob/main/examples/alpine/main.go)
+   - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/go/main.go)
 
 ### Invoke your extension
 
