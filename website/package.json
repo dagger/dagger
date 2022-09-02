@@ -15,7 +15,7 @@
     "browserslist-update": "browserslist --update-db"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.0.1",
+    "@docusaurus/core": "^2.1.0",
     "@docusaurus/preset-classic": "^2.0.1",
     "@mdx-js/react": "^1.6.22",
     "@svgr/webpack": "^6.3.1",
