@@ -1,0 +1,40 @@
+extend type Query {
+    "Load a directory by ID. No argument produces an empty directory."
+    directory(id: DirectoryID): Directory!
+}
+
+"A content-addressed directory identifier"
+scalar DirectoryID
+
+"A directory"
+type Directory {
+    "Return a list of files and directories at the given path"
+    contents(path: String=null): [String!]!
+
+    "Retrieve a file at the given path"
+    file(path: String!): File!
+
+    "A secret backed by the file at the given path"
+    secret(path: String!): SecretID!
+
+    "This directory plus a new file written at the given path"
+    withNewFile(path: String!, contents: String): Directory!
+
+    "This directory plus the contents of the given file copied to the given path"
+    withCopiedFile(path: String!, source: FileID!)
+
+    "This directory with the file at the given path removed"
+    withoutFile(path: String!): Directory!
+
+    "Retrieve a directory at the given path"
+    directory(path: String!): Directory!
+
+    "This directory plus a directory written at the given path"
+    withDirectory(path: String!, directory: DirectoryID!) Directory!
+
+    "This directory with the directory at the given path removed"
+    withoutDirectory(path: String!): Directory!
+
+    "The difference between this directory and an another directory"
+    diff(other: DirectoryID!): Directory!
+}
