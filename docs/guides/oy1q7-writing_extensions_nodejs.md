@@ -1,3 +1,8 @@
+---
+slug: /oy1q7/writing_extensions_nodejs
+displayed_sidebar: '0.3'
+---
+
 # Writing a new project with NodeJS (Javascript or Typescript)
 
 Say we are creating a new project called `foo`. It will have
@@ -125,8 +130,8 @@ dependencies:
     ```
 
   - Also see other examples:
-    - [yarn](../examples/yarn/schema.graphql)
-    - [netlify](../examples/netlify/ts/schema.graphql)
+    - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/schema.graphql)
+    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/schema.graphql)
   - NOTE: this step may become optional in the future if code-first schemas are supported
 
 - Create a new file `ext/operations.graphql`. This file will determine which functions are included in code-generated client stubs (for scripts or other projects that depend on this extension).
@@ -143,8 +148,8 @@ dependencies:
     ```
 
   - Also see other examples:
-    - [yarn](../examples/yarn/operations.graphql)
-    - [netlify](../examples/netlify/ts/operations.graphql)
+    - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/operations.graphql)
+    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/operations.graphql)
   - NOTE: In most cases, this file is easy to derive from `schema.graphql`; we thus expect to be able to autogenerate it for many cases and make its creation optional in the long term.
 
 ### Implement the extension
@@ -171,8 +176,8 @@ server.run();
 
 1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the cloak engine.
 1. Some more examples:
-   - [yarn](../examples/yarn/index.ts)
-   - [netlify](../examples/netlify/ts/index.ts)
+   - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/index.ts)
+   - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/index.ts)
 
 ### Invoke your extension
 

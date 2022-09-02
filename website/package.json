@@ -1,0 +1,52 @@
+{
+  "name": "dagger-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "start": "docusaurus start",
+    "build": "docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "browserslist-update": "browserslist --update-db"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^2.0.1",
+    "@docusaurus/preset-classic": "^2.0.1",
+    "@mdx-js/react": "^1.6.22",
+    "@svgr/webpack": "^6.3.1",
+    "amplitude-js": "^8.19.0",
+    "clsx": "^1.2.1",
+    "docusaurus-plugin-sass": "^0.2.2",
+    "docusaurus2-dotenv": "^1.4.0",
+    "file-loader": "^6.2.0",
+    "mdx-mermaid": "^v1.3.0",
+    "mermaid": "^9.1.6",
+    "nprogress": "^0.2.0",
+    "npx": "^10.2.2",
+    "querystringify": "^2.2.0",
+    "react": "^17.0.1",
+    "react-dom": "^17.0.1",
+    "react-social-login-buttons": "^3.6.1",
+    "remark-code-import": "^0.4.0",
+    "sass": "^1.54.4",
+    "url-loader": "^4.1.1"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {}
+}

@@ -1,3 +1,8 @@
+---
+slug: /f5cij/extension_runtime_protocol
+displayed_sidebar: '0.3'
+---
+
 # Extension Runtime Protocol
 
 An Extension Runtime is the bridge between the Dagger GraphQL server and executable programs implementing an extension. On a high-level, it is responsible for:
