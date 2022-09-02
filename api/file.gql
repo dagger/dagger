@@ -1,0 +1,21 @@
+extend type Query {
+    "Load a file by ID"
+    file(id: FileID!): File
+}
+
+scalar FileID
+
+"A file"
+type File {
+    "The content-addressed identifier of the file"
+    id: FileID!
+
+    "The contents of the file"
+    contents: String!
+
+    "A secret referencing the contents of this file"
+    secret: Secret!
+
+    "The size of the file, in bytes"
+    size: Integer!
+}

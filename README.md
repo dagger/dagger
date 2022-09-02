@@ -31,6 +31,7 @@ Docs have a website (TODO: host and provide URL. Website private for those with 
 
 - [Introduction](docs/unxpq-introduction.mdx)
 - [Getting Started](docs/guides/2ku9n-getting_started.md)
+- [Proposal for new core API](./api/README.md) ([calling for feedback!](https://github.com/dagger/cloak/pull/163))
 - [Writing Extensions](docs/guides/bnzm7-writing_extensions.md)
   - [Writing an extension in Go](docs/guides/y0yh0-writing_extensions_go.md)
   - [Writing an extension in Javascript/Typescript](docs/guides/oy1q7-writing_extensions_nodejs.md)
