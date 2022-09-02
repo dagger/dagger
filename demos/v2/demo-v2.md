@@ -4,7 +4,7 @@
 
 In this demo we show how a realistic scenario of how a software project might adopt Cloak, and why.
 
-This demo was delivered live (with some technical issues) at [VMware Explore 2022](https://www.twitch.tv/videos/1578318744).
+This demo was delivered live (with some technical issues) at [VMware Explore 2022](https://www.twitch.tv/videos/1578035654).
 
 Material to prepare this demo:
 
