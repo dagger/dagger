@@ -27,6 +27,7 @@ func init() {
 		doCmd,
 		generateCmd,
 		devCmd,
+		versionCmd,
 	)
 
 	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
