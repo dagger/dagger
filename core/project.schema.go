@@ -59,6 +59,9 @@ type Project {
 
 	"install the project's schema"
 	install: Boolean!
+
+	"The project filesystem plus generated code for its extensions and scripts"
+	withGeneratedCode: Filesystem!
 }
 
 "A schema extension provided by a project"
@@ -94,7 +97,7 @@ extend type Core {
 	"Look up a project by name"
 	project(name: String!): Project!
 }
-	`
+`
 }
 
 func (s *projectSchema) Operations() string {
@@ -110,7 +113,8 @@ func (s *projectSchema) Resolvers() router.Resolvers {
 			"project": s.project,
 		},
 		"Project": router.ObjectResolver{
-			"install": s.install,
+			"install":           s.install,
+			"withGeneratedCode": s.withGeneratedCode,
 		},
 	}
 }
@@ -158,6 +162,12 @@ func (s *projectSchema) project(p graphql.ResolveParams) (any, error) {
 	}
 
 	return routerSchemaToProject(schema), nil
+}
+
+func (s *projectSchema) withGeneratedCode(p graphql.ResolveParams) (any, error) {
+	obj := p.Source.(*Project)
+	coreSchema := s.router.Get("core")
+	return obj.schema.Generate(p.Context, coreSchema.Schema(), coreSchema.Operations())
 }
 
 // TODO:(sipsma) guard against infinite recursion

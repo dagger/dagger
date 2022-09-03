@@ -118,6 +118,8 @@ type Project struct {
 	Dependencies []*Project `json:"dependencies"`
 	// install the project's schema
 	Install bool `json:"install"`
+	// The project filesystem plus generated code for its extensions and scripts
+	WithGeneratedCode *dagger.Filesystem `json:"withGeneratedCode"`
 }
 
 // An executable script that uses the project's dependencies and/or extensions
