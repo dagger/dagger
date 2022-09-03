@@ -4,7 +4,7 @@ You will need to have `yarn` and Node.js v18 installed.
 
 From the `website` directory run the following commands:
 
-```
+```bash
 yarn install
 yarn start
 ```
