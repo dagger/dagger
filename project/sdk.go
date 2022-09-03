@@ -3,181 +3,61 @@ package project
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/cloak/core/filesystem"
-	"github.com/moby/buildkit/client/llb"
-	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/sshutil"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // TODO:(sipsma) SDKs should be pluggable extensions, not hardcoded LLB here. The implementation here is a temporary bridge from the previous hardcoded Dockerfiles to the sdk-as-extension model.
 
-func goRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client, sshAuthSockID string) (*filesystem.Filesystem, error) {
-	contextState, err := contextFS.ToState()
+// return the FS with the executable extension code, ready to be invoked by cloak
+func (s RemoteSchema) Runtime(ctx context.Context, ext *Extension) (*filesystem.Filesystem, error) {
+	var runtimeFS *filesystem.Filesystem
+	var err error
+	switch ext.SDK {
+	case "go":
+		runtimeFS, err = s.goRuntime(ctx, ext.Path)
+	case "ts":
+		runtimeFS, err = s.tsRuntime(ctx, ext.Path)
+	case "dockerfile":
+		runtimeFS, err = s.dockerfileRuntime(ctx, ext.Path)
+	default:
+		return nil, fmt.Errorf("unknown sdk %q", ext.SDK)
+	}
 	if err != nil {
 		return nil, err
 	}
-	workdir := "/src"
-	addSSHKnownHosts, err := withGithubSSHKnownHosts()
-	if err != nil {
+	if err := runtimeFS.Evaluate(ctx, s.gw); err != nil {
 		return nil, err
 	}
-	return filesystem.FromState(ctx,
-		llb.Image("golang:1.18.2-alpine", llb.WithMetaResolver(gw)).
-			Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root().
-			// FIXME:(sipsma) should be generalized to support any private go repo
-			File(llb.Mkfile("/root/.gitconfig", 0644, []byte(`
-[url "ssh://git@github.com/dagger/cloak"]
-  insteadOf = https://github.com/dagger/cloak
-`))).
-			Run(llb.Shlex(
-				fmt.Sprintf(
-					`go build -o /entrypoint -ldflags '-s -d -w' %s`,
-					filepath.Join(workdir, filepath.Dir(cfgPath), sourcePath),
-				)),
-				llb.Dir(workdir),
-				llb.AddEnv("GOMODCACHE", "/root/.cache/gocache"),
-				llb.AddEnv("CGO_ENABLED", "0"),
-				llb.AddMount("/src", contextState),
-				llb.AddMount(
-					"/root/.cache/gocache",
-					llb.Scratch(),
-					llb.AsPersistentCacheDir("gomodcache", llb.CacheMountShared),
-				),
-				// FIXME:(sipsma) should be generalized to support any private go repo
-				llb.AddEnv("GOPRIVATE", "github.com/dagger/cloak"),
-				withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
-				addSSHKnownHosts,
-			).Root(),
-		p,
-	)
+	return runtimeFS, nil
 }
 
-func tsRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client, sshAuthSockID string) (*filesystem.Filesystem, error) {
-	contextState, err := contextFS.ToState()
-	if err != nil {
-		return nil, err
-	}
-
-	ctrSrcPath := filepath.Join("/src", filepath.Dir(cfgPath), sourcePath)
-
-	addSSHKnownHosts, err := withGithubSSHKnownHosts()
-	if err != nil {
-		return nil, err
-	}
-	baseRunOpts := withRunOpts(
-		llb.AddEnv("YARN_CACHE_FOLDER", "/cache/yarn"),
-		llb.AddMount(
-			"/cache/yarn",
-			llb.Scratch(),
-			llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
-		),
-		withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
-		addSSHKnownHosts,
-	)
-
-	return filesystem.FromState(ctx,
-		llb.Merge([]llb.State{
-			llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
-				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
-			llb.Scratch().
-				File(llb.Copy(contextState, "/", "/src")),
-		}).
-			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn install'`, ctrSrcPath)), baseRunOpts).
-			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn build'`, ctrSrcPath)), baseRunOpts).
-			File(llb.Mkfile(
-				"/entrypoint",
-				0755,
-				[]byte(fmt.Sprintf(
-					"#!/bin/sh\nset -e; cd %s && node --unhandled-rejections=strict dist/index.js",
-					ctrSrcPath,
-				)),
-			)),
-		p,
-	)
-}
-
-func dockerfileRuntime(ctx context.Context, contextFS *filesystem.Filesystem, cfgPath, sourcePath string, p specs.Platform, gw bkgw.Client) (*filesystem.Filesystem, error) {
-	def, err := contextFS.ToDefinition()
-	if err != nil {
-		return nil, err
-	}
-
-	opts := map[string]string{
-		"platform": platforms.Format(p),
-		"filename": filepath.Join(filepath.Dir(cfgPath), sourcePath, "Dockerfile"),
-	}
-	inputs := map[string]*pb.Definition{
-		dockerfilebuilder.DefaultLocalNameContext:    def,
-		dockerfilebuilder.DefaultLocalNameDockerfile: def,
-	}
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	bkref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	st, err := bkref.ToState()
-	if err != nil {
-		return nil, err
-	}
-
-	return filesystem.FromState(ctx, st, p)
-}
-
-type runOptionFunc func(*llb.ExecInfo)
-
-func (fn runOptionFunc) SetRunOption(ei *llb.ExecInfo) {
-	if fn != nil {
-		fn(ei)
-	}
-}
-
-func withRunOpts(runOpts ...llb.RunOption) llb.RunOption {
-	return runOptionFunc(func(ei *llb.ExecInfo) {
-		for _, runOpt := range runOpts {
-			runOpt.SetRunOption(ei)
+// return the project filesystem plus any generated code from the SDKs of the extensions and scripts in the project
+func (s RemoteSchema) Generate(ctx context.Context, coreSchema, coreOperations string) (*filesystem.Filesystem, error) {
+	var generatedFSes []*filesystem.Filesystem
+	for _, ext := range s.extensions {
+		switch ext.SDK {
+		case "go":
+			generatedFS, err := s.goGenerate(ctx, ext.Path, ext.Schema, coreSchema, coreOperations)
+			if err != nil {
+				return nil, err
+			}
+			generatedFSes = append(generatedFSes, generatedFS)
+		default:
+			fmt.Printf("unsupported sdk for generation %q\n", ext.SDK)
 		}
-	})
-}
-
-func withSSHAuthSock(id, path string) llb.RunOption {
-	if id == "" {
-		return runOptionFunc(nil)
 	}
-	return withRunOpts(
-		llb.AddSSHSocket(
-			llb.SSHID(id),
-			llb.SSHSocketTarget(path),
-		),
-		llb.AddEnv("SSH_AUTH_SOCK", path),
-	)
-}
-
-func withGithubSSHKnownHosts() (llb.RunOption, error) {
-	knownHosts, err := sshutil.SSHKeyScan("github.com")
-	if err != nil {
-		return nil, err
+	for _, script := range s.scripts {
+		switch script.SDK {
+		case "go":
+			generatedFS, err := s.goGenerate(ctx, script.Path, "", coreSchema, coreOperations)
+			if err != nil {
+				return nil, err
+			}
+			generatedFSes = append(generatedFSes, generatedFS)
+		default:
+			fmt.Printf("unsupported sdk for generation %q\n", script.SDK)
+		}
 	}
-
-	return withRunOpts(
-		llb.AddMount("/tmp/known_hosts",
-			llb.Scratch().File(llb.Mkfile("known_hosts", 0600, []byte(knownHosts))),
-			llb.SourcePath("/known_hosts"),
-			llb.ForceNoOutput,
-		),
-		llb.AddEnv("GIT_SSH_COMMAND", "ssh -o UserKnownHostsFile=/tmp/known_hosts"),
-	), nil
+	return filesystem.MergedFilesystems(ctx, generatedFSes, s.platform)
 }

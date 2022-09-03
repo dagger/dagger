@@ -1,53 +1,53 @@
 
-	query Image($ref: String!) {
-		core {
-			image(ref: $ref) {
+query Image($ref: String!) {
+	core {
+		image(ref: $ref) {
+			id
+		}
+	}
+}
+query Workdir() {
+	host {
+		workdir {
+			read {
 				id
 			}
 		}
 	}
-	query Workdir() {
-		host {
-			workdir {
-				read {
+}
+query WriteWorkdir($contents: FSID!) {
+	host {
+		workdir {
+			write(contents: $contents)
+		}
+	}
+}
+	
+
+
+
+query Exec($fsid: FSID!, $input: ExecInput!) {
+	core {
+		filesystem(id: $fsid) {
+			exec(input: $input) {
+				fs {
 					id
 				}
 			}
 		}
 	}
-	query WriteWorkdir($contents: FSID!) {
-		host {
-			workdir {
-				write(contents: $contents)
-			}
-		}
-	}
-	
-
-
-
-	query Exec($fsid: FSID!, $input: ExecInput!) {
-		core {
-			filesystem(id: $fsid) {
-				exec(input: $input) {
-					fs {
-						id
-					}
+}
+query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
+	core {
+		filesystem(id: $fsid) {
+			exec(input: $input) {
+				mount(path: $getPath) {
+					id
 				}
 			}
 		}
 	}
-	query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
-		core {
-			filesystem(id: $fsid) {
-				exec(input: $input) {
-					mount(path: $getPath) {
-						id
-					}
-				}
-			}
-		}
-	}
+}
 	
 
 query Dockerfile($context: FSID!, $dockerfileName: String!) {
@@ -61,9 +61,9 @@ query Dockerfile($context: FSID!, $dockerfileName: String!) {
 }
 	
 
-	query Secret($id: SecretID!) {
-		core {
-			secret(id: $id)
-		}
+query Secret($id: SecretID!) {
+	core {
+		secret(id: $id)
 	}
+}
 	
