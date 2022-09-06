@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/dagger/cloak/router"
@@ -57,7 +60,7 @@ type LocalDir {
 	read: Filesystem!
 
 	"Write the provided filesystem to the directory"
-	write(contents: FSID!): Boolean!
+	write(contents: FSID!, path: String): Boolean!
 }
 	`
 }
@@ -182,11 +185,26 @@ func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
+	workdir, err := filepath.Abs(r.solveOpts.LocalDirs[r.workdirID])
+	if err != nil {
+		return nil, err
+	}
+
+	path, _ := p.Args["path"].(string)
+	dest, err := filepath.Abs(filepath.Join(workdir, path))
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.HasPrefix(dest, workdir) {
+		return nil, fmt.Errorf("path %q is outside workdir", path)
+	}
+
 	// NOTE: be careful to not overwrite any values from original shared r.solveOpts (i.e. with append).
 	solveOpts := r.solveOpts
 	solveOpts.Exports = []bkclient.ExportEntry{{
 		Type:      bkclient.ExporterLocal,
-		OutputDir: solveOpts.LocalDirs[r.workdirID],
+		OutputDir: dest,
 	}}
 	if _, err := r.bkClient.Build(p.Context, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return gw.Solve(ctx, bkgw.SolveRequest{
