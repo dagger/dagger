@@ -70,8 +70,8 @@ type Filesystem {
 	"copy from a filesystem"
 	copy(
 		from: FSID!,
-		src: String,
-		dest: String,
+		srcPath: String,
+		destPath: String,
 		include: [String!]
 		exclude: [String!]
 	): Filesystem
@@ -146,8 +146,8 @@ func (s *filesystemSchema) copy(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
-	src := p.Args["src"].(string)
-	dest := p.Args["dest"].(string)
+	src := p.Args["srcPath"].(string)
+	dest := p.Args["destPath"].(string)
 	include, _ := p.Args["include"].([]string)
 	exclude, _ := p.Args["exclude"].([]string)
 
