@@ -2,7 +2,12 @@
 
 You will need to have `yarn` and Node.js v18 installed.
 
-From the `website` directory run the following command: `yarn start`
+From the `website` directory run the following commands:
+
+```bash
+yarn install
+yarn start
+```
 
 This will install all dependencies, start the docs web server locally and open [localhost:3000](http://localhost:3000/) in your browser.
 
