@@ -1,0 +1,13 @@
+package {{ .Package }}
+
+import (
+	"context"
+
+	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
+)
+
+func New() *{{ .Schema.QueryType.Name }} {
+	return &{{ .Schema.QueryType.Name }}{
+		q: querybuilder.Query(),
+	}
+}

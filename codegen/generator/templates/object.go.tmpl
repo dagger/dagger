@@ -1,0 +1,34 @@
+{{ .Description | Comment }}
+type {{ .Name | PascalCase }} struct {
+	q *querybuilder.Selection
+}
+{{ range $field := .Fields }}
+{{ $field.Description | Comment }}
+{{- if $field.TypeRef.IsObject }}
+func (r *{{ $.Name | PascalCase }}) {{ $field.Name | PascalCase }}({{ $field.Args | FormatArgs }}) *{{ $field.TypeRef | FormatRef }} {
+	q := r.q.Select("{{ $field.Name }}")
+	{{- range $arg := $field.Args }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	{{- end }}
+
+	return &{{ $field.TypeRef | FormatRef }} {
+		q: q,
+	}
+}
+{{- else if $field.TypeRef.IsScalar }}
+func (r *{{ $.Name | PascalCase }}) {{ $field.Name | PascalCase }}(ctx context.Context, {{ $field.Args | FormatArgs }}) ({{ $field.TypeRef | FormatRef }}, error) {
+	q := r.q.Select("{{ $field.Name }}")
+	{{- range $arg := .Args }}
+	{{- if $arg.TypeRef.IsCustomScalar }}
+	q = q.Arg("{{ $arg.Name }}", string({{ $arg.Name }}))
+	{{- else }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	{{- end }}
+	{{- end }}
+
+	var response {{ $field.TypeRef | FormatRef }}
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+{{- end }}
+{{ end -}}

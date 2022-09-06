@@ -1,0 +1,7 @@
+{{ .Description | Comment }}
+type {{ .Name | PascalCase }} struct {
+{{- range $field := .InputFields }}
+{{ $field.Description | Comment }}
+{{ $field.Name | PascalCase }} {{ $field.TypeRef | FormatRef }}
+{{ end }}
+}
