@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+	"github.com/moby/buildkit/client/llb"
 )
 
 var fsIDResolver = router.ScalarResolver{
@@ -66,6 +67,15 @@ type Filesystem {
 	"read a file at path"
 	file(path: String!, lines: Int): String
 
+	"copy from a filesystem"
+	copy(
+		from: FSID!,
+		src: String,
+		dest: String,
+		include: [String!]
+		exclude: [String!]
+	): Filesystem
+
 	# FIXME: this should be in execSchema. However, removing this results in an error:
 	# failed to resolve all type definitions: [Core Query Filesystem Exec]
 	"execute a command inside this filesystem"
@@ -91,6 +101,7 @@ func (s *filesystemSchema) Resolvers() router.Resolvers {
 		},
 		"Filesystem": router.ObjectResolver{
 			"file": s.file,
+			"copy": s.copy,
 		},
 	}
 }
@@ -117,4 +128,40 @@ func (s *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
 	}
 
 	return truncate(string(output), p.Args), nil
+}
+
+func (s *filesystemSchema) copy(p graphql.ResolveParams) (any, error) {
+	obj, err := filesystem.FromSource(p.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := obj.ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	contents, err := filesystem.New(p.Args["from"].(filesystem.FSID)).ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	src := p.Args["src"].(string)
+	dest := p.Args["dest"].(string)
+	include, _ := p.Args["include"].([]string)
+	exclude, _ := p.Args["exclude"].([]string)
+
+	st = st.File(llb.Copy(contents, src, dest, &llb.CopyInfo{
+		CopyDirContentsOnly: true,
+		CreateDestPath:      true,
+		AllowWildcard:       true,
+		IncludePatterns:     include,
+		ExcludePatterns:     exclude,
+	}))
+
+	fs, err := s.Solve(p.Context, st)
+	if err != nil {
+		return nil, err
+	}
+	return fs, err
 }
