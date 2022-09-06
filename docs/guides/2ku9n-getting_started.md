@@ -1,6 +1,6 @@
 ---
 slug: /2ku9n/getting_started
-displayed_sidebar: '0.3'
+displayed_sidebar: "0.3"
 ---
 
 # Getting started with Cloak
@@ -15,6 +15,13 @@ displayed_sidebar: '0.3'
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`
    - Alternative: create a bash alias like `alias cloak="go run /absolute/path/to/the/cloak/repo/cmd/cloak"`
      - This results in cloak rebuilding every time in case you are making lots of changes to it
+3. (Recommended) Setup SSH Agent w/ credentials that can access the `dagger/cloak` GitHub repo
+   - This is necessary when authoring or invoking scripts+extensions that have dependencies on the cloak repo.
+   - [Github has documentation on setting this up for various platforms.](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
+   - Be sure that the `SSH_AUTH_SOCK` variable is set in your current terminal (running `eval "$(ssh-agent -s)"` will typically take care of that)
+4. (Optional) Setup Docker Credentials
+   - If you are receiving HTTP errors while pulling images from DockerHub, you might be getting rate-limited.
+   - You can provide credentials to cloak by running `docker login` on your host and signing into a DockerHub account, which may help avoid these.
 
 ## Basic Invoking
 
