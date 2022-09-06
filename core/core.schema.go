@@ -196,6 +196,11 @@ func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
+	// Ensure the destination is a sub-directory of the workdir
+	dest, err = filepath.EvalSymlinks(dest)
+	if err != nil {
+		return nil, err
+	}
 	if !strings.HasPrefix(dest, workdir) {
 		return nil, fmt.Errorf("path %q is outside workdir", path)
 	}
