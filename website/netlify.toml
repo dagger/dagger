@@ -17,6 +17,21 @@
   status = 302
   force = true
 
+[[redirects]]
+  from = "/github-proxy/*"
+  to = "https://github.com/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/github-api-proxy/*"
+  to = "https://api.github.com/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/docs-access/*"
+  to = "https://j20f3pfq11.execute-api.us-east-1.amazonaws.com/Prod/u/:splat"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]

@@ -1,0 +1,25 @@
+.wrapper {
+  background: linear-gradient(180deg, #131226, #0e2b3d);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: var(--ifm-color-primary-light);
+  max-width: 100%;
+}
+
+.wrapper a {
+  color: var(--ifm-color-primary-light);
+  text-decoration: underline;
+}
+
+.h1 {
+  margin-bottom: 2rem;
+}
+
+.row {
+  justify-content: center;
+  align-content: center;
+  align-items: center;
+}

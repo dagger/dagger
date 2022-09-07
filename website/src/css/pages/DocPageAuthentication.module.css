@@ -1,0 +1,18 @@
+.container {
+  background: url("/img/Dagger_Website_Space_Uranus.png") no-repeat;
+  background-size: cover;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.btn__github {
+  width: 240px !important;
+  border-radius: 0 !important;
+}
+
+.btn__github > div {
+  display: inline-flex !important;
+}

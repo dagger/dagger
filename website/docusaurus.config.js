@@ -14,7 +14,11 @@ module.exports = {
   stylesheets: [
     "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap",
   ],
-  customFields: {},
+  customFields: {
+    OAUTH_ENABLE: process.env.OAUTH_ENABLE,
+    REACT_APP_GITHUB_AUTHORIZE_URI: process.env.REACT_APP_GITHUB_AUTHORIZE_URI,
+    REACT_APP_DAGGER_SITE_URI: process.env.REACT_APP_DAGGER_SITE_URI
+  },
   themeConfig: {
     sidebarCollapsed: false,
     prism: {
@@ -88,5 +92,13 @@ module.exports = {
       },
     ],
   ],
-  plugins: ["docusaurus-plugin-sass", "docusaurus2-dotenv"],
+  plugins: [
+    "docusaurus-plugin-sass",
+    [
+      "docusaurus2-dotenv",
+      {
+        systemvars: true,
+      },
+    ]
+  ],
 };

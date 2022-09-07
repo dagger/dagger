@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import {HtmlClassNameProvider, ThemeClassNames} from '@docusaurus/theme-common';
 import {
@@ -13,6 +13,7 @@ import SearchMetadata from '@theme/SearchMetadata';
 
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import {useLocation} from '@docusaurus/router';
+import DocPageCustom from "../../components/pages/DocPageCustom"
 import amplitude from 'amplitude-js';
 
 export default function DocPage(props) {
@@ -22,6 +23,12 @@ export default function DocPage(props) {
   // DocPage Swizzle
   const {siteConfig} = useDocusaurusContext();
   const location = useLocation();
+  const [userAccessStatus, setUserAccessStatus] = useState(
+    (() => {
+      if (typeof window !== 'undefined')
+        return JSON.parse(window.localStorage.getItem('user'));
+    })(),
+  );
   
   useEffect(() => {
       if(siteConfig.customFields.AMPLITUDE_ID) {
@@ -31,6 +38,10 @@ export default function DocPage(props) {
         amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
       }
   }, [location.pathname])
+
+  if (siteConfig.customFields.OAUTH_ENABLE == 'true' && userAccessStatus?.permission !== true) {
+    return <DocPageCustom location={location} userAccessStatus={userAccessStatus} setUserAccessStatus={setUserAccessStatus} />
+  }
   // End DocPageSwizzle
 
   if (!currentDocRouteMetadata) {
