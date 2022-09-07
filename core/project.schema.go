@@ -37,63 +37,63 @@ func (s *projectSchema) Name() string {
 
 func (s *projectSchema) Schema() string {
 	return `
-	"A set of scripts and/or extensions"
-	type Project {
-		"name of the project"
-		name: String!
+"A set of scripts and/or extensions"
+type Project {
+	"name of the project"
+	name: String!
 
-		"schema provided by the project"
-		schema: String
+	"schema provided by the project"
+	schema: String
 
-		"operations provided by the project"
-		operations: String
+	"operations provided by the project"
+	operations: String
 
-		"extensions in this project"
-		extensions: [Extension!]!
+	"extensions in this project"
+	extensions: [Extension!]!
 
-		"scripts in this project"
-		scripts: [Script!]!
+	"scripts in this project"
+	scripts: [Script!]!
 
-		"other projects with schema this project depends on"
-		dependencies: [Project!]
+	"other projects with schema this project depends on"
+	dependencies: [Project!]
 
-		"install the project's schema"
-		install: Boolean!
-	}
+	"install the project's schema"
+	install: Boolean!
+}
 
-	"A schema extension provided by a project"
-	type Extension {
-		"path to the extension's code within the project's filesystem"
-		path: String!
+"A schema extension provided by a project"
+type Extension {
+	"path to the extension's code within the project's filesystem"
+	path: String!
 
-		"schema contributed to the project by this extension"
-		schema: String!
+	"schema contributed to the project by this extension"
+	schema: String!
 
-		"operations contributed to the project by this extension (if any)"
-		operations: String
+	"operations contributed to the project by this extension (if any)"
+	operations: String
 
-		"sdk used to generate code for and/or execute this extension"
-		sdk: String!
-	}
+	"sdk used to generate code for and/or execute this extension"
+	sdk: String!
+}
 
-	"An executable script that uses the project's dependencies and/or extensions"
-	type Script {
-		"path to the script's code within the project's filesystem"
-		path: String!
+"An executable script that uses the project's dependencies and/or extensions"
+type Script {
+	"path to the script's code within the project's filesystem"
+	path: String!
 
-		"sdk used to generate code for and/or execute this script"
-		sdk: String!
-	}
+	"sdk used to generate code for and/or execute this script"
+	sdk: String!
+}
 
-	extend type Filesystem {
-		"load a project's metadata"
-		loadProject(configPath: String!): Project!
-	}
+extend type Filesystem {
+	"load a project's metadata"
+	loadProject(configPath: String!): Project!
+}
 
-	extend type Core {
-		"Look up a project by name"
-		project(name: String!): Project!
-	}
+extend type Core {
+	"Look up a project by name"
+	project(name: String!): Project!
+}
 	`
 }
 

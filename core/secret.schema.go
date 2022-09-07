@@ -47,25 +47,25 @@ func (s *secretSchema) Name() string {
 
 func (s *secretSchema) Schema() string {
 	return `
-	scalar SecretID
+scalar SecretID
 
-	extend type Core {
-		"Look up a secret by ID"
-		secret(id: SecretID!): String!
+extend type Core {
+	"Look up a secret by ID"
+	secret(id: SecretID!): String!
 
-		"Add a secret"
-		addSecret(plaintext: String!): SecretID!
-	}
+	"Add a secret"
+	addSecret(plaintext: String!): SecretID!
+}
 	`
 }
 
 func (s *secretSchema) Operations() string {
 	return `
-	query Secret($id: SecretID!) {
-		core {
-			secret(id: $id)
-		}
+query Secret($id: SecretID!) {
+	core {
+		secret(id: $id)
 	}
+}
 	`
 }
 

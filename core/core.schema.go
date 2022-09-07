@@ -25,68 +25,68 @@ func (r *coreSchema) Name() string {
 
 func (r *coreSchema) Schema() string {
 	return `
-	extend type Query {
-		"Core API"
-		core: Core!
-
-		"Host API"
-		host: Host!
-	}
-
+extend type Query {
 	"Core API"
-	type Core {
-		"Fetch an OCI image"
-		image(ref: String!): Filesystem!
+	core: Core!
 
-		"Fetch a git repository"
-		git(remote: String!, ref: String): Filesystem!
-	}
+	"Host API"
+	host: Host!
+}
 
-	"Interactions with the user's host filesystem"
-	type Host {
-		"Fetch the client's workdir"
-		workdir: LocalDir!
+"Core API"
+type Core {
+	"Fetch an OCI image"
+	image(ref: String!): Filesystem!
 
-		"Fetch a client directory"
-		dir(id: String!): LocalDir!
-	}
+	"Fetch a git repository"
+	git(remote: String!, ref: String): Filesystem!
+}
 
-	"A directory on the user's host filesystem"
-	type LocalDir {
-		"Read the contents of the directory"
-		read: Filesystem!
+"Interactions with the user's host filesystem"
+type Host {
+	"Fetch the client's workdir"
+	workdir: LocalDir!
 
-		"Write the provided filesystem to the directory"
-		write(contents: FSID!): Boolean!
-	}
+	"Fetch a client directory"
+	dir(id: String!): LocalDir!
+}
+
+"A directory on the user's host filesystem"
+type LocalDir {
+	"Read the contents of the directory"
+	read: Filesystem!
+
+	"Write the provided filesystem to the directory"
+	write(contents: FSID!): Boolean!
+}
 	`
 }
 
 func (r *coreSchema) Operations() string {
 	return `
-	query Image($ref: String!) {
-		core {
-			image(ref: $ref) {
+query Image($ref: String!) {
+	core {
+		image(ref: $ref) {
+			id
+		}
+	}
+}
+query Workdir() {
+	host {
+		workdir {
+			read {
 				id
 			}
 		}
 	}
-	query Workdir() {
-		host {
-			workdir {
-				read {
-					id
-				}
-			}
+}
+query WriteWorkdir($contents: FSID!) {
+	host {
+		workdir {
+			write(contents: $contents)
 		}
 	}
-	query WriteWorkdir($contents: FSID!) {
-		host {
-			workdir {
-				write(contents: $contents)
-			}
-		}
-	}
+}
 	`
 }
 

@@ -23,3 +23,6 @@ stub/stub
 .idea
 
 node_modules
+
+# Built Binary
+cloak

@@ -63,115 +63,115 @@ func (s *execSchema) Name() string {
 
 func (s *execSchema) Schema() string {
 	return `
-	"Command execution"
-	type Exec {
-		"Modified filesystem"
-		fs: Filesystem!
+"Command execution"
+type Exec {
+	"Modified filesystem"
+	fs: Filesystem!
 
-		"stdout of the command"
-		stdout(lines: Int): String
+	"stdout of the command"
+	stdout(lines: Int): String
 
-		"stderr of the command"
-		stderr(lines: Int): String
+	"stderr of the command"
+	stderr(lines: Int): String
 
-		"Exit code of the command"
-		exitCode: Int
+	"Exit code of the command"
+	exitCode: Int
 
-		"Modified mounted filesystem"
-		mount(path: String!): Filesystem!
-	}
+	"Modified mounted filesystem"
+	mount(path: String!): Filesystem!
+}
 
-	input MountInput {
-		"filesystem to mount"
-		fs: FSID!
+input MountInput {
+	"filesystem to mount"
+	fs: FSID!
 
-		"path at which the filesystem will be mounted"
-		path: String!
-	}
+	"path at which the filesystem will be mounted"
+	path: String!
+}
 
-	input CacheMountInput {
-		"Cache mount name"
-		name: String!
+input CacheMountInput {
+	"Cache mount name"
+	name: String!
 
-		"Cache mount sharing mode (TODO: switch to enum)"
-		sharingMode: String!
+	"Cache mount sharing mode (TODO: switch to enum)"
+	sharingMode: String!
 
-		"path at which the cache will be mounted"
-		path: String!
-	}
+	"path at which the cache will be mounted"
+	path: String!
+}
 
-	input ExecInput {
-		"""
-		Command to execute
-		Example: ["echo", "hello, world!"]
-		"""
-		args: [String!]!
+input ExecInput {
+	"""
+	Command to execute
+	Example: ["echo", "hello, world!"]
+	"""
+	args: [String!]!
 
-		"Filesystem mounts"
-		mounts: [MountInput!]
+	"Filesystem mounts"
+	mounts: [MountInput!]
 
-		"Cached mounts"
-		cacheMounts: [CacheMountInput!]
+	"Cached mounts"
+	cacheMounts: [CacheMountInput!]
 
-		"Working directory"
-		workdir: String
+	"Working directory"
+	workdir: String
 
-		"Env vars"
-		env: [ExecEnvInput!]
+	"Env vars"
+	env: [ExecEnvInput!]
 
-		"Secret env vars"
-		secretEnv: [ExecSecretEnvInput!]
+	"Secret env vars"
+	secretEnv: [ExecSecretEnvInput!]
 
-		"Include the host's ssh agent socket in the exec at the provided path"
-		sshAuthSock: String
-	}
+	"Include the host's ssh agent socket in the exec at the provided path"
+	sshAuthSock: String
+}
 
-	input ExecEnvInput {
-		"Env var name"
-		name: String!
-		"Env var value"
-		value: String!
-	}
+input ExecEnvInput {
+	"Env var name"
+	name: String!
+	"Env var value"
+	value: String!
+}
 
-	input ExecSecretEnvInput {
-		"Env var name"
-		name: String!
-		"Secret env var value"
-		id: SecretID!
-	}
+input ExecSecretEnvInput {
+	"Env var name"
+	name: String!
+	"Secret env var value"
+	id: SecretID!
+}
 
-	# FIXME: broken
-	# extend type Filesystem {
-	#	"execute a command inside this filesystem"
-	# 	exec(input: ExecInput!): Exec!
-	# }
+# FIXME: broken
+# extend type Filesystem {
+#	"execute a command inside this filesystem"
+# 	exec(input: ExecInput!): Exec!
+# }
 	`
 }
 
 func (s *execSchema) Operations() string {
 	return `
-	query Exec($fsid: FSID!, $input: ExecInput!) {
-		core {
-			filesystem(id: $fsid) {
-				exec(input: $input) {
-					fs {
-						id
-					}
+query Exec($fsid: FSID!, $input: ExecInput!) {
+	core {
+		filesystem(id: $fsid) {
+			exec(input: $input) {
+				fs {
+					id
 				}
 			}
 		}
 	}
-	query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
-		core {
-			filesystem(id: $fsid) {
-				exec(input: $input) {
-					mount(path: $getPath) {
-						id
-					}
+}
+query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
+	core {
+		filesystem(id: $fsid) {
+			exec(input: $input) {
+				mount(path: $getPath) {
+					id
 				}
 			}
 		}
 	}
+}
 	`
 }
 
