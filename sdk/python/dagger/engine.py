@@ -30,7 +30,8 @@ class Engine:
             '--port', str(self._config['port']),
             '-p', self._config['configPath'],
         ]
-        subprocess.run(args)
+        result = subprocess.run(args)
+        result.check_returncode()
 
     def __enter__(self) -> Client:
         self._process.start()
@@ -41,5 +42,6 @@ class Engine:
         self._process.terminate()
         # Gives 5 seconds for the process to terminate properly
         self._process.join(timeout=5)
-        self._process.kill()
-        self._process.join()
+        if self._process.is_alive():
+            self._process.kill()
+            self._process.join()
