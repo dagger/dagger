@@ -13,7 +13,7 @@ export default function DocPageRedirect() {
     }, [])
 
     return (
-        <div data-cy="cy-page-redirect" className={`container ${style.wrapper}`}>
+        <div data-cy="cy-page-redirect" className={style.wrapper}>
             <div className={`row ${style.row}`}>
                 <div className="col col--4 col--offset-2">
                     <h1 className={style.h1}>Oups!</h1>
