@@ -6,7 +6,7 @@ import { Response } from "node-fetch";
 // @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
 global.Response = Response;
 
-export const client = new GraphQLClient("http://fake.invalid/graphql", {
+export const client = new GraphQLClient("http://fake.invalid/query", {
   fetch: buildAxiosFetch(
     axios.create({
       socketPath: "/dagger.sock",
@@ -27,7 +27,7 @@ export class Client {
 
   public async do(payload: string): Promise<any> {
     const response = await this.client.post(
-      `http://fake.invalid/graphql`,
+      `http://fake.invalid/query`,
       payload,
       { headers: { "Content-Type": "application/graphql" } }
     );

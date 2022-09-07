@@ -35,7 +35,7 @@ func Client(ctx context.Context) (graphql.Client, error) {
 	if !ok {
 		return nil, errors.New("no dagger client in context")
 	}
-	return graphql.NewClient("http://fake.invalid", client), nil
+	return graphql.NewClient("http://fake.invalid/query", client), nil
 }
 
 func WithHTTPClient(ctx context.Context, c *http.Client) context.Context {

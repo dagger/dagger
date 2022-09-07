@@ -55,13 +55,13 @@ export class Engine {
     });
     for (let i = 0; i < 360; i++) {
       try {
-        await client.get("/");
+        await client.get("/query");
       } catch (e) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
-    await cb(new GraphQLClient(`http://localhost:${this.config.Port}`))
+    await cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
       .catch(async (err) => {
         // FIXME:(sipsma) give the engine a sec to flush any progress logs on error
         // Better solution is to send SIGTERM and have a handler in cloak engine that
