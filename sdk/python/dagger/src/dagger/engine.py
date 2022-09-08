@@ -1,6 +1,5 @@
 import os
 import subprocess
-import multiprocessing
 
 from .client import Client
 
@@ -20,7 +19,7 @@ class Engine:
             'workdir': workdir,
             'configPath': configPath,
         }
-        self._process = multiprocessing.Process(target=self._spawn)
+        self._process = None
 
     def _spawn(self):
         args = [
@@ -29,18 +28,17 @@ class Engine:
             '--port', str(self._config['port']),
             '-p', self._config['configPath'],
         ]
-        result = subprocess.run(args)
-        result.check_returncode()
+        self._process = subprocess.Popen(args)
 
     def __enter__(self) -> Client:
-        self._process.start()
+        self._spawn()
         # FIXME: do a simple gql request to make sure the server is ready
         return Client(host="localhost", port=self._config['port'])
 
-    def __exit__(self, exc_type, exc_value, exc_traceback):
+    def __exit__(self, *_):
+        assert self._process is not None
         self._process.terminate()
         # Gives 5 seconds for the process to terminate properly
-        self._process.join(timeout=5)
-        if self._process.is_alive():
+        self._process.wait(timeout=3)
+        if self._process.poll() is None:
             self._process.kill()
-            self._process.join()

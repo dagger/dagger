@@ -1,3 +1,5 @@
+from typing import Any
+
 from gql.transport import requests
 from gql import Client as gqlClient, gql
 
@@ -14,6 +16,5 @@ class Client:
         self._client = gqlClient(transport=transport,
                                  fetch_schema_from_transport=True)
 
-    def do(self, query: str):
-        result = self._client.execute(gql(query))
-        print(result)
+    def do(self, query: str) -> dict[str, Any]:
+        return self._client.execute(gql(query))
