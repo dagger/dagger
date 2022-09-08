@@ -112,3 +112,56 @@ func TestFilesystemCopy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", res.Core.Filesystem.Copy.File)
 }
+
+func TestCoreExec(t *testing.T) {
+	t.Parallel()
+
+	imageRes := struct {
+		Core struct {
+			Image struct {
+				ID string
+			}
+		}
+	}{}
+	err := testutil.Query(
+		`{
+			core {
+				image(ref: "alpine:3.16.2") {
+					id
+				}
+			}
+		}`, &imageRes, nil)
+	require.NoError(t, err)
+	id := imageRes.Core.Image.ID
+
+	execRes := struct {
+		Core struct {
+			Image struct {
+				Exec struct {
+					Mount struct {
+						File string
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query TestExec($id: FSID!) {
+			core {
+				image(ref: "alpine:3.16.2") {
+					exec(input: {
+						args: ["sh", "-c", "echo hi > /mnt/hello"]
+						mounts: [{fs: $id, path: "/mnt/"}]
+					}) {
+						mount(path: "/mnt") {
+							file(path: "/hello")
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "hi\n", execRes.Core.Image.Exec.Mount.File)
+}
