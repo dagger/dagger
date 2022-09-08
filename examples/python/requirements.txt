@@ -1,1 +1,1 @@
-../../sdk/python/dagger
+-e ../../sdk/python/dagger
