@@ -5,17 +5,19 @@ if __name__ == "__main__":
     {
         core {
             image(ref: "alpine") {
-            exec(input: { args: ["apk", "add", "curl"] }) {
-                fs {
-                exec(input: { args: ["curl", "https://dagger.io/"] }) {
-                    stdout(lines: 1)
+                exec(input: { args: ["apk", "add", "curl"] }) {
+                    fs {
+                        exec(input: { args: ["curl", "https://dagger.io/"] }) {
+                            stdout(lines: 1)
+                        }
+                    }
                 }
-                }
-            }
             }
         }
     }
     """
 
-    with Engine(workdir='../..') as client:
-        client.do(query)
+    with Engine() as client:
+        result = client.do(query)
+        content = result['core']['image']['exec']['fs']['exec']['stdout']
+        print(content)
