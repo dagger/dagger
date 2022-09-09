@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/graphql-go/graphql"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 )
 
 var _ router.ExecutableSchema = &coreSchema{}
@@ -62,7 +60,7 @@ type LocalDir {
 	"Write the provided filesystem to the directory"
 	write(contents: FSID!, path: String): Boolean!
 }
-	`
+`
 }
 
 func (r *coreSchema) Operations() string {
@@ -180,10 +178,6 @@ func (r *coreSchema) localDirRead(p graphql.ResolveParams) (any, error) {
 func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
 	fsid := p.Args["contents"].(filesystem.FSID)
 	fs := filesystem.Filesystem{ID: fsid}
-	fsDef, err := fs.ToDefinition()
-	if err != nil {
-		return nil, err
-	}
 
 	workdir, err := filepath.Abs(r.solveOpts.LocalDirs[r.workdirID])
 	if err != nil {
@@ -205,28 +199,10 @@ func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
 		return nil, fmt.Errorf("path %q is outside workdir", path)
 	}
 
-	// NOTE: be careful to not overwrite any values from origqinal shared r.solveOpts (i.e. with append).
-	solveOpts := r.solveOpts
-	solveOpts.Exports = []bkclient.ExportEntry{{
+	if err := r.Export(p.Context, &fs, bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
-	}}
-
-	// Mirror events from the sub-Build into the main Build event channel.
-	// Build() will close the channel after completion so we don't want to use the main channel directly.
-	ch := make(chan *bkclient.SolveStatus)
-	go func() {
-		for event := range ch {
-			r.solveCh <- event
-		}
-	}()
-
-	if _, err := r.bkClient.Build(p.Context, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: fsDef,
-		})
-	}, ch); err != nil {
+	}); err != nil {
 		return nil, err
 	}
 	return true, nil
