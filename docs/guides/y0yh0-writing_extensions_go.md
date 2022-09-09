@@ -1,6 +1,6 @@
 ---
 slug: /y0yh0/writing_extensions_go
-displayed_sidebar: '0.3'
+displayed_sidebar: "0.3"
 ---
 
 # Writing a new project with Go
@@ -24,8 +24,6 @@ Say we are creating a new project called `foo`. It will have
      ```console
      export GOPRIVATE=github.com/dagger/cloak
      go get github.com/dagger/cloak@main
-     go get github.com/99designs/gqlgen
-     go get github.com/Khan/genqlient
      # This is needed to fix a transitive dependency issue (`sirupsen` vs. `Sirupsen`...)
      go mod edit -replace=github.com/docker/docker=github.com/docker/docker@v20.10.3-0.20220414164044-61404de7df1a+incompatible
      ```
@@ -150,13 +148,6 @@ dependencies:
 ### Generate initial extension code
 
 1. From any project directory (that is, the directory containing `cloak.yaml` or any subdirectory thereof), run `cloak generate`
-
-   - NOTE: this currently occasionally fails with an error similar to `unable to find type: github.com/99designs/gqlgen/graphql.Boolean`. If this happens, re-run:
-
-     ```console
-     go get github.com/99designs/gqlgen
-     go get github.com/Khan/genqlient
-     ```
 
 1. You should now see:
    - A `ext/main.go` file

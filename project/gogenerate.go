@@ -90,8 +90,10 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		selfSchema += otherExt.Schema + "\n"
 		selfOperations += otherExt.Operations + "\n"
 	}
-	selfSchema += coreSchema
-	projectFS = withClientMetadata(projectFS, subpath, s.configPath, s.Name(), selfSchema, selfOperations)
+	if selfOperations != "" {
+		selfSchema += coreSchema
+		projectFS = withClientMetadata(projectFS, subpath, s.configPath, s.Name(), selfSchema, selfOperations)
+	}
 
 	// generate client stubs and extension/script skeletons
 	projectSubpath := filepath.Join(filepath.Dir(s.configPath), subpath)
