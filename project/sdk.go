@@ -18,6 +18,8 @@ func (s RemoteSchema) Runtime(ctx context.Context, ext *Extension) (*filesystem.
 		runtimeFS, err = s.goRuntime(ctx, ext.Path)
 	case "ts":
 		runtimeFS, err = s.tsRuntime(ctx, ext.Path)
+	case "python":
+		runtimeFS, err = s.pythonRuntime(ctx, ext.Path)
 	case "dockerfile":
 		runtimeFS, err = s.dockerfileRuntime(ctx, ext.Path)
 	default:
