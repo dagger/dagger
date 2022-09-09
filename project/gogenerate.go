@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"path/filepath"
+	"sort"
 
 	"github.com/dagger/cloak/core/filesystem"
 	"github.com/moby/buildkit/client/llb"
@@ -41,12 +42,19 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		return nil, err
 	}
 	base = base.File(llb.Mkdir("/tools", 0755))
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
 	for _, e := range entries {
 		contents, err := fs.ReadFile(goGenerateSrc, filepath.Join("go", e.Name()))
 		if err != nil {
 			return nil, err
 		}
-		base = base.File(llb.Mkfile(filepath.Join("/tools", e.Name()), e.Type().Perm(), contents))
+		base = base.File(llb.Mkfile(
+			filepath.Join("/tools", e.Name()),
+			e.Type().Perm(),
+			contents,
+		))
 	}
 	base = base.Run(
 		// It would have been nice to just have go.mod in the embedded files, but for some reason
@@ -86,17 +94,21 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 	projectFS = withClientMetadata(projectFS, subpath, s.configPath, s.Name(), selfSchema, selfOperations)
 
 	// generate client stubs and extension/script skeletons
+	projectSubpath := filepath.Join(filepath.Dir(s.configPath), subpath)
+	outputDir := filepath.Join("/src", projectSubpath)
 	projectFS = base.Run(
 		llb.Shlex("./generate"),
 		llb.Dir("/tools"),
-		llb.AddMount("/src", projectFS),
+		// mount only the project subdirectory that should receive changes as read-write, the rest is ro
+		llb.AddMount("/src", projectFS, llb.Readonly),
+		llb.AddMount(outputDir, projectFS, llb.SourcePath(projectSubpath)),
 		llb.AddEnv("CGO_ENABLED", "0"),
-		llb.AddEnv("GENERATE_OUTPUT_DIR", filepath.Join("/src", filepath.Dir(s.configPath), subpath)),
+		llb.AddEnv("GENERATE_OUTPUT_DIR", outputDir),
 		llb.AddEnv("SCHEMA", schema),
 		llb.AddEnv("CORE_SCHEMA", coreSchema),
 		withGoCaching(),
 		withGoPrivateRepoConfiguration(s.sshAuthSockID),
-	).GetMount("/src")
+	).GetMount(outputDir)
 
 	return filesystem.FromState(ctx, projectFS, s.platform)
 }

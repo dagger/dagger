@@ -42,7 +42,11 @@ func (s RemoteSchema) Generate(ctx context.Context, coreSchema, coreOperations s
 			if err != nil {
 				return nil, err
 			}
-			generatedFSes = append(generatedFSes, generatedFS)
+			diff, err := filesystem.Diffed(ctx, s.contextFS, generatedFS, s.platform)
+			if err != nil {
+				return nil, err
+			}
+			generatedFSes = append(generatedFSes, diff)
 		default:
 			fmt.Printf("unsupported sdk for generation %q\n", ext.SDK)
 		}
@@ -54,10 +58,14 @@ func (s RemoteSchema) Generate(ctx context.Context, coreSchema, coreOperations s
 			if err != nil {
 				return nil, err
 			}
-			generatedFSes = append(generatedFSes, generatedFS)
+			diff, err := filesystem.Diffed(ctx, s.contextFS, generatedFS, s.platform)
+			if err != nil {
+				return nil, err
+			}
+			generatedFSes = append(generatedFSes, diff)
 		default:
 			fmt.Printf("unsupported sdk for generation %q\n", script.SDK)
 		}
 	}
-	return filesystem.MergedFilesystems(ctx, generatedFSes, s.platform)
+	return filesystem.Merged(ctx, generatedFSes, s.platform)
 }
