@@ -13,8 +13,6 @@ displayed_sidebar: "0.3"
 2. Build `cloak` and make sure it's in your PATH
    - `go build ./cmd/cloak`
    - `ln -sf "$(pwd)/cloak" /usr/local/bin`
-   - Alternative: create a bash alias like `alias cloak="go run /absolute/path/to/the/cloak/repo/cmd/cloak"`
-     - This results in cloak rebuilding every time in case you are making lots of changes to it
 3. (Recommended) Setup SSH Agent w/ credentials that can access the `dagger/cloak` GitHub repo
    - This is necessary when authoring or invoking scripts+extensions that have dependencies on the cloak repo.
    - [Github has documentation on setting this up for various platforms.](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
