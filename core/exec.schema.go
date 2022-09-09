@@ -141,11 +141,10 @@ input ExecSecretEnvInput {
 	id: SecretID!
 }
 
-# FIXME: broken
-# extend type Filesystem {
-#	"execute a command inside this filesystem"
-# 	exec(input: ExecInput!): Exec!
-# }
+extend type Filesystem {
+	"execute a command inside this filesystem"
+ 	exec(input: ExecInput!): Exec!
+}
 	`
 }
 
