@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -204,6 +205,11 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 
+	// cleanup mount paths for consistency
+	for i := range input.Mounts {
+		input.Mounts[i].Path = filepath.Clean(input.Mounts[i].Path)
+	}
+
 	shimSt, err := shim.Build(p.Context, s.gw, s.platform)
 	if err != nil {
 		return nil, err
@@ -333,6 +339,7 @@ func (s *execSchema) exitCode(p graphql.ResolveParams) (any, error) {
 func (s *execSchema) mount(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Exec)
 	path := p.Args["path"].(string)
+	path = filepath.Clean(path)
 
 	mnt, ok := obj.Mounts[path]
 	if !ok {
