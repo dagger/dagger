@@ -74,11 +74,12 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 
 	sourceSchemas := make([]router.LoadedSchema, len(cfg.Extensions))
 	for i, ext := range cfg.Extensions {
-		sdl, err := contextFS.ReadFile(ctx, gw, filepath.Join(
+		// filepath.Join and .Dir both swap file separator characters on Windows
+		sdl, err := contextFS.ReadFile(ctx, gw, filepath.ToSlash(filepath.Join(
 			filepath.Dir(configPath),
 			ext.Path,
 			schemaPath,
-		))
+		)))
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +97,7 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		// TODO:(sipsma) ensure only one source is specified
 		switch {
 		case dep.Local != "":
-			depConfigPath := filepath.Join(filepath.Dir(configPath), dep.Local)
+			depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(configPath), dep.Local))
 			depSchema, err := Load(ctx, gw, platform, contextFS, depConfigPath, sshAuthSockID)
 			if err != nil {
 				return nil, err

@@ -15,7 +15,7 @@ func (s RemoteSchema) tsRuntime(ctx context.Context, subpath string) (*filesyste
 		return nil, err
 	}
 
-	ctrSrcPath := filepath.Join("/src", filepath.Dir(s.configPath), subpath)
+	ctrSrcPath := filepath.ToSlash(filepath.Join("/src", filepath.Dir(s.configPath), subpath))
 
 	addSSHKnownHosts, err := withGithubSSHKnownHosts()
 	if err != nil {

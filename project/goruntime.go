@@ -20,7 +20,7 @@ func (s RemoteSchema) goRuntime(ctx context.Context, subpath string) (*filesyste
 		goBase(s.gw).Run(llb.Shlex(
 			fmt.Sprintf(
 				`go build -o /entrypoint -ldflags '-s -d -w' %s`,
-				filepath.Join(workdir, filepath.Dir(s.configPath), subpath),
+				filepath.ToSlash(filepath.Join(workdir, filepath.Dir(s.configPath), subpath)),
 			)),
 			llb.Dir(workdir),
 			llb.AddEnv("CGO_ENABLED", "0"),
