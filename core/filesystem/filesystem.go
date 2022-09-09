@@ -12,6 +12,10 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+const (
+	scratchID = FSID("scratch")
+)
+
 type FSID string
 
 type Filesystem struct {
@@ -19,6 +23,14 @@ type Filesystem struct {
 }
 
 func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
+	if f.ID == scratchID {
+		def, err := llb.Scratch().Marshal(context.TODO())
+		if err != nil {
+			return nil, err
+		}
+		return def.ToPB(), nil
+	}
+
 	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(f.ID)))
 	n, err := base64.StdEncoding.Decode(jsonBytes, []byte(f.ID))
 	if err != nil {
@@ -33,6 +45,10 @@ func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
 }
 
 func (f *Filesystem) ToState() (llb.State, error) {
+	if f.ID == scratchID {
+		return llb.Scratch(), nil
+	}
+
 	def, err := f.ToDefinition()
 	if err != nil {
 		return llb.State{}, err
@@ -71,6 +87,10 @@ func (f *Filesystem) ReadFile(ctx context.Context, gw bkgw.Client, path string) 
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
+	}
+	// Support scratch filesystem (nil ref)
+	if ref == nil {
+		return nil, fmt.Errorf("failed to read file: open %s: no such file or directory", path)
 	}
 	outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
 		Filename: path,
