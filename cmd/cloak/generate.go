@@ -30,7 +30,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			return err
 		}
 
-		generatedCodeFS, err := projectWithGeneratedCode(ctx, cl, ctx.Workdir, ctx.ConfigPath)
+		generatedCodeFS, err := projectGeneratedCode(ctx, cl, ctx.Workdir, ctx.ConfigPath)
 		if err != nil {
 			return err
 		}
@@ -46,12 +46,12 @@ func Generate(cmd *cobra.Command, args []string) {
 	}
 }
 
-func projectWithGeneratedCode(ctx context.Context, cl graphql.Client, projectFS dagger.FSID, configPath string) (*dagger.Filesystem, error) {
+func projectGeneratedCode(ctx context.Context, cl graphql.Client, projectFS dagger.FSID, configPath string) (*dagger.Filesystem, error) {
 	data := struct {
 		Core struct {
 			Filesystem struct {
 				LoadProject struct {
-					WithGeneratedCode dagger.Filesystem
+					GeneratedCode dagger.Filesystem
 				}
 			}
 		}
@@ -61,11 +61,11 @@ func projectWithGeneratedCode(ctx context.Context, cl graphql.Client, projectFS 
 	err := cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			query WithGeneratedCode($fs: FSID!, $configPath: String!) {
+			query GeneratedCode($fs: FSID!, $configPath: String!) {
 				core {
 					filesystem(id: $fs) {
 						loadProject(configPath: $configPath) {
-							withGeneratedCode {
+							generatedCode {
 								id
 							}
 						}
@@ -82,7 +82,7 @@ func projectWithGeneratedCode(ctx context.Context, cl graphql.Client, projectFS 
 	if err != nil {
 		return nil, err
 	}
-	return &data.Core.Filesystem.LoadProject.WithGeneratedCode, nil
+	return &data.Core.Filesystem.LoadProject.GeneratedCode, nil
 }
 
 func export(ctx context.Context, cl graphql.Client, fs dagger.FSID) error {

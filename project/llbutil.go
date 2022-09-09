@@ -2,6 +2,7 @@ package project
 
 import (
 	"strings"
+	"time"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/util/sshutil"
@@ -44,9 +45,9 @@ func withGithubSSHKnownHosts() (llb.RunOption, error) {
 
 	return withRunOpts(
 		llb.AddMount("/tmp/known_hosts",
-			llb.Scratch().File(llb.Mkfile("known_hosts", 0600, []byte(knownHosts))),
+			llb.Scratch().File(llb.Mkfile("known_hosts", 0600, []byte(knownHosts), llb.WithCreatedTime(time.Time{}))),
 			llb.SourcePath("/known_hosts"),
-			llb.ForceNoOutput,
+			llb.Readonly,
 		),
 		llb.AddEnv("GIT_SSH_COMMAND", "ssh -o UserKnownHostsFile=/tmp/known_hosts"),
 	), nil

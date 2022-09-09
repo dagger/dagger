@@ -102,8 +102,8 @@ func main() {
 
 	// generate extension code
 	cfg := gqlconfig.DefaultConfig()
-	cfg.SkipModTidy = false
-	cfg.SkipValidation = false
+	cfg.SkipModTidy = true
+	cfg.SkipValidation = true
 	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(generateOutputDir, "_deleteme.go"), Package: "main"}
 	cfg.SchemaFilename = nil
 	cfg.Sources = []*ast.Source{{Input: schema}}
