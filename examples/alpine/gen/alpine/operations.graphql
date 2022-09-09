@@ -5,3 +5,4 @@ query Build($pkgs: [String!]) {
     }
   }
 }
+

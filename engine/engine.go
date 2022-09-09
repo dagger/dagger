@@ -47,7 +47,7 @@ type Context struct {
 	Operations string
 	LocalDirs  map[string]dagger.FSID
 	Project    *core.Project
-	Workdir    string
+	Workdir    dagger.FSID
 	ConfigPath string
 }
 
@@ -152,9 +152,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			ctx = withInMemoryAPIClient(ctx, router)
 			engineCtx := Context{
-				Context:    ctx,
-				Workdir:    startOpts.Workdir,
-				ConfigPath: startOpts.ConfigPath,
+				Context: ctx,
 			}
 
 			engineCtx.Client, err = dagger.Client(ctx)
@@ -166,6 +164,8 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			if err != nil {
 				return nil, err
 			}
+			engineCtx.Workdir = engineCtx.LocalDirs[workdirID]
+			engineCtx.ConfigPath = startOpts.ConfigPath
 
 			engineCtx.Project, err = loadProject(
 				ctx,

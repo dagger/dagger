@@ -147,3 +147,27 @@ func FromSource(source any) (*Filesystem, error) {
 		ID: FSID(id),
 	}, nil
 }
+
+func Merged(ctx context.Context, filesystems []*Filesystem, platform specs.Platform) (*Filesystem, error) {
+	states := make([]llb.State, 0, len(filesystems))
+	for _, fs := range filesystems {
+		state, err := fs.ToState()
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	return FromState(ctx, llb.Merge(states), platform)
+}
+
+func Diffed(ctx context.Context, lower, upper *Filesystem, platform specs.Platform) (*Filesystem, error) {
+	lowerState, err := lower.ToState()
+	if err != nil {
+		return nil, err
+	}
+	upperState, err := upper.ToState()
+	if err != nil {
+		return nil, err
+	}
+	return FromState(ctx, llb.Diff(lowerState, upperState), platform)
+}

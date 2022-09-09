@@ -163,26 +163,11 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 			resolvers:    router.Resolvers{},
 		}
 
-		for _, src := range s.extensions {
-			var runtimeFS *filesystem.Filesystem
-			var err error
-			switch src.SDK {
-			case "go":
-				runtimeFS, err = goRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw, s.sshAuthSockID)
-			case "ts":
-				runtimeFS, err = tsRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw, s.sshAuthSockID)
-			case "dockerfile":
-				runtimeFS, err = dockerfileRuntime(ctx, s.contextFS, s.configPath, src.Path, s.platform, s.gw)
-			default:
-				return nil, fmt.Errorf("unknown sdk %q", src.SDK)
-			}
+		for _, ext := range s.extensions {
+			runtimeFS, err := s.Runtime(ctx, ext)
 			if err != nil {
 				return nil, err
 			}
-			if err := runtimeFS.Evaluate(ctx, s.gw); err != nil {
-				return nil, err
-			}
-
 			doc, err := parser.Parse(parser.ParseParams{Source: s.Schema()})
 			if err != nil {
 				return nil, err

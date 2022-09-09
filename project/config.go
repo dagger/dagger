@@ -1,6 +1,8 @@
 package project
 
-import "gopkg.in/yaml.v2"
+import (
+	"gopkg.in/yaml.v2"
+)
 
 type Config struct {
 	Name         string        `yaml:"name"`
@@ -17,9 +19,8 @@ type Script struct {
 type Extension struct {
 	Path string `yaml:"path"`
 	SDK  string `yaml:"sdk"`
-	// schema+operations are currently internal only (set by
-	// reading schema.graphql and operations.graphql), but
-	// could be public in future
+
+	// internal-only fields for tracking state
 	Schema     string `yaml:"-"`
 	Operations string `yaml:"-"`
 }

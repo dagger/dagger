@@ -11,38 +11,99 @@ import (
 	"github.com/99designs/gqlgen/codegen"
 	gqlconfig "github.com/99designs/gqlgen/codegen/config"
 	"github.com/99designs/gqlgen/codegen/templates"
-	"github.com/Khan/genqlient/generate"
-	"github.com/dagger/cloak/core"
+	genqlientGen "github.com/Khan/genqlient/generate"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-//go:embed templates/go.main.gotpl
+//go:embed go.main.gotpl
 var mainTmpl string
 
-//go:embed templates/go.generated.gotpl
+//go:embed go.generated.gotpl
 var generatedTmpl string
 
-func generateGoScriptStub(generateOutputDir string) error {
-	mainFile := filepath.Join(generateOutputDir, "main.go")
-	_, err := os.Stat(mainFile)
-	switch {
-	case os.IsNotExist(err):
-		// #nosec G306
-		if err := os.WriteFile(mainFile, []byte(scriptMain), 0644); err != nil {
-			return err
-		}
-	case err != nil:
-		return err
-	default:
-		fmt.Printf("%s already exists, skipping generation\n", mainFile)
+func main() {
+	// NOTE: passing through env vars is a bit ugly. The idea is that this code will eventually be
+	// running in an actual extension, at which time this information can be obtained through
+	// API calls to the cloak engine.
+	generateOutputDir, ok := os.LookupEnv("GENERATE_OUTPUT_DIR")
+	if !ok {
+		panic("GENERATE_OUTPUT_DIR not set")
 	}
 
-	return nil
-}
+	schema, ok := os.LookupEnv("SCHEMA")
+	if !ok {
+		panic("SCHEMA not set")
+	}
 
-func generateGoExtensionStub(generateOutputDir, schema string, coreProj *core.Project) error {
+	coreSchema, ok := os.LookupEnv("CORE_SCHEMA")
+	if !ok {
+		panic("CORE_SCHEMA not set")
+	}
+
+	// generate client code
+	clientDirs, err := os.ReadDir(filepath.Join(generateOutputDir, "gen"))
+	if err != nil {
+		panic(err)
+	}
+	for _, clientDir := range clientDirs {
+		subdir := filepath.Join(generateOutputDir, "gen", clientDir.Name())
+		cfg := &genqlientGen.Config{
+			Package:      clientDir.Name(),
+			Schema:       []string{filepath.Join(subdir, "schema.graphql")},
+			Operations:   []string{filepath.Join(subdir, "operations.graphql")},
+			Generated:    filepath.Join(subdir, "generated.go"),
+			ClientGetter: "github.com/dagger/cloak/sdk/go/dagger.Client",
+			Bindings: map[string]*genqlientGen.TypeBinding{
+				"Filesystem": {
+					Type: "github.com/dagger/cloak/sdk/go/dagger.Filesystem",
+				},
+				"Exec": {
+					Type: "github.com/dagger/cloak/sdk/go/dagger.Exec",
+				},
+				"FSID": {
+					Type: "github.com/dagger/cloak/sdk/go/dagger.FSID",
+				},
+				"SecretID": {
+					Type: "github.com/dagger/cloak/sdk/go/dagger.SecretID",
+				},
+			},
+		}
+		if err := cfg.ValidateAndFillDefaults(subdir); err != nil {
+			panic(err)
+		}
+		generated, err := genqlientGen.Generate(cfg)
+		if err != nil {
+			panic(err)
+		}
+		for filename, content := range generated {
+			if err := os.WriteFile(filename, content, 0600); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	if schema == "" {
+		// generate script code
+		mainFile := filepath.Join(generateOutputDir, "main.go")
+		_, err := os.Stat(mainFile)
+		switch {
+		case os.IsNotExist(err):
+			// #nosec G306
+			if err := os.WriteFile(mainFile, []byte(scriptMain), 0644); err != nil {
+				panic(err)
+			}
+		case err != nil:
+			panic(err)
+		default:
+			fmt.Printf("%s already exists, skipping generation\n", mainFile)
+		}
+		return
+	}
+
+	// generate extension code
 	cfg := gqlconfig.DefaultConfig()
-	cfg.SkipModTidy = false
+	cfg.SkipModTidy = true
+	cfg.SkipValidation = true
 	cfg.Exec = gqlconfig.ExecConfig{Filename: filepath.Join(generateOutputDir, "_deleteme.go"), Package: "main"}
 	cfg.SchemaFilename = nil
 	cfg.Sources = []*ast.Source{{Input: schema}}
@@ -78,7 +139,7 @@ func generateGoExtensionStub(generateOutputDir, schema string, coreProj *core.Pr
 	}
 
 	if err := gqlconfig.CompleteConfig(cfg); err != nil {
-		return fmt.Errorf("error completing config: %w", err)
+		panic(err)
 	}
 	defer os.Remove(cfg.Exec.Filename)
 
@@ -91,39 +152,10 @@ func generateGoExtensionStub(generateOutputDir, schema string, coreProj *core.Pr
 	if err := api.Generate(cfg, api.AddPlugin(plugin{
 		mainPath:      mainPath,
 		generatedPath: filepath.Join(generateOutputDir, "generated.go"),
-		coreSchema:    coreProj.Schema,
+		coreSchema:    coreSchema,
 	})); err != nil {
-		return fmt.Errorf("error generating code: %w", err)
+		panic(err)
 	}
-	return nil
-}
-
-func generateGoClientStubs(subdir string) error {
-	cfg := &generate.Config{
-		Schema:     generate.StringList{"schema.graphql"},
-		Operations: generate.StringList{"operations.graphql"},
-		Generated:  "generated.go",
-		Bindings: map[string]*generate.TypeBinding{
-			"Filesystem": {Type: "github.com/dagger/cloak/sdk/go/dagger.Filesystem"},
-			"Exec":       {Type: "github.com/dagger/cloak/sdk/go/dagger.Exec"},
-			"FSID":       {Type: "github.com/dagger/cloak/sdk/go/dagger.FSID"},
-			"SecretID":   {Type: "github.com/dagger/cloak/sdk/go/dagger.SecretID"},
-		},
-		ClientGetter: "github.com/dagger/cloak/sdk/go/dagger.Client",
-	}
-	if err := cfg.ValidateAndFillDefaults(subdir); err != nil {
-		return err
-	}
-	generated, err := generate.Generate(cfg)
-	if err != nil {
-		return err
-	}
-	for filename, content := range generated {
-		if err := os.WriteFile(filename, content, 0600); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type plugin struct {
