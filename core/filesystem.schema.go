@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -75,13 +76,16 @@ type Filesystem {
 		include: [String!]
 		exclude: [String!]
 	): Filesystem
+
+	"push a filesystem as an image to a registry"
+	pushImage(ref: String!): Boolean!
 }
 
 extend type Core {
 	"Look up a filesystem by its ID"
 	filesystem(id: FSID!): Filesystem!
 }
-	`
+`
 }
 
 func (s *filesystemSchema) Operations() string {
@@ -95,8 +99,9 @@ func (s *filesystemSchema) Resolvers() router.Resolvers {
 			"filesystem": s.filesystem,
 		},
 		"Filesystem": router.ObjectResolver{
-			"file": s.file,
-			"copy": s.copy,
+			"file":      s.file,
+			"copy":      s.copy,
+			"pushImage": s.pushImage,
 		},
 	}
 }
@@ -159,4 +164,27 @@ func (s *filesystemSchema) copy(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 	return fs, err
+}
+
+func (s *filesystemSchema) pushImage(p graphql.ResolveParams) (any, error) {
+	obj, err := filesystem.FromSource(p.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, _ := p.Args["ref"].(string)
+	if ref == "" {
+		return nil, fmt.Errorf("ref is required for pushImage")
+	}
+
+	if err := s.Export(p.Context, obj, bkclient.ExportEntry{
+		Type: bkclient.ExporterImage,
+		Attrs: map[string]string{
+			"name": ref,
+			"push": "true",
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return true, nil
 }

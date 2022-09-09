@@ -77,3 +77,34 @@ func (r *baseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb
 	// FIXME: should we create a filesystem from `res.SingleRef()`?
 	return filesystem.FromDefinition(def), nil
 }
+
+func (r *baseSchema) Export(ctx context.Context, fs *filesystem.Filesystem, export bkclient.ExportEntry) error {
+	fsDef, err := fs.ToDefinition()
+	if err != nil {
+		return err
+	}
+
+	solveOpts := r.solveOpts
+	// NOTE: be careful to not overwrite any values from original shared r.solveOpts (i.e. with append).
+	solveOpts.Exports = []bkclient.ExportEntry{export}
+
+	// Mirror events from the sub-Build into the main Build event channel.
+	// Build() will close the channel after completion so we don't want to use the main channel directly.
+	ch := make(chan *bkclient.SolveStatus)
+	go func() {
+		for event := range ch {
+			r.solveCh <- event
+		}
+	}()
+
+	_, err = r.bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: fsDef,
+		})
+	}, ch)
+	if err != nil {
+		return err
+	}
+	return nil
+}
