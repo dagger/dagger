@@ -167,7 +167,7 @@ Our templates are a great way to quickly see Dagger in action with a particular 
    {data.templates.map((x, index) => (
      <div className={styles.templateCard}>
        <div className={styles.templateInfo}>
-         <img src={`/img/getting-started/install-dagger/${x.imgFilename}`} />
+         <img className="not-zoom" src={`/img/getting-started/install-dagger/${x.imgFilename}`} />
          <a href={x.url}>{x.label}</a>
        </div>
        <CodeBlock>

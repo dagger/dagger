@@ -64,7 +64,7 @@ export const CardGrid = ({ data }) => {
           <div
             className={`${styles.card} ${x.fullWidth ? styles.fullWidth : ""}`}
           >
-            <img src={`/img/${x.imgFilename}`} />
+            <img className="not-zoom" src={`/img/${x.imgFilename}`} />
             <div className={styles.description}>
               <h4>{x.label}</h4>
               <p>{x.description}</p>
