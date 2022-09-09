@@ -129,6 +129,10 @@ dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cac
 See more options on registry export at [Buildkit cache documentation](https://github.com/moby/buildkit/blob/v0.10.3/README.md#registry-push-image-and-cache-separately)
 :::
 
+:::warning
+In order to pass the registry's auth informations to Buildkit, at least one of the actions of your plan has to pull or push an image from it (using the `auth` key in either `#Pull` or `#Push` definitions). For Docker Hub registries, you can also rely on the `DOCKERHUB_AUTH_USER` and `DOCKERHUB_AUTH_PASSWORD` env variables
+:::
+
 ## Persistent cache in your local filesystem
 
 To store cache in your local filesystem, you just need to change flags values to match `type=local`.
