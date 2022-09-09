@@ -3,8 +3,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
@@ -44,27 +42,6 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 		s.AddCredentials(target, a.Username, a.Secret.PlainText())
 		lg.Debug().Str("target", target).Msg("add target credentials")
-	} else if target == "docker.io" {
-		// Collect DOCKERHUB_AUTH_USER && DOCKERHUB_AUTH_PASSWORD env vars
-		username, secret := "", ""
-		for _, envVar := range os.Environ() {
-			split := strings.SplitN(envVar, "=", 2)
-			if len(split) != 2 {
-				continue
-			}
-			key, val := split[0], split[1]
-			if strings.EqualFold(key, "dockerhub_auth_user") {
-				username = val
-			}
-			if strings.EqualFold(key, "dockerhub_auth_password") {
-				secret = val
-			}
-		}
-
-		if username != "" && secret != "" {
-			s.AddCredentials(target, username, secret)
-			lg.Debug().Str("target", target).Msg("add global credentials from DOCKERHUB_AUTH_USER and DOCKERHUB_AUTH_PASSWORD env vars")
-		}
 	}
 
 	ref, err := reference.ParseNormalizedNamed(rawRef)

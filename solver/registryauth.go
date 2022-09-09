@@ -3,6 +3,7 @@ package solver
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -22,14 +23,40 @@ type RegistryAuthProvider struct {
 }
 
 func NewRegistryAuthProvider() *RegistryAuthProvider {
-	return &RegistryAuthProvider{
+	registry := &RegistryAuthProvider{
 		credentials: map[string]*bkauth.CredentialsResponse{},
 	}
+
+	registry.AddCredentials("docker.io", "", "")
+	return registry
 }
 
 func (a *RegistryAuthProvider) AddCredentials(target, username, secret string) {
 	a.m.Lock()
 	defer a.m.Unlock()
+
+	if target == "docker.io" && username == "" && secret == "" {
+		// Collect DOCKERHUB_AUTH_USER && DOCKERHUB_AUTH_PASSWORD env vars
+		u, s := "", ""
+		for _, envVar := range os.Environ() {
+			split := strings.SplitN(envVar, "=", 2)
+			if len(split) != 2 {
+				continue
+			}
+			key, val := split[0], split[1]
+			if strings.EqualFold(key, "dockerhub_auth_user") {
+				u = val
+			}
+			if strings.EqualFold(key, "dockerhub_auth_password") {
+				s = val
+			}
+		}
+
+		if u != "" && s != "" {
+			username = u
+			secret = s
+		}
+	}
 
 	a.credentials[target] = &bkauth.CredentialsResponse{
 		Username: username,
