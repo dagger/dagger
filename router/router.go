@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql/playground"
@@ -89,14 +88,6 @@ func (r *Router) Get(name string) ExecutableSchema {
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// Serve GraphiQL for text/html (e.g. browser) requests
-	// FIXME: Split into /query (API) and / (graphiql) rather than serving depending on content type.
-	acceptHeader := req.Header.Get("Accept")
-	if !strings.Contains(acceptHeader, "application/json") && strings.Contains(acceptHeader, "text/html") {
-		playground.Handler("Cloak Dev", "/").ServeHTTP(w, req)
-		return
-	}
-
 	r.l.RLock()
 	h := r.h
 	r.l.RUnlock()
@@ -114,7 +105,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
-	h.ServeHTTP(w, req)
+	mux := http.NewServeMux()
+	mux.Handle("/query", h)
+	mux.Handle("/", playground.Handler("Cloak Dev", "/query"))
+	mux.ServeHTTP(w, req)
 }
 
 func (r *Router) ServeConn(conn net.Conn) error {
