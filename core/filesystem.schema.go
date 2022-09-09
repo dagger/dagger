@@ -75,11 +75,6 @@ type Filesystem {
 		include: [String!]
 		exclude: [String!]
 	): Filesystem
-
-	# FIXME: this should be in execSchema. However, removing this results in an error:
-	# failed to resolve all type definitions: [Core Query Filesystem Exec]
-	"execute a command inside this filesystem"
-	exec(input: ExecInput!): Exec!
 }
 
 extend type Core {
