@@ -6,6 +6,13 @@ query Image($ref: String!) {
 		}
 	}
 }
+query Git($remote: String!, $ref: String) {
+	core {
+		git(remote: $remote, ref: $ref) {
+			id
+		}
+	}
+}
 query Workdir() {
 	host {
 		workdir {
@@ -15,14 +22,47 @@ query Workdir() {
 		}
 	}
 }
-query WriteWorkdir($contents: FSID!) {
+query LocalDir($id: String!) {
 	host {
-		workdir {
-			write(contents: $contents)
+		dir(id: $id) {
+			read {
+				id
+			}
 		}
 	}
 }
-	
+query WriteWorkdir($contents: FSID!, $path: String) {
+	host {
+		workdir {
+			write(contents: $contents, path: $path)
+		}
+	}
+}
+
+
+query ReadFile($fs: FSID!, $path: String!, $lines: Int) {
+	core {
+		filesystem(id: $fs) {
+			file(path: $path, lines: $lines)
+		}
+	}
+}
+query Copy($fs: FSID!, $from: FSID!, $srcPath: String, $destPath: String, $include: [String!], $exclude: [String!]) {
+	core {
+		filesystem(id: $fs) {
+			copy(from: $from, srcPath: $srcPath, destPath: $destPath, include: $include, exclude: $exclude) {
+				id
+			}
+		}
+	}
+}
+query PushImage($fs: FSID!, $ref: String!) {
+	core {
+		filesystem(id: $fs) {
+			pushImage(ref: $ref)
+		}
+	}
+}
 
 
 
@@ -66,4 +106,8 @@ query Secret($id: SecretID!) {
 		secret(id: $id)
 	}
 }
-	
+query AddSecret($plaintext: String!) {
+	core {
+		addSecret(plaintext: $plaintext)
+	}
+}

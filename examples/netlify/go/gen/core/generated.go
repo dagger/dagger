@@ -9,6 +9,27 @@ import (
 	"github.com/dagger/cloak/sdk/go/dagger"
 )
 
+// AddSecretCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
+type AddSecretCore struct {
+	// Add a secret
+	AddSecret dagger.SecretID `json:"addSecret"`
+}
+
+// GetAddSecret returns AddSecretCore.AddSecret, and is useful for accessing the field via an interface.
+func (v *AddSecretCore) GetAddSecret() dagger.SecretID { return v.AddSecret }
+
+// AddSecretResponse is returned by AddSecret on success.
+type AddSecretResponse struct {
+	// Core API
+	Core AddSecretCore `json:"core"`
+}
+
+// GetCore returns AddSecretResponse.Core, and is useful for accessing the field via an interface.
+func (v *AddSecretResponse) GetCore() AddSecretCore { return v.Core }
+
 type CacheMountInput struct {
 	// Cache mount name
 	Name string `json:"name"`
@@ -26,6 +47,27 @@ func (v *CacheMountInput) GetSharingMode() string { return v.SharingMode }
 
 // GetPath returns CacheMountInput.Path, and is useful for accessing the field via an interface.
 func (v *CacheMountInput) GetPath() string { return v.Path }
+
+// CopyCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
+type CopyCore struct {
+	// Look up a filesystem by its ID
+	Filesystem dagger.Filesystem `json:"filesystem"`
+}
+
+// GetFilesystem returns CopyCore.Filesystem, and is useful for accessing the field via an interface.
+func (v *CopyCore) GetFilesystem() dagger.Filesystem { return v.Filesystem }
+
+// CopyResponse is returned by Copy on success.
+type CopyResponse struct {
+	// Core API
+	Core CopyCore `json:"core"`
+}
+
+// GetCore returns CopyResponse.Core, and is useful for accessing the field via an interface.
+func (v *CopyResponse) GetCore() CopyCore { return v.Core }
 
 // DockerfileCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
@@ -155,6 +197,27 @@ func (v *ExecSecretEnvInput) GetName() string { return v.Name }
 // GetId returns ExecSecretEnvInput.Id, and is useful for accessing the field via an interface.
 func (v *ExecSecretEnvInput) GetId() dagger.SecretID { return v.Id }
 
+// GitCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
+type GitCore struct {
+	// Fetch a git repository
+	Git dagger.Filesystem `json:"git"`
+}
+
+// GetGit returns GitCore.Git, and is useful for accessing the field via an interface.
+func (v *GitCore) GetGit() dagger.Filesystem { return v.Git }
+
+// GitResponse is returned by Git on success.
+type GitResponse struct {
+	// Core API
+	Core GitCore `json:"core"`
+}
+
+// GetCore returns GitResponse.Core, and is useful for accessing the field via an interface.
+func (v *GitResponse) GetCore() GitCore { return v.Core }
+
 // ImageCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
 //
@@ -176,6 +239,39 @@ type ImageResponse struct {
 // GetCore returns ImageResponse.Core, and is useful for accessing the field via an interface.
 func (v *ImageResponse) GetCore() ImageCore { return v.Core }
 
+// LocalDirHost includes the requested fields of the GraphQL type Host.
+// The GraphQL type's documentation follows.
+//
+// Interactions with the user's host filesystem
+type LocalDirHost struct {
+	// Fetch a client directory
+	Dir LocalDirHostDirLocalDir `json:"dir"`
+}
+
+// GetDir returns LocalDirHost.Dir, and is useful for accessing the field via an interface.
+func (v *LocalDirHost) GetDir() LocalDirHostDirLocalDir { return v.Dir }
+
+// LocalDirHostDirLocalDir includes the requested fields of the GraphQL type LocalDir.
+// The GraphQL type's documentation follows.
+//
+// A directory on the user's host filesystem
+type LocalDirHostDirLocalDir struct {
+	// Read the contents of the directory
+	Read dagger.Filesystem `json:"read"`
+}
+
+// GetRead returns LocalDirHostDirLocalDir.Read, and is useful for accessing the field via an interface.
+func (v *LocalDirHostDirLocalDir) GetRead() dagger.Filesystem { return v.Read }
+
+// LocalDirResponse is returned by LocalDir on success.
+type LocalDirResponse struct {
+	// Host API
+	Host LocalDirHost `json:"host"`
+}
+
+// GetHost returns LocalDirResponse.Host, and is useful for accessing the field via an interface.
+func (v *LocalDirResponse) GetHost() LocalDirHost { return v.Host }
+
 type MountInput struct {
 	// filesystem to mount
 	Fs dagger.FSID `json:"fs"`
@@ -188,6 +284,48 @@ func (v *MountInput) GetFs() dagger.FSID { return v.Fs }
 
 // GetPath returns MountInput.Path, and is useful for accessing the field via an interface.
 func (v *MountInput) GetPath() string { return v.Path }
+
+// PushImageCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
+type PushImageCore struct {
+	// Look up a filesystem by its ID
+	Filesystem dagger.Filesystem `json:"filesystem"`
+}
+
+// GetFilesystem returns PushImageCore.Filesystem, and is useful for accessing the field via an interface.
+func (v *PushImageCore) GetFilesystem() dagger.Filesystem { return v.Filesystem }
+
+// PushImageResponse is returned by PushImage on success.
+type PushImageResponse struct {
+	// Core API
+	Core PushImageCore `json:"core"`
+}
+
+// GetCore returns PushImageResponse.Core, and is useful for accessing the field via an interface.
+func (v *PushImageResponse) GetCore() PushImageCore { return v.Core }
+
+// ReadFileCore includes the requested fields of the GraphQL type Core.
+// The GraphQL type's documentation follows.
+//
+// Core API
+type ReadFileCore struct {
+	// Look up a filesystem by its ID
+	Filesystem dagger.Filesystem `json:"filesystem"`
+}
+
+// GetFilesystem returns ReadFileCore.Filesystem, and is useful for accessing the field via an interface.
+func (v *ReadFileCore) GetFilesystem() dagger.Filesystem { return v.Filesystem }
+
+// ReadFileResponse is returned by ReadFile on success.
+type ReadFileResponse struct {
+	// Core API
+	Core ReadFileCore `json:"core"`
+}
+
+// GetCore returns ReadFileResponse.Core, and is useful for accessing the field via an interface.
+func (v *ReadFileResponse) GetCore() ReadFileCore { return v.Core }
 
 // SecretCore includes the requested fields of the GraphQL type Core.
 // The GraphQL type's documentation follows.
@@ -276,6 +414,42 @@ type WriteWorkdirResponse struct {
 // GetHost returns WriteWorkdirResponse.Host, and is useful for accessing the field via an interface.
 func (v *WriteWorkdirResponse) GetHost() WriteWorkdirHost { return v.Host }
 
+// __AddSecretInput is used internally by genqlient
+type __AddSecretInput struct {
+	Plaintext string `json:"plaintext"`
+}
+
+// GetPlaintext returns __AddSecretInput.Plaintext, and is useful for accessing the field via an interface.
+func (v *__AddSecretInput) GetPlaintext() string { return v.Plaintext }
+
+// __CopyInput is used internally by genqlient
+type __CopyInput struct {
+	Fs       dagger.FSID `json:"fs"`
+	From     dagger.FSID `json:"from"`
+	SrcPath  string      `json:"srcPath"`
+	DestPath string      `json:"destPath"`
+	Include  []string    `json:"include"`
+	Exclude  []string    `json:"exclude"`
+}
+
+// GetFs returns __CopyInput.Fs, and is useful for accessing the field via an interface.
+func (v *__CopyInput) GetFs() dagger.FSID { return v.Fs }
+
+// GetFrom returns __CopyInput.From, and is useful for accessing the field via an interface.
+func (v *__CopyInput) GetFrom() dagger.FSID { return v.From }
+
+// GetSrcPath returns __CopyInput.SrcPath, and is useful for accessing the field via an interface.
+func (v *__CopyInput) GetSrcPath() string { return v.SrcPath }
+
+// GetDestPath returns __CopyInput.DestPath, and is useful for accessing the field via an interface.
+func (v *__CopyInput) GetDestPath() string { return v.DestPath }
+
+// GetInclude returns __CopyInput.Include, and is useful for accessing the field via an interface.
+func (v *__CopyInput) GetInclude() []string { return v.Include }
+
+// GetExclude returns __CopyInput.Exclude, and is useful for accessing the field via an interface.
+func (v *__CopyInput) GetExclude() []string { return v.Exclude }
+
 // __DockerfileInput is used internally by genqlient
 type __DockerfileInput struct {
 	Context        dagger.FSID `json:"context"`
@@ -316,6 +490,18 @@ func (v *__ExecInput) GetFsid() dagger.FSID { return v.Fsid }
 // GetInput returns __ExecInput.Input, and is useful for accessing the field via an interface.
 func (v *__ExecInput) GetInput() ExecInput { return v.Input }
 
+// __GitInput is used internally by genqlient
+type __GitInput struct {
+	Remote string `json:"remote"`
+	Ref    string `json:"ref"`
+}
+
+// GetRemote returns __GitInput.Remote, and is useful for accessing the field via an interface.
+func (v *__GitInput) GetRemote() string { return v.Remote }
+
+// GetRef returns __GitInput.Ref, and is useful for accessing the field via an interface.
+func (v *__GitInput) GetRef() string { return v.Ref }
+
 // __ImageInput is used internally by genqlient
 type __ImageInput struct {
 	Ref string `json:"ref"`
@@ -323,6 +509,42 @@ type __ImageInput struct {
 
 // GetRef returns __ImageInput.Ref, and is useful for accessing the field via an interface.
 func (v *__ImageInput) GetRef() string { return v.Ref }
+
+// __LocalDirInput is used internally by genqlient
+type __LocalDirInput struct {
+	Id string `json:"id"`
+}
+
+// GetId returns __LocalDirInput.Id, and is useful for accessing the field via an interface.
+func (v *__LocalDirInput) GetId() string { return v.Id }
+
+// __PushImageInput is used internally by genqlient
+type __PushImageInput struct {
+	Fs  dagger.FSID `json:"fs"`
+	Ref string      `json:"ref"`
+}
+
+// GetFs returns __PushImageInput.Fs, and is useful for accessing the field via an interface.
+func (v *__PushImageInput) GetFs() dagger.FSID { return v.Fs }
+
+// GetRef returns __PushImageInput.Ref, and is useful for accessing the field via an interface.
+func (v *__PushImageInput) GetRef() string { return v.Ref }
+
+// __ReadFileInput is used internally by genqlient
+type __ReadFileInput struct {
+	Fs    dagger.FSID `json:"fs"`
+	Path  string      `json:"path"`
+	Lines int         `json:"lines"`
+}
+
+// GetFs returns __ReadFileInput.Fs, and is useful for accessing the field via an interface.
+func (v *__ReadFileInput) GetFs() dagger.FSID { return v.Fs }
+
+// GetPath returns __ReadFileInput.Path, and is useful for accessing the field via an interface.
+func (v *__ReadFileInput) GetPath() string { return v.Path }
+
+// GetLines returns __ReadFileInput.Lines, and is useful for accessing the field via an interface.
+func (v *__ReadFileInput) GetLines() int { return v.Lines }
 
 // __SecretInput is used internally by genqlient
 type __SecretInput struct {
@@ -335,10 +557,102 @@ func (v *__SecretInput) GetId() dagger.SecretID { return v.Id }
 // __WriteWorkdirInput is used internally by genqlient
 type __WriteWorkdirInput struct {
 	Contents dagger.FSID `json:"contents"`
+	Path     string      `json:"path"`
 }
 
 // GetContents returns __WriteWorkdirInput.Contents, and is useful for accessing the field via an interface.
 func (v *__WriteWorkdirInput) GetContents() dagger.FSID { return v.Contents }
+
+// GetPath returns __WriteWorkdirInput.Path, and is useful for accessing the field via an interface.
+func (v *__WriteWorkdirInput) GetPath() string { return v.Path }
+
+func AddSecret(
+	ctx context.Context,
+	plaintext string,
+) (*AddSecretResponse, error) {
+	req := &graphql.Request{
+		OpName: "AddSecret",
+		Query: `
+query AddSecret ($plaintext: String!) {
+	core {
+		addSecret(plaintext: $plaintext)
+	}
+}
+`,
+		Variables: &__AddSecretInput{
+			Plaintext: plaintext,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data AddSecretResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func Copy(
+	ctx context.Context,
+	fs dagger.FSID,
+	from dagger.FSID,
+	srcPath string,
+	destPath string,
+	include []string,
+	exclude []string,
+) (*CopyResponse, error) {
+	req := &graphql.Request{
+		OpName: "Copy",
+		Query: `
+query Copy ($fs: FSID!, $from: FSID!, $srcPath: String, $destPath: String, $include: [String!], $exclude: [String!]) {
+	core {
+		filesystem(id: $fs) {
+			copy(from: $from, srcPath: $srcPath, destPath: $destPath, include: $include, exclude: $exclude) {
+				id
+			}
+		}
+	}
+}
+`,
+		Variables: &__CopyInput{
+			Fs:       fs,
+			From:     from,
+			SrcPath:  srcPath,
+			DestPath: destPath,
+			Include:  include,
+			Exclude:  exclude,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data CopyResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
 
 func Dockerfile(
 	ctx context.Context,
@@ -475,6 +789,47 @@ query ExecGetMount ($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
 	return &data, err
 }
 
+func Git(
+	ctx context.Context,
+	remote string,
+	ref string,
+) (*GitResponse, error) {
+	req := &graphql.Request{
+		OpName: "Git",
+		Query: `
+query Git ($remote: String!, $ref: String) {
+	core {
+		git(remote: $remote, ref: $ref) {
+			id
+		}
+	}
+}
+`,
+		Variables: &__GitInput{
+			Remote: remote,
+			Ref:    ref,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data GitResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
 func Image(
 	ctx context.Context,
 	ref string,
@@ -503,6 +858,131 @@ query Image ($ref: String!) {
 	}
 
 	var data ImageResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func LocalDir(
+	ctx context.Context,
+	id string,
+) (*LocalDirResponse, error) {
+	req := &graphql.Request{
+		OpName: "LocalDir",
+		Query: `
+query LocalDir ($id: String!) {
+	host {
+		dir(id: $id) {
+			read {
+				id
+			}
+		}
+	}
+}
+`,
+		Variables: &__LocalDirInput{
+			Id: id,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data LocalDirResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func PushImage(
+	ctx context.Context,
+	fs dagger.FSID,
+	ref string,
+) (*PushImageResponse, error) {
+	req := &graphql.Request{
+		OpName: "PushImage",
+		Query: `
+query PushImage ($fs: FSID!, $ref: String!) {
+	core {
+		filesystem(id: $fs) {
+			pushImage(ref: $ref)
+		}
+	}
+}
+`,
+		Variables: &__PushImageInput{
+			Fs:  fs,
+			Ref: ref,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data PushImageResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func ReadFile(
+	ctx context.Context,
+	fs dagger.FSID,
+	path string,
+	lines int,
+) (*ReadFileResponse, error) {
+	req := &graphql.Request{
+		OpName: "ReadFile",
+		Query: `
+query ReadFile ($fs: FSID!, $path: String!, $lines: Int) {
+	core {
+		filesystem(id: $fs) {
+			file(path: $path, lines: $lines)
+		}
+	}
+}
+`,
+		Variables: &__ReadFileInput{
+			Fs:    fs,
+			Path:  path,
+			Lines: lines,
+		},
+	}
+	var err error
+	var client graphql.Client
+
+	client, err = dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var data ReadFileResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(
@@ -591,20 +1071,22 @@ query Workdir {
 func WriteWorkdir(
 	ctx context.Context,
 	contents dagger.FSID,
+	path string,
 ) (*WriteWorkdirResponse, error) {
 	req := &graphql.Request{
 		OpName: "WriteWorkdir",
 		Query: `
-query WriteWorkdir ($contents: FSID!) {
+query WriteWorkdir ($contents: FSID!, $path: String) {
 	host {
 		workdir {
-			write(contents: $contents)
+			write(contents: $contents, path: $path)
 		}
 	}
 }
 `,
 		Variables: &__WriteWorkdirInput{
 			Contents: contents,
+			Path:     path,
 		},
 	}
 	var err error
