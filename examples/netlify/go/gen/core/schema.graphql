@@ -33,7 +33,7 @@ type LocalDir {
 	"Write the provided filesystem to the directory"
 	write(contents: FSID!, path: String): Boolean!
 }
-	
+
 
 scalar FSID
 
@@ -62,17 +62,15 @@ type Filesystem {
 		exclude: [String!]
 	): Filesystem
 
-	# FIXME: this should be in execSchema. However, removing this results in an error:
-	# failed to resolve all type definitions: [Core Query Filesystem Exec]
-	"execute a command inside this filesystem"
-	exec(input: ExecInput!): Exec!
+	"push a filesystem as an image to a registry"
+	pushImage(ref: String!): Boolean!
 }
 
 extend type Core {
 	"Look up a filesystem by its ID"
 	filesystem(id: FSID!): Filesystem!
 }
-	
+
 
 "A set of scripts and/or extensions"
 type Project {
@@ -213,11 +211,10 @@ input ExecSecretEnvInput {
 	id: SecretID!
 }
 
-# FIXME: broken
-# extend type Filesystem {
-#	"execute a command inside this filesystem"
-# 	exec(input: ExecInput!): Exec!
-# }
+extend type Filesystem {
+	"execute a command inside this filesystem"
+ 	exec(input: ExecInput!): Exec!
+}
 	
 
 extend type Filesystem {
@@ -235,4 +232,3 @@ extend type Core {
 	"Add a secret"
 	addSecret(plaintext: String!): SecretID!
 }
-	
