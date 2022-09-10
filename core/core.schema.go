@@ -72,6 +72,13 @@ query Image($ref: String!) {
 		}
 	}
 }
+query Git($remote: String!, $ref: String) {
+	core {
+		git(remote: $remote, ref: $ref) {
+			id
+		}
+	}
+}
 query Workdir() {
 	host {
 		workdir {
@@ -81,14 +88,23 @@ query Workdir() {
 		}
 	}
 }
-query WriteWorkdir($contents: FSID!) {
+query LocalDir($id: String!) {
 	host {
-		workdir {
-			write(contents: $contents)
+		dir(id: $id) {
+			read {
+				id
+			}
 		}
 	}
 }
-	`
+query WriteWorkdir($contents: FSID!, $path: String) {
+	host {
+		workdir {
+			write(contents: $contents, path: $path)
+		}
+	}
+}
+`
 }
 
 func (r *coreSchema) Resolvers() router.Resolvers {

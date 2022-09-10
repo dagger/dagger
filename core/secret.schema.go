@@ -56,7 +56,7 @@ extend type Core {
 	"Add a secret"
 	addSecret(plaintext: String!): SecretID!
 }
-	`
+`
 }
 
 func (s *secretSchema) Operations() string {
@@ -66,7 +66,12 @@ query Secret($id: SecretID!) {
 		secret(id: $id)
 	}
 }
-	`
+query AddSecret($plaintext: String!) {
+	core {
+		addSecret(plaintext: $plaintext)
+	}
+}
+`
 }
 
 func (s *secretSchema) Resolvers() router.Resolvers {
