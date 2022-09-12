@@ -2756,10 +2756,10 @@ algoliasearch@^4.13.1:
     "@algolia/requester-node-http" "4.13.1"
     "@algolia/transporter" "4.13.1"
 
-amplitude-js@^8.20.1:
-  version "8.20.1"
-  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.20.1.tgz#24d224f3db65e2b8c15ede7a0f5850dcbacafc32"
-  integrity sha512-SWmUNgCd9HwqmnoLsMxgZrKDcj363H68/+rOgbnySpk+dfHPyDkmMTIh2qJAGVxrcFPbH5g6UeqYzk/+9fOFfg==
+amplitude-js@^8.21.0:
+  version "8.21.0"
+  resolved "https://registry.yarnpkg.com/amplitude-js/-/amplitude-js-8.21.0.tgz#6cebd767b666a1e4ad2ec15da4288daa71d806c8"
+  integrity sha512-kC01TmmCdDrtms8LhvC/r65FtbmCbNHZ1/jiezXmTH82TsWI/SkN47jKs8CCwjZNakqTBN/hmficiZBUKv4myw==
   dependencies:
     "@amplitude/analytics-connector" "1.4.4"
     "@amplitude/ua-parser-js" "0.7.31"
