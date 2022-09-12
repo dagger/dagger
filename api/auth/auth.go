@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
-	"golang.org/x/term"
 )
 
 const (
@@ -43,11 +41,6 @@ var authConfig = &oauth2.Config{
 func Login(ctx context.Context) error {
 	lg := log.Ctx(ctx)
 	lg.Info().Msg("logging into your dagger account")
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		lg.Error().Msg("login is only supported in interactive mode (stdout is not a terminal)")
-		lg.Error().Msg("please log in from a terminal")
-		return errors.New("authentication failed")
-	}
 
 	// oauth2 localhost handler
 	requestCh := make(chan *http.Request)
