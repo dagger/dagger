@@ -81,6 +81,16 @@ module.exports = {
     },
     posthog: {
       apiKey: "phc_hqwS484sDJhTnrPCANTyWX48nKL3AEucgf6w0czQtQi",
+    },
+    zoom: {
+      selector: '.markdown img:not(.not-zoom)',
+      background: {
+        light: 'rgb(255, 255, 255)',
+        dark: 'rgb(50, 50, 50)'
+      },
+      // medium-zoom configuration options
+      // Refer to https://github.com/francoischalifour/medium-zoom#options
+      config: {}
     }
   },
   presets: [
@@ -110,6 +120,7 @@ module.exports = {
     "docusaurus-plugin-sass",
     "docusaurus2-dotenv",
     "posthog-docusaurus",
+    "docusaurus-plugin-image-zoom",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
     path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
   ],
