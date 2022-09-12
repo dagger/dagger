@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/dagger/cloak/playground"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 )
