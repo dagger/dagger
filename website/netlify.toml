@@ -26,13 +26,12 @@
   from = "/github-api-proxy/*"
   to = "https://api.github.com/:splat"
   status = 200
+  force = true
+  headers = {X-From = "Netlify"}
 
 [[redirects]]
   from = "/docs-access/*"
   to = "https://j20f3pfq11.execute-api.us-east-1.amazonaws.com/Prod/u/:splat"
   status = 200
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    Referrer-policy = "no-referrer-when-downgrade"
+  force = true
+  headers = {X-From = "Netlify"}

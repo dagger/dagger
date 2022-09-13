@@ -13,19 +13,24 @@ function DocPageCustom({ location, userAccessStatus, setUserAccessStatus }) {
   const authQuery = qs.parse(location.search);
 
   useEffect(async () => {
-    NProgress.start()
-    if (!isEmpty(authQuery?.code) && userAccessStatus === null) { //callback after successful auth with github
-      const user = await checkUserCollaboratorStatus(authQuery?.code);
-      setUserAccessStatus(user)
-      if (user?.permission) {
-        window.localStorage.setItem('user', JSON.stringify(user));
+    try {
+      NProgress.start()
+      if (!isEmpty(authQuery?.code) && userAccessStatus === null) { //callback after successful auth with github
+        const user = await checkUserCollaboratorStatus(authQuery?.code);
+        setUserAccessStatus(user)
+        if (user?.permission) {
+          window.localStorage.setItem('user', JSON.stringify(user));
+        }
       }
-    }
       NProgress.done();
       setIsLoading(false)
+    } catch(error) {
+      console.log(error)
+    }
   }, [])
 
   if(isLoading) return <p>...</p>
+
 
   if (userAccessStatus?.permission === false) {
     return <DocPageRedirect />
@@ -34,6 +39,8 @@ function DocPageCustom({ location, userAccessStatus, setUserAccessStatus }) {
   if (userAccessStatus === null) {
     return <DocPageAuthentication />
   }
+
+  return null
 }
 
 export default DocPageCustom
