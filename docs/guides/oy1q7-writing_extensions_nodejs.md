@@ -1,6 +1,6 @@
 ---
 slug: /oy1q7/writing_extensions_nodejs
-displayed_sidebar: '0.3'
+displayed_sidebar: "0.3"
 ---
 
 # Writing a new project with NodeJS (Javascript or Typescript)
@@ -113,7 +113,7 @@ dependencies:
       path: examples/netlify/go/cloak.yaml
 ```
 
-### Create schema and operation files
+### Create schema files
 
 - Create a new file `ext/schema.graphql`, which will define the new APIs implemented by your extension and vended by your project.
 
@@ -133,24 +133,6 @@ dependencies:
     - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/schema.graphql)
     - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/schema.graphql)
   - NOTE: this step may become optional in the future if code-first schemas are supported
-
-- Create a new file `ext/operations.graphql`. This file will determine which functions are included in code-generated client stubs (for scripts or other projects that depend on this extension).
-
-  - This file is optional if you don't need code-generated clients to call your extension (and instead just rely on raw graphql queries)
-  - Example contents for a single `Bar` query:
-
-    ```graphql
-    query Bar($in: String!) {
-      foo {
-        bar(in: $in)
-      }
-    }
-    ```
-
-  - Also see other examples:
-    - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/operations.graphql)
-    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/operations.graphql)
-  - NOTE: In most cases, this file is easy to derive from `schema.graphql`; we thus expect to be able to autogenerate it for many cases and make its creation optional in the long term.
 
 ### Implement the extension
 
