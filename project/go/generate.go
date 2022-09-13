@@ -11,7 +11,6 @@ import (
 	"github.com/99designs/gqlgen/codegen"
 	gqlconfig "github.com/99designs/gqlgen/codegen/config"
 	"github.com/99designs/gqlgen/codegen/templates"
-	genqlientGen "github.com/Khan/genqlient/generate"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -38,48 +37,6 @@ func main() {
 	coreSchema, ok := os.LookupEnv("CORE_SCHEMA")
 	if !ok {
 		panic("CORE_SCHEMA not set")
-	}
-
-	// generate client code
-	clientDirs, err := os.ReadDir(filepath.Join(generateOutputDir, "gen"))
-	if err != nil {
-		panic(err)
-	}
-	for _, clientDir := range clientDirs {
-		subdir := filepath.Join(generateOutputDir, "gen", clientDir.Name())
-		cfg := &genqlientGen.Config{
-			Package:      clientDir.Name(),
-			Schema:       []string{filepath.Join(subdir, "schema.graphql")},
-			Operations:   []string{filepath.Join(subdir, "operations.graphql")},
-			Generated:    filepath.Join(subdir, "generated.go"),
-			ClientGetter: "github.com/dagger/cloak/sdk/go/dagger.Client",
-			Bindings: map[string]*genqlientGen.TypeBinding{
-				"Filesystem": {
-					Type: "github.com/dagger/cloak/sdk/go/dagger.Filesystem",
-				},
-				"Exec": {
-					Type: "github.com/dagger/cloak/sdk/go/dagger.Exec",
-				},
-				"FSID": {
-					Type: "github.com/dagger/cloak/sdk/go/dagger.FSID",
-				},
-				"SecretID": {
-					Type: "github.com/dagger/cloak/sdk/go/dagger.SecretID",
-				},
-			},
-		}
-		if err := cfg.ValidateAndFillDefaults(subdir); err != nil {
-			panic(err)
-		}
-		generated, err := genqlientGen.Generate(cfg)
-		if err != nil {
-			panic(err)
-		}
-		for filename, content := range generated {
-			if err := os.WriteFile(filename, content, 0600); err != nil {
-				panic(err)
-			}
-		}
 	}
 
 	if schema == "" {

@@ -88,34 +88,6 @@ extend type Core {
 `
 }
 
-func (s *filesystemSchema) Operations() string {
-	return `
-query ReadFile($fs: FSID!, $path: String!, $lines: Int) {
-	core {
-		filesystem(id: $fs) {
-			file(path: $path, lines: $lines)
-		}
-	}
-}
-query Copy($fs: FSID!, $from: FSID!, $srcPath: String, $destPath: String, $include: [String!], $exclude: [String!]) {
-	core {
-		filesystem(id: $fs) {
-			copy(from: $from, srcPath: $srcPath, destPath: $destPath, include: $include, exclude: $exclude) {
-				id
-			}
-		}
-	}
-}
-query PushImage($fs: FSID!, $ref: String!) {
-	core {
-		filesystem(id: $fs) {
-			pushImage(ref: $ref)
-		}
-	}
-}
-`
-}
-
 func (s *filesystemSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"FSID": fsIDResolver,

@@ -1,8 +1,0 @@
-query Build($pkgs: [String!]) {
-  alpine {
-    build(pkgs: $pkgs) {
-      id
-    }
-  }
-}
-

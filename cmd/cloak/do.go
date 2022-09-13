@@ -75,10 +75,6 @@ func Do(cmd *cobra.Command, args []string) {
 			vars[name] = string(id)
 		}
 
-		if operations == "" {
-			operations = ctx.Operations
-		}
-
 		res := make(map[string]interface{})
 		resp := &graphql.Response{Data: &res}
 		err = ctx.Client.MakeRequest(ctx,

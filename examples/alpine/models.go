@@ -73,8 +73,6 @@ type Extension struct {
 	Path string `json:"path"`
 	// schema contributed to the project by this extension
 	Schema string `json:"schema"`
-	// operations contributed to the project by this extension (if any)
-	Operations *string `json:"operations"`
 	// sdk used to generate code for and/or execute this extension
 	Sdk string `json:"sdk"`
 }
@@ -108,8 +106,6 @@ type Project struct {
 	Name string `json:"name"`
 	// schema provided by the project
 	Schema *string `json:"schema"`
-	// operations provided by the project
-	Operations *string `json:"operations"`
 	// extensions in this project
 	Extensions []*Extension `json:"extensions"`
 	// scripts in this project

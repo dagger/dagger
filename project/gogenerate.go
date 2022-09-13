@@ -14,7 +14,7 @@ import (
 //go:embed go/*
 var goGenerateSrc embed.FS
 
-func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchema, coreOperations string) (*filesystem.Filesystem, error) {
+func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchema string) (*filesystem.Filesystem, error) {
 	projectFS, err := s.contextFS.ToState()
 	if err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 	base := goBase(s.gw)
 
 	// Setup the generate tool in its own directory.
-	// gqlgen and genqlient need their own go module to execute, but we don't want to use
+	// gqlgen needs its own go module to execute, but we don't want to use
 	// the user's go.mod from the project since we don't want to pollute it with tools that
 	// only run here. However, those tools also need access to the user's go.mod so they can
 	// resolve types. This is why we split the tools dir (at /tools) and the project dir (at
@@ -74,28 +74,7 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		withGoPrivateRepoConfiguration(s.sshAuthSockID),
 	).Root()
 
-	// setup core schemas+operations for client codegen
-	projectFS = withClientMetadata(projectFS, subpath, s.configPath, "core", coreSchema, coreOperations)
-
-	// setup dependency schemas+operations for client codegen
-	for _, dep := range s.dependencies {
-		depSchema := dep.Schema() + "\n" + coreSchema
-		projectFS = withClientMetadata(projectFS, subpath, s.configPath, dep.Name(), depSchema, dep.Operations())
-	}
-
-	// setup schemas+operations of extensions in this project for client codegen
-	var selfSchema string
-	var selfOperations string
-	for _, otherExt := range s.extensions {
-		selfSchema += otherExt.Schema + "\n"
-		selfOperations += otherExt.Operations + "\n"
-	}
-	if selfOperations != "" {
-		selfSchema += coreSchema
-		projectFS = withClientMetadata(projectFS, subpath, s.configPath, s.Name(), selfSchema, selfOperations)
-	}
-
-	// generate client stubs and extension/script skeletons
+	// generate extension/script skeletons
 	projectSubpath := filepath.Join(filepath.Dir(s.configPath), subpath)
 	outputDir := filepath.Join("/src", projectSubpath)
 	projectFS = base.Run(
@@ -113,15 +92,4 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 	).GetMount(outputDir)
 
 	return filesystem.FromState(ctx, projectFS, s.platform)
-}
-
-// Create the schema.graphql and operations.graphql files needed for client codegen.
-// The actual code generation is done by the generate tool.
-func withClientMetadata(projectFS llb.State, subpath, configPath, name, schema, operations string) llb.State {
-	outputDir := filepath.Join(filepath.Dir(configPath), subpath, "gen", name)
-	return projectFS.
-		File(llb.Mkdir(outputDir, 0755, llb.WithParents(true))).
-		File(llb.Mkfile(filepath.Join(outputDir, ".gitattributes"), 0644, []byte(`** linguist-generated=true`))).
-		File(llb.Mkfile(filepath.Join(outputDir, "schema.graphql"), 0644, []byte(schema))).
-		File(llb.Mkfile(filepath.Join(outputDir, "operations.graphql"), 0644, []byte(operations)))
 }

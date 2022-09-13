@@ -16,8 +16,7 @@ func MergeLoadedSchemas(name string, schemas ...LoadedSchema) LoadedSchema {
 	staticSchemas := make([]StaticSchemaParams, len(schemas))
 	for i, s := range schemas {
 		staticSchemas[i] = StaticSchemaParams{
-			Schema:     s.Schema(),
-			Operations: s.Operations(),
+			Schema: s.Schema(),
 		}
 	}
 	return StaticSchema(mergeSchemas(name, staticSchemas...))
@@ -29,7 +28,6 @@ func MergeExecutableSchemas(name string, schemas ...ExecutableSchema) (Executabl
 		staticSchemas[i] = StaticSchemaParams{
 			Name:         s.Name(),
 			Schema:       s.Schema(),
-			Operations:   s.Operations(),
 			Resolvers:    s.Resolvers(),
 			Dependencies: s.Dependencies(),
 		}
@@ -83,12 +81,6 @@ func mergeSchemas(name string, schemas ...StaticSchemaParams) StaticSchemaParams
 		defs = append(defs, r.Schema)
 	}
 	merged.Schema = strings.Join(defs, "\n")
-
-	ops := []string{}
-	for _, r := range schemas {
-		ops = append(ops, r.Operations)
-	}
-	merged.Operations = strings.Join(ops, "\n")
 
 	return merged
 }
