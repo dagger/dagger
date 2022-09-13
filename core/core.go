@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/cloak/core/filesystem"
+	"github.com/dagger/cloak/core/service"
 	"github.com/dagger/cloak/project"
 	"github.com/dagger/cloak/router"
 	"github.com/dagger/cloak/secret"
@@ -46,6 +47,10 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		},
 		&execSchema{base, params.SSHAuthSockID},
 		&dockerBuildSchema{base},
+		&serviceSchema{
+			baseSchema: base,
+			svcs:       make(map[string]*service.Service),
+		},
 
 		&secretSchema{base},
 	)
