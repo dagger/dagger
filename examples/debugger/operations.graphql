@@ -1,0 +1,9 @@
+query Debug($fs: FSID!) {
+  core {
+    filesystem(id: $fs) {
+      debug {
+        session
+      }
+    }
+  }
+}

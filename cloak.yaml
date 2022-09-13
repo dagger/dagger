@@ -3,3 +3,4 @@ dependencies:
   - local: examples/alpine/cloak.yaml
   - local: examples/yarn/cloak.yaml
   - local: examples/netlify/go/cloak.yaml
+  - local: examples/debugger/cloak.yaml

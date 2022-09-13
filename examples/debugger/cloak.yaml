@@ -1,0 +1,4 @@
+name: debugger
+extensions:
+  - path: .
+    sdk: go
