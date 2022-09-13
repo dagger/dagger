@@ -7,7 +7,6 @@ import (
 type LoadedSchema interface {
 	Name() string
 	Schema() string
-	Operations() string
 }
 
 type ExecutableSchema interface {
@@ -37,7 +36,6 @@ func (ScalarResolver) _resolver() {}
 type StaticSchemaParams struct {
 	Name         string
 	Schema       string
-	Operations   string
 	Resolvers    Resolvers
 	Dependencies []ExecutableSchema
 }
@@ -58,10 +56,6 @@ func (s *staticSchema) Name() string {
 
 func (s *staticSchema) Schema() string {
 	return s.StaticSchemaParams.Schema
-}
-
-func (s *staticSchema) Operations() string {
-	return s.StaticSchemaParams.Operations
 }
 
 func (s *staticSchema) Resolvers() Resolvers {

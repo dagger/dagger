@@ -14,9 +14,6 @@ func TestMergeObjects(t *testing.T) {
 				fieldA: String
 			}
 			`,
-			Operations: `
-			query QueryA {}
-			`,
 			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
@@ -30,9 +27,6 @@ func TestMergeObjects(t *testing.T) {
 				fieldB: String
 			}
 			`,
-			Operations: `
-			query QueryB {}
-			`,
 			Resolvers: Resolvers{
 				"TypeB": ObjectResolver{
 					"fieldB": nil,
@@ -44,9 +38,6 @@ func TestMergeObjects(t *testing.T) {
 
 	require.Contains(t, merged.Schema(), "TypeA")
 	require.Contains(t, merged.Schema(), "TypeB")
-
-	require.Contains(t, merged.Operations(), "QueryA")
-	require.Contains(t, merged.Operations(), "QueryB")
 
 	require.Contains(t, merged.Resolvers(), "TypeA")
 	require.Contains(t, merged.Resolvers(), "TypeB")
@@ -68,7 +59,6 @@ func TestMergeFieldExtend(t *testing.T) {
 				fieldA: String
 			}
 			`,
-			Operations: ``,
 			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
@@ -82,7 +72,6 @@ func TestMergeFieldExtend(t *testing.T) {
 				fieldB: String
 			}
 			`,
-			Operations: ``,
 			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldB": nil,
@@ -107,7 +96,6 @@ func TestMergeFieldConflict(t *testing.T) {
 				fieldA: String
 			}
 			`,
-			Operations: ``,
 			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,
@@ -121,7 +109,6 @@ func TestMergeFieldConflict(t *testing.T) {
 				fieldA: String
 			}
 			`,
-			Operations: ``,
 			Resolvers: Resolvers{
 				"TypeA": ObjectResolver{
 					"fieldA": nil,

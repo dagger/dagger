@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/cloak/examples/netlify/go/gen/core"
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/sdk/go/dagger"
 
 	openAPIClient "github.com/go-openapi/runtime/client"
@@ -17,12 +17,17 @@ import (
 )
 
 func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
+	client, err := dagger.Client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Setup Auth
-	readSecretOutput, err := core.Secret(ctx, token)
+	tokenPlaintext, err := secret(ctx, client, token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret: %w", err)
 	}
-	ctx = netlifycontext.WithAuthInfo(ctx, openAPIClient.BearerToken(readSecretOutput.Core.Secret))
+	ctx = netlifycontext.WithAuthInfo(ctx, openAPIClient.BearerToken(tokenPlaintext))
 
 	// Get the site metadata
 	var site *netlifyModel.Site
@@ -77,4 +82,30 @@ func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *stri
 		URL:       deploy.URL,
 		DeployURL: deploy.DeployURL,
 	}, nil
+}
+
+func secret(ctx context.Context, client graphql.Client, id dagger.SecretID) (string, error) {
+	req := &graphql.Request{
+		Query: `
+query Secret ($id: SecretID!) {
+	core {
+		secret(id: $id)
+	}
+}
+`,
+		Variables: map[string]any{
+			"id": id,
+		},
+	}
+	resp := struct {
+		Core struct {
+			Secret string
+		}
+	}{}
+	err := client.MakeRequest(ctx, req, &graphql.Response{Data: &resp})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Core.Secret, nil
 }

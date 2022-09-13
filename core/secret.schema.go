@@ -59,21 +59,6 @@ extend type Core {
 `
 }
 
-func (s *secretSchema) Operations() string {
-	return `
-query Secret($id: SecretID!) {
-	core {
-		secret(id: $id)
-	}
-}
-query AddSecret($plaintext: String!) {
-	core {
-		addSecret(plaintext: $plaintext)
-	}
-}
-`
-}
-
 func (s *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,

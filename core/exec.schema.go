@@ -148,33 +148,6 @@ extend type Filesystem {
 	`
 }
 
-func (s *execSchema) Operations() string {
-	return `
-query Exec($fsid: FSID!, $input: ExecInput!) {
-	core {
-		filesystem(id: $fsid) {
-			exec(input: $input) {
-				fs {
-					id
-				}
-			}
-		}
-	}
-}
-query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
-	core {
-		filesystem(id: $fsid) {
-			exec(input: $input) {
-				mount(path: $getPath) {
-					id
-				}
-			}
-		}
-	}
-}
-	`
-}
-
 func (s *execSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{

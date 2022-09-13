@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/dagger/cloak/core/filesystem"
@@ -21,7 +20,6 @@ import (
 
 const (
 	schemaPath     = "/schema.graphql"
-	operationsPath = "/operations.graphql"
 	entrypointPath = "/entrypoint"
 
 	DaggerSockName = "dagger-sock"
@@ -37,7 +35,7 @@ const (
 	outputFile      = "/dagger.json"
 )
 
-// RemoteSchema holds the schema, operations and other configuration of an
+// RemoteSchema holds the schema and other configuration of an
 // extension, but has not yet been "compiled" with an SDK to an executable
 // extension. This allows obtaining the extension metadata without necessarily
 // being able to build it yet.
@@ -86,19 +84,8 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 		}
 		ext.Schema = string(sdl)
 
-		operations, err := contextFS.ReadFile(ctx, gw, filepath.Join(
-			filepath.Dir(configPath),
-			ext.Path,
-			operationsPath,
-		))
-		if err != nil && !isGatewayFileNotFound(err) {
-			return nil, err
-		}
-		ext.Operations = string(operations)
-
 		sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
-			Schema:     ext.Schema,
-			Operations: ext.Operations,
+			Schema: ext.Schema,
 		})
 	}
 	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
@@ -345,13 +332,4 @@ func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesyst
 		}
 	}
 	return fsPaths
-}
-
-func isGatewayFileNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	// TODO:(sipsma) the underlying error type doesn't appear to be passed over grpc
-	// from buildkit, so we have to resort to nasty substring checking, need a better way
-	return strings.Contains(err.Error(), "no such file or directory")
 }

@@ -21,8 +21,7 @@ type Extension struct {
 	SDK  string `yaml:"sdk"`
 
 	// internal-only fields for tracking state
-	Schema     string `yaml:"-"`
-	Operations string `yaml:"-"`
+	Schema string `yaml:"-"`
 }
 
 type Dependency struct {
