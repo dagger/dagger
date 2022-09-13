@@ -15,14 +15,16 @@ import (
 type Router struct {
 	schemas map[string]ExecutableSchema
 
-	s *graphql.Schema
-	h *handler.Handler
-	l sync.RWMutex
+	s      *graphql.Schema
+	h      *handler.Handler
+	routes map[string]http.HandlerFunc
+	l      sync.RWMutex
 }
 
 func New() *Router {
 	r := &Router{
 		schemas: make(map[string]ExecutableSchema),
+		routes:  make(map[string]http.HandlerFunc),
 	}
 
 	if err := r.Add(&rootSchema{}); err != nil {
@@ -87,11 +89,14 @@ func (r *Router) Get(name string) ExecutableSchema {
 	return r.schemas[name]
 }
 
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.l.RLock()
-	h := r.h
-	r.l.RUnlock()
+func (r *Router) Handle(pattern string, handler http.HandlerFunc) {
+	r.l.Lock()
+	defer r.l.Unlock()
 
+	r.routes[pattern] = handler
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
 			msg := "Internal Server Error"
@@ -106,8 +111,16 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	mux := http.NewServeMux()
+
+	r.l.RLock()
+	h := r.h
 	mux.Handle("/query", h)
 	mux.Handle("/", playground.Handler("Cloak Dev", "/query"))
+	for pattern, handler := range r.routes {
+		mux.Handle(pattern, handler)
+	}
+	r.l.RUnlock()
+
 	mux.ServeHTTP(w, req)
 }
 
