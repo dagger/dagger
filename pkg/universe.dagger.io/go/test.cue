@@ -7,13 +7,17 @@ package go
 	// Packages to test
 	packages: [...string] | *[package]
 
+	// Build tags to use for testing
+	tags: *"" | string
+
 	#Container & {
 		command: {
 			name: "go"
 			args: packages
 			flags: {
-				test: true
-				"-v": true
+				test:    true
+				"-v":    true
+				"-tags": tags
 			}
 		}
 	}
