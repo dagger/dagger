@@ -8,6 +8,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core/service"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
 	"go.dagger.io/dagger/secret"
@@ -47,6 +48,10 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		},
 		&execSchema{base},
 		&dockerBuildSchema{base},
+		&serviceSchema{
+			baseSchema: base,
+			svcs:       make(map[string]*service.Service),
+		},
 		&secretSchema{base},
 	)
 }
