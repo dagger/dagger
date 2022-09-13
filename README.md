@@ -27,8 +27,6 @@ We appreciate any participation in the project, including:
 
 ## Documentation
 
-Docs have a website (TODO: host and provide URL. Website private for those with access to [the dagger/cloak repo](https://github.com/dagger/cloak)) that you can run locally using [these instructions](docs/_README.md). The links in the docs assume you are viewing via the website.
-
 - [Introduction](docs/unxpq-introduction.mdx)
 - [Getting Started](docs/guides/2ku9n-getting_started.md)
 - [Proposal for new core API](./api/README.md) ([calling for feedback!](https://github.com/dagger/cloak/pull/163))
