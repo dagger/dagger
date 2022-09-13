@@ -19,12 +19,20 @@ func (s RemoteSchema) pythonRuntime(ctx context.Context, subpath string) (*files
 	if err != nil {
 		return nil, err
 	}
+	ctrSrcPath := filepath.Join(workdir, filepath.Dir(s.configPath), subpath)
+	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
 	return filesystem.FromState(ctx,
-		llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(s.gw)).
+		llb.Merge([]llb.State{
+			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(s.gw)).
+				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
+			llb.Scratch().
+				File(llb.Copy(contextState, "/", "/src")),
+		}).
+			// FIXME(samalba): Install python dependencies not as root
 			Run(llb.Shlex(
 				fmt.Sprintf(
-					`pip install --cache-dir=/root/.cache/pipcache -r %s`,
-					filepath.Join(workdir, filepath.Dir(s.configPath), subpath, "requirements.txt"),
+					`sh -c 'test -f %q && python3 -m pip install --cache-dir=/root/.cache/pipcache -r %q || true'`,
+					requirementsfile, requirementsfile,
 				)),
 				llb.Dir(workdir),
 				llb.AddMount("/src", contextState),
@@ -35,7 +43,15 @@ func (s RemoteSchema) pythonRuntime(ctx context.Context, subpath string) (*files
 				),
 				withSSHAuthSock(s.sshAuthSockID, "/ssh-agent.sock"),
 				addSSHKnownHosts,
-			).Root(),
+			).
+			File(llb.Mkfile(
+				"/entrypoint",
+				0755,
+				[]byte(fmt.Sprintf(
+					"#!/bin/sh\nset -e; cd %q && python3 main.py",
+					ctrSrcPath,
+				)),
+			)),
 		s.platform,
 	)
 }
