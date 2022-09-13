@@ -29,4 +29,4 @@ venv
 __pycache__
 
 # Built Binary
-cloak
+/cloak
