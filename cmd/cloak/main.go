@@ -27,6 +27,7 @@ func init() {
 		doCmd,
 		generateCmd,
 		devCmd,
+		attachCmd,
 		versionCmd,
 	)
 
