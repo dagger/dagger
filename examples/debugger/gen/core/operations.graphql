@@ -1,0 +1,115 @@
+
+query Image($ref: String!) {
+	core {
+		image(ref: $ref) {
+			id
+		}
+	}
+}
+query Git($remote: String!, $ref: String) {
+	core {
+		git(remote: $remote, ref: $ref) {
+			id
+		}
+	}
+}
+query Workdir() {
+	host {
+		workdir {
+			read {
+				id
+			}
+		}
+	}
+}
+query LocalDir($id: String!) {
+	host {
+		dir(id: $id) {
+			read {
+				id
+			}
+		}
+	}
+}
+query WriteWorkdir($contents: FSID!, $path: String) {
+	host {
+		workdir {
+			write(contents: $contents, path: $path)
+		}
+	}
+}
+
+
+query ReadFile($fs: FSID!, $path: String!, $lines: Int) {
+	core {
+		filesystem(id: $fs) {
+			file(path: $path, lines: $lines)
+		}
+	}
+}
+query Copy($fs: FSID!, $from: FSID!, $srcPath: String, $destPath: String, $include: [String!], $exclude: [String!]) {
+	core {
+		filesystem(id: $fs) {
+			copy(from: $from, srcPath: $srcPath, destPath: $destPath, include: $include, exclude: $exclude) {
+				id
+			}
+		}
+	}
+}
+query PushImage($fs: FSID!, $ref: String!) {
+	core {
+		filesystem(id: $fs) {
+			pushImage(ref: $ref)
+		}
+	}
+}
+
+
+
+query Exec($fsid: FSID!, $input: ExecInput!) {
+	core {
+		filesystem(id: $fsid) {
+			exec(input: $input) {
+				fs {
+					id
+				}
+			}
+		}
+	}
+}
+query ExecGetMount($fsid: FSID!, $input: ExecInput!, $getPath: String!) {
+	core {
+		filesystem(id: $fsid) {
+			exec(input: $input) {
+				mount(path: $getPath) {
+					id
+				}
+			}
+		}
+	}
+}
+	
+
+
+
+query Dockerfile($context: FSID!, $dockerfileName: String!) {
+  core {
+    filesystem(id: $context) {
+      dockerbuild(dockerfile: $dockerfileName) {
+        id
+      }
+    }
+  }
+}
+	
+
+query Secret($id: SecretID!) {
+	core {
+		secret(id: $id)
+	}
+}
+query AddSecret($plaintext: String!) {
+	core {
+		addSecret(plaintext: $plaintext)
+	}
+}

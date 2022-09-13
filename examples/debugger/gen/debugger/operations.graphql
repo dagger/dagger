@@ -1,0 +1,16 @@
+query Debug($fs: FSID!) {
+  core {
+    image(ref: "alpine") {
+      start(
+        input: {
+          args: ["sh"]
+          mounts: [{ path: "/mnt", fs: $fs }]
+          workdir: "/mnt"
+        }
+      ) {
+        id
+      }
+    }
+  }
+}
+
