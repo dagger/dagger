@@ -27,7 +27,7 @@ We appreciate any participation in the project, including:
 
 ## Documentation
 
-- [Introduction](docs/unxpq-introduction.mdx)
+- [Introduction](docs/unxpq-introduction.md)
 - [Getting Started](docs/guides/2ku9n-getting_started.md)
 - [Proposal for new core API](./api/README.md) ([calling for feedback!](https://github.com/dagger/cloak/pull/163))
 - [Writing Extensions](docs/guides/bnzm7-writing_extensions.md)
