@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
@@ -55,6 +56,12 @@ extend type Core {
 
 	"Add a secret"
 	addSecret(plaintext: String!): SecretID!
+
+	secrets: Secrets!
+}
+
+type Secrets {
+	env(name: String!): String!
 }
 `
 }
@@ -65,6 +72,10 @@ func (s *secretSchema) Resolvers() router.Resolvers {
 		"Core": router.ObjectResolver{
 			"secret":    s.secret,
 			"addSecret": s.addSecret,
+			"secrets":   s.secrets,
+		},
+		"Secrets": router.ObjectResolver{
+			"env": s.env,
 		},
 	}
 }
@@ -85,4 +96,12 @@ func (s *secretSchema) secret(p graphql.ResolveParams) (any, error) {
 func (s *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
 	plaintext := p.Args["plaintext"].(string)
 	return s.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
+}
+
+func (s *secretSchema) secrets(p graphql.ResolveParams) (any, error) {
+	return struct{}{}, nil
+}
+
+func (s *secretSchema) env(p graphql.ResolveParams) (any, error) {
+	return os.Getenv(p.Args["name"].(string)), nil
 }

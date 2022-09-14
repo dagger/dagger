@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -62,6 +63,20 @@ func (r *Router) Add(schema ExecutableSchema) error {
 		Schema: s,
 	})
 	return nil
+}
+
+func (r *Router) Do(ctx context.Context, query string, variables map[string]any) *graphql.Result {
+	r.l.RLock()
+	schema := *r.s
+	r.l.RUnlock()
+
+	params := graphql.Params{
+		Context:        ctx,
+		Schema:         schema,
+		RequestString:  query,
+		VariableValues: variables,
+	}
+	return graphql.Do(params)
 }
 
 func (r *Router) add(schema ExecutableSchema) {
