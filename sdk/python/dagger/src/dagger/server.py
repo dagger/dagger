@@ -1,43 +1,9 @@
 import sys
 import json
 import logging
-from typing import Any, NewType
+from typing import Any
 
-import strawberry
-
-FSID = strawberry.scalar(
-    NewType('FSID', str),
-    serialize=lambda v: v,
-    parse_value=lambda v: v,
-)
-
-SecretID = strawberry.scalar(
-    NewType('SecretID', str),
-    serialize=lambda v: v,
-    parse_value=lambda v: v,
-)
-
-Filesystem = NewType('Filesystem', object)
-Exec = NewType('Exec', object)
-
-
-@strawberry.type
-class Filesystem:
-    id: FSID
-    exec: Exec
-    dockerbuild: Filesystem
-    file: str
-
-
-@strawberry.type
-class Exec:
-    fs: Filesystem
-    stdout: str
-    stderr: str
-    exitcode: int
-    mount: Filesystem
-
-
+# FIXME: we should have a custom logger instead of using the global one
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 
@@ -86,7 +52,7 @@ class Server:
 
     def run(self) -> None:
         inputs = self._read_inputs()
-        logging.debug('inputs <- {}'.format(inputs))
+        logging.debug('sdk inputs <- {}'.format(inputs))
         result = self._call_resolver(inputs)
-        logging.debug('outputs -> {}'.format(inputs))
+        logging.debug('sdk outputs -> {}'.format(inputs))
         self._write_outputs(result)
