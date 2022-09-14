@@ -14,7 +14,6 @@ import (
 type Project struct {
 	Name         string
 	Schema       string
-	Operations   string
 	Dependencies []*Project
 	Scripts      []*project.Script
 	Extensions   []*project.Extension
@@ -45,9 +44,6 @@ type Project {
 	"schema provided by the project"
 	schema: String
 
-	"operations provided by the project"
-	operations: String
-
 	"extensions in this project"
 	extensions: [Extension!]!
 
@@ -72,9 +68,6 @@ type Extension {
 	"schema contributed to the project by this extension"
 	schema: String!
 
-	"operations contributed to the project by this extension (if any)"
-	operations: String
-
 	"sdk used to generate code for and/or execute this extension"
 	sdk: String!
 }
@@ -98,10 +91,6 @@ extend type Core {
 	project(name: String!): Project!
 }
 `
-}
-
-func (s *projectSchema) Operations() string {
-	return ""
 }
 
 func (s *projectSchema) Resolvers() router.Resolvers {
@@ -167,15 +156,14 @@ func (s *projectSchema) project(p graphql.ResolveParams) (any, error) {
 func (s *projectSchema) generatedCode(p graphql.ResolveParams) (any, error) {
 	obj := p.Source.(*Project)
 	coreSchema := s.router.Get("core")
-	return obj.schema.Generate(p.Context, coreSchema.Schema(), coreSchema.Operations())
+	return obj.schema.Generate(p.Context, coreSchema.Schema())
 }
 
 // TODO:(sipsma) guard against infinite recursion
 func routerSchemaToProject(schema router.ExecutableSchema) *Project {
 	ext := &Project{
-		Name:       schema.Name(),
-		Schema:     schema.Schema(),
-		Operations: schema.Operations(),
+		Name:   schema.Name(),
+		Schema: schema.Schema(),
 		//FIXME:(sipsma) Scripts, Extensions are not exposed on router.ExecutableSchema yet
 	}
 	for _, dep := range schema.Dependencies() {
@@ -189,7 +177,6 @@ func remoteSchemaToProject(schema *project.RemoteSchema) *Project {
 	ext := &Project{
 		Name:       schema.Name(),
 		Schema:     schema.Schema(),
-		Operations: schema.Operations(),
 		Scripts:    schema.Scripts(),
 		Extensions: schema.Extensions(),
 		schema:     schema,

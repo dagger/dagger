@@ -7,6 +7,7 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/cloak/engine"
 	"github.com/dagger/cloak/internal/testutil"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -172,15 +173,19 @@ func TestCoreExec(t *testing.T) {
 func TestCoreImageExport(t *testing.T) {
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.
+
+	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
+	randomID := identity.NewID()
 	err := engine.Start(context.Background(), nil, func(ctx engine.Context) error {
 		go func() {
 			err := ctx.Client.MakeRequest(ctx,
 				&graphql.Request{
-					Query: `query RunRegistry {
+					Query: `query RunRegistry($rand: String!) {
 						core {
 							image(ref: "registry:2") {
 								exec(input: {
 									args: ["/entrypoint.sh", "/etc/docker/registry/config.yml"]
+									env: [{name: "RANDOM", value: $rand}]
 								}) {
 									stdout
 									stderr
@@ -188,6 +193,9 @@ func TestCoreImageExport(t *testing.T) {
 							}
 						}
 					}`,
+					Variables: map[string]any{
+						"rand": randomID,
+					},
 				},
 				&graphql.Response{Data: new(map[string]any)},
 			)
@@ -198,17 +206,21 @@ func TestCoreImageExport(t *testing.T) {
 
 		err := ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
-				Query: `query WaitForRegistry {
+				Query: `query WaitForRegistry($rand: String!) {
 					core {
 						image(ref: "alpine:3.16.2") {
 							exec(input: {
 								args: ["sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"]
+								env: [{name: "RANDOM", value: $rand}]
 							}) {
 								stdout
 							}
 						}
 					}
 				}`,
+				Variables: map[string]any{
+					"rand": randomID,
+				},
 			},
 			&graphql.Response{Data: new(map[string]any)},
 		)

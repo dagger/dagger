@@ -33,12 +33,12 @@ func (s RemoteSchema) Runtime(ctx context.Context, ext *Extension) (*filesystem.
 }
 
 // return the project filesystem plus any generated code from the SDKs of the extensions and scripts in the project
-func (s RemoteSchema) Generate(ctx context.Context, coreSchema, coreOperations string) (*filesystem.Filesystem, error) {
+func (s RemoteSchema) Generate(ctx context.Context, coreSchema string) (*filesystem.Filesystem, error) {
 	var generatedFSes []*filesystem.Filesystem
 	for _, ext := range s.extensions {
 		switch ext.SDK {
 		case "go":
-			generatedFS, err := s.goGenerate(ctx, ext.Path, ext.Schema, coreSchema, coreOperations)
+			generatedFS, err := s.goGenerate(ctx, ext.Path, ext.Schema, coreSchema)
 			if err != nil {
 				return nil, err
 			}
@@ -54,7 +54,7 @@ func (s RemoteSchema) Generate(ctx context.Context, coreSchema, coreOperations s
 	for _, script := range s.scripts {
 		switch script.SDK {
 		case "go":
-			generatedFS, err := s.goGenerate(ctx, script.Path, "", coreSchema, coreOperations)
+			generatedFS, err := s.goGenerate(ctx, script.Path, "", coreSchema)
 			if err != nil {
 				return nil, err
 			}

@@ -44,7 +44,6 @@ type Config struct {
 type Context struct {
 	context.Context
 	Client     graphql.Client
-	Operations string
 	LocalDirs  map[string]dagger.FSID
 	Project    *core.Project
 	Workdir    dagger.FSID
@@ -177,8 +176,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			if err != nil {
 				return nil, err
 			}
-
-			engineCtx.Operations = engineCtx.Project.Operations
 
 			if fn == nil {
 				return nil, nil
@@ -319,11 +316,9 @@ func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, 
 						loadProject(configPath: $configPath) {
 							name
 							schema
-							operations
 							extensions {
 								path
 								schema
-								operations
 								sdk
 							}
 							scripts {
@@ -333,7 +328,6 @@ func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, 
 							dependencies {
 								name
 								schema
-								operations
 							}
 							%s
 						}
