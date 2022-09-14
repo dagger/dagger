@@ -1,20 +1,14 @@
-from typing import Any
-
 from gql.transport import requests
-from gql import Client as gqlClient, gql
+from gql import Client as gqlClient
 
 
-class Client:
+class Client(gqlClient):
 
-    def __init__(self, host: str, port: int):
-        self._client = None
+    def __init__(self, host: str = "localhost", port: int = "8080"):
         transport = requests.RequestsHTTPTransport(
-            url="http://{}:{}/".format(host, port),
+            url='http://{}:{}/query'.format(host, port),
             timeout=30,
             retries=10,
         )
-        self._client = gqlClient(transport=transport,
-                                 fetch_schema_from_transport=True)
-
-    def do(self, query: str) -> dict[str, Any]:
-        return self._client.execute(gql(query))
+        super().__init__(transport=transport,
+                         fetch_schema_from_transport=True)

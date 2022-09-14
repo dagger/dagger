@@ -19,6 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "gql[requests] >= 3.4.0",
+    "strawberry-graphql >= 0.130.3",
 ]
 
 [project.urls]
