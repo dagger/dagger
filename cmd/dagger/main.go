@@ -29,7 +29,13 @@ func init() {
 		versionCmd,
 		clientGenCmd,
 		projectCmd,
+		buildkitdStdioCmd,
 	)
+
+	// BuildkitdCmd is only set on linux
+	if buildkitdCmd != nil {
+		rootCmd.AddCommand(buildkitdCmd)
+	}
 
 	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
 	doCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")

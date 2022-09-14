@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"runtime"
-	"runtime/debug"
 
 	"github.com/spf13/cobra"
+	ver "go.dagger.io/dagger/internal/version"
 )
 
 const (
@@ -27,24 +27,12 @@ var versionCmd = &cobra.Command{
 // version holds the complete version number. Filled in at linking time.
 var version = developmentVersion
 
-// revision returns the VCS revision being used to build or empty string
-// if none.
-func revision() string {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
-	}
-	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" {
-			return s.Value[:9]
-		}
-	}
-
-	return ""
-}
-
 func short() string {
-	return fmt.Sprintf("dagger %s (%s)", version, revision())
+	rev, err := ver.Revision()
+	if err != nil {
+		rev = ""
+	}
+	return fmt.Sprintf("cloak %s (%s)", version, rev)
 }
 
 func long() string {

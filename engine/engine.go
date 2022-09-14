@@ -87,6 +87,10 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		sshAuthSockID = sshAuthSockEnv
 		socketProviders[sshAuthSockID] = sshAuthHandler
 	}
+	// https: //pkg.go.dev/github.com/docker/cli@v20.10.17+incompatible/cli/config?utm_source=gopls#LoadDefaultConfigFile
+	// Fix to be included in next Buildkit release:
+	// config := config.LoadDefaultConfigFile(os.Stderr)
+	// authprovider.NewDockerAuthProvider(config),
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
