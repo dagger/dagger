@@ -5,34 +5,34 @@ import (
 )
 
 type Config struct {
-	Name         string        `yaml:"name"`
-	Dependencies []*Dependency `yaml:"dependencies,omitempty"`
-	Scripts      []*Script     `yaml:"scripts,omitempty"`
-	Extensions   []*Extension  `yaml:"extensions,omitempty"`
+	Name         string        `yaml:"name",json:"name"`
+	Dependencies []*Dependency `yaml:"dependencies,omitempty",json:"dependencies"`
+	Scripts      []*Script     `yaml:"scripts,omitempty",json:"scripts"`
+	Extensions   []*Extension  `yaml:"extensions,omitempty",json:"extensions"`
 }
 
 type Script struct {
-	Path string `yaml:"path"`
-	SDK  string `yaml:"sdk"`
+	Path string `yaml:"path",json:"path"`
+	SDK  string `yaml:"sdk",json:"sdk"`
 }
 
 type Extension struct {
-	Path string `yaml:"path"`
-	SDK  string `yaml:"sdk"`
+	Path string `yaml:"path",json:"path"`
+	SDK  string `yaml:"sdk",json:"sdk"`
 
 	// internal-only fields for tracking state
 	Schema string `yaml:"-"`
 }
 
 type Dependency struct {
-	Local string     `yaml:"local,omitempty"`
-	Git   *GitSource `yaml:"git,omitempty"`
+	Local string     `yaml:"local,omitempty",json:"local"`
+	Git   *GitSource `yaml:"git,omitempty",json:"git"`
 }
 
 type GitSource struct {
-	Remote string `yaml:"remote,omitempty"`
-	Ref    string `yaml:"ref,omitempty"`
-	Path   string `yaml:"path,omitempty"`
+	Remote string `yaml:"remote,omitempty",json:"remote"`
+	Ref    string `yaml:"ref,omitempty",json:"ref"`
+	Path   string `yaml:"path,omitempty",json:"path"`
 }
 
 func ParseConfig(data []byte) (*Config, error) {

@@ -74,15 +74,17 @@ func (s *secretSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (s *secretSchema) secret(p graphql.ResolveParams) (any, error) {
+	parent := router.Parent[struct{}](p.Source)
 	id := p.Args["id"].(string)
 	plaintext, err := s.secretStore.GetSecret(p.Context, id)
 	if err != nil {
 		return nil, fmt.Errorf("secret %s: %w", id, err)
 	}
-	return string(plaintext), nil
+	return router.WithVal(parent, string(plaintext)), nil
 }
 
 func (s *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
+	parent := router.Parent[struct{}](p.Source)
 	plaintext := p.Args["plaintext"].(string)
-	return s.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
+	return router.WithVal(parent, s.secretStore.AddSecret(p.Context, []byte(plaintext))), nil
 }

@@ -12,11 +12,11 @@ import (
 )
 
 type Project struct {
-	Name         string
-	Schema       string
-	Dependencies []*Project
-	Scripts      []*project.Script
-	Extensions   []*project.Extension
+	Name         string                `json:"name"`
+	Schema       string                `json:"schema"`
+	Dependencies []*Project            `json:"dependencies"`
+	Scripts      []*project.Script     `json:"scripts"`
+	Extensions   []*project.Extension  `json:"extensions"`
 	schema       *project.RemoteSchema // internal-only, for convenience in `install` resolver
 }
 
@@ -45,10 +45,10 @@ type Project {
 	schema: String
 
 	"extensions in this project"
-	extensions: [Extension!]!
+	extensions: [Extension!]
 
 	"scripts in this project"
-	scripts: [Script!]!
+	scripts: [Script!]
 
 	"other projects with schema this project depends on"
 	dependencies: [Project!]
@@ -113,9 +113,9 @@ func (s *projectSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (s *projectSchema) install(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Project)
+	parent := router.Parent[*Project](p.Source)
 
-	executableSchema, err := obj.schema.Compile(p.Context, s.compiledSchemas, &s.l, &s.sf)
+	executableSchema, err := parent.Val.schema.Compile(p.Context, s.compiledSchemas, &s.l, &s.sf)
 	if err != nil {
 		return nil, err
 	}
@@ -128,21 +128,23 @@ func (s *projectSchema) install(p graphql.ResolveParams) (any, error) {
 }
 
 func (s *projectSchema) loadProject(p graphql.ResolveParams) (any, error) {
-	obj, err := filesystem.FromSource(p.Source)
+	parent := router.Parent[*filesystem.Filesystem](p.Source)
+	obj, err := filesystem.FromSource(parent.Val)
 	if err != nil {
 		return nil, err
 	}
 
 	configPath := p.Args["configPath"].(string)
-	schema, err := project.Load(p.Context, s.gw, s.platform, obj, configPath, s.sshAuthSockID)
+	schema, err := project.Load(p.Context, s.gw, parent.Platform, obj, configPath, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
 
-	return remoteSchemaToProject(schema), nil
+	return router.WithVal(parent, remoteSchemaToProject(schema)), nil
 }
 
 func (s *projectSchema) project(p graphql.ResolveParams) (any, error) {
+	parent := router.Parent[struct{}](p.Source)
 	name := p.Args["name"].(string)
 
 	schema := s.router.Get(name)
@@ -150,13 +152,13 @@ func (s *projectSchema) project(p graphql.ResolveParams) (any, error) {
 		return nil, fmt.Errorf("project %q not found", name)
 	}
 
-	return routerSchemaToProject(schema), nil
+	return router.WithVal(parent, routerSchemaToProject(schema)), nil
 }
 
 func (s *projectSchema) generatedCode(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Project)
+	parent := router.Parent[*Project](p.Source)
 	coreSchema := s.router.Get("core")
-	return obj.schema.Generate(p.Context, coreSchema.Schema())
+	return parent.Val.schema.Generate(p.Context, coreSchema.Schema())
 }
 
 // TODO:(sipsma) guard against infinite recursion

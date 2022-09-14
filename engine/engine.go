@@ -62,7 +62,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
-	platform, err := detectPlatform(ctx, c)
+	defaultPlatform, err := detectPlatform(ctx, c)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts.ConfigPath = "./" + cloakYamlName
 	}
 
-	router := router.New()
+	router := router.New(*defaultPlatform)
 	secretStore := secret.NewStore()
 
 	socketProviders := MergedSocketProviders{
@@ -140,7 +140,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				BKClient:      c,
 				SolveOpts:     solveOpts,
 				SolveCh:       ch,
-				Platform:      *platform,
 			})
 			if err != nil {
 				return nil, err

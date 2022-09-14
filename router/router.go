@@ -1,6 +1,8 @@
 package router
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -10,19 +12,22 @@ import (
 	"github.com/dagger/cloak/playground"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type Router struct {
-	schemas map[string]ExecutableSchema
+	schemas         map[string]ExecutableSchema
+	defaultPlatform specs.Platform
 
 	s *graphql.Schema
 	h *handler.Handler
 	l sync.RWMutex
 }
 
-func New() *Router {
+func New(defaultPlatform specs.Platform) *Router {
 	r := &Router{
-		schemas: make(map[string]ExecutableSchema),
+		schemas:         make(map[string]ExecutableSchema),
+		defaultPlatform: defaultPlatform,
 	}
 
 	if err := r.Add(&rootSchema{}); err != nil {
@@ -60,8 +65,69 @@ func (r *Router) Add(schema ExecutableSchema) error {
 	r.s = s
 	r.h = handler.New(&handler.Config{
 		Schema: s,
+		RootObjectFn: func(ctx context.Context, req *http.Request) map[string]any {
+			return map[string]any{
+				// FIXME: make less ugly somehow (see NOTE below)
+				"__p": ParentState[struct{}]{
+					Platform: r.defaultPlatform,
+				},
+			}
+		},
 	})
 	return nil
+}
+
+type ParentState[T any] struct {
+	Platform specs.Platform
+	Val      T
+}
+
+func (p ParentState[T]) Resolve(params graphql.ResolveParams) (any, error) {
+	m := make(map[string]any)
+	bytes, err := json.Marshal(p.Val)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(bytes, &m); err != nil {
+		return nil, err
+	}
+	path := params.Info.Path.AsArray()
+	k := path[len(path)-1].(string)
+	return m[k], nil
+}
+
+func (p ParentState[T]) MarshalJSON() ([]byte, error) {
+	bytes, err := json.Marshal(p.Val)
+	if err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
+func (p *ParentState[T]) UnmarshalJSON(b []byte) error {
+	return json.Unmarshal(b, &p.Val)
+}
+
+func WithVal[T, V any](s ParentState[T], v V) ParentState[V] {
+	return ParentState[V]{
+		Platform: s.Platform,
+		Val:      v,
+	}
+}
+
+func Parent[T any](obj any) ParentState[T] {
+	// NOTE:	the graphql-go interface is inconsistent in that the handler forces root object to be map[string]interface, but every resolver (and the internal implementation of ExecuteParams.Root) is any...
+	m, ok := obj.(map[string]any)
+	if ok {
+		// FIXME: make less ugly somehow (NOTE above)
+		obj = m["__p"]
+	}
+	p, ok := obj.(ParentState[T])
+	if !ok {
+		// FIXME:?
+		panic("invalid parent state")
+	}
+	return p
 }
 
 func (r *Router) add(schema ExecutableSchema) {

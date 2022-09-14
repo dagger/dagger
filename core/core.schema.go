@@ -41,6 +41,8 @@ type Core {
 
 	"Fetch a git repository"
 	git(remote: String!, ref: String): Filesystem!
+
+	pushMultiplatformImage(ref: String!, filesystems: [FSID!]!): Boolean!
 }
 
 "Interactions with the user's host filesystem"
@@ -72,6 +74,8 @@ func (r *coreSchema) Resolvers() router.Resolvers {
 		"Core": router.ObjectResolver{
 			"image": r.image,
 			"git":   r.git,
+			// FIXME: need to find a better place to put this (a filesystem like type that bundle multiple platforms?)
+			"pushMultiplatformImage": r.pushMultiplatformImage,
 		},
 		"Host": router.ObjectResolver{
 			"workdir": r.workdir,
@@ -89,21 +93,57 @@ func (r *coreSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (r *coreSchema) core(p graphql.ResolveParams) (any, error) {
-	return struct{}{}, nil
+	return router.Parent[struct{}](p.Source), nil
 }
 
 func (r *coreSchema) host(p graphql.ResolveParams) (any, error) {
-	return struct{}{}, nil
+	return router.Parent[struct{}](p.Source), nil
+}
+
+func (r *coreSchema) pushMultiplatformImage(p graphql.ResolveParams) (any, error) {
+	ref, _ := p.Args["ref"].(string)
+	if ref == "" {
+		return nil, fmt.Errorf("ref is required for pushImage")
+	}
+
+	rawFilesystems, _ := p.Args["filesystems"].([]any)
+	var filesystems []*filesystem.Filesystem
+	for _, raw := range rawFilesystems {
+		fsid, ok := raw.(filesystem.FSID)
+		if !ok {
+			return nil, fmt.Errorf("invalid filesystem: %v", raw)
+		}
+		fs := &filesystem.Filesystem{ID: fsid}
+		filesystems = append(filesystems, fs)
+	}
+
+	if err := r.ExportMultplatformImage(p.Context, filesystems, bkclient.ExportEntry{
+		Type: bkclient.ExporterImage,
+		Attrs: map[string]string{
+			"name": ref,
+			"push": "true",
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return true, nil
 }
 
 func (r *coreSchema) image(p graphql.ResolveParams) (any, error) {
+	parent := router.Parent[struct{}](p.Source)
 	ref := p.Args["ref"].(string)
 
 	st := llb.Image(ref)
-	return r.Solve(p.Context, st)
+	fs, err := r.Solve(p.Context, st, parent.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return router.WithVal(parent, fs), nil
 }
 
 func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
+	// TODO:(sipsma) you could wrap all these methods above so they have a type that's actually nice and skips all the parent boilerplate?
+	parent := router.Parent[struct{}](p.Source)
 	remote := p.Args["remote"].(string)
 	ref, _ := p.Args["ref"].(string)
 
@@ -112,7 +152,11 @@ func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
 		opts = append(opts, llb.MountSSHSock(r.sshAuthSockID))
 	}
 	st := llb.Git(remote, ref, opts...)
-	return r.Solve(p.Context, st)
+	fs, err := r.Solve(p.Context, st, parent.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return router.WithVal(parent, fs), nil
 }
 
 type localDir struct {
@@ -120,33 +164,38 @@ type localDir struct {
 }
 
 func (r *coreSchema) workdir(p graphql.ResolveParams) (any, error) {
-	return localDir{r.workdirID}, nil
+	parent := router.Parent[struct{}](p.Source)
+	return router.WithVal(parent, localDir{r.workdirID}), nil
 }
 
 func (r *coreSchema) dir(p graphql.ResolveParams) (any, error) {
+	parent := router.Parent[struct{}](p.Source)
 	id := p.Args["id"].(string)
-	return localDir{id}, nil
+	return router.WithVal(parent, localDir{id}), nil
 }
 
 func (r *coreSchema) localDirRead(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(localDir)
+	parent := router.Parent[localDir](p.Source)
 
 	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
 	// which makes it unable to reused, which in turn creates cache invalidations
 	// TODO: this should be optional, the above issue can also be avoided w/ readonly
 	// mount when possible
 	st := llb.Scratch().File(llb.Copy(llb.Local(
-		obj.ID,
+		parent.Val.ID,
 		// TODO: better shared key hint?
-		llb.SharedKeyHint(obj.ID),
+		llb.SharedKeyHint(parent.Val.ID),
 		// FIXME: should not be hardcoded
 		llb.ExcludePatterns([]string{"**/node_modules"}),
 	), "/", "/"))
 
-	return r.Solve(p.Context, st, llb.LocalUniqueID(obj.ID))
+	fs, err := r.Solve(p.Context, st, parent.Platform, llb.LocalUniqueID(parent.Val.ID))
+	if err != nil {
+		return nil, err
+	}
+	return router.WithVal(parent, fs), nil
 }
 
-// FIXME:(sipsma) have to make a new session to do a local export, need either gw support for exports or actually working session sharing to keep it all in the same session
 func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
 	fsid := p.Args["contents"].(filesystem.FSID)
 	fs := filesystem.Filesystem{ID: fsid}

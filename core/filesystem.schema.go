@@ -106,12 +106,30 @@ func (s *filesystemSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
+// TODO:
+/*
+func (s *filesystemSchema) id(p graphql.ResolveParams) (any, error) {
+	m := make(map[string]any)
+	bytes, err := json.Marshal(p.Source)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(bytes, &m); err != nil {
+		return nil, err
+	}
+	return m["id"], nil
+}
+*/
+
 func (s *filesystemSchema) filesystem(p graphql.ResolveParams) (any, error) {
-	return filesystem.New(p.Args["id"].(filesystem.FSID)), nil
+	parent := router.Parent[struct{}](p.Source)
+	fs := filesystem.New(p.Args["id"].(filesystem.FSID))
+	return router.WithVal(parent, fs), nil
 }
 
 func (s *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
-	obj, err := filesystem.FromSource(p.Source)
+	parent := router.Parent[any](p.Source)
+	obj, err := filesystem.FromSource(parent.Val)
 	if err != nil {
 		return nil, err
 	}
@@ -123,11 +141,12 @@ func (s *filesystemSchema) file(p graphql.ResolveParams) (any, error) {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	return truncate(string(output), p.Args), nil
+	return router.WithVal(parent, truncate(string(output), p.Args)), nil
 }
 
 func (s *filesystemSchema) copy(p graphql.ResolveParams) (any, error) {
-	obj, err := filesystem.FromSource(p.Source)
+	parent := router.Parent[any](p.Source)
+	obj, err := filesystem.FromSource(parent.Val)
 	if err != nil {
 		return nil, err
 	}
@@ -155,15 +174,16 @@ func (s *filesystemSchema) copy(p graphql.ResolveParams) (any, error) {
 		ExcludePatterns:     exclude,
 	}))
 
-	fs, err := s.Solve(p.Context, st)
+	fs, err := s.Solve(p.Context, st, parent.Platform)
 	if err != nil {
 		return nil, err
 	}
-	return fs, err
+	return router.WithVal(parent, fs), nil
 }
 
 func (s *filesystemSchema) pushImage(p graphql.ResolveParams) (any, error) {
-	obj, err := filesystem.FromSource(p.Source)
+	parent := router.Parent[any](p.Source)
+	obj, err := filesystem.FromSource(parent.Val)
 	if err != nil {
 		return nil, err
 	}

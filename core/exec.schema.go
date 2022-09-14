@@ -15,9 +15,9 @@ import (
 )
 
 type Exec struct {
-	FS       *filesystem.Filesystem
-	Metadata *filesystem.Filesystem
-	Mounts   map[string]*filesystem.Filesystem
+	FS       *filesystem.Filesystem            `json:"fs"`
+	Metadata *filesystem.Filesystem            `json:"metadata"`
+	Mounts   map[string]*filesystem.Filesystem `json:"mounts"`
 }
 
 type MountInput struct {
@@ -167,7 +167,9 @@ func (s *execSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
-	obj, err := filesystem.FromSource(p.Source)
+	// TODO:
+	parent := router.Parent[*filesystem.Filesystem](p.Source)
+	obj, err := filesystem.FromSource(parent.Val)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +184,7 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		input.Mounts[i].Path = filepath.Clean(input.Mounts[i].Path)
 	}
 
-	shimSt, err := shim.Build(p.Context, s.gw, s.platform)
+	shimSt, err := shim.Build(p.Context, s.gw, parent.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -250,37 +252,37 @@ func (s *execSchema) exec(p graphql.ResolveParams) (any, error) {
 		_ = execState.AddMount(mount.Path, state)
 	}
 
-	fs, err := s.Solve(p.Context, execState.Root())
+	fs, err := s.Solve(p.Context, execState.Root(), parent.Platform)
 	if err != nil {
 		// clean up shim from error messages
 		cleanErr := strings.ReplaceAll(err.Error(), shim.Path+" ", "")
 		return nil, errors.New(cleanErr)
 	}
 
-	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), s.platform)
+	metadataFS, err := filesystem.FromState(p.Context, execState.GetMount("/dagger"), parent.Platform)
 	if err != nil {
 		return nil, err
 	}
 
 	mounts := map[string]*filesystem.Filesystem{}
 	for _, mount := range input.Mounts {
-		mountFS, err := filesystem.FromState(p.Context, execState.GetMount(mount.Path), s.platform)
+		mountFS, err := filesystem.FromState(p.Context, execState.GetMount(mount.Path), parent.Platform)
 		if err != nil {
 			return nil, err
 		}
 		mounts[mount.Path] = mountFS
 	}
 
-	return &Exec{
+	return router.WithVal(parent, &Exec{
 		FS:       fs,
 		Metadata: metadataFS,
 		Mounts:   mounts,
-	}, nil
+	}), nil
 }
 
 func (s *execSchema) stdout(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, s.gw, "/stdout")
+	parent := router.Parent[*Exec](p.Source)
+	output, err := parent.Val.Metadata.ReadFile(p.Context, s.gw, "/stdout")
 	if err != nil {
 		return nil, err
 	}
@@ -289,8 +291,8 @@ func (s *execSchema) stdout(p graphql.ResolveParams) (any, error) {
 }
 
 func (s *execSchema) stderr(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, s.gw, "/stderr")
+	parent := router.Parent[*Exec](p.Source)
+	output, err := parent.Val.Metadata.ReadFile(p.Context, s.gw, "/stderr")
 	if err != nil {
 		return nil, err
 	}
@@ -299,23 +301,27 @@ func (s *execSchema) stderr(p graphql.ResolveParams) (any, error) {
 }
 
 func (s *execSchema) exitCode(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Exec)
-	output, err := obj.Metadata.ReadFile(p.Context, s.gw, "/exitCode")
+	parent := router.Parent[*Exec](p.Source)
+	output, err := parent.Val.Metadata.ReadFile(p.Context, s.gw, "/exitCode")
 	if err != nil {
 		return nil, err
 	}
 
-	return strconv.Atoi(string(output))
+	i, err := strconv.Atoi(string(output))
+	if err != nil {
+		return nil, err
+	}
+	return router.WithVal(parent, i), nil
 }
 
 func (s *execSchema) mount(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Exec)
+	parent := router.Parent[*Exec](p.Source)
 	path := p.Args["path"].(string)
 	path = filepath.Clean(path)
 
-	mnt, ok := obj.Mounts[path]
+	mnt, ok := parent.Val.Mounts[path]
 	if !ok {
 		return nil, fmt.Errorf("missing mount path")
 	}
-	return mnt, nil
+	return router.WithVal(parent, mnt), nil
 }
