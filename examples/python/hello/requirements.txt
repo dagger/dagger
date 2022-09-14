@@ -1,1 +1,1 @@
-strawberry-graphql==0.130.3
+git+ssh://git@github.com/samalba/cloak.git@sdk-python#subdirectory=sdk/python/dagger&egg=dagger
