@@ -1,3 +1,4 @@
+from gql import gql
 from dagger import Engine
 
 if __name__ == "__main__":
@@ -18,6 +19,6 @@ if __name__ == "__main__":
     """
 
     with Engine() as client:
-        result = client.do(query)
+        result = client.execute(gql(query))
         content = result['core']['image']['exec']['fs']['exec']['stdout']
         print(content)
