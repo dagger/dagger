@@ -6,33 +6,23 @@ import (
 	"net/url"
 )
 
-var page = template.Must(template.New("graphiql").Parse(`{{ $tick := "` + "`" + `" }}
+var page = template.Must(template.New("graphiql").Parse(`
 <!DOCTYPE html>
 <html>
   <head>
-  	<meta charset="utf-8">
-  	<title>{{.title}}</title>
-	<style>
-		body {
-			height: 100%;
-			margin: 0;
-			width: 100%;
-			overflow: hidden;
-		}
+    <style>
+      body {
+        height: 100%;
+        margin: 0;
+        width: 100%;
+        overflow: hidden;
+      }
 
-		#graphiql {
-			height: 100vh;
-		}
-	</style>
-	<script
-		src="https://cdn.jsdelivr.net/npm/react@17/umd/react.production.min.js"
-		crossorigin="anonymous"
-	></script>
-	<script
-		src="https://cdn.jsdelivr.net/npm/react-dom@17/umd/react-dom.production.min.js"
-		crossorigin="anonymous"
-	></script>
-    <link
+      #graphiql {
+        height: 100vh;
+      }
+    </style>
+	<link
 		rel="stylesheet"
 		href="https://cdn.jsdelivr.net/npm/graphiql@{{.version}}/graphiql.min.css"
 		crossorigin="anonymous"
@@ -42,14 +32,23 @@ var page = template.Must(template.New("graphiql").Parse(`{{ $tick := "` + "`" + 
 	  crossorigin="anonymous"
       href="https://cdn.jsdelivr.net/npm/@graphiql/plugin-explorer@{{.explorerVersion}}/dist/style.css"
     />
-
   </head>
+
   <body>
     <div id="graphiql">Loading...</div>
 
 	<script
-		src="https://cdn.jsdelivr.net/npm/graphiql@{{.version}}/graphiql.min.js"
+		src="https://cdn.jsdelivr.net/npm/react@17/umd/react.production.min.js"
 		crossorigin="anonymous"
+	></script>
+	<script
+		src="https://cdn.jsdelivr.net/npm/react-dom@17/umd/react-dom.production.min.js"
+		crossorigin="anonymous"
+	></script>
+
+	<script
+	  src="https://cdn.jsdelivr.net/npm/graphiql@{{.version}}/graphiql.min.js"
+	  crossorigin="anonymous"
 	></script>
     <script
       crossorigin="anonymous"
@@ -65,8 +64,10 @@ var page = template.Must(template.New("graphiql").Parse(`{{ $tick := "` + "`" + 
       const wsProto = location.protocol == 'https:' ? 'wss:' : 'ws:';
       const subscriptionUrl = wsProto + '//' + location.host + {{.endpoint}};
 {{- end}}
-     function GraphiQLWithExplorer() {
-	   var [query, setQuery] = React.useState(` + "`" + `
+      var fetcher = GraphiQL.createFetcher({url, subscriptionUrl});
+
+      function GraphiQLWithExplorer() {
+        var [query, setQuery] = React.useState(` + "`" + `
 # Welcome to Cloak's GraphQL explorer
 #
 # Keyboard shortcuts:
@@ -79,10 +80,8 @@ var page = template.Must(template.New("graphiql").Parse(`{{ $tick := "` + "`" + 
 #
 #    Auto Complete:  Ctrl-Space (or just start typing)
 #
-
 # Here's a simple query to get you started, for more information visit
 # https:\/\/github.com/dagger/cloak/blob/main/docs/unxpq-introduction.mdx
-
 {
   core {
     image(ref: "alpine") {
@@ -96,23 +95,24 @@ var page = template.Must(template.New("graphiql").Parse(`{{ $tick := "` + "`" + 
     }
   }
 }
-
 ` + "`" + `);
-	   var explorerPlugin = GraphiQLPluginExplorer.useExplorerPlugin({query, onEdit:setQuery});
-	   const fetcher = GraphiQL.createFetcher({ url, subscriptionUrl });
-       return React.createElement(GraphiQL, {
-         fetcher: fetcher,
-         defaultEditorToolsVisibility: true,
-		 query: query,
-		 onEditQuery: setQuery,
-         plugins: [explorerPlugin],
-       });
-     }
+        var explorerPlugin = GraphiQLPluginExplorer.useExplorerPlugin({
+          query: query,
+          onEdit: setQuery,
+        });
+        return React.createElement(GraphiQL, {
+          fetcher: fetcher,
+          defaultEditorToolsVisibility: true,
+          plugins: [explorerPlugin],
+          query: query,
+          onEditQuery: setQuery,
+        });
+      }
 
-     ReactDOM.render(
-       React.createElement(GraphiQLWithExplorer),
-       document.getElementById('graphiql'),
-     );
+      ReactDOM.render(
+        React.createElement(GraphiQLWithExplorer),
+        document.getElementById('graphiql'),
+      );
     </script>
   </body>
 </html>
