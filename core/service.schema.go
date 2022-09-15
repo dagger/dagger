@@ -59,6 +59,9 @@ type Service {
 	args: [String!]!
 	running: Boolean!
 
+	"exitCode of the service. Will block until the service exits"
+	exitCode: Int!
+
 	"Stop the service"
 	stop(
 		"Seconds to wait for stop before killing it"
@@ -109,10 +112,11 @@ func (s *serviceSchema) Resolvers() router.Resolvers {
 			"start": s.start,
 		},
 		"Service": router.ObjectResolver{
-			"fs":      s.fs,
-			"args":    s.args,
-			"running": s.running,
-			"stop":    s.stop,
+			"fs":       s.fs,
+			"args":     s.args,
+			"running":  s.running,
+			"stop":     s.stop,
+			"exitCode": s.exitCode,
 		},
 	}
 }
@@ -345,4 +349,10 @@ func (s *serviceSchema) running(p graphql.ResolveParams) (any, error) {
 	default:
 		return true, nil
 	}
+}
+
+func (s *serviceSchema) exitCode(p graphql.ResolveParams) (any, error) {
+	obj := p.Source.(Service)
+	svc := s.getService(obj.ID)
+	return svc.ExitCode(), nil
 }
