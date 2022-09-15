@@ -8,6 +8,7 @@ type Netlify {
     subdir: String
     siteName: String
     token: SecretID!
+    team: String
   ): SiteURLs!
 }
 
@@ -18,5 +19,10 @@ type SiteURLs {
 }
 
 extend type Filesystem {
-  netlifyDeploy(subdir: String, siteName: String, token: SecretID!): SiteURLs!
+  netlifyDeploy(
+    subdir: String
+    siteName: String
+    token: SecretID!
+    team: String
+  ): SiteURLs!
 }
