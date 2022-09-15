@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"path"
+	"sync"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/client/llb"
@@ -17,7 +18,10 @@ import (
 //go:embed cmd/*
 var cmd embed.FS
 
-var state llb.State
+var (
+	state llb.State
+	lock  sync.Mutex
+)
 
 const Path = "/_shim"
 
@@ -40,7 +44,9 @@ func init() {
 }
 
 func Build(ctx context.Context, gw bkgw.Client, p specs.Platform) (llb.State, error) {
+	lock.Lock()
 	def, err := state.Marshal(ctx, llb.Platform(p))
+	lock.Unlock()
 	if err != nil {
 		return llb.State{}, err
 	}
