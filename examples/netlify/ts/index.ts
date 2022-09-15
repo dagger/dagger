@@ -37,7 +37,7 @@ const resolvers = {
 
       if (site === undefined) {
         // Create the site for a particular team
-        if(args.team && typeof args.team === "string") {
+        if(args?.team && typeof args?.team === "string") {
           try {
             site = await netlifyClient.createSiteInTeam({
               account_slug: args.team,
