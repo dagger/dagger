@@ -14,6 +14,7 @@ const resolvers = {
       subdir: string;
       siteName: string;
       token: SecretID;
+      team: string;
     }) => {
       // TODO: should be set from Dockerfile ENV, just not propagated by dagger server yet
       process.env["PATH"] =
@@ -33,8 +34,24 @@ const resolvers = {
         .then((sites: Array<any>) =>
           sites.find((site: any) => site.name === args.siteName)
         );
+
       if (site === undefined) {
-        var site = await netlifyClient.createSite({
+        // Create the site for a particular team
+        if(args.team && typeof args.team === "string") {
+          try {
+            site = await netlifyClient.createSiteInTeam({
+              account_slug: args.team,
+              body: {
+                name: args.siteName,
+              },
+            })
+          } catch(error: any) { 
+              console.log(error?.status === 404 
+                ? `Unknown Netlify team ${args.team}`
+                : error)
+          }
+        }
+        site = await netlifyClient.createSite({
           body: {
             name: args.siteName,
           },
@@ -72,6 +89,7 @@ const resolvers = {
         subdir: string;
         siteName: string;
         token: SecretID;
+        team: string;
       },
       parent: { id: FSID }
     ) => {
@@ -82,7 +100,7 @@ const resolvers = {
           gql`
             {
               netlify {
-                deploy(contents: "${parent.id}", subdir: "${args.subdir}", siteName: "${args.siteName}", token: "${args.token}") {
+                deploy(contents: "${parent.id}", subdir: "${args.subdir}", siteName: "${args.siteName}", token: "${args.token}", team: "${args.team}") {
                   url
                   deployURL
                 }
