@@ -1,7 +1,0 @@
-{
-    "editor.formatOnSave": true,
-    "extensions.ignoreRecommendations": true,
-    "[cue]": {
-        "editor.useTabStops": true
-    }
-}
