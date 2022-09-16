@@ -95,7 +95,6 @@ end
 
 [Learn more about writing extensions](guides/bnzm7-writing_extensions.md)
 
-
 ### Available Extensions
 - [Vercel](https://github.com/slumbering/dagger-vercel)
 - [Terraform](https://github.com/kpenfound/dagger-terraform)
