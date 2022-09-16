@@ -24,4 +24,4 @@ dependencies = [
 
 [project.urls]
 "Homepage" = "https://dagger.io/"
-"Bug Tracker" = "https://github.com/dagger/cloak/issues"
+"Bug Tracker" = "https://github.com/dagger/dagger/issues"

@@ -1,1 +1,1 @@
-git+ssh://git@github.com/samalba/cloak.git@sdk-python#subdirectory=sdk/python/dagger&egg=dagger
+git+https://github.com/dagger/dagger.git@cloak#subdirectory=sdk/python/dagger&egg=dagger

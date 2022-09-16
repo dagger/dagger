@@ -13,7 +13,7 @@
 {{ reserveImport "github.com/99designs/gqlgen/graphql" }}
 {{ reserveImport "github.com/99designs/gqlgen/graphql/introspection" }}
 
-{{ reserveImport	"github.com/dagger/cloak/sdk/go/dagger" }}
+{{ reserveImport	"go.dagger.io/dagger/sdk/go/dagger" }}
 
 {{ $root := . }}
 

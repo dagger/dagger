@@ -15,26 +15,13 @@ Say we are creating a new project called `foo`. It will have
 1. Enter a go module directory for your project (`go mod init <module name>` if one doesn't exist)
 1. Configure go to use the private cloak git repo (this will go away once the repo is made public)
 
-   - If not already set, this command will update your `~/.gitconfig` with a rule that tells git to use ssh instead of https for the cloak repo:
-
-     - `git config --global --add url.ssh://git@github.com/dagger/cloak.insteadOf https://github.com/dagger/cloak`
-
    - Then run the following commands to setup the rest of the required dependencies
 
      ```console
-     export GOPRIVATE=github.com/dagger/cloak
-     go get github.com/dagger/cloak@main
+     go get go.dagger.io/dagger@cloak
      # This is needed to fix a transitive dependency issue (`sirupsen` vs. `Sirupsen`...)
      go mod edit -replace=github.com/docker/docker=github.com/docker/docker@v20.10.3-0.20220414164044-61404de7df1a+incompatible
      ```
-
-1. In order to pull cloak dependencies and build the extension in this example, cloak will need pull the private repo from a container running in the engine.
-
-   - Setting up an ssh-agent with credentials that can pull the `dagger/cloak` will cover all these cases and is recommended for now.
-     - Github has [documentation on setting this up for various platforms](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent).
-     - Be sure that the `SSH_AUTH_SOCK` variable is set in your current terminal (running `eval "$(ssh-agent -s)"` will typically take care of that)
-     - Without this, you may get error messages containing `no ssh handler for id default`
-   - Alternatively, if you don't have to pull any cloak dependencies (e.g. your `dependencies` key in `cloak.yaml` is empty), you can avoid the need to setup ssh-agent by vendoring your dependencies (`go mod vendor`)
 
 1. Create a new file called `cloak.yaml`
 
@@ -48,12 +35,12 @@ Say we are creating a new project called `foo`. It will have
        sdk: go
    dependencies:
      - git:
-         remote: git@github.com:dagger/cloak.git
-         ref: main
+         remote: https://github.com/dagger/dagger.git
+         ref: cloak
          path: examples/yarn/cloak.yaml
      - git:
-         remote: git@github.com:dagger/cloak.git
-         ref: main
+         remote: https://github.com/dagger/dagger.git
+         ref: cloak
          path: examples/netlify/go/cloak.yaml
    ```
 
@@ -64,6 +51,7 @@ Say we are creating a new project called `foo`. It will have
 
 ### Generate initial script code
 
+1. From the directory containing `cloak.yaml` run `mkdir script`
 1. From the directory containing `cloak.yaml` (or any subdirectory thereof), run `cloak generate`
 1. You should now see:
 
@@ -74,7 +62,7 @@ Say we are creating a new project called `foo`. It will have
 ### Implement the script
 
 1. Edit `script/main.go`, replacing the `panic("implement me")` with your actual implementation.
-1. When you need to call a dependency declared in `cloak.yaml`, you will currently have to use raw graphql queries. Examples of this can be found in [the alpine extension here](https://github.com/dagger/cloak/blob/main/examples/alpine/main.go).
+1. When you need to call a dependency declared in `cloak.yaml`, you will currently have to use raw graphql queries. Examples of this can be found in [the alpine extension here](https://github.com/dagger/dagger/blob/cloak/examples/alpine/main.go).
 1. Also feel free to import any other third-party libraries as needed the same way you would with any other go project.
 
 ### Invoke your script
@@ -96,12 +84,12 @@ extensions:
     sdk: go
 dependencies:
   - git:
-      remote: git@github.com:dagger/cloak.git
-      ref: main
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
       path: examples/yarn/cloak.yaml
   - git:
-      remote: git@github.com:dagger/cloak.git
-      ref: main
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
       path: examples/netlify/go/cloak.yaml
 ```
 
@@ -122,8 +110,8 @@ dependencies:
     ```
 
   - Also see other examples:
-    - [alpine](https://github.com/dagger/cloak/blob/main/examples/alpine/schema.graphql)
-    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/go/schema.graphql)
+    - [alpine](https://github.com/dagger/dagger/blob/cloak/examples/alpine/schema.graphql)
+    - [netlify](https://github.com/dagger/dagger/blob/cloak/examples/netlify/go/schema.graphql)
   - NOTE: this step may become optional in the future if code-first schemas are supported
 
 ### Generate initial extension code
@@ -138,11 +126,11 @@ dependencies:
 ### Implement the extension
 
 1. Edit `ext/main.go`, replacing occurences of `panic("implement me")` with the implementation of your extension's actions.
-1. When you need to call a dependency declared in `cloak.yaml`, you will currently have to use raw graphql queries. Examples of this can be found in [the alpine extension here](https://github.com/dagger/cloak/blob/main/examples/alpine/main.go).
+1. When you need to call a dependency declared in `cloak.yaml`, you will currently have to use raw graphql queries. Examples of this can be found in [the alpine extension here](https://github.com/dagger/dagger/blob/cloak/examples/alpine/main.go).
 1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the cloak engine.
 1. Some examples:
-   - [alpine](https://github.com/dagger/cloak/blob/main/examples/alpine/main.go)
-   - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/go/main.go)
+   - [alpine](https://github.com/dagger/dagger/blob/cloak/examples/alpine/main.go)
+   - [netlify](https://github.com/dagger/dagger/blob/cloak/examples/netlify/go/main.go)
 
 ### Invoke your extension
 
