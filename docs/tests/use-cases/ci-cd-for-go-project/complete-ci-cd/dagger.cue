@@ -32,9 +32,9 @@ dagger.#Plan & {
 
 		// Run go unit tests
 		unitTest: go.#Test & {
-			source:  _code
+			source: _code
 			packages: ["./..."]
-			input:   _base.output
+			input: _base.output
 		}
 
 		// Build go project

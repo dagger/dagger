@@ -23,7 +23,7 @@ dagger.#Plan & {
 				"""
 		}
 		go.#Build & {
-			source:  _source.output
+			source: _source.output
 			packages: ["/src/helloworld.go"]
 		}
 	}
