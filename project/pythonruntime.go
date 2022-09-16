@@ -39,6 +39,7 @@ python3 main.py
 				File(llb.Copy(contextState, "/", "/src")),
 		}).
 			// FIXME(samalba): Install python dependencies not as root
+			// FIXME(samalba): errors while installing requirements.txt will be ignored because of the `|| true`. Need to find a better way.
 			Run(llb.Shlex(
 				fmt.Sprintf(
 					`sh -c 'test -f %q && python3 -m pip install --cache-dir=/root/.cache/pipcache -r %q || true'`,
