@@ -24,5 +24,9 @@ stub/stub
 
 node_modules
 
+# python
+venv
+__pycache__
+
 # Built Binary
 cloak

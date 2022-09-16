@@ -1,0 +1,4 @@
+name: "python"
+extensions:
+  - path: .
+    sdk: python
