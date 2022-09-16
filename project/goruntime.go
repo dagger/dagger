@@ -26,7 +26,6 @@ func (s RemoteSchema) goRuntime(ctx context.Context, subpath string) (*filesyste
 			llb.AddEnv("CGO_ENABLED", "0"),
 			llb.AddMount("/src", contextState),
 			withGoCaching(),
-			withGoPrivateRepoConfiguration(s.sshAuthSockID),
 		).Root(),
 		s.platform,
 	)
@@ -49,26 +48,5 @@ func withGoCaching() llb.RunOption {
 			llb.Scratch(),
 			llb.AsPersistentCacheDir("gobuildcache", llb.CacheMountShared),
 		),
-	)
-}
-
-func withGoPrivateRepoConfiguration(sshAuthSockID string) llb.RunOption {
-	// FIXME:(sipsma) this all should be generalized to support any private go repo
-
-	gitConfigSt := llb.Scratch().File(llb.Mkfile(".gitconfig", 0644, []byte(`
-[url "ssh://git@go.dagger.io/dagger"]
-  insteadOf = https://go.dagger.io/dagger
-`)))
-
-	addSSHKnownHosts, err := withGithubSSHKnownHosts()
-	if err != nil {
-		panic(err)
-	}
-
-	return withRunOpts(
-		llb.AddMount("/root/.gitconfig", gitConfigSt, llb.SourcePath(".gitconfig"), llb.Readonly),
-		llb.AddEnv("GOPRIVATE", "go.dagger.io/dagger"),
-		addSSHKnownHosts,
-		withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 	)
 }

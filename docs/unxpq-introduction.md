@@ -31,7 +31,7 @@ Using Dagger does not require converting to yet another devops platform. Instead
 * Powershell (help wanted)
 * Ruby (help wanted)
 
-Want to write devops pipelines in another language? [Tell us about it in an issue](https://github.com/dagger/cloak/issues/new)!
+Want to write devops pipelines in another language? [Tell us about it in an issue](https://github.com/dagger/dagger/issues/new)!
 
 ## How it works
 

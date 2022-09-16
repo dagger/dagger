@@ -10,7 +10,7 @@ Say we are creating a new project called `foo`. It will have
 1. A single extension, written in Typescript, the extends the schema with an action called `bar`.
 1. A script, written in Javascript, that can call the extension (and any other project dependencies)
 
-NOTE: It's currently hardcoded in this cloak SDK to use yarn commands for building extensions, so it's safest to use yarn at the moment. There is [an open issue for improving this](https://github.com/dagger/cloak/issues/146).
+NOTE: It's currently hardcoded in this cloak SDK to use yarn commands for building extensions, so it's safest to use yarn at the moment. There is [an open issue for improving this](https://github.com/dagger/dagger/issues/3036).
 
 NOTE: For simplicity, these instructions also currently assume you are creating a new node module from scratch. Extensions and scripts can also be integrated into existing modules with some minor adjustments though.
 
@@ -26,16 +26,9 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
      - Then manually add `"type": "module"` to your `package.json`
      - And manually update `tsconfig.json` w/ `"include": ["ext/**/*"]` on the top level (sibling to `"compilerOptions"`)
 
-1. In order to pull cloak dependencies, cloak and yarn will need the ability to pull a private git repo
-
-   - Setting up an ssh-agent with credentials that can pull the `dagger/cloak` will cover all cases and is recommended for now.
-     - Github has [documentation on setting this up for various platforms](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent).
-     - Be sure that the `SSH_AUTH_SOCK` variable is set in your current terminal (running `eval "$(ssh-agent -s)"` will typically take care of that)
-     - Without this, you may get error messages containing `no ssh handler for id default`
-
 1. Add a dependency on the cloak nodejs sdk:
 
-   - `yarn add --dev git+ssh://git@github.com:dagger/cloak.git#main`
+   - `yarn add --dev git+https://github.com/dagger/dagger.git#cloak`
    - `yarn install`
 
 1. Create a new file called `cloak.yaml`
@@ -50,12 +43,12 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
        sdk: ts
    dependencies:
      - git:
-         remote: git@github.com:dagger/cloak.git
-         ref: main
+         remote: https://github.com/dagger/dagger.git
+         ref: cloak
          path: examples/yarn/cloak.yaml
      - git:
-         remote: git@github.com:dagger/cloak.git
-         ref: main
+         remote: https://github.com/dagger/dagger.git
+         ref: cloak
          path: examples/netlify/go/cloak.yaml
    ```
 
@@ -104,12 +97,12 @@ extensions:
     sdk: ts
 dependencies:
   - git:
-      remote: git@github.com:dagger/cloak.git
-      ref: main
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
       path: examples/yarn/cloak.yaml
   - git:
-      remote: git@github.com:dagger/cloak.git
-      ref: main
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
       path: examples/netlify/go/cloak.yaml
 ```
 
@@ -130,8 +123,8 @@ dependencies:
     ```
 
   - Also see other examples:
-    - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/schema.graphql)
-    - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/schema.graphql)
+    - [yarn](https://github.com/dagger/dagger/blob/cloak/examples/yarn/schema.graphql)
+    - [netlify](https://github.com/dagger/dagger/blob/cloak/examples/netlify/ts/schema.graphql)
   - NOTE: this step may become optional in the future if code-first schemas are supported
 
 ### Implement the extension
@@ -158,8 +151,8 @@ server.run();
 
 1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the cloak engine.
 1. Some more examples:
-   - [yarn](https://github.com/dagger/cloak/blob/main/examples/yarn/index.ts)
-   - [netlify](https://github.com/dagger/cloak/blob/main/examples/netlify/ts/index.ts)
+   - [yarn](https://github.com/dagger/dagger/blob/cloak/examples/yarn/index.ts)
+   - [netlify](https://github.com/dagger/dagger/blob/cloak/examples/netlify/ts/index.ts)
 
 ### Invoke your extension
 

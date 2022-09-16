@@ -14,8 +14,7 @@ module.exports = {
   stylesheets: [
     "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap",
   ],
-  customFields: {
-  },
+  customFields: {},
   themeConfig: {
     sidebarCollapsed: false,
     prism: {
@@ -46,7 +45,7 @@ module.exports = {
         },
         {
           position: "right",
-          href: "https://github.com/dagger/cloak",
+          href: "https://github.com/dagger/dagger/tree/cloak",
           className: "header-github-link hide-target-icon",
           "aria-label": "GitHub repository",
         },
@@ -89,8 +88,5 @@ module.exports = {
       },
     ],
   ],
-  plugins: [
-    "docusaurus-plugin-sass",
-    "docusaurus2-dotenv",
-  ],
+  plugins: ["docusaurus-plugin-sass", "docusaurus2-dotenv"],
 };

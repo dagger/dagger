@@ -71,7 +71,6 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		llb.AddMount("/src", projectFS, llb.Readonly),
 		llb.AddEnv("CGO_ENABLED", "0"),
 		withGoCaching(),
-		withGoPrivateRepoConfiguration(s.sshAuthSockID),
 	).Root()
 
 	// generate extension/script skeletons
@@ -88,7 +87,6 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		llb.AddEnv("SCHEMA", schema),
 		llb.AddEnv("CORE_SCHEMA", coreSchema),
 		withGoCaching(),
-		withGoPrivateRepoConfiguration(s.sshAuthSockID),
 	).GetMount(outputDir)
 
 	return filesystem.FromState(ctx, projectFS, s.platform)
