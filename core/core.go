@@ -3,14 +3,14 @@ package core
 import (
 	"context"
 
-	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/project"
-	"github.com/dagger/cloak/router"
-	"github.com/dagger/cloak/secret"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/project"
+	"go.dagger.io/dagger/router"
+	"go.dagger.io/dagger/secret"
 )
 
 type InitializeArgs struct {

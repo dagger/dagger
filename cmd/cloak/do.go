@@ -10,9 +10,9 @@ import (
 	"sync"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/engine"
-	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/sdk/go/dagger"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 )

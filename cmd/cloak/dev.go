@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/cloak/engine"
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/engine"
 )
 
 var devCmd = &cobra.Command{

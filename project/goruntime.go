@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/dagger/cloak/core/filesystem"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"go.dagger.io/dagger/core/filesystem"
 )
 
 func (s RemoteSchema) goRuntime(ctx context.Context, subpath string) (*filesystem.Filesystem, error) {
@@ -56,8 +56,8 @@ func withGoPrivateRepoConfiguration(sshAuthSockID string) llb.RunOption {
 	// FIXME:(sipsma) this all should be generalized to support any private go repo
 
 	gitConfigSt := llb.Scratch().File(llb.Mkfile(".gitconfig", 0644, []byte(`
-[url "ssh://git@github.com/dagger/cloak"]
-  insteadOf = https://github.com/dagger/cloak
+[url "ssh://git@go.dagger.io/dagger"]
+  insteadOf = https://go.dagger.io/dagger
 `)))
 
 	addSSHKnownHosts, err := withGithubSSHKnownHosts()
@@ -67,7 +67,7 @@ func withGoPrivateRepoConfiguration(sshAuthSockID string) llb.RunOption {
 
 	return withRunOpts(
 		llb.AddMount("/root/.gitconfig", gitConfigSt, llb.SourcePath(".gitconfig"), llb.Readonly),
-		llb.AddEnv("GOPRIVATE", "github.com/dagger/cloak"),
+		llb.AddEnv("GOPRIVATE", "go.dagger.io/dagger"),
 		addSSHKnownHosts,
 		withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 	)

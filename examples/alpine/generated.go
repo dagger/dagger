@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/dagger/cloak/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func (r *query) alpine(ctx context.Context) (*Alpine, error) {

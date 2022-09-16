@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/dagger/cloak/core/filesystem"
 	"github.com/moby/buildkit/client/llb"
+	"go.dagger.io/dagger/core/filesystem"
 )
 
 func (s RemoteSchema) pythonRuntime(ctx context.Context, subpath string) (*filesystem.Filesystem, error) {

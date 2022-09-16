@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/core/shim"
-	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
+	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core/shim"
+	"go.dagger.io/dagger/router"
 )
 
 type Exec struct {

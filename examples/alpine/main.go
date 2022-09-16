@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func (r *alpine) build(ctx context.Context, pkgs []string) (*dagger.Filesystem, error) {

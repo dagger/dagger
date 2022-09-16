@@ -3,9 +3,9 @@ package core
 import (
 	"fmt"
 
-	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+	"go.dagger.io/dagger/router"
 )
 
 var secretIDResolver = router.ScalarResolver{

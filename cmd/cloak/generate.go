@@ -7,9 +7,9 @@ import (
 	"os"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/engine"
-	"github.com/dagger/cloak/sdk/go/dagger"
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 var generateCmd = &cobra.Command{

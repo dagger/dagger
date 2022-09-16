@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/dagger/cloak/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 type CacheMountInput struct {

@@ -1,4 +1,4 @@
-module github.com/dagger/cloak
+module go.dagger.io/dagger
 
 go 1.18
 

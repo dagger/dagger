@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/project"
-	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
+	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/project"
+	"go.dagger.io/dagger/router"
 	"golang.org/x/sync/singleflight"
 )
 
