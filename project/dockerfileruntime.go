@@ -19,7 +19,7 @@ func (s RemoteSchema) dockerfileRuntime(ctx context.Context, subpath string) (*f
 
 	opts := map[string]string{
 		"platform": platforms.Format(s.platform),
-		"filename": filepath.Join(filepath.Dir(s.configPath), subpath, "Dockerfile"),
+		"filename": filepath.ToSlash(filepath.Join(filepath.Dir(s.configPath), subpath, "Dockerfile")),
 	}
 	inputs := map[string]*pb.Definition{
 		dockerfilebuilder.DefaultLocalNameContext:    def,
