@@ -1,0 +1,4 @@
+name: netlify
+extensions:
+  - path: .
+    sdk: ts

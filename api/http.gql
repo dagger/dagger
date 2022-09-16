@@ -1,0 +1,14 @@
+
+extend type Query {
+    "An http remote"
+    http(url: String!) HTTPRemote!
+}
+
+"An HTTP remote endpoint"
+type HTTPRemote {
+    "Download a tar-encoded directory from this remote"
+    directory: Directory!
+
+    "Download the file served by this remote"
+    file: File!
+}

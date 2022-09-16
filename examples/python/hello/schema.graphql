@@ -1,0 +1,9 @@
+extend type Query {
+  hello(greeting: String): Hello!
+}
+
+type Hello {
+  greeting: String!
+  say(msg: String!): String!
+  html(lines: Int): String!
+}

@@ -1,0 +1,4 @@
+name: alpine
+extensions:
+  - path: .
+    sdk: go

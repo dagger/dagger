@@ -1,0 +1,20 @@
+query Deploy(
+  $contents: FSID!
+  $subdir: String
+  $siteName: String
+  $token: SecretID!
+  $team: String
+) {
+  netlify {
+    deploy(
+      contents: $contents
+      subdir: $subdir
+      siteName: $siteName
+      token: $token
+      team: $team
+    ) {
+      url
+      deployURL
+    }
+  }
+}

@@ -1,0 +1,17 @@
+query build {
+  core {
+    git(remote: "github.com/dagger/dagger") {
+      dockerbuild {
+        id
+      }
+    }
+  }
+}
+
+query test {
+  core {
+    git(remote: "github.com/dagger/dagger") {
+      file(path: "README.md")
+    }
+  }
+}

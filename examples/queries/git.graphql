@@ -1,0 +1,7 @@
+{
+  core {
+    git(remote: "github.com/dagger/dagger") {
+      file(path: "README.md")
+    }
+  }
+}

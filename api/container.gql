@@ -1,0 +1,145 @@
+extend type Query {
+    """
+    Load a container from ID.
+    Null ID returns an empty container (scratch).
+    """
+    container(id: ContainerID): Container!
+}
+
+"A unique container identifier. Null designates an empty container (scratch)."
+scalar ContainerID
+
+
+"""
+The address (also known as "ref") of a container published as an OCI image.
+
+Examples:
+        - "alpine"
+        - "index.docker.io/alpine"
+        - "index.docker.io/alpine:latest"
+        - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
+"""
+scalar ContainerAddress
+
+"""
+"An OCI-compatible container, also known as a "docker container"
+"""
+type Container {
+    "A unique identifier for this container"
+    id: ContainerID!
+
+    "Initialize this container from the base image published at the given address"
+    from(address: ContainerAddress!): Container!
+
+    "This container's root filesystem. Mounts are not included."
+    rootfs: Directory!
+
+    "Retrieve a directory at the given path. Mounts are included."
+    directory(path: String!): Directory!
+
+    "The user to be set for all commands"
+    user: String
+
+    "This container but with a different command user"
+    withUser(name: String): Container!
+
+    "The working directory for all commands"
+    workdir: String
+
+    "This container but with a different working directory"
+    withWorkdir(path: String): Container!
+
+    "A list of environment variables passed to commands"
+    variables: [String!]
+
+    "The value of the specified environment variable"
+    variable(name: String!) String
+
+    "This container plus the given environment variable"
+    withVariable(name: String!, value: String!): Container!
+
+    "This container plus an env variable containing the given secret"
+    withSecretVariable(name: String!, secret: SecretID!) Container!
+
+    "This container minus the given environment variable"
+    withoutVariable(name: String): Container!
+
+    "Entrypoint to be prepended to the arguments of all commands"
+    entrypoint: [String!]
+
+    "This container but with a different command entrypoint"
+    withEntrypoint(args: [String!])
+
+    "List of paths where a directory is mounted"
+    mounts: [String!]!
+
+    "This container plus a directory mounted at the given path"
+    withMountedDirectory(path: String!, source: DirectoryID!) Container!
+
+    "This container plus a file mounted at the given path"
+    withMountedFile(path: String!, source: FileID!) Container!
+
+    "This container plus a temporary directory mounted at the given path"
+    withMountedTemp(path: String!): Container!
+
+	"This container plus a cache directory mounted at the given path"
+    withMountedCache(path: String!, source: DirectoryID): Container!
+
+    "This container plus a secret mounted into a file at the given path"
+    withMountedSecret(path: String!, source: SecretID!) Container!
+
+    """
+    This container after unmounting everything at the given path.
+    """
+    withoutMount(path: String!): Container!
+
+    "This container after executing the specified command inside it"
+    # FIXME: verb
+    exec(args: [String!]!, opts: execOpts) Container!
+
+    """
+    Exit code of the last executed command. Zero means success.
+    Null if no command has been executed.
+    """
+    exitCode: Integer
+
+    """
+    The output stream of the last executed command.
+    """
+    stdout: File!
+
+    """
+    The error stream of the last executed command.
+    """
+    stderr: File!
+
+    # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
+    #    This may actually be a good candidate for a mutation. To be discussed.
+    "Publish this container as a new image"
+    publish(address: ContainerAddress!) ContainerAddress!
+}
+
+"""
+Additional options for executing a command
+"""
+input ExecOpts {
+    """
+    Optionally write to the command's standard input
+
+    - Null means don't touch stdin (no redirection)
+    - Empty string means inject zero bytes to stdin, then send EOF
+    """
+    stdin: String
+
+    """
+    Optionally redirect the command's standard output to a file in the container.
+    Null means discard output.
+    """
+    redirectStdout: String
+
+    """
+    Optionally redirect the command's standard error to a file in the container.
+    Null means discard output.
+    """
+    redirectStderr: String
+}

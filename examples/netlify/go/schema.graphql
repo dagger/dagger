@@ -1,0 +1,18 @@
+extend type Query {
+  netlify: Netlify!
+}
+
+type Netlify {
+  deploy(
+    contents: FSID!
+    subdir: String
+    siteName: String
+    token: SecretID!
+  ): SiteURLs!
+}
+
+type SiteURLs {
+  url: String!
+  deployURL: String!
+  logsURL: String
+}

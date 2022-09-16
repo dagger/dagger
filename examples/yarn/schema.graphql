@@ -1,0 +1,11 @@
+extend type Query {
+  yarn: Yarn!
+}
+
+type Yarn {
+  script(source: FSID!, runArgs: [String!]): Filesystem!
+}
+
+extend type Filesystem {
+  yarn(runArgs: [String!]): Filesystem!
+}
