@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/cloak/core/filesystem"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"go.dagger.io/dagger/core/filesystem"
 )
 
 func (s RemoteSchema) dockerfileRuntime(ctx context.Context, subpath string) (*filesystem.Filesystem, error) {

@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/router"
 	"golang.org/x/sync/singleflight"
 )
 

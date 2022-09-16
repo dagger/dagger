@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/engine"
-	"github.com/dagger/cloak/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/internal/testutil"
 )
 
 func init() {

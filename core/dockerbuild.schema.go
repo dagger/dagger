@@ -2,12 +2,12 @@ package core
 
 import (
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/cloak/core/filesystem"
-	"github.com/dagger/cloak/router"
 	"github.com/graphql-go/graphql"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/router"
 )
 
 var _ router.ExecutableSchema = &dockerBuildSchema{}

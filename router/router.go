@@ -7,9 +7,9 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dagger/cloak/playground"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
+	"go.dagger.io/dagger/playground"
 )
 
 type Router struct {

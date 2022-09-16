@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/cloak/tracing"
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/tracing"
 )
 
 var (

@@ -70,13 +70,13 @@ func main() {
 	}
 	cfg.Models = gqlconfig.TypeMap{
 		"SecretID": gqlconfig.TypeMapEntry{
-			Model: gqlconfig.StringList{"github.com/dagger/cloak/sdk/go/dagger.SecretID"},
+			Model: gqlconfig.StringList{"go.dagger.io/dagger/sdk/go/dagger.SecretID"},
 		},
 		"FSID": gqlconfig.TypeMapEntry{
-			Model: gqlconfig.StringList{"github.com/dagger/cloak/sdk/go/dagger.FSID"},
+			Model: gqlconfig.StringList{"go.dagger.io/dagger/sdk/go/dagger.FSID"},
 		},
 		"Filesystem": gqlconfig.TypeMapEntry{
-			Model: gqlconfig.StringList{"github.com/dagger/cloak/sdk/go/dagger.Filesystem"},
+			Model: gqlconfig.StringList{"go.dagger.io/dagger/sdk/go/dagger.Filesystem"},
 			Fields: map[string]gqlconfig.TypeMapField{
 				"exec":        {Resolver: false},
 				"dockerbuild": {Resolver: false},
@@ -84,7 +84,7 @@ func main() {
 			},
 		},
 		"Exec": gqlconfig.TypeMapEntry{
-			Model: gqlconfig.StringList{"github.com/dagger/cloak/sdk/go/dagger.Exec"},
+			Model: gqlconfig.StringList{"go.dagger.io/dagger/sdk/go/dagger.Exec"},
 			Fields: map[string]gqlconfig.TypeMapField{
 				"fs":       {Resolver: false},
 				"stdout":   {Resolver: false},
@@ -278,7 +278,7 @@ const scriptMain = `package main
 
 import (
   "context"
-  "github.com/dagger/cloak/engine"
+  "go.dagger.io/dagger/engine"
 )
 
 func main() {

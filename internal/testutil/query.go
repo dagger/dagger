@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/dagger/cloak/engine"
-	"github.com/dagger/cloak/internal/buildkitd"
-	"github.com/dagger/cloak/sdk/go/dagger"
+	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/internal/buildkitd"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 type QueryOptions struct {

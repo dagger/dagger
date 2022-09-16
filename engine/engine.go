@@ -11,12 +11,6 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/cloak/core"
-	"github.com/dagger/cloak/internal/buildkitd"
-	"github.com/dagger/cloak/project"
-	"github.com/dagger/cloak/router"
-	"github.com/dagger/cloak/sdk/go/dagger"
-	"github.com/dagger/cloak/secret"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -24,6 +18,12 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.dagger.io/dagger/core"
+	"go.dagger.io/dagger/internal/buildkitd"
+	"go.dagger.io/dagger/project"
+	"go.dagger.io/dagger/router"
+	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger/secret"
 	"golang.org/x/sync/errgroup"
 )
 
