@@ -31,6 +31,7 @@ module.exports = {
         "guides/oy1q7-writing_extensions_nodejs",
         "guides/f5cij-extension_runtime_protocol",
         "guides/d7yxc-operator_manual",
+        "guides/joatj-extension_publishing_guide"
       ],
     },
   ],
