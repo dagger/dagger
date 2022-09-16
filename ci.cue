@@ -44,7 +44,7 @@ dagger.#Plan & {
 		build: {
 			"go": go.#Build & {
 				source:  _source
-				package: "./cmd/dagger/"
+				packages: ["./cmd/dagger/"]
 				os:      *client.platform.os | "linux"
 				arch:    client.platform.arch
 
@@ -67,7 +67,7 @@ dagger.#Plan & {
 			// Go unit tests
 			unit: go.#Test & {
 				source:  _source
-				package: "./..."
+				packages: ["./..."]
 
 				command: flags: "-race": true
 				env: DAGGER_LOG_FORMAT: client.env.DAGGER_LOG_FORMAT
@@ -135,7 +135,7 @@ dagger.#Plan & {
 					path:         "tests"
 					daggerBinary: go.#Build & {
 						source:  _source
-						package: "./cmd/dagger/"
+						packages: ["./cmd/dagger/"]
 						arch:    client.platform.arch
 						container: command: flags: "-race": true
 					}
