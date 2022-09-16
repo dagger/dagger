@@ -14,6 +14,7 @@ For information on writing the extension itself, visit the [Writing Extensions](
 ## The Extension Repository
 
 Extensions should:
+
 * Have their own git repo
 * Have an Apache 2.0 license
 * Have a dagger config at the repo root
