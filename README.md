@@ -14,7 +14,6 @@ Project Cloak is currently in early access for a small group of testers. Early A
 - Early access to the [Project Cloak repository](https://github.com/dagger/cloak)
 - Early access to the [Project Cloak community channel on Discord: #cloak](https://discord.com/channels/707636530424053791/1003718839739105300)
 - Our eternal gratitude for trying unfinished software and contributing precious feedback.
-- Sweet Dagger swag :)
 
 We appreciate any participation in the project, including:
 
