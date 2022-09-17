@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+	"io/fs"
+	"strconv"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
@@ -79,6 +81,9 @@ type Filesystem {
 
 	"push a filesystem as an image to a registry"
 	pushImage(ref: String!): Boolean!
+
+	"write a file at path"
+	writeFile(path: String!, contents: String!, permissions: String = "0664" ): Filesystem
 }
 
 extend type Core {
@@ -98,6 +103,7 @@ func (s *filesystemSchema) Resolvers() router.Resolvers {
 			"file":      s.file,
 			"copy":      s.copy,
 			"pushImage": s.pushImage,
+			"writeFile": s.writeFile,
 		},
 	}
 }
@@ -183,4 +189,30 @@ func (s *filesystemSchema) pushImage(p graphql.ResolveParams) (any, error) {
 		return nil, err
 	}
 	return true, nil
+}
+
+func (s *filesystemSchema) writeFile(p graphql.ResolveParams) (any, error) {
+	obj, err := filesystem.FromSource(p.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := obj.ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	contents := []byte(p.Args["contents"].(string))
+	path := p.Args["path"].(string)
+	permissions, err := strconv.ParseUint(p.Args["permissions"].(string), 8, 32)
+	if err != nil {
+		return fmt.Errorf("error parsing permissions %v", err), nil
+	}
+	st = st.File(llb.Mkfile(path, fs.FileMode(permissions), contents))
+
+	fs, err := s.Solve(p.Context, st)
+	if err != nil {
+		return nil, err
+	}
+	return fs, err
 }
