@@ -17,5 +17,5 @@ type File {
     secret: Secret!
 
     "The size of the file, in bytes"
-    size: Integer!
+    size: Int!
 }

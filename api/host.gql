@@ -9,7 +9,7 @@ type Host {
     workdir: Directory!
 
     "Lookup the value of an environment variable. Null if the variable is not available."
-    variable(name: String!) HostVariable
+    variable(name: String!): HostVariable
 }
 
 "An environment variable on the host environment"

@@ -53,13 +53,13 @@ type Container {
     variables: [String!]
 
     "The value of the specified environment variable"
-    variable(name: String!) String
+    variable(name: String!): String
 
     "This container plus the given environment variable"
     withVariable(name: String!, value: String!): Container!
 
     "This container plus an env variable containing the given secret"
-    withSecretVariable(name: String!, secret: SecretID!) Container!
+    withSecretVariable(name: String!, secret: SecretID!): Container!
 
     "This container minus the given environment variable"
     withoutVariable(name: String): Container!
@@ -68,16 +68,16 @@ type Container {
     entrypoint: [String!]
 
     "This container but with a different command entrypoint"
-    withEntrypoint(args: [String!])
+    withEntrypoint(args: [String!]): Container!
 
     "List of paths where a directory is mounted"
     mounts: [String!]!
 
     "This container plus a directory mounted at the given path"
-    withMountedDirectory(path: String!, source: DirectoryID!) Container!
+    withMountedDirectory(path: String!, source: DirectoryID!): Container!
 
     "This container plus a file mounted at the given path"
-    withMountedFile(path: String!, source: FileID!) Container!
+    withMountedFile(path: String!, source: FileID!): Container!
 
     "This container plus a temporary directory mounted at the given path"
     withMountedTemp(path: String!): Container!
@@ -86,7 +86,7 @@ type Container {
     withMountedCache(path: String!, source: DirectoryID): Container!
 
     "This container plus a secret mounted into a file at the given path"
-    withMountedSecret(path: String!, source: SecretID!) Container!
+    withMountedSecret(path: String!, source: SecretID!): Container!
 
     """
     This container after unmounting everything at the given path.
@@ -95,13 +95,13 @@ type Container {
 
     "This container after executing the specified command inside it"
     # FIXME: verb
-    exec(args: [String!]!, opts: execOpts) Container!
+    exec(args: [String!]!, opts: ExecOpts): Container!
 
     """
     Exit code of the last executed command. Zero means success.
     Null if no command has been executed.
     """
-    exitCode: Integer
+    exitCode: Int
 
     """
     The output stream of the last executed command.
@@ -116,7 +116,7 @@ type Container {
     # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
     #    This may actually be a good candidate for a mutation. To be discussed.
     "Publish this container as a new image"
-    publish(address: ContainerAddress!) ContainerAddress!
+    publish(address: ContainerAddress!): ContainerAddress!
 }
 
 """

@@ -1,7 +1,7 @@
 
 extend type Query {
     "An http remote"
-    http(url: String!) HTTPRemote!
+    http(url: String!): HTTPRemote!
 }
 
 "An HTTP remote endpoint"
