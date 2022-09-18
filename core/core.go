@@ -62,20 +62,20 @@ type baseSchema struct {
 }
 
 func (r *baseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*filesystem.Filesystem, error) {
-	def, err := st.Marshal(ctx, append([]llb.ConstraintsOpt{llb.Platform(r.platform)}, marshalOpts...)...)
+	info, err := filesystem.ImageFromState(ctx, st, append([]llb.ConstraintsOpt{llb.Platform(r.platform)}, marshalOpts...)...)
 	if err != nil {
 		return nil, err
 	}
+
 	_, err = r.gw.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
-		Definition: def.ToPB(),
+		Definition: info.FS,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// FIXME: should we create a filesystem from `res.SingleRef()`?
-	return filesystem.FromDefinition(def), nil
+	return info.ToFilesystem()
 }
 
 func (r *baseSchema) Export(ctx context.Context, fs *filesystem.Filesystem, export bkclient.ExportEntry) error {
