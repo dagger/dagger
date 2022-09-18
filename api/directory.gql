@@ -21,7 +21,7 @@ type Directory {
     withNewFile(path: String!, contents: String): Directory!
 
     "This directory plus the contents of the given file copied to the given path"
-    withCopiedFile(path: String!, source: FileID!)
+    withCopiedFile(path: String!, source: FileID!): Directory!
 
     "This directory with the file at the given path removed"
     withoutFile(path: String!): Directory!
@@ -30,7 +30,7 @@ type Directory {
     directory(path: String!): Directory!
 
     "This directory plus a directory written at the given path"
-    withDirectory(path: String!, directory: DirectoryID!) Directory!
+    withDirectory(path: String!, directory: DirectoryID!): Directory!
 
     "This directory with the directory at the given path removed"
     withoutDirectory(path: String!): Directory!
