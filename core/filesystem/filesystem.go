@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -18,17 +19,61 @@ const (
 
 type FSID string
 
+// Image pairs a filesystem LLB definition with an image config providing
+// defaults for future commands.
+type Image struct {
+	FS     *pb.Definition    `json:"fs"`
+	Config specs.ImageConfig `json:"cfg"`
+}
+
+func (info *Image) ToFilesystem() (*Filesystem, error) {
+	jsonBytes, err := json.Marshal(info)
+	if err != nil {
+		return nil, err
+	}
+	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
+	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
+	return &Filesystem{
+		ID: FSID(b64Bytes),
+	}, nil
+}
+
+func (info *Image) ToState() (llb.State, error) {
+	defop, err := llb.NewDefinitionOp(info.FS)
+	if err != nil {
+		return llb.State{}, err
+	}
+
+	st := llb.NewState(defop)
+	for _, env := range info.Config.Env {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts[0]) > 0 {
+			var v string
+			if len(parts) > 1 {
+				v = parts[1]
+			}
+			st = st.AddEnv(parts[0], v)
+		}
+	}
+
+	st = st.Dir(info.Config.WorkingDir)
+
+	return st, nil
+}
+
 type Filesystem struct {
 	ID FSID `json:"id"`
 }
 
-func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
+func (f *Filesystem) ToImage() (*Image, error) {
 	if f.ID == scratchID {
 		def, err := llb.Scratch().Marshal(context.TODO())
 		if err != nil {
 			return nil, err
 		}
-		return def.ToPB(), nil
+		return &Image{
+			FS: def.ToPB(),
+		}, nil
 	}
 
 	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(f.ID)))
@@ -37,11 +82,22 @@ func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
 		return nil, fmt.Errorf("failed to unmarshal fs bytes: %v", err)
 	}
 	jsonBytes = jsonBytes[:n]
-	var result pb.Definition
-	if err := json.Unmarshal(jsonBytes, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal result: %v: %s", err, string(jsonBytes))
+
+	var info Image
+	if err := json.Unmarshal(jsonBytes, &info); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal fs info: %v: %s", err, string(jsonBytes))
 	}
-	return &result, nil
+
+	return &info, nil
+}
+
+func (f *Filesystem) ToDefinition() (*pb.Definition, error) {
+	info, err := f.ToImage()
+	if err != nil {
+		return nil, err
+	}
+
+	return info.FS, nil
 }
 
 func (f *Filesystem) ToState() (llb.State, error) {
@@ -49,15 +105,12 @@ func (f *Filesystem) ToState() (llb.State, error) {
 		return llb.Scratch(), nil
 	}
 
-	def, err := f.ToDefinition()
+	info, err := f.ToImage()
 	if err != nil {
 		return llb.State{}, err
 	}
-	defop, err := llb.NewDefinitionOp(def)
-	if err != nil {
-		return llb.State{}, err
-	}
-	return llb.NewState(defop), nil
+
+	return info.ToState()
 }
 
 func (f *Filesystem) Evaluate(ctx context.Context, gw bkgw.Client) error {
@@ -107,24 +160,34 @@ func New(id FSID) *Filesystem {
 	}
 }
 
-func FromDefinition(def *llb.Definition) *Filesystem {
-	jsonBytes, err := json.Marshal(def.ToPB())
-	if err != nil {
-		panic(err)
-	}
-	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
-	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
-	return &Filesystem{
-		ID: FSID(b64Bytes),
-	}
-}
-
-func FromState(ctx context.Context, st llb.State, platform specs.Platform) (*Filesystem, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform))
+func ImageFromState(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*Image, error) {
+	def, err := st.Marshal(ctx, marshalOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return FromDefinition(def), nil
+	env, err := st.Env(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := st.GetDir(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Image{
+		FS: def.ToPB(),
+		Config: specs.ImageConfig{
+			Env:        env,
+			WorkingDir: dir,
+		},
+	}, nil
+}
+
+func FromState(ctx context.Context, st llb.State, platform specs.Platform) (*Filesystem, error) {
+	info, err := ImageFromState(ctx, st, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+	return info.ToFilesystem()
 }
 
 func FromSource(source any) (*Filesystem, error) {
