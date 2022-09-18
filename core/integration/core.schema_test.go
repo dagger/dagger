@@ -92,6 +92,56 @@ func TestCoreImageConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, res.Core.Image.Exec.Stdout, "GOLANG_VERSION=banana")
 	})
+
+	t.Run("propagates dir", func(t *testing.T) {
+		res := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						Stdout string
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+			core {
+				image(ref: "golang:1.19") {
+					exec(input: {args: ["pwd"]}) {
+						stdout
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, res.Core.Image.Exec.Stdout, "/go\n")
+	})
+
+	t.Run("exec dir overrides", func(t *testing.T) {
+		res := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						Stdout string
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+			core {
+				image(ref: "golang:1.19") {
+					exec(input: {args: ["pwd"], workdir: "/usr"}) {
+						stdout
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, res.Core.Image.Exec.Stdout, "/usr\n")
+	})
 }
 
 func TestCoreGit(t *testing.T) {
