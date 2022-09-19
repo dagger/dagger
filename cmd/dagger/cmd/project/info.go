@@ -1,12 +1,18 @@
 package project
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/mitchellh/go-homedir"
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.dagger.io/dagger/cmd/dagger/logger"
 	"go.dagger.io/dagger/pkg"
+	"go.dagger.io/dagger/plan"
 )
 
 var infoCmd = &cobra.Command{
@@ -30,6 +36,61 @@ var infoCmd = &cobra.Command{
 
 		fmt.Printf("\nCurrent dagger project in: %s\n", cueModPath)
 
-		// TODO: find available plans and if they load successfully
+		// load available dagger plan
+		ctx := context.Background()
+		plan, err := loadPlan(ctx, viper.GetString("plan"))
+		if err != nil {
+			fmt.Printf("Failed to load dagger plan\n\n%s", err)
+			return
+		}
+		children := plan.Action().Children
+		if len(children) == 0 {
+			return
+		}
+		table := setTable(children)
+		table.Render()
 	},
+}
+
+func setTable(children []*plan.Action) *tablewriter.Table {
+	row := [][]string{}
+	for _, ac := range children {
+		row = append(row, []string{ac.Name, ac.Documentation})
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"action", "comment"})
+	for _, v := range row {
+		table.Append(v)
+	}
+	return table
+}
+
+func loadPlan(ctx context.Context, planPath string) (*plan.Plan, error) {
+	// support only local filesystem paths
+	// even though CUE supports loading module and package names
+	homedirPlanPathExpanded, err := homedir.Expand(planPath)
+	if err != nil {
+		return nil, err
+	}
+
+	absPlanPath, err := filepath.Abs(homedirPlanPathExpanded)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = os.Stat(absPlanPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return plan.Load(ctx, plan.Config{
+		Args:   []string{planPath},
+		With:   []string{},
+		DryRun: true,
+	})
+}
+
+func init() {
+	infoCmd.Flags().StringP("plan", "p", ".", "Path to plan (defaults to current directory)")
 }
