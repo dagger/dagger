@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/olekukonko/tablewriter"
@@ -52,10 +53,13 @@ var infoCmd = &cobra.Command{
 	},
 }
 
+// Action name starting with plan.HiddenActionNamePrefix are not displayed
 func setTable(children []*plan.Action) *tablewriter.Table {
 	row := [][]string{}
 	for _, ac := range children {
-		row = append(row, []string{ac.Name, ac.Documentation})
+		if !strings.HasPrefix(ac.Name, plan.HiddenActionNamePrefix) {
+			row = append(row, []string{ac.Name, ac.Documentation})
+		}
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
