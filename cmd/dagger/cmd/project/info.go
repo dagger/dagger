@@ -63,7 +63,8 @@ func setTable(children []*plan.Action) *tablewriter.Table {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"action", "comment"})
+	table.SetHeader([]string{"ACTION", "DESCRIPTION"})
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
 	for _, v := range row {
 		table.Append(v)
 	}

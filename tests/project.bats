@@ -3,7 +3,7 @@ setup() {
   common_setup
 }
 
-@test "project init and update and info" {
+@test "project init, update and info" {
   TEMPDIR=$(mktemp -d)
   TEMPDIR2=$(mktemp -d)
   cd "$TEMPDIR" || exit 1
@@ -37,7 +37,6 @@ setup() {
   assert_output --partial "dagger project not found. Run \`dagger project init\`"
 }
 
-
 @test "project init with template" {
   TEMPDIR=$(mktemp -d)
   cd "$TEMPDIR" || exit 1
@@ -57,10 +56,23 @@ setup() {
     echo "./hello.cue file was not created by the template flag"
     exit 1
   fi
+}
 
-  #FIXME: disabled this test (the second diff argument points to a file outside of the test directory, not reachable when running inside dagger)
-  #cd -
-  #diff --unified "$TEMPDIR/hello.cue" "$TESTDIR/../cmd/dagger/cmd/project/templates/hello.cue"
+@test "project info list actions" {
+  TEMPDIR=$(mktemp -d)
+  cd "$TEMPDIR" || exit 1
+
+  run "$DAGGER" project init -t hello
+  run "$DAGGER" project update
+
+  run "$DAGGER" project info
+  assert_success
+
+  assert_output --partial "ACTION"
+  assert_output --partial "hello"
+
+  assert_output --partial "DESCRIPTION"
+  assert_output --partial "Hello world"
 }
 
 @test "todoapp project with absolute path" {
