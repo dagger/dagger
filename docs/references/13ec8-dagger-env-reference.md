@@ -52,6 +52,12 @@ As Dagger relies on Viper to manage the CLI inputs, all its option can be replac
 | `--private-key-password` | export `DAGGER_PRIVATE_KEY_PASSWORD=string` | Private ssh key password                       |
 | `--update`               | export `DAGGER_UPDATE=1`                    | Update to latest version of specified packages |
 
+#### info
+
+| option       | Usage                           | Description                                                |
+| :----------- | ------------------------------- | -----------------------------------------------------------|
+| `--plan`     | export `DAGGER_PLAN=string`     | Path to plan (defaults to current directory) (default ".") |
+
 ### dagger do
 
 | option            | Usage                                | Description                                                              |

@@ -26,6 +26,8 @@ var (
 	ClientSelector      = cue.Str("client")
 )
 
+const HiddenActionNamePrefix string = "_"
+
 type Plan struct {
 	config Config
 
