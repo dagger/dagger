@@ -43,10 +43,10 @@ dagger.#Plan & {
 
 		build: {
 			"go": go.#Build & {
-				source:  _source
-				package: "./cmd/dagger/"
-				os:      *client.platform.os | "linux"
-				arch:    client.platform.arch
+				source: _source
+				packages: ["./cmd/dagger/"]
+				os:   *client.platform.os | "linux"
+				arch: client.platform.arch
 
 				ldflags: "-s -w"
 
@@ -66,8 +66,8 @@ dagger.#Plan & {
 		test: {
 			// Go unit tests
 			unit: go.#Test & {
-				source:  _source
-				package: "./..."
+				source: _source
+				packages: ["./..."]
 
 				command: flags: "-race": true
 				env: DAGGER_LOG_FORMAT: client.env.DAGGER_LOG_FORMAT
@@ -134,9 +134,9 @@ dagger.#Plan & {
 				core: #BatsIntegrationTest & {
 					path:         "tests"
 					daggerBinary: go.#Build & {
-						source:  _source
-						package: "./cmd/dagger/"
-						arch:    client.platform.arch
+						source: _source
+						packages: ["./cmd/dagger/"]
+						arch: client.platform.arch
 						container: command: flags: "-race": true
 					}
 				}
