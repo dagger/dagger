@@ -22,6 +22,10 @@ stub/stub
 # intellij
 .idea
 
+# vim-obsession
+Session.vim
+
+# js
 node_modules
 
 # python
