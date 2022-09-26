@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -18,48 +17,6 @@ const (
 )
 
 type FSID string
-
-// Image pairs a filesystem LLB definition with an image config providing
-// defaults for future commands.
-type Image struct {
-	FS     *pb.Definition    `json:"fs"`
-	Config specs.ImageConfig `json:"cfg"`
-}
-
-func (info *Image) ToFilesystem() (*Filesystem, error) {
-	jsonBytes, err := json.Marshal(info)
-	if err != nil {
-		return nil, err
-	}
-	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
-	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
-	return &Filesystem{
-		ID: FSID(b64Bytes),
-	}, nil
-}
-
-func (info *Image) ToState() (llb.State, error) {
-	defop, err := llb.NewDefinitionOp(info.FS)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	st := llb.NewState(defop)
-	for _, env := range info.Config.Env {
-		parts := strings.SplitN(env, "=", 2)
-		if len(parts[0]) > 0 {
-			var v string
-			if len(parts) > 1 {
-				v = parts[1]
-			}
-			st = st.AddEnv(parts[0], v)
-		}
-	}
-
-	st = st.Dir(info.Config.WorkingDir)
-
-	return st, nil
-}
 
 type Filesystem struct {
 	ID FSID `json:"id"`
@@ -158,28 +115,6 @@ func New(id FSID) *Filesystem {
 	return &Filesystem{
 		ID: id,
 	}
-}
-
-func ImageFromState(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*Image, error) {
-	def, err := st.Marshal(ctx, marshalOpts...)
-	if err != nil {
-		return nil, err
-	}
-	env, err := st.Env(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir, err := st.GetDir(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &Image{
-		FS: def.ToPB(),
-		Config: specs.ImageConfig{
-			Env:        env,
-			WorkingDir: dir,
-		},
-	}, nil
 }
 
 func FromState(ctx context.Context, st llb.State, platform specs.Platform) (*Filesystem, error) {
