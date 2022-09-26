@@ -22,17 +22,28 @@ Examples:
 scalar ContainerAddress
 
 """
-"An OCI-compatible container, also known as a "docker container"
+An OCI-compatible container, also known as a "docker container"
 """
 type Container {
     "A unique identifier for this container"
     id: ContainerID!
 
-    "Initialize this container from the base image published at the given address"
+    "Initialize this container to the base image published at the given address"
     from(address: ContainerAddress!): Container!
 
+    """
+    Initialize this container to the result of the specified build.
+
+    The build can be customized to use a Dockerfile at a non-standard location,
+    or (in the future) to support files other than Dockerfile.
+    """
+    build(source: DirectoryID!, file: String="./Dockerfile")
+
     "This container's root filesystem. Mounts are not included."
-    rootfs: Directory!
+    fs: Directory!
+
+    "This container plus the given root filesystem."
+    withFS(source: DirectoryID!): Container!
 
     "Retrieve a directory at the given path. Mounts are included."
     directory(path: String!): Directory!
