@@ -19,7 +19,7 @@
     "@docusaurus/preset-classic": "^2.1.0",
     "@mdx-js/react": "^1.6.22",
     "@svgr/webpack": "^6.3.1",
-    "amplitude-js": "^8.21.0",
+    "amplitude-js": "^8.21.1",
     "clsx": "^1.2.1",
     "docusaurus-plugin-image-zoom": "^0.1.1",
     "docusaurus-plugin-sass": "^0.2.2",
@@ -33,7 +33,7 @@
     "react-dom": "^17.0.1",
     "react-social-login-buttons": "^3.6.1",
     "remark-code-import": "^0.4.0",
-    "sass": "^1.54.9",
+    "sass": "^1.55.0",
     "url-loader": "^4.1.1"
   },
   "browserslist": {
