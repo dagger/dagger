@@ -55,7 +55,6 @@ var _ router.ExecutableSchema = &filesystemSchema{}
 
 type execSchema struct {
 	*baseSchema
-	sshAuthSockID string
 }
 
 func (s *execSchema) Name() string {

@@ -16,8 +16,7 @@ var _ router.ExecutableSchema = &coreSchema{}
 
 type coreSchema struct {
 	*baseSchema
-	sshAuthSockID string
-	workdirID     string
+	workdirID string
 }
 
 func (r *coreSchema) Name() string {
@@ -38,9 +37,6 @@ extend type Query {
 type Core {
 	"Fetch an OCI image"
 	image(ref: String!): Filesystem!
-
-	"Fetch a git repository"
-	git(remote: String!, ref: String): Filesystem!
 }
 
 "Interactions with the user's host filesystem"
@@ -71,7 +67,6 @@ func (r *coreSchema) Resolvers() router.Resolvers {
 		},
 		"Core": router.ObjectResolver{
 			"image": r.image,
-			"git":   r.git,
 		},
 		"Host": router.ObjectResolver{
 			"workdir": r.workdir,
@@ -100,18 +95,6 @@ func (r *coreSchema) image(p graphql.ResolveParams) (any, error) {
 	ref := p.Args["ref"].(string)
 
 	st := llb.Image(ref, llb.WithMetaResolver(r.gw))
-	return r.Solve(p.Context, st)
-}
-
-func (r *coreSchema) git(p graphql.ResolveParams) (any, error) {
-	remote := p.Args["remote"].(string)
-	ref, _ := p.Args["ref"].(string)
-
-	var opts []llb.GitOption
-	if r.sshAuthSockID != "" {
-		opts = append(opts, llb.MountSSHSock(r.sshAuthSockID))
-	}
-	st := llb.Git(remote, ref, opts...)
 	return r.Solve(p.Context, st)
 }
 

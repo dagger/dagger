@@ -144,29 +144,6 @@ func TestCoreImageConfig(t *testing.T) {
 	})
 }
 
-func TestCoreGit(t *testing.T) {
-	t.Parallel()
-
-	res := struct {
-		Core struct {
-			Git struct {
-				File string
-			}
-		}
-	}{}
-
-	err := testutil.Query(
-		`{
-			core {
-				git(remote: "github.com/dagger/dagger") {
-					file(path: "README.md", lines: 1)
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.Contains(t, res.Core.Git.File, "Dagger")
-}
-
 func TestFilesystemCopy(t *testing.T) {
 	t.Parallel()
 
