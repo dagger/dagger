@@ -40,6 +40,110 @@ func TestCoreImage(t *testing.T) {
 	require.Equal(t, res.Core.Image.File, "3.16.2\n")
 }
 
+func TestCoreImageConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("propagates env", func(t *testing.T) {
+		res := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						Stdout string
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+			core {
+				image(ref: "golang:1.19") {
+					exec(input: {args: ["env"]}) {
+						stdout
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Contains(t, res.Core.Image.Exec.Stdout, "GOLANG_VERSION=")
+	})
+
+	t.Run("exec env overrides", func(t *testing.T) {
+		res := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						Stdout string
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+			core {
+				image(ref: "golang:1.19") {
+					exec(input: {args: ["env"], env: [{name: "GOLANG_VERSION", value: "banana"}]}) {
+						stdout
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Contains(t, res.Core.Image.Exec.Stdout, "GOLANG_VERSION=banana")
+	})
+
+	t.Run("propagates dir", func(t *testing.T) {
+		res := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						Stdout string
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+			core {
+				image(ref: "golang:1.19") {
+					exec(input: {args: ["pwd"]}) {
+						stdout
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, res.Core.Image.Exec.Stdout, "/go\n")
+	})
+
+	t.Run("exec dir overrides", func(t *testing.T) {
+		res := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						Stdout string
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+			core {
+				image(ref: "golang:1.19") {
+					exec(input: {args: ["pwd"], workdir: "/usr"}) {
+						stdout
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, res.Core.Image.Exec.Stdout, "/usr\n")
+	})
+}
+
 func TestCoreGit(t *testing.T) {
 	t.Parallel()
 

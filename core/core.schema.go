@@ -99,7 +99,7 @@ func (r *coreSchema) host(p graphql.ResolveParams) (any, error) {
 func (r *coreSchema) image(p graphql.ResolveParams) (any, error) {
 	ref := p.Args["ref"].(string)
 
-	st := llb.Image(ref)
+	st := llb.Image(ref, llb.WithMetaResolver(r.gw))
 	return r.Solve(p.Context, st)
 }
 

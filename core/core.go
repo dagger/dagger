@@ -62,20 +62,42 @@ type baseSchema struct {
 }
 
 func (r *baseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*filesystem.Filesystem, error) {
-	def, err := st.Marshal(ctx, append([]llb.ConstraintsOpt{llb.Platform(r.platform)}, marshalOpts...)...)
+	marshalOpts = append([]llb.ConstraintsOpt{llb.Platform(r.platform)}, marshalOpts...)
+
+	inputCfg, err := filesystem.ImageConfigFromState(ctx, st)
 	if err != nil {
 		return nil, err
 	}
-	_, err = r.gw.Solve(ctx, bkgw.SolveRequest{
+
+	input, err := st.Marshal(ctx, marshalOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := r.gw.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
-		Definition: def.ToPB(),
+		Definition: input.ToPB(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// FIXME: should we create a filesystem from `res.SingleRef()`?
-	return filesystem.FromDefinition(def), nil
+	bkref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	resSt, err := bkref.ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	img, err := filesystem.ImageFromStateAndConfig(ctx, resSt, inputCfg, marshalOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return img.ToFilesystem()
 }
 
 func (r *baseSchema) Export(ctx context.Context, fs *filesystem.Filesystem, export bkclient.ExportEntry) error {
