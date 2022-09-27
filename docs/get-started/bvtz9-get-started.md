@@ -9,7 +9,7 @@ displayed_sidebar: '0.3'
 
 Dagger is a DevOps automation engine. It enables DevOps teams to orchestrate and deliver pipelines in any programming language and embed them into existing scripts, tools and platforms. Popular use cases include multi-stage builds, CI/CD, on-demand staging environments, machine learning pipelines, end-to-end testing, artifact scanning and signing, and more.
 
-This tutorial introduces you to the basics of Dagger. It walks you through installing Dagger, understanding the Dagger API and Dagger SDKs, and building a Node.js application image with Dagger. 
+This tutorial introduces you to the basics of Dagger. It walks you through installing Dagger, understanding the Dagger API and Dagger SDKs, and building a Node.js application image with Dagger.
 
 ## Requirements
 
@@ -68,6 +68,7 @@ cloak is /usr/local/bin/cloak
 cloak version
 cloak devel (b7f3f4fec) linux/amd64
 ```
+
 </TabItem>
 
 <TabItem value="windows">
@@ -94,13 +95,13 @@ To see this API in action, follow the steps below:
   cloak dev
   ```
 
-  By default, this will start the Dagger API server on the local host at port 8080. Starting the server will also start an interactive GraphQL query console on the same port. 
+  By default, this will start the Dagger API server on the local host at port 8080. Starting the server will also start an interactive GraphQL query console on the same port.
 
 1. Access the query console by browsing to `http://localhost:8080/`. Here's what you will see.
 
   ![Query explorer](./explorer-query.png)
 
-  This query console provides an easy way to work with the Dagger API, allowing you to test actions and workflows by entering and executing queries in an ad-hoc manner. Query results are displayed in the accompanying results window. 
+  This query console provides an easy way to work with the Dagger API, allowing you to test actions and workflows by entering and executing queries in an ad-hoc manner. Query results are displayed in the accompanying results window.
 
 1. Try it out by entering the following simple query, which uses the Dagger API to query the [Reqres REST API](https://reqres.in/). Click the "Execute query" button in the right navigation bar or type `Ctrl+Enter` to execute the query.
 
@@ -122,9 +123,9 @@ To see this API in action, follow the steps below:
 
   Let's break this query down to see how it works:
 
-  - The `image()` field accepts an Open Container Initiative (OCI) image reference as argument and retrieves the corresponding image. In this example, it retrieves the `alpine` Docker image. The result of the query - the `alpine` image - is returned as the special Dagger `Filesystem` type and provided as input to the next query in the chain. 
-  - The first `exec()` field executes a command inside the `Filesystem` returned from the previous query. The commands are provided as input arguments. In this example, it executes the `apk add curl` command to download and install `curl` into the image. The resulting modified `Filesystem` is provided as input to the next query in the chain.
-  - The next `exec()` field executes the `curl https://reqres.in/api/products` command to retrieve a list of products from the remote API. The resulting output is printed to the standard output device, which is accessed via the `stdout` field.
+    - The `image()` field accepts an Open Container Initiative (OCI) image reference as argument and retrieves the corresponding image. In this example, it retrieves the `alpine` Docker image. The result of the query - the `alpine` image - is returned as the special Dagger `Filesystem` type and provided as input to the next query in the chain.
+    - The first `exec()` field executes a command inside the `Filesystem` returned from the previous query. The commands are provided as input arguments. In this example, it executes the `apk add curl` command to download and install `curl` into the image. The resulting modified `Filesystem` is provided as input to the next query in the chain.
+    - The next `exec()` field executes the `curl https://reqres.in/api/products` command to retrieve a list of products from the remote API. The resulting output is printed to the standard output device, which is accessed via the `stdout` field.
 
   Here's an example of the query result:
 
@@ -136,7 +137,7 @@ To see this API in action, follow the steps below:
 
 ### Use an SDK
 
-One of Dagger's key features is that it allows you build DevOps workflows in any programming language and integrate them into your existing scripts, tools and platforms. It does this by providing SDKs for many common programming languages. These SDKs include an embedded, native-language Dagger engine and GraphQL client, both of which can be directly imported and used in your scripts. 
+One of Dagger's key features is that it allows you build DevOps workflows in any programming language and integrate them into your existing scripts, tools and platforms. It does this by providing SDKs for many common programming languages. These SDKs include an embedded, native-language Dagger engine and GraphQL client, both of which can be directly imported and used in your scripts.
 
 :::note
 All GraphQL API servers can be accessed over HTTP. Therefore, even for those programming languages where a Dagger SDK is not currently available, you can still execute Dagger operations by starting the Dagger API server manually and using the HTTP client included with your selected language to communicate with it.
@@ -218,7 +219,7 @@ Found product: blue turquoise
 
 ## Step 3: Create an Express application
 
-Now that you've understood the basics, let's move on to a more realistic scenario: building and deploying an application using Dagger. This tutorial uses an Express application. 
+Now that you've understood the basics, let's move on to a more realistic scenario: building and deploying an application using Dagger. This tutorial uses an Express application.
 
 :::note
 If you already have a Node.js application, you can proceed directly to Step 4.
@@ -243,7 +244,7 @@ Create a simple Express application as follows:
 The next step is to build a Docker image of the Express application and push it to the Docker Hub registry. Briefly, this involves the following tasks:
 
 1. Start with a suitable base image (for example, `node:18-alpine`).
-1. Add required development tools (for example, `git` or `curl`). 
+1. Add required development tools (for example, `git` or `curl`).
 1. Copy the application source code to the image.
 1. Install application dependencies.
 1. Push the final image to the Docker Hub registry.
@@ -345,7 +346,7 @@ engine.run(async (client) => {
         query ($appWithDeps: FSID!) {
           core {
             filesystem(id: $appWithDeps) {
-                pushImage(ref: "USERNAME/my-first-dagger-app") 
+                pushImage(ref: "USERNAME/my-first-dagger-app")
             }
           }
         }
@@ -382,7 +383,7 @@ Wait for the script to complete execution. The newly-created container image wil
 
 Test the container image by running it locally, as follows:
 
-```
+```bash
 docker run -it -p 3000:3000 -w /home/node/ vikramatdagger/my-first-dagger-app npm start
 ```
 
