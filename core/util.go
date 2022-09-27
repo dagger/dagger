@@ -2,7 +2,13 @@ package core
 
 import (
 	"strings"
+
+	"github.com/pkg/errors"
 )
+
+// ErrNotImplementedYet is used to stub out API fields that aren't implemented
+// yet.
+var ErrNotImplementedYet = errors.New("not implemented yet")
 
 func truncate(s string, lines *int) string {
 	if lines == nil {
