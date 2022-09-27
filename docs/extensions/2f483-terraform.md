@@ -9,7 +9,7 @@ A Dagger extension for Terraform deployment.
 
 ## Example
 
-```
+```graphql
 query deploy(
   $tokenSecret: SecretID!
 ){

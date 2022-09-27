@@ -9,7 +9,7 @@ A Dagger extension for Vercel deployment.
 
 ## Example
 
-```
+```graphql
 query deploy(
   $tokenSecret: SecretID!
 ){

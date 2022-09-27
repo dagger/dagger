@@ -28,4 +28,4 @@ subgraph p2["Extension: NPM"]
 engine -..-> A1
 ```
 
-[Learn more about writing extensions](guides/bnzm7-writing_extensions.md)
+[Learn more about writing extensions](../guides/bnzm7-extensions.md)
