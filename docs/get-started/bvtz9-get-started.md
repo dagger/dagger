@@ -133,7 +133,7 @@ To see this API in action, follow the steps below:
 
 1. End the Dagger server process by typing `Ctrl+C` in the terminal where it is running.
 
-  From the above, it should be clear that Dagger allows you to execute operations (or workflows consisting of multiple operations) by performing one or more queries via its API. The result of one query can be supplied to the next in a nested manner, to maintain continuity and create outputs composed from multiple inputs.
+From the above, it should be clear that Dagger allows you to execute operations (or workflows consisting of multiple operations) by performing one or more queries via its API. The result of one query can be supplied to the next in a nested manner, to maintain continuity and create outputs composed from multiple inputs.
 
 ### Use an SDK
 
