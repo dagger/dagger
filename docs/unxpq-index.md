@@ -37,4 +37,3 @@ Using Dagger does not require converting to yet another DevOps platform. Instead
 * [Tutorials](./tutorials/)
 * [Extensions](./extensions/)
 * [API](./reference/api/)
-
