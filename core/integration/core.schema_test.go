@@ -17,30 +17,42 @@ func init() {
 	}
 }
 
-func TestCoreImage(t *testing.T) {
+func TestContainerFrom(t *testing.T) {
+	t.Skip("not implemented yet")
+
 	t.Parallel()
 
 	res := struct {
-		Core struct {
-			Image struct {
-				File string
+		Container struct {
+			From struct {
+				Rootfs struct {
+					File struct {
+						Contents string
+					}
+				}
 			}
 		}
 	}{}
 
 	err := testutil.Query(
 		`{
-			core {
-				image(ref: "alpine:3.16.2") {
-					file(path: "/etc/alpine-release")
+			container {
+				from(address: "alpine:3.16.2") {
+					rootfs {
+						file(path: "/etc/alpine-release") {
+							contents
+						}
+					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Core.Image.File, "3.16.2\n")
+	require.Equal(t, res.Container.From.Rootfs.File.Contents, "3.16.2\n")
 }
 
-func TestCoreImageConfig(t *testing.T) {
+func TestContainerImageConfig(t *testing.T) {
+	t.Skip("not implemented yet")
+
 	t.Parallel()
 
 	t.Run("propagates env", func(t *testing.T) {
@@ -144,102 +156,119 @@ func TestCoreImageConfig(t *testing.T) {
 	})
 }
 
-func TestFilesystemCopy(t *testing.T) {
+func TestCopiedFile(t *testing.T) {
+	t.Skip("not implemented yet")
+
 	t.Parallel()
 
 	alpine := struct {
-		Core struct {
-			Image struct {
-				ID string
+		Container struct {
+			From struct {
+				Rootfs struct {
+					File struct {
+						ID string
+					}
+				}
 			}
 		}
 	}{}
 
 	err := testutil.Query(
 		`{
-			core {
-				image(ref: "alpine:3.16.2") {
-					id
+			container {
+				from(address: "alpine:3.16.2") {
+					rootfs {
+						file(path: "/etc/alpine-release") {
+							id
+						}
+					}
 				}
 			}
 		}`, &alpine, nil)
 	require.NoError(t, err)
-	require.NotEmpty(t, alpine.Core.Image.ID)
+	require.NotEmpty(t, alpine.Container.From.Rootfs.File.ID)
 
 	res := struct {
-		Core struct {
-			Filesystem struct {
-				Copy struct {
-					File string
+		Directory struct {
+			WithCopiedFile struct {
+				File struct {
+					Contents string
 				}
 			}
 		}
 	}{}
 
 	testutil.Query(
-		`query ($from: FSID!) {
-			core {
-				filesystem(id: "scratch") {
-					copy(
-						from: $from
-						srcPath: "/etc/alpine-release"
-						destPath: "/test"
-					) {
-						file(path: "/test")
+		`query ($from: FileID!) {
+			directory {
+				withCopiedFile(path: "/test", source: $from) {
+					file(path: "/test") {
+						contents
 					}
 				}
 			}
 		}`, &res, &testutil.QueryOptions{
 			Variables: map[string]any{
-				"from": alpine.Core.Image.ID,
+				"from": alpine.Container.From.Rootfs.File.ID,
 			},
 		})
 	require.NoError(t, err)
-	require.Equal(t, "3.16.2\n", res.Core.Filesystem.Copy.File)
+	require.Equal(t, "3.16.2\n", res.Directory.WithCopiedFile.File.Contents)
 }
 
-func TestCoreExec(t *testing.T) {
+func TestContainerMountExec(t *testing.T) {
+	t.Skip("not implemented yet")
+
 	t.Parallel()
 
-	imageRes := struct {
-		Core struct {
-			Image struct {
-				ID string
+	ctrRes := struct {
+		Container struct {
+			From struct {
+				Rootfs struct {
+					ID string
+				}
 			}
 		}
 	}{}
 	err := testutil.Query(
 		`{
-			core {
-				image(ref: "alpine:3.16.2") {
-					id
+			container {
+				from(address: "alpine:3.16.2") {
+					rootfs {
+						id
+					}
 				}
 			}
-		}`, &imageRes, nil)
+		}`, &ctrRes, nil)
 	require.NoError(t, err)
-	id := imageRes.Core.Image.ID
+	id := ctrRes.Container.From.Rootfs.ID
 
 	execRes := struct {
-		Core struct {
-			Image struct {
-				Exec struct {
-					Mount struct {
-						File string
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Directory struct {
+							File struct {
+								Contents string
+							}
+						}
 					}
 				}
 			}
 		}
 	}{}
 	err = testutil.Query(
-		`query TestExec($id: FSID!) {
-			core {
-				image(ref: "alpine:3.16.2") {
-					exec(input: {
-						args: ["sh", "-c", "echo hi > /mnt/hello"]
-						mounts: [{fs: $id, path: "/mnt/"}]
-					}) {
-						mount(path: "/mnt") {
-							file(path: "/hello")
+		`query TestExec($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt", source: $id) {
+						exec(args: ["sh", "-c", "echo hi > /mnt/hello"]) {
+							directory(path: "/mnt") {
+								file(path: "/hello") {
+									contents
+								}
+							}
 						}
 					}
 				}
@@ -248,10 +277,12 @@ func TestCoreExec(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "hi\n", execRes.Core.Image.Exec.Mount.File)
+	require.Equal(t, "hi\n", execRes.Container.From.WithMountedDirectory.Exec.Directory.File.Contents)
 }
 
-func TestCoreImageExport(t *testing.T) {
+func TestContainerImageExport(t *testing.T) {
+	t.Skip("not implemented yet")
+
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.
 
@@ -262,14 +293,13 @@ func TestCoreImageExport(t *testing.T) {
 			err := ctx.Client.MakeRequest(ctx,
 				&graphql.Request{
 					Query: `query RunRegistry($rand: String!) {
-						core {
-							image(ref: "registry:2") {
-								exec(input: {
-									args: ["/entrypoint.sh", "/etc/docker/registry/config.yml"]
-									env: [{name: "RANDOM", value: $rand}]
-								}) {
-									stdout
-									stderr
+						container {
+							from(address: "registry:2") {
+								withVariable(name: "RANDOM", value: $rand) {
+									exec(args: ["/entrypoint.sh", "/etc/docker/registry/config.yml"]) {
+										stdout
+										stderr
+									}
 								}
 							}
 						}
@@ -288,13 +318,12 @@ func TestCoreImageExport(t *testing.T) {
 		err := ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query: `query WaitForRegistry($rand: String!) {
-					core {
-						image(ref: "alpine:3.16.2") {
-							exec(input: {
-								args: ["sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"]
-								env: [{name: "RANDOM", value: $rand}]
-							}) {
-								stdout
+					container {
+						from(address: "alpine:3.16.2") {
+							withVariable(name: "RANDOM", value: $rand) {
+								exec(args: ["sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"]) {
+									stdout
+								}
 							}
 						}
 					}
@@ -311,9 +340,9 @@ func TestCoreImageExport(t *testing.T) {
 		err = ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query: `query TestImagePush($ref: String!) {
-					core {
-						image(ref: "alpine:3.16.2") {
-							pushImage(ref: $ref)
+					container {
+						from(address: "alpine:3.16.2") {
+							publish(address: $ref)
 						}
 					}
 				}`,
@@ -326,18 +355,26 @@ func TestCoreImageExport(t *testing.T) {
 		require.NoError(t, err)
 
 		res := struct {
-			Core struct {
-				Image struct {
-					File string
+			Container struct {
+				From struct {
+					Rootfs struct {
+						File struct {
+							Contents string
+						}
+					}
 				}
 			}
 		}{}
 		err = ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query: `query TestImagePull($ref: String!) {
-					core {
-						image(ref: $ref) {
-							file(path: "/etc/alpine-release")
+					container {
+						from(address: $ref) {
+							rootfs {
+								file(path: "/etc/alpine-release") {
+									contents
+								}
+							}
 						}
 					}
 				}`,
@@ -348,7 +385,7 @@ func TestCoreImageExport(t *testing.T) {
 			&graphql.Response{Data: &res},
 		)
 		require.NoError(t, err)
-		require.Equal(t, res.Core.Image.File, "3.16.2\n")
+		require.Equal(t, res.Container.From.Rootfs.File.Contents, "3.16.2\n")
 		return nil
 	})
 	require.NoError(t, err)
