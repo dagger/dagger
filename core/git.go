@@ -1,10 +1,9 @@
 package core
 
 import (
-	"fmt"
-
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/router"
 )
 
@@ -19,37 +18,7 @@ func (s *gitSchema) Name() string {
 }
 
 func (s *gitSchema) Schema() string {
-	return `
-	extend type Query {
-		"Query a git repository"
-		git(url: String!): GitRepository!
-	}
-	
-	"A git repository"
-	type GitRepository {
-		"List of branches on the repository"
-		branches: [String!]!
-		"Details on one branch"
-		branch(name: String!): GitRef!
-		"List of tags on the repository"
-		tags: [String!]!
-		"Details on one tag"
-		tag(name: String!): GitRef!
-	}
-	
-	"A git ref (tag or branch)"
-	type GitRef {
-		"The digest of the current value of this ref"
-		digest: String!
-		"The filesystem tree at this ref"
-		tree: Filesystem!
-	}
-
-	# Compat with old API
-	extend type Core {
-		git(remote: String!, ref: String): Filesystem! @deprecated(reason: "use top-level 'query { git }'")
-	}
-`
+	return schema.Git
 }
 
 func (s *gitSchema) Resolvers() router.Resolvers {
@@ -121,7 +90,7 @@ func (s *gitSchema) branch(ctx *router.Context, parent gitRepository, args branc
 }
 
 func (s *gitSchema) branches(ctx *router.Context, parent any, args any) (any, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, ErrNotImplementedYet
 }
 
 type tagArgs struct {
@@ -136,11 +105,11 @@ func (s *gitSchema) tag(ctx *router.Context, parent gitRepository, args tagArgs)
 }
 
 func (s *gitSchema) tags(ctx *router.Context, parent any, args any) (any, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, ErrNotImplementedYet
 }
 
 func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, ErrNotImplementedYet
 }
 
 func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*filesystem.Filesystem, error) {

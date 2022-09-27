@@ -20,5 +20,10 @@ type GitRef {
     "The digest of the current value of this ref"
     digest: String!
     "The filesystem tree at this ref"
-    tree: Directory!
+    tree: Filesystem! # TODO(vito): replace with Directory!
+}
+
+# Compat with old API
+extend type Core {
+    git(remote: String!, ref: String): Filesystem! @deprecated(reason: "use top-level 'query { git }'")
 }
