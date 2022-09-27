@@ -3,8 +3,8 @@ package core
 import (
 	"fmt"
 
-	"github.com/graphql-go/graphql"
 	"github.com/moby/buildkit/client/llb"
+	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
 )
 
@@ -55,20 +55,20 @@ func (s *gitSchema) Schema() string {
 func (s *gitSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
-			"git": s.git,
+			"git": router.ToResolver(s.git),
 		},
 		"GitRepository": router.ObjectResolver{
-			"branches": s.branches,
-			"branch":   s.branch,
-			"tags":     s.tags,
-			"tag":      s.tag,
+			"branches": router.ToResolver(s.branches),
+			"branch":   router.ToResolver(s.branch),
+			"tags":     router.ToResolver(s.tags),
+			"tag":      router.ToResolver(s.tag),
 		},
 		"GitRef": router.ObjectResolver{
-			"digest": s.digest,
-			"tree":   s.tree,
+			"digest": router.ToResolver(s.digest),
+			"tree":   router.ToResolver(s.tree),
 		},
 		"Core": router.ObjectResolver{
-			"git": s.gitOld,
+			"git": router.ToResolver(s.gitOld),
 		},
 	}
 }
@@ -78,69 +78,76 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 // Compat with old git API
-func (s *gitSchema) gitOld(p graphql.ResolveParams) (any, error) {
-	remote := p.Args["remote"].(string)
-	ref, _ := p.Args["ref"].(string)
+type gitOldArgs struct {
+	Remote string
+	Ref    string
+}
 
+func (s *gitSchema) gitOld(ctx *router.Context, parent any, args gitOldArgs) (*filesystem.Filesystem, error) {
 	var opts []llb.GitOption
 	if s.sshAuthSockID != "" {
 		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
 	}
-	st := llb.Git(remote, ref, opts...)
-	return s.Solve(p.Context, st)
+	st := llb.Git(args.Remote, args.Ref, opts...)
+	return s.Solve(ctx, st)
 }
 
 type gitRepository struct {
-	url string
+	URL string `json:"url"`
 }
 
 type gitRef struct {
-	repository gitRepository
-	name       string
+	Repository gitRepository
+	Name       string
 }
 
-func (s *gitSchema) git(p graphql.ResolveParams) (any, error) {
-	url := p.Args["url"].(string)
-
-	return gitRepository{
-		url: url,
-	}, nil
+type gitArgs struct {
+	URL string `json:"url"`
 }
 
-func (s *gitSchema) branch(p graphql.ResolveParams) (any, error) {
-	repo := p.Source.(gitRepository)
+func (s *gitSchema) git(ctx *router.Context, parent any, args gitArgs) (gitRepository, error) {
+	return gitRepository(args), nil
+}
+
+type branchArgs struct {
+	Name string
+}
+
+func (s *gitSchema) branch(ctx *router.Context, parent gitRepository, args branchArgs) (gitRef, error) {
 	return gitRef{
-		repository: repo,
-		name:       p.Args["name"].(string),
+		Repository: parent,
+		Name:       args.Name,
 	}, nil
 }
 
-func (s *gitSchema) branches(p graphql.ResolveParams) (any, error) {
+func (s *gitSchema) branches(ctx *router.Context, parent any, args any) (any, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (s *gitSchema) tag(p graphql.ResolveParams) (any, error) {
-	repo := p.Source.(gitRepository)
+type tagArgs struct {
+	Name string
+}
+
+func (s *gitSchema) tag(ctx *router.Context, parent gitRepository, args tagArgs) (gitRef, error) {
 	return gitRef{
-		repository: repo,
-		name:       p.Args["name"].(string),
+		Repository: parent,
+		Name:       args.Name,
 	}, nil
 }
 
-func (s *gitSchema) tags(p graphql.ResolveParams) (any, error) {
+func (s *gitSchema) tags(ctx *router.Context, parent any, args any) (any, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (s *gitSchema) digest(p graphql.ResolveParams) (any, error) {
+func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (s *gitSchema) tree(p graphql.ResolveParams) (any, error) {
-	ref := p.Source.(gitRef)
+func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*filesystem.Filesystem, error) {
 	var opts []llb.GitOption
 	if s.sshAuthSockID != "" {
 		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
 	}
-	st := llb.Git(ref.repository.url, ref.name, opts...)
-	return s.Solve(p.Context, st)
+	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
+	return s.Solve(ctx, st)
 }

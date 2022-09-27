@@ -1,6 +1,9 @@
 package router
 
 import (
+	"context"
+	"encoding/json"
+
 	"github.com/graphql-go/graphql"
 )
 
@@ -64,4 +67,49 @@ func (s *staticSchema) Resolvers() Resolvers {
 
 func (s *staticSchema) Dependencies() []ExecutableSchema {
 	return s.StaticSchemaParams.Dependencies
+}
+
+type Context struct {
+	context.Context
+	ResolveInfo graphql.ResolveInfo
+}
+
+func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		ctx := Context{
+			Context:     p.Context,
+			ResolveInfo: p.Info,
+		}
+
+		var args A
+		argBytes, err := json.Marshal(p.Args)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(argBytes, &args); err != nil {
+			return nil, err
+		}
+
+		var parent P
+		parentBytes, err := json.Marshal(p.Source)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(parentBytes, &parent); err != nil {
+			return nil, err
+		}
+
+		res, err := f(&ctx, parent, args)
+		if err != nil {
+			return nil, err
+		}
+
+		return res, nil
+	}
+}
+
+func PassthroughResolver(p graphql.ResolveParams) (any, error) {
+	return ToResolver(func(ctx *Context, parent any, args any) (any, error) {
+		return struct{}{}, nil
+	})(p)
 }
