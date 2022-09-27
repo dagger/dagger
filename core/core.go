@@ -42,6 +42,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&filesystemSchema{base},
 		&projectSchema{
 			baseSchema:      base,
+			remoteSchemas:   make(map[string]*project.RemoteSchema),
 			compiledSchemas: make(map[string]*project.CompiledRemoteSchema),
 		},
 		&execSchema{base},

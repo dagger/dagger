@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/graphql-go/graphql"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
@@ -12,22 +11,23 @@ import (
 )
 
 type Project struct {
-	Name         string
-	Schema       string
-	Dependencies []*Project
-	Scripts      []*project.Script
-	Extensions   []*project.Extension
-	schema       *project.RemoteSchema // internal-only, for convenience in `install` resolver
+	Name         string               `json:"name"`
+	Schema       string               `json:"schema,omitempty"`
+	Dependencies []*Project           `json:"dependencies,omitempty"`
+	Scripts      []*project.Script    `json:"scripts,omitempty"`
+	Extensions   []*project.Extension `json:"extensions,omitempty"`
 }
 
 var _ router.ExecutableSchema = &projectSchema{}
 
 type projectSchema struct {
 	*baseSchema
-	compiledSchemas map[string]*project.CompiledRemoteSchema
-	l               sync.RWMutex
-	sf              singleflight.Group
-	sshAuthSockID   string
+	remoteSchemas     map[string]*project.RemoteSchema
+	remoteSchemasMu   sync.RWMutex
+	compiledSchemas   map[string]*project.CompiledRemoteSchema
+	compiledSchemasMu sync.RWMutex
+	sf                singleflight.Group
+	sshAuthSockID     string
 }
 
 func (s *projectSchema) Name() string {
@@ -45,10 +45,10 @@ type Project {
 	schema: String
 
 	"extensions in this project"
-	extensions: [Extension!]!
+	extensions: [Extension!]
 
 	"scripts in this project"
-	scripts: [Script!]!
+	scripts: [Script!]
 
 	"other projects with schema this project depends on"
 	dependencies: [Project!]
@@ -96,14 +96,14 @@ extend type Core {
 func (s *projectSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Filesystem": router.ObjectResolver{
-			"loadProject": s.loadProject,
+			"loadProject": router.ToResolver(s.loadProject),
 		},
 		"Core": router.ObjectResolver{
-			"project": s.project,
+			"project": router.ToResolver(s.project),
 		},
 		"Project": router.ObjectResolver{
-			"install":       s.install,
-			"generatedCode": s.generatedCode,
+			"install":       router.ToResolver(s.install),
+			"generatedCode": router.ToResolver(s.generatedCode),
 		},
 	}
 }
@@ -112,64 +112,73 @@ func (s *projectSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *projectSchema) install(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Project)
+func (s *projectSchema) install(ctx *router.Context, parent *Project, args struct{}) (bool, error) {
+	s.remoteSchemasMu.RLock()
+	remoteSchema, ok := s.remoteSchemas[parent.Name]
+	s.remoteSchemasMu.RUnlock()
+	if !ok {
+		return false, fmt.Errorf("project %q not found", parent.Name)
+	}
 
-	executableSchema, err := obj.schema.Compile(p.Context, s.compiledSchemas, &s.l, &s.sf)
+	executableSchema, err := remoteSchema.Compile(ctx, s.compiledSchemas, &s.compiledSchemasMu, &s.sf)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	if err := s.router.Add(executableSchema); err != nil {
-		return nil, err
+		return false, err
 	}
 
 	return true, nil
 }
 
-func (s *projectSchema) loadProject(p graphql.ResolveParams) (any, error) {
-	obj, err := filesystem.FromSource(p.Source)
+type loadProjectArgs struct {
+	ConfigPath string
+}
+
+func (s *projectSchema) loadProject(ctx *router.Context, parent *filesystem.Filesystem, args loadProjectArgs) (*Project, error) {
+	schema, err := project.Load(ctx, s.gw, s.platform, parent, args.ConfigPath, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
-
-	configPath := p.Args["configPath"].(string)
-	schema, err := project.Load(p.Context, s.gw, s.platform, obj, configPath, s.sshAuthSockID)
-	if err != nil {
-		return nil, err
-	}
-
+	s.remoteSchemasMu.Lock()
+	defer s.remoteSchemasMu.Unlock()
+	s.remoteSchemas[schema.Name()] = schema
 	return remoteSchemaToProject(schema), nil
 }
 
-func (s *projectSchema) project(p graphql.ResolveParams) (any, error) {
-	name := p.Args["name"].(string)
-
-	schema := s.router.Get(name)
-	if schema == nil {
-		return nil, fmt.Errorf("project %q not found", name)
-	}
-
-	return routerSchemaToProject(schema), nil
+type projectArgs struct {
+	Name string
 }
 
-func (s *projectSchema) generatedCode(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(*Project)
-	coreSchema := s.router.Get("core")
-	return obj.schema.Generate(p.Context, coreSchema.Schema())
+func (s *projectSchema) project(ctx *router.Context, parent struct{}, args projectArgs) (*Project, error) {
+	if args.Name == (&coreSchema{}).Name() {
+		coreSchema := s.router.Get(args.Name)
+		return &Project{
+			Name:   "core",
+			Schema: coreSchema.Schema(),
+		}, nil
+	}
+
+	s.remoteSchemasMu.RLock()
+	defer s.remoteSchemasMu.RUnlock()
+	remoteSchema, ok := s.remoteSchemas[args.Name]
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", args.Name)
+	}
+	return remoteSchemaToProject(remoteSchema), nil
 }
 
-// TODO:(sipsma) guard against infinite recursion
-func routerSchemaToProject(schema router.ExecutableSchema) *Project {
-	ext := &Project{
-		Name:   schema.Name(),
-		Schema: schema.Schema(),
-		//FIXME:(sipsma) Scripts, Extensions are not exposed on router.ExecutableSchema yet
+func (s *projectSchema) generatedCode(ctx *router.Context, parent *Project, args struct{}) (*filesystem.Filesystem, error) {
+	s.remoteSchemasMu.RLock()
+	remoteSchema, ok := s.remoteSchemas[parent.Name]
+	s.remoteSchemasMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", parent.Name)
 	}
-	for _, dep := range schema.Dependencies() {
-		ext.Dependencies = append(ext.Dependencies, routerSchemaToProject(dep))
-	}
-	return ext
+
+	coreSchema := s.router.Get((&coreSchema{}).Name())
+	return remoteSchema.Generate(ctx, coreSchema.Schema())
 }
 
 // TODO:(sipsma) guard against infinite recursion
@@ -179,7 +188,6 @@ func remoteSchemaToProject(schema *project.RemoteSchema) *Project {
 		Schema:     schema.Schema(),
 		Scripts:    schema.Scripts(),
 		Extensions: schema.Extensions(),
-		schema:     schema,
 	}
 	for _, dep := range schema.Dependencies() {
 		ext.Dependencies = append(ext.Dependencies, remoteSchemaToProject(dep))
