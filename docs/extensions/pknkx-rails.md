@@ -9,7 +9,7 @@ A Dagger extension for Rails operations.
 
 ## Example
 
-```
+```graphql
 {
   host {
     workdir {

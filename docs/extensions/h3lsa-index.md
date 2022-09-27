@@ -9,4 +9,3 @@ sidebar_class_name: navbar__toggle
 ---
 
 Use the links in the sidebar to explore Dagger extensions.
-
