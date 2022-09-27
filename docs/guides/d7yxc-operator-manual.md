@@ -1,13 +1,13 @@
 ---
-slug: /d7yxc/operator_manual
+slug: /d7yxc/operator-manual
 displayed_sidebar: '0.3'
 ---
 
-# Dagger operator manual
+# Operator Manual
 
 ## Overview
 
-This document explains how to operate dagger.
+This document explains how to operate Dagger.
 
 ## Concepts
 

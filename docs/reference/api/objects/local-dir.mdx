@@ -1,0 +1,52 @@
+---
+id: local-dir
+title: LocalDir
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+A directory on the user's host filesystem
+
+```graphql
+type LocalDir {
+  read: Filesystem!
+  write(
+  contents: FSID!
+  path: String
+): Boolean!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>LocalDir.<b>read</b></code>](#)<Bullet />[`Filesystem!`](/reference/api/objects/filesystem) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Read the contents of the directory
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>LocalDir.<b>write</b></code>](#)<Bullet />[`Boolean!`](/reference/api/scalars/boolean) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Write the provided filesystem to the directory
+> ##### [<code style={{ fontWeight: 'normal' }}>LocalDir.write.<b>contents</b></code>](#)<Bullet />[`FSID!`](/reference/api/scalars/fsid) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>LocalDir.write.<b>path</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+
+
+### Member of
+
+[`Host`](/reference/api/objects/host)  <Badge class="secondary" text="object"/>
+
+
+

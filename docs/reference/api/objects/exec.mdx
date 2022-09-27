@@ -1,0 +1,70 @@
+---
+id: exec
+title: Exec
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+Command execution
+
+```graphql
+type Exec {
+  exitCode: Int
+  fs: Filesystem!
+  mount(
+  path: String!
+): Filesystem!
+  stderr(
+  lines: Int
+): String
+  stdout(
+  lines: Int
+): String
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>Exec.<b>exitCode</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
+> Exit code of the command
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Exec.<b>fs</b></code>](#)<Bullet />[`Filesystem!`](/reference/api/objects/filesystem) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Modified filesystem
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Exec.<b>mount</b></code>](#)<Bullet />[`Filesystem!`](/reference/api/objects/filesystem) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Modified mounted filesystem
+> ##### [<code style={{ fontWeight: 'normal' }}>Exec.mount.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Exec.<b>stderr</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> stderr of the command
+> ##### [<code style={{ fontWeight: 'normal' }}>Exec.stderr.<b>lines</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Exec.<b>stdout</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> stdout of the command
+> ##### [<code style={{ fontWeight: 'normal' }}>Exec.stdout.<b>lines</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+
+
+### Member of
+
+[`Filesystem`](/reference/api/objects/filesystem)  <Badge class="secondary" text="object"/>
+
+
+

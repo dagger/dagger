@@ -1,0 +1,47 @@
+---
+id: host
+title: Host
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+Interactions with the user's host filesystem
+
+```graphql
+type Host {
+  dir(
+  id: String!
+): LocalDir!
+  workdir: LocalDir!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>Host.<b>dir</b></code>](#)<Bullet />[`LocalDir!`](/reference/api/objects/local-dir) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Fetch a client directory
+> ##### [<code style={{ fontWeight: 'normal' }}>Host.dir.<b>id</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Host.<b>workdir</b></code>](#)<Bullet />[`LocalDir!`](/reference/api/objects/local-dir) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Fetch the client's workdir
+> 
+
+
+
+### Returned by
+
+[`host`](/reference/api/queries/host)  <Badge class="secondary" text="query"/>
+
+
+

@@ -1,0 +1,34 @@
+---
+id: include
+title: include
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+Directs the executor to include this field or fragment only when the `if` argument is true.
+
+```graphql
+directive @include(
+  if: Boolean!
+)
+```
+
+
+### Arguments
+
+#### [<code style={{ fontWeight: 'normal' }}>include.<b>if</b></code>](#)<Bullet />[`Boolean!`](/reference/api/scalars/boolean) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Included when true.
+> 
+
+
+
+
+

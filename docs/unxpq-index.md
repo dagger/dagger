@@ -3,14 +3,12 @@ slug: /
 displayed_sidebar: '0.3'
 ---
 
-# Introduction to Dagger
+# Introduction
 
-## What is Dagger?
-
-Dagger is a cross-platform CI/CD engine with 3 defining features:
+Dagger is a cross-platform CI/CD engine with three defining features:
 
 1. Portable. Your pipelines run in containers so you get the same behavior on your local machine and in your CI environment.
-2. Scriptable. Develop pipelines in Go, Typescript, Python, or even a shell script. No niche language or proprietary YAML required.
+2. Scriptable. Develop pipelines in Go, Typescript, Python, or even a shell script. No niche language or proprietary YAML is required.
 3. Extensible. Each pipeline has an API. Pipelines can be shared and reused across projects, teams or the entire community.
 
 ```mermaid
@@ -57,47 +55,12 @@ This can drastically improve the experience of developing and running CI/CD pipe
 
 If you would like us to add support for another language, [please tell us about it in an issue](https://github.com/dagger/dagger/issues/new)!
 
-Note that it's possible, with some boilerplate work, to script Dagger using any language that [supports GraphQL](https://github.com/chentsulin/awesome-graphql).
+:::note
+It's possible, with some boilerplate work, to script Dagger using any language that [supports GraphQL](https://github.com/chentsulin/awesome-graphql).
+:::
 
-## How it works
+## Resources
 
-### The Dagger API
-
-The Dagger API is a graphql API for composing and running powerful pipelines with minimal effort. By relying on the Dagger API to do the heavy lifting, one can write a small script that orchestrates a complex workflow, knowing that it will run in a secure and scalable way out of the box, and can easily be changed later as needed.
-
-### Composition
-
-The Dagger API allows composing a large pipeline from smaller ones. The component pipelines may be defined inline, or imported from an extension. Pipeline composition happens at the API layer, and is therefore language-agnostic. Any Dagger pipeline can be composed of any other dagger pipelines, as long as they have compatible inputs and outputs.
-
-### Extensions
-
-Pipelines can be shared and reused using *extensions*.
-
-An extension is a collection of pipelines which can be imported into any Dagger project, and used to compose larger pipelines in the usual manner.
-
-Extensions may themselves import other extensions.
-
-```mermaid
-graph LR;
-
-script["your script"] -. Dagger API ..-> engine["Dagger Engine"]
-
-subgraph A["your build pipeline"]
-  A1[" "] -.-> A2["build with NPM"] -.-> A3[" "]
-end
-
-  A2 -.-> B1
-    B4 -.-> A2
-subgraph p2["Extension: NPM"]
-      B1[" "] -.-> B2[" "] -.-> B3[" "] -.-> B4[" "]
-    end
-engine -..-> A1
-```
-
-[Learn more about writing extensions](guides/bnzm7-writing_extensions.md)
-
-### Available Extensions
-
-* [Vercel](https://github.com/slumbering/dagger-vercel)
-* [Terraform](https://github.com/kpenfound/dagger-terraform)
-* [Rails](https://github.com/kpenfound/dagger-rails)
+- [Quickstart](./get-started/bvtz9-get-started.md)
+- [Tutorials](./tutorials/)
+- [API](./reference/api/)

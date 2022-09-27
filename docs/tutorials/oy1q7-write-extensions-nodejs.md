@@ -1,9 +1,9 @@
 ---
-slug: /oy1q7/writing_extensions_nodejs
+slug: /oy1q7/write-extensions-nodejs
 displayed_sidebar: "0.3"
 ---
 
-# Writing a new project with NodeJS (Javascript or Typescript)
+# Write an Extension for a NodeJS Project
 
 Say we are creating a new project called `foo`. It will have
 

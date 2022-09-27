@@ -88,5 +88,5 @@ module.exports = {
       },
     ],
   ],
-  plugins: ["docusaurus-plugin-sass", "docusaurus2-dotenv"],
+  plugins: ["docusaurus-plugin-sass", "docusaurus2-dotenv", ["@edno/docusaurus2-graphql-doc-generator",  {loaders: {UrlLoader: "@graphql-tools/url-loader", options: { subscription: ""}}, schema: "http://localhost:8080/query", rootPath: "../docs", baseURL: "reference/api"}]],
 };

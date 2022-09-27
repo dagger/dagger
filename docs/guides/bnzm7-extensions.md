@@ -1,9 +1,9 @@
 ---
-slug: /bnzm7/writing_extensions
+slug: /bnzm7/api-extensions
 displayed_sidebar: '0.3'
 ---
 
-# Writing an API extension
+# Extensions
 
 ## Overview
 
@@ -11,8 +11,8 @@ This document explains how to write an API extension for Dagger.
 
 ## SDK-specific guides
 
-- [Writing an extension in Go](y0yh0-writing_extensions_go.md)
-- [Writing an extension in Javascript/Typescript](oy1q7-writing_extensions_nodejs.md)
+- [Write an extension in Go](../tutorials/y0yh0-write-extensions-go.md)
+- [Write an extension in Javascript/Typescript](../tutorials/oy1q7-write-extensions-nodejs.md)
 
 ## Concepts
 

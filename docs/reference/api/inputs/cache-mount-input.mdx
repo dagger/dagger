@@ -1,0 +1,48 @@
+---
+id: cache-mount-input
+title: CacheMountInput
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+No description
+
+```graphql
+input CacheMountInput {
+  sharingMode: String!
+  path: String!
+  name: String!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>sharingMode</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Cache mount sharing mode (TODO: switch to enum)
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> path at which the cache will be mounted
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Cache mount name
+> 
+
+
+
+### Member of
+
+[`ExecInput`](/reference/api/inputs/exec-input)  <Badge class="secondary" text="input"/>
+
+
+

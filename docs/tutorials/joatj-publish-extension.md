@@ -1,15 +1,15 @@
 ---
-slug: /joatj/extension_publishing_guide
+slug: /joatj/publish-extension
 displayed_sidebar: '0.3'
 ---
 
-# Extension Publishing Guide
+# Publish an Extension
 
 ## Overview
 
 This document explains best practices for creating public extensions.
 
-For information on writing the extension itself, visit the [Writing Extensions](bnzm7-writing_extensions.md) guide.
+For information on writing the extension itself, visit the [Extensions](../guides/bnzm7-extensions.md) guide.
 
 ## The Extension Repository
 
@@ -30,7 +30,7 @@ Extensions should:
 
 ## Discoverability
 
-To make your extension easily discoverable by the dagger community, add a link to it in [introduction](../unxpq-introduction.md).
+To make your extension easily discoverable by the dagger community, add a link to it in [introduction](../unxpq-index.md).
 
 ## Get Started
 
