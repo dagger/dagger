@@ -12,16 +12,14 @@ type Config struct {
 }
 
 type Script struct {
-	Path string `yaml:"path"`
-	SDK  string `yaml:"sdk"`
+	Path string `yaml:"path" json:"path"`
+	SDK  string `yaml:"sdk" json:"sdk"`
 }
 
 type Extension struct {
-	Path string `yaml:"path"`
-	SDK  string `yaml:"sdk"`
-
-	// internal-only fields for tracking state
-	Schema string `yaml:"-"`
+	Path   string `yaml:"path" json:"path"`
+	SDK    string `yaml:"sdk" json:"sdk"`
+	Schema string `yaml:"schema" json:"schema"`
 }
 
 type Dependency struct {
