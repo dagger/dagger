@@ -20,12 +20,15 @@ module.exports = {
       items: ["unxpq-introduction"],
     },
     {
+      type: "doc",
+      id: "get-started/bvtz9-get-started",
+    },
+    {
       type: "category",
       label: "Guides",
       collapsible: false,
       collapsed: false,
       items: [
-        "guides/2ku9n-getting_started",
         "guides/bnzm7-writing_extensions",
         "guides/y0yh0-writing_extensions_go",
         "guides/oy1q7-writing_extensions_nodejs",
