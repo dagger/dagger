@@ -33,8 +33,8 @@ Using Dagger does not require converting to yet another DevOps platform. Instead
 
 ## Resources
 
-- [Quickstart](./get-started/bvtz9-get-started.md)
-- [Tutorials](./tutorials/)
-- [Extensions](./extensions/)
-- [API](./reference/api/)
+* [Quickstart](./get-started/bvtz9-get-started.md)
+* [Tutorials](./tutorials/)
+* [Extensions](./extensions/)
+* [API](./reference/api/)
 
