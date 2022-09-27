@@ -1,9 +1,9 @@
 ---
-slug: /y0yh0/writing_extensions_go
+slug: /y0yh0/write-extensions-go
 displayed_sidebar: "0.3"
 ---
 
-# Writing a new project with Go
+# Write an Extension for a Go Project
 
 Say we are creating a new project called `foo`. It will have
 

@@ -1,5 +1,5 @@
 ---
-slug: /f5cij/extension_runtime_protocol
+slug: /f5cij/extension-runtime-protocol
 displayed_sidebar: '0.3'
 ---
 

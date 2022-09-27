@@ -1,0 +1,133 @@
+---
+id: filesystem
+title: Filesystem
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+A reference to a filesystem tree.
+
+For example:
+	- The root filesystem of a container
+	- A source code repository
+	- A directory containing binary artifacts
+
+Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+
+```graphql
+type Filesystem {
+  copy(
+  from: FSID!
+  srcPath: String
+  destPath: String
+  include: [String!]
+  exclude: [String!]
+): Filesystem
+  dockerbuild(
+  dockerfile: String
+): Filesystem!
+  exec(
+  input: ExecInput!
+): Exec!
+  file(
+  lines: Int
+  path: String!
+): String
+  id: FSID!
+  loadProject(
+  configPath: String!
+): Project!
+  pushImage(
+  ref: String!
+): Boolean!
+  yarn(
+  runArgs: [String!]
+): Filesystem!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>copy</b></code>](#)<Bullet />[`Filesystem`](/reference/api/objects/filesystem) <Badge class="secondary" text="object"/>
+> copy from a filesystem
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.copy.<b>from</b></code>](#)<Bullet />[`FSID!`](/reference/api/scalars/fsid) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.copy.<b>srcPath</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.copy.<b>destPath</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.copy.<b>include</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.copy.<b>exclude</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>dockerbuild</b></code>](#)<Bullet />[`Filesystem!`](/reference/api/objects/filesystem) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> docker build using this filesystem as context
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.dockerbuild.<b>dockerfile</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>exec</b></code>](#)<Bullet />[`Exec!`](/reference/api/objects/exec) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> execute a command inside this filesystem
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.exec.<b>input</b></code>](#)<Bullet />[`ExecInput!`](/reference/api/inputs/exec-input) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="input"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>file</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> read a file at path
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.file.<b>lines</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.file.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>id</b></code>](#)<Bullet />[`FSID!`](/reference/api/scalars/fsid) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>loadProject</b></code>](#)<Bullet />[`Project!`](/reference/api/objects/project) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> load a project's metadata
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.loadProject.<b>configPath</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>pushImage</b></code>](#)<Bullet />[`Boolean!`](/reference/api/scalars/boolean) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> push a filesystem as an image to a registry
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.pushImage.<b>ref</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>yarn</b></code>](#)<Bullet />[`Filesystem!`](/reference/api/objects/filesystem) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> 
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.yarn.<b>runArgs</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+
+
+### Member of
+
+[`Alpine`](/reference/api/objects/alpine)  <Badge class="secondary" text="object"/><Bullet />[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Exec`](/reference/api/objects/exec)  <Badge class="secondary" text="object"/><Bullet />[`Filesystem`](/reference/api/objects/filesystem)  <Badge class="secondary" text="object"/><Bullet />[`LocalDir`](/reference/api/objects/local-dir)  <Badge class="secondary" text="object"/><Bullet />[`Project`](/reference/api/objects/project)  <Badge class="secondary" text="object"/><Bullet />[`Yarn`](/reference/api/objects/yarn)  <Badge class="secondary" text="object"/>
+
+
+

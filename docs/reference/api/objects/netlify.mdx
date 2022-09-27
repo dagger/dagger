@@ -1,0 +1,57 @@
+---
+id: netlify
+title: Netlify
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+No description
+
+```graphql
+type Netlify {
+  deploy(
+  subdir: String
+  siteName: String
+  token: SecretID!
+  contents: FSID!
+): SiteURLs!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>Netlify.<b>deploy</b></code>](#)<Bullet />[`SiteURLs!`](/reference/api/objects/site-urls) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> 
+> ##### [<code style={{ fontWeight: 'normal' }}>Netlify.deploy.<b>subdir</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Netlify.deploy.<b>siteName</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Netlify.deploy.<b>token</b></code>](#)<Bullet />[`SecretID!`](/reference/api/scalars/secret-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Netlify.deploy.<b>contents</b></code>](#)<Bullet />[`FSID!`](/reference/api/scalars/fsid) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+
+
+### Returned by
+
+[`netlify`](/reference/api/queries/netlify)  <Badge class="secondary" text="query"/>
+
+
+

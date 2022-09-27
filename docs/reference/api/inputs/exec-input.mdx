@@ -1,0 +1,65 @@
+---
+id: exec-input
+title: ExecInput
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+No description
+
+```graphql
+input ExecInput {
+  mounts: [MountInput!]
+  cacheMounts: [CacheMountInput!]
+  workdir: String
+  env: [ExecEnvInput!]
+  secretEnv: [ExecSecretEnvInput!]
+  sshAuthSock: String
+  args: [String!]!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>mounts</b></code>](#)<Bullet />[`[MountInput!]`](/reference/api/inputs/mount-input) <Badge class="secondary" text="list"/> <Badge class="secondary" text="input"/>
+> Filesystem mounts
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>cacheMounts</b></code>](#)<Bullet />[`[CacheMountInput!]`](/reference/api/inputs/cache-mount-input) <Badge class="secondary" text="list"/> <Badge class="secondary" text="input"/>
+> Cached mounts
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>workdir</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> Working directory
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>env</b></code>](#)<Bullet />[`[ExecEnvInput!]`](/reference/api/inputs/exec-env-input) <Badge class="secondary" text="list"/> <Badge class="secondary" text="input"/>
+> Env vars
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>secretEnv</b></code>](#)<Bullet />[`[ExecSecretEnvInput!]`](/reference/api/inputs/exec-secret-env-input) <Badge class="secondary" text="list"/> <Badge class="secondary" text="input"/>
+> Secret env vars
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>sshAuthSock</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> Include the host's ssh agent socket in the exec at the provided path
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>args</b></code>](#)<Bullet />[`[String!]!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Command to execute
+Example: ["echo", "hello, world!"]
+> 
+
+
+
+
+
