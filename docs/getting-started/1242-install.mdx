@@ -6,7 +6,7 @@ displayed_sidebar: "0.2"
 
 # Install Dagger
 
-The first step to get started is to install dagger on your local machine.  
+The first step to get started is to install dagger on your local machine.
 Once installed, we recommend [following our tutorial](/1200/local-dev) (or trying a template.)
 
 import Tabs from "@theme/Tabs";
@@ -57,6 +57,10 @@ curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
 dagger 0.2.19 (GIT_SHA) darwin/arm64
 ```
 
+:::note
+you need elevated privileges to run the previous command or append `sudo` before `sh`
+:::
+
 </TabItem>
 
 <TabItem value="linux">
@@ -67,6 +71,9 @@ The quickest way of installing `dagger` on Linux is to run the following command
 cd /usr/local
 curl -L https://dl.dagger.io/dagger/install.sh | sh
 ```
+:::note
+you need elevated privileges to run the previous command or append `sudo` before `sh`
+:::
 
 This installs `dagger` in `/usr/local/bin`:
 
