@@ -102,7 +102,7 @@ To see this API in action, follow the steps below:
 
   This query console provides an easy way to work with the Dagger API, allowing you to test actions and workflows by entering and executing queries in an ad-hoc manner. Query results are displayed in the accompanying results window. 
 
-1. Try it out by entering the following simple query, which uses the Dagger API to query the Reqres REST API. Click the "Execute query" button in the right navigation bar or type `Ctrl+Enter` to execute the query.
+1. Try it out by entering the following simple query, which uses the Dagger API to query the [Reqres REST API](https://reqres.in/). Click the "Execute query" button in the right navigation bar or type `Ctrl+Enter` to execute the query.
 
   ```graphql
   {
