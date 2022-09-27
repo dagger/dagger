@@ -42,6 +42,38 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: "Generate next release version"
+        id: release_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMVER_BUMP: ${{ github.event.inputs.release_type }}
+        run: |
+          previous_release_version="$(gh api /repos/:owner/:repo/releases --jq '.[0].tag_name')"
+          echo "PREVIOUS RELEASE VERSION: $previous_release_version"
+          printf "::set-output name=%s::%s\n" previous "$previous_release_version"
+          if [[ -n "${{ github.event.inputs.release_version }}" ]]
+          then
+            next_release_version="v${{ github.event.inputs.release_version }}"
+          else
+            # Rather than introducing an external dependency on `semver` on every run, we commit & use a specific version locally
+            # wget https://raw.githubusercontent.com/fsaintjacques/semver-tool/3.3.0/src/semver
+            # https://github.com/fsaintjacques/semver-tool
+            next_release_version="v$(./semver bump ${SEMVER_BUMP:=patch} $previous_release_version)"
+          fi
+          echo "NEXT RELEASE VERSION: $next_release_version"
+          printf "::set-output name=%s::%s\n" next "$next_release_version"
+
+      - name: "Fail if no changes since previous release"
+        run: |
+          echo "Changes since previous release:"
+          git diff --color --stat ${{ steps.release_version.outputs.previous }}...$GITHUB_SHA
+          if [ -z "$(git diff --color --stat ${{ steps.release_version.outputs.previous }}...$GITHUB_SHA)" ]
+          then
+            echo "This auto-release was failed on purpose: there have been no changes since ${{ steps.release_version.outputs.previous }}."
+            echo "While this can happen, it is rare and we should take notice of it, hence the failure."
+            exit 1
+          fi
+
       - name: "Ensure that all other checks have succeeded"
         # https://github.com/lewagon/wait-on-check-action
         uses: lewagon/wait-on-check-action@v1.0.0
@@ -52,32 +84,12 @@ jobs:
           running-workflow-name: "Bump version, tag & release"
           allowed-conclusions: success
 
-      - name: "Generate next release version"
-        id: next_release_version
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SEMVER_BUMP: ${{ github.event.inputs.release_type }}
-        run: |
-          if [[ -n "${{ github.event.inputs.release_version }}" ]]
-          then
-            next_release_version="v${{ github.event.inputs.release_version }}"
-          else
-            previous_release_version="$(gh api /repos/:owner/:repo/releases --jq '.[0].tag_name')"
-            echo "PREVIOUS RELEASE VERSION: $previous_release_version"
-            # Rather than installing it on every run, we commit it locally so that we have everything we need locally
-            # wget https://raw.githubusercontent.com/fsaintjacques/semver-tool/3.3.0/src/semver
-            # https://github.com/fsaintjacques/semver-tool
-            next_release_version="v$(./semver bump ${SEMVER_BUMP:=patch} $previous_release_version)"
-          fi
-          echo "NEXT RELEASE VERSION: $next_release_version"
-          printf "::set-output name=%s::%s\n" value "$next_release_version"
-
       - name: "Create next release tag"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api -X POST /repos/:owner/:repo/git/refs \
-            --field ref="refs/tags/${{ steps.next_release_version.outputs.value }}" \
+            --field ref="refs/tags/${{ steps.release_version.outputs.next }}" \
             --field sha="$GITHUB_SHA"
 
       - name: "Fetch new tag"
@@ -110,7 +122,7 @@ jobs:
         with:
           download-url: https://github.com/dagger/dagger.git
           formula-name: dagger
-          tag-name: ${{ steps.next_release_version.outputs.value }}
+          tag-name: ${{ steps.release_version.outputs.next }}
           commit-message: |
             {{formulaName}} {{version}}
 
