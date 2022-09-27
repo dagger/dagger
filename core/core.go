@@ -27,38 +27,38 @@ type InitializeArgs struct {
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
-		router:      params.Router,
-		secretStore: params.SecretStore,
-		gw:          params.Gateway,
-		bkClient:    params.BKClient,
-		solveOpts:   params.SolveOpts,
-		solveCh:     params.SolveCh,
-		platform:    params.Platform,
+		router:        params.Router,
+		secretStore:   params.SecretStore,
+		gw:            params.Gateway,
+		bkClient:      params.BKClient,
+		solveOpts:     params.SolveOpts,
+		solveCh:       params.SolveCh,
+		platform:      params.Platform,
+		sshAuthSockID: params.SSHAuthSockID,
 	}
 	return router.MergeExecutableSchemas("core",
-		&coreSchema{base, params.SSHAuthSockID, params.WorkdirID},
-
+		&coreSchema{base, params.WorkdirID},
+		&gitSchema{base},
 		&filesystemSchema{base},
 		&projectSchema{
 			baseSchema:      base,
 			compiledSchemas: make(map[string]*project.CompiledRemoteSchema),
-			sshAuthSockID:   params.SSHAuthSockID,
 		},
-		&execSchema{base, params.SSHAuthSockID},
+		&execSchema{base},
 		&dockerBuildSchema{base},
-
 		&secretSchema{base},
 	)
 }
 
 type baseSchema struct {
-	router      *router.Router
-	secretStore *secret.Store
-	gw          bkgw.Client
-	bkClient    *bkclient.Client
-	solveOpts   bkclient.SolveOpt
-	solveCh     chan *bkclient.SolveStatus
-	platform    specs.Platform
+	router        *router.Router
+	secretStore   *secret.Store
+	gw            bkgw.Client
+	bkClient      *bkclient.Client
+	solveOpts     bkclient.SolveOpt
+	solveCh       chan *bkclient.SolveStatus
+	platform      specs.Platform
+	sshAuthSockID string
 }
 
 func (r *baseSchema) Solve(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*filesystem.Filesystem, error) {
