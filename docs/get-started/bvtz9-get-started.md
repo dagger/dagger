@@ -15,9 +15,9 @@ This tutorial introduces you to the basics of Dagger. It walks you through insta
 
 This tutorial assumes that:
 
-- You have Docker installed and running on the host system. If not, install Docker.
-- You have a Node.js development environment on the host system, with Node.js 14.x/16.x/18.x and `npm` installed. If not, download and install Node.js and then download and install `npm`.
-- You have a Docker Hub account. If not, register for a free Docker Hub account.
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have a Node.js development environment on the host system, with Node.js 14.x/16.x/18.x and `npm` installed. If not, [download and install Node.js](https://nodejs.org/en/download/).
+- You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
 
 ## Step 1: Install Dagger
 
@@ -370,6 +370,12 @@ This script is significantly more complex than the one shown in Step 2, so let's
   - Once the application source code is copied, it uses the `exec()` field to run `npm install --production=true` to create a new build containing only the required dependencies.
   - A reference to the final filesystem, containing the base image, application source code and all required dependencies, is stored in the `appImage` constant as a `Filesystem`.
 - It uses the `pushImage()` field to push the final `Filesystem` to Docker Hub.
+
+Before testing the script, sign in to your Docker Hub account on the host, so that Dagger can use the same credentials when pushing the final image to Docker Hub.
+
+```bash
+docker login
+```
 
 Execute the script to build the application image and push it to Docker Hub.
 
