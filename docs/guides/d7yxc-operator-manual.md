@@ -1,13 +1,13 @@
 ---
-slug: /d7yxc/operator_manual
+slug: /d7yxc/operator-manual
 displayed_sidebar: '0.3'
 ---
 
-# Cloak operator manual
+# Operator Manual
 
 ## Overview
 
-This document explains how to operate dagger/cloak.
+This document explains how to operate Dagger.
 
 ## Concepts
 

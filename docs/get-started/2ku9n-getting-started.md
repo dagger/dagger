@@ -1,5 +1,5 @@
 ---
-slug: /2ku9n/getting_started
+slug: 2ku9n/getting-started
 displayed_sidebar: "0.3"
 ---
 

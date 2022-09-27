@@ -1,0 +1,30 @@
+---
+id: string
+title: String
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
+
+```graphql
+scalar String
+```
+
+
+
+
+### Member of
+
+[`CacheMountInput`](/reference/api/inputs/cache-mount-input)  <Badge class="secondary" text="input"/><Bullet />[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`deprecated`](/reference/api/directives/deprecated)  <Badge class="secondary" text="directive"/><Bullet />[`Exec`](/reference/api/objects/exec)  <Badge class="secondary" text="object"/><Bullet />[`ExecEnvInput`](/reference/api/inputs/exec-env-input)  <Badge class="secondary" text="input"/><Bullet />[`ExecInput`](/reference/api/inputs/exec-input)  <Badge class="secondary" text="input"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/><Bullet />[`Extension`](/reference/api/objects/extension)  <Badge class="secondary" text="object"/><Bullet />[`Filesystem`](/reference/api/objects/filesystem)  <Badge class="secondary" text="object"/><Bullet />[`MountInput`](/reference/api/inputs/mount-input)  <Badge class="secondary" text="input"/><Bullet />[`Project`](/reference/api/objects/project)  <Badge class="secondary" text="object"/><Bullet />[`Script`](/reference/api/objects/script)  <Badge class="secondary" text="object"/><Bullet />[`SiteURLs`](/reference/api/objects/site-urls)  <Badge class="secondary" text="object"/>
+
+
+
