@@ -86,12 +86,8 @@ func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, erro
 	})
 }
 
-func (dir *File) Decode() (llb.State, string, error) {
-	if dir.ID == "" {
-		return llb.Scratch(), "", nil
-	}
-
-	payload, err := dir.ID.decode()
+func (file *File) Decode() (llb.State, string, error) {
+	payload, err := file.ID.decode()
 	if err != nil {
 		return llb.State{}, "", err
 	}
