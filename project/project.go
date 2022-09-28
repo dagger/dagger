@@ -222,15 +222,15 @@ func (s *CompiledRemoteSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphql.FieldResolveFn {
-	return func(p graphql.ResolveParams) (any, error) {
-		pathArray := p.Info.Path.AsArray()
+	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
+		pathArray := ctx.ResolveInfo.Path.AsArray()
 		name := fmt.Sprintf("%+v", pathArray)
 
-		resolverName := fmt.Sprintf("%s.%s", p.Info.ParentType.Name(), p.Info.FieldName)
+		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveInfo.ParentType.Name(), ctx.ResolveInfo.FieldName)
 		inputMap := map[string]interface{}{
 			"resolver": resolverName,
-			"args":     p.Args,
-			"parent":   p.Source,
+			"args":     args,
+			"parent":   parent,
 		}
 		inputBytes, err := json.Marshal(inputMap)
 		if err != nil {
@@ -255,7 +255,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		)
 
 		// TODO: /mnt should maybe be configurable?
-		for path, fsid := range collectFSPaths(p.Args, fsMountPath, nil) {
+		for path, fsid := range collectFSPaths(args, fsMountPath, nil) {
 			fs := filesystem.New(fsid)
 			fsState, err := fs.ToState()
 			if err != nil {
@@ -270,12 +270,16 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		// FIXME:(sipsma) got to be a better way than string matching parent type... But not easy
 		// to just use go type matching because the parent result may be a Filesystem struct or
 		// an untyped map[string]interface{}.
-		if p.Info.ParentType.Name() == "Filesystem" {
-			obj, err := filesystem.FromSource(p.Source)
+		if ctx.ResolveInfo.ParentType.Name() == "Filesystem" {
+			var parentFS filesystem.Filesystem
+			bytes, err := json.Marshal(parent)
 			if err != nil {
 				return nil, err
 			}
-			fsState, err := obj.ToState()
+			if err := json.Unmarshal(bytes, &parentFS); err != nil {
+				return nil, err
+			}
+			fsState, err := parentFS.ToState()
 			if err != nil {
 				return nil, err
 			}
@@ -284,12 +288,12 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		}
 
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-		outputDef, err := outputMnt.Marshal(p.Context, llb.Platform(s.platform), llb.WithCustomName(name))
+		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(s.platform), llb.WithCustomName(name))
 		if err != nil {
 			return nil, err
 		}
 
-		res, err := s.gw.Solve(p.Context, bkgw.SolveRequest{
+		res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: outputDef.ToPB(),
 		})
 		if err != nil {
@@ -299,7 +303,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		if err != nil {
 			return nil, err
 		}
-		outputBytes, err := ref.ReadFile(p.Context, bkgw.ReadRequest{
+		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
 			Filename: outputFile,
 		})
 		if err != nil {
@@ -310,7 +314,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 		}
 		return output, nil
-	}
+	})
 }
 
 func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesystem.FSID) map[string]filesystem.FSID {

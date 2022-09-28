@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 
-	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"go.dagger.io/dagger/router"
 )
@@ -63,8 +62,8 @@ func (s *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,
 		"Core": router.ObjectResolver{
-			"secret":    s.secret,
-			"addSecret": s.addSecret,
+			"secret":    router.ToResolver(s.secret),
+			"addSecret": router.ToResolver(s.addSecret),
 		},
 	}
 }
@@ -73,16 +72,22 @@ func (s *secretSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *secretSchema) secret(p graphql.ResolveParams) (any, error) {
-	id := p.Args["id"].(string)
-	plaintext, err := s.secretStore.GetSecret(p.Context, id)
+type secretArgs struct {
+	ID string `json:"id"`
+}
+
+func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) (string, error) {
+	plaintext, err := s.secretStore.GetSecret(ctx, args.ID)
 	if err != nil {
-		return nil, fmt.Errorf("secret %s: %w", id, err)
+		return "", fmt.Errorf("secret %s: %w", args.ID, err)
 	}
 	return string(plaintext), nil
 }
 
-func (s *secretSchema) addSecret(p graphql.ResolveParams) (any, error) {
-	plaintext := p.Args["plaintext"].(string)
-	return s.secretStore.AddSecret(p.Context, []byte(plaintext)), nil
+type addSecretArgs struct {
+	Plaintext string
+}
+
+func (s *secretSchema) addSecret(ctx *router.Context, parent any, args addSecretArgs) (string, error) {
+	return s.secretStore.AddSecret(ctx, []byte(args.Plaintext)), nil
 }

@@ -125,27 +125,6 @@ func FromState(ctx context.Context, st llb.State, platform specs.Platform) (*Fil
 	return info.ToFilesystem()
 }
 
-func FromSource(source any) (*Filesystem, error) {
-	fs, ok := source.(*Filesystem)
-	if ok {
-		return fs, nil
-	}
-
-	// TODO: when returned by user actions, Filesystem is just a map[string]interface{}, need to fix, hack for now:
-
-	m, ok := source.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid source type: %T", source)
-	}
-	id, ok := m["id"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid source id: %T %v", source, source)
-	}
-	return &Filesystem{
-		ID: FSID(id),
-	}, nil
-}
-
 func Merged(ctx context.Context, filesystems []*Filesystem, platform specs.Platform) (*Filesystem, error) {
 	states := make([]llb.State, 0, len(filesystems))
 	for _, fs := range filesystems {

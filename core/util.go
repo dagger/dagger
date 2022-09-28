@@ -1,26 +1,22 @@
 package core
 
 import (
-	"encoding/json"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
-func convertArg(arg any, dest any) error {
-	marshalled, err := json.Marshal(arg)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(marshalled, dest)
-}
+// ErrNotImplementedYet is used to stub out API fields that aren't implemented
+// yet.
+var ErrNotImplementedYet = errors.New("not implemented yet")
 
-func truncate(s string, args map[string]any) string {
-	lines, ok := args["lines"].(int)
-	if !ok {
+func truncate(s string, lines *int) string {
+	if lines == nil {
 		return s
 	}
-	l := strings.SplitN(s, "\n", lines+1)
-	if lines > len(l) {
-		lines = len(l)
+	l := strings.SplitN(s, "\n", *lines+1)
+	if *lines > len(l) {
+		*lines = len(l)
 	}
-	return strings.Join(l[0:lines], "\n")
+	return strings.Join(l[0:*lines], "\n")
 }

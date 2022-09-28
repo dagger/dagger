@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/graphql-go/graphql"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/core/filesystem"
@@ -62,19 +61,19 @@ type LocalDir {
 func (r *coreSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
-			"core": r.core,
-			"host": r.host,
+			r.Name(): router.PassthroughResolver,
+			"host":   router.PassthroughResolver,
 		},
 		"Core": router.ObjectResolver{
-			"image": r.image,
+			"image": router.ToResolver(r.image),
 		},
 		"Host": router.ObjectResolver{
-			"workdir": r.workdir,
-			"dir":     r.dir,
+			"workdir": router.ToResolver(r.workdir),
+			"dir":     router.ToResolver(r.dir),
 		},
 		"LocalDir": router.ObjectResolver{
-			"read":  r.localDirRead,
-			"write": r.localDirWrite,
+			"read":  router.ToResolver(r.localDirRead),
+			"write": router.ToResolver(r.localDirWrite),
 		},
 	}
 }
@@ -83,82 +82,80 @@ func (r *coreSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (r *coreSchema) core(p graphql.ResolveParams) (any, error) {
-	return struct{}{}, nil
+type imageArgs struct {
+	Ref string
 }
 
-func (r *coreSchema) host(p graphql.ResolveParams) (any, error) {
-	return struct{}{}, nil
-}
-
-func (r *coreSchema) image(p graphql.ResolveParams) (any, error) {
-	ref := p.Args["ref"].(string)
-
-	st := llb.Image(ref, llb.WithMetaResolver(r.gw))
-	return r.Solve(p.Context, st)
+func (r *coreSchema) image(ctx *router.Context, parent any, args imageArgs) (*filesystem.Filesystem, error) {
+	st := llb.Image(args.Ref, llb.WithMetaResolver(r.gw))
+	return r.Solve(ctx, st)
 }
 
 type localDir struct {
 	ID string `json:"id"`
 }
 
-func (r *coreSchema) workdir(p graphql.ResolveParams) (any, error) {
+func (r *coreSchema) workdir(ctx *router.Context, parent any, args any) (localDir, error) {
 	return localDir{r.workdirID}, nil
 }
 
-func (r *coreSchema) dir(p graphql.ResolveParams) (any, error) {
-	id := p.Args["id"].(string)
-	return localDir{id}, nil
+type dirArgs struct {
+	ID string
 }
 
-func (r *coreSchema) localDirRead(p graphql.ResolveParams) (any, error) {
-	obj := p.Source.(localDir)
+func (r *coreSchema) dir(ctx *router.Context, parent any, args dirArgs) (localDir, error) {
+	return localDir(args), nil
+}
 
+func (r *coreSchema) localDirRead(ctx *router.Context, parent localDir, args any) (*filesystem.Filesystem, error) {
 	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
 	// which makes it unable to reused, which in turn creates cache invalidations
 	// TODO: this should be optional, the above issue can also be avoided w/ readonly
 	// mount when possible
 	st := llb.Scratch().File(llb.Copy(llb.Local(
-		obj.ID,
+		parent.ID,
 		// TODO: better shared key hint?
-		llb.SharedKeyHint(obj.ID),
+		llb.SharedKeyHint(parent.ID),
 		// FIXME: should not be hardcoded
 		llb.ExcludePatterns([]string{"**/node_modules"}),
 	), "/", "/"))
 
-	return r.Solve(p.Context, st, llb.LocalUniqueID(obj.ID))
+	return r.Solve(ctx, st, llb.LocalUniqueID(parent.ID))
 }
 
 // FIXME:(sipsma) have to make a new session to do a local export, need either gw support for exports or actually working session sharing to keep it all in the same session
-func (r *coreSchema) localDirWrite(p graphql.ResolveParams) (any, error) {
-	fsid := p.Args["contents"].(filesystem.FSID)
-	fs := filesystem.Filesystem{ID: fsid}
+type localDirWriteArgs struct {
+	Contents filesystem.FSID
+	Path     string
+}
+
+func (r *coreSchema) localDirWrite(ctx *router.Context, parent localDir, args localDirWriteArgs) (bool, error) {
+	fs := filesystem.Filesystem{ID: args.Contents}
 
 	workdir, err := filepath.Abs(r.solveOpts.LocalDirs[r.workdirID])
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
-	path, _ := p.Args["path"].(string)
-	dest, err := filepath.Abs(filepath.Join(workdir, path))
+	dest, err := filepath.Abs(filepath.Join(workdir, args.Path))
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	// Ensure the destination is a sub-directory of the workdir
 	dest, err = filepath.EvalSymlinks(dest)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	if !strings.HasPrefix(dest, workdir) {
-		return nil, fmt.Errorf("path %q is outside workdir", path)
+		return false, fmt.Errorf("path %q is outside workdir", args.Path)
 	}
 
-	if err := r.Export(p.Context, &fs, bkclient.ExportEntry{
+	if err := r.Export(ctx, &fs, bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
 	}); err != nil {
-		return nil, err
+		return false, err
 	}
 	return true, nil
 }
