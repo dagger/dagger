@@ -129,6 +129,15 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 	return NewDirectory(ctx, st, path.Join(cwd, subdir))
 }
 
+func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
+	st, cwd, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewFile(ctx, st, path.Join(cwd, file))
+}
+
 func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory) (*Directory, error) {
 	st, cwd, err := dir.Decode()
 	if err != nil {
@@ -187,10 +196,10 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 		},
 		"Directory": router.ObjectResolver{
 			"contents":         router.ToResolver(s.contents),
-			"file":             router.ErrResolver(ErrNotImplementedYet),
+			"file":             router.ToResolver(s.file),
 			"secret":           router.ErrResolver(ErrNotImplementedYet),
 			"withNewFile":      router.ToResolver(s.withNewFile),
-			"withCopiedFIle":   router.ErrResolver(ErrNotImplementedYet),
+			"withCopiedFile":   router.ErrResolver(ErrNotImplementedYet),
 			"withoutFile":      router.ErrResolver(ErrNotImplementedYet),
 			"directory":        router.ToResolver(s.subdirectory),
 			"withDirectory":    router.ToResolver(s.withDirectory),
@@ -237,6 +246,14 @@ type contentArgs struct {
 
 func (s *directorySchema) contents(ctx *router.Context, parent *Directory, args contentArgs) ([]string, error) {
 	return parent.Contents(ctx, s.gw, args.Path)
+}
+
+type dirFileArgs struct {
+	Path string
+}
+
+func (s *directorySchema) file(ctx *router.Context, parent *Directory, args dirFileArgs) (*File, error) {
+	return parent.File(ctx, args.Path)
 }
 
 type withNewFileArgs struct {

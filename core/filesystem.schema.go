@@ -93,12 +93,12 @@ func (s *filesystemSchema) filesystem(ctx *router.Context, parent any, args file
 	return filesystem.New(args.ID), nil
 }
 
-type fileArgs struct {
+type fsFileArgs struct {
 	Path  string
 	Lines *int
 }
 
-func (s *filesystemSchema) file(ctx *router.Context, parent *filesystem.Filesystem, args fileArgs) (string, error) {
+func (s *filesystemSchema) file(ctx *router.Context, parent *filesystem.Filesystem, args fsFileArgs) (string, error) {
 	output, err := parent.ReadFile(ctx, s.gw, args.Path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
