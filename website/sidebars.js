@@ -17,10 +17,6 @@
       id: "get-started/bvtz9-get-started"
     },
     {
-      type: "doc",
-      id: "get-started/bvtz9-get-started",
-    },
-    {
       type: "category",
       label: "Learn",
       collapsible: false,
