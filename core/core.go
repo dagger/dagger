@@ -38,6 +38,8 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	}
 	return router.MergeExecutableSchemas("core",
 		&coreSchema{base, params.WorkdirID},
+		&directorySchema{base},
+		&fileSchema{base},
 		&gitSchema{base},
 		&filesystemSchema{base},
 		&projectSchema{

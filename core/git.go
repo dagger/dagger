@@ -112,11 +112,11 @@ func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, erro
 	return nil, ErrNotImplementedYet
 }
 
-func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*filesystem.Filesystem, error) {
+func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*Directory, error) {
 	var opts []llb.GitOption
 	if s.sshAuthSockID != "" {
 		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return s.Solve(ctx, st)
+	return NewDirectory(ctx, st, "")
 }

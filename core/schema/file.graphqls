@@ -13,8 +13,9 @@ type File {
     "The contents of the file"
     contents: String!
 
-    "A secret referencing the contents of this file"
-    secret: Secret!
+    # TODO(vito): uncomment when secrets are a thing
+    # "A secret referencing the contents of this file"
+    # secret: Secret!
 
     "The size of the file, in bytes"
     size: Int!

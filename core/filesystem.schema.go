@@ -5,39 +5,13 @@ import (
 	"io/fs"
 	"strconv"
 
-	"github.com/graphql-go/graphql/language/ast"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
 )
 
-var fsIDResolver = router.ScalarResolver{
-	Serialize: func(value any) any {
-		switch v := value.(type) {
-		case filesystem.FSID, string:
-			return v
-		default:
-			panic(fmt.Sprintf("unexpected fsid type %T", v))
-		}
-	},
-	ParseValue: func(value any) any {
-		switch v := value.(type) {
-		case string:
-			return filesystem.FSID(v)
-		default:
-			panic(fmt.Sprintf("unexpected fsid value type %T: %+v", v, v))
-		}
-	},
-	ParseLiteral: func(valueAST ast.Value) any {
-		switch valueAST := valueAST.(type) {
-		case *ast.StringValue:
-			return filesystem.FSID(valueAST.Value)
-		default:
-			panic(fmt.Sprintf("unexpected fsid literal type: %T", valueAST))
-		}
-	},
-}
+var fsIDResolver = stringResolver(filesystem.FSID(""))
 
 var _ router.ExecutableSchema = &filesystemSchema{}
 
@@ -119,12 +93,12 @@ func (s *filesystemSchema) filesystem(ctx *router.Context, parent any, args file
 	return filesystem.New(args.ID), nil
 }
 
-type fileArgs struct {
+type fsFileArgs struct {
 	Path  string
 	Lines *int
 }
 
-func (s *filesystemSchema) file(ctx *router.Context, parent *filesystem.Filesystem, args fileArgs) (string, error) {
+func (s *filesystemSchema) file(ctx *router.Context, parent *filesystem.Filesystem, args fsFileArgs) (string, error) {
 	output, err := parent.ReadFile(ctx, s.gw, args.Path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)

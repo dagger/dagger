@@ -113,3 +113,9 @@ func PassthroughResolver(p graphql.ResolveParams) (any, error) {
 		return struct{}{}, nil
 	})(p)
 }
+
+func ErrResolver(err error) graphql.FieldResolveFn {
+	return ToResolver(func(ctx *Context, parent any, args any) (any, error) {
+		return nil, err
+	})
+}

@@ -3,36 +3,12 @@ package core
 import (
 	"fmt"
 
-	"github.com/graphql-go/graphql/language/ast"
 	"go.dagger.io/dagger/router"
 )
 
-var secretIDResolver = router.ScalarResolver{
-	Serialize: func(value interface{}) interface{} {
-		switch v := value.(type) {
-		case string:
-			return v
-		default:
-			panic(fmt.Sprintf("unexpected secret type %T", v))
-		}
-	},
-	ParseValue: func(value interface{}) interface{} {
-		switch v := value.(type) {
-		case string:
-			return v
-		default:
-			panic(fmt.Sprintf("unexpected secret value type %T: %+v", v, v))
-		}
-	},
-	ParseLiteral: func(valueAST ast.Value) interface{} {
-		switch valueAST := valueAST.(type) {
-		case *ast.StringValue:
-			return valueAST.Value
-		default:
-			panic(fmt.Sprintf("unexpected secret literal type: %T", valueAST))
-		}
-	},
-}
+type SecretID string
+
+var secretIDResolver = stringResolver(SecretID(""))
 
 var _ router.ExecutableSchema = &secretSchema{}
 

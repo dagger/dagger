@@ -20,7 +20,7 @@ type GitRef {
     "The digest of the current value of this ref"
     digest: String!
     "The filesystem tree at this ref"
-    tree: Filesystem! # TODO(vito): replace with Directory!
+    tree: Directory!
 }
 
 # Compat with old API

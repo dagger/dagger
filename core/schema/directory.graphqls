@@ -8,8 +8,11 @@ scalar DirectoryID
 
 "A directory"
 type Directory {
+    "The content-addressed identifier of the directory"
+    id: DirectoryID!
+
     "Return a list of files and directories at the given path"
-    contents(path: String=null): [String!]!
+    contents(path: String): [String!]!
 
     "Retrieve a file at the given path"
     file(path: String!): File!
