@@ -7,20 +7,19 @@ displayed_sidebar: '0.3'
 
 ## What is Dagger?
 
-Dagger is a devops automation engine. It makes it very easy to develop powerful devops pipelines in any programming language, and embed them into your existing scripts, tools and platforms.
+Dagger is an engine that lets you create devops pipelines as regular code running in regular containers, rather than proprietary YAML running on a proprietary CI/CD platform.
 
-Popular use cases include multi-stage builds, CI/CD, on-demand staging environments, machine learning pipelines, end-to-end testing, artifact scanning and signing, and more.
+A Dagger pipeline may be used to build, test, deploy, lint, scan, sign, transform, notify... or perhaps all of the above!
 
 Popular features include:
 
-* Write pipelines in your favorite programming language
+* SDKs for (almost) all major languages
 * Run pipelines from your existing tools, instead of learning yet another CLI
-* Faster builds with automatic caching
-* Highly portable pipelines run entirely in containers
-* Easy to test and troubleshoot pipelines locally
-* Portability across CI and development platforms
-
-Using Dagger does not require converting to yet another devops platform. Instead it empowers you to retrofit the capabilities of a modern devops platform into the tooling and workflows you already have.
+* Drop to GraphQL for complete control over your pipelines
+* Faster builds with automatic caching of every step
+* Pipelines run in regular containers, making them very portable
+* The same pipelines can run in development and CI
+* Share and reuse custom pipeline steps using extensions
 
 ## Supported languages
 
