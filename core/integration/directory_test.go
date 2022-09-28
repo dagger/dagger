@@ -230,3 +230,58 @@ func TestDirectoryWithDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Contents)
 }
+
+func TestDirectoryWithCopiedFile(t *testing.T) {
+	var fileRes struct {
+		Directory struct {
+			WithNewFile struct {
+				File struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					file(path: "some-file") {
+						id
+					}
+				}
+			}
+		}`, &fileRes, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, fileRes.Directory.WithNewFile.File.ID)
+
+	var res struct {
+		Directory struct {
+			WithCopiedFile struct {
+				File struct {
+					ID       core.DirectoryID
+					Contents string
+				}
+			}
+		}
+	}
+
+	err = testutil.Query(
+		`query Test($src: FileID!) {
+			directory {
+				withCopiedFile(path: "target-file", source: $src) {
+					file(path: "target-file") {
+						id
+						contents
+					}
+				}
+			}
+		}`, &res, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"src": fileRes.Directory.WithNewFile.File.ID,
+			},
+		})
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Directory.WithCopiedFile.File.ID)
+	require.Equal(t, "some-content", res.Directory.WithCopiedFile.File.Contents)
+}

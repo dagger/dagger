@@ -154,6 +154,22 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 	return NewDirectory(ctx, st, cwd)
 }
 
+func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
+	st, cwd, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	srcSt, srcPath, err := src.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	st = st.File(llb.Copy(srcSt, srcPath, path.Join(cwd, subdir)))
+
+	return NewDirectory(ctx, st, cwd)
+}
+
 func (dir *Directory) Decode() (llb.State, string, error) {
 	if dir.ID == "" {
 		return llb.Scratch(), "", nil
@@ -199,7 +215,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"file":             router.ToResolver(s.file),
 			"secret":           router.ErrResolver(ErrNotImplementedYet),
 			"withNewFile":      router.ToResolver(s.withNewFile),
-			"withCopiedFile":   router.ErrResolver(ErrNotImplementedYet),
+			"withCopiedFile":   router.ToResolver(s.withCopiedFile),
 			"withoutFile":      router.ErrResolver(ErrNotImplementedYet),
 			"directory":        router.ToResolver(s.subdirectory),
 			"withDirectory":    router.ToResolver(s.withDirectory),
@@ -263,4 +279,13 @@ type withNewFileArgs struct {
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *Directory, args withNewFileArgs) (*Directory, error) {
 	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
+}
+
+type withCopiedFileArgs struct {
+	Path   string
+	Source FileID
+}
+
+func (s *directorySchema) withCopiedFile(ctx *router.Context, parent *Directory, args withCopiedFileArgs) (*Directory, error) {
+	return parent.WithCopiedFile(ctx, args.Path, &File{ID: args.Source})
 }
