@@ -28,10 +28,10 @@ subgraph script["Your script"]
     subgraph p2["NPM Extension"]
       B1["step"] -.-> B2["step"] -.-> B3["step"] -.-> B4["step"]
     end
-  
+
     api <-..-> A1
   end
 end
 ```
 
-[Learn more about writing extensions](../guides/bnzm7-writing_extensions.md)
+[Learn more about writing extensions](../guides/bnzm7-extensions.md)

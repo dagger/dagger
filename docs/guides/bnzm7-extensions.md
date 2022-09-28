@@ -28,7 +28,7 @@ are provided to a resolver and how outputs are provided back to the Cloak server
 
 It is up to each runtime implementation to determine how the inputs are converted to outputs.
 
-[Extension Runtime Protocol reference](f5cij-extension_runtime_protocol.md)
+[Extension Runtime Protocol reference](f5cij-extension-runtime-protocol.md)
 
 ## Dependency
 
@@ -53,7 +53,7 @@ being requested; we call this "invoking a resolver". When an extension is loaded
 that takes args must be associated with a resolver.
 
 Resolvers are provided to Cloak in the form of a Filesystem+ImageConfig pair. The entrypoint of the image config is expected
-to be an executable that implements the [Runtime Protocol](f5cij-extension_runtime_protocol.md)
+to be an executable that implements the [Runtime Protocol](f5cij-extension-runtime-protocol.md)
 
 Resolvers have access to the Cloak API during execution, which enables them to invoke other resolvers as needed.
 
