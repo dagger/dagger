@@ -14,7 +14,9 @@ func TestGit(t *testing.T) {
 		Git struct {
 			Branch struct {
 				Tree struct {
-					File string
+					File struct {
+						Contents string
+					}
 				}
 			}
 		}
@@ -25,13 +27,15 @@ func TestGit(t *testing.T) {
 			git(url: "github.com/dagger/dagger") {
 				branch(name: "main") {
 					tree {
-						file(path: "README.md", lines: 1)
+						file(path: "README.md") {
+							contents
+						}
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Contains(t, res.Git.Branch.Tree.File, "Dagger")
+	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
 }
 
 // Test backwards compatibility with old git API
