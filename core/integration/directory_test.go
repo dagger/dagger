@@ -229,6 +229,21 @@ func TestDirectoryWithDirectory(t *testing.T) {
 		})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Contents)
+
+	err = testutil.Query(
+		`query Test($src: DirectoryID!) {
+			directory {
+				withDirectory(path: "sub-dir/sub-sub-dir/with-dir", directory: $src) {
+					contents(path: "sub-dir/sub-sub-dir/with-dir")
+				}
+			}
+		}`, &res2, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"src": res.Directory.WithNewFile.WithNewFile.Directory.ID,
+			},
+		})
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Contents)
 }
 
 func TestDirectoryWithCopiedFile(t *testing.T) {

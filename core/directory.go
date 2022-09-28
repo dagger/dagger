@@ -149,7 +149,9 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
-	st = st.File(llb.Copy(srcSt, srcCwd, path.Join(cwd, subdir)))
+	st = st.File(llb.Copy(srcSt, srcCwd, path.Join(cwd, subdir), &llb.CopyInfo{
+		CreateDestPath: true,
+	}))
 
 	return NewDirectory(ctx, st, cwd)
 }
