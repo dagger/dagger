@@ -5,39 +5,13 @@ import (
 	"io/fs"
 	"strconv"
 
-	"github.com/graphql-go/graphql/language/ast"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
 )
 
-var fsIDResolver = router.ScalarResolver{
-	Serialize: func(value any) any {
-		switch v := value.(type) {
-		case filesystem.FSID, string:
-			return v
-		default:
-			panic(fmt.Sprintf("unexpected fsid type %T", v))
-		}
-	},
-	ParseValue: func(value any) any {
-		switch v := value.(type) {
-		case string:
-			return filesystem.FSID(v)
-		default:
-			panic(fmt.Sprintf("unexpected fsid value type %T: %+v", v, v))
-		}
-	},
-	ParseLiteral: func(valueAST ast.Value) any {
-		switch valueAST := valueAST.(type) {
-		case *ast.StringValue:
-			return filesystem.FSID(valueAST.Value)
-		default:
-			panic(fmt.Sprintf("unexpected fsid literal type: %T", valueAST))
-		}
-	},
-}
+var fsIDResolver = stringResolver(filesystem.FSID(""))
 
 var _ router.ExecutableSchema = &filesystemSchema{}
 

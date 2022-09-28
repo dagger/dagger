@@ -8,11 +8,15 @@ scalar DirectoryID
 
 "A directory"
 type Directory {
-    "Return a list of files and directories at the given path"
-    contents(path: String=null): [String!]!
+    "The content-addressed identifier of the directory"
+    id: DirectoryID!
 
-    "Retrieve a file at the given path"
-    file(path: String!): File!
+    "Return a list of files and directories at the given path"
+    contents(path: String): [String!]!
+
+    # TODO(vito): add when File is implemented
+    # "Retrieve a file at the given path"
+    # file(path: String!): File!
 
     "A secret backed by the file at the given path"
     secret(path: String!): SecretID!
@@ -20,8 +24,9 @@ type Directory {
     "This directory plus a new file written at the given path"
     withNewFile(path: String!, contents: String): Directory!
 
-    "This directory plus the contents of the given file copied to the given path"
-    withCopiedFile(path: String!, source: FileID!): Directory!
+    # TODO(vito): add when File is implemented
+    # "This directory plus the contents of the given file copied to the given path"
+    # withCopiedFile(path: String!, source: FileID!): Directory!
 
     "This directory with the file at the given path removed"
     withoutFile(path: String!): Directory!
