@@ -7,7 +7,16 @@ import (
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
-func (r *alpine) build(ctx context.Context, pkgs []string) (*dagger.Filesystem, error) {
+func main() {
+	dagger.Serve(
+		Alpine{},
+	)
+}
+
+type Alpine struct {
+}
+
+func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*dagger.Filesystem, error) {
 	client, err := dagger.Client(ctx)
 	if err != nil {
 		return nil, err

@@ -74,17 +74,53 @@ func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextF
 
 	sourceSchemas := make([]router.LoadedSchema, len(cfg.Extensions))
 	for i, ext := range cfg.Extensions {
-		// filepath.Join and .Dir both swap file separator characters on Windows
-		sdl, err := contextFS.ReadFile(ctx, gw, filepath.ToSlash(filepath.Join(
-			filepath.Dir(configPath),
-			ext.Path,
-			schemaPath,
-		)))
+		// TODO: highly dumb, refactor
+		runtimeFS, err := s.Runtime(context.TODO(), ext)
 		if err != nil {
 			return nil, err
 		}
-		ext.Schema = string(sdl)
+		fsState, err := runtimeFS.ToState()
+		if err != nil {
+			return nil, err
+		}
 
+		contextSt, err := contextFS.ToState()
+		if err != nil {
+			return nil, err
+		}
+		st := fsState.Run(
+			llb.Args([]string{entrypointPath, "-schema"}),
+			llb.AddMount("/src", contextSt, llb.Readonly),
+			llb.ReadonlyRootFS(),
+		)
+		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
+		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(s.platform))
+		if err != nil {
+			return nil, err
+		}
+		res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
+			Definition: outputDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+			Filename: "/schema.graphql",
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO:
+		// TODO:
+		// TODO:
+		fmt.Println(string(outputBytes))
+
+		ext.Schema = string(outputBytes)
 		sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
 			Schema: ext.Schema,
 		})
@@ -243,6 +279,11 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 			return nil, err
 		}
 
+		contextSt, err := s.contextFS.ToState()
+		if err != nil {
+			return nil, err
+		}
+
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
 			llb.AddSSHSocket(
@@ -251,6 +292,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 			),
 			llb.AddMount(inputMountPath, input, llb.Readonly),
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
+			llb.AddMount("/src", contextSt, llb.Readonly), // TODO: not actually needed here, just makes go server code easier at moment
 			llb.ReadonlyRootFS(),
 		)
 
