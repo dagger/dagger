@@ -28,7 +28,7 @@ are provided to a resolver and how outputs are provided back to the Dagger serve
 
 It is up to each runtime implementation to determine how the inputs are converted to outputs.
 
-[Extension Runtime Protocol reference](f5cij-extension_runtime_protocol.md)
+[Extension Runtime Protocol reference](./f5cij-extension-runtime-protocol.md)
 
 ## Dependency
 
@@ -52,8 +52,7 @@ An implementation of one field of a schema. When Dagger is evaluating a query, i
 being requested; we call this "invoking a resolver". When an extension is loaded, each field in the extension's schema
 that takes args must be associated with a resolver.
 
-Resolvers are provided to Dagger in the form of a Filesystem+ImageConfig pair. The entrypoint of the image config is expected
-to be an executable that implements the [Runtime Protocol](f5cij-extension_runtime_protocol.md)
+Resolvers are provided to Cloak in the form of a Filesystem+ImageConfig pair. The entrypoint of the image config is expected to be an executable that implements the [Runtime Protocol](f5cij-extension-runtime-protocol.md)
 
 Resolvers have access to the Dagger API during execution, which enables them to invoke other resolvers as needed.
 
