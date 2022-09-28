@@ -5,7 +5,7 @@
   "type": "module",
   "types": "./sdk/nodejs/dagger/dist/index.d.ts",
   "files": [
-    "./sdk/nodejs/dagger/dist/"
+    "/sdk/nodejs/dagger/dist/"
   ],
   "exports": {
     ".": "./sdk/nodejs/dagger/dist/index.js"
