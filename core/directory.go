@@ -19,10 +19,10 @@ type Directory struct {
 // DirectoryID is an opaque value representing a content-addressed directory.
 type DirectoryID string
 
-// TODO(vito): this might need to include a path to pass to llb.SourcePath when
-// mounting the directory in, to support container { directory("./foo") }
+// directoryIDPayload is the inner content of a DirectoryID.
 type directoryIDPayload struct {
 	LLB *pb.Definition `json:"llb"`
+	Dir string         `json:"dir"`
 }
 
 func (id DirectoryID) decode() (*directoryIDPayload, error) {
@@ -34,14 +34,15 @@ func (id DirectoryID) decode() (*directoryIDPayload, error) {
 	return &payload, nil
 }
 
-func DirectoryFromState(ctx context.Context, st llb.State, marshalOpts ...llb.ConstraintsOpt) (*Directory, error) {
-	def, err := st.Marshal(ctx, marshalOpts...)
+func NewDirectory(ctx context.Context, st llb.State, cwd string) (*Directory, error) {
+	def, err := st.Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	id, err := encodeID(directoryIDPayload{
 		LLB: def.ToPB(),
+		Dir: cwd,
 	})
 	if err != nil {
 		return nil, err
@@ -52,8 +53,8 @@ func DirectoryFromState(ctx context.Context, st llb.State, marshalOpts ...llb.Co
 	}, nil
 }
 
-func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, path string) ([]string, error) {
-	st, err := dir.ToState()
+func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
+	st, cwd, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +81,7 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, path string)
 	}
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: path,
+		Path: path.Join(cwd, src),
 	})
 	if err != nil {
 		return nil, err
@@ -95,10 +96,13 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, path string)
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Directory, error) {
-	st, err := dir.ToState()
+	st, cwd, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
+
+	// be sure to create the file under the working directory
+	dest = path.Join(cwd, dest)
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
@@ -113,25 +117,50 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 		),
 	)
 
-	return DirectoryFromState(ctx, st)
+	return NewDirectory(ctx, st, cwd)
 }
 
-func (dir *Directory) ToState() (llb.State, error) {
+func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
+	st, cwd, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewDirectory(ctx, st, path.Join(cwd, subdir))
+}
+
+func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory) (*Directory, error) {
+	st, cwd, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	srcSt, srcCwd, err := src.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	st = st.File(llb.Copy(srcSt, srcCwd, path.Join(cwd, subdir)))
+
+	return NewDirectory(ctx, st, cwd)
+}
+
+func (dir *Directory) Decode() (llb.State, string, error) {
 	if dir.ID == "" {
-		return llb.Scratch(), nil
+		return llb.Scratch(), "", nil
 	}
 
 	payload, err := dir.ID.decode()
 	if err != nil {
-		return llb.State{}, err
+		return llb.State{}, "", err
 	}
 
 	defop, err := llb.NewDefinitionOp(payload.LLB)
 	if err != nil {
-		return llb.State{}, err
+		return llb.State{}, "", err
 	}
 
-	return llb.NewState(defop), nil
+	return llb.NewState(defop), payload.Dir, nil
 }
 
 type directorySchema struct {
@@ -163,8 +192,8 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"withNewFile":      router.ToResolver(s.withNewFile),
 			"withCopiedFIle":   router.ErrResolver(ErrNotImplementedYet),
 			"withoutFile":      router.ErrResolver(ErrNotImplementedYet),
-			"directory":        router.ErrResolver(ErrNotImplementedYet),
-			"withDirectory":    router.ErrResolver(ErrNotImplementedYet),
+			"directory":        router.ToResolver(s.subdirectory),
+			"withDirectory":    router.ToResolver(s.withDirectory),
 			"withoutDirectory": router.ErrResolver(ErrNotImplementedYet),
 			"diff":             router.ErrResolver(ErrNotImplementedYet),
 		},
@@ -183,6 +212,23 @@ func (s *directorySchema) directory(ctx *router.Context, parent any, args direct
 	return &Directory{
 		ID: args.ID,
 	}, nil
+}
+
+type subdirectoryArgs struct {
+	Path string
+}
+
+func (s *directorySchema) subdirectory(ctx *router.Context, parent *Directory, args subdirectoryArgs) (*Directory, error) {
+	return parent.Directory(ctx, args.Path)
+}
+
+type withDirectoryArgs struct {
+	Path      string
+	Directory DirectoryID
+}
+
+func (s *directorySchema) withDirectory(ctx *router.Context, parent *Directory, args withDirectoryArgs) (*Directory, error) {
+	return parent.WithDirectory(ctx, args.Path, &Directory{ID: args.Directory})
 }
 
 type contentArgs struct {

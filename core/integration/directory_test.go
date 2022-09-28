@@ -109,3 +109,124 @@ func TestDirectoryContentsOfPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Contents)
 }
+
+func TestDirectoryDirectory(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					Directory struct {
+						Contents []string
+					}
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
+						directory(path: "some-dir") {
+							contents
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Directory.Contents)
+}
+
+func TestDirectoryDirectoryWithNewFile(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					Directory struct {
+						WithNewFile struct {
+							Contents []string
+						}
+					}
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
+						directory(path: "some-dir") {
+							withNewFile(path: "another-file", contents: "more-content") {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.ElementsMatch(t,
+		[]string{"sub-file", "another-file"},
+		res.Directory.WithNewFile.WithNewFile.Directory.WithNewFile.Contents)
+}
+
+func TestDirectoryWithDirectory(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					Directory struct {
+						ID core.DirectoryID
+					}
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
+						directory(path: "some-dir") {
+							id
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+
+	var res2 struct {
+		Directory struct {
+			WithDirectory struct {
+				Contents []string
+			}
+		}
+	}
+
+	err = testutil.Query(
+		`query Test($src: DirectoryID!) {
+			directory {
+				withDirectory(path: "with-dir", directory: $src) {
+					contents(path: "with-dir")
+				}
+			}
+		}`, &res2, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"src": res.Directory.WithNewFile.WithNewFile.Directory.ID,
+			},
+		})
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Contents)
+}
