@@ -223,10 +223,10 @@ func (s *CompiledRemoteSchema) Dependencies() []router.ExecutableSchema {
 
 func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphql.FieldResolveFn {
 	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
-		pathArray := ctx.ResolveInfo.Path.AsArray()
+		pathArray := ctx.ResolveParams.Info.Path.AsArray()
 		name := fmt.Sprintf("%+v", pathArray)
 
-		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveInfo.ParentType.Name(), ctx.ResolveInfo.FieldName)
+		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveParams.Info.ParentType.Name(), ctx.ResolveParams.Info.FieldName)
 		inputMap := map[string]interface{}{
 			"resolver": resolverName,
 			"args":     args,
@@ -255,7 +255,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		)
 
 		// TODO: /mnt should maybe be configurable?
-		for path, fsid := range collectFSPaths(args, fsMountPath, nil) {
+		for path, fsid := range collectFSPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
 			fs := filesystem.New(fsid)
 			fsState, err := fs.ToState()
 			if err != nil {
@@ -270,7 +270,7 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		// FIXME:(sipsma) got to be a better way than string matching parent type... But not easy
 		// to just use go type matching because the parent result may be a Filesystem struct or
 		// an untyped map[string]interface{}.
-		if ctx.ResolveInfo.ParentType.Name() == "Filesystem" {
+		if ctx.ResolveParams.Info.ParentType.Name() == "Filesystem" {
 			var parentFS filesystem.Filesystem
 			bytes, err := json.Marshal(parent)
 			if err != nil {

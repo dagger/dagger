@@ -71,14 +71,14 @@ func (s *staticSchema) Dependencies() []ExecutableSchema {
 
 type Context struct {
 	context.Context
-	ResolveInfo graphql.ResolveInfo
+	ResolveParams graphql.ResolveParams
 }
 
 func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
 		ctx := Context{
-			Context:     p.Context,
-			ResolveInfo: p.Info,
+			Context:       p.Context,
+			ResolveParams: p,
 		}
 
 		var args A
