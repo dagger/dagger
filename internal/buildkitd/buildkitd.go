@@ -184,7 +184,7 @@ func checkDocker(ctx context.Context) error {
 			Err(err).
 			Bytes("output", output).
 			Msg("failed to run docker")
-		return err
+		return fmt.Errorf("%s%s", err, output)
 	}
 
 	return nil
