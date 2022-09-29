@@ -122,9 +122,10 @@ To see this API in action, follow the steps below:
   ```
 
   Let's break this query down to see how it works:
-    * The `image()` field accepts an Open Container Initiative (OCI) image reference as argument and retrieves the corresponding image. In this example, it retrieves the `alpine` Docker image. The result of the query - the `alpine` image - is returned as the special Dagger `Filesystem` type and provided as input to the next query in the chain.
-    * The first `exec()` field executes a command inside the `Filesystem` returned from the previous query. The commands are provided as input arguments. In this example, it executes the `apk add curl` command to download and install `curl` into the image. The resulting modified `Filesystem` is provided as input to the next query in the chain.
-    * The next `exec()` field executes the `curl https://reqres.in/api/products` command to retrieve a list of products from the remote API. The resulting output is printed to the standard output device, which is accessed via the `stdout` field.
+
+    - The `image()` field accepts an Open Container Initiative (OCI) image reference as argument and retrieves the corresponding image. In this example, it retrieves the `alpine` Docker image. The result of the query - the `alpine` image - is returned as the special Dagger `Filesystem` type and provided as input to the next query in the chain.
+    - The first `exec()` field executes a command inside the `Filesystem` returned from the previous query. The commands are provided as input arguments. In this example, it executes the `apk add curl` command to download and install `curl` into the image. The resulting modified `Filesystem` is provided as input to the next query in the chain.
+    - The next `exec()` field executes the `curl https://reqres.in/api/products` command to retrieve a list of products from the remote API. The resulting output is printed to the standard output device, which is accessed via the `stdout` field.
 
   Here's an example of the query result:
 
