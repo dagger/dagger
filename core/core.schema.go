@@ -1,12 +1,15 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
+	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
 )
@@ -87,8 +90,30 @@ type imageArgs struct {
 }
 
 func (r *coreSchema) image(ctx *router.Context, parent any, args imageArgs) (*filesystem.Filesystem, error) {
-	st := llb.Image(args.Ref, llb.WithMetaResolver(r.gw))
-	return r.Solve(ctx, st)
+	st := llb.Image(args.Ref)
+	// TODO:(sipsma) just a temporary hack to help out with issues like this while we continue to
+	// flesh out the new api: https://github.com/dagger/dagger/issues/3170
+	refName, err := reference.ParseNormalizedNamed(args.Ref)
+	if err != nil {
+		return nil, err
+	}
+	ref := reference.TagNameOnly(refName).String()
+	_, cfgBytes, err := r.gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+		Platform:    &r.platform,
+		ResolveMode: llb.ResolveModeDefault.String(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var imgSpec specs.Image
+	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+		return nil, err
+	}
+	img, err := filesystem.ImageFromStateAndConfig(ctx, st, imgSpec.Config, llb.Platform(r.platform))
+	if err != nil {
+		return nil, err
+	}
+	return img.ToFilesystem()
 }
 
 type localDir struct {

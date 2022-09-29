@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/moby/buildkit/identity"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
@@ -262,6 +264,77 @@ func TestCoreImageExport(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, res.Core.Image.File, "3.16.2\n")
+
+		testRef2 := "127.0.0.1:5000/testimageconfigpush:latest"
+		res2 := struct {
+			Core struct {
+				Image struct {
+					File string
+				}
+			}
+		}{}
+		err = ctx.Client.MakeRequest(ctx,
+			&graphql.Request{
+				Query: `query TestImageConfigPush($ref: String!) {
+					core {
+						image(ref: "php:8.1-apache") {
+							pushImage(ref: $ref)
+						}
+					}
+				}`,
+				Variables: map[string]any{
+					"ref": testRef2,
+				},
+			},
+			&graphql.Response{Data: &res2},
+		)
+		require.NoError(t, err)
+
+		res3 := struct {
+			Core struct {
+				Image struct {
+					Exec struct {
+						FS struct {
+							Exec struct {
+								Stdout string
+							}
+						}
+					}
+				}
+			}
+		}{}
+		err = ctx.Client.MakeRequest(ctx,
+			&graphql.Request{
+				Query: `query TestImageConfigPush($ref: String!) {
+					core {
+						image(ref: "regclient/regctl:latest") {
+							exec(input: {
+								args: ["/regctl", "registry", "set", "--tls=disabled", $ref]
+							}) {
+								fs {
+									exec(input: {
+										args: ["/regctl", "image", "inspect", $ref]
+									}) {
+										stdout
+									}
+								}
+							}
+						}
+					}
+				}`,
+				Variables: map[string]any{
+					"ref": testRef2,
+				},
+			},
+			&graphql.Response{Data: &res3},
+		)
+		require.NoError(t, err)
+
+		var img specs.Image
+		err = json.Unmarshal([]byte(res3.Core.Image.Exec.FS.Exec.Stdout), &img)
+		require.NoError(t, err)
+		require.Equal(t, []string{"docker-php-entrypoint"}, img.Config.Entrypoint)
+
 		return nil
 	})
 	require.NoError(t, err)

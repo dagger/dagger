@@ -49,9 +49,12 @@ func (info *Image) ToState() (llb.State, error) {
 	}
 
 	st = st.Dir(info.Config.WorkingDir)
+	st = st.WithValue(configKey{}, info.Config)
 
 	return st, nil
 }
+
+type configKey struct{}
 
 // ImageFromState returns an Image using the LLB state as both the filesystem
 // and the source of image config.
@@ -66,18 +69,22 @@ func ImageFromState(ctx context.Context, st llb.State, marshalOpts ...llb.Constr
 // ImageConfigFromState generates an OCI image config from values configured in
 // LLB state (currently env and workdir).
 func ImageConfigFromState(ctx context.Context, st llb.State) (specs.ImageConfig, error) {
+	rawCfg, err := st.Value(ctx, configKey{})
+	if err != nil {
+		return specs.ImageConfig{}, err
+	}
+	cfg, _ := rawCfg.(specs.ImageConfig)
 	env, err := st.Env(ctx)
 	if err != nil {
 		return specs.ImageConfig{}, err
 	}
+	cfg.Env = env
 	dir, err := st.GetDir(ctx)
 	if err != nil {
 		return specs.ImageConfig{}, err
 	}
-	return specs.ImageConfig{
-		Env:        env,
-		WorkingDir: dir,
-	}, nil
+	cfg.WorkingDir = dir
+	return cfg, nil
 }
 
 // ImageFromStateAndConfig returns an Image using the LLB state for the
