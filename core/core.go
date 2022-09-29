@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
@@ -108,6 +110,20 @@ func (r *baseSchema) Export(ctx context.Context, fs *filesystem.Filesystem, expo
 	if err != nil {
 		return err
 	}
+	img, err := fs.ToImage()
+	if err != nil {
+		return err
+	}
+	cfgBytes, err := json.Marshal(specs.Image{
+		Architecture: r.platform.Architecture,
+		OS:           r.platform.OS,
+		OSVersion:    r.platform.OSVersion,
+		OSFeatures:   r.platform.OSFeatures,
+		Config:       img.Config,
+	})
+	if err != nil {
+		return err
+	}
 
 	solveOpts := r.solveOpts
 	// NOTE: be careful to not overwrite any values from original shared r.solveOpts (i.e. with append).
@@ -123,10 +139,15 @@ func (r *baseSchema) Export(ctx context.Context, fs *filesystem.Filesystem, expo
 	}()
 
 	_, err = r.bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return gw.Solve(ctx, bkgw.SolveRequest{
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: fsDef,
 		})
+		if err != nil {
+			return nil, err
+		}
+		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		return res, nil
 	}, ch)
 	if err != nil {
 		return err
