@@ -33,15 +33,16 @@ type containerIDPayload struct {
 	Config specs.ImageConfig `json:"cfg"`
 
 	// Mount points configured for the container.
-	Mounts []ContainerMount `json:"mounts"`
+	Mounts []ContainerMount `json:"mounts,omitempty"`
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *pb.Definition `json:"meta"`
+	Meta *pb.Definition `json:"meta,omitempty"`
 }
 
 type ContainerMount struct {
-	Source *pb.Definition `json:"source"`
-	Target string         `json:"target"`
+	Source     *pb.Definition `json:"source"`
+	SourcePath string         `json:"source_path,omitempty"`
+	Target     string         `json:"target"`
 }
 
 func (mnt ContainerMount) State() (llb.State, error) {
@@ -290,8 +291,12 @@ func (s *containerSchema) exec(ctx *router.Context, parent *Container, args cont
 			return nil, err
 		}
 
-		// TODO(vito): respect SourcePath
-		runOpts = append(runOpts, llb.AddMount(mnt.Target, st))
+		mountOpts := []llb.MountOption{}
+		if mnt.SourcePath != "" {
+			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
+		}
+
+		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
 	}
 
 	execSt := st.Run(runOpts...)
@@ -303,10 +308,7 @@ func (s *containerSchema) exec(ctx *router.Context, parent *Container, args cont
 			return nil, err
 		}
 
-		mounts[i] = ContainerMount{
-			Source: execMountSt.ToPB(),
-			Target: mnt.Target,
-		}
+		mounts[i].Source = execMountSt.ToPB()
 	}
 
 	metaSt := execSt.GetMount(metaMount)
@@ -448,16 +450,15 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Cont
 		return nil, err
 	}
 
-	_ = dirRel // TODO(vito): respect this as SourcePath
-
 	dirDef, err := dirSt.Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	mounts = append(mounts, ContainerMount{
-		Source: dirDef.ToPB(),
-		Target: args.Path,
+		Source:     dirDef.ToPB(),
+		SourcePath: dirRel,
+		Target:     args.Path,
 	})
 
 	return NewContainer(ctx, st, cfg, mounts, nil)
