@@ -159,6 +159,38 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 	require.Equal(t, res.Container.From.Exec.Stderr.Contents, "goodbye\n")
 }
 
+func TestContainerNullStdoutStderr(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Stdout, Stderr *struct {
+					Contents string
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					stdout {
+						contents
+					}
+
+					stderr {
+						contents
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Nil(t, res.Container.From.Stdout)
+	require.Nil(t, res.Container.From.Stderr)
+}
+
 func TestContainerExecWithWorkdir(t *testing.T) {
 	t.Parallel()
 

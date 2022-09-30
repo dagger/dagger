@@ -26,9 +26,17 @@ type ContainerID string
 
 // containerIDPayload is the inner content of a ContainerID.
 type containerIDPayload struct {
-	FS     *pb.Definition    `json:"fs"`
+	// The container's root filesystem.
+	FS *pb.Definition `json:"fs"`
+
+	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
-	Mounts []ContainerMount  `json:"mounts"`
+
+	// Mount points configured for the container.
+	Mounts []ContainerMount `json:"mounts"`
+
+	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
+	Meta *pb.Definition `json:"meta"`
 }
 
 type ContainerMount struct {
@@ -51,17 +59,28 @@ func (id ContainerID) decode() (*containerIDPayload, error) {
 // ContainerAddress is a container image address.
 type ContainerAddress string
 
-func NewContainer(ctx context.Context, st llb.State, cfg specs.ImageConfig, mounts ...ContainerMount) (*Container, error) {
+func NewContainer(ctx context.Context, st llb.State, cfg specs.ImageConfig, mounts []ContainerMount, meta *llb.State) (*Container, error) {
 	def, err := st.Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	id, err := encodeID(containerIDPayload{
+	payload := containerIDPayload{
 		FS:     def.ToPB(),
 		Config: cfg,
 		Mounts: mounts,
-	})
+	}
+
+	if meta != nil {
+		metaDef, err := meta.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		payload.Meta = metaDef.ToPB()
+	}
+
+	id, err := encodeID(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -71,22 +90,42 @@ func NewContainer(ctx context.Context, st llb.State, cfg specs.ImageConfig, moun
 	}, nil
 }
 
-func (container *Container) Decode() (llb.State, specs.ImageConfig, []ContainerMount, error) {
+// Decode returns all the relevant information an internal Container related
+// API should be concerned with.
+//
+// NB(vito): Having a million return parameters is an anti-pattern, but I've
+// found it useful to have the compiler yell at me to ensure all values are
+// considered. Putting them in a struct would make it harder to track down the
+// call sites and notice ignored fields. Not married to it though.
+func (container *Container) Decode() (llb.State, specs.ImageConfig, []ContainerMount, *llb.State, error) {
 	if container.ID == "" {
-		return llb.Scratch(), specs.ImageConfig{}, nil, nil
+		return llb.Scratch(), specs.ImageConfig{}, nil, nil, nil
 	}
 
 	payload, err := container.ID.decode()
 	if err != nil {
-		return llb.State{}, specs.ImageConfig{}, nil, err
+		return llb.State{}, specs.ImageConfig{}, nil, nil, err
 	}
 
-	defop, err := llb.NewDefinitionOp(payload.FS)
+	fsOp, err := llb.NewDefinitionOp(payload.FS)
 	if err != nil {
-		return llb.State{}, specs.ImageConfig{}, nil, err
+		return llb.State{}, specs.ImageConfig{}, nil, nil, err
 	}
 
-	return llb.NewState(defop), payload.Config, payload.Mounts, nil
+	fs := llb.NewState(fsOp)
+
+	var meta *llb.State
+	if payload.Meta != nil {
+		metaOp, err := llb.NewDefinitionOp(payload.Meta)
+		if err != nil {
+			return llb.State{}, specs.ImageConfig{}, nil, nil, err
+		}
+
+		metaSt := llb.NewState(metaOp)
+		meta = &metaSt
+	}
+
+	return fs, payload.Config, payload.Mounts, meta, nil
 }
 
 type containerSchema struct {
@@ -181,11 +220,11 @@ func (s *containerSchema) from(ctx *router.Context, _ any, args containerFromArg
 		return nil, err
 	}
 
-	return NewContainer(ctx, llb.Image(addr), imgSpec.Config)
+	return NewContainer(ctx, llb.Image(addr), imgSpec.Config, nil, nil)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *Container, args any) (*Directory, error) {
-	st, _, _, err := parent.Decode()
+	st, _, _, _, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +243,7 @@ type containerExecArgs struct {
 
 func (s *containerSchema) exec(ctx *router.Context, parent *Container, args containerExecArgs) (*Container, error) {
 	// TODO(vito): propagate mounts? (or not?)
-	st, cfg, _, err := parent.Decode()
+	st, cfg, _, _, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -239,90 +278,63 @@ func (s *containerSchema) exec(ctx *router.Context, parent *Container, args cont
 
 	execSt := st.Run(runOpts...)
 
-	metaSt, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(s.platform))
-	if err != nil {
-		return nil, err
-	}
+	metaSt := execSt.GetMount(metaMount)
 
-	return NewContainer(ctx, execSt.Root(), cfg, ContainerMount{
-		Source: metaSt.ToPB(),
-		Target: metaMount,
-	})
+	return NewContainer(ctx, execSt.Root(), cfg, nil, &metaSt)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *Container, args any) (*int, error) {
-	_, _, mounts, err := parent.Decode()
+	_, _, _, meta, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, mnt := range mounts {
-		if mnt.Target == metaMount {
-			defop, err := llb.NewDefinitionOp(mnt.Source)
-			if err != nil {
-				return nil, err
-			}
-
-			file, err := NewFile(ctx, llb.NewState(defop), "exitCode")
-			if err != nil {
-				return nil, err
-			}
-
-			content, err := file.Contents(ctx, s.gw)
-			if err != nil {
-				return nil, err
-			}
-
-			exitCode, err := strconv.Atoi(string(content))
-			if err != nil {
-				return nil, err
-			}
-
-			return &exitCode, nil
-		}
+	if meta == nil {
+		return nil, nil
 	}
 
-	return nil, nil
+	file, err := NewFile(ctx, *meta, "exitCode")
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := file.Contents(ctx, s.gw)
+	if err != nil {
+		return nil, err
+	}
+
+	exitCode, err := strconv.Atoi(string(content))
+	if err != nil {
+		return nil, err
+	}
+
+	return &exitCode, nil
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *Container, args any) (*File, error) {
-	_, _, mounts, err := parent.Decode()
+	_, _, _, meta, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, mnt := range mounts {
-		if mnt.Target == metaMount {
-			defop, err := llb.NewDefinitionOp(mnt.Source)
-			if err != nil {
-				return nil, err
-			}
-
-			return NewFile(ctx, llb.NewState(defop), "stdout")
-		}
+	if meta == nil {
+		return nil, nil
 	}
 
-	return nil, nil
+	return NewFile(ctx, *meta, "stdout")
 }
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *Container, args any) (*File, error) {
-	_, _, mounts, err := parent.Decode()
+	_, _, _, meta, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, mnt := range mounts {
-		if mnt.Target == metaMount {
-			defop, err := llb.NewDefinitionOp(mnt.Source)
-			if err != nil {
-				return nil, err
-			}
-
-			return NewFile(ctx, llb.NewState(defop), "stderr")
-		}
+	if meta == nil {
+		return nil, nil
 	}
 
-	return nil, nil
+	return NewFile(ctx, *meta, "stderr")
 }
 
 type containerWithWorkdirArgs struct {
@@ -330,18 +342,18 @@ type containerWithWorkdirArgs struct {
 }
 
 func (s *containerSchema) withWorkdir(ctx *router.Context, parent *Container, args containerWithWorkdirArgs) (*Container, error) {
-	st, cfg, mounts, err := parent.Decode()
+	st, cfg, mounts, _, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
 
 	cfg.WorkingDir = args.Path
 
-	return NewContainer(ctx, st, cfg, mounts...)
+	return NewContainer(ctx, st, cfg, mounts, nil)
 }
 
 func (s *containerSchema) workdir(ctx *router.Context, parent *Container, args containerWithVariableArgs) (string, error) {
-	_, cfg, _, err := parent.Decode()
+	_, cfg, _, _, err := parent.Decode()
 	if err != nil {
 		return "", err
 	}
@@ -355,7 +367,7 @@ type containerWithVariableArgs struct {
 }
 
 func (s *containerSchema) withVariable(ctx *router.Context, parent *Container, args containerWithVariableArgs) (*Container, error) {
-	st, cfg, mounts, err := parent.Decode()
+	st, cfg, mounts, _, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -375,11 +387,11 @@ func (s *containerSchema) withVariable(ctx *router.Context, parent *Container, a
 
 	cfg.Env = newEnv
 
-	return NewContainer(ctx, st, cfg, mounts...)
+	return NewContainer(ctx, st, cfg, mounts, nil)
 }
 
 func (s *containerSchema) variables(ctx *router.Context, parent *Container, args containerWithVariableArgs) ([]string, error) {
-	_, cfg, _, err := parent.Decode()
+	_, cfg, _, _, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
