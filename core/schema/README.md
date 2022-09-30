@@ -9,13 +9,13 @@ This directory contains a proposal for a complete GraphQL API for Dagger/Cloak. 
 
 ## Reference
 
-* [Environment](environment.gql)
-* [Container](container.gql)
-* [Directory](directory.gql)
-* [File](file.gql)
-* [Git](git.gql)
-* [HTTP](http.gql)
-* [Secret](secret.gql)
+* [Environment](host.graphqls)
+* [Container](container.graphqls)
+* [Directory](directory.graphqls)
+* [File](file.graphqls)
+* [Git](git.graphqls)
+* [HTTP](http.graphqls)
+* [Secret](secret.graphqls)
 
 ## DX problems solved
 
