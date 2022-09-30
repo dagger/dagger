@@ -62,6 +62,7 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		// So instead we just init it here.
 		shell(
 			`go mod init cloakgenerate`,
+			`go get github.com/99designs/gqlgen`,
 			`go work init`,
 			`go work use .`,
 			`go work use -r /src`,
@@ -76,12 +77,22 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 	// generate extension/script skeletons
 	projectSubpath := filepath.Join(filepath.Dir(s.configPath), subpath)
 	outputDir := filepath.Join("/src", projectSubpath)
-	projectFS = base.Run(
-		llb.Shlex("./generate"),
-		llb.Dir("/tools"),
+
+	projectMounts := withRunOpts(
 		// mount only the project subdirectory that should receive changes as read-write, the rest is ro
 		llb.AddMount("/src", projectFS, llb.Readonly),
 		llb.AddMount(outputDir, projectFS, llb.SourcePath(projectSubpath)),
+	)
+	if projectSubpath == "." {
+		// In the case where the subpath is also the root of the project, we only need one mount.
+		// If we don't implement it this way, buildkit will actually return just the projectFS unchanged
+		// (most likely because it gets the /src read-only mount and considers that a no-op?)
+		projectMounts = llb.AddMount(outputDir, projectFS)
+	}
+	projectFS = base.Run(
+		llb.Shlex("./generate"),
+		llb.Dir("/tools"),
+		projectMounts,
 		llb.AddEnv("CGO_ENABLED", "0"),
 		llb.AddEnv("GENERATE_OUTPUT_DIR", outputDir),
 		llb.AddEnv("SCHEMA", schema),
