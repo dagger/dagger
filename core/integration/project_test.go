@@ -2,11 +2,15 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/stretchr/testify/require"
 	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/internal/testutil"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionMount(t *testing.T) {
@@ -62,6 +66,75 @@ func TestExtensionMount(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, res2.Test.TestMount, "bar")
 
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestGoGenerate(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	cloakYamlPath := filepath.Join(tmpdir, "cloak.yaml")
+	err := os.WriteFile(cloakYamlPath, []byte(`
+name: testgogenerate
+scripts:
+  - path: .
+    sdk: go
+`), 0644) // #nosec G306
+	require.NoError(t, err)
+
+	goModPath := filepath.Join(tmpdir, "go.mod")
+	err = os.WriteFile(goModPath, []byte(`
+module testgogenerate
+go 1.19
+`), 0644) // #nosec G306
+	require.NoError(t, err)
+
+	startOpts := &engine.Config{
+		LocalDirs: map[string]string{
+			"testgogenerate": tmpdir,
+		},
+	}
+
+	err = engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
+		data := struct {
+			Core struct {
+				Filesystem struct {
+					LoadProject struct {
+						GeneratedCode dagger.Filesystem
+					}
+				}
+			}
+		}{}
+		resp := &graphql.Response{Data: &data}
+
+		err := ctx.Client.MakeRequest(ctx,
+			&graphql.Request{
+				Query: `
+			query GeneratedCode($fs: FSID!, $configPath: String!) {
+				core {
+					filesystem(id: $fs) {
+						loadProject(configPath: $configPath) {
+							generatedCode {
+								id
+							}
+						}
+					}
+				}
+			}`,
+				Variables: map[string]any{
+					"fs":         ctx.LocalDirs["testgogenerate"],
+					"configPath": ctx.ConfigPath,
+				},
+			},
+			resp,
+		)
+		require.NoError(t, err)
+
+		generatedFSID := data.Core.Filesystem.LoadProject.GeneratedCode.ID
+
+		_, err = testutil.ReadFile(ctx, ctx.Client, generatedFSID, "main.go")
+		require.NoError(t, err)
 		return nil
 	})
 	require.NoError(t, err)

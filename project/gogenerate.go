@@ -62,6 +62,7 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		// So instead we just init it here.
 		shell(
 			`go mod init cloakgenerate`,
+			`go get github.com/99designs/gqlgen`,
 			`go work init`,
 			`go work use .`,
 			`go work use -r /src`,

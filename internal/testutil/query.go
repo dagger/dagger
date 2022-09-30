@@ -70,6 +70,39 @@ func addSecrets(ctx context.Context, cl graphql.Client, opts *QueryOptions) erro
 	return nil
 }
 
+func ReadFile(ctx context.Context, cl graphql.Client, fsid dagger.FSID, path string) (string, error) {
+	data := struct {
+		Core struct {
+			Filesystem struct {
+				File string
+			}
+		}
+	}{}
+	resp := &graphql.Response{Data: &data}
+
+	err := cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query ReadFile($fs: FSID!, $path: String!) {
+				core {
+					filesystem(id: $fs) {
+						file(path: $path)
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"fs":   fsid,
+				"path": path,
+			},
+		},
+		resp,
+	)
+	if err != nil {
+		return "", err
+	}
+	return data.Core.Filesystem.File, nil
+}
+
 func SetupBuildkitd() error {
 	host, err := buildkitd.StartGoModBuildkitd(context.Background())
 	if err != nil {
