@@ -54,5 +54,5 @@ class Server:
         inputs = self._read_inputs()
         logging.debug('sdk inputs <- {}'.format(inputs))
         result = self._call_resolver(inputs)
-        logging.debug('sdk outputs -> {}'.format(inputs))
+        logging.debug('sdk outputs -> {}'.format(result))
         self._write_outputs(result)
