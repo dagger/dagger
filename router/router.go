@@ -10,7 +10,6 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
-	"go.dagger.io/dagger/playground"
 )
 
 type Router struct {
@@ -108,7 +107,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/query", h)
-	mux.Handle("/", playground.Handler("Dagger Dev", "/query"))
 	mux.ServeHTTP(w, req)
 }
 
