@@ -9,7 +9,7 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
-	"go.dagger.io/dagger/playground"
+	"github.com/rs/cors"
 )
 
 type Router struct {
@@ -18,11 +18,19 @@ type Router struct {
 	s *graphql.Schema
 	h *handler.Handler
 	l sync.RWMutex
+	c *Config
 }
 
-func New() *Router {
+type Config struct {
+	CorsOrigins []string
+}
+
+var defaultCORSOrigins []string = []string{"*.dagger.cloud", "*.dagger.io"}
+
+func New(conf *Config) *Router {
 	r := &Router{
 		schemas: make(map[string]ExecutableSchema),
+		c:       conf,
 	}
 
 	if err := r.Add(&rootSchema{}); err != nil {
@@ -105,9 +113,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
+	co := defaultCORSOrigins
+
+	if len(r.c.CorsOrigins) > 0 {
+		co = r.c.CorsOrigins
+	}
+
+	c := cors.New(cors.Options{
+		AllowedOrigins: co,
+	})
+
 	mux := http.NewServeMux()
-	mux.Handle("/query", h)
-	mux.Handle("/", playground.Handler("Cloak Dev", "/query"))
+	mux.Handle("/query", c.Handler(h))
 	mux.ServeHTTP(w, req)
 }
 

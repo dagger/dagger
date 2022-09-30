@@ -1,0 +1,107 @@
+<!--
+ *  Copyright (c) 2021 GraphQL Contributors
+ *  All rights reserved.
+ *
+ *  This source code is licensed under the license found in the
+ *  LICENSE file in the root directory of this source tree.
+-->
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        height: 100%;
+        margin: 0;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      #graphiql {
+        height: 100vh;
+      }
+    </style>
+
+    <link rel="stylesheet" href="https://unpkg.com/graphiql/graphiql.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/@graphiql/plugin-explorer/dist/style.css"
+    />
+  </head>
+
+  <body>
+    <div id="graphiql">Loading...</div>
+
+    <script
+      crossorigin
+      src="https://unpkg.com/react@17/umd/react.development.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"
+    ></script>
+
+    <script
+      crossorigin
+      src="https://unpkg.com/graphiql/graphiql.min.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/@graphiql/plugin-explorer/dist/graphiql-plugin-explorer.umd.js"
+    ></script>
+
+    <script>
+      var fetcher = GraphiQL.createFetcher({
+        url: 'http://localhost:8080/query',
+      });
+
+      function GraphiQLWithExplorer() {
+        var [query, setQuery] = React.useState(`
+# Welcome to Cloak's GraphQL explorer
+#
+# Keyboard shortcuts:
+#
+#   Prettify query:  Shift-Ctrl-P (or press the prettify button)
+#
+#  Merge fragments:  Shift-Ctrl-M (or press the merge button)
+#
+#        Run Query:  Ctrl-Enter (or press the play button)
+#
+#    Auto Complete:  Ctrl-Space (or just start typing)
+#
+# Here's a simple query to get you started, for more information visit
+# https:\/\/github.com/dagger/dagger/blob/cloak/docs/unxpq-introduction.md
+{
+  core {
+    image(ref: "alpine") {
+      exec(input: {args: ["apk", "add", "curl"]}){
+        fs {
+          exec(input: {args: ["curl", "https://dagger.io"]}) {
+            stdout(lines: 1)
+          }
+        }
+      }
+    }
+  }
+}
+`
+        );
+        var explorerPlugin = GraphiQLPluginExplorer.useExplorerPlugin({
+          query: query,
+          onEdit: setQuery,
+        });
+        return React.createElement(GraphiQL, {
+          fetcher: fetcher,
+          defaultEditorToolsVisibility: true,
+          plugins: [explorerPlugin],
+          query: query,
+          onEditQuery: setQuery,
+        });
+      }
+
+      ReactDOM.render(
+        React.createElement(GraphiQLWithExplorer),
+        document.getElementById('graphiql'),
+      );
+    </script>
+  </body>
+</html>

@@ -14,13 +14,17 @@ var devCmd = &cobra.Command{
 	Run: Dev,
 }
 
+var corsOrigins []string
+
 func Dev(cmd *cobra.Command, args []string) {
+	cmd.Flags().Parse(args)
 	localDirs := getKVInput(localDirsInput)
 	startOpts := &engine.Config{
-		LocalDirs:  localDirs,
-		DevServer:  devServerPort,
-		Workdir:    workdir,
-		ConfigPath: configPath,
+		LocalDirs:         localDirs,
+		DevServer:         devServerPort,
+		Workdir:           workdir,
+		ConfigPath:        configPath,
+		RouterCorsOrigins: corsOrigins,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
@@ -30,4 +34,8 @@ func Dev(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func init() {
+	devCmd.Flags().StringSliceVarP(&corsOrigins, "cors-origins", "", []string{}, "CORS origins overrides")
 }

@@ -135,7 +135,7 @@ dependencies:
 ### Invoke your extension
 
 1. One simple way to verify your extension builds and can be invoked is via the graphql playground.
-   - Just run `cloak dev` from any directory in your project and navigate to `localhost:8080` in your browser (may need [an SSH tunnel](https://www.ssh.com/academy/ssh/tunneling-example) if on a remote host)
+   - Follow the instructions in the [GraphiQL](./2ku9n-getting_started.md#graphiql) getting started docs to test it in your browser (may need [an SSH tunnel](https://www.ssh.com/academy/ssh/tunneling-example) if on a remote host)
      - you can use the `--port` flag to override the port if needed
    - Click the "Docs" tab on the right to see the schemas available, including your extension and any dependencies.
    - You can submit queries by writing them on the left-side pane and clicking the play button in the middle

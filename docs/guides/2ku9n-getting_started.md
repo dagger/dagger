@@ -41,6 +41,15 @@ Yarn build (output will just be encoded fs bytes for now, need to add export or 
 cloak -p examples/yarn/cloak.yaml do --local-dir source=. --set runArgs=build
 ```
 
+## GraphiQL
+
+It's possible to use [GraphiQL](https://github.com/graphql/graphiql/) to access your local engine API and run some queries there for testing.
+
+- Setup a [local web server](https://developer.mozilla.org/en-US/docs/Learn/Common_questions/set_up_a_local_testing_server) and serve the file in `./helpers/graphiql/index.html`
+	- Using python you can use the following one liner: `python3 -m http.server --directory ./helpers/graphiql/ 8888`
+
+- Start cloak with `cloak dev --cors-origins "http://localhost:8888"`
+
 ## Development
 
 ### Invoking Actions

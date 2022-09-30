@@ -38,7 +38,8 @@ type Config struct {
 	Workdir    string
 	ConfigPath string
 	// If true, just load extension metadata rather than compiling and stitching them in
-	SkipInstall bool
+	SkipInstall       bool
+	RouterCorsOrigins []string
 }
 
 type Context struct {
@@ -97,7 +98,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts.ConfigPath = "./" + cloakYamlName
 	}
 
-	router := router.New()
+	router := router.New(&router.Config{
+		CorsOrigins: startOpts.RouterCorsOrigins,
+	})
 	secretStore := secret.NewStore()
 
 	socketProviders := MergedSocketProviders{
