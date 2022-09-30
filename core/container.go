@@ -44,6 +44,15 @@ type ContainerMount struct {
 	Target string         `json:"target"`
 }
 
+func (mnt ContainerMount) State() (llb.State, error) {
+	defop, err := llb.NewDefinitionOp(mnt.Source)
+	if err != nil {
+		return llb.State{}, err
+	}
+
+	return llb.NewState(defop), nil
+}
+
 // metaMount is the special path that the shim writes metadata to.
 const metaMount = "/dagger"
 
@@ -165,7 +174,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"entrypoint":           router.ErrResolver(ErrNotImplementedYet),
 			"withEntrypoint":       router.ErrResolver(ErrNotImplementedYet),
 			"mounts":               router.ErrResolver(ErrNotImplementedYet),
-			"withMountedDirectory": router.ErrResolver(ErrNotImplementedYet),
+			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ErrResolver(ErrNotImplementedYet),
 			"withMountedTemp":      router.ErrResolver(ErrNotImplementedYet),
 			"withMountedCache":     router.ErrResolver(ErrNotImplementedYet),
@@ -242,8 +251,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *Container, args containerExecArgs) (*Container, error) {
-	// TODO(vito): propagate mounts? (or not?)
-	st, cfg, _, _, err := parent.Decode()
+	st, cfg, mounts, _, err := parent.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -276,11 +284,34 @@ func (s *containerSchema) exec(ctx *router.Context, parent *Container, args cont
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
+	for _, mnt := range mounts {
+		st, err := mnt.State()
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO(vito): respect SourcePath
+		runOpts = append(runOpts, llb.AddMount(mnt.Target, st))
+	}
+
 	execSt := st.Run(runOpts...)
+
+	// propagate any changes to the mounts to subsequent containers
+	for i, mnt := range mounts {
+		execMountSt, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(s.platform))
+		if err != nil {
+			return nil, err
+		}
+
+		mounts[i] = ContainerMount{
+			Source: execMountSt.ToPB(),
+			Target: mnt.Target,
+		}
+	}
 
 	metaSt := execSt.GetMount(metaMount)
 
-	return NewContainer(ctx, execSt.Root(), cfg, nil, &metaSt)
+	return NewContainer(ctx, execSt.Root(), cfg, mounts, &metaSt)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *Container, args any) (*int, error) {
@@ -397,4 +428,37 @@ func (s *containerSchema) variables(ctx *router.Context, parent *Container, args
 	}
 
 	return cfg.Env, nil
+}
+
+type containerWithMountedDirectoryArgs struct {
+	Path   string
+	Source DirectoryID
+}
+
+func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Container, args containerWithMountedDirectoryArgs) (*Container, error) {
+	st, cfg, mounts, _, err := parent.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	dir := &Directory{ID: args.Source}
+
+	dirSt, dirRel, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	_ = dirRel // TODO(vito): respect this as SourcePath
+
+	dirDef, err := dirSt.Marshal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	mounts = append(mounts, ContainerMount{
+		Source: dirDef.ToPB(),
+		Target: args.Path,
+	})
+
+	return NewContainer(ctx, st, cfg, mounts, nil)
 }
