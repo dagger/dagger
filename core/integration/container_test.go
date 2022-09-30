@@ -248,7 +248,7 @@ func TestContainerVariables(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.19") {
+				from(address: "golang:1.18.2-alpine") {
 					variables
 					exec(args: ["env"]) {
 						stdout {
@@ -261,7 +261,7 @@ func TestContainerVariables(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, res.Container.From.Variables, []string{
 		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"GOLANG_VERSION=1.19.1",
+		"GOLANG_VERSION=1.18.2",
 		"GOPATH=/go",
 	})
 	require.Contains(t, res.Container.From.Exec.Stdout.Contents, "GOPATH=/go\n")
@@ -288,7 +288,7 @@ func TestContainerVariablesReplace(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.19") {
+				from(address: "golang:1.18.2-alpine") {
 					withVariable(name: "GOPATH", value: "/gone") {
 						variables
 						exec(args: ["env"]) {
@@ -303,7 +303,7 @@ func TestContainerVariablesReplace(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, res.Container.From.WithVariable.Variables, []string{
 		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"GOLANG_VERSION=1.19.1",
+		"GOLANG_VERSION=1.18.2",
 		"GOPATH=/gone",
 	})
 	require.Contains(t, res.Container.From.WithVariable.Exec.Stdout.Contents, "GOPATH=/gone\n")
@@ -328,7 +328,7 @@ func TestContainerWorkdir(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.19") {
+				from(address: "golang:1.18.2-alpine") {
 					workdir
 					exec(args: ["pwd"]) {
 						stdout {
@@ -364,7 +364,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.19") {
+				from(address: "golang:1.18.2-alpine") {
 					withWorkdir(path: "/usr") {
 						workdir
 						exec(args: ["pwd"]) {
