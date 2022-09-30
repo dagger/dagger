@@ -35,15 +35,22 @@ func (id DirectoryID) decode() (*directoryIDPayload, error) {
 }
 
 func NewDirectory(ctx context.Context, st llb.State, cwd string) (*Directory, error) {
-	def, err := st.Marshal(ctx)
-	if err != nil {
-		return nil, err
+	payload := directoryIDPayload{
+		Dir: cwd,
 	}
 
-	id, err := encodeID(directoryIDPayload{
-		LLB: def.ToPB(),
-		Dir: cwd,
-	})
+	if st.Output() == nil {
+		// scratch; leave LLB as nil
+	} else {
+		def, err := st.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		payload.LLB = def.ToPB()
+	}
+
+	id, err := encodeID(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +66,11 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 		return nil, err
 	}
 
+	if st.Output() == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []string{}, nil
+	}
+
 	def, err := st.Marshal(ctx)
 	if err != nil {
 		return nil, err
@@ -70,14 +82,10 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 	if err != nil {
 		return nil, err
 	}
+
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
-	}
-
-	if ref == nil {
-		// empty directory, i.e. llb.Scratch()
-		return []string{}, nil
 	}
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
@@ -182,12 +190,19 @@ func (dir *Directory) Decode() (llb.State, string, error) {
 		return llb.State{}, "", err
 	}
 
-	defop, err := llb.NewDefinitionOp(payload.LLB)
-	if err != nil {
-		return llb.State{}, "", err
+	var st llb.State
+	if payload.LLB == nil {
+		st = llb.Scratch()
+	} else {
+		defop, err := llb.NewDefinitionOp(payload.LLB)
+		if err != nil {
+			return llb.State{}, "", err
+		}
+
+		st = llb.NewState(defop)
 	}
 
-	return llb.NewState(defop), payload.Dir, nil
+	return st, payload.Dir, nil
 }
 
 type directorySchema struct {

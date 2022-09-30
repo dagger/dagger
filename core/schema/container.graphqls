@@ -22,7 +22,7 @@ Examples:
 scalar ContainerAddress
 
 """
-"An OCI-compatible container, also known as a "docker container"
+An OCI-compatible container, also known as a docker container
 """
 type Container {
     "A unique identifier for this container"

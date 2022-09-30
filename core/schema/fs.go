@@ -10,3 +10,6 @@ var Directory string
 
 //go:embed file.graphqls
 var File string
+
+//go:embed container.graphqls
+var Container string
