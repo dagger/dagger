@@ -231,7 +231,9 @@ func (s *containerSchema) exec(ctx *router.Context, parent *Container, args cont
 		if !ok {
 			// it's OK to not be OK
 			// we'll just set an empty env
+			_ = ok
 		}
+
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
