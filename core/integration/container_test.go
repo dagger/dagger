@@ -626,6 +626,78 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 	require.Equal(t, "hi", execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Exec.Stdout.Contents)
 }
 
+func TestContainerMultiFrom(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					ID string
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.WithNewFile.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						From struct {
+							Exec struct {
+								Exec struct {
+									Stdout struct {
+										Contents string
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "node:18.10.0-alpine") {
+					withMountedDirectory(path: "/mnt", source: $id) {
+						exec(args: ["sh", "-c", "node --version >> /mnt/versions"]) {
+							from(address: "golang:1.18.2-alpine") {
+								exec(args: ["sh", "-c", "go version >> /mnt/versions"]) {
+									exec(args: ["cat", "/mnt/versions"]) {
+										stdout {
+											contents
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "v18.10.0\ngo version go1.18.2 linux/amd64\n", execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents)
+}
+
 func TestContainerImageExport(t *testing.T) {
 	t.Skip("not implemented yet")
 

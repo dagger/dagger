@@ -9,6 +9,7 @@ import (
 
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/schema"
@@ -21,8 +22,25 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
+// ContainerAddress is a container image address.
+type ContainerAddress string
+
 // ContainerID is an opaque value representing a content-addressed container.
 type ContainerID string
+
+func (id ContainerID) decode() (*containerIDPayload, error) {
+	if id == "" {
+		// scratch
+		return &containerIDPayload{}, nil
+	}
+
+	var payload containerIDPayload
+	if err := decodeID(&payload, id); err != nil {
+		return nil, err
+	}
+
+	return &payload, nil
+}
 
 // containerIDPayload is the inner content of a ContainerID.
 type containerIDPayload struct {
@@ -39,13 +57,65 @@ type containerIDPayload struct {
 	Meta *pb.Definition `json:"meta,omitempty"`
 }
 
-type ContainerMount struct {
-	Source     *pb.Definition `json:"source"`
-	SourcePath string         `json:"source_path,omitempty"`
-	Target     string         `json:"target"`
+// Encode returns the opaque string ID representation of the container.
+func (payload *containerIDPayload) Encode() (ContainerID, error) {
+	id, err := encodeID(payload)
+	if err != nil {
+		return "", err
+	}
+
+	return ContainerID(id), nil
 }
 
-func (mnt ContainerMount) State() (llb.State, error) {
+// FSState returns the container's root filesystem mount state. If there is
+// none (as with an empty container ID), it returns scratch.
+func (payload *containerIDPayload) FSState() (llb.State, error) {
+	if payload.FS == nil {
+		return llb.Scratch(), nil
+	}
+
+	fsOp, err := llb.NewDefinitionOp(payload.FS)
+	if err != nil {
+		return llb.State{}, err
+	}
+
+	return llb.NewState(fsOp), nil
+}
+
+// metaMount is the special path that the shim writes metadata to.
+const metaMount = "/dagger"
+
+// MetaState returns the container's metadata mount state. If the container has
+// yet to run, it returns nil.
+func (payload *containerIDPayload) MetaState() (*llb.State, error) {
+	if payload.Meta == nil {
+		return nil, nil
+	}
+
+	metaOp, err := llb.NewDefinitionOp(payload.Meta)
+	if err != nil {
+		return nil, err
+	}
+
+	metaSt := llb.NewState(metaOp)
+
+	return &metaSt, nil
+}
+
+// ContainerMount is a mount point configured in a container.
+type ContainerMount struct {
+	// The source of the mount.
+	Source *pb.Definition `json:"source"`
+
+	// A path beneath the source to scope the mount to.
+	SourcePath string `json:"source_path,omitempty"`
+
+	// The path of the mount within the container.
+	Target string `json:"target"`
+}
+
+// SourceState returns the state of the source of the mount.
+func (mnt ContainerMount) SourceState() (llb.State, error) {
 	defop, err := llb.NewDefinitionOp(mnt.Source)
 	if err != nil {
 		return llb.State{}, err
@@ -54,88 +124,225 @@ func (mnt ContainerMount) State() (llb.State, error) {
 	return llb.NewState(defop), nil
 }
 
-// metaMount is the special path that the shim writes metadata to.
-const metaMount = "/dagger"
-
-func (id ContainerID) decode() (*containerIDPayload, error) {
-	var payload containerIDPayload
-	if err := decodeID(&payload, id); err != nil {
-		return nil, err
-	}
-
-	return &payload, nil
-}
-
-// ContainerAddress is a container image address.
-type ContainerAddress string
-
-func NewContainer(ctx context.Context, st llb.State, cfg specs.ImageConfig, mounts []ContainerMount, meta *llb.State) (*Container, error) {
-	def, err := st.Marshal(ctx)
+func (container *Container) FS(ctx context.Context) (*Directory, error) {
+	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	payload := containerIDPayload{
-		FS:     def.ToPB(),
-		Config: cfg,
-		Mounts: mounts,
+	st, err := payload.FSState()
+	if err != nil {
+		return nil, err
 	}
 
-	if meta != nil {
-		metaDef, err := meta.Marshal(ctx)
+	return NewDirectory(ctx, st, "")
+}
+
+func (container *Container) WithFS(ctx context.Context, st llb.State, platform specs.Platform) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	stDef, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	payload.FS = stDef.ToPB()
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	dirSt, dirRel, err := source.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	dirDef, err := dirSt.Marshal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Mounts = append(payload.Mounts, ContainerMount{
+		Source:     dirDef.ToPB(),
+		SourcePath: dirRel,
+		Target:     target,
+	})
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return specs.ImageConfig{}, err
+	}
+
+	return payload.Config, nil
+}
+
+func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(specs.ImageConfig) specs.ImageConfig) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Config = updateFn(payload.Config)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform specs.Platform, args []string, opts ContainerExecOpts) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := payload.Config
+	mounts := payload.Mounts
+
+	shimSt, err := shim.Build(ctx, gw, platform)
+	if err != nil {
+		return nil, err
+	}
+
+	runOpts := []llb.RunOption{
+		// run the command via the shim, hide shim behind custom name
+		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
+		llb.Args(append([]string{shim.Path}, args...)),
+		llb.WithCustomName(strings.Join(args, " ")),
+		llb.AddMount(metaMount, llb.Scratch()),
+	}
+
+	if cfg.WorkingDir != "" {
+		runOpts = append(runOpts, llb.Dir(cfg.WorkingDir))
+	}
+
+	for _, env := range cfg.Env {
+		name, val, ok := strings.Cut(env, "=")
+		if !ok {
+			// it's OK to not be OK
+			// we'll just set an empty env
+			_ = ok
+		}
+
+		runOpts = append(runOpts, llb.AddEnv(name, val))
+	}
+
+	for _, mnt := range mounts {
+		st, err := mnt.SourceState()
 		if err != nil {
 			return nil, err
 		}
 
-		payload.Meta = metaDef.ToPB()
+		mountOpts := []llb.MountOption{}
+		if mnt.SourcePath != "" {
+			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
+		}
+
+		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
 	}
 
-	id, err := encodeID(payload)
+	st, err := payload.FSState()
 	if err != nil {
 		return nil, err
 	}
 
-	return &Container{
-		ID: ContainerID(id),
-	}, nil
-}
+	execSt := st.Run(runOpts...)
 
-// Decode returns all the relevant information an internal Container related
-// API should be concerned with.
-//
-// NB(vito): Having a million return parameters is an anti-pattern, but I've
-// found it useful to have the compiler yell at me to ensure all values are
-// considered. Putting them in a struct would make it harder to track down the
-// call sites and notice ignored fields. Not married to it though.
-func (container *Container) Decode() (llb.State, specs.ImageConfig, []ContainerMount, *llb.State, error) {
-	if container.ID == "" {
-		return llb.Scratch(), specs.ImageConfig{}, nil, nil, nil
-	}
-
-	payload, err := container.ID.decode()
+	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
-		return llb.State{}, specs.ImageConfig{}, nil, nil, err
+		return nil, err
 	}
 
-	fsOp, err := llb.NewDefinitionOp(payload.FS)
-	if err != nil {
-		return llb.State{}, specs.ImageConfig{}, nil, nil, err
-	}
-
-	fs := llb.NewState(fsOp)
-
-	var meta *llb.State
-	if payload.Meta != nil {
-		metaOp, err := llb.NewDefinitionOp(payload.Meta)
+	// propagate any changes to the mounts to subsequent containers
+	for i, mnt := range mounts {
+		execMountDef, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(platform))
 		if err != nil {
-			return llb.State{}, specs.ImageConfig{}, nil, nil, err
+			return nil, err
 		}
 
-		metaSt := llb.NewState(metaOp)
-		meta = &metaSt
+		mounts[i].Source = execMountDef.ToPB()
 	}
 
-	return fs, payload.Config, payload.Mounts, meta, nil
+	metaDef, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	payload.FS = execDef.ToPB()
+	payload.Mounts = mounts
+	payload.Meta = metaDef.ToPB()
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
+	file, err := container.MetaFile(ctx, gw, "exitCode")
+	if err != nil {
+		return nil, err
+	}
+
+	if file != nil {
+		return nil, nil
+	}
+
+	content, err := file.Contents(ctx, gw)
+	if err != nil {
+		return nil, err
+	}
+
+	exitCode, err := strconv.Atoi(string(content))
+	if err != nil {
+		return nil, err
+	}
+
+	return &exitCode, nil
+}
+
+func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, path string) (*File, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	meta, err := payload.MetaState()
+	if err != nil {
+		return nil, err
+	}
+
+	if meta == nil {
+		return nil, nil
+	}
+
+	return NewFile(ctx, *meta, path)
 }
 
 type containerSchema struct {
@@ -208,7 +415,7 @@ type containerFromArgs struct {
 	Address ContainerAddress
 }
 
-func (s *containerSchema) from(ctx *router.Context, _ any, args containerFromArgs) (*Container, error) {
+func (s *containerSchema) from(ctx *router.Context, parent *Container, args containerFromArgs) (*Container, error) {
 	addr := string(args.Address)
 
 	refName, err := reference.ParseNormalizedNamed(addr)
@@ -217,6 +424,7 @@ func (s *containerSchema) from(ctx *router.Context, _ any, args containerFromArg
 	}
 
 	ref := reference.TagNameOnly(refName).String()
+
 	_, cfgBytes, err := s.gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &s.platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
@@ -230,144 +438,45 @@ func (s *containerSchema) from(ctx *router.Context, _ any, args containerFromArg
 		return nil, err
 	}
 
-	return NewContainer(ctx, llb.Image(addr), imgSpec.Config, nil, nil)
-}
-
-func (s *containerSchema) rootfs(ctx *router.Context, parent *Container, args any) (*Directory, error) {
-	st, _, _, _, err := parent.Decode()
+	ctr, err := parent.WithFS(ctx, llb.Image(addr), s.platform)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewDirectory(ctx, st, "")
+	return ctr.UpdateImageConfig(ctx, func(specs.ImageConfig) specs.ImageConfig {
+		return imgSpec.Config
+	})
+}
+
+func (s *containerSchema) rootfs(ctx *router.Context, parent *Container, args any) (*Directory, error) {
+	return parent.FS(ctx)
 }
 
 type containerExecArgs struct {
 	Args []string
-	Opts struct {
-		Stdin          *string
-		RedirectStdout *string
-		RedirectStderr *string
-	}
+	Opts ContainerExecOpts
+}
+
+type ContainerExecOpts struct {
+	Stdin          *string
+	RedirectStdout *string
+	RedirectStderr *string
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *Container, args containerExecArgs) (*Container, error) {
-	st, cfg, mounts, _, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	shimSt, err := shim.Build(ctx, s.gw, s.platform)
-	if err != nil {
-		return nil, err
-	}
-
-	runOpts := []llb.RunOption{
-		// run the command via the shim, hide shim behind custom name
-		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
-		llb.Args(append([]string{shim.Path}, args.Args...)),
-		llb.WithCustomName(strings.Join(args.Args, " ")),
-		llb.AddMount(metaMount, llb.Scratch()),
-	}
-
-	if cfg.WorkingDir != "" {
-		runOpts = append(runOpts, llb.Dir(cfg.WorkingDir))
-	}
-
-	for _, env := range cfg.Env {
-		name, val, ok := strings.Cut(env, "=")
-		if !ok {
-			// it's OK to not be OK
-			// we'll just set an empty env
-			_ = ok
-		}
-
-		runOpts = append(runOpts, llb.AddEnv(name, val))
-	}
-
-	for _, mnt := range mounts {
-		st, err := mnt.State()
-		if err != nil {
-			return nil, err
-		}
-
-		mountOpts := []llb.MountOption{}
-		if mnt.SourcePath != "" {
-			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
-		}
-
-		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
-	}
-
-	execSt := st.Run(runOpts...)
-
-	// propagate any changes to the mounts to subsequent containers
-	for i, mnt := range mounts {
-		execMountSt, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(s.platform))
-		if err != nil {
-			return nil, err
-		}
-
-		mounts[i].Source = execMountSt.ToPB()
-	}
-
-	metaSt := execSt.GetMount(metaMount)
-
-	return NewContainer(ctx, execSt.Root(), cfg, mounts, &metaSt)
+	return parent.Exec(ctx, s.gw, s.platform, args.Args, args.Opts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *Container, args any) (*int, error) {
-	_, _, _, meta, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	if meta == nil {
-		return nil, nil
-	}
-
-	file, err := NewFile(ctx, *meta, "exitCode")
-	if err != nil {
-		return nil, err
-	}
-
-	content, err := file.Contents(ctx, s.gw)
-	if err != nil {
-		return nil, err
-	}
-
-	exitCode, err := strconv.Atoi(string(content))
-	if err != nil {
-		return nil, err
-	}
-
-	return &exitCode, nil
+	return parent.ExitCode(ctx, s.gw)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *Container, args any) (*File, error) {
-	_, _, _, meta, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	if meta == nil {
-		return nil, nil
-	}
-
-	return NewFile(ctx, *meta, "stdout")
+	return parent.MetaFile(ctx, s.gw, "stdout")
 }
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *Container, args any) (*File, error) {
-	_, _, _, meta, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	if meta == nil {
-		return nil, nil
-	}
-
-	return NewFile(ctx, *meta, "stderr")
+	return parent.MetaFile(ctx, s.gw, "stderr")
 }
 
 type containerWithWorkdirArgs struct {
@@ -375,18 +484,14 @@ type containerWithWorkdirArgs struct {
 }
 
 func (s *containerSchema) withWorkdir(ctx *router.Context, parent *Container, args containerWithWorkdirArgs) (*Container, error) {
-	st, cfg, mounts, _, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	cfg.WorkingDir = args.Path
-
-	return NewContainer(ctx, st, cfg, mounts, nil)
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = args.Path
+		return cfg
+	})
 }
 
 func (s *containerSchema) workdir(ctx *router.Context, parent *Container, args containerWithVariableArgs) (string, error) {
-	_, cfg, _, _, err := parent.Decode()
+	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -400,31 +505,28 @@ type containerWithVariableArgs struct {
 }
 
 func (s *containerSchema) withVariable(ctx *router.Context, parent *Container, args containerWithVariableArgs) (*Container, error) {
-	st, cfg, mounts, _, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	// NB(vito): buildkit handles replacing properly when we do llb.AddEnv, but
-	// we want to replace it here anyway because someone might publish the image
-	// instead of running it. (there's a test covering this!)
-	newEnv := []string{}
-	prefix := args.Name + "="
-	for _, env := range cfg.Env {
-		if !strings.HasPrefix(env, prefix) {
-			newEnv = append(newEnv, env)
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		// NB(vito): buildkit handles replacing properly when we do llb.AddEnv, but
+		// we want to replace it here anyway because someone might publish the image
+		// instead of running it. (there's a test covering this!)
+		newEnv := []string{}
+		prefix := args.Name + "="
+		for _, env := range cfg.Env {
+			if !strings.HasPrefix(env, prefix) {
+				newEnv = append(newEnv, env)
+			}
 		}
-	}
 
-	newEnv = append(newEnv, fmt.Sprintf("%s=%s", args.Name, args.Value))
+		newEnv = append(newEnv, fmt.Sprintf("%s=%s", args.Name, args.Value))
 
-	cfg.Env = newEnv
+		cfg.Env = newEnv
 
-	return NewContainer(ctx, st, cfg, mounts, nil)
+		return cfg
+	})
 }
 
 func (s *containerSchema) variables(ctx *router.Context, parent *Container, args containerWithVariableArgs) ([]string, error) {
-	_, cfg, _, _, err := parent.Decode()
+	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -438,28 +540,5 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Container, args containerWithMountedDirectoryArgs) (*Container, error) {
-	st, cfg, mounts, _, err := parent.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	dir := &Directory{ID: args.Source}
-
-	dirSt, dirRel, err := dir.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	dirDef, err := dirSt.Marshal(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	mounts = append(mounts, ContainerMount{
-		Source:     dirDef.ToPB(),
-		SourcePath: dirRel,
-		Target:     args.Path,
-	})
-
-	return NewContainer(ctx, st, cfg, mounts, nil)
+	return parent.WithMountedDirectory(ctx, args.Path, &Directory{ID: args.Source})
 }
