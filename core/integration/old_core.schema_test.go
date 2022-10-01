@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
@@ -173,8 +174,17 @@ func TestCoreImageExport(t *testing.T) {
 	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
 	randomID := identity.NewID()
 	err := engine.Start(context.Background(), nil, func(ctx engine.Context) error {
+		wg := new(sync.WaitGroup)
+		defer wg.Wait()
+
+		registryCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		wg.Add(1)
 		go func() {
-			err := ctx.Client.MakeRequest(ctx,
+			defer wg.Done()
+
+			err := ctx.Client.MakeRequest(registryCtx,
 				&graphql.Request{
 					Query: `query RunRegistry($rand: String!) {
 						core {
