@@ -8039,10 +8039,10 @@ postcss@^8.3.11, postcss@^8.4.13, postcss@^8.4.14, postcss@^8.4.7:
     picocolors "^1.0.0"
     source-map-js "^1.0.2"
 
-posthog-docusaurus@^1.0.3:
-  version "1.0.3"
-  resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-1.0.3.tgz#bd49dd7f425bb6bce81ac49d3c251f8b0f9cd9d9"
-  integrity sha512-gvvHpKmOIcO7Sj68T2/vfYR/VfZmYoTaZO6kDZTJXQ309jdrhlrDncPr/Gjy+C0W9zaVlrOT6vvC7SdBBmvbdg==
+posthog-docusaurus@^1.0.4:
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-1.0.4.tgz#42af47af0789161fcdd9005b19d559998ba916ee"
+  integrity sha512-p7oJRqBzf6+AyI2e0yG6Z5kc/pHn6a5m76F2DOZaowAI3v+n1ABxa42smT+C5kjmhEGYfnRq3hFtd1naviwBRw==
 
 prepend-http@^1.0.1:
   version "1.0.4"
