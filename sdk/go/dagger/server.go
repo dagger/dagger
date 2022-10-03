@@ -482,8 +482,9 @@ func writeErrorf(err error) {
 	os.Exit(1)
 }
 
-// TODO: ugly hack to get models with URL to convert nicely, need more general solution
 func init() {
+	// TODO:(sipsma) silly hack to get netlify models to have better names
+	// need more general solution
 	strcase.ConfigureAcronym("URL", "url")
 }
 
