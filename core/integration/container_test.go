@@ -7,6 +7,7 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
 )
@@ -631,27 +632,19 @@ func TestContainerMultiFrom(t *testing.T) {
 
 	dirRes := struct {
 		Directory struct {
-			WithNewFile struct {
-				WithNewFile struct {
-					ID string
-				}
-			}
+			ID core.DirectoryID
 		}
 	}{}
 
 	err := testutil.Query(
 		`{
 			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
-						id
-					}
-				}
+				id
 			}
 		}`, &dirRes, nil)
 	require.NoError(t, err)
 
-	id := dirRes.Directory.WithNewFile.WithNewFile.ID
+	id := dirRes.Directory.ID
 
 	execRes := struct {
 		Container struct {

@@ -26,6 +26,10 @@ type directoryIDPayload struct {
 }
 
 func (id DirectoryID) decode() (*directoryIDPayload, error) {
+	if id == "" {
+		return &directoryIDPayload{}, nil
+	}
+
 	var payload directoryIDPayload
 	if err := decodeID(&payload, id); err != nil {
 		return nil, err
@@ -39,16 +43,12 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string) (*Directory, er
 		Dir: cwd,
 	}
 
-	if st.Output() == nil {
-		// scratch; leave LLB as nil
-	} else {
-		def, err := st.Marshal(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		payload.LLB = def.ToPB()
+	def, err := st.Marshal(ctx)
+	if err != nil {
+		return nil, err
 	}
+
+	payload.LLB = def.ToPB()
 
 	id, err := encodeID(payload)
 	if err != nil {
@@ -181,25 +181,18 @@ func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *Fi
 }
 
 func (dir *Directory) Decode() (llb.State, string, error) {
-	if dir.ID == "" {
-		return llb.Scratch(), "", nil
-	}
-
 	payload, err := dir.ID.decode()
 	if err != nil {
 		return llb.State{}, "", err
 	}
 
-	var st llb.State
 	if payload.LLB == nil {
-		st = llb.Scratch()
-	} else {
-		defop, err := llb.NewDefinitionOp(payload.LLB)
-		if err != nil {
-			return llb.State{}, "", err
-		}
+		return llb.Scratch(), payload.Dir, nil
+	}
 
-		st = llb.NewState(defop)
+	st, err := defToState(payload.LLB)
+	if err != nil {
+		return llb.State{}, "", err
 	}
 
 	return st, payload.Dir, nil

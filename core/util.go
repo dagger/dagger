@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/graphql-go/graphql/language/ast"
+	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/pkg/errors"
 	"go.dagger.io/dagger/router"
 )
@@ -80,4 +82,21 @@ func stringResolver[T ~string](sample T) router.ScalarResolver {
 			}
 		},
 	}
+}
+
+func defToState(def *pb.Definition) (llb.State, error) {
+	if def.Def == nil {
+		// NB(vito): llb.Scratch().Marshal().ToPB() produces an empty
+		// *pb.Definition. If we don't convert it properly back to a llb.Scratch()
+		// we'll hit 'cannot marshal empty definition op' when trying to marshal it
+		// again.
+		return llb.Scratch(), nil
+	}
+
+	defop, err := llb.NewDefinitionOp(def)
+	if err != nil {
+		return llb.State{}, err
+	}
+
+	return llb.NewState(defop), nil
 }

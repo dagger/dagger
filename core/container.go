@@ -74,12 +74,7 @@ func (payload *containerIDPayload) FSState() (llb.State, error) {
 		return llb.Scratch(), nil
 	}
 
-	fsOp, err := llb.NewDefinitionOp(payload.FS)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	return llb.NewState(fsOp), nil
+	return defToState(payload.FS)
 }
 
 // metaMount is the special path that the shim writes metadata to.
@@ -92,12 +87,10 @@ func (payload *containerIDPayload) MetaState() (*llb.State, error) {
 		return nil, nil
 	}
 
-	metaOp, err := llb.NewDefinitionOp(payload.Meta)
+	metaSt, err := defToState(payload.Meta)
 	if err != nil {
 		return nil, err
 	}
-
-	metaSt := llb.NewState(metaOp)
 
 	return &metaSt, nil
 }
@@ -116,12 +109,7 @@ type ContainerMount struct {
 
 // SourceState returns the state of the source of the mount.
 func (mnt ContainerMount) SourceState() (llb.State, error) {
-	defop, err := llb.NewDefinitionOp(mnt.Source)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	return llb.NewState(defop), nil
+	return defToState(mnt.Source)
 }
 
 func (container *Container) FS(ctx context.Context) (*Directory, error) {
