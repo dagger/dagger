@@ -205,7 +205,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform specs.Platform, args []string, opts ContainerExecOpts) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode id: %w", err)
 	}
 
 	cfg := payload.Config
@@ -213,7 +213,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform s
 
 	shimSt, err := shim.Build(ctx, gw, platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build shim: %w", err)
 	}
 
 	runOpts := []llb.RunOption{
@@ -242,7 +242,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform s
 	for _, mnt := range mounts {
 		st, err := mnt.SourceState()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
 		}
 
 		mountOpts := []llb.MountOption{}
@@ -255,21 +255,21 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform s
 
 	st, err := payload.FSState()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
 	execSt := st.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
 	// propagate any changes to the mounts to subsequent containers
 	for i, mnt := range mounts {
 		execMountDef, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(platform))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
 		}
 
 		mounts[i].Source = execMountDef.ToPB()
@@ -277,7 +277,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform s
 
 	metaDef, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(platform))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get meta mount: %w", err)
 	}
 
 	payload.FS = execDef.ToPB()
@@ -286,7 +286,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform s
 
 	id, err := payload.Encode()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode: %w", err)
 	}
 
 	return &Container{ID: id}, nil
