@@ -274,6 +274,43 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	return mounts, nil
 }
 
+func (container *Container) Directory(ctx context.Context, dir string) (*Directory, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	// NB(vito): iterate in reverse order so we'll find deeper mounts first
+	for i := len(payload.Mounts) - 1; i >= 0; i-- {
+		mnt := payload.Mounts[i]
+
+		if dir == mnt.Target || strings.HasPrefix(dir, mnt.Target+"/") {
+			st, err := mnt.SourceState()
+			if err != nil {
+				return nil, err
+			}
+
+			sub := mnt.SourcePath
+			if dir != mnt.Target {
+				// make relative portion relative to the source path
+				dirSub := strings.TrimPrefix(dir, mnt.Target+"/")
+				if dirSub != "" {
+					sub = path.Join(sub, dirSub)
+				}
+			}
+
+			return NewDirectory(ctx, st, sub)
+		}
+	}
+
+	st, err := payload.FSState()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewDirectory(ctx, st, dir)
+}
+
 type mountable interface {
 	Decode() (llb.State, string, specs.Platform, error)
 }
@@ -606,7 +643,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		"Container": router.ObjectResolver{
 			"from":                 router.ToResolver(s.from),
 			"rootfs":               router.ToResolver(s.rootfs),
-			"directory":            router.ErrResolver(ErrNotImplementedYet),
+			"directory":            router.ToResolver(s.directory),
 			"user":                 router.ToResolver(s.user),
 			"withUser":             router.ToResolver(s.withUser),
 			"workdir":              router.ToResolver(s.workdir),
@@ -909,4 +946,12 @@ func (s *containerSchema) withoutMount(ctx *router.Context, parent *Container, a
 
 func (s *containerSchema) mounts(ctx *router.Context, parent *Container, _ any) ([]string, error) {
 	return parent.Mounts(ctx)
+}
+
+type containerDirectoryArgs struct {
+	Path string
+}
+
+func (s *containerSchema) directory(ctx *router.Context, parent *Container, args containerDirectoryArgs) (*Directory, error) {
+	return parent.Directory(ctx, args.Path)
 }
