@@ -1103,6 +1103,94 @@ func TestContainerWithMountedTemp(t *testing.T) {
 	require.Contains(t, execRes.Container.From.WithMountedTemp.Exec.Stdout.Contents, "tmpfs /mnt/tmp tmpfs")
 }
 
+func TestContainerMountsWithoutMount(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					ID string
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.WithNewFile.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedTemp struct {
+					Mounts               []string
+					WithMountedDirectory struct {
+						Mounts []string
+						Exec   struct {
+							Stdout struct {
+								Contents string
+							}
+							WithoutMount struct {
+								Mounts []string
+								Exec   struct {
+									Stdout struct {
+										Contents string
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedTemp(path: "/temp") {
+						mounts
+						withMountedDirectory(path: "/mnt", source: $id) {
+							mounts
+							exec(args: ["ls", "/mnt"]) {
+								stdout {
+									contents
+								}
+								withoutMount(path: "/mnt") {
+									mounts
+									exec(args: ["ls", "/mnt"]) {
+										stdout {
+											contents
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"/temp"}, execRes.Container.From.WithMountedTemp.Mounts)
+	require.Equal(t, []string{"/temp", "/mnt"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Mounts)
+	require.Equal(t, "some-dir\nsome-file\n", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, "", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/temp"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Mounts)
+}
+
 func TestContainerMultiFrom(t *testing.T) {
 	t.Parallel()
 

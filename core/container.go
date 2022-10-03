@@ -235,6 +235,45 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return &Container{ID: id}, nil
 }
 
+func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := []ContainerMount{}
+	for _, mnt := range payload.Mounts {
+		if mnt.Target == target {
+			continue
+		}
+
+		filtered = append(filtered, mnt)
+	}
+
+	payload.Mounts = filtered
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) Mounts(ctx context.Context) ([]string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	mounts := []string{}
+	for _, mnt := range payload.Mounts {
+		mounts = append(mounts, mnt.Target)
+	}
+
+	return mounts, nil
+}
+
 type mountable interface {
 	Decode() (llb.State, string, specs.Platform, error)
 }
@@ -579,13 +618,13 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withoutVariable":      router.ToResolver(s.withoutVariable),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
-			"mounts":               router.ErrResolver(ErrNotImplementedYet),
+			"mounts":               router.ToResolver(s.mounts),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ToResolver(s.withMountedFile),
 			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ErrResolver(ErrNotImplementedYet),
-			"withoutMount":         router.ErrResolver(ErrNotImplementedYet),
+			"withoutMount":         router.ToResolver(s.withoutMount),
 			"exec":                 router.ToResolver(s.exec),
 			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
@@ -858,4 +897,16 @@ type containerWithMountedTempArgs struct {
 
 func (s *containerSchema) withMountedTemp(ctx *router.Context, parent *Container, args containerWithMountedTempArgs) (*Container, error) {
 	return parent.WithMountedTemp(ctx, args.Path)
+}
+
+type containerWithoutMountArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withoutMount(ctx *router.Context, parent *Container, args containerWithoutMountArgs) (*Container, error) {
+	return parent.WithoutMount(ctx, args.Path)
+}
+
+func (s *containerSchema) mounts(ctx *router.Context, parent *Container, _ any) ([]string, error) {
+	return parent.Mounts(ctx)
 }
