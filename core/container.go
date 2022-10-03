@@ -388,10 +388,10 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"workdir":              router.ToResolver(s.workdir),
 			"withWorkdir":          router.ToResolver(s.withWorkdir),
 			"variables":            router.ToResolver(s.variables),
-			"variable":             router.ErrResolver(ErrNotImplementedYet),
+			"variable":             router.ToResolver(s.variable),
 			"withVariable":         router.ToResolver(s.withVariable),
 			"withSecretVariable":   router.ErrResolver(ErrNotImplementedYet),
-			"withoutVariable":      router.ErrResolver(ErrNotImplementedYet),
+			"withoutVariable":      router.ToResolver(s.withoutVariable),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
 			"mounts":               router.ErrResolver(ErrNotImplementedYet),
@@ -578,13 +578,53 @@ func (s *containerSchema) withVariable(ctx *router.Context, parent *Container, a
 	})
 }
 
-func (s *containerSchema) variables(ctx *router.Context, parent *Container, args containerWithVariableArgs) ([]string, error) {
+type containerWithoutVariableArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutVariable(ctx *router.Context, parent *Container, args containerWithoutVariableArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		removedEnv := []string{}
+		prefix := args.Name + "="
+		for _, env := range cfg.Env {
+			if !strings.HasPrefix(env, prefix) {
+				removedEnv = append(removedEnv, env)
+			}
+		}
+
+		cfg.Env = removedEnv
+
+		return cfg
+	})
+}
+
+func (s *containerSchema) variables(ctx *router.Context, parent *Container, args any) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return cfg.Env, nil
+}
+
+type containerVariableArgs struct {
+	Name string
+}
+
+func (s *containerSchema) variable(ctx *router.Context, parent *Container, args containerVariableArgs) (*string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, env := range cfg.Env {
+		name, val, ok := strings.Cut(env, "=")
+		if ok && name == args.Name {
+			return &val, nil
+		}
+	}
+
+	return nil, nil
 }
 
 type containerWithMountedDirectoryArgs struct {

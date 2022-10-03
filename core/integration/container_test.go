@@ -391,6 +391,82 @@ func TestContainerVariables(t *testing.T) {
 	require.Contains(t, res.Container.From.Exec.Stdout.Contents, "GOPATH=/go\n")
 }
 
+func TestContainerVariable(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Variable *string
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "golang:1.18.2-alpine") {
+					variable(name: "GOLANG_VERSION")
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.NotNil(t, res.Container.From.Variable)
+	require.Equal(t, "1.18.2", *res.Container.From.Variable)
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "golang:1.18.2-alpine") {
+					variable(name: "UNKNOWN")
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Nil(t, res.Container.From.Variable)
+}
+
+func TestContainerWithoutVariable(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithoutVariable struct {
+					Variables []string
+					Exec      struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "golang:1.18.2-alpine") {
+					withoutVariable(name: "GOLANG_VERSION") {
+						variables
+						exec(args: ["env"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, res.Container.From.WithoutVariable.Variables, []string{
+		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"GOPATH=/go",
+	})
+	require.NotContains(t, res.Container.From.WithoutVariable.Exec.Stdout.Contents, "GOLANG_VERSION")
+}
+
 func TestContainerVariablesReplace(t *testing.T) {
 	t.Parallel()
 
