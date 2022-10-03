@@ -14,9 +14,10 @@ func TestQuery(t *testing.T) {
 		Select("image").Arg("ref", "alpine").
 		Select("file").Arg("path", "/etc/alpine-release").Bind(&contents)
 
-	q, err := root.Build()
-	require.NoError(t, err)
-	require.Equal(t, q, `query{core{image(ref:"alpine"){file(path:"/etc/alpine-release")}}}`)
+	q, v := root.Build()
+	require.Equal(t, `query($ref: String!, $path: String!){core{image(ref:$ref){file(path:$path)}}}`, q)
+	require.Equal(t, "alpine", v["ref"])
+	require.Equal(t, "/etc/alpine-release", v["path"])
 }
 
 func TestAlias(t *testing.T) {
@@ -26,22 +27,47 @@ func TestAlias(t *testing.T) {
 		Select("image").Arg("ref", "alpine").
 		SelectWithAlias("foo", "file").Arg("path", "/etc/alpine-release").Bind(&contents)
 
-	q, err := root.Build()
-	require.NoError(t, err)
-	require.Equal(t, q, `query{core{image(ref:"alpine"){foo:file(path:"/etc/alpine-release")}}}`)
+	q, v := root.Build()
+	require.Equal(t, `query($ref: String!, $path: String!){core{image(ref:$ref){foo:file(path:$path)}}}`, q)
+	require.Equal(t, "alpine", v["ref"])
+	require.Equal(t, "/etc/alpine-release", v["path"])
+}
+
+func TestArgsCollision(t *testing.T) {
+	q, v := Query().
+		Select("a").Arg("arg", "one").
+		Select("b").Arg("arg", "two").Build()
+	require.Equal(t, `query($arg: String!, $arg2: String!){a(arg:$arg){b(arg:$arg2)}}`, q)
+	require.Equal(t, "one", v["arg"])
+	require.Equal(t, "two", v["arg2"])
+}
+
+func TestNullableArgs(t *testing.T) {
+	v := "value"
+
+	tests := map[string]any{
+		`query($arg: String!){a(arg:$arg)}`:    v,
+		`query($arg: String){a(arg:$arg)}`:     &v,
+		`query($arg: [String!]!){a(arg:$arg)}`: []string{v},
+		`query($arg: [String]!){a(arg:$arg)}`:  []*string{&v},
+		`query($arg: [String]){a(arg:$arg)}`:   &([]*string{&v}),
+	}
+
+	for expect, arg := range tests {
+		q, _ := Query().Select("a").Arg("arg", arg).Build()
+		require.Equal(t, expect, q)
+	}
 }
 
 func TestFieldImmutability(t *testing.T) {
 	root := Query().
 		Select("test")
 
-	a, err := root.Select("a").Build()
-	require.NoError(t, err)
+	a, _ := root.Select("a").Build()
 	require.Equal(t, `query{test{a}}`, a)
 
 	// Make sure this is not `test{a,b}` (e.g. the previous select didn't modify `root` in-place)
-	b, err := root.Select("b").Build()
-	require.NoError(t, err)
+	b, _ := root.Select("b").Build()
 	require.Equal(t, `query{test{b}}`, b)
 }
 
@@ -49,14 +75,14 @@ func TestArgImmutability(t *testing.T) {
 	root := Query().
 		Select("test")
 
-	a, err := root.Arg("foo", "bar").Build()
-	require.NoError(t, err)
-	require.Equal(t, `query{test(foo:"bar")}`, a)
+	a, v := root.Arg("foo", "bar").Build()
+	require.Equal(t, `query($foo: String!){test(foo:$foo)}`, a)
+	require.Equal(t, "bar", v["foo"])
 
 	// Make sure this does not contain `hello` (e.g. the previous select didn't modify `root` in-place)
-	b, err := root.Arg("hello", "world").Build()
-	require.NoError(t, err)
-	require.Equal(t, `query{test(hello:"world")}`, b)
+	b, v := root.Arg("hello", "world").Build()
+	require.Equal(t, `query($hello: String!){test(hello:$hello)}`, b)
+	require.Equal(t, "world", v["hello"])
 }
 
 func TestUnpack(t *testing.T) {

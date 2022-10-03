@@ -21,34 +21,34 @@ func New() *Query {
 //   - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
 type ContainerAddress string
 
-func (v ContainerAddress) String() string {
-	return string(v)
+func (v ContainerAddress) GQLType() string {
+	return "ContainerAddress"
 }
 
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
-func (v ContainerID) String() string {
-	return string(v)
+func (v ContainerID) GQLType() string {
+	return "ContainerID"
 }
 
 // A content-addressed directory identifier
 type DirectoryID string
 
-func (v DirectoryID) String() string {
-	return string(v)
+func (v DirectoryID) GQLType() string {
+	return "DirectoryID"
 }
 
 type FileID string
 
-func (v FileID) String() string {
-	return string(v)
+func (v FileID) GQLType() string {
+	return "FileID"
 }
 
 type SecretID string
 
-func (v SecretID) String() string {
-	return string(v)
+func (v SecretID) GQLType() string {
+	return "SecretID"
 }
 
 // Additional options for executing a command
@@ -271,10 +271,10 @@ func (r *Container) WithMountedTemp(path string) *Container {
 }
 
 // This container plus an env variable containing the given secret
-func (r *Container) WithSecretVariable(secret SecretID, name string) *Container {
+func (r *Container) WithSecretVariable(name string, secret SecretID) *Container {
 	q := r.q.Select("withSecretVariable")
-	q = q.Arg("secret", secret)
 	q = q.Arg("name", name)
+	q = q.Arg("secret", secret)
 
 	return &Container{
 		q: q,
@@ -292,10 +292,10 @@ func (r *Container) WithUser(name string) *Container {
 }
 
 // This container plus the given environment variable
-func (r *Container) WithVariable(value string, name string) *Container {
+func (r *Container) WithVariable(name string, value string) *Container {
 	q := r.q.Select("withVariable")
-	q = q.Arg("value", value)
 	q = q.Arg("name", name)
+	q = q.Arg("value", value)
 
 	return &Container{
 		q: q,
@@ -417,10 +417,10 @@ func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
 }
 
 // This directory plus a directory written at the given path
-func (r *Directory) WithDirectory(path string, directory DirectoryID) *Directory {
+func (r *Directory) WithDirectory(directory DirectoryID, path string) *Directory {
 	q := r.q.Select("withDirectory")
-	q = q.Arg("path", path)
 	q = q.Arg("directory", directory)
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,

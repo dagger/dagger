@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/pkg/errors"
-	"github.com/udacity/graphb"
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func Query() *Selection {
 	return &Selection{}
+}
+
+type gqlTyper interface {
+	GQLType() string
 }
 
 type Selection struct {
@@ -69,53 +72,109 @@ func (s *Selection) resultName() string {
 	return s.name
 }
 
-func (s *Selection) rootField() *graphb.Field {
-	var root *graphb.Field
-	var parent *graphb.Field
-	for _, i := range s.path() {
-		field := graphb.MakeField(i.name)
-		if root == nil {
-			root = field
-		}
+func argumentKind(v any) string {
+	switch v := v.(type) {
+	case *bool:
+		return "Boolean"
+	case bool:
+		return "Boolean!"
+	case *[]*bool:
+		return "[Boolean]"
+	case []*bool:
+		return "[Boolean]!"
+	case *[]bool:
+		return "[Boolean!]"
+	case []bool:
+		return "[Boolean!]!"
+	case *int:
+		return "Int"
+	case int:
+		return "Int!"
+	case *[]*int:
+		return "[Int]"
+	case []*int:
+		return "[Int]!"
+	case *[]int:
+		return "[Int!]"
+	case []int:
+		return "[Int!]!"
+	case *string:
+		return "String"
+	case string:
+		return "String!"
+	case *[]*string:
+		return "[String]"
+	case []*string:
+		return "[String]!"
+	case *[]string:
+		return "[String!]"
+	case []string:
+		return "[String!]!"
 
-		if i.alias != "" {
-			field.Alias = i.alias
-		}
-		for name, value := range i.args {
-			var (
-				arg graphb.Argument
-				err error
-			)
+	case *gqlTyper:
+		return (*v).GQLType()
+	case gqlTyper:
+		return v.GQLType() + "!"
+	// FIXME: need to support these somehow
+	// case *[]*gqlTyper:
+	// 	return "[String]"
+	// case []*gqlTyper:
+	// 	return "[String]!"
+	// case *[]gqlTyper:
+	// 	return "[String!]"
+	// case []gqlTyper:
+	// 	return "[String!]!"
 
-			if v, ok := value.(graphb.Argument); ok {
-				arg = graphb.ArgumentCustomType(name, v)
-			} else {
-				arg, err = graphb.ArgumentAny(name, value)
-				if err != nil {
-					panic(err)
-				}
-			}
-
-			field = field.AddArguments(arg)
-		}
-		if parent != nil {
-			parent.Fields = []*graphb.Field{field}
-		}
-		parent = field
+	default:
+		panic(fmt.Errorf("unsupported argument of kind %T: %v", v, v))
 	}
-
-	return root
 }
 
-func (s *Selection) Build() (string, error) {
-	q := graphb.MakeQuery(graphb.TypeQuery)
-	q.SetFields(s.rootField())
-
-	strCh, err := q.StringChan()
-	if err != nil {
-		return "", errors.WithStack(err)
+func (s *Selection) Build() (string, map[string]any) {
+	fields := []string{}
+	variables := map[string]any{}
+	setVariable := func(name string, value any) string {
+		for i := 1; i < 100; i++ {
+			k := fmt.Sprintf("%s%d", name, i)
+			if i == 1 {
+				k = name
+			}
+			if _, ok := variables[k]; !ok {
+				variables[k] = value
+				return k
+			}
+		}
+		panic("argument names exhausted")
 	}
-	return graphb.StringFromChan(strCh), nil
+	for _, sel := range s.path() {
+		q := sel.name
+		if len(sel.args) > 0 {
+			args := make([]string, 0, len(sel.args))
+			for name, value := range sel.args {
+				k := setVariable(name, value)
+				args = append(args, fmt.Sprintf("%s:$%s", name, k))
+			}
+			q += "(" + strings.Join(args, ", ") + ")"
+		}
+		if sel.alias != "" {
+			q = sel.alias + ":" + q
+		}
+		fields = append(fields, q)
+	}
+
+	// Generate top-level `query(...) {}`
+	query := "query"
+	queryArgs := []string{}
+	for name, v := range variables {
+		queryArgs = append(queryArgs, fmt.Sprintf("$%s: %s", name, argumentKind(v)))
+	}
+	if len(queryArgs) > 0 {
+		query += "(" + strings.Join(queryArgs, ", ") + ")"
+	}
+	fields = append([]string{query}, fields...)
+
+	q := strings.Join(fields, "{") + strings.Repeat("}", len(fields)-1)
+	return q, variables
 }
 
 func (s *Selection) Unpack(data interface{}) error {
@@ -135,12 +194,9 @@ func (s *Selection) Unpack(data interface{}) error {
 }
 
 func (s *Selection) Execute(ctx context.Context) error {
-	query, err := s.Build()
-	if err != nil {
-		return err
-	}
+	query, vars := s.Build()
 
-	fmt.Printf("QUERY: %s\n", query)
+	fmt.Printf("QUERY: %s [args: %+v]\n", query, vars)
 
 	cl, err := dagger.Client(ctx)
 	if err != nil {
@@ -150,7 +206,8 @@ func (s *Selection) Execute(ctx context.Context) error {
 	var response any
 	err = cl.MakeRequest(ctx,
 		&graphql.Request{
-			Query: query,
+			Query:     query,
+			Variables: vars,
 		},
 		&graphql.Response{Data: &response},
 	)

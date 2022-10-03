@@ -1,6 +1,6 @@
 {{ .Description | Comment }}
 type {{ .Name | PascalCase }} string
 
-func (v {{ .Name | PascalCase }}) String() string {
-    return string(v)
+func (v {{ .Name | PascalCase }}) GQLType() string {
+    return "{{ .Name }}"
 }
