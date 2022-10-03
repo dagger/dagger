@@ -227,6 +227,48 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithWorkdir.Exec.Stdout.Contents, "/usr\n")
 }
 
+func TestContainerExecWithUser(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				User string
+
+				WithUser struct {
+					User string
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "daemon") {
+						user
+						exec(args: ["whoami"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, res.Container.From.User, "")
+	require.Equal(t, res.Container.From.WithUser.User, "daemon")
+	require.Equal(t, res.Container.From.WithUser.Exec.Stdout.Contents, "daemon\n")
+}
+
 func TestContainerExecWithVariable(t *testing.T) {
 	t.Parallel()
 

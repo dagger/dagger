@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
@@ -82,6 +83,9 @@ func (payload *containerIDPayload) FSState() (llb.State, error) {
 
 // metaMount is the special path that the shim writes metadata to.
 const metaMount = "/dagger"
+
+// metaSourcePath is a world-writable directory created and mounted to /dagger.
+const metaSourcePath = "meta"
 
 // MetaState returns the container's metadata mount state. If the container has
 // yet to run, it returns nil.
@@ -226,7 +230,19 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
 		llb.Args(append([]string{shim.Path}, args...)),
 		llb.WithCustomName(strings.Join(args, " ")),
-		llb.AddMount(metaMount, llb.Scratch()),
+
+		// create /dagger mount point for the shim to write to
+		llb.AddMount(
+			metaMount,
+			// because the shim might run as non-root, we need to make a
+			// world-writable directory first...
+			llb.Scratch().File(llb.Mkdir(metaSourcePath, 0777)),
+			// ...and then make it the base of the mount point.
+			llb.SourcePath(metaSourcePath)),
+	}
+
+	if cfg.User != "" {
+		runOpts = append(runOpts, llb.User(cfg.User))
 	}
 
 	if cfg.WorkingDir != "" {
@@ -320,7 +336,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 	return &exitCode, nil
 }
 
-func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, path string) (*File, error) {
+func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -335,7 +351,7 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, path s
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path, payload.Platform)
+	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform)
 }
 
 type containerSchema struct {
@@ -363,8 +379,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"from":                 router.ToResolver(s.from),
 			"rootfs":               router.ToResolver(s.rootfs),
 			"directory":            router.ErrResolver(ErrNotImplementedYet),
-			"user":                 router.ErrResolver(ErrNotImplementedYet),
-			"withUser":             router.ErrResolver(ErrNotImplementedYet),
+			"user":                 router.ToResolver(s.user),
+			"withUser":             router.ToResolver(s.withUser),
 			"workdir":              router.ToResolver(s.workdir),
 			"withWorkdir":          router.ToResolver(s.withWorkdir),
 			"variables":            router.ToResolver(s.variables),
@@ -470,6 +486,26 @@ func (s *containerSchema) stdout(ctx *router.Context, parent *Container, args an
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *Container, args any) (*File, error) {
 	return parent.MetaFile(ctx, s.gw, "stderr")
+}
+
+type containerWithUserArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withUser(ctx *router.Context, parent *Container, args containerWithUserArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.User = args.Name
+		return cfg
+	})
+}
+
+func (s *containerSchema) user(ctx *router.Context, parent *Container, args containerWithVariableArgs) (string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return cfg.User, nil
 }
 
 type containerWithWorkdirArgs struct {
