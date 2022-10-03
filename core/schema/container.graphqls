@@ -82,7 +82,7 @@ type Container {
     "This container plus a temporary directory mounted at the given path"
     withMountedTemp(path: String!): Container!
 
-	"This container plus a cache directory mounted at the given path"
+	  "This container plus a cache directory mounted at the given path"
     withMountedCache(path: String!, source: DirectoryID): Container!
 
     "This container plus a secret mounted into a file at the given path"

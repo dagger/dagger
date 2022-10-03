@@ -925,6 +925,150 @@ func TestContainerWithMountedFile(t *testing.T) {
 	require.Equal(t, "sub-content", execRes.Container.From.WithMountedFile.Exec.Stdout.Contents)
 }
 
+func TestContainerWithMountedCache(t *testing.T) {
+	t.Parallel()
+
+	// a random value used to scope the cache to the test run
+	testRand := identity.NewID()
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithVariable struct {
+					WithMountedCache struct {
+						WithVariable struct {
+							Exec struct {
+								Stdout struct {
+									Contents string
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	query := `query Test($testRand: String!, $rand: String!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withVariable(name: "TESTRAND", value: $testRand) {
+						withMountedCache(path: "/mnt/cache") {
+							withVariable(name: "RAND", value: $rand) {
+								exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/file; cat /mnt/cache/file"]) {
+									stdout {
+										contents
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`
+
+	rand1 := identity.NewID()
+	err := testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"rand":     rand1,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, rand1+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+
+	rand2 := identity.NewID()
+	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"rand":     rand2,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+}
+
+func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				Directory struct {
+					ID core.FileID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-dir/sub-file", contents: "initial-content\n") {
+					directory(path: "some-dir") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	initialID := dirRes.Directory.WithNewFile.Directory.ID
+
+	// a random value used to scope the cache to the test run
+	testRand := identity.NewID()
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithVariable struct {
+					WithMountedCache struct {
+						WithVariable struct {
+							Exec struct {
+								Stdout struct {
+									Contents string
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	query := `query Test($testRand: String!, $rand: String!, $init: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withVariable(name: "TESTRAND", value: $testRand) {
+						withMountedCache(path: "/mnt/cache", source: $init) {
+							withVariable(name: "RAND", value: $rand) {
+								exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"]) {
+									stdout {
+										contents
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`
+
+	rand1 := identity.NewID()
+	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"init":     initialID,
+		"rand":     rand1,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+
+	rand2 := identity.NewID()
+	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"init":     initialID,
+		"rand":     rand2,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+}
+
 func TestContainerMultiFrom(t *testing.T) {
 	t.Parallel()
 

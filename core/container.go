@@ -15,6 +15,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/core/shim"
 	"go.dagger.io/dagger/router"
@@ -114,10 +115,20 @@ type ContainerMount struct {
 
 	// The path of the mount within the container.
 	Target string `json:"target"`
+
+	// Persist changes to the mount under this cache ID.
+	CacheID string `json:"cache_id"`
+
+	// Whether the mount is a cache, and how to share it.
+	CacheSharingMode string `json:"cache_sharing"`
 }
 
 // SourceState returns the state of the source of the mount.
 func (mnt ContainerMount) SourceState() (llb.State, error) {
+	if mnt.Source == nil {
+		return llb.Scratch(), nil
+	}
+
 	return defToState(mnt.Source)
 }
 
@@ -163,6 +174,43 @@ func (container *Container) WithMountedDirectory(ctx context.Context, target str
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
 	return container.withMounted(ctx, target, source)
+}
+
+func (container *Container) WithMountedCache(ctx context.Context, target string, source *Directory) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	mount := ContainerMount{
+		Target:           target,
+		CacheID:          fmt.Sprintf("%s:%s", container.ID, target),
+		CacheSharingMode: "shared", // TODO(vito): add param
+	}
+
+	if source != nil {
+		dirSt, dirRel, err := source.Decode()
+		if err != nil {
+			return nil, err
+		}
+
+		dirDef, err := dirSt.Marshal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		mount.Source = dirDef.ToPB()
+		mount.SourcePath = dirRel
+	}
+
+	payload.Mounts = append(payload.Mounts, mount)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
 }
 
 type mountable interface {
@@ -289,6 +337,22 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
 
+		if mnt.CacheSharingMode != "" {
+			var sharingMode llb.CacheMountSharingMode
+			switch mnt.CacheSharingMode {
+			case "shared":
+				sharingMode = llb.CacheMountShared
+			case "private":
+				sharingMode = llb.CacheMountPrivate
+			case "locked":
+				sharingMode = llb.CacheMountLocked
+			default:
+				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
+			}
+
+			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheID, sharingMode))
+		}
+
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
 	}
 
@@ -306,6 +370,11 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 
 	// propagate any changes to the mounts to subsequent containers
 	for i, mnt := range mounts {
+		if mnt.CacheID != "" {
+			// caches "propagate" on their own
+			continue
+		}
+
 		execMountDef, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(platform))
 		if err != nil {
 			return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
@@ -483,7 +552,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ToResolver(s.withMountedFile),
 			"withMountedTemp":      router.ErrResolver(ErrNotImplementedYet),
-			"withMountedCache":     router.ErrResolver(ErrNotImplementedYet),
+			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ErrResolver(ErrNotImplementedYet),
 			"withoutMount":         router.ErrResolver(ErrNotImplementedYet),
 			"exec":                 router.ToResolver(s.exec),
@@ -736,4 +805,18 @@ type containerWithMountedFileArgs struct {
 
 func (s *containerSchema) withMountedFile(ctx *router.Context, parent *Container, args containerWithMountedFileArgs) (*Container, error) {
 	return parent.WithMountedFile(ctx, args.Path, &File{ID: args.Source})
+}
+
+type containerWithMountedCacheArgs struct {
+	Path   string
+	Source DirectoryID
+}
+
+func (s *containerSchema) withMountedCache(ctx *router.Context, parent *Container, args containerWithMountedCacheArgs) (*Container, error) {
+	var dir *Directory
+	if args.Source != "" {
+		dir = &Directory{ID: args.Source}
+	}
+
+	return parent.WithMountedCache(ctx, args.Path, dir)
 }
