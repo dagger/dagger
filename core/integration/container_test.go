@@ -1069,6 +1069,40 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
 }
 
+func TestContainerWithMountedTemp(t *testing.T) {
+	t.Parallel()
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedTemp struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedTemp(path: "/mnt/tmp") {
+						exec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, nil)
+	require.NoError(t, err)
+	require.Contains(t, execRes.Container.From.WithMountedTemp.Exec.Stdout.Contents, "tmpfs /mnt/tmp tmpfs")
+}
+
 func TestContainerMultiFrom(t *testing.T) {
 	t.Parallel()
 

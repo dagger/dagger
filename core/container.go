@@ -108,7 +108,7 @@ func (payload *containerIDPayload) MetaState() (*llb.State, error) {
 // ContainerMount is a mount point configured in a container.
 type ContainerMount struct {
 	// The source of the mount.
-	Source *pb.Definition `json:"source"`
+	Source *pb.Definition `json:"source,omitempty"`
 
 	// A path beneath the source to scope the mount to.
 	SourcePath string `json:"source_path,omitempty"`
@@ -117,10 +117,13 @@ type ContainerMount struct {
 	Target string `json:"target"`
 
 	// Persist changes to the mount under this cache ID.
-	CacheID string `json:"cache_id"`
+	CacheID string `json:"cache_id,omitempty"`
 
-	// Whether the mount is a cache, and how to share it.
-	CacheSharingMode string `json:"cache_sharing"`
+	// How to share the cache across concurrent runs.
+	CacheSharingMode string `json:"cache_sharing,omitempty"`
+
+	// Configure the mount as a tmpfs.
+	Tmpfs bool `json:"tmpfs,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
@@ -204,6 +207,25 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	}
 
 	payload.Mounts = append(payload.Mounts, mount)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithMountedTemp(ctx context.Context, target string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Mounts = append(payload.Mounts, ContainerMount{
+		Target: target,
+		Tmpfs:  true,
+	})
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -353,6 +375,10 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheID, sharingMode))
 		}
 
+		if mnt.Tmpfs {
+			mountOpts = append(mountOpts, llb.Tmpfs())
+		}
+
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
 	}
 
@@ -372,6 +398,11 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 	for i, mnt := range mounts {
 		if mnt.CacheID != "" {
 			// caches "propagate" on their own
+			continue
+		}
+
+		if mnt.Tmpfs {
+			// tmpfs changes don't propagate
 			continue
 		}
 
@@ -551,7 +582,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"mounts":               router.ErrResolver(ErrNotImplementedYet),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ToResolver(s.withMountedFile),
-			"withMountedTemp":      router.ErrResolver(ErrNotImplementedYet),
+			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ErrResolver(ErrNotImplementedYet),
 			"withoutMount":         router.ErrResolver(ErrNotImplementedYet),
@@ -819,4 +850,12 @@ func (s *containerSchema) withMountedCache(ctx *router.Context, parent *Containe
 	}
 
 	return parent.WithMountedCache(ctx, args.Path, dir)
+}
+
+type containerWithMountedTempArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withMountedTemp(ctx *router.Context, parent *Container, args containerWithMountedTempArgs) (*Container, error) {
+	return parent.WithMountedTemp(ctx, args.Path)
 }
