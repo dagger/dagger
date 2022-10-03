@@ -865,6 +865,66 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 	require.Equal(t, "hi", execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Exec.Stdout.Contents)
 }
 
+func TestContainerWithMountedFile(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				File struct {
+					ID core.FileID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
+					file(path: "some-dir/sub-file") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.File.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedFile struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: FileID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedFile(path: "/mnt/file", source: $id) {
+						exec(args: ["cat", "/mnt/file"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", execRes.Container.From.WithMountedFile.Exec.Stdout.Contents)
+}
+
 func TestContainerMultiFrom(t *testing.T) {
 	t.Parallel()
 

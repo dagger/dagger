@@ -158,24 +158,36 @@ func (container *Container) WithFS(ctx context.Context, st llb.State, platform s
 }
 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
+	return container.withMounted(ctx, target, source)
+}
+
+func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
+	return container.withMounted(ctx, target, source)
+}
+
+type mountable interface {
+	Decode() (llb.State, string, specs.Platform, error)
+}
+
+func (container *Container) withMounted(ctx context.Context, target string, source mountable) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	dirSt, dirRel, dirPlatform, err := source.Decode()
+	srcSt, srcRel, srcPlatform, err := source.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	dirDef, err := dirSt.Marshal(ctx, llb.Platform(dirPlatform))
+	srcDef, err := srcSt.Marshal(ctx, llb.Platform(srcPlatform))
 	if err != nil {
 		return nil, err
 	}
 
 	payload.Mounts = append(payload.Mounts, ContainerMount{
-		Source:     dirDef.ToPB(),
-		SourcePath: dirRel,
+		Source:     srcDef.ToPB(),
+		SourcePath: srcRel,
 		Target:     target,
 	})
 
@@ -469,7 +481,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
 			"mounts":               router.ErrResolver(ErrNotImplementedYet),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
-			"withMountedFile":      router.ErrResolver(ErrNotImplementedYet),
+			"withMountedFile":      router.ToResolver(s.withMountedFile),
 			"withMountedTemp":      router.ErrResolver(ErrNotImplementedYet),
 			"withMountedCache":     router.ErrResolver(ErrNotImplementedYet),
 			"withMountedSecret":    router.ErrResolver(ErrNotImplementedYet),
@@ -709,10 +721,19 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Cont
 	return parent.WithMountedDirectory(ctx, args.Path, &Directory{ID: args.Source})
 }
 
-type containerPushArgs struct {
+type containerPublishArgs struct {
 	Address ContainerAddress
 }
 
-func (s *containerSchema) publish(ctx *router.Context, parent *Container, args containerPushArgs) (ContainerAddress, error) {
+func (s *containerSchema) publish(ctx *router.Context, parent *Container, args containerPublishArgs) (ContainerAddress, error) {
 	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
+}
+
+type containerWithMountedFileArgs struct {
+	Path   string
+	Source FileID
+}
+
+func (s *containerSchema) withMountedFile(ctx *router.Context, parent *Container, args containerWithMountedFileArgs) (*Container, error) {
+	return parent.WithMountedFile(ctx, args.Path, &File{ID: args.Source})
 }
