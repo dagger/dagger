@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/pkg/errors"
@@ -13,85 +12,54 @@ import (
 )
 
 func Query() *Selection {
-	s := &Selection{
-		subSelection: make(map[string]*Selection),
-	}
-	s.root = s
-	return s
+	return &Selection{}
 }
 
 type Selection struct {
 	name  string
 	alias string
 	args  map[string]any
+	bind  interface{}
 
-	root         *Selection
-	subSelection map[string]*Selection
-	bind         interface{}
+	prev *Selection
 }
 
-func (s *Selection) copy() *Selection {
-	copy := &Selection{
-		name:  s.name,
-		alias: s.alias,
-		root:  s.root,
-		bind:  s.bind,
+func (s *Selection) path() []*Selection {
+	selections := []*Selection{}
+	for sel := s; sel.prev != nil; sel = sel.prev {
+		selections = append([]*Selection{sel}, selections...)
 	}
 
-	copy.args = make(map[string]any, len(s.args))
-	for k, v := range s.args {
-		copy.args[k] = v
-	}
-
-	copy.subSelection = make(map[string]*Selection, len(s.subSelection))
-	for k, v := range s.subSelection {
-		copy.subSelection[k] = v
-	}
-
-	return copy
+	return selections
 }
 
-func (s *Selection) SelectAs(alias, name string) *Selection {
+func (s *Selection) SelectWithAlias(alias, name string) *Selection {
 	sel := &Selection{
-		name:         name,
-		root:         s.root,
-		alias:        alias,
-		subSelection: make(map[string]*Selection),
+		name:  name,
+		prev:  s,
+		alias: alias,
 	}
-
-	fieldKey := name
-	if alias != "" {
-		fieldKey = alias
-	}
-
-	if _, ok := s.subSelection[fieldKey]; ok {
-		panic("duplicate selection field")
-	}
-
-	*s = *s.copy()
-	s.subSelection[fieldKey] = sel
 	return sel
 }
 
 func (s *Selection) Select(name string) *Selection {
-	return s.SelectAs("", name)
+	return s.SelectWithAlias("", name)
 }
 
 func (s *Selection) Arg(name string, value any) *Selection {
-	if s.args == nil {
-		s.args = map[string]any{}
+	sel := *s
+	if sel.args == nil {
+		sel.args = map[string]any{}
 	}
 
-	*s = *s.copy()
-	s.args[name] = value
-	return s
+	sel.args[name] = value
+	return &sel
 }
 
 func (s *Selection) Bind(v interface{}) *Selection {
-	*s = *s.copy()
-
-	s.bind = v
-	return s
+	sel := *s
+	sel.bind = v
+	return &sel
 }
 
 func (s *Selection) resultName() string {
@@ -101,24 +69,19 @@ func (s *Selection) resultName() string {
 	return s.name
 }
 
-func (s *Selection) buildFields() []*graphb.Field {
-	fields := []*graphb.Field{}
-	subFields := make([]*Selection, 0, len(s.subSelection))
-	for _, sub := range s.subSelection {
-		subFields = append(subFields, sub)
-	}
-	// Sort fields so the query is stable
-	sort.Slice(subFields, func(i, j int) bool {
-		return subFields[i].resultName() < subFields[j].resultName()
-	})
-
-	for _, sub := range subFields {
-		field := graphb.MakeField(sub.name)
-		fields = append(fields, field)
-		if sub.alias != "" {
-			field.Alias = sub.alias
+func (s *Selection) rootField() *graphb.Field {
+	var root *graphb.Field
+	var parent *graphb.Field
+	for _, i := range s.path() {
+		field := graphb.MakeField(i.name)
+		if root == nil {
+			root = field
 		}
-		for name, value := range sub.args {
+
+		if i.alias != "" {
+			field.Alias = i.alias
+		}
+		for name, value := range i.args {
 			var (
 				arg graphb.Argument
 				err error
@@ -135,15 +98,18 @@ func (s *Selection) buildFields() []*graphb.Field {
 
 			field = field.AddArguments(arg)
 		}
-		field.Fields = sub.buildFields()
+		if parent != nil {
+			parent.Fields = []*graphb.Field{field}
+		}
+		parent = field
 	}
 
-	return fields
+	return root
 }
 
 func (s *Selection) Build() (string, error) {
 	q := graphb.MakeQuery(graphb.TypeQuery)
-	q.SetFields(s.root.buildFields()...)
+	q.SetFields(s.rootField())
 
 	strCh, err := q.StringChan()
 	if err != nil {
@@ -153,22 +119,15 @@ func (s *Selection) Build() (string, error) {
 }
 
 func (s *Selection) Unpack(data interface{}) error {
-	return s.root.unpack(data)
-}
+	for _, i := range s.path() {
+		data = data.(map[string]interface{})[i.resultName()]
 
-func (s *Selection) unpack(data interface{}) error {
-	if s.bind != nil {
-		marshalled, err := json.Marshal(data)
-		if err != nil {
-			return err
-		}
-		json.Unmarshal(marshalled, s.bind)
-	}
-
-	for _, sub := range s.subSelection {
-		field := data.(map[string]interface{})[sub.resultName()]
-		if err := sub.unpack(field); err != nil {
-			return err
+		if i.bind != nil {
+			marshalled, err := json.Marshal(data)
+			if err != nil {
+				return err
+			}
+			json.Unmarshal(marshalled, s.bind)
 		}
 	}
 
