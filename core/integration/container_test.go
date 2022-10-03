@@ -264,9 +264,58 @@ func TestContainerExecWithUser(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.User, "")
-	require.Equal(t, res.Container.From.WithUser.User, "daemon")
-	require.Equal(t, res.Container.From.WithUser.Exec.Stdout.Contents, "daemon\n")
+	require.Equal(t, "", res.Container.From.User)
+	require.Equal(t, "daemon", res.Container.From.WithUser.User)
+	require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+}
+
+func TestContainerExecWithEntrypoint(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Entrypoint     []string
+				WithEntrypoint struct {
+					Entrypoint []string
+					Exec       struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+					WithEntrypoint struct {
+						Entrypoint []string
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					entrypoint
+					withEntrypoint(args: ["sh", "-c"]) {
+						entrypoint
+						exec(args: ["echo $HOME"]) {
+							stdout {
+								contents
+							}
+						}
+
+						withEntrypoint {
+							entrypoint
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Empty(t, res.Container.From.Entrypoint)
+	require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
+	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout.Contents)
+	require.Empty(t, res.Container.From.WithEntrypoint.WithEntrypoint.Entrypoint)
 }
 
 func TestContainerExecWithVariable(t *testing.T) {

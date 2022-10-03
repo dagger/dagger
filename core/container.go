@@ -225,6 +225,10 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 		return nil, fmt.Errorf("build shim: %w", err)
 	}
 
+	if len(cfg.Entrypoint) > 0 {
+		args = append(cfg.Entrypoint, args...)
+	}
+
 	runOpts := []llb.RunOption{
 		// run the command via the shim, hide shim behind custom name
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
@@ -388,8 +392,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withVariable":         router.ToResolver(s.withVariable),
 			"withSecretVariable":   router.ErrResolver(ErrNotImplementedYet),
 			"withoutVariable":      router.ErrResolver(ErrNotImplementedYet),
-			"entrypoint":           router.ErrResolver(ErrNotImplementedYet),
-			"withEntrypoint":       router.ErrResolver(ErrNotImplementedYet),
+			"entrypoint":           router.ToResolver(s.entrypoint),
+			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
 			"mounts":               router.ErrResolver(ErrNotImplementedYet),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ErrResolver(ErrNotImplementedYet),
@@ -486,6 +490,26 @@ func (s *containerSchema) stdout(ctx *router.Context, parent *Container, args an
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *Container, args any) (*File, error) {
 	return parent.MetaFile(ctx, s.gw, "stderr")
+}
+
+type containerWithEntrypointArgs struct {
+	Args []string
+}
+
+func (s *containerSchema) withEntrypoint(ctx *router.Context, parent *Container, args containerWithEntrypointArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Entrypoint = args.Args
+		return cfg
+	})
+}
+
+func (s *containerSchema) entrypoint(ctx *router.Context, parent *Container, args containerWithVariableArgs) ([]string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg.Entrypoint, nil
 }
 
 type containerWithUserArgs struct {
