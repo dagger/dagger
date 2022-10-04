@@ -688,7 +688,8 @@ func TestContainerMultiFrom(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "v18.10.0\ngo version go1.18.2 linux/amd64\n", execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents)
+	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents, "v18.10.0\n")
+	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents, "go version go1.18.2")
 }
 
 func TestContainerImageExport(t *testing.T) {
