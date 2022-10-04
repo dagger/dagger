@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/docker/distribution/reference"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -358,6 +360,77 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform)
 }
 
+func (container *Container) Publish(
+	ctx context.Context,
+	ref ContainerAddress,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) (ContainerAddress, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	st, err := payload.FSState()
+	if err != nil {
+		return "", err
+	}
+
+	stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return "", err
+	}
+
+	cfgBytes, err := json.Marshal(specs.Image{
+		Architecture: payload.Platform.Architecture,
+		OS:           payload.Platform.OS,
+		OSVersion:    payload.Platform.OSVersion,
+		OSFeatures:   payload.Platform.OSFeatures,
+		Config:       payload.Config,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
+	solveOpts.Exports = []bkclient.ExportEntry{
+		{
+			Type: bkclient.ExporterImage,
+			Attrs: map[string]string{
+				"name": string(ref),
+				"push": "true",
+			},
+		},
+	}
+
+	// Mirror events from the sub-Build into the main Build event channel.
+	// Build() will close the channel after completion so we don't want to use the main channel directly.
+	ch := make(chan *bkclient.SolveStatus)
+	go func() {
+		for event := range ch {
+			solveCh <- event
+		}
+	}()
+
+	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		return res, nil
+	}, ch)
+	if err != nil {
+		return "", err
+	}
+
+	return ref, nil
+}
+
 type containerSchema struct {
 	*baseSchema
 }
@@ -405,7 +478,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
-			"publish":              router.ErrResolver(ErrNotImplementedYet),
+			"publish":              router.ToResolver(s.publish),
 		},
 	}
 }
@@ -634,4 +707,12 @@ type containerWithMountedDirectoryArgs struct {
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Container, args containerWithMountedDirectoryArgs) (*Container, error) {
 	return parent.WithMountedDirectory(ctx, args.Path, &Directory{ID: args.Source})
+}
+
+type containerPushArgs struct {
+	Address ContainerAddress
+}
+
+func (s *containerSchema) publish(ctx *router.Context, parent *Container, args containerPushArgs) (ContainerAddress, error) {
+	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
 }
