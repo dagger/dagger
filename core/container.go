@@ -424,7 +424,14 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
-	for _, mnt := range mounts {
+	st, err := payload.FSState()
+	if err != nil {
+		return nil, fmt.Errorf("fs state: %w", err)
+	}
+
+	execSt := st.Run(runOpts...)
+
+	for i, mnt := range mounts {
 		st, err := mnt.SourceState()
 		if err != nil {
 			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
@@ -455,39 +462,22 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 			mountOpts = append(mountOpts, llb.Tmpfs())
 		}
 
-		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
-	}
+		mountSt := execSt.AddMount(mnt.Target, st, mountOpts...)
 
-	st, err := payload.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
-	}
+		// propagate any changes to regular mounts to subsequent containers
+		if !mnt.Tmpfs && mnt.CacheID == "" {
+			execMountDef, err := mountSt.Marshal(ctx, llb.Platform(platform))
+			if err != nil {
+				return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
+			}
 
-	execSt := st.Run(runOpts...)
+			mounts[i].Source = execMountDef.ToPB()
+		}
+	}
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-
-	// propagate any changes to the mounts to subsequent containers
-	for i, mnt := range mounts {
-		if mnt.CacheID != "" {
-			// caches "propagate" on their own
-			continue
-		}
-
-		if mnt.Tmpfs {
-			// tmpfs changes don't propagate
-			continue
-		}
-
-		execMountDef, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(platform))
-		if err != nil {
-			return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
-		}
-
-		mounts[i].Source = execMountDef.ToPB()
 	}
 
 	metaDef, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(platform))

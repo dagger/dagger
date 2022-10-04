@@ -799,9 +799,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
-				WithNewFile struct {
-					ID string
-				}
+				ID core.DirectoryID
 			}
 		}
 	}{}
@@ -810,26 +808,37 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
-					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
-						id
-					}
+					id
 				}
 			}
 		}`, &dirRes, nil)
 	require.NoError(t, err)
 
-	id := dirRes.Directory.WithNewFile.WithNewFile.ID
+	id := dirRes.Directory.WithNewFile.ID
 
 	execRes := struct {
 		Container struct {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
+						Stdout struct {
+							Contents string
+						}
 						Exec struct {
 							Exec struct {
-								Exec struct {
-									Stdout struct {
-										Contents string
+								Stdout struct {
+									Contents string
+								}
+								WithMountedDirectory struct {
+									Exec struct {
+										Stdout struct {
+											Contents string
+										}
+										Exec struct {
+											Stdout struct {
+												Contents string
+											}
+										}
 									}
 								}
 							}
@@ -844,12 +853,24 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 			container {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt", source: $id) {
-						exec(args: ["sh", "-c", "test $(cat /mnt/some-file) = some-content"]) {
-							exec(args: ["sh", "-c", "test $(cat /mnt/some-dir/sub-file) = sub-content"]) {
-								exec(args: ["sh", "-c", "echo -n hi > /mnt/hello"]) {
-									exec(args: ["cat", "/mnt/hello"]) {
-										stdout {
-											contents
+						exec(args: ["cat", "/mnt/some-file"]) {
+							# original content
+							stdout { contents }
+
+							exec(args: ["sh", "-c", "echo >> /mnt/some-file; echo -n more-content >> /mnt/some-file"]) {
+								exec(args: ["cat", "/mnt/some-file"]) {
+									# modified content should propagate
+									stdout { contents }
+
+									withMountedDirectory(path: "/mnt", source: $id) {
+										exec(args: ["cat", "/mnt/some-file"]) {
+											# should be back to the original content
+											stdout { contents }
+
+											exec(args: ["cat", "/mnt/some-file"]) {
+												# original content override should propagate
+												stdout { contents }
+											}
 										}
 									}
 								}
@@ -862,7 +883,22 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "hi", execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content\nmore-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Exec.Stdout.Contents)
 }
 
 func TestContainerWithMountedFile(t *testing.T) {
