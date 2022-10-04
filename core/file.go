@@ -92,12 +92,12 @@ func (file *File) Decode() (llb.State, string, error) {
 		return llb.State{}, "", err
 	}
 
-	defop, err := llb.NewDefinitionOp(payload.LLB)
+	st, err := defToState(payload.LLB)
 	if err != nil {
 		return llb.State{}, "", err
 	}
 
-	return llb.NewState(defop), payload.File, nil
+	return st, payload.File, nil
 }
 
 func (file *File) ref(ctx context.Context, gw bkgw.Client, st llb.State) (bkgw.Reference, error) {
