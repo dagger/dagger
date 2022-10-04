@@ -19,11 +19,7 @@ func (r *{{ $.Name | PascalCase }}) {{ $field.Name | PascalCase }}({{ $field.Arg
 func (r *{{ $.Name | PascalCase }}) {{ $field.Name | PascalCase }}(ctx context.Context, {{ $field.Args | FormatArgs }}) ({{ $field.TypeRef | FormatRef }}, error) {
 	q := r.q.Select("{{ $field.Name }}")
 	{{- range $arg := .Args }}
-	{{- if $arg.TypeRef.IsCustomScalar }}
-	q = q.Arg("{{ $arg.Name }}", string({{ $arg.Name }}))
-	{{- else }}
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
-	{{- end }}
 	{{- end }}
 
 	var response {{ $field.TypeRef | FormatRef }}

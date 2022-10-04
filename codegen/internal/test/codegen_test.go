@@ -21,9 +21,7 @@ func TestDirectory(t *testing.T) {
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
 		api := api.New()
 		// FIXME: use scratch instead
-		dir := api.Git("github.com/dagger/dagger").
-			Branch("cloak").
-			Tree()
+		dir := api.Directory("")
 
 		contents, err := dir.
 			WithNewFile("/hello.txt", "world").
@@ -69,14 +67,20 @@ func TestGit(t *testing.T) {
 func TestContainer(t *testing.T) {
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
 		core := api.New()
-		contents, err := core.
+		alpine := core.
 			Container("").
-			From("alpine").
+			From("alpine:3.16.2")
+
+		contents, err := alpine.
 			Rootfs().
 			File("/etc/alpine-release").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hello world\n", contents)
+		require.Equal(t, "3.16.2\n", contents)
+
+		stdout, err := alpine.Exec([]string{"cat", "/etc/alpine-release"}, api.ExecOpts{}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "3.16.2\n", stdout)
 
 		return nil
 	}))

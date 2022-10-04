@@ -21,51 +21,31 @@ func New() *Query {
 //   - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
 type ContainerAddress string
 
-func (v ContainerAddress) GQLType() string {
-	return "ContainerAddress"
-}
-
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
-
-func (v ContainerID) GQLType() string {
-	return "ContainerID"
-}
 
 // A content-addressed directory identifier
 type DirectoryID string
 
-func (v DirectoryID) GQLType() string {
-	return "DirectoryID"
-}
-
 type FileID string
 
-func (v FileID) GQLType() string {
-	return "FileID"
-}
-
 type SecretID string
-
-func (v SecretID) GQLType() string {
-	return "SecretID"
-}
 
 // Additional options for executing a command
 type ExecOpts struct {
 	// Optionally redirect the command's standard error to a file in the container.
 	// Null means discard output.
-	RedirectStderr string
+	RedirectStderr string `json:"redirectStderr"`
 
 	// Optionally redirect the command's standard output to a file in the container.
 	// Null means discard output.
-	RedirectStdout string
+	RedirectStdout string `json:"redirectStdout"`
 
 	// Optionally write to the command's standard input
 	//
 	// - Null means don't touch stdin (no redirection)
 	// - Empty string means inject zero bytes to stdin, then send EOF
-	Stdin string
+	Stdin string `json:"stdin"`
 }
 
 // An OCI-compatible container, also known as a docker container
@@ -144,7 +124,7 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 // Publish this container as a new image
 func (r *Container) Publish(ctx context.Context, address ContainerAddress) (ContainerAddress, error) {
 	q := r.q.Select("publish")
-	q = q.Arg("address", string(address))
+	q = q.Arg("address", address)
 
 	var response ContainerAddress
 	q = q.Bind(&response)
@@ -271,10 +251,10 @@ func (r *Container) WithMountedTemp(path string) *Container {
 }
 
 // This container plus an env variable containing the given secret
-func (r *Container) WithSecretVariable(name string, secret SecretID) *Container {
+func (r *Container) WithSecretVariable(secret SecretID, name string) *Container {
 	q := r.q.Select("withSecretVariable")
-	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
+	q = q.Arg("name", name)
 
 	return &Container{
 		q: q,
@@ -406,10 +386,10 @@ func (r *Directory) Secret(ctx context.Context, path string) (SecretID, error) {
 }
 
 // This directory plus the contents of the given file copied to the given path
-func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
+func (r *Directory) WithCopiedFile(source FileID, path string) *Directory {
 	q := r.q.Select("withCopiedFile")
-	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -417,10 +397,10 @@ func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
 }
 
 // This directory plus a directory written at the given path
-func (r *Directory) WithDirectory(directory DirectoryID, path string) *Directory {
+func (r *Directory) WithDirectory(path string, directory DirectoryID) *Directory {
 	q := r.q.Select("withDirectory")
-	q = q.Arg("directory", directory)
 	q = q.Arg("path", path)
+	q = q.Arg("directory", directory)
 
 	return &Directory{
 		q: q,
