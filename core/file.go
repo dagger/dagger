@@ -7,6 +7,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/router"
@@ -22,8 +23,9 @@ type FileID string
 
 // fileIDPayload is the inner content of a FileID.
 type fileIDPayload struct {
-	LLB  *pb.Definition `json:"llb"`
-	File string         `json:"file"`
+	LLB      *pb.Definition `json:"llb"`
+	File     string         `json:"file"`
+	Platform specs.Platform `json:"platform"`
 }
 
 func (id FileID) decode() (*fileIDPayload, error) {
@@ -35,15 +37,16 @@ func (id FileID) decode() (*fileIDPayload, error) {
 	return &payload, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string) (*File, error) {
-	def, err := st.Marshal(ctx)
+func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform) (*File, error) {
+	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
 	id, err := encodeID(fileIDPayload{
-		LLB:  def.ToPB(),
-		File: file,
+		LLB:      def.ToPB(),
+		File:     file,
+		Platform: platform,
 	})
 	if err != nil {
 		return nil, err
@@ -55,12 +58,12 @@ func NewFile(ctx context.Context, st llb.State, file string) (*File, error) {
 }
 
 func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	st, filePath, err := file.Decode()
+	st, filePath, platform, err := file.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := file.ref(ctx, gw, st)
+	ref, err := file.ref(ctx, gw, st, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -71,12 +74,12 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 }
 
 func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
-	st, filePath, err := file.Decode()
+	st, filePath, platform, err := file.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := file.ref(ctx, gw, st)
+	ref, err := file.ref(ctx, gw, st, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -86,22 +89,22 @@ func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, erro
 	})
 }
 
-func (file *File) Decode() (llb.State, string, error) {
+func (file *File) Decode() (llb.State, string, specs.Platform, error) {
 	payload, err := file.ID.decode()
 	if err != nil {
-		return llb.State{}, "", err
+		return llb.State{}, "", specs.Platform{}, err
 	}
 
 	st, err := defToState(payload.LLB)
 	if err != nil {
-		return llb.State{}, "", err
+		return llb.State{}, "", specs.Platform{}, err
 	}
 
-	return st, payload.File, nil
+	return st, payload.File, payload.Platform, nil
 }
 
-func (file *File) ref(ctx context.Context, gw bkgw.Client, st llb.State) (bkgw.Reference, error) {
-	def, err := st.Marshal(ctx)
+func (file *File) ref(ctx context.Context, gw bkgw.Client, st llb.State, platform specs.Platform) (bkgw.Reference, error) {
+	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}

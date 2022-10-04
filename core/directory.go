@@ -7,6 +7,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/router"
 )
@@ -21,8 +22,9 @@ type DirectoryID string
 
 // directoryIDPayload is the inner content of a DirectoryID.
 type directoryIDPayload struct {
-	LLB *pb.Definition `json:"llb"`
-	Dir string         `json:"dir"`
+	LLB      *pb.Definition `json:"llb"`
+	Dir      string         `json:"dir"`
+	Platform specs.Platform `json:"platform"`
 }
 
 func (id DirectoryID) decode() (*directoryIDPayload, error) {
@@ -38,12 +40,13 @@ func (id DirectoryID) decode() (*directoryIDPayload, error) {
 	return &payload, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform) (*Directory, error) {
 	payload := directoryIDPayload{
-		Dir: cwd,
+		Dir:      cwd,
+		Platform: platform,
 	}
 
-	def, err := st.Marshal(ctx)
+	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +64,7 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string) (*Directory, er
 }
 
 func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
-	st, cwd, err := dir.Decode()
+	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +74,7 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 		return []string{}, nil
 	}
 
-	def, err := st.Marshal(ctx)
+	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +107,7 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Directory, error) {
-	st, cwd, err := dir.Decode()
+	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -125,34 +128,34 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 		),
 	)
 
-	return NewDirectory(ctx, st, cwd)
+	return NewDirectory(ctx, st, cwd, platform)
 }
 
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
-	st, cwd, err := dir.Decode()
+	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewDirectory(ctx, st, path.Join(cwd, subdir))
+	return NewDirectory(ctx, st, path.Join(cwd, subdir), platform)
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	st, cwd, err := dir.Decode()
+	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(ctx, st, path.Join(cwd, file))
+	return NewFile(ctx, st, path.Join(cwd, file), platform)
 }
 
 func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory) (*Directory, error) {
-	st, cwd, err := dir.Decode()
+	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, srcCwd, err := src.Decode()
+	srcSt, srcCwd, _, err := src.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -161,41 +164,41 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		CreateDestPath: true,
 	}))
 
-	return NewDirectory(ctx, st, cwd)
+	return NewDirectory(ctx, st, cwd, platform)
 }
 
 func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
-	st, cwd, err := dir.Decode()
+	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, srcPath, err := src.Decode()
+	srcSt, srcPath, _, err := src.Decode()
 	if err != nil {
 		return nil, err
 	}
 
 	st = st.File(llb.Copy(srcSt, srcPath, path.Join(cwd, subdir)))
 
-	return NewDirectory(ctx, st, cwd)
+	return NewDirectory(ctx, st, cwd, platform)
 }
 
-func (dir *Directory) Decode() (llb.State, string, error) {
+func (dir *Directory) Decode() (llb.State, string, specs.Platform, error) {
 	payload, err := dir.ID.decode()
 	if err != nil {
-		return llb.State{}, "", err
+		return llb.State{}, "", specs.Platform{}, err
 	}
 
 	if payload.LLB == nil {
-		return llb.Scratch(), payload.Dir, nil
+		return llb.Scratch(), payload.Dir, specs.Platform{}, nil
 	}
 
 	st, err := defToState(payload.LLB)
 	if err != nil {
-		return llb.State{}, "", err
+		return llb.State{}, "", specs.Platform{}, err
 	}
 
-	return st, payload.Dir, nil
+	return st, payload.Dir, payload.Platform, nil
 }
 
 type directorySchema struct {

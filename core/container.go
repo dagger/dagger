@@ -55,6 +55,9 @@ type containerIDPayload struct {
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition `json:"meta,omitempty"`
+
+	// The platform of the container's rootfs.
+	Platform specs.Platform `json:"platform,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -123,7 +126,7 @@ func (container *Container) FS(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 
-	return NewDirectory(ctx, st, "")
+	return NewDirectory(ctx, st, "", payload.Platform)
 }
 
 func (container *Container) WithFS(ctx context.Context, st llb.State, platform specs.Platform) (*Container, error) {
@@ -138,6 +141,7 @@ func (container *Container) WithFS(ctx context.Context, st llb.State, platform s
 	}
 
 	payload.FS = stDef.ToPB()
+	payload.Platform = platform
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -153,12 +157,12 @@ func (container *Container) WithMountedDirectory(ctx context.Context, target str
 		return nil, err
 	}
 
-	dirSt, dirRel, err := source.Decode()
+	dirSt, dirRel, dirPlatform, err := source.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	dirDef, err := dirSt.Marshal(ctx)
+	dirDef, err := dirSt.Marshal(ctx, llb.Platform(dirPlatform))
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +206,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform specs.Platform, args []string, opts ContainerExecOpts) (*Container, error) {
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []string, opts ContainerExecOpts) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -210,6 +214,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, platform s
 
 	cfg := payload.Config
 	mounts := payload.Mounts
+	platform := payload.Platform
 
 	shimSt, err := shim.Build(ctx, gw, platform)
 	if err != nil {
@@ -330,7 +335,7 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, path s
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path)
+	return NewFile(ctx, *meta, path, payload.Platform)
 }
 
 type containerSchema struct {
@@ -452,7 +457,7 @@ type ContainerExecOpts struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *Container, args containerExecArgs) (*Container, error) {
-	return parent.Exec(ctx, s.gw, s.platform, args.Args, args.Opts)
+	return parent.Exec(ctx, s.gw, args.Args, args.Opts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *Container, args any) (*int, error) {
