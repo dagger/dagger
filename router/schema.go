@@ -74,6 +74,8 @@ type Context struct {
 	ResolveParams graphql.ResolveParams
 }
 
+// ToResolver transforms any function f with a *Context, a parent P and some args A that returns a Response R and an error
+// into a graphql resolver graphql.FieldResolveFn.
 func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
 		ctx := Context{
