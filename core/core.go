@@ -53,6 +53,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&execSchema{base},
 		&dockerBuildSchema{base},
 		&secretSchema{base},
+		&httpSchema{base},
 	)
 }
 
