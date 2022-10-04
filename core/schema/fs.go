@@ -13,3 +13,6 @@ var File string
 
 //go:embed container.graphqls
 var Container string
+
+//go:embed http.graphqls
+var HTTP string
