@@ -192,12 +192,12 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	}
 
 	if source != nil {
-		dirSt, dirRel, err := source.Decode()
+		dirSt, dirRel, dirPlatform, err := source.Decode()
 		if err != nil {
 			return nil, err
 		}
 
-		dirDef, err := dirSt.Marshal(ctx)
+		dirDef, err := dirSt.Marshal(ctx, llb.Platform(dirPlatform))
 		if err != nil {
 			return nil, err
 		}
@@ -299,7 +299,7 @@ func (container *Container) Directory(ctx context.Context, dir string) (*Directo
 				}
 			}
 
-			return NewDirectory(ctx, st, sub)
+			return NewDirectory(ctx, st, sub, payload.Platform)
 		}
 	}
 
@@ -308,7 +308,7 @@ func (container *Container) Directory(ctx context.Context, dir string) (*Directo
 		return nil, err
 	}
 
-	return NewDirectory(ctx, st, dir)
+	return NewDirectory(ctx, st, dir, payload.Platform)
 }
 
 type mountable interface {
