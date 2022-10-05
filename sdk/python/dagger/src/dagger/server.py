@@ -1,6 +1,8 @@
+import dataclasses
 import sys
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 # FIXME: we should have a custom logger instead of using the global one
@@ -16,9 +18,24 @@ class Server:
         with open('/inputs/dagger.json') as f:
             return json.loads(f.read())
 
+    def _to_dict(self, obj):
+        if dataclasses.is_dataclass(obj):
+            return dataclasses.asdict(obj)
+        if isinstance(obj, Sequence):
+            return list(map(self._to_dict, obj))
+        return obj
+
+    def _serialize(self, obj) -> str:
+        try:
+            r = json.dumps(obj)
+            return r
+        except TypeError:
+            # strawberry types are not serializable but can be converted to a dict
+            return json.dumps(self._to_dict(obj))
+
     def _write_outputs(self, result: Any) -> None:
         with open('/outputs/dagger.json', 'w') as f:
-            f.write(json.dumps(result))
+            f.write(self._serialize(result))
 
     def _call_resolver(self, inputs: dict) -> Any:
         def check(x):
@@ -54,5 +71,5 @@ class Server:
         inputs = self._read_inputs()
         logging.debug('sdk inputs <- {}'.format(inputs))
         result = self._call_resolver(inputs)
-        logging.debug('sdk outputs -> {}'.format(inputs))
+        logging.debug('sdk outputs -> {}'.format(result))
         self._write_outputs(result)

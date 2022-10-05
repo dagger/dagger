@@ -1,5 +1,10 @@
+from typing import NewType
+
 from gql.transport import requests
 from gql import Client as gqlClient
+
+SecretID = NewType('SecretID', str)
+FSID = NewType('FSID', str)
 
 
 class Client(gqlClient):
