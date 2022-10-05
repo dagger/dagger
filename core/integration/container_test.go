@@ -247,8 +247,9 @@ func TestContainerExecWithUser(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
-		`{
+	t.Run("user name", func(t *testing.T) {
+		err := testutil.Query(
+			`{
 			container {
 				from(address: "alpine:3.16.2") {
 					user
@@ -263,10 +264,80 @@ func TestContainerExecWithUser(t *testing.T) {
 				}
 			}
 		}`, &res, nil)
-	require.NoError(t, err)
-	require.Equal(t, "", res.Container.From.User)
-	require.Equal(t, "daemon", res.Container.From.WithUser.User)
-	require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "daemon", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+
+	t.Run("user and group name", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "daemon:floppy") {
+						user
+						exec(args: ["sh", "-c", "whoami; groups"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "daemon:floppy", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+
+	t.Run("user ID", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "2") {
+						user
+						exec(args: ["whoami"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "2", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+
+	t.Run("user and group ID", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "2:11") {
+						user
+						exec(args: ["sh", "-c", "whoami; groups"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "2:11", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
 }
 
 func TestContainerExecWithEntrypoint(t *testing.T) {
