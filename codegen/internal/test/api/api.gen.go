@@ -274,10 +274,10 @@ func (r *Container) WithMountedCache(path string, options ...ContainerWithMounte
 }
 
 // This container plus a directory mounted at the given path
-func (r *Container) WithMountedDirectory(source DirectoryID, path string) *Container {
+func (r *Container) WithMountedDirectory(path string, source DirectoryID) *Container {
 	q := r.q.Select("withMountedDirectory")
-	q = q.Arg("source", source)
 	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -547,10 +547,10 @@ func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
 }
 
 // This directory plus a directory written at the given path
-func (r *Directory) WithDirectory(path string, directory DirectoryID) *Directory {
+func (r *Directory) WithDirectory(directory DirectoryID, path string) *Directory {
 	q := r.q.Select("withDirectory")
-	q = q.Arg("path", path)
 	q = q.Arg("directory", directory)
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -579,10 +579,10 @@ func (r *Directory) WithNewFile(path string, options ...DirectoryWithNewFileOpti
 		fn(opts)
 	}
 	q := r.q.Select("withNewFile")
-	q = q.Arg("path", path)
 	if opts != nil && opts.Contents != nil {
 		q = q.Arg("contents", opts.Contents)
 	}
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
