@@ -283,43 +283,62 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	return mounts, nil
 }
 
-func (container *Container) Directory(ctx context.Context, dir string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	dir = absPath(payload.Config.WorkingDir, dir)
+	dirPath = absPath(payload.Config.WorkingDir, dirPath)
+
+	var dir *Directory
 
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(payload.Mounts) - 1; i >= 0; i-- {
 		mnt := payload.Mounts[i]
 
-		if dir == mnt.Target || strings.HasPrefix(dir, mnt.Target+"/") {
+		if dirPath == mnt.Target || strings.HasPrefix(dirPath, mnt.Target+"/") {
 			st, err := mnt.SourceState()
 			if err != nil {
 				return nil, err
 			}
 
 			sub := mnt.SourcePath
-			if dir != mnt.Target {
+			if dirPath != mnt.Target {
 				// make relative portion relative to the source path
-				dirSub := strings.TrimPrefix(dir, mnt.Target+"/")
+				dirSub := strings.TrimPrefix(dirPath, mnt.Target+"/")
 				if dirSub != "" {
 					sub = path.Join(sub, dirSub)
 				}
 			}
 
-			return NewDirectory(ctx, st, sub, payload.Platform)
+			dir, err = NewDirectory(ctx, st, sub, payload.Platform)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	st, err := payload.FSState()
+	if dir == nil {
+		st, err := payload.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		dir, err = NewDirectory(ctx, st, dirPath, payload.Platform)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// check that the directory actually exists so the user gets an error earlier
+	// rather than when the dir is used
+	_, err = dir.Contents(ctx, gw, ".")
 	if err != nil {
 		return nil, err
 	}
 
-	return NewDirectory(ctx, st, dir, payload.Platform)
+	return dir, nil
 }
 
 type mountable interface {
@@ -956,5 +975,5 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx *router.Context, parent *Container, args containerDirectoryArgs) (*Directory, error) {
-	return parent.Directory(ctx, args.Path)
+	return parent.Directory(ctx, s.gw, args.Path)
 }
