@@ -7,7 +7,7 @@ displayed_sidebar: '0.3'
 
 ## Overview
 
-This document explains how to write an API extension for Dagger/cloak.
+This document explains how to write an API extension for Dagger.
 
 ## SDK-specific guides
 
@@ -18,13 +18,13 @@ This document explains how to write an API extension for Dagger/cloak.
 
 ### Extension
 
-A schema + associated resolvers that can be loaded into Cloak at runtime to add new functionality beyond the core API.
+A schema + associated resolvers that can be loaded into Dagger at runtime to add new functionality beyond the core API.
 
 ### Extension Runtime
 
-The runtime serves as an interface between the Cloak server and the code or other artifacts that actually implement the actual functionality.
+The runtime serves as an interface between the Dagger server and the code or other artifacts that actually implement the actual functionality.
 Runtimes implement the "runtime protocol", which defines how inputs
-are provided to a resolver and how outputs are provided back to the Cloak server.
+are provided to a resolver and how outputs are provided back to the Dagger server.
 
 It is up to each runtime implementation to determine how the inputs are converted to outputs.
 
@@ -32,15 +32,15 @@ It is up to each runtime implementation to determine how the inputs are converte
 
 ## Dependency
 
-Resolvers can declare a list of extensions they depend on; that list determines the schema presented to the resolver by Cloak at the time the resolver
+Resolvers can declare a list of extensions they depend on; that list determines the schema presented to the resolver by Dagger at the time the resolver
 is executed.
 
 ### Host Client
 
-The initiator of queries to Cloak (the root of a DAG). These can currently be split into a few subtypes:
+The initiator of queries to Dagger (the root of a DAG). These can currently be split into a few subtypes:
 
 - Direct graphql queries (i.e. with `curl`, a `GraphiQL` web console, etc.)
-- The `cloak` CLI
+- The `dagger` CLI
 - Embedded SDKs, where the host client is imported as a library and enables submission of queries in a way
   that looks very similar to implementing a resolver.
 
@@ -48,14 +48,14 @@ The initiator of queries to Cloak (the root of a DAG). These can currently be sp
 
 ### Resolver
 
-An implementation of one field of a schema. When Cloak is evaluating a query, it needs to run code to calculate the values
+An implementation of one field of a schema. When Dagger is evaluating a query, it needs to run code to calculate the values
 being requested; we call this "invoking a resolver". When an extension is loaded, each field in the extension's schema
 that takes args must be associated with a resolver.
 
-Resolvers are provided to Cloak in the form of a Filesystem+ImageConfig pair. The entrypoint of the image config is expected
+Resolvers are provided to Dagger in the form of a Filesystem+ImageConfig pair. The entrypoint of the image config is expected
 to be an executable that implements the [Runtime Protocol](f5cij-extension_runtime_protocol.md)
 
-Resolvers have access to the Cloak API during execution, which enables them to invoke other resolvers as needed.
+Resolvers have access to the Dagger API during execution, which enables them to invoke other resolvers as needed.
 
 - TODO: mention complications of cases where fields w/ no args can be resolvers; what a "trivial resolver" is in graphql parlence, etc.
 - TODO: this is the closest thing to what we used to call an "action". Should we still call it an action instead of resolver?
@@ -93,7 +93,7 @@ type Dependency {
 Say you are implementing the Alpine extension in Go. The idea is:
 
 1. You write the schema of the Alpine extension and declare that you are using the Go SDK.
-2. The Go SDK extension is loaded (e.g. by `cloak generate` or similar tools)
+2. The Go SDK extension is loaded (e.g. by `dagger generate` or similar tools)
 3. The `go` stubber is invoked, which outputs an implementation skeleton and codegen'd clients to your local directory.
 4. You fill in your implementation of the resolvers needed for Alpine
 5. When you want to invoke your action, the implemented source code is provided to the `go` runtime resolver, which returns an `Extension`.

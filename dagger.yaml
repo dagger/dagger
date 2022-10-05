@@ -1,0 +1,5 @@
+name: examples
+dependencies:
+  - local: examples/alpine/dagger.yaml
+  - local: examples/yarn/dagger.yaml
+  - local: examples/netlify/go/dagger.yaml

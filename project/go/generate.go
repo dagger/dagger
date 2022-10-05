@@ -23,7 +23,7 @@ var generatedTmpl string
 func main() {
 	// NOTE: passing through env vars is a bit ugly. The idea is that this code will eventually be
 	// running in an actual extension, at which time this information can be obtained through
-	// API calls to the cloak engine.
+	// API calls to the dagger engine.
 	generateOutputDir, ok := os.LookupEnv("GENERATE_OUTPUT_DIR")
 	if !ok {
 		panic("GENERATE_OUTPUT_DIR not set")
@@ -122,7 +122,7 @@ type plugin struct {
 }
 
 func (plugin) Name() string {
-	return "cloakgen"
+	return "daggergen"
 }
 
 func (p plugin) InjectSourceEarly() *ast.Source {

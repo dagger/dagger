@@ -61,7 +61,7 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		// embed will fail with an error if you try to embed a file from a different go module.
 		// So instead we just init it here.
 		shell(
-			`go mod init cloakgenerate`,
+			`go mod init daggergenerate`,
 			`go get github.com/99designs/gqlgen`,
 			`go work init`,
 			`go work use .`,

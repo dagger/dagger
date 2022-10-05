@@ -10,7 +10,7 @@ Say we are creating a new project called `foo`. It will have
 1. A single extension, written in Typescript, the extends the schema with an action called `bar`.
 1. A script, written in Javascript, that can call the extension (and any other project dependencies)
 
-NOTE: It's currently hardcoded in this cloak SDK to use yarn commands for building extensions, so it's safest to use yarn at the moment. There is [an open issue for improving this](https://github.com/dagger/dagger/issues/3036).
+NOTE: It's currently hardcoded in this Dagger SDK to use yarn commands for building extensions, so it's safest to use yarn at the moment. There is [an open issue for improving this](https://github.com/dagger/dagger/issues/3036).
 
 NOTE: For simplicity, these instructions also currently assume you are creating a new node module from scratch. Extensions and scripts can also be integrated into existing modules with some minor adjustments though.
 
@@ -26,14 +26,14 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
      - Then manually add `"type": "module"` to your `package.json`
      - And manually update `tsconfig.json` w/ `"include": ["ext/**/*"]` on the top level (sibling to `"compilerOptions"`)
 
-1. Add a dependency on the cloak nodejs sdk:
+1. Add a dependency on the Dagger nodejs sdk:
 
    - `yarn add --dev git+https://github.com/dagger/dagger.git#cloak`
    - `yarn install`
 
-1. Create a new file called `cloak.yaml`
+1. Create a new file called `dagger.yaml`
 
-   - This is where you declare your project, and other project that it depends on. All extensions declared in this file will be built, loaded, and available to be called when the project is loaded into cloak.
+   - This is where you declare your project, and other project that it depends on. All extensions declared in this file will be built, loaded, and available to be called when the project is loaded into dagger.
    - Create the file in the following format:
 
    ```yaml
@@ -45,11 +45,11 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
      - git:
          remote: https://github.com/dagger/dagger.git
          ref: cloak
-         path: examples/yarn/cloak.yaml
+         path: examples/yarn/dagger.yaml
      - git:
          remote: https://github.com/dagger/dagger.git
          ref: cloak
-         path: examples/netlify/go/cloak.yaml
+         path: examples/netlify/go/dagger.yaml
    ```
 
    - The dependencies are optional and just examples, feel free to change as needed.
@@ -85,7 +85,7 @@ This can also be added to the scripts in `package.json` for more convenient invo
 
 ## Create your extension
 
-Update your `cloak.yaml` to include a new `extensions` key:
+Update your `dagger.yaml` to include a new `extensions` key:
 
 ```yaml
 name: foo
@@ -99,11 +99,11 @@ dependencies:
   - git:
       remote: https://github.com/dagger/dagger.git
       ref: cloak
-      path: examples/yarn/cloak.yaml
+      path: examples/yarn/dagger.yaml
   - git:
       remote: https://github.com/dagger/dagger.git
       ref: cloak
-      path: examples/netlify/go/cloak.yaml
+      path: examples/netlify/go/dagger.yaml
 ```
 
 ### Create schema files
@@ -149,7 +149,7 @@ const server = new DaggerServer({
 server.run();
 ```
 
-1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the cloak engine.
+1. Also feel free to import any other third-party dependencies as needed the same way you would with any other go project. They should all be installed and available when executing in the dagger engine.
 1. Some more examples:
    - [yarn](https://github.com/dagger/dagger/blob/cloak/examples/yarn/index.ts)
    - [netlify](https://github.com/dagger/dagger/blob/cloak/examples/netlify/ts/index.ts)
@@ -165,14 +165,14 @@ server.run();
    ```
 
 1. One simple way to verify your extension builds and can be invoked is via the graphql playground.
-   - Just run `cloak dev` from any directory in your project and navigate to `localhost:8080` in your browser (may need [an SSH tunnel](https://www.ssh.com/academy/ssh/tunneling-example) if on a remote host)
+   - Just run `dagger dev` from any directory in your project and navigate to `localhost:8080` in your browser (may need [an SSH tunnel](https://www.ssh.com/academy/ssh/tunneling-example) if on a remote host)
      - you can use the `--port` flag to override the port if needed
    - Click the "Docs" tab on the right to see the schemas available, including your extension and any dependencies.
    - You can submit queries by writing them on the lef-side pane and clicking the play button in the middle
-1. You can also use the cloak CLI, e.g.
+1. You can also use the dagger CLI, e.g.
 
    ```console
-   cloak do <<'EOF'
+   dagger do <<'EOF'
    {
      foo {
        bar(in: "in")

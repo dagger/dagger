@@ -68,7 +68,7 @@ var page = template.Must(template.New("graphiql").Parse(`
 
       function GraphiQLWithExplorer() {
         var [query, setQuery] = React.useState(` + "`" + `
-# Welcome to Cloak's GraphQL explorer
+# Welcome to Dagger's GraphQL explorer
 #
 # Keyboard shortcuts:
 #

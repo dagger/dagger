@@ -11,9 +11,9 @@ class Engine:
                  workdir: str = None,
                  configPath: str = None):
         if workdir is None:
-            workdir = os.environ.get('CLOAK_WORKDIR', os.getcwd())
+            workdir = os.environ.get('DAGGER_WORKDIR', os.getcwd())
         if configPath is None:
-            configPath = os.environ.get('CLOAK_CONFIG', './cloak.yaml')
+            configPath = os.environ.get('DAGGER_CONFIG', './dagger.yaml')
         self._config = {
             'port': port,
             'workdir': workdir,
@@ -23,7 +23,7 @@ class Engine:
 
     def _spawn(self):
         args = [
-            'cloak', 'dev',
+            'dagger', 'dev',
             '--workdir', self._config['workdir'],
             '--port', str(self._config['port']),
             '-p', self._config['configPath'],

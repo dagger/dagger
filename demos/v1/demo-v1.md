@@ -6,9 +6,9 @@ This is a demo meant for external users. They are assumed to have general knowle
 
 1. Ensure `dagger-buildkitd` is running (quickly invoke dagger if needed)
    - `docker run --privileged --name dagger-buildkitd --restart=always -d moby/buildkit:v0.10.3`
-2. Build `cloak` and make sure it's in your PATH
-   - `go build ./cmd/cloak`
-   - `ln -sf "$(pwd)/cloak" /usr/local/bin`
+2. Build `dagger` and make sure it's in your PATH
+   - `go build ./cmd/dagger`
+   - `ln -sf "$(pwd)/dagger" /usr/local/bin`
 3. Export `NETLIFY_AUTH_TOKEN` env
 4. Ensure that all the steps are cached by running through them before demo. Sometimes buildkit automatic cache pruning logic will kick in after certain disk usage thresholds and you'll still have uncached steps during demo, but should be minimal.
 
@@ -24,18 +24,18 @@ This is a demo meant for external users. They are assumed to have general knowle
 
 ## 2. Low-level GraphQL API
 
-Start with `cloak.yaml` in root of the repo where the non-core extensions are commented out, e.g.:
+Start with `dagger.yaml` in root of the repo where the non-core extensions are commented out, e.g.:
 
 ```yaml
 name: "examples"
 extensions:
-  # - local: examples/alpine/cloak.yaml
-  # - local: examples/yarn/cloak.yaml
-  # - local: examples/netlify/go/cloak.yaml
-  # - local: examples/todoapp/go/cloak.yaml
+  # - local: examples/alpine/dagger.yaml
+  # - local: examples/yarn/dagger.yaml
+  # - local: examples/netlify/go/dagger.yaml
+  # - local: examples/todoapp/go/dagger.yaml
 ```
 
-Run `cloak dev`, jump to GraphQL Playground (`http:localhost:8080`) and run following snippest
+Run `dagger dev`, jump to GraphQL Playground (`http:localhost:8080`) and run following snippest
 
 1.
 
@@ -116,18 +116,18 @@ Run `cloak dev`, jump to GraphQL Playground (`http:localhost:8080`) and run foll
 
 6.
 
-Now, go back to `cloak.yaml` in root of the repo and uncomment the extensions, e.g.
+Now, go back to `dagger.yaml` in root of the repo and uncomment the extensions, e.g.
 
 ```yaml
 name: "examples"
 extensions:
-  - local: examples/alpine/cloak.yaml
-  - local: examples/yarn/cloak.yaml
-  - local: examples/netlify/go/cloak.yaml
-  - local: examples/todoapp/go/cloak.yaml
+  - local: examples/alpine/dagger.yaml
+  - local: examples/yarn/dagger.yaml
+  - local: examples/netlify/go/dagger.yaml
+  - local: examples/todoapp/go/dagger.yaml
 ```
 
-Then, restart `cloak dev` (ctrl-C to kill it) and jump back to the playground and you can run:
+Then, restart `dagger dev` (ctrl-C to kill it) and jump back to the playground and you can run:
 
 ```graphql
 {
@@ -149,17 +149,17 @@ Then, restart `cloak dev` (ctrl-C to kill it) and jump back to the playground an
 ### todoapp Deploy from CLI
 
 1. Show todoapp docs from playground
-1. Jump to CLI, show this command: `cloak -p examples/todoapp/go/cloak.yaml do Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"`
-   - explain args (`-p` points to the configuration of the todoapp extension, `do Deploy` tells cloak to run the Deploy op, `--local-dir` and `--secret` map to args in the deploy schema)
+1. Jump to CLI, show this command: `dagger -p examples/todoapp/go/dagger.yaml do Deploy --local-dir src=examples/todoapp/app --secret token="$NETLIFY_AUTH_TOKEN"`
+   - explain args (`-p` points to the configuration of the todoapp extension, `do Deploy` tells dagger to run the Deploy op, `--local-dir` and `--secret` map to args in the deploy schema)
 1. Run command, show the deployed URL
 
 ### Extension Implementations
 
-1. From `examples/todoapp/go` show `schema.graphql`, `cloak.yaml` and `main.go`. Explain the schema, config and then map that to the implementation in `main.go`
+1. From `examples/todoapp/go` show `schema.graphql`, `dagger.yaml` and `main.go`. Explain the schema, config and then map that to the implementation in `main.go`
    - For the TS flavored demo, go to `examples/todoapp/ts` and open `index.ts` instead of `main.go`.
 1. Same as above, but show `examples/yarn` (implementation in `index.ts`)
    - Note use of raw graphql queries (TS has nice gql integration), how simple it is to express imperitive logic
 1. Same as above, but show `examples/alpine` (implementation in `main.go`)
-   - Note that `yarn` calls out to `alpine` but has no awareness it's invoking Go code from Typescript; cloak handles all the container magic in the background to make that happen
+   - Note that `yarn` calls out to `alpine` but has no awareness it's invoking Go code from Typescript; dagger handles all the container magic in the background to make that happen
 1. Same as above, but show `examples/netlify/go` (implementation in `main.go`) or `examples/netlify/ts` (implementation in `index.ts`)
    - Note that the 3rd party netlify client is just imported and used; can import whatever libraries you want. This code is then invokable from any other language and also wrapped up in dagger caching goodness.

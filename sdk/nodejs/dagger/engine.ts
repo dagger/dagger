@@ -23,11 +23,11 @@ export class Engine {
     this.config = this.config || {};
 
     this.config.Workdir =
-      this.config.Workdir || process.env["CLOAK_WORKDIR"] || process.cwd();
+      this.config.Workdir || process.env["DAGGER_WORKDIR"] || process.cwd();
     args.push("--workdir", `${this.config.Workdir}`);
 
     this.config.ConfigPath =
-      this.config.ConfigPath || process.env["CLOAK_CONFIG"] || "./cloak.yaml";
+      this.config.ConfigPath || process.env["DAGGER_CONFIG"] || "./dagger.yaml";
     args.push("-p", `${this.config.ConfigPath}`);
 
     // add local dirs from config in the form of `--local-dir <name>=<path>`
@@ -43,7 +43,7 @@ export class Engine {
     this.config.Port = this.config.Port || 8080;
     args.push("--port", `${this.config.Port}`);
 
-    const serverProc = execa("cloak", args, {
+    const serverProc = execa("dagger", args, {
       stdio: "inherit",
       cwd: this.config.Workdir,
     });
@@ -64,7 +64,7 @@ export class Engine {
     await cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
       .catch(async (err) => {
         // FIXME:(sipsma) give the engine a sec to flush any progress logs on error
-        // Better solution is to send SIGTERM and have a handler in cloak engine that
+        // Better solution is to send SIGTERM and have a handler in dagger engine that
         // flushes logs before exiting.
         await new Promise((resolve) => setTimeout(resolve, 1000));
         throw err;
@@ -73,7 +73,7 @@ export class Engine {
         serverProc.cancel();
         return serverProc.catch((e) => {
           if (!e.isCanceled) {
-            console.error("cloak engine error: ", e);
+            console.error("dagger engine error: ", e);
           }
         });
       });

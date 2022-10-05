@@ -1,0 +1,14 @@
+name: gitdeps-example
+dependencies:
+  - git:
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
+      path: examples/alpine/dagger.yaml
+  - git:
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
+      path: examples/yarn/dagger.yaml
+  - git:
+      remote: https://github.com/dagger/dagger.git
+      ref: cloak
+      path: examples/netlify/go/dagger.yaml
