@@ -14,7 +14,7 @@ func main() {
 type Test struct {
 }
 
-func (Test) A(
+func (Test) RequiredTypes(
 	ctx dagger.Context,
 	str string,
 	i int,
@@ -27,7 +27,7 @@ func (Test) A(
 	return fmt.Sprintf("%s %d %t %+v %v %v %v", str, i, b, strukt, strArray, intArray, boolArray), nil
 }
 
-func (Test) B(
+func (Test) OptionalTypes(
 	ctx dagger.Context,
 	str *string,
 	i *int,
@@ -39,7 +39,7 @@ func (Test) B(
 	return fmt.Sprintf("%s %s %s %s %s %s", ptrFormat(str), ptrFormat(i), ptrFormat(b), ptrArrayFormat(strArray), ptrArrayFormat(intArray), ptrArrayFormat(boolArray)), nil
 }
 
-func (Test) C(ctx dagger.Context, returnNil bool) (*string, error) {
+func (Test) OptionalReturn(ctx dagger.Context, returnNil bool) (*string, error) {
 	if returnNil {
 		return nil, nil
 	}
@@ -47,23 +47,31 @@ func (Test) C(ctx dagger.Context, returnNil bool) (*string, error) {
 	return &s, nil
 }
 
-func (Test) D(ctx dagger.Context, intArray []int) ([]int, error) {
+func (Test) IntArrayReturn(ctx dagger.Context, intArray []int) ([]int, error) {
 	return intArray, nil
 }
 
-func (Test) E(ctx dagger.Context, strArray []*string) ([]*string, error) {
+func (Test) StringArrayReturn(ctx dagger.Context, strArray []*string) ([]*string, error) {
 	return strArray, nil
 }
 
-func (Test) F(ctx dagger.Context, strukt AllTheTypes) (AllTheTypes, error) {
+func (Test) StructReturn(ctx dagger.Context, strukt AllTheTypes) (AllTheTypes, error) {
 	return strukt, nil
 }
 
-func (Test) G(ctx dagger.Context, str string) (SubResolver, error) {
+func (Test) ParentResolver(ctx dagger.Context, str string) (SubResolver, error) {
 	return SubResolver{Str: str}, nil
 }
 
-func (Test) H(ctx dagger.Context, ref string) (*dagger.Filesystem, error) {
+type SubResolver struct {
+	Str string
+}
+
+func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
+	return s.Str + "-" + str, nil
+}
+
+func (Test) ReturnFilesystem(ctx dagger.Context, ref string) (*dagger.Filesystem, error) {
 	client, err := dagger.Client(ctx)
 	if err != nil {
 		return nil, err
@@ -94,14 +102,6 @@ query Image ($ref: String!) {
 	}
 
 	return &resp.Core.Image, nil
-}
-
-type SubResolver struct {
-	Str string
-}
-
-func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
-	return s.Str + "-" + str, nil
 }
 
 type AllTheTypes struct {

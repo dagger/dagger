@@ -19,13 +19,6 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
-/* TODO:
-* thank Tanguy for help: https://github.com/dagger/cloak/pull/171/files
-* don't include private methods in API (also don't include their return types or args as objects)
-* remove the need to put json tags for all the struct fields (need some better conversion between capital and uncapitalized fields in structs)
-* what should we do when same object used as input and output? make two graphql types and ignore methods in the input case? Or error?
- */
-
 type Context struct {
 	context.Context
 }
@@ -49,16 +42,13 @@ func Serve(server any) {
 		types.fillParamNames(parsed)
 	}
 
-	// TODO: probably better ways of doing this
+	// if the schema is being requested, just return that
 	var getSchema bool
 	flag.BoolVar(&getSchema, "schema", false, "print the schema rather than executing")
 	flag.Parse()
 
 	if getSchema {
-		schema, err := types.schema()
-		if err != nil {
-			panic(err)
-		}
+		schema := types.schema()
 		if err := os.WriteFile("/outputs/schema.graphql", schema, 0600); err != nil {
 			writeErrorf(fmt.Errorf("unable to write schema response file: %v", err))
 		}
@@ -91,7 +81,7 @@ func Serve(server any) {
 
 	var method *goMethod
 	strukt, ok := types.Structs[objName]
-	if !ok && objName != "Query" { // TODO: ugly
+	if !ok && objName != "Query" {
 		writeErrorf(fmt.Errorf("unknown struct: %s", objName))
 	}
 	if ok {
@@ -134,7 +124,7 @@ type goTypes struct {
 	Structs map[string]*goStruct
 }
 
-func (ts *goTypes) schema() ([]byte, error) {
+func (ts *goTypes) schema() []byte {
 	doc := &ast.SchemaDocument{}
 	queryExtension := &ast.Definition{
 		Kind: ast.Object,
@@ -143,7 +133,7 @@ func (ts *goTypes) schema() ([]byte, error) {
 	doc.Extensions = append(doc.Extensions, queryExtension)
 
 	for _, s := range ts.Structs {
-		/* TODO:
+		/* TODO:(sipsma)
 		Huge hack: don't include any struct from the dagger go package, assume it is
 		from the core API and thus doesn't need to be included in the schema here.
 		The much cleaner approach will come when we integrate this code w/ the
@@ -194,7 +184,7 @@ func (ts *goTypes) schema() ([]byte, error) {
 				Kind: ast.InputObject,
 				Name: inputName(s.typ.Name()),
 			}
-			// TODO: just ignoring methods for now, maybe should be error or something else
+			// TODO:(sipsma) just ignoring methods for now, maybe should be error or something else
 			for _, f := range s.fields {
 				fieldDef := &ast.FieldDefinition{
 					Name: lowerCamelCase(f.name),
@@ -208,7 +198,7 @@ func (ts *goTypes) schema() ([]byte, error) {
 
 	var b bytes.Buffer
 	formatter.NewFormatter(&b).FormatSchemaDocument(doc)
-	return b.Bytes(), nil
+	return b.Bytes()
 }
 
 type goStruct struct {
@@ -233,6 +223,11 @@ type goMethod struct {
 	typ     reflect.Type
 	val     reflect.Value
 	parent  *goStruct
+}
+
+type goParam struct {
+	name string
+	typ  reflect.Type
 }
 
 func (m *goMethod) srcPath() string {
@@ -288,17 +283,12 @@ func (m *goMethod) call(ctx Context, rawParent, rawArgs json.RawMessage) (any, e
 	return results[0].Interface(), nil
 }
 
-type goParam struct {
-	name string
-	typ  reflect.Type
-}
-
 type walkState struct {
 	inputPath   bool // are we following a type path from an argument?
 	isSubObject bool // false if this is an object directly provided to Serve, true otherwise
 }
 
-// TODO: support more "root types" like map[string]any, plain func, etc. Should support "dynamic" schemas
+// TODO:(sipsma) support more "root types" like map[string]any, plain func, etc. Should support "dynamic" schemas
 func (ts *goTypes) walk(t reflect.Type, state walkState) {
 	switch t.Kind() {
 	case reflect.Ptr:
@@ -331,7 +321,7 @@ func (ts *goTypes) walkStruct(t reflect.Type, state walkState) {
 		strukt.topLevel = true
 	}
 
-	// TODO: dedupe if already walked (currently walk every possible path in type DAG)
+	// TODO:(sipsma) dedupe if already walked (currently walk every possible path in type DAG)
 	if state.inputPath {
 		strukt.usedAsInput = true
 	} else {
@@ -360,7 +350,7 @@ func (ts *goTypes) walkStruct(t reflect.Type, state walkState) {
 			isSubObject: true,
 		})
 	}
-	// TODO: should we skip methods for input types? error out? something else?
+	// TODO:(sipsma) should we skip methods for input types? error out? something else?
 	for i := 0; i < t.NumMethod(); i++ {
 		m := t.Method(i)
 		if m.PkgPath != "" {
@@ -380,7 +370,7 @@ func (ts *goTypes) walkStruct(t reflect.Type, state walkState) {
 		strukt.methods[i].val = m.Func
 
 		// (skip first two args for receiver and context)
-		// TODO: validate the above (right context type, etc)
+		// TODO:(sipsma) validate the above (right context type, etc)
 		for j := 2; j < m.Type.NumIn(); j++ {
 			if len(strukt.methods[i].args) <= j {
 				expanded := make([]*goParam, j+1)
@@ -395,7 +385,7 @@ func (ts *goTypes) walkStruct(t reflect.Type, state walkState) {
 			})
 		}
 		for j := 0; j < m.Type.NumOut(); j++ {
-			// TODO: only support (type, error) probably
+			// TODO:(sipsma) only support (type, error) probably
 			if len(strukt.methods[i].returns) <= j {
 				expanded := make([]*goParam, j+1)
 				copy(expanded, strukt.methods[i].returns)
@@ -452,6 +442,7 @@ func (ts *goTypes) fillParamNames(parsed *goast.File) {
 				}
 				method.args[i+1].name = param.Names[0].Name
 			}
+		default:
 		}
 		return true
 	})
@@ -492,21 +483,18 @@ func lowerCamelCase(s string) string {
 	return strcase.ToLowerCamel(s)
 }
 
-// TODO: not sure about name mangling here
 func inputName(name string) string {
 	return name + "Input"
 }
 
 func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
-	// TODO: this all assumes use of go types or user defined types, not types generated by codegen
-	// from other extensions (including core)
 	switch t.Kind() {
 	case reflect.String:
 		return ast.NonNullNamedType("String", nil)
 	case reflect.Int:
 		return ast.NonNullNamedType("Int", nil)
 	case reflect.Float32, reflect.Float64:
-		// TODO: does this actually handle both float32 and float64?
+		// TODO:(sipsma) does this actually handle both float32 and float64?
 		return ast.NonNullNamedType("Float", nil)
 	case reflect.Bool:
 		return ast.NonNullNamedType("Boolean", nil)
@@ -516,7 +504,7 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 		if isInput {
 			return ast.NonNullNamedType(inputName(t.Name()), nil)
 		}
-		return ast.NonNullNamedType(t.Name(), nil) // TODO: doesn't handle anything from another package
+		return ast.NonNullNamedType(t.Name(), nil) // TODO:(sipsma) doesn't handle anything from another package (besides the sdk)
 	case reflect.Pointer:
 		nonNullType := goReflectTypeToGraphqlType(t.Elem(), isInput)
 		nonNullType.NonNull = false
@@ -537,5 +525,6 @@ func lowerCaseResult(x any) {
 				delete(x, k)
 			}
 		}
+	default:
 	}
 }

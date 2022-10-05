@@ -7,27 +7,28 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
 )
 
-func (s RemoteSchema) goRuntime(ctx context.Context, subpath string) (*filesystem.Filesystem, error) {
-	contextState, err := s.contextFS.ToState()
+func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*filesystem.Filesystem, error) {
+	contextState, err := p.workdir.ToState()
 	if err != nil {
 		return nil, err
 	}
 	workdir := "/src"
 	return filesystem.FromState(ctx,
-		goBase(s.gw).Run(llb.Shlex(
+		goBase(gw).Run(llb.Shlex(
 			fmt.Sprintf(
 				`go build -o /entrypoint -ldflags '-s -d -w' %s`,
-				filepath.ToSlash(filepath.Join(workdir, filepath.Dir(s.configPath), subpath)),
+				filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.configPath), subpath)),
 			)),
 			llb.Dir(workdir),
 			llb.AddEnv("CGO_ENABLED", "0"),
 			llb.AddMount("/src", contextState),
 			withGoCaching(),
 		).Root(),
-		s.platform,
+		platform,
 	)
 }
 
