@@ -2,6 +2,7 @@ package introspection
 
 import (
 	"sort"
+	"strings"
 )
 
 type Visitor struct {
@@ -54,9 +55,16 @@ func (v *Visitor) visit(kind TypeKind, h VisitFunc) error {
 	types := []*Type{}
 	for _, t := range v.schema.Types {
 		if t.Kind == kind {
-			if _, ok := v.handlers.Allowed[t.Name]; ok {
-				types = append(types, t)
+			// internal GraphQL type
+			if strings.HasPrefix(t.Name, "__") {
+				continue
 			}
+			if v.handlers.Allowed != nil {
+				if _, ok := v.handlers.Allowed[t.Name]; !ok {
+					continue
+				}
+			}
+			types = append(types, t)
 		}
 	}
 

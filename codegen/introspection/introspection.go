@@ -74,7 +74,7 @@ type Type struct {
 	Kind        TypeKind     `json:"kind"`
 	Name        string       `json:"name"`
 	Description string       `json:"description,omitempty"`
-	Fields      []Field      `json:"fields,omitempty"`
+	Fields      []*Field     `json:"fields,omitempty"`
 	InputFields []InputValue `json:"inputFields,omitempty"`
 }
 
@@ -94,12 +94,18 @@ type Field struct {
 	Description string      `json:"description"`
 	TypeRef     *TypeRef    `json:"type"`
 	Args        InputValues `json:"args"`
+
+	ParentObject *Type `json:"-"`
 }
 
 type TypeRef struct {
 	Kind   TypeKind `json:"kind"`
 	Name   string   `json:"name,omitempty"`
 	OfType *TypeRef `json:"ofType,omitempty"`
+}
+
+func (r TypeRef) IsOptional() bool {
+	return r.Kind != TypeKindNonNull
 }
 
 func (r TypeRef) IsScalar() bool {
@@ -140,6 +146,15 @@ func (r TypeRef) IsObject() bool {
 }
 
 type InputValues []InputValue
+
+func (i InputValues) HasOptionals() bool {
+	for _, v := range i {
+		if v.TypeRef.IsOptional() {
+			return true
+		}
+	}
+	return false
+}
 
 type InputValue struct {
 	Name         string   `json:"name"`

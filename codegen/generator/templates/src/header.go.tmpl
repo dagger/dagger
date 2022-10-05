@@ -6,6 +6,7 @@ import (
 	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
 )
 
+// New returns a new API query object
 func New() *{{ .Schema.QueryType.Name }} {
 	return &{{ .Schema.QueryType.Name }}{
 		q: querybuilder.Query(),

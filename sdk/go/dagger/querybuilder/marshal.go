@@ -56,13 +56,4 @@ func marshalGQL(v reflect.Value) string {
 	default:
 		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
 	}
-
-	// fmt.Fprintf(os.Stderr, "ptr: %v\n", typ.Kind() == reflect.Pointer)
-	// fmt.Fprintf(os.Stderr, "str: %v\n", typ.Kind() == reflect.String)
-	// fmt.Fprintf(os.Stderr, "arr: %v\n", typ.Kind() == reflect.Array)
-	// fmt.Fprintf(os.Stderr, "slc: %v\n", typ.Kind() == reflect.Slice)
-
-	// typ.Kind()
-
-	// return typ.Name(), nil
 }

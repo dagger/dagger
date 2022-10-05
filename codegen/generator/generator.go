@@ -16,6 +16,24 @@ type Config struct {
 }
 
 func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]byte, error) {
+	// Set parent objects for fields
+	for _, t := range schema.Types {
+		for _, f := range t.Fields {
+			f.ParentObject = t
+		}
+	}
+
+	// FIXME: explicitly remove the old API from codegen. Remove once the API has been migrated.
+	q := schema.Query()
+	fields := []*introspection.Field{}
+	for _, f := range q.Fields {
+		if f.Name == "core" || f.Name == "host" {
+			continue
+		}
+		fields = append(fields, f)
+	}
+	q.Fields = fields
+
 	gen := &GoGenerator{
 		cfg:    cfg,
 		schema: schema,
@@ -45,6 +63,7 @@ func (g *GoGenerator) Generate(_ context.Context) ([]byte, error) {
 		header.String(),
 	}
 
+	// FIXME: for debug purposes
 	// indented, err := json.MarshalIndent(g.schema, "", "  ")
 	// if err != nil {
 	// 	panic(err)

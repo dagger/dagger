@@ -1,0 +1,7 @@
+{{ .Description | Comment }}
+type {{ .Name | FormatName }} struct {
+{{- range $field := .InputFields }}
+{{ $field.Description | Comment }}
+{{ $field.Name | FormatName }} {{ $field.TypeRef | FormatType }} `json:"{{ $field.Name }}"`
+{{ end }}
+}

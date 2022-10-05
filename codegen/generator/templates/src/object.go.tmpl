@@ -1,0 +1,61 @@
+{{ .Description | Comment }}
+type {{ .Name | FormatName }} struct {
+	q *querybuilder.Selection
+}
+{{ range $field := .Fields }}
+{{- if $field.Args.HasOptionals }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionsStructName }} struct {
+	{{- range $arg := $field.Args }}
+	{{ if $arg.TypeRef.IsOptional }}
+	{{ $arg.Name | FormatName }} *{{ $arg.TypeRef | FormatType }}
+	{{- end }}
+	{{- end }}
+}
+
+
+// {{ $field | FieldOptionHandlerName }} represents an option handler for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionHandlerName }} func(*{{ $field | FieldOptionsStructName }})
+
+
+{{- range $arg := $field.Args }}
+{{ if $arg.TypeRef.IsOptional }}
+// With{{ $field | FormatTypeAndFieldName }}{{ $arg.Name | FormatName }} sets the "{{ $arg.Name }}" option for {{ $field.Name | FormatName }}
+func With{{ $field | FormatTypeAndFieldName }}{{ $arg.Name | FormatName }}({{ $arg.Name }} {{ $arg.TypeRef | FormatType }}) {{ $field | FieldOptionHandlerName }} {
+	return func(daggerOptions *{{ $field | FieldOptionsStructName }}) {
+		daggerOptions.{{ $arg.Name | FormatName }} = &{{ $arg.Name }}
+	}
+}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{ $field.Description | Comment }}
+{{ $field | FieldFunction }} {
+	{{- if $field.Args.HasOptionals }}
+    opts := &{{ $field | FieldOptionsStructName }}{}
+    for _, fn := range options {
+        fn(opts)
+    }
+	{{- end }}
+	q := r.q.Select("{{ $field.Name }}")
+	{{- range $arg := $field.Args }}
+	{{- if $arg.TypeRef.IsOptional }}
+	if opts != nil && opts.{{ $arg.Name | FormatName }} != nil {
+		q = q.Arg("{{ $arg.Name }}", opts.{{ $arg.Name | FormatName }})
+	}
+	{{- else }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	{{- end }}
+	{{- end }}
+	{{ if $field.TypeRef.IsObject }}
+	return &{{ $field.TypeRef | FormatType }} {
+		q: q,
+	}
+	{{- else if $field.TypeRef.IsScalar }}
+	var response {{ $field.TypeRef | FormatType }}
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+	{{- end }}
+}
+{{ end -}}

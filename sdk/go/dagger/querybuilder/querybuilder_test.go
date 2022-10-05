@@ -8,22 +8,20 @@ import (
 )
 
 func TestQuery(t *testing.T) {
-	var contents string
 	root := Query().
 		Select("core").
 		Select("image").Arg("ref", "alpine").
-		Select("file").Arg("path", "/etc/alpine-release").Bind(&contents)
+		Select("file").Arg("path", "/etc/alpine-release")
 
 	q := root.Build()
 	require.Equal(t, `query{core{image(ref:"alpine"){file(path:"/etc/alpine-release")}}}`, q)
 }
 
 func TestAlias(t *testing.T) {
-	var contents string
 	root := Query().
 		Select("core").
 		Select("image").Arg("ref", "alpine").
-		SelectWithAlias("foo", "file").Arg("path", "/etc/alpine-release").Bind(&contents)
+		SelectWithAlias("foo", "file").Arg("path", "/etc/alpine-release")
 
 	q := root.Build()
 	require.Equal(t, `query{core{image(ref:"alpine"){foo:file(path:"/etc/alpine-release")}}}`, q)

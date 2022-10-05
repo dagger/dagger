@@ -6,6 +6,7 @@ import (
 	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
 )
 
+// New returns a new API query object
 func New() *Query {
 	return &Query{
 		q: querybuilder.Query(),
@@ -72,11 +73,32 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ContainerExecOptions contains options for Container.Exec
+type ContainerExecOptions struct {
+	Opts *ExecOpts
+}
+
+// ContainerExecOption represents an option handler for Container.Exec
+type ContainerExecOption func(*ContainerExecOptions)
+
+// WithContainerExecOpts sets the "opts" option for Exec
+func WithContainerExecOpts(opts ExecOpts) ContainerExecOption {
+	return func(daggerOptions *ContainerExecOptions) {
+		daggerOptions.Opts = &opts
+	}
+}
+
 // This container after executing the specified command inside it
-func (r *Container) Exec(args []string, opts ExecOpts) *Container {
+func (r *Container) Exec(args []string, options ...ContainerExecOption) *Container {
+	opts := &ContainerExecOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("exec")
 	q = q.Arg("args", args)
-	q = q.Arg("opts", opts)
+	if opts != nil && opts.Opts != nil {
+		q = q.Arg("opts", opts.Opts)
+	}
 
 	return &Container{
 		q: q,
@@ -141,6 +163,7 @@ func (r *Container) Rootfs() *Directory {
 }
 
 // The error stream of the last executed command.
+// Null if no command has been executed.
 func (r *Container) Stderr() *File {
 	q := r.q.Select("stderr")
 
@@ -150,6 +173,7 @@ func (r *Container) Stderr() *File {
 }
 
 // The output stream of the last executed command.
+// Null if no command has been executed.
 func (r *Container) Stdout() *File {
 	q := r.q.Select("stdout")
 
@@ -186,21 +210,63 @@ func (r *Container) Variables(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ContainerWithEntrypointOptions contains options for Container.WithEntrypoint
+type ContainerWithEntrypointOptions struct {
+	Args *[]string
+}
+
+// ContainerWithEntrypointOption represents an option handler for Container.WithEntrypoint
+type ContainerWithEntrypointOption func(*ContainerWithEntrypointOptions)
+
+// WithContainerWithEntrypointArgs sets the "args" option for WithEntrypoint
+func WithContainerWithEntrypointArgs(args []string) ContainerWithEntrypointOption {
+	return func(daggerOptions *ContainerWithEntrypointOptions) {
+		daggerOptions.Args = &args
+	}
+}
+
 // This container but with a different command entrypoint
-func (r *Container) WithEntrypoint(args []string) *Container {
+func (r *Container) WithEntrypoint(options ...ContainerWithEntrypointOption) *Container {
+	opts := &ContainerWithEntrypointOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("withEntrypoint")
-	q = q.Arg("args", args)
+	if opts != nil && opts.Args != nil {
+		q = q.Arg("args", opts.Args)
+	}
 
 	return &Container{
 		q: q,
 	}
 }
 
+// ContainerWithMountedCacheOptions contains options for Container.WithMountedCache
+type ContainerWithMountedCacheOptions struct {
+	Source *DirectoryID
+}
+
+// ContainerWithMountedCacheOption represents an option handler for Container.WithMountedCache
+type ContainerWithMountedCacheOption func(*ContainerWithMountedCacheOptions)
+
+// WithContainerWithMountedCacheSource sets the "source" option for WithMountedCache
+func WithContainerWithMountedCacheSource(source DirectoryID) ContainerWithMountedCacheOption {
+	return func(daggerOptions *ContainerWithMountedCacheOptions) {
+		daggerOptions.Source = &source
+	}
+}
+
 // This container plus a cache directory mounted at the given path
-func (r *Container) WithMountedCache(path string, source DirectoryID) *Container {
+func (r *Container) WithMountedCache(path string, options ...ContainerWithMountedCacheOption) *Container {
+	opts := &ContainerWithMountedCacheOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("withMountedCache")
 	q = q.Arg("path", path)
-	q = q.Arg("source", source)
+	if opts != nil && opts.Source != nil {
+		q = q.Arg("source", opts.Source)
+	}
 
 	return &Container{
 		q: q,
@@ -208,10 +274,10 @@ func (r *Container) WithMountedCache(path string, source DirectoryID) *Container
 }
 
 // This container plus a directory mounted at the given path
-func (r *Container) WithMountedDirectory(path string, source DirectoryID) *Container {
+func (r *Container) WithMountedDirectory(source DirectoryID, path string) *Container {
 	q := r.q.Select("withMountedDirectory")
-	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	q = q.Arg("path", path)
 
 	return &Container{
 		q: q,
@@ -251,20 +317,41 @@ func (r *Container) WithMountedTemp(path string) *Container {
 }
 
 // This container plus an env variable containing the given secret
-func (r *Container) WithSecretVariable(secret SecretID, name string) *Container {
+func (r *Container) WithSecretVariable(name string, secret SecretID) *Container {
 	q := r.q.Select("withSecretVariable")
-	q = q.Arg("secret", secret)
 	q = q.Arg("name", name)
+	q = q.Arg("secret", secret)
 
 	return &Container{
 		q: q,
 	}
 }
 
+// ContainerWithUserOptions contains options for Container.WithUser
+type ContainerWithUserOptions struct {
+	Name *string
+}
+
+// ContainerWithUserOption represents an option handler for Container.WithUser
+type ContainerWithUserOption func(*ContainerWithUserOptions)
+
+// WithContainerWithUserName sets the "name" option for WithUser
+func WithContainerWithUserName(name string) ContainerWithUserOption {
+	return func(daggerOptions *ContainerWithUserOptions) {
+		daggerOptions.Name = &name
+	}
+}
+
 // This container but with a different command user
-func (r *Container) WithUser(name string) *Container {
+func (r *Container) WithUser(options ...ContainerWithUserOption) *Container {
+	opts := &ContainerWithUserOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("withUser")
-	q = q.Arg("name", name)
+	if opts != nil && opts.Name != nil {
+		q = q.Arg("name", opts.Name)
+	}
 
 	return &Container{
 		q: q,
@@ -282,10 +369,31 @@ func (r *Container) WithVariable(name string, value string) *Container {
 	}
 }
 
+// ContainerWithWorkdirOptions contains options for Container.WithWorkdir
+type ContainerWithWorkdirOptions struct {
+	Path *string
+}
+
+// ContainerWithWorkdirOption represents an option handler for Container.WithWorkdir
+type ContainerWithWorkdirOption func(*ContainerWithWorkdirOptions)
+
+// WithContainerWithWorkdirPath sets the "path" option for WithWorkdir
+func WithContainerWithWorkdirPath(path string) ContainerWithWorkdirOption {
+	return func(daggerOptions *ContainerWithWorkdirOptions) {
+		daggerOptions.Path = &path
+	}
+}
+
 // This container but with a different working directory
-func (r *Container) WithWorkdir(path string) *Container {
+func (r *Container) WithWorkdir(options ...ContainerWithWorkdirOption) *Container {
+	opts := &ContainerWithWorkdirOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("withWorkdir")
-	q = q.Arg("path", path)
+	if opts != nil && opts.Path != nil {
+		q = q.Arg("path", opts.Path)
+	}
 
 	return &Container{
 		q: q,
@@ -302,10 +410,31 @@ func (r *Container) WithoutMount(path string) *Container {
 	}
 }
 
+// ContainerWithoutVariableOptions contains options for Container.WithoutVariable
+type ContainerWithoutVariableOptions struct {
+	Name *string
+}
+
+// ContainerWithoutVariableOption represents an option handler for Container.WithoutVariable
+type ContainerWithoutVariableOption func(*ContainerWithoutVariableOptions)
+
+// WithContainerWithoutVariableName sets the "name" option for WithoutVariable
+func WithContainerWithoutVariableName(name string) ContainerWithoutVariableOption {
+	return func(daggerOptions *ContainerWithoutVariableOptions) {
+		daggerOptions.Name = &name
+	}
+}
+
 // This container minus the given environment variable
-func (r *Container) WithoutVariable(name string) *Container {
+func (r *Container) WithoutVariable(options ...ContainerWithoutVariableOption) *Container {
+	opts := &ContainerWithoutVariableOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("withoutVariable")
-	q = q.Arg("name", name)
+	if opts != nil && opts.Name != nil {
+		q = q.Arg("name", opts.Name)
+	}
 
 	return &Container{
 		q: q,
@@ -326,10 +455,31 @@ type Directory struct {
 	q *querybuilder.Selection
 }
 
+// DirectoryContentsOptions contains options for Directory.Contents
+type DirectoryContentsOptions struct {
+	Path *string
+}
+
+// DirectoryContentsOption represents an option handler for Directory.Contents
+type DirectoryContentsOption func(*DirectoryContentsOptions)
+
+// WithDirectoryContentsPath sets the "path" option for Contents
+func WithDirectoryContentsPath(path string) DirectoryContentsOption {
+	return func(daggerOptions *DirectoryContentsOptions) {
+		daggerOptions.Path = &path
+	}
+}
+
 // Return a list of files and directories at the given path
-func (r *Directory) Contents(ctx context.Context, path string) ([]string, error) {
+func (r *Directory) Contents(ctx context.Context, options ...DirectoryContentsOption) ([]string, error) {
+	opts := &DirectoryContentsOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("contents")
-	q = q.Arg("path", path)
+	if opts != nil && opts.Path != nil {
+		q = q.Arg("path", opts.Path)
+	}
 
 	var response []string
 	q = q.Bind(&response)
@@ -386,10 +536,10 @@ func (r *Directory) Secret(ctx context.Context, path string) (SecretID, error) {
 }
 
 // This directory plus the contents of the given file copied to the given path
-func (r *Directory) WithCopiedFile(source FileID, path string) *Directory {
+func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
 	q := r.q.Select("withCopiedFile")
-	q = q.Arg("source", source)
 	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Directory{
 		q: q,
@@ -407,11 +557,32 @@ func (r *Directory) WithDirectory(path string, directory DirectoryID) *Directory
 	}
 }
 
+// DirectoryWithNewFileOptions contains options for Directory.WithNewFile
+type DirectoryWithNewFileOptions struct {
+	Contents *string
+}
+
+// DirectoryWithNewFileOption represents an option handler for Directory.WithNewFile
+type DirectoryWithNewFileOption func(*DirectoryWithNewFileOptions)
+
+// WithDirectoryWithNewFileContents sets the "contents" option for WithNewFile
+func WithDirectoryWithNewFileContents(contents string) DirectoryWithNewFileOption {
+	return func(daggerOptions *DirectoryWithNewFileOptions) {
+		daggerOptions.Contents = &contents
+	}
+}
+
 // This directory plus a new file written at the given path
-func (r *Directory) WithNewFile(path string, contents string) *Directory {
+func (r *Directory) WithNewFile(path string, options ...DirectoryWithNewFileOption) *Directory {
+	opts := &DirectoryWithNewFileOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
-	q = q.Arg("contents", contents)
+	if opts != nil && opts.Contents != nil {
+		q = q.Arg("contents", opts.Contents)
+	}
 
 	return &Directory{
 		q: q,
@@ -540,21 +711,63 @@ type Query struct {
 	q *querybuilder.Selection
 }
 
+// QueryContainerOptions contains options for Query.Container
+type QueryContainerOptions struct {
+	ID *ContainerID
+}
+
+// QueryContainerOption represents an option handler for Query.Container
+type QueryContainerOption func(*QueryContainerOptions)
+
+// WithQueryContainerID sets the "id" option for Container
+func WithQueryContainerID(id ContainerID) QueryContainerOption {
+	return func(daggerOptions *QueryContainerOptions) {
+		daggerOptions.ID = &id
+	}
+}
+
 // Load a container from ID.
 // Null ID returns an empty container (scratch).
-func (r *Query) Container(id ContainerID) *Container {
+func (r *Query) Container(options ...QueryContainerOption) *Container {
+	opts := &QueryContainerOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("container")
-	q = q.Arg("id", id)
+	if opts != nil && opts.ID != nil {
+		q = q.Arg("id", opts.ID)
+	}
 
 	return &Container{
 		q: q,
 	}
 }
 
+// QueryDirectoryOptions contains options for Query.Directory
+type QueryDirectoryOptions struct {
+	ID *DirectoryID
+}
+
+// QueryDirectoryOption represents an option handler for Query.Directory
+type QueryDirectoryOption func(*QueryDirectoryOptions)
+
+// WithQueryDirectoryID sets the "id" option for Directory
+func WithQueryDirectoryID(id DirectoryID) QueryDirectoryOption {
+	return func(daggerOptions *QueryDirectoryOptions) {
+		daggerOptions.ID = &id
+	}
+}
+
 // Load a directory by ID. No argument produces an empty directory.
-func (r *Query) Directory(id DirectoryID) *Directory {
+func (r *Query) Directory(options ...QueryDirectoryOption) *Directory {
+	opts := &QueryDirectoryOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
 	q := r.q.Select("directory")
-	q = q.Arg("id", id)
+	if opts != nil && opts.ID != nil {
+		q = q.Arg("id", opts.ID)
+	}
 
 	return &Directory{
 		q: q,
@@ -577,6 +790,16 @@ func (r *Query) Git(url string) *GitRepository {
 	q = q.Arg("url", url)
 
 	return &GitRepository{
+		q: q,
+	}
+}
+
+// An http remote
+func (r *Query) HTTP(url string) *File {
+	q := r.q.Select("http")
+	q = q.Arg("url", url)
+
+	return &File{
 		q: q,
 	}
 }
