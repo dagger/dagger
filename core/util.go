@@ -102,14 +102,14 @@ func defToState(def *pb.Definition) (llb.State, error) {
 	return llb.NewState(defop), nil
 }
 
-func absPath(workDir string, path_ string) string {
-	if path.IsAbs(path_) {
-		return path_
+func absPath(workDir string, containerPath string) string {
+	if path.IsAbs(containerPath) {
+		return containerPath
 	}
 
 	if workDir == "" {
 		workDir = "/"
 	}
 
-	return path.Join(workDir, path_)
+	return path.Join(workDir, containerPath)
 }

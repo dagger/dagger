@@ -78,9 +78,9 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 		if path.Clean(src) == "." {
 			// fake out a reasonable response
 			return &fstypes.Stat{Path: src}, nil
-		} else {
-			return nil, fmt.Errorf("%s: no such file or directory", src)
 		}
+
+		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	if st.Output() == nil {
@@ -127,9 +127,9 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 	if st.Output() == nil {
 		if path.Clean(src) == "." {
 			return []string{}, nil
-		} else {
-			return nil, fmt.Errorf("%s: no such file or directory", src)
 		}
+
+		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
