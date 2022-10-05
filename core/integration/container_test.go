@@ -304,7 +304,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 							}
 						}
 
-						withEntrypoint {
+						withEntrypoint(args: []) {
 							entrypoint
 						}
 					}

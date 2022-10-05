@@ -41,13 +41,13 @@ type Container {
     user: String
 
     "This container but with a different command user"
-    withUser(name: String): Container!
+    withUser(name: String!): Container!
 
     "The working directory for all commands"
     workdir: String
 
     "This container but with a different working directory"
-    withWorkdir(path: String): Container!
+    withWorkdir(path: String!): Container!
 
     "A list of environment variables passed to commands"
     variables: [String!]
@@ -62,13 +62,13 @@ type Container {
     withSecretVariable(name: String!, secret: SecretID!): Container!
 
     "This container minus the given environment variable"
-    withoutVariable(name: String): Container!
+    withoutVariable(name: String!): Container!
 
     "Entrypoint to be prepended to the arguments of all commands"
     entrypoint: [String!]
 
     "This container but with a different command entrypoint"
-    withEntrypoint(args: [String!]): Container!
+    withEntrypoint(args: [String!]!): Container!
 
     "List of paths where a directory is mounted"
     mounts: [String!]!
