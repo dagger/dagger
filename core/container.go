@@ -241,16 +241,19 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 		return nil, err
 	}
 
-	filtered := []ContainerMount{}
-	for _, mnt := range payload.Mounts {
-		if mnt.Target == target {
-			continue
+	var found bool
+	var foundIdx int
+	for i := len(payload.Mounts) - 1; i >= 0; i-- {
+		if payload.Mounts[i].Target == target {
+			found = true
+			foundIdx = i
+			break
 		}
-
-		filtered = append(filtered, mnt)
 	}
 
-	payload.Mounts = filtered
+	if found {
+		payload.Mounts = append(payload.Mounts[:foundIdx], payload.Mounts[foundIdx+1:]...)
+	}
 
 	id, err := payload.Encode()
 	if err != nil {

@@ -1227,6 +1227,112 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Mounts)
 }
 
+func TestContainerStackedMounts(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				ID string
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "lower-content") {
+					id
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+	lowerID := dirRes.Directory.WithNewFile.ID
+
+	err = testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "upper-content") {
+					id
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+	upperID := dirRes.Directory.WithNewFile.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Mounts []string
+					Exec   struct {
+						Stdout struct {
+							Contents string
+						}
+						WithMountedDirectory struct {
+							Mounts []string
+							Exec   struct {
+								Stdout struct {
+									Contents string
+								}
+								WithoutMount struct {
+									Mounts []string
+									Exec   struct {
+										Stdout struct {
+											Contents string
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($lower: DirectoryID!, $upper: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $lower) {
+						mounts
+						exec(args: ["cat", "/mnt/dir/some-file"]) {
+							stdout {
+								contents
+							}
+							withMountedDirectory(path: "/mnt/dir", source: $upper) {
+								mounts
+								exec(args: ["cat", "/mnt/dir/some-file"]) {
+									stdout {
+										contents
+									}
+									withoutMount(path: "/mnt/dir") {
+										mounts
+										exec(args: ["cat", "/mnt/dir/some-file"]) {
+											stdout {
+												contents
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"lower": lowerID,
+			"upper": upperID,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Mounts)
+	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/mnt/dir", "/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Mounts)
+	require.Equal(t, "upper-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Mounts)
+	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
+}
+
 func TestContainerMountDirectory(t *testing.T) {
 	t.Parallel()
 
