@@ -2,34 +2,26 @@ package secret
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/secrets"
+	"go.dagger.io/dagger/core"
 )
 
 func NewStore() *Store {
-	return &Store{
-		secrets: make(map[string][]byte),
-	}
+	return &Store{}
 }
 
 var _ secrets.SecretStore = &Store{}
 
 type Store struct {
-	secrets map[string][]byte
+	gw bkgw.Client
 }
 
-func (p *Store) AddSecret(ctx context.Context, value []byte) string {
-	hash := sha256.Sum256(value)
-	id := hex.EncodeToString(hash[:])
-	p.secrets[id] = value
-	return id
+func (store *Store) SetGateway(gw bkgw.Client) {
+	store.gw = gw
 }
 
-func (p *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
-	if secret, ok := p.secrets[id]; ok {
-		return secret, nil
-	}
-	return nil, secrets.ErrNotFound
+func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
+	return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw)
 }

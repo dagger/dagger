@@ -15,7 +15,7 @@ func TestFile(t *testing.T) {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
-					ID       core.DirectoryID
+					ID       core.FileID
 					Contents string
 				}
 			}
@@ -46,7 +46,7 @@ func TestDirectoryFile(t *testing.T) {
 			WithNewFile struct {
 				Directory struct {
 					File struct {
-						ID       core.DirectoryID
+						ID       core.FileID
 						Contents string
 					}
 				}
@@ -79,7 +79,7 @@ func TestFileSize(t *testing.T) {
 		Directory struct {
 			WithNewFile struct {
 				File struct {
-					ID   core.DirectoryID
+					ID   core.FileID
 					Size int
 				}
 			}

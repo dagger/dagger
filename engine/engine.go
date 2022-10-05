@@ -131,9 +131,15 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+			// Secret store is a circular dependency, since it needs to resolve
+			// SecretIDs using the gateway, we don't have a gateway until we call
+			// Build, which needs SolveOpts, which needs to contain the secret store.
+			//
+			// Thankfully we can just yeet the gateway into the store.
+			secretStore.SetGateway(gw)
+
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
-				SecretStore:   secretStore,
 				SSHAuthSockID: sshAuthSockID,
 				WorkdirID:     workdirID,
 				Gateway:       gw,
