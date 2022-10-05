@@ -4,6 +4,7 @@ import (
 	"list"
 	"strings"
 	"encoding/json"
+	"dagger.io/dagger"
 	"universe.dagger.io/aws"
 )
 
@@ -11,6 +12,9 @@ import (
 #Command: {
 	// "register" output.txt
 	export: files: "/output.txt": _
+	export: secrets: "/output.txt": dagger.#Secret
+
+	secretOutput: bool | *false
 
 	// Global arguments passed to the aws cli.
 	options: {
@@ -89,13 +93,17 @@ import (
 	#_unmarshalable: string | number | bool | null | [...#_unmarshalable] | {[string]: #_unmarshalable}
 	result:          #_unmarshalable
 
-	if unmarshal != false {
+	if unmarshal != false && secretOutput == false {
 		options: output: "json"
 		result: json.Unmarshal(export.files["/output.txt"])
 	}
 
-	if unmarshal == false {
+	if unmarshal == false && secretOutput == false{
 		result: export.files["/output.txt"]
+	}
+
+	if secretOutput == true {
+		secret: export.secrets["/output.txt"]
 	}
 
 	// The service to run the command against.
