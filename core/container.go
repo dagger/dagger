@@ -185,6 +185,8 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		return nil, err
 	}
 
+	target = absPath(payload.Config.WorkingDir, target)
+
 	mount := ContainerMount{
 		Target:           target,
 		CacheID:          fmt.Sprintf("%s:%s", container.ID, target),
@@ -222,6 +224,8 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 		return nil, err
 	}
 
+	target = absPath(payload.Config.WorkingDir, target)
+
 	payload.Mounts = append(payload.Mounts, ContainerMount{
 		Target: target,
 		Tmpfs:  true,
@@ -240,6 +244,8 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 	if err != nil {
 		return nil, err
 	}
+
+	target = absPath(payload.Config.WorkingDir, target)
 
 	var found bool
 	var foundIdx int
@@ -283,6 +289,8 @@ func (container *Container) Directory(ctx context.Context, dir string) (*Directo
 		return nil, err
 	}
 
+	dir = absPath(payload.Config.WorkingDir, dir)
+
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(payload.Mounts) - 1; i >= 0; i-- {
 		mnt := payload.Mounts[i]
@@ -323,6 +331,8 @@ func (container *Container) withMounted(ctx context.Context, target string, sour
 	if err != nil {
 		return nil, err
 	}
+
+	target = absPath(payload.Config.WorkingDir, target)
 
 	srcSt, srcRel, srcPlatform, err := source.Decode()
 	if err != nil {
@@ -792,7 +802,7 @@ type containerWithWorkdirArgs struct {
 
 func (s *containerSchema) withWorkdir(ctx *router.Context, parent *Container, args containerWithWorkdirArgs) (*Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = args.Path
+		cfg.WorkingDir = absPath(cfg.WorkingDir, args.Path)
 		return cfg
 	})
 }
