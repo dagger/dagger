@@ -324,6 +324,8 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 			if err != nil {
 				return nil, err
 			}
+
+			break
 		}
 	}
 
