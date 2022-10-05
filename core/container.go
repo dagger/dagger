@@ -298,6 +298,14 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 		mnt := payload.Mounts[i]
 
 		if dirPath == mnt.Target || strings.HasPrefix(dirPath, mnt.Target+"/") {
+			if mnt.Tmpfs {
+				return nil, fmt.Errorf("%s: cannot retrieve directory from tmpfs", dirPath)
+			}
+
+			if mnt.CacheID != "" {
+				return nil, fmt.Errorf("%s: cannot retrieve directory from cache", dirPath)
+			}
+
 			st, err := mnt.SourceState()
 			if err != nil {
 				return nil, err
@@ -333,7 +341,7 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	_, err = dir.Contents(ctx, gw, ".")
+	_, err = dir.Stat(ctx, gw, ".")
 	if err != nil {
 		return nil, err
 	}

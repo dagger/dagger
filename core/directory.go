@@ -2,12 +2,14 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	fstypes "github.com/tonistiigi/fsutil/types"
 	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/router"
 )
@@ -63,15 +65,71 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 	}, nil
 }
 
+func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
+	st, cwd, platform, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	src = path.Join(cwd, src)
+
+	// empty directory, i.e. llb.Scratch()
+	if st.Output() == nil {
+		if path.Clean(src) == "." {
+			// fake out a reasonable response
+			return &fstypes.Stat{Path: src}, nil
+		} else {
+			return nil, fmt.Errorf("%s: no such file or directory", src)
+		}
+	}
+
+	if st.Output() == nil {
+		// empty directory, i.e. llb.Scratch()
+		return nil, fmt.Errorf("cannot stat scratch")
+	}
+
+	def, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := gw.Solve(ctx, bkgw.SolveRequest{
+		Definition: def.ToPB(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	stat, err := ref.StatFile(ctx, bkgw.StatRequest{
+		Path: src,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return stat, nil
+}
+
 func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
 	st, cwd, platform, err := dir.Decode()
 	if err != nil {
 		return nil, err
 	}
 
+	src = path.Join(cwd, src)
+
+	// empty directory, i.e. llb.Scratch()
 	if st.Output() == nil {
-		// empty directory, i.e. llb.Scratch()
-		return []string{}, nil
+		if path.Clean(src) == "." {
+			return []string{}, nil
+		} else {
+			return nil, fmt.Errorf("%s: no such file or directory", src)
+		}
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
@@ -92,7 +150,7 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 	}
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: path.Join(cwd, src),
+		Path: src,
 	})
 	if err != nil {
 		return nil, err

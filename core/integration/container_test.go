@@ -1431,7 +1431,7 @@ func TestContainerMountDirectory(t *testing.T) {
 	require.Equal(t, "hello\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
-func TestContainerMountDirectoryNotExists(t *testing.T) {
+func TestContainerMountDirectoryErrors(t *testing.T) {
 	t.Parallel()
 
 	dirRes := struct {
@@ -1458,19 +1458,6 @@ func TestContainerMountDirectoryNotExists(t *testing.T) {
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithMountedDirectory struct {
-					Exec struct {
-						Stdout struct {
-							Contents string
-						}
-					}
-				}
-			}
-		}
-	}{}
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
@@ -1482,11 +1469,41 @@ func TestContainerMountDirectoryNotExists(t *testing.T) {
 					}
 				}
 			}
-		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
 			"id": id,
 		}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: no such file or directory")
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedTemp(path: "/mnt/tmp") {
+						directory(path: "/mnt/tmp/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: cannot retrieve directory from tmpfs")
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedCache(path: "/mnt/cache") {
+						directory(path: "/mnt/cache/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: cannot retrieve directory from cache")
 }
 
 func TestContainerMountDirectorySourcePath(t *testing.T) {
