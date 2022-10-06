@@ -74,8 +74,8 @@ func TestExtensionMount(t *testing.T) {
 func TestGoGenerate(t *testing.T) {
 	tmpdir := t.TempDir()
 
-	daggerYamlPath := filepath.Join(tmpdir, "cloak.yaml")
-	err := os.WriteFile(daggerYamlPath, []byte(`
+	yamlPath := filepath.Join(tmpdir, "cloak.yaml")
+	err := os.WriteFile(yamlPath, []byte(`
 name: testgogenerate
 scripts:
   - path: .

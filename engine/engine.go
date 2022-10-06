@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	workdirID      = "__dagger_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
-	daggerYamlName = "cloak.yaml"
+	workdirID = "__dagger_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
+	yamlName  = "cloak.yaml"
 )
 
 type Config struct {
@@ -86,7 +86,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			return err
 		}
 		startOpts.Workdir = filepath.Dir(configAbsPath)
-		startOpts.ConfigPath = "./" + daggerYamlName
+		startOpts.ConfigPath = "./" + yamlName
 	case startOpts.Workdir == "":
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -94,7 +94,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		}
 		startOpts.Workdir = cwd
 	case startOpts.ConfigPath == "":
-		startOpts.ConfigPath = "./" + daggerYamlName
+		startOpts.ConfigPath = "./" + yamlName
 	}
 
 	router := router.New()
@@ -355,14 +355,14 @@ func findConfig() (string, error) {
 	}
 
 	for {
-		configPath := filepath.Join(wd, daggerYamlName)
+		configPath := filepath.Join(wd, yamlName)
 		// FIXME:(sipsma) decide how to handle symlinks
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath, nil
 		}
 
 		if wd == "/" {
-			return "", fmt.Errorf("no %s found", daggerYamlName)
+			return "", fmt.Errorf("no %s found", yamlName)
 		}
 
 		wd = filepath.Dir(wd)
