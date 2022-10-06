@@ -1,6 +1,6 @@
 # Core API proposal
 
-This directory contains a proposal for a complete GraphQL API for Dagger/Cloak. It is written with the following goals in mind:
+This directory contains a proposal for a complete GraphQL API for Dagger. It is written with the following goals in mind:
 
 1. Feature parity with Dagger 0.2
 2. Close to feature parity with Buildkit, with an incremental path to reaching full parity in the future
@@ -19,7 +19,7 @@ This directory contains a proposal for a complete GraphQL API for Dagger/Cloak. 
 
 ## DX problems solved
 
-Some problems in the cloak DX that are not yet resolved, and this proposal would help solve, include:
+Some problems in the DX that are not yet resolved, and this proposal would help solve, include:
 
 * Uncertainty as to how to express uploads in a graphql-friendly way (deployment, image push, git push, etc)
 * Chaining of FS operations greatly reduces verbosity, but cannot be applied all the time
@@ -86,7 +86,7 @@ The `Container` type proposes an expansive definition of the container, similar 
 2. An OCI artifact which can be pulled from, and pushed to a repository at any time
 3. A persistent configuration to be applied to all commands executed inside it
 
-This is similar to how buildkit models llb state, and how the Dockerfile language models stage state. Note that Cloak extends this model to include even mount configuration (which are scoped to exec in buildkit, but scoped to container in cloak).
+This is similar to how buildkit models llb state, and how the Dockerfile language models stage state. Note that Dagger extends this model to include even mount configuration (which are scoped to exec in buildkit, but scoped to container in dagger).
 
 Examples:
 

@@ -20,10 +20,10 @@ export class Engine {
             const args = ["dev"];
             this.config = this.config || {};
             this.config.Workdir =
-                this.config.Workdir || process.env["CLOAK_WORKDIR"] || process.cwd();
+                this.config.Workdir || process.env["DAGGER_WORKDIR"] || process.cwd();
             args.push("--workdir", `${this.config.Workdir}`);
             this.config.ConfigPath =
-                this.config.ConfigPath || process.env["CLOAK_CONFIG"] || "./cloak.yaml";
+                this.config.ConfigPath || process.env["DAGGER_CONFIG"] || "./cloak.yaml";
             args.push("-p", `${this.config.ConfigPath}`);
             // add local dirs from config in the form of `--local-dir <name>=<path>`
             if (this.config.LocalDirs) {
@@ -37,7 +37,7 @@ export class Engine {
             // add port from config in the form of `--port <port>`, defaulting to 8080
             this.config.Port = this.config.Port || 8080;
             args.push("--port", `${this.config.Port}`);
-            const serverProc = execa("cloak", args, {
+            const serverProc = execa("dagger", args, {
                 stdio: "inherit",
                 cwd: this.config.Workdir,
             });
@@ -57,7 +57,7 @@ export class Engine {
             yield cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
                 .catch((err) => __awaiter(this, void 0, void 0, function* () {
                 // FIXME:(sipsma) give the engine a sec to flush any progress logs on error
-                // Better solution is to send SIGTERM and have a handler in cloak engine that
+                // Better solution is to send SIGTERM and have a handler in dagger engine that
                 // flushes logs before exiting.
                 yield new Promise((resolve) => setTimeout(resolve, 1000));
                 throw err;
@@ -66,7 +66,7 @@ export class Engine {
                 serverProc.cancel();
                 return serverProc.catch((e) => {
                     if (!e.isCanceled) {
-                        console.error("cloak engine error: ", e);
+                        console.error("dagger engine error: ", e);
                     }
                 });
             }));

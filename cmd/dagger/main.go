@@ -21,7 +21,7 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into cloak")
+	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
 	rootCmd.AddCommand(
 		doCmd,
@@ -41,7 +41,7 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use: "cloak",
+	Use: "dagger",
 }
 
 func main() {

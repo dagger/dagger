@@ -13,7 +13,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
-var Tracer = otel.Tracer("cloak")
+var Tracer = otel.Tracer("dagger")
 
 func Init() io.Closer {
 	traceEndpoint := os.Getenv("OTEL_EXPORTER_JAEGER_ENDPOINT")
@@ -53,7 +53,7 @@ func tracerProvider(url string) (*tracesdk.TracerProvider, error) {
 		// Record information about this application in an Resource.
 		tracesdk.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String("cloak"),
+			semconv.ServiceNameKey.String("dagger"),
 		)),
 	)
 	return tp, nil

@@ -53,7 +53,7 @@ module.exports = {
           position: "right",
           type: "html",
           value:
-            "<a href='https://discord.com/channels/707636530424053791/1003718839739105300'><div></div><span>Cloak Discord</span></a>",
+            "<a href='https://discord.com/channels/707636530424053791/1003718839739105300'><div></div><span>Dagger Discord</span></a>",
           className: "header-discord-link",
         },
         {

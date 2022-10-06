@@ -15,5 +15,5 @@
     "declarationMap": true
   },
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "cloak-sdk-nodejs"
+  "display": "dagger-sdk-nodejs"
 }

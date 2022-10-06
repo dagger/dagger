@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	workdirID     = "__cloak_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
-	cloakYamlName = "cloak.yaml"
+	workdirID = "__dagger_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
+	yamlName  = "cloak.yaml"
 )
 
 type Config struct {
@@ -69,12 +69,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 	// FIXME:(sipsma) use viper to get env support automatically
 	if startOpts.Workdir == "" {
-		if v, ok := os.LookupEnv("CLOAK_WORKDIR"); ok {
+		if v, ok := os.LookupEnv("DAGGER_WORKDIR"); ok {
 			startOpts.Workdir = v
 		}
 	}
 	if startOpts.ConfigPath == "" {
-		if v, ok := os.LookupEnv("CLOAK_CONFIG"); ok {
+		if v, ok := os.LookupEnv("DAGGER_CONFIG"); ok {
 			startOpts.ConfigPath = v
 		}
 	}
@@ -86,7 +86,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			return err
 		}
 		startOpts.Workdir = filepath.Dir(configAbsPath)
-		startOpts.ConfigPath = "./" + cloakYamlName
+		startOpts.ConfigPath = "./" + yamlName
 	case startOpts.Workdir == "":
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -94,7 +94,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		}
 		startOpts.Workdir = cwd
 	case startOpts.ConfigPath == "":
-		startOpts.ConfigPath = "./" + cloakYamlName
+		startOpts.ConfigPath = "./" + yamlName
 	}
 
 	router := router.New()
@@ -355,14 +355,14 @@ func findConfig() (string, error) {
 	}
 
 	for {
-		configPath := filepath.Join(wd, cloakYamlName)
+		configPath := filepath.Join(wd, yamlName)
 		// FIXME:(sipsma) decide how to handle symlinks
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath, nil
 		}
 
 		if wd == "/" {
-			return "", fmt.Errorf("no %s found", cloakYamlName)
+			return "", fmt.Errorf("no %s found", yamlName)
 		}
 
 		wd = filepath.Dir(wd)

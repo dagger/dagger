@@ -14,7 +14,7 @@ const (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Print cloak version",
+	Short: "Print dagger version",
 	// Disable version hook here to avoid double version check
 	PersistentPreRun:  func(*cobra.Command, []string) {},
 	PersistentPostRun: func(*cobra.Command, []string) {},
@@ -44,7 +44,7 @@ func revision() string {
 }
 
 func short() string {
-	return fmt.Sprintf("cloak %s (%s)", version, revision())
+	return fmt.Sprintf("dagger %s (%s)", version, revision())
 }
 
 func long() string {

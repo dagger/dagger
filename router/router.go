@@ -107,7 +107,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/query", h)
-	mux.Handle("/", playground.Handler("Cloak Dev", "/query"))
+	mux.Handle("/", playground.Handler("Dagger Dev", "/query"))
 	mux.ServeHTTP(w, req)
 }
 
