@@ -20,7 +20,7 @@ func init() {
 func TestDirectory(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New()
+		core := api.New(ctx.Client)
 
 		dir := core.Directory()
 
@@ -38,7 +38,7 @@ func TestDirectory(t *testing.T) {
 func TestGit(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New()
+		core := api.New(ctx.Client)
 		tree := core.Git("github.com/dagger/dagger").
 			Branch("cloak").
 			Tree()
@@ -68,7 +68,7 @@ func TestGit(t *testing.T) {
 func TestContainer(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New()
+		core := api.New(ctx.Client)
 		alpine := core.
 			Container().
 			From("alpine:3.16.2")

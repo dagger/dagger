@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/Khan/genqlient/graphql"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func Query() *Selection {
@@ -104,18 +103,13 @@ func (s *Selection) Unpack(data interface{}) error {
 	return nil
 }
 
-func (s *Selection) Execute(ctx context.Context) error {
+func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
 	query := s.Build()
 
 	fmt.Printf("QUERY: %s\n", query)
 
-	cl, err := dagger.Client(ctx)
-	if err != nil {
-		return err
-	}
-
 	var response any
-	err = cl.MakeRequest(ctx,
+	err := c.MakeRequest(ctx,
 		&graphql.Request{
 			Query: query,
 		},

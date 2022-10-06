@@ -1,6 +1,7 @@
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 {{ range $field := .Fields }}
 {{- if $field.Args.HasOptionals }}
@@ -51,11 +52,12 @@ func With{{ $field | FormatTypeAndFieldName }}{{ $arg.Name | FormatName }}({{ $a
 	{{ if $field.TypeRef.IsObject }}
 	return &{{ $field.TypeRef | FormatType }} {
 		q: q,
+		c: r.c,
 	}
 	{{- else if $field.TypeRef.IsScalar }}
 	var response {{ $field.TypeRef | FormatType }}
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 	{{- end }}
 }
 {{ end -}}

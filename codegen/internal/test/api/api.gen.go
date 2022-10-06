@@ -3,13 +3,15 @@ package api
 import (
 	"context"
 
+	"github.com/Khan/genqlient/graphql"
 	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
 )
 
 // New returns a new API query object
-func New() *Query {
+func New(c graphql.Client) *Query {
 	return &Query{
 		q: querybuilder.Query(),
+		c: c,
 	}
 }
 
@@ -52,6 +54,7 @@ type ExecOpts struct {
 // An OCI-compatible container, also known as a docker container
 type Container struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 
 // Retrieve a directory at the given path. Mounts are included.
@@ -61,6 +64,7 @@ func (r *Container) Directory(path string) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -70,7 +74,7 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 
 	var response []string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // ContainerExecOptions contains options for Container.Exec
@@ -102,6 +106,7 @@ func (r *Container) Exec(args []string, options ...ContainerExecOption) *Contain
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -112,7 +117,7 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 
 	var response int
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Initialize this container from the base image published at the given address
@@ -122,6 +127,7 @@ func (r *Container) From(address ContainerAddress) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -131,7 +137,7 @@ func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 
 	var response ContainerID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // List of paths where a directory is mounted
@@ -140,7 +146,7 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 
 	var response []string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Publish this container as a new image
@@ -150,7 +156,7 @@ func (r *Container) Publish(ctx context.Context, address ContainerAddress) (Cont
 
 	var response ContainerAddress
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // This container's root filesystem. Mounts are not included.
@@ -159,6 +165,7 @@ func (r *Container) Rootfs() *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -169,6 +176,7 @@ func (r *Container) Stderr() *File {
 
 	return &File{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -179,6 +187,7 @@ func (r *Container) Stdout() *File {
 
 	return &File{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -188,7 +197,7 @@ func (r *Container) User(ctx context.Context) (string, error) {
 
 	var response string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The value of the specified environment variable
@@ -198,7 +207,7 @@ func (r *Container) Variable(ctx context.Context, name string) (string, error) {
 
 	var response string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A list of environment variables passed to commands
@@ -207,7 +216,7 @@ func (r *Container) Variables(ctx context.Context) ([]string, error) {
 
 	var response []string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // ContainerWithEntrypointOptions contains options for Container.WithEntrypoint
@@ -238,6 +247,7 @@ func (r *Container) WithEntrypoint(options ...ContainerWithEntrypointOption) *Co
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -270,6 +280,7 @@ func (r *Container) WithMountedCache(path string, options ...ContainerWithMounte
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -281,6 +292,7 @@ func (r *Container) WithMountedDirectory(path string, source DirectoryID) *Conta
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -292,6 +304,7 @@ func (r *Container) WithMountedFile(path string, source FileID) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -303,6 +316,7 @@ func (r *Container) WithMountedSecret(path string, source SecretID) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -313,6 +327,7 @@ func (r *Container) WithMountedTemp(path string) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -324,6 +339,7 @@ func (r *Container) WithSecretVariable(name string, secret SecretID) *Container 
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -355,6 +371,7 @@ func (r *Container) WithUser(options ...ContainerWithUserOption) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -366,6 +383,7 @@ func (r *Container) WithVariable(name string, value string) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -397,6 +415,7 @@ func (r *Container) WithWorkdir(options ...ContainerWithWorkdirOption) *Containe
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -407,6 +426,7 @@ func (r *Container) WithoutMount(path string) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -438,6 +458,7 @@ func (r *Container) WithoutVariable(options ...ContainerWithoutVariableOption) *
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -447,12 +468,13 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 
 	var response string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A directory
 type Directory struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 
 // DirectoryContentsOptions contains options for Directory.Contents
@@ -483,7 +505,7 @@ func (r *Directory) Contents(ctx context.Context, options ...DirectoryContentsOp
 
 	var response []string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The difference between this directory and an another directory
@@ -493,6 +515,7 @@ func (r *Directory) Diff(other DirectoryID) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -503,6 +526,7 @@ func (r *Directory) Directory(path string) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -513,6 +537,7 @@ func (r *Directory) File(path string) *File {
 
 	return &File{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -522,7 +547,7 @@ func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 
 	var response DirectoryID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A secret backed by the file at the given path
@@ -532,7 +557,7 @@ func (r *Directory) Secret(ctx context.Context, path string) (SecretID, error) {
 
 	var response SecretID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // This directory plus the contents of the given file copied to the given path
@@ -543,6 +568,7 @@ func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -554,6 +580,7 @@ func (r *Directory) WithDirectory(directory DirectoryID, path string) *Directory
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -586,6 +613,7 @@ func (r *Directory) WithNewFile(path string, options ...DirectoryWithNewFileOpti
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -596,6 +624,7 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -606,12 +635,14 @@ func (r *Directory) WithoutFile(path string) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
 // A file
 type File struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 
 // The contents of the file
@@ -620,7 +651,7 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 
 	var response string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The content-addressed identifier of the file
@@ -629,7 +660,7 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 
 	var response FileID
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The size of the file, in bytes
@@ -638,12 +669,13 @@ func (r *File) Size(ctx context.Context) (int, error) {
 
 	var response int
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A git ref (tag or branch)
 type GitRef struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 
 // The digest of the current value of this ref
@@ -652,7 +684,7 @@ func (r *GitRef) Digest(ctx context.Context) (string, error) {
 
 	var response string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The filesystem tree at this ref
@@ -661,12 +693,14 @@ func (r *GitRef) Tree() *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
 // A git repository
 type GitRepository struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 
 // Details on one branch
@@ -676,6 +710,7 @@ func (r *GitRepository) Branch(name string) *GitRef {
 
 	return &GitRef{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -685,7 +720,7 @@ func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
 
 	var response []string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Details on one tag
@@ -695,6 +730,7 @@ func (r *GitRepository) Tag(name string) *GitRef {
 
 	return &GitRef{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -704,11 +740,12 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 
 	var response []string
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return response, q.Execute(ctx, r.c)
 }
 
 type Query struct {
 	q *querybuilder.Selection
+	c graphql.Client
 }
 
 // QueryContainerOptions contains options for Query.Container
@@ -740,6 +777,7 @@ func (r *Query) Container(options ...QueryContainerOption) *Container {
 
 	return &Container{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -771,6 +809,7 @@ func (r *Query) Directory(options ...QueryDirectoryOption) *Directory {
 
 	return &Directory{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -781,6 +820,7 @@ func (r *Query) File(id FileID) *File {
 
 	return &File{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -791,6 +831,7 @@ func (r *Query) Git(url string) *GitRepository {
 
 	return &GitRepository{
 		q: q,
+		c: r.c,
 	}
 }
 
@@ -801,5 +842,6 @@ func (r *Query) HTTP(url string) *File {
 
 	return &File{
 		q: q,
+		c: r.c,
 	}
 }

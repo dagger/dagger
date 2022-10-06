@@ -3,12 +3,14 @@ package {{ .Package }}
 import (
 	"context"
 
+	"github.com/Khan/genqlient/graphql"
 	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
 )
 
 // New returns a new API query object
-func New() *{{ .Schema.QueryType.Name }} {
+func New(c graphql.Client) *{{ .Schema.QueryType.Name }} {
 	return &{{ .Schema.QueryType.Name }}{
 		q: querybuilder.Query(),
+		c: c,
 	}
 }
