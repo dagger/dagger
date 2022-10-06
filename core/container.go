@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
 	"github.com/docker/distribution/reference"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -82,6 +85,9 @@ func (payload *containerIDPayload) FSState() (llb.State, error) {
 
 // metaMount is the special path that the shim writes metadata to.
 const metaMount = "/dagger"
+
+// metaSourcePath is a world-writable directory created and mounted to /dagger.
+const metaSourcePath = "meta"
 
 // MetaState returns the container's metadata mount state. If the container has
 // yet to run, it returns nil.
@@ -221,12 +227,28 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 		return nil, fmt.Errorf("build shim: %w", err)
 	}
 
+	if len(cfg.Entrypoint) > 0 {
+		args = append(cfg.Entrypoint, args...)
+	}
+
 	runOpts := []llb.RunOption{
 		// run the command via the shim, hide shim behind custom name
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
 		llb.Args(append([]string{shim.Path}, args...)),
 		llb.WithCustomName(strings.Join(args, " ")),
-		llb.AddMount(metaMount, llb.Scratch()),
+
+		// create /dagger mount point for the shim to write to
+		llb.AddMount(
+			metaMount,
+			// because the shim might run as non-root, we need to make a
+			// world-writable directory first...
+			llb.Scratch().File(llb.Mkdir(metaSourcePath, 0777)),
+			// ...and then make it the base of the mount point.
+			llb.SourcePath(metaSourcePath)),
+	}
+
+	if cfg.User != "" {
+		runOpts = append(runOpts, llb.User(cfg.User))
 	}
 
 	if cfg.WorkingDir != "" {
@@ -320,7 +342,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 	return &exitCode, nil
 }
 
-func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, path string) (*File, error) {
+func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -335,7 +357,78 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, path s
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path, payload.Platform)
+	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform)
+}
+
+func (container *Container) Publish(
+	ctx context.Context,
+	ref ContainerAddress,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) (ContainerAddress, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	st, err := payload.FSState()
+	if err != nil {
+		return "", err
+	}
+
+	stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return "", err
+	}
+
+	cfgBytes, err := json.Marshal(specs.Image{
+		Architecture: payload.Platform.Architecture,
+		OS:           payload.Platform.OS,
+		OSVersion:    payload.Platform.OSVersion,
+		OSFeatures:   payload.Platform.OSFeatures,
+		Config:       payload.Config,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
+	solveOpts.Exports = []bkclient.ExportEntry{
+		{
+			Type: bkclient.ExporterImage,
+			Attrs: map[string]string{
+				"name": string(ref),
+				"push": "true",
+			},
+		},
+	}
+
+	// Mirror events from the sub-Build into the main Build event channel.
+	// Build() will close the channel after completion so we don't want to use the main channel directly.
+	ch := make(chan *bkclient.SolveStatus)
+	go func() {
+		for event := range ch {
+			solveCh <- event
+		}
+	}()
+
+	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		return res, nil
+	}, ch)
+	if err != nil {
+		return "", err
+	}
+
+	return ref, nil
 }
 
 type containerSchema struct {
@@ -363,17 +456,17 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"from":                 router.ToResolver(s.from),
 			"rootfs":               router.ToResolver(s.rootfs),
 			"directory":            router.ErrResolver(ErrNotImplementedYet),
-			"user":                 router.ErrResolver(ErrNotImplementedYet),
-			"withUser":             router.ErrResolver(ErrNotImplementedYet),
+			"user":                 router.ToResolver(s.user),
+			"withUser":             router.ToResolver(s.withUser),
 			"workdir":              router.ToResolver(s.workdir),
 			"withWorkdir":          router.ToResolver(s.withWorkdir),
 			"variables":            router.ToResolver(s.variables),
-			"variable":             router.ErrResolver(ErrNotImplementedYet),
+			"variable":             router.ToResolver(s.variable),
 			"withVariable":         router.ToResolver(s.withVariable),
 			"withSecretVariable":   router.ErrResolver(ErrNotImplementedYet),
-			"withoutVariable":      router.ErrResolver(ErrNotImplementedYet),
-			"entrypoint":           router.ErrResolver(ErrNotImplementedYet),
-			"withEntrypoint":       router.ErrResolver(ErrNotImplementedYet),
+			"withoutVariable":      router.ToResolver(s.withoutVariable),
+			"entrypoint":           router.ToResolver(s.entrypoint),
+			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
 			"mounts":               router.ErrResolver(ErrNotImplementedYet),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ErrResolver(ErrNotImplementedYet),
@@ -385,7 +478,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
-			"publish":              router.ErrResolver(ErrNotImplementedYet),
+			"publish":              router.ToResolver(s.publish),
 		},
 	}
 }
@@ -472,6 +565,46 @@ func (s *containerSchema) stderr(ctx *router.Context, parent *Container, args an
 	return parent.MetaFile(ctx, s.gw, "stderr")
 }
 
+type containerWithEntrypointArgs struct {
+	Args []string
+}
+
+func (s *containerSchema) withEntrypoint(ctx *router.Context, parent *Container, args containerWithEntrypointArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Entrypoint = args.Args
+		return cfg
+	})
+}
+
+func (s *containerSchema) entrypoint(ctx *router.Context, parent *Container, args containerWithVariableArgs) ([]string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg.Entrypoint, nil
+}
+
+type containerWithUserArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withUser(ctx *router.Context, parent *Container, args containerWithUserArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.User = args.Name
+		return cfg
+	})
+}
+
+func (s *containerSchema) user(ctx *router.Context, parent *Container, args containerWithVariableArgs) (string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return cfg.User, nil
+}
+
 type containerWithWorkdirArgs struct {
 	Path string
 }
@@ -518,13 +651,53 @@ func (s *containerSchema) withVariable(ctx *router.Context, parent *Container, a
 	})
 }
 
-func (s *containerSchema) variables(ctx *router.Context, parent *Container, args containerWithVariableArgs) ([]string, error) {
+type containerWithoutVariableArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutVariable(ctx *router.Context, parent *Container, args containerWithoutVariableArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		removedEnv := []string{}
+		prefix := args.Name + "="
+		for _, env := range cfg.Env {
+			if !strings.HasPrefix(env, prefix) {
+				removedEnv = append(removedEnv, env)
+			}
+		}
+
+		cfg.Env = removedEnv
+
+		return cfg
+	})
+}
+
+func (s *containerSchema) variables(ctx *router.Context, parent *Container, args any) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return cfg.Env, nil
+}
+
+type containerVariableArgs struct {
+	Name string
+}
+
+func (s *containerSchema) variable(ctx *router.Context, parent *Container, args containerVariableArgs) (*string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, env := range cfg.Env {
+		name, val, ok := strings.Cut(env, "=")
+		if ok && name == args.Name {
+			return &val, nil
+		}
+	}
+
+	return nil, nil
 }
 
 type containerWithMountedDirectoryArgs struct {
@@ -534,4 +707,12 @@ type containerWithMountedDirectoryArgs struct {
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Container, args containerWithMountedDirectoryArgs) (*Container, error) {
 	return parent.WithMountedDirectory(ctx, args.Path, &Directory{ID: args.Source})
+}
+
+type containerPushArgs struct {
+	Address ContainerAddress
+}
+
+func (s *containerSchema) publish(ctx *router.Context, parent *Container, args containerPushArgs) (ContainerAddress, error) {
+	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
 }

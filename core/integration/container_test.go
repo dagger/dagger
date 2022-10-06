@@ -227,6 +227,168 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithWorkdir.Exec.Stdout.Contents, "/usr\n")
 }
 
+func TestContainerExecWithUser(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				User string
+
+				WithUser struct {
+					User string
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	t.Run("user name", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "daemon") {
+						user
+						exec(args: ["whoami"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "daemon", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+
+	t.Run("user and group name", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "daemon:floppy") {
+						user
+						exec(args: ["sh", "-c", "whoami; groups"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "daemon:floppy", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+
+	t.Run("user ID", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "2") {
+						user
+						exec(args: ["whoami"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "2", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+
+	t.Run("user and group ID", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "alpine:3.16.2") {
+					user
+					withUser(name: "2:11") {
+						user
+						exec(args: ["sh", "-c", "whoami; groups"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "", res.Container.From.User)
+		require.Equal(t, "2:11", res.Container.From.WithUser.User)
+		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+	})
+}
+
+func TestContainerExecWithEntrypoint(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Entrypoint     []string
+				WithEntrypoint struct {
+					Entrypoint []string
+					Exec       struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+					WithEntrypoint struct {
+						Entrypoint []string
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					entrypoint
+					withEntrypoint(args: ["sh", "-c"]) {
+						entrypoint
+						exec(args: ["echo $HOME"]) {
+							stdout {
+								contents
+							}
+						}
+
+						withEntrypoint(args: []) {
+							entrypoint
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Empty(t, res.Container.From.Entrypoint)
+	require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
+	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout.Contents)
+	require.Empty(t, res.Container.From.WithEntrypoint.WithEntrypoint.Entrypoint)
+}
+
 func TestContainerExecWithVariable(t *testing.T) {
 	t.Parallel()
 
@@ -298,6 +460,82 @@ func TestContainerVariables(t *testing.T) {
 		"GOPATH=/go",
 	})
 	require.Contains(t, res.Container.From.Exec.Stdout.Contents, "GOPATH=/go\n")
+}
+
+func TestContainerVariable(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Variable *string
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "golang:1.18.2-alpine") {
+					variable(name: "GOLANG_VERSION")
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.NotNil(t, res.Container.From.Variable)
+	require.Equal(t, "1.18.2", *res.Container.From.Variable)
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "golang:1.18.2-alpine") {
+					variable(name: "UNKNOWN")
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Nil(t, res.Container.From.Variable)
+}
+
+func TestContainerWithoutVariable(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithoutVariable struct {
+					Variables []string
+					Exec      struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "golang:1.18.2-alpine") {
+					withoutVariable(name: "GOLANG_VERSION") {
+						variables
+						exec(args: ["env"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, res.Container.From.WithoutVariable.Variables, []string{
+		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"GOPATH=/go",
+	})
+	require.NotContains(t, res.Container.From.WithoutVariable.Exec.Stdout.Contents, "GOLANG_VERSION")
 }
 
 func TestContainerVariablesReplace(t *testing.T) {
@@ -692,9 +930,7 @@ func TestContainerMultiFrom(t *testing.T) {
 	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents, "go version go1.18.2")
 }
 
-func TestContainerImageExport(t *testing.T) {
-	t.Skip("not implemented yet")
-
+func TestContainerPublish(t *testing.T) {
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.
 
@@ -708,7 +944,7 @@ func TestContainerImageExport(t *testing.T) {
 						container {
 							from(address: "registry:2") {
 								withVariable(name: "RANDOM", value: $rand) {
-									exec(args: ["/entrypoint.sh", "/etc/docker/registry/config.yml"]) {
+									exec(args: ["/etc/docker/registry/config.yml"]) {
 										stdout {
 											contents
 										}
@@ -754,10 +990,10 @@ func TestContainerImageExport(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		testRef := "127.0.0.1:5000/testimagepush:latest"
+		testRef := core.ContainerAddress("127.0.0.1:5000/testimagepush:latest")
 		err = ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
-				Query: `query TestImagePush($ref: String!) {
+				Query: `query TestImagePush($ref: ContainerAddress!) {
 					container {
 						from(address: "alpine:3.16.2") {
 							publish(address: $ref)
@@ -785,7 +1021,7 @@ func TestContainerImageExport(t *testing.T) {
 		}{}
 		err = ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
-				Query: `query TestImagePull($ref: String!) {
+				Query: `query TestImagePull($ref: ContainerAddress!) {
 					container {
 						from(address: $ref) {
 							rootfs {
