@@ -1,4 +1,0 @@
-name: "hello"
-extensions:
-  - path: .
-    sdk: python

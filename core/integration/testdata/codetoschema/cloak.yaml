@@ -1,4 +1,0 @@
-name: codetoschema
-extensions:
-  - path: .
-    sdk: go

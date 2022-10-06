@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	workdirID = "__dagger_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
-	yamlName  = "cloak.yaml"
+	workdirID      = "__dagger_workdir"
+	daggerJsonName = "dagger.json"
 )
 
 type Config struct {
@@ -327,20 +327,6 @@ func loadProject(ctx context.Context, cl graphql.Client, contextDir core.Directo
 				directory(id: $dir) {
 					loadProject(configPath: $configPath) {
 						name
-						schema
-						extensions {
-							path
-							schema
-							sdk
-						}
-						scripts {
-							path
-							sdk
-						}
-						dependencies {
-							name
-							schema
-						}
 						%s
 					}
 				}
@@ -359,6 +345,7 @@ func loadProject(ctx context.Context, cl graphql.Client, contextDir core.Directo
 	return &res.Core.Directory.LoadProject, nil
 }
 
+// TODO: remove
 func findConfig() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 func TestExtensionAlpine(t *testing.T) {
 	startOpts := &engine.Config{
 		Workdir:    "../../",
-		ConfigPath: "examples/alpine/cloak.yaml",
+		ConfigPath: "examples/alpine/cloak.json",
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
@@ -52,7 +52,7 @@ func TestExtensionAlpine(t *testing.T) {
 func TestExtensionNetlifyGo(t *testing.T) {
 	startOpts := &engine.Config{
 		Workdir:    "../../",
-		ConfigPath: "examples/netlify/go/cloak.yaml",
+		ConfigPath: "examples/netlify/go/cloak.json",
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {

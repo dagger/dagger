@@ -1,4 +1,0 @@
-name: test
-extensions:
-  - path: .
-    sdk: go

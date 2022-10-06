@@ -33,7 +33,7 @@ export class Engine {
                 this.config.Workdir || process.env["DAGGER_WORKDIR"] || process.cwd();
             args.push("--workdir", `${this.config.Workdir}`);
             this.config.ConfigPath =
-                this.config.ConfigPath || process.env["DAGGER_CONFIG"] || "./cloak.yaml";
+                this.config.ConfigPath || process.env["DAGGER_CONFIG"] || "./dagger.json";
             args.push("-p", `${this.config.ConfigPath}`);
             // add local dirs from config in the form of `--local-dir <name>=<path>`
             if (this.config.LocalDirs) {
