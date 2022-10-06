@@ -176,7 +176,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(ctx, target, source)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, target string, source *Directory) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 	mount := ContainerMount{
 		Target:           target,
-		CacheID:          fmt.Sprintf("%s:%s", container.ID, target),
+		CacheID:          string(cache),
 		CacheSharingMode: "shared", // TODO(vito): add param
 	}
 

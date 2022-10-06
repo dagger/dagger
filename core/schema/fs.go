@@ -16,3 +16,6 @@ var Container string
 
 //go:embed http.graphqls
 var HTTP string
+
+//go:embed cache.graphqls
+var Cache string
