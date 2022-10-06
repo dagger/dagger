@@ -1,4 +1,4 @@
-//go:generate cloak client-gen -o ./api/api.gen.go
+//go:generate dagger client-gen -o ./api/api.gen.go
 package core
 
 import (

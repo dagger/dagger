@@ -219,31 +219,10 @@ func (r *Container) Variables(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerWithEntrypointOptions contains options for Container.WithEntrypoint
-type ContainerWithEntrypointOptions struct {
-	Args *[]string
-}
-
-// ContainerWithEntrypointOption represents an option handler for Container.WithEntrypoint
-type ContainerWithEntrypointOption func(*ContainerWithEntrypointOptions)
-
-// WithContainerWithEntrypointArgs sets the "args" option for WithEntrypoint
-func WithContainerWithEntrypointArgs(args []string) ContainerWithEntrypointOption {
-	return func(daggerOptions *ContainerWithEntrypointOptions) {
-		daggerOptions.Args = &args
-	}
-}
-
 // This container but with a different command entrypoint
-func (r *Container) WithEntrypoint(options ...ContainerWithEntrypointOption) *Container {
-	opts := &ContainerWithEntrypointOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) WithEntrypoint(args []string) *Container {
 	q := r.q.Select("withEntrypoint")
-	if opts != nil && opts.Args != nil {
-		q = q.Arg("args", opts.Args)
-	}
+	q = q.Arg("args", args)
 
 	return &Container{
 		q: q,
@@ -343,31 +322,10 @@ func (r *Container) WithSecretVariable(name string, secret SecretID) *Container 
 	}
 }
 
-// ContainerWithUserOptions contains options for Container.WithUser
-type ContainerWithUserOptions struct {
-	Name *string
-}
-
-// ContainerWithUserOption represents an option handler for Container.WithUser
-type ContainerWithUserOption func(*ContainerWithUserOptions)
-
-// WithContainerWithUserName sets the "name" option for WithUser
-func WithContainerWithUserName(name string) ContainerWithUserOption {
-	return func(daggerOptions *ContainerWithUserOptions) {
-		daggerOptions.Name = &name
-	}
-}
-
 // This container but with a different command user
-func (r *Container) WithUser(options ...ContainerWithUserOption) *Container {
-	opts := &ContainerWithUserOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) WithUser(name string) *Container {
 	q := r.q.Select("withUser")
-	if opts != nil && opts.Name != nil {
-		q = q.Arg("name", opts.Name)
-	}
+	q = q.Arg("name", name)
 
 	return &Container{
 		q: q,
@@ -387,31 +345,10 @@ func (r *Container) WithVariable(name string, value string) *Container {
 	}
 }
 
-// ContainerWithWorkdirOptions contains options for Container.WithWorkdir
-type ContainerWithWorkdirOptions struct {
-	Path *string
-}
-
-// ContainerWithWorkdirOption represents an option handler for Container.WithWorkdir
-type ContainerWithWorkdirOption func(*ContainerWithWorkdirOptions)
-
-// WithContainerWithWorkdirPath sets the "path" option for WithWorkdir
-func WithContainerWithWorkdirPath(path string) ContainerWithWorkdirOption {
-	return func(daggerOptions *ContainerWithWorkdirOptions) {
-		daggerOptions.Path = &path
-	}
-}
-
 // This container but with a different working directory
-func (r *Container) WithWorkdir(options ...ContainerWithWorkdirOption) *Container {
-	opts := &ContainerWithWorkdirOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) WithWorkdir(path string) *Container {
 	q := r.q.Select("withWorkdir")
-	if opts != nil && opts.Path != nil {
-		q = q.Arg("path", opts.Path)
-	}
+	q = q.Arg("path", path)
 
 	return &Container{
 		q: q,
@@ -430,31 +367,10 @@ func (r *Container) WithoutMount(path string) *Container {
 	}
 }
 
-// ContainerWithoutVariableOptions contains options for Container.WithoutVariable
-type ContainerWithoutVariableOptions struct {
-	Name *string
-}
-
-// ContainerWithoutVariableOption represents an option handler for Container.WithoutVariable
-type ContainerWithoutVariableOption func(*ContainerWithoutVariableOptions)
-
-// WithContainerWithoutVariableName sets the "name" option for WithoutVariable
-func WithContainerWithoutVariableName(name string) ContainerWithoutVariableOption {
-	return func(daggerOptions *ContainerWithoutVariableOptions) {
-		daggerOptions.Name = &name
-	}
-}
-
 // This container minus the given environment variable
-func (r *Container) WithoutVariable(options ...ContainerWithoutVariableOption) *Container {
-	opts := &ContainerWithoutVariableOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) WithoutVariable(name string) *Container {
 	q := r.q.Select("withoutVariable")
-	if opts != nil && opts.Name != nil {
-		q = q.Arg("name", opts.Name)
-	}
+	q = q.Arg("name", name)
 
 	return &Container{
 		q: q,
