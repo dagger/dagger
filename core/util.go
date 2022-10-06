@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/graphql-go/graphql/language/ast"
@@ -99,4 +100,16 @@ func defToState(def *pb.Definition) (llb.State, error) {
 	}
 
 	return llb.NewState(defop), nil
+}
+
+func absPath(workDir string, containerPath string) string {
+	if path.IsAbs(containerPath) {
+		return containerPath
+	}
+
+	if workDir == "" {
+		workDir = "/"
+	}
+
+	return path.Join(workDir, containerPath)
 }

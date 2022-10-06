@@ -15,6 +15,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/core/shim"
 	"go.dagger.io/dagger/router"
@@ -107,17 +108,30 @@ func (payload *containerIDPayload) MetaState() (*llb.State, error) {
 // ContainerMount is a mount point configured in a container.
 type ContainerMount struct {
 	// The source of the mount.
-	Source *pb.Definition `json:"source"`
+	Source *pb.Definition `json:"source,omitempty"`
 
 	// A path beneath the source to scope the mount to.
 	SourcePath string `json:"source_path,omitempty"`
 
 	// The path of the mount within the container.
 	Target string `json:"target"`
+
+	// Persist changes to the mount under this cache ID.
+	CacheID string `json:"cache_id,omitempty"`
+
+	// How to share the cache across concurrent runs.
+	CacheSharingMode string `json:"cache_sharing,omitempty"`
+
+	// Configure the mount as a tmpfs.
+	Tmpfs bool `json:"tmpfs,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
 func (mnt ContainerMount) SourceState() (llb.State, error) {
+	if mnt.Source == nil {
+		return llb.Scratch(), nil
+	}
+
 	return defToState(mnt.Source)
 }
 
@@ -158,24 +172,210 @@ func (container *Container) WithFS(ctx context.Context, st llb.State, platform s
 }
 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
+	return container.withMounted(ctx, target, source)
+}
+
+func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
+	return container.withMounted(ctx, target, source)
+}
+
+func (container *Container) WithMountedCache(ctx context.Context, target string, source *Directory) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	dirSt, dirRel, dirPlatform, err := source.Decode()
+	target = absPath(payload.Config.WorkingDir, target)
+
+	mount := ContainerMount{
+		Target:           target,
+		CacheID:          fmt.Sprintf("%s:%s", container.ID, target),
+		CacheSharingMode: "shared", // TODO(vito): add param
+	}
+
+	if source != nil {
+		dirSt, dirRel, dirPlatform, err := source.Decode()
+		if err != nil {
+			return nil, err
+		}
+
+		dirDef, err := dirSt.Marshal(ctx, llb.Platform(dirPlatform))
+		if err != nil {
+			return nil, err
+		}
+
+		mount.Source = dirDef.ToPB()
+		mount.SourcePath = dirRel
+	}
+
+	payload.Mounts = append(payload.Mounts, mount)
+
+	id, err := payload.Encode()
 	if err != nil {
 		return nil, err
 	}
 
-	dirDef, err := dirSt.Marshal(ctx, llb.Platform(dirPlatform))
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithMountedTemp(ctx context.Context, target string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	payload.Mounts = append(payload.Mounts, ContainerMount{
+		Target: target,
+		Tmpfs:  true,
+	})
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	var found bool
+	var foundIdx int
+	for i := len(payload.Mounts) - 1; i >= 0; i-- {
+		if payload.Mounts[i].Target == target {
+			found = true
+			foundIdx = i
+			break
+		}
+	}
+
+	if found {
+		payload.Mounts = append(payload.Mounts[:foundIdx], payload.Mounts[foundIdx+1:]...)
+	}
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) Mounts(ctx context.Context) ([]string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	mounts := []string{}
+	for _, mnt := range payload.Mounts {
+		mounts = append(mounts, mnt.Target)
+	}
+
+	return mounts, nil
+}
+
+func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	dirPath = absPath(payload.Config.WorkingDir, dirPath)
+
+	var dir *Directory
+
+	// NB(vito): iterate in reverse order so we'll find deeper mounts first
+	for i := len(payload.Mounts) - 1; i >= 0; i-- {
+		mnt := payload.Mounts[i]
+
+		if dirPath == mnt.Target || strings.HasPrefix(dirPath, mnt.Target+"/") {
+			if mnt.Tmpfs {
+				return nil, fmt.Errorf("%s: cannot retrieve directory from tmpfs", dirPath)
+			}
+
+			if mnt.CacheID != "" {
+				return nil, fmt.Errorf("%s: cannot retrieve directory from cache", dirPath)
+			}
+
+			st, err := mnt.SourceState()
+			if err != nil {
+				return nil, err
+			}
+
+			sub := mnt.SourcePath
+			if dirPath != mnt.Target {
+				// make relative portion relative to the source path
+				dirSub := strings.TrimPrefix(dirPath, mnt.Target+"/")
+				if dirSub != "" {
+					sub = path.Join(sub, dirSub)
+				}
+			}
+
+			dir, err = NewDirectory(ctx, st, sub, payload.Platform)
+			if err != nil {
+				return nil, err
+			}
+
+			break
+		}
+	}
+
+	if dir == nil {
+		st, err := payload.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		dir, err = NewDirectory(ctx, st, dirPath, payload.Platform)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// check that the directory actually exists so the user gets an error earlier
+	// rather than when the dir is used
+	_, err = dir.Stat(ctx, gw, ".")
+	if err != nil {
+		return nil, err
+	}
+
+	return dir, nil
+}
+
+type mountable interface {
+	Decode() (llb.State, string, specs.Platform, error)
+}
+
+func (container *Container) withMounted(ctx context.Context, target string, source mountable) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	srcSt, srcRel, srcPlatform, err := source.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	srcDef, err := srcSt.Marshal(ctx, llb.Platform(srcPlatform))
 	if err != nil {
 		return nil, err
 	}
 
 	payload.Mounts = append(payload.Mounts, ContainerMount{
-		Source:     dirDef.ToPB(),
-		SourcePath: dirRel,
+		Source:     srcDef.ToPB(),
+		SourcePath: srcRel,
 		Target:     target,
 	})
 
@@ -266,7 +466,14 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
-	for _, mnt := range mounts {
+	st, err := payload.FSState()
+	if err != nil {
+		return nil, fmt.Errorf("fs state: %w", err)
+	}
+
+	execSt := st.Run(runOpts...)
+
+	for i, mnt := range mounts {
 		st, err := mnt.SourceState()
 		if err != nil {
 			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
@@ -277,29 +484,42 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
 
-		runOpts = append(runOpts, llb.AddMount(mnt.Target, st, mountOpts...))
-	}
+		if mnt.CacheSharingMode != "" {
+			var sharingMode llb.CacheMountSharingMode
+			switch mnt.CacheSharingMode {
+			case "shared":
+				sharingMode = llb.CacheMountShared
+			case "private":
+				sharingMode = llb.CacheMountPrivate
+			case "locked":
+				sharingMode = llb.CacheMountLocked
+			default:
+				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
+			}
 
-	st, err := payload.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
-	}
+			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheID, sharingMode))
+		}
 
-	execSt := st.Run(runOpts...)
+		if mnt.Tmpfs {
+			mountOpts = append(mountOpts, llb.Tmpfs())
+		}
+
+		mountSt := execSt.AddMount(mnt.Target, st, mountOpts...)
+
+		// propagate any changes to regular mounts to subsequent containers
+		if !mnt.Tmpfs && mnt.CacheID == "" {
+			execMountDef, err := mountSt.Marshal(ctx, llb.Platform(platform))
+			if err != nil {
+				return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
+			}
+
+			mounts[i].Source = execMountDef.ToPB()
+		}
+	}
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-
-	// propagate any changes to the mounts to subsequent containers
-	for i, mnt := range mounts {
-		execMountDef, err := execSt.GetMount(mnt.Target).Marshal(ctx, llb.Platform(platform))
-		if err != nil {
-			return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
-		}
-
-		mounts[i].Source = execMountDef.ToPB()
 	}
 
 	metaDef, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(platform))
@@ -455,7 +675,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		"Container": router.ObjectResolver{
 			"from":                 router.ToResolver(s.from),
 			"rootfs":               router.ToResolver(s.rootfs),
-			"directory":            router.ErrResolver(ErrNotImplementedYet),
+			"directory":            router.ToResolver(s.directory),
 			"user":                 router.ToResolver(s.user),
 			"withUser":             router.ToResolver(s.withUser),
 			"workdir":              router.ToResolver(s.workdir),
@@ -467,13 +687,13 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withoutVariable":      router.ToResolver(s.withoutVariable),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
-			"mounts":               router.ErrResolver(ErrNotImplementedYet),
+			"mounts":               router.ToResolver(s.mounts),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
-			"withMountedFile":      router.ErrResolver(ErrNotImplementedYet),
-			"withMountedTemp":      router.ErrResolver(ErrNotImplementedYet),
-			"withMountedCache":     router.ErrResolver(ErrNotImplementedYet),
+			"withMountedFile":      router.ToResolver(s.withMountedFile),
+			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
+			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ErrResolver(ErrNotImplementedYet),
-			"withoutMount":         router.ErrResolver(ErrNotImplementedYet),
+			"withoutMount":         router.ToResolver(s.withoutMount),
 			"exec":                 router.ToResolver(s.exec),
 			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
@@ -611,7 +831,7 @@ type containerWithWorkdirArgs struct {
 
 func (s *containerSchema) withWorkdir(ctx *router.Context, parent *Container, args containerWithWorkdirArgs) (*Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = args.Path
+		cfg.WorkingDir = absPath(cfg.WorkingDir, args.Path)
 		return cfg
 	})
 }
@@ -709,10 +929,61 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *Cont
 	return parent.WithMountedDirectory(ctx, args.Path, &Directory{ID: args.Source})
 }
 
-type containerPushArgs struct {
+type containerPublishArgs struct {
 	Address ContainerAddress
 }
 
-func (s *containerSchema) publish(ctx *router.Context, parent *Container, args containerPushArgs) (ContainerAddress, error) {
+func (s *containerSchema) publish(ctx *router.Context, parent *Container, args containerPublishArgs) (ContainerAddress, error) {
 	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
+}
+
+type containerWithMountedFileArgs struct {
+	Path   string
+	Source FileID
+}
+
+func (s *containerSchema) withMountedFile(ctx *router.Context, parent *Container, args containerWithMountedFileArgs) (*Container, error) {
+	return parent.WithMountedFile(ctx, args.Path, &File{ID: args.Source})
+}
+
+type containerWithMountedCacheArgs struct {
+	Path   string
+	Source DirectoryID
+}
+
+func (s *containerSchema) withMountedCache(ctx *router.Context, parent *Container, args containerWithMountedCacheArgs) (*Container, error) {
+	var dir *Directory
+	if args.Source != "" {
+		dir = &Directory{ID: args.Source}
+	}
+
+	return parent.WithMountedCache(ctx, args.Path, dir)
+}
+
+type containerWithMountedTempArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withMountedTemp(ctx *router.Context, parent *Container, args containerWithMountedTempArgs) (*Container, error) {
+	return parent.WithMountedTemp(ctx, args.Path)
+}
+
+type containerWithoutMountArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withoutMount(ctx *router.Context, parent *Container, args containerWithoutMountArgs) (*Container, error) {
+	return parent.WithoutMount(ctx, args.Path)
+}
+
+func (s *containerSchema) mounts(ctx *router.Context, parent *Container, _ any) ([]string, error) {
+	return parent.Mounts(ctx)
+}
+
+type containerDirectoryArgs struct {
+	Path string
+}
+
+func (s *containerSchema) directory(ctx *router.Context, parent *Container, args containerDirectoryArgs) (*Directory, error) {
+	return parent.Directory(ctx, s.gw, args.Path)
 }

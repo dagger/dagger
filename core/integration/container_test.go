@@ -799,6 +799,352 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
+				ID core.DirectoryID
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					id
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+						Exec struct {
+							Exec struct {
+								Stdout struct {
+									Contents string
+								}
+								WithMountedDirectory struct {
+									Exec struct {
+										Stdout struct {
+											Contents string
+										}
+										Exec struct {
+											Stdout struct {
+												Contents string
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt", source: $id) {
+						exec(args: ["cat", "/mnt/some-file"]) {
+							# original content
+							stdout { contents }
+
+							exec(args: ["sh", "-c", "echo >> /mnt/some-file; echo -n more-content >> /mnt/some-file"]) {
+								exec(args: ["cat", "/mnt/some-file"]) {
+									# modified content should propagate
+									stdout { contents }
+
+									withMountedDirectory(path: "/mnt", source: $id) {
+										exec(args: ["cat", "/mnt/some-file"]) {
+											# should be back to the original content
+											stdout { contents }
+
+											exec(args: ["cat", "/mnt/some-file"]) {
+												# original content override should propagate
+												stdout { contents }
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t,
+		"some-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content\nmore-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Stdout.Contents)
+
+	require.Equal(t,
+		"some-content",
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Exec.Stdout.Contents)
+}
+
+func TestContainerWithMountedFile(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				File struct {
+					ID core.FileID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
+					file(path: "some-dir/sub-file") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.File.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedFile struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: FileID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedFile(path: "/mnt/file", source: $id) {
+						exec(args: ["cat", "/mnt/file"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", execRes.Container.From.WithMountedFile.Exec.Stdout.Contents)
+}
+
+func TestContainerWithMountedCache(t *testing.T) {
+	t.Parallel()
+
+	// a random value used to scope the cache to the test run
+	testRand := identity.NewID()
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithVariable struct {
+					WithMountedCache struct {
+						WithVariable struct {
+							Exec struct {
+								Stdout struct {
+									Contents string
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	query := `query Test($testRand: String!, $rand: String!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withVariable(name: "TESTRAND", value: $testRand) {
+						withMountedCache(path: "/mnt/cache") {
+							withVariable(name: "RAND", value: $rand) {
+								exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/file; cat /mnt/cache/file"]) {
+									stdout {
+										contents
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`
+
+	rand1 := identity.NewID()
+	err := testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"rand":     rand1,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, rand1+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+
+	rand2 := identity.NewID()
+	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"rand":     rand2,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+}
+
+func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				Directory struct {
+					ID core.FileID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-dir/sub-file", contents: "initial-content\n") {
+					directory(path: "some-dir") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	initialID := dirRes.Directory.WithNewFile.Directory.ID
+
+	// a random value used to scope the cache to the test run
+	testRand := identity.NewID()
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithVariable struct {
+					WithMountedCache struct {
+						WithVariable struct {
+							Exec struct {
+								Stdout struct {
+									Contents string
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	query := `query Test($testRand: String!, $rand: String!, $init: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withVariable(name: "TESTRAND", value: $testRand) {
+						withMountedCache(path: "/mnt/cache", source: $init) {
+							withVariable(name: "RAND", value: $rand) {
+								exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"]) {
+									stdout {
+										contents
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`
+
+	rand1 := identity.NewID()
+	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"init":     initialID,
+		"rand":     rand1,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+
+	rand2 := identity.NewID()
+	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+		"init":     initialID,
+		"rand":     rand2,
+		"testRand": testRand,
+	}})
+	require.NoError(t, err)
+	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.WithVariable.Exec.Stdout.Contents)
+}
+
+func TestContainerWithMountedTemp(t *testing.T) {
+	t.Parallel()
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedTemp struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedTemp(path: "/mnt/tmp") {
+						exec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, nil)
+	require.NoError(t, err)
+	require.Contains(t, execRes.Container.From.WithMountedTemp.Exec.Stdout.Contents, "tmpfs /mnt/tmp tmpfs")
+}
+
+func TestContainerMountsWithoutMount(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
 				WithNewFile struct {
 					ID string
 				}
@@ -823,11 +1169,17 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 	execRes := struct {
 		Container struct {
 			From struct {
-				WithMountedDirectory struct {
-					Exec struct {
-						Exec struct {
-							Exec struct {
-								Exec struct {
+				WithMountedTemp struct {
+					Mounts               []string
+					WithMountedDirectory struct {
+						Mounts []string
+						Exec   struct {
+							Stdout struct {
+								Contents string
+							}
+							WithoutMount struct {
+								Mounts []string
+								Exec   struct {
 									Stdout struct {
 										Contents string
 									}
@@ -843,11 +1195,17 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "alpine:3.16.2") {
-					withMountedDirectory(path: "/mnt", source: $id) {
-						exec(args: ["sh", "-c", "test $(cat /mnt/some-file) = some-content"]) {
-							exec(args: ["sh", "-c", "test $(cat /mnt/some-dir/sub-file) = sub-content"]) {
-								exec(args: ["sh", "-c", "echo -n hi > /mnt/hello"]) {
-									exec(args: ["cat", "/mnt/hello"]) {
+					withMountedTemp(path: "/mnt/tmp") {
+						mounts
+						withMountedDirectory(path: "/mnt/dir", source: $id) {
+							mounts
+							exec(args: ["ls", "/mnt/dir"]) {
+								stdout {
+									contents
+								}
+								withoutMount(path: "/mnt/dir") {
+									mounts
+									exec(args: ["ls", "/mnt/dir"]) {
 										stdout {
 											contents
 										}
@@ -862,7 +1220,572 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "hi", execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.Mounts)
+	require.Equal(t, []string{"/mnt/tmp", "/mnt/dir"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Mounts)
+	require.Equal(t, "some-dir\nsome-file\n", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, "", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Mounts)
+}
+
+func TestContainerStackedMounts(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				ID string
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "lower-content") {
+					id
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+	lowerID := dirRes.Directory.WithNewFile.ID
+
+	err = testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "upper-content") {
+					id
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+	upperID := dirRes.Directory.WithNewFile.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Mounts []string
+					Exec   struct {
+						Stdout struct {
+							Contents string
+						}
+						WithMountedDirectory struct {
+							Mounts []string
+							Exec   struct {
+								Stdout struct {
+									Contents string
+								}
+								WithoutMount struct {
+									Mounts []string
+									Exec   struct {
+										Stdout struct {
+											Contents string
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($lower: DirectoryID!, $upper: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $lower) {
+						mounts
+						exec(args: ["cat", "/mnt/dir/some-file"]) {
+							stdout {
+								contents
+							}
+							withMountedDirectory(path: "/mnt/dir", source: $upper) {
+								mounts
+								exec(args: ["cat", "/mnt/dir/some-file"]) {
+									stdout {
+										contents
+									}
+									withoutMount(path: "/mnt/dir") {
+										mounts
+										exec(args: ["cat", "/mnt/dir/some-file"]) {
+											stdout {
+												contents
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"lower": lowerID,
+			"upper": upperID,
+		}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Mounts)
+	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/mnt/dir", "/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Mounts)
+	require.Equal(t, "upper-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Mounts)
+	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
+}
+
+func TestContainerMountDirectory(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.WithNewFile.ID
+
+	writeRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					WithMountedDirectory struct {
+						Exec struct {
+							Directory struct {
+								ID core.DirectoryID
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						withMountedDirectory(path: "/mnt/dir/overlap", source: $id) {
+							exec(args: ["sh", "-c", "echo hello >> /mnt/dir/overlap/another-file"]) {
+								directory(path: "/mnt/dir/overlap") {
+									id
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &writeRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+
+	writtenID := writeRes.Container.From.WithMountedDirectory.WithMountedDirectory.Exec.Directory.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						exec(args: ["cat", "/mnt/dir/another-file"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": writtenID,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t, "hello\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+}
+
+func TestContainerMountDirectoryErrors(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.WithNewFile.ID
+
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						directory(path: "/mnt/dir/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: no such file or directory")
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedTemp(path: "/mnt/tmp") {
+						directory(path: "/mnt/tmp/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: cannot retrieve directory from tmpfs")
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedCache(path: "/mnt/cache") {
+						directory(path: "/mnt/cache/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: cannot retrieve directory from cache")
+}
+
+func TestContainerMountDirectorySourcePath(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				Directory struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-dir/sub-dir/sub-file", contents: "sub-content\n") {
+					directory(path: "some-dir") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.Directory.ID
+
+	writeRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Directory struct {
+							ID core.DirectoryID
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						exec(args: ["sh", "-c", "echo more-content >> /mnt/dir/sub-dir/sub-file"]) {
+							directory(path: "/mnt/dir/sub-dir") {
+								id
+							}
+						}
+					}
+				}
+			}
+		}`, &writeRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+
+	writtenID := writeRes.Container.From.WithMountedDirectory.Exec.Directory.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						exec(args: ["cat", "/mnt/dir/sub-file"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": writtenID,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+}
+
+func TestContainerFSDirectory(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Container struct {
+			From struct {
+				Directory struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}{}
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					directory(path: "/etc") {
+						id
+					}
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	etcID := dirRes.Container.From.Directory.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/etc", source: $id) {
+						exec(args: ["cat", "/mnt/etc/alpine-release"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": etcID,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t, "3.16.2\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+}
+
+func TestContainerRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				ID core.DirectoryID
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					id
+				}
+			}
+		}`, &dirRes, nil)
+	require.NoError(t, err)
+
+	id := dirRes.Directory.WithNewFile.ID
+
+	writeRes := struct {
+		Container struct {
+			From struct {
+				Exec struct {
+					WithWorkdir struct {
+						WithWorkdir struct {
+							Workdir              string
+							WithMountedDirectory struct {
+								WithMountedTemp struct {
+									WithMountedCache struct {
+										Mounts []string
+										Exec   struct {
+											Directory struct {
+												ID core.DirectoryID
+											}
+										}
+										WithoutMount struct {
+											Mounts []string
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					exec(args: ["mkdir", "-p", "/mnt/sub"]) {
+						withWorkdir(path: "/mnt") {
+							withWorkdir(path: "sub") {
+								workdir
+								withMountedDirectory(path: "dir", source: $id) {
+									withMountedTemp(path: "tmp") {
+										withMountedCache(path: "cache") {
+											mounts
+											exec(args: ["touch", "dir/another-file"]) {
+												directory(path: "dir") {
+													id
+												}
+											}
+											withoutMount(path: "cache") {
+												mounts
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &writeRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t,
+		[]string{"/mnt/sub/dir", "/mnt/sub/tmp", "/mnt/sub/cache"},
+		writeRes.Container.From.Exec.WithWorkdir.WithWorkdir.WithMountedDirectory.WithMountedTemp.WithMountedCache.Mounts)
+
+	require.Equal(t,
+		[]string{"/mnt/sub/dir", "/mnt/sub/tmp"},
+		writeRes.Container.From.Exec.WithWorkdir.WithWorkdir.WithMountedDirectory.WithMountedTemp.WithMountedCache.WithoutMount.Mounts)
+
+	writtenID := writeRes.Container.From.Exec.WithWorkdir.WithWorkdir.WithMountedDirectory.WithMountedTemp.WithMountedCache.Exec.Directory.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						exec(args: ["ls", "/mnt/dir"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": writtenID,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t, "another-file\nsome-file\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
 func TestContainerMultiFrom(t *testing.T) {
