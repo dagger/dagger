@@ -131,16 +131,6 @@ func (s *projectSchema) project(ctx *router.Context, parent struct{}, args proje
 		return nil, fmt.Errorf("project %q not found", args.Name)
 	}
 	return &Project{Name: args.Name}, nil
-
-	/* TODO:
-	if args.Name == (&coreSchema{}).Name() {
-		coreSchema := s.router.Get(args.Name)
-		return &Project{
-			Name:   "core",
-			Schema: coreSchema.Schema(),
-		}, nil
-	}
-	*/
 }
 
 func (s *projectSchema) schema(ctx *router.Context, parent *Project, args any) (string, error) {

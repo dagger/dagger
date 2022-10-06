@@ -25,9 +25,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
 	rootCmd.AddCommand(
 		doCmd,
-		generateCmd,
 		devCmd,
 		versionCmd,
+		// TODO:(sipsma) disabling generate for the moment since it's not currently used anywhere, keeping the plumbing around though
+		// generateCmd,
 	)
 
 	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")

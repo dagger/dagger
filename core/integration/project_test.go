@@ -78,7 +78,6 @@ func TestExtensionMount(t *testing.T) {
 * Exported and unexported methods and struct fields
 * Provide multiple structs that have overlapping "type trees"
 * Unnamed (inlined) structs. e.g. `type Foo struct { Bar struct { Baz string } }`
-* Actual names for all these tests (not a,b,c,etc.)
 * Circular types (i.e. structs that have fields that reference themselves, etc.)
 */
 func TestCodeToSchema(t *testing.T) {

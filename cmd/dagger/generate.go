@@ -12,6 +12,7 @@ import (
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
+// nolint:deadcode,unused,varcheck
 var generateCmd = &cobra.Command{
 	Use: "generate",
 	Run: Generate,
