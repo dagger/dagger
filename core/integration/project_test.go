@@ -16,7 +16,7 @@ import (
 func TestExtensionMount(t *testing.T) {
 	startOpts := &engine.Config{
 		Workdir:    "../../",
-		ConfigPath: "core/integration/testdata/extension/dagger.yaml",
+		ConfigPath: "core/integration/testdata/extension/cloak.yaml",
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
@@ -74,7 +74,7 @@ func TestExtensionMount(t *testing.T) {
 func TestGoGenerate(t *testing.T) {
 	tmpdir := t.TempDir()
 
-	daggerYamlPath := filepath.Join(tmpdir, "dagger.yaml")
+	daggerYamlPath := filepath.Join(tmpdir, "cloak.yaml")
 	err := os.WriteFile(daggerYamlPath, []byte(`
 name: testgogenerate
 scripts:

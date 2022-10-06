@@ -22,7 +22,7 @@ displayed_sidebar: "0.3"
 Simple alpine example:
 
 ```console
-dagger -p examples/alpine/dagger.yaml do <<'EOF'
+dagger -p examples/alpine/cloak.yaml do <<'EOF'
 {
   alpine{
     build(pkgs:["curl"]) {
@@ -38,7 +38,7 @@ EOF
 Yarn build (output will just be encoded fs bytes for now, need to add export or shell util to dagger CLI interface):
 
 ```console
-dagger -p examples/yarn/dagger.yaml do --local-dir source=. --set runArgs=build
+dagger -p examples/yarn/cloak.yaml do --local-dir source=. --set runArgs=build
 ```
 
 ## Development

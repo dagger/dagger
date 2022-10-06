@@ -23,7 +23,7 @@ Some problems in the DX that are not yet resolved, and this proposal would help 
 
 * Uncertainty as to how to express uploads in a graphql-friendly way (deployment, image push, git push, etc)
 * Chaining of FS operations greatly reduces verbosity, but cannot be applied all the time
-* Loading extensions from custom locations requires re-inventing parts of our graphql API in a mini-DSL in dagger.yaml
+* Loading extensions from custom locations requires re-inventing parts of our graphql API in a mini-DSL in cloak.yaml
 * Transitioning a script to an extension requires non-trivial refactoring, to tease apart the script-specific code from the underlying "API".
 * The API sandbox is amazing for prototyping small queries, but of limited use when multiple queries must reference each other. This is because the native code doing the stitching cannot be run by the playground, so filesystem IDs must be manually copy-pasted between queries.
 

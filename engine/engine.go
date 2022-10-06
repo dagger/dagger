@@ -29,7 +29,7 @@ import (
 
 const (
 	workdirID      = "__dagger_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
-	daggerYamlName = "dagger.yaml"
+	daggerYamlName = "cloak.yaml"
 )
 
 type Config struct {

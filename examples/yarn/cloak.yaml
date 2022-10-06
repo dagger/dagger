@@ -3,4 +3,4 @@ extensions:
   - path: .
     sdk: ts
 dependencies:
-  - local: ../alpine/dagger.yaml
+  - local: ../alpine/cloak.yaml

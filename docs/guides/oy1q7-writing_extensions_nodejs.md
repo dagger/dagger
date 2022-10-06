@@ -31,7 +31,7 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
    - `yarn add --dev git+https://github.com/dagger/dagger.git#cloak`
    - `yarn install`
 
-1. Create a new file called `dagger.yaml`
+1. Create a new file called `cloak.yaml`
 
    - This is where you declare your project, and other project that it depends on. All extensions declared in this file will be built, loaded, and available to be called when the project is loaded into dagger.
    - Create the file in the following format:
@@ -45,11 +45,11 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
      - git:
          remote: https://github.com/dagger/dagger.git
          ref: cloak
-         path: examples/yarn/dagger.yaml
+         path: examples/yarn/cloak.yaml
      - git:
          remote: https://github.com/dagger/dagger.git
          ref: cloak
-         path: examples/netlify/go/dagger.yaml
+         path: examples/netlify/go/cloak.yaml
    ```
 
    - The dependencies are optional and just examples, feel free to change as needed.
@@ -85,7 +85,7 @@ This can also be added to the scripts in `package.json` for more convenient invo
 
 ## Create your extension
 
-Update your `dagger.yaml` to include a new `extensions` key:
+Update your `cloak.yaml` to include a new `extensions` key:
 
 ```yaml
 name: foo
@@ -99,11 +99,11 @@ dependencies:
   - git:
       remote: https://github.com/dagger/dagger.git
       ref: cloak
-      path: examples/yarn/dagger.yaml
+      path: examples/yarn/cloak.yaml
   - git:
       remote: https://github.com/dagger/dagger.git
       ref: cloak
-      path: examples/netlify/go/dagger.yaml
+      path: examples/netlify/go/cloak.yaml
 ```
 
 ### Create schema files
