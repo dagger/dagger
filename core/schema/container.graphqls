@@ -70,6 +70,12 @@ type Container {
     "This container but with a different command entrypoint"
     withEntrypoint(args: [String!]!): Container!
 
+    "Default arguments for future commands"
+    defaultArgs: [String!]
+
+    "Configures default arguments for future commands"
+    withDefaultArgs(args: [String!]): Container!
+
     "List of paths where a directory is mounted"
     mounts: [String!]!
 
@@ -95,7 +101,7 @@ type Container {
 
     "This container after executing the specified command inside it"
     # FIXME: verb
-    exec(args: [String!]!, opts: ExecOpts): Container!
+    exec(args: [String!], opts: ExecOpts): Container!
 
     """
     Exit code of the last executed command. Zero means success.
