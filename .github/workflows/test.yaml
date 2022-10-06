@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v3
       - run: go test -v ./...
   go-race:
+    needs: [go] # prioritize fast feedback + don't bother if tests fail
     name: go with -race
     runs-on: ubuntu-22.04-16c-64g-600gb
     steps:
