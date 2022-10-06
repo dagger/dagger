@@ -553,7 +553,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 		return nil, err
 	}
 
-	if file != nil {
+	if file == nil {
 		return nil, nil
 	}
 

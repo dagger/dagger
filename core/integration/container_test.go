@@ -76,7 +76,7 @@ func TestContainerExecExitCode(t *testing.T) {
 		Container struct {
 			From struct {
 				Exec struct {
-					ExitCode int
+					ExitCode *int
 				}
 			}
 		}
@@ -93,7 +93,8 @@ func TestContainerExecExitCode(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Exec.ExitCode, 0)
+	require.NotNil(t, res.Container.From.Exec.ExitCode)
+	require.Equal(t, 0, *res.Container.From.Exec.ExitCode)
 
 	/*
 		It's not currently possible to get a nonzero exit code back because
