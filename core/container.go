@@ -531,12 +531,13 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 		secretOpts := []llb.SecretOption{llb.SecretID(string(secret.Secret))}
 
 		var secretDest string
-		if secret.EnvName != "" {
+		switch {
+		case secret.EnvName != "":
 			secretDest = secret.EnvName
 			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
-		} else if secret.MountPath != "" {
+		case secret.MountPath != "":
 			secretDest = secret.MountPath
-		} else {
+		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
 

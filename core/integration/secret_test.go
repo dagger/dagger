@@ -11,34 +11,7 @@ import (
 func TestSecretEnvFromFile(t *testing.T) {
 	t.Parallel()
 
-	var secretRes struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					Secret struct {
-						ID core.SecretID
-					}
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						secret {
-							id
-						}
-					}
-				}
-			}
-		}`, &secretRes, nil)
-	require.NoError(t, err)
-
-	secretID := secretRes.Directory.WithNewFile.File.Secret.ID
-	require.NotEmpty(t, secretID)
+	secretID := secretID(t, "some-content")
 
 	var envRes struct {
 		Container struct {
@@ -52,7 +25,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 		}
 	}
 
-	err = testutil.Query(
+	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "alpine:3.16.2") {
@@ -73,34 +46,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 func TestSecretMountFromFile(t *testing.T) {
 	t.Parallel()
 
-	var secretRes struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					Secret struct {
-						ID core.SecretID
-					}
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						secret {
-							id
-						}
-					}
-				}
-			}
-		}`, &secretRes, nil)
-	require.NoError(t, err)
-
-	secretID := secretRes.Directory.WithNewFile.File.Secret.ID
-	require.NotEmpty(t, secretID)
+	secretID := secretID(t, "some-content")
 
 	var envRes struct {
 		Container struct {
@@ -114,7 +60,7 @@ func TestSecretMountFromFile(t *testing.T) {
 		}
 	}
 
-	err = testutil.Query(
+	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "alpine:3.16.2") {
@@ -130,4 +76,39 @@ func TestSecretMountFromFile(t *testing.T) {
 		}})
 	require.NoError(t, err)
 	require.Contains(t, envRes.Container.From.WithMountedSecret.Exec.Stdout.Contents, "some-content")
+}
+
+func secretID(t *testing.T, content string) core.SecretID {
+	var secretRes struct {
+		Directory struct {
+			WithNewFile struct {
+				File struct {
+					Secret struct {
+						ID core.SecretID
+					}
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`query Test($content: String!) {
+			directory {
+				withNewFile(path: "some-file", contents: $content) {
+					file(path: "some-file") {
+						secret {
+							id
+						}
+					}
+				}
+			}
+		}`, &secretRes, &testutil.QueryOptions{Variables: map[string]any{
+			"content": content,
+		}})
+	require.NoError(t, err)
+
+	secretID := secretRes.Directory.WithNewFile.File.Secret.ID
+	require.NotEmpty(t, secretID)
+
+	return secretID
 }
