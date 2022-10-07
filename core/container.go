@@ -412,7 +412,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []string, opts ContainerExecOpts) (*Container, error) {
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]string, opts ContainerExecOpts) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -427,15 +427,23 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args []str
 		return nil, fmt.Errorf("build shim: %w", err)
 	}
 
+	if args == nil {
+		// we clear the default args configured if nil
+		args = &[]string{}
+	} else if len(*args) == 0 {
+		// we use the default args if no new default args are passed
+		*args = cfg.Cmd
+	}
+
 	if len(cfg.Entrypoint) > 0 {
-		args = append(cfg.Entrypoint, args...)
+		*args = append(cfg.Entrypoint, *args...)
 	}
 
 	runOpts := []llb.RunOption{
 		// run the command via the shim, hide shim behind custom name
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
-		llb.Args(append([]string{shim.Path}, args...)),
-		llb.WithCustomName(strings.Join(args, " ")),
+		llb.Args(append([]string{shim.Path}, *args...)),
+		llb.WithCustomName(strings.Join(*args, " ")),
 
 		// create /dagger mount point for the shim to write to
 		llb.AddMount(
@@ -687,6 +695,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withoutVariable":      router.ToResolver(s.withoutVariable),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
+			"defaultArgs":          router.ToResolver(s.defaultArgs),
+			"withDefaultArgs":      router.ToResolver(s.withDefaultArgs),
 			"mounts":               router.ToResolver(s.mounts),
 			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
 			"withMountedFile":      router.ToResolver(s.withMountedFile),
@@ -759,7 +769,8 @@ func (s *containerSchema) rootfs(ctx *router.Context, parent *Container, args an
 }
 
 type containerExecArgs struct {
-	Args []string
+	// Args is optional. If it is nil, we the default args for the image.
+	Args *[]string
 	Opts ContainerExecOpts
 }
 
@@ -803,6 +814,31 @@ func (s *containerSchema) entrypoint(ctx *router.Context, parent *Container, arg
 	}
 
 	return cfg.Entrypoint, nil
+}
+
+type containerWithDefaultArgs struct {
+	Args *[]string
+}
+
+func (s *containerSchema) withDefaultArgs(ctx *router.Context, parent *Container, args containerWithDefaultArgs) (*Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		if args.Args == nil {
+			cfg.Cmd = []string{}
+			return cfg
+		}
+
+		cfg.Cmd = *args.Args
+		return cfg
+	})
+}
+
+func (s *containerSchema) defaultArgs(ctx *router.Context, parent *Container, args any) ([]string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cfg.Cmd, nil
 }
 
 type containerWithUserArgs struct {

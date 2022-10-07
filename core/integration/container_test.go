@@ -389,6 +389,108 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	require.Empty(t, res.Container.From.WithEntrypoint.WithEntrypoint.Entrypoint)
 }
 
+func TestContainerWithDefaultArgs(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Entrypoint  []string
+				DefaultArgs []string
+				Exec        struct {
+					Stdout struct {
+						Contents string
+					}
+				}
+				WithDefaultArgs struct {
+					Entrypoint  []string
+					DefaultArgs []string
+				}
+				WithEntrypoint struct {
+					Entrypoint  []string
+					DefaultArgs []string
+					Exec        struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+					WithDefaultArgs struct {
+						Entrypoint  []string
+						DefaultArgs []string
+						Exec        struct {
+							Stdout struct {
+								Contents string
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					entrypoint
+					defaultArgs
+					withDefaultArgs {
+						entrypoint
+						defaultArgs
+					}
+
+					withEntrypoint(args: ["sh", "-c"]) {
+						entrypoint
+						defaultArgs
+
+						exec(args: ["echo $HOME"]) {
+							stdout {
+								contents
+							}
+						}
+
+						withDefaultArgs(args: ["id"]) {
+							entrypoint
+							defaultArgs
+
+							exec(args: []) {
+								stdout {
+									contents
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	t.Run("default alpine (no entrypoint)", func(t *testing.T) {
+		require.NoError(t, err)
+		require.Empty(t, res.Container.From.Entrypoint)
+		require.Equal(t, []string{"/bin/sh"}, res.Container.From.DefaultArgs)
+	})
+
+	t.Run("with nil default args", func(t *testing.T) {
+		require.Empty(t, res.Container.From.WithDefaultArgs.Entrypoint)
+		require.Empty(t, res.Container.From.WithDefaultArgs.DefaultArgs)
+	})
+
+	t.Run("with entrypoint set", func(t *testing.T) {
+		require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
+		require.Equal(t, []string{"/bin/sh"}, res.Container.From.WithEntrypoint.DefaultArgs)
+	})
+
+	t.Run("with exec args", func(t *testing.T) {
+		require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout.Contents)
+	})
+
+	t.Run("with default args set", func(t *testing.T) {
+		require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.WithDefaultArgs.Entrypoint)
+		require.Equal(t, []string{"id"}, res.Container.From.WithEntrypoint.WithDefaultArgs.DefaultArgs)
+
+		require.Equal(t, "uid=0(root) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)\n", res.Container.From.WithEntrypoint.WithDefaultArgs.Exec.Stdout.Contents)
+	})
+}
+
 func TestContainerExecWithVariable(t *testing.T) {
 	t.Parallel()
 
