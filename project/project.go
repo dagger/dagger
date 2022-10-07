@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"sync"
 
@@ -15,7 +16,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
-	"golang.org/x/sync/singleflight"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -35,130 +36,211 @@ const (
 	outputFile      = "/dagger.json"
 )
 
-// RemoteSchema holds the schema and other configuration of an
-// extension, but has not yet been "compiled" with an SDK to an executable
-// extension. This allows obtaining the extension metadata without necessarily
-// being able to build it yet.
-type RemoteSchema struct {
-	gw         bkgw.Client
-	platform   specs.Platform
-	contextFS  *filesystem.Filesystem
+type State struct {
+	config     projectConfig
+	workdir    *filesystem.Filesystem
 	configPath string
 
-	router.LoadedSchema
-	dependencies  []*RemoteSchema
-	scripts       []*Script
-	extensions    []*Extension
-	sshAuthSockID string
+	schema     string
+	schemaOnce sync.Once
+
+	dependencies     []*State
+	dependenciesOnce sync.Once
+
+	extensionsOnce sync.Once
+
+	resolvers     router.Resolvers
+	resolversOnce sync.Once
 }
 
-func Load(ctx context.Context, gw bkgw.Client, platform specs.Platform, contextFS *filesystem.Filesystem, configPath string, sshAuthSockID string) (*RemoteSchema, error) {
-	cfgBytes, err := contextFS.ReadFile(ctx, gw, configPath)
+func Load(
+	ctx context.Context,
+	workdir *filesystem.Filesystem,
+	configPath string,
+	cache map[string]*State,
+	cacheMu *sync.RWMutex,
+	gw bkgw.Client,
+) (*State, error) {
+	cfgBytes, err := workdir.ReadFile(ctx, gw, configPath)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := ParseConfig(cfgBytes)
-	if err != nil {
+	s := &State{
+		workdir:    workdir,
+		configPath: configPath,
+		resolvers:  make(router.Resolvers),
+	}
+	if err := yaml.UnmarshalStrict(cfgBytes, &s.config); err != nil {
 		return nil, err
 	}
 
-	s := &RemoteSchema{
-		gw:            gw,
-		platform:      platform,
-		contextFS:     contextFS,
-		configPath:    configPath,
-		scripts:       cfg.Scripts,
-		extensions:    cfg.Extensions,
-		sshAuthSockID: sshAuthSockID,
+	if s.config.Name == "" {
+		return nil, fmt.Errorf("project name must be set")
 	}
-
-	sourceSchemas := make([]router.LoadedSchema, len(cfg.Extensions))
-	for i, ext := range cfg.Extensions {
-		// filepath.Join and .Dir both swap file separator characters on Windows
-		sdl, err := contextFS.ReadFile(ctx, gw, filepath.ToSlash(filepath.Join(
-			filepath.Dir(configPath),
-			ext.Path,
-			schemaPath,
-		)))
-		if err != nil {
-			return nil, err
-		}
-		ext.Schema = string(sdl)
-
-		sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
-			Schema: ext.Schema,
-		})
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	existing, ok := cache[s.config.Name]
+	if ok {
+		return existing, nil
 	}
-	s.LoadedSchema = router.MergeLoadedSchemas(cfg.Name, sourceSchemas...)
-
-	// TODO:(sipsma) guard against infinite recursion
-	// TODO:(sipsma) deduplicate load of same dependencies (same as compile)
-	for _, dep := range cfg.Dependencies {
-		// TODO:(sipsma) ensure only one source is specified
-		switch {
-		case dep.Local != "":
-			depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(configPath), dep.Local))
-			depSchema, err := Load(ctx, gw, platform, contextFS, depConfigPath, sshAuthSockID)
-			if err != nil {
-				return nil, err
-			}
-			s.dependencies = append(s.dependencies, depSchema)
-		case dep.Git != nil:
-			var opts []llb.GitOption
-			if sshAuthSockID != "" {
-				opts = append(opts, llb.MountSSHSock(sshAuthSockID))
-			}
-			gitFS, err := filesystem.FromState(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), platform)
-			if err != nil {
-				return nil, err
-			}
-			depSchema, err := Load(ctx, gw, platform, gitFS, dep.Git.Path, sshAuthSockID)
-			if err != nil {
-				return nil, err
-			}
-			s.dependencies = append(s.dependencies, depSchema)
-		}
-	}
-
+	cache[s.config.Name] = s
 	return s, nil
 }
 
-func (s *RemoteSchema) Dependencies() []*RemoteSchema {
-	return s.dependencies
+func (p *State) Name() string {
+	return p.config.Name
 }
 
-func (s *RemoteSchema) Scripts() []*Script {
-	return s.scripts
-}
-
-func (s *RemoteSchema) Extensions() []*Extension {
-	return s.extensions
-}
-
-func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRemoteSchema, l *sync.RWMutex, sf *singleflight.Group) (*CompiledRemoteSchema, error) {
-	res, err, _ := sf.Do(s.Name(), func() (interface{}, error) {
-		// if we have already compiled a schema with this name, return it
-		// TODO:(sipsma) should check that schema is actually the same, error out if not
-		l.RLock()
-		cached, ok := cache[s.Name()]
-		l.RUnlock()
-		if ok {
-			return cached, nil
+func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (string, error) {
+	var rerr error
+	p.schemaOnce.Do(func() {
+		sourceSchemas := make([]router.LoadedSchema, len(p.config.Extensions))
+		extensions, err := p.Extensions(ctx, gw, platform, sshAuthSockID)
+		if err != nil {
+			rerr = err
+			return
 		}
-
-		compiled := &CompiledRemoteSchema{
-			RemoteSchema: s,
-			resolvers:    router.Resolvers{},
+		for i, ext := range extensions {
+			sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
+				Schema: ext.Schema,
+			})
 		}
+		p.schema = router.MergeLoadedSchemas(p.config.Name, sourceSchemas...).Schema()
+	})
+	return p.schema, rerr
+}
 
-		for _, ext := range s.extensions {
-			runtimeFS, err := s.Runtime(ctx, ext)
-			if err != nil {
-				return nil, err
+func (p *State) Dependencies(
+	ctx context.Context,
+	cache map[string]*State,
+	cacheMu *sync.RWMutex,
+	gw bkgw.Client,
+	platform specs.Platform,
+	sshAuthSockID string,
+) ([]*State, error) {
+	var rerr error
+	p.dependenciesOnce.Do(func() {
+		p.dependencies = make([]*State, len(p.config.Dependencies))
+		for i, dep := range p.config.Dependencies {
+			switch {
+			case dep.Local != "":
+				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local))
+				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw)
+				if err != nil {
+					rerr = err
+					return
+				}
+				p.dependencies[i] = depState
+			case dep.Git != nil:
+				var opts []llb.GitOption
+				if sshAuthSockID != "" {
+					opts = append(opts, llb.MountSSHSock(sshAuthSockID))
+				}
+				gitFS, err := filesystem.FromState(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), platform)
+				if err != nil {
+					rerr = err
+					return
+				}
+				depState, err := Load(ctx, gitFS, dep.Git.Path, cache, cacheMu, gw)
+				if err != nil {
+					rerr = err
+					return
+				}
+				p.dependencies[i] = depState
 			}
-			doc, err := parser.Parse(parser.ParseParams{Source: s.Schema()})
+		}
+	})
+	return p.dependencies, rerr
+}
+
+func (p *State) Extensions(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) ([]*Extension, error) {
+	var rerr error
+	p.extensionsOnce.Do(func() {
+		for i, ext := range p.config.Extensions {
+			// first try to load a hardcoded schema
+			// TODO: remove this once all extensions migrate to code-first
+			schemaBytes, err := p.workdir.ReadFile(ctx, gw, path.Join(path.Dir(p.configPath), ext.Path, schemaPath))
+			if err == nil {
+				p.config.Extensions[i].Schema = string(schemaBytes)
+				continue
+			}
+
+			// otherwise go ask the extension for its schema
+			runtimeFS, err := p.Runtime(ctx, ext, gw, platform, sshAuthSockID)
 			if err != nil {
-				return nil, err
+				rerr = err
+				return
+			}
+			fsState, err := runtimeFS.ToState()
+			if err != nil {
+				rerr = err
+				return
+			}
+
+			workdirSt, err := p.workdir.ToState()
+			if err != nil {
+				rerr = err
+				return
+			}
+			st := fsState.Run(
+				llb.Args([]string{entrypointPath, "-schema"}),
+				llb.AddMount("/src", workdirSt, llb.Readonly),
+				llb.ReadonlyRootFS(),
+			)
+			outputMnt := st.AddMount(outputMountPath, llb.Scratch())
+			outputDef, err := outputMnt.Marshal(ctx, llb.Platform(platform))
+			if err != nil {
+				rerr = err
+				return
+			}
+			res, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Definition: outputDef.ToPB(),
+			})
+			if err != nil {
+				rerr = err
+				return
+			}
+			ref, err := res.SingleRef()
+			if err != nil {
+				rerr = err
+				return
+			}
+			outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+				Filename: "/schema.graphql",
+			})
+			if err != nil {
+				rerr = err
+				return
+			}
+
+			ext.Schema = string(outputBytes)
+		}
+	})
+	return p.config.Extensions, rerr
+}
+
+func (p *State) Scripts() []*Script {
+	return p.config.Scripts
+}
+
+func (p *State) Resolvers(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (router.Resolvers, error) {
+	var rerr error
+	p.resolversOnce.Do(func() {
+		extensions, err := p.Extensions(ctx, gw, platform, sshAuthSockID)
+		if err != nil {
+			rerr = err
+			return
+		}
+		for _, ext := range extensions {
+			runtimeFS, err := p.Runtime(ctx, ext, gw, platform, sshAuthSockID)
+			if err != nil {
+				rerr = err
+				return
+			}
+			doc, err := parser.Parse(parser.ParseParams{Source: ext.Schema})
+			if err != nil {
+				rerr = err
+				return
 			}
 			for _, def := range doc.Definitions {
 				var obj *ast.ObjectDefinition
@@ -176,52 +258,17 @@ func (s RemoteSchema) Compile(ctx context.Context, cache map[string]*CompiledRem
 				}
 
 				objResolver := router.ObjectResolver{}
-				compiled.resolvers[obj.Name.Value] = objResolver
+				p.resolvers[obj.Name.Value] = objResolver
 				for _, field := range obj.Fields {
-					objResolver[field.Name.Value] = compiled.resolver(runtimeFS)
+					objResolver[field.Name.Value] = p.resolver(runtimeFS, ext.SDK, gw, platform)
 				}
 			}
 		}
-
-		for _, dep := range s.dependencies {
-			// TODO:(sipsma) guard against infinite recursion
-			depCompiled, err := dep.Compile(ctx, cache, l, sf)
-			if err != nil {
-				return nil, err
-			}
-			compiled.dependencies = append(compiled.dependencies, depCompiled)
-		}
-
-		l.Lock()
-		cache[s.Name()] = compiled
-		l.Unlock()
-		return compiled, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return res.(*CompiledRemoteSchema), nil
+	return p.resolvers, rerr
 }
 
-// CompiledRemoteSchema is the compiled version of RemoteSchema where the
-// SDK has built its input into an executable extension.
-type CompiledRemoteSchema struct {
-	RemoteSchema
-	dependencies []router.ExecutableSchema
-	resolvers    router.Resolvers
-}
-
-var _ router.ExecutableSchema = &CompiledRemoteSchema{}
-
-func (s *CompiledRemoteSchema) Resolvers() router.Resolvers {
-	return s.resolvers
-}
-
-func (s *CompiledRemoteSchema) Dependencies() []router.ExecutableSchema {
-	return s.dependencies
-}
-
-func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphql.FieldResolveFn {
+func (p *State) resolver(runtimeFS *filesystem.Filesystem, sdk string, gw bkgw.Client, platform specs.Platform) graphql.FieldResolveFn {
 	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
 		pathArray := ctx.ResolveParams.Info.Path.AsArray()
 		name := fmt.Sprintf("%+v", pathArray)
@@ -243,6 +290,11 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 			return nil, err
 		}
 
+		workdirSt, err := p.workdir.ToState()
+		if err != nil {
+			return nil, err
+		}
+
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
 			llb.AddSSHSocket(
@@ -253,6 +305,11 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
 			llb.ReadonlyRootFS(),
 		)
+
+		// TODO:
+		if sdk == "go" {
+			st.AddMount("/src", workdirSt, llb.Readonly) // TODO: not actually needed here, just makes go server code easier at moment
+		}
 
 		// TODO: /mnt should maybe be configurable?
 		for path, fsid := range collectFSPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
@@ -288,12 +345,12 @@ func (s *CompiledRemoteSchema) resolver(runtimeFS *filesystem.Filesystem) graphq
 		}
 
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(s.platform), llb.WithCustomName(name))
+		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(platform), llb.WithCustomName(name))
 		if err != nil {
 			return nil, err
 		}
 
-		res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: outputDef.ToPB(),
 		})
 		if err != nil {

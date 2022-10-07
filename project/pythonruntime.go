@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
 )
 
-func (s RemoteSchema) pythonRuntime(ctx context.Context, subpath string) (*filesystem.Filesystem, error) {
-	contextState, err := s.contextFS.ToState()
+func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*filesystem.Filesystem, error) {
+	contextState, err := p.workdir.ToState()
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +21,7 @@ func (s RemoteSchema) pythonRuntime(ctx context.Context, subpath string) (*files
 	if err != nil {
 		return nil, err
 	}
-	ctrSrcPath := filepath.Join(workdir, filepath.Dir(s.configPath), subpath)
+	ctrSrcPath := filepath.Join(workdir, filepath.Dir(p.configPath), subpath)
 	entrypointScript := fmt.Sprintf(`#!/bin/sh
 set -exu
 # go to the workdir
@@ -33,7 +35,7 @@ python3 main.py
 	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
 	return filesystem.FromState(ctx,
 		llb.Merge([]llb.State{
-			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(s.gw)).
+			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client socat`)).Root(),
 			llb.Scratch().
 				File(llb.Copy(contextState, "/", "/src")),
@@ -52,10 +54,10 @@ python3 main.py
 					llb.Scratch(),
 					llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
 				),
-				withSSHAuthSock(s.sshAuthSockID, "/ssh-agent.sock"),
+				withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 				addSSHKnownHosts,
 			).
 			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),
-		s.platform,
+		platform,
 	)
 }

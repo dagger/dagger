@@ -16,7 +16,14 @@ import (
 	netlifycontext "github.com/netlify/open-api/v2/go/porcelain/context"
 )
 
-func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
+func main() {
+	dagger.Serve(Netlify{})
+}
+
+type Netlify struct {
+}
+
+func (Netlify) Deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
 	client, err := dagger.Client(ctx)
 	if err != nil {
 		return nil, err
@@ -82,6 +89,12 @@ func (r *netlify) deploy(ctx context.Context, contents dagger.FSID, subdir *stri
 		URL:       deploy.URL,
 		DeployURL: deploy.DeployURL,
 	}, nil
+}
+
+type SiteURLs struct {
+	URL       string
+	DeployURL string
+	LogsURL   string
 }
 
 func secret(ctx context.Context, client graphql.Client, id dagger.SecretID) (string, error) {

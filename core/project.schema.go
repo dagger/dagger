@@ -1,33 +1,22 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
+	"github.com/pkg/errors"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
-	"golang.org/x/sync/singleflight"
 )
-
-type Project struct {
-	Name         string               `json:"name"`
-	Schema       string               `json:"schema,omitempty"`
-	Dependencies []*Project           `json:"dependencies,omitempty"`
-	Scripts      []*project.Script    `json:"scripts,omitempty"`
-	Extensions   []*project.Extension `json:"extensions,omitempty"`
-}
 
 var _ router.ExecutableSchema = &projectSchema{}
 
 type projectSchema struct {
 	*baseSchema
-	remoteSchemas     map[string]*project.RemoteSchema
-	remoteSchemasMu   sync.RWMutex
-	compiledSchemas   map[string]*project.CompiledRemoteSchema
-	compiledSchemasMu sync.RWMutex
-	sf                singleflight.Group
-	sshAuthSockID     string
+	projectStates map[string]*project.State
+	mu            sync.RWMutex
 }
 
 func (s *projectSchema) Name() string {
@@ -102,8 +91,12 @@ func (s *projectSchema) Resolvers() router.Resolvers {
 			"project": router.ToResolver(s.project),
 		},
 		"Project": router.ObjectResolver{
+			"schema":        router.ToResolver(s.schema),
+			"extensions":    router.ToResolver(s.extensions),
+			"scripts":       router.ToResolver(s.scripts),
+			"dependencies":  router.ToResolver(s.dependencies),
 			"install":       router.ToResolver(s.install),
-			"generatedCode": router.ToResolver(s.generatedCode),
+			"generatedCode": router.ErrResolver(errors.New("not implemented")),
 		},
 	}
 }
@@ -112,15 +105,85 @@ func (s *projectSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *projectSchema) install(ctx *router.Context, parent *Project, args struct{}) (bool, error) {
-	s.remoteSchemasMu.RLock()
-	remoteSchema, ok := s.remoteSchemas[parent.Name]
-	s.remoteSchemasMu.RUnlock()
+type Project struct {
+	Name string
+}
+
+type loadProjectArgs struct {
+	ConfigPath string
+}
+
+func (s *projectSchema) loadProject(ctx *router.Context, parent *filesystem.Filesystem, args loadProjectArgs) (*Project, error) {
+	projectState, err := project.Load(ctx, parent, args.ConfigPath, s.projectStates, &s.mu, s.gw)
+	if err != nil {
+		return nil, err
+	}
+	return &Project{Name: projectState.Name()}, nil
+}
+
+type projectArgs struct {
+	Name string
+}
+
+func (s *projectSchema) project(ctx *router.Context, parent struct{}, args projectArgs) (*Project, error) {
+	_, ok := s.getProjectState(args.Name)
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", args.Name)
+	}
+	return &Project{Name: args.Name}, nil
+}
+
+func (s *projectSchema) schema(ctx *router.Context, parent *Project, args any) (string, error) {
+	projectState, ok := s.getProjectState(parent.Name)
+	if !ok {
+		return "", fmt.Errorf("project %q not found", parent.Name)
+	}
+	return projectState.Schema(ctx, s.gw, s.platform, s.sshAuthSockID)
+}
+
+func (s *projectSchema) extensions(ctx *router.Context, parent *Project, args any) ([]*project.Extension, error) {
+	projectState, ok := s.getProjectState(parent.Name)
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", parent.Name)
+	}
+	return projectState.Extensions(ctx, s.gw, s.platform, s.sshAuthSockID)
+}
+
+func (s *projectSchema) scripts(ctx *router.Context, parent *Project, args any) ([]*project.Script, error) {
+	projectState, ok := s.getProjectState(parent.Name)
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", parent.Name)
+	}
+	return projectState.Scripts(), nil
+}
+
+func (s *projectSchema) dependencies(ctx *router.Context, parent *Project, args any) ([]*Project, error) {
+	projectState, ok := s.getProjectState(parent.Name)
+	if !ok {
+		return nil, fmt.Errorf("project %q not found", parent.Name)
+	}
+
+	dependencies, err := projectState.Dependencies(ctx, s.projectStates, &s.mu, s.gw, s.platform, s.sshAuthSockID)
+	if err != nil {
+		return nil, err
+	}
+	depProjects := make([]*Project, len(dependencies))
+	for i, dependency := range dependencies {
+		if _, ok := s.projectStates[dependency.Name()]; !ok {
+			s.projectStates[dependency.Name()] = dependency
+		}
+		depProjects[i] = &Project{Name: dependency.Name()}
+	}
+	return depProjects, nil
+}
+
+func (s *projectSchema) install(ctx *router.Context, parent *Project, args any) (bool, error) {
+	projectState, ok := s.getProjectState(parent.Name)
 	if !ok {
 		return false, fmt.Errorf("project %q not found", parent.Name)
 	}
 
-	executableSchema, err := remoteSchema.Compile(ctx, s.compiledSchemas, &s.compiledSchemasMu, &s.sf)
+	executableSchema, err := s.projectToExecutableSchema(ctx, projectState)
 	if err != nil {
 		return false, err
 	}
@@ -132,65 +195,42 @@ func (s *projectSchema) install(ctx *router.Context, parent *Project, args struc
 	return true, nil
 }
 
-type loadProjectArgs struct {
-	ConfigPath string
+func (s *projectSchema) getProjectState(name string) (*project.State, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	projectState, ok := s.projectStates[name]
+	return projectState, ok
 }
 
-func (s *projectSchema) loadProject(ctx *router.Context, parent *filesystem.Filesystem, args loadProjectArgs) (*Project, error) {
-	schema, err := project.Load(ctx, s.gw, s.platform, parent, args.ConfigPath, s.sshAuthSockID)
+func (s *projectSchema) projectToExecutableSchema(ctx context.Context, projectState *project.State) (router.ExecutableSchema, error) {
+	schema, err := projectState.Schema(ctx, s.gw, s.platform, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
-	s.remoteSchemasMu.Lock()
-	defer s.remoteSchemasMu.Unlock()
-	s.remoteSchemas[schema.Name()] = schema
-	return remoteSchemaToProject(schema), nil
-}
 
-type projectArgs struct {
-	Name string
-}
-
-func (s *projectSchema) project(ctx *router.Context, parent struct{}, args projectArgs) (*Project, error) {
-	if args.Name == (&coreSchema{}).Name() {
-		coreSchema := s.router.Get(args.Name)
-		return &Project{
-			Name:   "core",
-			Schema: coreSchema.Schema(),
-		}, nil
+	resolvers, err := projectState.Resolvers(ctx, s.gw, s.platform, s.sshAuthSockID)
+	if err != nil {
+		return nil, err
 	}
 
-	s.remoteSchemasMu.RLock()
-	defer s.remoteSchemasMu.RUnlock()
-	remoteSchema, ok := s.remoteSchemas[args.Name]
-	if !ok {
-		return nil, fmt.Errorf("project %q not found", args.Name)
-	}
-	return remoteSchemaToProject(remoteSchema), nil
-}
-
-func (s *projectSchema) generatedCode(ctx *router.Context, parent *Project, args struct{}) (*filesystem.Filesystem, error) {
-	s.remoteSchemasMu.RLock()
-	remoteSchema, ok := s.remoteSchemas[parent.Name]
-	s.remoteSchemasMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("project %q not found", parent.Name)
+	params := router.StaticSchemaParams{
+		Name:      projectState.Name(),
+		Schema:    schema,
+		Resolvers: resolvers,
 	}
 
-	coreSchema := s.router.Get((&coreSchema{}).Name())
-	return remoteSchema.Generate(ctx, coreSchema.Schema())
-}
+	dependencies, err := projectState.Dependencies(ctx, s.projectStates, &s.mu, s.gw, s.platform, s.sshAuthSockID)
+	if err != nil {
+		return nil, err
+	}
+	// TODO:(sipsma) guard against circular dependencies, dedupe objects
+	for _, dependency := range dependencies {
+		remoteSchema, err := s.projectToExecutableSchema(ctx, dependency)
+		if err != nil {
+			return nil, err
+		}
+		params.Dependencies = append(params.Dependencies, remoteSchema)
+	}
 
-// TODO:(sipsma) guard against infinite recursion
-func remoteSchemaToProject(schema *project.RemoteSchema) *Project {
-	ext := &Project{
-		Name:       schema.Name(),
-		Schema:     schema.Schema(),
-		Scripts:    schema.Scripts(),
-		Extensions: schema.Extensions(),
-	}
-	for _, dep := range schema.Dependencies() {
-		ext.Dependencies = append(ext.Dependencies, remoteSchemaToProject(dep))
-	}
-	return ext
+	return router.StaticSchema(params), nil
 }

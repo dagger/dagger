@@ -46,9 +46,8 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&containerSchema{base},
 		&filesystemSchema{base},
 		&projectSchema{
-			baseSchema:      base,
-			remoteSchemas:   make(map[string]*project.RemoteSchema),
-			compiledSchemas: make(map[string]*project.CompiledRemoteSchema),
+			baseSchema:    base,
+			projectStates: make(map[string]*project.State),
 		},
 		&execSchema{base},
 		&dockerBuildSchema{base},

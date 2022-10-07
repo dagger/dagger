@@ -8,19 +8,21 @@ import (
 	"sort"
 
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
 )
 
 //go:embed go/*
 var goGenerateSrc embed.FS
 
-func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchema string) (*filesystem.Filesystem, error) {
-	projectFS, err := s.contextFS.ToState()
+func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema string, gw bkgw.Client, platform specs.Platform) (*filesystem.Filesystem, error) {
+	projectFS, err := p.workdir.ToState()
 	if err != nil {
 		return nil, err
 	}
 
-	base := goBase(s.gw)
+	base := goBase(gw)
 
 	// Setup the generate tool in its own directory.
 	// gqlgen needs its own go module to execute, but we don't want to use
@@ -75,7 +77,7 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 	).Root()
 
 	// generate extension/script skeletons
-	projectSubpath := filepath.Join(filepath.Dir(s.configPath), subpath)
+	projectSubpath := filepath.Join(filepath.Dir(p.configPath), subpath)
 	outputDir := filepath.Join("/src", projectSubpath)
 
 	projectMounts := withRunOpts(
@@ -100,5 +102,5 @@ func (s RemoteSchema) goGenerate(ctx context.Context, subpath, schema, coreSchem
 		withGoCaching(),
 	).GetMount(outputDir)
 
-	return filesystem.FromState(ctx, projectFS, s.platform)
+	return filesystem.FromState(ctx, projectFS, platform)
 }

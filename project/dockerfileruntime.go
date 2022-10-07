@@ -8,24 +8,25 @@ import (
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core/filesystem"
 )
 
-func (s RemoteSchema) dockerfileRuntime(ctx context.Context, subpath string) (*filesystem.Filesystem, error) {
-	def, err := s.contextFS.ToDefinition()
+func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*filesystem.Filesystem, error) {
+	def, err := p.workdir.ToDefinition()
 	if err != nil {
 		return nil, err
 	}
 
 	opts := map[string]string{
-		"platform": platforms.Format(s.platform),
-		"filename": filepath.ToSlash(filepath.Join(filepath.Dir(s.configPath), subpath, "Dockerfile")),
+		"platform": platforms.Format(platform),
+		"filename": filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), subpath, "Dockerfile")),
 	}
 	inputs := map[string]*pb.Definition{
 		dockerfilebuilder.DefaultLocalNameContext:    def,
 		dockerfilebuilder.DefaultLocalNameDockerfile: def,
 	}
-	res, err := s.gw.Solve(ctx, bkgw.SolveRequest{
+	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
@@ -43,5 +44,5 @@ func (s RemoteSchema) dockerfileRuntime(ctx context.Context, subpath string) (*f
 		return nil, err
 	}
 
-	return filesystem.FromState(ctx, st, s.platform)
+	return filesystem.FromState(ctx, st, platform)
 }
