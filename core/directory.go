@@ -10,8 +10,6 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/router"
 )
 
 // Directory is a content-addressed directory.
@@ -257,106 +255,4 @@ func (dir *Directory) Decode() (llb.State, string, specs.Platform, error) {
 	}
 
 	return st, payload.Dir, payload.Platform, nil
-}
-
-type directorySchema struct {
-	*baseSchema
-}
-
-var _ router.ExecutableSchema = &directorySchema{}
-
-func (s *directorySchema) Name() string {
-	return "directory"
-}
-
-func (s *directorySchema) Schema() string {
-	return schema.Directory
-}
-
-var directoryIDResolver = stringResolver(DirectoryID(""))
-
-func (s *directorySchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"DirectoryID": directoryIDResolver,
-		"Query": router.ObjectResolver{
-			"directory": router.ToResolver(s.directory),
-		},
-		"Directory": router.ObjectResolver{
-			"contents":         router.ToResolver(s.contents),
-			"file":             router.ToResolver(s.file),
-			"secret":           router.ErrResolver(ErrNotImplementedYet),
-			"withNewFile":      router.ToResolver(s.withNewFile),
-			"withCopiedFile":   router.ToResolver(s.withCopiedFile),
-			"withoutFile":      router.ErrResolver(ErrNotImplementedYet),
-			"directory":        router.ToResolver(s.subdirectory),
-			"withDirectory":    router.ToResolver(s.withDirectory),
-			"withoutDirectory": router.ErrResolver(ErrNotImplementedYet),
-			"diff":             router.ErrResolver(ErrNotImplementedYet),
-		},
-	}
-}
-
-func (s *directorySchema) Dependencies() []router.ExecutableSchema {
-	return nil
-}
-
-type directoryArgs struct {
-	ID DirectoryID
-}
-
-func (s *directorySchema) directory(ctx *router.Context, parent any, args directoryArgs) (*Directory, error) {
-	return &Directory{
-		ID: args.ID,
-	}, nil
-}
-
-type subdirectoryArgs struct {
-	Path string
-}
-
-func (s *directorySchema) subdirectory(ctx *router.Context, parent *Directory, args subdirectoryArgs) (*Directory, error) {
-	return parent.Directory(ctx, args.Path)
-}
-
-type withDirectoryArgs struct {
-	Path      string
-	Directory DirectoryID
-}
-
-func (s *directorySchema) withDirectory(ctx *router.Context, parent *Directory, args withDirectoryArgs) (*Directory, error) {
-	return parent.WithDirectory(ctx, args.Path, &Directory{ID: args.Directory})
-}
-
-type contentArgs struct {
-	Path string
-}
-
-func (s *directorySchema) contents(ctx *router.Context, parent *Directory, args contentArgs) ([]string, error) {
-	return parent.Contents(ctx, s.gw, args.Path)
-}
-
-type dirFileArgs struct {
-	Path string
-}
-
-func (s *directorySchema) file(ctx *router.Context, parent *Directory, args dirFileArgs) (*File, error) {
-	return parent.File(ctx, args.Path)
-}
-
-type withNewFileArgs struct {
-	Path     string
-	Contents string
-}
-
-func (s *directorySchema) withNewFile(ctx *router.Context, parent *Directory, args withNewFileArgs) (*Directory, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
-}
-
-type withCopiedFileArgs struct {
-	Path   string
-	Source FileID
-}
-
-func (s *directorySchema) withCopiedFile(ctx *router.Context, parent *Directory, args withCopiedFileArgs) (*Directory, error) {
-	return parent.WithCopiedFile(ctx, args.Path, &File{ID: args.Source})
 }

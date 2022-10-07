@@ -18,7 +18,7 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
+	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
@@ -45,7 +45,7 @@ type Context struct {
 	context.Context
 	Client     graphql.Client
 	LocalDirs  map[string]dagger.FSID
-	Project    *core.Project
+	Project    *schema.Project
 	Workdir    dagger.FSID
 	ConfigPath string
 }
@@ -131,7 +131,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	eg.Go(func() error {
 		var err error
 		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			coreAPI, err := core.New(core.InitializeArgs{
+			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
 				SecretStore:   secretStore,
 				SSHAuthSockID: sshAuthSockID,
@@ -291,11 +291,11 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 	return mapping, eg.Wait()
 }
 
-func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, configPath string, doInstall bool) (*core.Project, error) {
+func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, configPath string, doInstall bool) (*schema.Project, error) {
 	res := struct {
 		Core struct {
 			Filesystem struct {
-				LoadProject core.Project
+				LoadProject schema.Project
 			}
 		}
 	}{}

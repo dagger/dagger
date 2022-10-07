@@ -1,4 +1,4 @@
-package core
+package schema
 
 import (
 	"github.com/containerd/containerd/platforms"

@@ -1,4 +1,4 @@
-package core
+package schema
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	"go.dagger.io/dagger/router"
 )
 
-var _ router.ExecutableSchema = &projectSchema{}
-
 type projectSchema struct {
 	*baseSchema
 	projectStates map[string]*project.State
 	mu            sync.RWMutex
 }
+
+var _ router.ExecutableSchema = &projectSchema{}
 
 func (s *projectSchema) Name() string {
 	return "project"

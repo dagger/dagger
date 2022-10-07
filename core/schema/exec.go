@@ -1,4 +1,4 @@
-package core
+package schema
 
 import (
 	"fmt"
@@ -312,4 +312,15 @@ func (s *execSchema) mount(ctx *router.Context, parent *Exec, args mountArgs) (*
 		return nil, fmt.Errorf("missing mount path")
 	}
 	return mnt, nil
+}
+
+func truncate(s string, lines *int) string {
+	if lines == nil {
+		return s
+	}
+	l := strings.SplitN(s, "\n", *lines+1)
+	if *lines > len(l) {
+		*lines = len(l)
+	}
+	return strings.Join(l[0:*lines], "\n")
 }
