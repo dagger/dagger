@@ -1,9 +1,0 @@
-{
-  "name": "yarn",
-  "sdk": "ts",
-  "extensions": [
-    {
-      "local": "../alpine/cloak.json"
-    }
-  ]
-}

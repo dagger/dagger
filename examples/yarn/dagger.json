@@ -1,0 +1,11 @@
+{
+  "name": "yarn",
+  "extensions": {
+    "alpine": {
+      "local": {
+        "path": "../alpine/dagger.json"
+      }
+    }
+  },
+  "sdk": "ts"
+}

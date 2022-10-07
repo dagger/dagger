@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/core/schema"
+	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/project"
 )
 
@@ -24,12 +28,14 @@ var (
 	addGitRemote  string
 	addGitRef     string
 	addGitSubpath string
+
+	rmName string
 )
 
 var projectCmd = &cobra.Command{
 	Use: "project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := getConfig()
+		cfg, err := getThisProjectConfig()
 		if err != nil {
 			return err
 		}
@@ -48,35 +54,29 @@ var initCmd = &cobra.Command{
 	},
 }
 
-// TODO: hard, how do you identify it?
-var rmCmd = &cobra.Command{
-	Use: "rm",
-}
-
 var addCmd = &cobra.Command{
 	Use: "add",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := getConfig()
-		if err != nil {
-			return err
-		}
-		cfg.Extensions = append(cfg.Extensions, &project.Extension{
-			Local: addLocalPath,
-		})
-		return writeConfigFile(cfg)
-	},
 }
 
 var addLocalCmd = &cobra.Command{
 	Use: "local",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := getConfig()
+		cfg, err := getThisProjectConfig()
 		if err != nil {
 			return err
 		}
-		cfg.Extensions = append(cfg.Extensions, &project.Extension{
-			Local: addLocalPath,
-		})
+		if cfg.Extensions == nil {
+			cfg.Extensions = make(map[string]project.Extension)
+		}
+		otherCfg, err := getConfig(addLocalPath)
+		if err != nil {
+			return err
+		}
+		cfg.Extensions[otherCfg.Name] = project.Extension{
+			Local: &project.LocalExtension{
+				Path: addLocalPath,
+			},
+		}
 		return writeConfigFile(cfg)
 	},
 }
@@ -84,23 +84,56 @@ var addLocalCmd = &cobra.Command{
 var addGitCmd = &cobra.Command{
 	Use: "git",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := getConfig()
+		cfg, err := getThisProjectConfig()
 		if err != nil {
 			return err
 		}
-		cfg.Extensions = append(cfg.Extensions, &project.Extension{
-			Git: &project.GitSource{
+
+		startOpts := &engine.Config{
+			Workdir:     workdir,
+			ConfigPath:  configPath,
+			SkipInstall: true,
+		}
+		// TODO:(sipsma) this shouldn't need to start with an actual config, should just need core API
+		if err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
+			proj, err := loadGitProject(ctx, ctx.Client, project.GitExtension{
 				Remote: addGitRemote,
 				Ref:    addGitRef,
 				Path:   addGitSubpath,
-			},
-		})
+			})
+			if err != nil {
+				return err
+			}
+			cfg.Extensions[proj.Name] = project.Extension{
+				Git: &project.GitExtension{
+					Remote: addGitRemote,
+					Ref:    addGitRef,
+					Path:   addGitSubpath,
+				},
+			}
+			return nil
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
 		return writeConfigFile(cfg)
 	},
 }
 
-func getConfig() (*project.Config, error) {
-	p := filepath.Join(workdir, configPath)
+var rmCmd = &cobra.Command{
+	Use: "rm",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := getThisProjectConfig()
+		if err != nil {
+			return err
+		}
+		delete(cfg.Extensions, rmName)
+		return writeConfigFile(cfg)
+	},
+}
+
+func getConfig(p string) (*project.Config, error) {
 	bytes, err := os.ReadFile(p)
 	if err != nil {
 		return nil, err
@@ -110,6 +143,10 @@ func getConfig() (*project.Config, error) {
 		return nil, err
 	}
 	return &config, nil
+}
+
+func getThisProjectConfig() (*project.Config, error) {
+	return getConfig(configPath)
 }
 
 func writeConfig(dest io.Writer, cfg *project.Config) error {
@@ -126,10 +163,51 @@ func printConfig(cfg *project.Config) error {
 }
 
 func writeConfigFile(cfg *project.Config) error {
-	p := filepath.Join(workdir, configPath)
-	f, err := os.Create(p)
+	f, err := os.Create(configPath)
 	if err != nil {
 		return err
 	}
 	return writeConfig(f, cfg)
+}
+
+func loadGitProject(ctx context.Context, cl graphql.Client, gitParams project.GitExtension) (*schema.Project, error) {
+	res := struct {
+		Git struct {
+			Branch struct {
+				Tree struct {
+					LoadProject schema.Project
+				}
+			}
+		}
+	}{}
+	resp := &graphql.Response{Data: &res}
+
+	// TODO: update to new API once loadProject is migrated
+	err := cl.MakeRequest(ctx,
+		&graphql.Request{
+			Query: `
+			query Load($remote: String!, $ref: String!, $subpath: String!) {
+				git(url: $remote) {
+					branch(name: $ref) {
+						tree {
+							loadProject(configPath: $subpath) {
+								name
+							}
+						}
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"remote":  gitParams.Remote,
+				"ref":     gitParams.Ref,
+				"subpath": gitParams.Path,
+			},
+		},
+		resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res.Git.Branch.Tree.LoadProject, nil
 }

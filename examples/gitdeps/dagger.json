@@ -1,0 +1,19 @@
+{
+  "name": "gitdeps-example"
+  "extensions": {
+    "alpine": {
+      "git": {
+        "remote": "https://github.com/dagger/dagger.git",
+        "ref": "cloak",
+        "path": "examples/alpine/dagger.json"
+      }
+    },
+    "yarn": {
+      "git": {
+        "remote": "https://github.com/dagger/dagger.git",
+        "ref": "cloak",
+        "path": "examples/yarn/dagger.json"
+      }
+    }
+  }
+}

@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/tracing"
 )
 
@@ -47,7 +47,6 @@ func init() {
 	initCmd.Flags().StringVar(&initName, "name", "", "project name")
 	initCmd.MarkFlagRequired("name")
 	initCmd.Flags().StringVar(&initSDK, "sdk", "", "project sdk")
-	initCmd.MarkFlagRequired("sdk")
 
 	addCmd.AddCommand(
 		addLocalCmd,
@@ -60,45 +59,18 @@ func init() {
 	addGitCmd.Flags().StringVar(&addGitRemote, "remote", "", "remote of the git repository containing the extension")
 	addGitCmd.MarkFlagRequired("repo")
 	addGitCmd.Flags().StringVar(&addGitRef, "ref", "main", "git ref to use from the remote repo")
-	addGitCmd.Flags().StringVar(&addGitSubpath, "subpath", "./dagger.json", "subpath in the git repository to the dagger project config")
+	addGitCmd.Flags().StringVar(&addGitSubpath, "path", "./dagger.json", "subpath in the git repository to the dagger project config")
+
+	rmCmd.Flags().StringVar(&rmName, "name", "", "name of the extension to remove")
+	rmCmd.MarkFlagRequired("name")
 }
 
 var rootCmd = &cobra.Command{
 	Use: "dagger",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if workdir == "" {
-			workdir = os.Getenv("DAGGER_WORKDIR")
-		}
-		if workdir == "" {
-			var err error
-			workdir, err = os.Getwd()
-			if err != nil {
-				return err
-			}
-		}
-		workdir, err := filepath.Abs(workdir)
-		if err != nil {
-			return err
-		}
-
-		if configPath == "" {
-			configPath = os.Getenv("DAGGER_CONFIG")
-		}
-		if configPath == "" {
-			configPath = filepath.Join(workdir, "./dagger.json")
-		}
-		if !filepath.IsAbs(configPath) {
-			var err error
-			configPath, err = filepath.Abs(configPath)
-			if err != nil {
-				return err
-			}
-		}
-		configPath, err = filepath.Rel(workdir, configPath)
-		if err != nil {
-			return err
-		}
-		return nil
+		var err error
+		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
+		return err
 	},
 }
 

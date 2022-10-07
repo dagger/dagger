@@ -179,17 +179,17 @@ func (p *State) Extensions(
 ) ([]*State, error) {
 	var rerr error
 	p.extensionsOnce.Do(func() {
-		p.extensions = make([]*State, len(p.config.Extensions))
-		for i, dep := range p.config.Extensions {
+		p.extensions = make([]*State, 0, len(p.config.Extensions))
+		for depName, dep := range p.config.Extensions {
 			switch {
-			case dep.Local != "":
-				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local))
+			case dep.Local != nil:
+				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local.Path))
 				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw)
 				if err != nil {
 					rerr = err
 					return
 				}
-				p.extensions[i] = depState
+				p.extensions = append(p.extensions, depState)
 			case dep.Git != nil:
 				var opts []llb.GitOption
 				if sshAuthSockID != "" {
@@ -205,7 +205,10 @@ func (p *State) Extensions(
 					rerr = err
 					return
 				}
-				p.extensions[i] = depState
+				p.extensions = append(p.extensions, depState)
+			default:
+				rerr = fmt.Errorf("unset extension %s", depName)
+				return
 			}
 		}
 	})
