@@ -62,11 +62,11 @@ require github.com/google/go-cmp v0.5.9
 
 require (
 	github.com/dagger/cuelsp v0.3.4
+	github.com/olekukonko/tablewriter v0.0.5
 	github.com/tliron/kutil v0.1.62
 )
 
 require (
-	github.com/Microsoft/hcsshim v0.9.4 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20210428141323-04723f9f07d7 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
@@ -77,7 +77,6 @@ require (
 	github.com/cockroachdb/apd/v2 v2.0.2 // indirect
 	github.com/containerd/cgroups v1.0.4 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
-	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/containerd/ttrpc v1.1.0 // indirect
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -85,7 +84,6 @@ require (
 	github.com/docker/cli v20.10.17+incompatible // indirect
 	github.com/docker/docker v20.10.17+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
-	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/emicklei/proto v1.11.0 // indirect
 	github.com/emirpasic/gods v1.12.0 // indirect
@@ -97,7 +95,6 @@ require (
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.0.0 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/css v1.0.0 // indirect
@@ -124,9 +121,7 @@ require (
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.12.0 // indirect
-	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/opencontainers/runc v1.1.4 // indirect
-	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 // indirect
 	github.com/opencontainers/selinux v1.10.2 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
@@ -148,7 +143,6 @@ require (
 	github.com/yuin/goldmark v1.4.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.1 // indirect
 	go.lsp.dev/uri v0.3.0 // indirect
-	go.opencensus.io v0.23.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.29.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.4.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.4.1 // indirect
