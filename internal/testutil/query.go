@@ -12,7 +12,6 @@ import (
 
 type QueryOptions struct {
 	Variables map[string]any
-	Secrets   map[string]string
 	Operation string
 }
 
@@ -23,14 +22,7 @@ func Query(query string, res any, opts *QueryOptions) error {
 	if opts.Variables == nil {
 		opts.Variables = make(map[string]any)
 	}
-	if opts.Secrets == nil {
-		opts.Secrets = make(map[string]string)
-	}
 	return engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		if err := addSecrets(ctx, ctx.Client, opts); err != nil {
-			return err
-		}
-
 		return ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query:     query,
@@ -40,34 +32,6 @@ func Query(query string, res any, opts *QueryOptions) error {
 			&graphql.Response{Data: &res},
 		)
 	})
-}
-
-func addSecrets(ctx context.Context, cl graphql.Client, opts *QueryOptions) error {
-	for name, plaintext := range opts.Secrets {
-		addSecret := struct {
-			Core struct {
-				AddSecret dagger.SecretID
-			}
-		}{}
-		err := cl.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query AddSecret($plaintext: String!) {
-					core {
-						addSecret(plaintext: $plaintext)
-					}
-				}`,
-				Variables: map[string]string{
-					"plaintext": plaintext,
-				},
-			},
-			&graphql.Response{Data: &addSecret},
-		)
-		if err != nil {
-			return err
-		}
-		opts.Variables[name] = addSecret.Core.AddSecret
-	}
-	return nil
 }
 
 func ReadFile(ctx context.Context, cl graphql.Client, fsid dagger.FSID, path string) (string, error) {

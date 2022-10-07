@@ -31,13 +31,6 @@ func TestQueries(t *testing.T) {
 				Variables: map[string]any{"version": "v0.2.0"},
 			},
 		},
-		"secret.graphql": {
-			opts: &testutil.QueryOptions{
-				Secrets: map[string]string{
-					"secret": "test secret",
-				},
-			},
-		},
 		"targets.graphql": {
 			opts: &testutil.QueryOptions{
 				Operation: "test",
