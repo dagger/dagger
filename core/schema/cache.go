@@ -41,9 +41,7 @@ type cacheArgs struct {
 }
 
 func (s *cacheSchema) cache(ctx *router.Context, parent any, args cacheArgs) (*core.Cache, error) {
-	return &core.Cache{
-		ID: args.ID,
-	}, nil
+	return core.NewCacheFromID(args.ID)
 }
 
 type cacheFromTokensArgs struct {

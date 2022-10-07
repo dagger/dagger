@@ -23,7 +23,7 @@ func TestCacheVolume(t *testing.T) {
 		}
 	}
 
-	var idOrig, idSame, idDiff, idLong, idGiven core.CacheID
+	var idOrig, idSame, idDiff, idGiven core.CacheID
 
 	t.Run("creating from tokens", func(t *testing.T) {
 		var res createFromTokensRes
@@ -71,26 +71,7 @@ func TestCacheVolume(t *testing.T) {
 		require.NotEqual(t, idOrig, idDiff)
 	})
 
-	t.Run("creating from bigger tokens", func(t *testing.T) {
-		var res createFromTokensRes
-		err := testutil.Query(
-			`{
-				cacheFromTokens(tokens: ["aaaaa", "bbbbb"]) {
-					id
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
-
-		idLong = res.CacheFromTokens.ID
-		require.NotEmpty(t, idLong)
-
-		require.NotEqual(t, idOrig, idLong)
-
-		// test that we're hashing to result in equal-size IDs
-		require.Equal(t, len(idOrig), len(idLong))
-	})
-
-	t.Run("creating from given ID", func(t *testing.T) {
+	t.Run("creating from valid ID", func(t *testing.T) {
 		var res createRes
 		err := testutil.Query(
 			`query Test($id: CacheID!) {
@@ -104,5 +85,19 @@ func TestCacheVolume(t *testing.T) {
 
 		idGiven = res.Cache.ID
 		require.Equal(t, idOrig, idGiven)
+	})
+
+	t.Run("creating from bogus ID", func(t *testing.T) {
+		var res createRes
+		err := testutil.Query(
+			`query Test($id: CacheID!) {
+				cache(id: $id) {
+					id
+				}
+			}`, &res, &testutil.QueryOptions{Variables: map[string]any{
+				"id": "bogus",
+			}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid cache ID")
 	})
 }

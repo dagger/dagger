@@ -182,11 +182,16 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		return nil, err
 	}
 
+	cachePayload, err := cache.decode()
+	if err != nil {
+		return nil, err
+	}
+
 	target = absPath(payload.Config.WorkingDir, target)
 
 	mount := ContainerMount{
 		Target:           target,
-		CacheID:          string(cache),
+		CacheID:          cachePayload.Sum(),
 		CacheSharingMode: "shared", // TODO(vito): add param
 	}
 
