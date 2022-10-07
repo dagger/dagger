@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import axios from "axios";
-import { execa } from "execa";
+import { execa, execaCommandSync } from "execa";
 import { GraphQLClient } from "graphql-request";
 import path from "path";
 export class Engine {
@@ -18,6 +18,16 @@ export class Engine {
     run(cb) {
         return __awaiter(this, void 0, void 0, function* () {
             const args = ["dev"];
+            // exit with error if we are not using the non-Cloak dagger binary (< 0.3.0)
+            try {
+                execaCommandSync("dagger dev --help");
+            }
+            catch (err) {
+                console.error("⚠️  Please ensure that dagger binary in $PATH is v0.3.0 or newer - a.k.a. Cloak");
+                // https://tldp.org/LDP/abs/html/exitcodes.html
+                // | 127 | "command not found" | illegal_command | Possible problem with $PATH or a typo |
+                process.exit(127);
+            }
             this.config = this.config || {};
             this.config.Workdir =
                 this.config.Workdir || process.env["DAGGER_WORKDIR"] || process.cwd();
@@ -39,7 +49,7 @@ export class Engine {
             args.push("--port", `${this.config.Port}`);
             const serverProc = execa("dagger", args, {
                 stdio: "inherit",
-                cwd: this.config.Workdir,
+                cwd: this.config.Workdir
             });
             // use axios-fetch to try connecting to the server until successful
             // FIXME:(sipsma) hardcoding that the server has 3 minutes to import+install all extensions...
@@ -54,6 +64,7 @@ export class Engine {
                     yield new Promise((resolve) => setTimeout(resolve, 500));
                 }
             }
+            ;
             yield cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
                 .catch((err) => __awaiter(this, void 0, void 0, function* () {
                 // FIXME:(sipsma) give the engine a sec to flush any progress logs on error
