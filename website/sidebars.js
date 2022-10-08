@@ -62,39 +62,6 @@
     },
     {
       type: "category",
-      label: "Extensions",
-      collapsible: false,
-      collapsed: false,
-      link: {
-        type: "doc",
-        id:  "extensions/h3lsa-index",
-      },
-      items: [
-
-        {
-          type: "category",
-          label: "Languages",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extensions/pknkx-rails",
-          ],
-        },
-        {
-          type: "category",
-          label: "Deployment Targets",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "extensions/2f483-terraform",
-            "extensions/saz1g-vercel",
-          ],
-        },
-      ]
-    },
-
-    {
-      type: "category",
       label: "Reference",
       collapsible: false,
       collapsed: false,
@@ -118,6 +85,21 @@
       label: "FAQ",
       id: "faq/fvt9k-faq",
     },
+    {
+      type: "category",
+      label: "Resources",
+      collapsible: false,
+      collapsed: false,
+      link: {
+        type: "doc",
+        id:  "resources/0lc02-index",
+      },
+      items: [
+        "resources/3i28k-events",
+        "resources/kx7yn-videos",
+      ],
+    },
+
 
 
   ],
