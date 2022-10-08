@@ -17,18 +17,23 @@ No description
 
 ```graphql
 input ExecInput {
+  args: [String!]!
   mounts: [MountInput!]
   cacheMounts: [CacheMountInput!]
   workdir: String
   env: [ExecEnvInput!]
   secretEnv: [ExecSecretEnvInput!]
   sshAuthSock: String
-  args: [String!]!
 }
 ```
 
 
 ### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>args</b></code>](#)<Bullet />[`[String!]!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Command to execute
+Example: ["echo", "hello, world!"]
+> 
 
 #### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>mounts</b></code>](#)<Bullet />[`[MountInput!]`](/reference/api/inputs/mount-input) <Badge class="secondary" text="list"/> <Badge class="secondary" text="input"/>
 > Filesystem mounts
@@ -52,11 +57,6 @@ input ExecInput {
 
 #### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>sshAuthSock</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
 > Include the host's ssh agent socket in the exec at the provided path
-> 
-
-#### [<code style={{ fontWeight: 'normal' }}>ExecInput.<b>args</b></code>](#)<Bullet />[`[String!]!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
-> Command to execute
-Example: ["echo", "hello, world!"]
 > 
 
 
