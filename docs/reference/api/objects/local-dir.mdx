@@ -19,8 +19,8 @@ A directory on the user's host filesystem
 type LocalDir {
   read: Filesystem!
   write(
-  contents: FSID!
   path: String
+  contents: FSID!
 ): Boolean!
 }
 ```
@@ -34,11 +34,11 @@ type LocalDir {
 
 #### [<code style={{ fontWeight: 'normal' }}>LocalDir.<b>write</b></code>](#)<Bullet />[`Boolean!`](/reference/api/scalars/boolean) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
 > Write the provided filesystem to the directory
-> ##### [<code style={{ fontWeight: 'normal' }}>LocalDir.write.<b>contents</b></code>](#)<Bullet />[`FSID!`](/reference/api/scalars/fsid) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> ##### [<code style={{ fontWeight: 'normal' }}>LocalDir.write.<b>path</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
 > 
 > 
 
-##### [<code style={{ fontWeight: 'normal' }}>LocalDir.write.<b>path</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+##### [<code style={{ fontWeight: 'normal' }}>LocalDir.write.<b>contents</b></code>](#)<Bullet />[`FSID!`](/reference/api/scalars/fsid) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
 > 
 > 
 

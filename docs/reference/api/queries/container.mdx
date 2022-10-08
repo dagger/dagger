@@ -1,6 +1,6 @@
 ---
-id: secret-id
-title: SecretID
+id: container
+title: container
 hide_table_of_contents: false
 ---
 
@@ -13,18 +13,29 @@ export const SpecifiedBy = (props) => <>Specification<a className="link" style={
 export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
 
 
-No description
+Load a container from ID.
+Null ID returns an empty container (scratch).
 
 ```graphql
-scalar SecretID
+container(
+  id: ContainerID
+): Container!
 ```
 
 
+### Arguments
+
+#### [<code style={{ fontWeight: 'normal' }}>container.<b>id</b></code>](#)<Bullet />[`ContainerID`](/reference/api/scalars/container-id) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+### Type
+
+#### [`Container`](/reference/api/objects/container) <Badge class="secondary" text="object"/>
+> An OCI-compatible container, also known as a docker container
+> 
 
 
-### Member of
-
-[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Directory`](/reference/api/objects/directory)  <Badge class="secondary" text="object"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/>
 
 
 

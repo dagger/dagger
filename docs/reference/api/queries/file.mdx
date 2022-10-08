@@ -1,6 +1,6 @@
 ---
-id: secret-id
-title: SecretID
+id: file
+title: file
 hide_table_of_contents: false
 ---
 
@@ -13,18 +13,28 @@ export const SpecifiedBy = (props) => <>Specification<a className="link" style={
 export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
 
 
-No description
+Load a file by ID
 
 ```graphql
-scalar SecretID
+file(
+  id: FileID!
+): File
 ```
 
 
+### Arguments
+
+#### [<code style={{ fontWeight: 'normal' }}>file.<b>id</b></code>](#)<Bullet />[`FileID!`](/reference/api/scalars/file-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+### Type
+
+#### [`File`](/reference/api/objects/file) <Badge class="secondary" text="object"/>
+> A file
+> 
 
 
-### Member of
-
-[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Directory`](/reference/api/objects/directory)  <Badge class="secondary" text="object"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/>
 
 
 
