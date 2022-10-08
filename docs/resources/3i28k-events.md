@@ -13,5 +13,5 @@ Members of our team will be at the events below and we'd love to see you there!
 
 ## KubeCon USA
 
-We will be at KubeCon USA between 11-15 Oct 2022. <br/> <br/>
+24-28 Oct 2022 <br/> <br/>
 [Event website](https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/)
