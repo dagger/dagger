@@ -1,8 +1,8 @@
-package core
+package schema
 
 import (
 	"github.com/moby/buildkit/client/llb"
-	"go.dagger.io/dagger/core/schema"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/router"
 )
 
@@ -17,7 +17,7 @@ func (s *httpSchema) Name() string {
 }
 
 func (s *httpSchema) Schema() string {
-	return schema.HTTP
+	return HTTP
 }
 
 func (s *httpSchema) Resolvers() router.Resolvers {
@@ -36,9 +36,9 @@ type httpArgs struct {
 	URL string `json:"url"`
 }
 
-func (s *httpSchema) http(ctx *router.Context, _ any, args httpArgs) (*File, error) {
+func (s *httpSchema) http(ctx *router.Context, _ any, args httpArgs) (*core.File, error) {
 	st := llb.HTTP(args.URL, llb.Filename("contents"))
-	f, err := NewFile(ctx, st, "contents", s.platform)
+	f, err := core.NewFile(ctx, st, "contents", s.platform)
 	if err != nil {
 		return nil, err
 	}

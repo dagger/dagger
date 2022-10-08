@@ -1,4 +1,4 @@
-package core
+package schema
 
 import (
 	"encoding/json"
@@ -14,12 +14,12 @@ import (
 	"go.dagger.io/dagger/router"
 )
 
-var _ router.ExecutableSchema = &coreSchema{}
-
 type coreSchema struct {
 	*baseSchema
 	workdirID string
 }
+
+var _ router.ExecutableSchema = &coreSchema{}
 
 func (r *coreSchema) Name() string {
 	return "core"

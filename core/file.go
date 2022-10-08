@@ -9,8 +9,6 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/router"
 )
 
 // File is a content-addressed file.
@@ -127,66 +125,4 @@ func (file *File) ref(ctx context.Context, gw bkgw.Client, st llb.State, platfor
 	}
 
 	return ref, nil
-}
-
-type fileSchema struct {
-	*baseSchema
-}
-
-var _ router.ExecutableSchema = &fileSchema{}
-
-func (s *fileSchema) Name() string {
-	return "file"
-}
-
-func (s *fileSchema) Schema() string {
-	return schema.File
-}
-
-var fileIDResolver = stringResolver(FileID(""))
-
-func (s *fileSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"FileID": fileIDResolver,
-		"Query": router.ObjectResolver{
-			"file": router.ToResolver(s.file),
-		},
-		"File": router.ObjectResolver{
-			"contents": router.ToResolver(s.contents),
-			"secret":   router.ErrResolver(ErrNotImplementedYet),
-			"size":     router.ToResolver(s.size),
-		},
-	}
-}
-
-func (s *fileSchema) Dependencies() []router.ExecutableSchema {
-	return nil
-}
-
-type fileArgs struct {
-	ID FileID
-}
-
-func (s *fileSchema) file(ctx *router.Context, parent any, args fileArgs) (*File, error) {
-	return &File{
-		ID: args.ID,
-	}, nil
-}
-
-func (s *fileSchema) contents(ctx *router.Context, file *File, args any) (string, error) {
-	content, err := file.Contents(ctx, s.gw)
-	if err != nil {
-		return "", err
-	}
-
-	return string(content), nil
-}
-
-func (s *fileSchema) size(ctx *router.Context, file *File, args any) (int64, error) {
-	info, err := file.Stat(ctx, s.gw)
-	if err != nil {
-		return 0, err
-	}
-
-	return info.Size_, nil
 }

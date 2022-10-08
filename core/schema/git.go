@@ -1,9 +1,9 @@
-package core
+package schema
 
 import (
 	"github.com/moby/buildkit/client/llb"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/core/filesystem"
-	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/router"
 )
 
@@ -18,7 +18,7 @@ func (s *gitSchema) Name() string {
 }
 
 func (s *gitSchema) Schema() string {
-	return schema.Git
+	return Git
 }
 
 func (s *gitSchema) Resolvers() router.Resolvers {
@@ -112,11 +112,11 @@ func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, erro
 	return nil, ErrNotImplementedYet
 }
 
-func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*Directory, error) {
+func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*core.Directory, error) {
 	var opts []llb.GitOption
 	if s.sshAuthSockID != "" {
 		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return NewDirectory(ctx, st, "", s.platform)
+	return core.NewDirectory(ctx, st, "", s.platform)
 }
