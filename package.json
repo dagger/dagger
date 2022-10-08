@@ -20,7 +20,8 @@
     "node-fetch": "^3.2.10"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test-sdk": "timeout 60 node sdk/nodejs/test/index.mjs"
   },
   "devDependencies": {
     "@types/node": "^18.7.18",
