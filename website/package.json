@@ -17,7 +17,6 @@
   "dependencies": {
     "@docusaurus/core": "^2.0.1",
     "@docusaurus/preset-classic": "^2.0.1",
-    "@edno/docusaurus2-graphql-doc-generator": "^1.13.1",
     "@graphql-markdown/docusaurus": "^1.14.0",
     "@graphql-tools/url-loader": "^7.16.4",
     "@mdx-js/react": "^1.6.22",

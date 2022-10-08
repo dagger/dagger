@@ -1631,15 +1631,6 @@
     url-loader "^4.1.1"
     webpack "^5.73.0"
 
-"@edno/docusaurus2-graphql-doc-generator@^1.13.1":
-  version "1.13.1"
-  resolved "https://registry.npmjs.org/@edno/docusaurus2-graphql-doc-generator/-/docusaurus2-graphql-doc-generator-1.13.1.tgz"
-  integrity sha512-r19TbW+CFyzrsxCUr8CuDueEPsACeVj3DGf7T8ZdlRnBwcocF7omBF+oo6qOPP4JV0Y5A2Zp5JH8xY/KH7ODTA==
-  dependencies:
-    "@graphql-inspector/core" "^3.3.0"
-    "@graphql-tools/graphql-file-loader" "^7.5.2"
-    "@graphql-tools/load" "^7.7.4"
-
 "@graphql-inspector/core@^3.3.0":
   version "3.4.0"
   resolved "https://registry.npmjs.org/@graphql-inspector/core/-/core-3.4.0.tgz"
