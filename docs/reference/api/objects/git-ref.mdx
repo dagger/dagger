@@ -1,0 +1,43 @@
+---
+id: git-ref
+title: GitRef
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+A git ref (tag or branch)
+
+```graphql
+type GitRef {
+  digest: String!
+  tree: Directory!
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>GitRef.<b>digest</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> The digest of the current value of this ref
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>GitRef.<b>tree</b></code>](#)<Bullet />[`Directory!`](/reference/api/objects/directory) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> The filesystem tree at this ref
+> 
+
+
+
+### Member of
+
+[`GitRepository`](/reference/api/objects/git-repository)  <Badge class="secondary" text="object"/>
+
+
+

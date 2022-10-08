@@ -1,6 +1,6 @@
 ---
-id: secret-id
-title: SecretID
+id: container-id
+title: ContainerID
 hide_table_of_contents: false
 ---
 
@@ -13,10 +13,10 @@ export const SpecifiedBy = (props) => <>Specification<a className="link" style={
 export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
 
 
-No description
+A unique container identifier. Null designates an empty container (scratch).
 
 ```graphql
-scalar SecretID
+scalar ContainerID
 ```
 
 
@@ -24,7 +24,7 @@ scalar SecretID
 
 ### Member of
 
-[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Directory`](/reference/api/objects/directory)  <Badge class="secondary" text="object"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/>
+[`Container`](/reference/api/objects/container)  <Badge class="secondary" text="object"/><Bullet />[`container`](/reference/api/queries/container)  <Badge class="secondary" text="query"/>
 
 
 

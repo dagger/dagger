@@ -1,0 +1,292 @@
+---
+id: container
+title: Container
+hide_table_of_contents: false
+---
+
+
+
+export const Bullet = () => <><span style={{ fontWeight: 'normal', fontSize: '.5em', color: 'var(--ifm-color-secondary-darkest)' }}>&nbsp;●&nbsp;</span></>
+
+export const SpecifiedBy = (props) => <>Specification<a className="link" style={{ fontSize:'1.5em', paddingLeft:'4px' }} target="_blank" href={props.url} title={'Specified by ' + props.url}>⎘</a></>
+
+export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
+
+
+An OCI-compatible container, also known as a docker container
+
+```graphql
+type Container {
+  defaultArgs: [String!]
+  directory(
+  path: String!
+): Directory!
+  entrypoint: [String!]
+  exec(
+  args: [String!]
+  opts: ExecOpts
+): Container!
+  exitCode: Int
+  from(
+  address: ContainerAddress!
+): Container!
+  id: ContainerID!
+  mounts: [String!]!
+  publish(
+  address: ContainerAddress!
+): ContainerAddress!
+  rootfs: Directory!
+  stderr: File
+  stdout: File
+  user: String
+  variable(
+  name: String!
+): String
+  variables: [String!]
+  withDefaultArgs(
+  args: [String!]
+): Container!
+  withEntrypoint(
+  args: [String!]!
+): Container!
+  withMountedCache(
+  path: String!
+  source: DirectoryID
+): Container!
+  withMountedDirectory(
+  path: String!
+  source: DirectoryID!
+): Container!
+  withMountedFile(
+  path: String!
+  source: FileID!
+): Container!
+  withMountedSecret(
+  path: String!
+  source: SecretID!
+): Container!
+  withMountedTemp(
+  path: String!
+): Container!
+  withSecretVariable(
+  name: String!
+  secret: SecretID!
+): Container!
+  withUser(
+  name: String!
+): Container!
+  withVariable(
+  name: String!
+  value: String!
+): Container!
+  withWorkdir(
+  path: String!
+): Container!
+  withoutMount(
+  path: String!
+): Container!
+  withoutVariable(
+  name: String!
+): Container!
+  workdir: String
+}
+```
+
+
+### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>defaultArgs</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> Default arguments for future commands
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>directory</b></code>](#)<Bullet />[`Directory!`](/reference/api/objects/directory) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Retrieve a directory at the given path. Mounts are included.
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.directory.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>entrypoint</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> Entrypoint to be prepended to the arguments of all commands
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>exec</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container after executing the specified command inside it
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.exec.<b>args</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.exec.<b>opts</b></code>](#)<Bullet />[`ExecOpts`](/reference/api/inputs/exec-opts) <Badge class="secondary" text="input"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>exitCode</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
+> Exit code of the last executed command. Zero means success.
+Null if no command has been executed.
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>from</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Initialize this container from the base image published at the given address
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.from.<b>address</b></code>](#)<Bullet />[`ContainerAddress!`](/reference/api/scalars/container-address) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>id</b></code>](#)<Bullet />[`ContainerID!`](/reference/api/scalars/container-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> A unique identifier for this container
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>mounts</b></code>](#)<Bullet />[`[String!]!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> List of paths where a directory is mounted
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>publish</b></code>](#)<Bullet />[`ContainerAddress!`](/reference/api/scalars/container-address) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Publish this container as a new image
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.publish.<b>address</b></code>](#)<Bullet />[`ContainerAddress!`](/reference/api/scalars/container-address) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>rootfs</b></code>](#)<Bullet />[`Directory!`](/reference/api/objects/directory) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container's root filesystem. Mounts are not included.
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>stderr</b></code>](#)<Bullet />[`File`](/reference/api/objects/file) <Badge class="secondary" text="object"/>
+> The error stream of the last executed command.
+Null if no command has been executed.
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>stdout</b></code>](#)<Bullet />[`File`](/reference/api/objects/file) <Badge class="secondary" text="object"/>
+> The output stream of the last executed command.
+Null if no command has been executed.
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>user</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> The user to be set for all commands
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>variable</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> The value of the specified environment variable
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.variable.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>variables</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> A list of environment variables passed to commands
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withDefaultArgs</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> Configures default arguments for future commands
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withDefaultArgs.<b>args</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withEntrypoint</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container but with a different command entrypoint
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withEntrypoint.<b>args</b></code>](#)<Bullet />[`[String!]!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withMountedCache</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus a cache directory mounted at the given path
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedCache.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedCache.<b>source</b></code>](#)<Bullet />[`DirectoryID`](/reference/api/scalars/directory-id) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withMountedDirectory</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus a directory mounted at the given path
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedDirectory.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedDirectory.<b>source</b></code>](#)<Bullet />[`DirectoryID!`](/reference/api/scalars/directory-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withMountedFile</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus a file mounted at the given path
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedFile.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedFile.<b>source</b></code>](#)<Bullet />[`FileID!`](/reference/api/scalars/file-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withMountedSecret</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus a secret mounted into a file at the given path
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedSecret.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedSecret.<b>source</b></code>](#)<Bullet />[`SecretID!`](/reference/api/scalars/secret-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withMountedTemp</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus a temporary directory mounted at the given path
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withMountedTemp.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withSecretVariable</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus an env variable containing the given secret
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withSecretVariable.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.withSecretVariable.<b>secret</b></code>](#)<Bullet />[`SecretID!`](/reference/api/scalars/secret-id) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withUser</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container but with a different command user
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withUser.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withVariable</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container plus the given environment variable
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withVariable.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Container.withVariable.<b>value</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withWorkdir</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container but with a different working directory
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withWorkdir.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withoutMount</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container after unmounting everything at the given path.
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withoutMount.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>withoutVariable</b></code>](#)<Bullet />[`Container!`](/reference/api/objects/container) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+> This container minus the given environment variable
+> ##### [<code style={{ fontWeight: 'normal' }}>Container.withoutVariable.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+#### [<code style={{ fontWeight: 'normal' }}>Container.<b>workdir</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
+> The working directory for all commands
+> 
+
+
+
+### Returned by
+
+[`container`](/reference/api/queries/container)  <Badge class="secondary" text="query"/>
+
+### Member of
+
+[`Container`](/reference/api/objects/container)  <Badge class="secondary" text="object"/>
+
+
+

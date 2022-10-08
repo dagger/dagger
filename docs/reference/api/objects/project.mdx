@@ -18,12 +18,12 @@ A set of scripts and/or extensions
 ```graphql
 type Project {
   dependencies: [Project!]
-  extensions: [Extension!]!
+  extensions: [Extension!]
   generatedCode: Filesystem!
   install: Boolean!
   name: String!
   schema: String
-  scripts: [Script!]!
+  scripts: [Script!]
 }
 ```
 
@@ -34,7 +34,7 @@ type Project {
 > other projects with schema this project depends on
 > 
 
-#### [<code style={{ fontWeight: 'normal' }}>Project.<b>extensions</b></code>](#)<Bullet />[`[Extension!]!`](/reference/api/objects/extension) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+#### [<code style={{ fontWeight: 'normal' }}>Project.<b>extensions</b></code>](#)<Bullet />[`[Extension!]`](/reference/api/objects/extension) <Badge class="secondary" text="list"/> <Badge class="secondary" text="object"/>
 > extensions in this project
 > 
 
@@ -54,7 +54,7 @@ type Project {
 > schema provided by the project
 > 
 
-#### [<code style={{ fontWeight: 'normal' }}>Project.<b>scripts</b></code>](#)<Bullet />[`[Script!]!`](/reference/api/objects/script) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+#### [<code style={{ fontWeight: 'normal' }}>Project.<b>scripts</b></code>](#)<Bullet />[`[Script!]`](/reference/api/objects/script) <Badge class="secondary" text="list"/> <Badge class="secondary" text="object"/>
 > scripts in this project
 > 
 

@@ -1,6 +1,6 @@
 ---
-id: secret-id
-title: SecretID
+id: git
+title: git
 hide_table_of_contents: false
 ---
 
@@ -13,18 +13,28 @@ export const SpecifiedBy = (props) => <>Specification<a className="link" style={
 export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
 
 
-No description
+Query a git repository
 
 ```graphql
-scalar SecretID
+git(
+  url: String!
+): GitRepository!
 ```
 
 
+### Arguments
+
+#### [<code style={{ fontWeight: 'normal' }}>git.<b>url</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+### Type
+
+#### [`GitRepository`](/reference/api/objects/git-repository) <Badge class="secondary" text="object"/>
+> A git repository
+> 
 
 
-### Member of
-
-[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Directory`](/reference/api/objects/directory)  <Badge class="secondary" text="object"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/>
 
 
 

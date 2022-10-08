@@ -1,6 +1,6 @@
 ---
-id: secret-id
-title: SecretID
+id: directory
+title: directory
 hide_table_of_contents: false
 ---
 
@@ -13,18 +13,28 @@ export const SpecifiedBy = (props) => <>Specification<a className="link" style={
 export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
 
 
-No description
+Load a directory by ID. No argument produces an empty directory.
 
 ```graphql
-scalar SecretID
+directory(
+  id: DirectoryID
+): Directory!
 ```
 
 
+### Arguments
+
+#### [<code style={{ fontWeight: 'normal' }}>directory.<b>id</b></code>](#)<Bullet />[`DirectoryID`](/reference/api/scalars/directory-id) <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+### Type
+
+#### [`Directory`](/reference/api/objects/directory) <Badge class="secondary" text="object"/>
+> A directory
+> 
 
 
-### Member of
-
-[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Directory`](/reference/api/objects/directory)  <Badge class="secondary" text="object"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/>
 
 
 

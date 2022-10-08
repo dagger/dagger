@@ -38,8 +38,8 @@ type Filesystem {
   input: ExecInput!
 ): Exec!
   file(
-  lines: Int
   path: String!
+  lines: Int
 ): String
   id: FSID!
   loadProject(
@@ -48,9 +48,11 @@ type Filesystem {
   pushImage(
   ref: String!
 ): Boolean!
-  yarn(
-  runArgs: [String!]
-): Filesystem!
+  writeFile(
+  path: String!
+  contents: String!
+  permissions: String = "0664"
+): Filesystem
 }
 ```
 
@@ -93,11 +95,11 @@ type Filesystem {
 
 #### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>file</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
 > read a file at path
-> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.file.<b>lines</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.file.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
 > 
 > 
 
-##### [<code style={{ fontWeight: 'normal' }}>Filesystem.file.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.file.<b>lines</b></code>](#)<Bullet />[`Int`](/reference/api/scalars/int) <Badge class="secondary" text="scalar"/>
 > 
 > 
 
@@ -117,9 +119,17 @@ type Filesystem {
 > 
 > 
 
-#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>yarn</b></code>](#)<Bullet />[`Filesystem!`](/reference/api/objects/filesystem) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="object"/>
+#### [<code style={{ fontWeight: 'normal' }}>Filesystem.<b>writeFile</b></code>](#)<Bullet />[`Filesystem`](/reference/api/objects/filesystem) <Badge class="secondary" text="object"/>
+> write a file at path
+> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.writeFile.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
 > 
-> ##### [<code style={{ fontWeight: 'normal' }}>Filesystem.yarn.<b>runArgs</b></code>](#)<Bullet />[`[String!]`](/reference/api/scalars/string) <Badge class="secondary" text="list"/> <Badge class="secondary" text="scalar"/>
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.writeFile.<b>contents</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+##### [<code style={{ fontWeight: 'normal' }}>Filesystem.writeFile.<b>permissions</b></code>](#)<Bullet />[`String`](/reference/api/scalars/string) <Badge class="secondary" text="scalar"/>
 > 
 > 
 
@@ -127,7 +137,7 @@ type Filesystem {
 
 ### Member of
 
-[`Alpine`](/reference/api/objects/alpine)  <Badge class="secondary" text="object"/><Bullet />[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Exec`](/reference/api/objects/exec)  <Badge class="secondary" text="object"/><Bullet />[`Filesystem`](/reference/api/objects/filesystem)  <Badge class="secondary" text="object"/><Bullet />[`LocalDir`](/reference/api/objects/local-dir)  <Badge class="secondary" text="object"/><Bullet />[`Project`](/reference/api/objects/project)  <Badge class="secondary" text="object"/><Bullet />[`Yarn`](/reference/api/objects/yarn)  <Badge class="secondary" text="object"/>
+[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Exec`](/reference/api/objects/exec)  <Badge class="secondary" text="object"/><Bullet />[`Filesystem`](/reference/api/objects/filesystem)  <Badge class="secondary" text="object"/><Bullet />[`LocalDir`](/reference/api/objects/local-dir)  <Badge class="secondary" text="object"/><Bullet />[`Project`](/reference/api/objects/project)  <Badge class="secondary" text="object"/>
 
 
 

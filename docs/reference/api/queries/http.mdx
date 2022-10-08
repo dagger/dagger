@@ -1,6 +1,6 @@
 ---
-id: secret-id
-title: SecretID
+id: http
+title: http
 hide_table_of_contents: false
 ---
 
@@ -13,18 +13,28 @@ export const SpecifiedBy = (props) => <>Specification<a className="link" style={
 export const Badge = (props) => <><span class={'badge badge--' + props.class}>{props.text}</span></>
 
 
-No description
+An http remote
 
 ```graphql
-scalar SecretID
+http(
+  url: String!
+): File!
 ```
 
 
+### Arguments
+
+#### [<code style={{ fontWeight: 'normal' }}>http.<b>url</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> 
+> 
+
+### Type
+
+#### [`File`](/reference/api/objects/file) <Badge class="secondary" text="object"/>
+> A file
+> 
 
 
-### Member of
-
-[`Core`](/reference/api/objects/core)  <Badge class="secondary" text="object"/><Bullet />[`Directory`](/reference/api/objects/directory)  <Badge class="secondary" text="object"/><Bullet />[`ExecSecretEnvInput`](/reference/api/inputs/exec-secret-env-input)  <Badge class="secondary" text="input"/>
 
 
 
