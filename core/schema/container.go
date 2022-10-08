@@ -332,6 +332,7 @@ func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Cont
 
 type containerWithMountedCacheArgs struct {
 	Path   string
+	Cache  core.CacheID
 	Source core.DirectoryID
 }
 
@@ -341,7 +342,7 @@ func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Con
 		dir = &core.Directory{ID: args.Source}
 	}
 
-	return parent.WithMountedCache(ctx, args.Path, dir)
+	return parent.WithMountedCache(ctx, args.Path, args.Cache, dir)
 }
 
 type containerWithMountedTempArgs struct {

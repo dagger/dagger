@@ -44,6 +44,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&fileSchema{base},
 		&gitSchema{base},
 		&containerSchema{base},
+		&cacheSchema{base},
 		&filesystemSchema{base},
 		&projectSchema{
 			baseSchema:    base,
