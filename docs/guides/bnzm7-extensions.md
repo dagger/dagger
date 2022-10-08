@@ -1,5 +1,5 @@
 ---
-slug: /bnzm7/api-extensions
+slug: /bnzm7/extensions
 displayed_sidebar: '0.3'
 ---
 
@@ -7,7 +7,7 @@ displayed_sidebar: '0.3'
 
 ## Overview
 
-This document explains how to write an API extension for Dagger.
+This guide explains how to write an API extension for Dagger.
 
 ## SDK-specific guides
 

@@ -7,7 +7,7 @@ displayed_sidebar: '0.3'
 
 ## Overview
 
-This document explains how to operate Dagger.
+This guide explains how to operate Dagger.
 
 ## Concepts
 

@@ -18,21 +18,22 @@
     },
     {
       type: "category",
-      label: "Learn",
-      collapsible: false,
-      collapsed: false,
+      label: "Concepts",
+      collapsible: true,
+      collapsed: true,
       items: [
-        {
-          type: "category",
-          label: "Concepts",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "concepts/zlci7-api",
-            "concepts/jf74l-pipelines",
-            "concepts/hbf3z-extensions",
-          ],
-        },
+        "concepts/zlci7-api",
+        "concepts/jf74l-pipelines",
+        "concepts/hbf3z-extensions",
+      ],
+    },
+
+    {
+      type: "category",
+      label: "Tutorials and Guides",
+      collapsible: true,
+      collapsed: true,
+      items: [
         {
           type: "category",
           label: "Tutorials",
@@ -63,8 +64,8 @@
     {
       type: "category",
       label: "Reference",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
         {
           type: "category",
@@ -81,23 +82,19 @@
       ]
     },
     {
-      type: "doc",
-      label: "FAQ",
-      id: "faq/fvt9k-faq",
-    },
-    {
       type: "category",
       label: "Resources",
-      collapsible: false,
-      collapsed: false,
-      link: {
-        type: "doc",
-        id:  "resources/0lc02-index",
-      },
+      collapsible: true,
+      collapsed: true,
       items: [
         "resources/3i28k-events",
         "resources/kx7yn-videos",
       ],
+    },
+    {
+      type: "doc",
+      label: "FAQ",
+      id: "faq/fvt9k-faq",
     },
 
 
