@@ -17,14 +17,18 @@ No description
 
 ```graphql
 input CacheMountInput {
+  name: String!
   sharingMode: String!
   path: String!
-  name: String!
 }
 ```
 
 
 ### Fields
+
+#### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
+> Cache mount name
+> 
 
 #### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>sharingMode</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
 > Cache mount sharing mode (TODO: switch to enum)
@@ -32,10 +36,6 @@ input CacheMountInput {
 
 #### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>path</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
 > path at which the cache will be mounted
-> 
-
-#### [<code style={{ fontWeight: 'normal' }}>CacheMountInput.<b>name</b></code>](#)<Bullet />[`String!`](/reference/api/scalars/string) <Badge class="secondary" text="non-null"/> <Badge class="secondary" text="scalar"/>
-> Cache mount name
 > 
 
 
