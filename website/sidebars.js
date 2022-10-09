@@ -87,7 +87,6 @@
       collapsible: true,
       collapsed: true,
       items: [
-        "resources/3i28k-events",
         "resources/kx7yn-videos",
       ],
     },
