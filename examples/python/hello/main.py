@@ -1,23 +1,24 @@
-import dagger
 import strawberry
 from gql import gql
+
+import dagger
 
 
 @strawberry.type
 class Hello:
-
     greeting: str = "Hello"
 
     @strawberry.field
     def say(self, msg: str) -> str:
-        return '{} {}!'.format(self.greeting, msg)
+        return f"{self.greeting} {msg}!"
 
     @strawberry.field
-    def html(self, lines: int = 1) -> str:
+    def html(self, lines: int | None = 1) -> str:
         # embedded gql request to the core api
         c = dagger.Client()
         result = c.execute(
-            gql("""query ($lines: Int) {
+            gql(
+                """query ($lines: Int) {
                     core {
                         image(ref: "alpine") {
                             exec(input: {args: ["apk", "add", "curl"]}) {
@@ -29,16 +30,20 @@ class Hello:
                             }
                         }
                     }
-                }"""),
-            variable_values={'lines': lines})
-        return result['core']['image']['exec']['fs']['exec']['stdout']
+                }"""
+            ),
+            variable_values={"lines": lines},
+        )
+        return result["core"]["image"]["exec"]["fs"]["exec"]["stdout"]
 
 
-@strawberry.type
+@strawberry.type(extend=True)
 class Query:
-    hello: Hello
+    @strawberry.field
+    def hello(self) -> Hello:
+        return Hello()
 
 
-if __name__ == '__main__':
-    s = dagger.Server()
-    s.run()
+schema = strawberry.Schema(query=Query)
+
+server = dagger.Server(schema, debug=True)

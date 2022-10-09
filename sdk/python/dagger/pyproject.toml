@@ -8,10 +8,10 @@ version = "0.0.1"
 authors = [
   { name="Sam Alba", email="sam@dagger.io" },
 ]
-description = "Dagger client library"
+description = "Dagger library"
 #readme = "README.md"
 #license = { file="LICENSE" }
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
 #    "License :: OSI Approved :: MIT License",
@@ -20,6 +20,8 @@ classifiers = [
 dependencies = [
     "gql[requests] >= 3.4.0",
     "strawberry-graphql >= 0.130.3",
+    "attrs >= 22.1.0",
+    "cattrs >= 22.2.0",
 ]
 
 [project.urls]
