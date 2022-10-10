@@ -10,6 +10,9 @@
   "exports": {
     ".": "./sdk/nodejs/dagger/dist/index.js"
   },
+  "engines": {
+    "node": "~16"
+  },
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.0",
     "axios": "^0.27.2",
@@ -24,7 +27,7 @@
     "test-sdk": "timeout 60 node sdk/nodejs/test/index.mjs"
   },
   "devDependencies": {
-    "@types/node": "^18.7.18",
+    "@types/node": "~16",
     "typescript": "^4.8.3"
   }
 }
