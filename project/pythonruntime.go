@@ -25,10 +25,12 @@ func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Clien
 	ctrSrcPath := filepath.Join(workdir, filepath.Dir(p.configPath), subpath)
 	entrypointScript := fmt.Sprintf(`#!/bin/sh
 set -exu
+# go to the workdir
+cd %q
 # redirect local unix socket (graphql server) to a bound tcp port
 socat TCP-LISTEN:8080 UNIX-CONNECT:/dagger.sock &
 # run the extension
-exec python3 %q "$@"
+exec dagger-python "$@"
 `,
 		ctrSrcPath)
 	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")

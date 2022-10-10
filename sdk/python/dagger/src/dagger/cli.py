@@ -1,15 +1,33 @@
-import argparse
+import logging
+import sys
 
-from attrs import define
+import click
+
+from .log import configure_logging
+from .server import Server
 
 
-@define
-class Options:
-    schema: bool = False
+@click.command(short_help="Entrypoint for a dagger extension")
+@click.option("-schema", is_flag=True, help="Save schema to file")
+def run(schema: bool):
+    sys.path.insert(0, ".")
 
+    try:
+        from main import server
+    except (ImportError, AttributeError) as exc:
+        raise click.BadArgumentUsage(
+            "No “server: dagger.Server” found in “main” module."
+        )
 
-def parse_args() -> Options:
-    args = Options()
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-schema", action="store_true", help="Write schema file")
-    return parser.parse_args(namespace=args)
+    if not isinstance(server, Server):
+        raise click.BadArgumentUsage(
+            "The “server” must be an instance of “dagger.Server”"
+        )
+
+    configure_logging(logging.DEBUG if server.debug else logging.INFO)
+
+    if schema:
+        server.export_schema()
+        return
+
+    server.execute()

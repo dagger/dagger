@@ -2,13 +2,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from attrs import Factory, define
+from attrs import define
 from cattrs import Converter
 from strawberry import Schema
 
-from .cli import Options, parse_args
 from .converter import converter as json_converter
-from .log import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +26,13 @@ class Inputs:
 class Server:
     schema: Schema
     converter: Converter = json_converter
-    options: Options = Factory(parse_args)
     debug: bool = False
 
+    def export_schema(self) -> None:
+        logger.debug(f"schema => \n{self.schema}")
+        schema_path.write_text(str(self.schema))
+
     def execute(self) -> None:
-        configure_logging(logging.DEBUG if self.debug else logging.INFO)
-
-        if self.options.schema:
-            logger.debug(f"schema => \n{self.schema}")
-            self._write_schema()
-            return
-
         inputs = self._read_inputs()
         logger.debug(f"{inputs = }")
 
@@ -47,13 +41,8 @@ class Server:
 
         self._write_output(result)
 
-    def _write_schema(self) -> None:
-        with schema_path.open("w") as f:
-            f.write(str(self.schema))
-
     def _read_inputs(self) -> Inputs:
-        with inputs_path.open("r") as f:
-            return self.converter.loads(f.read(), Inputs)
+        return self.converter.loads(inputs_path.read_text(), Inputs)
 
     def _call_resolver(self, inputs: Inputs):
         type_name, field_name = inputs.resolver.split(".", 2)
@@ -65,6 +54,4 @@ class Server:
     def _write_output(self, o) -> None:
         output = self.converter.dumps(o, ensure_ascii=False)
         logger.debug(f"{output = }")
-
-        with outputs_path.open("w") as f:
-            f.write(output)
+        outputs_path.write_text(output)
