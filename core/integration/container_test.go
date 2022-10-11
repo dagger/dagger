@@ -1860,6 +1860,24 @@ func TestContainerFileErrors(t *testing.T) {
 		}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
+
+	secretID := newSecret(t, "some-secret")
+	err = testutil.Query(
+		`query Test($secret: SecretID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedSecret(path: "/sekret", source: $secret) {
+						file(path: "/sekret") {
+							contents
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"secret": secretID,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "sekret: no such file or directory")
 }
 
 func TestContainerFSDirectory(t *testing.T) {
