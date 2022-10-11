@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -70,7 +71,11 @@ func (dir *HostDirectory) Write(
 	// Mirror events from the sub-Build into the main Build event channel.
 	// Build() will close the channel after completion so we don't want to use the main channel directly.
 	ch := make(chan *bkclient.SolveStatus)
+
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for event := range ch {
 			solveCh <- event
 		}
@@ -101,6 +106,9 @@ func (dir *HostDirectory) Write(
 	if err != nil {
 		return false, err
 	}
+
+	wg.Wait()
+
 	return true, nil
 }
 
