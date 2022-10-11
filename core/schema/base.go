@@ -12,12 +12,10 @@ import (
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
-	"go.dagger.io/dagger/secret"
 )
 
 type InitializeArgs struct {
 	Router        *router.Router
-	SecretStore   *secret.Store
 	SSHAuthSockID string
 	WorkdirID     string
 	Gateway       bkgw.Client
@@ -30,7 +28,6 @@ type InitializeArgs struct {
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:        params.Router,
-		secretStore:   params.SecretStore,
 		gw:            params.Gateway,
 		bkClient:      params.BKClient,
 		solveOpts:     params.SolveOpts,
@@ -45,6 +42,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&gitSchema{base},
 		&containerSchema{base},
 		&cacheSchema{base},
+		&secretSchema{base},
 		&filesystemSchema{base},
 		&projectSchema{
 			baseSchema:    base,
@@ -52,14 +50,12 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		},
 		&execSchema{base},
 		&dockerBuildSchema{base},
-		&secretSchema{base},
 		&httpSchema{base},
 	)
 }
 
 type baseSchema struct {
 	router        *router.Router
-	secretStore   *secret.Store
 	gw            bkgw.Client
 	bkClient      *bkclient.Client
 	solveOpts     bkclient.SolveOpt

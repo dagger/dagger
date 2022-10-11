@@ -59,6 +59,17 @@ type containerIDPayload struct {
 
 	// The platform of the container's rootfs.
 	Platform specs.Platform `json:"platform,omitempty"`
+
+	// Secrets to expose to the container.
+	Secrets []ContainerSecret `json:"secret_env,omitempty"`
+}
+
+// ContainerSecret configures a secret to expose, either as an environment
+// variable or mounted to a file path.
+type ContainerSecret struct {
+	Secret    SecretID `json:"secret"`
+	EnvName   string   `json:"env,omitempty"`
+	MountPath string   `json:"path,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -241,6 +252,27 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return &Container{ID: id}, nil
 }
 
+func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	payload.Secrets = append(payload.Secrets, ContainerSecret{
+		Secret:    source.ID,
+		MountPath: target,
+	})
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
 func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -283,6 +315,25 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	}
 
 	return mounts, nil
+}
+
+func (container *Container) WithSecretVariable(ctx context.Context, name string, secret *Secret) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Secrets = append(payload.Secrets, ContainerSecret{
+		Secret:  secret.ID,
+		EnvName: name,
+	})
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
 }
 
 func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
@@ -476,15 +527,32 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
-	st, err := payload.FSState()
+	for i, secret := range payload.Secrets {
+		secretOpts := []llb.SecretOption{llb.SecretID(string(secret.Secret))}
+
+		var secretDest string
+		switch {
+		case secret.EnvName != "":
+			secretDest = secret.EnvName
+			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
+		case secret.MountPath != "":
+			secretDest = secret.MountPath
+		default:
+			return nil, fmt.Errorf("malformed secret config at index %d", i)
+		}
+
+		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
+	}
+
+	fsSt, err := payload.FSState()
 	if err != nil {
 		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
-	execSt := st.Run(runOpts...)
+	execSt := fsSt.Run(runOpts...)
 
 	for i, mnt := range mounts {
-		st, err := mnt.SourceState()
+		srcSt, err := mnt.SourceState()
 		if err != nil {
 			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
 		}
@@ -514,7 +582,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 			mountOpts = append(mountOpts, llb.Tmpfs())
 		}
 
-		mountSt := execSt.AddMount(mnt.Target, st, mountOpts...)
+		mountSt := execSt.AddMount(mnt.Target, srcSt, mountOpts...)
 
 		// propagate any changes to regular mounts to subsequent containers
 		if !mnt.Tmpfs && mnt.CacheID == "" {

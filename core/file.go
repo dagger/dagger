@@ -71,6 +71,10 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 	})
 }
 
+func (file *File) Secret(ctx context.Context) (*Secret, error) {
+	return NewSecretFromFile(file.ID)
+}
+
 func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
 	st, filePath, platform, err := file.Decode()
 	if err != nil {

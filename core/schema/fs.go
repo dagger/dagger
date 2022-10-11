@@ -19,3 +19,6 @@ var HTTP string
 
 //go:embed cache.graphqls
 var Cache string
+
+//go:embed secret.graphqls
+var Secret string

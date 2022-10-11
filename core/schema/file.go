@@ -29,7 +29,7 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 		},
 		"File": router.ObjectResolver{
 			"contents": router.ToResolver(s.contents),
-			"secret":   router.ErrResolver(ErrNotImplementedYet),
+			"secret":   router.ToResolver(s.secret),
 			"size":     router.ToResolver(s.size),
 		},
 	}
@@ -56,6 +56,10 @@ func (s *fileSchema) contents(ctx *router.Context, file *core.File, args any) (s
 	}
 
 	return string(content), nil
+}
+
+func (s *fileSchema) secret(ctx *router.Context, file *core.File, args any) (*core.Secret, error) {
+	return file.Secret(ctx)
 }
 
 func (s *fileSchema) size(ctx *router.Context, file *core.File, args any) (int64, error) {

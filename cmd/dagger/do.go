@@ -7,13 +7,10 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 	"go.dagger.io/dagger/engine"
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 )
 
@@ -31,7 +28,6 @@ func Do(cmd *cobra.Command, args []string) {
 	}
 
 	vars := getKVInput(queryVarsInput)
-	secrets := getKVInput(secretsInput)
 
 	localDirs := getKVInput(localDirsInput)
 
@@ -67,17 +63,9 @@ func Do(cmd *cobra.Command, args []string) {
 			vars[name] = string(id)
 		}
 
-		secretMapping, err := loadSecrets(ctx, ctx.Client, secrets)
-		if err != nil {
-			return err
-		}
-		for name, id := range secretMapping {
-			vars[name] = string(id)
-		}
-
 		res := make(map[string]interface{})
 		resp := &graphql.Response{Data: &res}
-		err = ctx.Client.MakeRequest(ctx,
+		err := ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query:     operations,
 				Variables: vars,
@@ -113,50 +101,4 @@ func getKVInput(kvs []string) map[string]string {
 		m[split[0]] = split[1]
 	}
 	return m
-}
-
-func loadSecrets(ctx context.Context, cl graphql.Client, secrets map[string]string) (map[string]dagger.SecretID, error) {
-	var eg errgroup.Group
-	var l sync.Mutex
-
-	mapping := map[string]dagger.SecretID{}
-	for name, value := range secrets {
-		name := name
-		value := value
-
-		eg.Go(func() error {
-			res := struct {
-				Core struct {
-					AddSecret dagger.SecretID
-				}
-			}{}
-			resp := &graphql.Response{Data: &res}
-
-			err := cl.MakeRequest(ctx,
-				&graphql.Request{
-					Query: `
-						query AddSecret($plaintext: String!) {
-							core {
-								addSecret(plaintext: $plaintext)
-							}
-						}
-				`,
-					Variables: map[string]any{
-						"plaintext": value,
-					},
-				},
-				resp,
-			)
-			if err != nil {
-				return err
-			}
-			l.Lock()
-			mapping[name] = res.Core.AddSecret
-			l.Unlock()
-
-			return nil
-		})
-	}
-
-	return mapping, eg.Wait()
 }

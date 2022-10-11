@@ -45,7 +45,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"variables":            router.ToResolver(s.variables),
 			"variable":             router.ToResolver(s.variable),
 			"withVariable":         router.ToResolver(s.withVariable),
-			"withSecretVariable":   router.ErrResolver(ErrNotImplementedYet),
+			"withSecretVariable":   router.ToResolver(s.withSecretVariable),
 			"withoutVariable":      router.ToResolver(s.withoutVariable),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
@@ -56,7 +56,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withMountedFile":      router.ToResolver(s.withMountedFile),
 			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
-			"withMountedSecret":    router.ErrResolver(ErrNotImplementedYet),
+			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
 			"withoutMount":         router.ToResolver(s.withoutMount),
 			"exec":                 router.ToResolver(s.exec),
 			"exitCode":             router.ToResolver(s.exitCode),
@@ -383,4 +383,22 @@ func absPath(workDir string, containerPath string) string {
 	}
 
 	return path.Join(workDir, containerPath)
+}
+
+type containerWithSecretVariableArgs struct {
+	Name   string
+	Secret core.SecretID
+}
+
+func (s *containerSchema) withSecretVariable(ctx *router.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
+	return parent.WithSecretVariable(ctx, args.Name, &core.Secret{ID: args.Secret})
+}
+
+type containerWithMountedSecretArgs struct {
+	Path   string
+	Source core.SecretID
+}
+
+func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
+	return parent.WithMountedSecret(ctx, args.Path, core.NewSecret(args.Source))
 }

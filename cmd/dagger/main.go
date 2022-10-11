@@ -15,7 +15,6 @@ var (
 	queryFile      string
 	queryVarsInput []string
 	localDirsInput []string
-	secretsInput   []string
 
 	devServerPort int
 )
@@ -34,11 +33,9 @@ func init() {
 	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
 	doCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
 	doCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
-	doCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
 	devCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
-	devCmd.Flags().StringSliceVarP(&secretsInput, "secret", "e", []string{}, "secret to import")
 }
 
 var rootCmd = &cobra.Command{
