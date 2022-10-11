@@ -18,6 +18,7 @@ dagger.#Plan & {
 				command: {
 					name: "/bin/sh"
 					args: ["-c", """
+							python --version
 							python --version | grep "3.8"
 						"""]
 				}
@@ -35,6 +36,7 @@ dagger.#Plan & {
 				command: {
 					name: "/bin/bash"
 					args: ["-c", """
+							python --version
 							python --version | grep "3.9"
 						"""]
 				}
