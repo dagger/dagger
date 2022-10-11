@@ -78,7 +78,7 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 	t.Parallel()
 
 	dir1 := t.TempDir()
-	err := os.WriteFile(path.Join(dir1, "foo"), []byte("bar"), 0644)
+	err := os.WriteFile(path.Join(dir1, "foo"), []byte("bar"), 0600)
 	require.NoError(t, err)
 
 	dir2 := t.TempDir()

@@ -12,7 +12,8 @@ import (
 )
 
 func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
-	contextState, rel, platform, err := p.workdir.Decode()
+	// TODO(vito): handle platform?
+	contextState, rel, _, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}

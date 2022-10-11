@@ -12,7 +12,8 @@ import (
 )
 
 func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
-	contextState, rel, platform, err := p.workdir.Decode()
+	// TODO(vito): handle platform?
+	contextState, rel, _, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}

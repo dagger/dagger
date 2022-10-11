@@ -14,7 +14,8 @@ import (
 )
 
 func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
-	st, _, platform, err := p.workdir.Decode() // TODO(vito): handle relative path?
+	// TODO(vito): handle relative path + platform?
+	st, _, _, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}

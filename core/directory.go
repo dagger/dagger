@@ -249,8 +249,8 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		}
 
 		if !reflect.DeepEqual(platform, dirPlatform) {
-			// TODO(vito): work around with llb.Copy shenangians?
-			return nil, fmt.Errorf("TODO: cannot diff across platforms: %+v != %+v", platform, dirPlatform)
+			// TODO(vito): work around with llb.Copy shenanigans?
+			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, dirPlatform)
 		}
 
 		states = append(states, state)
@@ -270,12 +270,12 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	}
 
 	if rel != otherRel {
-		// TODO(vito): work around with llb.Copy shenangians?
+		// TODO(vito): work around with llb.Copy shenanigans?
 		return nil, fmt.Errorf("TODO: cannot diff with different relative paths: %q != %q", rel, otherRel)
 	}
 
 	if !reflect.DeepEqual(platform, otherPlatform) {
-		// TODO(vito): work around with llb.Copy shenangians?
+		// TODO(vito): work around with llb.Copy shenanigans?
 		return nil, fmt.Errorf("TODO: cannot diff across platforms: %+v != %+v", platform, otherPlatform)
 	}
 

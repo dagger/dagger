@@ -17,7 +17,8 @@ import (
 var goGenerateSrc embed.FS
 
 func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
-	projectFS, rel, platform, err := p.workdir.Decode()
+	// TODO(vito): handle platform?
+	projectSt, rel, _, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema stri
 			`go build -o generate generate.go`,
 		),
 		llb.Dir("/tools"),
-		llb.AddMount("/src", projectFS, llb.Readonly, llb.SourcePath(rel)),
+		llb.AddMount("/src", projectSt, llb.Readonly, llb.SourcePath(rel)),
 		llb.AddEnv("CGO_ENABLED", "0"),
 		withGoCaching(),
 	).Root()
@@ -82,16 +83,16 @@ func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema stri
 
 	projectMounts := withRunOpts(
 		// mount only the project subdirectory that should receive changes as read-write, the rest is ro
-		llb.AddMount("/src", projectFS, llb.Readonly),
-		llb.AddMount(outputDir, projectFS, llb.SourcePath(projectSubpath)),
+		llb.AddMount("/src", projectSt, llb.Readonly),
+		llb.AddMount(outputDir, projectSt, llb.SourcePath(projectSubpath)),
 	)
 	if projectSubpath == "." {
 		// In the case where the subpath is also the root of the project, we only need one mount.
 		// If we don't implement it this way, buildkit will actually return just the projectFS unchanged
 		// (most likely because it gets the /src read-only mount and considers that a no-op?)
-		projectMounts = llb.AddMount(outputDir, projectFS)
+		projectMounts = llb.AddMount(outputDir, projectSt)
 	}
-	projectFS = base.Run(
+	projectSt = base.Run(
 		llb.Shlex("./generate"),
 		llb.Dir("/tools"),
 		projectMounts,
@@ -102,5 +103,5 @@ func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema stri
 		withGoCaching(),
 	).GetMount(outputDir)
 
-	return core.NewDirectory(ctx, projectFS, "", platform)
+	return core.NewDirectory(ctx, projectSt, "", platform)
 }
