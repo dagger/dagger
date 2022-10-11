@@ -344,25 +344,33 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	_, err = dir.Stat(ctx, gw, ".")
+	info, err := dir.Stat(ctx, gw, ".")
 	if err != nil {
 		return nil, err
+	}
+
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
 	}
 
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, gw bkgw.Client, dirPath string) (*File, error) {
-	file, err := locatePath(ctx, container, dirPath, gw, NewFile)
+func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
+	file, err := locatePath(ctx, container, filePath, gw, NewFile)
 	if err != nil {
 		return nil, err
 	}
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	_, err = file.Stat(ctx, gw)
+	info, err := file.Stat(ctx, gw)
 	if err != nil {
 		return nil, err
+	}
+
+	if info.IsDir() {
+		return nil, fmt.Errorf("path %s is a directory, not a file", filePath)
 	}
 
 	return file, nil

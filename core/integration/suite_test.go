@@ -35,3 +35,28 @@ func newCache(t *testing.T) core.CacheID {
 
 	return res.CacheFromTokens.ID
 }
+
+func dirWithFileID(t *testing.T, path string, contents string) core.DirectoryID {
+	dirRes := struct {
+		Directory struct {
+			WithNewFile struct {
+				ID core.DirectoryID
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`query Test($path: String!, $contents: String!) {
+			directory {
+				withNewFile(path: $path, contents: $contents) {
+					id
+				}
+			}
+		}`, &dirRes, &testutil.QueryOptions{Variables: map[string]any{
+			"path":     path,
+			"contents": contents,
+		}})
+	require.NoError(t, err)
+
+	return dirRes.Directory.WithNewFile.ID
+}

@@ -1556,6 +1556,23 @@ func TestContainerDirectoryErrors(t *testing.T) {
 			container {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						directory(path: "/mnt/dir/some-file") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "path /mnt/dir/some-file is a file, not a directory")
+
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/bogus") {
 							id
 						}
@@ -1696,34 +1713,10 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
-func dirWithFileID(t *testing.T, contents string) core.DirectoryID {
-	dirRes := struct {
-		Directory struct {
-			WithNewFile struct {
-				ID core.DirectoryID
-			}
-		}
-	}{}
-
-	err := testutil.Query(
-		`query Test($contents: String!) {
-			directory {
-				withNewFile(path: "some-file", contents: $contents) {
-					id
-				}
-			}
-		}`, &dirRes, &testutil.QueryOptions{Variables: map[string]any{
-			"contents": contents,
-		}})
-	require.NoError(t, err)
-
-	return dirRes.Directory.WithNewFile.ID
-}
-
 func TestContainerFile(t *testing.T) {
 	t.Parallel()
 
-	id := dirWithFileID(t, "some-content-")
+	id := dirWithFileID(t, "some-file", "some-content-")
 
 	writeRes := struct {
 		Container struct {
@@ -1799,7 +1792,7 @@ func TestContainerFile(t *testing.T) {
 func TestContainerFileErrors(t *testing.T) {
 	t.Parallel()
 
-	id := dirWithFileID(t, "some-content")
+	id := dirWithFileID(t, "some-file", "some-content")
 
 	err := testutil.Query(
 		`query Test($id: DirectoryID!) {
@@ -1817,6 +1810,23 @@ func TestContainerFileErrors(t *testing.T) {
 		}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: no such file or directory")
+
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						file(path: "/mnt/dir") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "path /mnt/dir is a directory, not a file")
 
 	err = testutil.Query(
 		`{
