@@ -75,7 +75,7 @@ extend type Directory {
 	loadProject(configPath: String!): Project!
 }
 
-extend type Core {
+extend type Query {
 	"Look up a project by name"
 	project(name: String!): Project!
 }
@@ -87,7 +87,7 @@ func (s *projectSchema) Resolvers() router.Resolvers {
 		"Directory": router.ObjectResolver{
 			"loadProject": router.ToResolver(s.loadProject),
 		},
-		"Core": router.ObjectResolver{
+		"Query": router.ObjectResolver{
 			"project": router.ToResolver(s.project),
 		},
 		"Project": router.ObjectResolver{
