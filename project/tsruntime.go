@@ -8,11 +8,11 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core"
 )
 
-func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*filesystem.Filesystem, error) {
-	contextState, err := p.workdir.ToState()
+func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+	contextState, rel, _, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -34,12 +34,12 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 		addSSHKnownHosts,
 	)
 
-	return filesystem.FromState(ctx,
+	return core.NewDirectory(ctx,
 		llb.Merge([]llb.State{
 			llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
 			llb.Scratch().
-				File(llb.Copy(contextState, "/", "/src")),
+				File(llb.Copy(contextState, rel, "/src")),
 		}).
 			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn install'`, ctrSrcPath)), baseRunOpts).
 			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn build'`, ctrSrcPath)), baseRunOpts).
@@ -51,6 +51,7 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 					ctrSrcPath,
 				)),
 			)),
+		"",
 		platform,
 	)
 }

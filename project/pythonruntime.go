@@ -8,11 +8,11 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core"
 )
 
-func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*filesystem.Filesystem, error) {
-	contextState, err := p.workdir.ToState()
+func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+	contextState, rel, platform, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -33,12 +33,12 @@ python3 main.py
 `,
 		ctrSrcPath)
 	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
-	return filesystem.FromState(ctx,
+	return core.NewDirectory(ctx,
 		llb.Merge([]llb.State{
 			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client socat`)).Root(),
 			llb.Scratch().
-				File(llb.Copy(contextState, "/", "/src")),
+				File(llb.Copy(contextState, rel, "/src")),
 		}).
 			// FIXME(samalba): Install python dependencies not as root
 			// FIXME(samalba): errors while installing requirements.txt will be ignored because of the `|| true`. Need to find a better way.
@@ -48,7 +48,7 @@ python3 main.py
 					requirementsfile, requirementsfile,
 				)),
 				llb.Dir(workdir),
-				llb.AddMount("/src", contextState),
+				llb.AddMount("/src", contextState, llb.SourcePath(rel)),
 				llb.AddMount(
 					"/root/.cache/pipcache",
 					llb.Scratch(),
@@ -58,6 +58,7 @@ python3 main.py
 				addSSHKnownHosts,
 			).
 			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),
+		"",
 		platform,
 	)
 }

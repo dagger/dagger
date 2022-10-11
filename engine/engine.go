@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/project"
@@ -33,9 +34,9 @@ const (
 )
 
 type Config struct {
+	Workdir    string
 	LocalDirs  map[string]string
 	DevServer  int
-	Workdir    string
 	ConfigPath string
 	// If true, just load extension metadata rather than compiling and stitching them in
 	SkipInstall bool
@@ -44,9 +45,9 @@ type Config struct {
 type Context struct {
 	context.Context
 	Client     graphql.Client
-	LocalDirs  map[string]dagger.FSID
+	Workdir    core.DirectoryID
+	LocalDirs  map[core.HostDirectoryID]core.DirectoryID
 	Project    *schema.Project
-	Workdir    dagger.FSID
 	ConfigPath string
 }
 
@@ -244,19 +245,19 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]string) (map[string]dagger.FSID, error) {
+func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]string) (map[core.HostDirectoryID]core.DirectoryID, error) {
 	var eg errgroup.Group
 	var l sync.Mutex
 
-	mapping := map[string]dagger.FSID{}
+	mapping := map[core.HostDirectoryID]core.DirectoryID{}
 	for localID := range localDirs {
 		localID := localID
 		eg.Go(func() error {
 			res := struct {
 				Host struct {
-					Dir struct {
+					Directory struct {
 						Read struct {
-							ID dagger.FSID `json:"id"`
+							ID core.DirectoryID `json:"id"`
 						}
 					}
 				}
@@ -266,9 +267,9 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 			err := cl.MakeRequest(ctx,
 				&graphql.Request{
 					Query: `
-						query LocalDir($id: String!) {
+						query LocalDir($id: HostDirectoryID!) {
 							host {
-								dir(id: $id) {
+								directory(id: $id) {
 									read {
 										id
 									}
@@ -287,7 +288,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 			}
 
 			l.Lock()
-			mapping[localID] = res.Host.Dir.Read.ID
+			mapping[core.HostDirectoryID(localID)] = res.Host.Directory.Read.ID
 			l.Unlock()
 
 			return nil
@@ -297,10 +298,10 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 	return mapping, eg.Wait()
 }
 
-func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, configPath string, doInstall bool) (*schema.Project, error) {
+func loadProject(ctx context.Context, cl graphql.Client, contextDir core.DirectoryID, configPath string, doInstall bool) (*schema.Project, error) {
 	res := struct {
 		Core struct {
-			Filesystem struct {
+			Directory struct {
 				LoadProject schema.Project
 			}
 		}
@@ -316,32 +317,30 @@ func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, 
 		&graphql.Request{
 			// FIXME:(sipsma) toggling install is extremely weird here, need better way
 			Query: fmt.Sprintf(`
-			query LoadProject($fs: FSID!, $configPath: String!) {
-				core {
-					filesystem(id: $fs) {
-						loadProject(configPath: $configPath) {
+			query LoadProject($dir: DirectoryID!, $configPath: String!) {
+				directory(id: $dir) {
+					loadProject(configPath: $configPath) {
+						name
+						schema
+						extensions {
+							path
+							schema
+							sdk
+						}
+						scripts {
+							path
+							sdk
+						}
+						dependencies {
 							name
 							schema
-							extensions {
-								path
-								schema
-								sdk
-							}
-							scripts {
-								path
-								sdk
-							}
-							dependencies {
-								name
-								schema
-							}
-							%s
 						}
+						%s
 					}
 				}
 			}`, install),
 			Variables: map[string]any{
-				"fs":         contextFS,
+				"dir":        contextDir,
 				"configPath": configPath,
 			},
 		},
@@ -351,7 +350,7 @@ func loadProject(ctx context.Context, cl graphql.Client, contextFS dagger.FSID, 
 		return nil, err
 	}
 
-	return &res.Core.Filesystem.LoadProject, nil
+	return &res.Core.Directory.LoadProject, nil
 }
 
 func findConfig() (string, error) {

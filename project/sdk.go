@@ -6,14 +6,14 @@ import (
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core"
 )
 
 // TODO:(sipsma) SDKs should be pluggable extensions, not hardcoded LLB here. The implementation here is a temporary bridge from the previous hardcoded Dockerfiles to the sdk-as-extension model.
 
 // return the FS with the executable extension code, ready to be invoked by dagger
-func (p *State) Runtime(ctx context.Context, ext *Extension, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*filesystem.Filesystem, error) {
-	var runtimeFS *filesystem.Filesystem
+func (p *State) Runtime(ctx context.Context, ext *Extension, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+	var runtimeFS *core.Directory
 	var err error
 	switch ext.SDK {
 	case "go":
@@ -30,15 +30,15 @@ func (p *State) Runtime(ctx context.Context, ext *Extension, gw bkgw.Client, pla
 	if err != nil {
 		return nil, err
 	}
-	if err := runtimeFS.Evaluate(ctx, gw); err != nil {
+	if _, err := runtimeFS.Stat(ctx, gw, "."); err != nil {
 		return nil, err
 	}
 	return runtimeFS, nil
 }
 
 // return the project filesystem plus any generated code from the SDKs of the extensions and scripts in the project
-func (p *State) Generate(ctx context.Context, coreSchema string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*filesystem.Filesystem, error) {
-	var generatedFSes []*filesystem.Filesystem
+func (p *State) Generate(ctx context.Context, coreSchema string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+	var generatedFSes []*core.Directory
 	extensions, err := p.Extensions(ctx, gw, platform, sshAuthSockID)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (p *State) Generate(ctx context.Context, coreSchema string, gw bkgw.Client,
 			if err != nil {
 				return nil, err
 			}
-			diff, err := filesystem.Diffed(ctx, p.workdir, generatedFS, platform)
+			diff, err := p.workdir.Diff(ctx, generatedFS)
 			if err != nil {
 				return nil, err
 			}
@@ -66,7 +66,7 @@ func (p *State) Generate(ctx context.Context, coreSchema string, gw bkgw.Client,
 			if err != nil {
 				return nil, err
 			}
-			diff, err := filesystem.Diffed(ctx, p.workdir, generatedFS, platform)
+			diff, err := p.workdir.Diff(ctx, generatedFS)
 			if err != nil {
 				return nil, err
 			}
@@ -75,5 +75,5 @@ func (p *State) Generate(ctx context.Context, coreSchema string, gw bkgw.Client,
 			fmt.Printf("unsupported sdk for generation %q\n", script.SDK)
 		}
 	}
-	return filesystem.Merged(ctx, generatedFSes, platform)
+	return core.MergeDirectories(ctx, generatedFSes, platform)
 }

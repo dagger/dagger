@@ -10,14 +10,14 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core/filesystem"
+	"go.dagger.io/dagger/core"
 )
 
 //go:embed go/*
 var goGenerateSrc embed.FS
 
-func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema string, gw bkgw.Client, platform specs.Platform) (*filesystem.Filesystem, error) {
-	projectFS, err := p.workdir.ToState()
+func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
+	projectFS, rel, platform, err := p.workdir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema stri
 			`go build -o generate generate.go`,
 		),
 		llb.Dir("/tools"),
-		llb.AddMount("/src", projectFS, llb.Readonly),
+		llb.AddMount("/src", projectFS, llb.Readonly, llb.SourcePath(rel)),
 		llb.AddEnv("CGO_ENABLED", "0"),
 		withGoCaching(),
 	).Root()
@@ -102,5 +102,5 @@ func (p *State) goGenerate(ctx context.Context, subpath, schema, coreSchema stri
 		withGoCaching(),
 	).GetMount(outputDir)
 
-	return filesystem.FromState(ctx, projectFS, platform)
+	return core.NewDirectory(ctx, projectFS, "", platform)
 }

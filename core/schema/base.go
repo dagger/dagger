@@ -9,6 +9,7 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
@@ -17,7 +18,7 @@ import (
 type InitializeArgs struct {
 	Router        *router.Router
 	SSHAuthSockID string
-	WorkdirID     string
+	WorkdirID     core.HostDirectoryID
 	Gateway       bkgw.Client
 	BKClient      *bkclient.Client
 	SolveOpts     bkclient.SolveOpt
@@ -36,13 +37,14 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		sshAuthSockID: params.SSHAuthSockID,
 	}
 	return router.MergeExecutableSchemas("core",
-		&coreSchema{base, params.WorkdirID},
+		&coreSchema{base},
 		&directorySchema{base},
 		&fileSchema{base},
 		&gitSchema{base},
 		&containerSchema{base},
 		&cacheSchema{base},
 		&secretSchema{base},
+		&hostSchema{base, params.WorkdirID},
 		&filesystemSchema{base},
 		&projectSchema{
 			baseSchema:    base,
