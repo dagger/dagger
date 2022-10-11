@@ -300,3 +300,165 @@ func TestDirectoryWithCopiedFile(t *testing.T) {
 	require.NotEmpty(t, res.Directory.WithCopiedFile.File.ID)
 	require.Equal(t, "some-content", res.Directory.WithCopiedFile.File.Contents)
 }
+
+func TestDirectoryWithoutDirectory(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
+						id
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+
+	var res2 struct {
+		Directory struct {
+			WithDirectory struct {
+				WithoutDirectory struct {
+					Contents []string
+				}
+			}
+		}
+	}
+
+	err = testutil.Query(
+		`query Test($src: DirectoryID!) {
+			directory {
+				withDirectory(path: "with-dir", directory: $src) {
+					withoutDirectory(path: "with-dir/some-dir") {
+						contents(path: "with-dir")
+					}
+				}
+			}
+		}`, &res2, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"src": res.Directory.WithNewFile.WithNewFile.ID,
+			},
+		})
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-file"}, res2.Directory.WithDirectory.WithoutDirectory.Contents)
+}
+
+func TestDirectoryWithoutFile(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "some-file", contents: "some-content") {
+					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
+						id
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+
+	var res2 struct {
+		Directory struct {
+			WithDirectory struct {
+				WithoutFile struct {
+					Contents []string
+				}
+			}
+		}
+	}
+
+	err = testutil.Query(
+		`query Test($src: DirectoryID!) {
+			directory {
+				withDirectory(path: "with-dir", directory: $src) {
+					withoutFile(path: "with-dir/some-file") {
+						contents(path: "with-dir")
+					}
+				}
+			}
+		}`, &res2, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"src": res.Directory.WithNewFile.WithNewFile.ID,
+			},
+		})
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-dir"}, res2.Directory.WithDirectory.WithoutFile.Contents)
+}
+
+func TestDirectoryDiff(t *testing.T) {
+	t.Parallel()
+
+	aID := dirWithFileID(t, "a-file", "a-content")
+	bID := dirWithFileID(t, "b-file", "b-content")
+
+	var res struct {
+		Directory struct {
+			Diff struct {
+				Contents []string
+			}
+		}
+	}
+
+	diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
+			directory(id: $id) {
+				diff(other: $other) {
+					contents
+				}
+			}
+		}`
+	err := testutil.Query(diff, &res, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"id":    aID,
+			"other": bID,
+		},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"b-file"}, res.Directory.Diff.Contents)
+
+	err = testutil.Query(diff, &res, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"id":    bID,
+			"other": aID,
+		},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"a-file"}, res.Directory.Diff.Contents)
+
+	/*
+		This triggers a nil panic in Buildkit!
+
+		err = testutil.Query(diff, &res, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"id":    aID,
+				"other": aID,
+			},
+		})
+		require.NoError(t, err)
+
+		require.Empty(t, res.Directory.Diff.Contents)
+	*/
+}

@@ -36,7 +36,7 @@ func newCache(t *testing.T) core.CacheID {
 	return res.CacheFromTokens.ID
 }
 
-func dirWithFileID(t *testing.T, path string, contents string) core.DirectoryID {
+func dirWithFileID(t *testing.T, path, contents string) core.DirectoryID {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
