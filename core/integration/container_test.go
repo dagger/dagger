@@ -1696,28 +1696,34 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
-func TestContainerFile(t *testing.T) {
-	t.Parallel()
-
+func dirWithFileID(t *testing.T, contents string) core.DirectoryID {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
-				ID core.FileID
+				ID core.DirectoryID
 			}
 		}
 	}{}
 
 	err := testutil.Query(
-		`{
+		`query Test($contents: String!) {
 			directory {
-				withNewFile(path: "some-file", contents: "some-content-") {
+				withNewFile(path: "some-file", contents: $contents) {
 					id
 				}
 			}
-		}`, &dirRes, nil)
+		}`, &dirRes, &testutil.QueryOptions{Variables: map[string]any{
+			"contents": contents,
+		}})
 	require.NoError(t, err)
 
-	id := dirRes.Directory.WithNewFile.ID
+	return dirRes.Directory.WithNewFile.ID
+}
+
+func TestContainerFile(t *testing.T) {
+	t.Parallel()
+
+	id := dirWithFileID(t, "some-content-")
 
 	writeRes := struct {
 		Container struct {
@@ -1734,7 +1740,7 @@ func TestContainerFile(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err := testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "alpine:3.16.2") {
@@ -1793,31 +1799,9 @@ func TestContainerFile(t *testing.T) {
 func TestContainerFileErrors(t *testing.T) {
 	t.Parallel()
 
-	dirRes := struct {
-		Directory struct {
-			WithNewFile struct {
-				WithNewFile struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}{}
+	id := dirWithFileID(t, "some-content")
 
 	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
-						id
-					}
-				}
-			}
-		}`, &dirRes, nil)
-	require.NoError(t, err)
-
-	id := dirRes.Directory.WithNewFile.WithNewFile.ID
-
-	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "alpine:3.16.2") {
