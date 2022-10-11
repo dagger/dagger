@@ -8,8 +8,8 @@ class Engine:
 
     def __init__(self,
                  port: int = 8080,
-                 workdir: str = None,
-                 configPath: str = None):
+                 workdir: str | None = None,
+                 configPath: str | None = None):
         if workdir is None:
             workdir = os.environ.get('DAGGER_WORKDIR', os.getcwd())
         if configPath is None:
