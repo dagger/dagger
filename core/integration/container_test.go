@@ -1,7 +1,10 @@
 package core
 
 import (
+	"archive/tar"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2444,4 +2447,41 @@ func TestContainerMultipleMounts(t *testing.T) {
 	out, err := build.Stdout().Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "123", out)
+}
+
+func TestContainerExport(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	dest := filepath.Join(t.TempDir(), "image.tar")
+
+	ok, err := c.Core().Container().From("alpine:3.16.2").Export(ctx, dest)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	f, err := os.Open(dest)
+	require.NoError(t, err)
+
+	entries := []string{}
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+		}
+
+		entries = append(entries, hdr.Name)
+	}
+
+	require.Contains(t, entries, "oci-layout")
+	require.Contains(t, entries, "manifest.json")
+	require.Contains(t, entries, "index.json")
 }

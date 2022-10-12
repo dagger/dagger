@@ -186,6 +186,16 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Export the container an OCI tarball to the destination path.
+func (r *Container) Export(ctx context.Context, path string) (bool, error) {
+	q := r.q.Select("export")
+	q = q.Arg("path", path)
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieve a file at the given path. Mounts are included.
 func (r *Container) File(path string) *File {
 	q := r.q.Select("file")
