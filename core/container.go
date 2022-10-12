@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -994,6 +996,60 @@ func (container *Container) Platform() (specs.Platform, error) {
 		return specs.Platform{}, err
 	}
 	return payload.Platform, nil
+}
+
+func (container *Container) Export(ctx context.Context, session *Session, dest string) error {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return err
+	}
+
+	st, err := payload.FSState()
+	if err != nil {
+		return err
+	}
+
+	stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return err
+	}
+
+	cfgBytes, err := json.Marshal(specs.Image{
+		Architecture: payload.Platform.Architecture,
+		OS:           payload.Platform.OS,
+		OSVersion:    payload.Platform.OSVersion,
+		OSFeatures:   payload.Platform.OSFeatures,
+		Config:       payload.Config,
+	})
+	if err != nil {
+		return err
+	}
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+
+	defer out.Close()
+
+	_, err = session.WithLocalDirs(payload.LocalDirs).WithExport(bkclient.ExportEntry{
+		Type: bkclient.ExporterOCI,
+		Output: func(map[string]string) (io.WriteCloser, error) {
+			return out, nil
+		},
+	}).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		return res, nil
+	})
+
+	return err
 }
 
 type ContainerExecOpts struct {
