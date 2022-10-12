@@ -23,17 +23,6 @@ func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]
 		}
 	}
 
-	// FIXME: explicitly remove the old API from codegen. Remove once the API has been migrated.
-	q := schema.Query()
-	fields := []*introspection.Field{}
-	for _, f := range q.Fields {
-		if f.Name == "core" || f.Name == "host" {
-			continue
-		}
-		fields = append(fields, f)
-	}
-	q.Fields = fields
-
 	gen := &GoGenerator{
 		cfg:    cfg,
 		schema: schema,
@@ -87,34 +76,6 @@ func (g *GoGenerator) Generate(_ context.Context) ([]byte, error) {
 			}
 			render = append(render, out.String())
 			return nil
-		},
-		// FIXME: temporary limit on the generation
-		Allowed: map[string]struct{}{
-			// Scalars
-			"DirectoryID":      {},
-			"SecretID":         {},
-			"ContainerID":      {},
-			"FileID":           {},
-			"ContainerAddress": {},
-			"CacheID":          {},
-
-			// Inputs
-			"ExecOpts": {},
-
-			// Objects
-			"Query":         {},
-			"File":          {},
-			"Directory":     {},
-			"Container":     {},
-			"GitRepository": {},
-			"GitRef":        {},
-			"Secret":        {},
-			"CacheVolume":   {},
-
-			// Project API
-			"Project":   {},
-			"Extension": {},
-			"Script":    {},
 		},
 	})
 	if err != nil {

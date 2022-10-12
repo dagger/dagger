@@ -118,4 +118,8 @@ var commonInitialisms = map[string]bool{
 	"XMPP":  true,
 	"XSRF":  true,
 	"XSS":   true,
+
+	// Custom added for dagger
+	"FS":  true,
+	"SDK": true,
 }
