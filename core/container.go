@@ -504,7 +504,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]string, opts ContainerExecOpts) (*Container, error) {
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]string, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
