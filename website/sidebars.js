@@ -111,7 +111,7 @@ module.exports = {
       label: "Guidelines",
       collapsible: false,
       collapsed: false,
-      items: ["common/guidelines/contributing", "common/guidelines/coding-style"],
+      items: ["common/guidelines/contributing", "v0.2/guidelines/coding-style"],
     },
     {
       type: "category",
@@ -137,6 +137,7 @@ module.exports = {
       },
       items: [
         "v0.2/use-cases/go-docker-swarm",
+        "v0.2/use-cases/go-docker-hub",
         "v0.2/use-cases/node-ci",
         "v0.2/use-cases/aws-sam",
       ],
@@ -180,13 +181,6 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: ["v0.1/use-cases/ci"],
-    },
-    {
-      type: "category",
-      label: "Guidelines",
-      collapsible: true,
-      collapsed: true,
-      items: ["common/guidelines/contributing", "common/guidelines/coding-style"],
     },
     {
       type: "category",

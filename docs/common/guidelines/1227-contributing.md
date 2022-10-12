@@ -14,7 +14,7 @@ on something that will not get merged.
 
 ## Package Style Guide
 
-If you're contributing CUE packages, be sure to follow the [Package Coding Style](./1226-coding-style.md) guide as well.
+If you're contributing to the project, be sure to follow the code style guides in our documentation.
 
 ## GitHub Workflow
 
