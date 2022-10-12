@@ -43,8 +43,10 @@ type cacheArgs struct {
 
 func (s *cacheSchema) cache(ctx *router.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
 	if args.ID == "" {
-		// TODO(vito): it would make much more sense to have some sort of scope
-		// inject an initial value here, but that's not implemented yet.
+		// TODO(vito): inject some sort of scope/session/project/user derived value
+		// here instead of a static value
+		//
+		// we have to inject something so we can tell it's a valid ID
 		return core.NewCache("cache")
 	}
 

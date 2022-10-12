@@ -3,7 +3,6 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 
 	"github.com/pkg/errors"
 )
@@ -25,7 +24,7 @@ func (id CacheID) decode() (*cacheIDPayload, error) {
 		return nil, ErrInvalidCacheID
 	}
 
-	if payload.Key == "" {
+	if len(payload.Keys) == 0 {
 		return nil, ErrInvalidCacheID
 	}
 
@@ -34,29 +33,35 @@ func (id CacheID) decode() (*cacheIDPayload, error) {
 
 // cacheIDPayload is the inner content of a CacheID.
 type cacheIDPayload struct {
-	// TODO(vito): right now this is a bit goofy, but if we ever want to add
-	// extra fields for scoping, this is what we'd augment.
-	Key string `json:"key"`
+	Keys []string `json:"keys"`
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
 func (payload cacheIDPayload) Sum() string {
 	hash := sha256.New()
-	_, _ = hash.Write([]byte(payload.Key))
+	for _, tok := range payload.Keys {
+		_, _ = hash.Write([]byte(tok + "\x00"))
+	}
+
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
-func NewCache(key string) (*CacheVolume, error) {
-	id, err := encodeID(cacheIDPayload{
-		Key: key,
-	})
+func (payload cacheIDPayload) Encode() (CacheID, error) {
+	id, err := encodeID(payload)
+	if err != nil {
+		return "", err
+	}
+
+	return CacheID(id), nil
+}
+
+func NewCache(keys ...string) (*CacheVolume, error) {
+	id, err := cacheIDPayload{Keys: keys}.Encode()
 	if err != nil {
 		return nil, err
 	}
 
-	return &CacheVolume{
-		ID: CacheID(id),
-	}, nil
+	return &CacheVolume{ID: id}, nil
 }
 
 func NewCacheFromID(id CacheID) (*CacheVolume, error) {
@@ -74,5 +79,12 @@ func (cache *CacheVolume) WithKey(key string) (*CacheVolume, error) {
 		return nil, err
 	}
 
-	return NewCache(fmt.Sprintf("%s:%s", payload.Key, key))
+	payload.Keys = append(payload.Keys, key)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &CacheVolume{ID: id}, nil
 }
