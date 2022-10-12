@@ -16,13 +16,17 @@ type QueryOptions struct {
 }
 
 func Query(query string, res any, opts *QueryOptions) error {
+	return QueryWithEngineConfig(query, res, opts, nil)
+}
+
+func QueryWithEngineConfig(query string, res any, opts *QueryOptions, cfg *engine.Config) error {
 	if opts == nil {
 		opts = &QueryOptions{}
 	}
 	if opts.Variables == nil {
 		opts.Variables = make(map[string]any)
 	}
-	return engine.Start(context.Background(), nil, func(ctx engine.Context) error {
+	return engine.Start(context.Background(), cfg, func(ctx engine.Context) error {
 		return ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query:     query,

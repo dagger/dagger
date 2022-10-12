@@ -59,27 +59,23 @@ func TestExtensionNetlifyGo(t *testing.T) {
 		// TODO: until we setup some shared netlify auth tokens, this test just asserts on the schema showing up
 
 		res := struct {
-			Core struct {
-				Project struct {
-					Schema string
-				}
+			Project struct {
+				Schema string
 			}
 		}{}
 		resp := &graphql.Response{Data: &res}
 		err := ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query: `{
-					core {
-						project(name: "netlify") {
-							schema
-						}
+					project(name: "netlify") {
+						schema
 					}
 				}`,
 			},
 			resp,
 		)
 		require.NoError(t, err)
-		require.NotEmpty(t, res.Core.Project.Schema)
+		require.NotEmpty(t, res.Project.Schema)
 
 		return nil
 	})

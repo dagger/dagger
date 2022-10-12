@@ -8,6 +8,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
@@ -36,7 +37,7 @@ func Generate(cmd *cobra.Command, args []string) {
 			return err
 		}
 
-		if err := export(ctx, cl, generatedCodeFS.ID); err != nil {
+		if err := export(ctx, cl, generatedCodeFS); err != nil {
 			return err
 		}
 
@@ -47,12 +48,12 @@ func Generate(cmd *cobra.Command, args []string) {
 	}
 }
 
-func projectGeneratedCode(ctx context.Context, cl graphql.Client, projectFS dagger.FSID, configPath string) (*dagger.Filesystem, error) {
+func projectGeneratedCode(ctx context.Context, cl graphql.Client, projectDir core.DirectoryID, configPath string) (core.DirectoryID, error) {
 	data := struct {
-		Core struct {
-			Filesystem struct {
-				LoadProject struct {
-					GeneratedCode dagger.Filesystem
+		Directory struct {
+			LoadProject struct {
+				GeneratedCode struct {
+					ID core.DirectoryID
 				}
 			}
 		}
@@ -74,19 +75,19 @@ func projectGeneratedCode(ctx context.Context, cl graphql.Client, projectFS dagg
 				}
 			}`,
 			Variables: map[string]any{
-				"fs":         projectFS,
+				"fs":         projectDir,
 				"configPath": configPath,
 			},
 		},
 		resp,
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return &data.Core.Filesystem.LoadProject.GeneratedCode, nil
+	return data.Directory.LoadProject.GeneratedCode.ID, nil
 }
 
-func export(ctx context.Context, cl graphql.Client, fs dagger.FSID) error {
+func export(ctx context.Context, cl graphql.Client, dir core.DirectoryID) error {
 	data := struct {
 		Host struct {
 			Workdir struct {
@@ -99,15 +100,15 @@ func export(ctx context.Context, cl graphql.Client, fs dagger.FSID) error {
 	err := cl.MakeRequest(ctx,
 		&graphql.Request{
 			Query: `
-			query Export($fs: FSID!) {
+			query Export($dir: DirectoryID!) {
 				host {
 					workdir {
-						write(contents: $fs)
+						write(contents: $dir)
 					}
 				}
 			}`,
 			Variables: map[string]any{
-				"fs": fs,
+				"dir": dir,
 			},
 		},
 		resp,

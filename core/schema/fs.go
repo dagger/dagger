@@ -22,3 +22,6 @@ var Cache string
 
 //go:embed secret.graphqls
 var Secret string
+
+//go:embed host.graphqls
+var Host string

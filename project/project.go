@@ -14,6 +14,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
 	"gopkg.in/yaml.v2"
@@ -38,7 +39,7 @@ const (
 
 type State struct {
 	config     projectConfig
-	workdir    *filesystem.Filesystem
+	workdir    *core.Directory
 	configPath string
 
 	schema     string
@@ -55,16 +56,22 @@ type State struct {
 
 func Load(
 	ctx context.Context,
-	workdir *filesystem.Filesystem,
+	workdir *core.Directory,
 	configPath string,
 	cache map[string]*State,
 	cacheMu *sync.RWMutex,
 	gw bkgw.Client,
 ) (*State, error) {
-	cfgBytes, err := workdir.ReadFile(ctx, gw, configPath)
+	file, err := workdir.File(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}
+
+	cfgBytes, err := file.Contents(ctx, gw)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &State{
 		workdir:    workdir,
 		configPath: configPath,
@@ -136,7 +143,7 @@ func (p *State) Dependencies(
 				if sshAuthSockID != "" {
 					opts = append(opts, llb.MountSSHSock(sshAuthSockID))
 				}
-				gitFS, err := filesystem.FromState(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), platform)
+				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), "", platform)
 				if err != nil {
 					rerr = err
 					return
@@ -159,10 +166,14 @@ func (p *State) Extensions(ctx context.Context, gw bkgw.Client, platform specs.P
 		for i, ext := range p.config.Extensions {
 			// first try to load a hardcoded schema
 			// TODO: remove this once all extensions migrate to code-first
-			schemaBytes, err := p.workdir.ReadFile(ctx, gw, path.Join(path.Dir(p.configPath), ext.Path, schemaPath))
+			schemaPath := path.Join(path.Dir(p.configPath), ext.Path, schemaPath)
+			schemaFile, err := p.workdir.File(ctx, schemaPath)
 			if err == nil {
-				p.config.Extensions[i].Schema = string(schemaBytes)
-				continue
+				schemaBytes, err := schemaFile.Contents(ctx, gw)
+				if err == nil {
+					p.config.Extensions[i].Schema = string(schemaBytes)
+					continue
+				}
 			}
 
 			// otherwise go ask the extension for its schema
@@ -171,13 +182,16 @@ func (p *State) Extensions(ctx context.Context, gw bkgw.Client, platform specs.P
 				rerr = err
 				return
 			}
-			fsState, err := runtimeFS.ToState()
+
+			// TODO(vito): handle relative path + platform?
+			fsState, _, _, err := runtimeFS.Decode()
 			if err != nil {
 				rerr = err
 				return
 			}
 
-			workdirSt, err := p.workdir.ToState()
+			// TODO(vito): handle relative path + platform?
+			workdirSt, _, _, err := p.workdir.Decode()
 			if err != nil {
 				rerr = err
 				return
@@ -268,7 +282,7 @@ func (p *State) Resolvers(ctx context.Context, gw bkgw.Client, platform specs.Pl
 	return p.resolvers, rerr
 }
 
-func (p *State) resolver(runtimeFS *filesystem.Filesystem, sdk string, gw bkgw.Client, platform specs.Platform) graphql.FieldResolveFn {
+func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, platform specs.Platform) graphql.FieldResolveFn {
 	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
 		pathArray := ctx.ResolveParams.Info.Path.AsArray()
 		name := fmt.Sprintf("%+v", pathArray)
@@ -285,12 +299,14 @@ func (p *State) resolver(runtimeFS *filesystem.Filesystem, sdk string, gw bkgw.C
 		}
 		input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
 
-		fsState, err := runtimeFS.ToState()
+		// TODO(vito): handle relative path + platform?
+		fsState, _, _, err := runtimeFS.Decode()
 		if err != nil {
 			return nil, err
 		}
 
-		workdirSt, err := p.workdir.ToState()
+		// TODO(vito): handle relative path + platform?
+		workdirSt, _, _, err := p.workdir.Decode()
 		if err != nil {
 			return nil, err
 		}
@@ -327,8 +343,8 @@ func (p *State) resolver(runtimeFS *filesystem.Filesystem, sdk string, gw bkgw.C
 		// FIXME:(sipsma) got to be a better way than string matching parent type... But not easy
 		// to just use go type matching because the parent result may be a Filesystem struct or
 		// an untyped map[string]interface{}.
-		if ctx.ResolveParams.Info.ParentType.Name() == "Filesystem" {
-			var parentFS filesystem.Filesystem
+		if ctx.ResolveParams.Info.ParentType.Name() == "Directory" {
+			var parentFS core.Directory
 			bytes, err := json.Marshal(parent)
 			if err != nil {
 				return nil, err
@@ -336,10 +352,13 @@ func (p *State) resolver(runtimeFS *filesystem.Filesystem, sdk string, gw bkgw.C
 			if err := json.Unmarshal(bytes, &parentFS); err != nil {
 				return nil, err
 			}
-			fsState, err := parentFS.ToState()
+
+			// TODO(vito): handle relative path + platform?
+			fsState, _, _, err := parentFS.Decode()
 			if err != nil {
 				return nil, err
 			}
+
 			// FIXME:(sipsma) not a good place to hardcode mounting this in, same as mounting in resolver args
 			st.AddMount("/mnt/.parent", fsState, llb.ForceNoOutput)
 		}

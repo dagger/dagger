@@ -59,8 +59,8 @@ func Do(cmd *cobra.Command, args []string) {
 
 	var result []byte
 	err := engine.Start(ctx, startOpts, func(ctx engine.Context) error {
-		for name, id := range ctx.LocalDirs {
-			vars[name] = string(id)
+		for hostID, dirID := range ctx.LocalDirs {
+			vars[string(hostID)] = string(dirID)
 		}
 
 		res := make(map[string]interface{})

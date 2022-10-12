@@ -1,22 +1,37 @@
 extend type Query {
-    "Query the host environment"
-    host: Host!
+  "Query the host environment"
+  host: Host!
 }
 
 "Information about the host execution environment"
 type Host {
-    "The current working directory on the host"
-    workdir: Directory!
+  "The current working directory on the host"
+  workdir: HostDirectory!
 
-    "Lookup the value of an environment variable. Null if the variable is not available."
-    variable(name: String!): HostVariable
+  "Access a directory on the host"
+  directory(id: HostDirectoryID!): HostDirectory!
+
+  "Lookup the value of an environment variable. Null if the variable is not available."
+  variable(name: String!): HostVariable
+}
+
+"An identifier for a directory on the host"
+scalar HostDirectoryID
+
+"A directory on the host"
+type HostDirectory {
+  "Read the contents of the directory"
+  read: Directory!
+
+  "Write the contents of another directory to the directory"
+  write(contents: DirectoryID!, path: String): Boolean!
 }
 
 "An environment variable on the host environment"
 type HostVariable {
-    "The value of this variable"
-    value: String!
+  "The value of this variable"
+  value: String!
 
-    "A secret referencing the value of this variable"
-    secret: Secret!
+  "A secret referencing the value of this variable"
+  secret: Secret!
 }

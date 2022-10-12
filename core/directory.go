@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"reflect"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -237,6 +238,48 @@ func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *Fi
 	st = st.File(llb.Copy(srcSt, srcPath, path.Join(cwd, subdir)))
 
 	return NewDirectory(ctx, st, cwd, platform)
+}
+
+func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
+	states := make([]llb.State, 0, len(dirs))
+	for _, fs := range dirs {
+		state, _, dirPlatform, err := fs.Decode()
+		if err != nil {
+			return nil, err
+		}
+
+		if !reflect.DeepEqual(platform, dirPlatform) {
+			// TODO(vito): work around with llb.Copy shenanigans?
+			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, dirPlatform)
+		}
+
+		states = append(states, state)
+	}
+	return NewDirectory(ctx, llb.Merge(states), "", platform)
+}
+
+func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
+	st, rel, platform, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	otherSt, otherRel, otherPlatform, err := other.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	if rel != otherRel {
+		// TODO(vito): work around with llb.Copy shenanigans?
+		return nil, fmt.Errorf("TODO: cannot diff with different relative paths: %q != %q", rel, otherRel)
+	}
+
+	if !reflect.DeepEqual(platform, otherPlatform) {
+		// TODO(vito): work around with llb.Copy shenanigans?
+		return nil, fmt.Errorf("TODO: cannot diff across platforms: %+v != %+v", platform, otherPlatform)
+	}
+
+	return NewDirectory(ctx, llb.Diff(st, otherSt), rel, platform)
 }
 
 func (dir *Directory) Decode() (llb.State, string, specs.Platform, error) {
