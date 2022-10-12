@@ -15,6 +15,9 @@ func New(c graphql.Client) *Query {
 	}
 }
 
+// A global cache volume identifier
+type CacheID string
+
 // The address (also known as "ref") of a container published as an OCI image.
 //
 // Examples:
@@ -32,6 +35,7 @@ type DirectoryID string
 
 type FileID string
 
+// A unique identifier for a secret
 type SecretID string
 
 // Additional options for executing a command
@@ -51,10 +55,33 @@ type ExecOpts struct {
 	Stdin string `json:"stdin"`
 }
 
+// A directory whose contents persist across runs
+type CacheVolume struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
+	q := r.q.Select("id")
+
+	var response CacheID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // An OCI-compatible container, also known as a docker container
 type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
+}
+
+// Default arguments for future commands
+func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
+	q := r.q.Select("defaultArgs")
+
+	var response []string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieve a directory at the given path. Mounts are included.
@@ -79,11 +106,20 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 
 // ContainerExecOptions contains options for Container.Exec
 type ContainerExecOptions struct {
+	Args *[]string
+
 	Opts *ExecOpts
 }
 
 // ContainerExecOption represents an option handler for Container.Exec
 type ContainerExecOption func(*ContainerExecOptions)
+
+// WithContainerExecArgs sets the "args" option for Exec
+func WithContainerExecArgs(args []string) ContainerExecOption {
+	return func(daggerOptions *ContainerExecOptions) {
+		daggerOptions.Args = &args
+	}
+}
 
 // WithContainerExecOpts sets the "opts" option for Exec
 func WithContainerExecOpts(opts ExecOpts) ContainerExecOption {
@@ -93,13 +129,15 @@ func WithContainerExecOpts(opts ExecOpts) ContainerExecOption {
 }
 
 // This container after executing the specified command inside it
-func (r *Container) Exec(args []string, options ...ContainerExecOption) *Container {
+func (r *Container) Exec(options ...ContainerExecOption) *Container {
 	opts := &ContainerExecOptions{}
 	for _, fn := range options {
 		fn(opts)
 	}
 	q := r.q.Select("exec")
-	q = q.Arg("args", args)
+	if opts != nil && opts.Args != nil {
+		q = q.Arg("args", opts.Args)
+	}
 	if opts != nil && opts.Opts != nil {
 		q = q.Arg("opts", opts.Opts)
 	}
@@ -219,6 +257,38 @@ func (r *Container) Variables(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// ContainerWithDefaultArgsOptions contains options for Container.WithDefaultArgs
+type ContainerWithDefaultArgsOptions struct {
+	Args *[]string
+}
+
+// ContainerWithDefaultArgsOption represents an option handler for Container.WithDefaultArgs
+type ContainerWithDefaultArgsOption func(*ContainerWithDefaultArgsOptions)
+
+// WithContainerWithDefaultArgsArgs sets the "args" option for WithDefaultArgs
+func WithContainerWithDefaultArgsArgs(args []string) ContainerWithDefaultArgsOption {
+	return func(daggerOptions *ContainerWithDefaultArgsOptions) {
+		daggerOptions.Args = &args
+	}
+}
+
+// Configures default arguments for future commands
+func (r *Container) WithDefaultArgs(options ...ContainerWithDefaultArgsOption) *Container {
+	opts := &ContainerWithDefaultArgsOptions{}
+	for _, fn := range options {
+		fn(opts)
+	}
+	q := r.q.Select("withDefaultArgs")
+	if opts != nil && opts.Args != nil {
+		q = q.Arg("args", opts.Args)
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This container but with a different command entrypoint
 func (r *Container) WithEntrypoint(args []string) *Container {
 	q := r.q.Select("withEntrypoint")
@@ -245,13 +315,14 @@ func WithContainerWithMountedCacheSource(source DirectoryID) ContainerWithMounte
 	}
 }
 
-// This container plus a cache directory mounted at the given path
-func (r *Container) WithMountedCache(path string, options ...ContainerWithMountedCacheOption) *Container {
+// This container plus a cache volume mounted at the given path
+func (r *Container) WithMountedCache(cache CacheID, path string, options ...ContainerWithMountedCacheOption) *Container {
 	opts := &ContainerWithMountedCacheOptions{}
 	for _, fn := range options {
 		fn(opts)
 	}
 	q := r.q.Select("withMountedCache")
+	q = q.Arg("cache", cache)
 	q = q.Arg("path", path)
 	if opts != nil && opts.Source != nil {
 		q = q.Arg("source", opts.Source)
@@ -579,6 +650,15 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+func (r *File) Secret() *Secret {
+	q := r.q.Select("secret")
+
+	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
 // The size of the file, in bytes
 func (r *File) Size(ctx context.Context) (int, error) {
 	q := r.q.Select("size")
@@ -662,6 +742,28 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 type Query struct {
 	q *querybuilder.Selection
 	c graphql.Client
+}
+
+// Construct a cache volume from its ID
+func (r *Query) Cache(id CacheID) *CacheVolume {
+	q := r.q.Select("cache")
+	q = q.Arg("id", id)
+
+	return &CacheVolume{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Create a new cache volume identified by an arbitrary set of tokens
+func (r *Query) CacheFromTokens(tokens []string) *CacheVolume {
+	q := r.q.Select("cacheFromTokens")
+	q = q.Arg("tokens", tokens)
+
+	return &CacheVolume{
+		q: q,
+		c: r.c,
+	}
 }
 
 // QueryContainerOptions contains options for Query.Container
@@ -760,4 +862,30 @@ func (r *Query) HTTP(url string) *File {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Load a secret from its ID
+func (r *Query) Secret(id SecretID) *Secret {
+	q := r.q.Select("secret")
+	q = q.Arg("id", id)
+
+	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A reference to a secret value, which can be handled more safely than the value itself
+type Secret struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// The identifier for this secret
+func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+	q := r.q.Select("id")
+
+	var response SecretID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }

@@ -103,6 +103,7 @@ func (g *GoGenerator) Generate(_ context.Context) ([]byte, error) {
 			"ContainerID":      {},
 			"FileID":           {},
 			"ContainerAddress": {},
+			"CacheID":          {},
 
 			// Inputs
 			"ExecOpts": {},
@@ -114,6 +115,8 @@ func (g *GoGenerator) Generate(_ context.Context) ([]byte, error) {
 			"Container":     {},
 			"GitRepository": {},
 			"GitRef":        {},
+			"Secret":        {},
+			"CacheVolume":   {},
 		},
 	})
 	if err != nil {

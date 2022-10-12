@@ -1,12 +1,10 @@
-//go:generate dagger client-gen -o ./api/api.gen.go
-package core
+package api
 
 import (
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/codegen/internal/test/api"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
 )
@@ -20,12 +18,12 @@ func init() {
 func TestDirectory(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New(ctx.Client)
+		core := New(ctx.Client)
 
 		dir := core.Directory()
 
 		contents, err := dir.
-			WithNewFile("/hello.txt", api.WithDirectoryWithNewFileContents("world")).
+			WithNewFile("/hello.txt", WithDirectoryWithNewFileContents("world")).
 			File("/hello.txt").
 			Contents(ctx)
 
@@ -38,7 +36,7 @@ func TestDirectory(t *testing.T) {
 func TestGit(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New(ctx.Client)
+		core := New(ctx.Client)
 		tree := core.Git("github.com/dagger/dagger").
 			Branch("cloak").
 			Tree()
@@ -68,7 +66,7 @@ func TestGit(t *testing.T) {
 func TestContainer(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New(ctx.Client)
+		core := New(ctx.Client)
 		alpine := core.
 			Container().
 			From("alpine:3.16.2")
@@ -80,7 +78,7 @@ func TestContainer(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "3.16.2\n", contents)
 
-		stdout, err := alpine.Exec([]string{"cat", "/etc/alpine-release"}).Stdout().Contents(ctx)
+		stdout, err := alpine.Exec(WithContainerExecArgs([]string{"cat", "/etc/alpine-release"})).Stdout().Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "3.16.2\n", stdout)
 
