@@ -63,13 +63,6 @@ func (g *GoGenerator) Generate(_ context.Context) ([]byte, error) {
 		header.String(),
 	}
 
-	// FIXME: for debug purposes
-	// indented, err := json.MarshalIndent(g.schema, "", "  ")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Fprint(os.Stdout, string(indented))
-
 	err := g.schema.Visit(introspection.VisitHandlers{
 		Scalar: func(t *introspection.Type) error {
 			var out bytes.Buffer
@@ -117,6 +110,11 @@ func (g *GoGenerator) Generate(_ context.Context) ([]byte, error) {
 			"GitRef":        {},
 			"Secret":        {},
 			"CacheVolume":   {},
+
+			// Project API
+			"Project":   {},
+			"Extension": {},
+			"Script":    {},
 		},
 	})
 	if err != nil {

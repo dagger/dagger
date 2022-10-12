@@ -37,7 +37,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 		q: q,
 		c: r.c,
 	}
-	{{- else if $field.TypeRef.IsScalar }}
+	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
 	var response {{ $field.TypeRef | FormatType }}
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)

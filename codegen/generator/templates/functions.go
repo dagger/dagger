@@ -99,7 +99,7 @@ func fieldFunction(f introspection.Field) string {
 
 	// Generate arguments
 	args := []string{}
-	if f.TypeRef.IsScalar() {
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
 		args = append(args, "ctx context.Context")
 	}
 	for _, arg := range f.Args {
@@ -117,7 +117,7 @@ func fieldFunction(f introspection.Field) string {
 	signature += "(" + strings.Join(args, ", ") + ")"
 
 	retType := ""
-	if f.TypeRef.IsScalar() {
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
 		retType = fmt.Sprintf("(%s, error)", formatType(f.TypeRef))
 	} else {
 		retType = "*" + formatType(f.TypeRef)

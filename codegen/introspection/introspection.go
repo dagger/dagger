@@ -109,38 +109,34 @@ func (r TypeRef) IsOptional() bool {
 }
 
 func (r TypeRef) IsScalar() bool {
-	for ref := &r; ref != nil; ref = ref.OfType {
-		if ref.Kind == TypeKindScalar {
-			return true
-		}
+	ref := r
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
 	}
-	return false
-}
-
-func (r TypeRef) IsCustomScalar() bool {
-	for ref := &r; ref != nil; ref = ref.OfType {
-		if ref.Kind == TypeKindScalar {
-			switch Scalar(ref.Name) {
-			case ScalarInt:
-				return false
-			case ScalarFloat:
-				return false
-			case ScalarString:
-				return false
-			case ScalarBoolean:
-				return false
-			}
-			return true
-		}
+	if ref.Kind == TypeKindScalar {
+		return true
 	}
 	return false
 }
 
 func (r TypeRef) IsObject() bool {
-	for ref := &r; ref != nil; ref = ref.OfType {
-		if ref.Kind == TypeKindObject {
-			return true
-		}
+	ref := r
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+	if ref.Kind == TypeKindObject {
+		return true
+	}
+	return false
+}
+
+func (r TypeRef) IsList() bool {
+	ref := r
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+	if ref.Kind == TypeKindList {
+		return true
 	}
 	return false
 }
