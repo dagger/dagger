@@ -304,27 +304,9 @@ func TestDirectoryWithCopiedFile(t *testing.T) {
 func TestDirectoryWithoutDirectory(t *testing.T) {
 	t.Parallel()
 
-	var res struct {
-		Directory struct {
-			WithNewFile struct {
-				WithNewFile struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
-						id
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
+	dirID := newDirWithFiles(t,
+		"some-file", "some-content",
+		"some-dir/sub-file", "sub-content")
 
 	var res2 struct {
 		Directory struct {
@@ -336,7 +318,7 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 		}
 	}
 
-	err = testutil.Query(
+	err := testutil.Query(
 		`query Test($src: DirectoryID!) {
 			directory {
 				withDirectory(path: "with-dir", directory: $src) {
@@ -347,7 +329,7 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 			}
 		}`, &res2, &testutil.QueryOptions{
 			Variables: map[string]any{
-				"src": res.Directory.WithNewFile.WithNewFile.ID,
+				"src": dirID,
 			},
 		})
 	require.NoError(t, err)
@@ -357,27 +339,9 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 func TestDirectoryWithoutFile(t *testing.T) {
 	t.Parallel()
 
-	var res struct {
-		Directory struct {
-			WithNewFile struct {
-				WithNewFile struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
-						id
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
+	dirID := newDirWithFiles(t,
+		"some-file", "some-content",
+		"some-dir/sub-file", "sub-content")
 
 	var res2 struct {
 		Directory struct {
@@ -389,7 +353,7 @@ func TestDirectoryWithoutFile(t *testing.T) {
 		}
 	}
 
-	err = testutil.Query(
+	err := testutil.Query(
 		`query Test($src: DirectoryID!) {
 			directory {
 				withDirectory(path: "with-dir", directory: $src) {
@@ -400,7 +364,7 @@ func TestDirectoryWithoutFile(t *testing.T) {
 			}
 		}`, &res2, &testutil.QueryOptions{
 			Variables: map[string]any{
-				"src": res.Directory.WithNewFile.WithNewFile.ID,
+				"src": dirID,
 			},
 		})
 	require.NoError(t, err)
@@ -410,8 +374,8 @@ func TestDirectoryWithoutFile(t *testing.T) {
 func TestDirectoryDiff(t *testing.T) {
 	t.Parallel()
 
-	aID := dirWithFileID(t, "a-file", "a-content")
-	bID := dirWithFileID(t, "b-file", "b-content")
+	aID := newDirWithFile(t, "a-file", "a-content")
+	bID := newDirWithFile(t, "b-file", "b-content")
 
 	var res struct {
 		Directory struct {
