@@ -9,7 +9,7 @@ FSID = NewType('FSID', str)
 
 class Client(gqlClient):
 
-    def __init__(self, host: str = "localhost", port: int = "8080"):
+    def __init__(self, host: str = "localhost", port: str = "8080"):
         transport = requests.RequestsHTTPTransport(
             url='http://{}:{}/query'.format(host, port),
             timeout=30,

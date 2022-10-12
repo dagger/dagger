@@ -29,7 +29,7 @@ Session.vim
 node_modules
 
 # python
-venv
+.venv
 __pycache__
 
 # Built Binary

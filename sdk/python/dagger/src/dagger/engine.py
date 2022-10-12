@@ -1,4 +1,5 @@
 import os
+import logging
 import subprocess
 
 from .client import Client
@@ -8,8 +9,8 @@ class Engine:
 
     def __init__(self,
                  port: int = 8080,
-                 workdir: str = None,
-                 configPath: str = None):
+                 workdir: str | None = None,
+                 configPath: str | None = None):
         if workdir is None:
             workdir = os.environ.get('DAGGER_WORKDIR', os.getcwd())
         if configPath is None:
@@ -30,7 +31,15 @@ class Engine:
         ]
         self._process = subprocess.Popen(args)
 
+    def _fail_if_incorrect_dagger_binary(self) -> None:
+        null = open(os.devnull, 'w')
+        completedProcess = subprocess.run(["dagger", "dev", "--help"], stdout=null, stderr=null)
+        if completedProcess.returncode != 0:
+            logging.error("⚠️  Please ensure that dagger binary in $PATH is v0.3.0 or newer - a.k.a. Cloak")
+            exit(127)
+
     def __enter__(self) -> Client:
+        self._fail_if_incorrect_dagger_binary()
         self._spawn()
         # FIXME: do a simple gql request to make sure the server is ready
         return Client(host="localhost", port=self._config['port'])
