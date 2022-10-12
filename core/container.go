@@ -337,26 +337,72 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 }
 
 func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
+	dir, err := locatePath(ctx, container, dirPath, gw, NewDirectory)
+	if err != nil {
+		return nil, err
+	}
+
+	// check that the directory actually exists so the user gets an error earlier
+	// rather than when the dir is used
+	info, err := dir.Stat(ctx, gw, ".")
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
+	}
+
+	return dir, nil
+}
+
+func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
+	file, err := locatePath(ctx, container, filePath, gw, NewFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// check that the file actually exists so the user gets an error earlier
+	// rather than when the file is used
+	info, err := file.Stat(ctx, gw)
+	if err != nil {
+		return nil, err
+	}
+
+	if info.IsDir() {
+		return nil, fmt.Errorf("path %s is a directory, not a file", filePath)
+	}
+
+	return file, nil
+}
+
+func locatePath[T *File | *Directory](
+	ctx context.Context,
+	container *Container,
+	containerPath string,
+	gw bkgw.Client,
+	init func(context.Context, llb.State, string, specs.Platform) (T, error),
+) (T, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	dirPath = absPath(payload.Config.WorkingDir, dirPath)
+	containerPath = absPath(payload.Config.WorkingDir, containerPath)
 
-	var dir *Directory
+	var found T
 
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(payload.Mounts) - 1; i >= 0; i-- {
 		mnt := payload.Mounts[i]
 
-		if dirPath == mnt.Target || strings.HasPrefix(dirPath, mnt.Target+"/") {
+		if containerPath == mnt.Target || strings.HasPrefix(containerPath, mnt.Target+"/") {
 			if mnt.Tmpfs {
-				return nil, fmt.Errorf("%s: cannot retrieve directory from tmpfs", dirPath)
+				return nil, fmt.Errorf("%s: cannot retrieve path from tmpfs", containerPath)
 			}
 
 			if mnt.CacheID != "" {
-				return nil, fmt.Errorf("%s: cannot retrieve directory from cache", dirPath)
+				return nil, fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
 			}
 
 			st, err := mnt.SourceState()
@@ -365,15 +411,15 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 			}
 
 			sub := mnt.SourcePath
-			if dirPath != mnt.Target {
+			if containerPath != mnt.Target {
 				// make relative portion relative to the source path
-				dirSub := strings.TrimPrefix(dirPath, mnt.Target+"/")
+				dirSub := strings.TrimPrefix(containerPath, mnt.Target+"/")
 				if dirSub != "" {
 					sub = path.Join(sub, dirSub)
 				}
 			}
 
-			dir, err = NewDirectory(ctx, st, sub, payload.Platform)
+			found, err = init(ctx, st, sub, payload.Platform)
 			if err != nil {
 				return nil, err
 			}
@@ -382,26 +428,19 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 		}
 	}
 
-	if dir == nil {
+	if found == nil {
 		st, err := payload.FSState()
 		if err != nil {
 			return nil, err
 		}
 
-		dir, err = NewDirectory(ctx, st, dirPath, payload.Platform)
+		found, err = init(ctx, st, containerPath, payload.Platform)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// check that the directory actually exists so the user gets an error earlier
-	// rather than when the dir is used
-	_, err = dir.Stat(ctx, gw, ".")
-	if err != nil {
-		return nil, err
-	}
-
-	return dir, nil
+	return found, nil
 }
 
 type mountable interface {

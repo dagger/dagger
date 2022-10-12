@@ -1426,7 +1426,7 @@ func TestContainerStackedMounts(t *testing.T) {
 	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
 }
 
-func TestContainerMountDirectory(t *testing.T) {
+func TestContainerDirectory(t *testing.T) {
 	t.Parallel()
 
 	dirRes := struct {
@@ -1524,7 +1524,7 @@ func TestContainerMountDirectory(t *testing.T) {
 	require.Equal(t, "hello\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
-func TestContainerMountDirectoryErrors(t *testing.T) {
+func TestContainerDirectoryErrors(t *testing.T) {
 	t.Parallel()
 
 	dirRes := struct {
@@ -1556,6 +1556,23 @@ func TestContainerMountDirectoryErrors(t *testing.T) {
 			container {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						directory(path: "/mnt/dir/some-file") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "path /mnt/dir/some-file is a file, not a directory")
+
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/bogus") {
 							id
 						}
@@ -1581,7 +1598,7 @@ func TestContainerMountDirectoryErrors(t *testing.T) {
 			}
 		}`, nil, nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: cannot retrieve directory from tmpfs")
+	require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
 
 	cacheID := newCache(t)
 	err = testutil.Query(
@@ -1599,10 +1616,10 @@ func TestContainerMountDirectoryErrors(t *testing.T) {
 			"cache": cacheID,
 		}})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: cannot retrieve directory from cache")
+	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
 }
 
-func TestContainerMountDirectorySourcePath(t *testing.T) {
+func TestContainerDirectorySourcePath(t *testing.T) {
 	t.Parallel()
 
 	dirRes := struct {
@@ -1694,6 +1711,173 @@ func TestContainerMountDirectorySourcePath(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+}
+
+func TestContainerFile(t *testing.T) {
+	t.Parallel()
+
+	id := dirWithFileID(t, "some-file", "some-content-")
+
+	writeRes := struct {
+		Container struct {
+			From struct {
+				WithMountedDirectory struct {
+					WithMountedDirectory struct {
+						Exec struct {
+							File struct {
+								ID core.FileID
+							}
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err := testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						withMountedDirectory(path: "/mnt/dir/overlap", source: $id) {
+							exec(args: ["sh", "-c", "echo -n appended >> /mnt/dir/overlap/some-file"]) {
+								file(path: "/mnt/dir/overlap/some-file") {
+									id
+								}
+							}
+						}
+					}
+				}
+			}
+		}`, &writeRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.NoError(t, err)
+
+	writtenID := writeRes.Container.From.WithMountedDirectory.WithMountedDirectory.Exec.File.ID
+
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedFile struct {
+					Exec struct {
+						Stdout struct {
+							Contents string
+						}
+					}
+				}
+			}
+		}
+	}{}
+	err = testutil.Query(
+		`query Test($id: FileID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedFile(path: "/mnt/file", source: $id) {
+						exec(args: ["cat", "/mnt/file"]) {
+							stdout {
+								contents
+							}
+						}
+					}
+				}
+			}
+		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+			"id": writtenID,
+		}})
+	require.NoError(t, err)
+
+	require.Equal(t, "some-content-appended", execRes.Container.From.WithMountedFile.Exec.Stdout.Contents)
+}
+
+func TestContainerFileErrors(t *testing.T) {
+	t.Parallel()
+
+	id := dirWithFileID(t, "some-file", "some-content")
+
+	err := testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						file(path: "/mnt/dir/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: no such file or directory")
+
+	err = testutil.Query(
+		`query Test($id: DirectoryID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedDirectory(path: "/mnt/dir", source: $id) {
+						file(path: "/mnt/dir") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"id": id,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "path /mnt/dir is a directory, not a file")
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedTemp(path: "/mnt/tmp") {
+						file(path: "/mnt/tmp/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
+
+	cacheID := newCache(t)
+	err = testutil.Query(
+		`query Test($cache: CacheID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedCache(path: "/mnt/cache", cache: $cache) {
+						file(path: "/mnt/cache/bogus") {
+							id
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"cache": cacheID,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
+
+	secretID := newSecret(t, "some-secret")
+	err = testutil.Query(
+		`query Test($secret: SecretID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedSecret(path: "/sekret", source: $secret) {
+						file(path: "/sekret") {
+							contents
+						}
+					}
+				}
+			}
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
+			"secret": secretID,
+		}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "sekret: no such file or directory")
 }
 
 func TestContainerFSDirectory(t *testing.T) {

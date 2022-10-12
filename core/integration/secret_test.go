@@ -4,14 +4,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestSecretEnvFromFile(t *testing.T) {
 	t.Parallel()
 
-	secretID := secretID(t, "some-content")
+	secretID := newSecret(t, "some-content")
 
 	var envRes struct {
 		Container struct {
@@ -46,7 +45,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 func TestSecretMountFromFile(t *testing.T) {
 	t.Parallel()
 
-	secretID := secretID(t, "some-content")
+	secretID := newSecret(t, "some-content")
 
 	var envRes struct {
 		Container struct {
@@ -78,13 +77,23 @@ func TestSecretMountFromFile(t *testing.T) {
 	require.Contains(t, envRes.Container.From.WithMountedSecret.Exec.Stdout.Contents, "some-content")
 }
 
-func secretID(t *testing.T, content string) core.SecretID {
-	var secretRes struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					Secret struct {
-						ID core.SecretID
+func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
+	t.Parallel()
+
+	secretID := newSecret(t, "some-secret")
+	fileID := newFile(t, "some-file", "some-content")
+
+	var res struct {
+		Container struct {
+			From struct {
+				WithMountedSecret struct {
+					WithMountedFile struct {
+						Exec struct {
+							Stdout struct{ Contents string }
+						}
+						File struct {
+							Contents string
+						}
 					}
 				}
 			}
@@ -92,23 +101,26 @@ func secretID(t *testing.T, content string) core.SecretID {
 	}
 
 	err := testutil.Query(
-		`query Test($content: String!) {
-			directory {
-				withNewFile(path: "some-file", contents: $content) {
-					file(path: "some-file") {
-						secret {
-							id
+		`query Test($secret: SecretID!, $file: FileID!) {
+			container {
+				from(address: "alpine:3.16.2") {
+					withMountedSecret(path: "/sekret", source: $secret) {
+						withMountedFile(path: "/sekret", source: $file) {
+							exec(args: ["cat", "/sekret"]) {
+								stdout { contents }
+							}
+							file(path: "/sekret") {
+								contents
+							}
 						}
 					}
 				}
 			}
-		}`, &secretRes, &testutil.QueryOptions{Variables: map[string]any{
-			"content": content,
+		}`, &res, &testutil.QueryOptions{Variables: map[string]any{
+			"secret": secretID,
+			"file":   fileID,
 		}})
 	require.NoError(t, err)
-
-	secretID := secretRes.Directory.WithNewFile.File.Secret.ID
-	require.NotEmpty(t, secretID)
-
-	return secretID
+	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.Exec.Stdout.Contents, "some-secret")
+	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }

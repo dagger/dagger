@@ -37,6 +37,9 @@ type Container {
     "Retrieve a directory at the given path. Mounts are included."
     directory(path: String!): Directory!
 
+    "Retrieve a file at the given path. Mounts are included."
+    file(path: String!): File!
+
     "The user to be set for all commands"
     user: String
 

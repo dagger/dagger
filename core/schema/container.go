@@ -37,6 +37,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		"Container": router.ObjectResolver{
 			"from":                 router.ToResolver(s.from),
 			"rootfs":               router.ToResolver(s.rootfs),
+			"file":                 router.ToResolver(s.file),
 			"directory":            router.ToResolver(s.directory),
 			"user":                 router.ToResolver(s.user),
 			"withUser":             router.ToResolver(s.withUser),
@@ -371,6 +372,14 @@ type containerDirectoryArgs struct {
 
 func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
 	return parent.Directory(ctx, s.gw, args.Path)
+}
+
+type containerFileArgs struct {
+	Path string
+}
+
+func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
+	return parent.File(ctx, s.gw, args.Path)
 }
 
 func absPath(workDir string, containerPath string) string {
