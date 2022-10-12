@@ -26,8 +26,7 @@ func init() {
 		doCmd,
 		devCmd,
 		versionCmd,
-		// TODO:(sipsma) disabling generate for the moment since it's not currently used anywhere, keeping the plumbing around though
-		// generateCmd,
+		clientGenCmd,
 	)
 
 	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")

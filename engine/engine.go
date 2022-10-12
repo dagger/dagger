@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
@@ -194,7 +195,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			if startOpts.DevServer != 0 {
 				fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", startOpts.DevServer)
-				return nil, http.ListenAndServe(fmt.Sprintf(":%d", startOpts.DevServer), router)
+				s := http.Server{
+					Handler:           router,
+					ReadHeaderTimeout: 30 * time.Second,
+					Addr:              fmt.Sprintf(":%d", startOpts.DevServer),
+				}
+				return nil, s.ListenAndServe()
 			}
 
 			return bkgw.NewResult(), nil

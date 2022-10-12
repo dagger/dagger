@@ -1,0 +1,46 @@
+{{ .Description | Comment }}
+type {{ .Name | FormatName }} struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+{{ range $field := .Fields }}
+{{- if $field.Args.HasOptionals }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionsStructName }} struct {
+	{{- range $arg := $field.Args }}
+	{{ if $arg.TypeRef.IsOptional }}
+	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatType }}
+	{{- end }}
+	{{- end }}
+}
+
+{{- end }}
+
+{{ $field.Description | Comment }}
+{{ $field | FieldFunction }} {
+	q := r.q.Select("{{ $field.Name }}")
+	{{- range $arg := $field.Args }}
+	{{- if $arg.TypeRef.IsOptional }}
+	// `{{ $arg.Name }}` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+			q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+			break
+		}
+	}
+	{{- else }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	{{- end }}
+	{{- end }}
+	{{ if $field.TypeRef.IsObject }}
+	return &{{ $field.TypeRef | FormatType }} {
+		q: q,
+		c: r.c,
+	}
+	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
+	var response {{ $field.TypeRef | FormatType }}
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+	{{- end }}
+}
+{{ end -}}
