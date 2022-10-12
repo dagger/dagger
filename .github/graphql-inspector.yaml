@@ -1,0 +1,2 @@
+branch: cloak
+schema: "core/schema/*.graphqls"
