@@ -4,7 +4,7 @@ on:
     tags:
       - v*
     branches:
-      - main
+      - cloak
   pull_request:
   # Enable manual trigger for easy ad-hoc debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -14,8 +14,7 @@ permissions:
   # Optional: allow read access to pull request. Use with `only-new-issues` option.
   # pull-requests: read
 jobs:
-  golangci:
-    name: golangci
+  go:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-go@v3
@@ -47,6 +46,15 @@ jobs:
 
           # Optional: if set to true then the action don't cache or restore ~/.cache/go-build.
           # skip-build-cache: true
+      - name: codegen
+        uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: lint:codegen
+  markdown:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
       - name: "Lint markdown"
         uses: avto-dev/markdown-lint@v1
         with:

@@ -13,6 +13,7 @@ require (
 	github.com/graphql-go/graphql v0.8.0
 	github.com/graphql-go/handler v0.2.3
 	github.com/iancoleman/strcase v0.2.0
+	github.com/magefile/mage v1.14.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/buildkit v0.10.4
 	github.com/netlify/open-api/v2 v2.12.0
