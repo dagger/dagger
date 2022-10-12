@@ -233,6 +233,16 @@ func (r *Container) From(address ContainerAddress) *Container {
 	}
 }
 
+// This container's root filesystem. Mounts are not included.
+func (r *Container) FS() *Directory {
+	q := r.q.Select("fs")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A unique identifier for this container
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	q := r.q.Select("id")
@@ -259,16 +269,6 @@ func (r *Container) Publish(ctx context.Context, address ContainerAddress) (Cont
 	var response ContainerAddress
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
-}
-
-// This container's root filesystem. Mounts are not included.
-func (r *Container) Rootfs() *Directory {
-	q := r.q.Select("rootfs")
-
-	return &Directory{
-		q: q,
-		c: r.c,
-	}
 }
 
 // The error stream of the last executed command.
@@ -347,6 +347,17 @@ func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Conta
 func (r *Container) WithEntrypoint(args []string) *Container {
 	q := r.q.Select("withEntrypoint")
 	q = q.Arg("args", args)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Initialize this container from this DirectoryID
+func (r *Container) WithFS(id DirectoryID) *Container {
+	q := r.q.Select("withFS")
+	q = q.Arg("id", id)
 
 	return &Container{
 		q: q,

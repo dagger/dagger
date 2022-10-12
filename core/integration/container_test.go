@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
@@ -10,6 +11,7 @@ import (
 	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
+	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -17,8 +19,8 @@ func TestContainerScratch(t *testing.T) {
 
 	res := struct {
 		Container struct {
-			ID     string
-			Rootfs struct {
+			ID string
+			Fs struct {
 				Contents []string
 			}
 		}
@@ -28,14 +30,14 @@ func TestContainerScratch(t *testing.T) {
 		`{
 			container {
 				id
-				rootfs {
+				fs {
 					contents
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Container.ID)
-	require.Empty(t, res.Container.Rootfs.Contents)
+	require.Empty(t, res.Container.Fs.Contents)
 }
 
 func TestContainerFrom(t *testing.T) {
@@ -44,7 +46,7 @@ func TestContainerFrom(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				Rootfs struct {
+				Fs struct {
 					File struct {
 						Contents string
 					}
@@ -57,7 +59,7 @@ func TestContainerFrom(t *testing.T) {
 		`{
 			container {
 				from(address: "alpine:3.16.2") {
-					rootfs {
+					fs {
 						file(path: "/etc/alpine-release") {
 							contents
 						}
@@ -66,7 +68,67 @@ func TestContainerFrom(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Rootfs.File.Contents, "3.16.2\n")
+	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
+}
+
+func TestContainerWithFS(t *testing.T) {
+	t.Parallel()
+	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
+		core := api.New(ctx.Client)
+
+		alpine316 := core.Container().From("alpine:3.16.2")
+
+		alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
+		if err != nil {
+			return err
+		}
+
+		alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
+		dirID, err := alpine316.FS().ID(ctx)
+		if err != nil {
+			return err
+		}
+		exitCode, err := core.Container().WithVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
+			Args: []string{
+				"/bin/sh",
+				"-c",
+				"test -f /etc/alpine-release && test \"$(head -n 1 /etc/alpine-release)\" = \"$ALPINE_RELEASE\"",
+			},
+		}).ExitCode(ctx)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, dirID)
+		require.Equal(t, exitCode, 0)
+
+		alpine315 := core.Container().From("alpine:3.15.6")
+
+		varVal := "testing123"
+
+		alpine315WithVar := alpine315.WithVariable("DAGGER_TEST", varVal)
+		varValResp, err := alpine315WithVar.Variable(ctx, "DAGGER_TEST")
+		if err != nil {
+			return err
+		}
+
+		require.Equal(t, varVal, varValResp)
+
+		alpine315ReplacedFS := alpine315WithVar.WithFS(dirID)
+
+		varValResp, err = alpine315ReplacedFS.Variable(ctx, "DAGGER_TEST")
+		if err != nil {
+			return err
+		}
+		require.Equal(t, varVal, varValResp)
+
+		releaseStr, err := alpine315ReplacedFS.File("/etc/alpine-release").Contents(ctx)
+		if err != nil {
+			return err
+		}
+
+		require.Equal(t, "3.16.2\n", releaseStr)
+
+		return nil
+	}))
 }
 
 func TestContainerExecExitCode(t *testing.T) {
@@ -2217,7 +2279,7 @@ func TestContainerPublish(t *testing.T) {
 		res := struct {
 			Container struct {
 				From struct {
-					Rootfs struct {
+					Fs struct {
 						File struct {
 							Contents string
 						}
@@ -2230,7 +2292,7 @@ func TestContainerPublish(t *testing.T) {
 				Query: `query TestImagePull($ref: ContainerAddress!) {
 					container {
 						from(address: $ref) {
-							rootfs {
+							fs {
 								file(path: "/etc/alpine-release") {
 									contents
 								}
@@ -2245,7 +2307,7 @@ func TestContainerPublish(t *testing.T) {
 			&graphql.Response{Data: &res},
 		)
 		require.NoError(t, err)
-		require.Equal(t, res.Container.From.Rootfs.File.Contents, "3.16.2\n")
+		require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
 		return nil
 	})
 	require.NoError(t, err)

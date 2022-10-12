@@ -74,7 +74,7 @@ func TestContainer(t *testing.T) {
 			From("alpine:3.16.2")
 
 		contents, err := alpine.
-			Rootfs().
+			FS().
 			File("/etc/alpine-release").
 			Contents(ctx)
 		require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestContainer(t *testing.T) {
 			Container(ContainerOpts{
 				ID: id,
 			}).
-			Rootfs().
+			FS().
 			File("/etc/alpine-release").
 			Contents(ctx)
 		require.NoError(t, err)
