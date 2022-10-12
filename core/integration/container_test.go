@@ -161,6 +161,99 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 	require.Equal(t, res.Container.From.Exec.Stderr.Contents, "goodbye\n")
 }
 
+func TestContainerExecStdin(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Exec struct {
+					Stdout struct {
+						Contents string
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					exec(args: ["cat"], opts: {stdin: "hello"}) {
+						stdout {
+							contents
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, res.Container.From.Exec.Stdout.Contents, "hello")
+}
+
+func TestContainerExecRedirectStdoutStderr(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Exec struct {
+					Out, Err struct {
+						Contents string
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					exec(
+						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
+						opts: {redirectStdout: "out", redirectStderr: "err"}
+					) {
+						out: file(path: "out") {
+							contents
+						}
+
+						err: file(path: "err") {
+							contents
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, res.Container.From.Exec.Out.Contents, "hello\n")
+	require.Equal(t, res.Container.From.Exec.Err.Contents, "goodbye\n")
+
+	err = testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					exec(
+						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
+						opts: {redirectStdout: "out", redirectStderr: "err"}
+					) {
+						stdout {
+							contents
+						}
+
+						stderr {
+							contents
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stdout: no such file or directory")
+	require.Contains(t, err.Error(), "stderr: no such file or directory")
+}
+
 func TestContainerNullStdoutStderr(t *testing.T) {
 	t.Parallel()
 
