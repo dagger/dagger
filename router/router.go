@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
@@ -116,7 +117,11 @@ func (r *Router) ServeConn(conn net.Conn) error {
 		conn: conn,
 	}
 
-	return http.Serve(l, r)
+	s := http.Server{
+		Handler:           r,
+		ReadHeaderTimeout: 30 * time.Second,
+	}
+	return s.Serve(l)
 }
 
 // converts a pre-existing net.Conn into a net.Listener that returns the conn
