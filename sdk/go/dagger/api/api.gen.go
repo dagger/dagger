@@ -35,10 +35,58 @@ type ContainerID string
 // A content-addressed directory identifier
 type DirectoryID string
 
+type FSID string
+
 type FileID string
+
+// An identifier for a directory on the host
+type HostDirectoryID string
 
 // A unique identifier for a secret
 type SecretID string
+
+type CacheMountInput struct {
+	// Cache mount name
+	Name string `json:"name"`
+
+	// path at which the cache will be mounted
+	Path string `json:"path"`
+
+	// Cache mount sharing mode (TODO: switch to enum)
+	SharingMode string `json:"sharingMode"`
+}
+
+type ExecEnvInput struct {
+	// Env var name
+	Name string `json:"name"`
+
+	// Env var value
+	Value string `json:"value"`
+}
+
+type ExecInput struct {
+	// Command to execute
+	// Example: ["echo", "hello, world!"]
+	Args []string `json:"args"`
+
+	// Cached mounts
+	CacheMounts []CacheMountInput `json:"cacheMounts"`
+
+	// Env vars
+	Env []ExecEnvInput `json:"env"`
+
+	// Filesystem mounts
+	Mounts []MountInput `json:"mounts"`
+
+	// Secret env vars
+	SecretEnv []ExecSecretEnvInput `json:"secretEnv"`
+
+	// Include the host's ssh agent socket in the exec at the provided path
+	SSHAuthSock string `json:"sshAuthSock"`
+
+	// Working directory
+	Workdir string `json:"workdir"`
+}
 
 // Additional options for executing a command
 type ExecOpts struct {
@@ -55,6 +103,22 @@ type ExecOpts struct {
 	// - Null means don't touch stdin (no redirection)
 	// - Empty string means inject zero bytes to stdin, then send EOF
 	Stdin string `json:"stdin"`
+}
+
+type ExecSecretEnvInput struct {
+	// Secret env var value
+	ID SecretID `json:"id"`
+
+	// Env var name
+	Name string `json:"name"`
+}
+
+type MountInput struct {
+	// filesystem to mount
+	FS FSID `json:"fs"`
+
+	// path at which the filesystem will be mounted
+	Path string `json:"path"`
 }
 
 // A directory whose contents persist across runs
@@ -438,6 +502,56 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Core API
+type Core struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Look up a filesystem by its ID
+func (r *Core) Filesystem(id FSID) *Filesystem {
+	q := r.q.Select("filesystem")
+	q = q.Arg("id", id)
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
+// CoreGitOpts contains options for Core.Git
+type CoreGitOpts struct {
+	Ref string
+}
+
+func (r *Core) Git(remote string, opts ...CoreGitOpts) *Filesystem {
+	q := r.q.Select("git")
+	// `ref` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Ref) {
+			q = q.Arg("ref", opts[i].Ref)
+			break
+		}
+	}
+	q = q.Arg("remote", remote)
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Fetch an OCI image
+func (r *Core) Image(ref string) *Filesystem {
+	q := r.q.Select("image")
+	q = q.Arg("ref", ref)
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A directory
 type Directory struct {
 	q *querybuilder.Selection
@@ -587,6 +701,84 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
+// Command execution
+type Exec struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Exit code of the command
+func (r *Exec) ExitCode(ctx context.Context) (int, error) {
+	q := r.q.Select("exitCode")
+
+	var response int
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Modified filesystem
+func (r *Exec) FS() *Filesystem {
+	q := r.q.Select("fs")
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Modified mounted filesystem
+func (r *Exec) Mount(path string) *Filesystem {
+	q := r.q.Select("mount")
+	q = q.Arg("path", path)
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ExecStderrOpts contains options for Exec.Stderr
+type ExecStderrOpts struct {
+	Lines int
+}
+
+// stderr of the command
+func (r *Exec) Stderr(ctx context.Context, opts ...ExecStderrOpts) (string, error) {
+	q := r.q.Select("stderr")
+	// `lines` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Lines) {
+			q = q.Arg("lines", opts[i].Lines)
+			break
+		}
+	}
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// ExecStdoutOpts contains options for Exec.Stdout
+type ExecStdoutOpts struct {
+	Lines int
+}
+
+// stdout of the command
+func (r *Exec) Stdout(ctx context.Context, opts ...ExecStdoutOpts) (string, error) {
+	q := r.q.Select("stdout")
+	// `lines` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Lines) {
+			q = q.Arg("lines", opts[i].Lines)
+			break
+		}
+	}
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A schema extension provided by a project
 type Extension struct {
 	q *querybuilder.Selection
@@ -612,7 +804,7 @@ func (r *Extension) Schema(ctx context.Context) (string, error) {
 }
 
 // sdk used to generate code for and/or execute this extension
-func (r *Extension) Sdk(ctx context.Context) (string, error) {
+func (r *Extension) SDK(ctx context.Context) (string, error) {
 	q := r.q.Select("sdk")
 
 	var response string
@@ -660,6 +852,166 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	var response int
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// A reference to a filesystem tree.
+//
+// For example:
+//   - The root filesystem of a container
+//   - A source code repository
+//   - A directory containing binary artifacts
+//
+// Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
+type Filesystem struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// FilesystemCopyOpts contains options for Filesystem.Copy
+type FilesystemCopyOpts struct {
+	DestPath string
+
+	Exclude []string
+
+	Include []string
+
+	SrcPath string
+}
+
+// copy from a filesystem
+func (r *Filesystem) Copy(from FSID, opts ...FilesystemCopyOpts) *Filesystem {
+	q := r.q.Select("copy")
+	// `destPath` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].DestPath) {
+			q = q.Arg("destPath", opts[i].DestPath)
+			break
+		}
+	}
+	// `exclude` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+			break
+		}
+	}
+	q = q.Arg("from", from)
+	// `include` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
+	// `srcPath` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SrcPath) {
+			q = q.Arg("srcPath", opts[i].SrcPath)
+			break
+		}
+	}
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
+// FilesystemDockerbuildOpts contains options for Filesystem.Dockerbuild
+type FilesystemDockerbuildOpts struct {
+	Dockerfile string
+}
+
+// docker build using this filesystem as context
+func (r *Filesystem) Dockerbuild(opts ...FilesystemDockerbuildOpts) *Filesystem {
+	q := r.q.Select("dockerbuild")
+	// `dockerfile` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
+			q = q.Arg("dockerfile", opts[i].Dockerfile)
+			break
+		}
+	}
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
+}
+
+// execute a command inside this filesystem
+func (r *Filesystem) Exec(input ExecInput) *Exec {
+	q := r.q.Select("exec")
+	q = q.Arg("input", input)
+
+	return &Exec{
+		q: q,
+		c: r.c,
+	}
+}
+
+// FilesystemFileOpts contains options for Filesystem.File
+type FilesystemFileOpts struct {
+	Lines int
+}
+
+// read a file at path
+func (r *Filesystem) File(ctx context.Context, path string, opts ...FilesystemFileOpts) (string, error) {
+	q := r.q.Select("file")
+	// `lines` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Lines) {
+			q = q.Arg("lines", opts[i].Lines)
+			break
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *Filesystem) ID(ctx context.Context) (FSID, error) {
+	q := r.q.Select("id")
+
+	var response FSID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// push a filesystem as an image to a registry
+func (r *Filesystem) PushImage(ctx context.Context, ref string) (bool, error) {
+	q := r.q.Select("pushImage")
+	q = q.Arg("ref", ref)
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// FilesystemWriteFileOpts contains options for Filesystem.WriteFile
+type FilesystemWriteFileOpts struct {
+	Permissions string
+}
+
+// write a file at path
+func (r *Filesystem) WriteFile(contents string, path string, opts ...FilesystemWriteFileOpts) *Filesystem {
+	q := r.q.Select("writeFile")
+	q = q.Arg("contents", contents)
+	q = q.Arg("path", path)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
+
+	return &Filesystem{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A git ref (tag or branch)
@@ -729,6 +1081,107 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 	q := r.q.Select("tags")
 
 	var response []string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Information about the host execution environment
+type Host struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Access a directory on the host
+func (r *Host) Directory(id HostDirectoryID) *HostDirectory {
+	q := r.q.Select("directory")
+	q = q.Arg("id", id)
+
+	return &HostDirectory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Lookup the value of an environment variable. Null if the variable is not available.
+func (r *Host) Variable(name string) *HostVariable {
+	q := r.q.Select("variable")
+	q = q.Arg("name", name)
+
+	return &HostVariable{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The current working directory on the host
+func (r *Host) Workdir() *HostDirectory {
+	q := r.q.Select("workdir")
+
+	return &HostDirectory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A directory on the host
+type HostDirectory struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Read the contents of the directory
+func (r *HostDirectory) Read() *Directory {
+	q := r.q.Select("read")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// HostDirectoryWriteOpts contains options for HostDirectory.Write
+type HostDirectoryWriteOpts struct {
+	Path string
+}
+
+// Write the contents of another directory to the directory
+func (r *HostDirectory) Write(ctx context.Context, contents DirectoryID, opts ...HostDirectoryWriteOpts) (bool, error) {
+	q := r.q.Select("write")
+	q = q.Arg("contents", contents)
+	// `path` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+			break
+		}
+	}
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// An environment variable on the host environment
+type HostVariable struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// A secret referencing the value of this variable
+func (r *HostVariable) Secret() *Secret {
+	q := r.q.Select("secret")
+
+	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The value of this variable
+func (r *HostVariable) Value(ctx context.Context) (string, error) {
+	q := r.q.Select("value")
+
+	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -853,6 +1306,16 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Core API
+func (r *Query) Core() *Core {
+	q := r.q.Select("core")
+
+	return &Core{
+		q: q,
+		c: r.c,
+	}
+}
+
 // DirectoryOpts contains options for Query.Directory
 type DirectoryOpts struct {
 	ID DirectoryID
@@ -892,6 +1355,16 @@ func (r *Query) Git(url string) *GitRepository {
 	q = q.Arg("url", url)
 
 	return &GitRepository{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Query the host environment
+func (r *Query) Host() *Host {
+	q := r.q.Select("host")
+
+	return &Host{
 		q: q,
 		c: r.c,
 	}
@@ -946,7 +1419,7 @@ func (r *Script) Path(ctx context.Context) (string, error) {
 }
 
 // sdk used to generate code for and/or execute this script
-func (r *Script) Sdk(ctx context.Context) (string, error) {
+func (r *Script) SDK(ctx context.Context) (string, error) {
 	q := r.q.Select("sdk")
 
 	var response string

@@ -13,20 +13,28 @@ type Visitor struct {
 type VisitFunc func(*Type) error
 
 type VisitHandlers struct {
-	Scalar  VisitFunc
-	Object  VisitFunc
-	Input   VisitFunc
-	Allowed map[string]struct{}
+	Scalar VisitFunc
+	Object VisitFunc
+	Input  VisitFunc
 }
 
 func (v *Visitor) Run() error {
 	sequence := []struct {
 		Kind    TypeKind
 		Handler VisitFunc
+		Ignore  map[string]any
 	}{
 		{
 			Kind:    TypeKindScalar,
 			Handler: v.handlers.Scalar,
+			Ignore: map[string]any{
+				"String":   struct{}{},
+				"Float":    struct{}{},
+				"Int":      struct{}{},
+				"Boolean":  struct{}{},
+				"DateTime": struct{}{},
+				"ID":       struct{}{},
+			},
 		},
 		{
 			Kind:    TypeKindInputObject,
@@ -39,7 +47,7 @@ func (v *Visitor) Run() error {
 	}
 
 	for _, i := range sequence {
-		if err := v.visit(i.Kind, i.Handler); err != nil {
+		if err := v.visit(i.Kind, i.Handler, i.Ignore); err != nil {
 			return err
 		}
 	}
@@ -47,7 +55,7 @@ func (v *Visitor) Run() error {
 	return nil
 }
 
-func (v *Visitor) visit(kind TypeKind, h VisitFunc) error {
+func (v *Visitor) visit(kind TypeKind, h VisitFunc, ignore map[string]any) error {
 	if h == nil {
 		return nil
 	}
@@ -59,8 +67,8 @@ func (v *Visitor) visit(kind TypeKind, h VisitFunc) error {
 			if strings.HasPrefix(t.Name, "__") {
 				continue
 			}
-			if v.handlers.Allowed != nil {
-				if _, ok := v.handlers.Allowed[t.Name]; !ok {
+			if ignore != nil {
+				if _, ok := ignore[t.Name]; ok {
 					continue
 				}
 			}
