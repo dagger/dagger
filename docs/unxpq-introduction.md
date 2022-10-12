@@ -101,3 +101,4 @@ engine -..-> A1
 * [Vercel](https://github.com/slumbering/dagger-vercel)
 * [Terraform](https://github.com/kpenfound/dagger-terraform)
 * [Rails](https://github.com/kpenfound/dagger-rails)
+* [Carvel kapp](https://github.com/laupse/dagger-kapp)
