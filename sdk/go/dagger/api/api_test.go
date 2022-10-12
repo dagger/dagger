@@ -23,7 +23,9 @@ func TestDirectory(t *testing.T) {
 		dir := core.Directory()
 
 		contents, err := dir.
-			WithNewFile("/hello.txt", WithDirectoryWithNewFileContents("world")).
+			WithNewFile("/hello.txt", DirectoryWithNewFileOpts{
+				Contents: "world",
+			}).
 			File("/hello.txt").
 			Contents(ctx)
 
@@ -78,9 +80,24 @@ func TestContainer(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "3.16.2\n", contents)
 
-		stdout, err := alpine.Exec(WithContainerExecArgs([]string{"cat", "/etc/alpine-release"})).Stdout().Contents(ctx)
+		stdout, err := alpine.Exec(ContainerExecOpts{
+			Args: []string{"cat", "/etc/alpine-release"},
+		}).Stdout().Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "3.16.2\n", stdout)
+
+		// Ensure we can grab the container ID back and re-run the same query
+		id, err := alpine.ID(ctx)
+		require.NoError(t, err)
+		core.
+			Container(ContainerOpts{
+				ID: id,
+			}).
+			Rootfs().
+			File("/etc/alpine-release").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "3.16.2\n", contents)
 
 		return nil
 	}))

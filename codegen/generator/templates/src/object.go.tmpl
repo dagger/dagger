@@ -9,41 +9,24 @@ type {{ .Name | FormatName }} struct {
 type {{ $field | FieldOptionsStructName }} struct {
 	{{- range $arg := $field.Args }}
 	{{ if $arg.TypeRef.IsOptional }}
-	{{ $arg.Name | FormatName }} *{{ $arg.TypeRef | FormatType }}
+	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatType }}
 	{{- end }}
 	{{- end }}
 }
 
-
-// {{ $field | FieldOptionHandlerName }} represents an option handler for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
-type {{ $field | FieldOptionHandlerName }} func(*{{ $field | FieldOptionsStructName }})
-
-
-{{- range $arg := $field.Args }}
-{{ if $arg.TypeRef.IsOptional }}
-// With{{ $field | FormatTypeAndFieldName }}{{ $arg.Name | FormatName }} sets the "{{ $arg.Name }}" option for {{ $field.Name | FormatName }}
-func With{{ $field | FormatTypeAndFieldName }}{{ $arg.Name | FormatName }}({{ $arg.Name }} {{ $arg.TypeRef | FormatType }}) {{ $field | FieldOptionHandlerName }} {
-	return func(daggerOptions *{{ $field | FieldOptionsStructName }}) {
-		daggerOptions.{{ $arg.Name | FormatName }} = &{{ $arg.Name }}
-	}
-}
-{{- end }}
-{{- end }}
 {{- end }}
 
 {{ $field.Description | Comment }}
 {{ $field | FieldFunction }} {
-	{{- if $field.Args.HasOptionals }}
-    opts := &{{ $field | FieldOptionsStructName }}{}
-    for _, fn := range options {
-        fn(opts)
-    }
-	{{- end }}
 	q := r.q.Select("{{ $field.Name }}")
 	{{- range $arg := $field.Args }}
 	{{- if $arg.TypeRef.IsOptional }}
-	if opts != nil && opts.{{ $arg.Name | FormatName }} != nil {
-		q = q.Arg("{{ $arg.Name }}", opts.{{ $arg.Name | FormatName }})
+	// `{{ $arg.Name }}` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+			q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+			break
+		}
 	}
 	{{- else }}
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})

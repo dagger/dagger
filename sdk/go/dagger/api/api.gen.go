@@ -106,42 +106,29 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerExecOptions contains options for Container.Exec
-type ContainerExecOptions struct {
-	Args *[]string
+// ContainerExecOpts contains options for Container.Exec
+type ContainerExecOpts struct {
+	Args []string
 
-	Opts *ExecOpts
-}
-
-// ContainerExecOption represents an option handler for Container.Exec
-type ContainerExecOption func(*ContainerExecOptions)
-
-// WithContainerExecArgs sets the "args" option for Exec
-func WithContainerExecArgs(args []string) ContainerExecOption {
-	return func(daggerOptions *ContainerExecOptions) {
-		daggerOptions.Args = &args
-	}
-}
-
-// WithContainerExecOpts sets the "opts" option for Exec
-func WithContainerExecOpts(opts ExecOpts) ContainerExecOption {
-	return func(daggerOptions *ContainerExecOptions) {
-		daggerOptions.Opts = &opts
-	}
+	Opts ExecOpts
 }
 
 // This container after executing the specified command inside it
-func (r *Container) Exec(options ...ContainerExecOption) *Container {
-	opts := &ContainerExecOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 	q := r.q.Select("exec")
-	if opts != nil && opts.Args != nil {
-		q = q.Arg("args", opts.Args)
+	// `args` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+			break
+		}
 	}
-	if opts != nil && opts.Opts != nil {
-		q = q.Arg("opts", opts.Opts)
+	// `opts` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Opts) {
+			q = q.Arg("opts", opts[i].Opts)
+			break
+		}
 	}
 
 	return &Container{
@@ -259,30 +246,20 @@ func (r *Container) Variables(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerWithDefaultArgsOptions contains options for Container.WithDefaultArgs
-type ContainerWithDefaultArgsOptions struct {
-	Args *[]string
-}
-
-// ContainerWithDefaultArgsOption represents an option handler for Container.WithDefaultArgs
-type ContainerWithDefaultArgsOption func(*ContainerWithDefaultArgsOptions)
-
-// WithContainerWithDefaultArgsArgs sets the "args" option for WithDefaultArgs
-func WithContainerWithDefaultArgsArgs(args []string) ContainerWithDefaultArgsOption {
-	return func(daggerOptions *ContainerWithDefaultArgsOptions) {
-		daggerOptions.Args = &args
-	}
+// ContainerWithDefaultArgsOpts contains options for Container.WithDefaultArgs
+type ContainerWithDefaultArgsOpts struct {
+	Args []string
 }
 
 // Configures default arguments for future commands
-func (r *Container) WithDefaultArgs(options ...ContainerWithDefaultArgsOption) *Container {
-	opts := &ContainerWithDefaultArgsOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
 	q := r.q.Select("withDefaultArgs")
-	if opts != nil && opts.Args != nil {
-		q = q.Arg("args", opts.Args)
+	// `args` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+			break
+		}
 	}
 
 	return &Container{
@@ -302,32 +279,22 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 	}
 }
 
-// ContainerWithMountedCacheOptions contains options for Container.WithMountedCache
-type ContainerWithMountedCacheOptions struct {
-	Source *DirectoryID
-}
-
-// ContainerWithMountedCacheOption represents an option handler for Container.WithMountedCache
-type ContainerWithMountedCacheOption func(*ContainerWithMountedCacheOptions)
-
-// WithContainerWithMountedCacheSource sets the "source" option for WithMountedCache
-func WithContainerWithMountedCacheSource(source DirectoryID) ContainerWithMountedCacheOption {
-	return func(daggerOptions *ContainerWithMountedCacheOptions) {
-		daggerOptions.Source = &source
-	}
+// ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
+type ContainerWithMountedCacheOpts struct {
+	Source DirectoryID
 }
 
 // This container plus a cache volume mounted at the given path
-func (r *Container) WithMountedCache(cache CacheID, path string, options ...ContainerWithMountedCacheOption) *Container {
-	opts := &ContainerWithMountedCacheOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Container) WithMountedCache(cache CacheID, path string, opts ...ContainerWithMountedCacheOpts) *Container {
 	q := r.q.Select("withMountedCache")
 	q = q.Arg("cache", cache)
 	q = q.Arg("path", path)
-	if opts != nil && opts.Source != nil {
-		q = q.Arg("source", opts.Source)
+	// `source` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+			break
+		}
 	}
 
 	return &Container{
@@ -466,30 +433,20 @@ type Directory struct {
 	c graphql.Client
 }
 
-// DirectoryContentsOptions contains options for Directory.Contents
-type DirectoryContentsOptions struct {
-	Path *string
-}
-
-// DirectoryContentsOption represents an option handler for Directory.Contents
-type DirectoryContentsOption func(*DirectoryContentsOptions)
-
-// WithDirectoryContentsPath sets the "path" option for Contents
-func WithDirectoryContentsPath(path string) DirectoryContentsOption {
-	return func(daggerOptions *DirectoryContentsOptions) {
-		daggerOptions.Path = &path
-	}
+// DirectoryContentsOpts contains options for Directory.Contents
+type DirectoryContentsOpts struct {
+	Path string
 }
 
 // Return a list of files and directories at the given path
-func (r *Directory) Contents(ctx context.Context, options ...DirectoryContentsOption) ([]string, error) {
-	opts := &DirectoryContentsOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Directory) Contents(ctx context.Context, opts ...DirectoryContentsOpts) ([]string, error) {
 	q := r.q.Select("contents")
-	if opts != nil && opts.Path != nil {
-		q = q.Arg("path", opts.Path)
+	// `path` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+			break
+		}
 	}
 
 	var response []string
@@ -573,30 +530,20 @@ func (r *Directory) WithDirectory(directory DirectoryID, path string) *Directory
 	}
 }
 
-// DirectoryWithNewFileOptions contains options for Directory.WithNewFile
-type DirectoryWithNewFileOptions struct {
-	Contents *string
-}
-
-// DirectoryWithNewFileOption represents an option handler for Directory.WithNewFile
-type DirectoryWithNewFileOption func(*DirectoryWithNewFileOptions)
-
-// WithDirectoryWithNewFileContents sets the "contents" option for WithNewFile
-func WithDirectoryWithNewFileContents(contents string) DirectoryWithNewFileOption {
-	return func(daggerOptions *DirectoryWithNewFileOptions) {
-		daggerOptions.Contents = &contents
-	}
+// DirectoryWithNewFileOpts contains options for Directory.WithNewFile
+type DirectoryWithNewFileOpts struct {
+	Contents string
 }
 
 // This directory plus a new file written at the given path
-func (r *Directory) WithNewFile(path string, options ...DirectoryWithNewFileOption) *Directory {
-	opts := &DirectoryWithNewFileOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Directory) WithNewFile(path string, opts ...DirectoryWithNewFileOpts) *Directory {
 	q := r.q.Select("withNewFile")
-	if opts != nil && opts.Contents != nil {
-		q = q.Arg("contents", opts.Contents)
+	// `contents` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Contents) {
+			q = q.Arg("contents", opts[i].Contents)
+			break
+		}
 	}
 	q = q.Arg("path", path)
 
@@ -768,31 +715,21 @@ func (r *Query) CacheFromTokens(tokens []string) *CacheVolume {
 	}
 }
 
-// QueryContainerOptions contains options for Query.Container
-type QueryContainerOptions struct {
-	ID *ContainerID
-}
-
-// QueryContainerOption represents an option handler for Query.Container
-type QueryContainerOption func(*QueryContainerOptions)
-
-// WithQueryContainerID sets the "id" option for Container
-func WithQueryContainerID(id ContainerID) QueryContainerOption {
-	return func(daggerOptions *QueryContainerOptions) {
-		daggerOptions.ID = &id
-	}
+// ContainerOpts contains options for Query.Container
+type ContainerOpts struct {
+	ID ContainerID
 }
 
 // Load a container from ID.
 // Null ID returns an empty container (scratch).
-func (r *Query) Container(options ...QueryContainerOption) *Container {
-	opts := &QueryContainerOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Query) Container(opts ...ContainerOpts) *Container {
 	q := r.q.Select("container")
-	if opts != nil && opts.ID != nil {
-		q = q.Arg("id", opts.ID)
+	// `id` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+			break
+		}
 	}
 
 	return &Container{
@@ -801,30 +738,20 @@ func (r *Query) Container(options ...QueryContainerOption) *Container {
 	}
 }
 
-// QueryDirectoryOptions contains options for Query.Directory
-type QueryDirectoryOptions struct {
-	ID *DirectoryID
-}
-
-// QueryDirectoryOption represents an option handler for Query.Directory
-type QueryDirectoryOption func(*QueryDirectoryOptions)
-
-// WithQueryDirectoryID sets the "id" option for Directory
-func WithQueryDirectoryID(id DirectoryID) QueryDirectoryOption {
-	return func(daggerOptions *QueryDirectoryOptions) {
-		daggerOptions.ID = &id
-	}
+// DirectoryOpts contains options for Query.Directory
+type DirectoryOpts struct {
+	ID DirectoryID
 }
 
 // Load a directory by ID. No argument produces an empty directory.
-func (r *Query) Directory(options ...QueryDirectoryOption) *Directory {
-	opts := &QueryDirectoryOptions{}
-	for _, fn := range options {
-		fn(opts)
-	}
+func (r *Query) Directory(opts ...DirectoryOpts) *Directory {
 	q := r.q.Select("directory")
-	if opts != nil && opts.ID != nil {
-		q = q.Arg("id", opts.ID)
+	// `id` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+			break
+		}
 	}
 
 	return &Directory{

@@ -57,3 +57,16 @@ func marshalGQL(v reflect.Value) string {
 		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
 	}
 }
+
+func IsZeroValue(value any) bool {
+	v := reflect.ValueOf(value)
+	kind := v.Type().Kind()
+	switch kind {
+	case reflect.Pointer:
+		return v.IsNil()
+	case reflect.Slice, reflect.Array:
+		return v.Len() == 0
+	default:
+		return v.IsZero()
+	}
+}

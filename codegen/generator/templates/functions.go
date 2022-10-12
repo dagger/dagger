@@ -13,9 +13,7 @@ var (
 		"Comment":                comment,
 		"FormatType":             formatType,
 		"FormatName":             formatName,
-		"FormatTypeAndFieldName": formatTypeAndFieldName,
 		"FieldOptionsStructName": fieldOptionsStructName,
-		"FieldOptionHandlerName": fieldOptionHandlerName,
 		"FieldFunction":          fieldFunction,
 	}
 )
@@ -80,20 +78,17 @@ func formatName(s string) string {
 	return lintName(s)
 }
 
-// formatTypeAndFieldName formats a GraphQL field into a Go equivalent in the form of `<Type Name><FieldName>`.
-// Example: `foo` -> `TypeFoo`
-func formatTypeAndFieldName(f introspection.Field) string {
-	return formatName(f.ParentObject.Name) + formatName(f.Name)
-}
-
 // fieldOptionsStructName returns the options struct name for a given field
 func fieldOptionsStructName(f introspection.Field) string {
-	return formatTypeAndFieldName(f) + "Options"
-}
-
-// fieldOptionHandlerName returns the option handler name for a given field
-func fieldOptionHandlerName(f introspection.Field) string {
-	return formatTypeAndFieldName(f) + "Option"
+	// Exception: `Query` option structs are not prefixed by `Query`.
+	// This is just so that they're nicer to work with, e.g.
+	// `ContainerOpts` rather than `QueryContainerOpts`
+	// The structure name will not clash with others since everybody else
+	// is prefixed by object name.
+	if f.ParentObject.Name == "Query" {
+		return formatName(f.Name) + "Opts"
+	}
+	return formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
 }
 
 // fieldFunction converts a field into a function signature
@@ -116,7 +111,7 @@ func fieldFunction(f introspection.Field) string {
 	if f.Args.HasOptionals() {
 		args = append(
 			args,
-			fmt.Sprintf("options ...%sOption", formatTypeAndFieldName(f)),
+			fmt.Sprintf("opts ...%s", fieldOptionsStructName(f)),
 		)
 	}
 	signature += "(" + strings.Join(args, ", ") + ")"

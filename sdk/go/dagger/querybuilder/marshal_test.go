@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -78,4 +79,34 @@ func TestMarshalGQLStruct(t *testing.T) {
 	}
 	s.Sub.X = []string{"1"}
 	require.Equal(t, `{a:"test",b:42,sub:{x:["1"]}}`, MarshalGQL(s))
+}
+
+func TestIsZeroValue(t *testing.T) {
+	zero := []any{
+		"",
+		0,
+		[]string{},
+		struct {
+			Foo string
+		}{},
+	}
+
+	nonZero := []any{
+		"hello",
+		42,
+		[]string{"world"},
+		struct {
+			Foo string
+		}{
+			Foo: "bar",
+		},
+	}
+
+	for _, i := range zero {
+		require.True(t, IsZeroValue(i), fmt.Sprintf("%v", i))
+	}
+
+	for _, i := range nonZero {
+		require.False(t, IsZeroValue(i), fmt.Sprintf("%v", i))
+	}
 }
