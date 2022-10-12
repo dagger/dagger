@@ -11,9 +11,11 @@ import (
 func TestCacheVolume(t *testing.T) {
 	t.Parallel()
 
-	type createFromTokensRes struct {
-		CacheFromTokens struct {
-			ID core.CacheID
+	type createWithKeyRes struct {
+		Cache struct {
+			WithKey struct {
+				ID core.CacheID
+			}
 		}
 	}
 
@@ -25,47 +27,83 @@ func TestCacheVolume(t *testing.T) {
 
 	var idOrig, idSame, idDiff, idGiven core.CacheID
 
-	t.Run("creating from tokens", func(t *testing.T) {
-		var res createFromTokensRes
+	t.Run("creating from scratch", func(t *testing.T) {
+		var res createRes
 		err := testutil.Query(
 			`{
-				cacheFromTokens(tokens: ["a", "b"]) {
+				cache {
 					id
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
 
-		idOrig = res.CacheFromTokens.ID
-		require.NotEmpty(t, res.CacheFromTokens.ID)
+		idOrig = res.Cache.ID
+		require.NotEmpty(t, res.Cache.ID)
 	})
 
-	t.Run("creating from same tokens again", func(t *testing.T) {
-		var res createFromTokensRes
+	t.Run("creating from a key", func(t *testing.T) {
+		var res createWithKeyRes
 		err := testutil.Query(
 			`{
-				cacheFromTokens(tokens: ["a", "b"]) {
-					id
+				cache {
+					withKey(key: "ab") {
+						id
+					}
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
 
-		idSame = res.CacheFromTokens.ID
+		idOrig = res.Cache.WithKey.ID
+		require.NotEmpty(t, res.Cache.WithKey.ID)
+	})
+
+	t.Run("creating from a key", func(t *testing.T) {
+		var res createWithKeyRes
+		err := testutil.Query(
+			`{
+				cache {
+					withKey(key: "ab") {
+						id
+					}
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+
+		idOrig = res.Cache.WithKey.ID
+		require.NotEmpty(t, res.Cache.WithKey.ID)
+	})
+
+	t.Run("creating from same key again", func(t *testing.T) {
+		var res createWithKeyRes
+		err := testutil.Query(
+			`{
+				cache {
+					withKey(key: "ab") {
+						id
+					}
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+
+		idSame = res.Cache.WithKey.ID
 		require.NotEmpty(t, idSame)
 
 		require.Equal(t, idOrig, idSame)
 	})
 
-	t.Run("creating from different tokens", func(t *testing.T) {
-		var res createFromTokensRes
+	t.Run("creating from a different key", func(t *testing.T) {
+		var res createWithKeyRes
 		err := testutil.Query(
 			`{
-				cacheFromTokens(tokens: ["a", "c"]) {
-					id
+				cache {
+					withKey(key: "ac") {
+						id
+					}
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
 
-		idDiff = res.CacheFromTokens.ID
+		idDiff = res.Cache.WithKey.ID
 		require.NotEmpty(t, idDiff)
 
 		require.NotEqual(t, idOrig, idDiff)

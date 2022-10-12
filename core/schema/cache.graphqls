@@ -3,13 +3,13 @@ scalar CacheID
 
 extend type Query {
   "Construct a cache volume from its ID"
-  cache(id: CacheID!): CacheVolume!
-
-  "Create a new cache volume identified by an arbitrary set of tokens"
-  cacheFromTokens(tokens: [String!]!): CacheVolume!
+  cache(id: CacheID): CacheVolume!
 }
 
 "A directory whose contents persist across runs"
 type CacheVolume {
   id: CacheID!
+
+  "Create a cache with key appended to the current cache key"
+  withKey(key: String!): CacheVolume!
 }

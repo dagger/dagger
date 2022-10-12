@@ -3,16 +3,17 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 
 	"github.com/pkg/errors"
 )
 
-// Cache is a persistent volume with a globally scoped identifier.
-type Cache struct {
+// CacheVolume is a persistent volume with a globally scoped identifier.
+type CacheVolume struct {
 	ID CacheID `json:"id"`
 }
 
-var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cacheFromTokens")
+var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cache.withKey")
 
 // CacheID is an arbitrary string typically derived from a set of token
 // strings acting as the cache's "key" or "scope".
@@ -24,7 +25,7 @@ func (id CacheID) decode() (*cacheIDPayload, error) {
 		return nil, ErrInvalidCacheID
 	}
 
-	if len(payload.Tokens) == 0 {
+	if payload.Key == "" {
 		return nil, ErrInvalidCacheID
 	}
 
@@ -34,38 +35,44 @@ func (id CacheID) decode() (*cacheIDPayload, error) {
 // cacheIDPayload is the inner content of a CacheID.
 type cacheIDPayload struct {
 	// TODO(vito): right now this is a bit goofy, but if we ever want to add
-	// extra server-provided fields, this is where we'd do it.
-	Tokens []string `json:"tokens"`
+	// extra fields for scoping, this is what we'd augment.
+	Key string `json:"key"`
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
 func (payload cacheIDPayload) Sum() string {
 	hash := sha256.New()
-	for _, tok := range payload.Tokens {
-		_, _ = hash.Write([]byte(tok + "\x00"))
-	}
-
+	_, _ = hash.Write([]byte(payload.Key))
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
-func NewCache(tokens []string) (*Cache, error) {
+func NewCache(key string) (*CacheVolume, error) {
 	id, err := encodeID(cacheIDPayload{
-		Tokens: tokens,
+		Key: key,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &Cache{
+	return &CacheVolume{
 		ID: CacheID(id),
 	}, nil
 }
 
-func NewCacheFromID(id CacheID) (*Cache, error) {
+func NewCacheFromID(id CacheID) (*CacheVolume, error) {
 	_, err := id.decode() // sanity check
 	if err != nil {
 		return nil, err
 	}
 
-	return &Cache{ID: id}, nil
+	return &CacheVolume{ID: id}, nil
+}
+
+func (cache *CacheVolume) WithKey(key string) (*CacheVolume, error) {
+	payload, err := cache.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCache(fmt.Sprintf("%s:%s", payload.Key, key))
 }
