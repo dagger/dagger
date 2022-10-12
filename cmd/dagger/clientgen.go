@@ -10,11 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 
 	"go.dagger.io/dagger/codegen/generator"
-	"go.dagger.io/dagger/codegen/introspection"
 	"go.dagger.io/dagger/engine"
 )
 
@@ -42,18 +40,7 @@ func ClientGen(cmd *cobra.Command, args []string) {
 
 	var generated []byte
 	if err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
-		var response introspection.Response
-		err := ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: introspection.Query,
-			},
-			&graphql.Response{Data: &response},
-		)
-		if err != nil {
-			return fmt.Errorf("error querying the API: %w", err)
-		}
-
-		generated, err = generator.Generate(ctx, response.Schema, generator.Config{
+		generated, err = generator.IntrospectAndGenerate(ctx, generator.Config{
 			Package: pkg,
 		})
 		return err
