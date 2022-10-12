@@ -282,6 +282,17 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return NewDirectory(ctx, llb.Diff(st, otherSt), rel, platform)
 }
 
+func (dir *Directory) Without(ctx context.Context, path string) (*Directory, error) {
+	st, cwd, platform, err := dir.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	st = st.File(llb.Rm(path))
+
+	return NewDirectory(ctx, st, cwd, platform)
+}
+
 func (dir *Directory) Decode() (llb.State, string, specs.Platform, error) {
 	payload, err := dir.ID.decode()
 	if err != nil {

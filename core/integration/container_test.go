@@ -1716,7 +1716,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 func TestContainerFile(t *testing.T) {
 	t.Parallel()
 
-	id := dirWithFileID(t, "some-file", "some-content-")
+	id := newDirWithFile(t, "some-file", "some-content-")
 
 	writeRes := struct {
 		Container struct {
@@ -1792,7 +1792,7 @@ func TestContainerFile(t *testing.T) {
 func TestContainerFileErrors(t *testing.T) {
 	t.Parallel()
 
-	id := dirWithFileID(t, "some-file", "some-content")
+	id := newDirWithFile(t, "some-file", "some-content")
 
 	err := testutil.Query(
 		`query Test($id: DirectoryID!) {

@@ -30,14 +30,13 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 		"Directory": router.ObjectResolver{
 			"contents":         router.ToResolver(s.contents),
 			"file":             router.ToResolver(s.file),
-			"secret":           router.ErrResolver(ErrNotImplementedYet),
 			"withNewFile":      router.ToResolver(s.withNewFile),
 			"withCopiedFile":   router.ToResolver(s.withCopiedFile),
-			"withoutFile":      router.ErrResolver(ErrNotImplementedYet),
+			"withoutFile":      router.ToResolver(s.withoutFile),
 			"directory":        router.ToResolver(s.subdirectory),
 			"withDirectory":    router.ToResolver(s.withDirectory),
-			"withoutDirectory": router.ErrResolver(ErrNotImplementedYet),
-			"diff":             router.ErrResolver(ErrNotImplementedYet),
+			"withoutDirectory": router.ToResolver(s.withoutDirectory),
+			"diff":             router.ToResolver(s.diff),
 		},
 	}
 }
@@ -105,4 +104,28 @@ type withCopiedFileArgs struct {
 
 func (s *directorySchema) withCopiedFile(ctx *router.Context, parent *core.Directory, args withCopiedFileArgs) (*core.Directory, error) {
 	return parent.WithCopiedFile(ctx, args.Path, &core.File{ID: args.Source})
+}
+
+type withoutDirectoryArgs struct {
+	Path string
+}
+
+func (s *directorySchema) withoutDirectory(ctx *router.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
+	return parent.Without(ctx, args.Path)
+}
+
+type withoutFileArgs struct {
+	Path string
+}
+
+func (s *directorySchema) withoutFile(ctx *router.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
+	return parent.Without(ctx, args.Path)
+}
+
+type diffArgs struct {
+	Other core.DirectoryID
+}
+
+func (s *directorySchema) diff(ctx *router.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
+	return parent.Diff(ctx, &core.Directory{ID: args.Other})
 }
