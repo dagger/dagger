@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
@@ -90,6 +93,7 @@ func getPackage(cmd *cobra.Command) (string, error) {
 		return "", err
 	}
 
+	// If a package name was provided as a flag, use it
 	if pkg != "" {
 		return pkg, nil
 	}
@@ -99,6 +103,8 @@ func getPackage(cmd *cobra.Command) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// If outputting to stdout, use `main` as package
 	if output == "" || output == "-" {
 		return "main", nil
 	}
@@ -107,5 +113,16 @@ func getPackage(cmd *cobra.Command) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Base(directory), nil
+
+	// If outputting to a directory already containing code, use the existing package name.
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, directory, nil, parser.PackageClauseOnly)
+	if err == nil && len(pkgs) > 0 {
+		for _, p := range pkgs {
+			return p.Name, nil
+		}
+	}
+
+	// Otherwise (e.g. outputting to a new directory), use the directory name as package name
+	return strings.ToLower(filepath.Base(directory)), nil
 }
