@@ -170,6 +170,25 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The value of the specified environment variable
+func (r *Container) EnvVariable(ctx context.Context, name string) (string, error) {
+	q := r.q.Select("envVariable")
+	q = q.Arg("name", name)
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A list of environment variables passed to commands
+func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
+	q := r.q.Select("envVariables")
+
+	var response []EnvVariable
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
 	Args []string
@@ -302,25 +321,6 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The value of the specified environment variable
-func (r *Container) Variable(ctx context.Context, name string) (string, error) {
-	q := r.q.Select("variable")
-	q = q.Arg("name", name)
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// A list of environment variables passed to commands
-func (r *Container) Variables(ctx context.Context) ([]string, error) {
-	q := r.q.Select("variables")
-
-	var response []string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // ContainerWithDefaultArgsOpts contains options for Container.WithDefaultArgs
 type ContainerWithDefaultArgsOpts struct {
 	Args []string
@@ -358,6 +358,18 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 func (r *Container) WithFS(id DirectoryID) *Container {
 	q := r.q.Select("withFS")
 	q = q.Arg("id", id)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This container plus the given environment variable
+func (r *Container) WithEnvVariable(name string, value string) *Container {
+	q := r.q.Select("withEnvVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
 
 	return &Container{
 		q: q,
@@ -459,18 +471,6 @@ func (r *Container) WithUser(name string) *Container {
 	}
 }
 
-// This container plus the given environment variable
-func (r *Container) WithVariable(name string, value string) *Container {
-	q := r.q.Select("withVariable")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
 // This container but with a different working directory
 func (r *Container) WithWorkdir(path string) *Container {
 	q := r.q.Select("withWorkdir")
@@ -482,10 +482,10 @@ func (r *Container) WithWorkdir(path string) *Container {
 	}
 }
 
-// This container after unmounting everything at the given path.
-func (r *Container) WithoutMount(path string) *Container {
-	q := r.q.Select("withoutMount")
-	q = q.Arg("path", path)
+// This container minus the given environment variable
+func (r *Container) WithoutEnvVariable(name string) *Container {
+	q := r.q.Select("withoutEnvVariable")
+	q = q.Arg("name", name)
 
 	return &Container{
 		q: q,
@@ -493,10 +493,10 @@ func (r *Container) WithoutMount(path string) *Container {
 	}
 }
 
-// This container minus the given environment variable
-func (r *Container) WithoutVariable(name string) *Container {
-	q := r.q.Select("withoutVariable")
-	q = q.Arg("name", name)
+// This container after unmounting everything at the given path.
+func (r *Container) WithoutMount(path string) *Container {
+	q := r.q.Select("withoutMount")
+	q = q.Arg("path", path)
 
 	return &Container{
 		q: q,
@@ -710,6 +710,31 @@ func (r *Directory) WithoutFile(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// EnvVariable is a simple key value struct that represent
+// an environment variable.
+type EnvVariable struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// name is the environment variable name.
+func (r *EnvVariable) Name(ctx context.Context) (string, error) {
+	q := r.q.Select("name")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// value is the environment variable valuek
+func (r *EnvVariable) Value(ctx context.Context) (string, error) {
+	q := r.q.Select("value")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Command execution
