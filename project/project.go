@@ -15,7 +15,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/filesystem"
 	"go.dagger.io/dagger/router"
 	"gopkg.in/yaml.v2"
 )
@@ -328,15 +327,15 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 		}
 
 		// TODO: /mnt should maybe be configurable?
-		for path, fsid := range collectFSPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
-			fs := filesystem.New(fsid)
-			fsState, err := fs.ToState()
+		for path, dirID := range collectDirPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
+			dir := core.Directory{ID: dirID}
+			dirSt, subdir, _, err := dir.Decode()
 			if err != nil {
 				return nil, err
 			}
 			// TODO: it should be possible for this to be outputtable by the action; the only question
 			// is how to expose that ability in a non-confusing way, just needs more thought
-			st.AddMount(path, fsState, llb.ForceNoOutput)
+			st.AddMount(path, dirSt, llb.SourcePath(subdir), llb.ForceNoOutput)
 		}
 
 		// Mount in the parent type if it is a Filesystem
@@ -393,24 +392,24 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 	})
 }
 
-func collectFSPaths(arg interface{}, curPath string, fsPaths map[string]filesystem.FSID) map[string]filesystem.FSID {
-	if fsPaths == nil {
-		fsPaths = make(map[string]filesystem.FSID)
+func collectDirPaths(arg interface{}, curPath string, dirPaths map[string]core.DirectoryID) map[string]core.DirectoryID {
+	if dirPaths == nil {
+		dirPaths = make(map[string]core.DirectoryID)
 	}
 
 	switch arg := arg.(type) {
-	case filesystem.FSID:
+	case core.DirectoryID:
 		// TODO: make sure there can't be any shenanigans with args named e.g. ../../../foo/bar
-		fsPaths[curPath] = arg
+		dirPaths[curPath] = arg
 	case map[string]interface{}:
 		for k, v := range arg {
-			fsPaths = collectFSPaths(v, filepath.Join(curPath, k), fsPaths)
+			dirPaths = collectDirPaths(v, filepath.Join(curPath, k), dirPaths)
 		}
 	case []interface{}:
 		for i, v := range arg {
 			// TODO: path format technically works but weird as hell, gotta be a better way
-			fsPaths = collectFSPaths(v, fmt.Sprintf("%s/%d", curPath, i), fsPaths)
+			dirPaths = collectDirPaths(v, fmt.Sprintf("%s/%d", curPath, i), dirPaths)
 		}
 	}
-	return fsPaths
+	return dirPaths
 }

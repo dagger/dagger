@@ -1,7 +1,0 @@
-extend type Query {
-  test: Test!
-}
-
-type Test {
-  testMount(in: FSID!): String!
-}

@@ -4,11 +4,12 @@ import (
 	"os"
 
 	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 type Test struct{}
 
-func (Test) TestMount(ctx dagger.Context, in dagger.FSID) (string, error) {
+func (Test) TestMount(ctx dagger.Context, in api.DirectoryID) (string, error) {
 	bytes, err := os.ReadFile("/mnt/in/foo")
 	if err != nil {
 		return "", err

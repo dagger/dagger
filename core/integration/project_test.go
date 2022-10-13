@@ -17,22 +17,18 @@ func TestExtensionMount(t *testing.T) {
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
 		res := struct {
-			Core struct {
-				Filesystem struct {
-					WriteFile struct {
-						ID string `json:"id"`
-					}
+			Directory struct {
+				WithNewFile struct {
+					ID string
 				}
 			}
 		}{}
 		err := ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
 				Query: `{
-					core {
-						filesystem(id: "scratch") {
-							writeFile(path: "/foo", contents: "bar") {
-								id
-							}
+					directory {
+						withNewFile(path: "foo", contents: "bar") {
+							id
 						}
 					}
 				}`,
@@ -48,13 +44,13 @@ func TestExtensionMount(t *testing.T) {
 		}{}
 		err = ctx.Client.MakeRequest(ctx,
 			&graphql.Request{
-				Query: `query TestMount($in: FSID!) {
+				Query: `query TestMount($in: DirectoryID!) {
 					test {
 						testMount(in: $in)
 					}
 				}`,
 				Variables: map[string]any{
-					"in": res.Core.Filesystem.WriteFile.ID,
+					"in": res.Directory.WithNewFile.ID,
 				},
 			},
 			&graphql.Response{Data: &res2},

@@ -490,6 +490,14 @@ func inputName(name string) string {
 func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 	switch t.Kind() {
 	case reflect.String:
+		/* TODO:(sipsma)
+		Huge hack: handle any scalar type from the go SDK (i.e. DirectoryID/ContainerID)
+		The much cleaner approach will come when we integrate this code w/ the
+		in-progress codegen work.
+		*/
+		if strings.HasPrefix(t.PkgPath(), "go.dagger.io/dagger/sdk/go") {
+			return ast.NonNullNamedType(t.Name(), nil)
+		}
 		return ast.NonNullNamedType("String", nil)
 	case reflect.Int:
 		return ast.NonNullNamedType("Int", nil)
