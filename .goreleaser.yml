@@ -11,7 +11,7 @@ builds:
     binary: dagger
     ldflags:
       - -s -w
-      - -X go.dagger.io/dagger/version.Version={{.Version}}
+      - -X main.version={{.Version}}
     goos:
       - linux
       - windows
@@ -43,17 +43,14 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - "^docs:"
-      - "^doc:"
-      - "^test:"
-      - "^tests:"
-      - "^ci:"
-      - "^website:"
-      - "^infra:"
-      - "^chore:"
-      - "^build\\(deps\\):"
-      - "^build\\(deps-dev\\):"
-      - "^Merge pull request"
+      - "^doc"
+      - "^test"
+      - "^ci"
+      - "^website"
+      - "^infra"
+      - "^chore"
+      - "^build"
+      - "^Merge"
   groups:
     - title: Breaking Changes
       regexp: "^.*!:+.*$"
@@ -67,11 +64,11 @@ brews:
       # ☑️  replace `gerhard` owner with `dagger`
       owner: gerhard
       name: homebrew-tap
-    name: dagger@0.3
+    name: dagger@{{ .Major }}.{{ .Minor }}
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
-    url_template: "https://dl.dagger.io/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
@@ -79,14 +76,13 @@ brews:
 
 blobs:
   - provider: s3
-    region: eu-west-1
-    # ☑️  replace all instances of `gerhard-dagger` with `dagger-io`
-    bucket: gerhard-dagger
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
     folder: "dagger/releases/{{ .Version }}"
 
 publishers:
   - name: publish-latest-version
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://gerhard-dagger/dagger/latest_version"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger-v{{ .Major }}.{{ .Minor }}.x/latest_version"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -94,7 +90,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://gerhard-dagger/dagger/versions/latest"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger-v{{ .Major }}.{{ .Minor }}.x/versions/latest"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -102,7 +98,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest-major-minor
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://gerhard-dagger/dagger/versions/{{ .Major }}.{{ .Minor }}"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/{{ .Major }}.{{ .Minor }}"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true

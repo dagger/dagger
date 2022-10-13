@@ -82,16 +82,15 @@ jobs:
             exit 1
           fi
 
-      # ☑️  Uncomment this step
-      # - name: "Ensure that all other checks have succeeded"
-      #   # https://github.com/lewagon/wait-on-check-action
-      #   uses: lewagon/wait-on-check-action@v1.0.0
-      #   with:
-      #     ref: ${{ github.ref }}
-      #     repo-token: ${{ secrets.GITHUB_TOKEN }}
-      #     wait-interval: 10 # polls the GitHub API every 10 every seconds
-      #     running-workflow-name: "Bump version, tag & release"
-      #     allowed-conclusions: success
+      - name: "Ensure that all other checks have succeeded"
+        # https://github.com/lewagon/wait-on-check-action
+        uses: lewagon/wait-on-check-action@v1.0.0
+        with:
+          ref: ${{ github.ref }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10 # polls the GitHub API every 10 every seconds
+          running-workflow-name: "Bump version, tag & release"
+          allowed-conclusions: success
 
       - name: "Create next release tag"
         env:
@@ -123,6 +122,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
+          AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
+          ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
 
       # Open a https://github.com/Homebrew/homebrew-core PR to update the bottled formula after we release.
       # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
