@@ -162,7 +162,7 @@ input ExecOpts {
 EnvVariable is a simple key value struct that represent
 an environment variable.
 """
-input EnvVariable {
+type EnvVariable {
     """
     name is the environment variable name.
     """

@@ -689,11 +689,8 @@ func TestContainerVariables(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				EnvVariables []struct {
-					Name  string
-					Value string
-				}
-				Exec struct {
+				EnvVariables []schema.EnvVariable
+				Exec         struct {
 					Stdout struct {
 						Contents string
 					}
@@ -769,11 +766,8 @@ func TestContainerWithoutVariable(t *testing.T) {
 		Container struct {
 			From struct {
 				WithoutEnvVariable struct {
-					EnvVariables []struct {
-						Name  string
-						Value string
-					}
-					Exec struct {
+					EnvVariables []schema.EnvVariable
+					Exec         struct {
 						Stdout struct {
 							Contents string
 						}
@@ -816,11 +810,8 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 		Container struct {
 			From struct {
 				WithEnvVariable struct {
-					EnvVariables []struct {
-						Name  string
-						Value string
-					}
-					Exec struct {
+					EnvVariables []schema.EnvVariable
+					Exec         struct {
 						Stdout struct {
 							Contents string
 						}

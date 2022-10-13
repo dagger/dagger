@@ -66,7 +66,6 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"stderr":               router.ToResolver(s.stderr),
 			"publish":              router.ToResolver(s.publish),
 		},
-		"EnvVariable": router.ObjectResolver{},
 	}
 }
 
