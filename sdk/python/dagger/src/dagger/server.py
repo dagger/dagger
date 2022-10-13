@@ -1,75 +1,57 @@
-import dataclasses
-import sys
-import json
 import logging
-from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
-# FIXME: we should have a custom logger instead of using the global one
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+from attrs import define
+from cattrs import Converter
+from strawberry import Schema
+
+from .converter import converter as json_converter
+
+logger = logging.getLogger(__name__)
+
+inputs_path = Path("/inputs/dagger.json")
+outputs_path = Path("/outputs/dagger.json")
+schema_path = Path("/outputs/schema.graphql")
 
 
+@define
+class Inputs:
+    resolver: str
+    args: dict[str, Any]
+    parent: dict[str, Any] | None
+
+
+@define
 class Server:
+    schema: Schema
+    converter: Converter = json_converter
+    debug: bool = False
 
-    def __init__(self, module_name: str = '__main__'):
-        self._module_name = module_name
+    def export_schema(self) -> None:
+        logger.debug(f"schema => \n{self.schema}")
+        schema_path.write_text(str(self.schema))
 
-    def _read_inputs(self) -> dict[str, Any]:
-        with open('/inputs/dagger.json') as f:
-            return json.loads(f.read())
-
-    def _to_dict(self, obj):
-        if dataclasses.is_dataclass(obj):
-            return dataclasses.asdict(obj)
-        if isinstance(obj, Sequence):
-            return list(map(self._to_dict, obj))
-        return obj
-
-    def _serialize(self, obj) -> str:
-        try:
-            r = json.dumps(obj)
-            return r
-        except TypeError:
-            # strawberry types are not serializable but can be converted to a dict
-            return json.dumps(self._to_dict(obj))
-
-    def _write_outputs(self, result: Any) -> None:
-        with open('/outputs/dagger.json', 'w') as f:
-            f.write(self._serialize(result))
-
-    def _call_resolver(self, inputs: dict) -> Any:
-        def check(x):
-            if x not in inputs:
-                raise RuntimeError('missing {}'.format(x))
-
-        for i in ['args', 'parent', 'resolver']:
-            check(i)
-
-        split = inputs['resolver'].split('.', 2)
-        typ, field = split[0], split[1]
-        obj = getattr(sys.modules[self._module_name], typ)
-
-        inst = None
-        try:
-            # if we have parent args, pass them to init the object
-            inst = obj(**inputs['parent']) if inputs['parent'] else obj()
-        except TypeError:
-            # Sometimes we cannot init the main obj, likely because of named args:
-            # the args passed should be used to init the sub-types
-            # and the sub-tuypes instances should be used to init the main obj)
-            # the end object should be jsonified and returned.
-            # FIXME: This is a temporary hack, ideally the object should always be initianted
-            return inputs['args']
-        resolver = getattr(inst, field)
-
-        if callable(resolver):
-            return resolver(**inputs['args'])
-
-        return resolver
-
-    def run(self) -> None:
+    def execute(self) -> None:
         inputs = self._read_inputs()
-        logging.debug('sdk inputs <- {}'.format(inputs))
+        logger.debug(f"{inputs = }")
+
         result = self._call_resolver(inputs)
-        logging.debug('sdk outputs -> {}'.format(result))
-        self._write_outputs(result)
+        logger.debug(f"{result = }")
+
+        self._write_output(result)
+
+    def _read_inputs(self) -> Inputs:
+        return self.converter.loads(inputs_path.read_text(), Inputs)
+
+    def _call_resolver(self, inputs: Inputs):
+        type_name, field_name = inputs.resolver.split(".", 2)
+        field = self.schema.get_field_for_type(field_name, type_name)
+        resolver = self.schema.schema_converter.from_resolver(field)
+        parent = field.origin(**inputs.parent) if inputs.parent else field.origin()
+        return resolver(parent, info=None, **inputs.args)
+
+    def _write_output(self, o) -> None:
+        output = self.converter.dumps(o, ensure_ascii=False)
+        logger.debug(f"{output = }")
+        outputs_path.write_text(output)

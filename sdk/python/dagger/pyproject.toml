@@ -4,24 +4,29 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dagger"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   { name="Sam Alba", email="sam@dagger.io" },
 ]
-description = "Dagger client library"
-#readme = "README.md"
-#license = { file="LICENSE" }
-requires-python = ">=3.7"
+description = "Dagger library"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
-#    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
 #    "Operating System :: OS Independent",
 ]
 dependencies = [
-    "gql[requests] >= 3.4.0",
-    "strawberry-graphql >= 0.130.3",
+    "gql[requests] ~= 3.4.0",
+    "strawberry-graphql[cli] ~= 0.133.5",
+    "attrs ~= 22.1.0",
+    "cattrs ~= 22.2.0",
 ]
 
 [project.urls]
 "Homepage" = "https://dagger.io/"
 "Bug Tracker" = "https://github.com/dagger/dagger/issues"
+
+[project.scripts]
+dagger-python = "dagger.cli:run"
