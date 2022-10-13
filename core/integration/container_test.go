@@ -5,13 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
+	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
@@ -74,62 +73,54 @@ func TestContainerFrom(t *testing.T) {
 
 func TestContainerWithFS(t *testing.T) {
 	t.Parallel()
-	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		core := api.New(ctx.Client)
 
-		alpine316 := core.Container().From("alpine:3.16.2")
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
 
-		alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
-		if err != nil {
-			return err
-		}
+	core := c.Core()
 
-		alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
-		dirID, err := alpine316.FS().ID(ctx)
-		if err != nil {
-			return err
-		}
-		exitCode, err := core.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
-			Args: []string{
-				"/bin/sh",
-				"-c",
-				"test -f /etc/alpine-release && test \"$(head -n 1 /etc/alpine-release)\" = \"$ALPINE_RELEASE\"",
-			},
-		}).ExitCode(ctx)
+	alpine316 := core.Container().From("alpine:3.16.2")
 
-		require.NoError(t, err)
-		require.NotEmpty(t, dirID)
-		require.Equal(t, exitCode, 0)
+	alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
+	require.NoError(t, err)
 
-		alpine315 := core.Container().From("alpine:3.15.6")
+	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
+	dirID, err := alpine316.FS().ID(ctx)
+	require.NoError(t, err)
+	exitCode, err := core.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
+		Args: []string{
+			"/bin/sh",
+			"-c",
+			"test -f /etc/alpine-release && test \"$(head -n 1 /etc/alpine-release)\" = \"$ALPINE_RELEASE\"",
+		},
+	}).ExitCode(ctx)
 
-		varVal := "testing123"
+	require.NoError(t, err)
+	require.NotEmpty(t, dirID)
+	require.Equal(t, exitCode, 0)
 
-		alpine315WithVar := alpine315.WithEnvVariable("DAGGER_TEST", varVal)
-		varValResp, err := alpine315WithVar.EnvVariable(ctx, "DAGGER_TEST")
-		if err != nil {
-			return err
-		}
+	alpine315 := core.Container().From("alpine:3.15.6")
 
-		require.Equal(t, varVal, varValResp)
+	varVal := "testing123"
 
-		alpine315ReplacedFS := alpine315WithVar.WithFS(dirID)
+	alpine315WithVar := alpine315.WithEnvVariable("DAGGER_TEST", varVal)
+	varValResp, err := alpine315WithVar.EnvVariable(ctx, "DAGGER_TEST")
+	require.NoError(t, err)
 
-		varValResp, err = alpine315ReplacedFS.EnvVariable(ctx, "DAGGER_TEST")
-		if err != nil {
-			return err
-		}
-		require.Equal(t, varVal, varValResp)
+	require.Equal(t, varVal, varValResp)
 
-		releaseStr, err := alpine315ReplacedFS.File("/etc/alpine-release").Contents(ctx)
-		if err != nil {
-			return err
-		}
+	alpine315ReplacedFS := alpine315WithVar.WithFS(dirID)
 
-		require.Equal(t, "3.16.2\n", releaseStr)
+	varValResp, err = alpine315ReplacedFS.EnvVariable(ctx, "DAGGER_TEST")
+	require.NoError(t, err)
+	require.Equal(t, varVal, varValResp)
 
-		return nil
-	}))
+	releaseStr, err := alpine315ReplacedFS.File("/etc/alpine-release").Contents(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, "3.16.2\n", releaseStr)
 }
 
 func TestContainerExecExitCode(t *testing.T) {
@@ -2302,16 +2293,20 @@ func TestContainerMultiFrom(t *testing.T) {
 }
 
 func TestContainerPublish(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.
 
 	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
 	randomID := identity.NewID()
-	err := engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		go func() {
-			err := ctx.Client.MakeRequest(ctx,
-				&graphql.Request{
-					Query: `query RunRegistry($rand: String!) {
+	go func() {
+		err := c.Do(ctx,
+			&dagger.Request{
+				Query: `query RunRegistry($rand: String!) {
 						container {
 							from(address: "registry:2") {
 								withEnvVariable(name: "RANDOM", value: $rand) {
@@ -2327,20 +2322,20 @@ func TestContainerPublish(t *testing.T) {
 							}
 						}
 					}`,
-					Variables: map[string]any{
-						"rand": randomID,
-					},
+				Variables: map[string]any{
+					"rand": randomID,
 				},
-				&graphql.Response{Data: new(map[string]any)},
-			)
-			if err != nil {
-				t.Logf("error running registry: %v", err)
-			}
-		}()
+			},
+			&dagger.Response{Data: new(map[string]any)},
+		)
+		if err != nil {
+			t.Logf("error running registry: %v", err)
+		}
+	}()
 
-		err := ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query WaitForRegistry($rand: String!) {
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query WaitForRegistry($rand: String!) {
 					container {
 						from(address: "alpine:3.16.2") {
 							withEnvVariable(name: "RANDOM", value: $rand) {
@@ -2353,46 +2348,46 @@ func TestContainerPublish(t *testing.T) {
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"rand": randomID,
-				},
+			Variables: map[string]any{
+				"rand": randomID,
 			},
-			&graphql.Response{Data: new(map[string]any)},
-		)
-		require.NoError(t, err)
+		},
+		&dagger.Response{Data: new(map[string]any)},
+	)
+	require.NoError(t, err)
 
-		testRef := core.ContainerAddress("127.0.0.1:5000/testimagepush:latest")
-		err = ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query TestImagePush($ref: ContainerAddress!) {
+	testRef := core.ContainerAddress("127.0.0.1:5000/testimagepush:latest")
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestImagePush($ref: ContainerAddress!) {
 					container {
 						from(address: "alpine:3.16.2") {
 							publish(address: $ref)
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"ref": testRef,
-				},
+			Variables: map[string]any{
+				"ref": testRef,
 			},
-			&graphql.Response{Data: new(map[string]any)},
-		)
-		require.NoError(t, err)
+		},
+		&dagger.Response{Data: new(map[string]any)},
+	)
+	require.NoError(t, err)
 
-		res := struct {
-			Container struct {
-				From struct {
-					Fs struct {
-						File struct {
-							Contents string
-						}
+	res := struct {
+		Container struct {
+			From struct {
+				Fs struct {
+					File struct {
+						Contents string
 					}
 				}
 			}
-		}{}
-		err = ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query TestImagePull($ref: ContainerAddress!) {
+		}
+	}{}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestImagePull($ref: ContainerAddress!) {
 					container {
 						from(address: $ref) {
 							fs {
@@ -2403,15 +2398,12 @@ func TestContainerPublish(t *testing.T) {
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"ref": testRef,
-				},
+			Variables: map[string]any{
+				"ref": testRef,
 			},
-			&graphql.Response{Data: &res},
-		)
-		require.NoError(t, err)
-		require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
-		return nil
-	})
+		},
+		&dagger.Response{Data: &res},
+	)
 	require.NoError(t, err)
+	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
 }

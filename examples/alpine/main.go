@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 
-	"github.com/Khan/genqlient/graphql"
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
@@ -17,10 +16,11 @@ type Alpine struct {
 }
 
 func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*dagger.Filesystem, error) {
-	client, err := dagger.Client(ctx)
+	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer client.Close()
 
 	// start with Alpine base
 	fsid, err := image(ctx, client, "alpine:3.15")
@@ -38,8 +38,8 @@ func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*dagger.Filesystem, er
 	return &dagger.Filesystem{ID: fsid}, nil
 }
 
-func image(ctx context.Context, client graphql.Client, ref string) (dagger.FSID, error) {
-	req := &graphql.Request{
+func image(ctx context.Context, client *dagger.Client, ref string) (dagger.FSID, error) {
+	req := &dagger.Request{
 		Query: `
 query Image ($ref: String!) {
 	core {
@@ -60,7 +60,7 @@ query Image ($ref: String!) {
 			}
 		}
 	}{}
-	err := client.MakeRequest(ctx, req, &graphql.Response{Data: &resp})
+	err := client.Do(ctx, req, &dagger.Response{Data: &resp})
 	if err != nil {
 		return "", err
 	}
@@ -68,8 +68,8 @@ query Image ($ref: String!) {
 	return resp.Core.Image.ID, nil
 }
 
-func addPkg(ctx context.Context, client graphql.Client, root dagger.FSID, pkg string) (dagger.FSID, error) {
-	req := &graphql.Request{
+func addPkg(ctx context.Context, client *dagger.Client, root dagger.FSID, pkg string) (dagger.FSID, error) {
+	req := &dagger.Request{
 		Query: `
 query AddPkg ($root: FSID!, $pkg: String!) {
 	core {
@@ -101,7 +101,7 @@ query AddPkg ($root: FSID!, $pkg: String!) {
 			}
 		}
 	}{}
-	err := client.MakeRequest(ctx, req, &graphql.Response{Data: &resp})
+	err := client.Do(ctx, req, &dagger.Response{Data: &resp})
 	if err != nil {
 		return "", err
 	}

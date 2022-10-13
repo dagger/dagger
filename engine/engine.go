@@ -3,14 +3,11 @@ package engine
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -24,7 +21,6 @@ import (
 	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
-	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/secret"
 	"golang.org/x/sync/errgroup"
 )
@@ -37,7 +33,6 @@ const (
 type Config struct {
 	Workdir    string
 	LocalDirs  map[string]string
-	DevServer  int
 	ConfigPath string
 	// If true, just load extension metadata rather than compiling and stitching them in
 	SkipInstall bool
@@ -45,7 +40,7 @@ type Config struct {
 
 type Context struct {
 	context.Context
-	Client     graphql.Client
+	Handler    http.Handler
 	Workdir    core.DirectoryID
 	LocalDirs  map[core.HostDirectoryID]core.DirectoryID
 	Project    *schema.Project
@@ -148,17 +143,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			ctx = withInMemoryAPIClient(ctx, router)
 			engineCtx := Context{
 				Context: ctx,
+				Handler: router,
 			}
 
-			engineCtx.Client, err = dagger.Client(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			engineCtx.LocalDirs, err = loadLocalDirs(ctx, engineCtx.Client, solveOpts.LocalDirs)
+			engineCtx.LocalDirs, err = loadLocalDirs(ctx, router, solveOpts.LocalDirs)
 			if err != nil {
 				return nil, err
 			}
@@ -168,8 +158,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			if engineCtx.ConfigPath != "" {
 				engineCtx.Project, err = loadProject(
 					ctx,
-					engineCtx.Client,
-					engineCtx.LocalDirs[core.HostDirectoryID(workdirID)],
+					router,
 					startOpts.ConfigPath,
 					!startOpts.SkipInstall,
 				)
@@ -184,16 +173,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			if err := fn(engineCtx); err != nil {
 				return nil, err
-			}
-
-			if startOpts.DevServer != 0 {
-				fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", startOpts.DevServer)
-				s := http.Server{
-					Handler:           router,
-					ReadHeaderTimeout: 30 * time.Second,
-					Addr:              fmt.Sprintf(":%d", startOpts.DevServer),
-				}
-				return nil, s.ListenAndServe()
 			}
 
 			return bkgw.NewResult(), nil
@@ -245,23 +224,6 @@ func NormalizePaths(workdir, configPath string) (string, string, error) {
 	return workdir, configPath, nil
 }
 
-func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.Context {
-	return dagger.WithHTTPClient(ctx, &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				// TODO: not efficient, but whatever
-				serverConn, clientConn := net.Pipe()
-
-				go func() {
-					_ = router.ServeConn(serverConn)
-				}()
-
-				return clientConn, nil
-			},
-		},
-	})
-}
-
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
 	w, err := c.ListWorkers(ctx)
 	if err != nil {
@@ -276,7 +238,7 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]string) (map[core.HostDirectoryID]core.DirectoryID, error) {
+func loadLocalDirs(ctx context.Context, r *router.Router, localDirs map[string]string) (map[core.HostDirectoryID]core.DirectoryID, error) {
 	var eg errgroup.Group
 	var l sync.Mutex
 
@@ -293,11 +255,8 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 					}
 				}
 			}{}
-			resp := &graphql.Response{Data: &res}
-
-			err := cl.MakeRequest(ctx,
-				&graphql.Request{
-					Query: `
+			_, err := r.Do(ctx,
+				`
 						query LocalDir($id: HostDirectoryID!) {
 							host {
 								directory(id: $id) {
@@ -308,11 +267,10 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 							}
 						}
 					`,
-					Variables: map[string]any{
-						"id": localID,
-					},
+				map[string]any{
+					"id": localID,
 				},
-				resp,
+				&res,
 			)
 			if err != nil {
 				return err
@@ -329,7 +287,7 @@ func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]
 	return mapping, eg.Wait()
 }
 
-func loadProject(ctx context.Context, cl graphql.Client, contextDir core.DirectoryID, configPath string, doInstall bool) (*schema.Project, error) {
+func loadProject(ctx context.Context, r *router.Router, configPath string, doInstall bool) (*schema.Project, error) {
 	res := struct {
 		Core struct {
 			Directory struct {
@@ -337,31 +295,31 @@ func loadProject(ctx context.Context, cl graphql.Client, contextDir core.Directo
 			}
 		}
 	}{}
-	resp := &graphql.Response{Data: &res}
 
 	var install string
 	if doInstall {
 		install = "install"
 	}
 
-	err := cl.MakeRequest(ctx,
-		&graphql.Request{
-			// FIXME:(sipsma) toggling install is extremely weird here, need better way
-			Query: fmt.Sprintf(`
-			query LoadProject($dir: DirectoryID!, $configPath: String!) {
-				directory(id: $dir) {
-					loadProject(configPath: $configPath) {
-						name
-						%s
+	_, err := r.Do(ctx,
+		// FIXME:(sipsma) toggling install is extremely weird here, need better way
+		fmt.Sprintf(`
+			query LoadProject($configPath: String!) {
+				host {
+					workdir {
+						read {
+							loadProject(configPath: $configPath) {
+								name
+								%s
+							}
+						}
 					}
 				}
 			}`, install),
-			Variables: map[string]any{
-				"dir":        contextDir,
-				"configPath": configPath,
-			},
+		map[string]any{
+			"configPath": configPath,
 		},
-		resp,
+		&res,
 	)
 	if err != nil {
 		return nil, err

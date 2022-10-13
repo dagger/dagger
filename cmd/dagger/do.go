@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
-	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger/api"
 	"golang.org/x/term"
 )
 
@@ -30,12 +30,6 @@ func Do(cmd *cobra.Command, args []string) {
 	vars := getKVInput(queryVarsInput)
 
 	localDirs := getKVInput(localDirsInput)
-
-	startOpts := &engine.Config{
-		LocalDirs:  localDirs,
-		Workdir:    workdir,
-		ConfigPath: configPath,
-	}
 
 	// Use the provided query file if specified
 	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
@@ -57,41 +51,66 @@ func Do(cmd *cobra.Command, args []string) {
 		operations = string(inBytes)
 	}
 
-	var result []byte
-	err := engine.Start(ctx, startOpts, func(ctx engine.Context) error {
-		for hostID, dirID := range ctx.LocalDirs {
-			vars[string(hostID)] = string(dirID)
-		}
-
-		res := make(map[string]interface{})
-		resp := &graphql.Response{Data: &res}
-		err := ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query:     operations,
-				Variables: vars,
-				OpName:    operation,
-			},
-			resp,
-		)
-		if err != nil {
-			return err
-		}
-		if len(resp.Errors) > 0 {
-			return resp.Errors
-		}
-
-		result, err = json.MarshalIndent(res, "", "    ")
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	result, err := doQuery(ctx, operations, operation, vars, localDirs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("%s\n", result)
+}
+
+func doQuery(ctx context.Context, query, op string, vars map[string]string, localDirs map[string]string) ([]byte, error) {
+	opts := []dagger.ClientOpt{
+		dagger.WithWorkdir(workdir),
+		dagger.WithConfigPath(configPath),
+	}
+	for id, path := range localDirs {
+		opts = append(opts, dagger.WithLocalDir(id, path))
+	}
+
+	c, err := dagger.Connect(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+
+	for hostID := range localDirs {
+		directoryID, err := c.
+			Core().
+			Host().
+			Directory(api.HostDirectoryID(hostID)).
+			Read().
+			ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		vars[hostID] = string(directoryID)
+	}
+
+	res := make(map[string]interface{})
+	resp := &dagger.Response{Data: &res}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query:     query,
+			Variables: vars,
+			OpName:    op,
+		},
+		resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Errors) > 0 {
+		return nil, resp.Errors
+	}
+
+	result, err := json.MarshalIndent(res, "", "    ")
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func getKVInput(kvs []string) map[string]string {

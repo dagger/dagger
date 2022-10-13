@@ -4,31 +4,33 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionAlpine(t *testing.T) {
-	startOpts := &engine.Config{
-		Workdir:    "../../",
-		ConfigPath: "../../examples/alpine/dagger.json",
-	}
+	ctx := context.Background()
+	c, err := dagger.Connect(
+		ctx,
+		dagger.WithWorkdir("../../"),
+		dagger.WithConfigPath("../../examples/alpine/dagger.json"),
+	)
+	require.NoError(t, err)
+	defer c.Close()
 
-	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
-		data := struct {
-			Alpine struct {
-				Build struct {
-					Exec struct {
-						Stdout string
-					}
+	data := struct {
+		Alpine struct {
+			Build struct {
+				Exec struct {
+					Stdout string
 				}
 			}
-		}{}
-		resp := &graphql.Response{Data: &data}
-		err := ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `
+		}
+	}{}
+	resp := &dagger.Response{Data: &data}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `
 				query {
 					alpine {
 						build(pkgs: ["curl"]) {
@@ -38,46 +40,41 @@ func TestExtensionAlpine(t *testing.T) {
 						}
 					}
 				}`,
-			},
-			resp,
-		)
-		require.NoError(t, err)
-		require.NotEmpty(t, data.Alpine.Build.Exec.Stdout)
-
-		return nil
-	})
+		},
+		resp,
+	)
 	require.NoError(t, err)
+	require.NotEmpty(t, data.Alpine.Build.Exec.Stdout)
 }
 
 func TestExtensionNetlifyGo(t *testing.T) {
-	startOpts := &engine.Config{
-		Workdir:    "../../",
-		ConfigPath: "../../examples/netlify/go/dagger.json",
-	}
+	ctx := context.Background()
+	c, err := dagger.Connect(
+		ctx,
+		dagger.WithWorkdir("../../"),
+		dagger.WithConfigPath("../../examples/netlify/go/dagger.json"),
+	)
+	require.NoError(t, err)
+	defer c.Close()
 
-	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
-		// TODO: until we setup some shared netlify auth tokens, this test just asserts on the schema showing up
+	// TODO: until we setup some shared netlify auth tokens, this test just asserts on the schema showing up
 
-		res := struct {
-			Project struct {
-				Schema string
-			}
-		}{}
-		resp := &graphql.Response{Data: &res}
-		err := ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `{
+	res := struct {
+		Project struct {
+			Schema string
+		}
+	}{}
+	resp := &dagger.Response{Data: &res}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `{
 					project(name: "netlify") {
 						schema
 					}
 				}`,
-			},
-			resp,
-		)
-		require.NoError(t, err)
-		require.NotEmpty(t, res.Project.Schema)
-
-		return nil
-	})
+		},
+		resp,
+	)
 	require.NoError(t, err)
+	require.NotEmpty(t, res.Project.Schema)
 }

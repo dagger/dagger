@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/Khan/genqlient/graphql"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/sdk/go/dagger"
@@ -20,55 +19,40 @@ func Query(query string, res any, opts *QueryOptions) error {
 }
 
 func QueryWithEngineConfig(query string, res any, opts *QueryOptions, cfg *engine.Config) error {
+	ctx := context.Background()
+
 	if opts == nil {
 		opts = &QueryOptions{}
 	}
 	if opts.Variables == nil {
 		opts.Variables = make(map[string]any)
 	}
-	return engine.Start(context.Background(), cfg, func(ctx engine.Context) error {
-		return ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query:     query,
-				Variables: opts.Variables,
-				OpName:    opts.Operation,
-			},
-			&graphql.Response{Data: &res},
+
+	clientOpts := []dagger.ClientOpt{}
+	if cfg != nil {
+		clientOpts = append(clientOpts,
+			dagger.WithWorkdir(cfg.Workdir),
+			dagger.WithConfigPath(cfg.ConfigPath),
 		)
-	})
-}
-
-func ReadFile(ctx context.Context, cl graphql.Client, fsid dagger.FSID, path string) (string, error) {
-	data := struct {
-		Core struct {
-			Filesystem struct {
-				File string
-			}
+		for id, path := range cfg.LocalDirs {
+			clientOpts = append(clientOpts, dagger.WithLocalDir(id, path))
 		}
-	}{}
-	resp := &graphql.Response{Data: &data}
-
-	err := cl.MakeRequest(ctx,
-		&graphql.Request{
-			Query: `
-			query ReadFile($fs: FSID!, $path: String!) {
-				core {
-					filesystem(id: $fs) {
-						file(path: $path)
-					}
-				}
-			}`,
-			Variables: map[string]any{
-				"fs":   fsid,
-				"path": path,
-			},
-		},
-		resp,
-	)
-	if err != nil {
-		return "", err
 	}
-	return data.Core.Filesystem.File, nil
+
+	c, err := dagger.Connect(ctx, clientOpts...)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	return c.Do(ctx,
+		&dagger.Request{
+			Query:     query,
+			Variables: opts.Variables,
+			OpName:    opts.Operation,
+		},
+		&dagger.Response{Data: &res},
+	)
 }
 
 func SetupBuildkitd() error {

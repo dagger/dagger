@@ -55,8 +55,6 @@ func Serve(server any) {
 		return
 	}
 
-	ctx := WithUnixSocketAPIClient(context.Background(), "/dagger.sock")
-
 	inputBytes, err := os.ReadFile("/inputs/dagger.json")
 	if err != nil {
 		writeErrorf(fmt.Errorf("unable to open request file: %w", err))
@@ -111,7 +109,7 @@ func Serve(server any) {
 		return
 	}
 
-	res, err := method.call(Context{ctx}, input.Parent, input.Args)
+	res, err := method.call(Context{context.Background()}, input.Parent, input.Args)
 	if err != nil {
 		writeErrorf(err)
 	}

@@ -298,6 +298,7 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
+			llb.AddEnv("DAGGER_HOST", "unix:///dagger.sock"),
 			llb.AddSSHSocket(
 				llb.SSHID(DaggerSockName),
 				llb.SSHSocketTarget(daggerSockPath),

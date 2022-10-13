@@ -6,12 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/moby/buildkit/identity"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestCoreImage(t *testing.T) {
@@ -168,25 +167,29 @@ func TestCoreExec(t *testing.T) {
 }
 
 func TestCoreImageExport(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.
 
 	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
 	randomID := identity.NewID()
-	err := engine.Start(context.Background(), nil, func(ctx engine.Context) error {
-		wg := new(sync.WaitGroup)
-		defer wg.Wait()
+	wg := new(sync.WaitGroup)
+	defer wg.Wait()
 
-		registryCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
+	registryCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-			err := ctx.Client.MakeRequest(registryCtx,
-				&graphql.Request{
-					Query: `query RunRegistry($rand: String!) {
+		err := c.Do(registryCtx,
+			&dagger.Request{
+				Query: `query RunRegistry($rand: String!) {
 						core {
 							image(ref: "registry:2") {
 								exec(input: {
@@ -199,20 +202,20 @@ func TestCoreImageExport(t *testing.T) {
 							}
 						}
 					}`,
-					Variables: map[string]any{
-						"rand": randomID,
-					},
+				Variables: map[string]any{
+					"rand": randomID,
 				},
-				&graphql.Response{Data: new(map[string]any)},
-			)
-			if err != nil {
-				t.Logf("error running registry: %v", err)
-			}
-		}()
+			},
+			&dagger.Response{Data: new(map[string]any)},
+		)
+		if err != nil {
+			t.Logf("error running registry: %v", err)
+		}
+	}()
 
-		err := ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query WaitForRegistry($rand: String!) {
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query WaitForRegistry($rand: String!) {
 					core {
 						image(ref: "alpine:3.16.2") {
 							exec(input: {
@@ -224,98 +227,98 @@ func TestCoreImageExport(t *testing.T) {
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"rand": randomID,
-				},
+			Variables: map[string]any{
+				"rand": randomID,
 			},
-			&graphql.Response{Data: new(map[string]any)},
-		)
-		require.NoError(t, err)
+		},
+		&dagger.Response{Data: new(map[string]any)},
+	)
+	require.NoError(t, err)
 
-		testRef := "127.0.0.1:5000/testimagepush:latest"
-		err = ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query TestImagePush($ref: String!) {
+	testRef := "127.0.0.1:5000/testimagepush:latest"
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestImagePush($ref: String!) {
 					core {
 						image(ref: "alpine:3.16.2") {
 							pushImage(ref: $ref)
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"ref": testRef,
-				},
+			Variables: map[string]any{
+				"ref": testRef,
 			},
-			&graphql.Response{Data: new(map[string]any)},
-		)
-		require.NoError(t, err)
+		},
+		&dagger.Response{Data: new(map[string]any)},
+	)
+	require.NoError(t, err)
 
-		res := struct {
-			Core struct {
-				Image struct {
-					File string
-				}
+	res := struct {
+		Core struct {
+			Image struct {
+				File string
 			}
-		}{}
-		err = ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query TestImagePull($ref: String!) {
+		}
+	}{}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestImagePull($ref: String!) {
 					core {
 						image(ref: $ref) {
 							file(path: "/etc/alpine-release")
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"ref": testRef,
-				},
+			Variables: map[string]any{
+				"ref": testRef,
 			},
-			&graphql.Response{Data: &res},
-		)
-		require.NoError(t, err)
-		require.Equal(t, res.Core.Image.File, "3.16.2\n")
+		},
+		&dagger.Response{Data: &res},
+	)
+	require.NoError(t, err)
+	require.Equal(t, res.Core.Image.File, "3.16.2\n")
 
-		testRef2 := "127.0.0.1:5000/testimageconfigpush:latest"
-		res2 := struct {
-			Core struct {
-				Image struct {
-					File string
-				}
+	testRef2 := "127.0.0.1:5000/testimageconfigpush:latest"
+	res2 := struct {
+		Core struct {
+			Image struct {
+				File string
 			}
-		}{}
-		err = ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query TestImageConfigPush($ref: String!) {
+		}
+	}{}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestImageConfigPush($ref: String!) {
 					core {
 						image(ref: "php:8.1-apache") {
 							pushImage(ref: $ref)
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"ref": testRef2,
-				},
+			Variables: map[string]any{
+				"ref": testRef2,
 			},
-			&graphql.Response{Data: &res2},
-		)
-		require.NoError(t, err)
+		},
+		&dagger.Response{Data: &res2},
+	)
+	require.NoError(t, err)
 
-		res3 := struct {
-			Core struct {
-				Image struct {
-					Exec struct {
-						FS struct {
-							Exec struct {
-								Stdout string
-							}
+	res3 := struct {
+		Core struct {
+			Image struct {
+				Exec struct {
+					FS struct {
+						Exec struct {
+							Stdout string
 						}
 					}
 				}
 			}
-		}{}
-		err = ctx.Client.MakeRequest(ctx,
-			&graphql.Request{
-				Query: `query TestImageConfigPush($ref: String!) {
+		}
+	}{}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestImageConfigPush($ref: String!) {
 					core {
 						image(ref: "regclient/regctl:latest") {
 							exec(input: {
@@ -332,20 +335,16 @@ func TestCoreImageExport(t *testing.T) {
 						}
 					}
 				}`,
-				Variables: map[string]any{
-					"ref": testRef2,
-				},
+			Variables: map[string]any{
+				"ref": testRef2,
 			},
-			&graphql.Response{Data: &res3},
-		)
-		require.NoError(t, err)
-
-		var img specs.Image
-		err = json.Unmarshal([]byte(res3.Core.Image.Exec.FS.Exec.Stdout), &img)
-		require.NoError(t, err)
-		require.Equal(t, []string{"docker-php-entrypoint"}, img.Config.Entrypoint)
-
-		return nil
-	})
+		},
+		&dagger.Response{Data: &res3},
+	)
 	require.NoError(t, err)
+
+	var img specs.Image
+	err = json.Unmarshal([]byte(res3.Core.Image.Exec.FS.Exec.Stdout), &img)
+	require.NoError(t, err)
+	require.Equal(t, []string{"docker-php-entrypoint"}, img.Config.Entrypoint)
 }

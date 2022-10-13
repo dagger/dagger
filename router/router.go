@@ -1,10 +1,14 @@
 package router
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +35,40 @@ func New() *Router {
 	}
 
 	return r
+}
+
+// Do executes a query directly in the server
+func (r *Router) Do(ctx context.Context, query string, variables map[string]any, data any) (*graphql.Result, error) {
+	r.l.RLock()
+	schema := *r.s
+	r.l.RUnlock()
+
+	params := graphql.Params{
+		Context:        ctx,
+		Schema:         schema,
+		RequestString:  query,
+		VariableValues: variables,
+	}
+	result := graphql.Do(params)
+	if result.HasErrors() {
+		messages := []string{}
+		for _, e := range result.Errors {
+			messages = append(messages, e.Message)
+		}
+		return nil, errors.New(strings.Join(messages, "\n"))
+	}
+
+	if data != nil {
+		marshalled, err := json.Marshal(result.Data)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(marshalled, data); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
 }
 
 func (r *Router) Add(schema ExecutableSchema) error {
