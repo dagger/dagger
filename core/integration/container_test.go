@@ -647,13 +647,13 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 	})
 }
 
-func TestContainerExecWithVariable(t *testing.T) {
+func TestContainerExecWithEnvVariable(t *testing.T) {
 	t.Parallel()
 
 	res := struct {
 		Container struct {
 			From struct {
-				WithVariable struct {
+				WithEnvVariable struct {
 					Exec struct {
 						Stdout struct {
 							Contents string
@@ -668,7 +668,7 @@ func TestContainerExecWithVariable(t *testing.T) {
 		`{
 			container {
 				from(address: "alpine:3.16.2") {
-					withVariable(name: "FOO", value: "bar") {
+					withEnvVariable(name: "FOO", value: "bar") {
 						exec(args: ["env"]) {
 							stdout {
 								contents
@@ -679,7 +679,7 @@ func TestContainerExecWithVariable(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Contains(t, res.Container.From.WithVariable.Exec.Stdout.Contents, "FOO=bar\n")
+	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout.Contents, "FOO=bar\n")
 }
 
 func TestContainerVariables(t *testing.T) {
@@ -688,8 +688,8 @@ func TestContainerVariables(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				Variables []string
-				Exec      struct {
+				EnvVariables []string
+				Exec         struct {
 					Stdout struct {
 						Contents string
 					}
@@ -702,7 +702,7 @@ func TestContainerVariables(t *testing.T) {
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
-					variables
+					envVariables
 					exec(args: ["env"]) {
 						stdout {
 							contents
@@ -712,11 +712,11 @@ func TestContainerVariables(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Variables, []string{
+	require.Equal(t, []string{
 		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"GOLANG_VERSION=1.18.2",
 		"GOPATH=/go",
-	})
+	}, res.Container.From.EnvVariables)
 	require.Contains(t, res.Container.From.Exec.Stdout.Contents, "GOPATH=/go\n")
 }
 
@@ -726,7 +726,7 @@ func TestContainerVariable(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				Variable *string
+				EnvVariable *string
 			}
 		}
 	}{}
@@ -735,24 +735,24 @@ func TestContainerVariable(t *testing.T) {
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
-					variable(name: "GOLANG_VERSION")
+					envVariable(name: "GOLANG_VERSION")
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.NotNil(t, res.Container.From.Variable)
-	require.Equal(t, "1.18.2", *res.Container.From.Variable)
+	require.NotNil(t, res.Container.From.EnvVariable)
+	require.Equal(t, "1.18.2", *res.Container.From.EnvVariable)
 
 	err = testutil.Query(
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
-					variable(name: "UNKNOWN")
+					envVariable(name: "UNKNOWN")
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Nil(t, res.Container.From.Variable)
+	require.Nil(t, res.Container.From.EnvVariable)
 }
 
 func TestContainerWithoutVariable(t *testing.T) {
@@ -761,9 +761,9 @@ func TestContainerWithoutVariable(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				WithoutVariable struct {
-					Variables []string
-					Exec      struct {
+				WithoutEnvVariable struct {
+					EnvVariables []string
+					Exec         struct {
 						Stdout struct {
 							Contents string
 						}
@@ -777,8 +777,8 @@ func TestContainerWithoutVariable(t *testing.T) {
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
-					withoutVariable(name: "GOLANG_VERSION") {
-						variables
+					withoutEnvVariable(name: "GOLANG_VERSION") {
+						envVariables
 						exec(args: ["env"]) {
 							stdout {
 								contents
@@ -789,22 +789,22 @@ func TestContainerWithoutVariable(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithoutVariable.Variables, []string{
+	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []string{
 		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"GOPATH=/go",
 	})
-	require.NotContains(t, res.Container.From.WithoutVariable.Exec.Stdout.Contents, "GOLANG_VERSION")
+	require.NotContains(t, res.Container.From.WithoutEnvVariable.Exec.Stdout.Contents, "GOLANG_VERSION")
 }
 
-func TestContainerVariablesReplace(t *testing.T) {
+func TestContainerEnvVariablesReplace(t *testing.T) {
 	t.Parallel()
 
 	res := struct {
 		Container struct {
 			From struct {
-				WithVariable struct {
-					Variables []string
-					Exec      struct {
+				WithEnvVariable struct {
+					EnvVariables []string
+					Exec         struct {
 						Stdout struct {
 							Contents string
 						}
@@ -818,8 +818,8 @@ func TestContainerVariablesReplace(t *testing.T) {
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
-					withVariable(name: "GOPATH", value: "/gone") {
-						variables
+					withEnvVariable(name: "GOPATH", value: "/gone") {
+						envVariables
 						exec(args: ["env"]) {
 							stdout {
 								contents
@@ -830,12 +830,12 @@ func TestContainerVariablesReplace(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithVariable.Variables, []string{
+	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []string{
 		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"GOLANG_VERSION=1.18.2",
 		"GOPATH=/gone",
 	})
-	require.Contains(t, res.Container.From.WithVariable.Exec.Stdout.Contents, "GOPATH=/gone\n")
+	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout.Contents, "GOPATH=/gone\n")
 }
 
 func TestContainerWorkdir(t *testing.T) {
@@ -1227,7 +1227,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 	execRes := struct {
 		Container struct {
 			From struct {
-				WithVariable struct {
+				WithEnvVariable struct {
 					WithMountedCache struct {
 						Exec struct {
 							Stdout struct {
@@ -1243,7 +1243,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 	query := `query Test($cache: CacheID!, $rand: String!) {
 			container {
 				from(address: "alpine:3.16.2") {
-					withVariable(name: "RAND", value: $rand) {
+					withEnvVariable(name: "RAND", value: $rand) {
 						withMountedCache(path: "/mnt/cache", cache: $cache) {
 							exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/file; cat /mnt/cache/file"]) {
 								stdout {
@@ -1262,7 +1262,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 		"rand":  rand1,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, rand1+"\n", execRes.Container.From.WithVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
 
 	rand2 := identity.NewID()
 	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
@@ -1270,7 +1270,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 		"rand":  rand2,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
 }
 
 func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
@@ -1305,7 +1305,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 	execRes := struct {
 		Container struct {
 			From struct {
-				WithVariable struct {
+				WithEnvVariable struct {
 					WithMountedCache struct {
 						Exec struct {
 							Stdout struct {
@@ -1321,7 +1321,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 	query := `query Test($cache: CacheID!, $rand: String!, $init: DirectoryID!) {
 			container {
 				from(address: "alpine:3.16.2") {
-					withVariable(name: "RAND", value: $rand) {
+					withEnvVariable(name: "RAND", value: $rand) {
 						withMountedCache(path: "/mnt/cache", cache: $cache, source: $init) {
 							exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"]) {
 								stdout {
@@ -1341,7 +1341,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		"cache": cacheID,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
 
 	rand2 := identity.NewID()
 	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
@@ -1350,7 +1350,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		"cache": cacheID,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
 }
 
 func TestContainerWithMountedTemp(t *testing.T) {
@@ -2304,7 +2304,7 @@ func TestContainerPublish(t *testing.T) {
 					Query: `query RunRegistry($rand: String!) {
 						container {
 							from(address: "registry:2") {
-								withVariable(name: "RANDOM", value: $rand) {
+								withEnvVariable(name: "RANDOM", value: $rand) {
 									exec(args: ["/etc/docker/registry/config.yml"]) {
 										stdout {
 											contents
@@ -2333,7 +2333,7 @@ func TestContainerPublish(t *testing.T) {
 				Query: `query WaitForRegistry($rand: String!) {
 					container {
 						from(address: "alpine:3.16.2") {
-							withVariable(name: "RANDOM", value: $rand) {
+							withEnvVariable(name: "RANDOM", value: $rand) {
 								exec(args: ["sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"]) {
 									stdout {
 										contents
