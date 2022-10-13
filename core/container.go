@@ -157,18 +157,18 @@ func (container *Container) FS(ctx context.Context) (*Directory, error) {
 	return NewDirectory(ctx, st, "", payload.Platform)
 }
 
-func (container *Container) WithFS(ctx context.Context, st llb.State, platform specs.Platform) (*Container, error) {
+func (container *Container) WithFS(ctx context.Context, dir *Directory, platform specs.Platform) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	stDef, err := st.Marshal(ctx, llb.Platform(platform))
+	dirPayload, err := dir.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	payload.FS = stDef.ToPB()
+	payload.FS = dirPayload.LLB
 	payload.Platform = platform
 
 	id, err := payload.Encode()

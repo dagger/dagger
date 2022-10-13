@@ -36,7 +36,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		},
 		"Container": router.ObjectResolver{
 			"from":                 router.ToResolver(s.from),
-			"rootfs":               router.ToResolver(s.rootfs),
+			"fs":                   router.ToResolver(s.fs),
+			"withFS":               router.ToResolver(s.withFS),
 			"file":                 router.ToResolver(s.file),
 			"directory":            router.ToResolver(s.directory),
 			"user":                 router.ToResolver(s.user),
@@ -109,7 +110,11 @@ func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args
 		return nil, err
 	}
 
-	ctr, err := parent.WithFS(ctx, llb.Image(addr), s.platform)
+	dir, err := core.NewDirectory(ctx, llb.Image(addr), "/", s.platform)
+	if err != nil {
+		return nil, err
+	}
+	ctr, err := parent.WithFS(ctx, dir, s.platform)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +124,16 @@ func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args
 	})
 }
 
-func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
+func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
+	ctr, err := parent.WithFS(ctx, &arg, s.platform)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr, nil
+}
+
+func (s *containerSchema) fs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
 	return parent.FS(ctx)
 }
 

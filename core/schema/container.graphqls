@@ -30,9 +30,12 @@ type Container {
 
     "Initialize this container from the base image published at the given address"
     from(address: ContainerAddress!): Container!
-
+    
     "This container's root filesystem. Mounts are not included."
-    rootfs: Directory!
+    fs: Directory!
+
+   "Initialize this container from this DirectoryID" 
+    withFS(id: DirectoryID!): Container!
 
     "Retrieve a directory at the given path. Mounts are included."
     directory(path: String!): Directory!
