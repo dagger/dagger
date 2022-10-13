@@ -73,8 +73,17 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	startOpts.ConfigPath, err = filepath.Rel(startOpts.Workdir, startOpts.ConfigPath)
-	if err != nil {
+
+	_, err = os.Stat(startOpts.ConfigPath)
+	switch {
+	case err == nil:
+		startOpts.ConfigPath, err = filepath.Rel(startOpts.Workdir, startOpts.ConfigPath)
+		if err != nil {
+			return err
+		}
+	case os.IsNotExist(err):
+		startOpts.ConfigPath = ""
+	default:
 		return err
 	}
 
@@ -156,15 +165,17 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			engineCtx.Workdir = engineCtx.LocalDirs[core.HostDirectoryID(workdirID)]
 			engineCtx.ConfigPath = startOpts.ConfigPath
 
-			engineCtx.Project, err = loadProject(
-				ctx,
-				engineCtx.Client,
-				engineCtx.LocalDirs[core.HostDirectoryID(workdirID)],
-				startOpts.ConfigPath,
-				!startOpts.SkipInstall,
-			)
-			if err != nil {
-				return nil, err
+			if engineCtx.ConfigPath != "" {
+				engineCtx.Project, err = loadProject(
+					ctx,
+					engineCtx.Client,
+					engineCtx.LocalDirs[core.HostDirectoryID(workdirID)],
+					startOpts.ConfigPath,
+					!startOpts.SkipInstall,
+				)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			if fn == nil {
