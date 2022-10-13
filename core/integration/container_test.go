@@ -89,7 +89,7 @@ func TestContainerWithFS(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		exitCode, err := core.Container().WithVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
+		exitCode, err := core.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
 			Args: []string{
 				"/bin/sh",
 				"-c",
@@ -105,8 +105,8 @@ func TestContainerWithFS(t *testing.T) {
 
 		varVal := "testing123"
 
-		alpine315WithVar := alpine315.WithVariable("DAGGER_TEST", varVal)
-		varValResp, err := alpine315WithVar.Variable(ctx, "DAGGER_TEST")
+		alpine315WithVar := alpine315.WithEnvVariable("DAGGER_TEST", varVal)
+		varValResp, err := alpine315WithVar.EnvVariable(ctx, "DAGGER_TEST")
 		if err != nil {
 			return err
 		}
@@ -115,7 +115,7 @@ func TestContainerWithFS(t *testing.T) {
 
 		alpine315ReplacedFS := alpine315WithVar.WithFS(dirID)
 
-		varValResp, err = alpine315ReplacedFS.Variable(ctx, "DAGGER_TEST")
+		varValResp, err = alpine315ReplacedFS.EnvVariable(ctx, "DAGGER_TEST")
 		if err != nil {
 			return err
 		}

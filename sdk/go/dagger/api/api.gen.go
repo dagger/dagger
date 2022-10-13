@@ -354,10 +354,11 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 	}
 }
 
-// Initialize this container from this DirectoryID
-func (r *Container) WithFS(id DirectoryID) *Container {
-	q := r.q.Select("withFS")
-	q = q.Arg("id", id)
+// This container plus the given environment variable
+func (r *Container) WithEnvVariable(name string, value string) *Container {
+	q := r.q.Select("withEnvVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
 
 	return &Container{
 		q: q,
@@ -365,11 +366,10 @@ func (r *Container) WithFS(id DirectoryID) *Container {
 	}
 }
 
-// This container plus the given environment variable
-func (r *Container) WithEnvVariable(name string, value string) *Container {
-	q := r.q.Select("withEnvVariable")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
+// Initialize this container from this DirectoryID
+func (r *Container) WithFS(id DirectoryID) *Container {
+	q := r.q.Select("withFS")
+	q = q.Arg("id", id)
 
 	return &Container{
 		q: q,
