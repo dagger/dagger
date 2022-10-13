@@ -64,7 +64,8 @@ changelog:
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
-      owner: dagger
+      # ☑️  replace `gerhard` owner with `dagger`
+      owner: gerhard
       name: homebrew-tap
     name: dagger@0.3
     commit_author:
@@ -78,13 +79,14 @@ brews:
 
 blobs:
   - provider: s3
-    region: us-east-1
-    bucket: dagger-io
+    region: eu-west-1
+    # ☑️  replace all instances of `gerhard-dagger` with `dagger-io`
+    bucket: gerhard-dagger
     folder: "dagger/releases/{{ .Version }}"
 
 publishers:
   - name: publish-latest-version
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://gerhard-dagger/dagger/latest_version"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -92,7 +94,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/versions/latest"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://gerhard-dagger/dagger/versions/latest"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -100,7 +102,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest-major-minor
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/versions/{{ .Major }}.{{ .Minor }}"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://gerhard-dagger/dagger/versions/{{ .Major }}.{{ .Minor }}"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
