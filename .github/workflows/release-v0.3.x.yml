@@ -4,13 +4,14 @@ name: "Release v0.3.x"
 concurrency: release-v0.3.x
 
 on:
-  # TODO: we may run this on a schedule at some point - just manual for now - Oct. 2022
   # This runs on a schedule by default:
+  # TODO: vvvvvvvvvvvvvvvv we may run this on a schedule at some point - just manual for now - Oct. 13, 2022
   # schedule:
+  #   - cron: "6 17 * * 2"
+  # TODO: ^^^^^^^^^^^^^^^^ we may run this on a schedule at some point - just manual for now - Oct. 13, 2022
     # https://crontab.guru/#6_17_*_*_2
     # Every Tuesday at 5:06pm UTC & 9:06am US West Coast.
     # GitHub Actions defaults to UTC:
-    # - cron: "6 17 * * 2"
     # There is high load on GitHub Actions at the top of the hour:
     #
     #     Note: The schedule event can be delayed during periods of high loads of
@@ -39,8 +40,9 @@ jobs:
   release:
     # ⚠️  If `name` changes, remember to update the `running-workflow-name` property too
     name: "Bump version, tag & release"
-    runs-on: ubuntu-22.04
-    # ☑️  runs-on: ubuntu-22.04-16c-64g-600gb
+    runs-on: ubuntu-22.04-16c-64g-600gb
+    # 🧰 comment the line above 👆 & uncomment the line below 👇 when debugging on a fork
+    # runs-on: ubuntu-22.04
     steps:
       - name: "Check out"
         # https://github.com/actions/checkout
@@ -54,9 +56,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SEMVER_BUMP: ${{ github.event.inputs.release_type }}
         run: |
-          # previous_release_version="$(gh api /repos/:owner/:repo/releases --jq '.[0].tag_name')"
+          previous_release_version="$(gh api /repos/:owner/:repo/releases --jq '.[0].tag_name')"
           # 🧰 comment the above line 👆 & uncomment the line below 👇 when debugging on a fork without any releases
-          previous_release_version="$(gh api /repos/:owner/:repo/tags --jq '.[0].name')"
+          # previous_release_version="$(gh api /repos/:owner/:repo/tags --jq '.[0].name')"
           echo "PREVIOUS RELEASE VERSION: $previous_release_version"
           printf "::set-output name=%s::%s\n" previous "$previous_release_version"
           if [[ -n "${{ github.event.inputs.release_version }}" ]]
@@ -129,7 +131,12 @@ jobs:
       # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
       # - https://github.com/Homebrew/homebrew-core/pull/105746#issuecomment-1190522063
       # - https://github.com/dagger/dagger/issues/2823#issuecomment-1190792261
-      # ☑️  Uncomment this step
+      #
+      # TODO: Uncomment this step AFTER we are producing final releases
+      # This will not be accepted by Homebrew maintainers otherwise: 
+      # > Unstable versions (alpha, beta, development versions) are not acceptable for versioned (or unversioned) formulae.
+      # > Excerpt from https://docs.brew.sh/Versions
+      #
       # - name: "Update homebrew-core formula"
       #   # https://github.com/mislav/bump-homebrew-formula-action
       #   uses: mislav/bump-homebrew-formula-action@v2

@@ -61,8 +61,7 @@ changelog:
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
-      # ☑️  replace `gerhard` owner with `dagger`
-      owner: gerhard
+      owner: dagger
       name: homebrew-tap
     name: dagger@{{ .Major }}.{{ .Minor }}
     commit_author:
@@ -76,7 +75,7 @@ brews:
 
 blobs:
   - provider: s3
-    region: eu-west-1
+    region: us-east-1
     bucket: "{{ .Env.AWS_BUCKET }}"
     folder: "dagger/releases/{{ .Version }}"
 
