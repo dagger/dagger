@@ -12,7 +12,7 @@ type CacheVolume struct {
 	ID CacheID `json:"id"`
 }
 
-var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cache.withKey")
+var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cacheVolume")
 
 // CacheID is an arbitrary string typically derived from a set of token
 // strings acting as the cache's "key" or "scope".

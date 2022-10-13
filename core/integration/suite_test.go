@@ -17,19 +17,15 @@ func init() {
 
 func newCache(t *testing.T) core.CacheID {
 	var res struct {
-		Cache struct {
-			WithKey struct {
-				ID core.CacheID
-			}
+		CacheVolume struct {
+			ID core.CacheID
 		}
 	}
 
 	err := testutil.Query(`
 		query CreateCache($key: String!) {
-			cache {
-				withKey(key: $key) {
-					id
-				}
+			cacheVolume(key: $key) {
+				id
 			}
 		}
 	`, &res, &testutil.QueryOptions{Variables: map[string]any{
@@ -37,7 +33,7 @@ func newCache(t *testing.T) core.CacheID {
 	}})
 	require.NoError(t, err)
 
-	return res.Cache.WithKey.ID
+	return res.CacheVolume.ID
 }
 
 func newDirWithFile(t *testing.T, path, contents string) core.DirectoryID {
