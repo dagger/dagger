@@ -66,6 +66,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"stderr":               router.ToResolver(s.stderr),
 			"publish":              router.ToResolver(s.publish),
 		},
+		"EnvVariable": router.ObjectResolver{},
 	}
 }
 
@@ -290,13 +291,29 @@ func (s *containerSchema) withoutEnvVariable(ctx *router.Context, parent *core.C
 	})
 }
 
-func (s *containerSchema) envVariables(ctx *router.Context, parent *core.Container, args any) ([]string, error) {
+type EnvVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+func (s *containerSchema) envVariables(ctx *router.Context, parent *core.Container, args any) ([]EnvVariable, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return cfg.Env, nil
+	vars := make([]EnvVariable, 0, len(cfg.Env))
+	for _, v := range cfg.Env {
+		name, value, _ := strings.Cut(v, "=")
+		e := EnvVariable{
+			Name:  name,
+			Value: value,
+		}
+
+		vars = append(vars, e)
+	}
+
+	return vars, nil
 }
 
 type containerVariableArgs struct {

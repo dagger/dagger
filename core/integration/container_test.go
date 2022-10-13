@@ -9,6 +9,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.dagger.io/dagger/core"
+	"go.dagger.io/dagger/core/schema"
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
@@ -688,8 +689,11 @@ func TestContainerVariables(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				EnvVariables []string
-				Exec         struct {
+				EnvVariables []struct {
+					Name  string
+					Value string
+				}
+				Exec struct {
 					Stdout struct {
 						Contents string
 					}
@@ -702,7 +706,10 @@ func TestContainerVariables(t *testing.T) {
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
-					envVariables
+					envVariables {
+						name
+						value
+					}
 					exec(args: ["env"]) {
 						stdout {
 							contents
@@ -712,10 +719,10 @@ func TestContainerVariables(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"GOLANG_VERSION=1.18.2",
-		"GOPATH=/go",
+	require.Equal(t, []schema.EnvVariable{
+		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+		{Name: "GOLANG_VERSION", Value: "1.18.2"},
+		{Name: "GOPATH", Value: "/go"},
 	}, res.Container.From.EnvVariables)
 	require.Contains(t, res.Container.From.Exec.Stdout.Contents, "GOPATH=/go\n")
 }
@@ -762,8 +769,11 @@ func TestContainerWithoutVariable(t *testing.T) {
 		Container struct {
 			From struct {
 				WithoutEnvVariable struct {
-					EnvVariables []string
-					Exec         struct {
+					EnvVariables []struct {
+						Name  string
+						Value string
+					}
+					Exec struct {
 						Stdout struct {
 							Contents string
 						}
@@ -778,7 +788,10 @@ func TestContainerWithoutVariable(t *testing.T) {
 			container {
 				from(address: "golang:1.18.2-alpine") {
 					withoutEnvVariable(name: "GOLANG_VERSION") {
-						envVariables
+						envVariables {
+							name
+							value
+						}
 						exec(args: ["env"]) {
 							stdout {
 								contents
@@ -789,9 +802,9 @@ func TestContainerWithoutVariable(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []string{
-		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"GOPATH=/go",
+	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []schema.EnvVariable{
+		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+		{Name: "GOPATH", Value: "/go"},
 	})
 	require.NotContains(t, res.Container.From.WithoutEnvVariable.Exec.Stdout.Contents, "GOLANG_VERSION")
 }
@@ -803,8 +816,11 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 		Container struct {
 			From struct {
 				WithEnvVariable struct {
-					EnvVariables []string
-					Exec         struct {
+					EnvVariables []struct {
+						Name  string
+						Value string
+					}
+					Exec struct {
 						Stdout struct {
 							Contents string
 						}
@@ -819,7 +835,10 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 			container {
 				from(address: "golang:1.18.2-alpine") {
 					withEnvVariable(name: "GOPATH", value: "/gone") {
-						envVariables
+						envVariables {
+							name
+							value
+						}
 						exec(args: ["env"]) {
 							stdout {
 								contents
@@ -830,10 +849,10 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []string{
-		"PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"GOLANG_VERSION=1.18.2",
-		"GOPATH=/gone",
+	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []schema.EnvVariable{
+		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
+		{Name: "GOLANG_VERSION", Value: "1.18.2"},
+		{Name: "GOPATH", Value: "/gone"},
 	})
 	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout.Contents, "GOPATH=/gone\n")
 }

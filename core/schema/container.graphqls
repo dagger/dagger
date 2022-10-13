@@ -56,7 +56,7 @@ type Container {
     withWorkdir(path: String!): Container!
 
     "A list of environment variables passed to commands"
-    envVariables: [String!]
+    envVariables: [EnvVariable!]!
 
     "The value of the specified environment variable"
     envVariable(name: String!): String
@@ -156,4 +156,20 @@ input ExecOpts {
     Null means discard output.
     """
     redirectStderr: String
+}
+
+"""
+EnvVariable is a simple key value struct that represent
+an environment variable.
+"""
+input EnvVariable {
+    """
+    name is the environment variable name.
+    """
+    name: String!
+
+    """
+    value is the environment variable valuek
+    """
+    value: String!
 }
