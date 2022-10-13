@@ -790,39 +790,6 @@ func (r *Exec) Stdout(ctx context.Context, opts ...ExecStdoutOpts) (string, erro
 	return response, q.Execute(ctx, r.c)
 }
 
-// A schema extension provided by a project
-type Extension struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-// path to the extension's code within the project's filesystem
-func (r *Extension) Path(ctx context.Context) (string, error) {
-	q := r.q.Select("path")
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// schema contributed to the project by this extension
-func (r *Extension) Schema(ctx context.Context) (string, error) {
-	q := r.q.Select("schema")
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// sdk used to generate code for and/or execute this extension
-func (r *Extension) SDK(ctx context.Context) (string, error) {
-	q := r.q.Select("sdk")
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // A file
 type File struct {
 	q *querybuilder.Selection
@@ -1203,20 +1170,11 @@ type Project struct {
 	c graphql.Client
 }
 
-// other projects with schema this project depends on
-func (r *Project) Dependencies(ctx context.Context) ([]Project, error) {
-	q := r.q.Select("dependencies")
-
-	var response []Project
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // extensions in this project
-func (r *Project) Extensions(ctx context.Context) ([]Extension, error) {
+func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
 	q := r.q.Select("extensions")
 
-	var response []Extension
+	var response []Project
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1258,11 +1216,11 @@ func (r *Project) Schema(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// scripts in this project
-func (r *Project) Scripts(ctx context.Context) ([]Script, error) {
-	q := r.q.Select("scripts")
+// sdk used to generate code for and/or execute this project
+func (r *Project) SDK(ctx context.Context) (string, error) {
+	q := r.q.Select("sdk")
 
-	var response []Script
+	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1412,30 +1370,6 @@ func (r *Query) Secret(id SecretID) *Secret {
 		q: q,
 		c: r.c,
 	}
-}
-
-// An executable script that uses the project's dependencies and/or extensions
-type Script struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-// path to the script's code within the project's filesystem
-func (r *Script) Path(ctx context.Context) (string, error) {
-	q := r.q.Select("path")
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// sdk used to generate code for and/or execute this script
-func (r *Script) SDK(ctx context.Context) (string, error) {
-	q := r.q.Select("sdk")
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // A reference to a secret value, which can be handled more safely than the value itself
