@@ -504,7 +504,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]string, opts ContainerExecOpts) (*Container, error) {
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]string, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -536,15 +536,29 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
 		llb.Args(append([]string{shim.Path}, *args...)),
 		llb.WithCustomName(strings.Join(*args, " ")),
+	}
 
-		// create /dagger mount point for the shim to write to
-		llb.AddMount(
-			metaMount,
-			// because the shim might run as non-root, we need to make a
-			// world-writable directory first...
-			llb.Scratch().File(llb.Mkdir(metaSourcePath, 0777)),
-			// ...and then make it the base of the mount point.
-			llb.SourcePath(metaSourcePath)),
+	// because the shim might run as non-root, we need to make a world-writable
+	// directory first and then make it the base of the /dagger mount point.
+	//
+	// TODO(vito): have the shim exec as the other user instead?
+	meta := llb.Mkdir(metaSourcePath, 0777)
+	if opts.Stdin != nil {
+		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(*opts.Stdin))
+	}
+
+	// create /dagger mount point for the shim to write to
+	runOpts = append(runOpts,
+		llb.AddMount(metaMount,
+			llb.Scratch().File(meta),
+			llb.SourcePath(metaSourcePath)))
+
+	if opts.RedirectStdout != nil {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", *opts.RedirectStdout))
+	}
+
+	if opts.RedirectStderr != nil {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", *opts.RedirectStderr))
 	}
 
 	if cfg.User != "" {

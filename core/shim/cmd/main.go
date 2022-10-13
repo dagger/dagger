@@ -8,9 +8,13 @@ import (
 )
 
 const (
-	stdoutPath   = "/dagger/stdout"
-	stderrPath   = "/dagger/stderr"
+	stdinPath    = "/dagger/stdin"
 	exitCodePath = "/dagger/exitCode"
+)
+
+var (
+	stdoutPath = "/dagger/stdout"
+	stderrPath = "/dagger/stderr"
 )
 
 func run() int {
@@ -26,7 +30,17 @@ func run() int {
 	cmd := exec.Command(name, args...)
 	cmd.Env = os.Environ()
 
-	cmd.Stdin = nil
+	if stdinFile, err := os.Open(stdinPath); err == nil {
+		defer stdinFile.Close()
+		cmd.Stdin = stdinFile
+	} else {
+		cmd.Stdin = nil
+	}
+
+	stdoutRedirect, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
+	if found {
+		stdoutPath = stdoutRedirect
+	}
 
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
@@ -34,6 +48,11 @@ func run() int {
 	}
 	defer stdoutFile.Close()
 	cmd.Stdout = io.MultiWriter(stdoutFile, os.Stdout)
+
+	stderrRedirect, found := internalEnv("_DAGGER_REDIRECT_STDERR")
+	if found {
+		stderrPath = stderrRedirect
+	}
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
@@ -55,6 +74,17 @@ func run() int {
 	}
 
 	return exitCode
+}
+
+func internalEnv(name string) (string, bool) {
+	val, found := os.LookupEnv(name)
+	if !found {
+		return "", false
+	}
+
+	os.Unsetenv(name)
+
+	return val, true
 }
 
 func main() {
