@@ -557,7 +557,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", *opts.RedirectStdout))
 	}
 
-	if opts.RedirectStdout != nil {
+	if opts.RedirectStderr != nil {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", *opts.RedirectStderr))
 	}
 
