@@ -14,7 +14,7 @@ class Engine:
         if workdir is None:
             workdir = os.environ.get('DAGGER_WORKDIR', os.getcwd())
         if configPath is None:
-            configPath = os.environ.get('DAGGER_CONFIG', './cloak.yaml')
+            configPath = os.environ.get('DAGGER_CONFIG', './dagger.json')
         self._config = {
             'port': port,
             'workdir': workdir,

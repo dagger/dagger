@@ -12,7 +12,7 @@ import (
 func TestExtensionMount(t *testing.T) {
 	startOpts := &engine.Config{
 		Workdir:    "../../",
-		ConfigPath: "core/integration/testdata/extension/cloak.yaml",
+		ConfigPath: "testdata/extension/dagger.json",
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
@@ -79,7 +79,7 @@ func TestExtensionMount(t *testing.T) {
 func TestCodeToSchema(t *testing.T) {
 	startOpts := &engine.Config{
 		Workdir:    "../../",
-		ConfigPath: "core/integration/testdata/codetoschema/cloak.yaml",
+		ConfigPath: "testdata/codetoschema/dagger.json",
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {

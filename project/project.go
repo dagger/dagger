@@ -16,7 +16,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/router"
-	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -37,16 +36,14 @@ const (
 )
 
 type State struct {
-	config     projectConfig
+	config     Config
 	workdir    *core.Directory
 	configPath string
 
 	schema     string
 	schemaOnce sync.Once
 
-	dependencies     []*State
-	dependenciesOnce sync.Once
-
+	extensions     []*State
 	extensionsOnce sync.Once
 
 	resolvers     router.Resolvers
@@ -76,7 +73,7 @@ func Load(
 		configPath: configPath,
 		resolvers:  make(router.Resolvers),
 	}
-	if err := yaml.UnmarshalStrict(cfgBytes, &s.config); err != nil {
+	if err := json.Unmarshal(cfgBytes, &s.config); err != nil {
 		return nil, err
 	}
 
@@ -97,26 +94,82 @@ func (p *State) Name() string {
 	return p.config.Name
 }
 
+func (p *State) SDK() string {
+	return p.config.SDK
+}
+
 func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (string, error) {
 	var rerr error
 	p.schemaOnce.Do(func() {
-		sourceSchemas := make([]router.LoadedSchema, len(p.config.Extensions))
-		extensions, err := p.Extensions(ctx, gw, platform, sshAuthSockID)
+		if p.config.SDK == "" {
+			return
+		}
+
+		// first try to load a hardcoded schema
+		// TODO: remove this once all extensions migrate to code-first
+		schemaFile, err := p.workdir.File(ctx, path.Join(path.Dir(p.configPath), schemaPath))
+		if err == nil {
+			schemaBytes, err := schemaFile.Contents(ctx, gw)
+			if err == nil {
+				p.schema = string(schemaBytes)
+				return
+			}
+		}
+
+		// otherwise go ask the extension for its schema
+		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
 		if err != nil {
 			rerr = err
 			return
 		}
-		for i, ext := range extensions {
-			sourceSchemas[i] = router.StaticSchema(router.StaticSchemaParams{
-				Schema: ext.Schema,
-			})
+		// TODO(sipsma): handle relative path + platform?
+		fsState, _, _, err := runtimeFS.Decode()
+		if err != nil {
+			rerr = err
+			return
 		}
-		p.schema = router.MergeLoadedSchemas(p.config.Name, sourceSchemas...).Schema()
+
+		workdirSt, _, _, err := p.workdir.Decode()
+		if err != nil {
+			rerr = err
+			return
+		}
+		st := fsState.Run(
+			llb.Args([]string{entrypointPath, "-schema"}),
+			llb.AddMount("/src", workdirSt, llb.Readonly),
+			llb.ReadonlyRootFS(),
+		)
+		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
+		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(platform))
+		if err != nil {
+			rerr = err
+			return
+		}
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Definition: outputDef.ToPB(),
+		})
+		if err != nil {
+			rerr = err
+			return
+		}
+		ref, err := res.SingleRef()
+		if err != nil {
+			rerr = err
+			return
+		}
+		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+			Filename: "/schema.graphql",
+		})
+		if err != nil {
+			rerr = err
+			return
+		}
+		p.schema = string(outputBytes)
 	})
 	return p.schema, rerr
 }
 
-func (p *State) Dependencies(
+func (p *State) Extensions(
 	ctx context.Context,
 	cache map[string]*State,
 	cacheMu *sync.RWMutex,
@@ -125,18 +178,18 @@ func (p *State) Dependencies(
 	sshAuthSockID string,
 ) ([]*State, error) {
 	var rerr error
-	p.dependenciesOnce.Do(func() {
-		p.dependencies = make([]*State, len(p.config.Dependencies))
-		for i, dep := range p.config.Dependencies {
+	p.extensionsOnce.Do(func() {
+		p.extensions = make([]*State, 0, len(p.config.Extensions))
+		for depName, dep := range p.config.Extensions {
 			switch {
-			case dep.Local != "":
-				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local))
+			case dep.Local != nil:
+				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local.Path))
 				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw)
 				if err != nil {
 					rerr = err
 					return
 				}
-				p.dependencies[i] = depState
+				p.extensions = append(p.extensions, depState)
 			case dep.Git != nil:
 				var opts []llb.GitOption
 				if sshAuthSockID != "" {
@@ -152,129 +205,62 @@ func (p *State) Dependencies(
 					rerr = err
 					return
 				}
-				p.dependencies[i] = depState
+				p.extensions = append(p.extensions, depState)
+			default:
+				rerr = fmt.Errorf("unset extension %s", depName)
+				return
 			}
 		}
 	})
-	return p.dependencies, rerr
+	return p.extensions, rerr
 }
 
-func (p *State) Extensions(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) ([]*Extension, error) {
-	var rerr error
-	p.extensionsOnce.Do(func() {
-		for i, ext := range p.config.Extensions {
-			// first try to load a hardcoded schema
-			// TODO: remove this once all extensions migrate to code-first
-			schemaPath := path.Join(path.Dir(p.configPath), ext.Path, schemaPath)
-			schemaFile, err := p.workdir.File(ctx, schemaPath)
-			if err == nil {
-				schemaBytes, err := schemaFile.Contents(ctx, gw)
-				if err == nil {
-					p.config.Extensions[i].Schema = string(schemaBytes)
-					continue
-				}
-			}
-
-			// otherwise go ask the extension for its schema
-			runtimeFS, err := p.Runtime(ctx, ext, gw, platform, sshAuthSockID)
-			if err != nil {
-				rerr = err
-				return
-			}
-
-			// TODO(vito): handle relative path + platform?
-			fsState, _, _, err := runtimeFS.Decode()
-			if err != nil {
-				rerr = err
-				return
-			}
-
-			// TODO(vito): handle relative path + platform?
-			workdirSt, _, _, err := p.workdir.Decode()
-			if err != nil {
-				rerr = err
-				return
-			}
-			st := fsState.Run(
-				llb.Args([]string{entrypointPath, "-schema"}),
-				llb.AddMount("/src", workdirSt, llb.Readonly),
-				llb.ReadonlyRootFS(),
-			)
-			outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-			outputDef, err := outputMnt.Marshal(ctx, llb.Platform(platform))
-			if err != nil {
-				rerr = err
-				return
-			}
-			res, err := gw.Solve(ctx, bkgw.SolveRequest{
-				Definition: outputDef.ToPB(),
-			})
-			if err != nil {
-				rerr = err
-				return
-			}
-			ref, err := res.SingleRef()
-			if err != nil {
-				rerr = err
-				return
-			}
-			outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-				Filename: "/schema.graphql",
-			})
-			if err != nil {
-				rerr = err
-				return
-			}
-
-			ext.Schema = string(outputBytes)
-		}
-	})
-	return p.config.Extensions, rerr
-}
-
-func (p *State) Scripts() []*Script {
-	return p.config.Scripts
-}
-
-func (p *State) Resolvers(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (router.Resolvers, error) {
+func (p *State) Resolvers(
+	ctx context.Context,
+	gw bkgw.Client,
+	platform specs.Platform,
+	sshAuthSockID string,
+) (router.Resolvers, error) {
 	var rerr error
 	p.resolversOnce.Do(func() {
-		extensions, err := p.Extensions(ctx, gw, platform, sshAuthSockID)
+		if p.config.SDK == "" {
+			return
+		}
+
+		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
 		if err != nil {
 			rerr = err
 			return
 		}
-		for _, ext := range extensions {
-			runtimeFS, err := p.Runtime(ctx, ext, gw, platform, sshAuthSockID)
-			if err != nil {
-				rerr = err
-				return
+		schema, err := p.Schema(ctx, gw, platform, sshAuthSockID)
+		if err != nil {
+			rerr = err
+			return
+		}
+		doc, err := parser.Parse(parser.ParseParams{Source: schema})
+		if err != nil {
+			rerr = err
+			return
+		}
+		for _, def := range doc.Definitions {
+			var obj *ast.ObjectDefinition
+
+			if def, ok := def.(*ast.ObjectDefinition); ok {
+				obj = def
 			}
-			doc, err := parser.Parse(parser.ParseParams{Source: ext.Schema})
-			if err != nil {
-				rerr = err
-				return
+
+			if def, ok := def.(*ast.TypeExtensionDefinition); ok {
+				obj = def.Definition
 			}
-			for _, def := range doc.Definitions {
-				var obj *ast.ObjectDefinition
 
-				if def, ok := def.(*ast.ObjectDefinition); ok {
-					obj = def
-				}
+			if obj == nil {
+				continue
+			}
 
-				if def, ok := def.(*ast.TypeExtensionDefinition); ok {
-					obj = def.Definition
-				}
-
-				if obj == nil {
-					continue
-				}
-
-				objResolver := router.ObjectResolver{}
-				p.resolvers[obj.Name.Value] = objResolver
-				for _, field := range obj.Fields {
-					objResolver[field.Name.Value] = p.resolver(runtimeFS, ext.SDK, gw, platform)
-				}
+			objResolver := router.ObjectResolver{}
+			p.resolvers[obj.Name.Value] = objResolver
+			for _, field := range obj.Fields {
+				objResolver[field.Name.Value] = p.resolver(runtimeFS, p.config.SDK, gw, platform)
 			}
 		}
 	})

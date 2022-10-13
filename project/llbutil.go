@@ -1,7 +1,6 @@
 package project
 
 import (
-	"strings"
 	"time"
 
 	"github.com/moby/buildkit/client/llb"
@@ -51,8 +50,4 @@ func withGithubSSHKnownHosts() (llb.RunOption, error) {
 		),
 		llb.AddEnv("GIT_SSH_COMMAND", "ssh -o UserKnownHostsFile=/tmp/known_hosts"),
 	), nil
-}
-
-func shell(lines ...string) llb.RunOption {
-	return llb.Args([]string{"sh", "-c", strings.Join(lines, "\n")})
 }

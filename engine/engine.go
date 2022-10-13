@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	workdirID = "__dagger_workdir" // FIXME:(sipsma) just hoping users don't try to use this as an id themselves, not robust
-	yamlName  = "cloak.yaml"
+	workdirID      = "__dagger_workdir"
+	daggerJSONName = "dagger.json"
 )
 
 type Config struct {
@@ -69,34 +69,22 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
-	// FIXME:(sipsma) use viper to get env support automatically
-	if startOpts.Workdir == "" {
-		if v, ok := os.LookupEnv("DAGGER_WORKDIR"); ok {
-			startOpts.Workdir = v
-		}
-	}
-	if startOpts.ConfigPath == "" {
-		if v, ok := os.LookupEnv("DAGGER_CONFIG"); ok {
-			startOpts.ConfigPath = v
-		}
+	startOpts.Workdir, startOpts.ConfigPath, err = NormalizePaths(startOpts.Workdir, startOpts.ConfigPath)
+	if err != nil {
+		return err
 	}
 
+	_, err = os.Stat(startOpts.ConfigPath)
 	switch {
-	case startOpts.Workdir == "" && startOpts.ConfigPath == "":
-		configAbsPath, err := findConfig()
+	case err == nil:
+		startOpts.ConfigPath, err = filepath.Rel(startOpts.Workdir, startOpts.ConfigPath)
 		if err != nil {
 			return err
 		}
-		startOpts.Workdir = filepath.Dir(configAbsPath)
-		startOpts.ConfigPath = "./" + yamlName
-	case startOpts.Workdir == "":
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		startOpts.Workdir = cwd
-	case startOpts.ConfigPath == "":
-		startOpts.ConfigPath = "./" + yamlName
+	case os.IsNotExist(err):
+		startOpts.ConfigPath = ""
+	default:
+		return err
 	}
 
 	router := router.New()
@@ -125,6 +113,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if startOpts.LocalDirs == nil {
 		startOpts.LocalDirs = map[string]string{}
 	}
+	// make workdir ID unique by absolute path to prevent concurrent runs from
+	// interfering with each other
+	workdirID := fmt.Sprintf("%s_%s", workdirID, startOpts.Workdir)
 	startOpts.LocalDirs[workdirID] = startOpts.Workdir
 	solveOpts.LocalDirs = startOpts.LocalDirs
 
@@ -143,7 +134,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
 				SSHAuthSockID: sshAuthSockID,
-				WorkdirID:     workdirID,
+				WorkdirID:     core.HostDirectoryID(workdirID),
 				Gateway:       gw,
 				BKClient:      c,
 				SolveOpts:     solveOpts,
@@ -171,18 +162,20 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			if err != nil {
 				return nil, err
 			}
-			engineCtx.Workdir = engineCtx.LocalDirs[workdirID]
+			engineCtx.Workdir = engineCtx.LocalDirs[core.HostDirectoryID(workdirID)]
 			engineCtx.ConfigPath = startOpts.ConfigPath
 
-			engineCtx.Project, err = loadProject(
-				ctx,
-				engineCtx.Client,
-				engineCtx.LocalDirs[workdirID],
-				startOpts.ConfigPath,
-				!startOpts.SkipInstall,
-			)
-			if err != nil {
-				return nil, err
+			if engineCtx.ConfigPath != "" {
+				engineCtx.Project, err = loadProject(
+					ctx,
+					engineCtx.Client,
+					engineCtx.LocalDirs[core.HostDirectoryID(workdirID)],
+					startOpts.ConfigPath,
+					!startOpts.SkipInstall,
+				)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			if fn == nil {
@@ -218,6 +211,38 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 	return nil
+}
+
+func NormalizePaths(workdir, configPath string) (string, string, error) {
+	if workdir == "" {
+		workdir = os.Getenv("DAGGER_WORKDIR")
+	}
+	if workdir == "" {
+		var err error
+		workdir, err = os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+	}
+	workdir, err := filepath.Abs(workdir)
+	if err != nil {
+		return "", "", err
+	}
+
+	if configPath == "" {
+		configPath = os.Getenv("DAGGER_CONFIG")
+	}
+	if configPath == "" {
+		configPath = filepath.Join(workdir, daggerJSONName)
+	}
+	if !filepath.IsAbs(configPath) {
+		var err error
+		configPath, err = filepath.Abs(configPath)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	return workdir, configPath, nil
 }
 
 func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.Context {
@@ -327,20 +352,6 @@ func loadProject(ctx context.Context, cl graphql.Client, contextDir core.Directo
 				directory(id: $dir) {
 					loadProject(configPath: $configPath) {
 						name
-						schema
-						extensions {
-							path
-							schema
-							sdk
-						}
-						scripts {
-							path
-							sdk
-						}
-						dependencies {
-							name
-							schema
-						}
 						%s
 					}
 				}
@@ -357,25 +368,4 @@ func loadProject(ctx context.Context, cl graphql.Client, contextDir core.Directo
 	}
 
 	return &res.Core.Directory.LoadProject, nil
-}
-
-func findConfig() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	for {
-		configPath := filepath.Join(wd, yamlName)
-		// FIXME:(sipsma) decide how to handle symlinks
-		if _, err := os.Stat(configPath); err == nil {
-			return configPath, nil
-		}
-
-		if wd == "/" {
-			return "", fmt.Errorf("no %s found", yamlName)
-		}
-
-		wd = filepath.Dir(wd)
-	}
 }

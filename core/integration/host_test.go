@@ -71,7 +71,7 @@ func TestHostWorkdir(t *testing.T) {
 
 	// FIXME(vito): this is brittle; it currently finds the README in the root of
 	// the repo but it'd be better to control the workdir
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents, "README.md")
+	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents, "suite_test.go")
 }
 
 func TestHostLocalDirReadWrite(t *testing.T) {
