@@ -5,14 +5,9 @@ displayed_sidebar: "0.3"
 
 # Writing a new project with NodeJS (Javascript or Typescript)
 
-Say we are creating a new project called `foo`. It will have
-
-1. A single extension, written in Typescript, the extends the schema with an action called `bar`.
-1. A script, written in Javascript, that can call the extension (and any other project dependencies)
-
 NOTE: It's currently hardcoded in this Dagger SDK to use yarn commands for building extensions, so it's safest to use yarn at the moment. There is [an open issue for improving this](https://github.com/dagger/dagger/issues/3036).
 
-NOTE: For simplicity, these instructions also currently assume you are creating a new node module from scratch. Extensions and scripts can also be integrated into existing modules with some minor adjustments though.
+NOTE: For simplicity, these instructions also currently assume you are creating a new node module from scratch. Extensions can also be integrated into existing modules with some minor adjustments though.
 
 ## Setup the project configuration
 
@@ -31,84 +26,28 @@ NOTE: For simplicity, these instructions also currently assume you are creating 
    - `yarn add --dev git+https://github.com/dagger/dagger.git#cloak`
    - `yarn install`
 
-1. Create a new file called `cloak.yaml`
+1. Create a new project
 
-   - This is where you declare your project, and other project that it depends on. All extensions declared in this file will be built, loaded, and available to be called when the project is loaded into dagger.
-   - Create the file in the following format:
-
-   ```yaml
-   name: foo
-   scripts:
-     - path: script
-       sdk: ts
-   dependencies:
-     - git:
-         remote: https://github.com/dagger/dagger.git
-         ref: cloak
-         path: examples/yarn/cloak.yaml
-     - git:
-         remote: https://github.com/dagger/dagger.git
-         ref: cloak
-         path: examples/netlify/go/cloak.yaml
+   ```console
+   dagger project init --name foo --sdk ts
    ```
 
+   - Optionally add any dependencies you may want. For example, to add dependencies on the yarn and netlify examples you could run:
+
+   ```console
+   dagger project add git --remote https://github.com/dagger/dagger.git --ref cloak --path examples/yarn/dagger.json
+   dagger project add git --remote https://github.com/dagger/dagger.git --ref cloak --path examples/netlify/ts/dagger.json
+   ```
+
+   - You'll now see a `dagger.json` file. You can view its contents directly (or run `dagger project`, which currently just dumps the contents)
+   - You can also remove extensions with `dagger project rm --name <name>`
    - The dependencies are optional and just examples, feel free to change as needed.
-   - `core` does not need to be explicitly declared as a dependency; it is implicitly included. If your only dependency is `core`, then you can just skip the `dependencies:` key entirely.
-
-## Create your script
-
-Create and open `script/index.mjs`. An example implementation that just pulls an image and reads a file is:
-
-```javascript
-import { gql, Engine } from "@dagger.io/dagger";
-new Engine().run(async (client) => {
-  const fileContents = await client
-    .request(
-      gql`
-        {
-          core {
-            image(ref: "alpine") {
-              file(path: "/etc/alpine-release")
-            }
-          }
-        }
-      `
-    )
-    .then((result) => result.core.image.file);
-  console.log("Output: " + fileContents);
-});
-```
-
-The simplest way to then invoke your script is to execute `node script/index.mjs`.
-
-This can also be added to the scripts in `package.json` for more convenient invocation.
 
 ## Create your extension
 
-Update your `cloak.yaml` to include a new `extensions` key:
-
-```yaml
-name: foo
-scripts:
-  - path: script
-    sdk: ts
-extensions:
-  - path: ext
-    sdk: ts
-dependencies:
-  - git:
-      remote: https://github.com/dagger/dagger.git
-      ref: cloak
-      path: examples/yarn/cloak.yaml
-  - git:
-      remote: https://github.com/dagger/dagger.git
-      ref: cloak
-      path: examples/netlify/go/cloak.yaml
-```
-
 ### Create schema files
 
-- Create a new file `ext/schema.graphql`, which will define the new APIs implemented by your extension and vended by your project.
+- Create a new file `schema.graphql`, which will define the new APIs implemented by your extension and vended by your project.
 
   - Example contents for a single `bar` action:
 
@@ -129,7 +68,7 @@ dependencies:
 
 ### Implement the extension
 
-1. Create and open `ext/index.ts`, using the following as a skeleton for the implementation
+1. Create and open `index.ts`, using the following as a skeleton for the implementation
 
 ```typescript
 import { client, DaggerServer, gql } from "@dagger.io/dagger";
@@ -180,23 +119,3 @@ server.run();
    }
    EOF
    ```
-
-1. Finally, you should now be able to invoke your extension from your script too, e.g.
-
-```javascript
-import { gql, Engine } from "@dagger.io/dagger";
-new Engine().run(async (client) => {
-  const output = await client
-    .request(
-      gql`
-        {
-          foo {
-            bar(in: "in")
-          }
-        }
-      `
-    )
-    .then((result) => result.foo.bar);
-  console.log("Output: " + output);
-});
-```
