@@ -45,31 +45,6 @@ import (
 		}
 	}
 
-	// Build mdn/todo-react
-	todoreact: {
-		pull: git.#Pull & {
-			remote: "https://github.com/mdn/todo-react"
-			ref:    "4c1ad2bc5d50f96265693be50997c306081b0964"
-		}
-		install: #Install & {
-			source: pull.output
-		}
-		build: #Script & {
-			source: pull.output
-			name:   "build"
-		}
-		verify: #AssertFile & {
-			input: build.output
-			path:  "robots.txt"
-			contents: """
-				# https://www.robotstxt.org/robotstxt.html
-				User-agent: *
-				Disallow:
-
-				"""
-		}
-	}
-
 	// Run yarn.#Build with a custom docker image
 	customImage: {
 		buildImage: docker.#Build & {
