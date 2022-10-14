@@ -7,11 +7,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/spf13/cobra"
 	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/project"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 /* TODO:
@@ -84,35 +83,40 @@ var addLocalCmd = &cobra.Command{
 var addGitCmd = &cobra.Command{
 	Use: "git",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
 		cfg, err := getThisProjectConfig()
 		if err != nil {
 			return err
 		}
 
-		startOpts := &engine.Config{
-			Workdir:     workdir,
-			ConfigPath:  configPath,
-			SkipInstall: true,
+		cl, err := dagger.Connect(ctx,
+			dagger.WithWorkdir(workdir),
+			dagger.WithConfigPath(configPath),
+			dagger.WithNoExtensions(),
+		)
+		if err != nil {
+			return err
 		}
+		defer cl.Close()
+
 		// TODO:(sipsma) this shouldn't need to start with an actual config, should just need core API
-		if err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
-			proj, err := loadGitProject(ctx, ctx.Client, project.GitExtension{
+		proj, err := loadGitProject(ctx, cl, project.GitExtension{
+			Remote: addGitRemote,
+			Ref:    addGitRef,
+			Path:   addGitSubpath,
+		})
+		if err != nil {
+			return err
+		}
+		cfg.Extensions[proj.Name] = project.Extension{
+			Git: &project.GitExtension{
 				Remote: addGitRemote,
 				Ref:    addGitRef,
 				Path:   addGitSubpath,
-			})
-			if err != nil {
-				return err
-			}
-			cfg.Extensions[proj.Name] = project.Extension{
-				Git: &project.GitExtension{
-					Remote: addGitRemote,
-					Ref:    addGitRef,
-					Path:   addGitSubpath,
-				},
-			}
-			return nil
-		}); err != nil {
+			},
+		}
+
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -170,7 +174,7 @@ func writeConfigFile(cfg *project.Config) error {
 	return writeConfig(f, cfg)
 }
 
-func loadGitProject(ctx context.Context, cl graphql.Client, gitParams project.GitExtension) (*schema.Project, error) {
+func loadGitProject(ctx context.Context, cl *dagger.Client, gitParams project.GitExtension) (*schema.Project, error) {
 	res := struct {
 		Git struct {
 			Branch struct {
@@ -180,11 +184,11 @@ func loadGitProject(ctx context.Context, cl graphql.Client, gitParams project.Gi
 			}
 		}
 	}{}
-	resp := &graphql.Response{Data: &res}
+	resp := &dagger.Response{Data: &res}
 
 	// TODO: update to new API once loadProject is migrated
-	err := cl.MakeRequest(ctx,
-		&graphql.Request{
+	err := cl.Do(ctx,
+		&dagger.Request{
 			Query: `
 			query Load($remote: String!, $ref: String!, $subpath: String!) {
 				git(url: $remote) {

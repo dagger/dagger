@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Khan/genqlient/graphql"
 	"go.dagger.io/dagger/sdk/go/dagger"
 
 	openAPIClient "github.com/go-openapi/runtime/client"
@@ -24,10 +23,11 @@ type Netlify struct {
 }
 
 func (Netlify) Deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
-	client, err := dagger.Client(ctx)
+	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer client.Close()
 
 	// Setup Auth
 	tokenPlaintext, err := secret(ctx, client, token)
@@ -97,8 +97,8 @@ type SiteURLs struct {
 	LogsURL   string
 }
 
-func secret(ctx context.Context, client graphql.Client, id dagger.SecretID) (string, error) {
-	req := &graphql.Request{
+func secret(ctx context.Context, client *dagger.Client, id dagger.SecretID) (string, error) {
+	req := &dagger.Request{
 		Query: `
 query Secret ($id: SecretID!) {
 	core {
@@ -115,7 +115,7 @@ query Secret ($id: SecretID!) {
 			Secret string
 		}
 	}{}
-	err := client.MakeRequest(ctx, req, &graphql.Response{Data: &resp})
+	err := client.Do(ctx, req, &dagger.Response{Data: &resp})
 	if err != nil {
 		return "", err
 	}

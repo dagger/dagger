@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"github.com/Khan/genqlient/graphql"
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
@@ -72,12 +71,13 @@ func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
 }
 
 func (Test) ReturnFilesystem(ctx dagger.Context, ref string) (*dagger.Filesystem, error) {
-	client, err := dagger.Client(ctx)
+	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer client.Close()
 
-	req := &graphql.Request{
+	req := &dagger.Request{
 		Query: `
 query Image ($ref: String!) {
 	core {
@@ -96,7 +96,7 @@ query Image ($ref: String!) {
 			Image dagger.Filesystem
 		}
 	}{}
-	err = client.MakeRequest(ctx, req, &graphql.Response{Data: &resp})
+	err = client.Do(ctx, req, &dagger.Response{Data: &resp})
 	if err != nil {
 		return nil, err
 	}

@@ -3,14 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
-	"time"
 
-	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/platforms"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -24,7 +19,6 @@ import (
 	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/project"
 	"go.dagger.io/dagger/router"
-	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/secret"
 	"golang.org/x/sync/errgroup"
 )
@@ -37,22 +31,12 @@ const (
 type Config struct {
 	Workdir    string
 	LocalDirs  map[string]string
-	DevServer  int
 	ConfigPath string
-	// If true, just load extension metadata rather than compiling and stitching them in
-	SkipInstall bool
+	// If true, do not load project extensions
+	NoExtensions bool
 }
 
-type Context struct {
-	context.Context
-	Client     graphql.Client
-	Workdir    core.DirectoryID
-	LocalDirs  map[core.HostDirectoryID]core.DirectoryID
-	Project    *schema.Project
-	ConfigPath string
-}
-
-type StartCallback func(Context) error
+type StartCallback func(context.Context, *router.Router) error
 
 func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if startOpts == nil {
@@ -148,30 +132,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			ctx = withInMemoryAPIClient(ctx, router)
-			engineCtx := Context{
-				Context: ctx,
-			}
-
-			engineCtx.Client, err = dagger.Client(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			engineCtx.LocalDirs, err = loadLocalDirs(ctx, engineCtx.Client, solveOpts.LocalDirs)
-			if err != nil {
-				return nil, err
-			}
-			engineCtx.Workdir = engineCtx.LocalDirs[core.HostDirectoryID(workdirID)]
-			engineCtx.ConfigPath = startOpts.ConfigPath
-
-			if engineCtx.ConfigPath != "" {
-				engineCtx.Project, err = loadProject(
+			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
+				_, err = installExtensions(
 					ctx,
-					engineCtx.Client,
-					engineCtx.LocalDirs[core.HostDirectoryID(workdirID)],
+					router,
 					startOpts.ConfigPath,
-					!startOpts.SkipInstall,
 				)
 				if err != nil {
 					return nil, err
@@ -182,18 +147,8 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, nil
 			}
 
-			if err := fn(engineCtx); err != nil {
+			if err := fn(ctx, router); err != nil {
 				return nil, err
-			}
-
-			if startOpts.DevServer != 0 {
-				fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", startOpts.DevServer)
-				s := http.Server{
-					Handler:           router,
-					ReadHeaderTimeout: 30 * time.Second,
-					Addr:              fmt.Sprintf(":%d", startOpts.DevServer),
-				}
-				return nil, s.ListenAndServe()
 			}
 
 			return bkgw.NewResult(), nil
@@ -245,23 +200,6 @@ func NormalizePaths(workdir, configPath string) (string, string, error) {
 	return workdir, configPath, nil
 }
 
-func withInMemoryAPIClient(ctx context.Context, router *router.Router) context.Context {
-	return dagger.WithHTTPClient(ctx, &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				// TODO: not efficient, but whatever
-				serverConn, clientConn := net.Pipe()
-
-				go func() {
-					_ = router.ServeConn(serverConn)
-				}()
-
-				return clientConn, nil
-			},
-		},
-	})
-}
-
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
 	w, err := c.ListWorkers(ctx)
 	if err != nil {
@@ -276,60 +214,7 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func loadLocalDirs(ctx context.Context, cl graphql.Client, localDirs map[string]string) (map[core.HostDirectoryID]core.DirectoryID, error) {
-	var eg errgroup.Group
-	var l sync.Mutex
-
-	mapping := map[core.HostDirectoryID]core.DirectoryID{}
-	for localID := range localDirs {
-		localID := localID
-		eg.Go(func() error {
-			res := struct {
-				Host struct {
-					Directory struct {
-						Read struct {
-							ID core.DirectoryID `json:"id"`
-						}
-					}
-				}
-			}{}
-			resp := &graphql.Response{Data: &res}
-
-			err := cl.MakeRequest(ctx,
-				&graphql.Request{
-					Query: `
-						query LocalDir($id: HostDirectoryID!) {
-							host {
-								directory(id: $id) {
-									read {
-										id
-									}
-								}
-							}
-						}
-					`,
-					Variables: map[string]any{
-						"id": localID,
-					},
-				},
-				resp,
-			)
-			if err != nil {
-				return err
-			}
-
-			l.Lock()
-			mapping[core.HostDirectoryID(localID)] = res.Host.Directory.Read.ID
-			l.Unlock()
-
-			return nil
-		})
-	}
-
-	return mapping, eg.Wait()
-}
-
-func loadProject(ctx context.Context, cl graphql.Client, contextDir core.DirectoryID, configPath string, doInstall bool) (*schema.Project, error) {
+func installExtensions(ctx context.Context, r *router.Router, configPath string) (*schema.Project, error) {
 	res := struct {
 		Core struct {
 			Directory struct {
@@ -337,31 +222,26 @@ func loadProject(ctx context.Context, cl graphql.Client, contextDir core.Directo
 			}
 		}
 	}{}
-	resp := &graphql.Response{Data: &res}
 
-	var install string
-	if doInstall {
-		install = "install"
-	}
-
-	err := cl.MakeRequest(ctx,
-		&graphql.Request{
-			// FIXME:(sipsma) toggling install is extremely weird here, need better way
-			Query: fmt.Sprintf(`
-			query LoadProject($dir: DirectoryID!, $configPath: String!) {
-				directory(id: $dir) {
-					loadProject(configPath: $configPath) {
-						name
-						%s
+	_, err := r.Do(ctx,
+		// FIXME:(sipsma) toggling install is extremely weird here, need better way
+		`
+			query LoadProject($configPath: String!) {
+				host {
+					workdir {
+						read {
+							loadProject(configPath: $configPath) {
+								name
+								install
+							}
+						}
 					}
 				}
-			}`, install),
-			Variables: map[string]any{
-				"dir":        contextDir,
-				"configPath": configPath,
-			},
+			}`,
+		map[string]any{
+			"configPath": configPath,
 		},
-		resp,
+		&res,
 	)
 	if err != nil {
 		return nil, err

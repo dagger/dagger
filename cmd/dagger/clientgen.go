@@ -13,12 +13,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.dagger.io/dagger/codegen/generator"
-	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 var clientGenCmd = &cobra.Command{
-	Use: "client-gen",
-	Run: ClientGen,
+	Use:  "client-gen",
+	RunE: ClientGen,
 }
 
 func init() {
@@ -26,27 +26,29 @@ func init() {
 	clientGenCmd.Flags().String("package", "", "package name")
 }
 
-func ClientGen(cmd *cobra.Command, args []string) {
-	startOpts := &engine.Config{
-		Workdir:     workdir,
-		ConfigPath:  configPath,
-		SkipInstall: true,
+func ClientGen(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx,
+		dagger.WithWorkdir(workdir),
+		dagger.WithConfigPath(configPath),
+		dagger.WithNoExtensions(),
+	)
+	if err != nil {
+		return err
 	}
+	defer c.Close()
 
 	pkg, err := getPackage(cmd)
 	if err != nil {
 		panic(err)
 	}
 
-	var generated []byte
-	if err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
-		generated, err = generator.IntrospectAndGenerate(ctx, generator.Config{
-			Package: pkg,
-		})
+	generated, err := generator.IntrospectAndGenerate(ctx, c, generator.Config{
+		Package: pkg,
+	})
+	if err != nil {
 		return err
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
 	}
 
 	output, err := cmd.Flags().GetString("output")
@@ -58,20 +60,19 @@ func ClientGen(cmd *cobra.Command, args []string) {
 		fmt.Fprint(os.Stdout, string(generated))
 	} else {
 		if err := os.MkdirAll(filepath.Dir(output), 0700); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		if err := os.WriteFile(output, generated, 0600); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 
 		gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
 		if err := os.WriteFile(path.Join(filepath.Dir(output), ".gitattributes"), []byte(gitAttributes), 0600); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 	}
+
+	return nil
 }
 
 func getPackage(cmd *cobra.Command) (string, error) {
