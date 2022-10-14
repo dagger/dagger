@@ -44,11 +44,11 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withUser":             router.ToResolver(s.withUser),
 			"workdir":              router.ToResolver(s.workdir),
 			"withWorkdir":          router.ToResolver(s.withWorkdir),
-			"variables":            router.ToResolver(s.variables),
-			"variable":             router.ToResolver(s.variable),
-			"withVariable":         router.ToResolver(s.withVariable),
+			"envVariables":         router.ToResolver(s.envVariables),
+			"envVariable":          router.ToResolver(s.envVariable),
+			"withEnvVariable":      router.ToResolver(s.withEnvVariable),
 			"withSecretVariable":   router.ToResolver(s.withSecretVariable),
-			"withoutVariable":      router.ToResolver(s.withoutVariable),
+			"withoutEnvVariable":   router.ToResolver(s.withoutEnvVariable),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
 			"defaultArgs":          router.ToResolver(s.defaultArgs),
@@ -249,7 +249,7 @@ type containerWithVariableArgs struct {
 	Value string
 }
 
-func (s *containerSchema) withVariable(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withEnvVariable(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		// NB(vito): buildkit handles replacing properly when we do llb.AddEnv, but
 		// we want to replace it here anyway because someone might publish the image
@@ -274,7 +274,7 @@ type containerWithoutVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutVariable(ctx *router.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withoutEnvVariable(ctx *router.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		removedEnv := []string{}
 		prefix := args.Name + "="
@@ -290,20 +290,36 @@ func (s *containerSchema) withoutVariable(ctx *router.Context, parent *core.Cont
 	})
 }
 
-func (s *containerSchema) variables(ctx *router.Context, parent *core.Container, args any) ([]string, error) {
+type EnvVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+func (s *containerSchema) envVariables(ctx *router.Context, parent *core.Container, args any) ([]EnvVariable, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return cfg.Env, nil
+	vars := make([]EnvVariable, 0, len(cfg.Env))
+	for _, v := range cfg.Env {
+		name, value, _ := strings.Cut(v, "=")
+		e := EnvVariable{
+			Name:  name,
+			Value: value,
+		}
+
+		vars = append(vars, e)
+	}
+
+	return vars, nil
 }
 
 type containerVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) variable(ctx *router.Context, parent *core.Container, args containerVariableArgs) (*string, error) {
+func (s *containerSchema) envVariable(ctx *router.Context, parent *core.Container, args containerVariableArgs) (*string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err

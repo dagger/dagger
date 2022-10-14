@@ -5,8 +5,9 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"go.dagger.io/dagger/codegen/generator"
 	"go.dagger.io/dagger/engine"
@@ -40,8 +41,9 @@ func (Lint) Codegen(ctx context.Context) error {
 		}
 
 		// compare the two
-		if string(generated) != src {
-			return errors.New("generated api mismatch. please run `go generate ./...`")
+		diff := cmp.Diff(string(generated), src)
+		if diff != "" {
+			return fmt.Errorf("generated api mismatch. please run `go generate ./...`:\n%s", diff)
 		}
 
 		return nil

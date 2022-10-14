@@ -56,19 +56,19 @@ type Container {
     withWorkdir(path: String!): Container!
 
     "A list of environment variables passed to commands"
-    variables: [String!]
+    envVariables: [EnvVariable!]!
 
     "The value of the specified environment variable"
-    variable(name: String!): String
+    envVariable(name: String!): String
 
     "This container plus the given environment variable"
-    withVariable(name: String!, value: String!): Container!
+    withEnvVariable(name: String!, value: String!): Container!
 
     "This container plus an env variable containing the given secret"
     withSecretVariable(name: String!, secret: SecretID!): Container!
 
     "This container minus the given environment variable"
-    withoutVariable(name: String!): Container!
+    withoutEnvVariable(name: String!): Container!
 
     "Entrypoint to be prepended to the arguments of all commands"
     entrypoint: [String!]
@@ -156,4 +156,19 @@ input ExecOpts {
     Null means discard output.
     """
     redirectStderr: String
+}
+
+"""
+EnvVariable is a simple key value object that represents an environment variable.
+"""
+type EnvVariable {
+    """
+    name is the environment variable name.
+    """
+    name: String!
+
+    """
+    value is the environment variable value
+    """
+    value: String!
 }
