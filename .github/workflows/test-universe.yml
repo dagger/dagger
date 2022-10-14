@@ -2,7 +2,7 @@ name: "Test Universe"
 
 on:
   push:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - "**.sh"
       - "**.bash"
@@ -16,7 +16,7 @@ on:
       - "!docs/**"
 
   pull_request:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - "**.sh"
       - "**.bash"

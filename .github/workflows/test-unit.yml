@@ -2,7 +2,7 @@ name: "Test Unit"
 
 on:
   push:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - '**.go'
       - 'Makefile'
@@ -10,7 +10,7 @@ on:
       - 'go.sum'
       - '.github/workflows/test-unit.yml'
   pull_request:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - '**.go'
       - 'Makefile'

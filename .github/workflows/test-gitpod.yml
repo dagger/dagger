@@ -2,7 +2,7 @@ name: "Gitpod"
 
 on:
   push:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - ".gitpod.yml"
       - ".gitpod.Dockerfile"
@@ -12,7 +12,7 @@ on:
       - "go.mod"
       - "go.sum"
   pull_request:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - ".gitpod.yml"
       - ".gitpod.Dockerfile"
