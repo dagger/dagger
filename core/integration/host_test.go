@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/testutil"
+	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestHostWorkdir(t *testing.T) {
@@ -93,7 +93,7 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 		}
 	}
 
-	err = testutil.QueryWithEngineConfig(
+	err = testutil.Query(
 		`{
 			host {
 				directory(id: "dir1") {
@@ -102,11 +102,7 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 					}
 				}
 			}
-		}`, &readRes, nil, &engine.Config{
-			LocalDirs: map[string]string{
-				"dir1": dir1,
-			},
-		})
+		}`, &readRes, nil, dagger.WithLocalDir("dir", dir1))
 	require.NoError(t, err)
 
 	srcID := readRes.Host.Directory.Read.ID
@@ -119,7 +115,7 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 		}
 	}
 
-	err = testutil.QueryWithEngineConfig(
+	err = testutil.Query(
 		`query Test($src: DirectoryID!) {
 			host {
 				directory(id: "dir2") {
@@ -130,12 +126,10 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 			Variables: map[string]any{
 				"src": srcID,
 			},
-		}, &engine.Config{
-			LocalDirs: map[string]string{
-				"dir1": dir1,
-				"dir2": dir2,
-			},
-		})
+		},
+		dagger.WithLocalDir("dir1", dir1),
+		dagger.WithLocalDir("dir2", dir2),
+	)
 	require.NoError(t, err)
 
 	require.True(t, writeRes.Host.Directory.Write)
@@ -178,7 +172,7 @@ func TestHostLocalDirWrite(t *testing.T) {
 		}
 	}
 
-	err = testutil.QueryWithEngineConfig(
+	err = testutil.Query(
 		`query Test($src: DirectoryID!) {
 			host {
 				directory(id: "dir1") {
@@ -189,12 +183,10 @@ func TestHostLocalDirWrite(t *testing.T) {
 			Variables: map[string]any{
 				"src": srcID,
 			},
-		}, &engine.Config{
-			LocalDirs: map[string]string{
-				"dir1": dir1,
-				"dir2": dir1,
-			},
-		})
+		},
+		dagger.WithLocalDir("dir1", dir1),
+		dagger.WithLocalDir("dir2", dir1),
+	)
 	require.NoError(t, err)
 
 	require.True(t, writeRes.Host.Directory.Write)

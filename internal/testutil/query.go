@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/sdk/go/dagger"
 )
@@ -14,11 +13,7 @@ type QueryOptions struct {
 	Operation string
 }
 
-func Query(query string, res any, opts *QueryOptions) error {
-	return QueryWithEngineConfig(query, res, opts, nil)
-}
-
-func QueryWithEngineConfig(query string, res any, opts *QueryOptions, cfg *engine.Config) error {
+func Query(query string, res any, opts *QueryOptions, clientOpts ...dagger.ClientOpt) error {
 	ctx := context.Background()
 
 	if opts == nil {
@@ -26,17 +21,6 @@ func QueryWithEngineConfig(query string, res any, opts *QueryOptions, cfg *engin
 	}
 	if opts.Variables == nil {
 		opts.Variables = make(map[string]any)
-	}
-
-	clientOpts := []dagger.ClientOpt{}
-	if cfg != nil {
-		clientOpts = append(clientOpts,
-			dagger.WithWorkdir(cfg.Workdir),
-			dagger.WithConfigPath(cfg.ConfigPath),
-		)
-		for id, path := range cfg.LocalDirs {
-			clientOpts = append(clientOpts, dagger.WithLocalDir(id, path))
-		}
 	}
 
 	c, err := dagger.Connect(ctx, clientOpts...)
