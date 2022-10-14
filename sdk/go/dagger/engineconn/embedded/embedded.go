@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/router"
 	"go.dagger.io/dagger/sdk/go/dagger/engineconn"
 )
 
@@ -39,13 +40,13 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.C
 	}
 	go func() {
 		defer close(c.doneCh)
-		err := engine.Start(ctx, engineCfg, func(ctx engine.Context) error {
+		err := engine.Start(ctx, engineCfg, func(ctx context.Context, r *router.Router) error {
 			client = &http.Client{
 				Transport: &http.Transport{
 					DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 						// TODO: not efficient, but whatever
 						serverConn, clientConn := net.Pipe()
-						go ctx.Router.ServeConn(serverConn)
+						go r.ServeConn(serverConn)
 
 						return clientConn, nil
 					},

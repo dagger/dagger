@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/containerd/containerd/platforms"
 	bkclient "github.com/moby/buildkit/client"
@@ -33,20 +32,11 @@ type Config struct {
 	Workdir    string
 	LocalDirs  map[string]string
 	ConfigPath string
-	// If true, just load extension metadata rather than compiling and stitching them in
-	SkipInstall bool
+	// If true, do not load project extensions
+	NoExtensions bool
 }
 
-type Context struct {
-	context.Context
-	Router     *router.Router
-	Workdir    core.DirectoryID
-	LocalDirs  map[core.HostDirectoryID]core.DirectoryID
-	Project    *schema.Project
-	ConfigPath string
-}
-
-type StartCallback func(Context) error
+type StartCallback func(context.Context, *router.Router) error
 
 func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if startOpts == nil {
@@ -142,24 +132,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			engineCtx := Context{
-				Context: ctx,
-				Router:  router,
-			}
-
-			engineCtx.LocalDirs, err = loadLocalDirs(ctx, router, solveOpts.LocalDirs)
-			if err != nil {
-				return nil, err
-			}
-			engineCtx.Workdir = engineCtx.LocalDirs[core.HostDirectoryID(workdirID)]
-			engineCtx.ConfigPath = startOpts.ConfigPath
-
-			if engineCtx.ConfigPath != "" {
-				engineCtx.Project, err = loadProject(
+			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
+				_, err = installExtensions(
 					ctx,
 					router,
 					startOpts.ConfigPath,
-					!startOpts.SkipInstall,
 				)
 				if err != nil {
 					return nil, err
@@ -170,7 +147,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, nil
 			}
 
-			if err := fn(engineCtx); err != nil {
+			if err := fn(ctx, router); err != nil {
 				return nil, err
 			}
 
@@ -237,56 +214,7 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	return &defaultPlatform, nil
 }
 
-func loadLocalDirs(ctx context.Context, r *router.Router, localDirs map[string]string) (map[core.HostDirectoryID]core.DirectoryID, error) {
-	var eg errgroup.Group
-	var l sync.Mutex
-
-	mapping := map[core.HostDirectoryID]core.DirectoryID{}
-	for localID := range localDirs {
-		localID := localID
-		eg.Go(func() error {
-			res := struct {
-				Host struct {
-					Directory struct {
-						Read struct {
-							ID core.DirectoryID `json:"id"`
-						}
-					}
-				}
-			}{}
-			_, err := r.Do(ctx,
-				`
-						query LocalDir($id: HostDirectoryID!) {
-							host {
-								directory(id: $id) {
-									read {
-										id
-									}
-								}
-							}
-						}
-					`,
-				map[string]any{
-					"id": localID,
-				},
-				&res,
-			)
-			if err != nil {
-				return err
-			}
-
-			l.Lock()
-			mapping[core.HostDirectoryID(localID)] = res.Host.Directory.Read.ID
-			l.Unlock()
-
-			return nil
-		})
-	}
-
-	return mapping, eg.Wait()
-}
-
-func loadProject(ctx context.Context, r *router.Router, configPath string, doInstall bool) (*schema.Project, error) {
+func installExtensions(ctx context.Context, r *router.Router, configPath string) (*schema.Project, error) {
 	res := struct {
 		Core struct {
 			Directory struct {
@@ -295,26 +223,21 @@ func loadProject(ctx context.Context, r *router.Router, configPath string, doIns
 		}
 	}{}
 
-	var install string
-	if doInstall {
-		install = "install"
-	}
-
 	_, err := r.Do(ctx,
 		// FIXME:(sipsma) toggling install is extremely weird here, need better way
-		fmt.Sprintf(`
+		`
 			query LoadProject($configPath: String!) {
 				host {
 					workdir {
 						read {
 							loadProject(configPath: $configPath) {
 								name
-								%s
+								install
 							}
 						}
 					}
 				}
-			}`, install),
+			}`,
 		map[string]any{
 			"configPath": configPath,
 		},

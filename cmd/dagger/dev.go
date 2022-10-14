@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.dagger.io/dagger/engine"
+	"go.dagger.io/dagger/router"
 )
 
 var devCmd = &cobra.Command{
@@ -24,10 +25,10 @@ func Dev(cmd *cobra.Command, args []string) {
 		ConfigPath: configPath,
 	}
 
-	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
+	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
 		srv := http.Server{
 			Addr:              fmt.Sprintf(":%d", devServerPort),
-			Handler:           ctx.Router,
+			Handler:           r,
 			ReadHeaderTimeout: 30 * time.Second,
 		}
 		fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", devServerPort)
