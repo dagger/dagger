@@ -40,7 +40,7 @@ func TestGit(t *testing.T) {
 	require.NoError(t, engine.Start(context.Background(), nil, func(ctx engine.Context) error {
 		core := New(ctx.Client)
 		tree := core.Git("github.com/dagger/dagger").
-			Branch("cloak").
+			Branch("main").
 			Tree()
 
 		files, err := tree.Contents(ctx)

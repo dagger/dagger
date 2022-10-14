@@ -45,7 +45,7 @@ module.exports = {
         },
         {
           position: "right",
-          href: "https://github.com/dagger/dagger/tree/cloak",
+          href: "https://github.com/dagger/dagger",
           className: "header-github-link hide-target-icon",
           "aria-label": "GitHub repository",
         },
