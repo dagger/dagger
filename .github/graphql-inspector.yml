@@ -1,2 +1,2 @@
-branch: cloak
+branch: main
 schema: "core/schema/*.graphqls"
