@@ -159,8 +159,7 @@ input ExecOpts {
 }
 
 """
-EnvVariable is a simple key value struct that represent
-an environment variable.
+EnvVariable is a simple key value object that represents an environment variable.
 """
 type EnvVariable {
     """
