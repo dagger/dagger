@@ -27,7 +27,7 @@
     "file-loader": "^6.2.0",
     "nprogress": "^0.2.0",
     "npx": "^10.2.2",
-    "posthog-docusaurus": "^1.0.5",
+    "posthog-docusaurus": "^2.0.0",
     "querystringify": "^2.2.0",
     "react": "^17.0.1",
     "react-dom": "^17.0.1",
