@@ -5,7 +5,7 @@ name: "Deploy Docs"
 on:
   push:
     branches:
-      - cloak
+      - main
     paths:
       - "docs/**"
       - '.github/workflows/deploy-docs.yml'
