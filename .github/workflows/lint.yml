@@ -4,7 +4,7 @@ on:
     tags:
       - v*
     branches:
-      - cloak
+      - main
   pull_request:
   # Enable manual trigger for easy ad-hoc debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
