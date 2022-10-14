@@ -5,7 +5,6 @@ import (
 	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
-	"universe.dagger.io/git"
 )
 
 // Tests for the yarn package, grouped together in a reusable action.
