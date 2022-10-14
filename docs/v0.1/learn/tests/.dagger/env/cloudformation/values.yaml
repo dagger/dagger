@@ -1,0 +1,34 @@
+plan:
+    package: ./cloudformation
+name: cloudformation
+inputs:
+    awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:HaGzSQ==,iv:FzsuSq7ZKttWs0WDC0q+vT/hxUx+WcQ4iy7vnV+Q8Dg=,tag:Oy9Xxq+4LMVkXkF/3ZjjsA==,type:str]
+    awsConfig.localMode:
+        bool: "true"
+    awsConfig.region:
+        text: us-east-2
+    awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:aHDXVQ==,iv:ZEA4JLLedUvITocXE5G4Ar6pDNilyvgdvEYsMy/LVIk=,tag:BALivFcV0xBQD//qvo0aUw==,type:str]
+    cfnStack.onFailure:
+        text: DELETE
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB0TW4xNVMzQkZueGY1NC91
+            WUplK09CRXpPSGMyTGhZYjZubDI1Sk96YVRFClJhVlNGT2VMMEtjeTcxbThaMHNq
+            MTgwdlFObTc3VVYxU3FFZ1lpMDAxVWcKLS0tIFJMQ2F6bWo4OEY2VnZoajJMMDVq
+            Lzd0bU1qMXF0dzIzTG05cmlzZURxUncKp2wNXD/HKXgGv16pM/yvaYfWL5lsQyWo
+            CDsT4rHHMZ21XtS9W+7oL9IqMMmDUQf6RZgDgoqLVmTjdBeA8yB2yg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-09-01T09:50:18Z"
+    mac: ENC[AES256_GCM,data:UsQxbxNq5wTpXIcw2V/LAQxiavwVcJxACSOGO/AWWrpamemOFqrjwHXQ0CfXGTEq16Vw/YnE3W+ivfxhlPQunkzUsxpvAsKexmx1/uDf04cmGQQFHownV8VO/YmKFmo5UKa6V2cEhDXT040iJncRwp8rrJ2nbRBDKd36RBWtIO0=,iv:QEF3brbSZsDAPyTfPRhyv440EtVKlDq1m0bFCBU0Aj8=,tag:RRCQciN3ho7ChAQ5HhTgIA==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

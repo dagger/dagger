@@ -1,0 +1,64 @@
+@use "./custom.scss";
+
+.templates {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+
+  @include custom.mobile {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+}
+
+.templateCard {
+  background-color: white;
+  box-shadow: var(--ifm-box-shadow-light);
+  border-radius: var(--ifm-global-radius);
+  padding: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: space-evenly;
+  align-items: center;
+
+  a {
+    text-align: center;
+    color: var(--ifm-color-primary-darker) !important;
+  }
+
+  @include custom.mobile {
+    width: 45%;
+  }
+
+  & > div {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-items: center;
+    height: 100%;
+
+    img {
+      max-width: 100px;
+      max-height: 60px;
+      height: auto;
+      width: auto;
+      margin: 5%;
+    }
+  }
+
+  div[class^="codeBlockContainer"] {
+    font-size: 0.8rem;
+    margin: 0;
+
+    code {
+      padding: 1.5rem;
+    }
+
+    @include custom.mobile {
+      display: none;
+    }
+  }
+}

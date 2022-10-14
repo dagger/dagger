@@ -17,6 +17,21 @@
   status = 302
   force = true
 
+[[redirects]]
+from = "/t"
+to = "https://api.amplitude.com"
+status = 200
+
+[[redirects]]
+from = "/reference"
+to = "/reference/alpine"
+status = 302
+
+[[redirects]]
+from = "/1241/dagger-cloud"
+to = "/1243/dagger-cloud"
+status = 302
+
 [[headers]]
   for = "/*"
   [headers.values]
