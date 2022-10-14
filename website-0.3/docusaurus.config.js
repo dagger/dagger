@@ -75,7 +75,7 @@ module.exports = {
       {
         docs: {
           breadcrumbs: false,
-          path: "../docs",
+          path: "../docs-0.3",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
           routeBasePath: "/",
