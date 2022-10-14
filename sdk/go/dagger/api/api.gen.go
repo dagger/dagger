@@ -712,8 +712,7 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
-// EnvVariable is a simple key value struct that represent
-// an environment variable.
+// EnvVariable is a simple key value object that represents an environment variable.
 type EnvVariable struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -728,7 +727,7 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// value is the environment variable valuek
+// value is the environment variable value
 func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	q := r.q.Select("value")
 
