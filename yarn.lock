@@ -7,10 +7,10 @@
   resolved "https://registry.yarnpkg.com/@graphql-typed-document-node/core/-/core-3.1.1.tgz#076d78ce99822258cf813ecc1e7fa460fa74d052"
   integrity sha512-NQ17ii0rK1b34VZonlmT2QMJFI70m0TRwbknO/ihlbatXyaktDhN/98vBiUU6kNBPljqGqyIrl2T4nY2RpFANg==
 
-"@lifeomic/axios-fetch@^3.0.0":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@lifeomic/axios-fetch/-/axios-fetch-3.0.0.tgz#87ac5f121a027b92a12248ce031199f836810022"
-  integrity sha512-XQH4iCCock19PzYveC/bu6O6zJ1mGdyQOdpu27I76lnb04+fKuFAw9J2HRAi/iN5fEsJevbUuGs3Pch3oxHxww==
+"@lifeomic/axios-fetch@^3.0.1":
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/@lifeomic/axios-fetch/-/axios-fetch-3.0.1.tgz#a0f135470d7bb54d0ce82b0a2f3b19daa7bf77e2"
+  integrity sha512-bwEgYXtGrn/F+yYqoUIAWBRzyqQ7yB1VL84gCq0uAk36GRoyoWyOzbE35VWeXlmkkoby91FnAwh4UhgayMM/og==
   dependencies:
     "@types/node-fetch" "^2.5.10"
 

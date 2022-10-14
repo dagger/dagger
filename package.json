@@ -14,7 +14,7 @@
     "node": "~16"
   },
   "dependencies": {
-    "@lifeomic/axios-fetch": "^3.0.0",
+    "@lifeomic/axios-fetch": "^3.0.1",
     "axios": "^0.27.2",
     "execa": "^6.1.0",
     "graphql": "^16.5.0",
