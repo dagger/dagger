@@ -32,7 +32,7 @@ on:
 jobs:
   universe-europa-tests:
     name: "Universe Tests - Europa"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-16c-64g-600gb
     timeout-minutes: 30
     steps:
       - name: "Check out"
