@@ -20,37 +20,45 @@ type Client struct {
 }
 
 // ClientOpt holds a client option
-type ClientOpt func(cfg *engineconn.Config)
+type ClientOpt interface {
+	setClientOpt(cfg *engineconn.Config)
+}
+
+type clientOptFunc func(cfg *engineconn.Config)
+
+func (fn clientOptFunc) setClientOpt(cfg *engineconn.Config) {
+	fn(cfg)
+}
 
 // WithWorkdir sets the engine workdir
 func WithWorkdir(path string) ClientOpt {
-	return func(cfg *engineconn.Config) {
+	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.Workdir = path
-	}
+	})
 }
 
 // WithLocalDir maps a local directory to the engine
 func WithLocalDir(id, path string) ClientOpt {
-	return func(cfg *engineconn.Config) {
+	return clientOptFunc(func(cfg *engineconn.Config) {
 		if cfg.LocalDirs == nil {
 			cfg.LocalDirs = make(map[string]string)
 		}
 		cfg.LocalDirs[id] = path
-	}
+	})
 }
 
 // WithConfigPath sets the engine config path
 func WithConfigPath(path string) ClientOpt {
-	return func(cfg *engineconn.Config) {
+	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.ConfigPath = path
-	}
+	})
 }
 
 // WithNoExtensions disables installing extensions
 func WithNoExtensions() ClientOpt {
-	return func(cfg *engineconn.Config) {
+	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.NoExtensions = true
-	}
+	})
 }
 
 // Connect to a Dagger Engine
@@ -58,7 +66,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
 
 	for _, o := range opts {
-		o(cfg)
+		o.setClientOpt(cfg)
 	}
 
 	// default host
