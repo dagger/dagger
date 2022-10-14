@@ -1,0 +1,32 @@
+plan:
+    package: ./kube-aws/basic/test
+name: kube-aws-basic
+inputs:
+    awsConfig.accessKey:
+        secret: ENC[AES256_GCM,data:aUxhaAdN44fGz2kKHIl3mdx1vIk=,iv:jgTqZiAwxAtzSjD+IOgjm2rxz43dqtRTcIEuKL3jUDo=,tag:SNU6auwJ/WcXsCc/mrc8sg==,type:str]
+    awsConfig.region:
+        text: us-east-2
+    awsConfig.secretKey:
+        secret: ENC[AES256_GCM,data:MAZ/xqZc6kuFO/7EA+degCQ7W7VaJXqseq1+etNSvVNVa+oiPNSnaw==,iv:yGyCKY8S6rwk2EQ7ba3BqirnNyfCtKX+z8EBfLx0WLY=,tag:pOqco/DzRa+lY4LNYmuwYw==,type:str]
+    eksConfig.clusterName:
+        text: dagger-example-eks-cluster
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBJZmFKRXhBZmQveFcvcEVH
+            UmhRS2g0WEdFNFFkZXlLaTZiUHlXSy9IcXdrCmNsTG1pTFVrSDh2NmlpeU1Xa0ZL
+            aWFMdU1HNytDWUlMK05RMlpIdmtOTDAKLS0tIGpYbUZ6UnBGYzR2SmlOZnE0cWtF
+            M2loUUEvOGJaRmltTTFmdWduaFMvTkUKtBy9ogOnVqqnoV8A4EBU6j2XPljp9jEz
+            25UHK3ecw2SZvKG1u0UcVL0E2KAwUTPzoPJrzRaRKXkSPI8ZXn+OGg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-08-16T13:31:31Z"
+    mac: ENC[AES256_GCM,data:9G4o5dpnI0FVvNPz4MbyeNMmop3Umuf5xDrm/JDqfvaFRS2DNVABkczu53y7oPcnlwVWzxdF0Jrul7AizWNCKmw8/NAsPaK9w/6Rff8HnZ2NjoM9rAux8pB5n1GLBjXCMsKcmh1LVmUjzh6WvQSBiCSzzKusdy1UxziP8/ntQJA=,iv:auWG3QOv/ZHMhqAcrdSlZCPmxB7CgrY5IGZFIATDje8=,tag:AL2nHsEVZO/5gO7oKPHpRg==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1

@@ -1,0 +1,11 @@
+client: {
+    filesystem: {
+        "./": read: {
+            contents: dagger.#FS
+            exclude: [
+                "README.md",
+                "eden.cue",
+            ]
+        }
+    }
+}

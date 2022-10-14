@@ -1,0 +1,26 @@
+plan:
+    package: ./kube-kind/deployment
+name: kube-kind-deployment
+inputs:
+    registry:
+        text: localhost:5000/kind
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxRlpLcVVoTnVLUkVOMlpN
+            eXRzdkgvNjNGYWNzaVBBNUJEZFdnbXhMTzI0CjlsNGVDcHlHTDk3VU1ycEVvVmti
+            SmlGVDFZUTlKWm9OVWdwK1Q4ZmZXZDgKLS0tIDRNRW4razlkbnFMdDV1UU52aHdT
+            d1pSR1VtUU12VmlDTEdyazgwdkdwQkkK6NZclDyaf5YwBWAbL6VmJWzCNT+cFXsU
+            gM9y8Bo/VXHx2uR5ceLVtAGvTl4XuIGTqBEqpIelTJAD3TUj2C2upg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-08-13T16:37:05Z"
+    mac: ENC[AES256_GCM,data:qO6rbMUVpVs5dwmZm7nHSsGPysJXcIkvpRMeEhihUXGcZ6IeVX2dmuwOXMTQWtJ6HwhM+wdYyj5IIlujYARC+FYj3ldrYlCs/kPzfcDkJm1K9PXcKKTm5wV7v0hcTvmwe9ju5VSNWtLvXNsE8+u8hz9Wnnz4e0QQCvNQmUHJrNo=,iv:+JuEpyBRXZ4xb4KQ15p8OK7QPqB4iYtgSyPDxK9949w=,tag:9m27tAGWjxr87DzEzP5vmQ==,type:str]
+    pgp: []
+    encrypted_suffix: secret
+    version: 3.7.1
