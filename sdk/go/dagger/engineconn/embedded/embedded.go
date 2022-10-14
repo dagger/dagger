@@ -2,12 +2,9 @@ package embedded
 
 import (
 	"context"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"sync"
-	"time"
 
 	"go.dagger.io/dagger/engine"
 	"go.dagger.io/dagger/sdk/go/dagger/engineconn"
@@ -48,15 +45,7 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.C
 					DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 						// TODO: not efficient, but whatever
 						serverConn, clientConn := net.Pipe()
-
-						l := &singleConnListener{
-							conn: serverConn,
-						}
-						s := http.Server{
-							Handler:           ctx.Handler,
-							ReadHeaderTimeout: 30 * time.Second,
-						}
-						go s.Serve(l)
+						go ctx.Router.ServeConn(serverConn)
 
 						return clientConn, nil
 					},
@@ -87,30 +76,4 @@ func (c *Embedded) Close() error {
 
 	close(c.stopCh)
 	return <-c.doneCh
-}
-
-// converts a pre-existing net.Conn into a net.Listener that returns the conn
-type singleConnListener struct {
-	conn net.Conn
-	l    sync.Mutex
-}
-
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	l.l.Lock()
-	defer l.l.Unlock()
-
-	if l.conn == nil {
-		return nil, io.ErrClosedPipe
-	}
-	c := l.conn
-	l.conn = nil
-	return c, nil
-}
-
-func (l *singleConnListener) Addr() net.Addr {
-	return nil
-}
-
-func (l *singleConnListener) Close() error {
-	return nil
 }

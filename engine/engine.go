@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -40,7 +39,7 @@ type Config struct {
 
 type Context struct {
 	context.Context
-	Handler    http.Handler
+	Router     *router.Router
 	Workdir    core.DirectoryID
 	LocalDirs  map[core.HostDirectoryID]core.DirectoryID
 	Project    *schema.Project
@@ -145,7 +144,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			engineCtx := Context{
 				Context: ctx,
-				Handler: router,
+				Router:  router,
 			}
 
 			engineCtx.LocalDirs, err = loadLocalDirs(ctx, router, solveOpts.LocalDirs)

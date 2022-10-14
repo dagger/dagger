@@ -27,7 +27,7 @@ func Dev(cmd *cobra.Command, args []string) {
 	err := engine.Start(context.Background(), startOpts, func(ctx engine.Context) error {
 		srv := http.Server{
 			Addr:              fmt.Sprintf(":%d", devServerPort),
-			Handler:           ctx.Handler,
+			Handler:           ctx.Router,
 			ReadHeaderTimeout: 30 * time.Second,
 		}
 		fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", devServerPort)
