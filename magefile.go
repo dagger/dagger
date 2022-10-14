@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"dagger.io/dagger"
@@ -70,14 +71,14 @@ func (Build) Dagger(ctx context.Context) error {
 			return err
 		}
 
-		builder = builder.WithMountedDirectory(".", src)
+		builder = builder.WithMountedDirectory("/app", src).WithWorkdir("/app")
 
 		builder = builder.Exec(api.ContainerExecOpts{
-			Args: []string{"mkdir", "./build"},
+			Args: []string{"mkdir", "/app/build"},
 		})
 
 		builder = builder.Exec(api.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "./build/dagger", "./cmd/dagger"},
+			Args: []string{"go", "build", "-o", "/app/build/dagger", "/app/cmd/dagger"},
 		})
 
 		daggerBuildDir, err := builder.Directory("./build").ID(ctx)
