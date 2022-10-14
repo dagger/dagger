@@ -1254,21 +1254,10 @@ type Query struct {
 	c graphql.Client
 }
 
-// Construct a cache volume from its ID
-func (r *Query) Cache(id CacheID) *CacheVolume {
-	q := r.q.Select("cache")
-	q = q.Arg("id", id)
-
-	return &CacheVolume{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Create a new cache volume identified by an arbitrary set of tokens
-func (r *Query) CacheFromTokens(tokens []string) *CacheVolume {
-	q := r.q.Select("cacheFromTokens")
-	q = q.Arg("tokens", tokens)
+// Construct a cache volume for a given cache key
+func (r *Query) CacheVolume(key string) *CacheVolume {
+	q := r.q.Select("cacheVolume")
+	q = q.Arg("key", key)
 
 	return &CacheVolume{
 		q: q,

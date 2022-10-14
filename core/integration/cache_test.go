@@ -11,93 +11,57 @@ import (
 func TestCacheVolume(t *testing.T) {
 	t.Parallel()
 
-	type createFromTokensRes struct {
-		CacheFromTokens struct {
+	type creatVolumeRes struct {
+		CacheVolume struct {
 			ID core.CacheID
 		}
 	}
 
-	type createRes struct {
-		Cache struct {
-			ID core.CacheID
-		}
-	}
+	var idOrig, idSame, idDiff core.CacheID
 
-	var idOrig, idSame, idDiff, idGiven core.CacheID
-
-	t.Run("creating from tokens", func(t *testing.T) {
-		var res createFromTokensRes
+	t.Run("creating from a key", func(t *testing.T) {
+		var res creatVolumeRes
 		err := testutil.Query(
 			`{
-				cacheFromTokens(tokens: ["a", "b"]) {
+				cacheVolume(key: "ab") {
 					id
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
 
-		idOrig = res.CacheFromTokens.ID
-		require.NotEmpty(t, res.CacheFromTokens.ID)
+		idOrig = res.CacheVolume.ID
+		require.NotEmpty(t, res.CacheVolume.ID)
 	})
 
-	t.Run("creating from same tokens again", func(t *testing.T) {
-		var res createFromTokensRes
+	t.Run("creating from same key again", func(t *testing.T) {
+		var res creatVolumeRes
 		err := testutil.Query(
 			`{
-				cacheFromTokens(tokens: ["a", "b"]) {
+				cacheVolume(key: "ab") {
 					id
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
 
-		idSame = res.CacheFromTokens.ID
+		idSame = res.CacheVolume.ID
 		require.NotEmpty(t, idSame)
 
 		require.Equal(t, idOrig, idSame)
 	})
 
-	t.Run("creating from different tokens", func(t *testing.T) {
-		var res createFromTokensRes
+	t.Run("creating from a different key", func(t *testing.T) {
+		var res creatVolumeRes
 		err := testutil.Query(
 			`{
-				cacheFromTokens(tokens: ["a", "c"]) {
+				cacheVolume(key: "ac") {
 					id
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
 
-		idDiff = res.CacheFromTokens.ID
+		idDiff = res.CacheVolume.ID
 		require.NotEmpty(t, idDiff)
 
 		require.NotEqual(t, idOrig, idDiff)
-	})
-
-	t.Run("creating from valid ID", func(t *testing.T) {
-		var res createRes
-		err := testutil.Query(
-			`query Test($id: CacheID!) {
-				cache(id: $id) {
-					id
-				}
-			}`, &res, &testutil.QueryOptions{Variables: map[string]any{
-				"id": idOrig,
-			}})
-		require.NoError(t, err)
-
-		idGiven = res.Cache.ID
-		require.Equal(t, idOrig, idGiven)
-	})
-
-	t.Run("creating from bogus ID", func(t *testing.T) {
-		var res createRes
-		err := testutil.Query(
-			`query Test($id: CacheID!) {
-				cache(id: $id) {
-					id
-				}
-			}`, &res, &testutil.QueryOptions{Variables: map[string]any{
-				"id": "bogus",
-			}})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid cache ID")
 	})
 }
