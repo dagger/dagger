@@ -92,6 +92,7 @@ var addGitCmd = &cobra.Command{
 		cl, err := dagger.Connect(ctx,
 			dagger.WithWorkdir(workdir),
 			dagger.WithConfigPath(configPath),
+			dagger.WithNoExtensions(),
 		)
 		if err != nil {
 			return err

@@ -32,6 +32,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	c, err := dagger.Connect(ctx,
 		dagger.WithWorkdir(workdir),
 		dagger.WithConfigPath(configPath),
+		dagger.WithNoExtensions(),
 	)
 	if err != nil {
 		return err

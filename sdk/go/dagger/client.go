@@ -46,6 +46,13 @@ func WithConfigPath(path string) ClientOpt {
 	}
 }
 
+// WithNoExtensions disables installing extensions
+func WithNoExtensions() ClientOpt {
+	return func(cfg *engineconn.Config) {
+		cfg.NoExtensions = true
+	}
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}

@@ -34,9 +34,10 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.C
 	var client *http.Client
 
 	engineCfg := &engine.Config{
-		Workdir:    cfg.Workdir,
-		ConfigPath: cfg.ConfigPath,
-		LocalDirs:  cfg.LocalDirs,
+		Workdir:      cfg.Workdir,
+		ConfigPath:   cfg.ConfigPath,
+		LocalDirs:    cfg.LocalDirs,
+		NoExtensions: cfg.NoExtensions,
 	}
 	go func() {
 		defer close(c.doneCh)

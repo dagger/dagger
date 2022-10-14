@@ -36,6 +36,9 @@ func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Clien
 	if cfg.LocalDirs != nil {
 		return nil, errors.New("local directories not supported on unix hosts")
 	}
+	if cfg.NoExtensions {
+		return nil, errors.New("no extensions is not supported on unix hosts")
+	}
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
