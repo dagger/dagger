@@ -169,7 +169,7 @@ type EnvVariable {
     name: String!
 
     """
-    value is the environment variable valuek
+    value is the environment variable value
     """
     value: String!
 }
