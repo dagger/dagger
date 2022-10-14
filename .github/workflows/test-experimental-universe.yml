@@ -2,7 +2,7 @@ name: "Test Experimental Universe"
 
 on:
   push:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - "**.sh"
       - "**.bash"
@@ -17,7 +17,7 @@ on:
       - "docs/tests/**"
 
   pull_request:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - "**.sh"
       - "**.bash"
@@ -34,7 +34,7 @@ on:
 jobs:
   experimental-universe-tests:
     name: "Experimental Universe Tests - Europa"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-16c-64g-600gb
     timeout-minutes: 30
     steps:
       - name: "Check out"

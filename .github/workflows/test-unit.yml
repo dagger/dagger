@@ -2,7 +2,7 @@ name: "Test Unit"
 
 on:
   push:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - '**.go'
       - 'Makefile'
@@ -10,7 +10,7 @@ on:
       - 'go.sum'
       - '.github/workflows/test-unit.yml'
   pull_request:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - '**.go'
       - 'Makefile'
@@ -21,7 +21,7 @@ on:
 jobs:
   unit-tests:
     name: "Unit Tests"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-16c-64g-600gb
     timeout-minutes: 30
     steps:
       - name: "Check out"

@@ -2,7 +2,7 @@ name: Lint
 
 on:
   push:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - "**.go"
       - "**.sh"
@@ -14,7 +14,7 @@ on:
       - "README.md"
       - ".github/workflows/lint.yml"
   pull_request:
-    branches: [main]
+    branches: [v0.2.x]
     paths:
       - "**.go"
       - "**.sh"
@@ -29,7 +29,7 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-16c-64g-600gb
     steps:
       - name: "Check out"
         uses: actions/checkout@v2
