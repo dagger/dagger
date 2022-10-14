@@ -16,3 +16,11 @@ func New(c graphql.Client) *{{ .Schema.QueryType.Name }} {
 		c: c,
 	}
 }
+
+// GraphQLMarshaller is an interface for marshalling an object into GraphQL.
+type GraphQLMarshaller interface {
+	// GraphQLType returns the native GraphQL type name
+	GraphQLType() string
+	// GraphQLMarshal serializes the structure into GraphQL
+	GraphQLMarshal(ctx context.Context) (any, error)
+}
