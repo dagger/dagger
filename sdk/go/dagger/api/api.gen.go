@@ -121,23 +121,6 @@ func (s SecretID) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
-// Additional options for executing a command
-type ExecOpts struct {
-	// Optionally redirect the command's standard error to a file in the container.
-	// Null means discard output.
-	RedirectStderr string `json:"redirectStderr"`
-
-	// Optionally redirect the command's standard output to a file in the container.
-	// Null means discard output.
-	RedirectStdout string `json:"redirectStdout"`
-
-	// Optionally write to the command's standard input
-	//
-	// - Null means don't touch stdin (no redirection)
-	// - Empty string means inject zero bytes to stdin, then send EOF
-	Stdin string `json:"stdin"`
-}
-
 // A directory whose contents persist across runs
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -224,7 +207,11 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 type ContainerExecOpts struct {
 	Args []string
 
-	Opts ExecOpts
+	RedirectStderr string
+
+	RedirectStdout string
+
+	Stdin string
 }
 
 // This container after executing the specified command inside it
@@ -237,10 +224,24 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 			break
 		}
 	}
-	// `opts` optional argument
+	// `redirectStderr` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Opts) {
-			q = q.Arg("opts", opts[i].Opts)
+		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
+			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+			break
+		}
+	}
+	// `redirectStdout` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
+			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
+			break
+		}
+	}
+	// `stdin` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
 			break
 		}
 	}

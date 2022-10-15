@@ -493,7 +493,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]string, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -508,23 +508,22 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 		return nil, fmt.Errorf("build shim: %w", err)
 	}
 
-	if args == nil {
-		// we clear the default args configured if nil
-		args = &[]string{}
-	} else if len(*args) == 0 {
+	args := opts.Args
+
+	if len(args) == 0 {
 		// we use the default args if no new default args are passed
-		*args = cfg.Cmd
+		args = cfg.Cmd
 	}
 
 	if len(cfg.Entrypoint) > 0 {
-		*args = append(cfg.Entrypoint, *args...)
+		args = append(cfg.Entrypoint, args...)
 	}
 
 	runOpts := []llb.RunOption{
 		// run the command via the shim, hide shim behind custom name
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
-		llb.Args(append([]string{shim.Path}, *args...)),
-		llb.WithCustomName(strings.Join(*args, " ")),
+		llb.Args(append([]string{shim.Path}, args...)),
+		llb.WithCustomName(strings.Join(args, " ")),
 	}
 
 	// because the shim might run as non-root, we need to make a world-writable
@@ -532,8 +531,8 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 	//
 	// TODO(vito): have the shim exec as the other user instead?
 	meta := llb.Mkdir(metaSourcePath, 0777)
-	if opts.Stdin != nil {
-		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(*opts.Stdin))
+	if opts.Stdin != "" {
+		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(opts.Stdin))
 	}
 
 	// create /dagger mount point for the shim to write to
@@ -542,12 +541,12 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, args *[]st
 			llb.Scratch().File(meta),
 			llb.SourcePath(metaSourcePath)))
 
-	if opts.RedirectStdout != nil {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", *opts.RedirectStdout))
+	if opts.RedirectStdout != "" {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", opts.RedirectStdout))
 	}
 
-	if opts.RedirectStderr != nil {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", *opts.RedirectStderr))
+	if opts.RedirectStderr != "" {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", opts.RedirectStderr))
 	}
 
 	if cfg.User != "" {
@@ -772,7 +771,15 @@ func (container *Container) Publish(
 }
 
 type ContainerExecOpts struct {
-	Stdin          *string
-	RedirectStdout *string
-	RedirectStderr *string
+	// Command to run instead of the container's default command
+	Args []string
+
+	// Content to write to the command's standard input before closing
+	Stdin string
+
+	// Redirect the command's standard output to a file in the container
+	RedirectStdout string
+
+	// Redirect the command's standard error to a file in the container
+	RedirectStderr string
 }
