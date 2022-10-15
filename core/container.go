@@ -651,7 +651,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -660,6 +660,9 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	cfg := payload.Config
 	mounts := payload.Mounts
 	platform := payload.Platform
+	if platform.OS == "" {
+		platform = defaultPlatform
+	}
 
 	shimSt, err := shim.Build(ctx, gw, platform)
 	if err != nil {
