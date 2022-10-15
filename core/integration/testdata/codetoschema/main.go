@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 func main() {
@@ -70,38 +71,13 @@ func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
 	return s.Str + "-" + str, nil
 }
 
-func (Test) ReturnFilesystem(ctx dagger.Context, ref string) (*dagger.Filesystem, error) {
+func (Test) ReturnDirectory(ctx dagger.Context, ref api.ContainerAddress) (*api.Directory, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
-
-	req := &dagger.Request{
-		Query: `
-query Image ($ref: String!) {
-	core {
-		image(ref: $ref) {
-			id
-		}
-	}
-}
-`,
-		Variables: map[string]any{
-			"ref": ref,
-		},
-	}
-	resp := struct {
-		Core struct {
-			Image dagger.Filesystem
-		}
-	}{}
-	err = client.Do(ctx, req, &dagger.Response{Data: &resp})
-	if err != nil {
-		return nil, err
-	}
-
-	return &resp.Core.Image, nil
+	return client.Core().Container().From(ref).FS(), nil
 }
 
 type AllTheTypes struct {
