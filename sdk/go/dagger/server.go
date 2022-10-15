@@ -17,6 +17,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
+	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 type Context struct {
@@ -24,6 +25,8 @@ type Context struct {
 }
 
 func Serve(server any) {
+	ctx := context.Background()
+
 	types := &goTypes{
 		Structs: make(map[string]*goStruct),
 	}
@@ -109,10 +112,18 @@ func Serve(server any) {
 		return
 	}
 
-	res, err := method.call(Context{context.Background()}, input.Parent, input.Args)
+	res, err := method.call(Context{ctx}, input.Parent, input.Args)
 	if err != nil {
 		writeErrorf(err)
 	}
+	if serializer, ok := res.(api.GraphQLMarshaller); ok {
+		res, err = serializer.GraphQLMarshal(ctx)
+		if err != nil {
+			writeErrorf(err)
+			return
+		}
+	}
+
 	if err := writeResult(res); err != nil {
 		writeErrorf(err)
 	}
@@ -507,6 +518,15 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 	case reflect.Slice:
 		return ast.ListType(goReflectTypeToGraphqlType(t.Elem(), isInput), nil)
 	case reflect.Struct:
+		// Handle types that implement the GraphQL serializer
+		// TODO: move this at the top so it works on scalars as well
+		marshaller := reflect.TypeOf((*api.GraphQLMarshaller)(nil)).Elem()
+		if t.Implements(marshaller) {
+			typ := reflect.New(t)
+			result := typ.MethodByName("GraphQLType").Call([]reflect.Value{})
+			return ast.NonNullNamedType(result[0].String(), nil)
+		}
+
 		if isInput {
 			return ast.NonNullNamedType(inputName(t.Name()), nil)
 		}
