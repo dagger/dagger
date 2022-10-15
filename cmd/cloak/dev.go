@@ -25,7 +25,7 @@ func Dev(cmd *cobra.Command, args []string) {
 		DisableHostRW: disableHostRW,
 	}
 
-	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
+	err := engine.StartAndDisplay(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
 		srv := http.Server{
 			Addr:              fmt.Sprintf(":%d", devServerPort),
 			Handler:           r,
