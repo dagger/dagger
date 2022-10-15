@@ -82,3 +82,69 @@ func TestExtensionNetlifyGo(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Project.Schema)
 }
+
+func TestExtensionYarn(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(
+		ctx,
+		dagger.WithWorkdir("../../"),
+		dagger.WithConfigPath("../../examples/yarn/dagger.json"),
+	)
+	require.NoError(t, err)
+	defer c.Close()
+
+	dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+	require.NoError(t, err)
+
+	data := struct {
+		Yarn struct {
+			Script struct {
+				Contents []string
+			}
+		}
+	}{}
+	resp := &dagger.Response{Data: &data}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestYarn($source: DirectoryID!) {
+				yarn {
+					script(source: $source, runArgs: ["build"]) {
+						contents(path: "sdk/nodejs/dagger/dist")
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"source": dirID,
+			},
+		},
+		resp,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, data.Yarn.Script.Contents)
+
+	data2 := struct {
+		Directory struct {
+			Yarn struct {
+				Contents []string
+			}
+		}
+	}{}
+	resp2 := &dagger.Response{Data: &data2}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestYarn($source: DirectoryID!) {
+				directory(id: $source) {
+					yarn(runArgs: ["build"]) {
+						contents(path: "sdk/nodejs/dagger/dist")
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"source": dirID,
+			},
+		},
+		resp2,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, data2.Directory.Yarn.Contents)
+}
