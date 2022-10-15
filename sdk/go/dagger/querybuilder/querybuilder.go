@@ -106,8 +106,6 @@ func (s *Selection) Unpack(data interface{}) error {
 func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
 	query := s.Build()
 
-	fmt.Printf("QUERY: %s\n", query)
-
 	var response any
 	err := c.MakeRequest(ctx,
 		&graphql.Request{
