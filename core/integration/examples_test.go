@@ -83,6 +83,59 @@ func TestExtensionNetlifyGo(t *testing.T) {
 	require.NotEmpty(t, res.Project.Schema)
 }
 
+func TestExtensionNetlifyTS(t *testing.T) {
+	t.Skip("Skipping test until shared netlify tokens are supported here, feel free to run locally though")
+
+	ctx := context.Background()
+	c, err := dagger.Connect(
+		ctx,
+		dagger.WithWorkdir("../../"),
+		dagger.WithConfigPath("../../examples/netlify/ts/dagger.json"),
+	)
+	require.NoError(t, err)
+	defer c.Close()
+
+	dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+	require.NoError(t, err)
+
+	secretID, err := c.Core().Host().Variable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
+	require.NoError(t, err)
+
+	data := struct {
+		Netlify struct {
+			Deploy struct {
+				URL string
+			}
+		}
+	}{}
+	resp := &dagger.Response{Data: &data}
+	err = c.Do(ctx,
+		&dagger.Request{
+			Query: `query TestNetlify(
+				$source: DirectoryID!,
+				$token: SecretID!,
+			) {
+				netlify {
+					deploy(
+						contents: $source,
+						siteName: "test-cloak-netlify-deploy",
+						token: $token,
+					) {
+						url
+					}
+				}
+			}`,
+			Variables: map[string]any{
+				"source": dirID,
+				"token":  secretID,
+			},
+		},
+		resp,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, data.Netlify.Deploy.URL)
+}
+
 func TestExtensionYarn(t *testing.T) {
 	ctx := context.Background()
 	c, err := dagger.Connect(
