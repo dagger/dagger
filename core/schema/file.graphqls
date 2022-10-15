@@ -18,4 +18,13 @@ type File {
 
     "The size of the file, in bytes"
     size: Int!
+
+    """
+    Write the contents of this file to the given path on the host filesystem.
+
+    Path may be absolute or relative:
+    - Relative path is scoped to the host workdir. Relative paths may not leave the workdir. For example '..' is forbidden
+    - Absolute path os scoped to the entire host filesystem. FIXME: there are security and trust considerations here.
+    """
+    export(path: String!): Boolean!
 }
