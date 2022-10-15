@@ -26,6 +26,7 @@ func init() {
 	rootCmd.AddCommand(
 		doCmd,
 		devCmd,
+		dialStdioCmd,
 		versionCmd,
 		clientGenCmd,
 		projectCmd,
@@ -37,6 +38,8 @@ func init() {
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
 	devCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
+
+	dialStdioCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
 
 	projectCmd.AddCommand(
 		initCmd,

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"dagger.io/dagger/internal/engineconn"
+	_ "dagger.io/dagger/internal/engineconn/bin"      // binary connection
 	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
 	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
 	"dagger.io/dagger/internal/querybuilder"
