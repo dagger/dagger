@@ -131,6 +131,27 @@ type Container {
     #    This may actually be a good candidate for a mutation. To be discussed.
     "Publish this container as a new image"
     publish(address: ContainerAddress!): ContainerAddress!
+
+    """
+    Export the container to an OCI image archive, and write it to the given
+    path on the host filesystem.
+
+    - Relative path is written to the current workdir on the host
+    - Relative paths are not allowed to leave workdir. For example "foo/../bar" is allowed, but ".." is not.
+    - Absolute path is written to the host filesystem root
+
+    NOTE: this is a stopgap implementation, to be deprecated by `Container { archive { export } }`
+    """
+    export(path: String!): Boolean!
+
+
+    """
+    The contents to an OCI image archive.
+
+    NOTE: this deprecates `export`
+    """
+    # FIXME: this is for future implementation (harder to do)
+    archive: Directory!
 }
 
 """
