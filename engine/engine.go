@@ -36,6 +36,7 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
+	Progress      chan *bkclient.SolveStatus
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -101,59 +102,71 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
 
-	ch := make(chan *bkclient.SolveStatus)
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		var err error
-		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			// Secret store is a circular dependency, since it needs to resolve
-			// SecretIDs using the gateway, we don't have a gateway until we call
-			// Build, which needs SolveOpts, which needs to contain the secret store.
-			//
-			// Thankfully we can just yeet the gateway into the store.
-			secretStore.SetGateway(gw)
+	_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		// Secret store is a circular dependency, since it needs to resolve
+		// SecretIDs using the gateway, we don't have a gateway until we call
+		// Build, which needs SolveOpts, which needs to contain the secret store.
+		//
+		// Thankfully we can just yeet the gateway into the store.
+		secretStore.SetGateway(gw)
 
-			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:        router,
-				SSHAuthSockID: sshAuthSockID,
-				Workdir:       startOpts.Workdir,
-				Gateway:       gw,
-				BKClient:      c,
-				SolveOpts:     solveOpts,
-				SolveCh:       ch,
-				Platform:      *platform,
-				DisableHostRW: startOpts.DisableHostRW,
-			})
+		coreAPI, err := schema.New(schema.InitializeArgs{
+			Router:        router,
+			SSHAuthSockID: sshAuthSockID,
+			Workdir:       startOpts.Workdir,
+			Gateway:       gw,
+			BKClient:      c,
+			SolveOpts:     solveOpts,
+			SolveCh:       startOpts.Progress,
+			Platform:      *platform,
+			DisableHostRW: startOpts.DisableHostRW,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := router.Add(coreAPI); err != nil {
+			return nil, err
+		}
+
+		if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
+			_, err = installExtensions(
+				ctx,
+				router,
+				startOpts.ConfigPath,
+			)
 			if err != nil {
 				return nil, err
 			}
-			if err := router.Add(coreAPI); err != nil {
-				return nil, err
-			}
+		}
 
-			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-				_, err = installExtensions(
-					ctx,
-					router,
-					startOpts.ConfigPath,
-				)
-				if err != nil {
-					return nil, err
-				}
-			}
+		if fn == nil {
+			return nil, nil
+		}
 
-			if fn == nil {
-				return nil, nil
-			}
+		if err := fn(ctx, router); err != nil {
+			return nil, err
+		}
 
-			if err := fn(ctx, router); err != nil {
-				return nil, err
-			}
+		return bkgw.NewResult(), nil
+	}, startOpts.Progress)
 
-			return bkgw.NewResult(), nil
-		}, ch)
-		return err
+	return err
+}
+
+func StartAndDisplay(ctx context.Context, startOpts *Config, fn StartCallback) error {
+	if startOpts == nil {
+		startOpts = &Config{}
+	}
+
+	ch := make(chan *bkclient.SolveStatus)
+	startOpts.Progress = ch
+
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		return Start(ctx, startOpts, fn)
 	})
+
 	eg.Go(func() error {
 		w := startOpts.LogOutput
 		if w == nil {
@@ -166,10 +179,8 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		}
 		return err
 	})
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-	return nil
+
+	return eg.Wait()
 }
 
 func NormalizePaths(workdir, configPath string) (string, string, error) {
