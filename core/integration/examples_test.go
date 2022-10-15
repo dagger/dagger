@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,89 +52,65 @@ func TestExtensionAlpine(t *testing.T) {
 	require.NotEmpty(t, data.Alpine.Build.Exec.Stdout.Contents)
 }
 
-func TestExtensionNetlifyGo(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(
-		ctx,
-		dagger.WithWorkdir("../../"),
-		dagger.WithConfigPath("../../examples/netlify/go/dagger.json"),
-	)
-	require.NoError(t, err)
-	defer c.Close()
-
-	// TODO: until we setup some shared netlify auth tokens, this test just asserts on the schema showing up
-
-	res := struct {
-		Project struct {
-			Schema string
-		}
-	}{}
-	resp := &dagger.Response{Data: &res}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `{
-					project(name: "netlify") {
-						schema
-					}
-				}`,
-		},
-		resp,
-	)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Project.Schema)
-}
-
-func TestExtensionNetlifyTS(t *testing.T) {
+func TestExtensionNetlify(t *testing.T) {
 	t.Skip("Skipping test until shared netlify tokens are supported here, feel free to run locally though")
 
-	ctx := context.Background()
-	c, err := dagger.Connect(
-		ctx,
-		dagger.WithWorkdir("../../"),
-		dagger.WithConfigPath("../../examples/netlify/ts/dagger.json"),
-	)
-	require.NoError(t, err)
-	defer c.Close()
+	runner := func(lang string) func(*testing.T) {
+		return func(t *testing.T) {
+			ctx := context.Background()
+			c, err := dagger.Connect(
+				ctx,
+				dagger.WithWorkdir("../../"),
+				dagger.WithConfigPath(fmt.Sprintf("../../examples/netlify/%s/dagger.json", lang)),
+			)
+			require.NoError(t, err)
+			defer c.Close()
 
-	dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
-	require.NoError(t, err)
+			dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+			require.NoError(t, err)
 
-	secretID, err := c.Core().Host().Variable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
-	require.NoError(t, err)
+			secretID, err := c.Core().Host().Variable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
+			require.NoError(t, err)
 
-	data := struct {
-		Netlify struct {
-			Deploy struct {
-				URL string
-			}
-		}
-	}{}
-	resp := &dagger.Response{Data: &data}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query TestNetlify(
-				$source: DirectoryID!,
-				$token: SecretID!,
-			) {
-				netlify {
-					deploy(
-						contents: $source,
-						siteName: "test-cloak-netlify-deploy",
-						token: $token,
-					) {
-						url
+			data := struct {
+				Netlify struct {
+					Deploy struct {
+						URL string
 					}
 				}
-			}`,
-			Variables: map[string]any{
-				"source": dirID,
-				"token":  secretID,
-			},
-		},
-		resp,
-	)
-	require.NoError(t, err)
-	require.NotEmpty(t, data.Netlify.Deploy.URL)
+			}{}
+			resp := &dagger.Response{Data: &data}
+			err = c.Do(ctx,
+				&dagger.Request{
+					Query: `query TestNetlify(
+						$source: DirectoryID!,
+						$token: SecretID!,
+					) {
+						netlify {
+							deploy(
+								contents: $source,
+								siteName: "test-cloak-netlify-deploy",
+								token: $token,
+							) {
+								url
+							}
+						}
+					}`,
+					Variables: map[string]any{
+						"source": dirID,
+						"token":  secretID,
+					},
+				},
+				resp,
+			)
+			require.NoError(t, err)
+			require.NotEmpty(t, data.Netlify.Deploy.URL)
+		}
+	}
+
+	for _, lang := range []string{"go", "ts"} {
+		t.Run(lang, runner(lang))
+	}
 }
 
 func TestExtensionYarn(t *testing.T) {
