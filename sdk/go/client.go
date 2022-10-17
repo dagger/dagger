@@ -7,10 +7,10 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
-	"go.dagger.io/dagger/sdk/go/dagger/engineconn"
-	_ "go.dagger.io/dagger/sdk/go/dagger/engineconn/embedded" // embedded connection
-	_ "go.dagger.io/dagger/sdk/go/dagger/engineconn/unix"     // unix connection
+	"go.dagger.io/dagger/api"
+	"go.dagger.io/dagger/engineconn"
+	_ "go.dagger.io/dagger/engineconn/embedded" // embedded connection
+	_ "go.dagger.io/dagger/engineconn/unix"     // unix connection
 )
 
 // Client is the Dagger Engine Client

@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/testutil"
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger"
 )
 
 func TestCoreImage(t *testing.T) {

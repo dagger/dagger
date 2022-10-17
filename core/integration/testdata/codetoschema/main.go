@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger"
 )
 
 func main() {

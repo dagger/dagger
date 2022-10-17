@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"go.dagger.io/dagger/api"
 )
 
 func TestDirectory(t *testing.T) {

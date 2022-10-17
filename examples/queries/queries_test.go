@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 type testOpts struct {

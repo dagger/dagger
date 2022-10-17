@@ -1,8 +1,8 @@
 package main
 
 import (
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"go.dagger.io/dagger"
+	"go.dagger.io/dagger/api"
 )
 
 func main() {

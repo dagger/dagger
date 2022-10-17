@@ -3,11 +3,11 @@ package schema
 import (
 	"encoding/json"
 
+	"github.com/dagger/dagger/core/filesystem"
+	"github.com/dagger/dagger/router"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core/filesystem"
-	"go.dagger.io/dagger/router"
 )
 
 type coreSchema struct {

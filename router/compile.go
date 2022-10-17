@@ -2,8 +2,8 @@ package router
 
 import (
 	tools "github.com/bhoriuchi/graphql-go-tools"
+	"github.com/dagger/dagger/tracing"
 	"github.com/graphql-go/graphql"
-	"go.dagger.io/dagger/tracing"
 )
 
 func compile(s ExecutableSchema) (*graphql.Schema, error) {

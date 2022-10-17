@@ -3,7 +3,7 @@ package testutil
 import (
 	"context"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger"
 )
 
 type QueryOptions struct {

@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dagger/dagger/core/filesystem"
+	"github.com/dagger/dagger/core/shim"
+	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
-	"go.dagger.io/dagger/core/filesystem"
-	"go.dagger.io/dagger/core/shim"
-	"go.dagger.io/dagger/router"
 )
 
 type Exec struct {

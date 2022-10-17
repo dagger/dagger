@@ -17,7 +17,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"go.dagger.io/dagger/api"
 )
 
 type Context struct {
@@ -148,7 +148,7 @@ func (ts *goTypes) schema() []byte {
 		The much cleaner approach will come when we integrate this code w/ the
 		in-progress codegen work.
 		*/
-		if strings.HasPrefix(s.typ.PkgPath(), "go.dagger.io/dagger/sdk/go") {
+		if strings.HasPrefix(s.typ.PkgPath(), "go.dagger.io/dagger") {
 			continue
 		}
 
@@ -504,7 +504,7 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 		The much cleaner approach will come when we integrate this code w/ the
 		in-progress codegen work.
 		*/
-		if strings.HasPrefix(t.PkgPath(), "go.dagger.io/dagger/sdk/go") {
+		if strings.HasPrefix(t.PkgPath(), "github.com/dagger/dagger/sdk/go") {
 			return ast.NonNullNamedType(t.Name(), nil)
 		}
 		return ast.NonNullNamedType("String", nil)

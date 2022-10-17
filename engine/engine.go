@@ -7,6 +7,12 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/internal/buildkitd"
+	"github.com/dagger/dagger/project"
+	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -14,12 +20,6 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/internal/buildkitd"
-	"go.dagger.io/dagger/project"
-	"go.dagger.io/dagger/router"
-	"go.dagger.io/dagger/secret"
 	"golang.org/x/sync/errgroup"
 )
 

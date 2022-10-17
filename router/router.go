@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/playground"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
-	"go.dagger.io/dagger/playground"
 )
 
 type Router struct {

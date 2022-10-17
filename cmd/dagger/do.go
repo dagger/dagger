@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"go.dagger.io/dagger"
+	"go.dagger.io/dagger/api"
 	"golang.org/x/term"
 )
 

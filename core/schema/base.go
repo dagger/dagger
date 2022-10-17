@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/filesystem"
+	"github.com/dagger/dagger/project"
+	"github.com/dagger/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/filesystem"
-	"go.dagger.io/dagger/project"
-	"go.dagger.io/dagger/router"
 )
 
 type InitializeArgs struct {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger"
 
 	openAPIClient "github.com/go-openapi/runtime/client"
 	netlifyModel "github.com/netlify/open-api/v2/go/models"

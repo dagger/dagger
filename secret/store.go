@@ -3,9 +3,9 @@ package secret
 import (
 	"context"
 
+	"github.com/dagger/dagger/core"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/secrets"
-	"go.dagger.io/dagger/core"
 )
 
 func NewStore() *Store {

@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/internal/testutil"
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"go.dagger.io/dagger"
+	"go.dagger.io/dagger/api"
 )
 
 func TestContainerScratch(t *testing.T) {

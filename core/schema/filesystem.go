@@ -5,10 +5,10 @@ import (
 	"io/fs"
 	"strconv"
 
+	"github.com/dagger/dagger/core/filesystem"
+	"github.com/dagger/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	"go.dagger.io/dagger/core/filesystem"
-	"go.dagger.io/dagger/router"
 )
 
 var fsIDResolver = stringResolver(filesystem.FSID(""))

@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"github.com/Khan/genqlient/graphql"
-	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
+	"go.dagger.io/dagger/querybuilder"
 )
 
 // New returns a new API query object
