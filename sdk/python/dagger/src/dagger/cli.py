@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 
@@ -30,4 +31,4 @@ def run(schema: bool):
         server.export_schema()
         return
 
-    server.execute()
+    asyncio.run(server.execute())
