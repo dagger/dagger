@@ -27,6 +27,7 @@ func (Lint) Codegen(ctx context.Context) error {
 	c, err := dagger.Connect(ctx)
 	if err != nil {
 		return err
+
 	}
 	defer c.Close()
 
