@@ -18,6 +18,7 @@ updates:
       interval: "daily"
     labels:
       - "kind/dependencies"
+
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:
@@ -25,3 +26,22 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/website"
+
+  - package-ecosystem: "gomod"
+    directory: "/sdk/go"
+    schedule:
+      interval: "daily"
+    labels:
+      - "kind/dependencies"
+  - package-ecosystem: "npm"
+    directory: "/sdk/nodejs/dagger"
+    schedule:
+      interval: "daily"
+    labels:
+      - "kind/dependencies"
+  - package-ecosystem: "pip"
+    directory: "/sdk/python/dagger"
+    schedule:
+      interval: "daily"
+    labels:
+      - "kind/dependencies"
