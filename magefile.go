@@ -70,7 +70,24 @@ func (Build) Dagger(ctx context.Context) error {
 
 	builder := c.Container().From("golang:1.18.2-alpine")
 
-	src, err := c.Host().Workdir().Read().ID(ctx)
+	workdir := c.Host().Workdir()
+	goMod, err := workdir.Read().File("go.mod").ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	goSum, err := workdir.Read().File("go.sum").ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	builder = builder.WithMountedFile("/app/go.mod", goMod)
+	builder = builder.WithMountedFile("/app/go.sum", goSum).WithWorkdir("/app")
+	builder = builder.Exec(dagger.ContainerExecOpts{
+		Args: []string{"go", "mod", "download"},
+	})
+
+	src, err := workdir.Read().ID(ctx)
 	if err != nil {
 		return err
 	}
