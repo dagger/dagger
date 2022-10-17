@@ -1,44 +1,33 @@
 # Dagger
 
-Dagger is a cross-platform CI/CD engine with 3 defining features:
+Dagger is a portable devkit for CICD.
 
-1. Portable. Your pipelines run in containers so you get the same behavior on your local machine and in your CI environment.
-2. Scriptable. Develop pipelines in Go, Typescript, Python, or even a shell script. No niche language or proprietary YAML required.
-3. Extensible. Each pipeline has an API. Pipelines can be shared and reused across projects, teams or the entire community.
+Using Dagger, software teams can develop powerful CICD pipelines with minimal effort, then run them anywhere. Benefits include:
 
-```mermaid
-graph LR;
+* Unify dev and CI environments. Write your pipeline once, Dagger will run it the same everywhere.
+* Reduce CI lock-in. No more re-writing everything from scratch every 6 months.
 
-script["your script"] -. Dagger API ..-> engine["Dagger Engine"]
+<img src="https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png" width="400" />
 
-subgraph A["your build pipeline"]
-  A1[" "] -.-> A2[" "] -.-> A3[" "]
-end
-subgraph B["your deploy pipeline"]
-  B1[" "] -.-> B2[" "] -.-> B3[" "] -.-> B4[" "]
-end
-subgraph C["your test pipeline"]
-  C1[" "] -.-> C2[" "] -.-> C3[" "] -.-> C4[" "]
-end
-engine -..-> A1 & B1 & C1
-```
+## How does it work?
 
-This can drastically improve the experience of developing and running CI/CD pipelines:
-
-| | Before Dagger | After Dagger |
-| -- | -- | -- |
-| To test a pipeline manually... | `git push` then wait a few minutes |  run it locally in a few seconds |
-| To test a pipeline automatically... | spend months developing a custom test framework  | use regular test tools for your favorite programming language |
-| To document a pipeline... | Write a document then manually keep it up to date. | Every pipeline has an API and auto-generated documentation. |
-| To detect a typing error in your pipeline... | `git push` then wait a few minutes | Use regular type checking tools for your programming language |
-| Development and CI pipelines are... | Completely different. Drift and duplicate logic are a common problem | Always the same. Write once, run anywhere.
-| To share pipelines across teams... | Force all teams to use the same CI and dev tools | Share Dagger pipelines. Each team can run them from the CI and dev tools of their choice.|
-| To migrate to a new CI... | Re-write all your pipeline logic to a new proprietary YAML | Install Dagger on the new CI. Run the same pipelines without modification. |
-| To compose a large pipeline from smaller ones... | Copy-paste YAML, or stitch 5 scripts together into a "frankenstein monster" script | Import and call a pipeline API the same way you would import and call a library |
-| To understand the devops setup of your application... | Ask the devops team or read 10 books | Read the scripts. They're written in a familiar language, and they're short. |
-| To optimize caching in your pipelines... | Even basic caching requires CI-specific configuration for each pipeline | All pipelines steps are cached automatically. Optimizing a pipeline makes it faster on all CI and development environments. |
+1. Automate actions with your favorite programming language. No proprietary SDK: just regular shell, Go, Javascript, Python...
+2. Reuse actions from a large and growing catalog.
+3. Tie it all together in CUE - a revolutionary declarative language invented at Google. No more YAML hell!
+4. Test and debug instantly on your local machine. No more waiting 10min to catch a typo.
+5. Run your pipelines on any Docker-compatible runtime, for maximum portability. This means most modern CI runners can run Dagger out of the box.
 
 ## Getting Started
 
-* [Documentation](docs/unxpq-introduction.md)
-* [Join the Discord server](https://discord.gg/ufnyBtc8uY)
+[Documentation website](https://docs.dagger.io/)
+
+## Releases
+
+We release a new version every Tuesday. You can find out more about our latest release [here](https://github.com/dagger/dagger/releases).
+
+## Useful links
+
+* [Join the Dagger community on Discord](https://discord.gg/ufnyBtc8uY)
+* [Install from a binary release](https://docs.dagger.io/install)
+* [Build from source](https://docs.dagger.io/1001/install/#option-4-install-from-source)
+* [How to contribute](https://docs.dagger.io/1227/contributing/)

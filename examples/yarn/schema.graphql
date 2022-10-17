@@ -3,9 +3,9 @@ extend type Query {
 }
 
 type Yarn {
-  script(source: FSID!, runArgs: [String!]): Filesystem!
+  script(source: DirectoryID!, runArgs: [String!]): Directory!
 }
 
-extend type Filesystem {
-  yarn(runArgs: [String!]): Filesystem!
+extend type Directory {
+  yarn(runArgs: [String!]): Directory!
 }
