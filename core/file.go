@@ -35,17 +35,12 @@ func (id FileID) decode() (*fileIDPayload, error) {
 	return &payload, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform) (*File, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
+func (payload *fileIDPayload) State() (llb.State, error) {
+	return defToState(payload.LLB)
+}
 
-	id, err := encodeID(fileIDPayload{
-		LLB:      def.ToPB(),
-		File:     file,
-		Platform: platform,
-	})
+func (payload *fileIDPayload) ToFile() (*File, error) {
+	id, err := encodeID(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -55,19 +50,32 @@ func NewFile(ctx context.Context, st llb.State, file string, platform specs.Plat
 	}, nil
 }
 
-func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	st, filePath, platform, err := file.Decode()
+func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform) (*File, error) {
+	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := file.ref(ctx, gw, st, platform)
+	return (&fileIDPayload{
+		LLB:      def.ToPB(),
+		File:     file,
+		Platform: platform,
+	}).ToFile()
+}
+
+func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+	payload, err := file.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := gwRef(ctx, gw, payload.LLB)
 	if err != nil {
 		return nil, err
 	}
 
 	return ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: filePath,
+		Filename: payload.File,
 	})
 }
 
@@ -76,43 +84,24 @@ func (file *File) Secret(ctx context.Context) (*Secret, error) {
 }
 
 func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
-	st, filePath, platform, err := file.Decode()
+	payload, err := file.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := file.ref(ctx, gw, st, platform)
+	ref, err := gwRef(ctx, gw, payload.LLB)
 	if err != nil {
 		return nil, err
 	}
 
 	return ref.StatFile(ctx, bkgw.StatRequest{
-		Path: filePath,
+		Path: payload.File,
 	})
 }
 
-func (file *File) Decode() (llb.State, string, specs.Platform, error) {
-	payload, err := file.ID.decode()
-	if err != nil {
-		return llb.State{}, "", specs.Platform{}, err
-	}
-
-	st, err := defToState(payload.LLB)
-	if err != nil {
-		return llb.State{}, "", specs.Platform{}, err
-	}
-
-	return st, payload.File, payload.Platform, nil
-}
-
-func (file *File) ref(ctx context.Context, gw bkgw.Client, st llb.State, platform specs.Platform) (bkgw.Reference, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
-
+func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
+		Definition: def,
 	})
 	if err != nil {
 		return nil, err

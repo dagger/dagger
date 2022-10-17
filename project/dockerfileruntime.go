@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/moby/buildkit/client/llb"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -15,12 +14,7 @@ import (
 
 func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
 	// TODO(vito): handle relative path + platform?
-	st, _, _, err := p.workdir.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(platform))
+	payload, err := p.workdir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -30,8 +24,8 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.C
 		"filename": filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), subpath, "Dockerfile")),
 	}
 	inputs := map[string]*pb.Definition{
-		dockerfilebuilder.DefaultLocalNameContext:    def.ToPB(),
-		dockerfilebuilder.DefaultLocalNameDockerfile: def.ToPB(),
+		dockerfilebuilder.DefaultLocalNameContext:    payload.LLB,
+		dockerfilebuilder.DefaultLocalNameDockerfile: payload.LLB,
 	}
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",

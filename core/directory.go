@@ -28,7 +28,11 @@ type directoryIDPayload struct {
 	Platform specs.Platform `json:"platform"`
 }
 
-func (id DirectoryID) decode() (*directoryIDPayload, error) {
+// Decode returns the private payload of a DirectoryID.
+//
+// NB(vito): Ideally this would not be exported, but it's currently needed for
+// the project/ package. I left the return type private as a compromise.
+func (id DirectoryID) Decode() (*directoryIDPayload, error) {
 	if id == "" {
 		return &directoryIDPayload{}, nil
 	}
@@ -39,6 +43,35 @@ func (id DirectoryID) decode() (*directoryIDPayload, error) {
 	}
 
 	return &payload, nil
+}
+
+func (payload *directoryIDPayload) State() (llb.State, error) {
+	if payload.LLB == nil {
+		return llb.Scratch(), nil
+	}
+
+	return defToState(payload.LLB)
+}
+
+func (payload *directoryIDPayload) SetState(ctx context.Context, st llb.State) error {
+	def, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return nil
+	}
+
+	payload.LLB = def.ToPB()
+	return nil
+}
+
+func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
+	id, err := encodeID(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Directory{
+		ID: DirectoryID(id),
+	}, nil
 }
 
 func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform) (*Directory, error) {
@@ -54,26 +87,19 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 
 	payload.LLB = def.ToPB()
 
-	id, err := encodeID(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Directory{
-		ID: DirectoryID(id),
-	}, nil
+	return payload.ToDirectory()
 }
 
 func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
-	st, cwd, platform, err := dir.Decode()
+	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	src = path.Join(cwd, src)
+	src = path.Join(payload.Dir, src)
 
 	// empty directory, i.e. llb.Scratch()
-	if st.Output() == nil {
+	if payload.LLB == nil {
 		if path.Clean(src) == "." {
 			// fake out a reasonable response
 			return &fstypes.Stat{Path: src}, nil
@@ -82,18 +108,8 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
-	if st.Output() == nil {
-		// empty directory, i.e. llb.Scratch()
-		return nil, fmt.Errorf("cannot stat scratch")
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
-
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
+		Definition: payload.LLB,
 	})
 	if err != nil {
 		return nil, err
@@ -115,15 +131,15 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 }
 
 func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
-	st, cwd, platform, err := dir.Decode()
+	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	src = path.Join(cwd, src)
+	src = path.Join(payload.Dir, src)
 
 	// empty directory, i.e. llb.Scratch()
-	if st.Output() == nil {
+	if payload.LLB == nil {
 		if path.Clean(src) == "." {
 			return []string{}, nil
 		}
@@ -131,13 +147,8 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
-
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
+		Definition: payload.LLB,
 	})
 	if err != nil {
 		return nil, err
@@ -164,13 +175,18 @@ func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) 
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Directory, error) {
-	st, cwd, platform, err := dir.Decode()
+	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
 	// be sure to create the file under the working directory
-	dest = path.Join(cwd, dest)
+	dest = path.Join(payload.Dir, dest)
+
+	st, err := payload.State()
+	if err != nil {
+		return nil, err
+	}
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
@@ -185,128 +201,180 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 		),
 	)
 
-	return NewDirectory(ctx, st, cwd, platform)
+	err = payload.SetState(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+
+	return payload.ToDirectory()
 }
 
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
-	st, cwd, platform, err := dir.Decode()
+	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewDirectory(ctx, st, path.Join(cwd, subdir), platform)
+	payload.Dir = path.Join(payload.Dir, subdir)
+
+	return payload.ToDirectory()
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	st, cwd, platform, err := dir.Decode()
+	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(ctx, st, path.Join(cwd, file), platform)
+	return (&fileIDPayload{
+		LLB:      payload.LLB,
+		File:     path.Join(payload.Dir, file),
+		Platform: payload.Platform,
+	}).ToFile()
 }
 
 func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory) (*Directory, error) {
-	st, cwd, platform, err := dir.Decode()
+	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, srcCwd, _, err := src.Decode()
+	srcPayload, err := src.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	st = st.File(llb.Copy(srcSt, srcCwd, path.Join(cwd, subdir), &llb.CopyInfo{
+	st, err := destPayload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	srcSt, err := srcPayload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	st = st.File(llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath: true,
 	}))
 
-	return NewDirectory(ctx, st, cwd, platform)
+	err = destPayload.SetState(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+
+	return destPayload.ToDirectory()
 }
 
 func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
-	st, cwd, platform, err := dir.Decode()
+	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, srcPath, _, err := src.Decode()
+	srcPayload, err := src.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	st = st.File(llb.Copy(srcSt, srcPath, path.Join(cwd, subdir)))
+	st, err := destPayload.State()
+	if err != nil {
+		return nil, err
+	}
 
-	return NewDirectory(ctx, st, cwd, platform)
+	srcSt, err := srcPayload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir)))
+
+	err = destPayload.SetState(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+
+	return destPayload.ToDirectory()
 }
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
 	states := make([]llb.State, 0, len(dirs))
 	for _, fs := range dirs {
-		state, _, dirPlatform, err := fs.Decode()
+		payload, err := fs.ID.Decode()
 		if err != nil {
 			return nil, err
 		}
 
-		if !reflect.DeepEqual(platform, dirPlatform) {
+		if !reflect.DeepEqual(platform, payload.Platform) {
 			// TODO(vito): work around with llb.Copy shenanigans?
-			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, dirPlatform)
+			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, payload.Platform)
+		}
+
+		state, err := payload.State()
+		if err != nil {
+			return nil, err
 		}
 
 		states = append(states, state)
 	}
+
 	return NewDirectory(ctx, llb.Merge(states), "", platform)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
-	st, rel, platform, err := dir.Decode()
+	lowerPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	otherSt, otherRel, otherPlatform, err := other.Decode()
+	upperPayload, err := other.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	if rel != otherRel {
+	if lowerPayload.Dir != upperPayload.Dir {
 		// TODO(vito): work around with llb.Copy shenanigans?
-		return nil, fmt.Errorf("TODO: cannot diff with different relative paths: %q != %q", rel, otherRel)
+		return nil, fmt.Errorf("TODO: cannot diff with different relative paths: %q != %q", lowerPayload.Dir, upperPayload.Dir)
 	}
 
-	if !reflect.DeepEqual(platform, otherPlatform) {
+	if !reflect.DeepEqual(lowerPayload.Platform, upperPayload.Platform) {
 		// TODO(vito): work around with llb.Copy shenanigans?
-		return nil, fmt.Errorf("TODO: cannot diff across platforms: %+v != %+v", platform, otherPlatform)
+		return nil, fmt.Errorf("TODO: cannot diff across platforms: %+v != %+v", lowerPayload.Platform, upperPayload.Platform)
 	}
 
-	return NewDirectory(ctx, llb.Diff(st, otherSt), rel, platform)
+	lowerSt, err := lowerPayload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	upperSt, err := upperPayload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	if err != nil {
+		return nil, err
+	}
+
+	return lowerPayload.ToDirectory()
 }
 
 func (dir *Directory) Without(ctx context.Context, path string) (*Directory, error) {
-	st, cwd, platform, err := dir.Decode()
+	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	st = st.File(llb.Rm(path))
-
-	return NewDirectory(ctx, st, cwd, platform)
-}
-
-func (dir *Directory) Decode() (llb.State, string, specs.Platform, error) {
-	payload, err := dir.ID.decode()
+	st, err := payload.State()
 	if err != nil {
-		return llb.State{}, "", specs.Platform{}, err
+		return nil, err
 	}
 
-	if payload.LLB == nil {
-		return llb.Scratch(), payload.Dir, specs.Platform{}, nil
-	}
-
-	st, err := defToState(payload.LLB)
+	err = payload.SetState(ctx, st.File(llb.Rm(path)))
 	if err != nil {
-		return llb.State{}, "", specs.Platform{}, err
+		return nil, err
 	}
 
-	return st, payload.Dir, payload.Platform, nil
+	return payload.ToDirectory()
 }
