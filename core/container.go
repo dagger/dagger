@@ -149,12 +149,10 @@ func (container *Container) FS(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 
-	st, err := payload.FSState()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewDirectory(ctx, st, "", payload.Platform)
+	return (&directoryIDPayload{
+		LLB:      payload.FS,
+		Platform: payload.Platform,
+	}).ToDirectory()
 }
 
 func (container *Container) WithFS(ctx context.Context, dir *Directory, platform specs.Platform) (*Container, error) {
@@ -163,7 +161,7 @@ func (container *Container) WithFS(ctx context.Context, dir *Directory, platform
 		return nil, err
 	}
 
-	dirPayload, err := dir.ID.decode()
+	dirPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -180,11 +178,21 @@ func (container *Container) WithFS(ctx context.Context, dir *Directory, platform
 }
 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
-	return container.withMounted(ctx, target, source)
+	payload, err := source.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return container.withMounted(target, payload.LLB, payload.Dir)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
-	return container.withMounted(ctx, target, source)
+	payload, err := source.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return container.withMounted(target, payload.LLB, payload.File)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory) (*Container, error) {
@@ -207,18 +215,13 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	}
 
 	if source != nil {
-		dirSt, dirRel, dirPlatform, err := source.Decode()
+		srcPayload, err := source.ID.Decode()
 		if err != nil {
 			return nil, err
 		}
 
-		dirDef, err := dirSt.Marshal(ctx, llb.Platform(dirPlatform))
-		if err != nil {
-			return nil, err
-		}
-
-		mount.Source = dirDef.ToPB()
-		mount.SourcePath = dirRel
+		mount.Source = srcPayload.LLB
+		mount.SourcePath = srcPayload.Dir
 	}
 
 	payload.Mounts = append(payload.Mounts, mount)
@@ -443,11 +446,7 @@ func locatePath[T *File | *Directory](
 	return found, nil
 }
 
-type mountable interface {
-	Decode() (llb.State, string, specs.Platform, error)
-}
-
-func (container *Container) withMounted(ctx context.Context, target string, source mountable) (*Container, error) {
+func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -455,19 +454,9 @@ func (container *Container) withMounted(ctx context.Context, target string, sour
 
 	target = absPath(payload.Config.WorkingDir, target)
 
-	srcSt, srcRel, srcPlatform, err := source.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	srcDef, err := srcSt.Marshal(ctx, llb.Platform(srcPlatform))
-	if err != nil {
-		return nil, err
-	}
-
 	payload.Mounts = append(payload.Mounts, ContainerMount{
-		Source:     srcDef.ToPB(),
-		SourcePath: srcRel,
+		Source:     srcDef,
+		SourcePath: srcPath,
 		Target:     target,
 	})
 
