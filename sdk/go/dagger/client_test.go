@@ -2,21 +2,11 @@ package dagger
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/buildkitd"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
-
-func init() {
-	host, err := buildkitd.StartGoModBuildkitd(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("BUILDKIT_HOST", host)
-}
 
 func TestDirectory(t *testing.T) {
 	t.Parallel()

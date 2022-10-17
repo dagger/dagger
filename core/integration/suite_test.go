@@ -9,12 +9,6 @@ import (
 	"go.dagger.io/dagger/internal/testutil"
 )
 
-func init() {
-	if err := testutil.SetupBuildkitd(); err != nil {
-		panic(err)
-	}
-}
-
 func newCache(t *testing.T) core.CacheID {
 	var res struct {
 		CacheVolume struct {
