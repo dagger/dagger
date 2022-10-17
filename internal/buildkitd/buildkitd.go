@@ -39,7 +39,7 @@ const (
 func Client(ctx context.Context) (*bkclient.Client, error) {
 	host := os.Getenv("BUILDKIT_HOST")
 	if host == "" {
-		h, err := startBuildInfoBuildkitd(ctx)
+		h, err := startBuildkitd(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -67,9 +67,21 @@ func Client(ctx context.Context) (*bkclient.Client, error) {
 	return c, nil
 }
 
-func startBuildInfoBuildkitd(ctx context.Context) (string, error) {
-	var vendoredVersion string
+func startBuildkitd(ctx context.Context) (string, error) {
+	version, err := getBuildInfoVersion()
+	if err != nil {
+		return version, err
+	}
+	if version == "" {
+		version, err = getGoModVersion()
+		if err != nil {
+			return version, err
+		}
+	}
+	return startBuildkitdVersion(ctx, version)
+}
 
+func getBuildInfoVersion() (string, error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "", errors.New("unable to read build info")
@@ -77,16 +89,15 @@ func startBuildInfoBuildkitd(ctx context.Context) (string, error) {
 
 	for _, d := range bi.Deps {
 		if d.Path == "github.com/moby/buildkit" {
-			vendoredVersion = d.Version
-			break
+			return d.Version, nil
 		}
 	}
-	return startBuildkitdVersion(ctx, vendoredVersion)
+	return "", nil
 }
 
 // Workaround the fact that debug.ReadBuildInfo doesn't work in tests:
 // https://github.com/golang/go/issues/33976
-func StartGoModBuildkitd(ctx context.Context) (string, error) {
+func getGoModVersion() (string, error) {
 	out, err := exec.Command("go", "list", "-m", "github.com/moby/buildkit").CombinedOutput()
 	if err != nil {
 		return "", err
@@ -96,7 +107,7 @@ func StartGoModBuildkitd(ctx context.Context) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unexpected go list output: %s", trimmed)
 	}
-	return startBuildkitdVersion(ctx, version)
+	return version, nil
 }
 
 func startBuildkitdVersion(ctx context.Context, version string) (string, error) {
