@@ -18,23 +18,22 @@ class Hello:
         c = dagger.Client()
         result = c.execute(
             gql(
-                """query ($lines: Int) {
-                    core {
-                        image(ref: "alpine") {
-                            exec(input: {args: ["apk", "add", "curl"]}) {
-                                fs {
-                                    exec(input: {args: ["curl", "https://dagger.io/"]}) {
-                                        stdout(lines: $lines)
+                """{
+                    container {
+                        from(address: "alpine") {
+                            exec(args: ["apk", "add", "curl"]) {
+                                exec(args: ["curl", "https://dagger.io/"]) {
+                                    stdout {
+                                        contents
                                     }
                                 }
                             }
                         }
                     }
                 }"""
-            ),
-            variable_values={"lines": lines},
+            )
         )
-        return result["core"]["image"]["exec"]["fs"]["exec"]["stdout"]
+        return result["container"]["from"]["exec"]["exec"]["stdout"]["contents"]
 
 
 @strawberry.type(extend=True)
