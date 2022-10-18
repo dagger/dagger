@@ -142,7 +142,7 @@ func checkBuildkit(ctx context.Context, version string) error {
 			return err
 		}
 
-		fmt.Println("No buildkitd container found, creating one...")
+		fmt.Fprintln(os.Stderr, "No buildkitd container found, creating one...")
 
 		removeBuildkit(ctx)
 		if err := installBuildkit(ctx, version); err != nil {
@@ -152,7 +152,7 @@ func checkBuildkit(ctx context.Context, version string) error {
 	}
 
 	if config.Version != version {
-		fmt.Println("Buildkitd container is out of date, updating it...")
+		fmt.Fprintln(os.Stderr, "Buildkitd container is out of date, updating it...")
 
 		if err := removeBuildkit(ctx); err != nil {
 			return err
@@ -162,7 +162,7 @@ func checkBuildkit(ctx context.Context, version string) error {
 		}
 	}
 	if !config.IsActive {
-		fmt.Println("Buildkitd container is not running, starting it...")
+		fmt.Fprintln(os.Stderr, "Buildkitd container is not running, starting it...")
 
 		if err := startBuildkit(ctx); err != nil {
 			return err
