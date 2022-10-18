@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/sync/errgroup"
+
 	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
@@ -28,6 +30,7 @@ func main() {
 
 func build(repoUrl string) error {
 	ctx := context.Background()
+	g, ctx := errgroup.WithContext(ctx)
 
 	// Our build matrix
 	oses := []string{"linux", "darwin"}
@@ -59,40 +62,50 @@ func build(repoUrl string) error {
 		// Mount source
 		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-		// TODO: parallel
 		for _, goos := range oses {
 			for _, goarch := range arches {
-				fmt.Printf("Building %s %s with go %s\n", goos, goarch, version)
-
-				// Write the build output to the host
-				path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
-				outpath := filepath.Join(".", path)
-				err = os.MkdirAll(outpath, os.ModePerm)
-				if err != nil {
-					return err
-				}
-
-				// Set GOARCH and GOOS
-				build := golang.WithEnvVariable("GOOS", goos)
-				build = build.WithEnvVariable("GOARCH", goarch)
-
-				build = build.Exec(api.ContainerExecOpts{
-					Args: []string{"go", "build", "-o", path},
+				ctx, golang, workdir, goos, goarch, version := ctx, golang, workdir, goos, goarch, version
+				g.Go(func() error {
+					return buildOsArch(ctx, golang, workdir, goos, goarch, version)
 				})
-
-				// Get build output from builder
-				output, err := build.Directory(path).ID(ctx)
-				if err != nil {
-					return err
-				}
-
-				// Write the build output to the host
-				_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
-				if err != nil {
-					return err
-				}
 			}
 		}
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostDirectory, goos string, goarch string, version string) error {
+	fmt.Printf("Building %s %s with go %s\n", goos, goarch, version)
+
+	// Write the build output to the host
+	path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
+	outpath := filepath.Join(".", path)
+	err := os.MkdirAll(outpath, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	// Set GOARCH and GOOS
+	build := builder.WithEnvVariable("GOOS", goos)
+	build = build.WithEnvVariable("GOARCH", goarch)
+
+	build = build.Exec(api.ContainerExecOpts{
+		Args: []string{"go", "build", "-o", path},
+	})
+
+	// Get build output from builder
+	output, err := build.Directory(path).ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Write the build output to the host
+	_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+	if err != nil {
+		return err
 	}
 	return nil
 }
