@@ -14,16 +14,15 @@ https://github.com/dagger/dagger/discussions/2874
   - [gradle](https://github.com/dagger/examples/tree/main/templates/java/gradle)
   - maven
 - go
-  - [universe](https://github.com/dagger/examples/tree/main/templates/go/universe)
+  - [multiarch](https://github.com/dagger/examples/tree/main/templates/go/multiarch)
 - nodejs
   - npm
-    - [bash](https://github.com/dagger/examples/tree/main/templates/nodejs/npm/bash)
+    - [gosdk](https://github.com/dagger/examples/tree/main/templates/nodejs/npm/gosdk)
   - yarn
-    - [bash](https://github.com/dagger/examples/tree/main/templates/nodejs/yarn/bash)
-    - [universe](https://github.com/dagger/examples/tree/main/templates/nodejs/yarn/universe)
+    - [gosdk](https://github.com/dagger/examples/tree/main/templates/nodejs/yarn/gosdk)
 
 #### Template guidelines
 
 - Templates should be complete and work out of the box: `git clone...`, `cd...`, `dagger do...`
 - Templates should be focused on simple build or test or deploy use case for a single platform.
-- Templates should be relatively short and use Dagger core functionality or [Universe packages](https://universe.dagger.io).
+- Templates should be relatively short and use Dagger core functionality

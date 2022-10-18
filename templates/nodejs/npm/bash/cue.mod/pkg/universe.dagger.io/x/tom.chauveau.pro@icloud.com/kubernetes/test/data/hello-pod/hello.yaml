@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Pod
-metadata:
-  name: hello-dagger
-spec:
-  containers:
-    - name: hello
-      image: "alpine:3"
-      command: ["/bin/echo", "hello Dagger"]
