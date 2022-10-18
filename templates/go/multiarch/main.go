@@ -6,24 +6,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sync/errgroup"
-
 	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"golang.org/x/sync/errgroup"
 )
 
-type platform struct {
-	os   string
-	arch string
-}
-
 func main() {
-	repo := "https://github.com/kpenfound/greetings-api.git"
-	if len(os.Args) > 1 { // Optionally pass in a git repo as a command line argument
+	repo := "https://github.com/kpenfound/greetings-api.git" // Default repo to build
+	if len(os.Args) > 1 {                                    // Optionally pass in a git repo as a command line argument
 		repo = os.Args[1]
 	}
-	err := build(repo)
-	if err != nil {
+	if err := build(repo); err != nil {
 		fmt.Println(err)
 	}
 }
@@ -44,7 +37,7 @@ func build(repoUrl string) error {
 	}
 	defer client.Close()
 
-	// get the projects source directory
+	// clone the specified git repo
 	repo := client.Core().Git(repoUrl)
 	src, err := repo.Branch("main").Tree().ID(ctx)
 	if err != nil {
@@ -55,16 +48,15 @@ func build(repoUrl string) error {
 	workdir := client.Core().Host().Workdir()
 
 	for _, version := range goVersions {
-		// Get golang image
+		// Get golang image and mount go source
 		imageTag := fmt.Sprintf("golang:%s", version)
 		golang := client.Core().Container().From(api.ContainerAddress(imageTag))
-
-		// Mount source
 		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
+		// Run matrix builds in parallel
 		for _, goos := range oses {
 			for _, goarch := range arches {
-				goos, goarch, version := goos, goarch, version
+				goos, goarch, version := goos, goarch, version // closures
 				g.Go(func() error {
 					return buildOsArch(ctx, golang, workdir, goos, goarch, version)
 				})
@@ -80,7 +72,7 @@ func build(repoUrl string) error {
 func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostDirectory, goos string, goarch string, version string) error {
 	fmt.Printf("Building %s %s with go %s\n", goos, goarch, version)
 
-	// Write the build output to the host
+	// Create the output path for the build
 	path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
 	outpath := filepath.Join(".", path)
 	err := os.MkdirAll(outpath, os.ModePerm)
@@ -88,10 +80,9 @@ func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostD
 		return err
 	}
 
-	// Set GOARCH and GOOS
+	// Set GOARCH and GOOS and build
 	build := builder.WithEnvVariable("GOOS", goos)
 	build = build.WithEnvVariable("GOARCH", goarch)
-
 	build = build.Exec(api.ContainerExecOpts{
 		Args: []string{"go", "build", "-o", path},
 	})
@@ -104,8 +95,5 @@ func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostD
 
 	// Write the build output to the host
 	_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
