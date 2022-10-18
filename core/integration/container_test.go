@@ -2356,11 +2356,14 @@ func TestContainerMultiFrom(t *testing.T) {
 }
 
 func TestContainerPublish(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
+
+	// interrupt the registry to ensure the test can complete
+	defer cancel()
 
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.

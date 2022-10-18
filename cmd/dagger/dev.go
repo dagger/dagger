@@ -18,9 +18,7 @@ var devCmd = &cobra.Command{
 }
 
 func Dev(cmd *cobra.Command, args []string) {
-	localDirs := getKVInput(localDirsInput)
 	startOpts := &engine.Config{
-		LocalDirs:  localDirs,
 		Workdir:    workdir,
 		ConfigPath: configPath,
 	}

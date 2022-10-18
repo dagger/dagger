@@ -1,16 +1,16 @@
 package schema
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
+	"github.com/moby/buildkit/client/llb"
 )
 
 type hostSchema struct {
 	*baseSchema
-	workdirID core.HostDirectoryID
+	workdirPath string
 }
 
 var _ router.ExecutableSchema = &hostSchema{}
@@ -25,7 +25,6 @@ func (s *hostSchema) Schema() string {
 
 func (s *hostSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
-		"HostDirectoryID": stringResolver(core.HostDirectoryID("")),
 		"Query": router.ObjectResolver{
 			"host": router.PassthroughResolver,
 		},
@@ -33,10 +32,6 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"workdir":   router.ToResolver(s.workdir),
 			"directory": router.ToResolver(s.directory),
 			"variable":  router.ToResolver(s.variable),
-		},
-		"HostDirectory": router.ObjectResolver{
-			"read":  router.ToResolver(s.dirRead),
-			"write": router.ToResolver(s.dirWrite),
 		},
 		"HostVariable": router.ObjectResolver{
 			"value":  router.ToResolver(s.variableValue),
@@ -49,10 +44,10 @@ func (s *hostSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *hostSchema) workdir(ctx *router.Context, parent any, args any) (*core.HostDirectory, error) {
-	return &core.HostDirectory{
-		ID: s.workdirID,
-	}, nil
+func (s *hostSchema) workdir(ctx *router.Context, parent any, args any) (*core.Directory, error) {
+	return s.directory(ctx, parent, hostDirectoryArgs{
+		Path: s.workdirPath,
+	})
 }
 
 type hostVariableArgs struct {
@@ -74,33 +69,25 @@ func (s *hostSchema) variableSecret(ctx *router.Context, parent *core.HostVariab
 }
 
 type hostDirectoryArgs struct {
-	ID core.HostDirectoryID
+	Path string
 }
 
-func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.HostDirectory, error) {
-	return &core.HostDirectory{
-		ID: args.ID,
-	}, nil
-}
+func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.Directory, error) {
+	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
+	// which makes it unable to reused, which in turn creates cache invalidations
+	// TODO: this should be optional, the above issue can also be avoided w/ readonly
+	// mount when possible
+	// st := llb.Scratch().File(llb.Copy(llb.Local(
+	// 	id,
+	// 	// TODO: better shared key hint?
+	// 	llb.SharedKeyHint(id),
+	// 	// FIXME: should not be hardcoded
+	// 	llb.ExcludePatterns([]string{"**/node_modules"}),
+	// ), "/", "/"))
 
-func (s *hostSchema) dirRead(ctx *router.Context, parent *core.HostDirectory, args any) (*core.Directory, error) {
-	return parent.Read(ctx, s.platform)
-}
-
-type hostDirectoryWriteArgs struct {
-	Contents core.DirectoryID
-	Path     string
-}
-
-func (s *hostSchema) dirWrite(ctx *router.Context, parent *core.HostDirectory, args hostDirectoryWriteArgs) (bool, error) {
-	dir, found := s.solveOpts.LocalDirs[string(parent.ID)]
-	if !found {
-		return false, fmt.Errorf("unknown host directory %q", parent.ID)
-	}
-
-	return parent.Write(ctx,
-		dir, args.Path,
-		&core.Directory{ID: args.Contents},
-		s.bkClient, s.solveOpts, s.solveCh,
-	)
+	return core.NewDirectory(ctx, llb.Local(args.Path), "", s.platform, map[string]string{
+		// TODO: hash ID?
+		// TODO: validate relative paths?
+		args.Path: args.Path,
+	})
 }

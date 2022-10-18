@@ -50,7 +50,7 @@ func (s *fileSchema) file(ctx *router.Context, parent any, args fileArgs) (*core
 }
 
 func (s *fileSchema) contents(ctx *router.Context, file *core.File, args any) (string, error) {
-	content, err := file.Contents(ctx, s.gw)
+	content, err := file.Contents(ctx, s.rootSession)
 	if err != nil {
 		return "", err
 	}
@@ -63,7 +63,7 @@ func (s *fileSchema) secret(ctx *router.Context, file *core.File, args any) (*co
 }
 
 func (s *fileSchema) size(ctx *router.Context, file *core.File, args any) (int64, error) {
-	info, err := file.Stat(ctx, s.gw)
+	info, err := file.Stat(ctx, s.rootSession)
 	if err != nil {
 		return 0, err
 	}

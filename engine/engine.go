@@ -12,25 +12,20 @@ import (
 	"github.com/dagger/dagger/internal/buildkitd"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
-	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	workdirID      = "__dagger_workdir"
 	daggerJSONName = "dagger.json"
 )
 
 type Config struct {
 	Workdir    string
-	LocalDirs  map[string]string
 	ConfigPath string
 	// If true, do not load project extensions
 	NoExtensions bool
@@ -72,7 +67,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 
 	router := router.New()
-	secretStore := secret.NewStore()
 
 	socketProviders := MergedSocketProviders{
 		project.DaggerSockName: project.NewAPIProxy(router),
@@ -89,71 +83,56 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
-			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
 			authprovider.NewDockerAuthProvider(os.Stderr),
 		},
 	}
-	if startOpts.LocalDirs == nil {
-		startOpts.LocalDirs = map[string]string{}
-	}
-	// make workdir ID unique by absolute path to prevent concurrent runs from
-	// interfering with each other
-	workdirID := fmt.Sprintf("%s_%s", workdirID, startOpts.Workdir)
-	startOpts.LocalDirs[workdirID] = startOpts.Workdir
-	solveOpts.LocalDirs = startOpts.LocalDirs
 
 	ch := make(chan *bkclient.SolveStatus)
+
+	session := core.NewSession(c, solveOpts, ch)
+
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		var err error
-		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			// Secret store is a circular dependency, since it needs to resolve
-			// SecretIDs using the gateway, we don't have a gateway until we call
-			// Build, which needs SolveOpts, which needs to contain the secret store.
-			//
-			// Thankfully we can just yeet the gateway into the store.
-			secretStore.SetGateway(gw)
+		defer func() {
+			session.Wait()
+			close(ch)
+		}()
 
-			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:        router,
-				SSHAuthSockID: sshAuthSockID,
-				WorkdirID:     core.HostDirectoryID(workdirID),
-				Gateway:       gw,
-				BKClient:      c,
-				SolveOpts:     solveOpts,
-				SolveCh:       ch,
-				Platform:      *platform,
-			})
+		coreAPI, err := schema.New(schema.InitializeArgs{
+			Router:        router,
+			SSHAuthSockID: sshAuthSockID,
+			WorkdirPath:   startOpts.Workdir,
+			Session:       session,
+			Platform:      *platform,
+		})
+		if err != nil {
+			return err
+		}
+		if err := router.Add(coreAPI); err != nil {
+			return err
+		}
+
+		if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
+			_, err = installExtensions(
+				ctx,
+				router,
+				startOpts.ConfigPath,
+			)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			if err := router.Add(coreAPI); err != nil {
-				return nil, err
-			}
+		}
 
-			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-				_, err = installExtensions(
-					ctx,
-					router,
-					startOpts.ConfigPath,
-				)
-				if err != nil {
-					return nil, err
-				}
-			}
+		if fn == nil {
+			return nil
+		}
 
-			if fn == nil {
-				return nil, nil
-			}
+		if err := fn(ctx, router); err != nil {
+			return err
+		}
 
-			if err := fn(ctx, router); err != nil {
-				return nil, err
-			}
-
-			return bkgw.NewResult(), nil
-		}, ch)
-		return err
+		return nil
 	})
 	eg.Go(func() error {
 		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stderr, ch)
@@ -229,11 +208,9 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 			query LoadProject($configPath: String!) {
 				host {
 					workdir {
-						read {
-							loadProject(configPath: $configPath) {
-								name
-								install
-							}
+						loadProject(configPath: $configPath) {
+							name
+							install
 						}
 					}
 				}

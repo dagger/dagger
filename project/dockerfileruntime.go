@@ -12,7 +12,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
+func (p *State) dockerfileRuntime(ctx context.Context, subpath string, session *core.Session, platform specs.Platform) (*core.Directory, error) {
 	// TODO(vito): handle relative path + platform?
 	payload, err := p.workdir.ID.Decode()
 	if err != nil {
@@ -27,24 +27,39 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.C
 		dockerfilebuilder.DefaultLocalNameContext:    payload.LLB,
 		dockerfilebuilder.DefaultLocalNameDockerfile: payload.LLB,
 	}
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
+
+	var dir *core.Directory
+
+	err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		bkref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		newSt, err := bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
+
+		dir, err = core.NewDirectory(ctx, newSt, "", platform, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		return bkgw.NewResult(), nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	bkref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	newSt, err := bkref.ToState()
-	if err != nil {
-		return nil, err
-	}
-
-	return core.NewDirectory(ctx, newSt, "", platform)
+	return dir, nil
 }

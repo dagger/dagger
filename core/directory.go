@@ -6,6 +6,7 @@ import (
 	"path"
 	"reflect"
 
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -23,9 +24,10 @@ type DirectoryID string
 
 // directoryIDPayload is the inner content of a DirectoryID.
 type directoryIDPayload struct {
-	LLB      *pb.Definition `json:"llb"`
-	Dir      string         `json:"dir"`
-	Platform specs.Platform `json:"platform"`
+	LLB       *pb.Definition    `json:"llb"`
+	Dir       string            `json:"dir"`
+	Platform  specs.Platform    `json:"platform"`
+	LocalDirs map[string]string `json:"local_dirs,omitempty"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -74,10 +76,11 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform, localDirs map[string]string) (*Directory, error) {
 	payload := directoryIDPayload{
-		Dir:      cwd,
-		Platform: platform,
+		Dir:       cwd,
+		Platform:  platform,
+		LocalDirs: localDirs,
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
@@ -90,7 +93,7 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, session *Session, src string) (*fstypes.Stat, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -108,29 +111,18 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: payload.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	stat, err := ref.StatFile(ctx, bkgw.StatRequest{
-		Path: src,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return stat, nil
+	return withRef(ctx,
+		session.WithLocalDirs(payload.LocalDirs),
+		payload.LLB,
+		func(ref bkgw.Reference) (*fstypes.Stat, error) {
+			return ref.StatFile(ctx, bkgw.StatRequest{
+				Path: src,
+			})
+		},
+	)
 }
 
-func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, session *Session, src string) ([]string, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -147,34 +139,28 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: payload.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
+	return withRef(ctx,
+		session.WithLocalDirs(payload.LocalDirs),
+		payload.LLB,
+		func(ref bkgw.Reference) ([]string, error) {
+			entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
+				Path: src,
+			})
+			if err != nil {
+				return nil, err
+			}
 
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
+			paths := []string{}
+			for _, entry := range entries {
+				paths = append(paths, entry.GetPath())
+			}
 
-	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: src,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	paths := []string{}
-	for _, entry := range entries {
-		paths = append(paths, entry.GetPath())
-	}
-
-	return paths, nil
+			return paths, nil
+		},
+	)
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Directory, error) {
+func (dir *Directory) WithNewFile(ctx context.Context, session *Session, dest string, content []byte) (*Directory, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -227,9 +213,10 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}
 
 	return (&fileIDPayload{
-		LLB:      payload.LLB,
-		File:     path.Join(payload.Dir, file),
-		Platform: payload.Platform,
+		LLB:       payload.LLB,
+		File:      path.Join(payload.Dir, file),
+		Platform:  payload.Platform,
+		LocalDirs: payload.LocalDirs,
 	}).ToFile()
 }
 
@@ -298,6 +285,8 @@ func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *Fi
 }
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
+	localDirs := map[string]string{}
+
 	states := make([]llb.State, 0, len(dirs))
 	for _, fs := range dirs {
 		payload, err := fs.ID.Decode()
@@ -316,9 +305,13 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		}
 
 		states = append(states, state)
+
+		for id, dir := range payload.LocalDirs {
+			localDirs[id] = dir
+		}
 	}
 
-	return NewDirectory(ctx, llb.Merge(states), "", platform)
+	return NewDirectory(ctx, llb.Merge(states), "", platform, localDirs)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -377,4 +370,42 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 	}
 
 	return payload.ToDirectory()
+}
+
+func (dir *Directory) Export(ctx context.Context, session *Session, dest string) error {
+	srcPayload, err := dir.ID.Decode()
+	if err != nil {
+		return err
+	}
+
+	return session.WithLocalDirs(srcPayload.LocalDirs).WithExport(bkclient.ExportEntry{
+		Type:      bkclient.ExporterLocal,
+		OutputDir: dest,
+	}).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		src, err := srcPayload.State()
+		if err != nil {
+			return nil, err
+		}
+
+		var defPB *pb.Definition
+		if srcPayload.Dir != "" {
+			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
+				CopyDirContentsOnly: true,
+			}))
+
+			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			defPB = def.ToPB()
+		} else {
+			defPB = srcPayload.LLB
+		}
+
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: defPB,
+		})
+	})
 }

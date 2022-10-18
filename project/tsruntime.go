@@ -11,7 +11,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+func (p *State) tsRuntime(ctx context.Context, subpath string, session *core.Session, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
 	payload, err := p.workdir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -38,24 +38,38 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 		addSSHKnownHosts,
 	)
 
-	return core.NewDirectory(ctx,
-		llb.Merge([]llb.State{
-			llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
-				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
-			llb.Scratch().
-				File(llb.Copy(contextState, payload.Dir, "/src")),
-		}).
-			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn install'`, ctrSrcPath)), baseRunOpts).
-			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn build'`, ctrSrcPath)), baseRunOpts).
-			File(llb.Mkfile(
-				"/entrypoint",
-				0755,
-				[]byte(fmt.Sprintf(
-					"#!/bin/sh\nset -e; cd %s && node --unhandled-rejections=strict dist/index.js",
-					ctrSrcPath,
+	var dir *core.Directory
+	err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		dir, err = core.NewDirectory(ctx,
+			llb.Merge([]llb.State{
+				llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
+					Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
+				llb.Scratch().
+					File(llb.Copy(contextState, payload.Dir, "/src")),
+			}).
+				Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn install'`, ctrSrcPath)), baseRunOpts).
+				Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn build'`, ctrSrcPath)), baseRunOpts).
+				File(llb.Mkfile(
+					"/entrypoint",
+					0755,
+					[]byte(fmt.Sprintf(
+						"#!/bin/sh\nset -e; cd %s && node --unhandled-rejections=strict dist/index.js",
+						ctrSrcPath,
+					)),
 				)),
-			)),
-		"",
-		platform,
-	)
+			"",
+			platform,
+			payload.LocalDirs,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return bkgw.NewResult(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return dir, nil
 }

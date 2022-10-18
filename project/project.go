@@ -56,14 +56,14 @@ func Load(
 	configPath string,
 	cache map[string]*State,
 	cacheMu *sync.RWMutex,
-	gw bkgw.Client,
+	session *core.Session,
 ) (*State, error) {
 	file, err := workdir.File(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	cfgBytes, err := file.Contents(ctx, gw)
+	cfgBytes, err := file.Contents(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (p *State) SDK() string {
 	return p.config.SDK
 }
 
-func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (string, error) {
+func (p *State) Schema(ctx context.Context, session *core.Session, platform specs.Platform, sshAuthSockID string) (string, error) {
 	var rerr error
 	p.schemaOnce.Do(func() {
 		if p.config.SDK == "" {
@@ -109,7 +109,7 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		// TODO: remove this once all extensions migrate to code-first
 		schemaFile, err := p.workdir.File(ctx, path.Join(path.Dir(p.configPath), schemaPath))
 		if err == nil {
-			schemaBytes, err := schemaFile.Contents(ctx, gw)
+			schemaBytes, err := schemaFile.Contents(ctx, session)
 			if err == nil {
 				p.schema = string(schemaBytes)
 				return
@@ -117,7 +117,7 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		}
 
 		// otherwise go ask the extension for its schema
-		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
+		runtimeFS, err := p.Runtime(ctx, session, platform, sshAuthSockID)
 		if err != nil {
 			rerr = err
 			return
@@ -129,11 +129,15 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 			return
 		}
 
+		session = session.WithLocalDirs(fsPayload.LocalDirs)
+
 		wdPayload, err := p.workdir.ID.Decode()
 		if err != nil {
 			rerr = err
 			return
 		}
+
+		session = session.WithLocalDirs(wdPayload.LocalDirs)
 
 		fsState, err := fsPayload.State()
 		if err != nil {
@@ -158,26 +162,30 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 			rerr = err
 			return
 		}
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: outputDef.ToPB(),
+		err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+			res, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Definition: outputDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := res.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+			outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+				Filename: "/schema.graphql",
+			})
+			if err != nil {
+				return nil, err
+			}
+			p.schema = string(outputBytes)
+			return bkgw.NewResult(), nil
 		})
 		if err != nil {
 			rerr = err
 			return
 		}
-		ref, err := res.SingleRef()
-		if err != nil {
-			rerr = err
-			return
-		}
-		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: "/schema.graphql",
-		})
-		if err != nil {
-			rerr = err
-			return
-		}
-		p.schema = string(outputBytes)
 	})
 	return p.schema, rerr
 }
@@ -186,7 +194,7 @@ func (p *State) Extensions(
 	ctx context.Context,
 	cache map[string]*State,
 	cacheMu *sync.RWMutex,
-	gw bkgw.Client,
+	session *core.Session,
 	platform specs.Platform,
 	sshAuthSockID string,
 ) ([]*State, error) {
@@ -197,7 +205,7 @@ func (p *State) Extensions(
 			switch {
 			case dep.Local != nil:
 				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local.Path))
-				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw)
+				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, session)
 				if err != nil {
 					rerr = err
 					return
@@ -208,12 +216,12 @@ func (p *State) Extensions(
 				if sshAuthSockID != "" {
 					opts = append(opts, llb.MountSSHSock(sshAuthSockID))
 				}
-				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), "", platform)
+				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), "", platform, nil)
 				if err != nil {
 					rerr = err
 					return
 				}
-				depState, err := Load(ctx, gitFS, dep.Git.Path, cache, cacheMu, gw)
+				depState, err := Load(ctx, gitFS, dep.Git.Path, cache, cacheMu, session)
 				if err != nil {
 					rerr = err
 					return
@@ -230,7 +238,7 @@ func (p *State) Extensions(
 
 func (p *State) Resolvers(
 	ctx context.Context,
-	gw bkgw.Client,
+	session *core.Session,
 	platform specs.Platform,
 	sshAuthSockID string,
 ) (router.Resolvers, error) {
@@ -240,12 +248,12 @@ func (p *State) Resolvers(
 			return
 		}
 
-		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
+		runtimeFS, err := p.Runtime(ctx, session, platform, sshAuthSockID)
 		if err != nil {
 			rerr = err
 			return
 		}
-		schema, err := p.Schema(ctx, gw, platform, sshAuthSockID)
+		schema, err := p.Schema(ctx, session, platform, sshAuthSockID)
 		if err != nil {
 			rerr = err
 			return
@@ -273,14 +281,14 @@ func (p *State) Resolvers(
 			objResolver := router.ObjectResolver{}
 			p.resolvers[obj.Name.Value] = objResolver
 			for _, field := range obj.Fields {
-				objResolver[field.Name.Value] = p.resolver(runtimeFS, p.config.SDK, gw, platform)
+				objResolver[field.Name.Value] = p.resolver(runtimeFS, p.config.SDK, session, platform)
 			}
 		}
 	})
 	return p.resolvers, rerr
 }
 
-func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, platform specs.Platform) graphql.FieldResolveFn {
+func (p *State) resolver(runtimeFS *core.Directory, sdk string, session *core.Session, platform specs.Platform) graphql.FieldResolveFn {
 	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
 		pathArray := ctx.ResolveParams.Info.Path.AsArray()
 		name := fmt.Sprintf("%+v", pathArray)
@@ -303,6 +311,8 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 			return nil, err
 		}
 
+		session = session.WithLocalDirs(fsPayload.LocalDirs)
+
 		fsState, err := fsPayload.State()
 		if err != nil {
 			return nil, err
@@ -313,6 +323,8 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 		if err != nil {
 			return nil, err
 		}
+
+		session = session.WithLocalDirs(wdPayload.LocalDirs)
 
 		wdState, err := wdPayload.State()
 		if err != nil {
@@ -350,6 +362,8 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 			// TODO: it should be possible for this to be outputtable by the action; the only question
 			// is how to expose that ability in a non-confusing way, just needs more thought
 			st.AddMount(path, dirSt, llb.SourcePath(dirPayload.Dir), llb.ForceNoOutput)
+
+			session = session.WithLocalDirs(dirPayload.LocalDirs)
 		}
 
 		// Mount in the parent type if it is a Filesystem
@@ -379,6 +393,8 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 
 			// FIXME:(sipsma) not a good place to hardcode mounting this in, same as mounting in resolver args
 			st.AddMount("/mnt/.parent", fsState, llb.ForceNoOutput)
+
+			session = session.WithLocalDirs(fsPayload.LocalDirs)
 		}
 
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
@@ -387,25 +403,31 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 			return nil, err
 		}
 
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: outputDef.ToPB(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		ref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: outputFile,
-		})
-		if err != nil {
-			return nil, err
-		}
 		var output interface{}
-		if err := json.Unmarshal(outputBytes, &output); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+		err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+			res, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Definition: outputDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := res.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+			outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+				Filename: outputFile,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(outputBytes, &output); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal output: %w", err)
+			}
+			return bkgw.NewResult(), nil
+		})
+		if err != nil {
+			return nil, err
 		}
 		return output, nil
 	})

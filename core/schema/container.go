@@ -85,7 +85,7 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	return parent.From(ctx, s.gw, args.Address, s.platform)
+	return parent.From(ctx, s.rootSession, args.Address, s.platform)
 }
 
 type containerBuildArgs struct {
@@ -94,7 +94,7 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, s.platform)
+	return parent.Build(ctx, s.rootSession, &core.Directory{ID: args.Context}, args.Dockerfile, s.platform)
 }
 
 func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
@@ -115,19 +115,19 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, args.ContainerExecOpts)
+	return parent.Exec(ctx, s.rootSession, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
-	return parent.ExitCode(ctx, s.gw)
+	return parent.ExitCode(ctx, s.rootSession)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
-	return parent.MetaFile(ctx, s.gw, "stdout")
+	return parent.MetaFile(ctx, s.rootSession, "stdout")
 }
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
-	return parent.MetaFile(ctx, s.gw, "stderr")
+	return parent.MetaFile(ctx, s.rootSession, "stderr")
 }
 
 type containerWithEntrypointArgs struct {
@@ -320,7 +320,7 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, s.rootSession, args.Address)
 }
 
 type containerWithMountedFileArgs struct {
@@ -372,7 +372,7 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.gw, args.Path)
+	return parent.Directory(ctx, s.rootSession, args.Path)
 }
 
 type containerFileArgs struct {
@@ -380,7 +380,7 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.gw, args.Path)
+	return parent.File(ctx, s.rootSession, args.Path)
 }
 
 func absPath(workDir string, containerPath string) string {

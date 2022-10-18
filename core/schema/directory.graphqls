@@ -37,4 +37,7 @@ type Directory {
 
     "The difference between this directory and an another directory"
     diff(other: DirectoryID!): Directory!
+
+    "Write the contents of the directory to a path on the host"
+    export(path: String!): Boolean!
 }

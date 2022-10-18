@@ -21,9 +21,10 @@ type FileID string
 
 // fileIDPayload is the inner content of a FileID.
 type fileIDPayload struct {
-	LLB      *pb.Definition `json:"llb"`
-	File     string         `json:"file"`
-	Platform specs.Platform `json:"platform"`
+	LLB       *pb.Definition    `json:"llb"`
+	File      string            `json:"file"`
+	Platform  specs.Platform    `json:"platform"`
+	LocalDirs map[string]string `json:"local_dirs,omitempty"`
 }
 
 func (id FileID) decode() (*fileIDPayload, error) {
@@ -50,72 +51,88 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform, localDirs map[string]string) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
 	return (&fileIDPayload{
-		LLB:      def.ToPB(),
-		File:     file,
-		Platform: platform,
+		LLB:       def.ToPB(),
+		File:      file,
+		Platform:  platform,
+		LocalDirs: localDirs,
 	}).ToFile()
 }
 
-func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+func (file *File) Contents(ctx context.Context, session *Session) ([]byte, error) {
 	payload, err := file.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := gwRef(ctx, gw, payload.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	return ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: payload.File,
-	})
+	return withRef(ctx,
+		session.WithLocalDirs(payload.LocalDirs),
+		payload.LLB,
+		func(ref bkgw.Reference) ([]byte, error) {
+			return ref.ReadFile(ctx, bkgw.ReadRequest{
+				Filename: payload.File,
+			})
+		},
+	)
 }
 
 func (file *File) Secret(ctx context.Context) (*Secret, error) {
 	return NewSecretFromFile(file.ID)
 }
 
-func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
+func (file *File) Stat(ctx context.Context, session *Session) (*fstypes.Stat, error) {
 	payload, err := file.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := gwRef(ctx, gw, payload.LLB)
-	if err != nil {
-		return nil, err
-	}
-
-	return ref.StatFile(ctx, bkgw.StatRequest{
-		Path: payload.File,
-	})
+	return withRef(ctx,
+		session.WithLocalDirs(payload.LocalDirs),
+		payload.LLB,
+		func(ref bkgw.Reference) (*fstypes.Stat, error) {
+			return ref.StatFile(ctx, bkgw.StatRequest{
+				Path: payload.File,
+			})
+		},
+	)
 }
 
-func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
+func withRef[T any](ctx context.Context, session *Session, def *pb.Definition, f func(bkgw.Reference) (T, error)) (T, error) {
+	var ret T
+	err := session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Definition: def,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		if ref == nil {
+			// empty file, i.e. llb.Scratch()
+			return res, fmt.Errorf("empty reference")
+		}
+
+		ret, err = f(ref)
+		if err != nil {
+			return nil, err
+		}
+
+		return bkgw.NewResult(), nil
 	})
 	if err != nil {
-		return nil, err
+		return ret, err
 	}
 
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	if ref == nil {
-		// empty file, i.e. llb.Scratch()
-		return nil, fmt.Errorf("empty reference")
-	}
-
-	return ref, nil
+	return ret, nil
 }

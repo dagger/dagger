@@ -36,7 +36,6 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.C
 	engineCfg := &engine.Config{
 		Workdir:      cfg.Workdir,
 		ConfigPath:   cfg.ConfigPath,
-		LocalDirs:    cfg.LocalDirs,
 		NoExtensions: cfg.NoExtensions,
 	}
 	go func() {

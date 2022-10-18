@@ -11,7 +11,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
+func (p *State) goRuntime(ctx context.Context, subpath string, session *core.Session, platform specs.Platform) (*core.Directory, error) {
 	// TODO(vito): handle platform?
 	payload, err := p.workdir.ID.Decode()
 	if err != nil {
@@ -23,21 +23,35 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 		return nil, err
 	}
 
-	workdir := "/src"
-	return core.NewDirectory(ctx,
-		goBase(gw).Run(llb.Shlex(
-			fmt.Sprintf(
-				`go build -o /entrypoint -ldflags '-s -d -w' %s`,
-				filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.configPath), subpath)),
-			)),
-			llb.Dir(workdir),
-			llb.AddEnv("CGO_ENABLED", "0"),
-			llb.AddMount("/src", contextState, llb.SourcePath(payload.Dir)),
-			withGoCaching(),
-		).Root(),
-		"",
-		platform,
-	)
+	var dir *core.Directory
+	err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		workdir := "/src"
+		dir, err = core.NewDirectory(ctx,
+			goBase(gw).Run(llb.Shlex(
+				fmt.Sprintf(
+					`go build -o /entrypoint -ldflags '-s -d -w' %s`,
+					filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.configPath), subpath)),
+				)),
+				llb.Dir(workdir),
+				llb.AddEnv("CGO_ENABLED", "0"),
+				llb.AddMount("/src", contextState, llb.SourcePath(payload.Dir)),
+				withGoCaching(),
+			).Root(),
+			"",
+			platform,
+			payload.LocalDirs,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return bkgw.NewResult(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return dir, nil
 }
 
 func goBase(gw bkgw.Client) llb.State {

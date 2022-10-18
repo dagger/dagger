@@ -89,7 +89,7 @@ type loadProjectArgs struct {
 }
 
 func (s *projectSchema) loadProject(ctx *router.Context, parent *core.Directory, args loadProjectArgs) (*Project, error) {
-	projectState, err := project.Load(ctx, parent, args.ConfigPath, s.projectStates, &s.mu, s.gw)
+	projectState, err := project.Load(ctx, parent, args.ConfigPath, s.projectStates, &s.mu, s.rootSession)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (s *projectSchema) schema(ctx *router.Context, parent *Project, args any) (
 	if !ok {
 		return "", fmt.Errorf("project %q not found", parent.Name)
 	}
-	return projectState.Schema(ctx, s.gw, s.platform, s.sshAuthSockID)
+	return projectState.Schema(ctx, s.rootSession, s.platform, s.sshAuthSockID)
 }
 
 func (s *projectSchema) sdk(ctx *router.Context, parent *Project, args any) (string, error) {
@@ -130,7 +130,7 @@ func (s *projectSchema) extensions(ctx *router.Context, parent *Project, args an
 		return nil, fmt.Errorf("project %q not found", parent.Name)
 	}
 
-	dependencies, err := projectState.Extensions(ctx, s.projectStates, &s.mu, s.gw, s.platform, s.sshAuthSockID)
+	dependencies, err := projectState.Extensions(ctx, s.projectStates, &s.mu, s.rootSession, s.platform, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,12 +170,12 @@ func (s *projectSchema) getProjectState(name string) (*project.State, bool) {
 }
 
 func (s *projectSchema) projectToExecutableSchema(ctx context.Context, projectState *project.State) (router.ExecutableSchema, error) {
-	schema, err := projectState.Schema(ctx, s.gw, s.platform, s.sshAuthSockID)
+	schema, err := projectState.Schema(ctx, s.rootSession, s.platform, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
 
-	resolvers, err := projectState.Resolvers(ctx, s.gw, s.platform, s.sshAuthSockID)
+	resolvers, err := projectState.Resolvers(ctx, s.rootSession, s.platform, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (s *projectSchema) projectToExecutableSchema(ctx context.Context, projectSt
 		Resolvers: resolvers,
 	}
 
-	dependencies, err := projectState.Extensions(ctx, s.projectStates, &s.mu, s.gw, s.platform, s.sshAuthSockID)
+	dependencies, err := projectState.Extensions(ctx, s.projectStates, &s.mu, s.rootSession, s.platform, s.sshAuthSockID)
 	if err != nil {
 		return nil, err
 	}

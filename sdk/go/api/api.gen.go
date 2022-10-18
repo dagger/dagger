@@ -76,19 +76,6 @@ func (s FileID) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
-// An identifier for a directory on the host
-type HostDirectoryID string
-
-// GraphQLType returns the native GraphQL type name
-func (s HostDirectoryID) GraphQLType() string {
-	return "HostDirectoryID"
-}
-
-// GraphQLMarshal serializes the structure into GraphQL
-func (s HostDirectoryID) GraphQLMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
 // A unique identifier for a secret
 type SecretID string
 
@@ -612,6 +599,16 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	return response, q.Execute(ctx, r.c)
 }
 
+// Write the contents of the directory to a path on the host
+func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
+	q := r.q.Select("export")
+	q = q.Arg("path", path)
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieve a file at the given path
 func (r *Directory) File(path string) *File {
 	q := r.q.Select("file")
@@ -884,11 +881,11 @@ type Host struct {
 }
 
 // Access a directory on the host
-func (r *Host) Directory(id HostDirectoryID) *HostDirectory {
+func (r *Host) Directory(path string) *Directory {
 	q := r.q.Select("directory")
-	q = q.Arg("id", id)
+	q = q.Arg("path", path)
 
-	return &HostDirectory{
+	return &Directory{
 		q: q,
 		c: r.c,
 	}
@@ -906,51 +903,13 @@ func (r *Host) Variable(name string) *HostVariable {
 }
 
 // The current working directory on the host
-func (r *Host) Workdir() *HostDirectory {
+func (r *Host) Workdir() *Directory {
 	q := r.q.Select("workdir")
-
-	return &HostDirectory{
-		q: q,
-		c: r.c,
-	}
-}
-
-// A directory on the host
-type HostDirectory struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-// Read the contents of the directory
-func (r *HostDirectory) Read() *Directory {
-	q := r.q.Select("read")
 
 	return &Directory{
 		q: q,
 		c: r.c,
 	}
-}
-
-// HostDirectoryWriteOpts contains options for HostDirectory.Write
-type HostDirectoryWriteOpts struct {
-	Path string
-}
-
-// Write the contents of another directory to the directory
-func (r *HostDirectory) Write(ctx context.Context, contents DirectoryID, opts ...HostDirectoryWriteOpts) (bool, error) {
-	q := r.q.Select("write")
-	q = q.Arg("contents", contents)
-	// `path` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Path) {
-			q = q.Arg("path", opts[i].Path)
-			break
-		}
-	}
-
-	var response bool
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // An environment variable on the host environment

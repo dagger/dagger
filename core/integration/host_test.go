@@ -17,26 +17,26 @@ func TestHostWorkdir(t *testing.T) {
 	var secretRes struct {
 		Host struct {
 			Workdir struct {
-				Read struct {
-					ID core.DirectoryID
-				}
+				ID core.DirectoryID
 			}
 		}
 	}
 
-	err := testutil.Query(
+	dir := t.TempDir()
+	err := os.WriteFile(path.Join(dir, "foo"), []byte("bar"), 0600)
+	require.NoError(t, err)
+
+	err = testutil.Query(
 		`{
 			host {
 				workdir {
-					read {
-						id
-					}
+					id
 				}
 			}
-		}`, &secretRes, nil)
+		}`, &secretRes, nil, dagger.WithWorkdir(dir))
 	require.NoError(t, err)
 
-	hostRes := secretRes.Host.Workdir.Read.ID
+	hostRes := secretRes.Host.Workdir.ID
 	require.NotEmpty(t, hostRes)
 
 	var execRes struct {
@@ -69,9 +69,7 @@ func TestHostWorkdir(t *testing.T) {
 		})
 	require.NoError(t, err)
 
-	// FIXME(vito): this is brittle; it currently finds the README in the root of
-	// the repo but it'd be better to control the workdir
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents, "suite_test.go")
+	require.Equal(t, "foo\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
 func TestHostLocalDirReadWrite(t *testing.T) {
@@ -86,53 +84,48 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 	var readRes struct {
 		Host struct {
 			Directory struct {
-				Read struct {
-					ID core.DirectoryID
-				}
+				ID core.DirectoryID
 			}
 		}
 	}
 
 	err = testutil.Query(
-		`{
+		`query Test($dir: String!) {
 			host {
-				directory(id: "dir1") {
-					read {
-						id
-					}
+				directory(path: $dir) {
+					id
 				}
 			}
-		}`, &readRes, nil, dagger.WithLocalDir("dir", dir1))
+		}`, &readRes, &testutil.QueryOptions{
+			Variables: map[string]interface{}{
+				"dir": dir1,
+			},
+		})
 	require.NoError(t, err)
 
-	srcID := readRes.Host.Directory.Read.ID
+	srcID := readRes.Host.Directory.ID
 
 	var writeRes struct {
-		Host struct {
-			Directory struct {
-				Write bool
-			}
+		Directory struct {
+			Export bool
 		}
 	}
 
 	err = testutil.Query(
-		`query Test($src: DirectoryID!) {
-			host {
-				directory(id: "dir2") {
-					write(contents: $src)
-				}
+		`query Test($src: DirectoryID!, $dir2: String!) {
+			directory(id: $src) {
+				export(path: $dir2)
 			}
 		}`, &writeRes, &testutil.QueryOptions{
 			Variables: map[string]any{
-				"src": srcID,
+				"src":  srcID,
+				"dir2": dir2,
 			},
 		},
-		dagger.WithLocalDir("dir1", dir1),
-		dagger.WithLocalDir("dir2", dir2),
 	)
 	require.NoError(t, err)
 
-	require.True(t, writeRes.Host.Directory.Write)
+	require.True(t, writeRes.Directory.Export)
 
 	content, err := os.ReadFile(path.Join(dir2, "foo"))
 	require.NoError(t, err)
@@ -165,31 +158,26 @@ func TestHostLocalDirWrite(t *testing.T) {
 	srcID := contentRes.Directory.WithNewFile.ID
 
 	var writeRes struct {
-		Host struct {
-			Directory struct {
-				Write bool
-			}
+		Directory struct {
+			Export bool
 		}
 	}
 
 	err = testutil.Query(
-		`query Test($src: DirectoryID!) {
-			host {
-				directory(id: "dir1") {
-					write(contents: $src)
-				}
+		`query Test($src: DirectoryID!, $dir1: String!) {
+			directory(id: $src) {
+				export(path: $dir1)
 			}
 		}`, &writeRes, &testutil.QueryOptions{
 			Variables: map[string]any{
-				"src": srcID,
+				"src":  srcID,
+				"dir1": dir1,
 			},
 		},
-		dagger.WithLocalDir("dir1", dir1),
-		dagger.WithLocalDir("dir2", dir1),
 	)
 	require.NoError(t, err)
 
-	require.True(t, writeRes.Host.Directory.Write)
+	require.True(t, writeRes.Directory.Export)
 
 	content, err := os.ReadFile(path.Join(dir1, "foo"))
 	require.NoError(t, err)

@@ -38,7 +38,7 @@ type httpArgs struct {
 
 func (s *httpSchema) http(ctx *router.Context, _ any, args httpArgs) (*core.File, error) {
 	st := llb.HTTP(args.URL, llb.Filename("contents"))
-	f, err := core.NewFile(ctx, st, "contents", s.platform)
+	f, err := core.NewFile(ctx, st, "contents", s.platform, nil)
 	if err != nil {
 		return nil, err
 	}

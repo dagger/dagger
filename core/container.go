@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path"
 	"strconv"
 	"strings"
@@ -63,6 +64,9 @@ type containerIDPayload struct {
 
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret `json:"secret_env,omitempty"`
+
+	// Local directories used by the container or any of its mounts.
+	LocalDirs map[string]string `json:"local_dirs,omitempty"`
 }
 
 // ContainerSecret configures a secret to expose, either as an environment
@@ -144,7 +148,7 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 	return defToState(mnt.Source)
 }
 
-func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string, platform specs.Platform) (*Container, error) {
+func (container *Container) From(ctx context.Context, session *Session, addr string, platform specs.Platform) (*Container, error) {
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, err
@@ -152,20 +156,28 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	ref := reference.TagNameOnly(refName).String()
 
-	_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
-		Platform:    &platform,
-		ResolveMode: llb.ResolveModeDefault.String(),
+	var imgSpec specs.Image
+	err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+			Platform:    &platform,
+			ResolveMode: llb.ResolveModeDefault.String(),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		err = json.Unmarshal(cfgBytes, &imgSpec)
+		if err != nil {
+			return nil, err
+		}
+
+		return bkgw.NewResult(), nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	var imgSpec specs.Image
-	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-		return nil, err
-	}
-
-	dir, err := NewDirectory(ctx, llb.Image(addr), "/", platform)
+	dir, err := NewDirectory(ctx, llb.Image(addr), "/", platform, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -180,13 +192,13 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	})
 }
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, platform specs.Platform) (*Container, error) {
+func (container *Container) Build(ctx context.Context, session *Session, ctxDir *Directory, dockerfile string, platform specs.Platform) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ctxPayload, err := context.ID.Decode()
+	ctxPayload, err := ctxDir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -201,41 +213,48 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
 	}
 
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	bkref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	st, err := bkref.ToState()
-	if err != nil {
-		return nil, err
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
-
-	payload.FS = def.ToPB()
-	payload.Platform = platform
-
-	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-	if found {
-		var imgSpec specs.Image
-		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+	err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
+		if err != nil {
 			return nil, err
 		}
 
-		payload.Config = imgSpec.Config
+		bkref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		st, err := bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
+
+		def, err := st.Marshal(ctx, llb.Platform(platform))
+		if err != nil {
+			return nil, err
+		}
+
+		payload.FS = def.ToPB()
+		payload.Platform = platform
+
+		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+		if found {
+			var imgSpec specs.Image
+			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+				return nil, err
+			}
+
+			payload.Config = imgSpec.Config
+		}
+
+		return res, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	id, err := payload.Encode()
@@ -253,8 +272,9 @@ func (container *Container) FS(ctx context.Context) (*Directory, error) {
 	}
 
 	return (&directoryIDPayload{
-		LLB:      payload.FS,
-		Platform: payload.Platform,
+		LLB:       payload.FS,
+		Platform:  payload.Platform,
+		LocalDirs: payload.LocalDirs,
 	}).ToDirectory()
 }
 
@@ -286,7 +306,7 @@ func (container *Container) WithMountedDirectory(ctx context.Context, target str
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.Dir)
+	return container.withMounted(target, payload.LLB, payload.Dir, payload.LocalDirs)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
@@ -295,7 +315,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.File)
+	return container.withMounted(target, payload.LLB, payload.File, payload.LocalDirs)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory) (*Container, error) {
@@ -442,15 +462,15 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
-	dir, err := locatePath(ctx, container, dirPath, gw, NewDirectory)
+func (container *Container) Directory(ctx context.Context, session *Session, dirPath string) (*Directory, error) {
+	dir, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
 	}
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, gw, ".")
+	info, err := dir.Stat(ctx, session, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -462,15 +482,15 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
-	file, err := locatePath(ctx, container, filePath, gw, NewFile)
+func (container *Container) File(ctx context.Context, session *Session, filePath string) (*File, error) {
+	file, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
 	}
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := file.Stat(ctx, gw)
+	info, err := file.Stat(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -486,8 +506,7 @@ func locatePath[T *File | *Directory](
 	ctx context.Context,
 	container *Container,
 	containerPath string,
-	gw bkgw.Client,
-	init func(context.Context, llb.State, string, specs.Platform) (T, error),
+	init func(context.Context, llb.State, string, specs.Platform, map[string]string) (T, error),
 ) (T, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -525,7 +544,7 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
-			found, err = init(ctx, st, sub, payload.Platform)
+			found, err = init(ctx, st, sub, payload.Platform, payload.LocalDirs)
 			if err != nil {
 				return nil, err
 			}
@@ -540,7 +559,7 @@ func locatePath[T *File | *Directory](
 			return nil, err
 		}
 
-		found, err = init(ctx, st, containerPath, payload.Platform)
+		found, err = init(ctx, st, containerPath, payload.Platform, payload.LocalDirs)
 		if err != nil {
 			return nil, err
 		}
@@ -549,7 +568,7 @@ func locatePath[T *File | *Directory](
 	return found, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string) (*Container, error) {
+func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, localDirs map[string]string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -562,6 +581,14 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 		SourcePath: srcPath,
 		Target:     target,
 	})
+
+	if payload.LocalDirs == nil {
+		payload.LocalDirs = localDirs
+	} else {
+		for id, dir := range localDirs {
+			payload.LocalDirs[id] = dir
+		}
+	}
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -596,7 +623,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, session *Session, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -606,9 +633,18 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	mounts := payload.Mounts
 	platform := payload.Platform
 
-	shimSt, err := shim.Build(ctx, gw, platform)
+	var shimSt llb.State
+	err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		var err error
+		shimSt, err = shim.Build(ctx, gw, platform)
+		if err != nil {
+			return nil, fmt.Errorf("build shim: %w", err)
+		}
+
+		return bkgw.NewResult(), nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("build shim: %w", err)
+		return nil, err
 	}
 
 	args := opts.Args
@@ -761,8 +797,8 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
-	file, err := container.MetaFile(ctx, gw, "exitCode")
+func (container *Container) ExitCode(ctx context.Context, session *Session) (*int, error) {
+	file, err := container.MetaFile(ctx, session, "exitCode")
 	if err != nil {
 		return nil, err
 	}
@@ -771,7 +807,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 		return nil, nil
 	}
 
-	content, err := file.Contents(ctx, gw)
+	content, err := file.Contents(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -784,7 +820,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 	return &exitCode, nil
 }
 
-func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
+func (container *Container) MetaFile(ctx context.Context, session *Session, filePath string) (*File, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -799,16 +835,10 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform)
+	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform, payload.LocalDirs)
 }
 
-func (container *Container) Publish(
-	ctx context.Context,
-	ref string,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
-) (string, error) {
+func (container *Container) Publish(ctx context.Context, session *Session, ref string) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
@@ -835,27 +865,13 @@ func (container *Container) Publish(
 		return "", err
 	}
 
-	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
-	solveOpts.Exports = []bkclient.ExportEntry{
-		{
-			Type: bkclient.ExporterImage,
-			Attrs: map[string]string{
-				"name": ref,
-				"push": "true",
-			},
+	err = session.WithExport(bkclient.ExportEntry{
+		Type: bkclient.ExporterImage,
+		Attrs: map[string]string{
+			"name": ref,
+			"push": "true",
 		},
-	}
-
-	// Mirror events from the sub-Build into the main Build event channel.
-	// Build() will close the channel after completion so we don't want to use the main channel directly.
-	ch := make(chan *bkclient.SolveStatus)
-	go func() {
-		for event := range ch {
-			solveCh <- event
-		}
-	}()
-
-	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: stDef.ToPB(),
@@ -863,31 +879,34 @@ func (container *Container) Publish(
 		if err != nil {
 			return nil, err
 		}
+
 		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+
+		refName, err := reference.ParseNormalizedNamed(ref)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Println("MMMMETA", res)
+		imageDigest, found := res.Metadata[exptypes.ExporterImageDigestKey]
+		if found {
+			dig, err := digest.Parse(string(imageDigest))
+			if err != nil {
+				return nil, fmt.Errorf("parse digest: %w", err)
+			}
+
+			withDig, err := reference.WithDigest(refName, dig)
+			if err != nil {
+				return nil, fmt.Errorf("with digest: %w", err)
+			}
+
+			ref = withDig.String()
+		}
+
 		return res, nil
-	}, ch)
+	})
 	if err != nil {
 		return "", err
-	}
-
-	refName, err := reference.ParseNormalizedNamed(ref)
-	if err != nil {
-		return "", err
-	}
-
-	imageDigest, found := res.ExporterResponse[exptypes.ExporterImageDigestKey]
-	if found {
-		dig, err := digest.Parse(imageDigest)
-		if err != nil {
-			return "", fmt.Errorf("parse digest: %w", err)
-		}
-
-		withDig, err := reference.WithDigest(refName, dig)
-		if err != nil {
-			return "", fmt.Errorf("with digest: %w", err)
-		}
-
-		return withDig.String(), nil
 	}
 
 	return ref, nil

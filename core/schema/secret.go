@@ -48,7 +48,7 @@ func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) 
 }
 
 func (s *secretSchema) plaintext(ctx *router.Context, parent core.Secret, args any) (string, error) {
-	bytes, err := parent.Plaintext(ctx, s.gw)
+	bytes, err := parent.Plaintext(ctx, s.rootSession)
 	if err != nil {
 		return "", err
 	}

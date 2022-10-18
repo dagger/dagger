@@ -37,6 +37,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"withDirectory":    router.ToResolver(s.withDirectory),
 			"withoutDirectory": router.ToResolver(s.withoutDirectory),
 			"diff":             router.ToResolver(s.diff),
+			"export":           router.ToResolver(s.export),
 		},
 	}
 }
@@ -77,7 +78,7 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx *router.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.gw, args.Path)
+	return parent.Entries(ctx, s.rootSession, args.Path)
 }
 
 type dirFileArgs struct {
@@ -94,7 +95,7 @@ type withNewFileArgs struct {
 }
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
+	return parent.WithNewFile(ctx, s.rootSession, args.Path, []byte(args.Contents))
 }
 
 type withCopiedFileArgs struct {
@@ -128,4 +129,16 @@ type diffArgs struct {
 
 func (s *directorySchema) diff(ctx *router.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
 	return parent.Diff(ctx, &core.Directory{ID: args.Other})
+}
+
+type exportArgs struct {
+	Path string
+}
+
+func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args exportArgs) (bool, error) {
+	if err := parent.Export(ctx, s.rootSession, args.Path); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
