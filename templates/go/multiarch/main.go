@@ -50,7 +50,7 @@ func build() error {
 		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 		for _, arch := range architectures {
-			fmt.Printf("Building %s with go %s", arch, version)
+			fmt.Printf("Building %s with go %s\n", arch, version)
 
 			// Set GOARCH and GOOS
 			build := golang.WithEnvVariable("GOOS", "linux")
