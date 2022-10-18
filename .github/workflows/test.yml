@@ -32,9 +32,14 @@ jobs:
       - uses: actions/checkout@v3
       - run: go install $(pwd)/cmd/dagger/
       - run: go test -v ./...
-  go-race:
-    needs: [go] # prioritize fast feedback + don't bother if tests fail
-    name: go with -race
+      - name: build
+        uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: build:dagger
+  engine-race:
+    needs: [engine] # prioritize fast feedback + don't bother if tests fail
+    name: engine with -race
     runs-on: ubuntu-22.04-16c-64g-600gb
     steps:
       - uses: actions/setup-go@v3
