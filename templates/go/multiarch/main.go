@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
@@ -51,13 +49,14 @@ func build() error {
 
 		for _, arch := range architectures {
 			fmt.Printf("Building %s with go %s\n", arch, version)
+			outputPath := fmt.Sprintf("build/dagger_%s_%s", version, arch)
 
 			// Set GOARCH and GOOS
 			build := golang.WithEnvVariable("GOOS", "linux")
 			build = build.WithEnvVariable("GOARCH", arch)
 
 			build = build.Exec(api.ContainerExecOpts{
-				Args: []string{"go", "build", "-o", "build/dagger", "./cmd/dagger"},
+				Args: []string{"go", "build", "-o", outputPath, "./cmd/dagger"},
 			})
 
 			// Get build output from builder
@@ -67,18 +66,7 @@ func build() error {
 			}
 
 			// Write the build output to the host
-			outpath := filepath.Join(".", "build", version, arch)
-			err = os.MkdirAll(outpath, os.ModePerm)
-			if err != nil {
-				return err
-			}
-			_, err = workdir.Write(
-				ctx,
-				output,
-				api.HostDirectoryWriteOpts{
-					Path: outpath,
-				},
-			)
+			_, err = workdir.Write(ctx, output)
 			if err != nil {
 				return err
 			}
