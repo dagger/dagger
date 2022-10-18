@@ -81,8 +81,20 @@ func (Build) Dagger(ctx context.Context) error {
 		return err
 	}
 
-	builder = builder.WithMountedFile("/app/go.mod", goMod)
-	builder = builder.WithMountedFile("/app/go.sum", goSum).WithWorkdir("/app")
+	builder = builder.Exec(dagger.ContainerExecOpts{
+		Args: []string{"mkdir", "/app"},
+	})
+
+	fs := builder.FS()
+	fs = fs.WithCopiedFile("/app/go.mod", goMod)
+	fs = fs.WithCopiedFile("/app/go.sum", goSum)
+
+	modFSID, err := fs.ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	builder = builder.WithFS(modFSID).WithWorkdir("/app")
 	builder = builder.Exec(dagger.ContainerExecOpts{
 		Args: []string{"go", "mod", "download"},
 	})
