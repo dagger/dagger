@@ -234,7 +234,7 @@ func TestContainerExecStdin(t *testing.T) {
 		`{
 			container {
 				from(address: "alpine:3.16.2") {
-					exec(args: ["cat"], opts: {stdin: "hello"}) {
+					exec(args: ["cat"], stdin: "hello") {
 						stdout {
 							contents
 						}
@@ -267,7 +267,8 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					exec(
 						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
-						opts: {redirectStdout: "out", redirectStderr: "err"}
+						redirectStdout: "out",
+						redirectStderr: "err"
 					) {
 						out: file(path: "out") {
 							contents
@@ -290,7 +291,8 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					exec(
 						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
-						opts: {redirectStdout: "out", redirectStderr: "err"}
+						redirectStdout: "out",
+						redirectStderr: "err"
 					) {
 						stdout {
 							contents

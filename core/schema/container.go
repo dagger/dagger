@@ -138,13 +138,11 @@ func (s *containerSchema) fs(ctx *router.Context, parent *core.Container, args a
 }
 
 type containerExecArgs struct {
-	// Args is optional. If it is nil, we the default args for the image.
-	Args *[]string
-	Opts core.ContainerExecOpts
+	core.ContainerExecOpts
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, args.Args, args.Opts)
+	return parent.Exec(ctx, s.gw, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
