@@ -16,13 +16,17 @@ type platform struct {
 }
 
 func main() {
-	err := build()
+	repo := "https://github.com/kpenfound/greetings-api.git"
+	if len(os.Args) > 1 { // Optionally pass in a git repo as a command line argument
+		repo = os.Args[1]
+	}
+	err := build(repo)
 	if err != nil {
 		fmt.Println(err)
 	}
 }
 
-func build() error {
+func build(repoUrl string) error {
 	ctx := context.Background()
 
 	// Our build matrix
@@ -38,7 +42,7 @@ func build() error {
 	defer client.Close()
 
 	// get the projects source directory
-	repo := client.Core().Git("https://github.com/kpenfound/greetings-api.git")
+	repo := client.Core().Git(repoUrl)
 	src, err := repo.Branch("main").Tree().ID(ctx)
 	if err != nil {
 		return err
