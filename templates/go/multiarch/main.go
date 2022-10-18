@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"go.dagger.io/dagger/sdk/go/dagger"
 	"go.dagger.io/dagger/sdk/go/dagger/api"
@@ -24,28 +26,8 @@ func build() error {
 	ctx := context.Background()
 
 	// Our build matrix
-	platforms := []platform{
-		{
-			os:   "linux",
-			arch: "amd64",
-		},
-		{
-			os:   "linux",
-			arch: "arm64",
-		},
-		{
-			os:   "linux",
-			arch: "s390x",
-		},
-		{
-			os:   "darwin",
-			arch: "amd64",
-		},
-		{
-			os:   "darwin",
-			arch: "arm64",
-		},
-	}
+	oses := []string{"linux", "darwin"}
+	arches := []string{"amd64", "arm64"}
 	goVersions := []string{"1.18", "1.19"}
 
 	// create a Dagger client
@@ -56,7 +38,7 @@ func build() error {
 	defer client.Close()
 
 	// get the projects source directory
-	repo := client.Core().Git("https://github.com/dagger/dagger.git")
+	repo := client.Core().Git("https://github.com/kpenfound/greetings-api.git")
 	src, err := repo.Branch("main").Tree().ID(ctx)
 	if err != nil {
 		return err
@@ -73,32 +55,40 @@ func build() error {
 		// Mount source
 		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-		for _, platform := range platforms {
-			fmt.Printf("Building %s %s with go %s\n", platform.os, platform.arch, version)
-			outputPath := fmt.Sprintf("build/dagger_%s_%s_%s", platform.os, platform.arch, version)
+		// TODO: parallel
+		for _, goos := range oses {
+			for _, goarch := range arches {
+				fmt.Printf("Building %s %s with go %s\n", goos, goarch, version)
 
-			// Set GOARCH and GOOS
-			build := golang.WithEnvVariable("GOOS", platform.os)
-			build = build.WithEnvVariable("GOARCH", platform.arch)
+				// Write the build output to the host
+				path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
+				outpath := filepath.Join(".", path)
+				err = os.MkdirAll(outpath, os.ModePerm)
+				if err != nil {
+					return err
+				}
 
-			build = build.Exec(api.ContainerExecOpts{
-				Args: []string{"go", "build", "-o", outputPath, "./cmd/dagger"},
-			})
+				// Set GOARCH and GOOS
+				build := golang.WithEnvVariable("GOOS", goos)
+				build = build.WithEnvVariable("GOARCH", goarch)
 
-			// Get build output from builder
-			output, err := build.Directory("/src/build").ID(ctx)
-			if err != nil {
-				return err
+				build = build.Exec(api.ContainerExecOpts{
+					Args: []string{"go", "build", "-o", path},
+				})
+
+				// Get build output from builder
+				output, err := build.Directory(path).ID(ctx)
+				if err != nil {
+					return err
+				}
+
+				// Write the build output to the host
+				_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+				if err != nil {
+					return err
+				}
 			}
-
-			// Write the build output to the host
-			_, err = workdir.Write(ctx, output)
-			if err != nil {
-				return err
-			}
-
 		}
 	}
-
 	return nil
 }
