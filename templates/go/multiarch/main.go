@@ -8,6 +8,11 @@ import (
 	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
+type platform struct {
+	os   string
+	arch string
+}
+
 func main() {
 	err := build()
 	if err != nil {
@@ -19,7 +24,28 @@ func build() error {
 	ctx := context.Background()
 
 	// Our build matrix
-	architectures := []string{"amd64", "arm", "arm64", "s390x"}
+	platforms := []platform{
+		{
+			os:   "linux",
+			arch: "amd64",
+		},
+		{
+			os:   "linux",
+			arch: "arm64",
+		},
+		{
+			os:   "linux",
+			arch: "s390x",
+		},
+		{
+			os:   "darwin",
+			arch: "amd64",
+		},
+		{
+			os:   "darwin",
+			arch: "arm64",
+		},
+	}
 	goVersions := []string{"1.18", "1.19"}
 
 	// create a Dagger client
@@ -47,13 +73,13 @@ func build() error {
 		// Mount source
 		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-		for _, arch := range architectures {
-			fmt.Printf("Building %s with go %s\n", arch, version)
-			outputPath := fmt.Sprintf("build/dagger_%s_%s", version, arch)
+		for _, platform := range platforms {
+			fmt.Printf("Building %s %s with go %s\n", platform.os, platform.arch, version)
+			outputPath := fmt.Sprintf("build/dagger_%s_%s_%s", platform.os, platform.arch, version)
 
 			// Set GOARCH and GOOS
-			build := golang.WithEnvVariable("GOOS", "linux")
-			build = build.WithEnvVariable("GOARCH", arch)
+			build := golang.WithEnvVariable("GOOS", platform.os)
+			build = build.WithEnvVariable("GOARCH", platform.arch)
 
 			build = build.Exec(api.ContainerExecOpts{
 				Args: []string{"go", "build", "-o", outputPath, "./cmd/dagger"},
