@@ -19,6 +19,12 @@ func main() {
 	if err := build(repo); err != nil {
 		fmt.Println(err)
 	}
+	filepath.Walk("build", func(name string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			fmt.Println(name)
+		}
+		return nil
+	})
 }
 
 func build(repoUrl string) error {
