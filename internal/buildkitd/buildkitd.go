@@ -67,7 +67,7 @@ func startDaggerBuildkitd(ctx context.Context) (string, error) {
 		return revisionedVersion, err
 	}
 	if revisionedVersion == "" {
-		revisionedVersion, err = version.GetCommitHash()
+		revisionedVersion, err = version.GetGoMod()
 		if err != nil {
 			return revisionedVersion, err
 		}
@@ -120,9 +120,7 @@ func checkDaggerBuildkitd(ctx context.Context, version string) (string, error) {
 	// check status of dagger-buildkitd
 	host, config, err := provisioner.DaggerBuildkitdState(ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "No buildkitd container found, creating one...")
-
-		// provisioner.RemoveDaggerBuildkitd(ctx)
+		fmt.Fprintln(os.Stderr, "No dagger-buildkitd container found, creating one...")
 
 		if err := provisioner.InstallDaggerBuildkitd(ctx, version); err != nil {
 			return "", err
@@ -131,7 +129,7 @@ func checkDaggerBuildkitd(ctx context.Context, version string) (string, error) {
 	}
 
 	if config.Version != version {
-		fmt.Fprintln(os.Stderr, "Buildkitd container is out of date, updating it...")
+		fmt.Fprintln(os.Stderr, "dagger-buildkitd container is out of date, updating it...")
 
 		if err := provisioner.RemoveDaggerBuildkitd(ctx); err != nil {
 			return "", err
@@ -141,7 +139,7 @@ func checkDaggerBuildkitd(ctx context.Context, version string) (string, error) {
 		}
 	}
 	if !config.IsActive {
-		fmt.Println("dagger-buildkitd container is not running, starting it...")
+		fmt.Fprintln(os.Stderr, "dagger-buildkitd container is not running, starting it...")
 
 		if err := provisioner.StartDaggerBuildkitd(ctx); err != nil {
 			return "", err

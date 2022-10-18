@@ -1,5 +1,3 @@
-//go:build queries
-
 package queries
 
 import (
