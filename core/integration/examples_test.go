@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/dagger/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionAlpine(t *testing.T) {

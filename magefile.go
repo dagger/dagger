@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dagger/dagger/codegen/generator"
+	"github.com/dagger/dagger/sdk/go/dagger"
 	"github.com/google/go-cmp/cmp"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
-	"go.dagger.io/dagger/codegen/generator"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 type Lint mg.Namespace

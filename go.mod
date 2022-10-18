@@ -1,4 +1,4 @@
-module go.dagger.io/dagger
+module github.com/dagger/dagger
 
 go 1.18
 

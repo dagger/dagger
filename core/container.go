@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core/shim"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -19,7 +20,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	"go.dagger.io/dagger/core/shim"
 )
 
 // Container is a content-addressed container.

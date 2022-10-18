@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestHTTP(t *testing.T) {

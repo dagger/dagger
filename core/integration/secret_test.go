@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/sdk/go/dagger"
+	"github.com/dagger/dagger/sdk/go/dagger/api"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/testutil"
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 func TestSecretEnvFromFile(t *testing.T) {

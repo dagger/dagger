@@ -3,10 +3,10 @@ package core
 import (
 	"testing"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func newCache(t *testing.T) core.CacheID {

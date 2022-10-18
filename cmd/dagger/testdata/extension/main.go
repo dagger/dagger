@@ -1,7 +1,7 @@
 package main
 
 import (
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"github.com/dagger/dagger/sdk/go/dagger"
 )
 
 type Test struct{}

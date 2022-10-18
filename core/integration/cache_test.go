@@ -3,9 +3,9 @@ package core
 import (
 	"testing"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestCacheVolume(t *testing.T) {
