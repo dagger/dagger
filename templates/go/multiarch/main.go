@@ -64,7 +64,7 @@ func build(repoUrl string) error {
 
 		for _, goos := range oses {
 			for _, goarch := range arches {
-				ctx, golang, workdir, goos, goarch, version := ctx, golang, workdir, goos, goarch, version
+				goos, goarch, version := goos, goarch, version
 				g.Go(func() error {
 					return buildOsArch(ctx, golang, workdir, goos, goarch, version)
 				})
