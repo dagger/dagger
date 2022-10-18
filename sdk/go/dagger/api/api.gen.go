@@ -1571,3 +1571,12 @@ func (r *Secret) GraphQLMarshal(ctx context.Context) (any, error) {
 	}
 	return map[string]any{"id": id}, nil
 }
+
+// The value of this secret
+func (r *Secret) Plaintext(ctx context.Context) (string, error) {
+	q := r.q.Select("plaintext")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
