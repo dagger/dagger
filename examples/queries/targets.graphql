@@ -1,17 +1,23 @@
-query build {
-  core {
-    git(remote: "github.com/dagger/dagger") {
-      dockerbuild {
-        id
+query broken {
+  git(url: "github.com/dagger/dagger") {
+    branch(name: "main") {
+      tree {
+        file(path: "BOGUS.md") {
+          id
+        }
       }
     }
   }
 }
 
-query test {
-  core {
-    git(remote: "github.com/dagger/dagger") {
-      file(path: "README.md")
+query working {
+  git(url: "github.com/dagger/dagger") {
+    branch(name: "main") {
+      tree {
+        file(path: "README.md") {
+          id
+        }
+      }
     }
   }
 }

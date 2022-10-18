@@ -1,7 +1,11 @@
 {
-  core {
-    git(remote: "github.com/dagger/dagger") {
-      file(path: "README.md")
+  git(url: "github.com/dagger/dagger") {
+    branch(name: "main") {
+      tree {
+        file(path: "README.md") {
+          contents
+        }
+      }
     }
   }
 }

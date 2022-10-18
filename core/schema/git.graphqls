@@ -22,8 +22,3 @@ type GitRef {
     "The filesystem tree at this ref"
     tree: Directory!
 }
-
-# Compat with old API
-extend type Core {
-    git(remote: String!, ref: String): Filesystem! @deprecated(reason: "use top-level 'query { git }'")
-}

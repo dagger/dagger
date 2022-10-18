@@ -1,10 +1,10 @@
 {
-  core {
-    image(ref: "alpine") {
-      exec(input: { args: ["apk", "add", "curl"] }) {
-        fs {
-          exec(input: { args: ["curl", "https://dagger.io/"] }) {
-            stdout(lines: 1)
+  container {
+    from(address: "alpine") {
+      exec(args: ["apk", "add", "curl"]) {
+        exec(args: ["curl", "https://dagger.io/"]) {
+          stdout {
+            contents
           }
         }
       }
