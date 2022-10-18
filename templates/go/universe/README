@@ -1,7 +1,0 @@
-Run `dagger do build --log-format plain --no-cache` to see the tests fire every time
-
-Run `dagger do build --log-format plain` to see caching work
-
-Run `dagger do build` for more quiet output
-
-Run `dagger do build test` to run sub-actions
