@@ -22,9 +22,12 @@
     "amplitude-js": "^8.21.1",
     "clsx": "^1.2.1",
     "docusaurus-plugin-image-zoom": "^0.1.1",
+    "docusaurus-plugin-includes": "^1.1.4",
     "docusaurus-plugin-sass": "^0.2.2",
     "docusaurus2-dotenv": "^1.4.0",
     "file-loader": "^6.2.0",
+    "mdx-mermaid": "^1.3.0",
+    "mermaid": "^9.1.7",
     "nprogress": "^0.2.0",
     "npx": "^10.2.2",
     "posthog-docusaurus": "^1.0.5",
@@ -47,6 +50,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "devDependencies": {}
+  }
 }

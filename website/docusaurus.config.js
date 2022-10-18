@@ -1,5 +1,6 @@
 const path = require("path");
 const remarkCodeImport = require("remark-code-import");
+const mdxMermaid = require("mdx-mermaid");
 
 /** @type {import('@docusaurus/types').DocusaurusConfig} */
 module.exports = {
@@ -103,7 +104,7 @@ module.exports = {
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
           routeBasePath: "/",
-          remarkPlugins: [remarkCodeImport],
+          remarkPlugins: [remarkCodeImport, mdxMermaid]
         },
         gtag: {
           trackingID: "G-RDXG80F635",
@@ -123,5 +124,6 @@ module.exports = {
     "docusaurus-plugin-image-zoom",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
     path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
+    "docusaurus-plugin-includes"
   ],
 };
