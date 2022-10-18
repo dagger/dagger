@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/project"
-	"github.com/dagger/dagger/sdk/go/dagger"
 	"github.com/spf13/cobra"
 )
 

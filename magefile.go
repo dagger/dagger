@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator"
-	"github.com/dagger/dagger/sdk/go/dagger"
 	"github.com/google/go-cmp/cmp"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 )
@@ -42,7 +42,7 @@ func (Lint) Codegen(ctx context.Context) error {
 		Host().
 		Workdir().
 		Read().
-		File("sdk/go/dagger/api/api.gen.go").
+		File("sdk/go/api/api.gen.go").
 		Contents(ctx)
 	if err != nil {
 		return err

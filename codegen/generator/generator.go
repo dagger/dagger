@@ -7,9 +7,9 @@ import (
 	"go/format"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator/templates"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/sdk/go/dagger"
 )
 
 type Config struct {

@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/dagger/dagger/sdk/go/dagger"
-	"github.com/dagger/dagger/sdk/go/dagger/api"
+	"dagger.io/dagger"
+	"dagger.io/dagger/api"
 )
 
 type Test struct{}

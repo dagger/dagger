@@ -5,9 +5,9 @@ import (
 	"path"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
 )
 
