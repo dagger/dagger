@@ -38,6 +38,11 @@ jobs:
         with:
           version: latest
           args: lint:codegen
+      - name: build
+        uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: build:dagger
   markdown:
     runs-on: ubuntu-latest
     steps:
