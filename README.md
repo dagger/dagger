@@ -1,33 +1,24 @@
 # Dagger
 
-Dagger is a portable devkit for CICD.
+Dagger is a CI/CD engine that is **programmable** and **container-native**.
 
-Using Dagger, software teams can develop powerful CICD pipelines with minimal effort, then run them anywhere. Benefits include:
+* **Programmable**: develop your CI/CD pipelines as code, in the same programming language as your application.
+* **Container-native**: Dagger executes your pipelines entirely as [standard OCI containers](https://opencontainers.org), so the same pipeline can run on your local machine, a CI runner, a dedicated server, or any container hosting service. Other benefits of container-native pipelines include superior caching; cross-language instrumentation; compatibility with the massive Docker ecosystem; and more.
 
-* Unify dev and CI environments. Write your pipeline once, Dagger will run it the same everywhere.
-* Reduce CI lock-in. No more re-writing everything from scratch every 6 months.
+## SDK roadmap
 
-<img src="https://user-images.githubusercontent.com/216487/122216381-328a3500-ce61-11eb-907f-d2b6f66b3b10.png" width="400" />
-
-## How does it work?
-
-1. Automate actions with your favorite programming language. No proprietary SDK: just regular shell, Go, Javascript, Python...
-2. Reuse actions from a large and growing catalog.
-3. Tie it all together in CUE - a revolutionary declarative language invented at Google. No more YAML hell!
-4. Test and debug instantly on your local machine. No more waiting 10min to catch a typo.
-5. Run your pipelines on any Docker-compatible runtime, for maximum portability. This means most modern CI runners can run Dagger out of the box.
+| SDK | Status | Documentation |
+| -- | -- | -- |
+| [CUE](https://cuelang.org) | Available |
+| [Go](https://golang.org) | In development |
+| [NodeJS](https://nodejs.dev) | In development |
+| [Python](https://python.org) | In development |
+| [Bash](https://www.gnu.org/software/bash/) | In development |
 
 ## Getting Started
 
-[Documentation website](https://docs.dagger.io/)
+[Documentation website](https://devel.docs.dagger.io/)
 
-## Releases
-
-We release a new version every Tuesday. You can find out more about our latest release [here](https://github.com/dagger/dagger/releases).
-
-## Useful links
+## Community
 
 * [Join the Dagger community on Discord](https://discord.gg/ufnyBtc8uY)
-* [Install from a binary release](https://docs.dagger.io/install)
-* [Build from source](https://docs.dagger.io/1001/install/#option-4-install-from-source)
-* [How to contribute](https://docs.dagger.io/1227/contributing/)
