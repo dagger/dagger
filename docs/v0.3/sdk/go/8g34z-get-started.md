@@ -13,8 +13,7 @@ Dagger exposes its functionality via a low-level language-agnostic API framework
 This tutorial teaches you the basics of using Dagger in Go. You will learn how to:
 
 - Install the Go SDK
-- Create a Go CI/CD tool that runs and tests a Go application using the Go SDK
-- Improve the Go CI/CD tool to build and publish an application image to Docker Hub
+- Create a Go CI tool that builds a Go application with multiple architectures and Go versions using the Dagger Go SDK
 
 ## Requirements
 
@@ -22,361 +21,376 @@ This tutorial assumes that:
 
 - You have a basic understanding of the Go programming language. If not, [read the Go tutorial](https://go.dev/doc/tutorial/getting-started).
 - You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
-- You have a Go application with accompanying tests. If not, [create a sample Go application](#appendix-create-a-sample-go-application).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
-- You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
+
+## Step 1: Create a Go CI/CD tool
+
+Begin creating a Go CI tool that uses the Dagger SDK to build your application. In this step, create the main function that the tool will run.
+
+1. Create a new Go module where the tool will be developed.
+
+  ```shell
+  mkdir multibuild
+  cd multibuild
+  go mod init multibuild
+  ```
+
+1. Create a new file named `main.go` and add the following code to it. Save the file once done.
 
 :::note
-This tutorial creates a Go CI/CD tool using the Dagger Go SDK. It uses this tool to build, test and publish an existing Go application. If you do not already have a Go application, follow the instructions in the [Appendix](#appendix-create-a-sample-go-application) and create a sample Go application before proceeding.
+If you would rather copy the complete `main.go` right away, it can be found in the [Appendix](#appendix-completed-code-sample)
 :::
 
-## Step 1: Install the Go SDK
+  ```go
+  package main
+
+  import (
+    "context"
+    "fmt"
+    "os"
+    "path/filepath"
+
+    "go.dagger.io/dagger/sdk/go/dagger"
+    "go.dagger.io/dagger/sdk/go/dagger/api"
+    "golang.org/x/sync/errgroup"
+  )
+
+  func main() {
+    if len(os.Args) < 2 {
+      fmt.Println("must pass in a git repo to build")
+      os.Exit(1)
+    }
+    repo := os.Args[1]
+    if err := build(repo); err != nil {
+      fmt.Println(err)
+    }
+  }
+
+  func build(repoUrl string) error {
+    fmt.Printf("Building %s\n", repoUrl)
+    return nil
+  }
+  ```
+
+  This tool imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument, and `build()`, which is where the pipeline will be defined in the next steps.
+
+  The `main()` function accepts a git repo url as an argument. This is a Go repo that the tool will build in the following steps.
+
+1. Install the Dagger Go SDK
 
 {@include: ../../partials/_install-sdk-go.md}
 
-## Step 2: Create a Go CI/CD tool
-
-Begin creating a Go CI/CD tool that uses the Dagger SDK to build, test and publish your application. In this step, the tool will perform only one task: run the application.
-
-1. Create a new subdirectory named `ci` to hold the Go tool.
+1. Try the tool by executing the command below:
 
   ```shell
-  mkdir ci
+  go build
+  ./multibuild https://github.com/kpenfound/greetings-api.git
   ```
 
-1. Create a new file named `ci/main.go` and add the following code to it. Save the file once done.
+The tool will output `Building https://github.com/kpenfound/greetings-api.git`, although it isn't actually building anything yet.
+
+## Step 2: Build a git repo with the Dagger Go SDK
+
+Now that the basic structure of `main.go` is setup, it is time to actually build the provided git repo.
+
+1. Update the file `main.go` and fill in `build()` function to it as shown below. Save the file once done.
 
   ```go
-  package main
+  func build(repoUrl string) error {
+    fmt.Printf("Building %s\n", repoUrl)
 
-  import (
-    "context"
-    "fmt"
-    "os"
-    "go.dagger.io/dagger/engine"
-    "go.dagger.io/dagger/sdk/go/dagger/api"
-  )
-
-  const (
-    golangImage    = "golang:latest"
-  )
-
-  func main() {
+    // 1. Get a context
     ctx := context.Background()
-
-    task := os.Args[1]
-
-    if len(os.Args) != 2 {
-      fmt.Println("Please pass a task as an argument")
-      os.Exit(1)
+    // 2. Initialize dagger client
+    client, err := dagger.Connect(ctx)
+    if err != nil {
+      return err
     }
-
-    switch task {
-    case "run":
-      run(ctx)
-    default:
-      fmt.Printf("Unknown task %s\n", task)
-      os.Exit(1)
+    defer client.Close()
+    // 3. Clone the repo using Dagger
+    repo := client.Core().Git(repoUrl)
+    src, err := repo.Branch("main").Tree().ID(ctx)
+    if err != nil {
+      return err
     }
-  }
-
-  func run(ctx context.Context) {
-    if err := engine.Start(ctx, &engine.Config{}, func(ctx engine.Context) error {
-      core := api.New(ctx.Client)
-
-      // get working directory on host
-      src, err := core.Host().Workdir().Read().ID(ctx)
-      if err != nil {
-        return err
-      }
-
-      // initialize new container from image
-      golang := core.Container().From(golangImage)
-
-      // mount working directory to /src
-      golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
-
-      // execute command
-      cmd := golang.Exec(api.ContainerExecOpts{
-        Args: []string{"go", "run", "main.go"},
-      })
-
-      // get command output
-      out, err := cmd.Stdout().Contents(ctx)
-      if err != nil {
-        return err
-      }
-
-      // print output to console
-      fmt.Println(out)
-
-      return nil
-    }); err != nil {
-      panic(err)
-    }
+    // 4. Load the golang image
+    golang := client.Core().Container().From("golang:latest")
+    // 5. Mount the cloned repo to the golang image
+    golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+    // 6. Do the go build
+    golang = golang.Exec(api.ContainerExecOpts{
+      Args: []string{"go", "build", "-o", "build/"},
+    })
+    return nil
   }
   ```
 
-  This tool imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to execute individual steps in the pipeline, and `run()`, which uses the Go SDK to mount the Go application's source code in a container and run it.
-
-  The `run()` function is the main workhorse, so let's step through it in detail.
-    - It begins by starting the Dagger engine and create a new API query object with the `New()` function.
-    - It uses the `Host().Workdir().Read()` function to read the contents of the current working directory on the host. This is the directory containing the application source code. The `Read()` function returns a new `Directory` struct, and the `ID()` function then returns an identifier for the directory. This identifier is stored in the `src` variable.
-    - It initializes a new container from a base image with the `Container().From()` function and returns a new `Container` struct. In this case, the base image is the `golang:latest` image.
-    - It mounts the working directory on the host in the container using the `WithMountedDirectory()` function of the `Container`.
-      - The first argument to this function is the target path in the container (here, `/src`).
-      - The second argument is the directory to be mounted (here, the reference previously created in the `src` variable).
-      It also changes the current working directory to the `/src` path of the container using the `WithWorkdir()` function and returns a revised `Container` with the results of these operations.
-    - It uses the `Exec()` function to execute a command in the container - in this case, the command `go run main.go`. The command and arguments are specified as a Go struct. The `Exec()` function returns a revised `Container` containing the results of command execution.
-    - It uses the `Container.Stdout()` function to retrieve the output stream of the last command as a `File` and, from there, the actual content using the `File.Contents()` function. The output is then printed to the console.
-
-1. Try the `run` step of this pipeline by executing the command below from the application directory:
-
-  ```shell
-  go run ci/main.go run
-  ```
-
-The Go tool goes to work, downloading the container image, mounting the working directory and executing the `go run` command. At the end of the process, the output `Hello` is displayed, as shown below:
-
-![Run output](./get-started-run-output.png)
-
-## Step 3: Test the application
-
-Most CI/CD pipelines include a test step, so add this to the Go tool next.
-
-1. Update the file `ci/main.go` and add a new `test()` function to it as shown below. Save the file once done.
-
-  ```go
-  package main
-
-  import (
-    "context"
-    "fmt"
-    "os"
-    "go.dagger.io/dagger/engine"
-    "go.dagger.io/dagger/sdk/go/dagger/api"
-  )
-
-  const (
-    golangImage    = "golang:latest"
-  )
-
-  func main() {
-    ctx := context.Background()
-
-    task := os.Args[1]
-
-    if len(os.Args) != 2 {
-      fmt.Println("Please pass a task as an argument")
-      os.Exit(1)
-    }
-
-    switch task {
-    case "run":
-      run(ctx)
-    case "test":
-      test(ctx)
-    default:
-      fmt.Printf("Unknown task %s\n", task)
-      os.Exit(1)
-    }
-  }
-
-  func run(ctx context.Context) {
-    // ...
-  }
-
-  func test(ctx context.Context) {
-    if err := engine.Start(ctx, &engine.Config{}, func(ctx engine.Context) error {
-      core := api.New(ctx.Client)
-
-      // get working directory on host
-      src, err := core.Host().Workdir().Read().ID(ctx)
-      if err != nil {
-        return err
-      }
-
-      // initialize new container from image
-      golang := core.Container().From(golangImage)
-
-      // mount working directory to /src
-      golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
-
-      // execute command
-      cmd := golang.Exec(api.ContainerExecOpts{
-        Args: []string{"go", "test"},
-      })
-
-      // get command output
-      out, err := cmd.Stdout().Contents(ctx)
-      if err != nil {
-        return err
-      }
-
-      // print output to console
-      fmt.Println(out)
-
-      return nil
-    }); err != nil {
-      panic(err)
-    }
-  }
-
-  ```
-
-  Most of the new `test()` function will be familiar to you from [Step 2](#step-2-run-the-application). The only difference lies in the arguments to the `Exec()` function, which in this case runs the command `go test`. The resulting output stream is captured and printed to the console as before.
+This new code will connect to a dagger engine, clone the given git repo, load a golang container image, and build the repo.
+- initialize a `context.Background` for the client to use.
+- get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
+- clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
+- load the latest golang image with `client.Core().Container().From("golang:latest")`.
+- mount the cloned repo with `.WithMountedDirectory("/src", src)` and set the container's working directory using `.WithWorkdir("/src")`.
+- execute the build command, `go build -o build/` by calling `Container.Exec()`.
 
 1. Try the `test` step of the pipeline by executing the command below from the application directory:
 
   ```shell
-  go run ci/main.go test
+  go build
+  ./multibuild https://github.com/kpenfound/greetings-api.git
   ```
 
-## Step 4: Build and publish the application image
+  In the output of this command, you will see Dagger cloning the git repo and running go build on it.
 
-Once your application has passed its tests, the typical next step in a CI/CD pipeline is to build and publish an image of it to a container registry. Follow the steps below to add this functionality to your Go tool:
+## Step 3: Copy the build output to the host machine
 
-1. Update the file `ci/main.go` and add a new `publish()` function and step to it as shown below. Replace the `DOCKER-USERNAME` placeholder with your Docker Hub username. Save the file once done.
+Once the tool has completed the build, it should put that build artifact somewhere to be used. In this step, Dagger will copy the build artifact to the host machine after the build is complete.
+
+1. Update the file `main.go` and some new steps to the `build()` function as shown below. Save the file once done.
 
   ```go
-  package main
+  func build(repoUrl string) error {
+    ...
+    // 1. reference to the current working directory on the host
+    workdir := client.Core().Host().Workdir() // <-- New
 
-  import (
-    "context"
-    "fmt"
-    "os"
-    "go.dagger.io/dagger/engine"
-    "go.dagger.io/dagger/sdk/go/dagger/api"
-  )
+    golang := client.Core().Container().From("golang:latest")
+    golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-  const (
-    golangImage    = "golang:latest"
-    baseImage      = "alpine:latest"
-    publishAddress = "docker.io/DOCKER-USERNAME/hello-container:latest"
-  )
-
-  func main() {
-    ctx := context.Background()
-
-    task := os.Args[1]
-
-    if len(os.Args) != 2 {
-      fmt.Println("Please pass a task as an argument")
-      os.Exit(1)
+    // 2. Create the output path on the host for the build
+    // -->
+    path := "build/"
+    outpath := filepath.Join(".", path)
+    err = os.MkdirAll(outpath, os.ModePerm)
+    if err != nil {
+      return err
     }
+    // <-- New
 
-    switch task {
-    case "run":
-      run(ctx)
-    case "test":
-      test(ctx)
-    case "publish":
-      publish(ctx)
-    default:
-      fmt.Printf("Unknown task %s\n", task)
-      os.Exit(1)
+    golang = golang.Exec(api.ContainerExecOpts{
+      Args: []string{"go", "build", "-o", path},
+    })
+
+    // 3. Get build output from builder
+    // -->
+    output, err := golang.Directory(path).ID(ctx)
+    if err != nil {
+      return err
     }
-  }
+    // <-- New
 
-  func run(ctx context.Context) {
-    // ...
-  }
-
-  func test(ctx context.Context) {
-    // ...
-  }
-
-  func publish(ctx context.Context) {
-    if err := engine.Start(ctx, &engine.Config{}, func(ctx engine.Context) error {
-      core := api.New(ctx.Client)
-
-      // get working directory on host
-      src, err := core.Host().Workdir().Read().ID(ctx)
-      if err != nil {
-        return err
-      }
-
-      // initialize new container from image
-      builder := core.Container().From(golangImage)
-
-      // mount working directory to /src
-      builder = builder.WithMountedDirectory("/src", src).WithWorkdir("/src")
-
-      // execute build command
-      builder = builder.Exec(api.ContainerExecOpts{
-        Args: []string{"go", "build", "-o", "hello"},
-      })
-
-      // get built binary file
-      helloBin, err := builder.File("/src/hello").ID(ctx)
-      if err != nil {
-        return err
-      }
-
-      // initialize new container for publishing from image
-      base := core.Container().From(baseImage)
-
-      // mount binary file at container path
-      base = base.WithMountedFile("/tmp/hello", helloBin)
-
-      // copy mounted file to container filesystem
-      base = base.Exec(api.ContainerExecOpts{
-        Args: []string{"cp", "/tmp/hello", "/bin/hello"},
-      })
-
-      // set container entrypoint
-      base = base.WithEntrypoint([]string{"/bin/hello"})
-
-      // publish image
-      addr, err := base.Publish(ctx, publishAddress)
-      if err != nil {
-        return err
-      }
-
-      fmt.Println(addr)
-
-      return nil
-    }); err != nil {
-      panic(err)
+    // 4. Write the build output to the host
+    // -->
+    _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+    if err != nil {
+      return err
     }
+    // <-- New
+
+    return nil
   }
   ```
 
-  The `publish()` function differs from the ones shown previously in that it uses two container images:
-    - It uses the `golang:latest` image to compile the Go application source code into a binary file.
-    - It uses the `alpine:latest` image to produce an optimized container image with the compiled binary file.
+With this new code, the tool will now write the build artifact to the host after the build is complete.
+- using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
+- in native Go, create a directory where the build artifact will be output
+- create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
+- write the directory to the host with `HostDirectory.Write()`
 
-  This `publish()` function is more complex than the ones shown earlier, so let's step through it in detail.
-
-  In the first stage:
-    - It begins by starting the Dagger engine and create a new API query object with the `New()` function.
-    - It uses the `Host().Workdir().Read().ID()` function to obtain a reference to the current working directory on the host.
-    - It initializes a new container from the `golang:latest` image with the `Container().From()` function and mounts the host working directory to the `/src` path in the container using the `WithMountedDirectory()` and `WithWorkdir()` functions.
-    - It uses the `Exec()` function to execute the `go build -o hello` compilation instruction. The compiled file is saved to the container path `/src/hello`. The `Exec()` function returns a revised `Container` containing the results of command execution.
-    - It uses the `Container.File().ID()` function to retrieve an identifier for the compiled file. This identifier is stored in the `helloBin` variable.
-
-  In the second stage:
-    - It initializes a new container from the `alpine:latest` image with the `Container().From()` function and returns a new `Container`.
-    - It uses the `withMountedFile()` function to mount the compiled binary at the `/tmp/hello` path of the container using the identifier from the `helloBin` variable.
-    - It uses the `Exec()` function to execute the command `cp /tmp/hello /bin/hello`, which copies the mounted file to the `/bin/hello` path of the container. The `Exec()` function returns a revised `Container` containing the updated filesystem.
-    - It uses the `withEntrypoint()` function to set the container entrypoint to `/bin/hello`.
-    - It uses the `Publish()` function to publish the container to the specified Docker Hub registry.
-
-1. Before trying the `publish()` function, sign in to your Docker Hub account on the host, as Dagger will use the same credentials when pushing the final image to Docker Hub.
+1. Now try out the updated build function, running the tool exactly as before
 
   ```shell
-  docker login
+  go build
+  ./multibuild https://github.com/kpenfound/greetings-api.git
+  tree build
   ```
 
-1. Try the `publish` step of the pipeline by executing the command below from the application directory:
+In the output of the multibuild, you'll see the build happening the same as it did before, but then Dagger will write the build artifact to `build/`.
+
+The output of the `tree` command will show you the built artifact on your machine at `build/greetings-api`.
+
+## Step 4: Build for multiple OS and architectures
+
+Now that the tool can build a Go application and output the build result, it should target multiple OS and architecture combinations. Many applications need to be distributed to users on a variety of systems.
+
+1. Update the file `main.go` and some new steps to the `build()` function as shown below. Save the file once done.
+
+```go
+func build(repoUrl string) error {
+	...
+
+	// 1. Define our build matrix
+	// -->
+	oses := []string{"linux", "darwin"}
+	arches := []string{"amd64", "arm64"}
+	// <-- New
+
+	...
+
+	// 2. Loop through the os and arch matrices
+	for _, goos := range oses {
+		for _, goarch := range arches {
+			// 3. Create a directory for each os and arch
+			path := fmt.Sprintf("build/%s/%s/", goos, goarch) // <-- Changed
+			outpath := filepath.Join(".", path)
+
+      ...
+
+			// 4. Set GOARCH and GOOS in the build environment
+			// -->
+			build := golang.WithEnvVariable("GOOS", goos) // <-- Uses new reference for the container, "build". Updated references below
+			build = build.WithEnvVariable("GOARCH", goarch)
+			// <--
+			build = build.Exec(api.ContainerExecOpts{
+				Args: []string{"go", "build", "-o", path},
+			})
+
+			...
+		}
+	}
+	return nil
+}
+```
+
+Now the tool is doing the build just as before, except for multiple OS and architectures
+- define the build matrix. In this case darwin and linux on amd64 and arm64.
+- iterate through each OS and architecture combination
+- create an output directory that includes the OS and architecture so the build outputs can be differentiated
+- set GOOS and GOARCH in the go build environment
+
+1. Now try out the updated build function, running the tool exactly as before
 
   ```shell
-  go run ci/main.go publish
+  go build
+  ./multibuild https://github.com/kpenfound/greetings-api.git
+  tree build
   ```
 
-You will see the newly-published image in your Docker Hub account, as shown below:
+In the output of the multibuild, you'll see the build happening the same as it did before, but 4 times, building each OS and archictecture combination.
 
-![Docker Hub listing](./get-started-docker-hub.png)
+The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<darwin|linux>/<amd64|arm64>/greetings-api`.
+
+## Step 5. Build for multiple Go versions
+
+Another common operation that might happen in a CI environment is targeting multiple Go versions. In this step the tool will be updated to build the git repo with multiple Go versions.
+
+1. Update the file `main.go` and some new steps to the `build()` function as shown below. Save the file once done.
+
+```go
+func build(repoUrl string) error {
+	...
+	// 1. Define multiple Go versions
+	goVersions := []string{"1.18", "1.19"}
+
+	// 2. Iterate through the Go versions
+	for _, version := range goVersions {
+		// 3. Determine the golang image to use
+		imageTag := fmt.Sprintf("golang:%s", version)
+		golang := client.Core().Container().From(api.ContainerAddress(imageTag)) // <-- Updated with the formatted image tag
+
+		for _, goos := range oses {
+			for _, goarch := range arches {
+				// 4. Update the output artifact path
+				path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch) // <-- Updated with version
+				outpath := filepath.Join(".", path)
+				
+        ...
+			}
+		}
+	}
+	return nil
+}
+```
+
+Similar to the previous step, another layer to the build matrix is added, this time with Go versions
+- define the Go versions to use: 1.18 and 1.19
+- iterate though these versions at the top level
+- using string templating, determine the golang image tag to use for the Go version
+- use the Go version in the build artifact output path to differentiate build outputs
+
+1. Now try out the updated build function, running the tool exactly as before
+
+  ```shell
+  go build
+  ./multibuild https://github.com/kpenfound/greetings-api.git
+  tree build
+  ```
+
+In the output of the multibuild, you'll see the build happening the same as it did before, but 8 times, building each Go version, OS, and archictecture combination.
+
+The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<go version>/<darwin|linux>/<amd64|arm64>/greetings-api`.
+
+## Step 6: Run builds in parallel
+
+Running all of these matrix combinations is very useful, but adds to the total amount of time our pipeline takes to complete. Because these individual builds do not rely on eachother, they can be run in parallel and save time overall.
+
+1. Update the file `main.go` and some new steps to the `build()` function as shown below. Save the file once done.
+
+```go
+func build(repoUrl string) error {
+	...
+	// 1. Create an errgroup
+	g, ctx := errgroup.WithContext(ctx)
+
+	...
+
+	for _, version := range goVersions {
+		...
+
+		for _, goos := range oses {
+			for _, goarch := range arches {
+				// 2. Run version/os/arch build in errgroup
+				goos, goarch, version := goos, goarch, version
+				g.Go(func() error {
+					path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
+					outpath := filepath.Join(".", path)
+					err = os.MkdirAll(outpath, os.ModePerm)
+					if err != nil {
+						return err
+					}
+
+					build := golang.WithEnvVariable("GOOS", goos)
+					build = build.WithEnvVariable("GOARCH", goarch)
+					build = build.Exec(api.ContainerExecOpts{
+						Args: []string{"go", "build", "-o", path},
+					})
+
+					output, err := build.Directory(path).ID(ctx)
+					if err != nil {
+						return err
+					}
+
+					_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+			}
+		}
+	}
+	// 3. Wait for all builds to complete
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+```
+
+Now the build steps are the same, except they're executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup)
+- create an errgroup to manage the build processes
+- run the same build steps as before, except within a an errgroup anonymous function to parallelize the process
+- wait for all of the build processes to complete before returning
+
+1. Now try out the updated build function, running the tool exactly as before
+
+  ```shell
+  go build
+  ./multibuild https://github.com/kpenfound/greetings-api.git
+  tree build
+  ```
+
+  The output of multibuild will show all of the builds happening at the same time, and the total time will be reduced. The output of `tree` will show the same output artifacts as before
 
 :::tip
 As the previous three steps illustrate, the Dagger Go SDK allows you to author your pipeline entirely in Go. This means that you don't need to spend time learning a new language, and you immediately benefit from all the powerful programming capabilities and packages available Go. For instance, this tutorial used native Go variables, conditionals and error handling throughout together with Go's testing package and built-in test framework.
@@ -384,69 +398,104 @@ As the previous three steps illustrate, the Dagger Go SDK allows you to author y
 
 ## Conclusion
 
-This tutorial introduced you to the Dagger Go SDK. It explained how to install the SDK and use it to create a Go CI/CD tool. It also provided code samples and explanations of how to run, test, build and publish an application with the Go SDK.
+This tutorial introduced you to the Dagger Go SDK. It explained how to install the SDK and use it to create a Go CI tool. It also provided code samples and explanations of how to build an application with the Go SDK.
 
 Use the following resources to learn more about the Dagger Go SDK:
 
 - [SDK Reference](https://pkg.go.dev/go.dagger.io/dagger@v0.3.0-alpha.1)
 - [FAQ](./xfgss-faq.md)
 
-## Appendix: Create a sample Go application
+## Appendix: Completed code sample
 
-Create a sample Go application as follows:
+`main.go`:
+```go
+package main
 
-1. Create and change into a new directory for the application.
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 
-  ```bash
-  mkdir myapp
-  cd myapp
-  ```
+	"go.dagger.io/dagger/sdk/go/dagger"
+	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"golang.org/x/sync/errgroup"
+)
 
-1. Declare the module path for your application.
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("must pass in a git repo to build")
+		os.Exit(1)
+	}
+	repo := os.Args[1]
+	if err := build(repo); err != nil {
+		fmt.Println(err)
+	}
+}
 
-  ```bash
-  go mod init myapp
-  ```
+func build(repoUrl string) error {
+	fmt.Printf("Building %s\n", repoUrl)
 
-1. Create a new file named `main.go` and add the following code to it. Save the file once done.
+	ctx := context.Background()
+	g, ctx := errgroup.WithContext(ctx)
 
-  ```go
-  package main
+	oses := []string{"linux", "darwin"}
+	arches := []string{"amd64", "arm64"}
+	goVersions := []string{"1.18", "1.19"}
 
-  import "fmt"
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
-  func main() {
-      say := greeting()
-      fmt.Println(say)
-  }
+	repo := client.Core().Git(repoUrl)
+	src, err := repo.Branch("main").Tree().ID(ctx)
+	if err != nil {
+		return err
+	}
 
-  func greeting() string {
-      return "Hello"
-  }
-  ```
+	workdir := client.Core().Host().Workdir()
 
-1. Create a new test file named `main_test.go` and add the following code to it. Save the file once done.
+	for _, version := range goVersions {
+		imageTag := fmt.Sprintf("golang:%s", version)
+		golang := client.Core().Container().From(api.ContainerAddress(imageTag))
+		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-  ```go
-  package main
+		for _, goos := range oses {
+			for _, goarch := range arches {
+				goos, goarch, version := goos, goarch, version
+				g.Go(func() error {
+					path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
+					outpath := filepath.Join(".", path)
+					err = os.MkdirAll(outpath, os.ModePerm)
+					if err != nil {
+						return err
+					}
 
-  import (
-    "testing"
+					build := golang.WithEnvVariable("GOOS", goos)
+					build = build.WithEnvVariable("GOARCH", goarch)
+					build = build.Exec(api.ContainerExecOpts{
+						Args: []string{"go", "build", "-o", path},
+					})
 
-    "gotest.tools/v3/assert"
-  )
+					output, err := build.Directory(path).ID(ctx)
+					if err != nil {
+						return err
+					}
 
-  func TestGreeting(t *testing.T) {
-    g := greeting()
-    should := "Hello"
-    assert.Equal(t, should, g)
-  }
-  ```
-
-1. Check that the application works by executing the command below.
-
-  ```bash
-  go run main.go
-  ```
-
-  The application displays the string `Hello`.
+					_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+			}
+		}
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+```
