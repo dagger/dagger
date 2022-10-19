@@ -61,9 +61,9 @@ end
 lib -..-> engine -..-> oci -..-> A1 & B1 & C1
 ```
 
-1. Your Go program imports the Dagger go library
-2. Using the go library, your program opens a new session to a Dagger Engine: either by connecting to an existing engine, or by provisioning one on-the-fly.
-3. Using the go library, your program prepares API requests describing pipelines to run, then sends them to the engine. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future. For now, the go library is the only documented API available to your program.
+1. Your Go program imports the Dagger Go library
+2. Using the Go library, your program opens a new session to a Dagger Engine: either by connecting to an existing engine, or by provisioning one on-the-fly.
+3. Using the Go library, your program prepares API requests describing pipelines to run, then sends them to the engine. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future. For now, the Go library is the only documented API available to your program.
 4. When the engine receives an API request, it computes a DAG of low-level operations required to compute the result, and starts processing operations concurrently.
 5. When all operations in the pipeline have been resolved, the engine sends the pipeline result back to your program.
 6. Your program may use the pipeline's result as input to new pipelines.
