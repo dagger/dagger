@@ -3,6 +3,7 @@ package dagger
 
 import (
 	"context"
+	"io"
 	"os"
 
 	"dagger.io/dagger/api"
@@ -58,6 +59,13 @@ func WithConfigPath(path string) ClientOpt {
 func WithNoExtensions() ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.NoExtensions = true
+	})
+}
+
+// WithProgressWriter sets the progress writer
+func WithProgressWriter(writer io.Writer) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ProgressWriter = writer
 	})
 }
 

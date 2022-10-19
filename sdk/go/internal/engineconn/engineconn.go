@@ -3,6 +3,7 @@ package engineconn
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -31,10 +32,11 @@ func Get(host string) (EngineConn, error) {
 }
 
 type Config struct {
-	Workdir      string
-	ConfigPath   string
-	LocalDirs    map[string]string
-	NoExtensions bool
+	Workdir        string
+	ConfigPath     string
+	LocalDirs      map[string]string
+	NoExtensions   bool
+	ProgressWriter io.Writer
 }
 
 // Register registers new connectionhelper for scheme
