@@ -88,14 +88,5 @@ module.exports = {
       },
     ],
   ],
-  plugins: [
-    "docusaurus-plugin-sass",
-    "docusaurus2-dotenv", 
-    [ 
-      "posthog-docusaurus",
-      {
-        apiKey: "phc_8Onnz5zyGA8mMEia4ALiaAetunwfeoHiekU0l5ND6tg"
-      }
-    ]
-  ]
+  plugins: ["docusaurus-plugin-sass", "docusaurus2-dotenv"],
 };
