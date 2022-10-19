@@ -123,13 +123,15 @@ func TestConnectOption(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(1 * time.Second)
 
-	want := `#1 resolve image config for docker.io/library/alpine:3.16.1
-#1 DONE [0-9.]+s
+	wants := []string{
+		"#1 resolve image config for docker.io/library/alpine:3.16.1",
+		"#1 DONE [0-9.]+s",
+		"#2 docker-image://docker.io/library/alpine:3.16.1",
+		"#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done",
+		"#2 (DONE [0-9.]+s|CACHED)",
+	}
 
-#2 docker-image://docker.io/library/alpine:3.16.1
-#2 resolve docker.io/library/alpine:3.16.1
-#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done
-#2 (DONE [0-9.]+s|CACHED)
-`
-	require.Regexp(t, want, b.String())
+	for _, want := range wants {
+		require.Regexp(t, want, b.String())
+	}
 }
