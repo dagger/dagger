@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path"
 	"testing"
@@ -72,7 +73,43 @@ func TestHostWorkdir(t *testing.T) {
 	require.Equal(t, "foo\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
 }
 
-func TestHostLocalDirReadWrite(t *testing.T) {
+func TestHostDirectoryRelative(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(path.Join(dir, "some-file"), []byte("hello"), 0600))
+	require.NoError(t, os.MkdirAll(path.Join(dir, "some-dir"), 0755))
+	require.NoError(t, os.WriteFile(path.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0600))
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run(". is same as workdir", func(t *testing.T) {
+		wdID1, err := c.Core().Host().Directory(".").ID(ctx)
+		require.NoError(t, err)
+
+		wdID2, err := c.Core().Host().Workdir().ID(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, wdID1, wdID2)
+	})
+
+	t.Run("./foo is relative to workdir", func(t *testing.T) {
+		contents, err := c.Core().Host().Directory("some-dir").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sub-file"}, contents)
+	})
+
+	t.Run("../ does not allow escaping", func(t *testing.T) {
+		_, err := c.Core().Host().Directory("../").ID(ctx)
+		require.Error(t, err)
+
+		// don't reveal the workdir location
+		require.NotContains(t, err, dir)
+	})
+}
+
+func TestHostDirectoryReadWrite(t *testing.T) {
 	t.Parallel()
 
 	dir1 := t.TempDir()
@@ -128,58 +165,6 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 	require.True(t, writeRes.Directory.Export)
 
 	content, err := os.ReadFile(path.Join(dir2, "foo"))
-	require.NoError(t, err)
-	require.Equal(t, "bar", string(content))
-}
-
-func TestHostLocalDirWrite(t *testing.T) {
-	t.Parallel()
-
-	dir1 := t.TempDir()
-
-	var contentRes struct {
-		Directory struct {
-			WithNewFile struct {
-				ID core.DirectoryID
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "foo", contents: "bar") {
-					id
-				}
-			}
-		}`, &contentRes, nil)
-	require.NoError(t, err)
-
-	srcID := contentRes.Directory.WithNewFile.ID
-
-	var writeRes struct {
-		Directory struct {
-			Export bool
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($src: DirectoryID!, $dir1: String!) {
-			directory(id: $src) {
-				export(path: $dir1)
-			}
-		}`, &writeRes, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src":  srcID,
-				"dir1": dir1,
-			},
-		},
-	)
-	require.NoError(t, err)
-
-	require.True(t, writeRes.Directory.Export)
-
-	content, err := os.ReadFile(path.Join(dir1, "foo"))
 	require.NoError(t, err)
 	require.Equal(t, "bar", string(content))
 }

@@ -21,10 +21,10 @@ type FileID string
 
 // fileIDPayload is the inner content of a FileID.
 type fileIDPayload struct {
-	LLB       *pb.Definition    `json:"llb"`
-	File      string            `json:"file"`
-	Platform  specs.Platform    `json:"platform"`
-	LocalDirs map[string]string `json:"local_dirs,omitempty"`
+	LLB       *pb.Definition `json:"llb"`
+	File      string         `json:"file"`
+	Platform  specs.Platform `json:"platform"`
+	LocalDirs []string       `json:"local_dirs,omitempty"`
 }
 
 func (id FileID) decode() (*fileIDPayload, error) {
@@ -51,7 +51,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform, localDirs map[string]string) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform, localDirs []string) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err

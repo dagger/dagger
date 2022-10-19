@@ -29,7 +29,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&containerSchema{base},
 		&cacheSchema{base},
 		&secretSchema{base},
-		&hostSchema{base, params.WorkdirPath},
+		&hostSchema{base, core.NewHost(params.WorkdirPath)},
 		&projectSchema{
 			baseSchema:    base,
 			projectStates: make(map[string]*project.State),

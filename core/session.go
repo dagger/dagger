@@ -27,14 +27,14 @@ func NewSession(bkClient *bkclient.Client, solveOpts bkclient.SolveOpt, solveCh 
 	}
 }
 
-func (s *Session) WithLocalDirs(localDirs map[string]string) *Session {
+func (s *Session) WithLocalDirs(localDirs []string) *Session {
 	cp := *s
 	cpDirs := map[string]string{}
 	for id, dir := range s.solveOpts.LocalDirs {
 		cpDirs[id] = dir
 	}
-	for id, dir := range localDirs {
-		cpDirs[id] = dir
+	for _, dir := range localDirs {
+		cpDirs[dir] = dir
 	}
 	cp.solveOpts.LocalDirs = cpDirs
 	return &cp

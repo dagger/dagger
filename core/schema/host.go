@@ -5,12 +5,12 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
-	"github.com/moby/buildkit/client/llb"
 )
 
 type hostSchema struct {
 	*baseSchema
-	workdirPath string
+
+	host *core.Host
 }
 
 var _ router.ExecutableSchema = &hostSchema{}
@@ -45,9 +45,7 @@ func (s *hostSchema) Dependencies() []router.ExecutableSchema {
 }
 
 func (s *hostSchema) workdir(ctx *router.Context, parent any, args any) (*core.Directory, error) {
-	return s.directory(ctx, parent, hostDirectoryArgs{
-		Path: s.workdirPath,
-	})
+	return s.host.Directory(ctx, ".", s.platform)
 }
 
 type hostVariableArgs struct {
@@ -73,21 +71,5 @@ type hostDirectoryArgs struct {
 }
 
 func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.Directory, error) {
-	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
-	// which makes it unable to reused, which in turn creates cache invalidations
-	// TODO: this should be optional, the above issue can also be avoided w/ readonly
-	// mount when possible
-	// st := llb.Scratch().File(llb.Copy(llb.Local(
-	// 	id,
-	// 	// TODO: better shared key hint?
-	// 	llb.SharedKeyHint(id),
-	// 	// FIXME: should not be hardcoded
-	// 	llb.ExcludePatterns([]string{"**/node_modules"}),
-	// ), "/", "/"))
-
-	return core.NewDirectory(ctx, llb.Local(args.Path), "", s.platform, map[string]string{
-		// TODO: hash ID?
-		// TODO: validate relative paths?
-		args.Path: args.Path,
-	})
+	return s.host.Directory(ctx, args.Path, s.platform)
 }

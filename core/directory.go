@@ -24,10 +24,10 @@ type DirectoryID string
 
 // directoryIDPayload is the inner content of a DirectoryID.
 type directoryIDPayload struct {
-	LLB       *pb.Definition    `json:"llb"`
-	Dir       string            `json:"dir"`
-	Platform  specs.Platform    `json:"platform"`
-	LocalDirs map[string]string `json:"local_dirs,omitempty"`
+	LLB       *pb.Definition `json:"llb"`
+	Dir       string         `json:"dir"`
+	Platform  specs.Platform `json:"platform"`
+	LocalDirs []string       `json:"local_dirs,omitempty"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -76,7 +76,7 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform, localDirs map[string]string) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform, localDirs []string) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:       cwd,
 		Platform:  platform,
@@ -285,7 +285,7 @@ func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *Fi
 }
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
-	localDirs := map[string]string{}
+	localDirs := []string{}
 
 	states := make([]llb.State, 0, len(dirs))
 	for _, fs := range dirs {
@@ -306,12 +306,10 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 
 		states = append(states, state)
 
-		for id, dir := range payload.LocalDirs {
-			localDirs[id] = dir
-		}
+		localDirs = append(localDirs, payload.LocalDirs...)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states), "", platform, localDirs)
+	return NewDirectory(ctx, llb.Merge(states), "", platform, uniq(localDirs))
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {

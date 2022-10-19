@@ -66,7 +66,7 @@ type containerIDPayload struct {
 	Secrets []ContainerSecret `json:"secret_env,omitempty"`
 
 	// Local directories used by the container or any of its mounts.
-	LocalDirs map[string]string `json:"local_dirs,omitempty"`
+	LocalDirs []string `json:"local_dirs,omitempty"`
 }
 
 // ContainerSecret configures a secret to expose, either as an environment
@@ -506,7 +506,7 @@ func locatePath[T *File | *Directory](
 	ctx context.Context,
 	container *Container,
 	containerPath string,
-	init func(context.Context, llb.State, string, specs.Platform, map[string]string) (T, error),
+	init func(context.Context, llb.State, string, specs.Platform, []string) (T, error),
 ) (T, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -568,7 +568,7 @@ func locatePath[T *File | *Directory](
 	return found, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, localDirs map[string]string) (*Container, error) {
+func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, localDirs []string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -582,13 +582,7 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 		Target:     target,
 	})
 
-	if payload.LocalDirs == nil {
-		payload.LocalDirs = localDirs
-	} else {
-		for id, dir := range localDirs {
-			payload.LocalDirs[id] = dir
-		}
-	}
+	payload.LocalDirs = uniq(append(payload.LocalDirs, localDirs...))
 
 	id, err := payload.Encode()
 	if err != nil {

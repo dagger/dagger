@@ -64,3 +64,17 @@ func defToState(def *pb.Definition) (llb.State, error) {
 
 	return llb.NewState(defop), nil
 }
+
+func uniq[T comparable](vals []T) []T {
+	seen := map[T]struct{}{}
+	uniq := []T{}
+
+	for _, val := range vals {
+		if _, ok := seen[val]; !ok {
+			uniq = append(uniq, val)
+			seen[val] = struct{}{}
+		}
+	}
+
+	return uniq
+}

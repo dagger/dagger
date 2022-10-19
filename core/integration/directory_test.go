@@ -1,6 +1,8 @@
 package core
 
 import (
+	"os"
+	"path"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -429,4 +431,56 @@ func TestDirectoryDiff(t *testing.T) {
 
 		require.Empty(t, res.Directory.Diff.Entries)
 	*/
+}
+
+func TestDirectoryExport(t *testing.T) {
+	t.Parallel()
+
+	dir1 := t.TempDir()
+
+	var contentRes struct {
+		Directory struct {
+			WithNewFile struct {
+				ID core.DirectoryID
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "foo", contents: "bar") {
+					id
+				}
+			}
+		}`, &contentRes, nil)
+	require.NoError(t, err)
+
+	srcID := contentRes.Directory.WithNewFile.ID
+
+	var writeRes struct {
+		Directory struct {
+			Export bool
+		}
+	}
+
+	err = testutil.Query(
+		`query Test($src: DirectoryID!, $dir1: String!) {
+			directory(id: $src) {
+				export(path: $dir1)
+			}
+		}`, &writeRes, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"src":  srcID,
+				"dir1": dir1,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	require.True(t, writeRes.Directory.Export)
+
+	content, err := os.ReadFile(path.Join(dir1, "foo"))
+	require.NoError(t, err)
+	require.Equal(t, "bar", string(content))
 }
