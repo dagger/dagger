@@ -14,7 +14,7 @@ Currently the Go SDK consists of:
 
 * A Go library: `dagger.io/dagger`
 * A CLI (optional)
-* Sample apps
+* Sample applications
 * This documentation
 
 In practice, everything is optional except the Go library.
