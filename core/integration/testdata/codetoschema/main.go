@@ -71,7 +71,7 @@ func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
 	return s.Str + "-" + str, nil
 }
 
-func (Test) ReturnDirectory(ctx dagger.Context, ref api.ContainerAddress) (*api.Directory, error) {
+func (Test) ReturnDirectory(ctx dagger.Context, ref string) (*api.Directory, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err

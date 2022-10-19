@@ -16,6 +16,7 @@ import (
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"go.dagger.io/dagger/core/shim"
@@ -25,9 +26,6 @@ import (
 type Container struct {
 	ID ContainerID `json:"id"`
 }
-
-// ContainerAddress is a container image address.
-type ContainerAddress string
 
 // ContainerID is an opaque value representing a content-addressed container.
 type ContainerID string
@@ -806,11 +804,11 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 
 func (container *Container) Publish(
 	ctx context.Context,
-	ref ContainerAddress,
+	ref string,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
-) (ContainerAddress, error) {
+) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
@@ -842,7 +840,7 @@ func (container *Container) Publish(
 		{
 			Type: bkclient.ExporterImage,
 			Attrs: map[string]string{
-				"name": string(ref),
+				"name": ref,
 				"push": "true",
 			},
 		},
@@ -857,7 +855,7 @@ func (container *Container) Publish(
 		}
 	}()
 
-	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: stDef.ToPB(),
@@ -870,6 +868,26 @@ func (container *Container) Publish(
 	}, ch)
 	if err != nil {
 		return "", err
+	}
+
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return "", err
+	}
+
+	imageDigest, found := res.ExporterResponse[exptypes.ExporterImageDigestKey]
+	if found {
+		dig, err := digest.Parse(imageDigest)
+		if err != nil {
+			return "", fmt.Errorf("parse digest: %w", err)
+		}
+
+		withDig, err := reference.WithDigest(refName, dig)
+		if err != nil {
+			return "", fmt.Errorf("with digest: %w", err)
+		}
+
+		return withDig.String(), nil
 	}
 
 	return ref, nil
