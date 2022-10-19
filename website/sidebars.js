@@ -43,7 +43,11 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
-        "v0.2/getting-started/install",
+        {
+          type: "doc",
+          label: "Installation",
+          id: "v0.2/getting-started/install",
+        },
       ],
     },
     {
