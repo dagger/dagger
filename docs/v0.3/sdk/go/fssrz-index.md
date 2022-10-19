@@ -6,10 +6,6 @@ slug: /fssrz/sdk-go
 
 <div class="status-badge">Technical Preview</div>
 
-## What is Dagger?
-
-{@include: ../../partials/_what-is-dagger.md}
-
 ## What is the Dagger Go SDK?
 
 The Dagger Go SDK contains everything you need to develop CI/CD pipelines in Go, and run them on any OCI-compatible container runtime.
