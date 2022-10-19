@@ -1,12 +1,13 @@
 import sys
+import asyncio
 
 from dagger import Engine
 from gql.dsl import DSLQuery, DSLSchema, dsl_gql
 from graphql.language import print_ast
 
 
-def main(msg: str):
-    with Engine() as session:
+async def main(msg: str):
+    async with Engine() as session:
         assert session.client.schema is not None
         ds = DSLSchema(session.client.schema)
 
@@ -25,11 +26,11 @@ def main(msg: str):
             )
         ))
 
-        result = session.execute(query)
+        result = await session.execute(query)
 
         print(f"query = {print_ast(query)}")
         print(result['container']['from']['exec']['exec']['stdout']['contents'])
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "Hey there!")
+    asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else "Hey there!"))
