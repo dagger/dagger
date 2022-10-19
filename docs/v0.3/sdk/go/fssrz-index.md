@@ -31,7 +31,7 @@ The Dagger Go SDK may be a good fit if you are...
 
 The Dagger GO SDK may *not* be a good fit if you are...
 
-* A developers who doesn't know Go, and is not interested in learning it
+* A developer who doesn't know Go, and is not interested in learning it
 * A "designated devops person" who doesn't think of themselves as a developer - nothing makes you happier than a battle-hardened shell script.
 * Someone who loves writing YAML all day, thank you very much
 * A container skeptic: the less containers are involved, the happier you are.
