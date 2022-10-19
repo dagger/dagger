@@ -26,9 +26,6 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
-// ContainerAddress is a container image address.
-type ContainerAddress string
-
 // ContainerID is an opaque value representing a content-addressed container.
 type ContainerID string
 
@@ -806,24 +803,24 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 
 func (container *Container) Publish(
 	ctx context.Context,
-	ref ContainerAddress,
+	ref string,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
-) (ContainerAddress, error) {
+) (bool, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
 	st, err := payload.FSState()
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
 	stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
 	cfgBytes, err := json.Marshal(specs.Image{
@@ -834,7 +831,7 @@ func (container *Container) Publish(
 		Config:       payload.Config,
 	})
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
 	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
@@ -869,10 +866,10 @@ func (container *Container) Publish(
 		return res, nil
 	}, ch)
 	if err != nil {
-		return "", err
+		return false, err
 	}
 
-	return ref, nil
+	return true, nil
 }
 
 type ContainerExecOpts struct {

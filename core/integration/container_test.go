@@ -2419,10 +2419,10 @@ func TestContainerPublish(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	testRef := core.ContainerAddress("127.0.0.1:5000/testimagepush:latest")
+	testRef := "127.0.0.1:5000/testimagepush:latest"
 	err = c.Do(ctx,
 		&dagger.Request{
-			Query: `query TestImagePush($ref: ContainerAddress!) {
+			Query: `query TestImagePush($ref: String!) {
 					container {
 						from(address: "alpine:3.16.2") {
 							publish(address: $ref)
@@ -2450,7 +2450,7 @@ func TestContainerPublish(t *testing.T) {
 	}{}
 	err = c.Do(ctx,
 		&dagger.Request{
-			Query: `query TestImagePull($ref: ContainerAddress!) {
+			Query: `query TestImagePull($ref: String!) {
 					container {
 						from(address: $ref) {
 							fs {

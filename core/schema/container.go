@@ -26,8 +26,7 @@ func (s *containerSchema) Schema() string {
 
 func (s *containerSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
-		"ContainerID":      stringResolver(core.ContainerID("")),
-		"ContainerAddress": stringResolver(core.ContainerAddress("")),
+		"ContainerID": stringResolver(core.ContainerID("")),
 		"Query": router.ObjectResolver{
 			"container": router.ToResolver(s.container),
 		},
@@ -82,7 +81,7 @@ func (s *containerSchema) container(ctx *router.Context, parent any, args contai
 }
 
 type containerFromArgs struct {
-	Address core.ContainerAddress
+	Address string
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
@@ -317,10 +316,10 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core
 }
 
 type containerPublishArgs struct {
-	Address core.ContainerAddress
+	Address string
 }
 
-func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (core.ContainerAddress, error) {
+func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (bool, error) {
 	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
 }
 

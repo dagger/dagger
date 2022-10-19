@@ -38,25 +38,6 @@ func (s CacheID) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
-// The address (also known as "ref") of a container published as an OCI image.
-//
-// Examples:
-//   - "alpine"
-//   - "index.docker.io/alpine"
-//   - "index.docker.io/alpine:latest"
-//   - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
-type ContainerAddress string
-
-// GraphQLType returns the native GraphQL type name
-func (s ContainerAddress) GraphQLType() string {
-	return "ContainerAddress"
-}
-
-// GraphQLMarshal serializes the structure into GraphQL
-func (s ContainerAddress) GraphQLMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
@@ -297,7 +278,7 @@ func (r *Container) File(path string) *File {
 }
 
 // Initialize this container from the base image published at the given address
-func (r *Container) From(address ContainerAddress) *Container {
+func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
 
@@ -350,11 +331,11 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 }
 
 // Publish this container as a new image
-func (r *Container) Publish(ctx context.Context, address ContainerAddress) (ContainerAddress, error) {
+func (r *Container) Publish(ctx context.Context, address string) (bool, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
 
-	var response ContainerAddress
+	var response bool
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }

@@ -11,17 +11,6 @@ scalar ContainerID
 
 
 """
-The address (also known as "ref") of a container published as an OCI image.
-
-Examples:
-        - "alpine"
-        - "index.docker.io/alpine"
-        - "index.docker.io/alpine:latest"
-        - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
-"""
-scalar ContainerAddress
-
-"""
 An OCI-compatible container, also known as a docker container
 """
 type Container {
@@ -29,7 +18,7 @@ type Container {
     id: ContainerID!
 
     "Initialize this container from the base image published at the given address"
-    from(address: ContainerAddress!): Container!
+    from(address: String!): Container!
 
     "Initialize this container from a Dockerfile build"
     build(context: DirectoryID!, dockerfile: String): Container!
@@ -141,7 +130,7 @@ type Container {
     # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
     #    This may actually be a good candidate for a mutation. To be discussed.
     "Publish this container as a new image"
-    publish(address: ContainerAddress!): ContainerAddress!
+    publish(address: String!): Boolean!
 }
 
 """
