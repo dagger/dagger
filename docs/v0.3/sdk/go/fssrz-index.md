@@ -23,7 +23,7 @@ In practice, everything is optional except the Go library.
 
 The Dagger Go SDK may be a good fit if you are...
 
-* A Go developer wishing their CI pipelines were Go instead of YAML
+* A Go developer wishing your CI pipelines were Go instead of YAML
 * A developer who needs CI/CD, and is looking for an excuse to learn Go
 * Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful
 * A platform engineer writing custom Go tooling, with the goal unifying continuous delivery across organizational silos
