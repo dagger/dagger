@@ -839,7 +839,7 @@ func (container *Container) Publish(
 		{
 			Type: bkclient.ExporterImage,
 			Attrs: map[string]string{
-				"name": string(ref),
+				"name": ref,
 				"push": "true",
 			},
 		},

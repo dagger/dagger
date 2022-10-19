@@ -85,7 +85,7 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	return parent.From(ctx, s.gw, string(args.Address), s.platform)
+	return parent.From(ctx, s.gw, args.Address, s.platform)
 }
 
 type containerBuildArgs struct {
