@@ -155,6 +155,29 @@ type Container struct {
 	c graphql.Client
 }
 
+// ContainerBuildOpts contains options for Container.Build
+type ContainerBuildOpts struct {
+	Dockerfile string
+}
+
+// Initialize this container from a Dockerfile build
+func (r *Container) Build(context DirectoryID, opts ...ContainerBuildOpts) *Container {
+	q := r.q.Select("build")
+	q = q.Arg("context", context)
+	// `dockerfile` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
+			q = q.Arg("dockerfile", opts[i].Dockerfile)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Default arguments for future commands
 func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 	q := r.q.Select("defaultArgs")

@@ -71,6 +71,67 @@ func TestContainerFrom(t *testing.T) {
 	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
 }
 
+func TestContainerBuild(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	envImpl := c.Core().Directory().
+		WithNewFile("main.go", api.DirectoryWithNewFileOpts{
+			Contents: `package main
+import "fmt"
+import "os"
+func main() {
+	for _, env := range os.Environ() {
+		fmt.Println(env)
+	}
+}`,
+		})
+
+	t.Run("default Dockerfile location", func(t *testing.T) {
+		srcID, err := envImpl.
+			WithNewFile("Dockerfile", api.DirectoryWithNewFileOpts{
+				Contents: `FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`,
+			}).
+			ID(ctx)
+		require.NoError(t, err)
+
+		env, err := c.Core().Container().Build(srcID).Exec().Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
+	t.Run("custom Dockerfile location", func(t *testing.T) {
+		srcID, err := envImpl.
+			WithNewFile("subdir/Dockerfile.whee", api.DirectoryWithNewFileOpts{
+				Contents: `FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`,
+			}).
+			ID(ctx)
+		require.NoError(t, err)
+
+		env, err := c.Core().Container().Build(srcID, api.ContainerBuildOpts{
+			Dockerfile: "subdir/Dockerfile.whee",
+		}).Exec().Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+}
+
 func TestContainerWithFS(t *testing.T) {
 	t.Parallel()
 

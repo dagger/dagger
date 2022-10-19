@@ -8,9 +8,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/platforms"
+	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
+	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -141,6 +144,108 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 	}
 
 	return defToState(mnt.Source)
+}
+
+func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string, platform specs.Platform) (*Container, error) {
+	refName, err := reference.ParseNormalizedNamed(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	ref := reference.TagNameOnly(refName).String()
+
+	_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+		Platform:    &platform,
+		ResolveMode: llb.ResolveModeDefault.String(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var imgSpec specs.Image
+	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+		return nil, err
+	}
+
+	dir, err := NewDirectory(ctx, llb.Image(addr), "/", platform)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := container.WithFS(ctx, dir, platform)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr.UpdateImageConfig(ctx, func(specs.ImageConfig) specs.ImageConfig {
+		return imgSpec.Config
+	})
+}
+
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, platform specs.Platform) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	ctxPayload, err := context.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	opts := map[string]string{
+		"platform": platforms.Format(platform),
+		"filename": dockerfile,
+	}
+
+	inputs := map[string]*pb.Definition{
+		dockerfilebuilder.DefaultLocalNameContext:    ctxPayload.LLB,
+		dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
+	}
+
+	res, err := gw.Solve(ctx, bkgw.SolveRequest{
+		Frontend:       "dockerfile.v0",
+		FrontendOpt:    opts,
+		FrontendInputs: inputs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	bkref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := bkref.ToState()
+	if err != nil {
+		return nil, err
+	}
+
+	def, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	payload.FS = def.ToPB()
+	payload.Platform = platform
+
+	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+	if found {
+		var imgSpec specs.Image
+		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+			return nil, err
+		}
+
+		payload.Config = imgSpec.Config
+	}
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
 }
 
 func (container *Container) FS(ctx context.Context) (*Directory, error) {

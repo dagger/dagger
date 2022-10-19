@@ -1,13 +1,10 @@
 package schema
 
 import (
-	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
 
-	"github.com/docker/distribution/reference"
-	"github.com/moby/buildkit/client/llb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.dagger.io/dagger/core"
 	"go.dagger.io/dagger/router"
@@ -36,6 +33,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		},
 		"Container": router.ObjectResolver{
 			"from":                 router.ToResolver(s.from),
+			"build":                router.ToResolver(s.build),
 			"fs":                   router.ToResolver(s.fs),
 			"withFS":               router.ToResolver(s.withFS),
 			"file":                 router.ToResolver(s.file),
@@ -88,40 +86,16 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	addr := string(args.Address)
+	return parent.From(ctx, s.gw, string(args.Address), s.platform)
+}
 
-	refName, err := reference.ParseNormalizedNamed(addr)
-	if err != nil {
-		return nil, err
-	}
+type containerBuildArgs struct {
+	Context    core.DirectoryID
+	Dockerfile string
+}
 
-	ref := reference.TagNameOnly(refName).String()
-
-	_, cfgBytes, err := s.gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
-		Platform:    &s.platform,
-		ResolveMode: llb.ResolveModeDefault.String(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var imgSpec specs.Image
-	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-		return nil, err
-	}
-
-	dir, err := core.NewDirectory(ctx, llb.Image(addr), "/", s.platform)
-	if err != nil {
-		return nil, err
-	}
-	ctr, err := parent.WithFS(ctx, dir, s.platform)
-	if err != nil {
-		return nil, err
-	}
-
-	return ctr.UpdateImageConfig(ctx, func(specs.ImageConfig) specs.ImageConfig {
-		return imgSpec.Config
-	})
+func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
+	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, s.platform)
 }
 
 func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
