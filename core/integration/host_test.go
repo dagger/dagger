@@ -74,7 +74,7 @@ func TestHostDirectoryRelative(t *testing.T) {
 	})
 
 	t.Run("./foo is relative to workdir", func(t *testing.T) {
-		contents, err := c.Core().Host().Directory("some-dir").Contents(ctx)
+		contents, err := c.Core().Host().Directory("some-dir").Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sub-file"}, contents)
 	})

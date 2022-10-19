@@ -39,7 +39,7 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, session *core.Ses
 	)
 
 	var dir *core.Directory
-	err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		dir, err = core.NewDirectory(ctx,
 			llb.Merge([]llb.State{
 				llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).

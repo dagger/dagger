@@ -30,7 +30,7 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, session *
 
 	var dir *core.Directory
 
-	err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Frontend:       "dockerfile.v0",
 			FrontendOpt:    opts,

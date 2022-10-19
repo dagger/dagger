@@ -58,15 +58,14 @@ func (s *Session) WithExport(export bkclient.ExportEntry) *Session {
 	return &cp
 }
 
-func (s *Session) Build(ctx context.Context, f bkgw.BuildFunc) error {
+func (s *Session) Build(ctx context.Context, f bkgw.BuildFunc) (*bkclient.SolveResponse, error) {
 	s.mirrorChs.Add(1)
 	mirrorCh, wg := mirrorCh(s.solveCh)
 	defer func() {
 		wg.Wait()
 		s.mirrorChs.Done()
 	}()
-	_, err := s.bkClient.Build(ctx, s.solveOpts, "", f, mirrorCh)
-	return err
+	return s.bkClient.Build(ctx, s.solveOpts, "", f, mirrorCh)
 }
 
 func (s *Session) Wait() {

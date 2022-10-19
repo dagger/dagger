@@ -376,7 +376,7 @@ func (dir *Directory) Export(ctx context.Context, session *Session, dest string)
 		return err
 	}
 
-	return session.WithLocalDirs(srcPayload.LocalDirs).WithExport(bkclient.ExportEntry{
+	_, err = session.WithLocalDirs(srcPayload.LocalDirs).WithExport(bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
 	}).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
@@ -406,4 +406,6 @@ func (dir *Directory) Export(ctx context.Context, session *Session, dest string)
 			Definition: defPB,
 		})
 	})
+
+	return err
 }

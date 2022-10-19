@@ -105,7 +105,7 @@ func (file *File) Stat(ctx context.Context, session *Session) (*fstypes.Stat, er
 
 func withRef[T any](ctx context.Context, session *Session, def *pb.Definition, f func(bkgw.Reference) (T, error)) (T, error) {
 	var ret T
-	err := session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err := session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: def,
 		})

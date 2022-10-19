@@ -162,7 +162,7 @@ func (p *State) Schema(ctx context.Context, session *core.Session, platform spec
 			rerr = err
 			return
 		}
-		err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			res, err := gw.Solve(ctx, bkgw.SolveRequest{
 				Definition: outputDef.ToPB(),
 			})
@@ -404,7 +404,7 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, session *core.Se
 		}
 
 		var output interface{}
-		err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			res, err := gw.Solve(ctx, bkgw.SolveRequest{
 				Definition: outputDef.ToPB(),
 			})

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"path"
 	"strconv"
 	"strings"
@@ -157,7 +156,7 @@ func (container *Container) From(ctx context.Context, session *Session, addr str
 	ref := reference.TagNameOnly(refName).String()
 
 	var imgSpec specs.Image
-	err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 			Platform:    &platform,
 			ResolveMode: llb.ResolveModeDefault.String(),
@@ -213,7 +212,7 @@ func (container *Container) Build(ctx context.Context, session *Session, ctxDir 
 		dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
 	}
 
-	err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Frontend:       "dockerfile.v0",
 			FrontendOpt:    opts,
@@ -628,7 +627,7 @@ func (container *Container) Exec(ctx context.Context, session *Session, opts Con
 	platform := payload.Platform
 
 	var shimSt llb.State
-	err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err = session.Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		var err error
 		shimSt, err = shim.Build(ctx, gw, platform)
 		if err != nil {
@@ -833,6 +832,11 @@ func (container *Container) MetaFile(ctx context.Context, session *Session, file
 }
 
 func (container *Container) Publish(ctx context.Context, session *Session, ref string) (string, error) {
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return "", err
+	}
+
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
@@ -859,7 +863,7 @@ func (container *Container) Publish(ctx context.Context, session *Session, ref s
 		return "", err
 	}
 
-	err = session.WithExport(bkclient.ExportEntry{
+	solveRes, err := session.WithExport(bkclient.ExportEntry{
 		Type: bkclient.ExporterImage,
 		Attrs: map[string]string{
 			"name": ref,
@@ -876,31 +880,25 @@ func (container *Container) Publish(ctx context.Context, session *Session, ref s
 
 		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
 
-		refName, err := reference.ParseNormalizedNamed(ref)
-		if err != nil {
-			return nil, err
-		}
-
-		log.Println("MMMMETA", res)
-		imageDigest, found := res.Metadata[exptypes.ExporterImageDigestKey]
-		if found {
-			dig, err := digest.Parse(string(imageDigest))
-			if err != nil {
-				return nil, fmt.Errorf("parse digest: %w", err)
-			}
-
-			withDig, err := reference.WithDigest(refName, dig)
-			if err != nil {
-				return nil, fmt.Errorf("with digest: %w", err)
-			}
-
-			ref = withDig.String()
-		}
-
 		return res, nil
 	})
 	if err != nil {
 		return "", err
+	}
+
+	imageDigest, found := solveRes.ExporterResponse[exptypes.ExporterImageDigestKey]
+	if found {
+		dig, err := digest.Parse(imageDigest)
+		if err != nil {
+			return "", fmt.Errorf("parse digest: %w", err)
+		}
+
+		withDig, err := reference.WithDigest(refName, dig)
+		if err != nil {
+			return "", fmt.Errorf("with digest: %w", err)
+		}
+
+		ref = withDig.String()
 	}
 
 	return ref, nil

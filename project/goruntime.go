@@ -24,7 +24,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, session *core.Ses
 	}
 
 	var dir *core.Directory
-	err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	_, err = session.WithLocalDirs(payload.LocalDirs).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		workdir := "/src"
 		dir, err = core.NewDirectory(ctx,
 			goBase(gw).Run(llb.Shlex(
