@@ -31,6 +31,9 @@ type Container {
     "Initialize this container from the base image published at the given address"
     from(address: ContainerAddress!): Container!
 
+    "Initialize this container from a Dockerfile build"
+    build(context: DirectoryID!, dockerfile: String): Container!
+
     "This container's root filesystem. Mounts are not included."
     fs: Directory!
 
