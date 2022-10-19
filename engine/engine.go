@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -33,7 +34,8 @@ type Config struct {
 	LocalDirs  map[string]string
 	ConfigPath string
 	// If true, do not load project extensions
-	NoExtensions bool
+	NoExtensions   bool
+	ProgressWriter io.Writer
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -156,7 +158,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	})
 	eg.Go(func() error {
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stderr, ch)
+		if startOpts.ProgressWriter == nil {
+			startOpts.ProgressWriter = io.Discard
+		}
+
+		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.ProgressWriter, ch)
 		for _, w := range warn {
 			fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
 		}
