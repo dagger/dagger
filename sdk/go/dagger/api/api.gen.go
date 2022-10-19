@@ -565,27 +565,6 @@ type Directory struct {
 	c graphql.Client
 }
 
-// DirectoryContentsOpts contains options for Directory.Contents
-type DirectoryContentsOpts struct {
-	Path string
-}
-
-// Return a list of files and directories at the given path
-func (r *Directory) Contents(ctx context.Context, opts ...DirectoryContentsOpts) ([]string, error) {
-	q := r.q.Select("contents")
-	// `path` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Path) {
-			q = q.Arg("path", opts[i].Path)
-			break
-		}
-	}
-
-	var response []string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // The difference between this directory and an another directory
 func (r *Directory) Diff(other DirectoryID) *Directory {
 	q := r.q.Select("diff")
@@ -606,6 +585,27 @@ func (r *Directory) Directory(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// DirectoryEntriesOpts contains options for Directory.Entries
+type DirectoryEntriesOpts struct {
+	Path string
+}
+
+// Return a list of files and directories at the given path
+func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
+	q := r.q.Select("entries")
+	// `path` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+			break
+		}
+	}
+
+	var response []string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieve a file at the given path

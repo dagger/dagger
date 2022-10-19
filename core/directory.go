@@ -130,7 +130,7 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	return stat, nil
 }
 
-func (dir *Directory) Contents(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err

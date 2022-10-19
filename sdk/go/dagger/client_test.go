@@ -42,7 +42,7 @@ func TestGit(t *testing.T) {
 		Branch("main").
 		Tree()
 
-	files, err := tree.Contents(ctx)
+	files, err := tree.Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, files, "README.md")
 

@@ -129,7 +129,7 @@ func TestExtensionYarn(t *testing.T) {
 	data := struct {
 		Yarn struct {
 			Script struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}{}
@@ -139,7 +139,7 @@ func TestExtensionYarn(t *testing.T) {
 			Query: `query TestYarn($source: DirectoryID!) {
 				yarn {
 					script(source: $source, runArgs: ["build"]) {
-						contents(path: "sdk/nodejs/dagger/dist")
+						entries(path: "sdk/nodejs/dagger/dist")
 					}
 				}
 			}`,
@@ -150,12 +150,12 @@ func TestExtensionYarn(t *testing.T) {
 		resp,
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, data.Yarn.Script.Contents)
+	require.NotEmpty(t, data.Yarn.Script.Entries)
 
 	data2 := struct {
 		Directory struct {
 			Yarn struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}{}
@@ -165,7 +165,7 @@ func TestExtensionYarn(t *testing.T) {
 			Query: `query TestYarn($source: DirectoryID!) {
 				directory(id: $source) {
 					yarn(runArgs: ["build"]) {
-						contents(path: "sdk/nodejs/dagger/dist")
+						entries(path: "sdk/nodejs/dagger/dist")
 					}
 				}
 			}`,
@@ -176,5 +176,5 @@ func TestExtensionYarn(t *testing.T) {
 		resp2,
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, data2.Directory.Yarn.Contents)
+	require.NotEmpty(t, data2.Directory.Yarn.Entries)
 }
