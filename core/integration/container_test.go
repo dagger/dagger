@@ -2357,6 +2357,7 @@ func TestContainerMultiFrom(t *testing.T) {
 
 func TestContainerPublish(t *testing.T) {
 	ctx := context.Background()
+
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
@@ -2367,106 +2368,35 @@ func TestContainerPublish(t *testing.T) {
 	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
 	randomID := identity.NewID()
 	go func() {
-		err := c.Do(ctx,
-			&dagger.Request{
-				Query: `query RunRegistry($rand: String!) {
-						container {
-							from(address: "registry:2") {
-								withEnvVariable(name: "RANDOM", value: $rand) {
-									exec(args: ["/etc/docker/registry/config.yml"]) {
-										stdout {
-											contents
-										}
-										stderr {
-											contents
-										}
-									}
-								}
-							}
-						}
-					}`,
-				Variables: map[string]any{
-					"rand": randomID,
-				},
-			},
-			&dagger.Response{Data: new(map[string]any)},
-		)
+		_, err := c.Core().Container().
+			From("registry:2").
+			WithEnvVariable("RANDOM", randomID).
+			Exec().
+			ExitCode(ctx)
 		if err != nil {
 			t.Logf("error running registry: %v", err)
 		}
 	}()
 
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query WaitForRegistry($rand: String!) {
-					container {
-						from(address: "alpine:3.16.2") {
-							withEnvVariable(name: "RANDOM", value: $rand) {
-								exec(args: ["sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"]) {
-									stdout {
-										contents
-									}
-								}
-							}
-						}
-					}
-				}`,
-			Variables: map[string]any{
-				"rand": randomID,
-			},
-		},
-		&dagger.Response{Data: new(map[string]any)},
-	)
+	_, err = c.Core().Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("RANDOM", randomID).
+		Exec(api.ContainerExecOpts{
+			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
+		}).
+		ExitCode(ctx)
 	require.NoError(t, err)
 
 	testRef := "127.0.0.1:5000/testimagepush:latest"
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query TestImagePush($ref: String!) {
-					container {
-						from(address: "alpine:3.16.2") {
-							publish(address: $ref)
-						}
-					}
-				}`,
-			Variables: map[string]any{
-				"ref": testRef,
-			},
-		},
-		&dagger.Response{Data: new(map[string]any)},
-	)
+	pushedRef, err := c.Core().Container().
+		From("alpine:3.16.2").
+		Publish(ctx, testRef)
 	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
 
-	res := struct {
-		Container struct {
-			From struct {
-				Fs struct {
-					File struct {
-						Contents string
-					}
-				}
-			}
-		}
-	}{}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query TestImagePull($ref: String!) {
-					container {
-						from(address: $ref) {
-							fs {
-								file(path: "/etc/alpine-release") {
-									contents
-								}
-							}
-						}
-					}
-				}`,
-			Variables: map[string]any{
-				"ref": testRef,
-			},
-		},
-		&dagger.Response{Data: &res},
-	)
+	contents, err := c.Core().Container().
+		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
+	require.Equal(t, contents, "3.16.2\n")
 }

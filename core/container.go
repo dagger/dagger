@@ -16,6 +16,7 @@ import (
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"go.dagger.io/dagger/core/shim"
@@ -807,20 +808,20 @@ func (container *Container) Publish(
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
-) (bool, error) {
+) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	st, err := payload.FSState()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	cfgBytes, err := json.Marshal(specs.Image{
@@ -831,7 +832,7 @@ func (container *Container) Publish(
 		Config:       payload.Config,
 	})
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
@@ -854,7 +855,7 @@ func (container *Container) Publish(
 		}
 	}()
 
-	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: stDef.ToPB(),
@@ -866,10 +867,30 @@ func (container *Container) Publish(
 		return res, nil
 	}, ch)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
-	return true, nil
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return "", err
+	}
+
+	imageDigest, found := res.ExporterResponse[exptypes.ExporterImageDigestKey]
+	if found {
+		dig, err := digest.Parse(imageDigest)
+		if err != nil {
+			return "", fmt.Errorf("parse digest: %w", err)
+		}
+
+		withDig, err := reference.WithDigest(refName, dig)
+		if err != nil {
+			return "", fmt.Errorf("with digest: %w", err)
+		}
+
+		return withDig.String(), nil
+	}
+
+	return ref, nil
 }
 
 type ContainerExecOpts struct {

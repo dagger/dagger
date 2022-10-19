@@ -319,7 +319,7 @@ type containerPublishArgs struct {
 	Address string
 }
 
-func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (bool, error) {
+func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
 	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
 }
 

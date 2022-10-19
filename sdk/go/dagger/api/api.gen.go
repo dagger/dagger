@@ -330,12 +330,12 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Publish this container as a new image
-func (r *Container) Publish(ctx context.Context, address string) (bool, error) {
+// Publish this container as a new image, returning a fully qualified ref
+func (r *Container) Publish(ctx context.Context, address string) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
 
-	var response bool
+	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
