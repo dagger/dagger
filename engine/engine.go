@@ -183,6 +183,10 @@ func NormalizePaths(workdir, configPath string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	workdir, err = filepath.EvalSymlinks(workdir)
+	if err != nil {
+		return "", "", err
+	}
 
 	if configPath == "" {
 		configPath = os.Getenv("DAGGER_CONFIG")
