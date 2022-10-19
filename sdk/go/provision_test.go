@@ -58,7 +58,7 @@ func TestImageProvision(t *testing.T) {
 	for i := 0; i < parallelism; i++ {
 		eg.Go(func() error {
 			<-start
-			c, err := Connect(ctx)
+			c, err := Connect(ctx, WithLogOutput(os.Stderr))
 			if err != nil {
 				return err
 			}
