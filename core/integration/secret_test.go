@@ -48,7 +48,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 func TestSecretMountFromFile(t *testing.T) {
 	t.Parallel()
 
-	secretID := newSecret(t, "some-content")
+	secretID := newSecret(t, "some-secret")
 
 	var envRes struct {
 		Container struct {
@@ -77,7 +77,7 @@ func TestSecretMountFromFile(t *testing.T) {
 			"secret": secretID,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, envRes.Container.From.WithMountedSecret.Exec.Stdout.Contents, "some-content")
+	require.Equal(t, "some-secret", envRes.Container.From.WithMountedSecret.Exec.Stdout.Contents)
 }
 
 func TestSecretMountFromFileWithOverridingMount(t *testing.T) {

@@ -19,12 +19,21 @@ type Session struct {
 }
 
 func NewSession(bkClient *bkclient.Client, solveOpts bkclient.SolveOpt, solveCh chan<- *bkclient.SolveStatus) *Session {
-	return &Session{
+	s := &Session{
 		bkClient:  bkClient,
 		solveOpts: solveOpts,
 		solveCh:   solveCh,
 		mirrorChs: new(sync.WaitGroup),
 	}
+
+	// NB: use the session itself as the secret store. it accepts SecretIDs,
+	// which might reference an LLB definition to run.
+	s.solveOpts.Session = append(
+		[]session.Attachable{secretsprovider.NewSecretProvider(s)},
+		solveOpts.Session...,
+	)
+
+	return s
 }
 
 func (s *Session) WithLocalDirs(localDirs []string) *Session {
@@ -56,10 +65,7 @@ func (s *Session) Build(ctx context.Context, f bkgw.BuildFunc) error {
 		wg.Wait()
 		s.mirrorChs.Done()
 	}()
-	solveOpts := s.solveOpts
-	// XXX(vito): explain this trickery
-	solveOpts.Session = append([]session.Attachable{secretsprovider.NewSecretProvider(s)}, solveOpts.Session...)
-	_, err := s.bkClient.Build(ctx, solveOpts, "", f, mirrorCh)
+	_, err := s.bkClient.Build(ctx, s.solveOpts, "", f, mirrorCh)
 	return err
 }
 
