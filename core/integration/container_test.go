@@ -21,7 +21,7 @@ func TestContainerScratch(t *testing.T) {
 		Container struct {
 			ID string
 			Fs struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}{}
@@ -31,13 +31,13 @@ func TestContainerScratch(t *testing.T) {
 			container {
 				id
 				fs {
-					contents
+					entries
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Container.ID)
-	require.Empty(t, res.Container.Fs.Contents)
+	require.Empty(t, res.Container.Fs.Entries)
 }
 
 func TestContainerFrom(t *testing.T) {
