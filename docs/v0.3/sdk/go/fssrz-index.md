@@ -66,7 +66,7 @@ lib -..-> engine -..-> oci -..-> A1 & B1 & C1
 3. Using the go library, your program prepares API requests describing pipelines to run, then sends them to the engine. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future. For now, the go library is the only documented API available to your program.
 4. When the engine receives an API request, it computes a DAG of low-level operations required to compute the result, and starts processing operations concurrently.
 5. When all operations in the pipeline have been resolved, the engine sends the pipeline result back to your program.
-6. Your program may use the pipeline's result as input to new pipelines
+6. Your program may use the pipeline's result as input to new pipelines.
 
 ## Getting started
 
