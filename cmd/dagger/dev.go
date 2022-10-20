@@ -25,7 +25,7 @@ func Dev(cmd *cobra.Command, args []string) {
 		Workdir:    workdir,
 		ConfigPath: configPath,
 		// TODO(dolanor): add option to configure it from flag?
-		ProgressWriter: io.Discard,
+		LogOutput: io.Discard,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {

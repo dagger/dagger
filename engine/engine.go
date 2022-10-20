@@ -34,8 +34,8 @@ type Config struct {
 	LocalDirs  map[string]string
 	ConfigPath string
 	// If true, do not load project extensions
-	NoExtensions   bool
-	ProgressWriter io.Writer
+	NoExtensions bool
+	LogOutput    io.Writer
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -158,11 +158,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	})
 	eg.Go(func() error {
-		if startOpts.ProgressWriter == nil {
-			startOpts.ProgressWriter = io.Discard
+		w := startOpts.LogOutput
+		if w == nil {
+			w = io.Discard
 		}
 
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.ProgressWriter, ch)
+		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
 		for _, w := range warn {
 			fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
 		}

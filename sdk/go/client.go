@@ -65,7 +65,7 @@ func WithNoExtensions() ClientOpt {
 // WithLogOutput sets the progress writer
 func WithLogOutput(writer io.Writer) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
-		cfg.ProgressWriter = writer
+		cfg.LogOutput = writer
 	})
 }
 
