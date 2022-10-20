@@ -1,4 +1,4 @@
-//go:generate dagger client-gen -o ./api/api.gen.go
+//go:generate go run ../../../cmd/dagger client-gen -o ./api/api.gen.go
 package dagger
 
 import (

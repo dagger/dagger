@@ -12,7 +12,7 @@ type Directory {
     id: DirectoryID!
 
     "Return a list of files and directories at the given path"
-    contents(path: String): [String!]!
+    entries(path: String): [String!]!
 
     "Retrieve a file at the given path"
     file(path: String!): File!

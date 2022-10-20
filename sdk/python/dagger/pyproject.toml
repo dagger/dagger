@@ -18,7 +18,7 @@ classifiers = [
 #    "Operating System :: OS Independent",
 ]
 dependencies = [
-    "gql[requests] ~= 3.4.0",
+    "gql[aiohttp,requests] ~= 3.4.0",
     "strawberry-graphql[cli] ~= 0.133.5",
     "attrs ~= 22.1.0",
     "cattrs ~= 22.2.0",

@@ -8,12 +8,6 @@ import (
 	"go.dagger.io/dagger/internal/testutil"
 )
 
-func init() {
-	if err := testutil.SetupBuildkitd(); err != nil {
-		panic(err)
-	}
-}
-
 type testOpts struct {
 	opts *testutil.QueryOptions
 }
@@ -22,10 +16,11 @@ func TestQueries(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]*testOpts{
-		"simple.graphql":       nil,
-		"multi.graphql":        nil,
-		"git.graphql":          nil,
-		"docker_build.graphql": nil,
+		"simple.graphql": nil,
+		"multi.graphql":  nil,
+		"git.graphql":    nil,
+		// TODO(vito): bring this back once we figure out the API (#3151)
+		// "docker_build.graphql": nil,
 		"params.graphql": {
 			opts: &testutil.QueryOptions{
 				Variables: map[string]any{"version": "v0.2.0"},
@@ -33,7 +28,7 @@ func TestQueries(t *testing.T) {
 		},
 		"targets.graphql": {
 			opts: &testutil.QueryOptions{
-				Operation: "test",
+				Operation: "working",
 			},
 		},
 	}

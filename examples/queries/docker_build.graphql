@@ -1,9 +1,9 @@
 {
-  core {
-    git(remote: "github.com/dagger/dagger") {
-      dockerbuild(dockerfile: "Dockerfile") {
-        exec(input: { args: ["dagger", "version"] }) {
-          stdout
+  git(remote: "github.com/dagger/dagger") {
+    dockerbuild(dockerfile: "Dockerfile") {
+      exec(args: ["dagger", "version"]) {
+        stdout {
+          contents
         }
       }
     }

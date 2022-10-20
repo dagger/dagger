@@ -12,7 +12,11 @@ import (
 )
 
 func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
-	contextState, rel, _, err := p.workdir.Decode()
+	payload, err := p.workdir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	contextState, err := payload.State()
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +43,7 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 			llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
 			llb.Scratch().
-				File(llb.Copy(contextState, rel, "/src")),
+				File(llb.Copy(contextState, payload.Dir, "/src")),
 		}).
 			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn install'`, ctrSrcPath)), baseRunOpts).
 			Run(llb.Shlex(fmt.Sprintf(`sh -c 'cd %s && yarn build'`, ctrSrcPath)), baseRunOpts).

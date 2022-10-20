@@ -38,25 +38,6 @@ func (s CacheID) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
-// The address (also known as "ref") of a container published as an OCI image.
-//
-// Examples:
-//   - "alpine"
-//   - "index.docker.io/alpine"
-//   - "index.docker.io/alpine:latest"
-//   - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
-type ContainerAddress string
-
-// GraphQLType returns the native GraphQL type name
-func (s ContainerAddress) GraphQLType() string {
-	return "ContainerAddress"
-}
-
-// GraphQLMarshal serializes the structure into GraphQL
-func (s ContainerAddress) GraphQLMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
@@ -80,18 +61,6 @@ func (s DirectoryID) GraphQLType() string {
 
 // GraphQLMarshal serializes the structure into GraphQL
 func (s DirectoryID) GraphQLMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
-type FSID string
-
-// GraphQLType returns the native GraphQL type name
-func (s FSID) GraphQLType() string {
-	return "FSID"
-}
-
-// GraphQLMarshal serializes the structure into GraphQL
-func (s FSID) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
@@ -133,82 +102,6 @@ func (s SecretID) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
-type CacheMountInput struct {
-	// Cache mount name
-	Name string `json:"name"`
-
-	// path at which the cache will be mounted
-	Path string `json:"path"`
-
-	// Cache mount sharing mode (TODO: switch to enum)
-	SharingMode string `json:"sharingMode"`
-}
-
-type ExecEnvInput struct {
-	// Env var name
-	Name string `json:"name"`
-
-	// Env var value
-	Value string `json:"value"`
-}
-
-type ExecInput struct {
-	// Command to execute
-	// Example: ["echo", "hello, world!"]
-	Args []string `json:"args"`
-
-	// Cached mounts
-	CacheMounts []CacheMountInput `json:"cacheMounts"`
-
-	// Env vars
-	Env []ExecEnvInput `json:"env"`
-
-	// Filesystem mounts
-	Mounts []MountInput `json:"mounts"`
-
-	// Secret env vars
-	SecretEnv []ExecSecretEnvInput `json:"secretEnv"`
-
-	// Include the host's ssh agent socket in the exec at the provided path
-	SSHAuthSock string `json:"sshAuthSock"`
-
-	// Working directory
-	Workdir string `json:"workdir"`
-}
-
-// Additional options for executing a command
-type ExecOpts struct {
-	// Optionally redirect the command's standard error to a file in the container.
-	// Null means discard output.
-	RedirectStderr string `json:"redirectStderr"`
-
-	// Optionally redirect the command's standard output to a file in the container.
-	// Null means discard output.
-	RedirectStdout string `json:"redirectStdout"`
-
-	// Optionally write to the command's standard input
-	//
-	// - Null means don't touch stdin (no redirection)
-	// - Empty string means inject zero bytes to stdin, then send EOF
-	Stdin string `json:"stdin"`
-}
-
-type ExecSecretEnvInput struct {
-	// Secret env var value
-	ID SecretID `json:"id"`
-
-	// Env var name
-	Name string `json:"name"`
-}
-
-type MountInput struct {
-	// filesystem to mount
-	FS FSID `json:"fs"`
-
-	// path at which the filesystem will be mounted
-	Path string `json:"path"`
-}
-
 // A directory whose contents persist across runs
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -241,6 +134,29 @@ func (r *CacheVolume) GraphQLMarshal(ctx context.Context) (any, error) {
 type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
+}
+
+// ContainerBuildOpts contains options for Container.Build
+type ContainerBuildOpts struct {
+	Dockerfile string
+}
+
+// Initialize this container from a Dockerfile build
+func (r *Container) Build(context DirectoryID, opts ...ContainerBuildOpts) *Container {
+	q := r.q.Select("build")
+	q = q.Arg("context", context)
+	// `dockerfile` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
+			q = q.Arg("dockerfile", opts[i].Dockerfile)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
 }
 
 // Default arguments for future commands
@@ -295,7 +211,11 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 type ContainerExecOpts struct {
 	Args []string
 
-	Opts ExecOpts
+	RedirectStderr string
+
+	RedirectStdout string
+
+	Stdin string
 }
 
 // This container after executing the specified command inside it
@@ -308,10 +228,24 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 			break
 		}
 	}
-	// `opts` optional argument
+	// `redirectStderr` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Opts) {
-			q = q.Arg("opts", opts[i].Opts)
+		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
+			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+			break
+		}
+	}
+	// `redirectStdout` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
+			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
+			break
+		}
+	}
+	// `stdin` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
 			break
 		}
 	}
@@ -344,7 +278,7 @@ func (r *Container) File(path string) *File {
 }
 
 // Initialize this container from the base image published at the given address
-func (r *Container) From(address ContainerAddress) *Container {
+func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
 
@@ -396,12 +330,12 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Publish this container as a new image
-func (r *Container) Publish(ctx context.Context, address ContainerAddress) (ContainerAddress, error) {
+// Publish this container as a new image, returning a fully qualified ref
+func (r *Container) Publish(ctx context.Context, address string) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
 
-	var response ContainerAddress
+	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -629,81 +563,10 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Core API
-type Core struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-// Look up a filesystem by its ID
-func (r *Core) Filesystem(id FSID) *Filesystem {
-	q := r.q.Select("filesystem")
-	q = q.Arg("id", id)
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
-// CoreGitOpts contains options for Core.Git
-type CoreGitOpts struct {
-	Ref string
-}
-
-func (r *Core) Git(remote string, opts ...CoreGitOpts) *Filesystem {
-	q := r.q.Select("git")
-	// `ref` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Ref) {
-			q = q.Arg("ref", opts[i].Ref)
-			break
-		}
-	}
-	q = q.Arg("remote", remote)
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Fetch an OCI image
-func (r *Core) Image(ref string) *Filesystem {
-	q := r.q.Select("image")
-	q = q.Arg("ref", ref)
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
 // A directory
 type Directory struct {
 	q *querybuilder.Selection
 	c graphql.Client
-}
-
-// DirectoryContentsOpts contains options for Directory.Contents
-type DirectoryContentsOpts struct {
-	Path string
-}
-
-// Return a list of files and directories at the given path
-func (r *Directory) Contents(ctx context.Context, opts ...DirectoryContentsOpts) ([]string, error) {
-	q := r.q.Select("contents")
-	// `path` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Path) {
-			q = q.Arg("path", opts[i].Path)
-			break
-		}
-	}
-
-	var response []string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // The difference between this directory and an another directory
@@ -726,6 +589,27 @@ func (r *Directory) Directory(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// DirectoryEntriesOpts contains options for Directory.Entries
+type DirectoryEntriesOpts struct {
+	Path string
+}
+
+// Return a list of files and directories at the given path
+func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
+	q := r.q.Select("entries")
+	// `path` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+			break
+		}
+	}
+
+	var response []string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieve a file at the given path
@@ -866,84 +750,6 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Command execution
-type Exec struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-// Exit code of the command
-func (r *Exec) ExitCode(ctx context.Context) (int, error) {
-	q := r.q.Select("exitCode")
-
-	var response int
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// Modified filesystem
-func (r *Exec) FS() *Filesystem {
-	q := r.q.Select("fs")
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Modified mounted filesystem
-func (r *Exec) Mount(path string) *Filesystem {
-	q := r.q.Select("mount")
-	q = q.Arg("path", path)
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
-// ExecStderrOpts contains options for Exec.Stderr
-type ExecStderrOpts struct {
-	Lines int
-}
-
-// stderr of the command
-func (r *Exec) Stderr(ctx context.Context, opts ...ExecStderrOpts) (string, error) {
-	q := r.q.Select("stderr")
-	// `lines` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Lines) {
-			q = q.Arg("lines", opts[i].Lines)
-			break
-		}
-	}
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// ExecStdoutOpts contains options for Exec.Stdout
-type ExecStdoutOpts struct {
-	Lines int
-}
-
-// stdout of the command
-func (r *Exec) Stdout(ctx context.Context, opts ...ExecStdoutOpts) (string, error) {
-	q := r.q.Select("stdout")
-	// `lines` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Lines) {
-			q = q.Arg("lines", opts[i].Lines)
-			break
-		}
-	}
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // A file
 type File struct {
 	q *querybuilder.Selection
@@ -998,180 +804,6 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	var response int
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
-}
-
-// A reference to a filesystem tree.
-//
-// For example:
-//   - The root filesystem of a container
-//   - A source code repository
-//   - A directory containing binary artifacts
-//
-// Rule of thumb: if it fits in a tar archive, it fits in a Filesystem.
-type Filesystem struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-// FilesystemCopyOpts contains options for Filesystem.Copy
-type FilesystemCopyOpts struct {
-	DestPath string
-
-	Exclude []string
-
-	Include []string
-
-	SrcPath string
-}
-
-// copy from a filesystem
-func (r *Filesystem) Copy(from FSID, opts ...FilesystemCopyOpts) *Filesystem {
-	q := r.q.Select("copy")
-	// `destPath` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].DestPath) {
-			q = q.Arg("destPath", opts[i].DestPath)
-			break
-		}
-	}
-	// `exclude` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-			break
-		}
-	}
-	q = q.Arg("from", from)
-	// `include` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-			break
-		}
-	}
-	// `srcPath` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].SrcPath) {
-			q = q.Arg("srcPath", opts[i].SrcPath)
-			break
-		}
-	}
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
-// FilesystemDockerbuildOpts contains options for Filesystem.Dockerbuild
-type FilesystemDockerbuildOpts struct {
-	Dockerfile string
-}
-
-// docker build using this filesystem as context
-func (r *Filesystem) Dockerbuild(opts ...FilesystemDockerbuildOpts) *Filesystem {
-	q := r.q.Select("dockerbuild")
-	// `dockerfile` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
-			q = q.Arg("dockerfile", opts[i].Dockerfile)
-			break
-		}
-	}
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
-}
-
-// execute a command inside this filesystem
-func (r *Filesystem) Exec(input ExecInput) *Exec {
-	q := r.q.Select("exec")
-	q = q.Arg("input", input)
-
-	return &Exec{
-		q: q,
-		c: r.c,
-	}
-}
-
-// FilesystemFileOpts contains options for Filesystem.File
-type FilesystemFileOpts struct {
-	Lines int
-}
-
-// read a file at path
-func (r *Filesystem) File(ctx context.Context, path string, opts ...FilesystemFileOpts) (string, error) {
-	q := r.q.Select("file")
-	// `lines` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Lines) {
-			q = q.Arg("lines", opts[i].Lines)
-			break
-		}
-	}
-	q = q.Arg("path", path)
-
-	var response string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-func (r *Filesystem) ID(ctx context.Context) (FSID, error) {
-	q := r.q.Select("id")
-
-	var response FSID
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// GraphQLType returns the native GraphQL type name
-func (r *Filesystem) GraphQLType() string {
-	return "Filesystem"
-}
-
-// GraphQLMarshal serializes the structure into GraphQL
-func (r *Filesystem) GraphQLMarshal(ctx context.Context) (any, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"id": id}, nil
-}
-
-// push a filesystem as an image to a registry
-func (r *Filesystem) PushImage(ctx context.Context, ref string) (bool, error) {
-	q := r.q.Select("pushImage")
-	q = q.Arg("ref", ref)
-
-	var response bool
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// FilesystemWriteFileOpts contains options for Filesystem.WriteFile
-type FilesystemWriteFileOpts struct {
-	Permissions string
-}
-
-// write a file at path
-func (r *Filesystem) WriteFile(contents string, path string, opts ...FilesystemWriteFileOpts) *Filesystem {
-	q := r.q.Select("writeFile")
-	q = q.Arg("contents", contents)
-	q = q.Arg("path", path)
-	// `permissions` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
-			break
-		}
-	}
-
-	return &Filesystem{
-		q: q,
-		c: r.c,
-	}
 }
 
 // A git ref (tag or branch)
@@ -1446,16 +1078,6 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
-// Core API
-func (r *Query) Core() *Core {
-	q := r.q.Select("core")
-
-	return &Core{
-		q: q,
-		c: r.c,
-	}
-}
-
 // DirectoryOpts contains options for Query.Directory
 type DirectoryOpts struct {
 	ID DirectoryID
@@ -1570,4 +1192,13 @@ func (r *Secret) GraphQLMarshal(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	return map[string]any{"id": id}, nil
+}
+
+// The value of this secret
+func (r *Secret) Plaintext(ctx context.Context) (string, error) {
+	q := r.q.Select("plaintext")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
