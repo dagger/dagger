@@ -3,6 +3,7 @@ package dagger
 import (
 	"bytes"
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,12 +105,30 @@ func TestContainer(t *testing.T) {
 	require.Equal(t, "3.16.2\n", contents)
 }
 
+type muWriter struct {
+	mu sync.RWMutex
+	b  bytes.Buffer
+}
+
+func (w *muWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.b.Write(b)
+}
+
+func (w *muWriter) String() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.b.String()
+}
+
 func TestConnectOption(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	var b bytes.Buffer
-	c, err := Connect(ctx, WithProgressWriter(&b))
+	w := muWriter{}
+	c, err := Connect(ctx, WithProgressWriter(&w))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -132,6 +151,6 @@ func TestConnectOption(t *testing.T) {
 	}
 
 	for _, want := range wants {
-		require.Regexp(t, want, b.String())
+		require.Regexp(t, want, w.String())
 	}
 }
