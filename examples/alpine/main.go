@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"dagger.io/dagger"
 )
 
@@ -13,7 +15,7 @@ func main() {
 type Alpine struct {
 }
 
-func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*dagger.Container, error) {
+func (a Alpine) Build(ctx context.Context, pkgs []string) (*dagger.Container, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err

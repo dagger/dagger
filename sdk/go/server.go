@@ -19,10 +19,6 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
-type Context struct {
-	context.Context
-}
-
 func Serve(server any) {
 	ctx := context.Background()
 
@@ -111,7 +107,7 @@ func Serve(server any) {
 		return
 	}
 
-	res, err := method.call(Context{ctx}, input.Parent, input.Args)
+	res, err := method.call(ctx, input.Parent, input.Args)
 	if err != nil {
 		writeErrorf(err)
 	}
@@ -245,7 +241,7 @@ func (m *goMethod) srcPath() string {
 	return srcPath
 }
 
-func (m *goMethod) call(ctx Context, rawParent, rawArgs json.RawMessage) (any, error) {
+func (m *goMethod) call(ctx context.Context, rawParent, rawArgs json.RawMessage) (any, error) {
 	parent := reflect.New(m.parent.typ).Interface()
 	if err := json.Unmarshal(rawParent, parent); err != nil {
 		panic(err)
