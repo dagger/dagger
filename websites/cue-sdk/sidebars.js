@@ -14,7 +14,7 @@ module.exports = {
     {
       type: "link",
       label: "Docs Home",
-      href: "/",
+      href: "https://docs.dagger.io/",
     },
     {
       type: "doc",

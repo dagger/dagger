@@ -1,5 +1,5 @@
 ---
-slug: /r2eu9/install-go-sdk
+slug: /378291/install
 ---
 
 # Installation

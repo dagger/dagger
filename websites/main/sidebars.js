@@ -27,7 +27,7 @@ module.exports = {
     },
     {
       type: "doc",
-      id: "xfgss-faq"
+      id: "faq"
     },
   ],
 };

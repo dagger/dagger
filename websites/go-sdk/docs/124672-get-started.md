@@ -1,5 +1,5 @@
 ---
-slug: /8g34z/get-started-go-sdk
+slug: /124672/get-started
 ---
 
 # Get Started with the Dagger Go SDK
@@ -404,7 +404,7 @@ This tutorial introduced you to the Dagger Go SDK. It explained how to install t
 Use the following resources to learn more about the Dagger Go SDK:
 
 - [SDK Reference](https://pkg.go.dev/go.dagger.io/dagger@v0.3.0-alpha.1)
-- [FAQ](/xfgss/faq)
+- [FAQ](/275382/faq)
 
 ## Appendix: Completed code sample
 

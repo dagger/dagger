@@ -14,21 +14,21 @@ module.exports = {
     {
       type: "link",
       label: "Docs Home",
-      href: "/",
+      href: "https://docs.dagger.io/",
     },
     {
       type: "doc",
       label: "Overview",
-      id: "fssrz-index"
+      id: "index"
     },
     {
       type: "doc",
-      id: "r2eu9-install",
+      id: "install",
     },
     {
       type: "doc",
       label: "Get Started",
-      id: "8g34z-get-started",
+      id: "get-started",
     },
     {
       type: "link",
