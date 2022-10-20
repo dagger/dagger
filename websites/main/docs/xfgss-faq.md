@@ -1,0 +1,29 @@
+---
+slug: /xfgss/faq
+---
+
+# FAQ
+
+### What API framework does Daggeruse?
+
+Dagger uses GraphQL as its low-level language-agnostic API framework.
+
+### What language SDKs are available for Dagger?
+
+We currently offer a CUE SDK and a technical preview of the Go SDK. We plan to add SDKs for other languages in future.
+
+### There's no SDK for &lt;language&gt; yet. Can I still use Dagger 0.3?
+
+Yes. It's possible to use Dagger engine from any language that [supports GraphQL](https://github.com/chentsulin/awesome-graphql).
+
+### Do I need to know GraphQL for Dagger?
+
+No. You only need to know one of Dagger's supported languages to use Dagger. Communicating with the Dagger API is as simple as calling Dagger SDK functions in the language you choose to use. The conversion of those function calls to language-agnostic API calls is performed by the Dagger SDK. You do not need to be an expert in GraphQL to use Dagger.
+
+### Do I need to know CUE for Dagger?
+
+No. You can author your automation pipeline in Go, Typescript, Python, or even a shell script.
+
+### I am stuck. How can I get help?
+
+Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
