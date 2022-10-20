@@ -2,7 +2,6 @@ package main
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/api"
 )
 
 func main() {
@@ -14,7 +13,7 @@ func main() {
 type Alpine struct {
 }
 
-func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*api.Container, error) {
+func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*dagger.Container, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
@@ -22,11 +21,11 @@ func (a Alpine) Build(ctx dagger.Context, pkgs []string) (*api.Container, error)
 	defer client.Close()
 
 	// start with Alpine base
-	alpine := client.Core().Container().From("alpine:3.15")
+	alpine := client.Container().From("alpine:3.15")
 
 	// install each of the requested packages
 	for _, pkg := range pkgs {
-		alpine = alpine.Exec(api.ContainerExecOpts{
+		alpine = alpine.Exec(dagger.ContainerExecOpts{
 			Args: []string{"apk", "add", "-U", "--no-cache", pkg},
 		})
 	}

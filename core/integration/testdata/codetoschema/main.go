@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/api"
 )
 
 func main() {
@@ -71,13 +70,13 @@ func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
 	return s.Str + "-" + str, nil
 }
 
-func (Test) ReturnDirectory(ctx dagger.Context, ref string) (*api.Directory, error) {
+func (Test) ReturnDirectory(ctx dagger.Context, ref string) (*dagger.Directory, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
-	return client.Core().Container().From(ref).FS(), nil
+	return client.Container().From(ref).FS(), nil
 }
 
 type AllTheTypes struct {

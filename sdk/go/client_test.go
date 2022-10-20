@@ -5,7 +5,6 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger/api"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,10 +17,10 @@ func TestDirectory(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dir := c.Core().Directory()
+	dir := c.Directory()
 
 	contents, err := dir.
-		WithNewFile("/hello.txt", api.DirectoryWithNewFileOpts{
+		WithNewFile("/hello.txt", DirectoryWithNewFileOpts{
 			Contents: "world",
 		}).
 		File("/hello.txt").
@@ -39,7 +38,7 @@ func TestGit(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	tree := c.Core().Git("github.com/dagger/dagger").
+	tree := c.Git("github.com/dagger/dagger").
 		Branch("main").
 		Tree()
 
@@ -57,7 +56,7 @@ func TestGit(t *testing.T) {
 	readmeID, err := readmeFile.ID(ctx)
 	require.NoError(t, err)
 
-	otherReadme, err := c.Core().File(readmeID).Contents(ctx)
+	otherReadme, err := c.File(readmeID).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, readme, otherReadme)
 }
@@ -71,7 +70,6 @@ func TestContainer(t *testing.T) {
 	defer c.Close()
 
 	alpine := c.
-		Core().
 		Container().
 		From("alpine:3.16.2")
 
@@ -82,7 +80,7 @@ func TestContainer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
 
-	stdout, err := alpine.Exec(api.ContainerExecOpts{
+	stdout, err := alpine.Exec(ContainerExecOpts{
 		Args: []string{"cat", "/etc/alpine-release"},
 	}).Stdout().Contents(ctx)
 	require.NoError(t, err)
@@ -92,8 +90,7 @@ func TestContainer(t *testing.T) {
 	id, err := alpine.ID(ctx)
 	require.NoError(t, err)
 	c.
-		Core().
-		Container(api.ContainerOpts{
+		Container(ContainerOpts{
 			ID: id,
 		}).
 		FS().
@@ -112,7 +109,6 @@ func TestConnectOption(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = c.
-		Core().
 		Container().
 		From("alpine:3.16.1").
 		FS().

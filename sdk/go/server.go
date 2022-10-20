@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 
-	"dagger.io/dagger/api"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
@@ -116,7 +115,7 @@ func Serve(server any) {
 	if err != nil {
 		writeErrorf(err)
 	}
-	if serializer, ok := res.(api.GraphQLMarshaller); ok {
+	if serializer, ok := res.(GraphQLMarshaller); ok {
 		res, err = serializer.GraphQLMarshal(ctx)
 		if err != nil {
 			writeErrorf(err)
@@ -520,7 +519,7 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 	case reflect.Struct:
 		// Handle types that implement the GraphQL serializer
 		// TODO: move this at the top so it works on scalars as well
-		marshaller := reflect.TypeOf((*api.GraphQLMarshaller)(nil)).Elem()
+		marshaller := reflect.TypeOf((*GraphQLMarshaller)(nil)).Elem()
 		if t.Implements(marshaller) {
 			typ := reflect.New(t)
 			result := typ.MethodByName("GraphQLType").Call([]reflect.Value{})

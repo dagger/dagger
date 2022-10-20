@@ -9,14 +9,6 @@ import (
 	"dagger.io/dagger/querybuilder"
 )
 
-// New returns a new API query object
-func New(c graphql.Client) *{{ .Schema.QueryType.Name }} {
-	return &{{ .Schema.QueryType.Name }}{
-		q: querybuilder.Query(),
-		c: c,
-	}
-}
-
 // GraphQLMarshaller is an interface for marshalling an object into GraphQL.
 type GraphQLMarshaller interface {
 	// GraphQLType returns the native GraphQL type name
