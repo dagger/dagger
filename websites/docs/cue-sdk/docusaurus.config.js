@@ -7,13 +7,13 @@ module.exports = {
   title: "Dagger",
   tagline: "Dagger is a programmable deployment system",
   url: "https://docs.dagger.io",
-  baseUrl: "/",
+  baseUrl: "/sdk/cue/",
   onBrokenMarkdownLinks: "throw",
   onBrokenLinks: "throw",
   favicon: "img/favicon.png",
   organizationName: "Dagger",
   projectName: "Dagger",
-  staticDirectories: ['../common/assets/static'],
+  staticDirectories: ['static', '../docs-common/assets/static'],
   stylesheets: [
     "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap",
   ],
@@ -72,7 +72,7 @@ module.exports = {
     },
     algolia: {
       apiKey: "bffda1490c07dcce81a26a144115cc02",
-      indexName: "dagger",
+      indexName: "dagger_cue-sdk",
       appId: "XEIYPBWGOI",
     },
     hotjar: {
@@ -100,7 +100,7 @@ module.exports = {
           breadcrumbs: false,
           path: "./docs",
           sidebarPath: require.resolve("./sidebars.js"),
-          editUrl: "https://github.com/dagger/dagger/edit/main/websites/main",
+          editUrl: "https://github.com/dagger/dagger/edit/main/websites/go-sdk",
           routeBasePath: "/",
           remarkPlugins: [remarkCodeImport, mdxMermaid]
         },
@@ -109,7 +109,7 @@ module.exports = {
           anonymizeIP: true,
         },
         theme: {
-          customCss: require.resolve("../common/assets/src/css/custom.scss"),
+          customCss: require.resolve("../docs-common/assets/src/css/custom.scss"),
         },
         blog: false,
       },

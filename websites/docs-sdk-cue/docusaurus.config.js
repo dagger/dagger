@@ -13,7 +13,7 @@ module.exports = {
   favicon: "img/favicon.png",
   organizationName: "Dagger",
   projectName: "Dagger",
-  staticDirectories: ['static', '../common/assets/static'],
+  staticDirectories: ['static', '../docs-common/assets/static'],
   stylesheets: [
     "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap",
   ],
@@ -109,7 +109,7 @@ module.exports = {
           anonymizeIP: true,
         },
         theme: {
-          customCss: require.resolve("../common/assets/src/css/custom.scss"),
+          customCss: require.resolve("../docs-common/assets/src/css/custom.scss"),
         },
         blog: false,
       },
