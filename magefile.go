@@ -30,7 +30,7 @@ func (Lint) Codegen(ctx context.Context) error {
 	defer c.Close()
 
 	generated, err := generator.IntrospectAndGenerate(ctx, c, generator.Config{
-		Package: "api",
+		Package: "dagger",
 	})
 	if err != nil {
 		return err
@@ -38,11 +38,10 @@ func (Lint) Codegen(ctx context.Context) error {
 
 	// grab the file from the repo
 	src, err := c.
-		Core().
 		Host().
 		Workdir().
 		Read().
-		File("sdk/go/api/api.gen.go").
+		File("sdk/go/api.gen.go").
 		Contents(ctx)
 	if err != nil {
 		return err

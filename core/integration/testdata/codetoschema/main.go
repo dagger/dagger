@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/api"
 )
 
 func main() {
@@ -15,7 +15,7 @@ type Test struct {
 }
 
 func (Test) RequiredTypes(
-	ctx dagger.Context,
+	ctx context.Context,
 	str string,
 	i int,
 	b bool,
@@ -28,7 +28,7 @@ func (Test) RequiredTypes(
 }
 
 func (Test) OptionalTypes(
-	ctx dagger.Context,
+	ctx context.Context,
 	str *string,
 	i *int,
 	b *bool,
@@ -39,7 +39,7 @@ func (Test) OptionalTypes(
 	return fmt.Sprintf("%s %s %s %s %s %s", ptrFormat(str), ptrFormat(i), ptrFormat(b), ptrArrayFormat(strArray), ptrArrayFormat(intArray), ptrArrayFormat(boolArray)), nil
 }
 
-func (Test) OptionalReturn(ctx dagger.Context, returnNil bool) (*string, error) {
+func (Test) OptionalReturn(ctx context.Context, returnNil bool) (*string, error) {
 	if returnNil {
 		return nil, nil
 	}
@@ -47,19 +47,19 @@ func (Test) OptionalReturn(ctx dagger.Context, returnNil bool) (*string, error) 
 	return &s, nil
 }
 
-func (Test) IntArrayReturn(ctx dagger.Context, intArray []int) ([]int, error) {
+func (Test) IntArrayReturn(ctx context.Context, intArray []int) ([]int, error) {
 	return intArray, nil
 }
 
-func (Test) StringArrayReturn(ctx dagger.Context, strArray []*string) ([]*string, error) {
+func (Test) StringArrayReturn(ctx context.Context, strArray []*string) ([]*string, error) {
 	return strArray, nil
 }
 
-func (Test) StructReturn(ctx dagger.Context, strukt AllTheTypes) (AllTheTypes, error) {
+func (Test) StructReturn(ctx context.Context, strukt AllTheTypes) (AllTheTypes, error) {
 	return strukt, nil
 }
 
-func (Test) ParentResolver(ctx dagger.Context, str string) (SubResolver, error) {
+func (Test) ParentResolver(ctx context.Context, str string) (SubResolver, error) {
 	return SubResolver{Str: str}, nil
 }
 
@@ -67,17 +67,17 @@ type SubResolver struct {
 	Str string
 }
 
-func (s SubResolver) SubField(ctx dagger.Context, str string) (string, error) {
+func (s SubResolver) SubField(ctx context.Context, str string) (string, error) {
 	return s.Str + "-" + str, nil
 }
 
-func (Test) ReturnDirectory(ctx dagger.Context, ref string) (*api.Directory, error) {
+func (Test) ReturnDirectory(ctx context.Context, ref string) (*dagger.Directory, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
-	return client.Core().Container().From(ref).FS(), nil
+	return client.Container().From(ref).FS(), nil
 }
 
 type AllTheTypes struct {

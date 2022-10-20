@@ -1,4 +1,4 @@
-//go:generate dagger client-gen -o ./api/api.gen.go
+//go:generate dagger client-gen -o api.gen.go
 package dagger
 
 import (
@@ -6,16 +6,18 @@ import (
 	"io"
 	"os"
 
-	"dagger.io/dagger/api"
 	"dagger.io/dagger/internal/engineconn"
 	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
 	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
+	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 // Client is the Dagger Engine Client
 type Client struct {
+	Query
+
 	conn engineconn.EngineConn
 	gql  graphql.Client
 }
@@ -95,6 +97,10 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	c.gql = graphql.NewClient("http://dagger/query", client)
+	c.Query = Query{
+		q: querybuilder.Query(),
+		c: c.gql,
+	}
 	return c, nil
 }
 
@@ -116,11 +122,6 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 		Variables: req.Variables,
 		OpName:    req.OpName,
 	}, &r)
-}
-
-// Core returns the Dagger Core API
-func (c *Client) Core() *api.Query {
-	return api.New(c.gql)
 }
 
 // Request contains all the values required to build queries executed by

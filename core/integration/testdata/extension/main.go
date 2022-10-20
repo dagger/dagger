@@ -1,15 +1,15 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/api"
 )
 
 type Test struct{}
 
-func (Test) TestMount(ctx dagger.Context, in api.DirectoryID) (string, error) {
+func (Test) TestMount(ctx context.Context, in dagger.DirectoryID) (string, error) {
 	bytes, err := os.ReadFile("/mnt/in/foo")
 	if err != nil {
 		return "", err

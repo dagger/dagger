@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/api"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -77,9 +76,8 @@ func doQuery(ctx context.Context, query, op string, vars map[string]string, loca
 
 	for hostID := range localDirs {
 		directoryID, err := c.
-			Core().
 			Host().
-			Directory(api.HostDirectoryID(hostID)).
+			Directory(dagger.HostDirectoryID(hostID)).
 			Read().
 			ID(ctx)
 		if err != nil {
