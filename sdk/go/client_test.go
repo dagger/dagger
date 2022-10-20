@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -100,4 +101,37 @@ func TestContainer(t *testing.T) {
 		Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
+}
+
+func TestConnectOption(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var b bytes.Buffer
+	c, err := Connect(ctx, WithLogOutput(&b))
+	require.NoError(t, err)
+
+	_, err = c.
+		Core().
+		Container().
+		From("alpine:3.16.1").
+		FS().
+		File("/etc/alpine-release").
+		Contents(ctx)
+	require.NoError(t, err)
+
+	err = c.Close()
+	require.NoError(t, err)
+
+	wants := []string{
+		"#1 resolve image config for docker.io/library/alpine:3.16.1",
+		"#1 DONE [0-9.]+s",
+		"#2 docker-image://docker.io/library/alpine:3.16.1",
+		"#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done",
+		"#2 (DONE [0-9.]+s|CACHED)",
+	}
+
+	for _, want := range wants {
+		require.Regexp(t, want, b.String())
+	}
 }

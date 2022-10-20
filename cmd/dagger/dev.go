@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -23,6 +24,8 @@ func Dev(cmd *cobra.Command, args []string) {
 		LocalDirs:  localDirs,
 		Workdir:    workdir,
 		ConfigPath: configPath,
+		// TODO(dolanor): add option to configure it from flag?
+		LogOutput: io.Discard,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {

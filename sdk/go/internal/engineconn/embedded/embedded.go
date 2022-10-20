@@ -38,6 +38,7 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.C
 		ConfigPath:   cfg.ConfigPath,
 		LocalDirs:    cfg.LocalDirs,
 		NoExtensions: cfg.NoExtensions,
+		LogOutput:    cfg.LogOutput,
 	}
 	go func() {
 		defer close(c.doneCh)
