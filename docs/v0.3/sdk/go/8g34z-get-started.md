@@ -255,6 +255,7 @@ func build(repoUrl string) error {
 ```
 
 Now the tool is doing the build just as before, except for multiple OS and architectures
+
 - define the build matrix. In this case darwin and linux on amd64 and arm64.
 - iterate through each OS and architecture combination
 - create an output directory that includes the OS and architecture so the build outputs can be differentiated
