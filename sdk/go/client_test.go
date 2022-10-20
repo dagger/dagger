@@ -3,9 +3,7 @@ package dagger
 import (
 	"bytes"
 	"context"
-	"sync"
 	"testing"
-	"time"
 
 	"dagger.io/dagger/api"
 	"github.com/stretchr/testify/require"
@@ -105,32 +103,13 @@ func TestContainer(t *testing.T) {
 	require.Equal(t, "3.16.2\n", contents)
 }
 
-type muWriter struct {
-	mu sync.RWMutex
-	b  bytes.Buffer
-}
-
-func (w *muWriter) Write(b []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	return w.b.Write(b)
-}
-
-func (w *muWriter) String() string {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.b.String()
-}
-
 func TestConnectOption(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	w := muWriter{}
-	c, err := Connect(ctx, WithLogOutput(&w))
+	var b bytes.Buffer
+	c, err := Connect(ctx, WithLogOutput(&b))
 	require.NoError(t, err)
-	defer c.Close()
 
 	_, err = c.
 		Core().
@@ -140,7 +119,9 @@ func TestConnectOption(t *testing.T) {
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
-	time.Sleep(1 * time.Second)
+
+	err = c.Close()
+	require.NoError(t, err)
 
 	wants := []string{
 		"#1 resolve image config for docker.io/library/alpine:3.16.1",
@@ -151,6 +132,6 @@ func TestConnectOption(t *testing.T) {
 	}
 
 	for _, want := range wants {
-		require.Regexp(t, want, w.String())
+		require.Regexp(t, want, b.String())
 	}
 }
