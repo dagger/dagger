@@ -126,6 +126,7 @@ func build(repoUrl string) error {
 ```
 
 This new code will connect to a dagger engine, clone the given git repo, load a golang container image, and build the repo.
+
 - initialize a `context.Background` for the client to use.
 - get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
 - clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
@@ -192,6 +193,7 @@ func build(repoUrl string) error {
 ```
 
 With this new code, the tool will now write the build artifact to the host after the build is complete.
+
 - using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
 - in native Go, create a directory where the build artifact will be output
 - create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
@@ -303,6 +305,7 @@ func build(repoUrl string) error {
 ```
 
 Similar to the previous step, another layer to the build matrix is added, this time with Go versions
+
 - define the Go versions to use: 1.18 and 1.19
 - iterate though these versions at the top level
 - using string templating, determine the golang image tag to use for the Go version
@@ -378,6 +381,7 @@ func build(repoUrl string) error {
 ```
 
 Now the build steps are the same, except they're executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup)
+
 - create an errgroup to manage the build processes
 - run the same build steps as before, except within a an errgroup anonymous function to parallelize the process
 - wait for all of the build processes to complete before returning
@@ -408,6 +412,7 @@ Use the following resources to learn more about the Dagger Go SDK:
 ## Appendix: Completed code sample
 
 `main.go`:
+
 ```go
 package main
 
