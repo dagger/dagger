@@ -29,11 +29,11 @@ Begin creating a Go CI tool that uses the Dagger SDK to build your application. 
 
 1. Create a new Go module where the tool will be developed.
 
-  ```shell
-  mkdir multibuild
-  cd multibuild
-  go mod init multibuild
-  ```
+```shell
+mkdir multibuild
+cd multibuild
+go mod init multibuild
+```
 
 1. Create a new file named `main.go` and add the following code to it. Save the file once done.
 
@@ -41,36 +41,36 @@ Begin creating a Go CI tool that uses the Dagger SDK to build your application. 
 If you would rather copy the complete `main.go` right away, it can be found in the [Appendix](#appendix-completed-code-sample)
 :::
 
-  ```go
-  package main
+```go
+package main
 
-  import (
-    "context"
-    "fmt"
-    "os"
-    "path/filepath"
+import (
+  "context"
+  "fmt"
+  "os"
+  "path/filepath"
 
-    "go.dagger.io/dagger/sdk/go/dagger"
-    "go.dagger.io/dagger/sdk/go/dagger/api"
-    "golang.org/x/sync/errgroup"
-  )
+  "go.dagger.io/dagger/sdk/go/dagger"
+  "go.dagger.io/dagger/sdk/go/dagger/api"
+  "golang.org/x/sync/errgroup"
+)
 
-  func main() {
-    if len(os.Args) < 2 {
-      fmt.Println("must pass in a git repo to build")
-      os.Exit(1)
-    }
-    repo := os.Args[1]
-    if err := build(repo); err != nil {
-      fmt.Println(err)
-    }
+func main() {
+  if len(os.Args) < 2 {
+    fmt.Println("must pass in a git repo to build")
+    os.Exit(1)
   }
-
-  func build(repoUrl string) error {
-    fmt.Printf("Building %s\n", repoUrl)
-    return nil
+  repo := os.Args[1]
+  if err := build(repo); err != nil {
+    fmt.Println(err)
   }
-  ```
+}
+
+func build(repoUrl string) error {
+  fmt.Printf("Building %s\n", repoUrl)
+  return nil
+}
+```
 
   This tool imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument, and `build()`, which is where the pipeline will be defined in the next steps.
 
@@ -82,12 +82,12 @@ If you would rather copy the complete `main.go` right away, it can be found in t
 
 1. Try the tool by executing the command below:
 
-  ```shell
-  go build
-  ./multibuild https://github.com/kpenfound/greetings-api.git
-  ```
+```shell
+go build
+./multibuild https://github.com/kpenfound/greetings-api.git
+```
 
-The tool will output `Building https://github.com/kpenfound/greetings-api.git`, although it isn't actually building anything yet.
+  The tool will output `Building https://github.com/kpenfound/greetings-api.git`, although it isn't actually building anything yet.
 
 ## Step 2: Build a git repo with the Dagger Go SDK
 
@@ -95,50 +95,50 @@ Now that the basic structure of `main.go` is setup, it is time to actually build
 
 1. Update the file `main.go` and fill in `build()` function to it as shown below. Save the file once done.
 
-  ```go
-  func build(repoUrl string) error {
-    fmt.Printf("Building %s\n", repoUrl)
+```go
+func build(repoUrl string) error {
+  fmt.Printf("Building %s\n", repoUrl)
 
-    // 1. Get a context
-    ctx := context.Background()
-    // 2. Initialize dagger client
-    client, err := dagger.Connect(ctx)
-    if err != nil {
-      return err
-    }
-    defer client.Close()
-    // 3. Clone the repo using Dagger
-    repo := client.Core().Git(repoUrl)
-    src, err := repo.Branch("main").Tree().ID(ctx)
-    if err != nil {
-      return err
-    }
-    // 4. Load the golang image
-    golang := client.Core().Container().From("golang:latest")
-    // 5. Mount the cloned repo to the golang image
-    golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
-    // 6. Do the go build
-    golang = golang.Exec(api.ContainerExecOpts{
-      Args: []string{"go", "build", "-o", "build/"},
-    })
-    return nil
+  // 1. Get a context
+  ctx := context.Background()
+  // 2. Initialize dagger client
+  client, err := dagger.Connect(ctx)
+  if err != nil {
+    return err
   }
-  ```
+  defer client.Close()
+  // 3. Clone the repo using Dagger
+  repo := client.Core().Git(repoUrl)
+  src, err := repo.Branch("main").Tree().ID(ctx)
+  if err != nil {
+    return err
+  }
+  // 4. Load the golang image
+  golang := client.Core().Container().From("golang:latest")
+  // 5. Mount the cloned repo to the golang image
+  golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+  // 6. Do the go build
+  golang = golang.Exec(api.ContainerExecOpts{
+    Args: []string{"go", "build", "-o", "build/"},
+  })
+  return nil
+}
+```
 
-This new code will connect to a dagger engine, clone the given git repo, load a golang container image, and build the repo.
-- initialize a `context.Background` for the client to use.
-- get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
-- clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
-- load the latest golang image with `client.Core().Container().From("golang:latest")`.
-- mount the cloned repo with `.WithMountedDirectory("/src", src)` and set the container's working directory using `.WithWorkdir("/src")`.
-- execute the build command, `go build -o build/` by calling `Container.Exec()`.
+  This new code will connect to a dagger engine, clone the given git repo, load a golang container image, and build the repo.
+  - initialize a `context.Background` for the client to use.
+  - get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
+  - clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
+  - load the latest golang image with `client.Core().Container().From("golang:latest")`.
+  - mount the cloned repo with `.WithMountedDirectory("/src", src)` and set the container's working directory using `.WithWorkdir("/src")`.
+  - execute the build command, `go build -o build/` by calling `Container.Exec()`.
 
 1. Try the `test` step of the pipeline by executing the command below from the application directory:
 
-  ```shell
-  go build
-  ./multibuild https://github.com/kpenfound/greetings-api.git
-  ```
+```shell
+go build
+./multibuild https://github.com/kpenfound/greetings-api.git
+```
 
   In the output of this command, you will see Dagger cloning the git repo and running go build on it.
 
@@ -148,66 +148,66 @@ Once the tool has completed the build, it should put that build artifact somewhe
 
 1. Update the file `main.go` and some new steps to the `build()` function as shown below. Save the file once done.
 
-  ```go
-  func build(repoUrl string) error {
-    ...
-    // 1. reference to the current working directory on the host
-    workdir := client.Core().Host().Workdir() // <-- New
+```go
+func build(repoUrl string) error {
+  ...
+  // 1. reference to the current working directory on the host
+  workdir := client.Core().Host().Workdir() // <-- New
 
-    golang := client.Core().Container().From("golang:latest")
-    golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+  golang := client.Core().Container().From("golang:latest")
+  golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-    // 2. Create the output path on the host for the build
-    // -->
-    path := "build/"
-    outpath := filepath.Join(".", path)
-    err = os.MkdirAll(outpath, os.ModePerm)
-    if err != nil {
-      return err
-    }
-    // <-- New
-
-    golang = golang.Exec(api.ContainerExecOpts{
-      Args: []string{"go", "build", "-o", path},
-    })
-
-    // 3. Get build output from builder
-    // -->
-    output, err := golang.Directory(path).ID(ctx)
-    if err != nil {
-      return err
-    }
-    // <-- New
-
-    // 4. Write the build output to the host
-    // -->
-    _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
-    if err != nil {
-      return err
-    }
-    // <-- New
-
-    return nil
+  // 2. Create the output path on the host for the build
+  // -->
+  path := "build/"
+  outpath := filepath.Join(".", path)
+  err = os.MkdirAll(outpath, os.ModePerm)
+  if err != nil {
+    return err
   }
-  ```
+  // <-- New
 
-With this new code, the tool will now write the build artifact to the host after the build is complete.
-- using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
-- in native Go, create a directory where the build artifact will be output
-- create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
-- write the directory to the host with `HostDirectory.Write()`
+  golang = golang.Exec(api.ContainerExecOpts{
+    Args: []string{"go", "build", "-o", path},
+  })
+
+  // 3. Get build output from builder
+  // -->
+  output, err := golang.Directory(path).ID(ctx)
+  if err != nil {
+    return err
+  }
+  // <-- New
+
+  // 4. Write the build output to the host
+  // -->
+  _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+  if err != nil {
+    return err
+  }
+  // <-- New
+
+  return nil
+}
+```
+
+  With this new code, the tool will now write the build artifact to the host after the build is complete.
+  - using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
+  - in native Go, create a directory where the build artifact will be output
+  - create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
+  - write the directory to the host with `HostDirectory.Write()`
 
 1. Now try out the updated build function, running the tool exactly as before
 
-  ```shell
-  go build
-  ./multibuild https://github.com/kpenfound/greetings-api.git
-  tree build
-  ```
+```shell
+go build
+./multibuild https://github.com/kpenfound/greetings-api.git
+tree build
+```
 
-In the output of the multibuild, you'll see the build happening the same as it did before, but then Dagger will write the build artifact to `build/`.
+  In the output of the multibuild, you'll see the build happening the same as it did before, but then Dagger will write the build artifact to `build/`.
 
-The output of the `tree` command will show you the built artifact on your machine at `build/greetings-api`.
+  The output of the `tree` command will show you the built artifact on your machine at `build/greetings-api`.
 
 ## Step 4: Build for multiple OS and architectures
 
@@ -252,23 +252,23 @@ func build(repoUrl string) error {
 }
 ```
 
-Now the tool is doing the build just as before, except for multiple OS and architectures
-- define the build matrix. In this case darwin and linux on amd64 and arm64.
-- iterate through each OS and architecture combination
-- create an output directory that includes the OS and architecture so the build outputs can be differentiated
-- set GOOS and GOARCH in the go build environment
+  Now the tool is doing the build just as before, except for multiple OS and architectures
+  - define the build matrix. In this case darwin and linux on amd64 and arm64.
+  - iterate through each OS and architecture combination
+  - create an output directory that includes the OS and architecture so the build outputs can be differentiated
+  - set GOOS and GOARCH in the go build environment
 
 1. Now try out the updated build function, running the tool exactly as before
 
-  ```shell
-  go build
-  ./multibuild https://github.com/kpenfound/greetings-api.git
-  tree build
-  ```
+```shell
+go build
+./multibuild https://github.com/kpenfound/greetings-api.git
+tree build
+```
 
-In the output of the multibuild, you'll see the build happening the same as it did before, but 4 times, building each OS and archictecture combination.
+  In the output of the multibuild, you'll see the build happening the same as it did before, but 4 times, building each OS and archictecture combination.
 
-The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<darwin|linux>/<amd64|arm64>/greetings-api`.
+  The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<darwin|linux>/<amd64|arm64>/greetings-api`.
 
 ## Step 5. Build for multiple Go versions
 
@@ -302,23 +302,23 @@ func build(repoUrl string) error {
 }
 ```
 
-Similar to the previous step, another layer to the build matrix is added, this time with Go versions
-- define the Go versions to use: 1.18 and 1.19
-- iterate though these versions at the top level
-- using string templating, determine the golang image tag to use for the Go version
-- use the Go version in the build artifact output path to differentiate build outputs
+  Similar to the previous step, another layer to the build matrix is added, this time with Go versions
+  - define the Go versions to use: 1.18 and 1.19
+  - iterate though these versions at the top level
+  - using string templating, determine the golang image tag to use for the Go version
+  - use the Go version in the build artifact output path to differentiate build outputs
 
 1. Now try out the updated build function, running the tool exactly as before
 
-  ```shell
-  go build
-  ./multibuild https://github.com/kpenfound/greetings-api.git
-  tree build
-  ```
+```shell
+go build
+./multibuild https://github.com/kpenfound/greetings-api.git
+tree build
+```
 
-In the output of the multibuild, you'll see the build happening the same as it did before, but 8 times, building each Go version, OS, and archictecture combination.
+  In the output of the multibuild, you'll see the build happening the same as it did before, but 8 times, building each Go version, OS, and archictecture combination.
 
-The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<go version>/<darwin|linux>/<amd64|arm64>/greetings-api`.
+  The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<go version>/<darwin|linux>/<amd64|arm64>/greetings-api`.
 
 ## Step 6: Run builds in parallel
 
@@ -377,18 +377,18 @@ func build(repoUrl string) error {
 }
 ```
 
-Now the build steps are the same, except they're executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup)
-- create an errgroup to manage the build processes
-- run the same build steps as before, except within a an errgroup anonymous function to parallelize the process
-- wait for all of the build processes to complete before returning
+  Now the build steps are the same, except they're executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup)
+  - create an errgroup to manage the build processes
+  - run the same build steps as before, except within a an errgroup anonymous function to parallelize the process
+  - wait for all of the build processes to complete before returning
 
 1. Now try out the updated build function, running the tool exactly as before
 
-  ```shell
-  go build
-  ./multibuild https://github.com/kpenfound/greetings-api.git
-  tree build
-  ```
+```shell
+go build
+./multibuild https://github.com/kpenfound/greetings-api.git
+tree build
+```
 
   The output of multibuild will show all of the builds happening at the same time, and the total time will be reduced. The output of `tree` will show the same output artifacts as before
 
