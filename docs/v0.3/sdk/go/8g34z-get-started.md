@@ -6,10 +6,6 @@ slug: /8g34z/get-started-sdk-go
 
 ## Introduction
 
-[Dagger](https://dagger.io/) is a DevOps automation engine. It enables DevOps teams to orchestrate and deliver pipelines using any supported programming language. Popular use cases include multi-stage builds, CI/CD, on-demand staging environments, machine learning pipelines, end-to-end testing, artifact scanning and signing, and more.
-
-Dagger exposes its functionality via a low-level language-agnostic API framework and provides native language SDKs to communicate with this API. The Dagger Go SDK is one such SDK. It enables pipeline authors to use Dagger directly from Go, without needing to learn a new language.
-
 This tutorial teaches you the basics of using Dagger in Go. You will learn how to:
 
 - Install the Go SDK
