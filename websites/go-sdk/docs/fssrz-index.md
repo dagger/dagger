@@ -1,5 +1,5 @@
 ---
-slug: /go-sdk
+slug: /sdk/go
 ---
 
 # Dagger Go SDK

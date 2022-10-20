@@ -18,12 +18,12 @@ module.exports = {
     {
       type: "link",
       label: "Go SDK",
-      href: "/go-sdk"
+      href: "/sdk/go"
     },
     {
       type: "link",
       label: "CUE SDK",
-      href: "/cue-sdk"
+      href: "/sdk/cue"
     },
     {
       type: "doc",

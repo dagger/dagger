@@ -72,7 +72,7 @@ module.exports = {
     },
     algolia: {
       apiKey: "bffda1490c07dcce81a26a144115cc02",
-      indexName: "dagger",
+      indexName: "dagger_go-sdk",
       appId: "XEIYPBWGOI",
     },
     hotjar: {
