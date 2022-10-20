@@ -125,13 +125,13 @@ func build(repoUrl string) error {
 }
 ```
 
-  This new code will connect to a dagger engine, clone the given git repo, load a golang container image, and build the repo.
-  - initialize a `context.Background` for the client to use.
-  - get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
-  - clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
-  - load the latest golang image with `client.Core().Container().From("golang:latest")`.
-  - mount the cloned repo with `.WithMountedDirectory("/src", src)` and set the container's working directory using `.WithWorkdir("/src")`.
-  - execute the build command, `go build -o build/` by calling `Container.Exec()`.
+This new code will connect to a dagger engine, clone the given git repo, load a golang container image, and build the repo.
+- initialize a `context.Background` for the client to use.
+- get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
+- clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
+- load the latest golang image with `client.Core().Container().From("golang:latest")`.
+- mount the cloned repo with `.WithMountedDirectory("/src", src)` and set the container's working directory using `.WithWorkdir("/src")`.
+- execute the build command, `go build -o build/` by calling `Container.Exec()`.
 
 1. Try the `test` step of the pipeline by executing the command below from the application directory:
 
@@ -140,7 +140,7 @@ go build
 ./multibuild https://github.com/kpenfound/greetings-api.git
 ```
 
-  In the output of this command, you will see Dagger cloning the git repo and running go build on it.
+In the output of this command, you will see Dagger cloning the git repo and running go build on it.
 
 ## Step 3: Copy the build output to the host machine
 
@@ -191,11 +191,11 @@ func build(repoUrl string) error {
 }
 ```
 
-  With this new code, the tool will now write the build artifact to the host after the build is complete.
-  - using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
-  - in native Go, create a directory where the build artifact will be output
-  - create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
-  - write the directory to the host with `HostDirectory.Write()`
+With this new code, the tool will now write the build artifact to the host after the build is complete.
+- using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
+- in native Go, create a directory where the build artifact will be output
+- create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
+- write the directory to the host with `HostDirectory.Write()`
 
 1. Now try out the updated build function, running the tool exactly as before
 
@@ -205,9 +205,9 @@ go build
 tree build
 ```
 
-  In the output of the multibuild, you'll see the build happening the same as it did before, but then Dagger will write the build artifact to `build/`.
+In the output of the multibuild, you'll see the build happening the same as it did before, but then Dagger will write the build artifact to `build/`.
 
-  The output of the `tree` command will show you the built artifact on your machine at `build/greetings-api`.
+The output of the `tree` command will show you the built artifact on your machine at `build/greetings-api`.
 
 ## Step 4: Build for multiple OS and architectures
 
@@ -217,46 +217,46 @@ Now that the tool can build a Go application and output the build result, it sho
 
 ```go
 func build(repoUrl string) error {
-	...
+  ...
 
-	// 1. Define our build matrix
-	// -->
-	oses := []string{"linux", "darwin"}
-	arches := []string{"amd64", "arm64"}
-	// <-- New
+  // 1. Define our build matrix
+  // -->
+  oses := []string{"linux", "darwin"}
+  arches := []string{"amd64", "arm64"}
+  // <-- New
 
-	...
+  ...
 
-	// 2. Loop through the os and arch matrices
-	for _, goos := range oses {
-		for _, goarch := range arches {
-			// 3. Create a directory for each os and arch
-			path := fmt.Sprintf("build/%s/%s/", goos, goarch) // <-- Changed
-			outpath := filepath.Join(".", path)
+  // 2. Loop through the os and arch matrices
+  for _, goos := range oses {
+    for _, goarch := range arches {
+      // 3. Create a directory for each os and arch
+      path := fmt.Sprintf("build/%s/%s/", goos, goarch) // <-- Changed
+      outpath := filepath.Join(".", path)
 
       ...
 
-			// 4. Set GOARCH and GOOS in the build environment
-			// -->
-			build := golang.WithEnvVariable("GOOS", goos) // <-- Uses new reference for the container, "build". Updated references below
-			build = build.WithEnvVariable("GOARCH", goarch)
-			// <--
-			build = build.Exec(api.ContainerExecOpts{
-				Args: []string{"go", "build", "-o", path},
-			})
+      // 4. Set GOARCH and GOOS in the build environment
+      // -->
+      build := golang.WithEnvVariable("GOOS", goos) // <-- Uses new reference for the container, "build". Updated references below
+      build = build.WithEnvVariable("GOARCH", goarch)
+      // <--
+      build = build.Exec(api.ContainerExecOpts{
+        Args: []string{"go", "build", "-o", path},
+      })
 
-			...
-		}
-	}
-	return nil
+      ...
+    }
+  }
+  return nil
 }
 ```
 
-  Now the tool is doing the build just as before, except for multiple OS and architectures
-  - define the build matrix. In this case darwin and linux on amd64 and arm64.
-  - iterate through each OS and architecture combination
-  - create an output directory that includes the OS and architecture so the build outputs can be differentiated
-  - set GOOS and GOARCH in the go build environment
+Now the tool is doing the build just as before, except for multiple OS and architectures
+- define the build matrix. In this case darwin and linux on amd64 and arm64.
+- iterate through each OS and architecture combination
+- create an output directory that includes the OS and architecture so the build outputs can be differentiated
+- set GOOS and GOARCH in the go build environment
 
 1. Now try out the updated build function, running the tool exactly as before
 
@@ -266,9 +266,9 @@ go build
 tree build
 ```
 
-  In the output of the multibuild, you'll see the build happening the same as it did before, but 4 times, building each OS and archictecture combination.
+In the output of the multibuild, you'll see the build happening the same as it did before, but 4 times, building each OS and archictecture combination.
 
-  The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<darwin|linux>/<amd64|arm64>/greetings-api`.
+The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<darwin|linux>/<amd64|arm64>/greetings-api`.
 
 ## Step 5. Build for multiple Go versions
 
@@ -278,35 +278,35 @@ Another common operation that might happen in a CI environment is targeting mult
 
 ```go
 func build(repoUrl string) error {
-	...
-	// 1. Define multiple Go versions
-	goVersions := []string{"1.18", "1.19"}
+  ...
+  // 1. Define multiple Go versions
+  goVersions := []string{"1.18", "1.19"}
 
-	// 2. Iterate through the Go versions
-	for _, version := range goVersions {
-		// 3. Determine the golang image to use
-		imageTag := fmt.Sprintf("golang:%s", version)
-		golang := client.Core().Container().From(api.ContainerAddress(imageTag)) // <-- Updated with the formatted image tag
+  // 2. Iterate through the Go versions
+  for _, version := range goVersions {
+    // 3. Determine the golang image to use
+    imageTag := fmt.Sprintf("golang:%s", version)
+    golang := client.Core().Container().From(api.ContainerAddress(imageTag)) // <-- Updated with the formatted image tag
 
-		for _, goos := range oses {
-			for _, goarch := range arches {
-				// 4. Update the output artifact path
-				path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch) // <-- Updated with version
-				outpath := filepath.Join(".", path)
-				
+    for _, goos := range oses {
+      for _, goarch := range arches {
+        // 4. Update the output artifact path
+        path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch) // <-- Updated with version
+        outpath := filepath.Join(".", path)
+        
         ...
-			}
-		}
-	}
-	return nil
+      }
+    }
+  }
+  return nil
 }
 ```
 
-  Similar to the previous step, another layer to the build matrix is added, this time with Go versions
-  - define the Go versions to use: 1.18 and 1.19
-  - iterate though these versions at the top level
-  - using string templating, determine the golang image tag to use for the Go version
-  - use the Go version in the build artifact output path to differentiate build outputs
+Similar to the previous step, another layer to the build matrix is added, this time with Go versions
+- define the Go versions to use: 1.18 and 1.19
+- iterate though these versions at the top level
+- using string templating, determine the golang image tag to use for the Go version
+- use the Go version in the build artifact output path to differentiate build outputs
 
 1. Now try out the updated build function, running the tool exactly as before
 
@@ -316,9 +316,9 @@ go build
 tree build
 ```
 
-  In the output of the multibuild, you'll see the build happening the same as it did before, but 8 times, building each Go version, OS, and archictecture combination.
+In the output of the multibuild, you'll see the build happening the same as it did before, but 8 times, building each Go version, OS, and archictecture combination.
 
-  The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<go version>/<darwin|linux>/<amd64|arm64>/greetings-api`.
+The output of the `tree` command will show you the all of the built artifacts on your machine at `build/<go version>/<darwin|linux>/<amd64|arm64>/greetings-api`.
 
 ## Step 6: Run builds in parallel
 
@@ -328,59 +328,59 @@ Running all of these matrix combinations is very useful, but adds to the total a
 
 ```go
 func build(repoUrl string) error {
-	...
-	// 1. Create an errgroup
-	g, ctx := errgroup.WithContext(ctx)
+  ...
+  // 1. Create an errgroup
+  g, ctx := errgroup.WithContext(ctx)
 
-	...
+  ...
 
-	for _, version := range goVersions {
-		...
+  for _, version := range goVersions {
+    ...
 
-		for _, goos := range oses {
-			for _, goarch := range arches {
-				// 2. Run version/os/arch build in errgroup
-				goos, goarch, version := goos, goarch, version
-				g.Go(func() error {
-					path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
-					outpath := filepath.Join(".", path)
-					err = os.MkdirAll(outpath, os.ModePerm)
-					if err != nil {
-						return err
-					}
+    for _, goos := range oses {
+      for _, goarch := range arches {
+        // 2. Run version/os/arch build in errgroup
+        goos, goarch, version := goos, goarch, version
+        g.Go(func() error {
+          path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
+          outpath := filepath.Join(".", path)
+          err = os.MkdirAll(outpath, os.ModePerm)
+          if err != nil {
+            return err
+          }
 
-					build := golang.WithEnvVariable("GOOS", goos)
-					build = build.WithEnvVariable("GOARCH", goarch)
-					build = build.Exec(api.ContainerExecOpts{
-						Args: []string{"go", "build", "-o", path},
-					})
+          build := golang.WithEnvVariable("GOOS", goos)
+          build = build.WithEnvVariable("GOARCH", goarch)
+          build = build.Exec(api.ContainerExecOpts{
+            Args: []string{"go", "build", "-o", path},
+          })
 
-					output, err := build.Directory(path).ID(ctx)
-					if err != nil {
-						return err
-					}
+          output, err := build.Directory(path).ID(ctx)
+          if err != nil {
+            return err
+          }
 
-					_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
-					if err != nil {
-						return err
-					}
-					return nil
-				})
-			}
-		}
-	}
-	// 3. Wait for all builds to complete
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
+          _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+          if err != nil {
+            return err
+          }
+          return nil
+        })
+      }
+    }
+  }
+  // 3. Wait for all builds to complete
+  if err := g.Wait(); err != nil {
+    return err
+  }
+  return nil
 }
 ```
 
-  Now the build steps are the same, except they're executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup)
-  - create an errgroup to manage the build processes
-  - run the same build steps as before, except within a an errgroup anonymous function to parallelize the process
-  - wait for all of the build processes to complete before returning
+Now the build steps are the same, except they're executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup)
+- create an errgroup to manage the build processes
+- run the same build steps as before, except within a an errgroup anonymous function to parallelize the process
+- wait for all of the build processes to complete before returning
 
 1. Now try out the updated build function, running the tool exactly as before
 
@@ -390,7 +390,7 @@ go build
 tree build
 ```
 
-  The output of multibuild will show all of the builds happening at the same time, and the total time will be reduced. The output of `tree` will show the same output artifacts as before
+The output of multibuild will show all of the builds happening at the same time, and the total time will be reduced. The output of `tree` will show the same output artifacts as before
 
 :::tip
 As the previous three steps illustrate, the Dagger Go SDK allows you to author your pipeline entirely in Go. This means that you don't need to spend time learning a new language, and you immediately benefit from all the powerful programming capabilities and packages available Go. For instance, this tutorial used native Go variables, conditionals and error handling throughout together with Go's testing package and built-in test framework.
@@ -412,90 +412,90 @@ Use the following resources to learn more about the Dagger Go SDK:
 package main
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"path/filepath"
+  "context"
+  "fmt"
+  "os"
+  "path/filepath"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
-	"golang.org/x/sync/errgroup"
+  "go.dagger.io/dagger/sdk/go/dagger"
+  "go.dagger.io/dagger/sdk/go/dagger/api"
+  "golang.org/x/sync/errgroup"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("must pass in a git repo to build")
-		os.Exit(1)
-	}
-	repo := os.Args[1]
-	if err := build(repo); err != nil {
-		fmt.Println(err)
-	}
+  if len(os.Args) < 2 {
+    fmt.Println("must pass in a git repo to build")
+    os.Exit(1)
+  }
+  repo := os.Args[1]
+  if err := build(repo); err != nil {
+    fmt.Println(err)
+  }
 }
 
 func build(repoUrl string) error {
-	fmt.Printf("Building %s\n", repoUrl)
+  fmt.Printf("Building %s\n", repoUrl)
 
-	ctx := context.Background()
-	g, ctx := errgroup.WithContext(ctx)
+  ctx := context.Background()
+  g, ctx := errgroup.WithContext(ctx)
 
-	oses := []string{"linux", "darwin"}
-	arches := []string{"amd64", "arm64"}
-	goVersions := []string{"1.18", "1.19"}
+  oses := []string{"linux", "darwin"}
+  arches := []string{"amd64", "arm64"}
+  goVersions := []string{"1.18", "1.19"}
 
-	client, err := dagger.Connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+  client, err := dagger.Connect(ctx)
+  if err != nil {
+    return err
+  }
+  defer client.Close()
 
-	repo := client.Core().Git(repoUrl)
-	src, err := repo.Branch("main").Tree().ID(ctx)
-	if err != nil {
-		return err
-	}
+  repo := client.Core().Git(repoUrl)
+  src, err := repo.Branch("main").Tree().ID(ctx)
+  if err != nil {
+    return err
+  }
 
-	workdir := client.Core().Host().Workdir()
+  workdir := client.Core().Host().Workdir()
 
-	for _, version := range goVersions {
-		imageTag := fmt.Sprintf("golang:%s", version)
-		golang := client.Core().Container().From(api.ContainerAddress(imageTag))
-		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+  for _, version := range goVersions {
+    imageTag := fmt.Sprintf("golang:%s", version)
+    golang := client.Core().Container().From(api.ContainerAddress(imageTag))
+    golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
-		for _, goos := range oses {
-			for _, goarch := range arches {
-				goos, goarch, version := goos, goarch, version
-				g.Go(func() error {
-					path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
-					outpath := filepath.Join(".", path)
-					err = os.MkdirAll(outpath, os.ModePerm)
-					if err != nil {
-						return err
-					}
+    for _, goos := range oses {
+      for _, goarch := range arches {
+        goos, goarch, version := goos, goarch, version
+        g.Go(func() error {
+          path := fmt.Sprintf("build/%s/%s/%s/", version, goos, goarch)
+          outpath := filepath.Join(".", path)
+          err = os.MkdirAll(outpath, os.ModePerm)
+          if err != nil {
+            return err
+          }
 
-					build := golang.WithEnvVariable("GOOS", goos)
-					build = build.WithEnvVariable("GOARCH", goarch)
-					build = build.Exec(api.ContainerExecOpts{
-						Args: []string{"go", "build", "-o", path},
-					})
+          build := golang.WithEnvVariable("GOOS", goos)
+          build = build.WithEnvVariable("GOARCH", goarch)
+          build = build.Exec(api.ContainerExecOpts{
+            Args: []string{"go", "build", "-o", path},
+          })
 
-					output, err := build.Directory(path).ID(ctx)
-					if err != nil {
-						return err
-					}
+          output, err := build.Directory(path).ID(ctx)
+          if err != nil {
+            return err
+          }
 
-					_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
-					if err != nil {
-						return err
-					}
-					return nil
-				})
-			}
-		}
-	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
+          _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+          if err != nil {
+            return err
+          }
+          return nil
+        })
+      }
+    }
+  }
+  if err := g.Wait(); err != nil {
+    return err
+  }
+  return nil
 }
 ```
