@@ -69,7 +69,7 @@ func TestExtensionNetlify(t *testing.T) {
 			dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
 			require.NoError(t, err)
 
-			secretID, err := c.Core().Host().Variable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
+			secretID, err := c.Core().Host().EnvVariable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
 			require.NoError(t, err)
 
 			data := struct {

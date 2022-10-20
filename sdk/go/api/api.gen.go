@@ -895,8 +895,8 @@ func (r *Host) Directory(id HostDirectoryID) *HostDirectory {
 }
 
 // Lookup the value of an environment variable. Null if the variable is not available.
-func (r *Host) Variable(name string) *HostVariable {
-	q := r.q.Select("variable")
+func (r *Host) EnvVariable(name string) *HostVariable {
+	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)
 
 	return &HostVariable{
