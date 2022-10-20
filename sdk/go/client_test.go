@@ -128,7 +128,7 @@ func TestConnectOption(t *testing.T) {
 	ctx := context.Background()
 
 	w := muWriter{}
-	c, err := Connect(ctx, WithProgressWriter(&w))
+	c, err := Connect(ctx, WithLogOutput(&w))
 	require.NoError(t, err)
 	defer c.Close()
 
