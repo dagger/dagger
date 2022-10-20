@@ -58,6 +58,11 @@ func (dir *HostDirectory) Write(
 	if err != nil {
 		return false, err
 	}
+	// Ensure that we also eval the localDir
+	localDir, err = filepath.EvalSymlinks(localDir)
+	if err != nil {
+		return false, err
+	}
 	if !strings.HasPrefix(dest, localDir) {
 		return false, fmt.Errorf("path %q is outside workdir", dest)
 	}
