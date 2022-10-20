@@ -201,6 +201,10 @@ func NormalizePaths(workdir, configPath string) (string, string, error) {
 			return "", "", err
 		}
 	}
+	// Eval configPath if symlink
+	if configPath, err := filepath.EvalSymlinks(configPath); err == nil {
+		return workdir, configPath, nil
+	}
 	return workdir, configPath, nil
 }
 
