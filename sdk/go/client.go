@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"dagger.io/dagger/api"
-	"dagger.io/dagger/engineconn"
-	_ "dagger.io/dagger/engineconn/embedded" // embedded connection
-	_ "dagger.io/dagger/engineconn/unix"     // unix connection
+	"dagger.io/dagger/internal/engineconn"
+	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
+	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )

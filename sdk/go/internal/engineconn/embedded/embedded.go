@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"dagger.io/dagger/engineconn"
+	"dagger.io/dagger/internal/engineconn"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 )
