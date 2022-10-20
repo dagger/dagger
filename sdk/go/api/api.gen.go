@@ -5,8 +5,8 @@ package api
 import (
 	"context"
 
-	"dagger.io/dagger/querybuilder"
 	"github.com/Khan/genqlient/graphql"
+	"go.dagger.io/dagger/sdk/go/dagger/querybuilder"
 )
 
 // New returns a new API query object
@@ -35,6 +35,25 @@ func (s CacheID) GraphQLType() string {
 
 // GraphQLMarshal serializes the structure into GraphQL
 func (s CacheID) GraphQLMarshal(ctx context.Context) (any, error) {
+	return string(s), nil
+}
+
+// The address (also known as "ref") of a container published as an OCI image.
+//
+// Examples:
+//   - "alpine"
+//   - "index.docker.io/alpine"
+//   - "index.docker.io/alpine:latest"
+//   - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
+type ContainerAddress string
+
+// GraphQLType returns the native GraphQL type name
+func (s ContainerAddress) GraphQLType() string {
+	return "ContainerAddress"
+}
+
+// GraphQLMarshal serializes the structure into GraphQL
+func (s ContainerAddress) GraphQLMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
@@ -134,29 +153,6 @@ func (r *CacheVolume) GraphQLMarshal(ctx context.Context) (any, error) {
 type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
-}
-
-// ContainerBuildOpts contains options for Container.Build
-type ContainerBuildOpts struct {
-	Dockerfile string
-}
-
-// Initialize this container from a Dockerfile build
-func (r *Container) Build(context DirectoryID, opts ...ContainerBuildOpts) *Container {
-	q := r.q.Select("build")
-	q = q.Arg("context", context)
-	// `dockerfile` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
-			q = q.Arg("dockerfile", opts[i].Dockerfile)
-			break
-		}
-	}
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
 }
 
 // Default arguments for future commands
@@ -278,7 +274,7 @@ func (r *Container) File(path string) *File {
 }
 
 // Initialize this container from the base image published at the given address
-func (r *Container) From(address string) *Container {
+func (r *Container) From(address ContainerAddress) *Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
 
@@ -330,12 +326,12 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Publish this container as a new image, returning a fully qualified ref
-func (r *Container) Publish(ctx context.Context, address string) (string, error) {
+// Publish this container as a new image
+func (r *Container) Publish(ctx context.Context, address ContainerAddress) (ContainerAddress, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
 
-	var response string
+	var response ContainerAddress
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -569,6 +565,27 @@ type Directory struct {
 	c graphql.Client
 }
 
+// DirectoryContentsOpts contains options for Directory.Contents
+type DirectoryContentsOpts struct {
+	Path string
+}
+
+// Return a list of files and directories at the given path
+func (r *Directory) Contents(ctx context.Context, opts ...DirectoryContentsOpts) ([]string, error) {
+	q := r.q.Select("contents")
+	// `path` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+			break
+		}
+	}
+
+	var response []string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // The difference between this directory and an another directory
 func (r *Directory) Diff(other DirectoryID) *Directory {
 	q := r.q.Select("diff")
@@ -589,27 +606,6 @@ func (r *Directory) Directory(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
-}
-
-// DirectoryEntriesOpts contains options for Directory.Entries
-type DirectoryEntriesOpts struct {
-	Path string
-}
-
-// Return a list of files and directories at the given path
-func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
-	q := r.q.Select("entries")
-	// `path` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Path) {
-			q = q.Arg("path", opts[i].Path)
-			break
-		}
-	}
-
-	var response []string
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieve a file at the given path
