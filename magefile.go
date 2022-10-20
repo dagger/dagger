@@ -61,38 +61,40 @@ type Build mg.Namespace
 
 // Dagger will build the dagger binary
 func (Build) Dagger(ctx context.Context) error {
-	return engine.Start(ctx, nil, func(ctx engine.Context) error {
-		core := api.New(ctx.Client)
+	c, err := dagger.Connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
 
-		builder := core.Container().From("golang:1.18.2-alpine")
+	builder := c.Container().From("golang:1.18.2-alpine")
 
-		src, err := core.Host().Workdir().Read().ID(ctx)
-		if err != nil {
-			return err
-		}
+	src, err := c.Host().Workdir().Read().ID(ctx)
+	if err != nil {
+		return err
+	}
 
-		builder = builder.WithMountedDirectory("/app", src).WithWorkdir("/app")
+	builder = builder.WithMountedDirectory("/app", src).WithWorkdir("/app")
 
-		builder = builder.Exec(api.ContainerExecOpts{
-			Args: []string{"mkdir", "/app/build"},
-		})
-
-		builder = builder.Exec(api.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "/app/build/dagger", "/app/cmd/dagger"},
-		})
-
-		daggerBuildDir, err := builder.Directory("./build").ID(ctx)
-		if err != nil {
-			return err
-		}
-
-		ok, err := core.Host().Workdir().Write(ctx, daggerBuildDir, api.HostDirectoryWriteOpts{Path: "."})
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("HostDirectoryWrite not ok")
-		}
-		return nil
+	builder = builder.Exec(dagger.ContainerExecOpts{
+		Args: []string{"mkdir", "/app/build"},
 	})
+
+	builder = builder.Exec(dagger.ContainerExecOpts{
+		Args: []string{"go", "build", "-o", "/app/build/dagger", "/app/cmd/dagger"},
+	})
+
+	daggerBuildDir, err := builder.Directory("./build").ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	ok, err := c.Host().Workdir().Write(ctx, daggerBuildDir, dagger.HostDirectoryWriteOpts{Path: "."})
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("HostDirectoryWrite not ok")
+	}
+	return nil
 }
