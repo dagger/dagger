@@ -5,10 +5,10 @@ import (
 	"path"
 	"testing"
 
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestHostWorkdir(t *testing.T) {

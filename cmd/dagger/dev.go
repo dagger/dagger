@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
-	"go.dagger.io/dagger/engine"
-	"go.dagger.io/dagger/router"
 )
 
 var devCmd = &cobra.Command{

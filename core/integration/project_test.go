@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionMount(t *testing.T) {

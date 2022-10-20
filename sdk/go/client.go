@@ -1,16 +1,16 @@
-//go:generate go run ../../../cmd/dagger client-gen -o ./api/api.gen.go
+//go:generate dagger client-gen -o ./api/api.gen.go
 package dagger
 
 import (
 	"context"
 	"os"
 
+	"dagger.io/dagger/api"
+	"dagger.io/dagger/internal/engineconn"
+	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
+	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
-	"go.dagger.io/dagger/sdk/go/dagger/engineconn"
-	_ "go.dagger.io/dagger/sdk/go/dagger/engineconn/embedded" // embedded connection
-	_ "go.dagger.io/dagger/sdk/go/dagger/engineconn/unix"     // unix connection
 )
 
 // Client is the Dagger Engine Client

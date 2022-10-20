@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/google/go-cmp/cmp"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
-	"go.dagger.io/dagger/codegen/generator"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 type Lint mg.Namespace
@@ -42,7 +42,7 @@ func (Lint) Codegen(ctx context.Context) error {
 		Host().
 		Workdir().
 		Read().
-		File("sdk/go/dagger/api/api.gen.go").
+		File("sdk/go/api/api.gen.go").
 		Contents(ctx)
 	if err != nil {
 		return err

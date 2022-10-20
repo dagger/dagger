@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger/api"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 func TestDirectory(t *testing.T) {
