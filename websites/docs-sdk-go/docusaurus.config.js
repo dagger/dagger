@@ -9,7 +9,7 @@ module.exports = {
   url: "https://docs.dagger.io",
   baseUrl: "/sdk/go/",
   onBrokenMarkdownLinks: "throw",
-  onBrokenLinks: "throw",
+  onBrokenLinks: "log",
   favicon: "img/favicon.png",
   organizationName: "Dagger",
   projectName: "Dagger",
