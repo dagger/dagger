@@ -37,6 +37,14 @@ status = 302
 from = "/sdk/cue/*"
 to = "https://docs-v03x-sdk-cue-dagger-io.netlify.app/:splat"
 status = 200
+[[redirects]]
+from = "/pets-code"
+to = "https://github.com/netlify/petsofnetlify"
+status = 200
+[[redirects]]
+from = "/pets-code/*"
+to = "https://github.com/netlify/petsofnetlify/:splat"
+status = 200
 
 [[headers]]
 for = "/*"
