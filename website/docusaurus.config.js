@@ -120,7 +120,7 @@ async function createConfig() {
       [ 
         "posthog-docusaurus",
         {
-          apiKey: "phc_hqwS484sDJhTnrPCANTyWX48nKL3AEucgf6w0czQtQi"
+          apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d"
         }
       ],
       "docusaurus-plugin-image-zoom",
