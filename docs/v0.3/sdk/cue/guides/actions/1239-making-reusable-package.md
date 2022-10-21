@@ -32,7 +32,7 @@ mkdir rootProject && cd rootProject
 - Initialize the project
 
 ```console
-dagger project init
+dagger-cue project init
 ```
 
 - Update `dagger-cue` and `universe` dependencies

@@ -13,7 +13,7 @@ A simple way to accomplish this is to create and import packages within your pro
 
 A [module in CUE](https://cuelang.org/docs/concepts/packages/#modules) is any directory including a `cue.mod` folder. It makes for the prefix/root of importable packages. For example, `universe.dagger.io` is a module which includes several packages.
 
-When you ran `dagger project init`, *dagger* created this directory for you.
+When you ran `dagger-cue project init`, *dagger* created this directory for you.
 
 :::tip
 
@@ -60,12 +60,12 @@ Consider the module as the URL to access the root of your project. Any subfolder
 
 ### Project non initialized
 
-The module name can be set during project initialization: `dagger project init --name <NAME>`.
+The module name can be set during project initialization: `dagger-cue project init --name <NAME>`.
 
 Let's use an email address for convenience purposes:
 
 ```console
-dagger project init --name "info@example.com"
+dagger-cue project init --name "info@example.com"
 ```
 
 ### Project already initialized
@@ -91,7 +91,7 @@ mkdir daggerTest && cd daggerTest
 - Initialize the project
 
 ```console
-dagger project init --name "info@example.com"
+dagger-cue project init --name "info@example.com"
 ```
 
 - Install `dagger.io` and `universe.dagger.io` dependencies
