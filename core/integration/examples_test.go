@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionAlpine(t *testing.T) {
@@ -66,10 +66,10 @@ func TestExtensionNetlify(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+			dirID, err := c.Host().Workdir().Read().ID(ctx)
 			require.NoError(t, err)
 
-			secretID, err := c.Core().Host().Variable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
+			secretID, err := c.Host().EnvVariable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
 			require.NoError(t, err)
 
 			data := struct {
@@ -123,13 +123,13 @@ func TestExtensionYarn(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+	dirID, err := c.Host().Workdir().Read().ID(ctx)
 	require.NoError(t, err)
 
 	data := struct {
 		Yarn struct {
 			Script struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}{}
@@ -139,7 +139,7 @@ func TestExtensionYarn(t *testing.T) {
 			Query: `query TestYarn($source: DirectoryID!) {
 				yarn {
 					script(source: $source, runArgs: ["build"]) {
-						contents(path: "sdk/nodejs/dagger/dist")
+						entries(path: "sdk/nodejs/dagger/dist")
 					}
 				}
 			}`,
@@ -150,12 +150,12 @@ func TestExtensionYarn(t *testing.T) {
 		resp,
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, data.Yarn.Script.Contents)
+	require.NotEmpty(t, data.Yarn.Script.Entries)
 
 	data2 := struct {
 		Directory struct {
 			Yarn struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}{}
@@ -165,7 +165,7 @@ func TestExtensionYarn(t *testing.T) {
 			Query: `query TestYarn($source: DirectoryID!) {
 				directory(id: $source) {
 					yarn(runArgs: ["build"]) {
-						contents(path: "sdk/nodejs/dagger/dist")
+						entries(path: "sdk/nodejs/dagger/dist")
 					}
 				}
 			}`,
@@ -176,5 +176,5 @@ func TestExtensionYarn(t *testing.T) {
 		resp2,
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, data2.Directory.Yarn.Contents)
+	require.NotEmpty(t, data2.Directory.Yarn.Entries)
 }

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"dagger.io/dagger/project"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/project"
 )
 
 func TestProjectCLI(t *testing.T) {

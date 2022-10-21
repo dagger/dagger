@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"dagger.io/dagger/router"
 	"github.com/graphql-go/graphql/language/ast"
-	"go.dagger.io/dagger/router"
 )
 
 // ErrNotImplementedYet is used to stub out API fields that aren't implemented

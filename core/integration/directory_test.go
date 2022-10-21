@@ -3,9 +3,9 @@ package core
 import (
 	"testing"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestEmptyDirectory(t *testing.T) {
@@ -13,8 +13,8 @@ func TestEmptyDirectory(t *testing.T) {
 
 	var res struct {
 		Directory struct {
-			ID       core.DirectoryID
-			Contents []string
+			ID      core.DirectoryID
+			Entries []string
 		}
 	}
 
@@ -22,12 +22,12 @@ func TestEmptyDirectory(t *testing.T) {
 		`{
 			directory {
 				id
-				contents
+				entries
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.ID)
-	require.Empty(t, res.Directory.Contents)
+	require.Empty(t, res.Directory.Entries)
 }
 
 func TestDirectoryWithNewFile(t *testing.T) {
@@ -36,8 +36,8 @@ func TestDirectoryWithNewFile(t *testing.T) {
 	var res struct {
 		Directory struct {
 			WithNewFile struct {
-				ID       core.DirectoryID
-				Contents []string
+				ID      core.DirectoryID
+				Entries []string
 			}
 		}
 	}
@@ -47,23 +47,23 @@ func TestDirectoryWithNewFile(t *testing.T) {
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
 					id
-					contents
+					entries
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.ID)
-	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Contents)
+	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Entries)
 }
 
-func TestDirectoryContents(t *testing.T) {
+func TestDirectoryEntries(t *testing.T) {
 	t.Parallel()
 
 	var res struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
-					Contents []string
+					Entries []string
 				}
 			}
 		}
@@ -74,23 +74,23 @@ func TestDirectoryContents(t *testing.T) {
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
 					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
-						contents
+						entries
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"some-file", "some-dir"}, res.Directory.WithNewFile.WithNewFile.Contents)
+	require.ElementsMatch(t, []string{"some-file", "some-dir"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
-func TestDirectoryContentsOfPath(t *testing.T) {
+func TestDirectoryEntriesOfPath(t *testing.T) {
 	t.Parallel()
 
 	var res struct {
 		Directory struct {
 			WithNewFile struct {
 				WithNewFile struct {
-					Contents []string
+					Entries []string
 				}
 			}
 		}
@@ -101,13 +101,13 @@ func TestDirectoryContentsOfPath(t *testing.T) {
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
 					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
-						contents(path: "some-dir")
+						entries(path: "some-dir")
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Contents)
+	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func TestDirectoryDirectory(t *testing.T) {
@@ -118,7 +118,7 @@ func TestDirectoryDirectory(t *testing.T) {
 			WithNewFile struct {
 				WithNewFile struct {
 					Directory struct {
-						Contents []string
+						Entries []string
 					}
 				}
 			}
@@ -131,14 +131,14 @@ func TestDirectoryDirectory(t *testing.T) {
 				withNewFile(path: "some-file", contents: "some-content") {
 					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
 						directory(path: "some-dir") {
-							contents
+							entries
 						}
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Directory.Contents)
+	require.Equal(t, []string{"sub-file"}, res.Directory.WithNewFile.WithNewFile.Directory.Entries)
 }
 
 func TestDirectoryDirectoryWithNewFile(t *testing.T) {
@@ -150,7 +150,7 @@ func TestDirectoryDirectoryWithNewFile(t *testing.T) {
 				WithNewFile struct {
 					Directory struct {
 						WithNewFile struct {
-							Contents []string
+							Entries []string
 						}
 					}
 				}
@@ -165,7 +165,7 @@ func TestDirectoryDirectoryWithNewFile(t *testing.T) {
 					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
 						directory(path: "some-dir") {
 							withNewFile(path: "another-file", contents: "more-content") {
-								contents
+								entries
 							}
 						}
 					}
@@ -175,7 +175,7 @@ func TestDirectoryDirectoryWithNewFile(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t,
 		[]string{"sub-file", "another-file"},
-		res.Directory.WithNewFile.WithNewFile.Directory.WithNewFile.Contents)
+		res.Directory.WithNewFile.WithNewFile.Directory.WithNewFile.Entries)
 }
 
 func TestDirectoryWithDirectory(t *testing.T) {
@@ -210,7 +210,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 	var res2 struct {
 		Directory struct {
 			WithDirectory struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}
@@ -219,7 +219,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 		`query Test($src: DirectoryID!) {
 			directory {
 				withDirectory(path: "with-dir", directory: $src) {
-					contents(path: "with-dir")
+					entries(path: "with-dir")
 				}
 			}
 		}`, &res2, &testutil.QueryOptions{
@@ -228,13 +228,13 @@ func TestDirectoryWithDirectory(t *testing.T) {
 			},
 		})
 	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Contents)
+	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Entries)
 
 	err = testutil.Query(
 		`query Test($src: DirectoryID!) {
 			directory {
 				withDirectory(path: "sub-dir/sub-sub-dir/with-dir", directory: $src) {
-					contents(path: "sub-dir/sub-sub-dir/with-dir")
+					entries(path: "sub-dir/sub-sub-dir/with-dir")
 				}
 			}
 		}`, &res2, &testutil.QueryOptions{
@@ -243,7 +243,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 			},
 		})
 	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Contents)
+	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Entries)
 }
 
 func TestDirectoryWithCopiedFile(t *testing.T) {
@@ -312,7 +312,7 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 		Directory struct {
 			WithDirectory struct {
 				WithoutDirectory struct {
-					Contents []string
+					Entries []string
 				}
 			}
 		}
@@ -323,7 +323,7 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 			directory {
 				withDirectory(path: "with-dir", directory: $src) {
 					withoutDirectory(path: "with-dir/some-dir") {
-						contents(path: "with-dir")
+						entries(path: "with-dir")
 					}
 				}
 			}
@@ -333,7 +333,7 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 			},
 		})
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-file"}, res2.Directory.WithDirectory.WithoutDirectory.Contents)
+	require.Equal(t, []string{"some-file"}, res2.Directory.WithDirectory.WithoutDirectory.Entries)
 }
 
 func TestDirectoryWithoutFile(t *testing.T) {
@@ -347,7 +347,7 @@ func TestDirectoryWithoutFile(t *testing.T) {
 		Directory struct {
 			WithDirectory struct {
 				WithoutFile struct {
-					Contents []string
+					Entries []string
 				}
 			}
 		}
@@ -358,7 +358,7 @@ func TestDirectoryWithoutFile(t *testing.T) {
 			directory {
 				withDirectory(path: "with-dir", directory: $src) {
 					withoutFile(path: "with-dir/some-file") {
-						contents(path: "with-dir")
+						entries(path: "with-dir")
 					}
 				}
 			}
@@ -368,7 +368,7 @@ func TestDirectoryWithoutFile(t *testing.T) {
 			},
 		})
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, res2.Directory.WithDirectory.WithoutFile.Contents)
+	require.Equal(t, []string{"some-dir"}, res2.Directory.WithDirectory.WithoutFile.Entries)
 }
 
 func TestDirectoryDiff(t *testing.T) {
@@ -380,7 +380,7 @@ func TestDirectoryDiff(t *testing.T) {
 	var res struct {
 		Directory struct {
 			Diff struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}
@@ -388,7 +388,7 @@ func TestDirectoryDiff(t *testing.T) {
 	diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
 			directory(id: $id) {
 				diff(other: $other) {
-					contents
+					entries
 				}
 			}
 		}`
@@ -400,7 +400,7 @@ func TestDirectoryDiff(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"b-file"}, res.Directory.Diff.Contents)
+	require.Equal(t, []string{"b-file"}, res.Directory.Diff.Entries)
 
 	err = testutil.Query(diff, &res, &testutil.QueryOptions{
 		Variables: map[string]any{
@@ -410,12 +410,12 @@ func TestDirectoryDiff(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"a-file"}, res.Directory.Diff.Contents)
+	require.Equal(t, []string{"a-file"}, res.Directory.Diff.Entries)
 
 	/*
 		This triggers a nil panic in Buildkit!
 
-		Issue: https://github.com/dagger/dagger/issues/3337
+		Issue: https://dagger.io/dagger/issues/3337
 
 		This might be fixed once we update Buildkit.
 
@@ -427,6 +427,6 @@ func TestDirectoryDiff(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.Empty(t, res.Directory.Diff.Contents)
+		require.Empty(t, res.Directory.Diff.Entries)
 	*/
 }

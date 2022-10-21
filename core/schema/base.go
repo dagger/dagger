@@ -1,12 +1,12 @@
 package schema
 
 import (
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/project"
+	"dagger.io/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/project"
-	"go.dagger.io/dagger/router"
 )
 
 type InitializeArgs struct {

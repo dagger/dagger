@@ -80,9 +80,6 @@ module.exports = {
     colorMode: {
       defaultMode: "light",
     },
-    posthog: {
-      apiKey: "phc_hqwS484sDJhTnrPCANTyWX48nKL3AEucgf6w0czQtQi",
-    },
     zoom: {
       selector: '.markdown img:not(.not-zoom)',
       background: {
@@ -120,7 +117,12 @@ module.exports = {
   plugins: [
     "docusaurus-plugin-sass",
     "docusaurus2-dotenv",
-    "posthog-docusaurus",
+    [ 
+      "posthog-docusaurus",
+      {
+        apiKey: "phc_8Onnz5zyGA8mMEia4ALiaAetunwfeoHiekU0l5ND6tg"
+      }
+    ],
     "docusaurus-plugin-image-zoom",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
     path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
