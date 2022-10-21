@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
+	"dagger.io/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestGit(t *testing.T) {

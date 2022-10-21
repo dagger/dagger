@@ -1,8 +1,8 @@
 package schema
 
 import (
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 )
 
 type directorySchema struct {

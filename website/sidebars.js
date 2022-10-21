@@ -27,7 +27,7 @@ module.exports = {
 
         {
           type: "link",
-          label: "Reference",
+          label: "Reference 🔗",
           href: "https://pkg.go.dev/go.dagger.io/dagger@v0.3.0-alpha.1"
         }
       ],

@@ -3,9 +3,9 @@ package core
 import (
 	"testing"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestFile(t *testing.T) {

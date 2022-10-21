@@ -5,9 +5,9 @@ import (
 	"path"
 	"strings"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
 )
 
 type containerSchema struct {
