@@ -1,0 +1,22 @@
+test: {
+      integrationTest: {
+        workdir: "./src"
+        docker.#Run & {
+          input: build.output
+          command: {
+            name: "/bin/bash"
+            args: ["-c", "npm run test:ci"]
+          }
+        }
+      }
+      unitTest: {
+        workdir: "./src"
+        docker.#Run & {
+          input: build.output
+          command: {
+            name: "/bin/bash"
+            args: ["-c", "npm run test:unit"]
+          }
+        }
+      }
+    }
