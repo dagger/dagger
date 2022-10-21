@@ -13,7 +13,7 @@ Developers of other Dagger packages are expected to build on top of these core p
 
 ### Plan definition
 
-`#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger do`
+`#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger-cue do`
 
 | Definition | File                                                                                   | Description                                          |
 | :--------- | :------------------------------------------------------------------------------------- | :--------------------------------------------------- |

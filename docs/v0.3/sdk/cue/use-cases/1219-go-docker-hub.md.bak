@@ -116,7 +116,7 @@ binary on Docker Hub.
 
 ```
 
-You can then use `dagger do` to select which action you want to run.
+You can then use `dagger-cue do` to select which action you want to run.
 
 ## Push multi-platform
 

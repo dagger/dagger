@@ -10,7 +10,7 @@ Actions are the basic building block of the Dagger platform.
 An action encapsulates an arbitrarily complex automation into a simple
 software component that can be safely shared, and repeatably executed by any Dagger engine.
 
-Actions can be executed directly with `dagger do`, or integrated as a component of a more complex action.
+Actions can be executed directly with `dagger-cue do`, or integrated as a component of a more complex action.
 
 There are two types of actions: _core actions_ and _composite actions_.
 
@@ -132,14 +132,14 @@ To learn more about the structure of a plan, see [it all begins with a plan](./1
 Once integrated into a plan, actions can be discovered by end users, by using the familiar convention of usage messages:
 
 ```bash
-$ dagger do --help
+$ dagger-cue do --help
 Execute a dagger action.
 
 Available Actions:
  hello   Say hello by writing to a file
 
 Usage:
-  dagger do [OPTIONS] ACTION [SUBACTION...] [flags]
+  dagger-cue do [OPTIONS] ACTION [SUBACTION...] [flags]
 
 Flags:
   [...]
@@ -147,10 +147,10 @@ Flags:
 
 ### Execution
 
-Once the end user has discovered the action that they need, they can execute it with `dagger do`. For example:
+Once the end user has discovered the action that they need, they can execute it with `dagger-cue do`. For example:
 
 ```bash
-dagger do hello
+dagger-cue do hello
 ```
 
 #### Example
@@ -171,10 +171,10 @@ dagger.#Plan & {
 
 Running:
 
-- `dagger do build` will run the `build` action
-- `dagger do deploy` will run both the `local` and `cloud` actions
-- `dagger do deploy local` will run the `local` sub-action
-- `dagger do deploy cloud` will run the `cloud` sub-action
+- `dagger-cue do build` will run the `build` action
+- `dagger-cue do deploy` will run both the `local` and `cloud` actions
+- `dagger-cue do deploy local` will run the `local` sub-action
+- `dagger-cue do deploy cloud` will run the `cloud` sub-action
 
 If you specify the key path to an action regrouping several sub-actions, all of the sub-actions will run. When you specify the key path to a single action/sub-action, only one will run.
 

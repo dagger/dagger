@@ -275,7 +275,7 @@ This is the opposite of `docker.#Pull`. It's only needed when publishing a built
 If you target the push action directly, you'll get this value printed on the screen:
 
 ```shell
-➜ dagger do push
+➜ dagger-cue do push
 [✔] ...
 [✔] actions.push
 Field   Value

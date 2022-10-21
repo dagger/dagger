@@ -58,7 +58,7 @@ As Dagger relies on Viper to manage the CLI inputs, all its option can be replac
 | :----------- | ------------------------------- | -----------------------------------------------------------|
 | `--plan`     | export `DAGGER_PLAN=string`     | Path to plan (defaults to current directory) (default ".") |
 
-### dagger do
+### dagger-cue do
 
 | option            | Usage                                | Description                                                              |
 | :---------------- | ------------------------------------ | ------------------------------------------------------------------------ |

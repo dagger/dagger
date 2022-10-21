@@ -44,7 +44,7 @@ This is a the plan for a `.zip archives` function:
 
 ```
 
-Now we can run `dagger do deploy` to build an AWS SAM function and deploy it to AWS Lambda.
+Now we can run `dagger-cue do deploy` to build an AWS SAM function and deploy it to AWS Lambda.
 
 #### Plan for a Docker image
 
@@ -55,7 +55,7 @@ In case of building a Docker image we have to define the Docker socket and we do
 
 ```
 
-Now we can run `dagger do deploy` to build an AWS SAM function and deploy it to AWS Lambda.
+Now we can run `dagger-cue do deploy` to build an AWS SAM function and deploy it to AWS Lambda.
 
 ### GitLab CI
 
@@ -91,7 +91,7 @@ Next we have to update our `.gitlab-ci.yml` with the following content:
 
 ```
 
-Notice that we have added `--with 'actions: ciKey: "gitlab"'` to the `dagger do deploy` command.
+Notice that we have added `--with 'actions: ciKey: "gitlab"'` to the `dagger-cue do deploy` command.
 
 If we trigger the pipeline, it should build our AWS SAM function and deploy everything to AWS Lambda.
 

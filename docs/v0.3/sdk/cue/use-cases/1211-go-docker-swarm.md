@@ -24,7 +24,7 @@ This is a high level overview of all actions in the Particubes docs Dagger plan:
 We can see all available actions in a Plan by running the following command:
 
 ```console
-$ dagger do
+$ dagger-cue do
 Execute a dagger action.
 
 Available Actions:
@@ -90,16 +90,16 @@ jobs:
         run: dagger project update
 
       - name: Dagger do test
-        run: dagger do test --log-format plain
+        run: dagger-cue do test --log-format plain
 
       - name: Dagger do deploy
-        run: dagger do deploy --log-format plain
+        run: dagger-cue do deploy --log-format plain
 ```
 
 Since this is a Dagger pipeline, anyone on the team can run it locally with a single command:
 
 ```console
-dagger do
+dagger-cue do
 ```
 
 This is the first step that enabled the Particubes team to have the same CI/CD experience everywhere.

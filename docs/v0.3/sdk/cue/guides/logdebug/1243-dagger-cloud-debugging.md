@@ -18,17 +18,17 @@ To take advantage of this feature, you will need to create an account by followi
 3. After authenticating, authorize the Dagger GitHub application to finish the process.
 4. The CLI is now authenticated, it's OK to close the browser window.
 
-Once you complete the above, your `dagger do` executions will appear under your <a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> account, and look similar to:
+Once you complete the above, your `dagger-cue do` executions will appear under your <a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> account, and look similar to:
 
 ![Dagger Cloud run URL](/img/dagger-cloud/runs.png)
 
 When you click on a specific run, you can see the following:
 
-- Overview - An overview of the `dagger do` execution results. The presented information will highlight the status of the execution (succeed, failed), contextual information about the environment, and a detailed view of each action with their corresponding log outputs.
+- Overview - An overview of the `dagger-cue do` execution results. The presented information will highlight the status of the execution (succeed, failed), contextual information about the environment, and a detailed view of each action with their corresponding log outputs.
 - Shareable Run URL - A unique URL only accessible by the owner of the execution as well as some specialized Dagger engineers.
 - CUE Plans - The raw execution plan. This provides understanding about how Dagger resolved the action dependencies as well as the CUE evaluation results.
 - Actions - All the events involved in the action execution with their corresponding duration and outputs.
-- CLI Argument view - Arguments specified in the CLI when running `dagger do <action> [flags]`.
+- CLI Argument view - Arguments specified in the CLI when running `dagger-cue do <action> [flags]`.
 
 With this information, we’ve made it easier for you to inspect your runs with a more verbose failure output.
 

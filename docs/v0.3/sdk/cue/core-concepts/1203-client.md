@@ -93,7 +93,7 @@ Sometimes you need something more advanced that only a local command can give yo
 ```
 
 ```shell title="Output"
-➜  dagger do test
+➜  dagger-cue do test
 [✔] client.commands.arch
 [✔] client.commands.os
 [✔] actions.test

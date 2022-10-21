@@ -10,7 +10,7 @@ There are two ways of emptying the BuildKit cache:
 - Run your action with the `--no-cache` option:
 
 ```console
-dagger do <your-action> --no-cache
+dagger-cue do <your-action> --no-cache
 ```
 
 - Stop and remove the buildkitd container then remove its associated volume:

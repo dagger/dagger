@@ -46,13 +46,13 @@ Building images in CUE gives you greater flexibility. For example, you can autom
 Now you can deploy all versions:
 
 ```shell
-dagger do versions
+dagger-cue do versions
 ```
 
 Or just build a specific version, without pushing:
 
 ```shell
-dagger do versions 8.0 build
+dagger-cue do versions 8.0 build
 ```
 
 ## Multi-stage build

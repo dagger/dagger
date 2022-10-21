@@ -10,7 +10,7 @@ import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md';
 Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](/1200/local-dev) finishes:
 
 ```shell
-➜  APP_NAME=dagger-todo dagger do deploy
+➜  APP_NAME=dagger-todo dagger-cue do deploy
 [✔] actions.deps
 [✔] actions.test.script
 [✔] client.env
@@ -83,7 +83,7 @@ You're not limited to the outputs of an action because you can make your own in 
 ```
 
 ```shell
-➜ dagger do push
+➜ dagger-cue do push
 [✔] actions.pull
 [✔] actions.push
 Field   Value
@@ -104,7 +104,7 @@ Let's leverage CUE's [default integrations](https://cuelang.org/docs/integration
 ```
 
 ```shell
-➜ dagger do pull
+➜ dagger-cue do pull
 [✔] actions.pull
 [✔] client.filesystem."config.yaml".write
 ➜ cat config.yaml

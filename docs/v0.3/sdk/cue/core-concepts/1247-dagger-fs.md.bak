@@ -114,7 +114,7 @@ As most of Dagger actions run within a container image, an easy way to transfer 
 
 A common use-case is to create an action whose sole purpose is to install all the required packages/dependencies, and let the next action execute the core logic:
 
-```cue file=../tests/core-concepts/fs/client/input_output.cue title="dagger do test --log-format plain"
+```cue file=../tests/core-concepts/fs/client/input_output.cue title="dagger-cue do test --log-format plain"
 
 ```
 
@@ -162,7 +162,7 @@ In above example, the script only has access to the `/foo` and `/bar` directorie
 
 Below is a plan showing how to mount an FS prior executing a command on top of it:
 
-```cue file=../tests/core-concepts/fs/mount/mount_fs.cue title="dagger do verify --log-format plain"
+```cue file=../tests/core-concepts/fs/mount/mount_fs.cue title="dagger-cue do verify --log-format plain"
 
 ```
 
@@ -203,7 +203,7 @@ The aim of this action is to copy the content of an `#FS` to a `rootfs`. It reli
 
 Let's take the same plan as the one used to previously show how to `mount` a `dagger.#FS`. In this example, we will rely on the `docker.#Copy` instead of the mount, so the `#FS` is made part of the `rootfs` and can be shared with other actions:
 
-```cue file=../tests/core-concepts/fs/copy/copy_fs.cue title="dagger do verify --log-format plain"
+```cue file=../tests/core-concepts/fs/copy/copy_fs.cue title="dagger-cue do verify --log-format plain"
 
 ```
 
@@ -227,7 +227,7 @@ Below is a plan showing how to list the content of the current directory from wh
 This example uses the client API, but if you only need access to files within your Dagger project, `core.#Source` [may be a better choice](https://docs.dagger.io/1240/core-source).
 :::
 
-```cue file=../tests/core-concepts/fs/client/read_fs.cue title="dagger do list --log-format plain"
+```cue file=../tests/core-concepts/fs/client/read_fs.cue title="dagger-cue do list --log-format plain"
 
 ```
 
@@ -239,7 +239,7 @@ A simplified visual representation of above plan would be:
 
 Let's now write to the host filesystem:
 
-```cue file=../tests/core-concepts/fs/client/write_fs.cue title="dagger do create --log-format plain"
+```cue file=../tests/core-concepts/fs/client/write_fs.cue title="dagger-cue do create --log-format plain"
 
 ```
 

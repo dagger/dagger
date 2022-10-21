@@ -31,7 +31,7 @@ It does all of this only using the Bash and Docker packages in a very simple lay
 
 ### Set up all dependencies
 
-- Next we set up all the containers and tools we will need for the other steps. In this case it is a Node container for building the application and all the tools bundled into NPM and Sonarscanner for static code analysis. I do not imagine this will often be called with a dagger do command, and is more useful as a pre-requisite for other actions.
+- Next we set up all the containers and tools we will need for the other steps. In this case it is a Node container for building the application and all the tools bundled into NPM and Sonarscanner for static code analysis. I do not imagine this will often be called with a dagger-cue do command, and is more useful as a pre-requisite for other actions.
 
 ```cue file=../tests/use-cases/node-ci/dependency.cue.fragment
 

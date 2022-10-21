@@ -13,11 +13,11 @@ Developers of other Dagger packages are expected to build on top of these core p
 
 ### Plan definition
 
-`#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger do`
+`#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger-cue do`
 
 | Definition | File                                                                                   | Description                                          |
 | :--------- | :------------------------------------------------------------------------------------- | :--------------------------------------------------- |
-| `#Plan`    | [plan.cue](https://github.com/dagger/dagger/blob/v0.2.19/pkg/dagger.io/dagger/plan.cue) | A special kind of program which `dagger` can execute |
+| `#Plan`    | [plan.cue](https://github.com/dagger/dagger/blob/v0.2.19/pkg/dagger.io/dagger/plan.cue) | A special kind of program which `dagger-cue` can execute |
 
 ### Core types
 

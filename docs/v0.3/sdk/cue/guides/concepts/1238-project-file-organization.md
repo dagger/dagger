@@ -186,7 +186,7 @@ $ tree -L 2 .
 And the expected output is:
 
 ```console
-$ dagger do hello
+$ dagger-cue do hello
 [✔] actions.hello
 Field   Value
 result  "Hello, inlined world!"

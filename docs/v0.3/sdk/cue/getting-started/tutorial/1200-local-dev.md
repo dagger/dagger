@@ -43,7 +43,7 @@ With Docker running, we are ready to download our example app and run its CI/CD 
 git clone https://github.com/dagger/todoapp
 cd todoapp
 dagger project update
-dagger do build
+dagger-cue do build
 ```
 
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under 3 minutes:
@@ -79,7 +79,7 @@ In the todoapp directory, edit line `25` of `src/components/Form.js` and save th
 I change this line to `What must be done today?` and run the build locally again:
 
 ```shell
-dagger do build
+dagger-cue do build
 
 [✔] client.filesystem."./".read                                   0.0s
 [✔] actions.deps                                                  7.5s
@@ -109,7 +109,7 @@ With Docker Engine running, we are ready to download our example app and run its
 git clone https://github.com/dagger/todoapp
 cd todoapp
 dagger project update
-dagger do build
+dagger-cue do build
 ```
 
 With an empty cache, installing all dependencies, then testing & generating a build for this example app completes in just under 1 minute:
@@ -145,7 +145,7 @@ In the todoapp directory, edit line `25` of `src/components/Form.js` and save th
 I change this line to `What must be done today?` and run the build locally again:
 
 ```shell
-dagger do build
+dagger-cue do build
 
 [✔] client.filesystem."./".read                                   0.0s
 [✔] actions.deps                                                  1.1s
@@ -174,7 +174,7 @@ Still in your `Command Prompt` terminal:
 git clone https://github.com/dagger/todoapp
 cd todoapp
 dagger project update
-dagger do build
+dagger-cue do build
 ```
 
 :::tip
@@ -218,7 +218,7 @@ In the todoapp directory, edit line `25` of `src/components/Form.js` and save th
 I change this line to `What must be done today?` and run the build locally again:
 
 ```shell
-dagger do build
+dagger-cue do build
 [✔] actions.build.run.script                                     0.0s
 [✔] actions.deps                                                 3.4s
 [✔] client.filesystem."./".read                                  0.1s

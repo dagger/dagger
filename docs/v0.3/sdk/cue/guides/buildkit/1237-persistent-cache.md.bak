@@ -58,7 +58,7 @@ dagger.#Plan & {
 }
 ```
 
-To build a Go binary, just run `dagger do build`. It should then take some time to
+To build a Go binary, just run `dagger-cue do build`. It should then take some time to
 install dependencies, build the binary and output it.
 
 Here's an example of a run
@@ -100,7 +100,7 @@ missing layers on multiple runs.
 :::
 
 To store cache in an external registry, you just need to add flags to dagger command :
-`dagger do <action> --cache-to type=registry,mode=max,ref=<registry target>/<image> --cache-from type=registry,ref=<registry target>/<image>`
+`dagger-cue do <action> --cache-to type=registry,mode=max,ref=<registry target>/<image> --cache-from type=registry,ref=<registry target>/<image>`
 
 :::tip
 Using `mode=max` argument will cache **all** layers from intermediate
@@ -115,10 +115,10 @@ Let's first deploy a simple registry in your localhost
 docker run -d -p 5000:5000 --restart=always --name cache-registry registry:2
 ```
 
-Then run `dagger do build` with export cache flags.
+Then run `dagger-cue do build` with export cache flags.
 
 ```shell
-dagger do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cache-from type=registry,ref=localhost:5000/cache
+dagger-cue do build --cache-to type=registry,mode=max,ref=localhost:5000/cache --cache-from type=registry,ref=localhost:5000/cache
 [✔] actions.build.container                                                 1.3s
 [✔] client.filesystem.".".read                                              0.0s
 [✔] actions.build.container.export                                          0.0s
@@ -136,7 +136,7 @@ To store cache in your local filesystem, you just need to change flags values to
 Here's an example that exports cache to a local directory at path `./storage`.
 
 ```shell
-dagger do build --cache-to type=local,mode=max,dest=storage
+dagger-cue do build --cache-to type=local,mode=max,dest=storage
 # ...
 
 tree storage -L 1
@@ -166,7 +166,7 @@ Here's an example, using a new buildkit daemon running on a Docker installation
 docker container stop dagger-buildkitd && docker container rm dagger-buildkitd && docker volume rm dagger-buildkitd
 
 # Import cache on rebuild
-dagger do build --cache-to type=local,mode=max,dest=storage --cache-from type=local,src=storage
+dagger-cue do build --cache-to type=local,mode=max,dest=storage --cache-from type=local,src=storage
 [✔] actions.build.container                                                 2.3s
 [✔] client.filesystem.".".read                                              0.1s
 [✔] actions.build.container.export                                          0.0s

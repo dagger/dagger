@@ -91,7 +91,7 @@ If we execute this one, it will fail because `MESSAGE` has a conflict created
 from field shadowing.
 
 ```shell
-dagger do hello                   
+dagger-cue do hello                   
 [✗] actions.hello.run                                                      0.0s
 [✔] actions.hello                                                          0.0s
 12:12PM FTL failed to execute plan: task failed: actions.hello.run._exec: actions.hello.run._exec.env.MESSAGE: non-concrete value (string|struct)
@@ -112,7 +112,7 @@ run: docker.#Run & {
 ```
 
 ```shell
-dagger do hello
+dagger-cue do hello
 [✔] actions.hello.run                                                      0.0s
 [✔] actions.hello                                                          0.0s
 ```

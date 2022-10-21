@@ -68,11 +68,11 @@ jobs:
   include:
     - stage: build
       env:
-        - TASK: "dagger do build"
+        - TASK: "dagger-cue do build"
       before_script:
         - dagger project update
       script:
-        - dagger do build
+        - dagger-cue do build
 ```
 
 </TabItem>
@@ -99,7 +99,7 @@ jobs:
       - run:
           name: "Run Dagger"
           command: |
-            dagger do build --log-format plain
+            dagger-cue do build --log-format plain
 
 workflows:
   dagger-workflow:
@@ -226,7 +226,7 @@ pipeline {
         //if you're using your own Dagger plan, substitute your action name for 'hello'
         //e.g. 'build' or 'push' or whatever you've created!
         sh '''
-            dagger do hello --log-format=plain
+            dagger-cue do hello --log-format=plain
         '''
       }
     }
@@ -328,7 +328,7 @@ spec:
               tar zxf - -C /usr/local/bin
 
               dagger version
-              dagger do $(params.dagger-action)
+              dagger-cue do $(params.dagger-action)
 
             env:
               - name: APP_NAME

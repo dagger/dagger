@@ -10,7 +10,7 @@ import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md';
 Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](/1200/local-dev) finishes:
 
 ```shell
-➜  APP_NAME=dagger-todo dagger do deploy
+➜  APP_NAME=dagger-todo dagger-cue do deploy
 [✔] actions.deps
 [✔] actions.test.script
 [✔] client.env
@@ -83,7 +83,7 @@ You're not limited to the outputs of an action because you can make your own in 
 ```
 
 ```shell
-➜ dagger do push
+➜ dagger-cue do push
 [✔] actions.pull
 [✔] actions.push
 Field   Value
@@ -95,7 +95,7 @@ path    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 Since you can only output simple values, you may find the need for a solution where you can output more complex types such as structs and lists. As showcased in the [interacting with the client](../../core-concepts/1203-client.md) docs, Dagger has the ability to write into the client filesystem through the `client` API.
 
-Using this capability we can then have full control of what to output. The downsides are that these won't print to the console (only to a file), and you won't be able to pipe directly from the `dagger` command.
+Using this capability we can then have full control of what to output. The downsides are that these won't print to the console (only to a file), and you won't be able to pipe directly from the `dagger-cue` command.
 
 Let's leverage CUE's [default integrations](https://cuelang.org/docs/integrations/) and marshal a more complex value into a single `json` or `yaml` file.
 
@@ -104,7 +104,7 @@ Let's leverage CUE's [default integrations](https://cuelang.org/docs/integration
 ```
 
 ```shell
-➜ dagger do pull
+➜ dagger-cue do pull
 [✔] actions.pull
 [✔] client.filesystem."config.yaml".write
 ➜ cat config.yaml

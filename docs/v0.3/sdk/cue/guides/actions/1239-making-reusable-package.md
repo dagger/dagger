@@ -152,7 +152,7 @@ Now that we have connected all the dots, let's run our plan to see if it works:
 ```console
 $ cd rootProject
 
-$ dagger do hello --log-format plain
+$ dagger-cue do hello --log-format plain
 4:42PM INF actions.hello.script._write | computing
 4:42PM INF actions.hello._img._dag."0"._op | computing
 4:42PM INF actions.hello.script._write | completed    duration=0s
