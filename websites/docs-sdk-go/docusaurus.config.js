@@ -74,8 +74,6 @@ module.exports = {
       apiKey: "43ff4c51f0d86fbb156cdd8685f0f0f0",
       indexName: "dagger_go-sdk",
       appId: "XEIYPBWGOI",
-      // https://discourse.algolia.com/t/algolia-searchbar-is-not-working-with-docusaurus-v2/14659
-      contextualSearch: false,
     },
     hotjar: {
       siteId: "2541514",
