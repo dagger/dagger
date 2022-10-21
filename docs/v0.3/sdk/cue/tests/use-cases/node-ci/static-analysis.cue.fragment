@@ -1,0 +1,20 @@
+staticAnalysis: {
+      lint:
+        bash.#Run & {
+          workdir: "./src"
+          input:   build.output
+          script: contents: #"""
+            npx eslint --color .
+            """#
+        }
+      sonarscanner:
+        docker.#Run & {
+          env: {
+            GITHUB_BRANCH_NAME: client.env.GITHUB_HEAD_REF
+            SONAR_LOGIN:        client.env.SONAR_LOGIN
+            SONAR_HOST_URL:     "https://sonarcloud.io"
+          }
+          workdir: "/usr/src"
+          input:   deps.sonarscanner.output
+        }
+    }

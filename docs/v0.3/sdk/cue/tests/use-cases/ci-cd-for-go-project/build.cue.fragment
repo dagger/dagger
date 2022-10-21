@@ -1,0 +1,4 @@
+// Build go project
+build: go.#Build & {
+	source: _code
+}

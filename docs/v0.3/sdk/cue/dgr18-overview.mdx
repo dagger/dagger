@@ -1,0 +1,60 @@
+---
+id: overview
+title: Overview
+displayed_sidebar: "0.2"
+slug: /
+---
+
+import styles from "@site/src/css/overview.module.scss";
+import Link from "@docusaurus/Link";
+import Button from "@site/src/components/atoms/button.js";
+import TutorialCard from "@site/src/components/molecules/tutorialCard.js";
+import LinkCTA from "@site/src/components/atoms/linkCTA.js";
+import { useDocsSidebar } from "@docusaurus/theme-common";
+
+# Welcome!
+
+Welcome to Dagger's documentation site!
+
+Dagger is a portable devkit for CI/CD pipelines that helps you build powerful CI/CD pipelines quickly, then run them anywhere.
+Developed in the open by the creators of Docker.
+
+In this page you'll find all the necessary information to navigate the docs your own way.
+However, if you are looking for something specific, we recommend using the search bar.
+
+If something is missing or you think could be improved, [ask for support](https://discord.gg/ufnyBtc8uY) or [create an issue](https://github.com/dagger/dagger/issues/new?template=documentation.yaml). Thanks for being part of the Dagger community!
+
+<MainCards />
+
+<TutorialCard
+  img="/img/dagger-planning_astronaute.png"
+  title="✨ Tutorial: Test your CI locally ✨"
+  description="In this quick tutorial you'll learn how to build, test and deploy your pipeline locally and then integrate it in your own CI environment."
+  buttonLabel="Let's Build!"
+  url="1200/local-dev"
+/>
+
+export const MainCards = ({ children }) => (
+  <div className={styles.mainCards}>
+    <MainCard
+      title="🚀 Ready to lift-off?"
+      description="Set up your environment and begin your Dagger journey!"
+      buttonLabel="Install Dagger"
+      docPath="install"
+    />
+    <MainCard
+      title="📖 Want to know how it works?"
+      description="Dive in to the fundamentals of Dagger to understand the science behind the magic."
+      buttonLabel="Learn Dagger Concepts"
+      docPath="f44rm/how-it-works"
+    />
+  </div>
+);
+
+export const MainCard = ({ title, description, buttonLabel, docPath }) => (
+  <div className={styles.card}>
+    <h5>{title}</h5>
+    <span>{description}</span>
+    <Button label={buttonLabel} docPath={docPath} color="light" />
+  </div>
+);

@@ -1,0 +1,14 @@
+import (
+	"dagger.io/dagger"
+	"universe.dagger.io/go"
+)
+
+dagger.#Plan & {
+    actions: {
+    	// Improve go base image with useful tool
+        // Enable cgo by installing build-base
+        _base: go.#Image & {
+        	packages: "build-base": version: _
+        }
+    }
+}

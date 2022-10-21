@@ -79,7 +79,6 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
-        "v0.2/core-concepts/vs",
         "v0.2/core-concepts/action",
         "v0.2/core-concepts/plan",
         "v0.2/core-concepts/client",
