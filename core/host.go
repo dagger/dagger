@@ -28,12 +28,12 @@ type HostVariable struct {
 	Name string `json:"name"`
 }
 
-type FilterOpts struct {
+type CopyFilter struct {
 	Exclude []string
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.Platform, filter FilterOpts) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
