@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
 )
 

@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/tracing"
+	"dagger.io/dagger/engine"
+	"dagger.io/dagger/tracing"
 	"github.com/spf13/cobra"
 )
 

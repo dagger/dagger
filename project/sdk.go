@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger/core"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )

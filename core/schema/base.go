@@ -1,9 +1,9 @@
 package schema
 
 import (
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/project"
-	"github.com/dagger/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/project"
+	"dagger.io/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"

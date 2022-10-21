@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/sdk/go/dagger"
 )
 
 type Test struct{}

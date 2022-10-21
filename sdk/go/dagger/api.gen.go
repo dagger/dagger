@@ -5,7 +5,7 @@ package dagger
 import (
 	"context"
 
-	"dagger.io/dagger/internal/querybuilder"
+	"dagger.io/dagger/sdk/go/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 )
 
