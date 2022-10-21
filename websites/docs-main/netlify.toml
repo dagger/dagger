@@ -33,9 +33,14 @@ to = "/1243/dagger-cloud"
 status = 302
 
 # https://docs.netlify.com/routing/redirects/rewrites-proxies/
+# :splat -> https://www.youtube.com/watch?v=bcbrhxH6j-0
 [[redirects]]
 from = "/sdk/cue/*"
 to = "https://docs-v03x-sdk-cue-dagger-io.netlify.app/:splat"
+status = 200
+[[redirects]]
+from = "/sdk/go/*"
+to = "https://docs-v03x-sdk-go-dagger-io.netlify.app/:splat"
 status = 200
 
 [[headers]]
