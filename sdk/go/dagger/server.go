@@ -17,12 +17,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
-
-type Context struct {
-	context.Context
-}
 
 func Serve(server any) {
 	ctx := context.Background()
@@ -112,12 +107,12 @@ func Serve(server any) {
 		return
 	}
 
-	res, err := method.call(Context{ctx}, input.Parent, input.Args)
+	res, err := method.call(ctx, input.Parent, input.Args)
 	if err != nil {
 		writeErrorf(err)
 	}
-	if serializer, ok := res.(api.GraphQLMarshaller); ok {
-		res, err = serializer.GraphQLMarshal(ctx)
+	if serializer, ok := res.(graphqlMarshaller); ok {
+		res, err = serializer.graphqlMarshal(ctx)
 		if err != nil {
 			writeErrorf(err)
 			return
@@ -148,7 +143,7 @@ func (ts *goTypes) schema() []byte {
 		The much cleaner approach will come when we integrate this code w/ the
 		in-progress codegen work.
 		*/
-		if strings.HasPrefix(s.typ.PkgPath(), "go.dagger.io/dagger/sdk/go") {
+		if strings.HasPrefix(s.typ.PkgPath(), "dagger.io/dagger/sdk/go/dagger") {
 			continue
 		}
 
@@ -246,7 +241,7 @@ func (m *goMethod) srcPath() string {
 	return srcPath
 }
 
-func (m *goMethod) call(ctx Context, rawParent, rawArgs json.RawMessage) (any, error) {
+func (m *goMethod) call(ctx context.Context, rawParent, rawArgs json.RawMessage) (any, error) {
 	parent := reflect.New(m.parent.typ).Interface()
 	if err := json.Unmarshal(rawParent, parent); err != nil {
 		panic(err)
@@ -504,7 +499,7 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 		The much cleaner approach will come when we integrate this code w/ the
 		in-progress codegen work.
 		*/
-		if strings.HasPrefix(t.PkgPath(), "go.dagger.io/dagger/sdk/go") {
+		if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger/sdk/go/dagger") {
 			return ast.NonNullNamedType(t.Name(), nil)
 		}
 		return ast.NonNullNamedType("String", nil)
@@ -520,10 +515,10 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 	case reflect.Struct:
 		// Handle types that implement the GraphQL serializer
 		// TODO: move this at the top so it works on scalars as well
-		marshaller := reflect.TypeOf((*api.GraphQLMarshaller)(nil)).Elem()
+		marshaller := reflect.TypeOf((*graphqlMarshaller)(nil)).Elem()
 		if t.Implements(marshaller) {
 			typ := reflect.New(t)
-			result := typ.MethodByName("GraphQLType").Call([]reflect.Value{})
+			result := typ.MethodByName("graphqlType").Call([]reflect.Value{})
 			return ast.NonNullNamedType(result[0].String(), nil)
 		}
 

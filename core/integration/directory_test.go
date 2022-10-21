@@ -3,9 +3,9 @@ package core
 import (
 	"testing"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestEmptyDirectory(t *testing.T) {
@@ -415,7 +415,7 @@ func TestDirectoryDiff(t *testing.T) {
 	/*
 		This triggers a nil panic in Buildkit!
 
-		Issue: https://github.com/dagger/dagger/issues/3337
+		Issue: https://dagger.io/dagger/issues/3337
 
 		This might be fixed once we update Buildkit.
 

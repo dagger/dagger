@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"dagger.io/dagger/engine"
+	"dagger.io/dagger/tracing"
 	"github.com/spf13/cobra"
-	"go.dagger.io/dagger/engine"
-	"go.dagger.io/dagger/tracing"
 )
 
 var (

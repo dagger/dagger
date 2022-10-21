@@ -1,9 +1,9 @@
 package schema
 
 import (
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 	"github.com/moby/buildkit/client/llb"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
 )
 
 var _ router.ExecutableSchema = &gitSchema{}
