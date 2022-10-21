@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Interacting with the client
 
-`dagger.#Plan` has a `client` field that allows interaction with the local machine where the `dagger-cue` command line client is run. You can:
+`dagger.#Plan` has a `client` field that allows interaction with the local machine where the `dagger` command line client is run. You can:
 
 - Read and write files and directories;
 - Use local sockets;
@@ -168,7 +168,7 @@ INFO  actions.test._run._exec | #4 0.209 Platform: darwin / amd64
 
 :::tip Remember
 
-This is the platform where the `dagger-cue` binary is being run (a.k.a *client*), which is different from the environment where the action is actually run (i.e., BuildKit, a.k.a *server*).
+This is the platform where the `dagger` binary is being run (a.k.a *client*), which is different from the environment where the action is actually run (i.e., BuildKit, a.k.a *server*).
 
 :::
 

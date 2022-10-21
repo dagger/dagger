@@ -52,7 +52,7 @@ In this example we see that in CUE we have declared a top-level key _Bob_ twice:
 
 ### Types _are_ Values
 
-In the previous example we defined the `Name` value as the string literal _"Bob Smith"_ and the `Age` value as the integer literal _42_, both of which are [_concrete values_](#concrete-values). Generally, the output of CUE will be used as input to some other system be it an API, a CLI tool such as `dagger-cue`, a CICD process, etc, and those systems will likely expect that the data conform to a schema where each field has a type and potentially constrained by such functions as min, max, enums, regular expressions, and so on. With that in mind, we need to enforce _types_ and _constraints_ in order to prevent us for example from setting the `Name` value as an integer, or the `Age` value as a string
+In the previous example we defined the `Name` value as the string literal _"Bob Smith"_ and the `Age` value as the integer literal _42_, both of which are [_concrete values_](#concrete-values). Generally, the output of CUE will be used as input to some other system be it an API, a CLI tool such as `dagger`, a CICD process, etc, and those systems will likely expect that the data conform to a schema where each field has a type and potentially constrained by such functions as min, max, enums, regular expressions, and so on. With that in mind, we need to enforce _types_ and _constraints_ in order to prevent us for example from setting the `Name` value as an integer, or the `Age` value as a string
 
 ```cue
 Bob: {

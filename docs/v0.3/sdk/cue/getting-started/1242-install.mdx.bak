@@ -32,13 +32,13 @@ values={[
 <TabItem value="macos">
 
 We assume that you have [Homebrew](https://brew.sh/) installed.
-If you do, you can install `dagger-cue` with a single command:
+If you do, you can install `dagger` with a single command:
 
 ```shell
 brew install dagger
 ```
 
-This installs `dagger-cue` in:
+This installs `dagger` in:
 
 ```shell
 type dagger
@@ -48,7 +48,7 @@ dagger is /opt/homebrew/bin/dagger
 dagger is /usr/local/bin/dagger
 ```
 
-If you do not have Homebrew installed, or you want to install a specific version of `dagger-cue`, you can run:
+If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
 ```shell
 curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
@@ -61,14 +61,14 @@ dagger 0.2.19 (GIT_SHA) darwin/arm64
 
 <TabItem value="linux">
 
-The quickest way of installing `dagger-cue` on Linux is to run the following command:
+The quickest way of installing `dagger` on Linux is to run the following command:
 
 ```shell
 cd /usr/local
 curl -L https://dl.dagger.io/dagger/install.sh | sh
 ```
 
-This installs `dagger-cue` in `/usr/local/bin`:
+This installs `dagger` in `/usr/local/bin`:
 
 ```shell
 type dagger
@@ -77,7 +77,7 @@ dagger is /usr/local/bin/dagger
 
 If you want to install dagger to a different location, `cd` where you want `./bin/dagger` in.
 
-If you want to install a specific version of `dagger-cue`, you can run:
+If you want to install a specific version of `dagger`, you can run:
 
 ```shell
 curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
@@ -90,7 +90,7 @@ dagger 0.2.19 (GIT_SHA) linux/amd64
 
 <TabItem value="windows">
 
-`dagger-cue` can be installed in Windows via an installation powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
+`dagger` can be installed in Windows via an installation powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
 
 If you want to use the installation script, powershell 7.0 or newer is required. From powershell, run:
 
@@ -106,7 +106,7 @@ $params = "-InstallPath C:\temp"
 "$script $params" | Invoke-Expression
 ```
 
-If you want to install a specific version of `dagger-cue`, pass in a version number with the `-DaggerVersion` parameter.
+If you want to install a specific version of `dagger`, pass in a version number with the `-DaggerVersion` parameter.
 
 ```Powershell
 $script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
@@ -116,7 +116,7 @@ $params = "-DaggerVersion 0.2.28"
 
 Without passing in the `-InstallPath`, We'll save everything under `<your home folder>\dagger`
 
-Check that `dagger-cue` is installed correctly by opening a `Command Prompt` terminal and run:
+Check that `dagger` is installed correctly by opening a `Command Prompt` terminal and run:
 
 ```shell
 where dagger

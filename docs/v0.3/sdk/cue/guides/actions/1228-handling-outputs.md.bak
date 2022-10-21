@@ -95,7 +95,7 @@ path    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 Since you can only output simple values, you may find the need for a solution where you can output more complex types such as structs and lists. As showcased in the [interacting with the client](../../core-concepts/1203-client.md) docs, Dagger has the ability to write into the client filesystem through the `client` API.
 
-Using this capability we can then have full control of what to output. The downsides are that these won't print to the console (only to a file), and you won't be able to pipe directly from the `dagger-cue` command.
+Using this capability we can then have full control of what to output. The downsides are that these won't print to the console (only to a file), and you won't be able to pipe directly from the `dagger` command.
 
 Let's leverage CUE's [default integrations](https://cuelang.org/docs/integrations/) and marshal a more complex value into a single `json` or `yaml` file.
 

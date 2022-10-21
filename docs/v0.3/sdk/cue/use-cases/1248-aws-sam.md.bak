@@ -12,7 +12,7 @@ The aim is to integrate the lambda deployment to your current [Dagger](https://d
 ## :hammer_and_pick: Prerequisite
 
 Before we can build, test & deploy our example app with Dagger, we need to have Docker Engine running.
-We also need to [install `dagger-cue`](/install).
+We also need to [install `dagger`](/install).
 
 ## :beginner: Quickstart
 

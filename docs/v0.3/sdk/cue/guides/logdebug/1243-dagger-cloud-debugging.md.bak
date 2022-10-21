@@ -8,7 +8,7 @@ displayed_sidebar: '0.2'
 <p><a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> is under development, but we have just released the first telemetry feature!</p>
 
 :::tip
-Ensure you are using `dagger-cue` CLI version `0.2.18` or higher for Dagger Cloud.
+Ensure you are using `dagger` CLI version `0.2.18` or higher for Dagger Cloud.
 :::
 
 To take advantage of this feature, you will need to create an account by following these steps:

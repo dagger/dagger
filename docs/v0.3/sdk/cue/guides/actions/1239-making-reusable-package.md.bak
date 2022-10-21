@@ -35,7 +35,7 @@ mkdir rootProject && cd rootProject
 dagger project init
 ```
 
-- Update `dagger-cue` and `universe` dependencies
+- Update `dagger` and `universe` dependencies
 
 ```console
 dagger project update
