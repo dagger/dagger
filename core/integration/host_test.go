@@ -5,10 +5,10 @@ import (
 	"path"
 	"testing"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/internal/testutil"
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestHostWorkdir(t *testing.T) {
@@ -201,7 +201,7 @@ func TestHostVariable(t *testing.T) {
 
 	var secretRes struct {
 		Host struct {
-			Variable struct {
+			EnvVariable struct {
 				Value  string
 				Secret struct {
 					ID core.SecretID
@@ -215,7 +215,7 @@ func TestHostVariable(t *testing.T) {
 	err := testutil.Query(
 		`{
 			host {
-				variable(name: "HELLO_TEST") {
+				envVariable(name: "HELLO_TEST") {
 					value
 					secret {
 						id
@@ -225,10 +225,10 @@ func TestHostVariable(t *testing.T) {
 		}`, &secretRes, nil)
 	require.NoError(t, err)
 
-	varValue := secretRes.Host.Variable.Value
+	varValue := secretRes.Host.EnvVariable.Value
 	require.Equal(t, "hello", varValue)
 
-	varSecret := secretRes.Host.Variable.Secret.ID
+	varSecret := secretRes.Host.EnvVariable.Secret.ID
 
 	var execRes struct {
 		Container struct {

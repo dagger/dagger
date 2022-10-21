@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"sync"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
 )
 
 const (

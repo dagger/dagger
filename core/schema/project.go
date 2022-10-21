@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sync"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/project"
+	"dagger.io/dagger/router"
 	"github.com/pkg/errors"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/project"
-	"go.dagger.io/dagger/router"
 )
 
 type projectSchema struct {

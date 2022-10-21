@@ -5,7 +5,7 @@ import (
 	"strings"
 	"text/template"
 
-	"go.dagger.io/dagger/codegen/introspection"
+	"dagger.io/dagger/codegen/introspection"
 )
 
 var (

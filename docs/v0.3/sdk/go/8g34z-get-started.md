@@ -285,7 +285,7 @@ func build(repoUrl string) error {
   for _, version := range goVersions {
     // 3. Determine the golang image to use
     imageTag := fmt.Sprintf("golang:%s", version)
-    golang := client.Core().Container().From(api.ContainerAddress(imageTag)) // <-- Updated with the formatted image tag
+    golang := client.Core().Container().From(imageTag) // <-- Updated with the formatted image tag
 
     for _, goos := range oses {
       for _, goarch := range arches {
@@ -461,7 +461,7 @@ func build(repoUrl string) error {
 
   for _, version := range goVersions {
     imageTag := fmt.Sprintf("golang:%s", version)
-    golang := client.Core().Container().From(api.ContainerAddress(imageTag))
+    golang := client.Core().Container().From(imageTag)
     golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
     for _, goos := range oses {

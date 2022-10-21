@@ -3,9 +3,16 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/core/schema"
+	"dagger.io/dagger/internal/buildkitd"
+	"dagger.io/dagger/project"
+	"dagger.io/dagger/router"
+	"dagger.io/dagger/secret"
 	"github.com/containerd/containerd/platforms"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -14,12 +21,6 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/internal/buildkitd"
-	"go.dagger.io/dagger/project"
-	"go.dagger.io/dagger/router"
-	"go.dagger.io/dagger/secret"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -34,6 +35,7 @@ type Config struct {
 	ConfigPath string
 	// If true, do not load project extensions
 	NoExtensions bool
+	LogOutput    io.Writer
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -156,7 +158,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	})
 	eg.Go(func() error {
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, os.Stderr, ch)
+		w := startOpts.LogOutput
+		if w == nil {
+			w = io.Discard
+		}
+
+		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
 		for _, w := range warn {
 			fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
 		}

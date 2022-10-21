@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionAlpine(t *testing.T) {
@@ -66,10 +66,10 @@ func TestExtensionNetlify(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+			dirID, err := c.Host().Workdir().Read().ID(ctx)
 			require.NoError(t, err)
 
-			secretID, err := c.Core().Host().Variable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
+			secretID, err := c.Host().EnvVariable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
 			require.NoError(t, err)
 
 			data := struct {
@@ -123,7 +123,7 @@ func TestExtensionYarn(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dirID, err := c.Core().Host().Workdir().Read().ID(ctx)
+	dirID, err := c.Host().Workdir().Read().ID(ctx)
 	require.NoError(t, err)
 
 	data := struct {
