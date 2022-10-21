@@ -22,7 +22,7 @@
       `
     })
 
-    return query
+    return query.replace(/\s+/g, '')
   }
 
   export function queryFlatten(res: any) {

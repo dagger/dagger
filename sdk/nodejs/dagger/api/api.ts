@@ -1,113 +1,127 @@
 import { Engine, GraphQLClient, gql } from "../dist/index.js";
-import { Scalars, ContainerExecArgs, InputMaybe } from "./types.js";
+import { ContainerExecArgs } from "./types.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
 type QueryTree = {
   operation: string
-  args?: ContainerExecArgs | InputMaybe<Array<Scalars['String']>>
+  args?: Record<string, any>
 }
 
-
-export default class Api {
-  queryTree:  QueryTree[]
+export class BaseApi {
+  protected _queryTree:  QueryTree[]
   
-  constructor() {
-    this.queryTree = [{
+  constructor(queryTree: QueryTree[]= [{
       operation: ""
-    }]
+    }]) {
+    this._queryTree = queryTree
   }
 
-  host(): Api {
-    this.queryTree.push({
-      operation: 'host'
-    })
-
-    return this
+  // This getter is used by mocha tests.
+  get queryTree() {
+    return this._queryTree;
   }
 
-  workdir(): Api {
-    this.queryTree.push({
-      operation: 'workdir'
-    })
-
-    return this
-  }
-  
-  read(): Api {
-    this.queryTree.push({
-      operation: 'read'
-    })
-
-    return this
-  }
-
-
-  async Id(): Promise<Scalars['DirectoryID'] | []> {
-    this.queryTree.push({
-      operation: 'id'
-    })
-
-    const response = await this.compute()
-
-    return response
-  }
-
-  container(): Api {
-    this.queryTree.push({
-      operation: 'container'
-    })
-
-    return this
-  }
-
-  from(address: Scalars['ContainerAddress']): Api {
-    this.queryTree.push({
-      operation: 'from',
-      args: address
-    })
-
-    return this
-  }
-
-  exec(args: ContainerExecArgs): Api {
-    this.queryTree.push({
-      operation: 'exec',
-      args
-    })
-
-    return this
-  }
-
-  stdout(): Api {
-    this.queryTree.push({
-      operation: 'stdout',
-    })
-
-    return this
-  }
-
-  async id(): Promise<Scalars['FileID'] | []> {
-    this.queryTree.push({
-      operation: 'id',
-    })
-
-    const response = await this.compute()
-
-    return response
-  }
-
-  async compute() : Promise<string | []> {
+  protected async _compute() : Promise<Record<string, string>> {
     // run the query and return the result.
-    const query = queryBuilder(this.queryTree)
+    const query = queryBuilder(this._queryTree)
 
-    const computeQuery: Promise<{[key:string]: string | []}> = new Promise(resolve  => 
+    const computeQuery: Promise<Record<string, string>> = new Promise(resolve  => 
       new Engine({}).run(async (client: GraphQLClient) => {
         const response = await client.request(gql`${query}`)
         resolve(queryFlatten(response));
       })
     )
+
     const result = await computeQuery;
 
-    return result[Object.keys(result)[0]]
+    return result
+  }
+}
+
+export default class Api extends BaseApi {
+  
+  container(): Container {
+
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'container'
+      }
+    ]
+
+    return new Container(this._queryTree)
+  }
+}
+
+class Container extends BaseApi {
+
+  get getQueryTree() {
+    return this._queryTree;
+  }
+  
+  exec(args: ContainerExecArgs): Directory {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'exec',
+      args
+      }
+    ]
+    
+    return new Directory(this._queryTree)
+  }
+
+  from(args: { address: String } ): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'from',
+      args
+      }
+    ]
+    
+    return new Container(this._queryTree)
+  }
+
+  async id(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'id',
+      }
+    ]
+
+    const response: Record<string, string> = await this._compute()
+
+    return response
+  }
+}
+
+class Directory extends BaseApi {
+  
+  stdout(): File{
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'stdout',
+      }
+    ]
+
+    return new File(this._queryTree)
+  }
+}
+
+class File extends BaseApi {
+  async contents(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'contents'
+      }
+    ]
+
+    const response: Record<string, string> = await this._compute()
+
+    return response
   }
 }
