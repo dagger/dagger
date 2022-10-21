@@ -9,18 +9,18 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  # Specifying which version of dagger to install
+  # Specifying which version of dagger-cue to install
   # This value is read from the install script
   DAGGER_VERSION: 0.2.19
 
 jobs:
-- job: dagger
+- job: dagger-cue
   steps:
   - script: |
       cd /usr/local
       curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=$(DAGGER_VERSION) sh
     displayName: Install Dagger $(DAGGER_VERSION)
   - script: |
-      dagger project update
-      dagger do ci
+      dagger-cue project update
+      dagger-cue do ci
     displayName: Run ci action

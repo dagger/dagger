@@ -30,15 +30,15 @@
     before_script:
         - apk add --no-cache curl
         - |
-            # install dagger
+            # install dagger-cue
             cd /usr/local
             curl -L https://dl.dagger.io/dagger/install.sh | sh
             cd -
 
     script:
-        - dagger project update
+        - dagger-cue project update
         - |
-            dagger \
+            dagger-cue \
                 do \
                 ${ARGS} \
                 --log-format=plain \
