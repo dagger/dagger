@@ -5,13 +5,13 @@ displayed_sidebar: "0.2"
 
 # AWS SAM
 
-This is a [Dagger](https://dagger.io/) package to help you deploy serverless functions with ease.
+This is a [Dagger-Classic](https://dagger.io/) package to help you deploy serverless functions with ease.
 It is a superset of [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html), which allows you to build and deploy Lambda function(s).
-The aim is to integrate the lambda deployment to your current [Dagger](https://dagger.io/) pipeline. This way, you can **build** and **deploy** with a single [Dagger environment](/1200/local-dev).
+The aim is to integrate the lambda deployment to your current [Dagger-Classic](https://dagger.io/) pipeline. This way, you can **build** and **deploy** with a single [Dagger-Classic environment](/1200/local-dev).
 
 ## :hammer_and_pick: Prerequisite
 
-Before we can build, test & deploy our example app with Dagger, we need to have Docker Engine running.
+Before we can build, test & deploy our example app with Dagger-Classic, we need to have Docker Engine running.
 We also need to [install `dagger-cue`](/install).
 
 ## :beginner: Quickstart
@@ -34,7 +34,7 @@ AWS_SECRET_KEY=<your AWS secret key>
 AWS_STACK_NAME=<your stack name>
 ```
 
-Now we are ready to write the plan to build and deploy a SAM function with dagger.
+Now we are ready to write the plan to build and deploy a SAM function with Dagger-Classic.
 
 #### Plan for a .zip archive
 
