@@ -30,7 +30,7 @@ type Directory {
     directory(path: String!): Directory!
 
     "This directory plus a directory written at the given path"
-    withDirectory(path: String!, directory: DirectoryID!): Directory!
+    withDirectory(path: String!, directory: DirectoryID!, exclude: [String!], include: [String!]): Directory!
 
     "This directory with the directory at the given path removed"
     withoutDirectory(path: String!): Directory!

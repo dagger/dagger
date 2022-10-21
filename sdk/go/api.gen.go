@@ -658,10 +658,31 @@ func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
 	}
 }
 
+// DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
+type DirectoryWithDirectoryOpts struct {
+	Exclude []string
+
+	Include []string
+}
+
 // This directory plus a directory written at the given path
-func (r *Directory) WithDirectory(directory DirectoryID, path string) *Directory {
+func (r *Directory) WithDirectory(directory DirectoryID, path string, opts ...DirectoryWithDirectoryOpts) *Directory {
 	q := r.q.Select("withDirectory")
 	q = q.Arg("directory", directory)
+	// `exclude` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+			break
+		}
+	}
+	// `include` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{
@@ -872,9 +893,30 @@ type Host struct {
 	c graphql.Client
 }
 
+// HostDirectoryOpts contains options for Host.Directory
+type HostDirectoryOpts struct {
+	Exclude []string
+
+	Include []string
+}
+
 // Access a directory on the host
-func (r *Host) Directory(path string) *Directory {
+func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q := r.q.Select("directory")
+	// `exclude` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+			break
+		}
+	}
+	// `include` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{
@@ -894,9 +936,30 @@ func (r *Host) EnvVariable(name string) *HostVariable {
 	}
 }
 
+// HostWorkdirOpts contains options for Host.Workdir
+type HostWorkdirOpts struct {
+	Exclude []string
+
+	Include []string
+}
+
 // The current working directory on the host
-func (r *Host) Workdir() *Directory {
+func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
 	q := r.q.Select("workdir")
+	// `exclude` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+			break
+		}
+	}
+	// `include` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,

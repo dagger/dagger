@@ -44,8 +44,12 @@ func (s *hostSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *hostSchema) workdir(ctx *router.Context, parent any, args any) (*core.Directory, error) {
-	return s.host.Directory(ctx, ".", s.platform)
+type hostWorkdirArgs struct {
+	core.FilterOpts
+}
+
+func (s *hostSchema) workdir(ctx *router.Context, parent any, args hostWorkdirArgs) (*core.Directory, error) {
+	return s.host.Directory(ctx, ".", s.platform, args.FilterOpts)
 }
 
 type hostVariableArgs struct {
@@ -68,8 +72,10 @@ func (s *hostSchema) envVariableSecret(ctx *router.Context, parent *core.HostVar
 
 type hostDirectoryArgs struct {
 	Path string
+
+	core.FilterOpts
 }
 
 func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.Directory, error) {
-	return s.host.Directory(ctx, args.Path, s.platform)
+	return s.host.Directory(ctx, args.Path, s.platform, args.FilterOpts)
 }
