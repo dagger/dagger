@@ -97,7 +97,7 @@ dagger-cue project init --name "info@example.com"
 - Install `dagger.io` and `universe.dagger.io` dependencies
 
 ```console
-dagger project update
+dagger-cue project update
 ```
 
 - Create 2 subfolders: `foo` and `bar`:

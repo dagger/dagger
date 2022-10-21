@@ -87,7 +87,7 @@ jobs:
           install-only: true
 
       - name: Dagger project update
-        run: dagger project update
+        run: dagger-cue project update
 
       - name: Dagger do test
         run: dagger-cue do test --log-format plain

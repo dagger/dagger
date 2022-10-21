@@ -70,7 +70,7 @@ jobs:
       env:
         - TASK: "dagger-cue do build"
       before_script:
-        - dagger project update
+        - dagger-cue project update
       script:
         - dagger-cue do build
 ```
@@ -150,7 +150,7 @@ workflows:
 
       dagger version
   script:
-    - dagger project update
+    - dagger-cue project update
     - |
       dagger \
           do \

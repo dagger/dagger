@@ -63,5 +63,5 @@ cue.mod/
 The current best practice is to push your project with these files: it will ensure its consistency between runs.
 
 :::info
-We are aware of that and, soon, `dagger project update` will only download the dependencies required by your actions
+We are aware of that and, soon, `dagger-cue project update` will only download the dependencies required by your actions
 :::

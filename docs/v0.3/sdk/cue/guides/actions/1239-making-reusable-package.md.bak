@@ -38,7 +38,7 @@ dagger-cue project init
 - Update `dagger-cue` and `universe` dependencies
 
 ```console
-dagger project update
+dagger-cue project update
 ```
 
 - At the root of the project, create your `main.cue` file (file and package names are arbitrary):
@@ -110,7 +110,7 @@ $ tree -L 2
 
 ### Link package to the project
 
-- We first need to include the newly created package in the project. In order to do that, we will create a symlink similar to what `dagger project update` would create once we push the package on Github:
+- We first need to include the newly created package in the project. In order to do that, we will create a symlink similar to what `dagger-cue project update` would create once we push the package on Github:
 
 ```console
 $ ls -l
@@ -123,7 +123,7 @@ $ mkdir -p rootProject/cue.mod/pkg/github.com/your-username/
 $ ln -s "$(pwd)/personal" "$(pwd)/rootProject/cue.mod/pkg/github.com/your-username/personal"
 ```
 
-When using your package from `dagger project update` in the `rootProject` directory, the actual packager manager would copy the files from the repository in the `rootProject/cue.mod/pkg/github.com/your-username/personal` folder.
+When using your package from `dagger-cue project update` in the `rootProject` directory, the actual packager manager would copy the files from the repository in the `rootProject/cue.mod/pkg/github.com/your-username/personal` folder.
 
 - We then need to change the project's `main.cue` to call the `#Run` definition in the `personal` package that we just built:
 
@@ -173,7 +173,7 @@ Now that we made sure we correctly built our package, we only need to push it to
 - Tag
 - Push
 
-On another project, you will directly be able to retrieve your package using the `dagger project update github.com/your-username/personal@<tag>` command, where `<tag>` is a git tag in the format `vX.Y.Z`[^1] (e.g., `v0.1.0`).
+On another project, you will directly be able to retrieve your package using the `dagger-cue project update github.com/your-username/personal@<tag>` command, where `<tag>` is a git tag in the format `vX.Y.Z`[^1] (e.g., `v0.1.0`).
 
 [^1]: Where `X.Y.Z` is a [semantic version](https://semver.org), with *major*, *minor* and *patch* components.
 
@@ -187,10 +187,10 @@ The name of the repository should follow the name of the created folder and the 
 
 Omitting `@<tag>` (same as using default branch for repository) or using a branch instead of a tag (e.g., `@main`) is not recommended because of **reproducibility** issues. If you do this you may get a *checksum didn't match* error.
 
-The reason for this is that a branch may point to different commits in time. If you use a branch as the version when you install the package, the file contents of that same "version" may change if you add commits to it by the next time you install in a clean clone (`dagger project update`). The new checksum for the files won't match the one that was commited in `dagger.sum` previously.
+The reason for this is that a branch may point to different commits in time. If you use a branch as the version when you install the package, the file contents of that same "version" may change if you add commits to it by the next time you install in a clean clone (`dagger-cue project update`). The new checksum for the files won't match the one that was commited in `dagger.sum` previously.
 
 There's an [open issue](https://github.com/dagger/dagger/issues/2502) to fix this behavior by converting the branch into a [pseudo-version](https://go.dev/ref/mod#pseudo-versions), targetting the specific commit the branch points to at the point it was added to the project or updated.
 
-Until then, it's best to avoid using branches as versions. If you really need to, the best workaround is to vendor your module (committing in `cue.mod/pkg` to git and not running `dagger project update` in CI), and re-install with `dagger project update <url>@<branch>` to update.
+Until then, it's best to avoid using branches as versions. If you really need to, the best workaround is to vendor your module (committing in `cue.mod/pkg` to git and not running `dagger-cue project update` in CI), and re-install with `dagger-cue project update <url>@<branch>` to update.
 
 :::
