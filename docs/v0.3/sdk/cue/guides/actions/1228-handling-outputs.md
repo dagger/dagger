@@ -49,7 +49,7 @@ For this example, ensure you have a registry on `localhost` listening on port `5
 ```
 
 ```shell
-➜ dagger --output-format json do push | jq '.result'
+➜ dagger-cue --output-format json do push | jq '.result'
 "localhost:5042/alpine:latest@sha256:a777c9c66ba177ccfea23f2a216ff6721e78a662cd17019488c417135299cd89"
 ```
 
@@ -57,7 +57,7 @@ For this example, ensure you have a registry on `localhost` listening on port `5
 You can silence the `info` logs by raising the log level (or redirecting _stderr_ somewhere else):
 
 ```shell
-➜ dagger -l error --output-format json do push | jq '.result'
+➜ dagger-cue -l error --output-format json do push | jq '.result'
 ```
 
 :::
@@ -67,7 +67,7 @@ You can silence the `info` logs by raising the log level (or redirecting _stderr
 You can also save the output to a file using the `--output` flag. Let's do it in _yaml_ this time:
 
 ```shell
-➜ dagger --output-format yaml --output result.yaml do push
+➜ dagger-cue --output-format yaml --output result.yaml do push
 ➜ cat result.yaml
 result: localhost:5042/alpine:latest@sha256:47a163eb7b572819d862b4a2c95a399829c8c79fab51f1d40c59708aa0e35331
 ```
