@@ -71,8 +71,8 @@ module.exports = {
       hideOnScroll: true,
     },
     algolia: {
-      apiKey: "bffda1490c07dcce81a26a144115cc02",
-      indexName: "dagger",
+      apiKey: "43ff4c51f0d86fbb156cdd8685f0f0f0",
+      indexName: "dagger_v03x",
       appId: "XEIYPBWGOI",
     },
     hotjar: {
