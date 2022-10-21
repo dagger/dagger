@@ -18,6 +18,7 @@ var (
 	localDirsInput []string
 
 	devServerPort int
+	logOutputPath string
 )
 
 func init() {
@@ -37,6 +38,7 @@ func init() {
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
 	devCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
+	devCmd.Flags().StringVarP(&logOutputPath, "log-output", "", "", "path to a file for the log")
 
 	projectCmd.AddCommand(
 		initCmd,
