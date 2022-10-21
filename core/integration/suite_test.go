@@ -1,13 +1,22 @@
 package core
 
 import (
+	"context"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
+
+func connect(t *testing.T) (*dagger.Client, context.Context) {
+	ctx := context.Background()
+	client, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	return client, ctx
+}
 
 func newCache(t *testing.T) core.CacheID {
 	var res struct {
