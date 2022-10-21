@@ -162,7 +162,7 @@ If you need the current platform, there’s a more portable way than running the
 ```cue file=../tests/core-concepts/client/plans/platform.cue
 ```
 
-```shell title="dagger --log-format plain do test"
+```shell title="dagger-cue --log-format plain do test"
 INFO  actions.test._run._exec | #4 0.209 Platform: darwin / amd64
 ```
 

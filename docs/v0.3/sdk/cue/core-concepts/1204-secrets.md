@@ -7,9 +7,9 @@ displayed_sidebar: '0.2'
 
 ## What are Secrets?
 
-Secrets support in Dagger allows you to utilize confidential information -- such as passwords, API keys, SSH keys, etc -- when running your Dagger Plans, _without_ exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into cache.
+Secrets support in Dagger-Classic allows you to utilize confidential information -- such as passwords, API keys, SSH keys, etc -- when running your Dagger-Classic Plans, _without_ exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into cache.
 
-Secrets are never merged into the CUE configuration. They are managed by the Dagger runtime, only  referenced as opaque identifiers, and can only be used by a special filesystem mount or as an environment variable designed to minimize leak risk.
+Secrets are never merged into the CUE configuration. They are managed by the Dagger-Classic runtime, only  referenced as opaque identifiers, and can only be used by a special filesystem mount or as an environment variable designed to minimize leak risk.
 
 ## Getting or Generating Secrets
 
@@ -114,7 +114,7 @@ dagger.#Plan & {
 
 ## Using Secrets
 
-Secrets can be used in a number of contexts within a Dagger Plan (note: this list is _not exhaustive_):
+Secrets can be used in a number of contexts within a Dagger-Classic Plan (note: this list is _not exhaustive_):
 
 ### In a `Docker.#Run`
 
@@ -210,7 +210,7 @@ TODO: Provide examples of these
 - Baking secrets into a container, by copying them into a filesystem or container from a mount or environment variable
 -->
 
-We provide safeguards against printing of Secret values to Dagger logs, but you should generally not log Secrets to the console using `echo`, `cat`, etc.
+We provide safeguards against printing of Secret values to Dagger-Classic logs, but you should generally not log Secrets to the console using `echo`, `cat`, etc.
 
 ## Safe Transformations of Secrets
 

@@ -3,17 +3,17 @@ slug: /1213/api
 displayed_sidebar: '0.2'
 ---
 
-# Dagger CUE API
+# Dagger-Classic CUE API
 
-As of Dagger 0.2, the Dagger CUE API can be imported via `dagger.io/dagger` & `dagger.io/dagger/core`
+As of Dagger-Classic 0.2, the Dagger-Classic CUE API can be imported via `dagger.io/dagger` & `dagger.io/dagger/core`
 
-The Dagger CUE API is the set of CUE packages released alongside the Dagger engine.
+The Dagger-Classic CUE API is the set of CUE packages released alongside the Dagger-Classic engine.
 
-Developers of other Dagger packages are expected to build on top of these core packages.
+Developers of other Dagger-Classic packages are expected to build on top of these core packages.
 
 ### Plan definition
 
-`#Plan` defines the structure of a Dagger plan - a complete configuration executable by `dagger-cue do`
+`#Plan` defines the structure of a Dagger-Classic plan - a complete configuration executable by `dagger-cue do`
 
 | Definition | File                                                                                   | Description                                          |
 | :--------- | :------------------------------------------------------------------------------------- | :--------------------------------------------------- |
@@ -21,7 +21,7 @@ Developers of other Dagger packages are expected to build on top of these core p
 
 ### Core types
 
-Dagger extends the CUE type system with the following core types:
+Dagger-Classic extends the CUE type system with the following core types:
 
 | Definition     | File                                                                                          | Description                                           |
 | :------------- | :------------------------------------------------------------------------------------------   | :---------------------------------------------------- |
@@ -39,11 +39,11 @@ Dagger extends the CUE type system with the following core types:
 
 ### Core actions
 
-Dagger works by executing actions in a certain order and passing data between actions in a certain layout.
+Dagger-Classic works by executing actions in a certain order and passing data between actions in a certain layout.
 
 Developers can combine actions into higher-level actions, which in turn can be combined into even higher-level actions,
 and so on at arbitrary levels of depth. At the bottom of this abstraction stack are _core actions_: these
-are implemented by Dagger itself, and are always available.
+are implemented by Dagger-Classic itself, and are always available.
 
 The following core actions are available:
 
