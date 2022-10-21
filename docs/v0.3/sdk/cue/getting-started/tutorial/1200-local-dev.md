@@ -14,10 +14,10 @@ This guide shows you the Dagger way.
 Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
 Afterwards, we'll look at running the same [Dagger pipeline in your CI system](/1201/ci-environment).
 
-Before we can build & test our example app with `dagger-cue`, we need to have [Dagger installed](/install) and Docker running.
+Before we can build & test our example app with `dagger-cue`, we need to have [the Dagger Engine installed](/install) and Docker running.
 
 :::tip
-[The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
+[The Dagger Engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
 :::
 
 <BrowserOnly>

@@ -6,7 +6,7 @@ displayed_sidebar: "0.2"
 
 # Install Dagger
 
-The first step to get started is to install dagger on your local machine.
+The first step to get started is to install the Dagger Engine on your local machine.
 Once installed, we recommend [following our tutorial](/1200/local-dev) (or trying a template.)
 
 import Tabs from "@theme/Tabs";
@@ -35,17 +35,17 @@ We assume that you have [Homebrew](https://brew.sh/) installed.
 If you do, you can install `dagger-cue` with a single command:
 
 ```shell
-brew install dagger
+brew install dagger-cue
 ```
 
 This installs `dagger-cue` in:
 
 ```shell
-type dagger
+type dagger-cue
 # macOS ARM:
-dagger is /opt/homebrew/bin/dagger
+dagger-cue is /opt/homebrew/bin/dagger-cue
 # macOS Intel:
-dagger is /usr/local/bin/dagger
+dagger-cue is /usr/local/bin/dagger-cue
 ```
 
 If you do not have Homebrew installed, or you want to install a specific version of `dagger-cue`, you can run:
@@ -53,8 +53,8 @@ If you do not have Homebrew installed, or you want to install a specific version
 ```shell
 curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
 
-./bin/dagger version
-dagger 0.2.19 (GIT_SHA) darwin/arm64
+./bin/dagger-cue version
+dagger-cue 0.2.19 (GIT_SHA) darwin/arm64
 ```
 
 </TabItem>
@@ -71,26 +71,26 @@ curl -L https://dl.dagger.io/dagger/install.sh | sh
 This installs `dagger-cue` in `/usr/local/bin`:
 
 ```shell
-type dagger
-dagger is /usr/local/bin/dagger
+type dagger-cue
+dagger-cue is /usr/local/bin/dagger-cue
 ```
 
-If you want to install dagger to a different location, `cd` where you want `./bin/dagger` in.
+If you want to install the Dagger Engine to a different location, `cd` where you want `./bin/dagger-cue` in.
 
 If you want to install a specific version of `dagger-cue`, you can run:
 
 ```shell
 curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.2.19 sh
 
-./bin/dagger version
-dagger 0.2.19 (GIT_SHA) linux/amd64
+./bin/dagger-cue version
+dagger-cue 0.2.19 (GIT_SHA) linux/amd64
 ```
 
 </TabItem>
 
 <TabItem value="windows">
 
-`dagger-cue` can be installed in Windows via an installation powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger) or [Scoop](https://scoop.sh/#/apps?q=dagger).
+`dagger-cue` can be installed in Windows via an installation powershell script, [Chocolatey](https://community.chocolatey.org/packages/dagger-cue) or [Scoop](https://scoop.sh/#/apps?q=dagger-cue).
 
 If you want to use the installation script, powershell 7.0 or newer is required. From powershell, run:
 
@@ -114,26 +114,26 @@ $params = "-DaggerVersion 0.2.28"
 "$script $params" | Invoke-Expression
 ```
 
-Without passing in the `-InstallPath`, We'll save everything under `<your home folder>\dagger`
+Without passing in the `-InstallPath`, We'll save everything under `<your home folder>\dagger-cue`
 
 Check that `dagger-cue` is installed correctly by opening a `Command Prompt` terminal and run:
 
 ```shell
-where dagger
-C:\<your home folder>\dagger\dagger.exe
+where dagger-cue
+C:\<your home folder>\dagger\dagger-cue.exe
 ```
 
 If you have Chocolatey installed, just open a terminal and run:
 
 ```shell
-choco install dagger
+choco install dagger-cue
 ```
 
 If you have Scoop installed, just open a terminal and run:
 
 ```shell
 scoop bucket add main # If you don't have the main bucket added yet
-scoop install dagger
+scoop install dagger-cue
 ```
 
 </TabItem>

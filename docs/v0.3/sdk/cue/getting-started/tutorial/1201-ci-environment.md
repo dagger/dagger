@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # Integrate with your CI environment
 
-[Once you have Dagger running locally](/1200/local-dev), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
+[Once you have the Dagger Engine running locally](/1200/local-dev), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
 
 We started with [CI environments that you told us you are using](https://github.com/dagger/dagger/discussions/1677).
 We will configure a production deployment for the same application that we covered in the [local dev example](/1200/local-dev).
@@ -55,7 +55,7 @@ services:
 
 install:
   - |
-    # Installing dagger
+    # Installing dagger-cue
     cd /usr/local
     curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
     cd -
@@ -91,13 +91,13 @@ jobs:
       - setup_remote_docker:
           version: "20.10.14"
       - run:
-          name: "Install Dagger"
+          name: "Install the Dagger Engine"
           command: |
             cd /usr/local
             wget -O - https://dl.dagger.io/dagger/install.sh | sudo sh
             cd -
       - run:
-          name: "Run Dagger"
+          name: "Run the Dagger Engine"
           command: |
             dagger-cue do build --log-format plain
 
@@ -148,11 +148,11 @@ workflows:
       wget -O - https://dl.dagger.io/dagger/install.sh | sh
       cd -
 
-      dagger version
+      dagger-cue version
   script:
     - dagger-cue project update
     - |
-      dagger \
+      dagger-cue \
           do \
           --cache-from type=local,src=${DAGGER_CACHE_PATH} \
           --cache-to type=local,mode=max,dest=${DAGGER_CACHE_PATH} \
@@ -242,7 +242,7 @@ pipeline {
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: dagger
+  name: dagger-cue
 spec:
   description: |
     Execute a dagger action from a git repo.
@@ -327,7 +327,7 @@ spec:
               wget -c https://github.com/dagger/dagger/releases/download/$(params.dagger-version)/dagger_$(params.dagger-version)_linux_${arch}.tar.gz  -O - |  \
               tar zxf - -C /usr/local/bin
 
-              dagger version
+              dagger-cue version
               dagger-cue do $(params.dagger-action)
 
             env:
@@ -406,7 +406,7 @@ Since you cannot use the `install.sh` script on a Windows hosted agent, you will
 - task: ChocolateyCommand@0
   inputs:
     command: "install"
-    installPackageId: "dagger"
+    installPackageId: "dagger-cue"
     installPackageVersion: "$(DAGGER_VERSION)"
   displayName: Install Dagger $(DAGGER_VERSION)
 ```
