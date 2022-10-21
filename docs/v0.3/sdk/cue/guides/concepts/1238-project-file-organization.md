@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # Project file organization
 
-When your Dagger configuration grows, you may feel the need to better organize your project by splitting it into multiple files.
+When your configuration grows, you may feel the need to better organize your project by splitting it into multiple files.
 
 A simple way to accomplish this is to create and import packages within your project's module.
 
@@ -31,7 +31,7 @@ module: ""
 
 Anonymous modules are used when we don't need to import other packages from within the same module.
 
-By default, this is how Dagger projects start: a single CUE file (e.g. `dagger.cue`), which imports everything from third-party packages, such as `universe.dagger.io/docker`.
+By default, this is how projects start: a single CUE file (e.g. `dagger.cue`), which imports everything from third-party packages, such as `universe.dagger.io/docker`.
 
 ### When to name a module
 

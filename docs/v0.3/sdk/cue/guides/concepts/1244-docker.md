@@ -63,7 +63,7 @@ You can see more examples in the [Building container images](./1205-container-im
 
 ### `docker.#Pull`
 
-In most cases, you'll need to pull a docker image from a docker registry in order to work on top of it with dagger. Authentication is supported via a simple `username` and `secret` combination, although these credentials can be fetched through more complex means (see the [AWS package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/aws) for an example).
+In most cases, you'll need to pull a docker image from a docker registry in order to work on top of it with the Dagger Engine. Authentication is supported via a simple `username` and `secret` combination, although these credentials can be fetched through more complex means (see the [AWS package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/aws) for an example).
 
 ```cue file=../../tests/guides/docker/pull.cue
 ```
