@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 )
 
 type hostSchema struct {
@@ -30,17 +30,17 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"host": router.PassthroughResolver,
 		},
 		"Host": router.ObjectResolver{
-			"workdir":   router.ToResolver(s.workdir),
-			"directory": router.ToResolver(s.directory),
-			"variable":  router.ToResolver(s.variable),
+			"workdir":     router.ToResolver(s.workdir),
+			"directory":   router.ToResolver(s.directory),
+			"envVariable": router.ToResolver(s.envVariable),
 		},
 		"HostDirectory": router.ObjectResolver{
 			"read":  router.ToResolver(s.dirRead),
 			"write": router.ToResolver(s.dirWrite),
 		},
 		"HostVariable": router.ObjectResolver{
-			"value":  router.ToResolver(s.variableValue),
-			"secret": router.ToResolver(s.variableSecret),
+			"value":  router.ToResolver(s.envVariableValue),
+			"secret": router.ToResolver(s.envVariableSecret),
 		},
 	}
 }
@@ -59,17 +59,17 @@ type hostVariableArgs struct {
 	Name string
 }
 
-func (s *hostSchema) variable(ctx *router.Context, parent any, args hostVariableArgs) (*core.HostVariable, error) {
+func (s *hostSchema) envVariable(ctx *router.Context, parent any, args hostVariableArgs) (*core.HostVariable, error) {
 	return &core.HostVariable{
 		Name: args.Name,
 	}, nil
 }
 
-func (s *hostSchema) variableValue(ctx *router.Context, parent *core.HostVariable, args any) (string, error) {
+func (s *hostSchema) envVariableValue(ctx *router.Context, parent *core.HostVariable, args any) (string, error) {
 	return os.Getenv(parent.Name), nil
 }
 
-func (s *hostSchema) variableSecret(ctx *router.Context, parent *core.HostVariable, args any) (*core.Secret, error) {
+func (s *hostSchema) envVariableSecret(ctx *router.Context, parent *core.HostVariable, args any) (*core.Secret, error) {
 	return core.NewSecretFromHostEnv(parent.Name)
 }
 

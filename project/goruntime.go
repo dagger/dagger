@@ -5,18 +5,24 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"dagger.io/dagger/core"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
 )
 
 func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
 	// TODO(vito): handle platform?
-	contextState, rel, _, err := p.workdir.Decode()
+	payload, err := p.workdir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
+
+	contextState, err := payload.State()
+	if err != nil {
+		return nil, err
+	}
+
 	workdir := "/src"
 	return core.NewDirectory(ctx,
 		goBase(gw).Run(llb.Shlex(
@@ -26,7 +32,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 			)),
 			llb.Dir(workdir),
 			llb.AddEnv("CGO_ENABLED", "0"),
-			llb.AddMount("/src", contextState, llb.SourcePath(rel)),
+			llb.AddMount("/src", contextState, llb.SourcePath(payload.Dir)),
 			withGoCaching(),
 		).Root(),
 		"",

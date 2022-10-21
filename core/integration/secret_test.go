@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"testing"
 
+	"dagger.io/dagger/internal/testutil"
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/testutil"
 )
 
 func TestSecretEnvFromFile(t *testing.T) {
@@ -123,4 +125,16 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.Exec.Stdout.Contents, "some-secret")
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
+}
+
+func TestSecretPlaintext(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	plaintext, err := c.Directory().
+		WithNewFile("TOP_SECRET", dagger.DirectoryWithNewFileOpts{Contents: "hi"}).File("TOP_SECRET").Secret().Plaintext(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hi", plaintext)
 }

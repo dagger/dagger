@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"dagger.io/dagger/sdk/go/dagger"
 
 	openAPIClient "github.com/go-openapi/runtime/client"
 	netlifyModel "github.com/netlify/open-api/v2/go/models"
@@ -22,7 +22,7 @@ func main() {
 type Netlify struct {
 }
 
-func (Netlify) Deploy(ctx context.Context, contents dagger.FSID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
+func (Netlify) Deploy(ctx context.Context, contents dagger.DirectoryID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func (Netlify) Deploy(ctx context.Context, contents dagger.FSID, subdir *string,
 	defer client.Close()
 
 	// Setup Auth
-	tokenPlaintext, err := secret(ctx, client, token)
+	tokenPlaintext, err := client.Secret(token).Plaintext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret: %w", err)
 	}
@@ -95,30 +95,4 @@ type SiteURLs struct {
 	URL       string
 	DeployURL string
 	LogsURL   string
-}
-
-func secret(ctx context.Context, client *dagger.Client, id dagger.SecretID) (string, error) {
-	req := &dagger.Request{
-		Query: `
-query Secret ($id: SecretID!) {
-	core {
-		secret(id: $id)
-	}
-}
-`,
-		Variables: map[string]any{
-			"id": id,
-		},
-	}
-	resp := struct {
-		Core struct {
-			Secret string
-		}
-	}{}
-	err := client.Do(ctx, req, &dagger.Response{Data: &resp})
-	if err != nil {
-		return "", err
-	}
-
-	return resp.Core.Secret, nil
 }

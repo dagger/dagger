@@ -4,7 +4,7 @@ extend type Query {
 
 type Netlify {
   deploy(
-    contents: FSID!
+    contents: DirectoryID!
     subdir: String
     siteName: String
     token: SecretID!
@@ -18,7 +18,7 @@ type SiteURLs {
   logsURL: String
 }
 
-extend type Filesystem {
+extend type Directory {
   netlifyDeploy(
     subdir: String
     siteName: String

@@ -5,13 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/core/schema"
+	"dagger.io/dagger/internal/testutil"
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/internal/testutil"
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -21,7 +20,7 @@ func TestContainerScratch(t *testing.T) {
 		Container struct {
 			ID string
 			Fs struct {
-				Contents []string
+				Entries []string
 			}
 		}
 	}{}
@@ -31,13 +30,13 @@ func TestContainerScratch(t *testing.T) {
 			container {
 				id
 				fs {
-					contents
+					entries
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Container.ID)
-	require.Empty(t, res.Container.Fs.Contents)
+	require.Empty(t, res.Container.Fs.Entries)
 }
 
 func TestContainerFrom(t *testing.T) {
@@ -71,6 +70,67 @@ func TestContainerFrom(t *testing.T) {
 	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
 }
 
+func TestContainerBuild(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	envImpl := c.Directory().
+		WithNewFile("main.go", dagger.DirectoryWithNewFileOpts{
+			Contents: `package main
+import "fmt"
+import "os"
+func main() {
+	for _, env := range os.Environ() {
+		fmt.Println(env)
+	}
+}`,
+		})
+
+	t.Run("default Dockerfile location", func(t *testing.T) {
+		srcID, err := envImpl.
+			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
+				Contents: `FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`,
+			}).
+			ID(ctx)
+		require.NoError(t, err)
+
+		env, err := c.Container().Build(srcID).Exec().Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
+	t.Run("custom Dockerfile location", func(t *testing.T) {
+		srcID, err := envImpl.
+			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
+				Contents: `FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`,
+			}).
+			ID(ctx)
+		require.NoError(t, err)
+
+		env, err := c.Container().Build(srcID, dagger.ContainerBuildOpts{
+			Dockerfile: "subdir/Dockerfile.whee",
+		}).Exec().Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+}
+
 func TestContainerWithFS(t *testing.T) {
 	t.Parallel()
 
@@ -79,9 +139,7 @@ func TestContainerWithFS(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	core := c.Core()
-
-	alpine316 := core.Container().From("alpine:3.16.2")
+	alpine316 := c.Container().From("alpine:3.16.2")
 
 	alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
@@ -89,7 +147,7 @@ func TestContainerWithFS(t *testing.T) {
 	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
 	dirID, err := alpine316.FS().ID(ctx)
 	require.NoError(t, err)
-	exitCode, err := core.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
+	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(dagger.ContainerExecOpts{
 		Args: []string{
 			"/bin/sh",
 			"-c",
@@ -101,7 +159,7 @@ func TestContainerWithFS(t *testing.T) {
 	require.NotEmpty(t, dirID)
 	require.Equal(t, exitCode, 0)
 
-	alpine315 := core.Container().From("alpine:3.15.6")
+	alpine315 := c.Container().From("alpine:3.15.6")
 
 	varVal := "testing123"
 
@@ -234,7 +292,7 @@ func TestContainerExecStdin(t *testing.T) {
 		`{
 			container {
 				from(address: "alpine:3.16.2") {
-					exec(args: ["cat"], opts: {stdin: "hello"}) {
+					exec(args: ["cat"], stdin: "hello") {
 						stdout {
 							contents
 						}
@@ -267,7 +325,8 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					exec(
 						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
-						opts: {redirectStdout: "out", redirectStderr: "err"}
+						redirectStdout: "out",
+						redirectStderr: "err"
 					) {
 						out: file(path: "out") {
 							contents
@@ -290,7 +349,8 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					exec(
 						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
-						opts: {redirectStdout: "out", redirectStderr: "err"}
+						redirectStdout: "out",
+						redirectStderr: "err"
 					) {
 						stdout {
 							contents
@@ -2294,6 +2354,7 @@ func TestContainerMultiFrom(t *testing.T) {
 
 func TestContainerPublish(t *testing.T) {
 	ctx := context.Background()
+
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
@@ -2304,106 +2365,35 @@ func TestContainerPublish(t *testing.T) {
 	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
 	randomID := identity.NewID()
 	go func() {
-		err := c.Do(ctx,
-			&dagger.Request{
-				Query: `query RunRegistry($rand: String!) {
-						container {
-							from(address: "registry:2") {
-								withEnvVariable(name: "RANDOM", value: $rand) {
-									exec(args: ["/etc/docker/registry/config.yml"]) {
-										stdout {
-											contents
-										}
-										stderr {
-											contents
-										}
-									}
-								}
-							}
-						}
-					}`,
-				Variables: map[string]any{
-					"rand": randomID,
-				},
-			},
-			&dagger.Response{Data: new(map[string]any)},
-		)
+		_, err := c.Container().
+			From("registry:2").
+			WithEnvVariable("RANDOM", randomID).
+			Exec().
+			ExitCode(ctx)
 		if err != nil {
 			t.Logf("error running registry: %v", err)
 		}
 	}()
 
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query WaitForRegistry($rand: String!) {
-					container {
-						from(address: "alpine:3.16.2") {
-							withEnvVariable(name: "RANDOM", value: $rand) {
-								exec(args: ["sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"]) {
-									stdout {
-										contents
-									}
-								}
-							}
-						}
-					}
-				}`,
-			Variables: map[string]any{
-				"rand": randomID,
-			},
-		},
-		&dagger.Response{Data: new(map[string]any)},
-	)
+	_, err = c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("RANDOM", randomID).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
+		}).
+		ExitCode(ctx)
 	require.NoError(t, err)
 
-	testRef := core.ContainerAddress("127.0.0.1:5000/testimagepush:latest")
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query TestImagePush($ref: ContainerAddress!) {
-					container {
-						from(address: "alpine:3.16.2") {
-							publish(address: $ref)
-						}
-					}
-				}`,
-			Variables: map[string]any{
-				"ref": testRef,
-			},
-		},
-		&dagger.Response{Data: new(map[string]any)},
-	)
+	testRef := "127.0.0.1:5000/testimagepush:latest"
+	pushedRef, err := c.Container().
+		From("alpine:3.16.2").
+		Publish(ctx, testRef)
 	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
 
-	res := struct {
-		Container struct {
-			From struct {
-				Fs struct {
-					File struct {
-						Contents string
-					}
-				}
-			}
-		}
-	}{}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query TestImagePull($ref: ContainerAddress!) {
-					container {
-						from(address: $ref) {
-							fs {
-								file(path: "/etc/alpine-release") {
-									contents
-								}
-							}
-						}
-					}
-				}`,
-			Variables: map[string]any{
-				"ref": testRef,
-			},
-		},
-		&dagger.Response{Data: &res},
-	)
+	contents, err := c.Container().
+		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
+	require.Equal(t, contents, "3.16.2\n")
 }

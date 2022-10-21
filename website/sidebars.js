@@ -10,6 +10,38 @@
  */
 
 module.exports = {
+  '0.3-go-sdk': [
+    {
+      type: "category",
+      label: "Go SDK",
+      collapsible: false,
+      collapsed: false,
+      link: {type: "doc", id: "v0.3/sdk/go/fssrz-index"},
+      items: [
+        "v0.3/sdk/go/r2eu9-install",
+        {
+          type: "doc",
+          label: "Get Started",
+          id: "v0.3/sdk/go/8g34z-get-started",
+        },
+
+        {
+          type: "link",
+          label: "Reference 🔗",
+          href: "https://pkg.go.dev/go.dagger.io/dagger@v0.3.0-alpha.1"
+        }
+      ],
+    },
+    {
+      type: "doc",
+      id: "v0.3/sdk/go/xfgss-faq",
+    },
+    {
+      type: "link",
+      label: "⬅️ Dagger 0.2",
+      href: "/",
+    },
+  ],
   0.2: [
     {
       type: "category",

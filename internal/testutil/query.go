@@ -2,10 +2,8 @@ package testutil
 
 import (
 	"context"
-	"os"
 
-	"go.dagger.io/dagger/internal/buildkitd"
-	"go.dagger.io/dagger/sdk/go/dagger"
+	"dagger.io/dagger/sdk/go/dagger"
 )
 
 type QueryOptions struct {
@@ -37,13 +35,4 @@ func Query(query string, res any, opts *QueryOptions, clientOpts ...dagger.Clien
 		},
 		&dagger.Response{Data: &res},
 	)
-}
-
-func SetupBuildkitd() error {
-	host, err := buildkitd.StartGoModBuildkitd(context.Background())
-	if err != nil {
-		return err
-	}
-	os.Setenv("BUILDKIT_HOST", host)
-	return nil
 }

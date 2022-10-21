@@ -10,7 +10,7 @@ function new() {
 		return 1
 	fi
 	local next
-	next=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c5)
+	next=$(LC_ALL=C tr -dc '0-9' < /dev/urandom | head -c6)
 
 	local filename="$next-$name.md"
 	echo "Creating $filename"

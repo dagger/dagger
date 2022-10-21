@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 func TestExtensionMount(t *testing.T) {
@@ -115,8 +115,10 @@ func TestCodeToSchema(t *testing.T) {
 			ParentResolver      struct {
 				SubField string
 			}
-			ReturnFilesystem struct {
-				File string
+			ReturnDirectory struct {
+				File struct {
+					Contents string
+				}
 			}
 		}
 	}{}
@@ -189,8 +191,10 @@ func TestCodeToSchema(t *testing.T) {
 						parentResolver(str: "parent") {
 							subField(str: "child")
 						}
-						returnFilesystem(ref: "alpine:3.16.2") {
-							file(path: "/etc/alpine-release")
+						returnDirectory(ref: "alpine:3.16.2") {
+							file(path: "/etc/alpine-release") {
+								contents
+							}
 						}
 					}
 				}`,
@@ -222,7 +226,7 @@ func TestCodeToSchema(t *testing.T) {
 		},
 	}, res.Test.StructReturn)
 	require.Equal(t, "parent-child", res.Test.ParentResolver.SubField)
-	require.Equal(t, "3.16.2\n", res.Test.ReturnFilesystem.File)
+	require.Equal(t, "3.16.2\n", res.Test.ReturnDirectory.File.Contents)
 }
 
 func ptrTo[T any](v T) *T {

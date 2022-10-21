@@ -1,10 +1,9 @@
 package schema
 
 import (
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 	"github.com/moby/buildkit/client/llb"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/core/filesystem"
-	"go.dagger.io/dagger/router"
 )
 
 var _ router.ExecutableSchema = &gitSchema{}
@@ -36,29 +35,11 @@ func (s *gitSchema) Resolvers() router.Resolvers {
 			"digest": router.ToResolver(s.digest),
 			"tree":   router.ToResolver(s.tree),
 		},
-		"Core": router.ObjectResolver{
-			"git": router.ToResolver(s.gitOld),
-		},
 	}
 }
 
 func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 	return nil
-}
-
-// Compat with old git API
-type gitOldArgs struct {
-	Remote string
-	Ref    string
-}
-
-func (s *gitSchema) gitOld(ctx *router.Context, parent any, args gitOldArgs) (*filesystem.Filesystem, error) {
-	var opts []llb.GitOption
-	if s.sshAuthSockID != "" {
-		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
-	}
-	st := llb.Git(args.Remote, args.Ref, opts...)
-	return s.Solve(ctx, st)
 }
 
 type gitRepository struct {

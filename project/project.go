@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"sync"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
 )
 
 const (
@@ -123,20 +123,33 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 			return
 		}
 		// TODO(sipsma): handle relative path + platform?
-		fsState, _, _, err := runtimeFS.Decode()
+		fsPayload, err := runtimeFS.ID.Decode()
 		if err != nil {
 			rerr = err
 			return
 		}
 
-		workdirSt, _, _, err := p.workdir.Decode()
+		wdPayload, err := p.workdir.ID.Decode()
 		if err != nil {
 			rerr = err
 			return
 		}
+
+		fsState, err := fsPayload.State()
+		if err != nil {
+			rerr = err
+			return
+		}
+
+		wdState, err := wdPayload.State()
+		if err != nil {
+			rerr = err
+			return
+		}
+
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath, "-schema"}),
-			llb.AddMount("/src", workdirSt, llb.Readonly),
+			llb.AddMount("/src", wdState, llb.Readonly),
 			llb.ReadonlyRootFS(),
 		)
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
@@ -285,13 +298,23 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 		input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
 
 		// TODO(vito): handle relative path + platform?
-		fsState, _, _, err := runtimeFS.Decode()
+		fsPayload, err := runtimeFS.ID.Decode()
+		if err != nil {
+			return nil, err
+		}
+
+		fsState, err := fsPayload.State()
 		if err != nil {
 			return nil, err
 		}
 
 		// TODO(vito): handle relative path + platform?
-		workdirSt, _, _, err := p.workdir.Decode()
+		wdPayload, err := p.workdir.ID.Decode()
+		if err != nil {
+			return nil, err
+		}
+
+		wdState, err := wdPayload.State()
 		if err != nil {
 			return nil, err
 		}
@@ -310,19 +333,23 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 
 		// TODO:
 		if sdk == "go" {
-			st.AddMount("/src", workdirSt, llb.Readonly) // TODO: not actually needed here, just makes go server code easier at moment
+			st.AddMount("/src", wdState, llb.Readonly) // TODO: not actually needed here, just makes go server code easier at moment
 		}
 
 		// TODO: /mnt should maybe be configurable?
 		for path, dirID := range collectDirPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
-			dir := core.Directory{ID: dirID}
-			dirSt, subdir, _, err := dir.Decode()
+			dirPayload, err := dirID.Decode()
+			if err != nil {
+				return nil, err
+			}
+
+			dirSt, err := dirPayload.State()
 			if err != nil {
 				return nil, err
 			}
 			// TODO: it should be possible for this to be outputtable by the action; the only question
 			// is how to expose that ability in a non-confusing way, just needs more thought
-			st.AddMount(path, dirSt, llb.SourcePath(subdir), llb.ForceNoOutput)
+			st.AddMount(path, dirSt, llb.SourcePath(dirPayload.Dir), llb.ForceNoOutput)
 		}
 
 		// Mount in the parent type if it is a Filesystem
@@ -340,7 +367,12 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 			}
 
 			// TODO(vito): handle relative path + platform?
-			fsState, _, _, err := parentFS.Decode()
+			fsPayload, err := parentFS.ID.Decode()
+			if err != nil {
+				return nil, err
+			}
+
+			fsState, err := fsPayload.State()
 			if err != nil {
 				return nil, err
 			}

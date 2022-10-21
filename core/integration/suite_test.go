@@ -3,17 +3,11 @@ package core
 import (
 	"testing"
 
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/internal/testutil"
 )
-
-func init() {
-	if err := testutil.SetupBuildkitd(); err != nil {
-		panic(err)
-	}
-}
 
 func newCache(t *testing.T) core.CacheID {
 	var res struct {

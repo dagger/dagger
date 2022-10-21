@@ -11,17 +11,6 @@ scalar ContainerID
 
 
 """
-The address (also known as "ref") of a container published as an OCI image.
-
-Examples:
-        - "alpine"
-        - "index.docker.io/alpine"
-        - "index.docker.io/alpine:latest"
-        - "index.docker.io/alpine:latest@sha256deadbeefdeadbeefdeadbeef"
-"""
-scalar ContainerAddress
-
-"""
 An OCI-compatible container, also known as a docker container
 """
 type Container {
@@ -29,12 +18,15 @@ type Container {
     id: ContainerID!
 
     "Initialize this container from the base image published at the given address"
-    from(address: ContainerAddress!): Container!
-    
+    from(address: String!): Container!
+
+    "Initialize this container from a Dockerfile build"
+    build(context: DirectoryID!, dockerfile: String): Container!
+
     "This container's root filesystem. Mounts are not included."
     fs: Directory!
 
-   "Initialize this container from this DirectoryID" 
+   "Initialize this container from this DirectoryID"
     withFS(id: DirectoryID!): Container!
 
     "Retrieve a directory at the given path. Mounts are included."
@@ -106,8 +98,16 @@ type Container {
     withoutMount(path: String!): Container!
 
     "This container after executing the specified command inside it"
-    # FIXME: verb
-    exec(args: [String!], opts: ExecOpts): Container!
+    exec(
+      "Command to run instead of the container's default command"
+      args: [String!],
+      "Content to write to the command's standard input before closing"
+      stdin: String,
+      "Redirect the command's standard output to a file in the container"
+      redirectStdout: String,
+      "Redirect the command's standard error to a file in the container"
+      redirectStderr: String,
+    ): Container!
 
     """
     Exit code of the last executed command. Zero means success.
@@ -129,33 +129,8 @@ type Container {
 
     # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
     #    This may actually be a good candidate for a mutation. To be discussed.
-    "Publish this container as a new image"
-    publish(address: ContainerAddress!): ContainerAddress!
-}
-
-"""
-Additional options for executing a command
-"""
-input ExecOpts {
-    """
-    Optionally write to the command's standard input
-
-    - Null means don't touch stdin (no redirection)
-    - Empty string means inject zero bytes to stdin, then send EOF
-    """
-    stdin: String
-
-    """
-    Optionally redirect the command's standard output to a file in the container.
-    Null means discard output.
-    """
-    redirectStdout: String
-
-    """
-    Optionally redirect the command's standard error to a file in the container.
-    Null means discard output.
-    """
-    redirectStderr: String
+    "Publish this container as a new image, returning a fully qualified ref"
+    publish(address: String!): String!
 }
 
 """

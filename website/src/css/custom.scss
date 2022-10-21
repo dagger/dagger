@@ -699,3 +699,16 @@ img[alt="github-contribute"] {
 .margin--vertical-md {
   margin: 50px 0px;
 }
+
+
+/* release status badge */
+.status-badge {
+  width: fit-content;
+  background-color: #fdf9d7;
+  color: black;
+  padding: 4px 8px;
+  text-align: center;
+  border-radius: 5px;
+  margin-bottom: 8px;
+  font-size: 15px;
+}

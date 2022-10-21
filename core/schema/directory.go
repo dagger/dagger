@@ -1,8 +1,8 @@
 package schema
 
 import (
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 )
 
 type directorySchema struct {
@@ -28,7 +28,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"directory": router.ToResolver(s.directory),
 		},
 		"Directory": router.ObjectResolver{
-			"contents":         router.ToResolver(s.contents),
+			"entries":          router.ToResolver(s.entries),
 			"file":             router.ToResolver(s.file),
 			"withNewFile":      router.ToResolver(s.withNewFile),
 			"withCopiedFile":   router.ToResolver(s.withCopiedFile),
@@ -72,12 +72,12 @@ func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Direct
 	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory})
 }
 
-type contentArgs struct {
+type entriesArgs struct {
 	Path string
 }
 
-func (s *directorySchema) contents(ctx *router.Context, parent *core.Directory, args contentArgs) ([]string, error) {
-	return parent.Contents(ctx, s.gw, args.Path)
+func (s *directorySchema) entries(ctx *router.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
+	return parent.Entries(ctx, s.gw, args.Path)
 }
 
 type dirFileArgs struct {

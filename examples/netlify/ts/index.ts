@@ -1,6 +1,4 @@
-import { client, DaggerServer, gql, FSID, SecretID } from "@dagger.io/dagger";
-import { getSdk } from "./gen/core/core.js";
-const core = getSdk(client);
+import { client, DaggerServer, SecretID, gql } from "@dagger.io/dagger";
 
 import { NetlifyAPI } from "netlify";
 import { execa } from "execa";
@@ -10,7 +8,7 @@ import * as path from "path";
 const resolvers = {
   Netlify: {
     deploy: async (args: {
-      contents: FSID;
+      contents: string;
       subdir: string;
       siteName: string;
       token: SecretID;
@@ -21,9 +19,21 @@ const resolvers = {
         "/src/examples/netlify/ts/node_modules/.bin:" + process.env["PATH"];
       process.env["HOME"] = "/tmp";
 
-      const token = await core
-        .Secret({ id: args.token })
-        .then((res) => res.core.secret);
+      const token = await client
+        .request(
+          gql`
+            query GetSecretPlaintext($tokenID: SecretID!) {
+              secret(id: $tokenID) {
+                plaintext
+              }
+            }
+          `,
+          {
+            tokenID: args.token,
+          }
+        )
+        .then((result: any) => result.secret.plaintext);
+
       process.env["NETLIFY_AUTH_TOKEN"] = token;
 
       const netlifyClient = new NetlifyAPI(token);
@@ -37,18 +47,20 @@ const resolvers = {
 
       if (site === undefined) {
         // Create the site for a particular team
-        if(args?.team && typeof args?.team === "string") {
+        if (args?.team && typeof args?.team === "string") {
           try {
             site = await netlifyClient.createSiteInTeam({
               account_slug: args.team,
               body: {
                 name: args.siteName,
               },
-            })
-          } catch(error: any) { 
-              console.log(error?.status === 404 
+            });
+          } catch (error: any) {
+            console.log(
+              error?.status === 404
                 ? `Unknown Netlify team ${args.team}`
-                : error)
+                : error
+            );
           }
         }
         site = await netlifyClient.createSite({
@@ -58,6 +70,9 @@ const resolvers = {
         });
       }
 
+      if (!args.subdir) {
+        args.subdir = "";
+      }
       const srcDir = path.join("/mnt/contents", args.subdir);
 
       await execa("netlify", ["link", "--id", site.id], {
@@ -83,7 +98,7 @@ const resolvers = {
       };
     },
   },
-  Filesystem: {
+  Directory: {
     netlifyDeploy: async (
       args: {
         subdir: string;
@@ -91,10 +106,8 @@ const resolvers = {
         token: SecretID;
         team: string;
       },
-      parent: { id: FSID }
+      parent: { id: string }
     ) => {
-      // FIXME:(sipsma) should be able to just direct invoke self, but won't have /mnt/contents.
-      // Need a fix server-side to mount any FSID fields from parent.
       return client
         .request(
           gql`

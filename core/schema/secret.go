@@ -1,8 +1,8 @@
 package schema
 
 import (
-	"go.dagger.io/dagger/core"
-	"go.dagger.io/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 )
 
 type secretSchema struct {
@@ -27,7 +27,9 @@ func (s *secretSchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"secret": router.ToResolver(s.secret),
 		},
-		"Secret": router.ObjectResolver{},
+		"Secret": router.ObjectResolver{
+			"plaintext": router.ToResolver(s.plaintext),
+		},
 	}
 }
 
@@ -43,4 +45,12 @@ func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) 
 	return &core.Secret{
 		ID: args.ID,
 	}, nil
+}
+
+func (s *secretSchema) plaintext(ctx *router.Context, parent core.Secret, args any) (string, error) {
+	bytes, err := parent.Plaintext(ctx, s.gw)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }

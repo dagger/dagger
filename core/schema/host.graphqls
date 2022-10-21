@@ -12,7 +12,7 @@ type Host {
   directory(id: HostDirectoryID!): HostDirectory!
 
   "Lookup the value of an environment variable. Null if the variable is not available."
-  variable(name: String!): HostVariable
+  envVariable(name: String!): HostVariable
 }
 
 "An identifier for a directory on the host"

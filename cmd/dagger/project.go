@@ -7,10 +7,10 @@ import (
 	"io"
 	"os"
 
+	"dagger.io/dagger/core/schema"
+	"dagger.io/dagger/project"
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/spf13/cobra"
-	"go.dagger.io/dagger/core/schema"
-	"go.dagger.io/dagger/project"
-	"go.dagger.io/dagger/sdk/go/dagger"
 )
 
 /* TODO:

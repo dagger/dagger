@@ -1,22 +1,12 @@
 package dagger
 
 import (
+	"bytes"
 	"context"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dagger.io/dagger/internal/buildkitd"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
 )
-
-func init() {
-	host, err := buildkitd.StartGoModBuildkitd(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("BUILDKIT_HOST", host)
-}
 
 func TestDirectory(t *testing.T) {
 	t.Parallel()
@@ -27,10 +17,10 @@ func TestDirectory(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dir := c.Core().Directory()
+	dir := c.Directory()
 
 	contents, err := dir.
-		WithNewFile("/hello.txt", api.DirectoryWithNewFileOpts{
+		WithNewFile("/hello.txt", DirectoryWithNewFileOpts{
 			Contents: "world",
 		}).
 		File("/hello.txt").
@@ -48,11 +38,11 @@ func TestGit(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	tree := c.Core().Git("github.com/dagger/dagger").
+	tree := c.Git("github.com/dagger/dagger").
 		Branch("main").
 		Tree()
 
-	files, err := tree.Contents(ctx)
+	files, err := tree.Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, files, "README.md")
 
@@ -66,7 +56,7 @@ func TestGit(t *testing.T) {
 	readmeID, err := readmeFile.ID(ctx)
 	require.NoError(t, err)
 
-	otherReadme, err := c.Core().File(readmeID).Contents(ctx)
+	otherReadme, err := c.File(readmeID).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, readme, otherReadme)
 }
@@ -80,7 +70,6 @@ func TestContainer(t *testing.T) {
 	defer c.Close()
 
 	alpine := c.
-		Core().
 		Container().
 		From("alpine:3.16.2")
 
@@ -91,7 +80,7 @@ func TestContainer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
 
-	stdout, err := alpine.Exec(api.ContainerExecOpts{
+	stdout, err := alpine.Exec(ContainerExecOpts{
 		Args: []string{"cat", "/etc/alpine-release"},
 	}).Stdout().Contents(ctx)
 	require.NoError(t, err)
@@ -101,8 +90,7 @@ func TestContainer(t *testing.T) {
 	id, err := alpine.ID(ctx)
 	require.NoError(t, err)
 	c.
-		Core().
-		Container(api.ContainerOpts{
+		Container(ContainerOpts{
 			ID: id,
 		}).
 		FS().
@@ -110,4 +98,36 @@ func TestContainer(t *testing.T) {
 		Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
+}
+
+func TestConnectOption(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var b bytes.Buffer
+	c, err := Connect(ctx, WithLogOutput(&b))
+	require.NoError(t, err)
+
+	_, err = c.
+		Container().
+		From("alpine:3.16.1").
+		FS().
+		File("/etc/alpine-release").
+		Contents(ctx)
+	require.NoError(t, err)
+
+	err = c.Close()
+	require.NoError(t, err)
+
+	wants := []string{
+		"#1 resolve image config for docker.io/library/alpine:3.16.1",
+		"#1 DONE [0-9.]+s",
+		"#2 docker-image://docker.io/library/alpine:3.16.1",
+		"#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done",
+		"#2 (DONE [0-9.]+s|CACHED)",
+	}
+
+	for _, want := range wants {
+		require.Regexp(t, want, b.String())
+	}
 }

@@ -10,6 +10,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -82,25 +83,35 @@ func (dir *HostDirectory) Write(
 	}()
 
 	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		src, rel, platform, err := source.Decode()
+		srcPayload, err := source.ID.Decode()
 		if err != nil {
 			return nil, err
 		}
 
-		if rel != "" {
-			src = llb.Scratch().File(llb.Copy(src, rel, ".", &llb.CopyInfo{
+		src, err := srcPayload.State()
+		if err != nil {
+			return nil, err
+		}
+
+		var defPB *pb.Definition
+		if srcPayload.Dir != "" {
+			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
 				CopyDirContentsOnly: true,
 			}))
-		}
 
-		def, err := src.Marshal(ctx, llb.Platform(platform))
-		if err != nil {
-			return nil, err
+			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			defPB = def.ToPB()
+		} else {
+			defPB = srcPayload.LLB
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
-			Definition: def.ToPB(),
+			Definition: defPB,
 		})
 	}, ch)
 	if err != nil {
