@@ -13,7 +13,7 @@ Ensure you are using `dagger-cue` CLI version `0.2.18` or higher for Dagger Clou
 
 To take advantage of this feature, you will need to create an account by following these steps:
 
-1. Initiate a login process using the CLI with `dagger login`.
+1. Initiate a login process using the CLI with `dagger-cue login`.
 2. A new window will open in the browser requesting to sign-up using GitHub.
 3. After authenticating, authorize the Dagger GitHub application to finish the process.
 4. The CLI is now authenticated, it's OK to close the browser window.

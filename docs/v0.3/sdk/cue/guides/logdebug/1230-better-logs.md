@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # How can I have better logs ?
 
-Dagger exposes 2 logging format options:
+The Dagger Engine exposes 2 logging format options:
 
 - `--log-format <auto|plain|tty|json>`
 
