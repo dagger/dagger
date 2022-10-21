@@ -7,19 +7,19 @@ displayed_sidebar: "0.2"
 
 Whilst splitting your plan into several files is a good idea, you will sometimes need to create standalone packages aiming to be reusable and shared. Let's explore how to do that.
 
-## Packages, modules, and Dagger-Classic projects
+## Packages, modules, and projects
 
-Understanding the difference between a package, a module and a Dagger-Classic project is an important distinction, as it will help better organizing your work:
+Understanding the difference between a package, a module and a project is an important distinction, as it will help better organizing your work:
 
 - **CUE Package**: directory with CUE files, each including a package definition on top, making it importable (e.g, `universe.dagger.io/docker` is a package, `universe.dagger.io/docker/cli` is another package);
 - **CUE Module**: directory with a `cue.mod` directory which makes for the prefix/root of importable packages (e.g, `universe.dagger.io` is a module);
-- **Dagger-Classic Project**: a CUE module that includes Dagger-Classic plans and dependencies for running the Dagger Engine.
+- **Project**: a CUE module that includes plans and dependencies for running the Dagger Engine.
 
 ## End-to-End example
 
 Instead of splitting all of our files in the the same project with a module, we could directly make reusable components from our plan as standalone packages. For the sake of the exercise, we will use GitHub as a version control system, but it will work with any alternative.
 
-### Create the base Dagger-Classic project
+### Create the base project
 
 First, let's start with a basic plan:
 

@@ -57,7 +57,7 @@ CUE will not get confused, and you meet the expected behavior.
 
 ## How to avoid it
 
-Here's a concrete example of shadowing that can happens with Dagger
+Here's a concrete example of shadowing
 
 ```cue
 package main

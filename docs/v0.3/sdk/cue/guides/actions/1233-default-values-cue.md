@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Default values and optional fields
 
-When writing a Cue config, you will sometimes want to set default values in your package.
+When writing a CUE config, you will sometimes want to set default values in your package.
 
 The most common way you'll encounter in our codebase is: `key: type | *value`:
 
