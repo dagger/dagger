@@ -3,9 +3,9 @@ slug: /1234/dagger-types-reference
 displayed_sidebar: "0.2"
 ---
 
-# Dagger Types Reference
+# Dagger-Classic Types Reference
 
-Dagger Types are primitives that hold internal references to values stored in the Dagger Engine. They extend the CUE type system and can be used in [Dagger Actions](../core-concepts/1221-action.md). Their definitions can be imported from the `dagger.io/dagger` package.
+Dagger-Classic Types are primitives that hold internal references to values stored in the Dagger-Classic Engine. They extend the CUE type system and can be used in [Dagger-Classic Actions](../core-concepts/1221-action.md). Their definitions can be imported from the `dagger.io/dagger` package.
 
 The following types are available:
 
@@ -15,7 +15,7 @@ The following types are available:
 | `#Secret`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.7/pkg/dagger.io/dagger/types.cue)    | Secure reference to an external secret                |
 | `#Socket`      | [types.cue](https://github.com/dagger/dagger/blob/v0.2.7/pkg/dagger.io/dagger/types.cue)    | Reference to a network socket: unix or npipe          |
 
-And there's a special instance of a Dagger Type:
+And there's a special instance of a Dagger-Classic Type:
 
 | Definition     | File                                                                                        | Type  | Description                                   |
 | :------------- | :------------------------------------------------------------------------------------------ | : --- | :-------------------------------------------- |

@@ -3,23 +3,23 @@ slug: /13ec8/dagger-env-reference
 displayed_sidebar: '0.2'
 ---
 
-# Dagger Environment Variables Reference
+# Dagger-Classic Environment Variables Reference
 
-Dagger supports a variety of environment variables.
+Dagger-Classic supports a variety of environment variables.
 
 They have two purposes:
 
-- Extend Dagger capabilities
+- Extend Dagger-Classic capabilities
 - Persist CLI options
 
-## Extend Dagger capabilities
+## Extend Dagger-Classic capabilities
 
-Dagger aims to fit any use case, even the most specific ones. To avoid burdening the user experience with rarely used options, a small list of environment variables can be set:
+Dagger-Classic aims to fit any use case, even the most specific ones. To avoid burdening the user experience with rarely used options, a small list of environment variables can be set:
 
 | Environment variable            | Source                                                                                                                                  | Description                                               |
 | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
-| `BUILDKIT_HOST`                 | [custom buildkit](https://docs.dagger.io/1223/custom-buildkit/#using-a-custom-buildkit-daemon)                                          | Link Dagger to custom Buildkit instance                   |
-| `DOCKER_HOST`                   | [custom buildkit w/Docker](https://docs.dagger.io/1223/custom-buildkit/#using-a-custom-remote-buildkit-running-in-docker)               | Link Dagger to custom Buildkit instance running in Docker |
+| `BUILDKIT_HOST`                 | [custom buildkit](https://docs.dagger.io/1223/custom-buildkit/#using-a-custom-buildkit-daemon)                                          | Link Dagger-Classic to custom Buildkit instance                   |
+| `DOCKER_HOST`                   | [custom buildkit w/Docker](https://docs.dagger.io/1223/custom-buildkit/#using-a-custom-remote-buildkit-running-in-docker)               | Link Dagger-Classic to custom Buildkit instance running in Docker |
 | `OTEL_EXPORTER_JAEGER_ENDPOINT` | [opentelemetry](https://docs.dagger.io/1223/custom-buildkit/#opentelemetry-support)                                                     | Opentelemetry Jaeger endpoint                             |
 | `JAEGER_TRACE`                  | [opentelemetry](https://docs.dagger.io/1223/custom-buildkit/#opentelemetry-support)                                                     | Jaeger UI endpoint                                        |
 | `DOCKERHUB_AUTH_USER`           | [image.cue](https://github.com/dagger/dagger/blob/3709d3da00325d410721014c401b82cbcc1116c9/pkg/dagger.io/dagger/core/image.cue#L74-L79) | `Docker.#Pull` repository login                           |
@@ -27,7 +27,7 @@ Dagger aims to fit any use case, even the most specific ones. To avoid burdening
 
 ## Persist CLI options
 
-As Dagger relies on Viper to manage the CLI inputs, all its option can be replaced with environment variables:
+As Dagger-Classic relies on Viper to manage the CLI inputs, all its option can be replaced with environment variables:
 
 ### dagger version
 
