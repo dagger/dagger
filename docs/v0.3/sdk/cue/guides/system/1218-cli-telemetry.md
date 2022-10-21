@@ -7,7 +7,7 @@ displayed_sidebar: '0.2'
 
 ## Overview
 
-By default, the dagger CLI sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used.
+By default, the Dagger Engine sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used.
 Telemetry is optional and can be disabled at any time. If you are willing and able to leave telemetry enabled: thank you! This will help
 us better understand how Dagger is used, and will allow us to improve your experience.
 
