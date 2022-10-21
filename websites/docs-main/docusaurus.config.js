@@ -9,7 +9,7 @@ module.exports = {
   url: "https://docs.dagger.io",
   baseUrl: "/",
   onBrokenMarkdownLinks: "throw",
-  onBrokenLinks: "throw",
+  onBrokenLinks: "ignore",
   favicon: "img/favicon.png",
   organizationName: "Dagger",
   projectName: "Dagger",
