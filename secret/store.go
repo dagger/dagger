@@ -3,7 +3,7 @@ package secret
 import (
 	"context"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger/core"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/secrets"
 )

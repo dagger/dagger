@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 )
 
 type hostSchema struct {
