@@ -18,12 +18,12 @@ module.exports = {
     {
       type: "link",
       label: "Go SDK",
-      href: "/sdk/go"
+      href: "https://docs-v03x.dagger.io/sdk/go"
     },
     {
       type: "link",
       label: "CUE SDK",
-      href: "/sdk/cue"
+      href: "https://docs-v03x.dagger.io/sdk/cue"
     },
     {
       type: "doc",
