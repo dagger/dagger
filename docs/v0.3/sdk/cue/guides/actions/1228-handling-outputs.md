@@ -3,8 +3,6 @@ slug: /1228/handling-outputs
 displayed_sidebar: 0.2
 ---
 
-import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md';
-
 # Handling action outputs
 
 Dagger tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](/1200/local-dev) finishes:
@@ -113,5 +111,3 @@ env:
 cmd:
   - /bin/sh
 ```
-
-<DaggerCloudCTA/>

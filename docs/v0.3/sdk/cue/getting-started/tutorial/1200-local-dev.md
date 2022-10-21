@@ -3,7 +3,6 @@ slug: /1200/local-dev
 displayed_sidebar: "0.2"
 ---
 
-import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md'
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 
@@ -244,5 +243,3 @@ Now that we are comfortable with our local CI/CD loop, let us configure a remote
 The difference is that we will also deploy the build output to Netlify.
 Dagger makes this easy.
 :::
-
-<DaggerCloudCTA/>
