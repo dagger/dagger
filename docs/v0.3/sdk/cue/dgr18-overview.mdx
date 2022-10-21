@@ -24,8 +24,6 @@ However, if you are looking for something specific, we recommend using the searc
 
 If something is missing or you think could be improved, [ask for support](https://discord.gg/ufnyBtc8uY) or [create an issue](https://github.com/dagger/dagger/issues/new?template=documentation.yaml). Thanks for being part of the Dagger community!
 
-<InfoCard />
-
 <MainCards />
 
 <TutorialCard
@@ -58,20 +56,5 @@ export const MainCard = ({ title, description, buttonLabel, docPath }) => (
     <h5>{title}</h5>
     <span>{description}</span>
     <Button label={buttonLabel} docPath={docPath} color="light" />
-  </div>
-);
-
-export const InfoCard = () => (
-  <div className={styles.infoCard}>
-    <h2>Where does Dagger fit?</h2>
-    <img src={`/img/docker-compatible-runtime.png`} className="not-zoom" />
-    <div>
-      <ul>
-        <li>Give your developers parity between dev and CI environments</li>
-        <li>Test and debug your pipelines locally</li>
-        <li>Run the same pipeline on any CI environment without re-writes</li>
-      </ul>
-      <LinkCTA url="/1220/vs" label="Learn More"></LinkCTA>
-    </div>
   </div>
 );
