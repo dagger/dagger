@@ -5,7 +5,7 @@ displayed_sidebar: 0.2
 
 # Handling action outputs
 
-The Dagger Engine tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](/1200/local-dev) finishes:
+The Dagger CUE SDK tries to detect which fields are outputs in an action. Simple values like strings, numbers and booleans are printed directly to the console, as you can see when the [todo app example](/1200/local-dev) finishes:
 
 ```shell
 ➜  APP_NAME=dagger-todo dagger-cue do deploy
