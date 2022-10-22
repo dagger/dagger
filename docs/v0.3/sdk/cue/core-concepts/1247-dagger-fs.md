@@ -3,13 +3,13 @@ slug: /1247/dagger-fs
 displayed_sidebar: "0.2"
 ---
 
-# Dagger-Classic filesystems: `#FS`
+# Filesystems: `#FS`
 
-Along with container images, filesystems are one of the building blocks of the Dagger-Classic platform. They are represented by the `dagger.#FS` type. An `#FS` is a reference to a filesystem tree: a directory storing files in a hierarchical/tree structure.
+Along with container images, filesystems are one of the building blocks of the Dagger CUE SDK. They are represented by the `dagger.#FS` type. An `#FS` is a reference to a filesystem tree: a directory storing files in a hierarchical/tree structure.
 
 ## Filesystems are everywhere
 
-Filesystems are key to any CI pipeline, and Dagger-Classic is no exception. CI pipelines, at their core, are just a series of transformations applied on filesystems until deployment. You may, for example:
+Filesystems are key to any CI pipeline. Pipeline are essentially a series of transformations applied on filesystems until deployment. You may, for example:
 
 - load code
 - compile binaries
@@ -21,11 +21,11 @@ Each of these use cases requires a change or transfer of data, in the form of fi
 
 ### `docker.#Image` vs `dagger.#FS`
 
-You need an understanding of how Dagger-Classic filesystems relate to core Dagger-Classic actions and container images to fully benefit from the power of Dagger-Classic.
+You need an understanding of how filesystems relate to core actions and container images to fully benefit from the power of the CUE SDK.
 
-#### Dagger-Classic's core API
+#### The core API
 
-Dagger-Classic leverages, at its core, a low level API to interact with filesystem trees [(see reference)](https://docs.dagger.io/1222/core-actions-reference/#core-actions-related-to-filesystem-trees). Every other Universe package is just an abstraction on top of these low-level `core` primitives.
+The Dagger CUE SDK leverages, at its core, a low level API to interact with filesystem trees [(see reference)](https://docs.dagger.io/1222/core-actions-reference/#core-actions-related-to-filesystem-trees). Every other Universe package is just an abstraction on top of these low-level `core` primitives.
 
 Let's dissect one:
 
@@ -54,7 +54,7 @@ Let's dissect one:
 
 `core.#Mkdir` is the dagger equivalent of the `mkdir` command: it takes as `input` a `dagger.#FS` and retrieves a `dagger.#FS` containing the newly created folders.
 
-As Dagger-Classic is statically typed, you can look at an action definition to see the types that an action requires or outputs. In most cases, an action will either take as input a `dagger.#FS` or a `docker.#Image`. Let's look inside a `docker.#Image` to see the `#FS` inside.
+As Dagger CUE is statically typed, you can look at an action definition to see the types that an action requires or outputs. In most cases, an action will either take as input a `dagger.#FS` or a `docker.#Image`. Let's look inside a `docker.#Image` to see the `#FS` inside.
 
 #### Dissecting `docker.#Image`
 
@@ -108,7 +108,7 @@ This is the last type of filesystem that you might encounter: for the sake of th
 
 ### Transfer of filesystems via `docker.#Image`
 
-As most of Dagger-Classic actions run within a container image, an easy way to transfer an `fs` is to make the `output` image of an action the `input` of the next one. In other words, to make the state of the `rootfs` after execution, the initial `rootfs` of my second action.
+As most of actions run within a container image, an easy way to transfer an `fs` is to make the `output` image of an action the `input` of the next one. In other words, to make the state of the `rootfs` after execution, the initial `rootfs` of my second action.
 
 ![Universe action topology](/img/core-concepts/fs/fs-share-via-rootfs.png)
 
@@ -128,9 +128,9 @@ A `mount` is way to add new filesystem layers to a container image. With mounts,
 
 ![diagram-representing-action-with-mounts](/img/core-concepts/fs/mounts-action-mounts.png)
 
-#### Difference between a Docker bind mount and Dagger-Classic mounts
+#### Difference between a Docker bind mount and Dagger CUE SDK mounts
 
-Dagger-Classic mounts are very similar to the docker ones you may be familiar with. You can mount filesytems from your underlying dev/CI machine (host) or from another action. The main difference is that Dagger-Classic mounts are transient (more on that below) and not bi-directional like "bind" mounts. So, even if you're mounting a `#FS` that is read from the host system (client API), any script interacting with the mounted folder (inside the container) writes to the container's filesystem layer only, and the writes do not impact the underlying client system at all.
+Dagger CUE SDK mounts are very similar to the docker ones you may be familiar with. You can mount filesytems from your underlying dev/CI machine (host) or from another action. The main difference is that Dagger CUE SDK mounts are transient (more on that below) and not bi-directional like "bind" mounts. So, even if you're mounting a `#FS` that is read from the host system (client API), any script interacting with the mounted folder (inside the container) writes to the container's filesystem layer only, and the writes do not impact the underlying client system at all.
 
 ![diagram-representing-dagger-mount](/img/core-concepts/fs/fs-mount.png)
 
@@ -142,13 +142,13 @@ However, if your script creates artifacts outside of the mounted filesystem, the
 
 #### Mounts are not shared between actions (transient)
 
-In Dagger-Classic, as an image is only composed of a `rootfs` + a `config`, when passing the image to the next action, it loses all the mounted filesystems:
+In the Dagger CUE SDK, as an image is only composed of a `rootfs` + a `config`, when passing the image to the next action, it loses all the mounted filesystems:
 
 ![diagram-representing-mount-loss](/img/core-concepts/fs/mount-loss-action.png)
 
 #### Mounted FS cannot be exported (transient)
 
-Exports in Dagger-Classic only export from a `rootfs`. As mounts do not reside inside the `rootfs` layer, but on a layer above, the information residing inside a mounted filesystem gets lost, unless you mount it again inside the next action.
+Exports only export from a `rootfs`. As mounts do not reside inside the `rootfs` layer, but on a layer above, the information residing inside a mounted filesystem gets lost, unless you mount it again inside the next action.
 
 #### Mounts can overshadow filesystems
 
@@ -215,7 +215,7 @@ The `verify` action does not have any mount, and instead has access to the `/tar
 
 ## Mounting host `#FS` to container (`#FS` perspective)
 
-Filesystems are not just shared between actions, they can also be shared between the host (e.g. dev/CI machine) and the Dagger-Classic runtime:
+Filesystems are not just shared between actions, they can also be shared between the host (e.g. dev/CI machine) and the Dagger Engine:
 
 ![dagger client api](/img/core-concepts/fs/dagger-client-api-fs.png)
 
@@ -224,7 +224,7 @@ Filesystems are not just shared between actions, they can also be shared between
 Below is a plan showing how to list the content of the current directory from which the dagger plan is being run (relative to the dagger CLI).
 
 :::note
-This example uses the client API, but if you only need access to files within your Dagger-Classic project, `core.#Source` [may be a better choice](https://docs.dagger.io/1240/core-source).
+This example uses the client API, but if you only need access to files within your project, `core.#Source` [may be a better choice](https://docs.dagger.io/1240/core-source).
 :::
 
 ```cue file=../tests/core-concepts/fs/client/read_fs.cue title="dagger-cue do list --log-format plain"

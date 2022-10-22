@@ -4,11 +4,11 @@ displayed_sidebar: "0.2"
 pagination_prev: v0.2/getting-started/how-it-works
 ---
 
-# Dagger-Classic Actions
+# Actions
 
-Actions are the basic building block of the Dagger-Classic platform.
+Actions are the basic building block of the Dagger CUE SDK.
 An action encapsulates an arbitrarily complex automation into a simple
-software component that can be safely shared, and repeatably executed by any Dagger-Classic engine.
+software component that can be safely shared, and repeatably executed by any Dagger Engine.
 
 Actions can be executed directly with `dagger-cue do`, or integrated as a component of a more complex action.
 
@@ -16,15 +16,15 @@ There are two types of actions: _core actions_ and _composite actions_.
 
 ## Core Actions
 
-Core Actions are primitives implemented by the Dagger-Classic Engine itself. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
+Core Actions are primitives implemented by the Dagger CUE SDK and Dagger Engine itself. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
 
 To learn more about core actions, see [the core action reference](../references/1222-core-actions-reference.md).
 
 ## Composite Actions
 
-Composite Actions are actions made of other actions. Dagger-Classic supports arbitrary nesting of actions, so a composite action can be assembled from any combination of core and composite actions.
+Composite Actions are actions made of other actions. Arbitrary nesting of actions is supported, so a composite action can be assembled from any combination of core and composite actions.
 
-One consequence of arbitrary nesting is that Dagger-Classic doesn't need to distinguish between "pipelines" and "steps": everything is an action. Some actions are just more complex and powerful than others. This is a defining feature of Dagger-Classic.
+One consequence of arbitrary nesting is that there is no distinction between "pipelines" and "steps": everything is an action. Some actions are just more complex and powerful than others.
 
 ### Universe packages
 

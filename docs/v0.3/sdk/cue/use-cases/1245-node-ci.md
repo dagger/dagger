@@ -9,7 +9,7 @@ Dagger is incredibly useful for all kinds of complex deployment and building. In
 
 ## Plan of Action
 
-The application we are building a Dagger-Classic pipeline for has very simple build and publish steps.
+The application we are building a pipeline for has very simple build and publish steps.
 
 Where this pipeline is powerful is its use of pre-build tools to check the code every time new code is pushed. It uses the below tools to ensure the repo is up to scratch.
 
@@ -23,7 +23,7 @@ It does all of this only using the Bash and Docker packages in a very simple lay
 
 ### Client-Side Jobs
 
-- First we have a step that copies the contents of the repository we are working on into an output we can then bring into our containers at a later step. We exclude the README.md and the Dagger-Classic CUE file so this step does not have to be rerun every time we change something inconsequential.
+- First we have a step that copies the contents of the repository we are working on into an output we can then bring into our containers at a later step. We exclude the README.md and the CUE file so this step does not have to be rerun every time we change something inconsequential.
 
 ```cue file=../tests/use-cases/node-ci/client.cue.fragment
 

@@ -83,7 +83,7 @@ copy: #Copy & Mixin & { ... }
 ## All public definitions and fields must be documented
 
 Documenting other fields is optional. The main idea is that public fields should be documented for someone
-reading Dagger-Classic’s documentation in the browser. Everything else is for someone looking at the code.
+reading documentation in the browser. Everything else is for someone looking at the code.
 
 ```cue
 // Copy files into an image

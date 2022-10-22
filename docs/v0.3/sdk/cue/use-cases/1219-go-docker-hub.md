@@ -7,7 +7,7 @@ displayed_sidebar: '0.2'
 
 Dagger stands as a powerful CI/CD tool that works on any environment.
 
-For instance, you can use the [Dagger-Classic Go package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/go)
+For instance, you can use the [CUE SDK Go package](https://github.com/dagger/dagger/tree/main/pkg/universe.dagger.io/go)
 to control the whole CI/CD process, from testing to pushing into a remote registry.
 
 :::tip
@@ -16,7 +16,7 @@ The following examples can be used as a template for any standalone Go project.
 
 ## Retrieve Go project
 
-The first step is to make your Go project accessible to the Dagger-Classic plan.
+The first step is to make your Go project accessible to the plan.
 
 You can indeed choose which files to include. Since it's a Golang project
 it should contain the module and all Go source files:

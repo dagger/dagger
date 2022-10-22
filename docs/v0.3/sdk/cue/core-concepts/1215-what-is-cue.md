@@ -272,7 +272,7 @@ In the last few examples we&rsquo;ve included an `import` statement to load the 
 
 ## Cue Patterns
 
-Below are the most common Cue patterns being used in Dagger-Classic. You can play with them in the [playground](https://cuelang.org/play/?id=mfAIAXR-uEs#cue@export@cue)
+Below are the most common Cue patterns being used in the Dagger CUE SDK. You can play with them in the [playground](https://cuelang.org/play/?id=mfAIAXR-uEs#cue@export@cue)
 
 ### Template syntax
 

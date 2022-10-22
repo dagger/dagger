@@ -5,9 +5,9 @@ displayed_sidebar: '0.2'
 
 # Core Actions Reference
 
-Core Actions are primitives implemented by the Dagger-Classic Engine itself. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
+Core Actions are primitives implemented by the Dagger CUE SDK and Dagger Engine. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
 
-For more information about Dagger-Classic Actions, see [Dagger-Classic Actions](../core-concepts/1221-action.md).
+For more information about Actions, see [Dagger CUE SDK Actions](../core-concepts/1221-action.md).
 
 The following core actions are available:
 
