@@ -8,7 +8,7 @@ builds:
   - env:
       - CGO_ENABLED=0
     main: ./cmd/dagger
-    binary: dagger
+    binary: dagger-cue
     ldflags:
       - -s -w
       - -X go.dagger.io/dagger/version.Version={{.Version}}
@@ -73,7 +73,7 @@ brews:
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
-      system "#{bin}/dagger version"
+      system "#{bin}/dagger-cue version"
 
 blobs:
   - provider: s3
