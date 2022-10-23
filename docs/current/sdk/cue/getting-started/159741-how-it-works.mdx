@@ -1,0 +1,113 @@
+---
+slug: /sdk/cue/159741/how-it-works
+pagination_next: current/sdk/cue/core-concepts/action
+displayed_sidebar: 'current'
+---
+
+import Link from "@docusaurus/Link";
+import Button from "@site/src/components/atoms/button.js";
+import LinkCTA from "@site/src/components/atoms/linkCTA.js";
+import styles from "@site/src/css/how-it-works.module.scss";
+
+# How Dagger Works
+
+## 💎 Core Concepts
+
+In this section you can easily find the main concepts inside the Dagger Engine and CUE SDK and navigate through them.
+
+<CardGrid data={data.concepts} />
+
+## 🌎 References
+
+The technical reference is a great resource to have at hand.
+
+<LinkCTA
+  label="Core Actions Reference"
+  url="/sdk/cue/565505/core-actions-reference"
+  textDecoration="false"
+/>
+<LinkCTA
+  label="Dagger CUE SDK Types Reference"
+  url="/sdk/cue/105200/dagger-types-reference"
+  textDecoration="false"
+/>
+
+## 🎤 Case studies
+
+Want to know more about how Dagger can solve real-life problems? Check clients testimonies and go through how we helped them.
+
+<LinkCTA
+  label="Particubes: Go on Docker Swarm"
+  url="/sdk/cue/564914/go-docker-swarm"
+  textDecoration="false"
+/>
+
+## 🚀 Time to use Dagger
+
+If you haven't installed Dagger yet, we recommend you do it in order to consolidate the main concepts. After seeing the tool in action by yourself, you'll understand the concepts easily.
+
+<Button label="Get Started" docPath="sdk/cue/526369/install" />
+
+export const CardGrid = ({ data }) => {
+  return (
+    <div className={styles.cardGrid}>
+      {data.map((x, index) => (
+        <Link
+          href={x.url}
+          style={{ textDecoration: "none" }}
+          className={styles.link}
+          key={index}
+        >
+          <div
+            className={`${styles.card} ${x.fullWidth ? styles.fullWidth : ""}`}
+          >
+            <img className="not-zoom" src={`/img/${x.imgFilename}`} />
+            <div className={styles.description}>
+              <h4>{x.label}</h4>
+              <p>{x.description}</p>
+            </div>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+};
+
+export const data = {
+  concepts: [
+    {
+      label: "Plan",
+      description:
+        "A config declared in the Dagger CUE SDK starts with a plan. Learn more about how they work.",
+      imgFilename: "dagger-plan.webp",
+      url: "/sdk/cue/347598/plan",
+    },
+    {
+      label: "Actions",
+      description:
+        "Actions are the basic building block of the Dagger CUE SDK. Learn more here. ",
+      imgFilename: "dagger-actions.webp",
+      url: "/sdk/cue/934917/action",
+    },
+    {
+      label: "Clients",
+      description:
+        "Learn how to use the client field to interact with the local machine. ",
+      imgFilename: "dagger-clients.webp",
+      url: "/sdk/cue/006395/client",
+    },
+    {
+      label: "Secrets",
+      description:
+        "Learn how to use secrets.",
+      imgFilename: "dagger-secrets.webp",
+      url: "/sdk/cue/233781/secrets",
+    },
+    {
+      label: "What is CUE",
+      description: "Learn more about CUE and how the Dagger CUE SDK integrates with it.",
+      imgFilename: "dagger-what_is_cue.webp",
+      url: "/sdk/cue/151357/what-is-cue/",
+    },
+  ],
+};

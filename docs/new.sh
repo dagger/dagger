@@ -17,8 +17,7 @@ function new() {
 	cat <<- EOF > "$filename"
 		---
 		slug: /$next/$name
-		displayed_sidebar: '0.2'
-		---
+				---
 EOF
 }
 
