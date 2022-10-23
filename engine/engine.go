@@ -94,7 +94,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(os.Stderr),
+			authprovider.NewDockerAuthProvider(startOpts.LogOutput),
 		},
 	}
 
