@@ -3,6 +3,7 @@ package engineconn
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -35,6 +36,7 @@ type Config struct {
 	ConfigPath   string
 	LocalDirs    map[string]string
 	NoExtensions bool
+	LogOutput    io.Writer
 }
 
 // Register registers new connectionhelper for scheme

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"dagger.io/dagger/internal/engineconn"
-"dagger.io/dagger/engine"
-"dagger.io/dagger/router"
+	"dagger.io/dagger/engine"
+	"dagger.io/dagger/router"
+	"dagger.io/dagger/sdk/go/dagger/internal/engineconn"
 )
 
 func init() {
@@ -37,6 +37,7 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.C
 		Workdir:      cfg.Workdir,
 		ConfigPath:   cfg.ConfigPath,
 		NoExtensions: cfg.NoExtensions,
+		LogOutput:    cfg.LogOutput,
 	}
 	go func() {
 		defer close(c.doneCh)

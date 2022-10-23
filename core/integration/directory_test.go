@@ -417,7 +417,7 @@ func TestDirectoryDiff(t *testing.T) {
 	/*
 		This triggers a nil panic in Buildkit!
 
-		Issue: https://github.com/dagger/dagger/issues/3337
+		Issue: https://dagger.io/dagger/issues/3337
 
 		This might be fixed once we update Buildkit.
 

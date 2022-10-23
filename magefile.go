@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"dagger.io/dagger/codegen/generator"
 	"dagger.io/dagger/sdk/go/dagger"
-"dagger.io/dagger/codegen/generator"
 	"github.com/google/go-cmp/cmp"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 )
@@ -30,7 +30,7 @@ func (Lint) Codegen(ctx context.Context) error {
 	defer c.Close()
 
 	generated, err := generator.IntrospectAndGenerate(ctx, c, generator.Config{
-		Package: "api",
+		Package: "dagger",
 	})
 	if err != nil {
 		return err
@@ -38,10 +38,9 @@ func (Lint) Codegen(ctx context.Context) error {
 
 	// grab the file from the repo
 	src, err := c.
-		Core().
 		Host().
 		Workdir().
-		File("sdk/go/api/api.gen.go").
+		File("sdk/go/dagger/api.gen.go").
 		Contents(ctx)
 	if err != nil {
 		return err

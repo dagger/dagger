@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
+
 	"dagger.io/dagger/sdk/go/dagger"
 )
 
 type Test struct{}
 
-func (Test) Test(ctx dagger.Context) (string, error) {
+func (Test) Test(ctx context.Context) (string, error) {
 	return "hey", nil
 }
 

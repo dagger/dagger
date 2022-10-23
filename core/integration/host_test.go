@@ -6,7 +6,6 @@ import (
 	"path"
 	"testing"
 
-	"dagger.io/dagger/api"
 	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
 )
@@ -23,14 +22,14 @@ func TestHostWorkdir(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	wdID, err := c.Core().Host().Workdir().ID(ctx)
+	wdID, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
 	t.Run("contains the workdir's content", func(t *testing.T) {
-		contents, err := c.Core().Container().
+		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wdID).
-			Exec(api.ContainerExecOpts{
+			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -41,10 +40,10 @@ func TestHostWorkdir(t *testing.T) {
 		err := os.WriteFile(path.Join(dir, "fizz"), []byte("buzz"), 0600)
 		require.NoError(t, err)
 
-		contents, err := c.Core().Container().
+		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wdID).
-			Exec(api.ContainerExecOpts{
+			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -64,23 +63,23 @@ func TestHostDirectoryRelative(t *testing.T) {
 	defer c.Close()
 
 	t.Run(". is same as workdir", func(t *testing.T) {
-		wdID1, err := c.Core().Host().Directory(".").ID(ctx)
+		wdID1, err := c.Host().Directory(".").ID(ctx)
 		require.NoError(t, err)
 
-		wdID2, err := c.Core().Host().Workdir().ID(ctx)
+		wdID2, err := c.Host().Workdir().ID(ctx)
 		require.NoError(t, err)
 
 		require.Equal(t, wdID1, wdID2)
 	})
 
 	t.Run("./foo is relative to workdir", func(t *testing.T) {
-		contents, err := c.Core().Host().Directory("some-dir").Entries(ctx)
+		contents, err := c.Host().Directory("some-dir").Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sub-file"}, contents)
 	})
 
 	t.Run("../ does not allow escaping", func(t *testing.T) {
-		_, err := c.Core().Host().Directory("../").ID(ctx)
+		_, err := c.Host().Directory("../").ID(ctx)
 		require.Error(t, err)
 
 		// don't reveal the workdir location
@@ -102,10 +101,10 @@ func TestHostDirectoryReadWrite(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	srcID, err := c.Core().Host().Directory(dir1).ID(ctx)
+	srcID, err := c.Host().Directory(dir1).ID(ctx)
 	require.NoError(t, err)
 
-	exported, err := c.Core().Directory(api.DirectoryOpts{ID: srcID}).Export(ctx, dir2)
+	exported, err := c.Directory(dagger.DirectoryOpts{ID: srcID}).Export(ctx, dir2)
 	require.NoError(t, err)
 	require.True(t, exported)
 
@@ -124,7 +123,7 @@ func TestHostVariable(t *testing.T) {
 
 	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
 
-	secret := c.Core().Host().Variable("HELLO_TEST")
+	secret := c.Host().EnvVariable("HELLO_TEST")
 
 	varValue, err := secret.Value(ctx)
 	require.NoError(t, err)
@@ -133,10 +132,10 @@ func TestHostVariable(t *testing.T) {
 	varSecret, err := secret.Secret().ID(ctx)
 	require.NoError(t, err)
 
-	env, err := c.Core().Container().
+	env, err := c.Container().
 		From("alpine:3.16.2").
 		WithSecretVariable("SECRET", varSecret).
-		Exec(api.ContainerExecOpts{
+		Exec(dagger.ContainerExecOpts{
 			Args: []string{"env"},
 		}).Stdout().Contents(ctx)
 	require.NoError(t, err)

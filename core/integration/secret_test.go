@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger/api"
 	"dagger.io/dagger/internal/testutil"
 	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
@@ -134,8 +133,8 @@ func TestSecretPlaintext(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	plaintext, err := c.Core().Directory().
-		WithNewFile("TOP_SECRET", api.DirectoryWithNewFileOpts{Contents: "hi"}).File("TOP_SECRET").Secret().Plaintext(ctx)
+	plaintext, err := c.Directory().
+		WithNewFile("TOP_SECRET", dagger.DirectoryWithNewFileOpts{Contents: "hi"}).File("TOP_SECRET").Secret().Plaintext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hi", plaintext)
 }

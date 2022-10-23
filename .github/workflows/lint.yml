@@ -1,10 +1,11 @@
 name: lint
 on:
   push:
-    tags:
-      - v*
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - '**.go'
+      - '**.md'
+      - '.github/workflows/lint.yml'
   pull_request:
   # Enable manual trigger for easy ad-hoc debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -25,12 +26,6 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.48.0
-          args: --timeout=5m
-      - name: golangci-lint / sdk / go
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: v1.48.0
-          working-directory: sdk/go
           args: --timeout=5m
       - name: codegen
         uses: magefile/mage-action@v2

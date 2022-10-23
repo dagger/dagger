@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"dagger.io/dagger/api"
 	"dagger.io/dagger/sdk/go/dagger"
 
 	openAPIClient "github.com/go-openapi/runtime/client"
@@ -23,7 +22,7 @@ func main() {
 type Netlify struct {
 }
 
-func (Netlify) Deploy(ctx context.Context, contents api.DirectoryID, subdir *string, siteName *string, token api.SecretID) (*SiteURLs, error) {
+func (Netlify) Deploy(ctx context.Context, contents dagger.DirectoryID, subdir *string, siteName *string, token dagger.SecretID) (*SiteURLs, error) {
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		return nil, err
@@ -31,7 +30,7 @@ func (Netlify) Deploy(ctx context.Context, contents api.DirectoryID, subdir *str
 	defer client.Close()
 
 	// Setup Auth
-	tokenPlaintext, err := client.Core().Secret(token).Plaintext(ctx)
+	tokenPlaintext, err := client.Secret(token).Plaintext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret: %w", err)
 	}

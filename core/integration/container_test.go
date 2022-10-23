@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger/api"
 	"dagger.io/dagger/core"
 	"dagger.io/dagger/core/schema"
 	"dagger.io/dagger/internal/testutil"
@@ -77,8 +76,8 @@ func TestContainerBuild(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	envImpl := c.Core().Directory().
-		WithNewFile("main.go", api.DirectoryWithNewFileOpts{
+	envImpl := c.Directory().
+		WithNewFile("main.go", dagger.DirectoryWithNewFileOpts{
 			Contents: `package main
 import "fmt"
 import "os"
@@ -91,7 +90,7 @@ func main() {
 
 	t.Run("default Dockerfile location", func(t *testing.T) {
 		srcID, err := envImpl.
-			WithNewFile("Dockerfile", api.DirectoryWithNewFileOpts{
+			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
 				Contents: `FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
@@ -104,14 +103,14 @@ CMD goenv
 			ID(ctx)
 		require.NoError(t, err)
 
-		env, err := c.Core().Container().Build(srcID).Exec().Stdout().Contents(ctx)
+		env, err := c.Container().Build(srcID).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
 	t.Run("custom Dockerfile location", func(t *testing.T) {
 		srcID, err := envImpl.
-			WithNewFile("subdir/Dockerfile.whee", api.DirectoryWithNewFileOpts{
+			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
 				Contents: `FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
@@ -124,7 +123,7 @@ CMD goenv
 			ID(ctx)
 		require.NoError(t, err)
 
-		env, err := c.Core().Container().Build(srcID, api.ContainerBuildOpts{
+		env, err := c.Container().Build(srcID, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
 		}).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -140,9 +139,7 @@ func TestContainerWithFS(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	core := c.Core()
-
-	alpine316 := core.Container().From("alpine:3.16.2")
+	alpine316 := c.Container().From("alpine:3.16.2")
 
 	alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
@@ -150,7 +147,7 @@ func TestContainerWithFS(t *testing.T) {
 	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
 	dirID, err := alpine316.FS().ID(ctx)
 	require.NoError(t, err)
-	exitCode, err := core.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(api.ContainerExecOpts{
+	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(dagger.ContainerExecOpts{
 		Args: []string{
 			"/bin/sh",
 			"-c",
@@ -162,7 +159,7 @@ func TestContainerWithFS(t *testing.T) {
 	require.NotEmpty(t, dirID)
 	require.Equal(t, exitCode, 0)
 
-	alpine315 := core.Container().From("alpine:3.15.6")
+	alpine315 := c.Container().From("alpine:3.15.6")
 
 	varVal := "testing123"
 
@@ -2371,7 +2368,7 @@ func TestContainerPublish(t *testing.T) {
 	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
 	randomID := identity.NewID()
 	go func() {
-		_, err := c.Core().Container().
+		_, err := c.Container().
 			From("registry:2").
 			WithEnvVariable("RANDOM", randomID).
 			Exec().
@@ -2381,24 +2378,24 @@ func TestContainerPublish(t *testing.T) {
 		}
 	}()
 
-	_, err = c.Core().Container().
+	_, err = c.Container().
 		From("alpine:3.16.2").
 		WithEnvVariable("RANDOM", randomID).
-		Exec(api.ContainerExecOpts{
+		Exec(dagger.ContainerExecOpts{
 			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
 		}).
 		ExitCode(ctx)
 	require.NoError(t, err)
 
 	testRef := "127.0.0.1:5000/testimagepush:latest"
-	pushedRef, err := c.Core().Container().
+	pushedRef, err := c.Container().
 		From("alpine:3.16.2").
 		Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 
-	contents, err := c.Core().Container().
+	contents, err := c.Container().
 		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.16.2\n")
