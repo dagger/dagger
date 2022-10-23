@@ -36,7 +36,10 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
-	Progress      chan *bkclient.SolveStatus
+
+	// WARNING: this is currently exposed directly but will be removed or
+	// replaced with something incompatible in the future.
+	RawBuildkitStatus chan *bkclient.SolveStatus
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -117,7 +120,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			Gateway:       gw,
 			BKClient:      c,
 			SolveOpts:     solveOpts,
-			SolveCh:       startOpts.Progress,
+			SolveCh:       startOpts.RawBuildkitStatus,
 			Platform:      *platform,
 			DisableHostRW: startOpts.DisableHostRW,
 		})
@@ -148,7 +151,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		}
 
 		return bkgw.NewResult(), nil
-	}, startOpts.Progress)
+	}, startOpts.RawBuildkitStatus)
 
 	return err
 }
@@ -159,7 +162,7 @@ func StartAndDisplay(ctx context.Context, startOpts *Config, fn StartCallback) e
 	}
 
 	ch := make(chan *bkclient.SolveStatus)
-	startOpts.Progress = ch
+	startOpts.RawBuildkitStatus = ch
 
 	eg, ctx := errgroup.WithContext(ctx)
 
