@@ -63,7 +63,7 @@ Here's a concrete example of shadowing that can happens with Dagger
 package main
 
 import (
-    "dagger.io/dagger"
+    "dagger.io/dagger/sdk/go/dagger"
     "universe.dagger.io/docker"
     "universe.dagger.io/alpine"
 )

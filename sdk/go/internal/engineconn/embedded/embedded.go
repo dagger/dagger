@@ -7,8 +7,8 @@ import (
 	"net/url"
 
 	"dagger.io/dagger/internal/engineconn"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/router"
+"dagger.io/dagger/engine"
+"dagger.io/dagger/router"
 )
 
 func init() {

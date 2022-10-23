@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/codegen/generator"
+	"dagger.io/dagger/codegen/generator"
+	"dagger.io/dagger/sdk/go/dagger"
 )
 
 var clientGenCmd = &cobra.Command{

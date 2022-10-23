@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/playground"
+	"dagger.io/dagger/playground"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 )

@@ -6,8 +6,8 @@ import (
 	"path"
 	"testing"
 
-	"dagger.io/dagger"
 	"dagger.io/dagger/api"
+	"dagger.io/dagger/sdk/go/dagger"
 	"github.com/stretchr/testify/require"
 )
 

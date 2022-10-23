@@ -5,8 +5,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
+	"dagger.io/dagger/core"
+	"dagger.io/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 

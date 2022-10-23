@@ -2,7 +2,7 @@ package main
 
 import (
 	"strings"
-	"dagger.io/dagger"
+	"dagger.io/dagger/sdk/go/dagger"
 	"dagger.io/dagger/core"
 )
 

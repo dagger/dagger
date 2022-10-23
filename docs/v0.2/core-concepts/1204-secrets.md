@@ -84,7 +84,7 @@ package main
 
 import (
   "encoding/yaml"
-  "dagger.io/dagger"
+  "dagger.io/dagger/sdk/go/dagger"
   "dagger.io/dagger/core"
 )
 
@@ -155,7 +155,7 @@ dagger.#Plan & {
 
 ```cue
 import (
-  "dagger.io/dagger"
+  "dagger.io/dagger/sdk/go/dagger"
   "dagger.io/dagger/core"
 
   "universe.dagger.io/netlify"

@@ -173,7 +173,7 @@ The recommended way of interacting with the docker daemon using the `universe.da
 package example
 
 import (
-  "dagger.io/dagger"
+  "dagger.io/dagger/sdk/go/dagger"
 
   "universe.dagger.io/docker/cli"
 )

@@ -148,7 +148,7 @@ func (ts *goTypes) schema() []byte {
 		The much cleaner approach will come when we integrate this code w/ the
 		in-progress codegen work.
 		*/
-		if strings.HasPrefix(s.typ.PkgPath(), "dagger.io/dagger") {
+		if strings.HasPrefix(s.typ.PkgPath(), "dagger.io/dagger/sdk/go/dagger") {
 			continue
 		}
 
@@ -504,7 +504,7 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 		The much cleaner approach will come when we integrate this code w/ the
 		in-progress codegen work.
 		*/
-		if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger") {
+		if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger/sdk/go/dagger") {
 			return ast.NonNullNamedType(t.Name(), nil)
 		}
 		return ast.NonNullNamedType("String", nil)

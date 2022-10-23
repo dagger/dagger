@@ -47,7 +47,7 @@ dagger project update
 package main
 
 import (
-    "dagger.io/dagger"
+    "dagger.io/dagger/sdk/go/dagger"
 )
 
 dagger.#Plan & {
@@ -131,7 +131,7 @@ When using your package from `dagger project update` in the `rootProject` direct
 package main
 
 import (
-    "dagger.io/dagger"
+    "dagger.io/dagger/sdk/go/dagger"
 
     "github.com/your-username/personal" // import personal package
 )

@@ -27,7 +27,7 @@ standard way
 package ci
 
 import (
-  "dagger.io/dagger"
+  "dagger.io/dagger/sdk/go/dagger"
   "universe.dagger.io/go"
 )
 

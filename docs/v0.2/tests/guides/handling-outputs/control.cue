@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/yaml"
-	"dagger.io/dagger"
+	"dagger.io/dagger/sdk/go/dagger"
 	"universe.dagger.io/docker"
 )
 

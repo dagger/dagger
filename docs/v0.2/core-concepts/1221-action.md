@@ -57,7 +57,7 @@ Here is an example of a simple action definition:
 package main
 
 import (
-    "dagger.io/dagger"
+    "dagger.io/dagger/sdk/go/dagger"
     "dagger.io/dagger/core"
 )
 
@@ -108,7 +108,7 @@ Here is an example of a plan:
 package main
 
 import (
-    "dagger.io/dagger"
+    "dagger.io/dagger/sdk/go/dagger"
 )
 
 dagger.#Plan & {

@@ -150,7 +150,7 @@ import (
 package main
 
 import (
-    "dagger.io/dagger"
+    "dagger.io/dagger/sdk/go/dagger"
 
     "info@example.com/foo"
 )

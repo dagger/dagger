@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger/core"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
