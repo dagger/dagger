@@ -326,7 +326,7 @@ execute() {
     checksum="checksums.txt"
     checksum_url="${base_url}/${checksum}"
     bin_dir="${BIN_DIR:-./bin}"
-    binexe="dagger"
+    binexe="${name}"
 
     tmpdir=$(mktemp -d)
     log_debug "downloading files into ${tmpdir}"
