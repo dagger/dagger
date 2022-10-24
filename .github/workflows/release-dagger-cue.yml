@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: "E.g. 0.2.37"
+        description: "E.g. 0.1.0"
         required: true
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api -X POST /repos/:owner/:repo/git/refs \
-            --field ref="refs/tags/${{ github.event.inputs.release_version }}" \
+            --field ref="refs/tags/sdk/cue/v${{ github.event.inputs.release_version }}" \
             --field sha="$GITHUB_SHA"
 
       - name: "Fetch new tag"

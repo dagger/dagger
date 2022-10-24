@@ -1,5 +1,8 @@
 project_name: dagger-cue
 
+monorepo:
+  tag_prefix: sdk/cue/v
+
 before:
   hooks:
     - go mod download
