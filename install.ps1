@@ -4,7 +4,7 @@ param (
     # [Parameter(Mandatory)] $PersonalToken  
     [Parameter(Mandatory = $false)] [System.Management.Automation.SemanticVersion]$DaggerVersion,
     [Parameter(Mandatory = $false)] [System.Boolean]$InteractiveInstall = $false,
-    [Parameter(Mandatory = $false)] [string]$InstallPath = $env:HOMEPATH + '\dagger'
+    [Parameter(Mandatory = $false)] [string]$InstallPath = $env:HOMEPATH + '\dagger-cue'
 )
 Clear-Host
 @"
@@ -12,19 +12,19 @@ Clear-Host
 ---------------------------------------------------------------------------------
 Author: Alessandro Festa
 Co Author: Brittan DeYoung
-Dagger Installation Utility  for Windows users
+Dagger CUE Installation Utility for Windows users
 ---------------------------------------------------------------------------------
 
 "@
 
 # Since we are already authenticated we may directly download latest version.
-$name = "dagger"
+$name = "dagger-cue"
 $base = "https://dagger-io.s3.amazonaws.com"
 function http_download {
     $version = Get_Version
     $version = $version -replace '[""]'
     $version = $version -replace '\n'
-    $fileName = "dagger_v" + $version + "_windows_amd64"
+    $fileName = $name + "_v" + $version + "_windows_amd64"
     Clear-Host
     $url = $base + "/" + $name + "/releases/" + $version + "/" + $fileName + ".zip"
     write-host $url
@@ -40,7 +40,7 @@ function http_download {
         @"
 Whoops apparently we had an issue in unzipping the file, please check
 you have the right permission to do so and try to unzip manually the file.
-Currently we saved Dagger at your temp folder.
+Currently we saved Dagger CUE at your temp folder.
 "@
         exit
     }
@@ -49,11 +49,11 @@ Currently we saved Dagger at your temp folder.
     
         @"
 
-Thank You for downloading Dagger!
+Thank You for downloading Dagger CUE!
 
 -----------------------------------------------------
-Dagger has been saved in $InstallPath
-Please add dagger.exe to your PATH in order to use it
+Dagger CUE has been saved in $InstallPath
+Please add dagger-cue.exe to your PATH in order to use it
 ----------------------------------------------------
 
 "@
@@ -66,7 +66,7 @@ function Get_Version {
         $version = $DaggerVersion
     }
     else {
-        $response = Invoke-RestMethod 'http://releases.dagger.io/dagger/latest_version' -Method 'GET'  -Body $body -ErrorAction SilentlyContinue -ErrorVariable DownloadError
+        $response = Invoke-RestMethod 'http://releases.dagger.io/dagger-cue/latest_version' -Method 'GET'  -Body $body -ErrorAction SilentlyContinue -ErrorVariable DownloadError
         If ($DownloadError) {
             Clear-Host
             @"
