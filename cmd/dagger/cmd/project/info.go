@@ -32,7 +32,7 @@ var infoCmd = &cobra.Command{
 
 		cueModPath, cueModExists := pkg.GetCueModParent()
 		if !cueModExists {
-			lg.Fatal().Msg("dagger project not found. Run `dagger project init`")
+			lg.Fatal().Msg("dagger project not found. Run `dagger-cue project init`")
 		}
 
 		fmt.Printf("\nCurrent dagger project in: %s\n", cueModPath)

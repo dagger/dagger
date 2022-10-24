@@ -18,7 +18,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "dagger",
+	Use:   "dagger-cue",
 	Short: "A programmable deployment system",
 }
 
@@ -80,7 +80,7 @@ func Execute() {
 		if overrideName := os.Getenv("DAGGER_TRACE_SPAN_NAME"); overrideName != "" {
 			spanName = overrideName
 		}
-		ctx, span = otel.Tracer("dagger").Start(ctx, spanName)
+		ctx, span = otel.Tracer("dagger-cue").Start(ctx, spanName)
 		// Record the action
 		span.AddEvent("command", trace.WithAttributes(
 			attribute.String("args", strings.Join(os.Args, " ")),

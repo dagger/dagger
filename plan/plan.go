@@ -54,7 +54,7 @@ func (e ErrorValidation) Error() string {
 }
 
 func Load(ctx context.Context, cfg Config) (*Plan, error) {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Load")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "plan.Load")
 	defer span.End()
 
 	planFileInfo, _ := os.Stat(cfg.Args[0])
@@ -177,7 +177,7 @@ func (p *Plan) Action() *Action {
 
 // prepare executes the pre-run hooks of tasks
 func (p *Plan) prepare(ctx context.Context) error {
-	_, span := otel.Tracer("dagger").Start(ctx, "plan.Prepare")
+	_, span := otel.Tracer("dagger-cue").Start(ctx, "plan.Prepare")
 	defer span.End()
 
 	flow := cueflow.New(
@@ -217,7 +217,7 @@ func (p *Plan) prepare(ctx context.Context) error {
 
 // Do executes an action in the plan
 func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "plan.Do")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "plan.Do")
 	defer span.End()
 
 	r := NewRunner(p.context, path, s, p.config.DryRun)
@@ -232,7 +232,7 @@ func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 }
 
 func (p *Plan) fillAction(ctx context.Context) {
-	_, span := otel.Tracer("dagger").Start(ctx, "plan.FillAction")
+	_, span := otel.Tracer("dagger-cue").Start(ctx, "plan.FillAction")
 	defer span.End()
 
 	cfg := &cueflow.Config{
@@ -292,7 +292,7 @@ func (p *Plan) fillAction(ctx context.Context) {
 }
 
 func (p *Plan) validate(ctx context.Context) error {
-	_, span := otel.Tracer("dagger").Start(ctx, "plan.Validate")
+	_, span := otel.Tracer("dagger-cue").Start(ctx, "plan.Validate")
 	defer span.End()
 
 	return isPlanConcrete(p.source, p.source)

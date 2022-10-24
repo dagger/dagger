@@ -52,9 +52,9 @@ var initCmd = &cobra.Command{
 		}
 
 		if dir == "." {
-			fmt.Println("Project initialized! To install dagger packages, run `dagger project update`")
+			fmt.Println("Project initialized! To install dagger packages, run `dagger-cue project update`")
 		} else {
-			fmt.Printf("Project initialized in \"%s\"! To install dagger packages, go to subfolder \"%s\" and run \"dagger project update\"", dir, dir)
+			fmt.Printf("Project initialized in \"%s\"! To install dagger packages, go to subfolder \"%s\" and run \"dagger-cue project update\"", dir, dir)
 		}
 	},
 }

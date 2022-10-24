@@ -29,7 +29,7 @@ var updateCmd = &cobra.Command{
 
 		cueModPath, cueModExists := pkg.GetCueModParent()
 		if !cueModExists {
-			lg.Fatal().Msg("dagger project not found. Run `dagger project init`")
+			lg.Fatal().Msg("dagger project not found. Run `dagger-cue project init`")
 		}
 
 		var update = viper.GetBool("update")
