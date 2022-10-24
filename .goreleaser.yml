@@ -8,7 +8,7 @@ builds:
   - env:
       - CGO_ENABLED=0
     main: ./cmd/dagger
-    binary: dagger
+    binary: dagger-cue
     ldflags:
       - -s -w
       - -X go.dagger.io/dagger/version.Version={{.Version}}
@@ -21,11 +21,10 @@ builds:
       - arm64
       - arm
     goarm:
-      - 7
+      - "7"
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
-    replacements:
     files:
       - LICENSE
       - examples/**/*
@@ -62,28 +61,30 @@ changelog:
     - title: Changes
       order: 999
 
+# https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
       owner: dagger
       name: homebrew-tap
+    name: dagger-cue
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
-    url_template: "https://dl.dagger.io/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
-      system "#{bin}/dagger version"
+      system "#{bin}/dagger-cue version"
 
 blobs:
   - provider: s3
-    region: us-east-1
-    bucket: dagger-io
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
     folder: "dagger/releases/{{ .Version }}"
 
 publishers:
   - name: publish-latest-version
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/latest_version"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/latest_version"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -91,7 +92,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/versions/latest"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/latest"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -99,7 +100,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest-major-minor
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://dagger-io/dagger/versions/{{ .Major }}.{{ .Minor }}"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/{{ .Major }}.{{ .Minor }}"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true

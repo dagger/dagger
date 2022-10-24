@@ -1,0 +1,86 @@
+name: "Release dagger-cue"
+
+# Only a single job with this concurrency can run at any given time
+concurrency: release-dagger-cue
+
+on:
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  #
+  # This workflow can only be triggered manually.
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "E.g. 0.2.37"
+        required: true
+
+jobs:
+  bump_version-tag-release:
+    # ⚠️ If this changes, remember to update the running-workflow-name property
+    name: "Tag & release"
+    runs-on: ubuntu-22.04-16c-64g-600gb
+    steps:
+      - name: "Check out"
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: "Ensure that all other checks have succeeded"
+        # https://github.com/lewagon/wait-on-check-action
+        uses: lewagon/wait-on-check-action@v1.0.0
+        with:
+          ref: ${{ github.ref }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10 # polls the GitHub API every 10 every seconds
+          running-workflow-name: "Tag & release"
+          allowed-conclusions: success
+
+      - name: "Create release tag"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST /repos/:owner/:repo/git/refs \
+            --field ref="refs/tags/${{ github.event.inputs.release_version }}" \
+            --field sha="$GITHUB_SHA"
+
+      - name: "Fetch new tag"
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: "Install Go"
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.18
+
+      - name: "Release"
+        uses: goreleaser/goreleaser-action@v2
+        with:
+          args: release --rm-dist --debug
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+
+      # Open a https://github.com/Homebrew/homebrew-core PR to update the bottled formula after we release.
+      # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
+      # - https://github.com/Homebrew/homebrew-core/pull/105746#issuecomment-1190522063
+      # - https://github.com/dagger/dagger/issues/2823#issuecomment-1190792261
+      #
+      # TODO: This is temporarily disabled, until we finalise the dagger -> dagger-cue rename
+      # https://github.com/dagger/dagger/issues/3471
+      # - name: "Update homebrew-core formula"
+      #   # https://github.com/mislav/bump-homebrew-formula-action
+      #   uses: mislav/bump-homebrew-formula-action@v2
+      #   with:
+      #     download-url: https://github.com/dagger/dagger.git
+      #     formula-name: dagger
+      #     tag-name: ${{ github.event.inputs.release_version }}
+      #     commit-message: |
+      #       {{formulaName}} {{version}}
+
+      #       Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      #       If there is problem with this PR, [open an issue](https://github.com/dagger/dagger/issues/new). The right people will be automatically notified.
+      #   env:
+      #     COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
