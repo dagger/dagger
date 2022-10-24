@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	versionFile = "~/.config/dagger/version-check"
-	versionURL  = "https://releases.dagger.io/dagger/latest_version"
+	versionFile = "~/.config/dagger-cue/version-check"
+	versionURL  = "https://releases.dagger.io/dagger-cue/latest_version"
 )
 
 var (
