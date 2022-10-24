@@ -55,8 +55,10 @@ jobs:
       - name: "Release"
         uses: goreleaser/goreleaser-action@v2
         with:
+          distribution: goreleaser-pro
           args: release --rm-dist --debug
         env:
+          GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
