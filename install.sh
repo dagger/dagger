@@ -2,8 +2,8 @@
 
 set -e
 
-name="dagger"
 base="https://dagger-io.s3.amazonaws.com"
+name="dagger-cue"
 
 cat /dev/null <<EOF
 ------------------------------------------------------------------------
