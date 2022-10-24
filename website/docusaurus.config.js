@@ -2,7 +2,7 @@ const path = require("path");
 const mdxMermaid = require("mdx-mermaid");
 
 async function createConfig() {
-  const remarkCodeImport = (await import('remark-code-import'));
+  const remarkCodeImport = (await import('remark-code-import')).codeImport;
   return {
     title: "Dagger",
     tagline: "Dagger is a programmable deployment system",
@@ -101,7 +101,10 @@ async function createConfig() {
             sidebarPath: require.resolve("./sidebars.js"),
             editUrl: "https://github.com/dagger/dagger/edit/main/website",
             routeBasePath: "/",
-            remarkPlugins: [remarkCodeImport, mdxMermaid]
+            remarkPlugins: [
+              [remarkCodeImport, {allowImportingFromOutside: true}],
+              mdxMermaid
+            ]
           },
           gtag: {
             trackingID: "G-RDXG80F635",
@@ -117,7 +120,7 @@ async function createConfig() {
     plugins: [
       "docusaurus-plugin-sass",
       "docusaurus2-dotenv",
-      [ 
+      [
         "posthog-docusaurus",
         {
           apiKey: "phc_hqwS484sDJhTnrPCANTyWX48nKL3AEucgf6w0czQtQi"
