@@ -1,4 +1,4 @@
-project_name: dagger
+project_name: dagger-cue
 
 before:
   hooks:
@@ -70,7 +70,7 @@ brews:
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
-    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger-cue/releases/{{ .Version }}/{{ .ArtifactName }}"
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
@@ -80,11 +80,11 @@ blobs:
   - provider: s3
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
-    folder: "dagger/releases/{{ .Version }}"
+    folder: "dagger-cue/releases/{{ .Version }}"
 
 publishers:
   - name: publish-latest-version
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/latest_version"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger-cue/latest_version"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -92,7 +92,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/latest"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger-cue/versions/latest"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -100,7 +100,7 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest-major-minor
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/{{ .Major }}.{{ .Minor }}"
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger-cue/versions/{{ .Major }}.{{ .Minor }}"
     env:
       - PATH={{ .Env.PATH }}
       - AWS_EC2_METADATA_DISABLED=true
@@ -108,10 +108,6 @@ publishers:
       - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
       - AWS_REGION={{ .Env.AWS_REGION }}
 
+# We do not want to publish dagger-cue as a GitHub release until we have clarified the other SDKs
 release:
-  footer: |
-    **Full Changelog**: https://github.com/dagger/dagger/compare/{{ .PreviousTag }}...{{ .Tag }}
-    ## What to do next?
-    - Read the [documentation](https://docs.dagger.io)
-    - Join our [Discord server](https://discord.gg/dagger-io)
-    - Follow us on [Twitter](https://twitter.com/dagger_io)
+  disable: true

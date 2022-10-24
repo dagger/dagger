@@ -60,7 +60,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-1
+          AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
+          AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
+          ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
 
       # Open a https://github.com/Homebrew/homebrew-core PR to update the bottled formula after we release.
       # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
