@@ -44,11 +44,8 @@ import (
   "context"
   "fmt"
   "os"
-  "path/filepath"
 
-  "go.dagger.io/dagger/sdk/go/dagger"
-  "go.dagger.io/dagger/sdk/go/dagger/api"
-  "golang.org/x/sync/errgroup"
+  "dagger.io/dagger"
 )
 
 func main() {
@@ -64,6 +61,16 @@ func main() {
 
 func build(repoUrl string) error {
   fmt.Printf("Building %s\n", repoUrl)
+
+  // 1. Get a context
+  ctx := context.Background()
+  // 2. Initialize dagger client
+  client, err := dagger.Connect(ctx)
+  if err != nil {
+    return err
+  }
+  defer client.Close()
+
   return nil
 }
 ```
@@ -71,6 +78,8 @@ func build(repoUrl string) error {
 This tool imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument, and `build()`, which is where the pipeline will be defined in the next steps.
 
 The `main()` function accepts a git repo url as an argument. This is a Go repo that the tool will build in the following steps.
+
+The `build()` function currently just creates a dagger client with `dagger.Connect()`. In the next steps, this will provide the interface for executing commands against the Dagger engine.
 
 1. Install the Dagger Go SDK
 
@@ -98,25 +107,28 @@ func build(repoUrl string) error {
   // 1. Get a context
   ctx := context.Background()
   // 2. Initialize dagger client
-  client, err := dagger.Connect(ctx)
+  client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
   if err != nil {
     return err
   }
   defer client.Close()
   // 3. Clone the repo using Dagger
-  repo := client.Core().Git(repoUrl)
+  repo := client.Git(repoUrl)
   src, err := repo.Branch("main").Tree().ID(ctx)
   if err != nil {
     return err
   }
   // 4. Load the golang image
-  golang := client.Core().Container().From("golang:latest")
+  golang := client.Container().From("golang:latest")
   // 5. Mount the cloned repo to the golang image
   golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
   // 6. Do the go build
-  golang = golang.Exec(api.ContainerExecOpts{
+  _, err = golang.Exec(dagger.ContainerExecOpts{
     Args: []string{"go", "build", "-o", "build/"},
-  })
+  }).ExitCode(ctx)
+  if err != nil {
+    return err
+  }
   return nil
 }
 ```
@@ -125,10 +137,10 @@ This new code will connect to a dagger engine, clone the given git repo, load a 
 
 - initialize a `context.Background` for the client to use.
 - get a Dagger client with `dagger.Connect()`. This will provide the interface to execute commands against the Dagger engine.
-- clone the git repo. `client.Core().Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
-- load the latest golang image with `client.Core().Container().From("golang:latest")`.
+- clone the git repo. `client.Git()` gives a `GitRepository`, then `.Branch("main").Tree().ID()` will clone the main branch.
+- load the latest golang image with `client.Container().From("golang:latest")`.
 - mount the cloned repo with `.WithMountedDirectory("/src", src)` and set the container's working directory using `.WithWorkdir("/src")`.
-- execute the build command, `go build -o build/` by calling `Container.Exec()`.
+- execute the build command, `go build -o build/` by calling `Container.Exec().ExitCode()`.
 
 1. Try the `test` step of the pipeline by executing the command below from the application directory:
 
@@ -149,9 +161,9 @@ Once the tool has completed the build, it should put that build artifact somewhe
 func build(repoUrl string) error {
   ...
   // 1. reference to the current working directory on the host
-  workdir := client.Core().Host().Workdir() // <-- New
+  workdir := client.Host().Workdir() // <-- New
 
-  golang := client.Core().Container().From("golang:latest")
+  golang := client.Container().From("golang:latest")
   golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
   // 2. Create the output path on the host for the build
@@ -164,7 +176,7 @@ func build(repoUrl string) error {
   }
   // <-- New
 
-  golang = golang.Exec(api.ContainerExecOpts{
+  golang = golang.Exec(dagger.ContainerExecOpts{
     Args: []string{"go", "build", "-o", path},
   })
 
@@ -178,7 +190,7 @@ func build(repoUrl string) error {
 
   // 4. Write the build output to the host
   // -->
-  _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+  _, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
   if err != nil {
     return err
   }
@@ -190,7 +202,7 @@ func build(repoUrl string) error {
 
 With this new code, the tool will now write the build artifact to the host after the build is complete.
 
-- using the Dagger Go SDK, a reference to the host workdir is created with `.Core().Host().Workdir()`
+- using the Dagger Go SDK, a reference to the host workdir is created with `.Host().Workdir()`
 - in native Go, create a directory where the build artifact will be output
 - create a reference to the build output in the Dagger engine with `Container.Directory().ID()`
 - write the directory to the host with `HostDirectory.Write()`
@@ -211,7 +223,7 @@ The output of the `tree` command will show you the built artifact on your machin
 
 Now that the tool can build a Go application and output the build result, it should target multiple OS and architecture combinations. Many applications need to be distributed to users on a variety of systems.
 
-1. Update the file `main.go` and some new steps to the `build()` function as shown below. Save the file once done.
+1. Update the file `main.go` with some new steps to the `build()` function as shown below. Save the file once done.
 
 ```go
 func build(repoUrl string) error {
@@ -223,27 +235,33 @@ func build(repoUrl string) error {
   arches := []string{"amd64", "arm64"}
   // <-- New
 
-  ...
-
   // 2. Loop through the os and arch matrices
   for _, goos := range oses {
     for _, goarch := range arches {
       // 3. Create a directory for each os and arch
       path := fmt.Sprintf("build/%s/%s/", goos, goarch) // <-- Changed
       outpath := filepath.Join(".", path)
-
-      ...
+      err = os.MkdirAll(outpath, os.ModePerm)
+      if err != nil {
+        return err
+      }
 
       // 4. Set GOARCH and GOOS in the build environment
-      // -->
-      build := golang.WithEnvVariable("GOOS", goos) // <-- Uses new reference for the container, "build". Updated references below
+      build := golang.WithEnvVariable("GOOS", goos)
       build = build.WithEnvVariable("GOARCH", goarch)
-      // <--
-      build = build.Exec(api.ContainerExecOpts{
+      build = build.Exec(dagger.ContainerExecOpts{
         Args: []string{"go", "build", "-o", path},
       })
 
-      ...
+      output, err := build.Directory(path).ID(ctx)
+      if err != nil {
+        return err
+      }
+
+      _, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
+      if err != nil {
+        return err
+      }
     }
   }
   return nil
@@ -285,7 +303,8 @@ func build(repoUrl string) error {
   for _, version := range goVersions {
     // 3. Determine the golang image to use
     imageTag := fmt.Sprintf("golang:%s", version)
-    golang := client.Core().Container().From(imageTag) // <-- Updated with the formatted image tag
+    golang := client.Container().From(imageTag) // <-- Updated with the formatted image tag
+    golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
     for _, goos := range oses {
       for _, goarch := range arches {
@@ -351,7 +370,7 @@ func build(repoUrl string) error {
 
           build := golang.WithEnvVariable("GOOS", goos)
           build = build.WithEnvVariable("GOARCH", goarch)
-          build = build.Exec(api.ContainerExecOpts{
+          build = build.Exec(dagger.ContainerExecOpts{
             Args: []string{"go", "build", "-o", path},
           })
 
@@ -360,7 +379,7 @@ func build(repoUrl string) error {
             return err
           }
 
-          _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+          _, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
           if err != nil {
             return err
           }
@@ -416,8 +435,7 @@ import (
   "os"
   "path/filepath"
 
-  "go.dagger.io/dagger/sdk/go/dagger"
-  "go.dagger.io/dagger/sdk/go/dagger/api"
+  "dagger.io/dagger"
   "golang.org/x/sync/errgroup"
 )
 
@@ -442,23 +460,23 @@ func build(repoUrl string) error {
   arches := []string{"amd64", "arm64"}
   goVersions := []string{"1.18", "1.19"}
 
-  client, err := dagger.Connect(ctx)
+  client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
   if err != nil {
     return err
   }
   defer client.Close()
 
-  repo := client.Core().Git(repoUrl)
+  repo := client.Git(repoUrl)
   src, err := repo.Branch("main").Tree().ID(ctx)
   if err != nil {
     return err
   }
 
-  workdir := client.Core().Host().Workdir()
+  workdir := client.Host().Workdir()
 
   for _, version := range goVersions {
     imageTag := fmt.Sprintf("golang:%s", version)
-    golang := client.Core().Container().From(imageTag)
+    golang := client.Container().From(imageTag)
     golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
     for _, goos := range oses {
@@ -474,7 +492,7 @@ func build(repoUrl string) error {
 
           build := golang.WithEnvVariable("GOOS", goos)
           build = build.WithEnvVariable("GOARCH", goarch)
-          build = build.Exec(api.ContainerExecOpts{
+          build = build.Exec(dagger.ContainerExecOpts{
             Args: []string{"go", "build", "-o", path},
           })
 
@@ -483,7 +501,7 @@ func build(repoUrl string) error {
             return err
           }
 
-          _, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+          _, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
           if err != nil {
             return err
           }
