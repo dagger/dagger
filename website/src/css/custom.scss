@@ -598,6 +598,10 @@ button[class^="copyButton"] {
   }
 }
 
+.menu__list-item-collapsible--active {
+  background-color: transparent;
+}
+
 li.theme-doc-sidebar-item-link-level-1,
 li.theme-doc-sidebar-item-link-level-1:active {
   font-size: 1.2rem;
