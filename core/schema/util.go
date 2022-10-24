@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"dagger.io/dagger/router"
+	"github.com/dagger/dagger/router"
 	"github.com/graphql-go/graphql/language/ast"
 )
 

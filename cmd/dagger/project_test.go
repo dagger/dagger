@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dagger.io/dagger/project"
+	"github.com/dagger/dagger/project"
 	"github.com/stretchr/testify/require"
 )
 

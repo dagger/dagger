@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"dagger.io/dagger/core"
-	"dagger.io/dagger/router"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/router"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"

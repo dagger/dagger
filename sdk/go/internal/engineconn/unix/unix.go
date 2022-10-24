@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"dagger.io/dagger/sdk/go/dagger/internal/engineconn"
+	"dagger.io/dagger/internal/engineconn"
 )
 
 func init() {

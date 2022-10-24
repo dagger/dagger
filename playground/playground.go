@@ -81,7 +81,7 @@ var page = template.Must(template.New("graphiql").Parse(`
 #    Auto Complete:  Ctrl-Space (or just start typing)
 #
 # Here's a simple query to get you started, for more information visit
-# https:\/\/dagger.io/dagger/blob/cloak/docs/unxpq-introduction.md
+# https:\/\/github.com/dagger/dagger/blob/cloak/docs/unxpq-introduction.md
 {
   core {
     image(ref: "alpine") {

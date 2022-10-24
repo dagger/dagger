@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"dagger.io/dagger/core"
-	"dagger.io/dagger/project"
-	"dagger.io/dagger/router"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/project"
+	"github.com/dagger/dagger/router"
 	"github.com/pkg/errors"
 )
 

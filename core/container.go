@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"dagger.io/dagger/core/shim"
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core/shim"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
