@@ -63,26 +63,3 @@ jobs:
           AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
-
-      # Open a https://github.com/Homebrew/homebrew-core PR to update the bottled formula after we release.
-      # This explains why we need to do it separately, on top of GoReleaser updating our Homebrew tap:
-      # - https://github.com/Homebrew/homebrew-core/pull/105746#issuecomment-1190522063
-      # - https://github.com/dagger/dagger/issues/2823#issuecomment-1190792261
-      #
-      # TODO: This is temporarily disabled, until we finalise the dagger -> dagger-cue rename
-      # https://github.com/dagger/dagger/issues/3471
-      # - name: "Update homebrew-core formula"
-      #   # https://github.com/mislav/bump-homebrew-formula-action
-      #   uses: mislav/bump-homebrew-formula-action@v2
-      #   with:
-      #     download-url: https://github.com/dagger/dagger.git
-      #     formula-name: dagger
-      #     tag-name: ${{ github.event.inputs.release_version }}
-      #     commit-message: |
-      #       {{formulaName}} {{version}}
-
-      #       Created by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-      #       If there is problem with this PR, [open an issue](https://github.com/dagger/dagger/issues/new). The right people will be automatically notified.
-      #   env:
-      #     COMMITTER_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
