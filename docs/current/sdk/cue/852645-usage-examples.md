@@ -1,5 +1,5 @@
 ---
-slug: /852645/usage-examples
+slug: /sdk/cue/852645/usage-examples
 ---
 
 # Dagger CUE SDK Usage Examples
