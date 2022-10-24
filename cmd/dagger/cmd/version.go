@@ -174,7 +174,7 @@ func warnVersion() bool {
 		if p, err := os.Readlink(binPath); err == nil {
 			// Homebrew detected, print custom message
 			if strings.Contains(p, "/Cellar/") {
-				fmt.Println("\nA new version is available, please run:\n\nbrew update && brew upgrade dagger")
+				fmt.Println("\nA new version is available, please run:\n\nbrew update && brew upgrade dagger/tap/dagger-cue")
 				return true
 			}
 		}
