@@ -21,15 +21,18 @@ module.exports = {
       label: "Go SDK",
       collapsible: false,
       collapsed: false,
-      link: {type: "doc", id: "current/sdk/go/index"},
       items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/sdk/go/index",
+        },
         "current/sdk/go/install",
         {
           type: "doc",
           label: "Get Started",
           id: "current/sdk/go/get-started",
         },
-
         {
           type: "link",
           label: "Reference 🔗",
@@ -42,8 +45,12 @@ module.exports = {
       label: "CUE SDK",
       collapsible: false,
       collapsed: false,
-      link: {type: "doc", id: "current/sdk/cue/index"},
       items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/sdk/cue/index",
+        },
         "current/sdk/cue/getting-started/install",
         {
           type: "doc",
