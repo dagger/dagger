@@ -68,13 +68,13 @@ func build(repoUrl string) error {
 }
 ```
 
-  This tool imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument, and `build()`, which is where the pipeline will be defined in the next steps.
+This tool imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument, and `build()`, which is where the pipeline will be defined in the next steps.
 
-  The `main()` function accepts a git repo url as an argument. This is a Go repo that the tool will build in the following steps.
+The `main()` function accepts a git repo url as an argument. This is a Go repo that the tool will build in the following steps.
 
 1. Install the Dagger Go SDK
 
-{@include: ../../partials/_install-sdk-go.md}
+{@include: ../../partials/\_install-sdk-go.md}
 
 1. Try the tool by executing the command below:
 
@@ -83,7 +83,7 @@ go build
 ./multibuild https://github.com/kpenfound/greetings-api.git
 ```
 
-  The tool will output `Building https://github.com/kpenfound/greetings-api.git`, although it isn't actually building anything yet.
+The tool will output `Building https://github.com/kpenfound/greetings-api.git`, although it isn't actually building anything yet.
 
 ## Step 2: Build a git repo with the Dagger Go SDK
 
