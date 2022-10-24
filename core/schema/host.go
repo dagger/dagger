@@ -101,6 +101,6 @@ func (s *hostSchema) dirWrite(ctx *router.Context, parent *core.HostDirectory, a
 	return parent.Write(ctx,
 		dir, args.Path,
 		&core.Directory{ID: args.Contents},
-		s.bkClient, s.solveOpts, s.solveCh,
+		s.bkClient, s.solveOpts, s.solveCh, s.cacheImports,
 	)
 }

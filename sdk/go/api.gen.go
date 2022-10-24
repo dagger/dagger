@@ -258,6 +258,29 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// ContainerExportCacheOpts contains options for Container.ExportCache
+type ContainerExportCacheOpts struct {
+	Max bool
+}
+
+// Export this container's rootfs to remote cache
+func (r *Container) ExportCache(ctx context.Context, exportType string, ref string, opts ...ContainerExportCacheOpts) (bool, error) {
+	q := r.q.Select("exportCache")
+	q = q.Arg("exportType", exportType)
+	// `max` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Max) {
+			q = q.Arg("max", opts[i].Max)
+			break
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieve a file at the given path. Mounts are included.
 func (r *Container) File(path string) *File {
 	q := r.q.Select("file")

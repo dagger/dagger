@@ -63,13 +63,13 @@ func NewFile(ctx context.Context, st llb.State, file string, platform specs.Plat
 	}).ToFile()
 }
 
-func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+func (file *File) Contents(ctx context.Context, gw bkgw.Client, cacheImports []bkgw.CacheOptionsEntry) ([]byte, error) {
 	payload, err := file.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := gwRef(ctx, gw, payload.LLB)
+	ref, err := gwRef(ctx, gw, payload.LLB, cacheImports)
 	if err != nil {
 		return nil, err
 	}
@@ -83,13 +83,13 @@ func (file *File) Secret(ctx context.Context) (*Secret, error) {
 	return NewSecretFromFile(file.ID)
 }
 
-func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
+func (file *File) Stat(ctx context.Context, gw bkgw.Client, cacheImports []bkgw.CacheOptionsEntry) (*fstypes.Stat, error) {
 	payload, err := file.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := gwRef(ctx, gw, payload.LLB)
+	ref, err := gwRef(ctx, gw, payload.LLB, cacheImports)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +99,10 @@ func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, erro
 	})
 }
 
-func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
+func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition, cacheImports []bkgw.CacheOptionsEntry) (bkgw.Reference, error) {
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
+		Definition:   def,
+		CacheImports: cacheImports,
 	})
 	if err != nil {
 		return nil, err

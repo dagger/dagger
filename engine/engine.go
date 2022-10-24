@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/cmd/buildctl/build"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -73,8 +75,18 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
+	// TODO:(sipsma)
+	var cacheImports []bkclient.CacheOptionsEntry
+	if v, ok := os.LookupEnv("DAGGER_CACHE_IMPORT"); ok {
+		cacheImports, err = build.ParseImportCache(strings.Split(v, ";"))
+		if err != nil {
+			return err
+		}
+	}
+	gatewayCacheImports := toGatewayCacheImports(cacheImports)
+
 	router := router.New()
-	secretStore := secret.NewStore()
+	secretStore := secret.NewStore(gatewayCacheImports)
 
 	socketProviders := MergedSocketProviders{
 		project.DaggerSockName: project.NewAPIProxy(router),
@@ -95,6 +107,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			socketProviders,
 			authprovider.NewDockerAuthProvider(os.Stderr),
 		},
+		CacheImports: cacheImports,
 	}
 	if startOpts.LocalDirs == nil {
 		startOpts.LocalDirs = map[string]string{}
@@ -126,6 +139,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				SolveOpts:     solveOpts,
 				SolveCh:       ch,
 				Platform:      *platform,
+				CacheImports:  gatewayCacheImports,
 			})
 			if err != nil {
 				return nil, err
@@ -255,4 +269,15 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 	}
 
 	return &res.Core.Directory.LoadProject, nil
+}
+
+func toGatewayCacheImports(in []bkclient.CacheOptionsEntry) []bkgw.CacheOptionsEntry {
+	out := make([]bkgw.CacheOptionsEntry, len(in))
+	for i, entry := range in {
+		out[i] = bkgw.CacheOptionsEntry{
+			Type:  entry.Type,
+			Attrs: entry.Attrs,
+		}
+	}
+	return out
 }

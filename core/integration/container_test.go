@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -2396,4 +2399,75 @@ func TestContainerPublish(t *testing.T) {
 		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.16.2\n")
+}
+
+func TestContainerCacheExportImport(t *testing.T) {
+	t.Skip("this test fails when running registry here, but passes with an external registry???")
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	/* TODO: why does using this registry cause a failure even though buildkit progress logs show successful cache upload and manifest download??????????
+	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
+	randomID := identity.NewID()
+	go func() {
+		registryClient, err := dagger.Connect(ctx)
+		require.NoError(t, err)
+		defer registryClient.Close()
+
+		_, err = registryClient.Container().
+			From("registry:2").
+			WithEnvVariable("RANDOM", randomID).
+			Exec().
+			ExitCode(ctx)
+		if err != nil {
+			t.Logf("error running registry: %v", err)
+		}
+	}()
+
+	_, err = c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("RANDOM", randomID).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
+		}).
+		ExitCode(ctx)
+	require.NoError(t, err)
+	*/
+
+	ctr := c.Container().From("alpine:3.15").Exec(dagger.ContainerExecOpts{
+		Args: []string{"sh", "-c", "echo $RANDOM > /random && cat /random"},
+	})
+
+	randomVal, err := ctr.File("/random").Contents(ctx)
+	require.NoError(t, err)
+
+	cacheRef := "127.0.0.1:5000/testcacheexport:latest"
+	_, err = ctr.ExportCache(ctx, "registry", cacheRef, dagger.ContainerExportCacheOpts{Max: true})
+	require.NoError(t, err)
+
+	// TODO: hack to force prune of cache, need better way
+	c.Close()
+	err = exec.Command("docker", "exec", "dagger-buildkitd", "buildctl", "prune", "--all").Run()
+	require.NoError(t, err)
+	defer exec.Command("docker", "exec", "dagger-buildkitd", "buildctl", "prune", "--all").Run()
+
+	os.Setenv("DAGGER_CACHE_IMPORT", fmt.Sprintf("type=registry,ref=%s", cacheRef))
+	defer os.Unsetenv("DAGGER_CACHE_IMPORT")
+
+	otherClient, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer otherClient.Close()
+
+	otherCtr := otherClient.Container().From("alpine:3.15").Exec(dagger.ContainerExecOpts{
+		Args: []string{"sh", "-c", "echo $RANDOM > /random && cat /random"},
+	})
+
+	otherRandomVal, err := otherCtr.File("/random").Contents(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, randomVal, otherRandomVal)
 }

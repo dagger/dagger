@@ -77,7 +77,7 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx *router.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.gw, args.Path)
+	return parent.Entries(ctx, s.gw, args.Path, s.cacheImports)
 }
 
 type dirFileArgs struct {

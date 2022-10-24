@@ -7,6 +7,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/shim"
@@ -180,7 +181,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	})
 }
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, platform specs.Platform) (*Container, error) {
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, platform specs.Platform, cacheImports []bkgw.CacheOptionsEntry) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -205,6 +206,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
+		CacheImports:   cacheImports,
 	})
 	if err != nil {
 		return nil, err
@@ -442,7 +444,7 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string, cacheImports []bkgw.CacheOptionsEntry) (*Directory, error) {
 	dir, err := locatePath(ctx, container, dirPath, gw, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -450,7 +452,7 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, gw, ".")
+	info, err := dir.Stat(ctx, gw, ".", cacheImports)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +464,7 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string, cacheImports []bkgw.CacheOptionsEntry) (*File, error) {
 	file, err := locatePath(ctx, container, filePath, gw, NewFile)
 	if err != nil {
 		return nil, err
@@ -470,7 +472,7 @@ func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath s
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := file.Stat(ctx, gw)
+	info, err := file.Stat(ctx, gw, cacheImports)
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +598,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts, cacheImports []bkgw.CacheOptionsEntry) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -606,7 +608,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	mounts := payload.Mounts
 	platform := payload.Platform
 
-	shimSt, err := shim.Build(ctx, gw, platform)
+	shimSt, err := shim.Build(ctx, gw, platform, cacheImports)
 	if err != nil {
 		return nil, fmt.Errorf("build shim: %w", err)
 	}
@@ -622,9 +624,14 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 		args = append(cfg.Entrypoint, args...)
 	}
 
+	fsSt, err := payload.FSState()
+	if err != nil {
+		return nil, fmt.Errorf("fs state: %w", err)
+	}
+
 	runOpts := []llb.RunOption{
 		// run the command via the shim, hide shim behind custom name
-		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
+		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path), llb.Readonly),
 		llb.Args(append([]string{shim.Path}, args...)),
 		llb.WithCustomName(strings.Join(args, " ")),
 	}
@@ -633,16 +640,17 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	// directory first and then make it the base of the /dagger mount point.
 	//
 	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(metaSourcePath, 0777)
+	meta := llb.Mkdir(metaSourcePath, 0777, llb.WithCreatedTime(time.Time{}))
 	if opts.Stdin != "" {
-		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(opts.Stdin))
+		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(opts.Stdin), llb.WithCreatedTime(time.Time{}))
 	}
 
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMount,
 			llb.Scratch().File(meta),
-			llb.SourcePath(metaSourcePath)))
+			llb.SourcePath(metaSourcePath),
+		))
 
 	if opts.RedirectStdout != "" {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", opts.RedirectStdout))
@@ -686,11 +694,6 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 		}
 
 		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
-	}
-
-	fsSt, err := payload.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
 	execSt := fsSt.Run(runOpts...)
@@ -761,7 +764,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client, cacheImports []bkgw.CacheOptionsEntry) (*int, error) {
 	file, err := container.MetaFile(ctx, gw, "exitCode")
 	if err != nil {
 		return nil, err
@@ -771,7 +774,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 		return nil, nil
 	}
 
-	content, err := file.Contents(ctx, gw)
+	content, err := file.Contents(ctx, gw, cacheImports)
 	if err != nil {
 		return nil, err
 	}
@@ -808,6 +811,7 @@ func (container *Container) Publish(
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
+	cacheImports []bkgw.CacheOptionsEntry,
 ) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -857,8 +861,9 @@ func (container *Container) Publish(
 
 	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: stDef.ToPB(),
+			Evaluate:     true,
+			Definition:   stDef.ToPB(),
+			CacheImports: cacheImports,
 		})
 		if err != nil {
 			return nil, err
@@ -891,6 +896,73 @@ func (container *Container) Publish(
 	}
 
 	return ref, nil
+}
+
+func (container *Container) ExportCache(
+	ctx context.Context,
+	exportType string,
+	ref string,
+	max bool,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+	cacheImports []bkgw.CacheOptionsEntry,
+) (bool, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return false, err
+	}
+
+	rootfsState, err := payload.FSState()
+	if err != nil {
+		return false, err
+	}
+
+	metastate, err := payload.MetaState()
+	if err != nil {
+		return false, err
+	}
+
+	combinedState := rootfsState
+	if metastate != nil {
+		combinedState = llb.Merge([]llb.State{rootfsState, *metastate})
+	}
+
+	stDef, err := combinedState.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return false, err
+	}
+
+	exp := bkclient.CacheOptionsEntry{
+		Type: exportType,
+		Attrs: map[string]string{
+			"ref": ref,
+		},
+	}
+	if max {
+		exp.Attrs["mode"] = "max"
+	}
+	solveOpts.CacheExports = []bkclient.CacheOptionsEntry{exp}
+
+	ch := make(chan *bkclient.SolveStatus)
+	go func() {
+		for event := range ch {
+			solveCh <- event
+		}
+	}()
+
+	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Definition:   stDef.ToPB(),
+			Evaluate:     true,
+			CacheImports: cacheImports,
+		})
+	}, ch)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 type ContainerExecOpts struct {

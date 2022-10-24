@@ -90,7 +90,7 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string, cacheImports []bkgw.CacheOptionsEntry) (*fstypes.Stat, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -109,7 +109,8 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	}
 
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: payload.LLB,
+		Definition:   payload.LLB,
+		CacheImports: cacheImports,
 	})
 	if err != nil {
 		return nil, err
@@ -130,7 +131,7 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	return stat, nil
 }
 
-func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string, cacheImports []bkgw.CacheOptionsEntry) ([]string, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -148,7 +149,8 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	}
 
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: payload.LLB,
+		Definition:   payload.LLB,
+		CacheImports: cacheImports,
 	})
 	if err != nil {
 		return nil, err

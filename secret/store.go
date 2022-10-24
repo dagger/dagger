@@ -8,14 +8,15 @@ import (
 	"github.com/moby/buildkit/session/secrets"
 )
 
-func NewStore() *Store {
-	return &Store{}
+func NewStore(cacheImports []bkgw.CacheOptionsEntry) *Store {
+	return &Store{cacheImports: cacheImports}
 }
 
 var _ secrets.SecretStore = &Store{}
 
 type Store struct {
-	gw bkgw.Client
+	gw           bkgw.Client
+	cacheImports []bkgw.CacheOptionsEntry
 }
 
 func (store *Store) SetGateway(gw bkgw.Client) {
@@ -23,5 +24,5 @@ func (store *Store) SetGateway(gw bkgw.Client) {
 }
 
 func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
-	return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw)
+	return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw, store.cacheImports)
 }

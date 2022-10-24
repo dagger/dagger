@@ -18,6 +18,7 @@ type InitializeArgs struct {
 	SolveOpts     bkclient.SolveOpt
 	SolveCh       chan *bkclient.SolveStatus
 	Platform      specs.Platform
+	CacheImports  []bkgw.CacheOptionsEntry
 }
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
@@ -29,6 +30,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		solveCh:       params.SolveCh,
 		platform:      params.Platform,
 		sshAuthSockID: params.SSHAuthSockID,
+		cacheImports:  params.CacheImports,
 	}
 	return router.MergeExecutableSchemas("core",
 		&directorySchema{base},
@@ -54,4 +56,5 @@ type baseSchema struct {
 	solveCh       chan *bkclient.SolveStatus
 	platform      specs.Platform
 	sshAuthSockID string
+	cacheImports  []bkgw.CacheOptionsEntry
 }

@@ -63,7 +63,7 @@ func (id SecretID) decode() (*secretIDPayload, error) {
 	return &payload, nil
 }
 
-func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client, cacheImports []bkgw.CacheOptionsEntry) ([]byte, error) {
 	payload, err := secret.ID.decode()
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, er
 
 	if payload.FromFile != "" {
 		file := &File{ID: payload.FromFile}
-		return file.Contents(ctx, gw)
+		return file.Contents(ctx, gw, cacheImports)
 	}
 
 	if payload.FromHostEnv != "" {

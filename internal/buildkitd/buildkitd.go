@@ -239,6 +239,13 @@ func installBuildkit(ctx context.Context, version string) error {
 		"-v", volumeName+":/var/lib/buildkit",
 		"--name", containerName,
 		"--privileged",
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO: Don't commit this, just needed for hacky cache import/export test
+		"--network", "host",
 		image+":"+version,
 		"--debug",
 	)

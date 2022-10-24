@@ -62,6 +62,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
 			"publish":              router.ToResolver(s.publish),
+			"exportCache":          router.ToResolver(s.exportCache),
 		},
 	}
 }
@@ -94,7 +95,7 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, s.platform)
+	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, s.platform, s.cacheImports)
 }
 
 func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
@@ -115,11 +116,11 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, args.ContainerExecOpts)
+	return parent.Exec(ctx, s.gw, args.ContainerExecOpts, s.cacheImports)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
-	return parent.ExitCode(ctx, s.gw)
+	return parent.ExitCode(ctx, s.gw, s.cacheImports)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
@@ -320,7 +321,17 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh, s.cacheImports)
+}
+
+type containerExportCacheArgs struct {
+	ExportType string
+	Ref        string
+	Max        bool
+}
+
+func (s *containerSchema) exportCache(ctx *router.Context, parent *core.Container, args containerExportCacheArgs) (bool, error) {
+	return parent.ExportCache(ctx, args.ExportType, args.Ref, args.Max, s.bkClient, s.solveOpts, s.solveCh, s.cacheImports)
 }
 
 type containerWithMountedFileArgs struct {
@@ -372,7 +383,7 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.gw, args.Path)
+	return parent.Directory(ctx, s.gw, args.Path, s.cacheImports)
 }
 
 type containerFileArgs struct {
@@ -380,7 +391,7 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.gw, args.Path)
+	return parent.File(ctx, s.gw, args.Path, s.cacheImports)
 }
 
 func absPath(workDir string, containerPath string) string {

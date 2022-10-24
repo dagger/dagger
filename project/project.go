@@ -57,13 +57,14 @@ func Load(
 	cache map[string]*State,
 	cacheMu *sync.RWMutex,
 	gw bkgw.Client,
+	cacheImports []bkgw.CacheOptionsEntry,
 ) (*State, error) {
 	file, err := workdir.File(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	cfgBytes, err := file.Contents(ctx, gw)
+	cfgBytes, err := file.Contents(ctx, gw, cacheImports)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +99,7 @@ func (p *State) SDK() string {
 	return p.config.SDK
 }
 
-func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (string, error) {
+func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string, cacheImports []bkgw.CacheOptionsEntry) (string, error) {
 	var rerr error
 	p.schemaOnce.Do(func() {
 		if p.config.SDK == "" {
@@ -109,7 +110,7 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		// TODO: remove this once all extensions migrate to code-first
 		schemaFile, err := p.workdir.File(ctx, path.Join(path.Dir(p.configPath), schemaPath))
 		if err == nil {
-			schemaBytes, err := schemaFile.Contents(ctx, gw)
+			schemaBytes, err := schemaFile.Contents(ctx, gw, cacheImports)
 			if err == nil {
 				p.schema = string(schemaBytes)
 				return
@@ -117,7 +118,7 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		}
 
 		// otherwise go ask the extension for its schema
-		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
+		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID, cacheImports)
 		if err != nil {
 			rerr = err
 			return
@@ -159,7 +160,8 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 			return
 		}
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: outputDef.ToPB(),
+			Definition:   outputDef.ToPB(),
+			CacheImports: cacheImports,
 		})
 		if err != nil {
 			rerr = err
@@ -189,6 +191,7 @@ func (p *State) Extensions(
 	gw bkgw.Client,
 	platform specs.Platform,
 	sshAuthSockID string,
+	cacheImports []bkgw.CacheOptionsEntry,
 ) ([]*State, error) {
 	var rerr error
 	p.extensionsOnce.Do(func() {
@@ -197,7 +200,7 @@ func (p *State) Extensions(
 			switch {
 			case dep.Local != nil:
 				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local.Path))
-				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw)
+				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw, cacheImports)
 				if err != nil {
 					rerr = err
 					return
@@ -213,7 +216,7 @@ func (p *State) Extensions(
 					rerr = err
 					return
 				}
-				depState, err := Load(ctx, gitFS, dep.Git.Path, cache, cacheMu, gw)
+				depState, err := Load(ctx, gitFS, dep.Git.Path, cache, cacheMu, gw, cacheImports)
 				if err != nil {
 					rerr = err
 					return
@@ -233,6 +236,7 @@ func (p *State) Resolvers(
 	gw bkgw.Client,
 	platform specs.Platform,
 	sshAuthSockID string,
+	cacheImports []bkgw.CacheOptionsEntry,
 ) (router.Resolvers, error) {
 	var rerr error
 	p.resolversOnce.Do(func() {
@@ -240,12 +244,12 @@ func (p *State) Resolvers(
 			return
 		}
 
-		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
+		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID, cacheImports)
 		if err != nil {
 			rerr = err
 			return
 		}
-		schema, err := p.Schema(ctx, gw, platform, sshAuthSockID)
+		schema, err := p.Schema(ctx, gw, platform, sshAuthSockID, cacheImports)
 		if err != nil {
 			rerr = err
 			return
@@ -273,14 +277,14 @@ func (p *State) Resolvers(
 			objResolver := router.ObjectResolver{}
 			p.resolvers[obj.Name.Value] = objResolver
 			for _, field := range obj.Fields {
-				objResolver[field.Name.Value] = p.resolver(runtimeFS, p.config.SDK, gw, platform)
+				objResolver[field.Name.Value] = p.resolver(runtimeFS, p.config.SDK, gw, platform, cacheImports)
 			}
 		}
 	})
 	return p.resolvers, rerr
 }
 
-func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, platform specs.Platform) graphql.FieldResolveFn {
+func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, platform specs.Platform, cacheImports []bkgw.CacheOptionsEntry) graphql.FieldResolveFn {
 	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
 		pathArray := ctx.ResolveParams.Info.Path.AsArray()
 		name := fmt.Sprintf("%+v", pathArray)
@@ -388,7 +392,8 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 		}
 
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: outputDef.ToPB(),
+			Definition:   outputDef.ToPB(),
+			CacheImports: cacheImports,
 		})
 		if err != nil {
 			return nil, err

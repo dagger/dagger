@@ -1,149 +1,156 @@
 extend type Query {
-    """
-    Load a container from ID.
-    Null ID returns an empty container (scratch).
-    """
-    container(id: ContainerID): Container!
+  """
+  Load a container from ID.
+  Null ID returns an empty container (scratch).
+  """
+  container(id: ContainerID): Container!
 }
 
 "A unique container identifier. Null designates an empty container (scratch)."
 scalar ContainerID
 
-
 """
 An OCI-compatible container, also known as a docker container
 """
 type Container {
-    "A unique identifier for this container"
-    id: ContainerID!
+  "A unique identifier for this container"
+  id: ContainerID!
 
-    "Initialize this container from the base image published at the given address"
-    from(address: String!): Container!
+  "Initialize this container from the base image published at the given address"
+  from(address: String!): Container!
 
-    "Initialize this container from a Dockerfile build"
-    build(context: DirectoryID!, dockerfile: String): Container!
+  "Initialize this container from a Dockerfile build"
+  build(context: DirectoryID!, dockerfile: String): Container!
 
-    "This container's root filesystem. Mounts are not included."
-    fs: Directory!
+  "This container's root filesystem. Mounts are not included."
+  fs: Directory!
 
-   "Initialize this container from this DirectoryID"
-    withFS(id: DirectoryID!): Container!
+  "Initialize this container from this DirectoryID"
+  withFS(id: DirectoryID!): Container!
 
-    "Retrieve a directory at the given path. Mounts are included."
-    directory(path: String!): Directory!
+  "Retrieve a directory at the given path. Mounts are included."
+  directory(path: String!): Directory!
 
-    "Retrieve a file at the given path. Mounts are included."
-    file(path: String!): File!
+  "Retrieve a file at the given path. Mounts are included."
+  file(path: String!): File!
 
-    "The user to be set for all commands"
-    user: String
+  "The user to be set for all commands"
+  user: String
 
-    "This container but with a different command user"
-    withUser(name: String!): Container!
+  "This container but with a different command user"
+  withUser(name: String!): Container!
 
-    "The working directory for all commands"
-    workdir: String
+  "The working directory for all commands"
+  workdir: String
 
-    "This container but with a different working directory"
-    withWorkdir(path: String!): Container!
+  "This container but with a different working directory"
+  withWorkdir(path: String!): Container!
 
-    "A list of environment variables passed to commands"
-    envVariables: [EnvVariable!]!
+  "A list of environment variables passed to commands"
+  envVariables: [EnvVariable!]!
 
-    "The value of the specified environment variable"
-    envVariable(name: String!): String
+  "The value of the specified environment variable"
+  envVariable(name: String!): String
 
-    "This container plus the given environment variable"
-    withEnvVariable(name: String!, value: String!): Container!
+  "This container plus the given environment variable"
+  withEnvVariable(name: String!, value: String!): Container!
 
-    "This container plus an env variable containing the given secret"
-    withSecretVariable(name: String!, secret: SecretID!): Container!
+  "This container plus an env variable containing the given secret"
+  withSecretVariable(name: String!, secret: SecretID!): Container!
 
-    "This container minus the given environment variable"
-    withoutEnvVariable(name: String!): Container!
+  "This container minus the given environment variable"
+  withoutEnvVariable(name: String!): Container!
 
-    "Entrypoint to be prepended to the arguments of all commands"
-    entrypoint: [String!]
+  "Entrypoint to be prepended to the arguments of all commands"
+  entrypoint: [String!]
 
-    "This container but with a different command entrypoint"
-    withEntrypoint(args: [String!]!): Container!
+  "This container but with a different command entrypoint"
+  withEntrypoint(args: [String!]!): Container!
 
-    "Default arguments for future commands"
-    defaultArgs: [String!]
+  "Default arguments for future commands"
+  defaultArgs: [String!]
 
-    "Configures default arguments for future commands"
-    withDefaultArgs(args: [String!]): Container!
+  "Configures default arguments for future commands"
+  withDefaultArgs(args: [String!]): Container!
 
-    "List of paths where a directory is mounted"
-    mounts: [String!]!
+  "List of paths where a directory is mounted"
+  mounts: [String!]!
 
-    "This container plus a directory mounted at the given path"
-    withMountedDirectory(path: String!, source: DirectoryID!): Container!
+  "This container plus a directory mounted at the given path"
+  withMountedDirectory(path: String!, source: DirectoryID!): Container!
 
-    "This container plus a file mounted at the given path"
-    withMountedFile(path: String!, source: FileID!): Container!
+  "This container plus a file mounted at the given path"
+  withMountedFile(path: String!, source: FileID!): Container!
 
-    "This container plus a temporary directory mounted at the given path"
-    withMountedTemp(path: String!): Container!
+  "This container plus a temporary directory mounted at the given path"
+  withMountedTemp(path: String!): Container!
 
-    "This container plus a cache volume mounted at the given path"
-    withMountedCache(path: String!, cache: CacheID!, source: DirectoryID): Container!
+  "This container plus a cache volume mounted at the given path"
+  withMountedCache(
+    path: String!
+    cache: CacheID!
+    source: DirectoryID
+  ): Container!
 
-    "This container plus a secret mounted into a file at the given path"
-    withMountedSecret(path: String!, source: SecretID!): Container!
+  "This container plus a secret mounted into a file at the given path"
+  withMountedSecret(path: String!, source: SecretID!): Container!
 
-    """
-    This container after unmounting everything at the given path.
-    """
-    withoutMount(path: String!): Container!
+  """
+  This container after unmounting everything at the given path.
+  """
+  withoutMount(path: String!): Container!
 
-    "This container after executing the specified command inside it"
-    exec(
-      "Command to run instead of the container's default command"
-      args: [String!],
-      "Content to write to the command's standard input before closing"
-      stdin: String,
-      "Redirect the command's standard output to a file in the container"
-      redirectStdout: String,
-      "Redirect the command's standard error to a file in the container"
-      redirectStderr: String,
-    ): Container!
+  "This container after executing the specified command inside it"
+  exec(
+    "Command to run instead of the container's default command"
+    args: [String!]
+    "Content to write to the command's standard input before closing"
+    stdin: String
+    "Redirect the command's standard output to a file in the container"
+    redirectStdout: String
+    "Redirect the command's standard error to a file in the container"
+    redirectStderr: String
+  ): Container!
 
-    """
-    Exit code of the last executed command. Zero means success.
-    Null if no command has been executed.
-    """
-    exitCode: Int
+  """
+  Exit code of the last executed command. Zero means success.
+  Null if no command has been executed.
+  """
+  exitCode: Int
 
-    """
-    The output stream of the last executed command.
-    Null if no command has been executed.
-    """
-    stdout: File
+  """
+  The output stream of the last executed command.
+  Null if no command has been executed.
+  """
+  stdout: File
 
-    """
-    The error stream of the last executed command.
-    Null if no command has been executed.
-    """
-    stderr: File
+  """
+  The error stream of the last executed command.
+  Null if no command has been executed.
+  """
+  stderr: File
 
-    # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
-    #    This may actually be a good candidate for a mutation. To be discussed.
-    "Publish this container as a new image, returning a fully qualified ref"
-    publish(address: String!): String!
+  # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
+  #    This may actually be a good candidate for a mutation. To be discussed.
+  "Publish this container as a new image, returning a fully qualified ref"
+  publish(address: String!): String!
+
+  # FIXME:(sipsma) not sure if this is best long-term place for this API
+  "Export this container's rootfs to remote cache"
+  exportCache(exportType: String!, ref: String!, max: Boolean): Boolean!
 }
 
 """
 EnvVariable is a simple key value object that represents an environment variable.
 """
 type EnvVariable {
-    """
-    name is the environment variable name.
-    """
-    name: String!
+  """
+  name is the environment variable name.
+  """
+  name: String!
 
-    """
-    value is the environment variable value
-    """
-    value: String!
+  """
+  value is the environment variable value
+  """
+  value: String!
 }

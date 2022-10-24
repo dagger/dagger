@@ -43,7 +43,7 @@ func init() {
 	}
 }
 
-func Build(ctx context.Context, gw bkgw.Client, p specs.Platform) (llb.State, error) {
+func Build(ctx context.Context, gw bkgw.Client, p specs.Platform, cacheImports []bkgw.CacheOptionsEntry) (llb.State, error) {
 	lock.Lock()
 	def, err := state.Marshal(ctx, llb.Platform(p))
 	lock.Unlock()
@@ -62,6 +62,7 @@ func Build(ctx context.Context, gw bkgw.Client, p specs.Platform) (llb.State, er
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
+		CacheImports:   cacheImports,
 	})
 	if err != nil {
 		return llb.State{}, err

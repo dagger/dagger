@@ -12,7 +12,7 @@ import (
 // TODO:(sipsma) SDKs should be pluggable extensions, not hardcoded LLB here. The implementation here is a temporary bridge from the previous hardcoded Dockerfiles to the sdk-as-extension model.
 
 // return the FS with the executable extension code, ready to be invoked by dagger
-func (p *State) Runtime(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+func (p *State) Runtime(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string, cacheImports []bkgw.CacheOptionsEntry) (*core.Directory, error) {
 	var runtimeFS *core.Directory
 	var err error
 	switch p.config.SDK {
@@ -30,7 +30,7 @@ func (p *State) Runtime(ctx context.Context, gw bkgw.Client, platform specs.Plat
 	if err != nil {
 		return nil, err
 	}
-	if _, err := runtimeFS.Stat(ctx, gw, "."); err != nil {
+	if _, err := runtimeFS.Stat(ctx, gw, ".", cacheImports); err != nil {
 		return nil, err
 	}
 	return runtimeFS, nil

@@ -47,6 +47,7 @@ func (dir *HostDirectory) Write(
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
+	cacheImports []bkgw.CacheOptionsEntry,
 ) (bool, error) {
 	dest, err := filepath.Abs(filepath.Join(localDir, dest))
 	if err != nil {
@@ -110,8 +111,9 @@ func (dir *HostDirectory) Write(
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: defPB,
+			Evaluate:     true,
+			Definition:   defPB,
+			CacheImports: cacheImports,
 		})
 	}, ch)
 	if err != nil {
