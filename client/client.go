@@ -57,7 +57,7 @@ type Config struct {
 }
 
 func New(ctx context.Context, host string, cfg Config) (*Client, error) {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "client.New")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "client.New")
 	defer span.End()
 
 	if host == "" {
@@ -100,7 +100,7 @@ type DoFunc func(context.Context, *solver.Solver) error
 
 // FIXME: return completed *Route, instead of *compiler.Value
 func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) error {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "client.Do")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "client.Do")
 	defer span.End()
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -132,7 +132,7 @@ func (c *Client) Do(ctx context.Context, pctx *plancontext.Context, fn DoFunc) e
 // detectPlatform tries using Buildkit's target platform;
 // if not possible, default platform will be used.
 func (c *Client) detectPlatform(ctx context.Context) (*specs.Platform, error) {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "client.DetectPlatform")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "client.DetectPlatform")
 	defer span.End()
 
 	w, err := c.c.ListWorkers(ctx)
@@ -166,7 +166,7 @@ func convertCacheOptionEntries(ims []bk.CacheOptionsEntry) []bkgw.CacheOptionsEn
 }
 
 func (c *Client) buildfn(ctx context.Context, pctx *plancontext.Context, fn DoFunc, ch chan *bk.SolveStatus) error {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "client.Build")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "client.Build")
 	defer span.End()
 
 	wg := sync.WaitGroup{}

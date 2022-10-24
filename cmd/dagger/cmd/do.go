@@ -351,7 +351,7 @@ func doHelpCmd(cmd *cobra.Command, daggerPlan *plan.Plan, action *plan.Action, a
 			targetStr = "<action> [subaction...]"
 		}
 
-		fmt.Printf("Usage: \n  dagger do %s [flags]\n\n", targetStr)
+		fmt.Printf("Usage: \n  dagger-cue do %s [flags]\n\n", targetStr)
 		if actionFlags != nil {
 			fmt.Println("Options")
 			actionFlags.VisitAll(func(flag *pflag.Flag) {
@@ -363,7 +363,7 @@ func doHelpCmd(cmd *cobra.Command, daggerPlan *plan.Plan, action *plan.Action, a
 			})
 		}
 	} else {
-		fmt.Println("Usage: \n  dagger do <action> [subaction...] [flags]")
+		fmt.Println("Usage: \n  dagger-cue do <action> [subaction...] [flags]")
 	}
 
 	var err error

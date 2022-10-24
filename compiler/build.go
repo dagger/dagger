@@ -14,7 +14,7 @@ import (
 
 // Build a cue configuration tree from the files in fs.
 func Build(ctx context.Context, src string, overlays map[string]fs.FS, args ...string) (*Value, error) {
-	_, span := otel.Tracer("dagger").Start(ctx, "compiler.Build")
+	_, span := otel.Tracer("dagger-cue").Start(ctx, "compiler.Build")
 	defer span.End()
 
 	c := DefaultCompiler

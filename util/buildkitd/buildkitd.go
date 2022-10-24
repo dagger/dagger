@@ -50,7 +50,7 @@ func init() {
 }
 
 func Start(ctx context.Context) (string, error) {
-	ctx, span := otel.Tracer("dagger").Start(ctx, "buildkitd.Start")
+	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "buildkitd.Start")
 	defer span.End()
 
 	if vendoredVersion == "" {

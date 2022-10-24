@@ -2,8 +2,8 @@
 
 set -e
 
-name="dagger"
 base="https://dagger-io.s3.amazonaws.com"
+name="dagger-cue"
 
 cat /dev/null <<EOF
 ------------------------------------------------------------------------
@@ -267,7 +267,7 @@ latest_version() {
 base_url() {
     os="$(uname_os)"
     arch="$(uname_arch)"
-    version="${DAGGER_VERSION:-$(latest_version)}"
+    version="${VERSION:-$(latest_version)}"
     url="${base}/${name}/releases/${version}"
     echo "$url"
 }
@@ -275,7 +275,7 @@ base_url() {
 tarball() {
     os="$(uname_os)"
     arch="$(uname_arch)"
-    version="${DAGGER_VERSION:-$(latest_version)}"
+    version="${VERSION:-$(latest_version)}"
     name="${name}_v${version}_${os}_${arch}"
     if [ "$os" = "windows" ]; then
         name="${name}.zip"
@@ -326,7 +326,7 @@ execute() {
     checksum="checksums.txt"
     checksum_url="${base_url}/${checksum}"
     bin_dir="${BIN_DIR:-./bin}"
-    binexe="dagger"
+    binexe="${name}"
 
     tmpdir=$(mktemp -d)
     log_debug "downloading files into ${tmpdir}"

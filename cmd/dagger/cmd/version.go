@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	versionFile = "~/.config/dagger/version-check"
-	versionURL  = "https://releases.dagger.io/dagger/latest_version"
+	versionFile = "~/.config/dagger-cue/version-check"
+	versionURL  = "https://releases.dagger.io/dagger-cue/latest_version"
 )
 
 var (
@@ -29,7 +29,7 @@ var (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Print dagger version",
+	Short: "Print dagger-cue version",
 	// Disable version hook here to avoid double version check
 	PersistentPreRun:  func(*cobra.Command, []string) {},
 	PersistentPostRun: func(*cobra.Command, []string) {},
@@ -46,14 +46,14 @@ var versionCmd = &cobra.Command{
 			_ = os.Remove(versionFilePath)
 			checkVersion()
 			if !warnVersion() {
-				fmt.Println("dagger is up to date.")
+				fmt.Println("dagger-cue is up to date.")
 			}
 		}
 	},
 }
 
 func init() {
-	versionCmd.Flags().Bool("check", false, "check if dagger is up to date")
+	versionCmd.Flags().Bool("check", false, "check if dagger-cue is up to date")
 
 	if err := viper.BindPFlags(versionCmd.Flags()); err != nil {
 		panic(err)
@@ -90,7 +90,7 @@ func getLatestVersion(currentVersion *goVersion.Version) (*goVersion.Version, er
 	}
 
 	// dagger/<version> (<OS>; <ARCH>)
-	agent := fmt.Sprintf("dagger/%s (%s; %s)", currentVersion.String(), runtime.GOOS, runtime.GOARCH)
+	agent := fmt.Sprintf("dagger-cue/%s (%s; %s)", currentVersion.String(), runtime.GOOS, runtime.GOARCH)
 	req.Header.Set("User-Agent", agent)
 
 	resp, err := http.DefaultClient.Do(req)
@@ -157,7 +157,7 @@ func checkVersion() {
 	}
 
 	if latestVersion != "" {
-		versionMessage = fmt.Sprintf("\nA new version is available (%s), please go to https://docs.dagger.io/1200/local-dev for instructions.", latestVersion)
+		versionMessage = fmt.Sprintf("\nA new version is available (%s), please go to https://docs.dagger.io/sdk/cue/526369/install for instructions.", latestVersion)
 	}
 
 	// Update check timestamps file
@@ -174,7 +174,7 @@ func warnVersion() bool {
 		if p, err := os.Readlink(binPath); err == nil {
 			// Homebrew detected, print custom message
 			if strings.Contains(p, "/Cellar/") {
-				fmt.Println("\nA new version is available, please run:\n\nbrew update && brew upgrade dagger")
+				fmt.Println("\nA new version is available, please run:\n\nbrew update && brew upgrade dagger/tap/dagger-cue")
 				return true
 			}
 		}
