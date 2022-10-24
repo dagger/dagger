@@ -1,7 +1,7 @@
 project_name: dagger-cue
 
 monorepo:
-  tag_prefix: sdk/cue/v
+  tag_prefix: sdk/cue/
 
 before:
   hooks:
