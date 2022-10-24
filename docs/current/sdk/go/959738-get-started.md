@@ -83,7 +83,7 @@ The `build()` function currently just creates a dagger client with `dagger.Conne
 
 1. Install the Dagger Go SDK
 
-{@include: ../../partials/\_install-sdk-go.md}
+{@include: ../../partials/_install-sdk-go.md}
 
 1. Try the tool by executing the command below:
 
