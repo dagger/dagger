@@ -67,7 +67,7 @@ changelog:
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
-      owner: dagger
+      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
       name: homebrew-tap
     name: dagger-cue
     commit_author:
