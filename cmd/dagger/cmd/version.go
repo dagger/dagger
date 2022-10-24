@@ -157,7 +157,7 @@ func checkVersion() {
 	}
 
 	if latestVersion != "" {
-		versionMessage = fmt.Sprintf("\nA new version is available (%s), please go to https://docs.dagger.io/1200/local-dev for instructions.", latestVersion)
+		versionMessage = fmt.Sprintf("\nA new version is available (%s), please go to https://docs.dagger.io/sdk/cue/526369/install for instructions.", latestVersion)
 	}
 
 	// Update check timestamps file
