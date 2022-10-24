@@ -14,7 +14,7 @@ module.exports = {
     {
       type: "doc",
       id: "current/index",
-      label: "Documentation Home"
+      label: "Introduction"
     },
     {
       type: "category",
