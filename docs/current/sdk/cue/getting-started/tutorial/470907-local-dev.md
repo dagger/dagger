@@ -12,7 +12,7 @@ Everyone should be able to develop, test and run their application using a local
 Having to commit & push in order to test a change slows down iteration.
 This guide shows you the Dagger way.
 Within 5 minutes, you will have a local CI/CD loop and run your first test & build pipeline.
-Afterwards, we'll look at running the same [Dagger pipeline in your CI system](/1201/ci-environment).
+Afterwards, we'll look at running the same [Dagger pipeline in your CI system](./665980-ci-environment.md).
 
 Before we can build & test our example app with `dagger-cue`, we need to have [Dagger installed](/install) and Docker running.
 

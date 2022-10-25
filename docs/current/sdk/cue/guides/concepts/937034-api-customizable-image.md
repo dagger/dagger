@@ -9,7 +9,7 @@ You should move away from having a default image inside main actions: for exampl
 
 Two reasons:
 
-1. Default values cannot be directly appended to a [composite action](/1221/action/#composite-actions)
+1. Default values cannot be directly appended to a [composite action](../../core-concepts/934917-action.md#composite-actions)
 2. Even if you override a default image with a custom one, the default will still be [evaluated and executed](https://github.com/dagger/dagger/blob/d45b946f024c63bcb89d22bd843a011f18d64b69/pkg/universe.dagger.io/go/build.cue#L34), which is wasteful
 
 ## Three main action patterns

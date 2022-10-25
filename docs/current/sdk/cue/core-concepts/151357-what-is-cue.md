@@ -318,7 +318,7 @@ hello: "Hello \(myarg)" // even if `myarg` is not a string
 
 The string interpolation done via the `\(myarg)` key, and would compute to `hello: "Hello bar"`.
 
-As shown in [avoid string interpolation](https://docs.dagger.io/1226/coding-style#avoid-interpolation), you should avoid using them as much as possible, as the cue evaluator sometimes gets lost with the cast.
+As shown in [avoid string interpolation](../guidelines/102745-coding-style.md#avoid-interpolation), you should avoid using them as much as possible, as the cue evaluator sometimes gets lost with the cast.
 
 ### Non-interpolated string
 
