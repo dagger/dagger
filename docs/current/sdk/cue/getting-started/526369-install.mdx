@@ -93,13 +93,13 @@ dagger-cue 0.2.19 (GIT_SHA) linux/amd64
 If you want to use the installation script, powershell 7.0 or newer is required. From powershell, run:
 
 ```Powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger-cue/install.ps1 | Invoke-Expression
 ```
 
 If you want to install dagger to a different location, pass in a location to the script with the `-InstallPath` parameter.
 
 ```Powershell
-$script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
+$script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger-cue/install.ps1
 $params = "-InstallPath C:\temp"
 "$script $params" | Invoke-Expression
 ```
@@ -107,7 +107,7 @@ $params = "-InstallPath C:\temp"
 If you want to install a specific version of `dagger-cue`, pass in a version number with the `-DaggerVersion` parameter.
 
 ```Powershell
-$script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
+$script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger-cue/install.ps1
 $params = "-DaggerVersion 0.2.28"
 "$script $params" | Invoke-Expression
 ```
