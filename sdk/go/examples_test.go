@@ -3,7 +3,6 @@ package dagger_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -228,33 +227,33 @@ func ExampleHost_Workdir() {
 	// Output: # Dagger Go SDK
 }
 
-func ExampleHost_EnvVariable() {
-	ctx := context.Background()
-	client, err := dagger.Connect(ctx)
-	if err != nil {
-		panic(err)
-	}
-	defer client.Close()
+// func ExampleHost_EnvVariable() {
+// 	ctx := context.Background()
+// 	client, err := dagger.Connect(ctx)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	defer client.Close()
 
-	os.Setenv("SEKRIT", "hunter2")
+// 	os.Setenv("SEKRIT", "hunter2")
 
-	secretID, err := client.Host().EnvVariable("SEKRIT").Secret().ID(ctx)
-	if err != nil {
-		panic(err)
-	}
+// 	secretID, err := client.Host().EnvVariable("SEKRIT").Secret().ID(ctx)
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	alpine := client.Container().From("alpine:3.16.2")
-	leaked, err := alpine.
-		WithSecretVariable("PASSWORD", secretID).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-c", "echo $PASSWORD"},
-		}).
-		Stdout().Contents(ctx)
-	if err != nil {
-		panic(err)
-	}
+// 	alpine := client.Container().From("alpine:3.16.2")
+// 	leaked, err := alpine.
+// 		WithSecretVariable("PASSWORD", secretID).
+// 		Exec(dagger.ContainerExecOpts{
+// 			Args: []string{"sh", "-c", "echo $PASSWORD"},
+// 		}).
+// 		Stdout().Contents(ctx)
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	fmt.Println(leaked)
+// 	fmt.Println(leaked)
 
-	// Output: hunter2
-}
+// 	// Output: hunter2
+// }
