@@ -14,6 +14,8 @@ on:
       - "**.go"
       - "go.mod"
       - "go.sum"
+      - "**/go.mod"
+      - "**/go.sum"
       - "sdk/nodejs/**.js"
       - ".github/workflows/test.yml"
   # Enable manual trigger for easy ad-hoc debugging
