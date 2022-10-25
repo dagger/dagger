@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"dagger.io/dagger"
@@ -31,6 +32,60 @@ func ExampleContainer() {
 	fmt.Println(out)
 
 	// Output: 3.16.2
+}
+
+func ExampleGitRepository() {
+	ctx := context.Background()
+
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	defer client.Close()
+
+	readme, err := client.Git("https://github.com/dagger/dagger").
+		Tag("v0.3.0").
+		Tree().File("README.md").Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(readme), "\n")
+	fmt.Println(lines[0])
+
+	// Output: ## What is Dagger?
+}
+
+func ExampleContainer_Build() {
+	ctx := context.Background()
+
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	defer client.Close()
+
+	repoID, err := client.Git("https://github.com/dagger/dagger").
+		Tag("v0.3.0").
+		Tree().ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	daggerImg := client.Container().Build(repoID)
+
+	out, err := daggerImg.Exec(dagger.ContainerExecOpts{
+		Args: []string{"version"},
+	}).Stdout().Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(out)
+
+	// Output: dagger devel () linux/amd64
 }
 
 func ExampleContainer_WithEnvVariable() {
