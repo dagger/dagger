@@ -6,6 +6,9 @@ replace github.com/dagger/dagger => ../..
 
 replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220414164044-61404de7df1a+incompatible
 
+// retract engine releases from SDK releases
+retract [v0.0.0, v0.2.36]
+
 require (
 	github.com/Khan/genqlient v0.5.0
 	github.com/dagger/dagger v0.3.2
