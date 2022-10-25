@@ -2402,7 +2402,7 @@ func TestContainerPublish(t *testing.T) {
 }
 
 func TestContainerCacheExportImport(t *testing.T) {
-	t.Skip("this test fails when running registry here, but passes with an external registry???")
+	// t.Skip("this test fails when running registry here, but passes with an external registry???")
 
 	ctx := context.Background()
 
@@ -2438,9 +2438,16 @@ func TestContainerCacheExportImport(t *testing.T) {
 	require.NoError(t, err)
 	*/
 
-	ctr := c.Container().From("alpine:3.15").Exec(dagger.ContainerExecOpts{
-		Args: []string{"sh", "-c", "echo $RANDOM > /random && cat /random"},
-	})
+	mnt, err := c.Directory().WithNewFile("/hi", dagger.DirectoryWithNewFileOpts{
+		Contents: "hey",
+	}).ID(ctx)
+	require.NoError(t, err)
+
+	ctr := c.Container().From("alpine:3.15").
+		WithMountedDirectory("/mnt", mnt).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", "echo $RANDOM > /random"},
+		})
 
 	randomVal, err := ctr.File("/random").Contents(ctx)
 	require.NoError(t, err)
@@ -2462,9 +2469,16 @@ func TestContainerCacheExportImport(t *testing.T) {
 	require.NoError(t, err)
 	defer otherClient.Close()
 
-	otherCtr := otherClient.Container().From("alpine:3.15").Exec(dagger.ContainerExecOpts{
-		Args: []string{"sh", "-c", "echo $RANDOM > /random && cat /random"},
-	})
+	otherMnt, err := c.Directory().WithNewFile("/hi", dagger.DirectoryWithNewFileOpts{
+		Contents: "hey",
+	}).ID(ctx)
+	require.NoError(t, err)
+
+	otherCtr := otherClient.Container().From("alpine:3.15").
+		WithMountedDirectory("/mnt", otherMnt).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", "echo $RANDOM > /random"},
+		})
 
 	otherRandomVal, err := otherCtr.File("/random").Contents(ctx)
 	require.NoError(t, err)

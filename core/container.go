@@ -923,9 +923,27 @@ func (container *Container) ExportCache(
 		return false, err
 	}
 
-	combinedState := rootfsState
+	combinedStates := []llb.State{rootfsState}
 	if metastate != nil {
-		combinedState = llb.Merge([]llb.State{rootfsState, *metastate})
+		combinedStates = append(combinedStates, *metastate)
+	}
+
+	for _, m := range payload.Mounts {
+		switch {
+		case m.CacheID != "", m.Tmpfs:
+			// can't include
+		default:
+			mntSt, err := m.SourceState()
+			if err != nil {
+				return false, err
+			}
+			combinedStates = append(combinedStates, mntSt)
+		}
+	}
+
+	combinedState := llb.Merge(combinedStates)
+	if len(combinedStates) == 1 {
+		combinedState = combinedStates[0]
 	}
 
 	stDef, err := combinedState.Marshal(ctx, llb.Platform(payload.Platform))
