@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"dagger.io/dagger"
 )
 
 func main() {
@@ -19,26 +19,26 @@ func doCi() error {
 	ctx := context.Background()
 
 	// create a Dagger client
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
 	// get the projects source directory
-	src, err := client.Core().Host().Workdir().Read().ID(ctx)
+	src, err := client.Host().Workdir().Read().ID(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Build an gradle image with gradle and bash installed
-	gradle := client.Core().Container().From("gradle:latest")
+	gradle := client.Container().From("gradle:latest")
 
 	// mount source directory to /src
 	gradle = gradle.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 	// execute gradle build command
-	gradle = gradle.Exec(api.ContainerExecOpts{
+	gradle = gradle.Exec(dagger.ContainerExecOpts{
 		Args: []string{"gradle", "build"},
 	})
 

@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"dagger.io/dagger"
 )
 
 func main() {
@@ -19,31 +19,31 @@ func doCi() error {
 	ctx := context.Background()
 
 	// create a Dagger client
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
 	// get the projects source directory
-	src, err := client.Core().Host().Workdir().Read().ID(ctx)
+	src, err := client.Host().Workdir().Read().ID(ctx)
 	if err != nil {
 		return err
 	}
 
 	// initialize new container from npm image
-	npm := client.Core().Container().From("node")
+	npm := client.Container().From("node")
 
 	// mount source directory to /src
 	npm = npm.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 	// execute npm install
-	npm = npm.Exec(api.ContainerExecOpts{
+	npm = npm.Exec(dagger.ContainerExecOpts{
 		Args: []string{"npm", "install"},
 	})
 
 	// execute npm test command
-	npm = npm.Exec(api.ContainerExecOpts{
+	npm = npm.Exec(dagger.ContainerExecOpts{
 		Args: []string{"npm", "run", "test"},
 	})
 
@@ -56,7 +56,7 @@ func doCi() error {
 	fmt.Println(test)
 
 	// execute build command
-	npm = npm.Exec(api.ContainerExecOpts{
+	npm = npm.Exec(dagger.ContainerExecOpts{
 		Args: []string{"npm", "run", "build"},
 	})
 

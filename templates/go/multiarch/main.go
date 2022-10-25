@@ -6,8 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.dagger.io/dagger/sdk/go/dagger"
-	"go.dagger.io/dagger/sdk/go/dagger/api"
+	"dagger.io/dagger"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,26 +36,26 @@ func build(repoUrl string) error {
 	goVersions := []string{"1.18", "1.19"}
 
 	// create a Dagger client
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
 	// clone the specified git repo
-	repo := client.Core().Git(repoUrl)
+	repo := client.Git(repoUrl)
 	src, err := repo.Branch("main").Tree().ID(ctx)
 	if err != nil {
 		return err
 	}
 
 	// reference to the current working directory
-	workdir := client.Core().Host().Workdir()
+	workdir := client.Host().Workdir()
 
 	for _, version := range goVersions {
 		// Get golang image and mount go source
 		imageTag := fmt.Sprintf("golang:%s", version)
-		golang := client.Core().Container().From(api.ContainerAddress(imageTag))
+		golang := client.Container().From(imageTag)
 		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 		// Run matrix builds in parallel
@@ -75,7 +74,7 @@ func build(repoUrl string) error {
 	return nil
 }
 
-func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostDirectory, goos string, goarch string, version string) error {
+func buildOsArch(ctx context.Context, builder *dagger.Container, workdir *dagger.HostDirectory, goos string, goarch string, version string) error {
 	fmt.Printf("Building %s %s with go %s\n", goos, goarch, version)
 
 	// Create the output path for the build
@@ -89,7 +88,7 @@ func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostD
 	// Set GOARCH and GOOS and build
 	build := builder.WithEnvVariable("GOOS", goos)
 	build = build.WithEnvVariable("GOARCH", goarch)
-	build = build.Exec(api.ContainerExecOpts{
+	build = build.Exec(dagger.ContainerExecOpts{
 		Args: []string{"go", "build", "-o", path},
 	})
 
@@ -100,6 +99,6 @@ func buildOsArch(ctx context.Context, builder *api.Container, workdir *api.HostD
 	}
 
 	// Write the build output to the host
-	_, err = workdir.Write(ctx, output, api.HostDirectoryWriteOpts{Path: path})
+	_, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
 	return err
 }
