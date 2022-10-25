@@ -1,12 +1,12 @@
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} string
 
-// GraphQLType returns the native GraphQL type name
-func (s {{ .Name | FormatName }}) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s {{ .Name | FormatName }}) graphqlType() string {
 	return "{{ .Name }}"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s {{ .Name | FormatName }}) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s {{ .Name | FormatName }}) graphqlMarshal(ctx context.Context) (any, error) {
     return string(s), nil
 }

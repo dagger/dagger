@@ -20,77 +20,77 @@ type graphqlMarshaller interface {
 // A global cache volume identifier
 type CacheID string
 
-// GraphQLType returns the native GraphQL type name
-func (s CacheID) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s CacheID) graphqlType() string {
 	return "CacheID"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s CacheID) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s CacheID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
-// GraphQLType returns the native GraphQL type name
-func (s ContainerID) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s ContainerID) graphqlType() string {
 	return "ContainerID"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s ContainerID) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s ContainerID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
 // A content-addressed directory identifier
 type DirectoryID string
 
-// GraphQLType returns the native GraphQL type name
-func (s DirectoryID) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s DirectoryID) graphqlType() string {
 	return "DirectoryID"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s DirectoryID) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s DirectoryID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
 type FileID string
 
-// GraphQLType returns the native GraphQL type name
-func (s FileID) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s FileID) graphqlType() string {
 	return "FileID"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s FileID) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s FileID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
 // An identifier for a directory on the host
 type HostDirectoryID string
 
-// GraphQLType returns the native GraphQL type name
-func (s HostDirectoryID) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s HostDirectoryID) graphqlType() string {
 	return "HostDirectoryID"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s HostDirectoryID) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s HostDirectoryID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
 // A unique identifier for a secret
 type SecretID string
 
-// GraphQLType returns the native GraphQL type name
-func (s SecretID) GraphQLType() string {
+// graphqlType returns the native GraphQL type name
+func (s SecretID) graphqlType() string {
 	return "SecretID"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
-func (s SecretID) GraphQLMarshal(ctx context.Context) (any, error) {
+// graphqlMarshal serializes the structure into GraphQL
+func (s SecretID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
@@ -108,12 +108,12 @@ func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// GraphQLType returns the native GraphQL type name
+// graphqlType returns the native GraphQL type name
 func (r *CacheVolume) graphqlType() string {
 	return "CacheVolume"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
+// graphqlMarshal serializes the structure into GraphQL
 func (r *CacheVolume) graphqlMarshal(ctx context.Context) (any, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
@@ -299,12 +299,12 @@ func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// GraphQLType returns the native GraphQL type name
+// graphqlType returns the native GraphQL type name
 func (r *Container) graphqlType() string {
 	return "Container"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
+// graphqlMarshal serializes the structure into GraphQL
 func (r *Container) graphqlMarshal(ctx context.Context) (any, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
@@ -624,12 +624,12 @@ func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// GraphQLType returns the native GraphQL type name
+// graphqlType returns the native GraphQL type name
 func (r *Directory) graphqlType() string {
 	return "Directory"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
+// graphqlMarshal serializes the structure into GraphQL
 func (r *Directory) graphqlMarshal(ctx context.Context) (any, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
@@ -766,12 +766,12 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// GraphQLType returns the native GraphQL type name
+// graphqlType returns the native GraphQL type name
 func (r *File) graphqlType() string {
 	return "File"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
+// graphqlMarshal serializes the structure into GraphQL
 func (r *File) graphqlMarshal(ctx context.Context) (any, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
@@ -1172,12 +1172,12 @@ func (r *Secret) ID(ctx context.Context) (SecretID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// GraphQLType returns the native GraphQL type name
+// graphqlType returns the native GraphQL type name
 func (r *Secret) graphqlType() string {
 	return "Secret"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
+// graphqlMarshal serializes the structure into GraphQL
 func (r *Secret) graphqlMarshal(ctx context.Context) (any, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
