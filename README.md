@@ -64,7 +64,7 @@ To get started with Dagger, simply choose a SDK, then follow that SDK's getting 
 
 ## Getting Started
 
-[Documentation website](https://devel.docs.dagger.io/)
+[Documentation website](https://docs.dagger.io/)
 
 ## Community
 
