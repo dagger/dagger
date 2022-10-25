@@ -10,7 +10,7 @@ go mod edit -replace github.com/docker/docker=github.com/docker/docker@v20.10.3-
 ```
 
 :::note
-The replace statement is currently needed due to one of Dagger's dependencies using a replace statement in their Go module. There is an issue tracking fixes to this [here](https://github.com/dagger/dagger/issues/3391).
+The `replace` statement is currently needed due to one of Dagger's dependencies using a `replace` statement in its Go module. Learn more in this [GitHub tracking issue](https://github.com/dagger/dagger/issues/3391).
 :::
 
 Once you've added code to your module that imports `dagger.io/dagger` then you will need to run the following to update `go.sum`:
