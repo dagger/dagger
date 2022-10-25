@@ -8,7 +8,7 @@ replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220414
 
 require (
 	github.com/Khan/genqlient v0.5.0
-	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
+	github.com/dagger/dagger v0.3.0
 	github.com/iancoleman/strcase v0.2.0
 	github.com/stretchr/testify v1.8.1
 	github.com/vektah/gqlparser/v2 v2.5.1
@@ -37,12 +37,14 @@ require (
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/graphql-go/graphql v0.8.0 // indirect
 	github.com/graphql-go/handler v0.2.3 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.2 // indirect
 	github.com/klauspost/compress v1.15.9 // indirect
+	github.com/magefile/mage v1.14.0 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
