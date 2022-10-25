@@ -55,7 +55,7 @@ module.exports = {
         {
           type: "doc",
           label: "Get Started",
-          id: "current/sdk/cue/getting-started/tutorial/local-dev",
+          id: "current/sdk/cue/getting-started/get-started",
         },
         {
           type: "doc",
