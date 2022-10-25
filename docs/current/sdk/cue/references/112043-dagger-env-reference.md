@@ -16,10 +16,10 @@ To avoid burdening the user experience with rarely used options, a small list of
 
 | Environment variable            | Source                                                                                                                                  | Description                                               |
 | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
-| `BUILDKIT_HOST`                 | [custom buildkit](https://docs.dagger.io/1223/custom-buildkit/#using-a-custom-buildkit-daemon)                                          | Link the Dagger Engine to custom Buildkit instance                   |
-| `DOCKER_HOST`                   | [custom buildkit w/Docker](https://docs.dagger.io/1223/custom-buildkit/#using-a-custom-remote-buildkit-running-in-docker)               | Link the Dagger Engine to custom Buildkit instance running in Docker |
-| `OTEL_EXPORTER_JAEGER_ENDPOINT` | [opentelemetry](https://docs.dagger.io/1223/custom-buildkit/#opentelemetry-support)                                                     | Opentelemetry Jaeger endpoint                             |
-| `JAEGER_TRACE`                  | [opentelemetry](https://docs.dagger.io/1223/custom-buildkit/#opentelemetry-support)                                                     | Jaeger UI endpoint                                        |
+| `BUILDKIT_HOST`                 | custom buildkit                                          | Link the Dagger Engine to custom Buildkit instance                   |
+| `DOCKER_HOST`                   | custom buildkit w/Docker               | Link the Dagger Engine to custom Buildkit instance running in Docker |
+| `OTEL_EXPORTER_JAEGER_ENDPOINT` | opentelemetry                                                     | Opentelemetry Jaeger endpoint                             |
+| `JAEGER_TRACE`                  | opentelemetry                                                     | Jaeger UI endpoint                                        |
 | `DOCKERHUB_AUTH_USER`           | [image.cue](https://github.com/dagger/dagger/blob/3709d3da00325d410721014c401b82cbcc1116c9/pkg/dagger.io/dagger/core/image.cue#L74-L79) | `Docker.#Pull` repository login                           |
 | `DOCKERHUB_AUTH_PASSWORD`       | [image.cue](https://github.com/dagger/dagger/blob/3709d3da00325d410721014c401b82cbcc1116c9/pkg/dagger.io/dagger/core/image.cue#L74-L79) | `Docker.#Pull` repository password                        |
 

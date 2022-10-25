@@ -5,10 +5,10 @@ displayed_sidebar: 'current'
 
 # Integrate with your CI environment
 
-[Once you have the Dagger Engine running locally](/1200/local-dev), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
+[Once you have the Dagger Engine running locally](./470907-local-dev.md), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
 
 We started with [CI environments that you told us you are using](https://github.com/dagger/dagger/discussions/1677).
-We will configure a production deployment for the same application that we covered in the [local dev example](/1200/local-dev).
+We will configure a production deployment for the same application that we covered in the [local dev example](./470907-local-dev.md).
 
 :::note
 If you cannot find your CI environment below, [let us know via this GitHub discussion](https://github.com/dagger/dagger/discussions/1677).

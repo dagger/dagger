@@ -25,7 +25,7 @@ You need an understanding of how filesystems relate to core actions and containe
 
 #### The core API
 
-The Dagger CUE SDK leverages, at its core, a low level API to interact with filesystem trees [(see reference)](https://docs.dagger.io/1222/core-actions-reference/#core-actions-related-to-filesystem-trees). Every other Universe package is just an abstraction on top of these low-level `core` primitives.
+The Dagger CUE SDK leverages, at its core, a low level API to interact with filesystem trees [(see reference)](../references/565505-core-actions-reference.md#core-actions-related-to-filesystem-trees). Every other Universe package is just an abstraction on top of these low-level `core` primitives.
 
 Let's dissect one:
 
@@ -224,7 +224,7 @@ Filesystems are not just shared between actions, they can also be shared between
 Below is a plan showing how to list the content of the current directory from which the dagger plan is being run (relative to the dagger CLI).
 
 :::note
-This example uses the client API, but if you only need access to files within your project, `core.#Source` [may be a better choice](https://docs.dagger.io/1240/core-source).
+This example uses the client API, but if you only need access to files within your project, `core.#Source` [may be a better choice](../guides/actions/246250-core-source.md).
 :::
 
 ```cue file=../tests/core-concepts/fs/client/read_fs.cue title="dagger-cue do list --log-format plain"
