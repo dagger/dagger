@@ -420,7 +420,7 @@ As the previous three steps illustrate, the Dagger Go SDK allows you to author y
 
 This tutorial introduced you to the Dagger Go SDK. It explained how to install the SDK and use it to create a Go CI tool. It also provided code samples and explanations of how to build an application with the Go SDK.
 
-Use the [SDK Reference](https://pkg.go.dev/go.dagger.io/dagger@v0.3.0-alpha.1) to learn more about the Dagger Go SDK.
+Use the [SDK Reference](https://pkg.go.dev/dagger.io/dagger) to learn more about the Dagger Go SDK.
 
 ## Appendix: Completed code sample
 
