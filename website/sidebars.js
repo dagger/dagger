@@ -67,11 +67,6 @@ module.exports = {
           label: "Reference",
           id: "current/sdk/cue/reference"
         },
-        {
-          type: "doc",
-          label: "Usage Examples",
-          id: "current/sdk/cue/usage-examples"
-        },
       ],
     },
 
