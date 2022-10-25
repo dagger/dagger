@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger/sdk/go/dagger"
+	"dagger.io/dagger"
 )
 
 func main() {

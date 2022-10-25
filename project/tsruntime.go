@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/core"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"

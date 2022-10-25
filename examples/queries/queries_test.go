@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"dagger.io/dagger/internal/testutil"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 

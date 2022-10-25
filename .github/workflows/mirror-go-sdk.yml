@@ -1,0 +1,41 @@
+name: Mirror Go SDK
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - sdk/go/**
+    paths:
+      - "sdk/go/**"
+      - .github/workflows/mirror-go-sdk.yml
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      # Needed for go mod edit
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          fetch-depth: 0
+      - name: mirror
+        run: |
+          set -euo pipefail
+
+          git config user.name dagger-ci
+          git config user.email hello@dagger.io
+
+          # Filter branch:
+          # 1) Make `sdk/go` the root (`--subdirectory-filter`)
+          # 2) Drop the `replace github.com/dagger/dagger => ../..` go.mod directive (`--tree-filter`)
+          export FILTER_BRANCH_SQUELCH_WARNING=1
+          git filter-branch -f --prune-empty \
+            --subdirectory-filter sdk/go \
+            --tree-filter "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi" \
+            -- ${{ github.ref_name }}
+
+          # Push to mirror. Trim the `sdk/go` prefix from tag names.
+          git remote add mirror "https://github.com/dagger/dagger-go-sdk.git"
+          git push -f mirror $GITHUB_REF_NAME:"${GITHUB_REF_NAME/sdk\/go\//}"

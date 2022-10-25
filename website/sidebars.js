@@ -10,36 +10,69 @@
  */
 
 module.exports = {
-  '0.3-go-sdk': [
+  'current': [
+    {
+      type: "doc",
+      id: "current/index",
+      label: "Introduction"
+    },
     {
       type: "category",
       label: "Go SDK",
       collapsible: false,
       collapsed: false,
-      link: {type: "doc", id: "v0.3/sdk/go/fssrz-index"},
       items: [
-        "v0.3/sdk/go/r2eu9-install",
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/sdk/go/index",
+        },
+        "current/sdk/go/install",
         {
           type: "doc",
           label: "Get Started",
-          id: "v0.3/sdk/go/8g34z-get-started",
+          id: "current/sdk/go/get-started",
         },
-
         {
           type: "link",
           label: "Reference 🔗",
-          href: "https://pkg.go.dev/go.dagger.io/dagger@v0.3.0-alpha.1"
+          href: "https://pkg.go.dev/dagger.io/dagger"
         }
       ],
     },
     {
-      type: "doc",
-      id: "v0.3/sdk/go/xfgss-faq",
+      type: "category",
+      label: "CUE SDK",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/sdk/cue/index",
+        },
+        "current/sdk/cue/getting-started/install",
+        {
+          type: "doc",
+          label: "Get Started",
+          id: "current/sdk/cue/getting-started/tutorial/local-dev",
+        },
+        {
+          type: "doc",
+          label: "Guides",
+          id: "current/sdk/cue/guides"
+        },
+        {
+          type: "doc",
+          label: "Reference",
+          id: "current/sdk/cue/reference"
+        },
+      ],
     },
+
     {
-      type: "link",
-      label: "⬅️ Dagger 0.2",
-      href: "/",
+      type: "doc",
+      id: "current/faq",
     },
   ],
   0.2: [
@@ -143,7 +176,9 @@ module.exports = {
       label: "Guidelines",
       collapsible: false,
       collapsed: false,
-      items: ["common/guidelines/contributing", "v0.2/guidelines/coding-style"],
+      items: [
+        "v0.2/guidelines/contributing",
+        "v0.2/guidelines/coding-style"],
     },
     {
       type: "category",

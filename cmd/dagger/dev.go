@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"dagger.io/dagger/engine"
-	"dagger.io/dagger/router"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 )
 
