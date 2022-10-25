@@ -5,7 +5,7 @@ replace dagger.io/dagger => ./sdk/go
 go 1.18
 
 require (
-	dagger.io/dagger v0.0.0-00010101000000-000000000000
+	dagger.io/dagger v0.3.0-alpha.1
 	github.com/bhoriuchi/graphql-go-tools v1.0.0
 	github.com/containerd/containerd v1.6.8
 	github.com/docker/distribution v2.8.1+incompatible
