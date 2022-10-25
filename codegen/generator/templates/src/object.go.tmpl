@@ -45,12 +45,12 @@ type {{ $field | FieldOptionsStructName }} struct {
 }
 
 {{ if eq $field.Name "id" }}
-// GraphQLType returns the native GraphQL type name
+// graphqlType returns the native GraphQL type name
 func (r *{{ $.Name | FormatName }}) graphqlType() string {
 	return "{{ $.Name }}"
 }
 
-// GraphQLMarshal serializes the structure into GraphQL
+// graphqlMarshal serializes the structure into GraphQL
 func (r *{{ $.Name | FormatName }}) graphqlMarshal(ctx context.Context) (any, error) {
     id, err := r.ID(ctx)
     if err != nil {
