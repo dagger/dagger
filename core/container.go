@@ -94,7 +94,7 @@ func (payload *containerIDPayload) FSState() (llb.State, error) {
 }
 
 // metaMount is the special path that the shim writes metadata to.
-const metaMount = "/dagger"
+const metaMount = "/.dagger_meta_mount"
 
 // metaSourcePath is a world-writable directory created and mounted to /dagger.
 const metaSourcePath = "meta"

@@ -8,13 +8,13 @@ import (
 )
 
 const (
-	stdinPath    = "/dagger/stdin"
-	exitCodePath = "/dagger/exitCode"
+	stdinPath    = "/.dagger_meta_mount/stdin"
+	exitCodePath = "/.dagger_meta_mount/exitCode"
 )
 
 var (
-	stdoutPath = "/dagger/stdout"
-	stderrPath = "/dagger/stderr"
+	stdoutPath = "/.dagger_meta_mount/stdout"
+	stderrPath = "/.dagger_meta_mount/stderr"
 )
 
 func run() int {
