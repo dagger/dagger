@@ -3,6 +3,7 @@ package dagger_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,12 +13,10 @@ import (
 
 func ExampleContainer() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	alpine := client.Container().From("alpine:3.16.2")
@@ -36,12 +35,10 @@ func ExampleContainer() {
 
 func ExampleGitRepository() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	readme, err := client.Git("https://github.com/dagger/dagger").
@@ -59,12 +56,10 @@ func ExampleGitRepository() {
 
 func ExampleContainer_Build() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	repoID, err := client.Git("https://github.com/dagger/dagger").
@@ -90,12 +85,10 @@ func ExampleContainer_Build() {
 
 func ExampleContainer_WithEnvVariable() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	container := client.Container().From("alpine:3.16.2")
@@ -116,12 +109,10 @@ func ExampleContainer_WithEnvVariable() {
 
 func ExampleContainer_WithMountedDirectory() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	dir := client.Directory().
@@ -155,12 +146,10 @@ func ExampleContainer_WithMountedDirectory() {
 
 func ExampleContainer_WithMountedCache() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	cacheKey := "example-" + time.Now().Format(time.RFC3339)
@@ -195,12 +184,10 @@ func ExampleContainer_WithMountedCache() {
 
 func ExampleDirectory() {
 	ctx := context.Background()
-
 	client, err := dagger.Connect(ctx)
 	if err != nil {
 		panic(err)
 	}
-
 	defer client.Close()
 
 	dir := client.Directory().
@@ -219,4 +206,54 @@ func ExampleDirectory() {
 	fmt.Println(entries)
 
 	// Output: [goodbye.txt hello.txt]
+}
+
+func ExampleHost_Workdir() {
+	ctx := context.Background()
+	client, err := dagger.Connect(ctx, dagger.WithWorkdir("."))
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	readme, err := client.Host().Workdir().Read().File("README.md").Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(readme), "\n")
+	fmt.Println(lines[0])
+
+	// Output: # Dagger Go SDK
+}
+
+func ExampleHost_EnvVariable() {
+	ctx := context.Background()
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	os.Setenv("SEKRIT", "hunter2")
+
+	secretID, err := client.Host().EnvVariable("SEKRIT").Secret().ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	alpine := client.Container().From("alpine:3.16.2")
+	leaked, err := alpine.
+		WithSecretVariable("PASSWORD", secretID).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", "echo $PASSWORD"},
+		}).
+		Stdout().Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(leaked)
+
+	// Output: hunter2
 }
