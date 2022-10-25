@@ -2,7 +2,7 @@
 The Dagger Go SDK requires [Go 1.15 or later](https://go.dev/doc/install).
 :::
 
-Install the Dagger Go SDK using the commands below:
+From an existing Go module, you can install the Dagger Go SDK using the commands below:
 
 ```shell
 go get dagger.io/dagger@latest
