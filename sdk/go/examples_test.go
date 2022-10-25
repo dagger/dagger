@@ -78,9 +78,10 @@ func ExampleContainer_Build() {
 		panic(err)
 	}
 
-	fmt.Println(out)
+	words := strings.Split(strings.TrimSpace(out), " ")
+	fmt.Println(words[0])
 
-	// Output: dagger devel () linux/amd64
+	// Output: dagger
 }
 
 func ExampleContainer_WithEnvVariable() {
