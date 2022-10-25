@@ -71,7 +71,7 @@ func EnsureCompatibility(ctx context.Context, p string) error {
 				return fmt.Errorf("failed to read %q: %w", versionFile, err)
 			}
 
-			return fmt.Errorf("package %q is incompatible with this version of dagger (requires %s or newer). Run `dagger project update` to resolve this", module, minimumVersion.String())
+			return fmt.Errorf("package %q is incompatible with this version of dagger-cue (requires %s or newer). Run `dagger-cue project update` to resolve this", module, minimumVersion.String())
 		}
 
 		vendoredVersion, err := gv.NewVersion(strings.TrimSpace(string(data)))
@@ -80,11 +80,11 @@ func EnsureCompatibility(ctx context.Context, p string) error {
 		}
 
 		if vendoredVersion.LessThan(minimumVersion) {
-			return fmt.Errorf("package %q (version %s) is incompatible with this version of dagger (requires %s or newer). Run `dagger project update` to resolve this", module, vendoredVersion.String(), minimumVersion.String())
+			return fmt.Errorf("package %q (version %s) is incompatible with this version of dagger-cue (requires %s or newer). Run `dagger-cue project update` to resolve this", module, vendoredVersion.String(), minimumVersion.String())
 		}
 
 		if vendoredVersion.GreaterThan(daggerVersion) {
-			return fmt.Errorf("this plan requires dagger %s or newer. Run `dagger version --check` to check for latest version", vendoredVersion.String())
+			return fmt.Errorf("this plan requires dagger-cue %s or newer. Run `dagger-cue version --check` to check for latest version", vendoredVersion.String())
 		}
 	}
 
