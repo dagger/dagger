@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger/sdk/go/dagger"
+	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

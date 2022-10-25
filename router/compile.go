@@ -1,8 +1,8 @@
 package router
 
 import (
-	"dagger.io/dagger/tracing"
 	tools "github.com/bhoriuchi/graphql-go-tools"
+	"github.com/dagger/dagger/tracing"
 	"github.com/graphql-go/graphql"
 )
 

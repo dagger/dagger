@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
-	"dagger.io/dagger/core"
-	"dagger.io/dagger/internal/testutil"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )

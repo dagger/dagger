@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"dagger.io/dagger/router"
+	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
 	"google.golang.org/grpc"

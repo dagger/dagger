@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger/core"
-	"dagger.io/dagger/core/schema"
-	"dagger.io/dagger/internal/testutil"
-	"dagger.io/dagger/sdk/go/dagger"
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )

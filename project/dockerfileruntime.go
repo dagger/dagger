@@ -4,8 +4,8 @@ import (
 	"context"
 	"path/filepath"
 
-	"dagger.io/dagger/core"
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
