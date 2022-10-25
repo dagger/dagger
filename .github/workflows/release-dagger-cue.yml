@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only run this workflow from the cue-sdk branch
     # We do not want to release dagger-cue from any other branch
-    if: ${{ github.ref_name == "cue-sdk" }}
+    if: github.ref_name == 'cue-sdk'
     steps:
       - name: "Check out"
         # https://github.com/actions/checkout
