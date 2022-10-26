@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator"
@@ -24,7 +26,7 @@ func (t Lint) All(ctx context.Context) error {
 
 // Lint SDK code generation
 func (Lint) Codegen(ctx context.Context) error {
-	c, err := dagger.Connect(ctx)
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
@@ -61,32 +63,29 @@ type Build mg.Namespace
 
 // Dagger will build the dagger binary
 func (Build) Dagger(ctx context.Context) error {
-	c, err := dagger.Connect(ctx)
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	builder := c.Container().From("golang:1.18.2-alpine")
+	builder := c.Container().
+		From("golang:1.18.2-alpine").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"mkdir", "-p", "/app/sdk/go"},
+		})
 
 	workdir := c.Host().Workdir()
-	goMod, err := workdir.Read().File("go.mod").ID(ctx)
-	if err != nil {
-		return err
-	}
-
-	goSum, err := workdir.Read().File("go.sum").ID(ctx)
-	if err != nil {
-		return err
-	}
-
-	builder = builder.Exec(dagger.ContainerExecOpts{
-		Args: []string{"mkdir", "/app"},
-	})
 
 	fs := builder.FS()
-	fs = fs.WithCopiedFile("/app/go.mod", goMod)
-	fs = fs.WithCopiedFile("/app/go.sum", goSum)
+	for _, f := range []string{"go.mod", "go.sum", "sdk/go/go.mod", "sdk/go/go.sum"} {
+		fileID, err := workdir.Read().File(f).ID(ctx)
+		if err != nil {
+			return err
+		}
+
+		fs = fs.WithCopiedFile(path.Join("/app", f), fileID)
+	}
 
 	modFSID, err := fs.ID(ctx)
 	if err != nil {
