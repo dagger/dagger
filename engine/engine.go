@@ -228,11 +228,9 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 			query LoadProject($configPath: String!) {
 				host {
 					workdir {
-						read {
-							loadProject(configPath: $configPath) {
-								name
-								install
-							}
+						loadProject(configPath: $configPath) {
+							name
+							install
 						}
 					}
 				}
