@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/buildkitd"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
@@ -31,7 +31,6 @@ const (
 
 type Config struct {
 	Workdir    string
-	LocalDirs  map[string]string
 	ConfigPath string
 	// If true, do not load project extensions
 	NoExtensions bool
@@ -94,16 +93,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
 			authprovider.NewDockerAuthProvider(os.Stderr),
+			filesync.NewFSSyncProvider(),
 		},
 	}
-	if startOpts.LocalDirs == nil {
-		startOpts.LocalDirs = map[string]string{}
-	}
-	// make workdir ID unique by absolute path to prevent concurrent runs from
-	// interfering with each other
-	workdirID := fmt.Sprintf("%s_%s", workdirID, startOpts.Workdir)
-	startOpts.LocalDirs[workdirID] = startOpts.Workdir
-	solveOpts.LocalDirs = startOpts.LocalDirs
 
 	ch := make(chan *bkclient.SolveStatus)
 	eg, ctx := errgroup.WithContext(ctx)
@@ -120,7 +112,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
 				SSHAuthSockID: sshAuthSockID,
-				WorkdirID:     core.HostDirectoryID(workdirID),
+				Workdir:       startOpts.Workdir,
 				Gateway:       gw,
 				BKClient:      c,
 				SolveOpts:     solveOpts,

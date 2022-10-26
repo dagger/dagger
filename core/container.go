@@ -846,14 +846,8 @@ func (container *Container) Publish(
 		},
 	}
 
-	// Mirror events from the sub-Build into the main Build event channel.
-	// Build() will close the channel after completion so we don't want to use the main channel directly.
-	ch := make(chan *bkclient.SolveStatus)
-	go func() {
-		for event := range ch {
-			solveCh <- event
-		}
-	}()
+	ch, wg := mirrorCh(solveCh)
+	defer wg.Wait()
 
 	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{

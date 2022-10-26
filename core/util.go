@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"sync"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
@@ -63,4 +64,29 @@ func defToState(def *pb.Definition) (llb.State, error) {
 	}
 
 	return llb.NewState(defop), nil
+}
+
+// mirrorCh mirrors messages from one channel to another, protecting the
+// destination channel from being closed.
+//
+// this is used to reflect Build/Solve progress in a longer-lived progress UI,
+// since they close the channel when they're done.
+func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
+	wg := new(sync.WaitGroup)
+
+	if dest == nil {
+		return nil, wg
+	}
+
+	mirrorCh := make(chan T)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for event := range mirrorCh {
+			dest <- event
+		}
+	}()
+
+	return mirrorCh, wg
 }

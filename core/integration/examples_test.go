@@ -66,7 +66,7 @@ func TestExtensionNetlify(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			dirID, err := c.Host().Workdir().Read().ID(ctx)
+			dirID, err := c.Host().Workdir().ID(ctx)
 			require.NoError(t, err)
 
 			secretID, err := c.Host().EnvVariable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
@@ -123,7 +123,7 @@ func TestExtensionYarn(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dirID, err := c.Host().Workdir().Read().ID(ctx)
+	dirID, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
 	data := struct {
