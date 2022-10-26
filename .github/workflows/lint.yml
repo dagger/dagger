@@ -3,9 +3,9 @@ on:
   push:
     branches: [main]
     paths:
-      - '**.go'
-      - '**.md'
-      - '.github/workflows/lint.yml'
+      - "**.go"
+      - "**.md"
+      - ".github/workflows/lint.yml"
   pull_request:
   # Enable manual trigger for easy ad-hoc debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -42,8 +42,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: "Lint markdown"
-        uses: avto-dev/markdown-lint@v1
+      - uses: actions/setup-go@v3
         with:
-          config: ".markdownlint.yaml"
-          args: ./docs README.md
+          go-version: 1.19
+      - name: "Lint markdown"
+        uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: lint:markdown

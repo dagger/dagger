@@ -20,8 +20,48 @@ type Lint mg.Namespace
 
 // Run all lint targets
 func (t Lint) All(ctx context.Context) error {
-	mg.Deps(t.Codegen)
+	mg.Deps(
+		t.Codegen,
+		t.Markdown,
+	)
 	return nil
+}
+
+// Markdown lint
+func (Lint) Markdown(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	workdir := c.Host().Workdir().Read()
+
+	src, err := workdir.ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := workdir.File(".markdownlint.yaml").ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Container().
+		From("tmknom/markdownlint:0.31.1").
+		WithMountedDirectory("/src", src).
+		WithMountedFile("/src/.markdownlint.yaml", cfg).
+		WithWorkdir("/src").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{
+				"-c",
+				".markdownlint.yaml",
+				"--",
+				"./docs",
+				"README.md",
+			},
+		}).ExitCode(ctx)
+	return err
 }
 
 // Lint SDK code generation
