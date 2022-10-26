@@ -1,0 +1,24 @@
+TestConfig:
+    awsConfig:
+        accessKey: ENC[AES256_GCM,data:cZLf9D1ymnU4A44oGiQ4fFKdEB0=,iv:rNv9rnXSvIpKeUYRqseS9aKjEG4Wim7OW0EKEbBgp+M=,tag:cOzI4KsDgCgi/w7ByFKJJw==,type:str]
+        secretKey: ENC[AES256_GCM,data:ZFIHfnQYYu7ZhoXogVIHbd2wakBTw9D0TiHeadSKaYAQemCun/egNg==,iv:zISyY5zGZHfe5HZJHdfIUpX6siFIgLMrwAbZRyLH9FU=,tag:uD+1eLHY/AKR9vnpyBh+GQ==,type:str]
+sops:
+    kms: []
+    gcp_kms: []
+    azure_kv: []
+    hc_vault: []
+    age:
+        - recipient: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPdU5ENVpScm0yd2RXWjRJ
+            aSsxWTNvSHBBeU94Z2ZKNjhXdzJHZGNybXkwCk9FVW5EM21LSTRHMkE5VG1SRFpL
+            ZGUyOHl3MEU3M3ZXTzBqSlExTU1uVTgKLS0tIDZRVDJOaEVZVnVSalRKMUVTTytV
+            ZWRONHhmOEJVd1lqM1NkMFdSNHU2THMKSjtxHeq/ZSgpXrevLH4AVYyRh4jO6qjT
+            J301rFx0Cu5qeSIhRiG54Pse83GD+fObDhfH0nPf5HZttDZxrISUdg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2021-05-28T20:45:06Z"
+    mac: ENC[AES256_GCM,data:7b6X10McAD1qvsS3ZFWeteP7zLC6IAo6NdFjvaX1iyrjoZ+fT8hNkIPVKyfPFTqZzNIZ7qEYJO2PKrTjbhf6a1LEsL9gtfoX4JwINDk66TgIsJsvdp4TRIlEKoRSKK08zc+A5YFAtD1Pj+a3+NnF32ZUsoH+jqSixH2hK51RI0U=,iv:JKeSA0bp+QBE8H/kS/eIL47k1Bsg4L0q/YU4OlJmIKU=,tag:f3gzp/Nv4p4DajNfoAicAg==,type:str]
+    pgp: []
+    unencrypted_suffix: _unencrypted
+    version: 3.7.1
