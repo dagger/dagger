@@ -16,15 +16,15 @@ func TestProjectCLI(t *testing.T) {
 
 	// setup a local extension
 	extensionDir := filepath.Join(tmpdir, "ext")
-	require.NoError(t, os.Mkdir(extensionDir, 0755))
+	require.NoError(t, os.Mkdir(extensionDir, 0o755))
 
 	mainContents, err := os.ReadFile("./testdata/extension/main.go")
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(extensionDir, "main.go"), mainContents, 0600)
+	err = os.WriteFile(filepath.Join(extensionDir, "main.go"), mainContents, 0o600)
 	require.NoError(t, err)
 
 	// init sdk-less project
-	cmd := exec.Command("dagger", "project", "init", "--name", "test")
+	cmd := exec.Command("cloak", "project", "init", "--name", "test")
 	cmd.Dir = tmpdir
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
@@ -37,7 +37,7 @@ func TestProjectCLI(t *testing.T) {
 	}, configPath)
 
 	// init sdk project
-	cmd = exec.Command("dagger", "project", "init", "--name", "ext", "--sdk", "go")
+	cmd = exec.Command("cloak", "project", "init", "--name", "ext", "--sdk", "go")
 	cmd.Dir = extensionDir
 	out, err = cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
@@ -50,7 +50,7 @@ func TestProjectCLI(t *testing.T) {
 	}, extConfigPath)
 
 	// add local
-	cmd = exec.Command("dagger", "project", "add", "local", "--path", "./ext/dagger.json")
+	cmd = exec.Command("cloak", "project", "add", "local", "--path", "./ext/dagger.json")
 	cmd.Dir = tmpdir
 	out, err = cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
@@ -71,14 +71,14 @@ func TestProjectCLI(t *testing.T) {
 	// TODO: test adding git (hard because it requires a git repo that would need to change everytime there's a change to the format/this test)
 
 	// show project
-	cmd = exec.Command("dagger", "project")
+	cmd = exec.Command("cloak", "project")
 	cmd.Dir = tmpdir
 	out, err = cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 	requireExpectedConfigBytes(t, expectedConfig, out)
 
 	// rm extension
-	cmd = exec.Command("dagger", "project", "rm", "--name", "ext")
+	cmd = exec.Command("cloak", "project", "rm", "--name", "ext")
 	cmd.Dir = tmpdir
 	out, err = cmd.CombinedOutput()
 	require.NoError(t, err, string(out))

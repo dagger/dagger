@@ -20,10 +20,10 @@ export class Engine {
             const args = ["dev"];
             // exit with error if we are not using the non-Cloak dagger binary (< 0.3.0)
             try {
-                execaCommandSync("dagger dev --help");
+                execaCommandSync("cloak dev --help");
             }
             catch (err) {
-                console.error("⚠️  Please ensure that dagger binary in $PATH is v0.3.0 or newer - a.k.a. Cloak");
+                console.error("⚠️  Please ensure that cloak binary in $PATH is v0.3.0 or newer - a.k.a. Cloak");
                 // https://tldp.org/LDP/abs/html/exitcodes.html
                 // | 127 | "command not found" | illegal_command | Possible problem with $PATH or a typo |
                 process.exit(127);
@@ -47,7 +47,7 @@ export class Engine {
             // add port from config in the form of `--port <port>`, defaulting to 8080
             this.config.Port = this.config.Port || 8080;
             args.push("--port", `${this.config.Port}`);
-            const serverProc = execa("dagger", args, {
+            const serverProc = execa("cloak", args, {
                 stdio: "inherit",
                 cwd: this.config.Workdir
             });
