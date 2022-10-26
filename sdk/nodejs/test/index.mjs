@@ -13,9 +13,7 @@ describe('NodeJS sdk', function () {
               {
                 host {
                   workdir {
-                    read {
-                      id
-                    }
+                    id
                   }
                 }
               }
