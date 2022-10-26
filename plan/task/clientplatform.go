@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	Register("ClientPlatform", func() Task { return &clientPlatformTask{} })
+	// Register("ClientPlatform", func() Task { return &clientPlatformTask{} })
 }
 
 type clientPlatformTask struct {

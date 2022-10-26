@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	Register("ClientEnv", func() Task { return &clientEnvTask{} })
+	// Register("ClientEnv", func() Task { return &clientEnvTask{} })
 }
 
 type clientEnvTask struct {

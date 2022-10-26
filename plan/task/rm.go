@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	Register("Rm", func() Task { return &rmTask{} })
+	// Register("Rm", func() Task { return &rmTask{} })
 }
 
 type rmTask struct {

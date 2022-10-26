@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	Register("Merge", func() Task { return &mergeTask{} })
+	// Register("Merge", func() Task { return &mergeTask{} })
 }
 
 type mergeTask struct {

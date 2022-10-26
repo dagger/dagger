@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	Register("ClientCommand", func() Task { return &clientCommandTask{} })
+	// Register("ClientCommand", func() Task { return &clientCommandTask{} })
 }
 
 type clientCommandTask struct {

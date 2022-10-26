@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	Register("Dockerfile", func() Task { return &dockerfileTask{} })
+// Register("Dockerfile", func() Task { return &dockerfileTask{} })
 }
 
 type dockerfileTask struct{}

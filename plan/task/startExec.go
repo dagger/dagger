@@ -17,9 +17,9 @@ import (
 )
 
 func init() {
-	Register("Start", func() Task { return &startTask{} })
-	Register("Stop", func() Task { return &stopTask{} })
-	Register("SendSignal", func() Task { return &sendSignalTask{} })
+	// Register("Start", func() Task { return &startTask{} })
+	// Register("Stop", func() Task { return &stopTask{} })
+	// Register("SendSignal", func() Task { return &sendSignalTask{} })
 }
 
 type startTask struct {

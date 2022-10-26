@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	Register("ClientFilesystemRead", func() Task { return &clientFilesystemReadTask{} })
+	// Register("ClientFilesystemRead", func() Task { return &clientFilesystemReadTask{} })
 }
 
 type clientFilesystemReadTask struct{}

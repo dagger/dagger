@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	Register("DecodeSecret", func() Task { return &decodeSecretTask{} })
+	// Register("DecodeSecret", func() Task { return &decodeSecretTask{} })
 }
 
 type decodeSecretTask struct {

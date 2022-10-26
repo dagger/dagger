@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	Register("ClientNetwork", func() Task { return &clientNetwork{} })
+	// Register("ClientNetwork", func() Task { return &clientNetwork{} })
 }
 
 type clientNetwork struct {

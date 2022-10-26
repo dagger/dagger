@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	Register("Source", func() Task { return &sourceTask{} })
+	// Register("Source", func() Task { return &sourceTask{} })
 }
 
 type sourceTask struct {

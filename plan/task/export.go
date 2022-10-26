@@ -19,7 +19,7 @@ import (
 )
 
 func init() {
-	Register("Export", func() Task { return &exportTask{} })
+	// Register("Export", func() Task { return &exportTask{} })
 }
 
 type exportTask struct {

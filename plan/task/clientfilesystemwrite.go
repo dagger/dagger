@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	Register("ClientFilesystemWrite", func() Task { return &clientFilesystemWriteTask{} })
+	// Register("ClientFilesystemWrite", func() Task { return &clientFilesystemWriteTask{} })
 }
 
 type clientFilesystemWriteTask struct {
