@@ -37,6 +37,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"withDirectory":    router.ToResolver(s.withDirectory),
 			"withoutDirectory": router.ToResolver(s.withoutDirectory),
 			"diff":             router.ToResolver(s.diff),
+			"export":           router.ToResolver(s.export),
 		},
 	}
 }
@@ -128,4 +129,17 @@ type diffArgs struct {
 
 func (s *directorySchema) diff(ctx *router.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
 	return parent.Diff(ctx, &core.Directory{ID: args.Other})
+}
+
+type exportArgs struct {
+	Path string
+}
+
+func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args exportArgs) (bool, error) {
+	err := parent.Export(ctx, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

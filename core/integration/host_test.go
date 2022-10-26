@@ -1,80 +1,93 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path"
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHostWorkdir(t *testing.T) {
 	t.Parallel()
 
-	var secretRes struct {
-		Host struct {
-			Workdir struct {
-				Read struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			host {
-				workdir {
-					read {
-						id
-					}
-				}
-			}
-		}`, &secretRes, nil)
+	dir := t.TempDir()
+	err := os.WriteFile(path.Join(dir, "foo"), []byte("bar"), 0600)
 	require.NoError(t, err)
 
-	hostRes := secretRes.Host.Workdir.Read.ID
-	require.NotEmpty(t, hostRes)
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	require.NoError(t, err)
+	defer c.Close()
 
-	var execRes struct {
-		Container struct {
-			From struct {
-				WithMountedDirectory struct {
-					Exec struct {
-						Stdout struct{ Contents string }
-					}
-				}
-			}
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($host: DirectoryID!) {
-			container {
-				from(address: "alpine:3.16.2") {
-					withMountedDirectory(path: "/host", source: $host) {
-						exec(args: ["ls", "/host"]) {
-							stdout { contents }
-						}
-					}
-				}
-			}
-		}`, &execRes, &testutil.QueryOptions{
-			Variables: map[string]interface{}{
-				"host": hostRes,
-			},
-		})
+	wdID, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
-	// FIXME(vito): this is brittle; it currently finds the README in the root of
-	// the repo but it'd be better to control the workdir
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents, "suite_test.go")
+	t.Run("contains the workdir's content", func(t *testing.T) {
+		contents, err := c.Container().
+			From("alpine:3.16.2").
+			WithMountedDirectory("/host", wdID).
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"ls", "/host"},
+			}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\n", contents)
+	})
+
+	t.Run("does NOT re-sync on each call", func(t *testing.T) {
+		err := os.WriteFile(path.Join(dir, "fizz"), []byte("buzz"), 0600)
+		require.NoError(t, err)
+
+		contents, err := c.Container().
+			From("alpine:3.16.2").
+			WithMountedDirectory("/host", wdID).
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"ls", "/host"},
+			}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\n", contents)
+	})
 }
 
-func TestHostLocalDirReadWrite(t *testing.T) {
+func TestHostDirectoryRelative(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(path.Join(dir, "some-file"), []byte("hello"), 0600))
+	require.NoError(t, os.MkdirAll(path.Join(dir, "some-dir"), 0755))
+	require.NoError(t, os.WriteFile(path.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0600))
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run(". is same as workdir", func(t *testing.T) {
+		wdID1, err := c.Host().Directory(".").ID(ctx)
+		require.NoError(t, err)
+
+		wdID2, err := c.Host().Workdir().ID(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, wdID1, wdID2)
+	})
+
+	t.Run("./foo is relative to workdir", func(t *testing.T) {
+		contents, err := c.Host().Directory("some-dir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sub-file"}, contents)
+	})
+
+	t.Run("../ does not allow escaping", func(t *testing.T) {
+		_, err := c.Host().Directory("../").ID(ctx)
+		require.Error(t, err)
+
+		// don't reveal the workdir location
+		require.NotContains(t, err.Error(), dir)
+	})
+}
+
+func TestHostDirectoryReadWrite(t *testing.T) {
 	t.Parallel()
 
 	dir1 := t.TempDir()
@@ -83,115 +96,19 @@ func TestHostLocalDirReadWrite(t *testing.T) {
 
 	dir2 := t.TempDir()
 
-	var readRes struct {
-		Host struct {
-			Directory struct {
-				Read struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
 
-	err = testutil.Query(
-		`{
-			host {
-				directory(id: "dir1") {
-					read {
-						id
-					}
-				}
-			}
-		}`, &readRes, nil, dagger.WithLocalDir("dir", dir1))
+	srcID, err := c.Host().Directory(dir1).ID(ctx)
 	require.NoError(t, err)
 
-	srcID := readRes.Host.Directory.Read.ID
-
-	var writeRes struct {
-		Host struct {
-			Directory struct {
-				Write bool
-			}
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($src: DirectoryID!) {
-			host {
-				directory(id: "dir2") {
-					write(contents: $src)
-				}
-			}
-		}`, &writeRes, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": srcID,
-			},
-		},
-		dagger.WithLocalDir("dir1", dir1),
-		dagger.WithLocalDir("dir2", dir2),
-	)
+	exported, err := c.Directory(dagger.DirectoryOpts{ID: srcID}).Export(ctx, dir2)
 	require.NoError(t, err)
-
-	require.True(t, writeRes.Host.Directory.Write)
+	require.True(t, exported)
 
 	content, err := os.ReadFile(path.Join(dir2, "foo"))
-	require.NoError(t, err)
-	require.Equal(t, "bar", string(content))
-}
-
-func TestHostLocalDirWrite(t *testing.T) {
-	t.Parallel()
-
-	dir1 := t.TempDir()
-
-	var contentRes struct {
-		Directory struct {
-			WithNewFile struct {
-				ID core.DirectoryID
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "foo", contents: "bar") {
-					id
-				}
-			}
-		}`, &contentRes, nil)
-	require.NoError(t, err)
-
-	srcID := contentRes.Directory.WithNewFile.ID
-
-	var writeRes struct {
-		Host struct {
-			Directory struct {
-				Write bool
-			}
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($src: DirectoryID!) {
-			host {
-				directory(id: "dir1") {
-					write(contents: $src)
-				}
-			}
-		}`, &writeRes, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": srcID,
-			},
-		},
-		dagger.WithLocalDir("dir1", dir1),
-		dagger.WithLocalDir("dir2", dir1),
-	)
-	require.NoError(t, err)
-
-	require.True(t, writeRes.Host.Directory.Write)
-
-	content, err := os.ReadFile(path.Join(dir1, "foo"))
 	require.NoError(t, err)
 	require.Equal(t, "bar", string(content))
 }
@@ -199,66 +116,29 @@ func TestHostLocalDirWrite(t *testing.T) {
 func TestHostVariable(t *testing.T) {
 	t.Parallel()
 
-	var secretRes struct {
-		Host struct {
-			EnvVariable struct {
-				Value  string
-				Secret struct {
-					ID core.SecretID
-				}
-			}
-		}
-	}
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
 
 	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
 
-	err := testutil.Query(
-		`{
-			host {
-				envVariable(name: "HELLO_TEST") {
-					value
-					secret {
-						id
-					}
-				}
-			}
-		}`, &secretRes, nil)
-	require.NoError(t, err)
+	secret := c.Host().EnvVariable("HELLO_TEST")
 
-	varValue := secretRes.Host.EnvVariable.Value
+	varValue, err := secret.Value(ctx)
+	require.NoError(t, err)
 	require.Equal(t, "hello", varValue)
 
-	varSecret := secretRes.Host.EnvVariable.Secret.ID
-
-	var execRes struct {
-		Container struct {
-			From struct {
-				WithSecretVariable struct {
-					Exec struct {
-						Stdout struct{ Contents string }
-					}
-				}
-			}
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($secret: SecretID!) {
-			container {
-				from(address: "alpine:3.16.2") {
-					withSecretVariable(name: "SECRET", secret: $secret) {
-						exec(args: ["env"]) {
-							stdout { contents }
-						}
-					}
-				}
-			}
-		}`, &execRes, &testutil.QueryOptions{
-			Variables: map[string]interface{}{
-				"secret": varSecret,
-			},
-		})
+	varSecret, err := secret.Secret().ID(ctx)
 	require.NoError(t, err)
 
-	require.Contains(t, execRes.Container.From.WithSecretVariable.Exec.Stdout.Contents, "SECRET=hello")
+	env, err := c.Container().
+		From("alpine:3.16.2").
+		WithSecretVariable("SECRET", varSecret).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"env"},
+		}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+
+	require.Contains(t, env, "SECRET=hello")
 }

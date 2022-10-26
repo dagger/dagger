@@ -12,7 +12,7 @@ import (
 type InitializeArgs struct {
 	Router        *router.Router
 	SSHAuthSockID string
-	WorkdirID     core.HostDirectoryID
+	Workdir       string
 	Gateway       bkgw.Client
 	BKClient      *bkclient.Client
 	SolveOpts     bkclient.SolveOpt
@@ -37,7 +37,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&containerSchema{base},
 		&cacheSchema{base},
 		&secretSchema{base},
-		&hostSchema{base, params.WorkdirID},
+		&hostSchema{base, core.NewHost(params.Workdir)},
 		&projectSchema{
 			baseSchema:    base,
 			projectStates: make(map[string]*project.State),
