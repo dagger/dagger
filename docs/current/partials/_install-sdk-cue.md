@@ -112,6 +112,7 @@ Check that `dagger-cue` is installed correctly by opening a `Command Prompt` ter
 where dagger-cue
 C:\<your home folder>\dagger\dagger-cue.exe
 ```
+
 </TabItem>
 
 </Tabs>
