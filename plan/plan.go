@@ -12,6 +12,8 @@ import (
 	"cuelang.org/go/cue"
 	cueflow "cuelang.org/go/tools/flow"
 	"github.com/rs/zerolog/log"
+
+	"dagger.io/dagger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/pkg"
 	"go.dagger.io/dagger/plan/task"
@@ -219,6 +221,25 @@ func (p *Plan) prepare(ctx context.Context) error {
 func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 	ctx, span := otel.Tracer("dagger-cue").Start(ctx, "plan.Do")
 	defer span.End()
+
+	clientOpts := []dagger.ClientOpt{}
+
+	paths, err := p.context.LocalDirs.Paths()
+	if err != nil {
+		return err
+	}
+
+	for id, path := range paths {
+		clientOpts = append(clientOpts, dagger.WithLocalDir(id, path))
+	}
+
+	client, err := dagger.Connect(ctx, clientOpts...)
+
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	s.Client = client
 
 	r := NewRunner(p.context, path, s, p.config.DryRun)
 	final, err := r.Run(ctx, p.source)

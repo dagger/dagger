@@ -19,7 +19,7 @@ import "dagger.io/dagger"
 	$dagger: task: _name: "GitPull"
 	remote:     string
 	ref:        string
-	keepGitDir: true | *false
+	keepGitDir: true | *false @cloak(notimplemented)
 	auth?:      {
 		username: string
 		password: dagger.#Secret // can be password or personal access token
@@ -27,6 +27,6 @@ import "dagger.io/dagger"
 		authToken: dagger.#Secret
 	} | {
 		authHeader: dagger.#Secret
-	}
+	}       @cloak(notimplemented)
 	output: dagger.#FS @dagger(generated)
 }

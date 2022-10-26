@@ -12,7 +12,9 @@ import "dagger.io/dagger"
 	// Transient filesystem mounts
 	//   Key is an arbitrary name, for example "app source code"
 	//   Value is mount configuration
-	mounts: [name=string]: #Mount
+	mounts: {
+		[name=string]: #Mount
+	} @cloak(notimplemented)
 
 	// Command to execute
 	// Example: ["echo", "hello, world!"]
@@ -28,11 +30,13 @@ import "dagger.io/dagger"
 	user: string | *"root:root"
 
 	// If set, always execute even if the operation could be cached
-	always: true | *false
+	always: true | *false @cloak(notimplemented)
 
 	// Inject hostname resolution into the container
 	// key is hostname, value is IP
-	hosts: [hostname=string]: string
+	hosts: {
+		[hostname=string]: string
+	} @cloak(notimplemented)
 
 	// Modified filesystem
 	output: dagger.#FS @dagger(generated)
@@ -55,23 +59,23 @@ import "dagger.io/dagger"
 		type:     "tmp"
 		contents: #TempDir
 	} | {
-		type:     "socket"
+		type:     "socket" @cloak(notimplemented)
 		contents: dagger.#Socket
 	} | {
 		type:     "fs"
 		contents: dagger.#FS
 		source?:  string
-		ro?:      true | *false
+		ro?:      true | *false @cloak(notimplemented)
 	} | {
 		type:     "secret"
 		contents: dagger.#Secret
-		uid:      int | *0
-		gid:      int | *0
-		mask:     int | *0o400
+		uid:      int | *0     @cloak(notimplemented)
+		gid:      int | *0     @cloak(notimplemented)
+		mask:     int | *0o400 @cloak(notimplemented)
 	} | {
 		type:        "file"
 		contents:    string
-		permissions: *0o644 | int
+		permissions: *0o644 | int @cloak(notimplemented)
 	}
 }
 

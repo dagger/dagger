@@ -7,9 +7,11 @@ import (
 	"os"
 
 	"cuelang.org/go/cue"
-	bk "github.com/moby/buildkit/client"
+	"dagger.io/dagger"
+
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -86,20 +88,26 @@ func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plan
 }
 
 func (t clientFilesystemWriteTask) writeFS(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value, path string) error {
-	contents, err := pctx.FS.FromValue(v)
-	if err != nil {
-		return err
-	}
 
-	st, err := contents.State()
-	if err != nil {
-		return err
-	}
+	fsid, err := utils.GetFSId(v)
 
-	_, err = s.Export(ctx, st, nil, bk.ExportEntry{
-		Type:      bk.ExporterLocal,
-		OutputDir: path,
-	}, pctx.Platform.Get())
+	dgr := s.Client
+	// contents, err := pctx.FS.FromValue(v)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// st, err := contents.State()
+	// if err != nil {
+	// 	return err
+	// }
+
+	// _, err = s.Export(ctx, st, nil, bk.ExportEntry{
+	// 	Type:      bk.ExporterLocal,
+	// 	OutputDir: path,
+	// }, pctx.Platform.Get())
+
+	_, err = dgr.Host().Directory(dagger.HostDirectoryID(path)).Write(ctx, dagger.DirectoryID(fsid), dagger.HostDirectoryWriteOpts{Path: path})
 
 	return err
 }

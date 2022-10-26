@@ -8,6 +8,7 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -19,7 +20,7 @@ func init() {
 type clientEnvTask struct {
 }
 
-func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	log.Ctx(ctx).Debug().Msg("loading environment variables")
 
 	fields, err := v.Fields(cue.Optional(true))
@@ -33,44 +34,32 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *so
 			continue
 		}
 		envvar := field.Label()
-		val, err := t.getEnv(envvar, field.Value, field.IsOptional, pctx)
-		if err != nil {
-			return nil, err
+		// val, err := t.getEnv(envvar, field.Value, field.IsOptional, pctx, s)
+
+		val, hasDefault := field.Value.Default()
+
+		env, hasEnv := os.LookupEnv(envvar)
+
+		switch {
+		case !hasEnv && !field.IsOptional && !hasDefault:
+			return nil, fmt.Errorf("environment variable %q not set", envvar)
+		case plancontext.IsSecretValue(val):
+			{
+				secretid, err := s.Client.Host().EnvVariable(envvar).Secret().ID(ctx)
+				if err != nil {
+					return nil, err
+				}
+				envs[envvar] = utils.NewSecret(secretid)
+			}
+		case !hasDefault && val.IsConcrete():
+			return nil, fmt.Errorf("%s: unexpected concrete value, please use a type or set a default", envvar)
+		case val.IncompleteKind() == cue.StringKind:
+			envs[envvar] = env
+		default:
+			return nil, fmt.Errorf("%s: unsupported type %q", envvar, val.IncompleteKind())
 		}
-		if val != nil {
-			envs[envvar] = val
-		}
+
 	}
 
 	return compiler.NewValue().FillFields(envs)
-}
-
-func (t clientEnvTask) getEnv(envvar string, v *compiler.Value, isOpt bool, pctx *plancontext.Context) (interface{}, error) {
-	// Resolve default in disjunction if a type hasn't been specified
-	val, hasDefault := v.Default()
-
-	env, hasEnv := os.LookupEnv(envvar)
-	if !hasEnv {
-		if isOpt || hasDefault {
-			// Ignore unset var if it's optional
-			return nil, nil
-		}
-		return nil, fmt.Errorf("environment variable %q not set", envvar)
-	}
-
-	if plancontext.IsSecretValue(val) {
-		secret := pctx.Secrets.New(env)
-		return secret.MarshalCUE(), nil
-	}
-
-	if !hasDefault && val.IsConcrete() {
-		return nil, fmt.Errorf("%s: unexpected concrete value, please use a type or set a default", envvar)
-	}
-
-	k := val.IncompleteKind()
-	if k == cue.StringKind {
-		return env, nil
-	}
-
-	return nil, fmt.Errorf("%s: unsupported type %q", envvar, k)
 }

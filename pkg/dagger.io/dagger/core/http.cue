@@ -32,17 +32,17 @@ import "dagger.io/dagger"
 
 	// Optionally verify the file checksum
 	// FIXME: what is the best format to encode checksum?
-	checksum?: string
+	checksum?: string @cloak(notimplemented)
 
 	// Optionally set file permissions on the downloaded file
 	// FIXME: find a more developer-friendly way to input file permissions
-	permissions?: int
+	permissions?: int @cloak(notimplemented)
 
 	// Optionally set UID of the downloaded file
-	uid?: int
+	uid?: int @cloak(notimplemented)
 
 	// Optionally set GID of the downloaded file
-	gid?: int
+	gid?: int @cloak(notimplemented)
 
 	// New filesystem state containing the downloaded file
 	output: dagger.#FS @dagger(generated)

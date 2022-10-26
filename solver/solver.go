@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger"
 	bk "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -30,6 +31,7 @@ type Solver struct {
 
 	containers   map[string]*container
 	containersMu sync.RWMutex
+	Client       *dagger.Client
 }
 
 type Opts struct {

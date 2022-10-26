@@ -57,10 +57,10 @@ import (
 	auth?: {
 		username: string
 		secret:   dagger.#Secret
-	}
+	} @cloak(notimplemented)
 
 	// Complete ref of the pushed image, including digest
-	result: #Ref @dagger(generated)
+	result: #Ref @dagger(generated) @cloak(notimplemented)
 }
 
 // Download a container image from a remote repository
@@ -76,16 +76,16 @@ import (
 	auth?: {
 		username: string
 		secret:   dagger.#Secret
-	}
+	} @cloak(notimplemented)
 
 	// When to pull the image
-	resolveMode: *"default" | "forcePull" | "preferLocal"
+	resolveMode: *"default" | "forcePull" | "preferLocal" @cloak(notimplemented)
 
 	// Root filesystem of downloaded image
 	output: dagger.#FS @dagger(generated)
 
 	// Image digest
-	digest: string @dagger(generated)
+	digest: string @dagger(generated) @cloak(notimplemented)
 
 	// Downloaded container image config
 	config: #ImageConfig @dagger(generated)
@@ -101,26 +101,34 @@ import (
 	dockerfile: *{
 		path: string | *"Dockerfile"
 	} | {
-		contents: string
+		contents: string @cloak(notimplemented)
 	}
 
 	// Authentication
-	auth: [registry=string]: {
-		username: string
-		secret:   dagger.#Secret
+	auth: {
+		[registry=string]: {
+			username: string
+			secret:   dagger.#Secret
+		} @cloak(notimplemented)
 	}
 
-	platforms?: [...string]
-	target?: string
-	buildArg?: [string]: string
-	label?: [string]:    string
-	hosts?: [string]:    string
+	platforms?: [...string] @cloak(notimplemented)
+	target?: string @cloak(notimplemented)
+	buildArg?: {
+		[string]: string @cloak(notimplemented)
+	}
+	label?: {
+		[string]: string @cloak(notimplemented)
+	}
+	hosts?: {
+		[string]: string @cloak(notimplemented)
+	}
 
 	// Root filesystem produced
 	output: dagger.#FS @dagger(generated)
 
 	// Container image config produced
-	config: #ImageConfig @dagger(generated)
+	config: #ImageConfig @dagger(generated) @cloak(notimplemented)
 }
 
 // Export an image as a tar archive

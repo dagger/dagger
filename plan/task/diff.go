@@ -3,8 +3,10 @@ package task
 import (
 	"context"
 
-	"github.com/moby/buildkit/client/llb"
+	"dagger.io/dagger"
+
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -17,32 +19,26 @@ type diffTask struct {
 }
 
 func (t *diffTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	lowerFS, err := pctx.FS.FromValue(v.Lookup("lower"))
-	if err != nil {
-		return nil, err
-	}
-	lower, err := lowerFS.State()
+	dgr := s.Client
+
+	lowerFSID, err := utils.GetFSId(v.Lookup("lower"))
+
 	if err != nil {
 		return nil, err
 	}
 
-	upperFS, err := pctx.FS.FromValue(v.Lookup("upper"))
-	if err != nil {
-		return nil, err
-	}
-	upper, err := upperFS.State()
+	upperFSID, err := utils.GetFSId(v.Lookup("upper"))
+
 	if err != nil {
 		return nil, err
 	}
 
-	st := llb.Diff(lower, upper)
-	result, err := s.Solve(ctx, st, pctx.Platform.Get())
+	diffID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(lowerFSID)}).Diff(dagger.DirectoryID(upperFSID)).ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": fs.MarshalCUE(),
+		"output": utils.NewFS(dagger.DirectoryID(diffID)),
 	})
 }

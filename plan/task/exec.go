@@ -9,10 +9,13 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger"
+
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -29,66 +32,110 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	if err != nil {
 		return nil, err
 	}
-	opts, err := common.runOpts()
-	if err != nil {
-		return nil, err
-	}
+	// fmt.Println("dude...", common)
+	// return compiler.NewValue(), nil
+	// opts, err := common.runOpts()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// env
+
+	// always run
+	// always, err := v.Lookup("always").Bool()
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// marker for status events
+	// FIXME
+
+	// args := make([]string, 0, len(common.args))
+	// for _, a := range common.args {
+	// 	args = append(args, fmt.Sprintf("%q", a))
+	// }
+
+	dgr := s.Client
+
+	ctr := dgr.Container().WithFS(dagger.DirectoryID(common.FSID))
+
 	envs, err := v.Lookup("env").Fields()
 	if err != nil {
 		return nil, err
 	}
 	for _, env := range envs {
 		if plancontext.IsSecretValue(env.Value) {
-			secret, err := pctx.Secrets.FromValue(env.Value)
+			id, err := utils.GetSecretId(env.Value)
+
 			if err != nil {
 				return nil, err
 			}
-			opts = append(opts, llb.AddSecret(env.Label(), llb.SecretID(secret.ID()), llb.SecretAsEnv(true)))
+			ctr = ctr.WithSecretVariable(env.Label(), dagger.SecretID(id))
 		} else {
 			s, err := env.Value.String()
 			if err != nil {
 				return nil, err
 			}
-			opts = append(opts, llb.AddEnv(env.Label(), s))
+			ctr = ctr.WithEnvVariable(env.Label(), s)
 		}
 	}
 
-	// always run
-	always, err := v.Lookup("always").Bool()
+	// TODO: Finish implementing mount types.
+
+	for _, m := range common.mounts {
+		switch {
+		case m.cacheMount != nil:
+			// TODO: Need sharing mode...
+			// var sharingMode string
+			// switch m.cacheMount.concurrency {
+			// case llb.CacheMountShared:
+			// 	sharingMode = "shared"
+			// case llb.CacheMountPrivate:
+			// 	sharingMode = "private"
+			// case llb.CacheMountLocked:
+			// 	sharingMode = "locked"
+			// }
+			ctr = ctr.WithMountedCache(dagger.CacheID(m.cacheMount.id), m.dest)
+		case m.tmpMount != nil:
+			ctr = ctr.WithMountedTemp(m.dest)
+		case m.fsMount != nil:
+			ctr = ctr.WithMountedDirectory(m.dest, dagger.DirectoryID(m.fsMount.fsid))
+		case m.secretMount != nil:
+			ctr = ctr.WithMountedSecret(m.dest, dagger.SecretID(m.secretMount.id))
+		case m.fileMount != nil:
+			fileid, err := dgr.Directory().WithNewFile("/file", dagger.DirectoryWithNewFileOpts{Contents: m.fileMount.contents}).File("/file").ID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ctr = ctr.WithMountedFile(m.dest, fileid)
+		default:
+		}
+	}
+
+	ctr = ctr.WithUser(common.user).WithWorkdir(common.workdir)
+
+	exec := ctr.Exec(dagger.ContainerExecOpts{
+		Args: common.args,
+	})
+	fsid, err := exec.FS().ID(ctx)
+
 	if err != nil {
 		return nil, err
 	}
-	if always {
-		opts = append(opts, llb.IgnoreCache)
-	}
-
-	// marker for status events
-	// FIXME
-	args := make([]string, 0, len(common.args))
-	for _, a := range common.args {
-		args = append(args, fmt.Sprintf("%q", a))
-	}
-	opts = append(opts, withCustomName(v, "Exec [%s]", strings.Join(args, ", ")))
-
-	st, err := common.root.State()
+	stdout, err := exec.Stdout().Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	st = st.Run(opts...).Root()
+	fmt.Println(stdout)
 
-	// Solve
-	result, err := s.Solve(ctx, st, pctx.Platform.Get())
+	exit, err := exec.ExitCode(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Fill result
-	resultFS := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": resultFS.MarshalCUE(),
-		"exit":   0,
+		"output": utils.NewFS(dagger.DirectoryID(fsid)),
+		"exit":   exit,
 	})
 }
 
@@ -98,11 +145,19 @@ func parseCommon(pctx *plancontext.Context, v *compiler.Value) (*execCommon, err
 	}
 
 	// root
-	input, err := pctx.FS.FromValue(v.Lookup("input"))
+	// input, err := pctx.FS.FromValue(v.Lookup("input"))
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// e.root = input
+
+	// fsid, err := pctx.FS.GetId(v.Lookup("input"))
+	fsid, err := utils.GetFSId(v.Lookup("input"))
+
 	if err != nil {
 		return nil, err
 	}
-	e.root = input
+	e.FSID = fsid
 
 	// args
 	var cmd struct {
@@ -161,6 +216,7 @@ func parseCommon(pctx *plancontext.Context, v *compiler.Value) (*execCommon, err
 
 // fields that are common between sync and async execs
 type execCommon struct {
+	FSID    dagger.DirectoryID
 	root    *plancontext.FS
 	args    []string
 	workdir string
@@ -280,11 +336,16 @@ func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 			fsMount: &fsMount{},
 		}
 
-		contents, err := pctx.FS.FromValue(v.Lookup("contents"))
+		// contents, err := pctx.FS.FromValue(v.Lookup("contents"))
+		// if err != nil {
+		// 	return mount{}, err
+		// }
+		// mnt.fsMount.contents = contents
+		fsid, err := utils.GetFSId(v.Lookup("contents"))
 		if err != nil {
 			return mount{}, err
 		}
-		mnt.fsMount.contents = contents
+		mnt.fsMount.fsid = fsid
 
 		if source := v.Lookup("source"); source.Exists() {
 			src, err := source.String()
@@ -495,6 +556,7 @@ type socketMount struct {
 
 type fsMount struct {
 	contents *plancontext.FS
+	fsid     dagger.DirectoryID
 	source   string
 	readonly bool
 }

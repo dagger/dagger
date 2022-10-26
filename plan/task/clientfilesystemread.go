@@ -7,9 +7,11 @@ import (
 	"os"
 
 	"cuelang.org/go/cue"
-	"github.com/moby/buildkit/client/llb"
+	"dagger.io/dagger"
+
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -122,45 +124,53 @@ func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.
 		return nil, err
 	}
 
-	opts := []llb.LocalOption{
-		withCustomName(v, "Local %s", path),
-		// Without hint, multiple `llb.Local` operations on the
-		// same path get a different digest.
-		llb.SessionID(s.SessionID()),
-		llb.SharedKeyHint(path),
-	}
+	// opts := []llb.LocalOption{
+	// 	withCustomName(v, "Local %s", path),
+	// 	// Without hint, multiple `llb.Local` operations on the
+	// 	// same path get a different digest.
+	// 	llb.SessionID(s.SessionID()),
+	// 	llb.SharedKeyHint(path),
+	// }
 
-	if len(dir.Include) > 0 {
-		opts = append(opts, llb.IncludePatterns(dir.Include))
-	}
+	// if len(dir.Include) > 0 {
+	// 	opts = append(opts, llb.IncludePatterns(dir.Include))
+	// }
 
-	if len(dir.Exclude) > 0 {
-		opts = append(opts, llb.ExcludePatterns(dir.Exclude))
-	}
+	// if len(dir.Exclude) > 0 {
+	// 	opts = append(opts, llb.ExcludePatterns(dir.Exclude))
+	// }
 
 	// FIXME: Remove the `Copy` and use `Local` directly.
 	//
 	// Copy'ing is a costly operation which should be unnecessary.
 	// However, using llb.Local directly breaks caching sometimes for unknown reasons.
-	st := llb.Scratch().File(
-		llb.Copy(
-			llb.Local(
-				path,
-				opts...,
-			),
-			"/",
-			"/",
-		),
-		withCustomName(v, "Local %s [copy]", path),
-	)
 
-	result, err := s.Solve(ctx, st, pctx.Platform.Get())
+	dgr := s.Client
+
+	hostDirId, err := dgr.Host().Directory(dagger.HostDirectoryID(path)).Read().ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	fs := pctx.FS.New(result)
-	return fs.MarshalCUE(), nil
+	// st := llb.Scratch().File(
+	// 	llb.Copy(
+	// 		llb.Local(
+	// 			path,
+	// 			opts...,
+	// 		),
+	// 		"/",
+	// 		"/",
+	// 	),
+	// 	withCustomName(v, "Local %s [copy]", path),
+	// )
+
+	// result, err := s.Solve(ctx, st, pctx.Platform.Get())
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// fs := pctx.FS.New(result)
+	return utils.NewFS(dagger.DirectoryID(hostDirId)), nil
 }
 
 func (t clientFilesystemReadTask) readSecret(pctx *plancontext.Context, path string) (*compiler.Value, error) {
