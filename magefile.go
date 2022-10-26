@@ -108,9 +108,11 @@ func (Build) Dagger(ctx context.Context) error {
 		Args: []string{"mkdir", "/app/build"},
 	})
 
-	builder = builder.Exec(dagger.ContainerExecOpts{
-		Args: []string{"go", "build", "-o", "/app/build/dagger", "/app/cmd/dagger"},
-	})
+	builder = builder.
+		WithEnvVariable("CGO_ENABLED", "0").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "build", "-o", "/app/build/dagger", "-ldflags", "-s -w", "/app/cmd/dagger"},
+		})
 
 	daggerBuildDir, err := builder.Directory("./build").ID(ctx)
 	if err != nil {
