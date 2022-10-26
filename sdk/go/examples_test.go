@@ -216,7 +216,7 @@ func ExampleHost_Workdir() {
 	}
 	defer client.Close()
 
-	readme, err := client.Host().Workdir().Read().File("README.md").Contents(ctx)
+	readme, err := client.Host().Workdir().File("README.md").Contents(ctx)
 	if err != nil {
 		panic(err)
 	}
