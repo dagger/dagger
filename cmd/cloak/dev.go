@@ -20,21 +20,12 @@ var devCmd = &cobra.Command{
 
 func Dev(cmd *cobra.Command, args []string) {
 	localDirs := getKVInput(localDirsInput)
-	w := io.Discard
-	if logOutputPath != "" {
-		var err error
-		w, err = os.OpenFile(logOutputPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-	}
 
 	startOpts := &engine.Config{
 		LocalDirs:  localDirs,
 		Workdir:    workdir,
 		ConfigPath: configPath,
-		LogOutput:  w,
+		LogOutput:  os.Stderr,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
