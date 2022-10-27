@@ -8,7 +8,7 @@ import (
 	"net/url"
 
 	"dagger.io/dagger/internal/engineconn"
-	"github.com/docker/cli/cli/connhelper/commandconn"
+	"dagger.io/dagger/internal/engineconn/bin/commandconn"
 )
 
 func init() {
