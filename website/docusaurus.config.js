@@ -21,6 +21,7 @@ async function createConfig() {
     },
     themeConfig: {
       sidebarCollapsed: false,
+      metadata: [{name: 'og:image', content: '/img/favicon.png'}],
       prism: {
         theme: require("prism-react-renderer/themes/okaidia"),
       },
