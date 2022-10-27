@@ -17,6 +17,8 @@ var (
 	queryVarsInput []string
 
 	devServerPort int
+
+	disableHostRW bool
 )
 
 func init() {
@@ -34,6 +36,7 @@ func init() {
 	doCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
+	devCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
 
 	projectCmd.AddCommand(
 		initCmd,
