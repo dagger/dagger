@@ -36,7 +36,7 @@ func (Lint) Markdown(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	workdir := c.Host().Workdir().Read()
+	workdir := c.Host().Workdir()
 
 	src, err := workdir.ID(ctx)
 	if err != nil {
@@ -119,7 +119,7 @@ func (Build) Dagger(ctx context.Context) error {
 
 	fs := builder.FS()
 	for _, f := range []string{"go.mod", "go.sum", "sdk/go/go.mod", "sdk/go/go.sum"} {
-		fileID, err := workdir.Read().File(f).ID(ctx)
+		fileID, err := workdir.File(f).ID(ctx)
 		if err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ func (Build) Dagger(ctx context.Context) error {
 		Args: []string{"go", "mod", "download"},
 	})
 
-	src, err := workdir.Read().ID(ctx)
+	src, err := workdir.ID(ctx)
 	if err != nil {
 		return err
 	}
@@ -156,15 +156,11 @@ func (Build) Dagger(ctx context.Context) error {
 			Args: []string{"go", "build", "-o", "/app/build/cloak", "-ldflags", "-s -w", "/app/cmd/cloak"},
 		})
 
-	daggerBuildDir, err := builder.Directory("./build").ID(ctx)
+	ok, err := builder.Directory("./build").Export(ctx, ".")
 	if err != nil {
 		return err
 	}
 
-	ok, err := c.Host().Workdir().Write(ctx, daggerBuildDir, dagger.HostDirectoryWriteOpts{Path: "."})
-	if err != nil {
-		return err
-	}
 	if !ok {
 		return errors.New("HostDirectoryWrite not ok")
 	}
