@@ -84,7 +84,6 @@ func (Lint) Codegen(ctx context.Context) error {
 	src, err := c.
 		Host().
 		Workdir().
-		Read().
 		File("sdk/go/api.gen.go").
 		Contents(ctx)
 	if err != nil {
