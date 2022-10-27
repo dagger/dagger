@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"dagger.io/dagger"
@@ -15,6 +16,7 @@ func TestExtensionAlpine(t *testing.T) {
 		ctx,
 		dagger.WithWorkdir("../../"),
 		dagger.WithConfigPath("../../examples/alpine/dagger.json"),
+		dagger.WithLogOutput(os.Stderr),
 	)
 	require.NoError(t, err)
 	defer c.Close()
