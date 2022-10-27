@@ -9,15 +9,16 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/buildkitd"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
+	dockerconfig "github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -91,8 +92,8 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(os.Stderr),
-			filesync.NewFSSyncProvider(),
+			authprovider.NewDockerAuthProvider(dockerconfig.LoadDefaultConfigFile(os.Stderr)),
+			filesync.NewFSSyncProvider(AnyDirSource{}),
 		},
 	}
 
@@ -244,4 +245,12 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 	}
 
 	return &res.Core.Directory.LoadProject, nil
+}
+
+type AnyDirSource struct{}
+
+func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
+	return filesync.SyncedDir{
+		Dir: name,
+	}, true
 }

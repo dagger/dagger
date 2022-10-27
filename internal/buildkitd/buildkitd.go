@@ -103,10 +103,22 @@ func getGoModVersion() (string, error) {
 		return "", err
 	}
 	trimmed := strings.TrimSpace(string(out))
-	_, version, ok := strings.Cut(trimmed, " ")
-	if !ok {
+
+	// NB: normally this will be:
+	//
+	//   github.com/moby/buildkit v0.10.5 => github.com/vito/buildkit v0.10.5
+	//
+	// but if it's replaced for client-only changes in a fork it'll be:
+	//
+	//   github.com/moby/buildkit v0.10.5 => github.com/vito/buildkit v0.10.5
+	//
+	// so we always want the second word.
+	fields := strings.Fields(trimmed)
+	if len(fields) < 2 {
 		return "", fmt.Errorf("unexpected go list output: %s", trimmed)
 	}
+
+	version := fields[1]
 	return version, nil
 }
 
