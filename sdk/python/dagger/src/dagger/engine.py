@@ -28,7 +28,7 @@ class Engine:
 
     def _spawn_args(self) -> list[str]:
         return [
-            "dagger",
+            "cloak",
             "dev",
             "--workdir",
             self.workdir,
@@ -40,10 +40,10 @@ class Engine:
 
     def _check_dagger_version(self) -> None:
         try:
-            run(["dagger", "dev", "--help"], stdout=DEVNULL, stderr=DEVNULL, check=True)
+            run(["cloak", "dev", "--help"], stdout=DEVNULL, stderr=DEVNULL, check=True)
         except CalledProcessError as e:
             logger.error(
-                "⚠️  Please ensure that dagger binary in $PATH is v0.3.0 or newer - a.k.a. Cloak"
+                "⚠️  Please ensure that cloak binary in $PATH is v0.3.0 or newer."
             )
             sys.exit(127)
 
