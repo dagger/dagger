@@ -33,4 +33,4 @@ node_modules
 __pycache__
 
 # Built Binary
-/dagger
+/bin

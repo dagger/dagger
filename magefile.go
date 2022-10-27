@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"runtime"
 
 	"dagger.io/dagger"
@@ -19,7 +18,7 @@ import (
 
 type Lint mg.Namespace
 
-// Run all lint targets
+// All runs all lint targets
 func (t Lint) All(ctx context.Context) error {
 	mg.Deps(
 		t.Codegen,
@@ -28,7 +27,7 @@ func (t Lint) All(ctx context.Context) error {
 	return nil
 }
 
-// Markdown lint
+// Markdown lints the markdown files
 func (Lint) Markdown(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -65,7 +64,7 @@ func (Lint) Markdown(ctx context.Context) error {
 	return err
 }
 
-// Lint SDK code generation
+// Codegen ensure the SDK code was re-generated
 func (Lint) Codegen(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -99,64 +98,54 @@ func (Lint) Codegen(ctx context.Context) error {
 	return nil
 }
 
-type Build mg.Namespace
-
-// Dagger will build the dagger binary
-func (Build) Dagger(ctx context.Context) error {
+// Build builds the binary
+func Build(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	builder := c.Container().
-		From("golang:1.18.2-alpine").
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"mkdir", "-p", "/app/sdk/go"},
-		})
-
 	workdir := c.Host().Workdir()
+	builder := c.Container().
+		From("golang:1.19-alpine").
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithEnvVariable("GOOS", runtime.GOOS).
+		WithEnvVariable("GOARCH", runtime.GOARCH).
+		WithWorkdir("/app")
 
-	fs := builder.FS()
+	// install dependencies
+	modules := c.Directory()
 	for _, f := range []string{"go.mod", "go.sum", "sdk/go/go.mod", "sdk/go/go.sum"} {
 		fileID, err := workdir.File(f).ID(ctx)
 		if err != nil {
 			return err
 		}
 
-		fs = fs.WithCopiedFile(path.Join("/app", f), fileID)
+		modules = modules.WithCopiedFile(f, fileID)
 	}
-
-	modFSID, err := fs.ID(ctx)
+	modID, err := modules.ID(ctx)
 	if err != nil {
 		return err
 	}
-
-	builder = builder.WithFS(modFSID).WithWorkdir("/app")
-	builder = builder.Exec(dagger.ContainerExecOpts{
-		Args: []string{"go", "mod", "download"},
-	})
+	builder = builder.
+		WithMountedDirectory("/app", modID).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "mod", "download"},
+		})
 
 	src, err := workdir.ID(ctx)
 	if err != nil {
 		return err
 	}
 
-	builder = builder.WithMountedDirectory("/app", src).WithWorkdir("/app")
-
-	builder = builder.Exec(dagger.ContainerExecOpts{
-		Args: []string{"mkdir", "/app/build"},
-	})
-
 	builder = builder.
-		WithEnvVariable("CGO_ENABLED", "0").
-		WithEnvVariable("GOOS", runtime.GOOS).
-		WithEnvVariable("GOARCH", runtime.GOARCH).
+		WithMountedDirectory("/app", src).WithWorkdir("/app").
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "/app/build/cloak", "-ldflags", "-s -w", "/app/cmd/cloak"},
+			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "/app/cmd/cloak"},
 		})
 
-	ok, err := builder.Directory("./build").Export(ctx, ".")
+	ok, err := builder.Directory("./bin").Export(ctx, "./bin")
 	if err != nil {
 		return err
 	}
