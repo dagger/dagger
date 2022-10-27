@@ -33,9 +33,6 @@ func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Clien
 	if cfg.ConfigPath != "" {
 		return nil, errors.New("config path not supported on unix hosts")
 	}
-	if cfg.LocalDirs != nil {
-		return nil, errors.New("local directories not supported on unix hosts")
-	}
 	if cfg.NoExtensions {
 		return nil, errors.New("no extensions is not supported on unix hosts")
 	}
