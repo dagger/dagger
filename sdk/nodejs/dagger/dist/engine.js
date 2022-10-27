@@ -23,7 +23,7 @@ export class Engine {
                 execaCommandSync("cloak dev --help");
             }
             catch (err) {
-                console.error("⚠️  Please ensure that cloak binary in $PATH is v0.3.0 or newer - a.k.a. Cloak");
+                console.error("⚠️  Please ensure that cloak binary in $PATH is v0.3.0 or newer.");
                 // https://tldp.org/LDP/abs/html/exitcodes.html
                 // | 127 | "command not found" | illegal_command | Possible problem with $PATH or a typo |
                 process.exit(127);

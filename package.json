@@ -11,7 +11,7 @@
     ".": "./sdk/nodejs/dagger/dist/index.js"
   },
   "engines": {
-    "node": "~16"
+    "node": ">=16"
   },
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.1",
