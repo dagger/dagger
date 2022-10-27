@@ -22,6 +22,8 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tonistiigi/fsutil"
+	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -252,5 +254,10 @@ type AnyDirSource struct{}
 func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
 	return filesync.SyncedDir{
 		Dir: name,
+		Map: func(p string, st *fstypes.Stat) fsutil.MapResult {
+			st.Uid = 0
+			st.Gid = 0
+			return fsutil.MapResultKeep
+		},
 	}, true
 }
