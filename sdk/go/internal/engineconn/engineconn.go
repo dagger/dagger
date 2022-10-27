@@ -34,7 +34,6 @@ func Get(host string) (EngineConn, error) {
 type Config struct {
 	Workdir      string
 	ConfigPath   string
-	LocalDirs    map[string]string
 	NoExtensions bool
 	LogOutput    io.Writer
 }

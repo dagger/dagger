@@ -40,16 +40,6 @@ func WithWorkdir(path string) ClientOpt {
 	})
 }
 
-// WithLocalDir maps a local directory to the engine
-func WithLocalDir(id, path string) ClientOpt {
-	return clientOptFunc(func(cfg *engineconn.Config) {
-		if cfg.LocalDirs == nil {
-			cfg.LocalDirs = make(map[string]string)
-		}
-		cfg.LocalDirs[id] = path
-	})
-}
-
 // WithConfigPath sets the engine config path
 func WithConfigPath(path string) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
