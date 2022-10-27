@@ -1,0 +1,7 @@
+# TODO: move this to pyproject.toml when supported, see https://github.com/PyCQA/flake8/issues/234
+
+[flake8]
+select = B,C,E,F,W,B001,B003,B006,B007,B301,B305,B306,B902,Q000,Q001,Q002,Q003
+ignore = E203,E722,W503
+max-line-length = 119
+extend-immutable-calls = typer.Option
