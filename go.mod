@@ -5,6 +5,7 @@ replace dagger.io/dagger => ./sdk/go
 go 1.18
 
 require (
+	dagger.io/dagger v0.3.0-alpha.4
 	github.com/bhoriuchi/graphql-go-tools v1.0.0
 	github.com/containerd/containerd v1.6.9
 	github.com/docker/cli v20.10.17+incompatible
@@ -16,7 +17,7 @@ require (
 	github.com/graphql-go/handler v0.2.3
 	github.com/magefile/mage v1.14.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/moby/buildkit v0.10.1-0.20221026024300-46f6f51822ff
+	github.com/moby/buildkit v0.10.5
 	github.com/netlify/open-api/v2 v2.12.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
@@ -124,3 +125,12 @@ require (
 
 // keep this in sync with the go.mod from buildkit
 replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20221006005007-99aa9bb766b5+incompatible // 22.06 branch (v22.06-dev)
+
+// NB: we need an unreleased buildkit version.
+//
+// this needs to be its own replace rather than just bumping the buildkit
+// dependency; see https://github.com/dagger/dagger/pull/3560#discussion_r1007075789
+//
+// once a new version is shipped with our changes we can remove this, but
+// consider commenting it out instead so we can keep this tribal knowledge!
+replace github.com/moby/buildkit => github.com/moby/buildkit v0.10.1-0.20221027014600-b78713cdd127

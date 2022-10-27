@@ -508,8 +508,8 @@ github.com/mitchellh/mapstructure v1.4.1/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RR
 github.com/mitchellh/mapstructure v1.4.3/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
 github.com/mitchellh/mapstructure v1.5.0/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
-github.com/moby/buildkit v0.10.1-0.20221026024300-46f6f51822ff h1:/TCeYMsqL768V/03oyWnwdV+NvhA2c37EFi7m1PRSlg=
-github.com/moby/buildkit v0.10.1-0.20221026024300-46f6f51822ff/go.mod h1:puBC74FaCtIyLaIp95LzzLutPkKdDIdT+B8itnVVLBs=
+github.com/moby/buildkit v0.10.1-0.20221027014600-b78713cdd127 h1:Y39DzPEUILDOE1Y1Cn0PbeX4pacOT7kmMxE6H8c253Y=
+github.com/moby/buildkit v0.10.1-0.20221027014600-b78713cdd127/go.mod h1:puBC74FaCtIyLaIp95LzzLutPkKdDIdT+B8itnVVLBs=
 github.com/moby/locker v1.0.1 h1:fOXqR41zeveg4fFODix+1Ch4mj/gT0NE1XJbp/epuBg=
 github.com/moby/locker v1.0.1/go.mod h1:S7SDdo5zpBK84bzzVlKr2V0hz+7x9hWbYC/kq7oQppc=
 github.com/moby/patternmatcher v0.5.0 h1:YCZgJOeULcxLw1Q+sVR636pmS7sPEn1Qo2iAN6M7DBo=
@@ -648,8 +648,6 @@ github.com/vektah/gqlparser/v2 v2.4.0/go.mod h1:flJWIR04IMQPGz+BXLrORkrARBxv/rty
 github.com/vektah/gqlparser/v2 v2.4.5/go.mod h1:flJWIR04IMQPGz+BXLrORkrARBxv/rtyIAFvd/MceW0=
 github.com/vektah/gqlparser/v2 v2.5.1 h1:ZGu+bquAY23jsxDRcYpWjttRZrUz07LbiY77gUOHcr4=
 github.com/vektah/gqlparser/v2 v2.5.1/go.mod h1:mPgqFBu/woKTVYWyNk8cO3kh4S/f4aRFZrvOnp3hmCs=
-github.com/vito/buildkit v0.10.1-0.20221026223114-affda29be3bc h1:8M3N0S7+7xzNrn8GLh3theSkoFuVvpjRXfKNA6iMIDo=
-github.com/vito/buildkit v0.10.1-0.20221026223114-affda29be3bc/go.mod h1:puBC74FaCtIyLaIp95LzzLutPkKdDIdT+B8itnVVLBs=
 github.com/wacul/ptr v0.0.0-20170209030335-91632201dfc8/go.mod h1:BD0gjsZrCwtoR+yWDB9v2hQ8STlq9tT84qKfa+3txOc=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.0.2/go.mod h1:1WAq6h33pAW+iRreB34OORO2Nf7qel3VV3fjBj+hCSs=

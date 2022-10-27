@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/distribution/reference"
 	"github.com/gofrs/flock"
 	"github.com/mitchellh/go-homedir"
 	bkclient "github.com/moby/buildkit/client"
@@ -26,15 +25,44 @@ import (
 )
 
 const (
-	image         = "moby/buildkit"
-	containerName = "dagger-buildkitd"
-	volumeName    = "dagger-buildkitd"
+	mobyBuildkitImage = "moby/buildkit"
+	containerName     = "dagger-buildkitd"
+	volumeName        = "dagger-buildkitd"
 
 	buildkitdLockPath = "~/.config/dagger/.buildkitd.lock"
 	// Long timeout to allow for slow image pulls of
 	// buildkitd while not blocking for infinity
 	lockTimeout = 10 * time.Minute
 )
+
+// NB: normally we take the version of Buildkit from our go.mod, e.g. v0.10.5,
+// and use the same version for the moby/buildkit Docker tag.
+//
+// this isn't possible when we're using an unreleased version of Buildkit. in
+// this scenario a new buildkit image will eventually be built + pushed to
+// moby/buildkit:master by their own CI, but if we were to use just "master" we
+// wouldn't know when the image needs to be bumped.
+//
+// so instead we'll manually map the go.mod version to the the image that
+// corresponds to it. note that this go.mod version doesn't care what repo it's
+// from; the sha should be enough.
+//
+// you can find this digest by pulling moby/buildkit:master like so:
+//
+//		$ docker pull moby/buildkit:master
+//
+//	  # check that it matches
+//		$ docker run moby/buildkit:master --version
+//
+//	  # get the exact digest
+//		$ docker images --digests | grep moby/buildkit:master
+//
+// (unfortunately this relies on timing/chance/spying on their CI)
+//
+// alternatively you can build your own image and push it somewhere
+var modVersionToImage = map[string]string{
+	"v0.10.1-0.20221027014600-b78713cdd127": "moby/buildkit@sha256:4984ac6da1898a9a06c4c3f7da5eaabe8a09ec56f5054b0a911ab0f9df6a092c",
+}
 
 func Client(ctx context.Context) (*bkclient.Client, error) {
 	host := os.Getenv("BUILDKIT_HOST")
@@ -78,8 +106,17 @@ func startBuildkitd(ctx context.Context) (string, error) {
 			return version, err
 		}
 	}
-	return startBuildkitdVersion(ctx, version)
+	var ref string
+	customImage, found := modVersionToImage[version]
+	if found {
+		ref = customImage
+	} else {
+		ref = mobyBuildkitImage + ":" + version
+	}
+	return startBuildkitdVersion(ctx, ref)
 }
+
+const buildkitPkg = "github.com/moby/buildkit"
 
 func getBuildInfoVersion() (string, error) {
 	bi, ok := debug.ReadBuildInfo()
@@ -88,10 +125,21 @@ func getBuildInfoVersion() (string, error) {
 	}
 
 	for _, d := range bi.Deps {
-		if d.Path == "github.com/moby/buildkit" {
+		if d.Path != buildkitPkg {
+			continue
+		}
+
+		if d.Replace == nil {
 			return d.Version, nil
 		}
+
+		if d.Replace.Path == buildkitPkg {
+			return d.Replace.Version, nil
+		} else {
+			return "", fmt.Errorf("cannot determine buildkitd version for %s", d.Replace.Path)
+		}
 	}
+
 	return "", nil
 }
 
@@ -102,17 +150,21 @@ func getGoModVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	trimmed := strings.TrimSpace(string(out))
 
 	// NB: normally this will be:
 	//
+	//   github.com/moby/buildkit v0.10.5
+	//
+	// if it's replaced it'll be:
+	//
 	//   github.com/moby/buildkit v0.10.5 => github.com/vito/buildkit v0.10.5
-	//
-	// but if it's replaced for client-only changes in a fork it'll be:
-	//
-	//   github.com/moby/buildkit v0.10.5 => github.com/vito/buildkit v0.10.5
-	//
-	// so we always want the second word.
+	_, replace, replaced := strings.Cut(trimmed, " => ")
+	if replaced {
+		trimmed = strings.TrimSpace(replace)
+	}
+
 	fields := strings.Fields(trimmed)
 	if len(fields) < 2 {
 		return "", fmt.Errorf("unexpected go list output: %s", trimmed)
@@ -122,12 +174,12 @@ func getGoModVersion() (string, error) {
 	return version, nil
 }
 
-func startBuildkitdVersion(ctx context.Context, version string) (string, error) {
-	if version == "" {
-		return "", errors.New("buildkitd version is empty")
+func startBuildkitdVersion(ctx context.Context, imageRef string) (string, error) {
+	if imageRef == "" {
+		return "", errors.New("buildkitd image ref is empty")
 	}
 
-	if err := checkBuildkit(ctx, version); err != nil {
+	if err := checkBuildkit(ctx, imageRef); err != nil {
 		return "", err
 	}
 
@@ -135,7 +187,7 @@ func startBuildkitdVersion(ctx context.Context, version string) (string, error) 
 }
 
 // ensure the buildkit is active and properly set up (e.g. connected to host and last version with moby/buildkit)
-func checkBuildkit(ctx context.Context, version string) error {
+func checkBuildkit(ctx context.Context, imageRef string) error {
 	// acquire a file-based lock to ensure parallel dagger clients
 	// don't interfere with checking+creating the buildkitd container
 	lockFilePath, err := homedir.Expand(buildkitdLockPath)
@@ -168,19 +220,19 @@ func checkBuildkit(ctx context.Context, version string) error {
 		fmt.Fprintln(os.Stderr, "No buildkitd container found, creating one...")
 
 		removeBuildkit(ctx)
-		if err := installBuildkit(ctx, version); err != nil {
+		if err := installBuildkit(ctx, imageRef); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	if config.Version != version {
+	if config.Image != imageRef {
 		fmt.Fprintln(os.Stderr, "Buildkitd container is out of date, updating it...")
 
 		if err := removeBuildkit(ctx); err != nil {
 			return err
 		}
-		if err := installBuildkit(ctx, version); err != nil {
+		if err := installBuildkit(ctx, imageRef); err != nil {
 			return err
 		}
 	}
@@ -230,13 +282,9 @@ func startBuildkit(ctx context.Context) error {
 
 // Pull and run the buildkit daemon with a proper configuration
 // If the buildkit daemon is already configured, use startBuildkit
-func installBuildkit(ctx context.Context, version string) error {
+func installBuildkit(ctx context.Context, ref string) error {
 	// #nosec
-	cmd := exec.CommandContext(ctx,
-		"docker",
-		"pull",
-		image+":"+version,
-	)
+	cmd := exec.CommandContext(ctx, "docker", "pull", ref)
 	_, err := cmd.CombinedOutput()
 	if err != nil {
 		return err
@@ -251,7 +299,7 @@ func installBuildkit(ctx context.Context, version string) error {
 		"-v", volumeName+":/var/lib/buildkit",
 		"--name", containerName,
 		"--privileged",
-		image+":"+version,
+		ref,
 		"--debug",
 	)
 	output, err := cmd.CombinedOutput()
@@ -323,15 +371,8 @@ func getBuildkitInformation(ctx context.Context) (*buildkitInformation, error) {
 
 	s := strings.Split(string(output), ";")
 
-	// Retrieve the tag
-	ref, err := reference.ParseNormalizedNamed(strings.TrimSpace(s[0]))
-	if err != nil {
-		return nil, err
-	}
-	tag, ok := ref.(reference.Tagged)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse image: %s", output)
-	}
+	// Retrieve the image name
+	imageRef := strings.TrimSpace(s[0])
 
 	// Retrieve the state
 	isActive, err := strconv.ParseBool(strings.TrimSpace(s[1]))
@@ -340,12 +381,12 @@ func getBuildkitInformation(ctx context.Context) (*buildkitInformation, error) {
 	}
 
 	return &buildkitInformation{
-		Version:  tag.Tag(),
+		Image:    imageRef,
 		IsActive: isActive,
 	}, nil
 }
 
 type buildkitInformation struct {
-	Version  string
+	Image    string
 	IsActive bool
 }
