@@ -5,7 +5,6 @@ replace dagger.io/dagger => ./sdk/go
 go 1.18
 
 require (
-	dagger.io/dagger v0.3.0-alpha.4
 	github.com/bhoriuchi/graphql-go-tools v1.0.0
 	github.com/containerd/containerd v1.6.9
 	github.com/docker/cli v20.10.17+incompatible
@@ -17,7 +16,7 @@ require (
 	github.com/graphql-go/handler v0.2.3
 	github.com/magefile/mage v1.14.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/moby/buildkit v0.10.5
+	github.com/moby/buildkit v0.10.1-0.20221026024300-46f6f51822ff
 	github.com/netlify/open-api/v2 v2.12.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
@@ -122,9 +121,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// remove + bump when https://github.com/moby/buildkit/pull/3228 is merged
-replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20221026223114-affda29be3bc // branch: dynamic-filesync
 
 // keep this in sync with the go.mod from buildkit
 replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20221006005007-99aa9bb766b5+incompatible // 22.06 branch (v22.06-dev)
