@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator"
@@ -150,6 +151,8 @@ func (Build) Dagger(ctx context.Context) error {
 
 	builder = builder.
 		WithEnvVariable("CGO_ENABLED", "0").
+		WithEnvVariable("GOOS", runtime.GOOS).
+		WithEnvVariable("GOARCH", runtime.GOARCH).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"go", "build", "-o", "/app/build/cloak", "-ldflags", "-s -w", "/app/cmd/cloak"},
 		})
