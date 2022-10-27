@@ -6,17 +6,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type Host struct {
-	Workdir string
+	Workdir   string
+	DisableRW bool
 }
 
-func NewHost(workdir string) *Host {
+func NewHost(workdir string, disableRW bool) *Host {
 	return &Host{
-		Workdir: workdir,
+		Workdir:   workdir,
+		DisableRW: disableRW,
 	}
 }
 
@@ -25,6 +29,10 @@ type HostVariable struct {
 }
 
 func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.Platform) (*Directory, error) {
+	if host.DisableRW {
+		return nil, ErrHostRWDisabled
+	}
+
 	var absPath string
 	var err error
 	if filepath.IsAbs(dirPath) {
@@ -55,4 +63,30 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	), "/", "/"))
 
 	return NewDirectory(ctx, st, "", platform)
+}
+
+func (host *Host) Export(
+	ctx context.Context,
+	dest string,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+	buildFn bkgw.BuildFunc,
+) error {
+	if host.DisableRW {
+		return ErrHostRWDisabled
+	}
+
+	solveOpts.Exports = []bkclient.ExportEntry{
+		{
+			Type:      bkclient.ExporterLocal,
+			OutputDir: dest,
+		},
+	}
+
+	ch, wg := mirrorCh(solveCh)
+	defer wg.Wait()
+
+	_, err := bkClient.Build(ctx, solveOpts, "", buildFn, ch)
+	return err
 }

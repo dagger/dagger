@@ -7,6 +7,8 @@ import (
 
 type directorySchema struct {
 	*baseSchema
+
+	host *core.Host
 }
 
 var _ router.ExecutableSchema = &directorySchema{}
@@ -136,7 +138,7 @@ type exportArgs struct {
 }
 
 func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args exportArgs) (bool, error) {
-	err := parent.Export(ctx, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
 	if err != nil {
 		return false, err
 	}

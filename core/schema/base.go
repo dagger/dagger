@@ -18,6 +18,7 @@ type InitializeArgs struct {
 	SolveOpts     bkclient.SolveOpt
 	SolveCh       chan *bkclient.SolveStatus
 	Platform      specs.Platform
+	DisableHostRW bool
 }
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
@@ -30,14 +31,15 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		platform:      params.Platform,
 		sshAuthSockID: params.SSHAuthSockID,
 	}
+	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
-		&directorySchema{base},
+		&directorySchema{base, host},
 		&fileSchema{base},
 		&gitSchema{base},
 		&containerSchema{base},
 		&cacheSchema{base},
 		&secretSchema{base},
-		&hostSchema{base, core.NewHost(params.Workdir)},
+		&hostSchema{base, host},
 		&projectSchema{
 			baseSchema:    base,
 			projectStates: make(map[string]*project.State),

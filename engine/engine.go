@@ -35,8 +35,9 @@ type Config struct {
 	Workdir    string
 	ConfigPath string
 	// If true, do not load project extensions
-	NoExtensions bool
-	LogOutput    io.Writer
+	NoExtensions  bool
+	LogOutput     io.Writer
+	DisableHostRW bool
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -95,8 +96,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
 			authprovider.NewDockerAuthProvider(dockerconfig.LoadDefaultConfigFile(os.Stderr)),
-			filesync.NewFSSyncProvider(AnyDirSource{}),
 		},
+	}
+
+	if !startOpts.DisableHostRW {
+		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
 
 	ch := make(chan *bkclient.SolveStatus)
@@ -120,6 +124,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				SolveOpts:     solveOpts,
 				SolveCh:       ch,
 				Platform:      *platform,
+				DisableHostRW: startOpts.DisableHostRW,
 			})
 			if err != nil {
 				return nil, err

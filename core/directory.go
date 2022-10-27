@@ -382,6 +382,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 
 func (dir *Directory) Export(
 	ctx context.Context,
+	host *Host,
 	dest string,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
@@ -392,17 +393,7 @@ func (dir *Directory) Export(
 		return err
 	}
 
-	solveOpts.Exports = []bkclient.ExportEntry{
-		{
-			Type:      bkclient.ExporterLocal,
-			OutputDir: dest,
-		},
-	}
-
-	ch, wg := mirrorCh(solveCh)
-	defer wg.Wait()
-
-	_, err = bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	return host.Export(ctx, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		src, err := srcPayload.State()
 		if err != nil {
 			return nil, err
@@ -428,7 +419,5 @@ func (dir *Directory) Export(
 			Evaluate:   true,
 			Definition: defPB,
 		})
-	}, ch)
-
-	return err
+	})
 }
