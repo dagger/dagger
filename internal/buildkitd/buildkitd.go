@@ -116,8 +116,6 @@ func startBuildkitd(ctx context.Context) (string, error) {
 	return startBuildkitdVersion(ctx, ref)
 }
 
-const buildkitPkg = "github.com/moby/buildkit"
-
 func getBuildInfoVersion() (string, error) {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -125,19 +123,15 @@ func getBuildInfoVersion() (string, error) {
 	}
 
 	for _, d := range bi.Deps {
-		if d.Path != buildkitPkg {
+		if d.Path != "github.com/moby/buildkit" {
 			continue
 		}
 
-		if d.Replace == nil {
-			return d.Version, nil
+		if d.Replace != nil {
+			return d.Replace.Version, nil
 		}
 
-		if d.Replace.Path == buildkitPkg {
-			return d.Replace.Version, nil
-		} else {
-			return "", fmt.Errorf("cannot determine buildkitd version for %s", d.Replace.Path)
-		}
+		return d.Version, nil
 	}
 
 	return "", nil
