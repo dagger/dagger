@@ -32,14 +32,14 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	} else {
 		absPath = filepath.Join(host.Workdir, dirPath)
 
-		absPath, err = filepath.EvalSymlinks(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("eval symlinks: %w", err)
-		}
-
 		if !strings.HasPrefix(absPath, host.Workdir) {
 			return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", dirPath)
 		}
+	}
+
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("eval symlinks: %w", err)
 	}
 
 	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
