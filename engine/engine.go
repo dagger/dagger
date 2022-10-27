@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	workdirID      = "__dagger_workdir"
 	daggerJSONName = "dagger.json"
 )
 
