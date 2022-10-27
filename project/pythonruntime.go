@@ -34,7 +34,7 @@ cd %q
 # redirect local unix socket (graphql server) to a bound tcp port
 socat TCP-LISTEN:8080 UNIX-CONNECT:/dagger.sock &
 # run the extension
-exec dagger-python "$@"
+exec dagger-py "$@"
 `,
 		ctrSrcPath)
 	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
