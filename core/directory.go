@@ -270,7 +270,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 	return destPayload.ToDirectory()
 }
 
-func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
+func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err

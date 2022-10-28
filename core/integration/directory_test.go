@@ -277,7 +277,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 }
 
-func TestDirectoryWithCopiedFile(t *testing.T) {
+func TestDirectoryWithFile(t *testing.T) {
 	var fileRes struct {
 		Directory struct {
 			WithNewFile struct {
@@ -303,7 +303,7 @@ func TestDirectoryWithCopiedFile(t *testing.T) {
 
 	var res struct {
 		Directory struct {
-			WithCopiedFile struct {
+			WithFile struct {
 				File struct {
 					ID       core.DirectoryID
 					Contents string
@@ -315,7 +315,7 @@ func TestDirectoryWithCopiedFile(t *testing.T) {
 	err = testutil.Query(
 		`query Test($src: FileID!) {
 			directory {
-				withCopiedFile(path: "target-file", source: $src) {
+				withFile(path: "target-file", source: $src) {
 					file(path: "target-file") {
 						id
 						contents
@@ -328,8 +328,8 @@ func TestDirectoryWithCopiedFile(t *testing.T) {
 			},
 		})
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithCopiedFile.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithCopiedFile.File.Contents)
+	require.NotEmpty(t, res.Directory.WithFile.File.ID)
+	require.Equal(t, "some-content", res.Directory.WithFile.File.Contents)
 }
 
 func TestDirectoryWithoutDirectory(t *testing.T) {
