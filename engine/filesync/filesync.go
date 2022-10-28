@@ -70,14 +70,16 @@ func (sp *fsSyncProvider) TarStream(stream FileSync_TarStreamServer) error {
 }
 
 func (sp *fsSyncProvider) handle(method string, stream grpc.ServerStream) (retErr error) {
-	var pr *protocol
+	var pr protocol
+	var found bool
 	for _, p := range supportedProtocols {
 		if method == p.name {
-			pr = &p
+			pr = p
+			found = true
 			break
 		}
 	}
-	if pr == nil {
+	if !found {
 		return InvalidSessionError{errors.New("failed to negotiate protocol")}
 	}
 
@@ -172,14 +174,16 @@ type CacheUpdater interface {
 
 // FSSync initializes a transfer of files
 func FSSync(ctx context.Context, c session.Caller, opt FSSendRequestOpt) error {
-	var pr *protocol
+	var pr protocol
+	var found bool
 	for _, p := range supportedProtocols {
 		if c.Supports(session.MethodURL(_FileSync_serviceDesc.ServiceName, p.name)) {
-			pr = &p
+			pr = p
+			found = true
 			break
 		}
 	}
-	if pr == nil {
+	if !found {
 		return errors.New("no local sources enabled")
 	}
 
