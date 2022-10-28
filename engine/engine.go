@@ -9,6 +9,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/buildkitd"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
@@ -18,7 +19,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
