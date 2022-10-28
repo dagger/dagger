@@ -206,6 +206,12 @@ func TestDirectoryWithDirectory(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
+
+	t.Run("copies directory contents to .", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(dirID, ".").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sub-file"}, entries)
+	})
 }
 
 func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
@@ -214,11 +220,15 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	dirID, err := c.Directory().
+	dir := c.Directory().
 		WithNewFile("a.txt").
 		WithNewFile("b.txt").
 		WithNewFile("c.txt.rar").
-		ID(ctx)
+		WithNewFile("subdir/d.txt").
+		WithNewFile("subdir/e.txt").
+		WithNewFile("subdir/f.txt.rar")
+
+	dirID, err := dir.ID(ctx)
 	require.NoError(t, err)
 
 	t.Run("exclude", func(t *testing.T) {
@@ -226,7 +236,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a.txt", "b.txt"}, entries)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
 	})
 
 	t.Run("include", func(t *testing.T) {
@@ -253,6 +263,17 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 		}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{}, entries)
+	})
+
+	subdirID, err := dir.Directory("subdir").ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("exclude respects subdir", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(subdirID, ".", dagger.DirectoryWithDirectoryOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
 	})
 }
 
