@@ -724,6 +724,17 @@ func (r *Directory) WithFile(path string, source FileID) *Directory {
 	}
 }
 
+// This directory plus a new directory created at the given path
+func (r *Directory) WithNewDirectory(path string) *Directory {
+	q := r.q.Select("withNewDirectory")
+	q = q.Arg("path", path)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
 // DirectoryWithNewFileOpts contains options for Directory.WithNewFile
 type DirectoryWithNewFileOpts struct {
 	Contents string

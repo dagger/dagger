@@ -32,11 +32,12 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 		"Directory": router.ObjectResolver{
 			"entries":          router.ToResolver(s.entries),
 			"file":             router.ToResolver(s.file),
-			"withNewFile":      router.ToResolver(s.withNewFile),
 			"withFile":         router.ToResolver(s.withFile),
+			"withNewFile":      router.ToResolver(s.withNewFile),
 			"withoutFile":      router.ToResolver(s.withoutFile),
 			"directory":        router.ToResolver(s.subdirectory),
 			"withDirectory":    router.ToResolver(s.withDirectory),
+			"withNewDirectory": router.ToResolver(s.withNewDirectory),
 			"withoutDirectory": router.ToResolver(s.withoutDirectory),
 			"diff":             router.ToResolver(s.diff),
 			"export":           router.ToResolver(s.export),
@@ -64,6 +65,14 @@ type subdirectoryArgs struct {
 
 func (s *directorySchema) subdirectory(ctx *router.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
 	return parent.Directory(ctx, args.Path)
+}
+
+type withNewDirectoryArgs struct {
+	Path string
+}
+
+func (s *directorySchema) withNewDirectory(ctx *router.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
+	return parent.WithNewDirectory(ctx, s.gw, args.Path)
 }
 
 type withDirectoryArgs struct {

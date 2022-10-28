@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"dagger.io/dagger"
@@ -275,6 +276,27 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
 	})
+}
+
+func TestDirectoryWithNewDirectory(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	dir := c.Directory().
+		WithNewDirectory("a").
+		WithNewDirectory("b/c")
+
+	entries, err := dir.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a", "b"}, entries)
+
+	entries, err = dir.Entries(ctx, dagger.DirectoryEntriesOpts{
+		Path: "b",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"c"}, entries)
 }
 
 func TestDirectoryWithFile(t *testing.T) {
