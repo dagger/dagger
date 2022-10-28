@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"time"
@@ -20,12 +19,12 @@ var devCmd = &cobra.Command{
 
 func Dev(cmd *cobra.Command, args []string) {
 	localDirs := getKVInput(localDirsInput)
+
 	startOpts := &engine.Config{
 		LocalDirs:  localDirs,
 		Workdir:    workdir,
 		ConfigPath: configPath,
-		// TODO(dolanor): add option to configure it from flag?
-		LogOutput: io.Discard,
+		LogOutput:  os.Stderr,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
