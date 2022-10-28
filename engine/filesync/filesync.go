@@ -35,7 +35,7 @@ type fsSyncProvider struct {
 type SyncedDir struct {
 	Dir      string
 	Excludes []string
-	Map      func(string, *fstypes.Stat) fsutil.MapResult
+	Map      func(string, *fstypes.Stat) bool
 }
 
 type DirSource interface {

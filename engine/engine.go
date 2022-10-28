@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
-	dockerconfig "github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -22,7 +21,6 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
@@ -95,7 +93,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(dockerconfig.LoadDefaultConfigFile(os.Stderr)),
+			authprovider.NewDockerAuthProvider(os.Stderr),
 		},
 	}
 
@@ -259,10 +257,10 @@ type AnyDirSource struct{}
 func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
 	return filesync.SyncedDir{
 		Dir: name,
-		Map: func(p string, st *fstypes.Stat) fsutil.MapResult {
+		Map: func(p string, st *fstypes.Stat) bool {
 			st.Uid = 0
 			st.Gid = 0
-			return fsutil.MapResultKeep
+			return true
 		},
 	}, true
 }
