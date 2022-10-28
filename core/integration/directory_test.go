@@ -277,29 +277,6 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 }
 
-func TestDirectoryWithDirectoryWildcard(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-	defer c.Close()
-
-	dir := c.Directory().
-		WithNewFile("ayy/bee/cee/dee/ee/eff.txt").
-		WithNewFile("ayy/bee/cee/dee/ee/gee.txt")
-
-	dirID, err := dir.Directory("*/b*/c*").ID(ctx)
-	require.NoError(t, err)
-	entries, err := c.Directory().WithDirectory(dirID, ".").Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"dee"}, entries)
-
-	dirID, err = dir.Directory("ayy/bee/cee/dee/*").ID(ctx)
-	require.NoError(t, err)
-	entries, err = c.Directory().WithDirectory(dirID, ".").Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"eff.txt", "gee.txt"}, entries)
-}
-
 func TestDirectoryWithCopiedFile(t *testing.T) {
 	var fileRes struct {
 		Directory struct {

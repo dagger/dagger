@@ -258,7 +258,6 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 	st = st.File(llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath:      true,
 		CopyDirContentsOnly: true,
-		AllowWildcard:       true,
 		IncludePatterns:     filter.Include,
 		ExcludePatterns:     filter.Exclude,
 	}))
