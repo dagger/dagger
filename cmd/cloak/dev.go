@@ -18,13 +18,11 @@ var devCmd = &cobra.Command{
 }
 
 func Dev(cmd *cobra.Command, args []string) {
-	localDirs := getKVInput(localDirsInput)
-
 	startOpts := &engine.Config{
-		LocalDirs:  localDirs,
-		Workdir:    workdir,
-		ConfigPath: configPath,
-		LogOutput:  os.Stderr,
+		Workdir:       workdir,
+		ConfigPath:    configPath,
+		LogOutput:     os.Stderr,
+		DisableHostRW: disableHostRW,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {

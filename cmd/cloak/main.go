@@ -15,9 +15,10 @@ var (
 
 	queryFile      string
 	queryVarsInput []string
-	localDirsInput []string
 
 	devServerPort int
+
+	disableHostRW bool
 )
 
 func init() {
@@ -33,10 +34,9 @@ func init() {
 
 	doCmd.Flags().StringVarP(&queryFile, "file", "f", "", "query file")
 	doCmd.Flags().StringSliceVarP(&queryVarsInput, "set", "s", []string{}, "query variable")
-	doCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
 
 	devCmd.Flags().IntVar(&devServerPort, "port", 8080, "dev server port")
-	devCmd.Flags().StringSliceVarP(&localDirsInput, "local-dir", "l", []string{}, "local directory to import")
+	devCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
 
 	projectCmd.AddCommand(
 		initCmd,

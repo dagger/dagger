@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/dagger/dagger/core"
@@ -10,7 +9,8 @@ import (
 
 type hostSchema struct {
 	*baseSchema
-	workdirID core.HostDirectoryID
+
+	host *core.Host
 }
 
 var _ router.ExecutableSchema = &hostSchema{}
@@ -25,7 +25,6 @@ func (s *hostSchema) Schema() string {
 
 func (s *hostSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
-		"HostDirectoryID": stringResolver(core.HostDirectoryID("")),
 		"Query": router.ObjectResolver{
 			"host": router.PassthroughResolver,
 		},
@@ -33,10 +32,6 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"workdir":     router.ToResolver(s.workdir),
 			"directory":   router.ToResolver(s.directory),
 			"envVariable": router.ToResolver(s.envVariable),
-		},
-		"HostDirectory": router.ObjectResolver{
-			"read":  router.ToResolver(s.dirRead),
-			"write": router.ToResolver(s.dirWrite),
 		},
 		"HostVariable": router.ObjectResolver{
 			"value":  router.ToResolver(s.envVariableValue),
@@ -49,10 +44,8 @@ func (s *hostSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-func (s *hostSchema) workdir(ctx *router.Context, parent any, args any) (*core.HostDirectory, error) {
-	return &core.HostDirectory{
-		ID: s.workdirID,
-	}, nil
+func (s *hostSchema) workdir(ctx *router.Context, parent any, args any) (*core.Directory, error) {
+	return s.host.Directory(ctx, ".", s.platform)
 }
 
 type hostVariableArgs struct {
@@ -74,33 +67,9 @@ func (s *hostSchema) envVariableSecret(ctx *router.Context, parent *core.HostVar
 }
 
 type hostDirectoryArgs struct {
-	ID core.HostDirectoryID
+	Path string
 }
 
-func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.HostDirectory, error) {
-	return &core.HostDirectory{
-		ID: args.ID,
-	}, nil
-}
-
-func (s *hostSchema) dirRead(ctx *router.Context, parent *core.HostDirectory, args any) (*core.Directory, error) {
-	return parent.Read(ctx, s.platform)
-}
-
-type hostDirectoryWriteArgs struct {
-	Contents core.DirectoryID
-	Path     string
-}
-
-func (s *hostSchema) dirWrite(ctx *router.Context, parent *core.HostDirectory, args hostDirectoryWriteArgs) (bool, error) {
-	dir, found := s.solveOpts.LocalDirs[string(parent.ID)]
-	if !found {
-		return false, fmt.Errorf("unknown host directory %q", parent.ID)
-	}
-
-	return parent.Write(ctx,
-		dir, args.Path,
-		&core.Directory{ID: args.Contents},
-		s.bkClient, s.solveOpts, s.solveCh,
-	)
+func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.Directory, error) {
+	return s.host.Directory(ctx, args.Path, s.platform)
 }

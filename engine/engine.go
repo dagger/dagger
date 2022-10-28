@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/buildkitd"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
@@ -21,21 +21,21 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	workdirID      = "__dagger_workdir"
 	daggerJSONName = "dagger.json"
 )
 
 type Config struct {
 	Workdir    string
-	LocalDirs  map[string]string
 	ConfigPath string
 	// If true, do not load project extensions
-	NoExtensions bool
-	LogOutput    io.Writer
+	NoExtensions  bool
+	LogOutput     io.Writer
+	DisableHostRW bool
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -96,14 +96,10 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			authprovider.NewDockerAuthProvider(os.Stderr),
 		},
 	}
-	if startOpts.LocalDirs == nil {
-		startOpts.LocalDirs = map[string]string{}
+
+	if !startOpts.DisableHostRW {
+		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
-	// make workdir ID unique by absolute path to prevent concurrent runs from
-	// interfering with each other
-	workdirID := fmt.Sprintf("%s_%s", workdirID, startOpts.Workdir)
-	startOpts.LocalDirs[workdirID] = startOpts.Workdir
-	solveOpts.LocalDirs = startOpts.LocalDirs
 
 	ch := make(chan *bkclient.SolveStatus)
 	eg, ctx := errgroup.WithContext(ctx)
@@ -120,12 +116,13 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
 				SSHAuthSockID: sshAuthSockID,
-				WorkdirID:     core.HostDirectoryID(workdirID),
+				Workdir:       startOpts.Workdir,
 				Gateway:       gw,
 				BKClient:      c,
 				SolveOpts:     solveOpts,
 				SolveCh:       ch,
 				Platform:      *platform,
+				DisableHostRW: startOpts.DisableHostRW,
 			})
 			if err != nil {
 				return nil, err
@@ -236,11 +233,9 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 			query LoadProject($configPath: String!) {
 				host {
 					workdir {
-						read {
-							loadProject(configPath: $configPath) {
-								name
-								install
-							}
+						loadProject(configPath: $configPath) {
+							name
+							install
 						}
 					}
 				}
@@ -255,4 +250,17 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 	}
 
 	return &res.Core.Directory.LoadProject, nil
+}
+
+type AnyDirSource struct{}
+
+func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
+	return filesync.SyncedDir{
+		Dir: name,
+		Map: func(p string, st *fstypes.Stat) bool {
+			st.Uid = 0
+			st.Gid = 0
+			return true
+		},
+	}, true
 }

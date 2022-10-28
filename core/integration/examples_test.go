@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"dagger.io/dagger"
@@ -15,6 +16,7 @@ func TestExtensionAlpine(t *testing.T) {
 		ctx,
 		dagger.WithWorkdir("../../"),
 		dagger.WithConfigPath("../../examples/alpine/dagger.json"),
+		dagger.WithLogOutput(os.Stderr),
 	)
 	require.NoError(t, err)
 	defer c.Close()
@@ -66,7 +68,7 @@ func TestExtensionNetlify(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			dirID, err := c.Host().Workdir().Read().ID(ctx)
+			dirID, err := c.Host().Workdir().ID(ctx)
 			require.NoError(t, err)
 
 			secretID, err := c.Host().EnvVariable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)
@@ -123,7 +125,7 @@ func TestExtensionYarn(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dirID, err := c.Host().Workdir().Read().ID(ctx)
+	dirID, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
 	data := struct {

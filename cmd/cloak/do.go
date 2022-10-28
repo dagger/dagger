@@ -28,8 +28,6 @@ func Do(cmd *cobra.Command, args []string) {
 
 	vars := getKVInput(queryVarsInput)
 
-	localDirs := getKVInput(localDirsInput)
-
 	// Use the provided query file if specified
 	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
 	// Finally, default to the operations returned by the loadExtension query
@@ -50,7 +48,7 @@ func Do(cmd *cobra.Command, args []string) {
 		operations = string(inBytes)
 	}
 
-	result, err := doQuery(ctx, operations, operation, vars, localDirs)
+	result, err := doQuery(ctx, operations, operation, vars)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -59,13 +57,10 @@ func Do(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s\n", result)
 }
 
-func doQuery(ctx context.Context, query, op string, vars map[string]string, localDirs map[string]string) ([]byte, error) {
+func doQuery(ctx context.Context, query, op string, vars map[string]string) ([]byte, error) {
 	opts := []dagger.ClientOpt{
 		dagger.WithWorkdir(workdir),
 		dagger.WithConfigPath(configPath),
-	}
-	for id, path := range localDirs {
-		opts = append(opts, dagger.WithLocalDir(id, path))
 	}
 
 	c, err := dagger.Connect(ctx, opts...)
@@ -73,18 +68,6 @@ func doQuery(ctx context.Context, query, op string, vars map[string]string, loca
 		return nil, err
 	}
 	defer c.Close()
-
-	for hostID := range localDirs {
-		directoryID, err := c.
-			Host().
-			Directory(dagger.HostDirectoryID(hostID)).
-			Read().
-			ID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		vars[hostID] = string(directoryID)
-	}
 
 	res := make(map[string]interface{})
 	resp := &dagger.Response{Data: &res}

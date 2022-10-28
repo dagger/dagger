@@ -6,6 +6,7 @@ import (
 	"path"
 	"reflect"
 
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -377,4 +378,46 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 	}
 
 	return payload.ToDirectory()
+}
+
+func (dir *Directory) Export(
+	ctx context.Context,
+	host *Host,
+	dest string,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) error {
+	srcPayload, err := dir.ID.Decode()
+	if err != nil {
+		return err
+	}
+
+	return host.Export(ctx, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		src, err := srcPayload.State()
+		if err != nil {
+			return nil, err
+		}
+
+		var defPB *pb.Definition
+		if srcPayload.Dir != "" {
+			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
+				CopyDirContentsOnly: true,
+			}))
+
+			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			defPB = def.ToPB()
+		} else {
+			defPB = srcPayload.LLB
+		}
+
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: defPB,
+		})
+	})
 }
