@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/Khan/genqlient/graphql"
+	"golang.org/x/sync/errgroup"
 )
 
 func Query() *Selection {
@@ -16,7 +18,7 @@ func Query() *Selection {
 type Selection struct {
 	name  string
 	alias string
-	args  map[string]any
+	args  map[string]*argument
 	bind  interface{}
 
 	prev *Selection
@@ -47,10 +49,12 @@ func (s *Selection) Select(name string) *Selection {
 func (s *Selection) Arg(name string, value any) *Selection {
 	sel := *s
 	if sel.args == nil {
-		sel.args = map[string]any{}
+		sel.args = map[string]*argument{}
 	}
 
-	sel.args[name] = value
+	sel.args[name] = &argument{
+		value: value,
+	}
 	return &sel
 }
 
@@ -60,7 +64,24 @@ func (s *Selection) Bind(v interface{}) *Selection {
 	return &sel
 }
 
-func (s *Selection) Build() string {
+func (s *Selection) marshalArguments(ctx context.Context) error {
+	eg, gctx := errgroup.WithContext(ctx)
+	for _, sel := range s.path() {
+		for _, arg := range sel.args {
+			arg := arg
+			eg.Go(func() error {
+				return arg.marshal(gctx)
+			})
+		}
+	}
+
+	return eg.Wait()
+}
+
+func (s *Selection) build(ctx context.Context) (string, error) {
+	if err := s.marshalArguments(ctx); err != nil {
+		return "", err
+	}
 	fields := []string{
 		"query",
 	}
@@ -68,8 +89,8 @@ func (s *Selection) Build() string {
 		q := sel.name
 		if len(sel.args) > 0 {
 			args := make([]string, 0, len(sel.args))
-			for name, value := range sel.args {
-				args = append(args, fmt.Sprintf("%s:%s", name, MarshalGQL(value)))
+			for name, arg := range sel.args {
+				args = append(args, fmt.Sprintf("%s:%s", name, arg.marshalled))
 			}
 			q += "(" + strings.Join(args, ", ") + ")"
 		}
@@ -80,10 +101,10 @@ func (s *Selection) Build() string {
 	}
 
 	q := strings.Join(fields, "{") + strings.Repeat("}", len(fields)-1)
-	return q
+	return q, nil
 }
 
-func (s *Selection) Unpack(data interface{}) error {
+func (s *Selection) unpack(data interface{}) error {
 	for _, i := range s.path() {
 		k := i.name
 		if i.alias != "" {
@@ -104,10 +125,13 @@ func (s *Selection) Unpack(data interface{}) error {
 }
 
 func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
-	query := s.Build()
+	query, err := s.build(ctx)
+	if err != nil {
+		return err
+	}
 
 	var response any
-	err := c.MakeRequest(ctx,
+	err = c.MakeRequest(ctx,
 		&graphql.Request{
 			Query: query,
 		},
@@ -117,5 +141,19 @@ func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
 		return err
 	}
 
-	return s.Unpack(response)
+	return s.unpack(response)
+}
+
+type argument struct {
+	value      any
+	marshalled string
+	once       sync.Once
+}
+
+func (a *argument) marshal(ctx context.Context) error {
+	var err error
+	a.once.Do(func() {
+		a.marshalled, err = MarshalGQL(ctx, a.value)
+	})
+	return err
 }

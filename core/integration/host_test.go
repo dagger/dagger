@@ -22,13 +22,10 @@ func TestHostWorkdir(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	wdID, err := c.Host().Workdir().ID(ctx)
-	require.NoError(t, err)
-
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", wdID).
+			WithMountedDirectory("/host", c.Host().Workdir()).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -42,7 +39,7 @@ func TestHostWorkdir(t *testing.T) {
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", wdID).
+			WithMountedDirectory("/host", c.Host().Workdir()).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -65,14 +62,13 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	defer c.Close()
 
 	t.Run("exclude", func(t *testing.T) {
-		wdID, err := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
 			Exclude: []string{"*.rar"},
-		}).ID(ctx)
-		require.NoError(t, err)
+		})
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", wdID).
+			WithMountedDirectory("/host", wd).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -81,14 +77,13 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("include", func(t *testing.T) {
-		wdID, err := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
 			Include: []string{"*.rar"},
-		}).ID(ctx)
-		require.NoError(t, err)
+		})
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", wdID).
+			WithMountedDirectory("/host", wd).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -97,15 +92,14 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("exclude overrides include", func(t *testing.T) {
-		wdID, err := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
-		}).ID(ctx)
-		require.NoError(t, err)
+		})
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", wdID).
+			WithMountedDirectory("/host", wd).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -114,15 +108,14 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("include does not override exclude", func(t *testing.T) {
-		wdID, err := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
-		}).ID(ctx)
-		require.NoError(t, err)
+		})
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", wdID).
+			WithMountedDirectory("/host", wd).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -247,10 +240,7 @@ func TestHostDirectoryReadWrite(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	srcID, err := c.Host().Directory(dir1).ID(ctx)
-	require.NoError(t, err)
-
-	exported, err := c.Directory(dagger.DirectoryOpts{ID: srcID}).Export(ctx, dir2)
+	exported, err := c.Host().Directory(dir1).Export(ctx, dir2)
 	require.NoError(t, err)
 	require.True(t, exported)
 
@@ -275,12 +265,9 @@ func TestHostVariable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello", varValue)
 
-	varSecret, err := secret.Secret().ID(ctx)
-	require.NoError(t, err)
-
 	env, err := c.Container().
 		From("alpine:3.16.2").
-		WithSecretVariable("SECRET", varSecret).
+		WithSecretVariable("SECRET", secret.Secret()).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"env"},
 		}).Stdout().Contents(ctx)

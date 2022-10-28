@@ -90,7 +90,7 @@ func main() {
 		})
 
 	t.Run("default Dockerfile location", func(t *testing.T) {
-		srcID, err := contextDir.
+		src := contextDir.
 			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
 				Contents: `FROM golang:1.18.2-alpine
 WORKDIR /src
@@ -100,17 +100,15 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `,
-			}).
-			ID(ctx)
-		require.NoError(t, err)
+			})
 
-		env, err := c.Container().Build(srcID).Exec().Stdout().Contents(ctx)
+		env, err := c.Container().Build(src).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
 	t.Run("custom Dockerfile location", func(t *testing.T) {
-		srcID, err := contextDir.
+		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
 				Contents: `FROM golang:1.18.2-alpine
 WORKDIR /src
@@ -120,11 +118,9 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `,
-			}).
-			ID(ctx)
-		require.NoError(t, err)
+			})
 
-		env, err := c.Container().Build(srcID, dagger.ContainerBuildOpts{
+		env, err := c.Container().Build(src, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
 		}).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -132,7 +128,7 @@ CMD goenv
 	})
 
 	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
-		srcID, err := contextDir.
+		src := contextDir.
 			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
 				Contents: `FROM golang:1.18.2-alpine
 WORKDIR /src
@@ -142,20 +138,17 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `,
-			}).
-			ID(ctx)
-		require.NoError(t, err)
+			})
 
-		subID, err := c.Directory().WithDirectory(srcID, "subcontext").Directory("subcontext").ID(ctx)
-		require.NoError(t, err)
+		sub := c.Directory().WithDirectory(src, "subcontext").Directory("subcontext")
 
-		env, err := c.Container().Build(subID).Exec().Stdout().Contents(ctx)
+		env, err := c.Container().Build(sub).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
 	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
-		srcID, err := contextDir.
+		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
 				Contents: `FROM golang:1.18.2-alpine
 WORKDIR /src
@@ -165,14 +158,11 @@ RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
 `,
-			}).
-			ID(ctx)
-		require.NoError(t, err)
+			})
 
-		subID, err := c.Directory().WithDirectory(srcID, "subcontext").Directory("subcontext").ID(ctx)
-		require.NoError(t, err)
+		sub := c.Directory().WithDirectory(src, "subcontext").Directory("subcontext")
 
-		env, err := c.Container().Build(subID, dagger.ContainerBuildOpts{
+		env, err := c.Container().Build(sub, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
 		}).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -194,9 +184,8 @@ func TestContainerWithFS(t *testing.T) {
 	require.NoError(t, err)
 
 	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
-	dirID, err := alpine316.FS().ID(ctx)
-	require.NoError(t, err)
-	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dirID).Exec(dagger.ContainerExecOpts{
+	dir := alpine316.FS()
+	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dir).Exec(dagger.ContainerExecOpts{
 		Args: []string{
 			"/bin/sh",
 			"-c",
@@ -205,7 +194,6 @@ func TestContainerWithFS(t *testing.T) {
 	}).ExitCode(ctx)
 
 	require.NoError(t, err)
-	require.NotEmpty(t, dirID)
 	require.Equal(t, exitCode, 0)
 
 	alpine315 := c.Container().From("alpine:3.15.6")
@@ -218,7 +206,7 @@ func TestContainerWithFS(t *testing.T) {
 
 	require.Equal(t, varVal, varValResp)
 
-	alpine315ReplacedFS := alpine315WithVar.WithFS(dirID)
+	alpine315ReplacedFS := alpine315WithVar.WithFS(dir)
 
 	varValResp, err = alpine315ReplacedFS.EnvVariable(ctx, "DAGGER_TEST")
 	require.NoError(t, err)
@@ -1594,18 +1582,14 @@ func TestContainerReplacedMounts(t *testing.T) {
 	lower := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
 		Contents: "lower-content",
 	})
-	lowerID, err := lower.ID(ctx)
-	require.NoError(t, err)
 
 	upper := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
 		Contents: "upper-content",
 	})
-	upperID, err := upper.ID(ctx)
-	require.NoError(t, err)
 
 	ctr := c.Container().
 		From("alpine:3.16.2").
-		WithMountedDirectory("/mnt/dir", lowerID)
+		WithMountedDirectory("/mnt/dir", lower)
 
 	t.Run("initial content is lower", func(t *testing.T) {
 		mnts, err := ctr.Mounts(ctx)
@@ -1619,7 +1603,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 		require.Equal(t, "lower-content", out)
 	})
 
-	replaced := ctr.WithMountedDirectory("/mnt/dir", upperID)
+	replaced := ctr.WithMountedDirectory("/mnt/dir", upper)
 
 	t.Run("mounts of same path are replaced", func(t *testing.T) {
 		mnts, err := replaced.Mounts(ctx)
@@ -1643,9 +1627,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	clobberedDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
 		Contents: "clobbered-content",
 	})
-	clobberedID, err := clobberedDir.ID(ctx)
-	require.NoError(t, err)
-	clobbered := replaced.WithMountedDirectory("/mnt", clobberedID)
+	clobbered := replaced.WithMountedDirectory("/mnt", clobberedDir)
 
 	t.Run("replacing parent of a mount clobbers child", func(t *testing.T) {
 		mnts, err := clobbered.Mounts(ctx)
@@ -1662,9 +1644,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	clobberedSubDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
 		Contents: "clobbered-sub-content",
 	})
-	clobberedSubID, err := clobberedSubDir.ID(ctx)
-	require.NoError(t, err)
-	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubID)
+	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubDir)
 
 	t.Run("restoring mount under clobbered mount", func(t *testing.T) {
 		mnts, err := clobberedSub.Mounts(ctx)
@@ -2444,12 +2424,9 @@ func TestContainerMultipleMounts(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0600))
 
-	one, err := c.Host().Directory(dir).File("one").ID(ctx)
-	require.NoError(t, err)
-	two, err := c.Host().Directory(dir).File("two").ID(ctx)
-	require.NoError(t, err)
-	three, err := c.Host().Directory(dir).File("three").ID(ctx)
-	require.NoError(t, err)
+	one := c.Host().Directory(dir).File("one")
+	two := c.Host().Directory(dir).File("two")
+	three := c.Host().Directory(dir).File("three")
 
 	build := c.Container().From("alpine:3.16.2").
 		WithMountedFile("/example/one", one).

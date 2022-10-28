@@ -11,7 +11,8 @@ import (
 var (
 	funcMap = template.FuncMap{
 		"Comment":                comment,
-		"FormatType":             formatType,
+		"FormatInputType":        formatInputType,
+		"FormatOutputType":       formatOutputType,
 		"FormatName":             formatName,
 		"FieldOptionsStructName": fieldOptionsStructName,
 		"FieldFunction":          fieldFunction,
@@ -33,7 +34,17 @@ func comment(s string) string {
 
 // formatType formats a GraphQL type into Go
 // Example: `String` -> `string`
-func formatType(r *introspection.TypeRef) string {
+func formatInputType(r *introspection.TypeRef) string {
+	return formatType(r, true)
+}
+
+func formatOutputType(r *introspection.TypeRef) string {
+	return formatType(r, false)
+}
+
+// formatType formats a GraphQL type into Go
+// Example: `String` -> `string`
+func formatType(r *introspection.TypeRef, input bool) string {
 	var representation string
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
@@ -55,7 +66,21 @@ func formatType(r *introspection.TypeRef) string {
 				return representation
 			default:
 				// Custom scalar
-				representation += ref.Name
+
+				// When used as an input, we're going to use objects rather than ID scalars (e.g. `*Container` rather than `ContainerID`)
+				// FIXME: do this dynamically rather than a hardcoded map.
+				rewrite := map[string]string{
+					"ContainerID": "Container",
+					"FileID":      "File",
+					"DirectoryID": "Directory",
+					"SecretID":    "Secret",
+					"CacheID":     "CacheVolume",
+				}
+				if alias, ok := rewrite[ref.Name]; ok && input {
+					representation += "*" + alias
+				} else {
+					representation += ref.Name
+				}
 				return representation
 			}
 		case introspection.TypeKindObject:
@@ -104,8 +129,16 @@ func fieldFunction(f introspection.Field) string {
 		args = append(args, "ctx context.Context")
 	}
 	for _, arg := range f.Args {
-		if !arg.TypeRef.IsOptional() {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatType(arg.TypeRef)))
+		if arg.TypeRef.IsOptional() {
+			continue
+		}
+
+		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
+		// scalar (DirectoryID) rather than an object (*Directory).
+		if f.ParentObject.Name == "Query" && arg.Name == "id" {
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatOutputType(arg.TypeRef)))
+		} else {
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatInputType(arg.TypeRef)))
 		}
 	}
 	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
@@ -119,9 +152,9 @@ func fieldFunction(f introspection.Field) string {
 
 	retType := ""
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
-		retType = fmt.Sprintf("(%s, error)", formatType(f.TypeRef))
+		retType = fmt.Sprintf("(%s, error)", formatOutputType(f.TypeRef))
 	} else {
-		retType = "*" + formatType(f.TypeRef)
+		retType = "*" + formatOutputType(f.TypeRef)
 	}
 	signature += " " + retType
 

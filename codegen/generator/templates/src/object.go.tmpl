@@ -8,8 +8,12 @@ type {{ .Name | FormatName }} struct {
 // {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
 type {{ $field | FieldOptionsStructName }} struct {
 	{{- range $arg := $field.Args }}
-	{{ if $arg.TypeRef.IsOptional }}
-	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatType }}
+	{{- if $arg.TypeRef.IsOptional }}
+	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
+	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatOutputType }}
+	{{- else }}
+	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatInputType }}
+	{{- end }}
 	{{- end }}
 	{{- end }}
 }
@@ -33,30 +37,30 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{- end }}
 	{{ if $field.TypeRef.IsObject }}
-	return &{{ $field.TypeRef | FormatType }} {
+	return &{{ $field.TypeRef | FormatOutputType }} {
 		q: q,
 		c: r.c,
 	}
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
-	var response {{ $field.TypeRef | FormatType }}
+	var response {{ $field.TypeRef | FormatOutputType }}
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 	{{- end }}
 }
 
 {{ if eq $field.Name "id" }}
-// graphqlType returns the native GraphQL type name
-func (r *{{ $.Name | FormatName }}) graphqlType() string {
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLType() string {
 	return "{{ $.Name }}"
 }
 
-// graphqlMarshal serializes the structure into GraphQL
-func (r *{{ $.Name | FormatName }}) graphqlMarshal(ctx context.Context) (any, error) {
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, error) {
     id, err := r.ID(ctx)
     if err != nil {
-        return nil, err
+        return "", err
     }
-    return map[string]any{"id": id}, nil
+	return string(id), nil
 }
 {{ end }}
 {{ end -}}

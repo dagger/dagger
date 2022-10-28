@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -62,7 +63,9 @@ func TestMarshalGQL(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		require.Equal(t, testCase.expect, MarshalGQL(testCase.v))
+		enc, err := MarshalGQL(context.TODO(), testCase.v)
+		require.NoError(t, err)
+		require.Equal(t, testCase.expect, enc)
 	}
 }
 
@@ -78,7 +81,50 @@ func TestMarshalGQLStruct(t *testing.T) {
 		B: 42,
 	}
 	s.Sub.X = []string{"1"}
-	require.Equal(t, `{a:"test",b:42,sub:{x:["1"]}}`, MarshalGQL(s))
+	enc, err := MarshalGQL(context.TODO(), s)
+	require.NoError(t, err)
+	require.Equal(t, `{a:"test",b:42,sub:{x:["1"]}}`, enc)
+}
+
+type customMarshaller struct {
+	v     string
+	count int
+}
+
+// nolint
+func (m *customMarshaller) XXX_GraphQLType() string { return "idTest" }
+
+// nolint
+func (m *customMarshaller) XXX_GraphQLID(context.Context) (string, error) {
+	m.count++
+	return m.v, nil
+}
+
+var _ GraphQLMarshaller = &customMarshaller{}
+
+func TestCustomMarshaller(t *testing.T) {
+	testCases := []struct {
+		v      any
+		expect string
+	}{
+		{
+			v:      &customMarshaller{v: "custom"},
+			expect: `"custom"`,
+		},
+		{
+			v: []*customMarshaller{
+				{v: "custom1"},
+				{v: "custom2"},
+			},
+			expect: `["custom1","custom2"]`,
+		},
+	}
+
+	for _, testCase := range testCases {
+		enc, err := MarshalGQL(context.TODO(), testCase.v)
+		require.NoError(t, err)
+		require.Equal(t, testCase.expect, enc)
+	}
 }
 
 func TestIsZeroValue(t *testing.T) {
