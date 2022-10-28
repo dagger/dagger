@@ -61,14 +61,11 @@ func ExampleContainer_Build() {
 	}
 	defer client.Close()
 
-	repoID, err := client.Git("https://github.com/dagger/dagger").
+	repo := client.Git("https://github.com/dagger/dagger").
 		Tag("v0.3.0").
-		Tree().ID(ctx)
-	if err != nil {
-		panic(err)
-	}
+		Tree()
 
-	daggerImg := client.Container().Build(repoID)
+	daggerImg := client.Container().Build(repo)
 
 	out, err := daggerImg.Exec(dagger.ContainerExecOpts{
 		Args: []string{"version"},
@@ -123,14 +120,9 @@ func ExampleContainer_WithMountedDirectory() {
 			Contents: "Goodbye, world!",
 		})
 
-	dirID, err := dir.ID(ctx)
-	if err != nil {
-		panic(err)
-	}
-
 	container := client.Container().From("alpine:3.16.2")
 
-	container = container.WithMountedDirectory("/mnt", dirID)
+	container = container.WithMountedDirectory("/mnt", dir)
 
 	out, err := container.Exec(dagger.ContainerExecOpts{
 		Args: []string{"ls", "/mnt"},
@@ -154,14 +146,11 @@ func ExampleContainer_WithMountedCache() {
 
 	cacheKey := "example-" + time.Now().Format(time.RFC3339)
 
-	cacheID, err := client.CacheVolume(cacheKey).ID(ctx)
-	if err != nil {
-		panic(err)
-	}
+	cache := client.CacheVolume(cacheKey)
 
 	container := client.Container().From("alpine:3.16.2")
 
-	container = container.WithMountedCache(cacheID, "/cache")
+	container = container.WithMountedCache(cache, "/cache")
 
 	var out string
 	for i := 0; i < 5; i++ {

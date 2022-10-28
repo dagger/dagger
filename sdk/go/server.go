@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	"dagger.io/dagger/internal/querybuilder"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
@@ -111,12 +112,13 @@ func Serve(server any) {
 	if err != nil {
 		writeErrorf(err)
 	}
-	if serializer, ok := res.(graphqlMarshaller); ok {
-		res, err = serializer.graphqlMarshal(ctx)
+	if serializer, ok := res.(querybuilder.GraphQLMarshaller); ok {
+		id, err := serializer.XXX_GraphQLID(ctx)
 		if err != nil {
 			writeErrorf(err)
 			return
 		}
+		res = map[string]any{"id": id}
 	}
 
 	if err := writeResult(res); err != nil {
@@ -515,10 +517,10 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 	case reflect.Struct:
 		// Handle types that implement the GraphQL serializer
 		// TODO: move this at the top so it works on scalars as well
-		marshaller := reflect.TypeOf((*graphqlMarshaller)(nil)).Elem()
+		marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 		if t.Implements(marshaller) {
 			typ := reflect.New(t)
-			result := typ.MethodByName("graphqlType").Call([]reflect.Value{})
+			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
 			return ast.NonNullNamedType(result[0].String(), nil)
 		}
 
