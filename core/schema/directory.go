@@ -33,7 +33,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"entries":          router.ToResolver(s.entries),
 			"file":             router.ToResolver(s.file),
 			"withNewFile":      router.ToResolver(s.withNewFile),
-			"withCopiedFile":   router.ToResolver(s.withCopiedFile),
+			"withFile":         router.ToResolver(s.withFile),
 			"withoutFile":      router.ToResolver(s.withoutFile),
 			"directory":        router.ToResolver(s.subdirectory),
 			"withDirectory":    router.ToResolver(s.withDirectory),
@@ -102,13 +102,13 @@ func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Director
 	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
 }
 
-type withCopiedFileArgs struct {
+type withFileArgs struct {
 	Path   string
 	Source core.FileID
 }
 
-func (s *directorySchema) withCopiedFile(ctx *router.Context, parent *core.Directory, args withCopiedFileArgs) (*core.Directory, error) {
-	return parent.WithCopiedFile(ctx, args.Path, &core.File{ID: args.Source})
+func (s *directorySchema) withFile(ctx *router.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
+	return parent.WithFile(ctx, args.Path, &core.File{ID: args.Source})
 }
 
 type withoutDirectoryArgs struct {
