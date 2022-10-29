@@ -45,6 +45,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 			projectStates: make(map[string]*project.State),
 		},
 		&httpSchema{base},
+		&platformSchema{base},
 	)
 }
 

@@ -2,8 +2,9 @@ extend type Query {
   """
   Load a container from ID.
   Null ID returns an empty container (scratch).
+  Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
   """
-  container(id: ContainerID, platform: String): Container!
+  container(id: ContainerID, platform: Platform): Container!
 }
 
 "A unique container identifier. Null designates an empty container (scratch)."
