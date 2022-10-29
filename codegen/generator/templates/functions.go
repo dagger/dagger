@@ -55,7 +55,8 @@ func formatType(r *introspection.TypeRef) string {
 				return representation
 			default:
 				// Custom scalar
-				return ref.Name
+				representation += ref.Name
+				return representation
 			}
 		case introspection.TypeKindObject:
 			representation += formatName(ref.Name)
