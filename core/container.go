@@ -988,6 +988,14 @@ func (container *Container) Publish(
 	return ref, nil
 }
 
+func (container *Container) Platform() (specs.Platform, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return specs.Platform{}, err
+	}
+	return payload.Platform, nil
+}
+
 type ContainerExecOpts struct {
 	// Command to run instead of the container's default command
 	Args []string
