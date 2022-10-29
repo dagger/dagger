@@ -62,6 +62,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
 			"publish":              router.ToResolver(s.publish),
+			"platform":             router.ToResolver(s.platform),
 		},
 	}
 }
@@ -76,7 +77,7 @@ type containerArgs struct {
 }
 
 func (s *containerSchema) container(ctx *router.Context, parent any, args containerArgs) (*core.Container, error) {
-	platform := s.platform
+	platform := s.baseSchema.platform
 	if args.Platform != nil {
 		if args.ID != "" {
 			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
@@ -418,4 +419,8 @@ type containerWithMountedSecretArgs struct {
 
 func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
 	return parent.WithMountedSecret(ctx, args.Path, core.NewSecret(args.Source))
+}
+
+func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, args any) (specs.Platform, error) {
+	return parent.Platform()
 }
