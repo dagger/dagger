@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -180,6 +181,8 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	})
 }
 
+const defaultDockerfileName = "Dockerfile"
+
 func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, platform specs.Platform) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -192,8 +195,14 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	}
 
 	opts := map[string]string{
-		"platform": platforms.Format(platform),
-		"filename": dockerfile,
+		"platform":      platforms.Format(platform),
+		"contextsubdir": ctxPayload.Dir,
+	}
+
+	if dockerfile != "" {
+		opts["filename"] = filepath.Join(ctxPayload.Dir, dockerfile)
+	} else {
+		opts["filename"] = filepath.Join(ctxPayload.Dir, defaultDockerfileName)
 	}
 
 	inputs := map[string]*pb.Definition{
