@@ -34,8 +34,8 @@ jobs:
         uses: magefile/mage-action@v2
         with:
           version: latest
-          args: build:dagger
-      - run: cp ./cloak /usr/local/bin
+          args: build
+      - run: cp ./bin/cloak /usr/local/bin
       - run: go test -v ./...
   go-race:
     needs: [go] # prioritize fast feedback + don't bother if tests fail

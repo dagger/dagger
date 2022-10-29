@@ -288,7 +288,9 @@ func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *Fi
 		return nil, err
 	}
 
-	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir)))
+	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
+		CreateDestPath: true,
+	}))
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
