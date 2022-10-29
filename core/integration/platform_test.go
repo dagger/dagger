@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -140,26 +141,28 @@ func TestPlatformCrossCompile(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// pull that image, make sure everything is of the right platform
+	// pull the images, mount them all into a container and ensure the binaries are the right platform
+	ctr := c.Container().From("alpine:3.16").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"apk", "add", "file"},
+		})
+	var cmds []string
 	for platform, uname := range platformToFileArch {
 		pulledDirID, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(testRef).
 			FS().
 			ID(ctx)
 		require.NoError(t, err)
-
-		output, err := c.Container().From("alpine:3.16").
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"apk", "add", "file"},
-			}).
-			WithMountedDirectory("/mnt", pulledDirID).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"file", "/mnt/cloak"},
-			}).
-			Stdout().Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, output, uname)
+		ctr = ctr.WithMountedDirectory("/"+platform, pulledDirID)
+		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | grep '%s'`, platform, uname))
 	}
+	exit, err := ctr.
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", strings.Join(cmds, " && ")},
+		}).
+		ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, exit)
 }
 
 func TestPlatformInvalid(t *testing.T) {
