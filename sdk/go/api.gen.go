@@ -1135,6 +1135,15 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// The default platform of the builder.
+func (r *Query) DefaultPlatform(ctx context.Context) (Platform, error) {
+	q := r.q.Select("defaultPlatform")
+
+	var response Platform
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // DirectoryOpts contains options for Query.Directory
 type DirectoryOpts struct {
 	ID DirectoryID

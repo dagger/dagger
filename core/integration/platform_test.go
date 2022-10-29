@@ -99,7 +99,8 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.NoError(t, err)
 
 	// cross compile the cloak binary for each platform
-	var defaultPlatform string
+	defaultPlatform, err := c.DefaultPlatform(ctx)
+	require.NoError(t, err)
 	variants := make([]dagger.ContainerID, 0, len(platformToFileArch))
 	for platform := range platformToUname {
 		ctr := c.Container().
@@ -115,18 +116,15 @@ func TestPlatformCrossCompile(t *testing.T) {
 				Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
 			})
 
+		// should be running as the default (buildkit host) platform
+		ctrPlatform, err := ctr.Platform(ctx)
+		require.NoError(t, err)
+		require.Equal(t, defaultPlatform, ctrPlatform)
+
 		stdout, err := ctr.Stdout().Contents(ctx)
 		require.NoError(t, err)
 		stdout = strings.TrimSpace(stdout)
-		if defaultPlatform == "" {
-			defaultPlatform = stdout
-		} else {
-			require.Equal(t, defaultPlatform, stdout)
-
-			ctrPlatform, err := ctr.Platform(ctx)
-			require.NoError(t, err)
-			require.Equal(t, defaultPlatform, platformToUname[ctrPlatform])
-		}
+		require.Equal(t, platformToUname[defaultPlatform], stdout)
 
 		dirID, err := ctr.
 			Directory("/out").
@@ -237,3 +235,6 @@ func TestPlatformCacheMounts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exit)
 }
+
+// TODO: test that exec on darwin/windows fails reasonably
+// TODO: test you can cross-compile and local export darwin/windows binaries
