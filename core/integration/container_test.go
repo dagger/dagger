@@ -37,7 +37,6 @@ func TestContainerScratch(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Empty(t, res.Container.ID)
 	require.Empty(t, res.Container.Fs.Entries)
 }
 
