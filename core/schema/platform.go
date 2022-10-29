@@ -25,6 +25,9 @@ func (s *platformSchema) Schema() string {
 
 func (s *platformSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
+		"Query": router.ObjectResolver{
+			"defaultPlatform": router.ToResolver(s.defaultPlatform),
+		},
 		"Platform": router.ScalarResolver{
 			Serialize: func(value any) any {
 				switch v := value.(type) {
@@ -69,4 +72,8 @@ func (s *platformSchema) Resolvers() router.Resolvers {
 
 func (s *platformSchema) Dependencies() []router.ExecutableSchema {
 	return nil
+}
+
+func (s *platformSchema) defaultPlatform(ctx *router.Context, parent, args any) (specs.Platform, error) {
+	return s.baseSchema.platform, nil
 }
