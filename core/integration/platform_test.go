@@ -11,19 +11,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var platformToUname = map[string]string{
+var platformToUname = map[dagger.Platform]string{
 	"linux/amd64": "x86_64",
 	"linux/arm64": "aarch64",
 	"linux/s390x": "s390x",
 }
 
-var platformToFileArch = map[string]string{
+var platformToFileArch = map[dagger.Platform]string{
 	"linux/amd64": "x86-64",
 	"linux/arm64": "aarch64",
 	"linux/s390x": "IBM S/390",
 }
 
-// TODO: speed up test w/ parallelism
 func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -41,6 +40,11 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"uname", "-m"},
 			})
+
+		ctrPlatform, err := ctr.Platform(ctx)
+		require.NoError(t, err)
+		require.Equal(t, platform, ctrPlatform)
+
 		output, err := ctr.Stdout().Contents(ctx)
 		require.NoError(t, err)
 		output = strings.TrimSpace(output)
@@ -88,7 +92,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.NoError(t, err)
 
 	// cross compile the cloak binary for each platform
-	var hostPlatform string
+	var defaultPlatform string
 	variants := make([]dagger.ContainerID, 0, len(platformToFileArch))
 	for platform := range platformToUname {
 		ctr := c.Container().
@@ -96,21 +100,23 @@ func TestPlatformCrossCompile(t *testing.T) {
 			WithMountedDirectory("/src", thisRepo).
 			WithMountedDirectory("/out", "").
 			WithWorkdir("/src").
-			WithEnvVariable("TARGETPLATFORM", platform).
+			WithEnvVariable("TARGETPLATFORM", string(platform)).
 			WithEnvVariable("CGO_ENABLED", "0").
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
 			})
 
-		// TODO: add API for retrieving platform of buildkit host?
-		// TODO: until then, just assert that the platform is at least not changing in this case
 		stdout, err := ctr.Stdout().Contents(ctx)
 		require.NoError(t, err)
 		stdout = strings.TrimSpace(stdout)
-		if hostPlatform == "" {
-			hostPlatform = stdout
+		if defaultPlatform == "" {
+			defaultPlatform = stdout
 		} else {
-			require.Equal(t, hostPlatform, stdout)
+			require.Equal(t, defaultPlatform, stdout)
+
+			ctrPlatform, err := ctr.Platform(ctx)
+			require.NoError(t, err)
+			require.Equal(t, defaultPlatform, platformToUname[ctrPlatform])
 		}
 
 		dirID, err := ctr.
@@ -146,14 +152,14 @@ func TestPlatformCrossCompile(t *testing.T) {
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"apk", "add", "file"},
 		})
-	var cmds []string
+	cmds := make([]string, 0, len(platformToFileArch))
 	for platform, uname := range platformToFileArch {
 		pulledDirID, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(testRef).
 			FS().
 			ID(ctx)
 		require.NoError(t, err)
-		ctr = ctr.WithMountedDirectory("/"+platform, pulledDirID)
+		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDirID)
 		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | grep '%s'`, platform, uname))
 	}
 	exit, err := ctr.
