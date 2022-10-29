@@ -300,58 +300,29 @@ func TestDirectoryWithNewDirectory(t *testing.T) {
 }
 
 func TestDirectoryWithFile(t *testing.T) {
-	var fileRes struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						id
-					}
-				}
-			}
-		}`, &fileRes, nil)
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, fileRes.Directory.WithNewFile.File.ID)
+	defer c.Close()
 
-	var res struct {
-		Directory struct {
-			WithFile struct {
-				File struct {
-					ID       core.DirectoryID
-					Contents string
-				}
-			}
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($src: FileID!) {
-			directory {
-				withFile(path: "target-file", source: $src) {
-					file(path: "target-file") {
-						id
-						contents
-					}
-				}
-			}
-		}`, &res, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": fileRes.Directory.WithNewFile.File.ID,
-			},
-		})
+	fileID, err := c.Directory().
+		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "some-content",
+		}).
+		File("some-file").ID(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithFile.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithFile.File.Contents)
+
+	content, err := c.Directory().
+		WithFile("target-file", fileID).
+		File("target-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", content)
+
+	content, err = c.Directory().
+		WithFile("sub-dir/target-file", fileID).
+		File("sub-dir/target-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", content)
 }
 
 func TestDirectoryWithoutDirectory(t *testing.T) {
