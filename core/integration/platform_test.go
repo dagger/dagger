@@ -10,6 +10,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 var platformToUname = map[dagger.Platform]string{
@@ -75,7 +76,6 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	}
 }
 
-// TODO: speed up test w/ parallelism
 func TestPlatformCrossCompile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -101,40 +101,49 @@ func TestPlatformCrossCompile(t *testing.T) {
 	// cross compile the cloak binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
 	require.NoError(t, err)
-	variants := make([]dagger.ContainerID, 0, len(platformToFileArch))
+	variants := make([]dagger.ContainerID, len(platformToFileArch))
+	i := 0
+	var eg errgroup.Group
 	for platform := range platformToUname {
-		ctr := c.Container().
-			From("crazymax/goxx:latest").
-			WithMountedCache(gomodCache, "/go/pkg/mod").
-			WithMountedCache(gobuildCache, "/root/.cache/go-build").
-			WithMountedDirectory("/src", thisRepo).
-			WithMountedDirectory("/out", "").
-			WithWorkdir("/src").
-			WithEnvVariable("TARGETPLATFORM", string(platform)).
-			WithEnvVariable("CGO_ENABLED", "0").
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
-			})
+		i++
+		i := i - 1
+		platform := platform
+		eg.Go(func() error {
+			ctr := c.Container().
+				From("crazymax/goxx:latest").
+				WithMountedCache(gomodCache, "/go/pkg/mod").
+				WithMountedCache(gobuildCache, "/root/.cache/go-build").
+				WithMountedDirectory("/src", thisRepo).
+				WithMountedDirectory("/out", "").
+				WithWorkdir("/src").
+				WithEnvVariable("TARGETPLATFORM", string(platform)).
+				WithEnvVariable("CGO_ENABLED", "0").
+				Exec(dagger.ContainerExecOpts{
+					Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
+				})
 
-		// should be running as the default (buildkit host) platform
-		ctrPlatform, err := ctr.Platform(ctx)
-		require.NoError(t, err)
-		require.Equal(t, defaultPlatform, ctrPlatform)
+			// should be running as the default (buildkit host) platform
+			ctrPlatform, err := ctr.Platform(ctx)
+			require.NoError(t, err)
+			require.Equal(t, defaultPlatform, ctrPlatform)
 
-		stdout, err := ctr.Stdout().Contents(ctx)
-		require.NoError(t, err)
-		stdout = strings.TrimSpace(stdout)
-		require.Equal(t, platformToUname[defaultPlatform], stdout)
+			stdout, err := ctr.Stdout().Contents(ctx)
+			require.NoError(t, err)
+			stdout = strings.TrimSpace(stdout)
+			require.Equal(t, platformToUname[defaultPlatform], stdout)
 
-		dirID, err := ctr.
-			Directory("/out").
-			ID(ctx)
-		require.NoError(t, err)
+			dirID, err := ctr.
+				Directory("/out").
+				ID(ctx)
+			require.NoError(t, err)
 
-		id, err := c.Container(dagger.ContainerOpts{Platform: platform}).WithFS(dirID).ID(ctx)
-		require.NoError(t, err)
-		variants = append(variants, id)
+			id, err := c.Container(dagger.ContainerOpts{Platform: platform}).WithFS(dirID).ID(ctx)
+			require.NoError(t, err)
+			variants[i] = id
+			return nil
+		})
 	}
+	require.NoError(t, eg.Wait())
 
 	// make sure the binaries for each platform are executable via emulation now
 	for _, id := range variants {
@@ -178,21 +187,9 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.Equal(t, 0, exit)
 }
 
-func TestPlatformInvalid(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx,
-		dagger.WithLogOutput(os.Stdout),
-	)
-	require.NoError(t, err)
-	defer c.Close()
-
-	_, err = c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
-	require.ErrorContains(t, err, "unknown operating system or architecture")
-}
-
 func TestPlatformCacheMounts(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -236,5 +233,39 @@ func TestPlatformCacheMounts(t *testing.T) {
 	require.Equal(t, 0, exit)
 }
 
-// TODO: test that exec on darwin/windows fails reasonably
-// TODO: test you can cross-compile and local export darwin/windows binaries
+func TestPlatformInvalid(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx,
+		dagger.WithLogOutput(os.Stdout),
+	)
+	require.NoError(t, err)
+	defer c.Close()
+
+	_, err = c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
+	require.ErrorContains(t, err, "unknown operating system or architecture")
+}
+
+func TestPlatformWindows(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx,
+		dagger.WithLogOutput(os.Stdout),
+	)
+	require.NoError(t, err)
+	defer c.Close()
+
+	// It's not possible to exec, but we can pull and read files
+	ents, err := c.Container(dagger.ContainerOpts{Platform: "windows/amd64"}).
+		From("mcr.microsoft.com/windows/nanoserver:ltsc2022").
+		FS().
+		Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"License.txt", "ProgramData", "Users", "Windows"}, ents)
+}
