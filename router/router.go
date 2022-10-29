@@ -14,6 +14,7 @@ import (
 
 	"github.com/dagger/dagger/playground"
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/gqlerrors"
 	"github.com/graphql-go/handler"
 )
 
@@ -134,13 +135,27 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
 			msg := "Internal Server Error"
+			code := http.StatusInternalServerError
 			switch v := v.(type) {
 			case error:
 				msg = v.Error()
+				if errors.As(v, &InvalidInputError{}) {
+					// panics can happen on invalid input in scalar serde
+					code = http.StatusBadRequest
+				}
 			case string:
 				msg = v
 			}
-			http.Error(w, msg, http.StatusInternalServerError)
+			res := graphql.Result{
+				Errors: []gqlerrors.FormattedError{
+					gqlerrors.NewFormattedError(msg),
+				},
+			}
+			bytes, err := json.Marshal(res)
+			if err != nil {
+				panic(err)
+			}
+			http.Error(w, string(bytes), code)
 		}
 	}()
 

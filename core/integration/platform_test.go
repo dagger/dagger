@@ -10,7 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestContainerPlatformEmulatedExecAndPush(t *testing.T) {
+var platformToUname = map[string]string{
+	"linux/amd64": "x86_64",
+	"linux/arm64": "aarch64",
+	"linux/s390x": "s390x",
+}
+
+var platformToFileArch = map[string]string{
+	"linux/amd64": "x86-64",
+	"linux/arm64": "aarch64",
+	"linux/s390x": "IBM S/390",
+}
+
+func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -19,12 +31,6 @@ func TestContainerPlatformEmulatedExecAndPush(t *testing.T) {
 	defer c.Close()
 
 	startRegistry(ctx, c, t)
-
-	platformToUname := map[string]string{
-		"linux/amd64": "x86_64",
-		"linux/arm64": "aarch64",
-		"linux/s390x": "s390x",
-	}
 
 	variants := make([]dagger.ContainerID, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -62,7 +68,7 @@ func TestContainerPlatformEmulatedExecAndPush(t *testing.T) {
 	}
 }
 
-func TestContainerPlatformCrossCompile(t *testing.T) {
+func TestPlatformCrossCompile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -78,23 +84,31 @@ func TestContainerPlatformCrossCompile(t *testing.T) {
 	thisRepo, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
-	platformToFileArch := map[string]string{
-		"linux/amd64": "x86-64",
-		"linux/arm64": "aarch64",
-		"linux/s390x": "IBM S/390",
-	}
-
+	var hostPlatform string
 	variants := make([]dagger.ContainerID, 0, len(platformToFileArch))
-	for platform := range platformToFileArch {
-		dirID, err := c.Container().
+	for platform := range platformToUname {
+		ctr := c.Container().
 			From("crazymax/goxx:latest").
 			WithMountedDirectory("/src", thisRepo).
 			WithMountedDirectory("/out", "").
 			WithWorkdir("/src").
 			WithEnvVariable("TARGETPLATFORM", platform).
 			Exec(dagger.ContainerExecOpts{
-				Args: []string{"goxx-go", "build", "-o", "/out/cloak", "/src/cmd/cloak"},
-			}).
+				Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
+			})
+
+		// TODO: add API for retrieving platform of buildkit host?
+		// TODO: until then, just assert that the platform is at least not changing in this case
+		stdout, err := ctr.Stdout().Contents(ctx)
+		require.NoError(t, err)
+		stdout = strings.TrimSpace(stdout)
+		if hostPlatform == "" {
+			hostPlatform = stdout
+		} else {
+			require.Equal(t, hostPlatform, stdout)
+		}
+
+		dirID, err := ctr.
 			Directory("/out").
 			ID(ctx)
 		require.NoError(t, err)
@@ -129,4 +143,18 @@ func TestContainerPlatformCrossCompile(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, output, uname)
 	}
+}
+
+func TestPlatformInvalid(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx,
+		dagger.WithLogOutput(os.Stdout),
+	)
+	require.NoError(t, err)
+	defer c.Close()
+
+	_, err = c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
+	require.ErrorContains(t, err, "unknown operating system or architecture")
 }
