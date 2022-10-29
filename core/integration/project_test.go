@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"dagger.io/dagger"
@@ -14,6 +15,7 @@ func TestExtensionMount(t *testing.T) {
 		ctx,
 		dagger.WithWorkdir("../../"),
 		dagger.WithConfigPath("testdata/extension/dagger.json"),
+		dagger.WithLogOutput(os.Stdout),
 	)
 	require.NoError(t, err)
 	defer c.Close()
@@ -80,6 +82,7 @@ func TestCodeToSchema(t *testing.T) {
 		ctx,
 		dagger.WithWorkdir("../../"),
 		dagger.WithConfigPath("testdata/codetoschema/dagger.json"),
+		dagger.WithLogOutput(os.Stdout),
 	)
 	require.NoError(t, err)
 	defer c.Close()
