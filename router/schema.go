@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/graphql-go/graphql"
 )
@@ -86,19 +87,19 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 		var args A
 		argBytes, err := json.Marshal(p.Args)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to marshal args: %w", err)
 		}
 		if err := json.Unmarshal(argBytes, &args); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to unmarshal args: %w", err)
 		}
 
 		var parent P
 		parentBytes, err := json.Marshal(p.Source)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to marshal parent: %w", err)
 		}
 		if err := json.Unmarshal(parentBytes, &parent); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to unmarshal parent: %w", err)
 		}
 
 		res, err := f(&ctx, parent, args)

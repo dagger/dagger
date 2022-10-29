@@ -5,7 +5,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -73,7 +72,7 @@ func (s *containerSchema) Dependencies() []router.ExecutableSchema {
 
 type containerArgs struct {
 	ID       core.ContainerID
-	Platform *string
+	Platform *specs.Platform
 }
 
 func (s *containerSchema) container(ctx *router.Context, parent any, args containerArgs) (*core.Container, error) {
@@ -82,11 +81,7 @@ func (s *containerSchema) container(ctx *router.Context, parent any, args contai
 		if args.ID != "" {
 			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
 		}
-		var err error
-		platform, err = platforms.Parse(*args.Platform)
-		if err != nil {
-			return nil, err
-		}
+		platform = *args.Platform
 	}
 	return core.NewContainer(args.ID, platform)
 }

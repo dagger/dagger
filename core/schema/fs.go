@@ -25,3 +25,6 @@ var Secret string
 
 //go:embed host.graphqls
 var Host string
+
+//go:embed platform.graphqls
+var Platform string
