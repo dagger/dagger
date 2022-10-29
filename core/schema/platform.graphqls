@@ -1,1 +1,8 @@
 scalar Platform
+
+extend type Query {
+  """
+  The default platform of the builder.
+  """
+  defaultPlatform: Platform!
+}
