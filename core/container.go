@@ -28,6 +28,17 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
+func NewContainer(id ContainerID, platform specs.Platform) (*Container, error) {
+	if id == "" {
+		id, err := (&containerIDPayload{Platform: platform}).Encode()
+		if err != nil {
+			return nil, err
+		}
+		return &Container{ID: id}, nil
+	}
+	return &Container{ID: id}, nil
+}
+
 // ContainerID is an opaque value representing a content-addressed container.
 type ContainerID string
 
@@ -167,7 +178,13 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
-func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string, platform specs.Platform) (*Container, error) {
+func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+	platform := payload.Platform
+
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, err
@@ -193,7 +210,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	ctr, err := container.WithFS(ctx, dir, platform)
+	ctr, err := container.WithFS(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +222,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, platform specs.Platform) (*Container, error) {
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -215,6 +232,8 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	if err != nil {
 		return nil, err
 	}
+
+	platform := payload.Platform
 
 	opts := map[string]string{
 		"platform":      platforms.Format(platform),
@@ -257,7 +276,6 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	}
 
 	payload.FS = def.ToPB()
-	payload.Platform = platform
 
 	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
 	if found {
@@ -289,7 +307,7 @@ func (container *Container) FS(ctx context.Context) (*Directory, error) {
 	}).ToDirectory()
 }
 
-func (container *Container) WithFS(ctx context.Context, dir *Directory, platform specs.Platform) (*Container, error) {
+func (container *Container) WithFS(ctx context.Context, dir *Directory) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -301,7 +319,6 @@ func (container *Container) WithFS(ctx context.Context, dir *Directory, platform
 	}
 
 	payload.FS = dirPayload.LLB
-	payload.Platform = platform
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -844,36 +861,11 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 func (container *Container) Publish(
 	ctx context.Context,
 	ref string,
+	platformVariants []ContainerID,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) (string, error) {
-	payload, err := container.ID.decode()
-	if err != nil {
-		return "", err
-	}
-
-	st, err := payload.FSState()
-	if err != nil {
-		return "", err
-	}
-
-	stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-	if err != nil {
-		return "", err
-	}
-
-	cfgBytes, err := json.Marshal(specs.Image{
-		Architecture: payload.Platform.Architecture,
-		OS:           payload.Platform.OS,
-		OSVersion:    payload.Platform.OSVersion,
-		OSFeatures:   payload.Platform.OSFeatures,
-		Config:       payload.Config,
-	})
-	if err != nil {
-		return "", err
-	}
-
 	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
 	solveOpts.Exports = []bkclient.ExportEntry{
 		{
@@ -888,15 +880,85 @@ func (container *Container) Publish(
 	ch, wg := mirrorCh(solveCh)
 	defer wg.Wait()
 
+	var payloads []*containerIDPayload
+	if container.ID != "" {
+		payload, err := container.ID.decode()
+		if err != nil {
+			return "", err
+		}
+		if payload.FS != nil {
+			payloads = append(payloads, payload)
+		}
+	}
+	for _, id := range platformVariants {
+		payload, err := id.decode()
+		if err != nil {
+			return "", err
+		}
+		if payload.FS != nil {
+			payloads = append(payloads, payload)
+		}
+	}
+
+	if len(payloads) == 0 {
+		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
+		return "", errors.New("no containers to publish")
+	}
+
 	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: stDef.ToPB(),
-		})
+		res := bkgw.NewResult()
+		expPlatforms := &exptypes.Platforms{
+			Platforms: make([]exptypes.Platform, len(payloads)),
+		}
+
+		for i, payload := range payloads {
+			st, err := payload.FSState()
+			if err != nil {
+				return nil, err
+			}
+
+			stDef, err := st.Marshal(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			r, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Definition: stDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := r.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+
+			platformKey := platforms.Format(payload.Platform)
+			res.AddRef(platformKey, ref)
+			expPlatforms.Platforms[i] = exptypes.Platform{
+				ID:       platformKey,
+				Platform: payload.Platform,
+			}
+
+			cfgBytes, err := json.Marshal(specs.Image{
+				Architecture: payload.Platform.Architecture,
+				OS:           payload.Platform.OS,
+				OSVersion:    payload.Platform.OSVersion,
+				OSFeatures:   payload.Platform.OSFeatures,
+				Config:       payload.Config,
+			})
+			if err != nil {
+				return nil, err
+			}
+			res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
+		}
+
+		platformBytes, err := json.Marshal(expPlatforms)
 		if err != nil {
 			return nil, err
 		}
-		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
+
 		return res, nil
 	}, ch)
 	if err != nil {

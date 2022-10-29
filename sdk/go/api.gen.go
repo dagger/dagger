@@ -309,10 +309,22 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// ContainerPublishOpts contains options for Container.Publish
+type ContainerPublishOpts struct {
+	PlatformVariants []ContainerID
+}
+
 // Publish this container as a new image, returning a fully qualified ref
-func (r *Container) Publish(ctx context.Context, address string) (string, error) {
+func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
+	// `platformVariants` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+			break
+		}
+	}
 
 	var response string
 	q = q.Bind(&response)
@@ -1072,6 +1084,8 @@ func (r *Query) CacheVolume(key string) *CacheVolume {
 // ContainerOpts contains options for Query.Container
 type ContainerOpts struct {
 	ID ContainerID
+
+	Platform string
 }
 
 // Load a container from ID.
@@ -1085,6 +1099,13 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 			break
 		}
 	}
+	// `platform` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -1095,6 +1116,8 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 // DirectoryOpts contains options for Query.Directory
 type DirectoryOpts struct {
 	ID DirectoryID
+
+	Platform string
 }
 
 // Load a directory by ID. No argument produces an empty directory.
@@ -1104,6 +1127,13 @@ func (r *Query) Directory(opts ...DirectoryOpts) *Directory {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].ID) {
 			q = q.Arg("id", opts[i].ID)
+			break
+		}
+	}
+	// `platform` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
 			break
 		}
 	}

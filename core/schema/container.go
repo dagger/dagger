@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -71,13 +72,23 @@ func (s *containerSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type containerArgs struct {
-	ID core.ContainerID
+	ID       core.ContainerID
+	Platform *string
 }
 
 func (s *containerSchema) container(ctx *router.Context, parent any, args containerArgs) (*core.Container, error) {
-	return &core.Container{
-		ID: args.ID,
-	}, nil
+	platform := s.platform
+	if args.Platform != nil {
+		if args.ID != "" {
+			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
+		}
+		var err error
+		platform, err = platforms.Parse(*args.Platform)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return core.NewContainer(args.ID, platform)
 }
 
 type containerFromArgs struct {
@@ -85,7 +96,7 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	return parent.From(ctx, s.gw, args.Address, s.platform)
+	return parent.From(ctx, s.gw, args.Address)
 }
 
 type containerBuildArgs struct {
@@ -94,11 +105,11 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, s.platform)
+	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile)
 }
 
 func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
-	ctr, err := parent.WithFS(ctx, &arg, s.platform)
+	ctr, err := parent.WithFS(ctx, &arg)
 	if err != nil {
 		return nil, err
 	}
@@ -316,11 +327,12 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core
 }
 
 type containerPublishArgs struct {
-	Address string
+	Address          string
+	PlatformVariants []core.ContainerID
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, args.Address, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh)
 }
 
 type containerWithMountedFileArgs struct {
