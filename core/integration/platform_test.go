@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,7 +75,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	}
 }
 
-// TODO: speed up test w/ parallelism, cache mount?
+// TODO: speed up test w/ parallelism
 func TestPlatformCrossCompile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,12 +92,20 @@ func TestPlatformCrossCompile(t *testing.T) {
 	thisRepo, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
+	gomodCache, err := c.CacheVolume("gomod").ID(ctx)
+	require.NoError(t, err)
+
+	gobuildCache, err := c.CacheVolume("gobuild").ID(ctx)
+	require.NoError(t, err)
+
 	// cross compile the cloak binary for each platform
 	var defaultPlatform string
 	variants := make([]dagger.ContainerID, 0, len(platformToFileArch))
 	for platform := range platformToUname {
 		ctr := c.Container().
 			From("crazymax/goxx:latest").
+			WithMountedCache(gomodCache, "/go/pkg/mod").
+			WithMountedCache(gobuildCache, "/root/.cache/go-build").
 			WithMountedDirectory("/src", thisRepo).
 			WithMountedDirectory("/out", "").
 			WithWorkdir("/src").
@@ -183,4 +192,48 @@ func TestPlatformInvalid(t *testing.T) {
 
 	_, err = c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
 	require.ErrorContains(t, err, "unknown operating system or architecture")
+}
+
+func TestPlatformCacheMounts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx,
+		dagger.WithLogOutput(os.Stdout),
+	)
+	require.NoError(t, err)
+	defer c.Close()
+
+	randomID := identity.NewID()
+
+	cacheID, err := c.CacheVolume("test-platform-cache-mount").ID(ctx)
+	require.NoError(t, err)
+
+	// make sure cache mounts are inherently platform-agnostic
+	cmds := make([]string, 0, len(platformToUname))
+	for platform := range platformToUname {
+		exit, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From("alpine:3.16").
+			WithMountedCache(cacheID, "/cache").
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"sh", "-x", "-c", strings.Join([]string{
+					"mkdir -p /cache/" + randomID + string(platform),
+					"uname -m > /cache/" + randomID + string(platform) + "/uname",
+				}, " && ")},
+			}).
+			ExitCode(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0, exit)
+		cmds = append(cmds, fmt.Sprintf(`cat /cache/%s%s/uname | grep '%s'`, randomID, platform, platformToUname[platform]))
+	}
+
+	exit, err := c.Container().
+		From("alpine:3.16").
+		WithMountedCache(cacheID, "/cache").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-x", "-c", strings.Join(cmds, " && ")},
+		}).
+		ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, exit)
 }
