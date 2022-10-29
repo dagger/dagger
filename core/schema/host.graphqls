@@ -6,10 +6,10 @@ extend type Query {
 "Information about the host execution environment"
 type Host {
   "The current working directory on the host"
-  workdir: Directory!
+  workdir(exclude: [String!], include: [String!]): Directory!
 
   "Access a directory on the host"
-  directory(path: String!): Directory!
+  directory(path: String!, exclude: [String!], include: [String!]): Directory!
 
   "Lookup the value of an environment variable. Null if the variable is not available."
   envVariable(name: String!): HostVariable

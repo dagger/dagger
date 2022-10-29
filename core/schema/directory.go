@@ -69,10 +69,12 @@ func (s *directorySchema) subdirectory(ctx *router.Context, parent *core.Directo
 type withDirectoryArgs struct {
 	Path      string
 	Directory core.DirectoryID
+
+	core.CopyFilter
 }
 
 func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
-	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory})
+	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
 }
 
 type entriesArgs struct {

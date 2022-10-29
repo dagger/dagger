@@ -3,6 +3,7 @@ package core
 import (
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
@@ -181,69 +182,99 @@ func TestDirectoryDirectoryWithNewFile(t *testing.T) {
 func TestDirectoryWithDirectory(t *testing.T) {
 	t.Parallel()
 
-	var res struct {
-		Directory struct {
-			WithNewFile struct {
-				WithNewFile struct {
-					Directory struct {
-						ID core.DirectoryID
-					}
-				}
-			}
-		}
-	}
+	c, ctx := connect(t)
+	defer c.Close()
 
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					withNewFile(path: "some-dir/sub-file", contents: "some-content") {
-						directory(path: "some-dir") {
-							id
-						}
-					}
-				}
-			}
-		}`, &res, nil)
+	dirID, err := c.Directory().
+		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "some-content",
+		}).
+		WithNewFile("some-dir/sub-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "sub-content",
+		}).
+		Directory("some-dir").ID(ctx)
 	require.NoError(t, err)
 
-	var res2 struct {
-		Directory struct {
-			WithDirectory struct {
-				Entries []string
-			}
-		}
-	}
-
-	err = testutil.Query(
-		`query Test($src: DirectoryID!) {
-			directory {
-				withDirectory(path: "with-dir", directory: $src) {
-					entries(path: "with-dir")
-				}
-			}
-		}`, &res2, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": res.Directory.WithNewFile.WithNewFile.Directory.ID,
-			},
-		})
+	entries, err := c.Directory().WithDirectory(dirID, "with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
+		Path: "with-dir",
+	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Entries)
+	require.Equal(t, []string{"sub-file"}, entries)
 
-	err = testutil.Query(
-		`query Test($src: DirectoryID!) {
-			directory {
-				withDirectory(path: "sub-dir/sub-sub-dir/with-dir", directory: $src) {
-					entries(path: "sub-dir/sub-sub-dir/with-dir")
-				}
-			}
-		}`, &res2, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": res.Directory.WithNewFile.WithNewFile.Directory.ID,
-			},
-		})
+	entries, err = c.Directory().WithDirectory(dirID, "sub-dir/sub-sub-dir/with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
+		Path: "sub-dir/sub-sub-dir/with-dir",
+	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, res2.Directory.WithDirectory.Entries)
+	require.Equal(t, []string{"sub-file"}, entries)
+
+	t.Run("copies directory contents to .", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(dirID, ".").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sub-file"}, entries)
+	})
+}
+
+func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	dir := c.Directory().
+		WithNewFile("a.txt").
+		WithNewFile("b.txt").
+		WithNewFile("c.txt.rar").
+		WithNewFile("subdir/d.txt").
+		WithNewFile("subdir/e.txt").
+		WithNewFile("subdir/f.txt.rar")
+
+	dirID, err := dir.ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("exclude", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
+	})
+
+	t.Run("include", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+			Include: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"c.txt.rar"}, entries)
+	})
+
+	t.Run("exclude overrides include", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+			Include: []string{"*.txt"},
+			Exclude: []string{"b.txt"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt"}, entries)
+	})
+
+	t.Run("include does not override exclude", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+			Include: []string{"a.txt"},
+			Exclude: []string{"*.txt"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{}, entries)
+	})
+
+	subdirID, err := dir.Directory("subdir").ID(ctx)
+	require.NoError(t, err)
+
+	t.Run("exclude respects subdir", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(subdirID, ".", dagger.DirectoryWithDirectoryOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
+	})
 }
 
 func TestDirectoryWithCopiedFile(t *testing.T) {

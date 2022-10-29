@@ -234,7 +234,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}).ToFile()
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory) (*Directory, error) {
+func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -256,7 +256,10 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 	}
 
 	st = st.File(llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
-		CreateDestPath: true,
+		CreateDestPath:      true,
+		CopyDirContentsOnly: true,
+		IncludePatterns:     filter.Include,
+		ExcludePatterns:     filter.Exclude,
 	}))
 
 	err = destPayload.SetState(ctx, st)
