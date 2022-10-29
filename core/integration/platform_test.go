@@ -22,6 +22,7 @@ var platformToFileArch = map[string]string{
 	"linux/s390x": "IBM S/390",
 }
 
+// TODO: speed up test w/ parallelism
 func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -68,6 +69,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	}
 }
 
+// TODO: speed up test w/ parallelism, cache mount?
 func TestPlatformCrossCompile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -84,6 +86,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	thisRepo, err := c.Host().Workdir().ID(ctx)
 	require.NoError(t, err)
 
+	// cross compile the cloak binary for each platform
 	var hostPlatform string
 	variants := make([]dagger.ContainerID, 0, len(platformToFileArch))
 	for platform := range platformToUname {
@@ -93,6 +96,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 			WithMountedDirectory("/out", "").
 			WithWorkdir("/src").
 			WithEnvVariable("TARGETPLATFORM", platform).
+			WithEnvVariable("CGO_ENABLED", "0").
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
 			})
@@ -118,12 +122,25 @@ func TestPlatformCrossCompile(t *testing.T) {
 		variants = append(variants, id)
 	}
 
+	// make sure the binaries for each platform are executable via emulation now
+	for _, id := range variants {
+		exit, err := c.Container(dagger.ContainerOpts{ID: id}).
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"/cloak", "version"},
+			}).
+			ExitCode(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0, exit)
+	}
+
+	// push a multiplatform image
 	testRef := "127.0.0.1:5000/testmultiplatimagepush:latest"
 	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
 
+	// pull that image, make sure everything is of the right platform
 	for platform, uname := range platformToFileArch {
 		pulledDirID, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(testRef).
