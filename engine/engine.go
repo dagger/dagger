@@ -105,81 +105,74 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
 
-	_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		// Secret store is a circular dependency, since it needs to resolve
-		// SecretIDs using the gateway, we don't have a gateway until we call
-		// Build, which needs SolveOpts, which needs to contain the secret store.
-		//
-		// Thankfully we can just yeet the gateway into the store.
-		secretStore.SetGateway(gw)
+	eg, ctx := errgroup.WithContext(ctx)
 
-		coreAPI, err := schema.New(schema.InitializeArgs{
-			Router:        router,
-			SSHAuthSockID: sshAuthSockID,
-			Workdir:       startOpts.Workdir,
-			Gateway:       gw,
-			BKClient:      c,
-			SolveOpts:     solveOpts,
-			SolveCh:       startOpts.RawBuildkitStatus,
-			Platform:      *platform,
-			DisableHostRW: startOpts.DisableHostRW,
+	if startOpts.RawBuildkitStatus == nil && startOpts.LogOutput != nil {
+		ch := make(chan *bkclient.SolveStatus)
+		startOpts.RawBuildkitStatus = ch
+
+		eg.Go(func() error {
+			w := startOpts.LogOutput
+			if w == nil {
+				w = io.Discard
+			}
+
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
+			for _, w := range warn {
+				fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
+			}
+			return err
 		})
-		if err != nil {
-			return nil, err
-		}
-		if err := router.Add(coreAPI); err != nil {
-			return nil, err
-		}
+	}
 
-		if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-			_, err = installExtensions(
-				ctx,
-				router,
-				startOpts.ConfigPath,
-			)
+	eg.Go(func() error {
+		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+			// Secret store is a circular dependency, since it needs to resolve
+			// SecretIDs using the gateway, we don't have a gateway until we call
+			// Build, which needs SolveOpts, which needs to contain the secret store.
+			//
+			// Thankfully we can just yeet the gateway into the store.
+			secretStore.SetGateway(gw)
+
+			coreAPI, err := schema.New(schema.InitializeArgs{
+				Router:        router,
+				SSHAuthSockID: sshAuthSockID,
+				Workdir:       startOpts.Workdir,
+				Gateway:       gw,
+				BKClient:      c,
+				SolveOpts:     solveOpts,
+				SolveCh:       startOpts.RawBuildkitStatus,
+				Platform:      *platform,
+				DisableHostRW: startOpts.DisableHostRW,
+			})
 			if err != nil {
 				return nil, err
 			}
-		}
+			if err := router.Add(coreAPI); err != nil {
+				return nil, err
+			}
 
-		if fn == nil {
-			return nil, nil
-		}
+			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
+				_, err = installExtensions(
+					ctx,
+					router,
+					startOpts.ConfigPath,
+				)
+				if err != nil {
+					return nil, err
+				}
+			}
 
-		if err := fn(ctx, router); err != nil {
-			return nil, err
-		}
+			if fn == nil {
+				return nil, nil
+			}
 
-		return bkgw.NewResult(), nil
-	}, startOpts.RawBuildkitStatus)
+			if err := fn(ctx, router); err != nil {
+				return nil, err
+			}
 
-	return err
-}
-
-func StartAndDisplay(ctx context.Context, startOpts *Config, fn StartCallback) error {
-	if startOpts == nil {
-		startOpts = &Config{}
-	}
-
-	ch := make(chan *bkclient.SolveStatus)
-	startOpts.RawBuildkitStatus = ch
-
-	eg, ctx := errgroup.WithContext(ctx)
-
-	eg.Go(func() error {
-		return Start(ctx, startOpts, fn)
-	})
-
-	eg.Go(func() error {
-		w := startOpts.LogOutput
-		if w == nil {
-			w = io.Discard
-		}
-
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
-		for _, w := range warn {
-			fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
-		}
+			return bkgw.NewResult(), nil
+		}, startOpts.RawBuildkitStatus)
 		return err
 	})
 
