@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -2444,4 +2446,38 @@ func TestContainerPublish(t *testing.T) {
 		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.16.2\n")
+}
+
+func TestContainerMultipleMounts(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0600))
+
+	one, err := c.Host().Directory(dir).File("one").ID(ctx)
+	require.NoError(t, err)
+	two, err := c.Host().Directory(dir).File("two").ID(ctx)
+	require.NoError(t, err)
+	three, err := c.Host().Directory(dir).File("three").ID(ctx)
+	require.NoError(t, err)
+
+	build := c.Container().From("alpine:3.16.2").
+		WithMountedFile("/example/one", one).
+		WithMountedFile("/example/two", two).
+		WithMountedFile("/example/three", three)
+
+	build = build.Exec(dagger.ContainerExecOpts{
+		Args: []string{"ls", "/example/one", "/example/two", "/example/three"},
+	})
+
+	build = build.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "/example/one", "/example/two", "/example/three"},
+	})
+
+	out, err := build.Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "123", out)
 }
