@@ -1586,7 +1586,7 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Mounts)
 }
 
-func TestContainerStackedMounts(t *testing.T) {
+func TestContainerReplacedMounts(t *testing.T) {
 	t.Parallel()
 
 	dirRes := struct {
@@ -1636,11 +1636,6 @@ func TestContainerStackedMounts(t *testing.T) {
 								}
 								WithoutMount struct {
 									Mounts []string
-									Exec   struct {
-										Stdout struct {
-											Contents string
-										}
-									}
 								}
 							}
 						}
@@ -1667,11 +1662,6 @@ func TestContainerStackedMounts(t *testing.T) {
 									}
 									withoutMount(path: "/mnt/dir") {
 										mounts
-										exec(args: ["cat", "/mnt/dir/some-file"]) {
-											stdout {
-												contents
-											}
-										}
 									}
 								}
 							}
@@ -1686,10 +1676,9 @@ func TestContainerStackedMounts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Mounts)
 	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
-	require.Equal(t, []string{"/mnt/dir", "/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Mounts)
+	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Mounts)
 	require.Equal(t, "upper-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.Stdout.Contents)
-	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Mounts)
-	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
+	require.Equal(t, []string{}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Mounts)
 }
 
 func TestContainerDirectory(t *testing.T) {
