@@ -54,7 +54,7 @@ type containerIDPayload struct {
 	Config specs.ImageConfig `json:"cfg"`
 
 	// Mount points configured for the container.
-	Mounts []ContainerMount `json:"mounts,omitempty"`
+	Mounts ContainerMounts `json:"mounts,omitempty"`
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition `json:"meta,omitempty"`
@@ -143,6 +143,27 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 	}
 
 	return defToState(mnt.Source)
+}
+
+type ContainerMounts []ContainerMount
+
+func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
+	mntsCp := make(ContainerMounts, len(mnts))
+	copy(mntsCp, mnts)
+
+	var replaced bool
+	for i, mnt := range mntsCp {
+		if mnt.Target == newMnt.Target {
+			mntsCp[i] = newMnt
+			replaced = true
+		}
+	}
+
+	if !replaced {
+		mntsCp = append(mntsCp, newMnt)
+	}
+
+	return mntsCp
 }
 
 func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string, platform specs.Platform) (*Container, error) {
@@ -336,7 +357,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		mount.SourcePath = srcPayload.Dir
 	}
 
-	payload.Mounts = append(payload.Mounts, mount)
+	payload.Mounts = payload.Mounts.With(mount)
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -354,7 +375,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 
 	target = absPath(payload.Config.WorkingDir, target)
 
-	payload.Mounts = append(payload.Mounts, ContainerMount{
+	payload.Mounts = payload.Mounts.With(ContainerMount{
 		Target: target,
 		Tmpfs:  true,
 	})
@@ -566,7 +587,7 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 
 	target = absPath(payload.Config.WorkingDir, target)
 
-	payload.Mounts = append(payload.Mounts, ContainerMount{
+	payload.Mounts = payload.Mounts.With(ContainerMount{
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
@@ -702,8 +723,6 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
-	execSt := fsSt.Run(runOpts...)
-
 	for _, mnt := range mounts {
 		srcSt, err := mnt.SourceState()
 		if err != nil {
@@ -735,20 +754,23 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 			mountOpts = append(mountOpts, llb.Tmpfs())
 		}
 
-		execSt.AddMount(mnt.Target, srcSt, mountOpts...)
+		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
+
+	execSt := fsSt.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
+	payload.FS = execDef.ToPB()
+
 	metaDef, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, fmt.Errorf("get meta mount: %w", err)
 	}
 
-	payload.FS = execDef.ToPB()
 	payload.Meta = metaDef.ToPB()
 
 	for i, mnt := range mounts {
