@@ -622,7 +622,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts, defaultPlatform specs.Platform) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -632,7 +632,14 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	mounts := payload.Mounts
 	platform := payload.Platform
 
-	shimSt, err := shim.Build(ctx, gw, platform)
+	var includeWasmShim bool
+	if platform.Architecture == "wasm32" {
+		// reset to use the host platform, shim execs the wasm
+		platform = defaultPlatform
+		includeWasmShim = true
+	}
+
+	shimSt, err := shim.Build(ctx, gw, platform, includeWasmShim)
 	if err != nil {
 		return nil, fmt.Errorf("build shim: %w", err)
 	}
@@ -651,8 +658,37 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	runOpts := []llb.RunOption{
 		// run the command via the shim, hide shim behind custom name
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
-		llb.Args(append([]string{shim.Path}, args...)),
 		llb.WithCustomName(strings.Join(args, " ")),
+	}
+
+	if payload.Platform.Architecture == "wasm32" {
+		runOpts = append(runOpts,
+			llb.AddMount(shim.WasmPath, shimSt, llb.SourcePath(shim.WasmPath)),
+		)
+
+		wasmArgs := []string{
+			shim.Path,
+			shim.WasmPath,
+			"--wasm-features", "all",
+			"--wasi-modules", "wasi-common",
+		}
+		for _, mnt := range mounts {
+			// FIXME:(sipsma) you can't mount individual files into a wasm container.
+			// Very dumb workaround is to skip mounts that have source paths (which also
+			// catches many directory mounts)
+			if mnt.SourcePath != "" {
+				continue
+			}
+			wasmArgs = append(wasmArgs, "--dir", mnt.Target)
+		}
+		for _, env := range cfg.Env {
+			wasmArgs = append(wasmArgs, "--env", env)
+		}
+		wasmArgs = append(wasmArgs, args...)
+		runOpts = append(runOpts, llb.Args(wasmArgs))
+		// runOpts = append(runOpts, llb.Args([]string{shim.WasmPath, "help", "run"}))
+	} else {
+		runOpts = append(runOpts, llb.Args(append([]string{shim.Path}, args...)))
 	}
 
 	// because the shim might run as non-root, we need to make a world-writable

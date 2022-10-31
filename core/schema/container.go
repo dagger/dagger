@@ -122,7 +122,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, args.ContainerExecOpts)
+	return parent.Exec(ctx, s.gw, args.ContainerExecOpts, s.baseSchema.platform)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
