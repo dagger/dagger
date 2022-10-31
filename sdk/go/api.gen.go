@@ -757,6 +757,16 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Write the contents of the file to a file or directory path on the host
+func (r *File) Export(ctx context.Context, path string) (bool, error) {
+	q := r.q.Select("export")
+	q = q.Arg("path", path)
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // The content-addressed identifier of the file
 func (r *File) ID(ctx context.Context) (FileID, error) {
 	q := r.q.Select("id")
