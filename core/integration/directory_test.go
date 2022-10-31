@@ -297,6 +297,11 @@ func TestDirectoryWithNewDirectory(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"c"}, entries)
+
+	t.Run("does not permit creating directory outside of root", func(t *testing.T) {
+		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
+		require.Error(t, err)
+	})
 }
 
 func TestDirectoryWithFile(t *testing.T) {
