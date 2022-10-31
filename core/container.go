@@ -148,20 +148,21 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 type ContainerMounts []ContainerMount
 
 func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
-	mntsCp := make(ContainerMounts, len(mnts))
-	copy(mntsCp, mnts)
+	mntsCp := make(ContainerMounts, 0, len(mnts))
 
-	var replaced bool
-	for i, mnt := range mntsCp {
-		if mnt.Target == newMnt.Target {
-			mntsCp[i] = newMnt
-			replaced = true
+	// NB: this / might need to change on Windows, but I'm not even sure how
+	// mounts work on Windows, so...
+	parent := newMnt.Target + "/"
+
+	for _, mnt := range mnts {
+		if mnt.Target == newMnt.Target || strings.HasPrefix(mnt.Target, parent) {
+			continue
 		}
+
+		mntsCp = append(mntsCp, mnt)
 	}
 
-	if !replaced {
-		mntsCp = append(mntsCp, newMnt)
-	}
+	mntsCp = append(mntsCp, newMnt)
 
 	return mntsCp
 }
