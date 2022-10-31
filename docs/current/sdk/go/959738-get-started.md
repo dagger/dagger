@@ -79,7 +79,7 @@ This tool imports the Dagger SDK and defines two functions: `main()`, which prov
 
 The `main()` function accepts a git repo url as an argument. This is a Go repo that the tool will build in the following steps.
 
-The `build()` function currently just creates a dagger client with `dagger.Connect()`. In the next steps, this will provide the interface for executing commands against the Dagger engine.
+The `build()` function currently just creates a dagger client with [dagger.Connect()](https://pkg.go.dev/dagger.io/dagger#Connect). In the next steps, this will provide the interface for executing commands against the Dagger engine.
 
 1. Install the Dagger Go SDK
 
