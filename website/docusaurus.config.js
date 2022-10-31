@@ -1,5 +1,4 @@
 const path = require("path");
-const mdxMermaid = require("mdx-mermaid");
 
 async function createConfig() {
   const remarkCodeImport = (await import('remark-code-import')).codeImport;
@@ -92,6 +91,10 @@ async function createConfig() {
         config: {}
       }
     },
+    markdown: {
+      mermaid: true,
+    },
+    themes: ['@docusaurus/theme-mermaid'],
     presets: [
       [
         "@docusaurus/preset-classic",
@@ -104,7 +107,6 @@ async function createConfig() {
             routeBasePath: "/",
             remarkPlugins: [
               [remarkCodeImport, {allowImportingFromOutside: true}],
-              mdxMermaid
             ]
           },
           gtag: {
