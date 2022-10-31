@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"strings"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -274,6 +275,11 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
+	}
+
+	dest = path.Clean(dest)
+	if strings.HasPrefix(dest, "../") {
+		return nil, fmt.Errorf("cannot create directory outside parent: %s", dest)
 	}
 
 	// be sure to create the file under the working directory
