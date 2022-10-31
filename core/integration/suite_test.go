@@ -195,9 +195,9 @@ func ls(dir string) ([]string, error) {
 		return nil, err
 	}
 
-	var names []string
-	for _, ent := range ents {
-		names = append(names, ent.Name())
+	names := make([]string, len(ents))
+	for i, ent := range ents {
+		names[i] = ent.Name()
 	}
 	return names, nil
 }
