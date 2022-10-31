@@ -1589,96 +1589,95 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 func TestContainerReplacedMounts(t *testing.T) {
 	t.Parallel()
 
-	dirRes := struct {
-		Directory struct {
-			WithNewFile struct {
-				ID string
-			}
-		}
-	}{}
+	c, ctx := connect(t)
+	defer c.Close()
 
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "lower-content") {
-					id
-				}
-			}
-		}`, &dirRes, nil)
+	lower := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+		Contents: "lower-content",
+	})
+	lowerID, err := lower.ID(ctx)
 	require.NoError(t, err)
-	lowerID := dirRes.Directory.WithNewFile.ID
 
-	err = testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "upper-content") {
-					id
-				}
-			}
-		}`, &dirRes, nil)
+	upper := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+		Contents: "upper-content",
+	})
+	upperID, err := upper.ID(ctx)
 	require.NoError(t, err)
-	upperID := dirRes.Directory.WithNewFile.ID
 
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithMountedDirectory struct {
-					Mounts []string
-					Exec   struct {
-						Stdout struct {
-							Contents string
-						}
-						WithMountedDirectory struct {
-							Mounts []string
-							Exec   struct {
-								Stdout struct {
-									Contents string
-								}
-								WithoutMount struct {
-									Mounts []string
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}{}
-	err = testutil.Query(
-		`query Test($lower: DirectoryID!, $upper: DirectoryID!) {
-			container {
-				from(address: "alpine:3.16.2") {
-					withMountedDirectory(path: "/mnt/dir", source: $lower) {
-						mounts
-						exec(args: ["cat", "/mnt/dir/some-file"]) {
-							stdout {
-								contents
-							}
-							withMountedDirectory(path: "/mnt/dir", source: $upper) {
-								mounts
-								exec(args: ["cat", "/mnt/dir/some-file"]) {
-									stdout {
-										contents
-									}
-									withoutMount(path: "/mnt/dir") {
-										mounts
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
-			"lower": lowerID,
-			"upper": upperID,
-		}})
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithMountedDirectory("/mnt/dir", lowerID)
+
+	t.Run("initial content is lower", func(t *testing.T) {
+		mnts, err := ctr.Mounts(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"/mnt/dir"}, mnts)
+
+		out, err := ctr.Exec(dagger.ContainerExecOpts{
+			Args: []string{"cat", "/mnt/dir/some-file"},
+		}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "lower-content", out)
+	})
+
+	replaced := ctr.WithMountedDirectory("/mnt/dir", upperID)
+
+	t.Run("mounts of same path are replaced", func(t *testing.T) {
+		mnts, err := replaced.Mounts(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"/mnt/dir"}, mnts)
+
+		out, err := replaced.Exec(dagger.ContainerExecOpts{
+			Args: []string{"cat", "/mnt/dir/some-file"},
+		}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "upper-content", out)
+	})
+
+	t.Run("removing a replaced mount does not reveal previous mount", func(t *testing.T) {
+		removed := replaced.WithoutMount("/mnt/dir")
+		mnts, err := removed.Mounts(ctx)
+		require.NoError(t, err)
+		require.Empty(t, mnts)
+	})
+
+	clobberedDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+		Contents: "clobbered-content",
+	})
+	clobberedID, err := clobberedDir.ID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Mounts)
-	require.Equal(t, "lower-content", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
-	require.Equal(t, []string{"/mnt/dir"}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Mounts)
-	require.Equal(t, "upper-content", execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.Stdout.Contents)
-	require.Equal(t, []string{}, execRes.Container.From.WithMountedDirectory.Exec.WithMountedDirectory.Exec.WithoutMount.Mounts)
+	clobbered := replaced.WithMountedDirectory("/mnt", clobberedID)
+
+	t.Run("replacing parent of a mount clobbers child", func(t *testing.T) {
+		mnts, err := clobbered.Mounts(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"/mnt"}, mnts)
+
+		out, err := clobbered.Exec(dagger.ContainerExecOpts{
+			Args: []string{"cat", "/mnt/some-file"},
+		}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "clobbered-content", out)
+	})
+
+	clobberedSubDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+		Contents: "clobbered-sub-content",
+	})
+	clobberedSubID, err := clobberedSubDir.ID(ctx)
+	require.NoError(t, err)
+	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubID)
+
+	t.Run("restoring mount under clobbered mount", func(t *testing.T) {
+		mnts, err := clobberedSub.Mounts(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"/mnt", "/mnt/dir"}, mnts)
+
+		out, err := clobberedSub.Exec(dagger.ContainerExecOpts{
+			Args: []string{"cat", "/mnt/dir/some-file"},
+		}).Stdout().Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "clobbered-sub-content", out)
+	})
 }
 
 func TestContainerDirectory(t *testing.T) {
