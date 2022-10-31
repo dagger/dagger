@@ -8,12 +8,12 @@ require (
 	dagger.io/dagger v0.3.0-alpha.4
 	github.com/bhoriuchi/graphql-go-tools v1.0.0
 	github.com/containerd/containerd v1.6.9
-	github.com/docker/cli v20.10.17+incompatible
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/go-openapi/runtime v0.24.2
 	github.com/gofrs/flock v0.8.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/go-cmp v0.5.9
+	github.com/goyek/goyek/v2 v2.0.0-rc.8
 	github.com/graphql-go/graphql v0.8.0
 	github.com/graphql-go/handler v0.2.3
 	github.com/magefile/mage v1.14.0
@@ -52,6 +52,7 @@ require (
 	github.com/containerd/ttrpc v1.1.0 // indirect
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/docker/cli v20.10.17+incompatible // indirect
 	github.com/docker/docker v20.10.17+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.6.4 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
