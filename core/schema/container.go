@@ -12,6 +12,8 @@ import (
 
 type containerSchema struct {
 	*baseSchema
+
+	host *core.Host
 }
 
 var _ router.ExecutableSchema = &containerSchema{}
@@ -431,7 +433,7 @@ type containerExportArgs struct {
 }
 
 func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.rootSession, args.Path); err != nil {
+	if err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh); err != nil {
 		return false, err
 	}
 

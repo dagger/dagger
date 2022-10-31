@@ -428,7 +428,10 @@ func (dir *Directory) Export(
 		return err
 	}
 
-	return host.Export(ctx, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	return host.Export(ctx, bkclient.ExportEntry{
+		Type:      bkclient.ExporterLocal,
+		OutputDir: dest,
+	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		src, err := srcPayload.State()
 		if err != nil {
 			return nil, err

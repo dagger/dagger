@@ -2460,7 +2460,7 @@ func TestContainerExport(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "image.tar")
 
-	ok, err := c.Core().Container().From("alpine:3.16.2").Export(ctx, dest)
+	ok, err := c.Container().From("alpine:3.16.2").Export(ctx, dest)
 	require.NoError(t, err)
 	require.True(t, ok)
 
