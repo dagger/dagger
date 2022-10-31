@@ -36,6 +36,10 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
+
+	// WARNING: this is currently exposed directly but will be removed or
+	// replaced with something incompatible in the future.
+	RawBuildkitStatus chan *bkclient.SolveStatus
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -93,7 +97,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(os.Stderr),
+			authprovider.NewDockerAuthProvider(startOpts.LogOutput),
 		},
 	}
 
@@ -101,11 +105,28 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
 
-	ch := make(chan *bkclient.SolveStatus)
 	eg, ctx := errgroup.WithContext(ctx)
+
+	if startOpts.RawBuildkitStatus == nil && startOpts.LogOutput != nil {
+		ch := make(chan *bkclient.SolveStatus)
+		startOpts.RawBuildkitStatus = ch
+
+		eg.Go(func() error {
+			w := startOpts.LogOutput
+			if w == nil {
+				w = io.Discard
+			}
+
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
+			for _, w := range warn {
+				fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
+			}
+			return err
+		})
+	}
+
 	eg.Go(func() error {
-		var err error
-		_, err = c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve
 			// SecretIDs using the gateway, we don't have a gateway until we call
 			// Build, which needs SolveOpts, which needs to contain the secret store.
@@ -120,7 +141,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				Gateway:       gw,
 				BKClient:      c,
 				SolveOpts:     solveOpts,
-				SolveCh:       ch,
+				SolveCh:       startOpts.RawBuildkitStatus,
 				Platform:      *platform,
 				DisableHostRW: startOpts.DisableHostRW,
 			})
@@ -151,25 +172,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			}
 
 			return bkgw.NewResult(), nil
-		}, ch)
+		}, startOpts.RawBuildkitStatus)
 		return err
 	})
-	eg.Go(func() error {
-		w := startOpts.LogOutput
-		if w == nil {
-			w = io.Discard
-		}
 
-		warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
-		for _, w := range warn {
-			fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
-		}
-		return err
-	})
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-	return nil
+	return eg.Wait()
 }
 
 func NormalizePaths(workdir, configPath string) (string, string, error) {
