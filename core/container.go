@@ -998,7 +998,14 @@ func (container *Container) Platform() (specs.Platform, error) {
 	return payload.Platform, nil
 }
 
-func (container *Container) Export(ctx context.Context, session *Session, dest string) error {
+func (container *Container) Export(
+	ctx context.Context,
+	host *Host,
+	dest string,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) error {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return err
@@ -1032,12 +1039,12 @@ func (container *Container) Export(ctx context.Context, session *Session, dest s
 
 	defer out.Close()
 
-	_, err = session.WithLocalDirs(payload.LocalDirs).WithExport(bkclient.ExportEntry{
+	return host.Export(ctx, bkclient.ExportEntry{
 		Type: bkclient.ExporterOCI,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return out, nil
 		},
-	}).Build(ctx, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: stDef.ToPB(),
@@ -1048,8 +1055,6 @@ func (container *Container) Export(ctx context.Context, session *Session, dest s
 		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
 		return res, nil
 	})
-
-	return err
 }
 
 type ContainerExecOpts struct {

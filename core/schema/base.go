@@ -36,7 +36,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&directorySchema{base, host},
 		&fileSchema{base},
 		&gitSchema{base},
-		&containerSchema{base},
+		&containerSchema{base, host},
 		&cacheSchema{base},
 		&secretSchema{base},
 		&hostSchema{base, host},
