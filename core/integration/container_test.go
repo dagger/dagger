@@ -2454,17 +2454,42 @@ func TestContainerExport(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, err := dagger.Connect(ctx)
+	wd := t.TempDir()
+	dest := t.TempDir()
+
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
 	require.NoError(t, err)
 	defer c.Close()
 
-	dest := filepath.Join(t.TempDir(), "image.tar")
+	ctr := c.Container().From("alpine:3.16.2")
 
-	ok, err := c.Container().From("alpine:3.16.2").Export(ctx, dest)
-	require.NoError(t, err)
-	require.True(t, ok)
+	t.Run("to absolute dir", func(t *testing.T) {
+		imagePath := filepath.Join(dest, "image.tar")
 
-	f, err := os.Open(dest)
+		ok, err := ctr.Export(ctx, imagePath)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		checkOCI(t, imagePath)
+	})
+
+	t.Run("to workdir", func(t *testing.T) {
+		ok, err := ctr.Export(ctx, "./image.tar")
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		checkOCI(t, filepath.Join(wd, "image.tar"))
+	})
+
+	t.Run("to outer dir", func(t *testing.T) {
+		ok, err := ctr.Export(ctx, "../")
+		require.Error(t, err)
+		require.False(t, ok)
+	})
+}
+
+func checkOCI(t *testing.T, path string) {
+	f, err := os.Open(path)
 	require.NoError(t, err)
 
 	entries := []string{}

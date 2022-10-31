@@ -423,6 +423,11 @@ func (dir *Directory) Export(
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) error {
+	dest, err := host.NormalizeDest(dest)
+	if err != nil {
+		return err
+	}
+
 	srcPayload, err := dir.ID.Decode()
 	if err != nil {
 		return err

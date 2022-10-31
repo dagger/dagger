@@ -105,3 +105,29 @@ func (host *Host) Export(
 	_, err := bkClient.Build(ctx, solveOpts, "", buildFn, ch)
 	return err
 }
+
+func (host *Host) NormalizeDest(dest string) (string, error) {
+	if filepath.IsAbs(dest) {
+		return dest, nil
+	}
+
+	wd, err := filepath.EvalSymlinks(host.Workdir)
+	if err != nil {
+		return "", err
+	}
+
+	dest = filepath.Clean(filepath.Join(wd, dest))
+
+	if dest == wd {
+		// writing directly to workdir
+		return dest, nil
+	}
+
+	if !strings.HasPrefix(dest, wd+"/") {
+		// writing outside of workdir
+		return "", fmt.Errorf("destination %q escapes workdir", dest)
+	}
+
+	// writing within workdir
+	return dest, nil
+}

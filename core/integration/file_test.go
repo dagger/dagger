@@ -111,21 +111,46 @@ func TestFileExport(t *testing.T) {
 
 	ctx := context.Background()
 
-	c, err := dagger.Connect(ctx)
+	wd := t.TempDir()
+	dest := t.TempDir()
+
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
 	require.NoError(t, err)
 	defer c.Close()
 
-	dest := filepath.Join(t.TempDir(), "image.tar")
+	file := c.Container().From("alpine:3.16.2").File("/etc/alpine-release")
 
-	ok, err := c.Container().From("alpine:3.16.2").File("/etc/alpine-release").Export(ctx, dest)
-	require.NoError(t, err)
-	require.True(t, ok)
+	t.Run("to absolute dir", func(t *testing.T) {
+		ok, err := file.Export(ctx, dest)
+		require.NoError(t, err)
+		require.True(t, ok)
 
-	contents, err := os.ReadFile(filepath.Join(dest, "alpine-release"))
-	require.NoError(t, err)
-	require.Equal(t, "3.16.2\n", string(contents))
+		contents, err := os.ReadFile(filepath.Join(dest, "alpine-release"))
+		require.NoError(t, err)
+		require.Equal(t, "3.16.2\n", string(contents))
 
-	entries, err := os.ReadDir(dest)
-	require.NoError(t, err)
-	require.Len(t, entries, 1)
+		entries, err := ls(dest)
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+	})
+
+	t.Run("to workdir", func(t *testing.T) {
+		ok, err := file.Export(ctx, ".")
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		contents, err := os.ReadFile(filepath.Join(wd, "alpine-release"))
+		require.NoError(t, err)
+		require.Equal(t, "3.16.2\n", string(contents))
+
+		entries, err := ls(wd)
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+	})
+
+	t.Run("to outer dir", func(t *testing.T) {
+		ok, err := file.Export(ctx, "../")
+		require.Error(t, err)
+		require.False(t, ok)
+	})
 }
