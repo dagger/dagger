@@ -108,6 +108,11 @@ func (file *File) Export(
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) error {
+	dest, err := host.NormalizeDest(dest)
+	if err != nil {
+		return err
+	}
+
 	srcPayload, err := file.ID.decode()
 	if err != nil {
 		return err

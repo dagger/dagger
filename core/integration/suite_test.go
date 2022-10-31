@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"dagger.io/dagger"
@@ -186,4 +187,17 @@ func startRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
 		}).
 		ExitCode(ctx)
 	require.NoError(t, err)
+}
+
+func ls(dir string) ([]string, error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, ent := range ents {
+		names = append(names, ent.Name())
+	}
+	return names, nil
 }

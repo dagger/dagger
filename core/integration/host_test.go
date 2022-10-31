@@ -226,29 +226,6 @@ func TestHostDirectoryExcludeInclude(t *testing.T) {
 	})
 }
 
-func TestHostDirectoryReadWrite(t *testing.T) {
-	t.Parallel()
-
-	dir1 := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir1, "foo"), []byte("bar"), 0600)
-	require.NoError(t, err)
-
-	dir2 := t.TempDir()
-
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
-
-	exported, err := c.Host().Directory(dir1).Export(ctx, dir2)
-	require.NoError(t, err)
-	require.True(t, exported)
-
-	content, err := os.ReadFile(filepath.Join(dir2, "foo"))
-	require.NoError(t, err)
-	require.Equal(t, "bar", string(content))
-}
-
 func TestHostVariable(t *testing.T) {
 	t.Parallel()
 

@@ -1006,6 +1006,11 @@ func (container *Container) Export(
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) error {
+	dest, err := host.NormalizeDest(dest)
+	if err != nil {
+		return err
+	}
+
 	payload, err := container.ID.decode()
 	if err != nil {
 		return err
