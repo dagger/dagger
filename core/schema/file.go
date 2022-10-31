@@ -7,6 +7,8 @@ import (
 
 type fileSchema struct {
 	*baseSchema
+
+	host *core.Host
 }
 
 var _ router.ExecutableSchema = &fileSchema{}
@@ -31,6 +33,7 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 			"contents": router.ToResolver(s.contents),
 			"secret":   router.ToResolver(s.secret),
 			"size":     router.ToResolver(s.size),
+			"export":   router.ToResolver(s.export),
 		},
 	}
 }
@@ -69,4 +72,17 @@ func (s *fileSchema) size(ctx *router.Context, file *core.File, args any) (int64
 	}
 
 	return info.Size_, nil
+}
+
+type fileExportArgs struct {
+	Path string
+}
+
+func (s *fileSchema) export(ctx *router.Context, parent *core.File, args fileExportArgs) (bool, error) {
+	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

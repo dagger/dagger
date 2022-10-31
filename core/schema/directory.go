@@ -144,11 +144,11 @@ func (s *directorySchema) diff(ctx *router.Context, parent *core.Directory, args
 	return parent.Diff(ctx, &core.Directory{ID: args.Other})
 }
 
-type exportArgs struct {
+type dirExportArgs struct {
 	Path string
 }
 
-func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args exportArgs) (bool, error) {
+func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
 	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
 	if err != nil {
 		return false, err

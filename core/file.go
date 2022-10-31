@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -96,6 +97,42 @@ func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, erro
 
 	return ref.StatFile(ctx, bkgw.StatRequest{
 		Path: payload.File,
+	})
+}
+
+func (file *File) Export(
+	ctx context.Context,
+	host *Host,
+	dest string,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) error {
+	srcPayload, err := file.ID.decode()
+	if err != nil {
+		return err
+	}
+
+	return host.Export(ctx, bkclient.ExportEntry{
+		Type:      bkclient.ExporterLocal,
+		OutputDir: dest,
+	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		src, err := srcPayload.State()
+		if err != nil {
+			return nil, err
+		}
+
+		src = llb.Scratch().File(llb.Copy(src, srcPayload.File, "."))
+
+		def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+		if err != nil {
+			return nil, err
+		}
+
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: def.ToPB(),
+		})
 	})
 }
 
