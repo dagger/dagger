@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@docusaurus/core": "^2.1.0",
-    "@docusaurus/preset-classic": "^2.1.0",
+    "@docusaurus/preset-classic": "^2.2.0",
     "@mdx-js/react": "^1.6.22",
     "@svgr/webpack": "^6.5.0",
     "amplitude-js": "^8.21.2",
