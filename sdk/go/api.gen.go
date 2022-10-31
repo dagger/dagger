@@ -68,6 +68,18 @@ func (s FileID) graphqlMarshal(ctx context.Context) (any, error) {
 	return string(s), nil
 }
 
+type Platform string
+
+// graphqlType returns the native GraphQL type name
+func (s Platform) graphqlType() string {
+	return "Platform"
+}
+
+// graphqlMarshal serializes the structure into GraphQL
+func (s Platform) graphqlMarshal(ctx context.Context) (any, error) {
+	return string(s), nil
+}
+
 // A unique identifier for a secret
 type SecretID string
 
@@ -309,10 +321,31 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The platform this container executes and publishes as
+func (r *Container) Platform(ctx context.Context) (Platform, error) {
+	q := r.q.Select("platform")
+
+	var response Platform
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// ContainerPublishOpts contains options for Container.Publish
+type ContainerPublishOpts struct {
+	PlatformVariants []ContainerID
+}
+
 // Publish this container as a new image, returning a fully qualified ref
-func (r *Container) Publish(ctx context.Context, address string) (string, error) {
+func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
+	// `platformVariants` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+			break
+		}
+	}
 
 	var response string
 	q = q.Bind(&response)
@@ -1072,10 +1105,13 @@ func (r *Query) CacheVolume(key string) *CacheVolume {
 // ContainerOpts contains options for Query.Container
 type ContainerOpts struct {
 	ID ContainerID
+
+	Platform Platform
 }
 
 // Load a container from ID.
 // Null ID returns an empty container (scratch).
+// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
 func (r *Query) Container(opts ...ContainerOpts) *Container {
 	q := r.q.Select("container")
 	// `id` optional argument
@@ -1085,11 +1121,27 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 			break
 		}
 	}
+	// `platform` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
 		c: r.c,
 	}
+}
+
+// The default platform of the builder.
+func (r *Query) DefaultPlatform(ctx context.Context) (Platform, error) {
+	q := r.q.Select("defaultPlatform")
+
+	var response Platform
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // DirectoryOpts contains options for Query.Directory

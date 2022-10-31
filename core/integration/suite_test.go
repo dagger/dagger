@@ -161,3 +161,29 @@ func newFile(t *testing.T, path, contents string) core.FileID {
 
 	return fileID
 }
+
+func startRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
+	t.Helper()
+
+	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
+	randomID := identity.NewID()
+	go func() {
+		_, err := c.Container().
+			From("registry:2").
+			WithEnvVariable("RANDOM", randomID).
+			Exec().
+			ExitCode(ctx)
+		if err != nil {
+			t.Logf("error running registry: %v", err)
+		}
+	}()
+
+	_, err := c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("RANDOM", randomID).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
+		}).
+		ExitCode(ctx)
+	require.NoError(t, err)
+}
