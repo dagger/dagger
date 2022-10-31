@@ -3,6 +3,7 @@ package generator
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/format"
 	"strings"
@@ -12,8 +13,23 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
+var ErrUnknownSDK = errors.New("unknown sdk")
+
+type SDKLang string
+
+const (
+	SDKLangUnknown SDKLang = ""
+	SDKLangGo      SDKLang = "Go"
+	SDKLangTS      SDKLang = "TypeScript"
+)
+
 type Config struct {
+	Lang    SDKLang
 	Package string
+}
+
+type Generator interface {
+	Generate(ctx context.Context) ([]byte, error)
 }
 
 func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]byte, error) {
@@ -24,10 +40,18 @@ func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]
 		}
 	}
 
-	gen := &GoGenerator{
-		cfg:    cfg,
-		schema: schema,
+	var gen Generator
+	switch cfg.Lang {
+	case SDKLangGo:
+		gen = &GoGenerator{
+			cfg:    cfg,
+			schema: schema,
+		}
+
+	default:
+		return []byte{}, ErrUnknownSDK
 	}
+
 	return gen.Generate(ctx)
 }
 

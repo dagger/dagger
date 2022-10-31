@@ -46,6 +46,8 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 	generated, err := generator.IntrospectAndGenerate(ctx, c, generator.Config{
 		Package: pkg,
+		// FIXME: use a flag to customize this
+		Lang: generator.SDKLangGo,
 	})
 	if err != nil {
 		return err
