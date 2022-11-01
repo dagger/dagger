@@ -186,30 +186,29 @@ func TestDirectoryWithDirectory(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	dirID, err := c.Directory().
+	dir := c.Directory().
 		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
 			Contents: "some-content",
 		}).
 		WithNewFile("some-dir/sub-file", dagger.DirectoryWithNewFileOpts{
 			Contents: "sub-content",
 		}).
-		Directory("some-dir").ID(ctx)
-	require.NoError(t, err)
+		Directory("some-dir")
 
-	entries, err := c.Directory().WithDirectory(dirID, "with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err := c.Directory().WithDirectory(dir, "with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "with-dir",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 
-	entries, err = c.Directory().WithDirectory(dirID, "sub-dir/sub-sub-dir/with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err = c.Directory().WithDirectory(dir, "sub-dir/sub-sub-dir/with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "sub-dir/sub-sub-dir/with-dir",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 
 	t.Run("copies directory contents to .", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dirID, ".").Entries(ctx)
+		entries, err := c.Directory().WithDirectory(dir, ".").Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sub-file"}, entries)
 	})
@@ -229,11 +228,8 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 		WithNewFile("subdir/e.txt").
 		WithNewFile("subdir/f.txt.rar")
 
-	dirID, err := dir.ID(ctx)
-	require.NoError(t, err)
-
 	t.Run("exclude", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -241,7 +237,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 
 	t.Run("include", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -249,7 +245,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 
 	t.Run("exclude overrides include", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		}).Entries(ctx)
@@ -258,7 +254,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 
 	t.Run("include does not override exclude", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dirID, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		}).Entries(ctx)
@@ -266,11 +262,10 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 		require.Equal(t, []string{}, entries)
 	})
 
-	subdirID, err := dir.Directory("subdir").ID(ctx)
-	require.NoError(t, err)
+	subdir := dir.Directory("subdir")
 
 	t.Run("exclude respects subdir", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(subdirID, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(subdir, ".", dagger.DirectoryWithDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -310,21 +305,20 @@ func TestDirectoryWithFile(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	fileID, err := c.Directory().
+	file := c.Directory().
 		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
 			Contents: "some-content",
 		}).
-		File("some-file").ID(ctx)
-	require.NoError(t, err)
+		File("some-file")
 
 	content, err := c.Directory().
-		WithFile("target-file", fileID).
+		WithFile("target-file", file).
 		File("target-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", content)
 
 	content, err = c.Directory().
-		WithFile("sub-dir/target-file", fileID).
+		WithFile("sub-dir/target-file", file).
 		File("sub-dir/target-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", content)

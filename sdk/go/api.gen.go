@@ -9,89 +9,21 @@ import (
 	"github.com/Khan/genqlient/graphql"
 )
 
-// graphqlMarshaller is an interface for marshalling an object into GraphQL.
-type graphqlMarshaller interface {
-	// GraphQLType returns the native GraphQL type name
-	graphqlType() string
-	// GraphQLMarshal serializes the structure into GraphQL
-	graphqlMarshal(ctx context.Context) (any, error)
-}
-
 // A global cache volume identifier
 type CacheID string
-
-// graphqlType returns the native GraphQL type name
-func (s CacheID) graphqlType() string {
-	return "CacheID"
-}
-
-// graphqlMarshal serializes the structure into GraphQL
-func (s CacheID) graphqlMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
 
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
-// graphqlType returns the native GraphQL type name
-func (s ContainerID) graphqlType() string {
-	return "ContainerID"
-}
-
-// graphqlMarshal serializes the structure into GraphQL
-func (s ContainerID) graphqlMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
 // A content-addressed directory identifier
 type DirectoryID string
 
-// graphqlType returns the native GraphQL type name
-func (s DirectoryID) graphqlType() string {
-	return "DirectoryID"
-}
-
-// graphqlMarshal serializes the structure into GraphQL
-func (s DirectoryID) graphqlMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
 type FileID string
-
-// graphqlType returns the native GraphQL type name
-func (s FileID) graphqlType() string {
-	return "FileID"
-}
-
-// graphqlMarshal serializes the structure into GraphQL
-func (s FileID) graphqlMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
 
 type Platform string
 
-// graphqlType returns the native GraphQL type name
-func (s Platform) graphqlType() string {
-	return "Platform"
-}
-
-// graphqlMarshal serializes the structure into GraphQL
-func (s Platform) graphqlMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
-
 // A unique identifier for a secret
 type SecretID string
-
-// graphqlType returns the native GraphQL type name
-func (s SecretID) graphqlType() string {
-	return "SecretID"
-}
-
-// graphqlMarshal serializes the structure into GraphQL
-func (s SecretID) graphqlMarshal(ctx context.Context) (any, error) {
-	return string(s), nil
-}
 
 // A directory whose contents persist across runs
 type CacheVolume struct {
@@ -107,18 +39,18 @@ func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// graphqlType returns the native GraphQL type name
-func (r *CacheVolume) graphqlType() string {
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CacheVolume) XXX_GraphQLType() string {
 	return "CacheVolume"
 }
 
-// graphqlMarshal serializes the structure into GraphQL
-func (r *CacheVolume) graphqlMarshal(ctx context.Context) (any, error) {
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return map[string]any{"id": id}, nil
+	return string(id), nil
 }
 
 // An OCI-compatible container, also known as a docker container
@@ -133,7 +65,7 @@ type ContainerBuildOpts struct {
 }
 
 // Initialize this container from a Dockerfile build
-func (r *Container) Build(context DirectoryID, opts ...ContainerBuildOpts) *Container {
+func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	q := r.q.Select("build")
 	q = q.Arg("context", context)
 	// `dockerfile` optional argument
@@ -200,13 +132,10 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
-	Args []string
-
+	Args           []string
 	RedirectStderr string
-
 	RedirectStdout string
-
-	Stdin string
+	Stdin          string
 }
 
 // This container after executing the specified command inside it
@@ -298,18 +227,18 @@ func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// graphqlType returns the native GraphQL type name
-func (r *Container) graphqlType() string {
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Container) XXX_GraphQLType() string {
 	return "Container"
 }
 
-// graphqlMarshal serializes the structure into GraphQL
-func (r *Container) graphqlMarshal(ctx context.Context) (any, error) {
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return map[string]any{"id": id}, nil
+	return string(id), nil
 }
 
 // List of paths where a directory is mounted
@@ -332,7 +261,7 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 
 // ContainerPublishOpts contains options for Container.Publish
 type ContainerPublishOpts struct {
-	PlatformVariants []ContainerID
+	PlatformVariants []*Container
 }
 
 // Publish this container as a new image, returning a fully qualified ref
@@ -429,7 +358,7 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 }
 
 // Initialize this container from this DirectoryID
-func (r *Container) WithFS(id DirectoryID) *Container {
+func (r *Container) WithFS(id *Directory) *Container {
 	q := r.q.Select("withFS")
 	q = q.Arg("id", id)
 
@@ -441,11 +370,11 @@ func (r *Container) WithFS(id DirectoryID) *Container {
 
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
-	Source DirectoryID
+	Source *Directory
 }
 
 // This container plus a cache volume mounted at the given path
-func (r *Container) WithMountedCache(cache CacheID, path string, opts ...ContainerWithMountedCacheOpts) *Container {
+func (r *Container) WithMountedCache(cache *CacheVolume, path string, opts ...ContainerWithMountedCacheOpts) *Container {
 	q := r.q.Select("withMountedCache")
 	q = q.Arg("cache", cache)
 	q = q.Arg("path", path)
@@ -464,7 +393,7 @@ func (r *Container) WithMountedCache(cache CacheID, path string, opts ...Contain
 }
 
 // This container plus a directory mounted at the given path
-func (r *Container) WithMountedDirectory(path string, source DirectoryID) *Container {
+func (r *Container) WithMountedDirectory(path string, source *Directory) *Container {
 	q := r.q.Select("withMountedDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
@@ -476,7 +405,7 @@ func (r *Container) WithMountedDirectory(path string, source DirectoryID) *Conta
 }
 
 // This container plus a file mounted at the given path
-func (r *Container) WithMountedFile(path string, source FileID) *Container {
+func (r *Container) WithMountedFile(path string, source *File) *Container {
 	q := r.q.Select("withMountedFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
@@ -488,7 +417,7 @@ func (r *Container) WithMountedFile(path string, source FileID) *Container {
 }
 
 // This container plus a secret mounted into a file at the given path
-func (r *Container) WithMountedSecret(path string, source SecretID) *Container {
+func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
 	q := r.q.Select("withMountedSecret")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
@@ -511,7 +440,7 @@ func (r *Container) WithMountedTemp(path string) *Container {
 }
 
 // This container plus an env variable containing the given secret
-func (r *Container) WithSecretVariable(name string, secret SecretID) *Container {
+func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	q := r.q.Select("withSecretVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
@@ -582,7 +511,7 @@ type Directory struct {
 }
 
 // The difference between this directory and an another directory
-func (r *Directory) Diff(other DirectoryID) *Directory {
+func (r *Directory) Diff(other *Directory) *Directory {
 	q := r.q.Select("diff")
 	q = q.Arg("other", other)
 
@@ -654,18 +583,18 @@ func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// graphqlType returns the native GraphQL type name
-func (r *Directory) graphqlType() string {
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Directory) XXX_GraphQLType() string {
 	return "Directory"
 }
 
-// graphqlMarshal serializes the structure into GraphQL
-func (r *Directory) graphqlMarshal(ctx context.Context) (any, error) {
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return map[string]any{"id": id}, nil
+	return string(id), nil
 }
 
 // load a project's metadata
@@ -682,12 +611,11 @@ func (r *Directory) LoadProject(configPath string) *Project {
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
 	Exclude []string
-
 	Include []string
 }
 
 // This directory plus a directory written at the given path
-func (r *Directory) WithDirectory(directory DirectoryID, path string, opts ...DirectoryWithDirectoryOpts) *Directory {
+func (r *Directory) WithDirectory(directory *Directory, path string, opts ...DirectoryWithDirectoryOpts) *Directory {
 	q := r.q.Select("withDirectory")
 	q = q.Arg("directory", directory)
 	// `exclude` optional argument
@@ -713,7 +641,7 @@ func (r *Directory) WithDirectory(directory DirectoryID, path string, opts ...Di
 }
 
 // This directory plus the contents of the given file copied to the given path
-func (r *Directory) WithFile(path string, source FileID) *Directory {
+func (r *Directory) WithFile(path string, source *File) *Directory {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
@@ -828,18 +756,18 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// graphqlType returns the native GraphQL type name
-func (r *File) graphqlType() string {
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *File) XXX_GraphQLType() string {
 	return "File"
 }
 
-// graphqlMarshal serializes the structure into GraphQL
-func (r *File) graphqlMarshal(ctx context.Context) (any, error) {
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return map[string]any{"id": id}, nil
+	return string(id), nil
 }
 
 func (r *File) Secret() *Secret {
@@ -940,7 +868,6 @@ type Host struct {
 // HostDirectoryOpts contains options for Host.Directory
 type HostDirectoryOpts struct {
 	Exclude []string
-
 	Include []string
 }
 
@@ -983,7 +910,6 @@ func (r *Host) EnvVariable(name string) *HostVariable {
 // HostWorkdirOpts contains options for Host.Workdir
 type HostWorkdirOpts struct {
 	Exclude []string
-
 	Include []string
 }
 
@@ -1115,8 +1041,7 @@ func (r *Query) CacheVolume(key string) *CacheVolume {
 
 // ContainerOpts contains options for Query.Container
 type ContainerOpts struct {
-	ID ContainerID
-
+	ID       ContainerID
 	Platform Platform
 }
 
@@ -1257,18 +1182,18 @@ func (r *Secret) ID(ctx context.Context) (SecretID, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// graphqlType returns the native GraphQL type name
-func (r *Secret) graphqlType() string {
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Secret) XXX_GraphQLType() string {
 	return "Secret"
 }
 
-// graphqlMarshal serializes the structure into GraphQL
-func (r *Secret) graphqlMarshal(ctx context.Context) (any, error) {
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return map[string]any{"id": id}, nil
+	return string(id), nil
 }
 
 // The value of this secret

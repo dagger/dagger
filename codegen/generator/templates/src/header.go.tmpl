@@ -8,11 +8,3 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"dagger.io/dagger/internal/querybuilder"
 )
-
-// graphqlMarshaller is an interface for marshalling an object into GraphQL.
-type graphqlMarshaller interface {
-	// GraphQLType returns the native GraphQL type name
-	graphqlType() string
-	// GraphQLMarshal serializes the structure into GraphQL
-	graphqlMarshal(ctx context.Context) (any, error)
-}

@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -13,7 +14,8 @@ func TestQuery(t *testing.T) {
 		Select("image").Arg("ref", "alpine").
 		Select("file").Arg("path", "/etc/alpine-release")
 
-	q := root.Build()
+	q, err := root.build(context.Background())
+	require.NoError(t, err)
 	require.Equal(t, `query{core{image(ref:"alpine"){file(path:"/etc/alpine-release")}}}`, q)
 }
 
@@ -23,15 +25,18 @@ func TestAlias(t *testing.T) {
 		Select("image").Arg("ref", "alpine").
 		SelectWithAlias("foo", "file").Arg("path", "/etc/alpine-release")
 
-	q := root.Build()
+	q, err := root.build(context.Background())
+	require.NoError(t, err)
 	require.Equal(t, `query{core{image(ref:"alpine"){foo:file(path:"/etc/alpine-release")}}}`, q)
 }
 
 func TestArgsCollision(t *testing.T) {
-	q := Query().
+	q, err := Query().
 		Select("a").Arg("arg", "one").
 		Select("b").Arg("arg", "two").
-		Build()
+		build(context.Background())
+
+	require.NoError(t, err)
 	require.Equal(t, `query{a(arg:"one"){b(arg:"two")}}`, q)
 }
 
@@ -65,7 +70,8 @@ func TestNullableArgs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		q := Query().Select("a").Arg("arg", test.arg).Build()
+		q, err := Query().Select("a").Arg("arg", test.arg).build(context.Background())
+		require.NoError(t, err)
 		require.Equal(t, test.expect, q)
 	}
 }
@@ -74,11 +80,13 @@ func TestFieldImmutability(t *testing.T) {
 	root := Query().
 		Select("test")
 
-	a := root.Select("a").Build()
+	a, err := root.Select("a").build(context.Background())
+	require.NoError(t, err)
 	require.Equal(t, `query{test{a}}`, a)
 
 	// Make sure this is not `test{a,b}` (e.g. the previous select didn't modify `root` in-place)
-	b := root.Select("b").Build()
+	b, err := root.Select("b").build(context.Background())
+	require.NoError(t, err)
 	require.Equal(t, `query{test{b}}`, b)
 }
 
@@ -86,11 +94,13 @@ func TestArgImmutability(t *testing.T) {
 	root := Query().
 		Select("test")
 
-	a := root.Arg("foo", "bar").Build()
+	a, err := root.Arg("foo", "bar").build(context.Background())
+	require.NoError(t, err)
 	require.Equal(t, `query{test(foo:"bar")}`, a)
 
 	// Make sure this does not contain `hello` (e.g. the previous select didn't modify `root` in-place)
-	b := root.Arg("hello", "world").Build()
+	b, err := root.Arg("hello", "world").build(context.Background())
+	require.NoError(t, err)
 	require.Equal(t, `query{test(hello:"world")}`, b)
 }
 
@@ -112,6 +122,6 @@ func TestUnpack(t *testing.T) {
 		}
 	`), &response)
 	require.NoError(t, err)
-	require.NoError(t, root.Unpack(response))
+	require.NoError(t, root.unpack(response))
 	require.Equal(t, "TEST", contents)
 }

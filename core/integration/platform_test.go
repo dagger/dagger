@@ -35,13 +35,14 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 
 	startRegistry(ctx, c, t)
 
-	variants := make([]dagger.ContainerID, 0, len(platformToUname))
+	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"uname", "-m"},
 			})
+		variants = append(variants, ctr)
 
 		ctrPlatform, err := ctr.Platform(ctx)
 		require.NoError(t, err)
@@ -51,10 +52,6 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 		require.NoError(t, err)
 		output = strings.TrimSpace(output)
 		require.Equal(t, uname, output)
-
-		id, err := ctr.ID(ctx)
-		require.NoError(t, err)
-		variants = append(variants, id)
 	}
 
 	testRef := "127.0.0.1:5000/testmultiplatimagepush:latest"
@@ -89,19 +86,10 @@ func TestPlatformCrossCompile(t *testing.T) {
 
 	startRegistry(ctx, c, t)
 
-	thisRepo, err := c.Host().Workdir().ID(ctx)
-	require.NoError(t, err)
-
-	gomodCache, err := c.CacheVolume("gomod").ID(ctx)
-	require.NoError(t, err)
-
-	gobuildCache, err := c.CacheVolume("gobuild").ID(ctx)
-	require.NoError(t, err)
-
 	// cross compile the cloak binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
 	require.NoError(t, err)
-	variants := make([]dagger.ContainerID, len(platformToFileArch))
+	variants := make([]*dagger.Container, len(platformToFileArch))
 	i := 0
 	var eg errgroup.Group
 	for platform := range platformToUname {
@@ -111,10 +99,10 @@ func TestPlatformCrossCompile(t *testing.T) {
 		eg.Go(func() error {
 			ctr := c.Container().
 				From("crazymax/goxx:latest").
-				WithMountedCache(gomodCache, "/go/pkg/mod").
-				WithMountedCache(gobuildCache, "/root/.cache/go-build").
-				WithMountedDirectory("/src", thisRepo).
-				WithMountedDirectory("/out", "").
+				WithMountedCache(c.CacheVolume("gomod"), "/go/pkg/mod").
+				WithMountedCache(c.CacheVolume("gobuild"), "/root/.cache/go-build").
+				WithMountedDirectory("/src", c.Host().Workdir()).
+				WithMountedDirectory("/out", c.Directory()).
 				WithWorkdir("/src").
 				WithEnvVariable("TARGETPLATFORM", string(platform)).
 				WithEnvVariable("CGO_ENABLED", "0").
@@ -132,22 +120,16 @@ func TestPlatformCrossCompile(t *testing.T) {
 			stdout = strings.TrimSpace(stdout)
 			require.Equal(t, platformToUname[defaultPlatform], stdout)
 
-			dirID, err := ctr.
-				Directory("/out").
-				ID(ctx)
-			require.NoError(t, err)
-
-			id, err := c.Container(dagger.ContainerOpts{Platform: platform}).WithFS(dirID).ID(ctx)
-			require.NoError(t, err)
-			variants[i] = id
+			out := ctr.Directory("/out")
+			variants[i] = c.Container(dagger.ContainerOpts{Platform: platform}).WithFS(out)
 			return nil
 		})
 	}
 	require.NoError(t, eg.Wait())
 
 	// make sure the binaries for each platform are executable via emulation now
-	for _, id := range variants {
-		exit, err := c.Container(dagger.ContainerOpts{ID: id}).
+	for _, ctr := range variants {
+		exit, err := ctr.
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"/cloak", "version"},
 			}).
@@ -170,12 +152,10 @@ func TestPlatformCrossCompile(t *testing.T) {
 		})
 	cmds := make([]string, 0, len(platformToFileArch))
 	for platform, uname := range platformToFileArch {
-		pulledDirID, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+		pulledDir := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(testRef).
-			FS().
-			ID(ctx)
-		require.NoError(t, err)
-		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDirID)
+			FS()
+		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDir)
 		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | grep '%s'`, platform, uname))
 	}
 	exit, err := ctr.
@@ -201,15 +181,14 @@ func TestPlatformCacheMounts(t *testing.T) {
 
 	randomID := identity.NewID()
 
-	cacheID, err := c.CacheVolume("test-platform-cache-mount").ID(ctx)
-	require.NoError(t, err)
+	cache := c.CacheVolume("test-platform-cache-mount")
 
 	// make sure cache mounts are inherently platform-agnostic
 	cmds := make([]string, 0, len(platformToUname))
 	for platform := range platformToUname {
 		exit, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16").
-			WithMountedCache(cacheID, "/cache").
+			WithMountedCache(cache, "/cache").
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"sh", "-x", "-c", strings.Join([]string{
 					"mkdir -p /cache/" + randomID + string(platform),
@@ -224,7 +203,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 
 	exit, err := c.Container().
 		From("alpine:3.16").
-		WithMountedCache(cacheID, "/cache").
+		WithMountedCache(cache, "/cache").
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"sh", "-x", "-c", strings.Join(cmds, " && ")},
 		}).
