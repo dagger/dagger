@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"strings"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -270,7 +271,36 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 	return destPayload.ToDirectory()
 }
 
-func (dir *Directory) WithCopiedFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
+func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest string) (*Directory, error) {
+	payload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	dest = path.Clean(dest)
+	if strings.HasPrefix(dest, "../") {
+		return nil, fmt.Errorf("cannot create directory outside parent: %s", dest)
+	}
+
+	// be sure to create the file under the working directory
+	dest = path.Join(payload.Dir, dest)
+
+	st, err := payload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	st = st.File(llb.Mkdir(dest, 0755, llb.WithParents(true)))
+
+	err = payload.SetState(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+
+	return payload.ToDirectory()
+}
+
+func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"dagger.io/dagger"
@@ -277,59 +278,56 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 }
 
-func TestDirectoryWithCopiedFile(t *testing.T) {
-	var fileRes struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						id
-					}
-				}
-			}
-		}`, &fileRes, nil)
+func TestDirectoryWithNewDirectory(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, fileRes.Directory.WithNewFile.File.ID)
+	defer c.Close()
 
-	var res struct {
-		Directory struct {
-			WithCopiedFile struct {
-				File struct {
-					ID       core.DirectoryID
-					Contents string
-				}
-			}
-		}
-	}
+	dir := c.Directory().
+		WithNewDirectory("a").
+		WithNewDirectory("b/c")
 
-	err = testutil.Query(
-		`query Test($src: FileID!) {
-			directory {
-				withCopiedFile(path: "target-file", source: $src) {
-					file(path: "target-file") {
-						id
-						contents
-					}
-				}
-			}
-		}`, &res, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": fileRes.Directory.WithNewFile.File.ID,
-			},
-		})
+	entries, err := dir.Entries(ctx)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithCopiedFile.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithCopiedFile.File.Contents)
+	require.Equal(t, []string{"a", "b"}, entries)
+
+	entries, err = dir.Entries(ctx, dagger.DirectoryEntriesOpts{
+		Path: "b",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"c"}, entries)
+
+	t.Run("does not permit creating directory outside of root", func(t *testing.T) {
+		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
+		require.Error(t, err)
+	})
+}
+
+func TestDirectoryWithFile(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	fileID, err := c.Directory().
+		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "some-content",
+		}).
+		File("some-file").ID(ctx)
+	require.NoError(t, err)
+
+	content, err := c.Directory().
+		WithFile("target-file", fileID).
+		File("target-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", content)
+
+	content, err = c.Directory().
+		WithFile("sub-dir/target-file", fileID).
+		File("sub-dir/target-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", content)
 }
 
 func TestDirectoryWithoutDirectory(t *testing.T) {

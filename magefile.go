@@ -122,7 +122,7 @@ func Build(ctx context.Context) error {
 			return err
 		}
 
-		modules = modules.WithCopiedFile(f, fileID)
+		modules = modules.WithFile(f, fileID)
 	}
 	modID, err := modules.ID(ctx)
 	if err != nil {

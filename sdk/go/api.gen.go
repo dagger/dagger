@@ -679,18 +679,6 @@ func (r *Directory) LoadProject(configPath string) *Project {
 	}
 }
 
-// This directory plus the contents of the given file copied to the given path
-func (r *Directory) WithCopiedFile(path string, source FileID) *Directory {
-	q := r.q.Select("withCopiedFile")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-
-	return &Directory{
-		q: q,
-		c: r.c,
-	}
-}
-
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
 	Exclude []string
@@ -716,6 +704,29 @@ func (r *Directory) WithDirectory(directory DirectoryID, path string, opts ...Di
 			break
 		}
 	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This directory plus the contents of the given file copied to the given path
+func (r *Directory) WithFile(path string, source FileID) *Directory {
+	q := r.q.Select("withFile")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This directory plus a new directory created at the given path
+func (r *Directory) WithNewDirectory(path string) *Directory {
+	q := r.q.Select("withNewDirectory")
 	q = q.Arg("path", path)
 
 	return &Directory{

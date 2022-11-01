@@ -40,7 +40,7 @@ Example:
 "An empty directory with a README copied to it"
 query readmeDir($readme: FileID!) {
   directory {
-    withCopiedFile(source: $readme, path: "README.md") {
+    withFile(source: $readme, path: "README.md") {
       id
     }
 }
