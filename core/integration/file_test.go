@@ -112,7 +112,7 @@ func TestFileExport(t *testing.T) {
 	ctx := context.Background()
 
 	wd := t.TempDir()
-	dest := t.TempDir()
+	targetDir := t.TempDir()
 
 	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
 	require.NoError(t, err)
@@ -120,26 +120,28 @@ func TestFileExport(t *testing.T) {
 
 	file := c.Container().From("alpine:3.16.2").File("/etc/alpine-release")
 
-	t.Run("to absolute dir", func(t *testing.T) {
+	t.Run("to absolute path", func(t *testing.T) {
+		dest := filepath.Join(targetDir, "some-file")
+
 		ok, err := file.Export(ctx, dest)
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		contents, err := os.ReadFile(filepath.Join(dest, "alpine-release"))
+		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
 		require.Equal(t, "3.16.2\n", string(contents))
 
-		entries, err := ls(dest)
+		entries, err := ls(targetDir)
 		require.NoError(t, err)
 		require.Len(t, entries, 1)
 	})
 
-	t.Run("to workdir", func(t *testing.T) {
-		ok, err := file.Export(ctx, ".")
+	t.Run("to relative path", func(t *testing.T) {
+		ok, err := file.Export(ctx, "some-file")
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		contents, err := os.ReadFile(filepath.Join(wd, "alpine-release"))
+		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
 		require.Equal(t, "3.16.2\n", string(contents))
 
@@ -148,8 +150,20 @@ func TestFileExport(t *testing.T) {
 		require.Len(t, entries, 1)
 	})
 
-	t.Run("to outer dir", func(t *testing.T) {
-		ok, err := file.Export(ctx, "../")
+	t.Run("to path in outer dir", func(t *testing.T) {
+		ok, err := file.Export(ctx, "../some-file")
+		require.Error(t, err)
+		require.False(t, ok)
+	})
+
+	t.Run("to absolute dir", func(t *testing.T) {
+		ok, err := file.Export(ctx, targetDir)
+		require.Error(t, err)
+		require.False(t, ok)
+	})
+
+	t.Run("to workdir", func(t *testing.T) {
+		ok, err := file.Export(ctx, ".")
 		require.Error(t, err)
 		require.False(t, ok)
 	})

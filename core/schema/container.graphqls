@@ -139,7 +139,7 @@ type Container {
   "Publish this container as a new image, returning a fully qualified ref"
   publish(address: String!, platformVariants: [ContainerID!]): String!
 
-  "Export the container an OCI tarball to the destination path."
+  "Write the container as an OCI tarball to the destination file path on the host"
   export(path: String!): Boolean!
 }
 

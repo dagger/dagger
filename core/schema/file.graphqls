@@ -19,6 +19,6 @@ type File {
     "The size of the file, in bytes"
     size: Int!
 
-    "Write the file to a directory on the host"
+    "Write the file to a file path on the host"
     export(path: String!): Boolean!
 }

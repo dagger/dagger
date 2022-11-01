@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -113,21 +115,30 @@ func (file *File) Export(
 		return err
 	}
 
+	if stat, err := os.Stat(dest); err == nil {
+		if stat.IsDir() {
+			return fmt.Errorf("destination %q is a directory; must be a file path", dest)
+		}
+	}
+
 	srcPayload, err := file.ID.decode()
 	if err != nil {
 		return err
 	}
 
+	destFilename := filepath.Base(dest)
+	destDir := filepath.Dir(dest)
+
 	return host.Export(ctx, bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
-		OutputDir: dest,
+		OutputDir: destDir,
 	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		src, err := srcPayload.State()
 		if err != nil {
 			return nil, err
 		}
 
-		src = llb.Scratch().File(llb.Copy(src, srcPayload.File, "."))
+		src = llb.Scratch().File(llb.Copy(src, srcPayload.File, destFilename))
 
 		def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
 		if err != nil {
