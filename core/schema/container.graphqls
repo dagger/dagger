@@ -140,7 +140,7 @@ type Container {
   publish(address: String!, platformVariants: [ContainerID!]): String!
 
   "Write the container as an OCI tarball to the destination file path on the host"
-  export(path: String!): Boolean!
+  export(path: String!, platformVariants: [ContainerID!]): Boolean!
 }
 
 """

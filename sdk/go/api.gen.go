@@ -186,10 +186,22 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Export the container an OCI tarball to the destination path.
-func (r *Container) Export(ctx context.Context, path string) (bool, error) {
+// ContainerExportOpts contains options for Container.Export
+type ContainerExportOpts struct {
+	PlatformVariants []ContainerID
+}
+
+// Write the container as an OCI tarball to the destination file path on the host
+func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
+	// `platformVariants` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+			break
+		}
+	}
 
 	var response bool
 	q = q.Bind(&response)
@@ -757,7 +769,7 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Write the file to a directory on the host
+// Write the file to a file path on the host
 func (r *File) Export(ctx context.Context, path string) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
