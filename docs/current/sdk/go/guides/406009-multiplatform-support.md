@@ -1,6 +1,6 @@
 ---
 slug: /sdk/go/406009/multiplatform-support
-displayed_sidebar: 'current'
+displayed_sidebar: "current"
 ---
 
 # Understand Multi-Platform Support
@@ -58,6 +58,7 @@ This guide assumes that:
 This example demonstrates how to pull images for multiple different architectures and execute commands on each of them.
 
 ```go file=../snippets/multiplatform-support/pull-images/main.go
+
 ```
 
 As illustrated above, you can optionally initialize a `Container` with a specific platform. That platform will be used to pull images and execute any commands.
@@ -68,7 +69,7 @@ If you don't specify a platform, the `Container` will be initialized with a plat
 
 ### Create new multi-platform images
 
-The next step is to build on the previous example by:
+The next step builds on the previous example by:
 
 1. Building binaries for each of the platforms. We'll use Go binaries for this example.
 1. Combining those binaries into a multi-platform image that we push to a registry.
@@ -80,6 +81,7 @@ This example will fail to push the final image unless you change the registry to
 :::
 
 ```go file=../snippets/multiplatform-support/build-images-emulation/main.go
+
 ```
 
 ### Use cross-compilation
@@ -90,11 +92,12 @@ Emulation is great to have because it requires no customization of build options
 
 However, emulation has the downside of being quite slow relative to executing native CPU instructions.
 
-While cross-compilation is sometimes much easier said than done, it's a great option for speeding up multi-architecture builds when feasible.
+While cross-compilation is sometimes much easier said than done, it's a great option for speeding up multi-platform builds when feasible.
 
 Fortunately, Go has great built-in support for cross-compilation, so modifying the previous example to use this feature instead is straightforward (changes are highlighted):
 
 ```go file=../snippets/multiplatform-support/build-images-cross-compilation/main.go
+
 ```
 
 The only changes we made to enable faster cross-compilation are:
@@ -102,7 +105,7 @@ The only changes we made to enable faster cross-compilation are:
 1. Pulling the base `golang` image for the host platform
 1. Configuring the Go compiler to target the specific platform
 
-The final image is still multi-platform because we initialize each `Container` with specific platforms after the cross-compilation has occurred.
+The final image is still multi-platform because each `Container` set as a `PlatformVariant` was initialized with a specific platform (after the cross-compilation has occurred, at the bottom of the `for` loop in the code above).
 
 ## Support for non-Linux platforms
 
@@ -113,6 +116,7 @@ As explored in our [Get Started tutorial](../959738-get-started.md), Dagger can 
 Additionally, Dagger has _limited_ support for some operations involving non-Linux container images. Specifically, it is often possible to pull these images and perform basic file operations, but attempting to execute commands will result in an error:
 
 ```go file=../snippets/multiplatform-support/non-linux-support/main.go
+
 ```
 
 :::note
@@ -153,5 +157,5 @@ You can see the full list of valid platform strings by running the command `go t
 Whether a particular platform can be used successfully with Dagger depends on several factors:
 
 - Whether an image you are pulling has a published version for that platform
-- Whether QEMU emulation is supported for the architecture and has been configured (as described in Pre-requisites above)
-- Whether the OS is Linux (command execution on works on Linux for now)
+- Whether QEMU emulation is supported for the architecture and has been configured (as described in Requirements above)
+- Whether the OS is Linux (command execution only works on Linux for now)
