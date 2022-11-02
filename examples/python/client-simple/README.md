@@ -3,6 +3,6 @@
 ```sh
 python3 -m venv ../../../.venv
 source ../../../.venv/bin/activate
-pip3 install -r requirements.txt
-python3 query.py
+python3 -m pip install -r requirements.txt
+python3 say.py "Simple is better than complex"
 ```
