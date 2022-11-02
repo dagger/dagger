@@ -3,21 +3,12 @@ package test
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 	"text/template"
 
+	"github.com/dagger/dagger/codegen/generator/ts/templates"
 	"github.com/stretchr/testify/require"
 )
-
-func join(sep string, str ...string) string {
-	return strings.Join(str, sep)
-}
-
-// TODO move to non test package
-func subtract(a, b int) int {
-	return a - b
-}
 
 func TestArgs(t *testing.T) {
 	cases := map[string]struct {
@@ -31,7 +22,7 @@ func TestArgs(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			tmpl := template.New("args").Funcs(template.FuncMap{
-				"subtract": subtract,
+				"subtract": templates.Subtract,
 			})
 			tmpl = template.Must(tmpl.ParseFiles("args.ts.tmpl", "arg.ts.tmpl"))
 
