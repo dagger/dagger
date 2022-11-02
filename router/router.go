@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/playground"
 	"github.com/dagger/dagger/router/internal/handler"
+	"github.com/dagger/dagger/router/internal/playground"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
 )
