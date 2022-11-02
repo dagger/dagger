@@ -34,9 +34,9 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
 		&directorySchema{base, host},
-		&fileSchema{base},
+		&fileSchema{base, host},
 		&gitSchema{base},
-		&containerSchema{base},
+		&containerSchema{base, host},
 		&cacheSchema{base},
 		&secretSchema{base},
 		&hostSchema{base, host},

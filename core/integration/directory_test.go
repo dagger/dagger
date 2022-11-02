@@ -453,3 +453,44 @@ func TestDirectoryDiff(t *testing.T) {
 		require.Empty(t, res.Directory.Diff.Entries)
 	*/
 }
+
+func TestDirectoryExport(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	wd := t.TempDir()
+	dest := t.TempDir()
+
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	require.NoError(t, err)
+	defer c.Close()
+
+	dir := c.Container().From("alpine:3.16.2").Directory("/etc/profile.d")
+
+	t.Run("to absolute dir", func(t *testing.T) {
+		ok, err := dir.Export(ctx, dest)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		entries, err := ls(dest)
+		require.NoError(t, err)
+		require.Equal(t, []string{"README", "color_prompt.sh.disabled", "locale.sh"}, entries)
+	})
+
+	t.Run("to workdir", func(t *testing.T) {
+		ok, err := dir.Export(ctx, ".")
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		entries, err := ls(wd)
+		require.NoError(t, err)
+		require.Equal(t, []string{"README", "color_prompt.sh.disabled", "locale.sh"}, entries)
+	})
+
+	t.Run("to outer dir", func(t *testing.T) {
+		ok, err := dir.Export(ctx, "../")
+		require.Error(t, err)
+		require.False(t, ok)
+	})
+}

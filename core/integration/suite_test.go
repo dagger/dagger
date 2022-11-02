@@ -1,7 +1,11 @@
 package core
 
 import (
+	"archive/tar"
 	"context"
+	"errors"
+	"io"
+	"os"
 	"testing"
 
 	"dagger.io/dagger"
@@ -186,4 +190,38 @@ func startRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
 		}).
 		ExitCode(ctx)
 	require.NoError(t, err)
+}
+
+func ls(dir string) ([]string, error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(ents))
+	for i, ent := range ents {
+		names[i] = ent.Name()
+	}
+	return names, nil
+}
+
+func tarEntries(t *testing.T, path string) []string {
+	f, err := os.Open(path)
+	require.NoError(t, err)
+
+	entries := []string{}
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+		}
+
+		entries = append(entries, hdr.Name)
+	}
+
+	return entries
 }

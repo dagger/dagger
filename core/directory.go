@@ -423,12 +423,20 @@ func (dir *Directory) Export(
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) error {
+	dest, err := host.NormalizeDest(dest)
+	if err != nil {
+		return err
+	}
+
 	srcPayload, err := dir.ID.Decode()
 	if err != nil {
 		return err
 	}
 
-	return host.Export(ctx, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	return host.Export(ctx, bkclient.ExportEntry{
+		Type:      bkclient.ExporterLocal,
+		OutputDir: dest,
+	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		src, err := srcPayload.State()
 		if err != nil {
 			return nil, err

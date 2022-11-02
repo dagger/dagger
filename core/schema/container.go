@@ -12,6 +12,8 @@ import (
 
 type containerSchema struct {
 	*baseSchema
+
+	host *core.Host
 }
 
 var _ router.ExecutableSchema = &containerSchema{}
@@ -63,6 +65,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"stderr":               router.ToResolver(s.stderr),
 			"publish":              router.ToResolver(s.publish),
 			"platform":             router.ToResolver(s.platform),
+			"export":               router.ToResolver(s.export),
 		},
 	}
 }
@@ -423,4 +426,17 @@ func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Co
 
 func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, args any) (specs.Platform, error) {
 	return parent.Platform()
+}
+
+type containerExportArgs struct {
+	Path             string
+	PlatformVariants []core.ContainerID
+}
+
+func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
+	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

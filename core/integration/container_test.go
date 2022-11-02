@@ -2445,3 +2445,88 @@ func TestContainerMultipleMounts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "123", out)
 }
+
+func TestContainerExport(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	wd := t.TempDir()
+	dest := t.TempDir()
+
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	require.NoError(t, err)
+	defer c.Close()
+
+	ctr := c.Container().From("alpine:3.16.2")
+
+	t.Run("to absolute dir", func(t *testing.T) {
+		imagePath := filepath.Join(dest, "image.tar")
+
+		ok, err := ctr.Export(ctx, imagePath)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		entries := tarEntries(t, imagePath)
+		require.Contains(t, entries, "oci-layout")
+		require.Contains(t, entries, "index.json")
+
+		// a single-platform image can include a manifest.json, making it
+		// compatible with docker load
+		require.Contains(t, entries, "manifest.json")
+	})
+
+	t.Run("to workdir", func(t *testing.T) {
+		ok, err := ctr.Export(ctx, "./image.tar")
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		entries := tarEntries(t, filepath.Join(wd, "image.tar"))
+		require.Contains(t, entries, "oci-layout")
+		require.Contains(t, entries, "index.json")
+		require.Contains(t, entries, "manifest.json")
+	})
+
+	t.Run("to outer dir", func(t *testing.T) {
+		ok, err := ctr.Export(ctx, "../")
+		require.Error(t, err)
+		require.False(t, ok)
+	})
+}
+
+func TestContainerMultiPlatformExport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	startRegistry(ctx, c, t)
+
+	variants := make([]*dagger.Container, 0, len(platformToUname))
+	for platform := range platformToUname {
+		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From("alpine:3.16.2").
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"uname", "-m"},
+			})
+
+		variants = append(variants, ctr)
+	}
+
+	dest := filepath.Join(t.TempDir(), "image.tar")
+
+	ok, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+		PlatformVariants: variants,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	entries := tarEntries(t, dest)
+	require.Contains(t, entries, "oci-layout")
+	require.Contains(t, entries, "index.json")
+
+	// multi-platform images don't contain a manifest.json
+	require.NotContains(t, entries, "manifest.json")
+}

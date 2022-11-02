@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -880,86 +882,8 @@ func (container *Container) Publish(
 	ch, wg := mirrorCh(solveCh)
 	defer wg.Wait()
 
-	var payloads []*containerIDPayload
-	if container.ID != "" {
-		payload, err := container.ID.decode()
-		if err != nil {
-			return "", err
-		}
-		if payload.FS != nil {
-			payloads = append(payloads, payload)
-		}
-	}
-	for _, id := range platformVariants {
-		payload, err := id.decode()
-		if err != nil {
-			return "", err
-		}
-		if payload.FS != nil {
-			payloads = append(payloads, payload)
-		}
-	}
-
-	if len(payloads) == 0 {
-		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
-		return "", errors.New("no containers to publish")
-	}
-
 	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		res := bkgw.NewResult()
-		expPlatforms := &exptypes.Platforms{
-			Platforms: make([]exptypes.Platform, len(payloads)),
-		}
-
-		for i, payload := range payloads {
-			st, err := payload.FSState()
-			if err != nil {
-				return nil, err
-			}
-
-			stDef, err := st.Marshal(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			r, err := gw.Solve(ctx, bkgw.SolveRequest{
-				Definition: stDef.ToPB(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			ref, err := r.SingleRef()
-			if err != nil {
-				return nil, err
-			}
-
-			platformKey := platforms.Format(payload.Platform)
-			res.AddRef(platformKey, ref)
-			expPlatforms.Platforms[i] = exptypes.Platform{
-				ID:       platformKey,
-				Platform: payload.Platform,
-			}
-
-			cfgBytes, err := json.Marshal(specs.Image{
-				Architecture: payload.Platform.Architecture,
-				OS:           payload.Platform.OS,
-				OSVersion:    payload.Platform.OSVersion,
-				OSFeatures:   payload.Platform.OSFeatures,
-				Config:       payload.Config,
-			})
-			if err != nil {
-				return nil, err
-			}
-			res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
-		}
-
-		platformBytes, err := json.Marshal(expPlatforms)
-		if err != nil {
-			return nil, err
-		}
-		res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
-
-		return res, nil
+		return container.export(ctx, gw, platformVariants)
 	}, ch)
 	if err != nil {
 		return "", err
@@ -994,6 +918,160 @@ func (container *Container) Platform() (specs.Platform, error) {
 		return specs.Platform{}, err
 	}
 	return payload.Platform, nil
+}
+
+func (container *Container) Export(
+	ctx context.Context,
+	host *Host,
+	dest string,
+	platformVariants []ContainerID,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) error {
+	dest, err := host.NormalizeDest(dest)
+	if err != nil {
+		return err
+	}
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+
+	defer out.Close()
+
+	return host.Export(ctx, bkclient.ExportEntry{
+		Type: bkclient.ExporterOCI,
+		Output: func(map[string]string) (io.WriteCloser, error) {
+			return out, nil
+		},
+	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		return container.export(ctx, gw, platformVariants)
+	})
+}
+
+func (container *Container) export(
+	ctx context.Context,
+	gw bkgw.Client,
+	platformVariants []ContainerID,
+) (*bkgw.Result, error) {
+	var payloads []*containerIDPayload
+	if container.ID != "" {
+		payload, err := container.ID.decode()
+		if err != nil {
+			return nil, err
+		}
+		if payload.FS != nil {
+			payloads = append(payloads, payload)
+		}
+	}
+	for _, id := range platformVariants {
+		payload, err := id.decode()
+		if err != nil {
+			return nil, err
+		}
+		if payload.FS != nil {
+			payloads = append(payloads, payload)
+		}
+	}
+
+	if len(payloads) == 0 {
+		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
+		return nil, errors.New("no containers to export")
+	}
+
+	if len(payloads) == 1 {
+		payload := payloads[0]
+
+		st, err := payload.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		cfgBytes, err := json.Marshal(specs.Image{
+			Architecture: payload.Platform.Architecture,
+			OS:           payload.Platform.OS,
+			OSVersion:    payload.Platform.OSVersion,
+			OSFeatures:   payload.Platform.OSFeatures,
+			Config:       payload.Config,
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+
+		return res, nil
+	}
+
+	res := bkgw.NewResult()
+	expPlatforms := &exptypes.Platforms{
+		Platforms: make([]exptypes.Platform, len(payloads)),
+	}
+
+	for i, payload := range payloads {
+		st, err := payload.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, err
+		}
+
+		r, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		ref, err := r.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		platformKey := platforms.Format(payload.Platform)
+		res.AddRef(platformKey, ref)
+		expPlatforms.Platforms[i] = exptypes.Platform{
+			ID:       platformKey,
+			Platform: payload.Platform,
+		}
+
+		cfgBytes, err := json.Marshal(specs.Image{
+			Architecture: payload.Platform.Architecture,
+			OS:           payload.Platform.OS,
+			OSVersion:    payload.Platform.OSVersion,
+			OSFeatures:   payload.Platform.OSFeatures,
+			Config:       payload.Config,
+		})
+		if err != nil {
+			return nil, err
+		}
+		res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
+	}
+
+	platformBytes, err := json.Marshal(expPlatforms)
+	if err != nil {
+		return nil, err
+	}
+	res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
+
+	return res, nil
 }
 
 type ContainerExecOpts struct {

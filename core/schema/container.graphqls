@@ -138,6 +138,9 @@ type Container {
   #    This may actually be a good candidate for a mutation. To be discussed.
   "Publish this container as a new image, returning a fully qualified ref"
   publish(address: String!, platformVariants: [ContainerID!]): String!
+
+  "Write the container as an OCI tarball to the destination file path on the host"
+  export(path: String!, platformVariants: [ContainerID!]): Boolean!
 }
 
 """
