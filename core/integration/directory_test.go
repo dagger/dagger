@@ -195,20 +195,20 @@ func TestDirectoryWithDirectory(t *testing.T) {
 		}).
 		Directory("some-dir")
 
-	entries, err := c.Directory().WithDirectory(dir, "with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err := c.Directory().WithDirectory("with-dir", dir).Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "with-dir",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 
-	entries, err = c.Directory().WithDirectory(dir, "sub-dir/sub-sub-dir/with-dir").Entries(ctx, dagger.DirectoryEntriesOpts{
+	entries, err = c.Directory().WithDirectory("sub-dir/sub-sub-dir/with-dir", dir).Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "sub-dir/sub-sub-dir/with-dir",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
 
 	t.Run("copies directory contents to .", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dir, ".").Entries(ctx)
+		entries, err := c.Directory().WithDirectory(".", dir).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sub-file"}, entries)
 	})
@@ -229,7 +229,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 		WithNewFile("subdir/f.txt.rar")
 
 	t.Run("exclude", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 
 	t.Run("include", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 
 	t.Run("exclude overrides include", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		}).Entries(ctx)
@@ -254,7 +254,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	})
 
 	t.Run("include does not override exclude", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(dir, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		}).Entries(ctx)
@@ -265,7 +265,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	subdir := dir.Directory("subdir")
 
 	t.Run("exclude respects subdir", func(t *testing.T) {
-		entries, err := c.Directory().WithDirectory(subdir, ".", dagger.DirectoryWithDirectoryOpts{
+		entries, err := c.Directory().WithDirectory(".", subdir, dagger.DirectoryWithDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)

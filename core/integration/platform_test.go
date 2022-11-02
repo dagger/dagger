@@ -99,8 +99,8 @@ func TestPlatformCrossCompile(t *testing.T) {
 		eg.Go(func() error {
 			ctr := c.Container().
 				From("crazymax/goxx:latest").
-				WithMountedCache(c.CacheVolume("gomod"), "/go/pkg/mod").
-				WithMountedCache(c.CacheVolume("gobuild"), "/root/.cache/go-build").
+				WithMountedCache("/go/pkg/mod", c.CacheVolume("gomod")).
+				WithMountedCache("/root/.cache/go-build", c.CacheVolume("gobuild")).
 				WithMountedDirectory("/src", c.Host().Workdir()).
 				WithMountedDirectory("/out", c.Directory()).
 				WithWorkdir("/src").
@@ -188,7 +188,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 	for platform := range platformToUname {
 		exit, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16").
-			WithMountedCache(cache, "/cache").
+			WithMountedCache("/cache", cache).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"sh", "-x", "-c", strings.Join([]string{
 					"mkdir -p /cache/" + randomID + string(platform),
@@ -203,7 +203,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 
 	exit, err := c.Container().
 		From("alpine:3.16").
-		WithMountedCache(cache, "/cache").
+		WithMountedCache("/cache", cache).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"sh", "-x", "-c", strings.Join(cmds, " && ")},
 		}).

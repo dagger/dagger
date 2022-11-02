@@ -133,9 +133,9 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
 	Args           []string
-	RedirectStderr string
-	RedirectStdout string
 	Stdin          string
+	RedirectStdout string
+	RedirectStderr string
 }
 
 // This container after executing the specified command inside it
@@ -148,10 +148,10 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 			break
 		}
 	}
-	// `redirectStderr` optional argument
+	// `stdin` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
-			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
 			break
 		}
 	}
@@ -162,10 +162,10 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 			break
 		}
 	}
-	// `stdin` optional argument
+	// `redirectStderr` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Stdin) {
-			q = q.Arg("stdin", opts[i].Stdin)
+		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
+			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
 			break
 		}
 	}
@@ -374,10 +374,10 @@ type ContainerWithMountedCacheOpts struct {
 }
 
 // This container plus a cache volume mounted at the given path
-func (r *Container) WithMountedCache(cache *CacheVolume, path string, opts ...ContainerWithMountedCacheOpts) *Container {
+func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
 	q := r.q.Select("withMountedCache")
-	q = q.Arg("cache", cache)
 	q = q.Arg("path", path)
+	q = q.Arg("cache", cache)
 	// `source` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Source) {
@@ -615,8 +615,9 @@ type DirectoryWithDirectoryOpts struct {
 }
 
 // This directory plus a directory written at the given path
-func (r *Directory) WithDirectory(directory *Directory, path string, opts ...DirectoryWithDirectoryOpts) *Directory {
+func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
 	q := r.q.Select("withDirectory")
+	q = q.Arg("path", path)
 	q = q.Arg("directory", directory)
 	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -632,7 +633,6 @@ func (r *Directory) WithDirectory(directory *Directory, path string, opts ...Dir
 			break
 		}
 	}
-	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -671,6 +671,7 @@ type DirectoryWithNewFileOpts struct {
 // This directory plus a new file written at the given path
 func (r *Directory) WithNewFile(path string, opts ...DirectoryWithNewFileOpts) *Directory {
 	q := r.q.Select("withNewFile")
+	q = q.Arg("path", path)
 	// `contents` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Contents) {
@@ -678,7 +679,6 @@ func (r *Directory) WithNewFile(path string, opts ...DirectoryWithNewFileOpts) *
 			break
 		}
 	}
-	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -874,6 +874,7 @@ type HostDirectoryOpts struct {
 // Access a directory on the host
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q := r.q.Select("directory")
+	q = q.Arg("path", path)
 	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -888,7 +889,6 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 			break
 		}
 	}
-	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
