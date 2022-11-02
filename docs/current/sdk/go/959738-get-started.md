@@ -41,7 +41,7 @@ If you would prefer to use the final `main.go` file right away, it can be found 
 
 Create a new file named `main.go` and add the following code to it.
 
-```go file=snippets/step2/main.go
+```go file=snippets/get-started/step2/main.go
 ```
 
 This Go CI tool stub imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument to the tool and `build()`, which defines the pipeline operations.
@@ -72,7 +72,7 @@ Now that the basic structure of the Go CI tool is defined and functional, the ne
 
 Replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
-```go file=snippets/step4/main.go
+```go file=snippets/get-started/step4/main.go
 ```
 
 The revised `build()` function is the main workhorse here, so let's step through it in detail.
@@ -148,7 +148,7 @@ Now that the Go CI tool can build a Go application and output the build result, 
 
 Replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
-```go file=snippets/step5a/main.go
+```go file=snippets/get-started/step5a/main.go
 ```
 
 This revision of the Go CI tool does much the same as before, except that it now supports building the application for multiple OSs and architectures.
@@ -185,7 +185,7 @@ build/
 
 Another common operation in a CI environment involves creating builds targeting multiple Go versions. To do this, extend the Go CI tool further and replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
-```go file=snippets/step5b/main.go
+```go file=snippets/get-started/step5b/main.go
 ```
 
 This revision of the Go CI tool adds another layer to the build matrix, this time for Go language versions. Here, the `build()` function uses the Go version number to download the appropriate Go base image for each build. It also adds the Go version number to each build output directory on the host to differentiate the build outputs.
@@ -235,7 +235,7 @@ The pipeline shown in the previous step is very useful, but not very scalable: e
 
 To see how this works, replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
-```go file=snippets/step6/main.go
+```go file=snippets/get-started/step6/main.go
 ```
 
 This revision of the Go CI tool performs the same build process as before, except that the steps are executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup) to parallelize the process in separate goroutines.
