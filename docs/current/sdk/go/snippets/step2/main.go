@@ -14,15 +14,13 @@ func main() {
 		os.Exit(1)
 	}
 	repo := os.Args[1]
-	if err := build(repo); err != nil {
+	if err := build(context.Background(), repo); err != nil {
 		fmt.Println(err)
 	}
 }
 
-func build(repoUrl string) error {
-	fmt.Printf("Building %s\n", repoUrl)
-
-	ctx := context.Background()
+func build(ctx context.Context, repoURL string) error {
+	fmt.Printf("Building %s\n", repoURL)
 
 	// initialize Dagger client
 	client, err := dagger.Connect(ctx)
