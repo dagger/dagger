@@ -2504,7 +2504,7 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 	startRegistry(ctx, c, t)
 
-	variants := make([]dagger.ContainerID, 0, len(platformToUname))
+	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
@@ -2512,9 +2512,7 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 				Args: []string{"uname", "-m"},
 			})
 
-		id, err := ctr.ID(ctx)
-		require.NoError(t, err)
-		variants = append(variants, id)
+		variants = append(variants, ctr)
 	}
 
 	dest := filepath.Join(t.TempDir(), "image.tar")
