@@ -10,7 +10,6 @@ import (
 
 var (
 	FuncMap = template.FuncMap{
-		"Comment":                Comment,
 		"CommentToLines":         CommentToLines,
 		"FormatInputType":        FormatInputType,
 		"FormatOutputType":       FormatOutputType,
@@ -29,24 +28,6 @@ func Subtract(a, b int) int {
 func CommentToLines(s string) []string {
 	split := strings.Split(s, "\n")
 	return split
-}
-
-// comments out a string
-// Example: `hello\nworld` -> `// hello\n// world\n`
-func Comment(s string) string {
-	return "not implemented in TS yet"
-
-	//	if s == "" {
-	//		return ""
-	//	}
-	//
-	// lines := strings.Split(s, "\n")
-	//
-	//	for i, l := range lines {
-	//		lines[i] = "// " + l
-	//	}
-	//
-	// return strings.Join(lines, "\n")
 }
 
 // formatType formats a GraphQL type into Go
