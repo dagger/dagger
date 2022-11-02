@@ -15,16 +15,33 @@ func templateHelper(templateType string) *template.Template {
 	return tmpl
 }
 func TestComment(t *testing.T) {
-	templateType := "comment"
-	tmpl := templateHelper(templateType)
-	want := `/**
+	t.Run("simple comment", func(t *testing.T) {
+		templateType := "comment"
+		tmpl := templateHelper(templateType)
+		want := `/**
  * This is a comment
  */`
-	comments := []string{"This is a comment"}
+		comments := []string{"This is a comment"}
 
-	var b bytes.Buffer
-	err := tmpl.ExecuteTemplate(&b, templateType, comments)
-	require.NoError(t, err)
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, templateType, comments)
+		require.NoError(t, err)
 
-	require.Equal(t, want, b.String())
+		require.Equal(t, want, b.String())
+	})
+	t.Run("multi line comment", func(t *testing.T) {
+		templateType := "comment"
+		tmpl := templateHelper(templateType)
+		want := `/**
+ * This is a comment
+ * that spans on multiple lines
+ */`
+		comments := []string{"This is a comment", "that spans on multiple lines"}
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, templateType, comments)
+		require.NoError(t, err)
+
+		require.Equal(t, want, b.String())
+	})
 }
