@@ -11,7 +11,7 @@ retract [v0.0.0, v0.2.36]
 
 require (
 	github.com/Khan/genqlient v0.5.0
-	github.com/dagger/dagger v0.3.2
+	github.com/dagger/dagger v0.3.3
 	github.com/iancoleman/strcase v0.2.0
 	github.com/stretchr/testify v1.8.1
 	github.com/vektah/gqlparser/v2 v2.5.1
