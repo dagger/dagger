@@ -26,10 +26,10 @@ func TestFormatName(t *testing.T) {
 
 func TestFormatType(t *testing.T) {
 	t.Run("String -> string", func(t *testing.T) {
-		//TODO
-		//introspection.Field
-		//got := FormatInputType("String!")
-		//require.Equal(t, "string", got)
+		// TODO
+		// introspection.Field
+		// got := FormatInputType("String!")
+		// require.Equal(t, "string", got)
 	})
 }
 

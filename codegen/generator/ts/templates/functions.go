@@ -106,7 +106,7 @@ func FieldFunction(f introspection.Field) string {
 	if solve {
 		async = "async"
 	}
-	//TODO think about the await in the func body
+	// TODO think about the await in the func body
 
 	signature := fmt.Sprintf(`%s %s`,
 		async,
@@ -136,7 +136,7 @@ func FieldFunction(f introspection.Field) string {
 	signature += ": " + retType
 
 	// FIXME: just use fmt.Sprintf?
-	//signature = fmt.Sprintf("%s %s(%s): %s", async, funcName, argString, retType)
+	// signature = fmt.Sprintf("%s %s(%s): %s", async, funcName, argString, retType)
 
 	return signature
 }
