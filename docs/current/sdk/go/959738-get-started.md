@@ -213,7 +213,7 @@ go build
 The output shows all of the builds happening at the same time, and the total time will be reduced. The process will produce the same output artifacts as those seen at the end of [Step 5](#step-5-create-a-multi-build-pipeline).
 
 :::tip
-As the previous steps illustrate, the Dagger Go SDK allows you to author your pipeline entirely in Go. This means that you don't need to spend time learning a new language, and you immediately benefit from all the powerful programming capabilities and packages available Go. For instance, this tutorial used native Go variables, conditionals and error handling throughout, together with the errgroup package for sub-task parallelization.
+As the previous steps illustrate, the Dagger Go SDK allows you to author your pipeline entirely in Go. This means that you don't need to spend time learning a new language, and you immediately benefit from all the powerful programming capabilities and packages available in Go. For instance, this tutorial used native Go variables, conditionals and error handling throughout, together with the errgroup package for sub-task parallelization.
 :::
 
 ## Conclusion
