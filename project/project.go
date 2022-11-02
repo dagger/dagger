@@ -10,9 +10,9 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
-	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/graphql/language/ast"
-	"github.com/graphql-go/graphql/language/parser"
+	"github.com/dagger/graphql"
+	"github.com/dagger/graphql/language/ast"
+	"github.com/dagger/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
