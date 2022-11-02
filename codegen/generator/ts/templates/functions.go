@@ -22,11 +22,7 @@ var (
 )
 
 func Solve(field introspection.Field) bool {
-	solve := field.TypeRef.IsScalar() || field.TypeRef.IsList()
-	if solve {
-		return true
-	}
-	return false
+	return field.TypeRef.IsScalar() || field.TypeRef.IsList()
 }
 
 // Subtract subtract integer a with integer b.
