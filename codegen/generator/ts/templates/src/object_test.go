@@ -9,23 +9,9 @@ import (
 )
 
 func TestObject(t *testing.T) {
-	tmpl := templateHelper(t, "object", "comment")
+	tmpl := templateHelper(t, "object", "comment", "field", "args", "arg")
 
 	var b bytes.Buffer
-	type Arg struct {
-		Name string
-		Type string
-	}
-	type Args struct {
-		Args         []Arg
-		HasOptionals bool
-	}
-	type Field struct {
-		Name        string
-		Type        string
-		Description string
-		Args        Args
-	}
 	err := tmpl.ExecuteTemplate(&b, "object", struct {
 		Name        string
 		Type        string
@@ -37,7 +23,9 @@ func TestObject(t *testing.T) {
 		Description: "this is the description",
 		Fields: []introspection.Field{
 			{
+				// TODO improve so Field1 becomes field1 : check with introspection
 				Name: "Field1", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "string"}, Args: introspection.InputValues{
+					// TODO improve so Arg1 becomes field1 : check with introspection
 					{Name: "Arg1", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "string"}},
 				},
 			},
@@ -60,6 +48,6 @@ class ref extends BaseApi {
     return this._queryTree;
   }
 
-
+  async Field1(string Arg1) Promise<Record<string, string>>
 }
 `

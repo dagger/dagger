@@ -1,5 +1,6 @@
 {{ define "object" }}
 {{ $commentLines := CommentToLines .Description }}
+{{- /* we split the comment string into a string slice of one line per element */ -}}
 
 {{- template "comment" $commentLines }}
 class {{ .Name | FormatName }} extends BaseApi {
@@ -7,8 +8,8 @@ class {{ .Name | FormatName }} extends BaseApi {
   get getQueryTree() {
     return this._queryTree;
   }
-
 {{ range $field := .Fields }}
+  {{ template "field" . }}
 {{ end -}}
 
 }

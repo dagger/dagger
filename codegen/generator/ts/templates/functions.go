@@ -16,9 +16,18 @@ var (
 		"FormatName":             FormatName,
 		"FieldOptionsStructName": FieldOptionsStructName,
 		"FieldFunction":          FieldFunction,
+		"Solve":                  Solve,
 		"Subtract":               Subtract,
 	}
 )
+
+func Solve(field introspection.Field) bool {
+	solve := field.TypeRef.IsScalar() || field.TypeRef.IsList()
+	if solve {
+		return true
+	}
+	return false
+}
 
 // Subtract subtract integer a with integer b.
 func Subtract(a, b int) int {

@@ -5,20 +5,22 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 
 func TestArg(t *testing.T) {
-	tmpl := template.Must(template.New("arg1").ParseFiles("arg.ts.tmpl"))
+	tmpl := template.Must(template.New("arg").ParseFiles("arg.ts.tmpl"))
 
-	var b bytes.Buffer
-	err := tmpl.ExecuteTemplate(&b, "arg", struct {
-		Name string
-		Type string
-	}{
-		Type: "string",
+	arg := introspection.Field{
 		Name: "ref",
-	})
+		TypeRef: &introspection.TypeRef{
+			Kind: introspection.TypeKindScalar,
+			Name: "string",
+		},
+	}
+	var b bytes.Buffer
+	err := tmpl.ExecuteTemplate(&b, "arg", arg)
 
 	want := "string ref"
 

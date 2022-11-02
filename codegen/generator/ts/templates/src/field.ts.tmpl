@@ -1,0 +1,3 @@
+{{ define "field" }}
+{{- if Solve . }}async {{end}}{{ .Name }}({{- template "args" .Args -}}){{- if Solve . }} Promise<Record<string, string>>{{ else }}{{ template "args" .Args }}{{ end -}}
+{{ end }}

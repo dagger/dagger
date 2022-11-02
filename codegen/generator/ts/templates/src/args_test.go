@@ -7,6 +7,7 @@ import (
 	"text/template"
 
 	"github.com/dagger/dagger/codegen/generator/ts/templates"
+	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +16,7 @@ func TestArgs(t *testing.T) {
 		in   string
 		want string
 	}{
-		"2 types": {`[ { "type": "string", "name": "ref" }, { "type": "string", "name": "tag" } ]`, "string ref, string tag"},
+		"2 types": {`[ { "name": "ref", "type": { "name": "string", "kind": "SCALAR" } }, { "name": "tag", "type": { "name": "string", "kind": "SCALAR" } } ]`, "string ref, string tag"},
 		"0 types": {`[]`, ""},
 	}
 
@@ -26,12 +27,7 @@ func TestArgs(t *testing.T) {
 
 			jsonData := c.in
 
-			type elem struct {
-				Name string
-				Type string
-			}
-
-			var elems []elem
+			var elems []introspection.Field
 			err := json.Unmarshal([]byte(jsonData), &elems)
 			require.NoError(t, err)
 
