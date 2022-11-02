@@ -51,6 +51,9 @@ func TestObject(t *testing.T) {
 }
 
 var expectedFunc = `
+/**
+ * this is the description
+ */
 class ref extends BaseApi {
 
   get getQueryTree() {

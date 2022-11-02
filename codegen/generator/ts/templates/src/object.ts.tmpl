@@ -1,5 +1,7 @@
 {{ define "object" }}
-{{ .Description | Comment }}
+{{ $commentLines := CommentToLines .Description }}
+
+{{- template "comment" $commentLines }}
 class {{ .Name | FormatName }} extends BaseApi {
 
   get getQueryTree() {

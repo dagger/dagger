@@ -17,7 +17,7 @@ func TestFormatName(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := formatName(c.in)
+			got := FormatName(c.in)
 			require.Equal(t, c.want, got)
 		})
 	}

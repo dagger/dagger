@@ -11,6 +11,7 @@ import (
 var (
 	FuncMap = template.FuncMap{
 		"Comment":                Comment,
+		"CommentToLines":         CommentToLines,
 		"FormatInputType":        FormatInputType,
 		"FormatOutputType":       FormatOutputType,
 		"FormatName":             FormatName,
@@ -23,6 +24,11 @@ var (
 // Subtract subtract integer a with integer b.
 func Subtract(a, b int) int {
 	return a - b
+}
+
+func CommentToLines(s string) []string {
+	split := strings.Split(s, "\n")
+	return split
 }
 
 // comments out a string
