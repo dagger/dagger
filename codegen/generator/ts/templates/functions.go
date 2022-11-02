@@ -38,16 +38,16 @@ func CommentToLines(s string) []string {
 // formatType formats a GraphQL type into Go
 // Example: `String` -> `string`
 func FormatInputType(r *introspection.TypeRef) string {
-	return formatType(r, true)
+	return formatType(r)
 }
 
 func FormatOutputType(r *introspection.TypeRef) string {
-	return formatType(r, false)
+	return formatType(r)
 }
 
 // formatType formats a GraphQL type into TypeScript
 // Example: `String` -> `string`
-func formatType(r *introspection.TypeRef, input bool) string {
+func formatType(r *introspection.TypeRef) string {
 	var representation string
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {

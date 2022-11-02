@@ -21,7 +21,6 @@ func TestFormatName(t *testing.T) {
 			require.Equal(t, c.want, got)
 		})
 	}
-
 }
 
 func TestFormatType(t *testing.T) {
