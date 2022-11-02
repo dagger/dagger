@@ -140,7 +140,7 @@ CMD goenv
 `,
 			})
 
-		sub := c.Directory().WithDirectory(src, "subcontext").Directory("subcontext")
+		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
 		env, err := c.Container().Build(sub).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -160,7 +160,7 @@ CMD goenv
 `,
 			})
 
-		sub := c.Directory().WithDirectory(src, "subcontext").Directory("subcontext")
+		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
 		env, err := c.Container().Build(sub, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
