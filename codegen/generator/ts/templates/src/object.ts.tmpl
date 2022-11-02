@@ -1,0 +1,13 @@
+{{ define "object" }}
+{{ .Description | Comment }}
+class {{ .Name | FormatName }} extends BaseApi {
+
+  get getQueryTree() {
+    return this._queryTree;
+  }
+
+{{ range $field := .Fields }}
+{{ end -}}
+
+}
+{{ end }}

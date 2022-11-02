@@ -1,6 +1,6 @@
 {{ define "args" }}
 	{{- $maxIndex := len . }}
-	{{- $maxIndex = subtract $maxIndex 1 }}
+	{{- $maxIndex = Subtract $maxIndex 1 }}
 	{{- range $index, $value := . }}
 		{{- template "arg" . }}{{ if ne $index $maxIndex }}, {{ end -}}
 	{{ end }}

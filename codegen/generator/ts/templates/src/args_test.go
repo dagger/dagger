@@ -21,9 +21,7 @@ func TestArgs(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			tmpl := template.New("args").Funcs(template.FuncMap{
-				"subtract": templates.Subtract,
-			})
+			tmpl := template.New("args").Funcs(templates.FuncMap)
 			tmpl = template.Must(tmpl.ParseFiles("args.ts.tmpl", "arg.ts.tmpl"))
 
 			jsonData := c.in
