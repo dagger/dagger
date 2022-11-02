@@ -1,7 +1,7 @@
-import asyncio
 import logging
 import sys
 
+import anyio
 import typer
 
 from ..log import configure_logging
@@ -19,7 +19,7 @@ def main(schema: bool = typer.Option(False, "-schema", help="Save schema to file
     sys.path.insert(0, ".")
 
     try:
-        from main import server
+        from main import server  # type: ignore
     except ImportError:
         raise typer.BadParameter("No “server: dagger.Server” found in “main” module.")
 
@@ -32,4 +32,4 @@ def main(schema: bool = typer.Option(False, "-schema", help="Save schema to file
         server.export_schema()
         raise typer.Exit()
 
-    asyncio.run(server.execute(), debug=server.debug)
+    anyio.run(server.execute)
