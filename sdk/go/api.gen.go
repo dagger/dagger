@@ -188,7 +188,7 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
-	PlatformVariants []ContainerID
+	PlatformVariants []*Container
 }
 
 // Write the container as an OCI tarball to the destination file path on the host
