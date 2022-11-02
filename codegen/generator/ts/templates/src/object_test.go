@@ -3,15 +3,13 @@ package test
 import (
 	"bytes"
 	"testing"
-	"text/template"
 
-	"github.com/dagger/dagger/codegen/generator/ts/templates"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 
 func TestObject(t *testing.T) {
-	tmpl := template.Must(template.New("object").Funcs(templates.FuncMap).ParseFiles("object.ts.tmpl"))
+	tmpl := templateHelper(t, "object", "comment")
 
 	var b bytes.Buffer
 	type Arg struct {
