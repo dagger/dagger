@@ -78,52 +78,15 @@ Replace the `main.go` file from the previous step with the version below (highli
 The revised `build()` function is the main workhorse here, so let's step through it in detail.
 
 - It begins by creating a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect), as before.
-- It uses the client's [`Git()`](https://pkg.go.dev/dagger.io/dagger#Query.Git) function to obtain a reference to the target repository. This function returns a `GitRepository` struct. The struct's [`Branch()`](https://pkg.go.dev/dagger.io/dagger#GitRepository.Branch) function provides details on a specific branch (here, the `main` branch), the [`Tree()`](https://pkg.go.dev/dagger.io/dagger#GitRef.Tree) function returns the directory of the branch, and the [`ID()`](https://pkg.go.dev/dagger.io/dagger#Directory.ID) function returns a reference for the directory. This reference is stored in the `src` variable.
-
-  ```go
-  ...
-  repo := client.Git(repoUrl)
-  src, err := repo.Branch("main").Tree().ID(ctx)
-  ```
-
-- It initializes a new container from a base image with the [`Container().From()`](https://pkg.go.dev/dagger.io/dagger#Container.From) function and returns a new `Container` struct. In this case, the base image is the `golang:latest` image.
-
-  ```go
-  ...
-  golang := client.Container().From("golang:latest")
-  ```
-
-- It mounts the filesystem of the repository branch in the container using the [`WithMountedDirectory()`](https://pkg.go.dev/dagger.io/dagger#Container.WithMountedDirectory) function of the `Container`.
-  - The first argument to this function is the target path in the container (here, `/src`).
+- It uses the client's [`Git()`](https://pkg.go.dev/dagger.io/dagger#Query.Git) method to obtain a reference to the target repository. This method returns a `GitRepository` struct. The struct's [`Branch()`](https://pkg.go.dev/dagger.io/dagger#GitRepository.Branch) method provides details on a specific branch (here, the `main` branch), the [`Tree()`](https://pkg.go.dev/dagger.io/dagger#GitRef.Tree) method returns the directory of the branch, and the [`ID()`](https://pkg.go.dev/dagger.io/dagger#Directory.ID) method returns a reference for the directory. This reference is stored in the `src` variable.
+- It initializes a new container from a base image with the [`Container().From()`](https://pkg.go.dev/dagger.io/dagger#Container.From) method and returns a new `Container` struct. In this case, the base image is the `golang:latest` image.
+- It mounts the filesystem of the repository branch in the container using the [`WithMountedDirectory()`](https://pkg.go.dev/dagger.io/dagger#Container.WithMountedDirectory) method of the `Container`.
+  - The first argument is the target path in the container (here, `/src`).
   - The second argument is the directory to be mounted (here, the reference previously created in the `src` variable).
-  It also changes the current working directory to the `/src` path of the container using the [`WithWorkdir()`](https://pkg.go.dev/dagger.io/dagger#Container.WithWorkdir) function and returns a revised `Container` with the results of these operations.
-
-  ```go
-  ...
-  golang := client.Container().From("golang:latest")
-  golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
-  ```
-
-- It uses the [`Exec()`](https://pkg.go.dev/dagger.io/dagger#Container.Exec) function to define the command to be executed in the container - in this case, the command `go build -o PATH`, where `PATH` refers to the `build/` directory in the container. The `Exec()` function returns a revised `Container` containing the results of command execution.
-
-  ```go
-  ...
-  golang = golang.Exec(dagger.ContainerExecOpts{
-    Args: []string{"go", "build", "-o", path},
-  })
-  ```
-
-- It obtains a reference to the `build/` directory in the container with the [`Directory().ID()`](https://pkg.go.dev/dagger.io/dagger#Directory.ID) function.
-- It copies the build result from the container to the host as follows:
-  - Using the Go standard library, it creates a directory on the host to store the final build output.
-  - It uses the client's [`Host().Workdir()`](https://pkg.go.dev/dagger.io/dagger#Host.Workdir) function to obtain a reference to the current working directory on the host. This reference is stored as a `HostDirectory` struct in the `workdir` variable.
-  - It writes the `build/` directory from the container to the host using the [`Write()`](https://pkg.go.dev/dagger.io/dagger#HostDirectory.Write) function.
-
-  ```go
-  ...
-  workdir := client.Host().Workdir()
-  _, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
-  ```
+  It also changes the current working directory to the `/src` path of the container using the [`WithWorkdir()`](https://pkg.go.dev/dagger.io/dagger#Container.WithWorkdir) method and returns a revised `Container` with the results of these operations.
+- It uses the [`Exec()`](https://pkg.go.dev/dagger.io/dagger#Container.Exec) method to define the command to be executed in the container - in this case, the command `go build -o PATH`, where `PATH` refers to the `build/` directory in the container. The `Exec()` method returns a revised `Container` containing the results of command execution.
+- It obtains a reference to the `build/` directory in the container with the [`Directory()`](https://pkg.go.dev/dagger.io/dagger#Directory) method.
+- It writes the `build/` directory from the container to the host using the `Directory.Export()` method.
 
 Try the tool by executing the commands below:
 
@@ -154,7 +117,7 @@ Replace the `main.go` file from the previous step with the version below (highli
 This revision of the Go CI tool does much the same as before, except that it now supports building the application for multiple OSs and architectures.
 
 - It defines the build matrix, consisting of two OSs (`darwin` and `linux`) and two architectures (`amd64` and `arm64`).
-- It iterates over this matrix, building the Go application for each combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case via the [`WithEnvVariable()`](https://pkg.go.dev/dagger.io/dagger#Container.WithEnvVariable) function of the `Container`.
+- It iterates over this matrix, building the Go application for each combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case via the [`Container.WithEnvVariable()`](https://pkg.go.dev/dagger.io/dagger#Container.WithEnvVariable) method.
 - It creates an output directory on the host named for each OS/architecture combination so that the build outputs can be differentiated.
 
 Try the Go CI tool by executing the commands below:
