@@ -14,8 +14,8 @@ from graphql import GraphQLObjectType as Object
 from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
 
-from dagger.client.codegen import Scalar as ScalarHandler
-from dagger.client.codegen import _InputField, format_input_type, format_name, format_output_type
+from dagger.codegen import Scalar as ScalarHandler
+from dagger.codegen import _InputField, format_input_type, format_name, format_output_type
 
 
 @pytest.mark.parametrize(
@@ -144,9 +144,7 @@ def test_scalar_predicate(type_, expected):
             dedent(
                 '''\
                 SecretID = NewType("SecretID", str)
-                """
-                A unique identifier for a secret.
-                """
+                """A unique identifier for a secret."""
 
                 ''',
             ),
@@ -155,5 +153,4 @@ def test_scalar_predicate(type_, expected):
 )
 def test_scalar_render(type_, expected):
     handler = ScalarHandler()
-    handler.render(type_)
-    assert handler.output == [expected]
+    assert handler.render(type_) == expected
