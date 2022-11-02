@@ -31,7 +31,7 @@ func main() {
 		Branch("086862926433e19e1f24cd709e6165c36bdb2633").
 		Tree()
 
-	var platformVariants []*dagger.Container
+	platformVariants := make([]*dagger.Container, 0, len(platforms))
 	for _, platform := range platforms {
 		// pull the golang image for this platform
 		ctr := client.Container(dagger.ContainerOpts{Platform: platform})
