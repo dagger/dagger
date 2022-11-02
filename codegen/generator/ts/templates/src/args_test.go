@@ -2,6 +2,7 @@ package test
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"text/template"
@@ -19,29 +20,37 @@ func subtract(a, b int) int {
 }
 
 func TestArgs(t *testing.T) {
-	tmpl := template.New("args").Funcs(template.FuncMap{
-		"join":     join,
-		"subtract": subtract,
-	})
-	tmpl = template.Must(tmpl.ParseFiles("args.ts.tmpl", "arg.ts.tmpl"))
-
-	var b bytes.Buffer
-	err := tmpl.ExecuteTemplate(&b, "args", []struct {
-		Name string
-		Type string
+	cases := map[string]struct {
+		in   string
+		want string
 	}{
-		{
-			Type: "string",
-			Name: "ref",
-		},
-		{
-			Type: "string",
-			Name: "tag",
-		},
-	})
+		"2 types": {`[ { "type": "string", "name": "ref" }, { "type": "string", "name": "tag" } ]`, "string ref, string tag"},
+		"0 types": {`[]`, ""},
+	}
 
-	want := "string ref, string tag"
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			tmpl := template.New("args").Funcs(template.FuncMap{
+				"subtract": subtract,
+			})
+			tmpl = template.Must(tmpl.ParseFiles("args.ts.tmpl", "arg.ts.tmpl"))
 
-	require.NoError(t, err)
-	require.Equal(t, want, b.String())
+			jsonData := c.in
+
+			type elem struct {
+				Name string
+				Type string
+			}
+
+			var elems []elem
+			err := json.Unmarshal([]byte(jsonData), &elems)
+			require.NoError(t, err)
+
+			var b bytes.Buffer
+			err = tmpl.ExecuteTemplate(&b, "args", elems)
+
+			require.NoError(t, err)
+			require.Equal(t, c.want, b.String())
+		})
+	}
 }
