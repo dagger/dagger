@@ -87,12 +87,6 @@ func (v *Visitor) visit(kind TypeKind, h VisitFunc, ignore map[string]any) error
 			return t.Fields[i].Name < t.Fields[j].Name
 		})
 
-		for _, f := range t.Fields {
-			sort.Slice(f.Args, func(i, j int) bool {
-				return f.Args[i].Name < f.Args[j].Name
-			})
-		}
-
 		sort.Slice(t.InputFields, func(i, j int) bool {
 			return t.InputFields[i].Name < t.InputFields[j].Name
 		})

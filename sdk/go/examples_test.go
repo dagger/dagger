@@ -150,7 +150,7 @@ func ExampleContainer_WithMountedCache() {
 
 	container := client.Container().From("alpine:3.16.2")
 
-	container = container.WithMountedCache(cache, "/cache")
+	container = container.WithMountedCache("/cache", cache)
 
 	var out string
 	for i := 0; i < 5; i++ {
