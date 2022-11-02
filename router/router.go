@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/playground"
+	"github.com/dagger/dagger/router/internal/handler"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
-	"github.com/graphql-go/handler"
 )
 
 type Router struct {
