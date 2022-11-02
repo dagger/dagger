@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/playground"
-	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/graphql/gqlerrors"
+	"github.com/dagger/graphql"
+	"github.com/dagger/graphql/gqlerrors"
 	"github.com/graphql-go/handler"
 )
 

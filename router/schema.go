@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/graphql-go/graphql"
+	"github.com/dagger/graphql"
 )
 
 type LoadedSchema interface {

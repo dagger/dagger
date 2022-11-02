@@ -5,7 +5,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/router"
-	"github.com/graphql-go/graphql/language/ast"
+	"github.com/dagger/graphql/language/ast"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
