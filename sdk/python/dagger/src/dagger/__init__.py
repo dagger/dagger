@@ -1,5 +1,7 @@
+"""Dagger Python SDK"""
+
 from .client import Client
-from .engine import Engine
+from .client.engine import Engine
 from .server import Server
 
 __all__ = [
