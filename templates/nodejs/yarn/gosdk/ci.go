@@ -26,10 +26,7 @@ func doCi() error {
 	defer client.Close()
 
 	// get the projects source directory
-	src, err := client.Host().Workdir().Read().ID(ctx)
-	if err != nil {
-		return err
-	}
+	src := client.Host().Workdir()
 
 	// initialize new container from yarn image
 	yarn := client.Container().From("yarnpkg/node-yarn")

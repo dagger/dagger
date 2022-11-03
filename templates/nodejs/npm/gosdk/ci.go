@@ -26,10 +26,7 @@ func doCi() error {
 	defer client.Close()
 
 	// get the projects source directory
-	src, err := client.Host().Workdir().Read().ID(ctx)
-	if err != nil {
-		return err
-	}
+	src := client.Host().Workdir()
 
 	// initialize new container from npm image
 	npm := client.Container().From("node")
