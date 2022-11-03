@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	// Register("ClientEnv", func() Task { return &clientEnvTask{} })
+	Register("ClientEnv", func() Task { return &clientEnvTask{} })
 }
 
 type clientEnvTask struct {
@@ -34,7 +34,6 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, s *so
 			continue
 		}
 		envvar := field.Label()
-		// val, err := t.getEnv(envvar, field.Value, field.IsOptional, pctx, s)
 
 		val, hasDefault := field.Value.Default()
 
@@ -49,7 +48,7 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, s *so
 				if err != nil {
 					return nil, err
 				}
-				envs[envvar] = utils.NewSecret(secretid)
+				envs[envvar] = utils.NewSecretFromId(secretid)
 			}
 		case !hasDefault && val.IsConcrete():
 			return nil, fmt.Errorf("%s: unexpected concrete value, please use a type or set a default", envvar)

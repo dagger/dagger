@@ -224,13 +224,9 @@ func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 
 	clientOpts := []dagger.ClientOpt{}
 
-	paths, err := p.context.LocalDirs.Paths()
+	_, err := p.context.LocalDirs.Paths()
 	if err != nil {
 		return err
-	}
-
-	for id, path := range paths {
-		clientOpts = append(clientOpts, dagger.WithLocalDir(id, path))
 	}
 
 	client, err := dagger.Connect(ctx, clientOpts...)

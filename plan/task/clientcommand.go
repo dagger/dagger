@@ -12,18 +12,19 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
 
 func init() {
-	// Register("ClientCommand", func() Task { return &clientCommandTask{} })
+	Register("ClientCommand", func() Task { return &clientCommandTask{} })
 }
 
 type clientCommandTask struct {
 }
 
-func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	var opts struct {
 		Name string
 		Args []string
@@ -60,7 +61,7 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _
 
 	env := make([]string, len(envs))
 	for _, envvar := range envs {
-		s, err := t.getString(pctx, envvar.Value)
+		s, err := t.getString(ctx, pctx, s, envvar.Value)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +75,7 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _
 	cmd.Env = append(os.Environ(), env...)
 
 	if i := v.Lookup("stdin"); i.Exists() {
-		val, err := t.getString(pctx, i)
+		val, err := t.getString(ctx, pctx, s, i)
 		if err != nil {
 			return nil, err
 		}
@@ -129,13 +130,15 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, _
 	})
 }
 
-func (t clientCommandTask) getString(pctx *plancontext.Context, v *compiler.Value) (string, error) {
+func (t clientCommandTask) getString(ctx context.Context, pctx *plancontext.Context, solver *solver.Solver, v *compiler.Value) (string, error) {
 	if plancontext.IsSecretValue(v) {
-		secret, err := pctx.Secrets.FromValue(v)
+
+		secretid, err := utils.GetSecretId(v)
 		if err != nil {
 			return "", err
 		}
-		return secret.PlainText(), nil
+		plaintext, err := solver.Client.Secret(secretid).Plaintext(ctx)
+		return plaintext, nil
 	}
 
 	s, err := v.String()

@@ -68,34 +68,6 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 
-	// FIXME: allow more configurable llb options
-	// For now we define the following convenience presets.
-	// opts := &llb.CopyInfo{
-	// 	CopyDirContentsOnly: true,
-	// 	CreateDestPath:      true,
-	// 	AllowWildcard:       true,
-	// 	IncludePatterns:     filters.Include,
-	// 	ExcludePatterns:     filters.Exclude,
-	// }
-
-	// outputState := inputState.File(
-	// 	llb.Copy(
-	// 		contentsState,
-	// 		sourcePath,
-	// 		destPath,
-	// 		opts,
-	// 	),
-	// 	withCustomName(v, "Copy %s %s", sourcePath, destPath),
-	// )
-
-	// result, err := s.Solve(ctx, outputState, pctx.Platform.Get())
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// TODO: Filters would be nice! Also... a way to specify where the new directory should go...
-	// Beyond what I've done here.
-
 	dgr := s.Client
 
 	sourceDirID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(contentsFsid)}).Directory(sourcePath).ID(ctx)
@@ -103,7 +75,10 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 
-	fsid, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(inputFsid)}).WithDirectory(dagger.DirectoryID(sourceDirID), destPath).ID(ctx)
+	fsid, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(inputFsid)}).
+		WithDirectory(dagger.DirectoryID(sourceDirID), destPath,
+			dagger.DirectoryWithDirectoryOpts{Include: filters.Include, Exclude: filters.Exclude}).
+		ID(ctx)
 	if err != nil {
 		return nil, err
 	}

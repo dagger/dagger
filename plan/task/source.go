@@ -7,21 +7,22 @@ import (
 	"os"
 	"strings"
 
-	"github.com/moby/buildkit/client/llb"
+	"dagger.io/dagger"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
 
 func init() {
-	// Register("Source", func() Task { return &sourceTask{} })
+	Register("Source", func() Task { return &sourceTask{} })
 }
 
 type sourceTask struct {
 }
 
-func (c *sourceTask) PreRun(_ context.Context, pctx *plancontext.Context, v *compiler.Value) error {
+func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *compiler.Value) error {
 	origPath, err := v.Lookup("path").String()
 	if err != nil {
 		return err
@@ -68,39 +69,16 @@ func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solv
 	}
 
 	lg.Debug().Str("path", path).Msg("loading local directory")
-	opts := []llb.LocalOption{
-		withCustomName(v, "Source %s", path),
-		llb.IncludePatterns(source.Include),
-		llb.ExcludePatterns(source.Exclude),
-		// Without hint, multiple `llb.Local` operations on the
-		// same path get a different digest.
-		llb.SessionID(s.SessionID()),
-		llb.SharedKeyHint(path),
-	}
 
-	// FIXME: Remove the `Copy` and use `Local` directly.
-	//
-	// Copy'ing is a costly operation which should be unnecessary.
-	// However, using llb.Local directly breaks caching sometimes for unknown reasons.
-	st := llb.Scratch().File(
-		llb.Copy(
-			llb.Local(
-				path,
-				opts...,
-			),
-			"/",
-			"/",
-		),
-		withCustomName(v, "Embed %s [copy]", path),
-	)
-
-	result, err := s.Solve(ctx, st, pctx.Platform.Get())
+	dirId, err := s.Client.Host().Directory(path, dagger.HostDirectoryOpts{
+		Include: source.Include,
+		Exclude: source.Exclude,
+	}).ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	fs := pctx.FS.New(result)
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": fs.MarshalCUE(),
+		"output": utils.NewFS(dirId),
 	})
 }

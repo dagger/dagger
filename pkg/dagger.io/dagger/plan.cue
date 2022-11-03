@@ -30,13 +30,13 @@ package dagger
 		}
 
 		// Access client environment variables
-		// env: _#clientEnv
+		env: _#clientEnv
 
 		// Execute commands in the client
-		// commands: [id=string]: _#clientCommand
+		commands: [id=string]: _#clientCommand
 
 		// Platform of the client machine
-		// platform: _#clientPlatform
+		platform: _#clientPlatform
 	}
 
 	// Configure platform execution

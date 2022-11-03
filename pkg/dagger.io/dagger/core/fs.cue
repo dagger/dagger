@@ -5,16 +5,14 @@ import "dagger.io/dagger"
 // Access the source directory for the current CUE package
 // This may safely be called from any package
 #Source: {
-	$dagger: task: {
-		_name: "Source" @cloak(notimplemented)
-	}
+	$dagger: task: _name: "Source"
 
 	// Relative path to source.
 	path: string
 	// Optionally include certain files
-	include: [...string] @cloak(notimplemented)
+	include: [...string]
 	// Optionally exclude certain files
-	exclude: [...string] @cloak(notimplemented)
+	exclude: [...string]
 
 	output: dagger.#FS @dagger(generated)
 }

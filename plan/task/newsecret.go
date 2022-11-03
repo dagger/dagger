@@ -58,6 +58,6 @@ func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	// secret := pctx.Secrets.New(plaintext)
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": utils.NewSecret(secretid),
+		"output": utils.NewSecretFromId(secretid),
 	})
 }

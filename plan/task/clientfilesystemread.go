@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	// Register("ClientFilesystemRead", func() Task { return &clientFilesystemReadTask{} })
+	Register("ClientFilesystemRead", func() Task { return &clientFilesystemReadTask{} })
 }
 
 type clientFilesystemReadTask struct{}
@@ -98,7 +98,7 @@ func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *planco
 
 	if plancontext.IsSecretValue(contents) {
 		lg.Debug().Str("path", path).Msg("loading local secret file")
-		return t.readSecret(pctx, path)
+		return t.readSecret(ctx, pctx, s, path)
 	}
 
 	if contents.IsConcrete() {
@@ -124,62 +124,40 @@ func (t clientFilesystemReadTask) readFS(ctx context.Context, pctx *plancontext.
 		return nil, err
 	}
 
-	// opts := []llb.LocalOption{
-	// 	withCustomName(v, "Local %s", path),
-	// 	// Without hint, multiple `llb.Local` operations on the
-	// 	// same path get a different digest.
-	// 	llb.SessionID(s.SessionID()),
-	// 	llb.SharedKeyHint(path),
-	// }
+	opts := dagger.HostDirectoryOpts{}
 
-	// if len(dir.Include) > 0 {
-	// 	opts = append(opts, llb.IncludePatterns(dir.Include))
-	// }
+	if len(dir.Include) > 0 {
+		opts.Include = dir.Include
+	}
 
-	// if len(dir.Exclude) > 0 {
-	// 	opts = append(opts, llb.ExcludePatterns(dir.Exclude))
-	// }
-
-	// FIXME: Remove the `Copy` and use `Local` directly.
-	//
-	// Copy'ing is a costly operation which should be unnecessary.
-	// However, using llb.Local directly breaks caching sometimes for unknown reasons.
+	if len(dir.Exclude) > 0 {
+		opts.Exclude = dir.Exclude
+	}
 
 	dgr := s.Client
 
-	hostDirId, err := dgr.Host().Directory(dagger.HostDirectoryID(path)).Read().ID(ctx)
+	hostDirId, err := dgr.Host().Directory(path, opts).ID(ctx)
+
 	if err != nil {
 		return nil, err
 	}
 
-	// st := llb.Scratch().File(
-	// 	llb.Copy(
-	// 		llb.Local(
-	// 			path,
-	// 			opts...,
-	// 		),
-	// 		"/",
-	// 		"/",
-	// 	),
-	// 	withCustomName(v, "Local %s [copy]", path),
-	// )
-
-	// result, err := s.Solve(ctx, st, pctx.Platform.Get())
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// fs := pctx.FS.New(result)
-	return utils.NewFS(dagger.DirectoryID(hostDirId)), nil
+	return utils.NewFS(hostDirId), nil
 }
 
-func (t clientFilesystemReadTask) readSecret(pctx *plancontext.Context, path string) (*compiler.Value, error) {
+// TODO:
+func (t clientFilesystemReadTask) readSecret(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, path string) (*compiler.Value, error) {
 	contents, err := t.readString(path)
 	if err != nil {
 		return nil, err
 	}
-	secret := pctx.Secrets.New(contents)
-	return secret.MarshalCUE(), nil
+
+	secretid, err := s.NewSecret(contents).ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return utils.NewSecretFromId(secretid), nil
 }
 
 func (t clientFilesystemReadTask) readString(path string) (string, error) {

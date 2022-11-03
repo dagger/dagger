@@ -75,6 +75,9 @@ func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	}
 
 	dirId, err := dgr.Directory().WithCopiedFile(httpFetch.Dest, fileid).ID(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": utils.NewFS(dagger.DirectoryID(dirId)),

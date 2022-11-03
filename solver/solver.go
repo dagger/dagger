@@ -2,9 +2,11 @@ package solver
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -95,6 +97,26 @@ func (s *Solver) Stop(ctx context.Context) {
 
 func (s *Solver) AddCredentials(target, username, secret string) {
 	s.opts.Auth.AddCredentials(target, username, secret)
+}
+
+func (s *Solver) NewSecret(plaintext string) *dagger.Secret {
+	env := hashID(plaintext)
+	err := os.Setenv(env, plaintext)
+	if err != nil {
+		panic(err)
+	}
+
+	return s.Client.Host().EnvVariable(env).Secret()
+}
+
+func hashID(values ...string) string {
+	hash := sha256.New()
+	for _, v := range values {
+		if _, err := hash.Write([]byte(v)); err != nil {
+			panic(err)
+		}
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil))
 }
 
 func (s *Solver) Marshal(ctx context.Context, st llb.State, co ...llb.ConstraintsOpt) (*bkpb.Definition, error) {

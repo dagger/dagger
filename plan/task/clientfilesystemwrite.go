@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	// Register("ClientFilesystemWrite", func() Task { return &clientFilesystemWriteTask{} })
+	Register("ClientFilesystemWrite", func() Task { return &clientFilesystemWriteTask{} })
 }
 
 type clientFilesystemWriteTask struct {
@@ -92,22 +92,8 @@ func (t clientFilesystemWriteTask) writeFS(ctx context.Context, pctx *plancontex
 	fsid, err := utils.GetFSId(v)
 
 	dgr := s.Client
-	// contents, err := pctx.FS.FromValue(v)
-	// if err != nil {
-	// 	return err
-	// }
 
-	// st, err := contents.State()
-	// if err != nil {
-	// 	return err
-	// }
-
-	// _, err = s.Export(ctx, st, nil, bk.ExportEntry{
-	// 	Type:      bk.ExporterLocal,
-	// 	OutputDir: path,
-	// }, pctx.Platform.Get())
-
-	_, err = dgr.Host().Directory(dagger.HostDirectoryID(path)).Write(ctx, dagger.DirectoryID(fsid), dagger.HostDirectoryWriteOpts{Path: path})
+	_, err = dgr.Directory(dagger.DirectoryOpts{ID: fsid}).Export(ctx, path)
 
 	return err
 }

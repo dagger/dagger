@@ -57,7 +57,7 @@ func NewFS(id dagger.DirectoryID) *compiler.Value {
 	return v
 }
 
-func NewSecret(id dagger.SecretID) *compiler.Value {
+func NewSecretFromId(id dagger.SecretID) *compiler.Value {
 	v := compiler.NewValue()
 
 	if err := v.FillPath(secretIDPath, id); err != nil {
@@ -66,3 +66,7 @@ func NewSecret(id dagger.SecretID) *compiler.Value {
 
 	return v
 }
+
+// func NewSecret(plaintext string) *dagger.Secret {
+// 	dagger.Host.EnvVariables
+// }
