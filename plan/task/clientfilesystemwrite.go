@@ -67,11 +67,15 @@ func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plan
 
 	if plancontext.IsSecretValue(contents) {
 		lg.Debug().Str("path", path).Msg("writing secret to local file")
-		secret, err := pctx.Secrets.FromValue(contents)
+		secretid, err := utils.GetSecretId(contents)
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(path, []byte(secret.PlainText()), permissions)
+		plaintext, err := s.Client.Secret(secretid).Plaintext(ctx)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, []byte(plaintext), permissions)
 	}
 
 	k := contents.Kind()

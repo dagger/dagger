@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"strings"
 
 	"dagger.io/dagger"
 	"go.dagger.io/dagger/compiler"
@@ -31,31 +32,29 @@ func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 
 	dgr := s.Client
 
-	secretid, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).File(path).Secret().ID(ctx)
+	secret := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).File(path).Secret()
 
-	// input, err := pctx.FS.FromValue(v.Lookup("input"))
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// inputFS := solver.NewBuildkitFS(input.Result())
-
-	// FIXME: we should create an intermediate image containing only `path`.
-	// That way, on cache misses, we'll only download the layer with the file contents rather than the entire FS.
-	// contents, err := fs.ReadFile(inputFS, path)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("ReadFile %s: %w", path, err)
-	// }
-	// plaintext := string(contents)
-
-	// trimSpace, err := v.Lookup("trimSpace").Bool()
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// if trimSpace {
-	// 	plaintext = strings.TrimSpace(plaintext)
-	// }
-
-	// secret := pctx.Secrets.New(plaintext)
+	var secretid dagger.SecretID
+	trimSpace, err := v.Lookup("trimSpace").Bool()
+	if err != nil {
+		return nil, err
+	}
+	if trimSpace {
+		plaintext, err := s.Client.Secret(secretid).Plaintext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		newsecret := s.NewSecret(strings.TrimSpace(plaintext))
+		secretid, err = newsecret.ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		secretid, err = secret.ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": utils.NewSecretFromId(secretid),

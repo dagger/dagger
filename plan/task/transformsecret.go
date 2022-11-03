@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 )
@@ -20,19 +21,29 @@ func init() {
 type transformSecretTask struct {
 }
 
-func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, solver *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("transforming secret")
 
 	input := v.Lookup("input")
 
-	inputSecret, err := pctx.Secrets.FromValue(input)
+	secretid, err := utils.GetSecretId(input)
 	if err != nil {
 		return nil, err
 	}
 
+	inputSecretPlaintext, err := solver.Client.Secret(secretid).Plaintext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// inputSecret, err := pctx.Secrets.FromValue(input)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	function := v.Lookup("#function")
-	inputSecretPlaintext := inputSecret.PlainText()
+	// inputSecretPlaintext := inputSecret.PlainText()
 	err = function.FillPath(cue.ParsePath("input"), inputSecretPlaintext)
 	if err != nil {
 		dmp := diffmatchpatch.New()
@@ -69,8 +80,11 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 	output := compiler.NewValue()
 
 	for p, s := range pathToSecrets {
-		secret := pctx.Secrets.New(s)
-		output.FillPath(cue.ParsePath(p), secret.MarshalCUE())
+		secretid, err := solver.NewSecret(s).ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		output.FillPath(cue.ParsePath(p), utils.NewSecretFromId(secretid))
 	}
 
 	return output, nil

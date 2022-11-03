@@ -27,7 +27,7 @@ _#decodedOutput: dagger.#Secret | *{[!~"\\$dagger"]: _#decodedOutput}
 	// Path of the secret to read
 	path: string
 	// Whether to trim leading and trailing space characters from secret value
-	trimSpace: *true | false @cloak(notimplemented)
+	trimSpace: *true | false
 	// Contents of the secret
 	output: dagger.#Secret @dagger(generated)
 }
