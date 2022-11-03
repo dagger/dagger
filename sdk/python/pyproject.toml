@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "dagger"
 version = "0.1.0"
 authors = [
-    { name="Sam Alba", email="sam@dagger.io" },
+    { name="Dagger Inc.", email="hello@dagger.io" },
 ]
 description = "Dagger library"
 keywords = ["dagger"]
@@ -91,6 +91,9 @@ all = [
 testpaths = ["tests/"]
 addopts = [
     "--import-mode=importlib",
+]
+markers = [
+    "slow: mark test as slow (integration)",
 ]
 
 [tool.mypy]
