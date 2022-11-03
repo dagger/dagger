@@ -1,4 +1,6 @@
-  export function queryBuilder(q: any) {
+import { QueryTree } from "./api";
+
+  export function queryBuilder(q: QueryTree[]) {
 
     const args = (item: any) => { 
       let regex = /\{"[a-zA-Z]+"/ig;
@@ -16,7 +18,7 @@
     }
 
     let query = ""
-    q.forEach((item: any, index: any) => {
+    q.forEach((item: QueryTree, index: number) => {
       query += `
         ${item.operation} ${item.args ? `(${args(item)})` : ''} ${q.length - 1 !== index ? '{' : '}'.repeat(q.length - 1)}  
       `
@@ -25,15 +27,14 @@
     return query.replace(/\s+/g, '')
   }
 
-  export function queryFlatten(res: any) {
+  export function queryFlatten(res: Record<string, any>) {
     return Object.assign(
       {}, 
       ...function _flatten(o): any { 
         return [].concat(...Object.keys(o)
           .map((k: string) => {
             if(typeof o[k] === 'object' && !(o[k] instanceof Array)) return _flatten(o[k])
-            if(o[k] instanceof Array) return {[k]: o[k]}
-            else return ({[k]: o[k]})
+            else return {[k]: o[k]}
             }
           )
         );
