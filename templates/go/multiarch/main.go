@@ -44,13 +44,7 @@ func build(repoUrl string) error {
 
 	// clone the specified git repo
 	repo := client.Git(repoUrl)
-	src, err := repo.Branch("main").Tree().ID(ctx)
-	if err != nil {
-		return err
-	}
-
-	// reference to the current working directory
-	workdir := client.Host().Workdir()
+	src := repo.Branch("main").Tree()
 
 	for _, version := range goVersions {
 		// Get golang image and mount go source
@@ -63,7 +57,7 @@ func build(repoUrl string) error {
 			for _, goarch := range arches {
 				goos, goarch, version := goos, goarch, version // closures
 				g.Go(func() error {
-					return buildOsArch(ctx, golang, workdir, goos, goarch, version)
+					return buildOsArch(ctx, golang, goos, goarch, version)
 				})
 			}
 		}
@@ -74,7 +68,7 @@ func build(repoUrl string) error {
 	return nil
 }
 
-func buildOsArch(ctx context.Context, builder *dagger.Container, workdir *dagger.HostDirectory, goos string, goarch string, version string) error {
+func buildOsArch(ctx context.Context, builder *dagger.Container, goos string, goarch string, version string) error {
 	fmt.Printf("Building %s %s with go %s\n", goos, goarch, version)
 
 	// Create the output path for the build
@@ -93,12 +87,9 @@ func buildOsArch(ctx context.Context, builder *dagger.Container, workdir *dagger
 	})
 
 	// Get build output from builder
-	output, err := build.Directory(path).ID(ctx)
-	if err != nil {
-		return err
-	}
+	output := build.Directory(path)
 
 	// Write the build output to the host
-	_, err = workdir.Write(ctx, output, dagger.HostDirectoryWriteOpts{Path: path})
+	_, err = output.Export(ctx, path)
 	return err
 }

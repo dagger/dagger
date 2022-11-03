@@ -26,10 +26,7 @@ func doCi() error {
 	defer client.Close()
 
 	// get the projects source directory
-	src, err := client.Host().Workdir().Read().ID(ctx)
-	if err != nil {
-		return err
-	}
+	src := client.Host().Workdir()
 
 	// Build an gradle image with gradle and bash installed
 	gradle := client.Container().From("gradle:latest")
