@@ -9,18 +9,13 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Must pass in a Git repository to build")
-		os.Exit(1)
-	}
-	repo := os.Args[1]
-	if err := build(context.Background(), repo); err != nil {
+	if err := build(context.Background()); err != nil {
 		fmt.Println(err)
 	}
 }
 
-func build(ctx context.Context, repoURL string) error {
-	fmt.Printf("Building %s\n", repoURL)
+func build(ctx context.Context) error {
+	fmt.Println("Building with Dagger")
 
 	// highlight-start
 	// define build matrix
@@ -35,9 +30,13 @@ func build(ctx context.Context, repoURL string) error {
 	}
 	defer client.Close()
 
-	// clone repository with Dagger
-	repo := client.Git(repoURL)
-	src := repo.Branch("main").Tree()
+	// get reference to the local project
+	src := client.Host().Workdir()
+
+	// highlight-start
+	// create empty directory to put build outputs
+	outputs := client.Directory()
+	// highlight-end
 
 	// get `golang` image
 	golang := client.Container().From("golang:latest")
@@ -61,14 +60,13 @@ func build(ctx context.Context, repoURL string) error {
 			})
 
 			// get reference to build output directory in container
-			output := build.Directory(path)
-
-			// write contents of container build/ directory to the host
-			_, err = output.Export(ctx, path)
-			if err != nil {
-				return err
-			}
+			outputs = outputs.WithDirectory(path, build.Directory(path))
 		}
+	}
+	// write build artifacts to host
+	_, err = outputs.Export(ctx, ".")
+	if err != nil {
+		return err
 	}
 	// highlight-end
 
