@@ -1,8 +1,10 @@
 package core
 
 import (
+	"context"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +26,7 @@ func TestGit(t *testing.T) {
 
 	err := testutil.Query(
 		`{
-			git(url: "github.com/dagger/dagger") {
+			git(url: "github.com/dagger/dagger", keepGitDir: true) {
 				branch(name: "main") {
 					tree {
 						file(path: "README.md") {
@@ -36,4 +38,24 @@ func TestGit(t *testing.T) {
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
+}
+
+func TestGitKeepGitDir(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client, _ := dagger.Connect(ctx)
+	defer client.Close()
+
+	t.Run("git dir is present", func(t *testing.T) {
+		dir := client.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
+		ent, _ := dir.Entries(ctx)
+		require.Contains(t, ent, ".git")
+	})
+
+	t.Run("git dir is not present", func(t *testing.T) {
+		dir := client.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+		ent, _ := dir.Entries(ctx)
+		require.NotContains(t, ent, ".git")
+	})
 }

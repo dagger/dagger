@@ -1145,10 +1145,22 @@ func (r *Query) File(id FileID) *File {
 	}
 }
 
+// GitOpts contains options for Query.Git
+type GitOpts struct {
+	KeepGitDir bool
+}
+
 // Query a git repository
-func (r *Query) Git(url string) *GitRepository {
+func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.q.Select("git")
 	q = q.Arg("url", url)
+	// `keepGitDir` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
+			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+			break
+		}
+	}
 
 	return &GitRepository{
 		q: q,
