@@ -72,7 +72,12 @@ type withNewDirectoryArgs struct {
 }
 
 func (s *directorySchema) withNewDirectory(ctx *router.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
-	return parent.WithNewDirectory(ctx, s.gw, args.Path)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithNewDirectory(ctx, gw, args.Path)
 }
 
 type withDirectoryArgs struct {
@@ -91,7 +96,12 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx *router.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.gw, args.Path)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.Entries(ctx, gw, args.Path)
 }
 
 type dirFileArgs struct {
@@ -108,7 +118,12 @@ type withNewFileArgs struct {
 }
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithNewFile(ctx, gw, args.Path, []byte(args.Contents))
 }
 
 type withFileArgs struct {

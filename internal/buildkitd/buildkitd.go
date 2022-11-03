@@ -62,6 +62,7 @@ const (
 // alternatively you can build your own image and push it somewhere
 var modVersionToImage = map[string]string{
 	"v0.10.1-0.20221027014600-b78713cdd127": "moby/buildkit@sha256:4984ac6da1898a9a06c4c3f7da5eaabe8a09ec56f5054b0a911ab0f9df6a092c",
+	"(devel)":                               "moby/buildkit:v0.10.5",
 }
 
 func Client(ctx context.Context) (*bkclient.Client, error) {

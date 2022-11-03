@@ -14,21 +14,33 @@ import (
 
 	"github.com/dagger/dagger/router/internal/handler"
 	"github.com/dagger/dagger/router/internal/playground"
+	"github.com/dagger/dagger/sessions"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 )
+
+// SessionManager is a whole lot like a Buildkit *session.Manager except it
+// opens a gateway client.
+type SessionManager interface {
+	HandleHTTPRequest(context.Context, http.ResponseWriter, *http.Request) error
+	Gateway(ctx context.Context, id string) (bkgw.Client, error)
+}
 
 type Router struct {
 	schemas map[string]ExecutableSchema
 
-	s *graphql.Schema
-	h *handler.Handler
-	l sync.RWMutex
+	gqlSchema  *graphql.Schema
+	gqlHandler http.Handler
+	gqlL       sync.RWMutex
+
+	manager *sessions.Manager
 }
 
-func New() *Router {
+func New(sm *sessions.Manager) *Router {
 	r := &Router{
 		schemas: make(map[string]ExecutableSchema),
+		manager: sm,
 	}
 
 	if err := r.Add(&rootSchema{}); err != nil {
@@ -40,9 +52,9 @@ func New() *Router {
 
 // Do executes a query directly in the server
 func (r *Router) Do(ctx context.Context, query string, variables map[string]any, data any) (*graphql.Result, error) {
-	r.l.RLock()
-	schema := *r.s
-	r.l.RUnlock()
+	r.gqlL.RLock()
+	schema := *r.gqlSchema
+	r.gqlL.RUnlock()
 
 	params := graphql.Params{
 		Context:        ctx,
@@ -73,8 +85,8 @@ func (r *Router) Do(ctx context.Context, query string, variables map[string]any,
 }
 
 func (r *Router) Add(schema ExecutableSchema) error {
-	r.l.Lock()
-	defer r.l.Unlock()
+	r.gqlL.Lock()
+	defer r.gqlL.Unlock()
 
 	// Copy the current schemas and append new schemas
 	r.add(schema)
@@ -97,9 +109,17 @@ func (r *Router) Add(schema ExecutableSchema) error {
 	}
 
 	// Atomic swap
-	r.s = s
-	r.h = handler.New(&handler.Config{
+	r.gqlSchema = s
+	r.gqlHandler = handler.New(&handler.Config{
 		Schema: s,
+	})
+	r.gqlHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		sid := req.URL.Query().Get("session")
+		ctx = context.WithValue(ctx, sessionIDKey{}, sid)
+		handler.New(&handler.Config{
+			Schema: s,
+		}).ContextHandler(ctx, w, req)
 	})
 	return nil
 }
@@ -121,16 +141,16 @@ func (r *Router) add(schema ExecutableSchema) {
 }
 
 func (r *Router) Get(name string) ExecutableSchema {
-	r.l.RLock()
-	defer r.l.RUnlock()
+	r.gqlL.RLock()
+	defer r.gqlL.RUnlock()
 
 	return r.schemas[name]
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.l.RLock()
-	h := r.h
-	r.l.RUnlock()
+	r.gqlL.RLock()
+	queryHandler := r.gqlHandler
+	r.gqlL.RUnlock()
 
 	defer func() {
 		if v := recover(); v != nil {
@@ -160,7 +180,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	mux := http.NewServeMux()
-	mux.Handle("/query", h)
+	mux.Handle("/query", queryHandler)
+	mux.Handle("/session", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		err := r.manager.HandleHTTPRequest(req.Context(), w, req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}))
 	mux.Handle("/", playground.Handler("Dagger Dev", "/query"))
 	mux.ServeHTTP(w, req)
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -25,14 +26,27 @@ func Dev(cmd *cobra.Command, args []string) {
 		DisableHostRW: disableHostRW,
 	}
 
-	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
-		srv := http.Server{
+	ctx := context.Background()
+
+	err := engine.Start(ctx, startOpts, func(ctx context.Context, r *router.Router) error {
+		httpSrv := http.Server{
 			Addr:              fmt.Sprintf(":%d", devServerPort),
 			Handler:           r,
 			ReadHeaderTimeout: 30 * time.Second,
 		}
-		fmt.Fprintf(os.Stderr, "==> dev server listening on http://localhost:%d", devServerPort)
-		return srv.ListenAndServe()
+
+		httpL, err := net.Listen("tcp", fmt.Sprintf(":%d", devServerPort))
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "==> dev HTTP server listening on http://%s\n", httpL.Addr())
+
+		if err := httpSrv.Serve(httpL); err != nil {
+			return fmt.Errorf("failed to serve HTTP: %w", err)
+		}
+
+		return nil
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

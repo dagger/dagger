@@ -4,8 +4,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/sessions"
 	bkclient "github.com/moby/buildkit/client"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -13,7 +13,7 @@ type InitializeArgs struct {
 	Router        *router.Router
 	SSHAuthSockID string
 	Workdir       string
-	Gateway       bkgw.Client
+	Sessions      *sessions.Manager
 	BKClient      *bkclient.Client
 	SolveOpts     bkclient.SolveOpt
 	SolveCh       chan *bkclient.SolveStatus
@@ -24,7 +24,7 @@ type InitializeArgs struct {
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:        params.Router,
-		gw:            params.Gateway,
+		sessions:      params.Sessions,
 		bkClient:      params.BKClient,
 		solveOpts:     params.SolveOpts,
 		solveCh:       params.SolveCh,
@@ -51,7 +51,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 
 type baseSchema struct {
 	router        *router.Router
-	gw            bkgw.Client
+	sessions      *sessions.Manager
 	bkClient      *bkclient.Client
 	solveOpts     bkclient.SolveOpt
 	solveCh       chan *bkclient.SolveStatus

@@ -3,7 +3,6 @@ package unix
 import (
 	"context"
 	"net"
-	"net/http"
 	"net/url"
 
 	"dagger.io/dagger/internal/engineconn"
@@ -25,7 +24,7 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 	}, nil
 }
 
-func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
+func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
 	// FIXME: These are necessary for dagger-in-dagger but do not work.
 	// if cfg.Workdir != "" {
 	// 	return nil, errors.New("workdir not supported on unix hosts")
@@ -36,12 +35,8 @@ func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Clien
 	// if cfg.NoExtensions {
 	// 	return nil, errors.New("no extensions is not supported on unix hosts")
 	// }
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", c.path)
-			},
-		},
+	return func(_ context.Context) (net.Conn, error) {
+		return net.Dial("unix", c.path)
 	}, nil
 }
 

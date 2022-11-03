@@ -95,7 +95,12 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	return parent.From(ctx, s.gw, args.Address)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.From(ctx, gw, args.Address)
 }
 
 type containerBuildArgs struct {
@@ -104,7 +109,12 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.Build(ctx, gw, &core.Directory{ID: args.Context}, args.Dockerfile)
 }
 
 func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
@@ -125,19 +135,39 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, args.ContainerExecOpts)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.Exec(ctx, gw, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
-	return parent.ExitCode(ctx, s.gw)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.ExitCode(ctx, gw)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
-	return parent.MetaFile(ctx, s.gw, "stdout")
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.MetaFile(ctx, gw, "stdout")
 }
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
-	return parent.MetaFile(ctx, s.gw, "stderr")
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.MetaFile(ctx, gw, "stderr")
 }
 
 type containerWithEntrypointArgs struct {
@@ -383,7 +413,12 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.gw, args.Path)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.Directory(ctx, gw, args.Path)
 }
 
 type containerFileArgs struct {
@@ -391,7 +426,12 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.gw, args.Path)
+	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.File(ctx, gw, args.Path)
 }
 
 func absPath(workDir string, containerPath string) string {

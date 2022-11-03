@@ -39,7 +39,6 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	}
 
 	var absPath string
-	var err error
 	if filepath.IsAbs(dirPath) {
 		absPath = dirPath
 	} else {
@@ -50,10 +49,10 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 		}
 	}
 
-	absPath, err = filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("eval symlinks: %w", err)
-	}
+	// absPath, err = filepath.EvalSymlinks(absPath)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("eval symlinks: %w", err)
+	// }
 
 	localID := fmt.Sprintf("host:%s", absPath)
 

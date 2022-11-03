@@ -3,23 +3,30 @@ package dagger
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 
 	"dagger.io/dagger/internal/engineconn"
 	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
+	_ "dagger.io/dagger/internal/engineconn/tcp"      // tcp connection
 	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
+	"github.com/moby/buildkit/session"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.uber.org/multierr"
 )
 
 // Client is the Dagger Engine Client
 type Client struct {
 	Query
 
-	conn engineconn.EngineConn
-	gql  graphql.Client
+	conn    engineconn.EngineConn
+	session *session.Session
+	gql     graphql.Client
 }
 
 // ClientOpt holds a client option
@@ -88,11 +95,22 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	c := &Client{
 		conn: conn,
 	}
-	client, err := c.conn.Connect(ctx, cfg)
+	dialer, err := c.conn.Connect(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	c.gql = errorWrappedClient{graphql.NewClient("http://dagger/query", client)}
+	c.session, err = openSession(ctx, dialer)
+	if err != nil {
+		return nil, fmt.Errorf("open sessionme: %w", err)
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _network, _addr string) (net.Conn, error) {
+				return dialer(ctx)
+			},
+		},
+	}
+	c.gql = errorWrappedClient{graphql.NewClient("http://dagger/query?session="+c.session.ID(), client)}
 	c.Query = Query{
 		q: querybuilder.Query(),
 		c: c.gql,
@@ -102,7 +120,10 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 
 // Close the engine connection
 func (c *Client) Close() error {
-	return c.conn.Close()
+	return multierr.Append(
+		c.conn.Close(),
+		c.session.Close(),
+	)
 }
 
 // Do sends a GraphQL request to the engine

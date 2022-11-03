@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
+	"net"
 	"net/url"
 )
 
@@ -13,9 +13,11 @@ type RegisterFunc func(*url.URL) (EngineConn, error)
 var helpers = map[string]RegisterFunc{}
 
 type EngineConn interface {
-	Connect(ctx context.Context, cfg *Config) (*http.Client, error)
+	Connect(ctx context.Context, cfg *Config) (Dialer, error)
 	Close() error
 }
+
+type Dialer func(ctx context.Context) (net.Conn, error)
 
 func Get(host string) (EngineConn, error) {
 	u, err := url.Parse(host)

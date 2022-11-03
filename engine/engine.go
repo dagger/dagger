@@ -14,12 +14,9 @@ import (
 	"github.com/dagger/dagger/internal/buildkitd"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
-	"github.com/dagger/dagger/secret"
+	"github.com/dagger/dagger/sessions"
 	bkclient "github.com/moby/buildkit/client"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -78,12 +75,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
-	router := router.New()
-	secretStore := secret.NewStore()
-
-	socketProviders := MergedSocketProviders{
-		core.DaggerSockName: project.NewAPIProxy(router),
-	}
+	socketProviders := MergedSocketProviders{}
 	var sshAuthSockID string
 	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {
 		sshAuthHandler, err := sshAuthSockHandler()
@@ -94,17 +86,17 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		sshAuthSockID = sshAuthSockEnv
 		socketProviders[sshAuthSockID] = sshAuthHandler
 	}
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
-			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(startOpts.LogOutput),
+			// authprovider.NewDockerAuthProvider(startOpts.LogOutput),
 		},
 	}
 
-	if !startOpts.DisableHostRW {
-		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
-	}
+	// if !startOpts.DisableHostRW {
+	// 	solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
+	// }
 
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -126,55 +118,50 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		})
 	}
 
-	eg.Go(func() error {
-		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			// Secret store is a circular dependency, since it needs to resolve
-			// SecretIDs using the gateway, we don't have a gateway until we call
-			// Build, which needs SolveOpts, which needs to contain the secret store.
-			//
-			// Thankfully we can just yeet the gateway into the store.
-			secretStore.SetGateway(gw)
-
-			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:        router,
-				SSHAuthSockID: sshAuthSockID,
-				Workdir:       startOpts.Workdir,
-				Gateway:       gw,
-				BKClient:      c,
-				SolveOpts:     solveOpts,
-				SolveCh:       startOpts.RawBuildkitStatus,
-				Platform:      *platform,
-				DisableHostRW: startOpts.DisableHostRW,
-			})
-			if err != nil {
-				return nil, err
-			}
-			if err := router.Add(coreAPI); err != nil {
-				return nil, err
-			}
-
-			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-				_, err = installExtensions(
-					ctx,
-					router,
-					startOpts.ConfigPath,
-				)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			if fn == nil {
-				return nil, nil
-			}
-
-			if err := fn(ctx, router); err != nil {
-				return nil, err
-			}
-
-			return bkgw.NewResult(), nil
-		}, startOpts.RawBuildkitStatus)
+	sm, err := sessions.NewManager(c, startOpts.RawBuildkitStatus, solveOpts)
+	if err != nil {
 		return err
+	}
+
+	router := router.New(sm)
+	socketProviders[core.DaggerSockName] = project.NewAPIProxy(router)
+
+	eg.Go(func() error {
+		coreAPI, err := schema.New(schema.InitializeArgs{
+			Router:        router,
+			SSHAuthSockID: sshAuthSockID,
+			Workdir:       startOpts.Workdir,
+			Sessions:      sm,
+			BKClient:      c,
+			SolveOpts:     solveOpts,
+			SolveCh:       startOpts.RawBuildkitStatus,
+			Platform:      *platform,
+			DisableHostRW: startOpts.DisableHostRW,
+		})
+		if err != nil {
+			return err
+		}
+
+		if err := router.Add(coreAPI); err != nil {
+			return err
+		}
+
+		if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
+			_, err = installExtensions(
+				ctx,
+				router,
+				startOpts.ConfigPath,
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		if fn == nil {
+			return nil
+		}
+
+		return fn(ctx, router)
 	})
 
 	return eg.Wait()

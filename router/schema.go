@@ -73,15 +73,24 @@ func (s *staticSchema) Dependencies() []ExecutableSchema {
 type Context struct {
 	context.Context
 	ResolveParams graphql.ResolveParams
+	SessionID     string
 }
+
+type sessionIDKey struct{}
 
 // ToResolver transforms any function f with a *Context, a parent P and some args A that returns a Response R and an error
 // into a graphql resolver graphql.FieldResolveFn.
 func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
+		sid, ok := p.Context.Value(sessionIDKey{}).(string)
+		if !ok {
+			sid = ""
+		}
+
 		ctx := Context{
 			Context:       p.Context,
 			ResolveParams: p,
+			SessionID:     sid,
 		}
 
 		var args A
