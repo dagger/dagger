@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"dagger.io/dagger"
 )
@@ -51,11 +50,6 @@ func build(ctx context.Context, repoURL string) error {
 		for _, goarch := range arches {
 			// create a directory for each os and arch
 			path := fmt.Sprintf("build/%s/%s/", goos, goarch)
-			outpath := filepath.Join(".", path)
-			err = os.MkdirAll(outpath, os.ModePerm)
-			if err != nil {
-				return err
-			}
 
 			// set GOARCH and GOOS in the build environment
 			build := golang.WithEnvVariable("GOOS", goos)
