@@ -1,6 +1,6 @@
 // WIP(TomChv): This file shall be renamed to something else
-import { Client } from './client';
-import { execa, execaCommandSync } from 'execa';
+import { Client } from './client.js';
+import { execa, ExecaChildProcess, execaCommandSync } from 'execa';
 import path from 'path';
 import axios from 'axios';
 
@@ -21,9 +21,11 @@ export interface ConnectOpts {
 	ConfigPath?: string;
 }
 
+export type ServerProcess = ExecaChildProcess;
+
 /**
  * connect runs cloak GraphQL server and initializes a
- * Dagger client.
+ * GraphQL client to execute query on it.
  * This implementation is based on the existing Go SDK.
  */
 export async function connect(config: ConnectOpts): Promise<Client> {
@@ -44,8 +46,7 @@ export async function connect(config: ConnectOpts): Promise<Client> {
 	const args = buildCLIArguments(_config);
 
 	// Start Cloak server.
-	//
-	const serverProcess = execa(CLOAK_BINARY, args, {
+	const serverProcess: ServerProcess = execa(CLOAK_BINARY, args, {
 		stdio: "inherit",
 		cwd: _config.Workdir
 	});
@@ -53,34 +54,7 @@ export async function connect(config: ConnectOpts): Promise<Client> {
 	// Wait for Cloak server to be ready.
 	await waitCloakServer(_config.Port)
 
-	// TODO(TomChv): How transform this part here? This function currently
-	// execute the GQL query but instead we may want to returns a client and
-	// close the server when it's finished.
-	// The only way I see to do this is to let the client hold an optional server
-	// process and shut it down in a Close function if it's defined.
-	// WDYT?
-	//
-	// Piece of code to transform
-	// ```
-	//     await cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
-	//       .catch(async (err) => {
-	//         // FIXME:(sipsma) give the engine a sec to flush any progress logs on error
-	//         // Better solution is to send SIGTERM and have a handler in dagger engine that
-	//         // flushes logs before exiting.
-	//         await new Promise((resolve) => setTimeout(resolve, 1000));
-	//         throw err;
-	//       })
-	//       .finally(async () => {
-	//         serverProc.cancel();
-	//         return serverProc.catch((e) => {
-	//           if (!e.isCanceled) {
-	//             console.error("dagger engine error: ", e);
-	//           }
-	//         });
-	//       });
-	// ```
-
-	return new Client();
+	return new Client(_config.Port, serverProcess);
 }
 
 /**
@@ -134,14 +108,12 @@ async function waitCloakServer(port: number) {
 		baseURL: `http://localhost:${port}`,
 	});
 
-	// Time in ms to wait between each attempt.
-	const waitTime = 500;
-
+	// Wait 500ms between each attempt.
 	for (let i = 0; i < 360; i++) {
 		try {
 			await client.get("/query");
 		} catch (e) {
-			await new Promise((resolve) => setTimeout(resolve, waitTime));
+			await new Promise((resolve) => setTimeout(resolve, 500));
 		}
 	}
 }
