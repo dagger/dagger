@@ -17,12 +17,13 @@ import { QueryTree } from "./api";
         })
     }
 
-    let query = ""
+    let query = "{"
     q.forEach((item: QueryTree, index: number) => {
       query += `
-        ${item.operation} ${item.args ? `(${args(item)})` : ''} ${q.length - 1 !== index ? '{' : '}'.repeat(q.length - 1)}  
+        ${item.operation} ${item.args ? `(${args(item)})` : ''} ${q.length - 1 !== index ? '{' : '}'.repeat(q.length - 1)}
       `
     })
+    query += "}"
 
     return query.replace(/\s+/g, '')
   }

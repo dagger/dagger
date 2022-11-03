@@ -2,7 +2,7 @@ import { Engine, GraphQLClient, gql } from "../dist/index.js";
 import { ContainerExecArgs } from "./types.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
-type QueryTree = {
+export type QueryTree = {
   operation: string
   args?: Record<string, any>
 }
@@ -10,13 +10,10 @@ type QueryTree = {
 export class BaseApi {
   protected _queryTree:  QueryTree[]
   
-  constructor(queryTree: QueryTree[]= [{
-      operation: ""
-    }]) {
+  constructor(queryTree: QueryTree[]= []) {
     this._queryTree = queryTree
   }
 
-  // This getter is used by mocha tests.
   get queryTree() {
     return this._queryTree;
   }
@@ -24,10 +21,11 @@ export class BaseApi {
   protected async _compute() : Promise<Record<string, string>> {
     // run the query and return the result.
     const query = queryBuilder(this._queryTree)
-
+    
     const computeQuery: Promise<Record<string, string>> = new Promise(resolve  => 
       new Engine({}).run(async (client: GraphQLClient) => {
-        const response = await client.request(gql`${query}`)
+        const response: Awaited<Promise<Record<string, any>>> = await client.request(gql`${query}`)
+
         resolve(queryFlatten(response));
       })
     )
@@ -40,26 +38,101 @@ export class BaseApi {
 
 export default class Api extends BaseApi {
   
-  container(): Container {
+  container(args?: {id: any}): Container {
 
     this._queryTree = [
       ...this._queryTree,
       {
-      operation: 'container'
+      operation: 'container',
+      args
       }
     ]
 
     return new Container(this._queryTree)
   }
+
+  git(args: {url: string}): Git {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'git',
+      args
+      }
+    ]
+
+    return new Git(this._queryTree)
+  }
+
+  host(): Host {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'host',
+      }
+    ]
+
+    return new Host(this._queryTree)
+  }
+
+}
+
+class Host extends BaseApi {
+  workdir(args?: {exclude?: Array<string>, include?: Array<string>}): Directory {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'workdir',
+      args
+      }
+    ]
+
+    return new Directory(this._queryTree)
+  }
+}
+
+class Git extends BaseApi {
+  branch(args: {name: string}): Tree {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: 'branch',
+        args
+      }
+    ]
+
+    return new Tree(this._queryTree)
+  }
+
+}
+class Tree extends BaseApi {
+  tree(): File {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: 'tree'
+      }
+    ]
+
+    return new File(this._queryTree)
+  }
+}
+class File extends BaseApi {
+  file(args: {path: string}): Contents {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: 'file',
+        args
+      }
+    ]
+
+    return new Contents(this._queryTree) 
+  }
 }
 
 class Container extends BaseApi {
 
-  get getQueryTree() {
-    return this._queryTree;
-  }
-  
-  exec(args: ContainerExecArgs): Directory {
+  exec(args: ContainerExecArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -68,7 +141,7 @@ class Container extends BaseApi {
       }
     ]
     
-    return new Directory(this._queryTree)
+    return new Container(this._queryTree)
   }
 
   from(args: { address: String } ): Container {
@@ -76,6 +149,41 @@ class Container extends BaseApi {
       ...this._queryTree,
       {
       operation: 'from',
+      args
+      }
+    ]
+    
+    return new Container(this._queryTree)
+  }
+
+  fs(): Directory {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'fs',
+      }
+    ]
+    
+    return new Directory(this._queryTree)
+  }
+
+  withFS(args: {id: string}): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'withFS',
+      args
+      }
+    ]
+    
+    return new Container(this._queryTree)
+  }
+
+  withMountedDirectory(args: {path: string, source: string}): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'withMountedDirectory',
       args
       }
     ]
@@ -95,11 +203,85 @@ class Container extends BaseApi {
 
     return response
   }
+
+  stdout(): Contents {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'stdout',
+      }
+    ]
+    
+    return new Contents(this._queryTree)
+  }
+
+  withWorkdir(args: {path: string}): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'withWorkdir',
+      args
+      }
+    ]
+
+    return new Container(this._queryTree)
+  }
+
+  withEnvVariable(args: {name: string,value: string}): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'withEnvVariable',
+      args
+      }
+    ]
+
+    return new Container(this._queryTree)
+  }
+
+  directory(args: {path: string}): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'directory',
+      args
+      }
+    ]
+
+    return new Container(this._queryTree)
+  }
+
+  async entries(args?: {path: string}): Promise<Record<string, string>>  {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'entries',
+      args
+      }
+    ]
+
+    const response: Record<string, string> = await this._compute()
+
+    return response
+  }
 }
 
 class Directory extends BaseApi {
   
-  stdout(): File{
+  async id(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'id'
+      }
+    ]
+
+    const response: Record<string, string> = await this._compute()
+
+    return response
+  }
+
+  stdout(): Contents {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -107,11 +289,11 @@ class Directory extends BaseApi {
       }
     ]
 
-    return new File(this._queryTree)
+    return new Contents(this._queryTree)
   }
 }
 
-class File extends BaseApi {
+class Contents extends BaseApi {
   async contents(): Promise<Record<string, string>> {
     this._queryTree = [
       ...this._queryTree,
