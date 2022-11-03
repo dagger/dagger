@@ -13,6 +13,8 @@ type GitRepository {
     tags: [String!]!
     "Details on one tag"
     tag(name: String!): GitRef!
+    "Details on one commit"
+    commit(id: String!): GitRef!
 }
 
 "A git ref (tag or branch)"
