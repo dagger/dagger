@@ -61,8 +61,7 @@ func build(ctx context.Context, repoURL string) error {
 					})
 
 				// build application
-				output := build.Directory(path)
-				outputDirectory = outputDirectory.WithDirectory(path, output)
+				outputDirectory = outputDirectory.WithDirectory(path, build.Directory(path))
 			}
 		}
 	}
