@@ -871,6 +871,17 @@ func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Details on one commit
+func (r *GitRepository) Commit(id string) *GitRef {
+	q := r.q.Select("commit")
+	q = q.Arg("id", id)
+
+	return &GitRef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Details on one tag
 func (r *GitRepository) Tag(name string) *GitRef {
 	q := r.q.Select("tag")

@@ -19,6 +19,13 @@ func TestGit(t *testing.T) {
 					}
 				}
 			}
+			Commit struct {
+				Tree struct {
+					File struct {
+						Contents string
+					}
+				}
+			}
 		}
 	}{}
 
@@ -32,8 +39,16 @@ func TestGit(t *testing.T) {
 						}
 					}
 				}
+				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
+					tree {
+						file(path: "README.md") {
+							contents
+						}
+					}
+				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
+	require.Contains(t, res.Git.Commit.Tree.File.Contents, "Dagger")
 }
