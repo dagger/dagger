@@ -14,9 +14,7 @@
 package commandconn
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -32,7 +30,7 @@ import (
 )
 
 // New returns net.Conn
-func New(ctx context.Context, cmd string, args ...string) (net.Conn, error) {
+func New(ctx context.Context, stderrWriter io.Writer, cmd string, args ...string) (net.Conn, error) {
 	var (
 		c   commandConn
 		err error
@@ -52,11 +50,12 @@ func New(ctx context.Context, cmd string, args ...string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.cmd.Stderr = &stderrWriter{
-		stderrMu:    &c.stderrMu,
-		stderr:      &c.stderr,
-		debugPrefix: fmt.Sprintf("commandconn (%s):", cmd),
+	stderr, err := c.cmd.StderrPipe()
+	if err != nil {
+		return nil, err
 	}
+	go io.Copy(stderrWriter, stderr)
+
 	c.localAddr = dummyAddr{network: "dummy", s: "dummy-0"}
 	c.remoteAddr = dummyAddr{network: "dummy", s: "dummy-1"}
 	return &c, c.cmd.Start()
@@ -64,14 +63,15 @@ func New(ctx context.Context, cmd string, args ...string) (net.Conn, error) {
 
 // commandConn implements net.Conn
 type commandConn struct {
-	cmd           *exec.Cmd
-	cmdExited     bool
-	cmdWaitErr    error
-	cmdMutex      sync.Mutex
-	stdin         io.WriteCloser
-	stdout        io.ReadCloser
-	stderrMu      sync.Mutex
-	stderr        bytes.Buffer
+	cmd        *exec.Cmd
+	cmdExited  bool
+	cmdWaitErr error
+	cmdMutex   sync.Mutex
+	stdin      io.WriteCloser
+	stdout     io.ReadCloser
+	// stderrMu      sync.Mutex
+	// stderr        bytes.Buffer
+	stderrClosed  chan struct{}
 	stdioClosedMu sync.Mutex // for stdinClosed and stdoutClosed
 	stdinClosed   bool
 	stdoutClosed  bool
@@ -149,20 +149,14 @@ func (c *commandConn) onEOF(eof error) error {
 			c.cmdExited = true
 		case <-time.After(10 * time.Second):
 			c.cmdMutex.Unlock()
-			c.stderrMu.Lock()
-			stderr := c.stderr.String()
-			c.stderrMu.Unlock()
-			return errors.Errorf("command %v did not exit after %v: stderr=%q", c.cmd.Args, eof, stderr)
+			return errors.Errorf("command %v did not exit after %v", c.cmd.Args, eof)
 		}
 	}
 	c.cmdMutex.Unlock()
 	if werr == nil {
 		return eof
 	}
-	c.stderrMu.Lock()
-	stderr := c.stderr.String()
-	c.stderrMu.Unlock()
-	return errors.Errorf("command %v has exited with %v, please make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=%s", c.cmd.Args, werr, stderr)
+	return errors.Errorf("command %v has exited with %v", c.cmd.Args, werr)
 }
 
 func ignorableCloseError(err error) bool {
@@ -267,21 +261,4 @@ func (d dummyAddr) Network() string {
 
 func (d dummyAddr) String() string {
 	return d.s
-}
-
-type stderrWriter struct {
-	stderrMu    *sync.Mutex
-	stderr      *bytes.Buffer
-	debugPrefix string
-}
-
-func (w *stderrWriter) Write(p []byte) (int, error) {
-	logrus.Debugf("%s%s", w.debugPrefix, string(p))
-	w.stderrMu.Lock()
-	if w.stderr.Len() > 4096 {
-		w.stderr.Reset()
-	}
-	n, err := w.stderr.Write(p)
-	w.stderrMu.Unlock()
-	return n, err
 }

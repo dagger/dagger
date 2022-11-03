@@ -43,7 +43,7 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return commandconn.New(ctx, c.path, args...)
+				return commandconn.New(ctx, cfg.LogOutput, c.path, args...)
 			},
 		},
 	}, nil

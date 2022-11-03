@@ -80,7 +80,9 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		}
 	}()
 
-	cfg := &engineconn.Config{}
+	cfg := &engineconn.Config{
+		LogOutput: io.Discard,
+	}
 
 	for _, o := range opts {
 		o.setClientOpt(cfg)

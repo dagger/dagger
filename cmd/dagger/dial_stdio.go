@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/dagger/dagger/engine"
@@ -26,6 +28,7 @@ func DialStdio(cmd *cobra.Command, args []string) {
 		LocalDirs:  localDirs,
 		Workdir:    workdir,
 		ConfigPath: configPath,
+		LogOutput:  os.Stderr,
 	}
 
 	err := engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
@@ -40,14 +43,23 @@ func DialStdio(cmd *cobra.Command, args []string) {
 			closeCh: closeCh,
 		}
 
+		signalCh := make(chan os.Signal, 1)
+		signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+
 		go func() {
 			err := srv.Serve(l)
 			if err != nil && err != http.ErrServerClosed {
 				fmt.Fprintf(os.Stderr, "http serve: error: %v\n", err)
 			}
+			fmt.Fprintf(os.Stderr, "serve done: %v\n", err)
 		}()
 
-		<-closeCh
+		select {
+		case <-closeCh:
+			fmt.Fprintf(os.Stderr, "server closed\n")
+		case sig := <-signalCh:
+			fmt.Fprintf(os.Stderr, "received signal %d, exiting\n", sig)
+		}
 
 		return srv.Shutdown(ctx)
 	})
@@ -79,8 +91,9 @@ func (l *stdioConnListener) Accept() (net.Conn, error) {
 	}
 
 	// For the other `Accept()`, block until the server is closed
+	// return &stdioConn{closeCh: make(chan struct{})}, nil
 	<-l.closeCh
-	return nil, net.ErrClosed
+	return nil, os.ErrClosed
 }
 
 func (l *stdioConnListener) Addr() net.Addr {
@@ -107,6 +120,7 @@ func (c *stdioConn) Write(b []byte) (n int, err error) {
 
 func (c *stdioConn) Close() error {
 	close(c.closeCh)
+	c.closeCh = nil
 	return nil
 }
 
