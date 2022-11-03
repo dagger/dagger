@@ -34,6 +34,11 @@ module.exports = {
           id: "current/sdk/go/get-started",
         },
         {
+          type: "doc",
+          label: "Guides",
+          id: "current/sdk/go/guides"
+        },
+        {
           type: "link",
           label: "Reference 🔗",
           href: "https://pkg.go.dev/dagger.io/dagger"
