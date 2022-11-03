@@ -20,7 +20,7 @@ This tutorial assumes that:
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 :::note
-This tutorial creates a Go CI tool using the Dagger Go SDK. It uses this tool to build an [example Go application from GitHub](https://github.com/kpenfound/multibuild.git). If you already have a Go application on GitHub, you can use your own application and repository instead.
+This tutorial creates a Go CI tool using the Dagger Go SDK. It uses this tool to build the Go application in the current directory. The binary from this guide can be used to build any Go project.
 :::
 
 ## Step 1: Create a Go module for the tool
