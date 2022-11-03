@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/router/internal/handler"
-	"github.com/dagger/dagger/router/internal/playground"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
 )
@@ -161,7 +160,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/query", h)
-	mux.Handle("/", playground.Handler("Dagger Dev", "/query"))
 	mux.ServeHTTP(w, req)
 }
 
