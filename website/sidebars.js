@@ -47,6 +47,35 @@ module.exports = {
     },
     {
       type: "category",
+      label: "Python SDK",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/sdk/python/index",
+        },
+        "current/sdk/python/install",
+        {
+          type: "doc",
+          label: "Get Started",
+          id: "current/sdk/python/get-started",
+        },
+        {
+          type: "doc",
+          label: "Guides",
+          id: "current/sdk/python/guides",
+        },
+        {
+          type: "link",
+          label: "Reference 🔗",
+          href: "https://dagger-io.readthedocs.org/",
+        },
+      ],
+    },
+    {
+      type: "category",
       label: "CUE SDK",
       collapsible: false,
       collapsed: false,
