@@ -4,6 +4,7 @@ from asyncio.subprocess import Process
 from subprocess import DEVNULL, CalledProcessError
 
 import anyio
+from aiohttp import ClientTimeout
 from attrs import Factory, define, field
 from gql.transport import AsyncTransport, Transport
 from gql.transport.aiohttp import AIOHTTPTransport
@@ -84,7 +85,14 @@ class HTTPConnector(Connector):
         return super().connect_sync()
 
     def make_transport(self) -> AsyncTransport:
-        return AIOHTTPTransport(self.query_url, timeout=self.cfg.timeout)
+        session_timeout = self.cfg.execute_timeout
+        if isinstance(session_timeout, int):
+            session_timeout = float(session_timeout)
+        return AIOHTTPTransport(
+            self.query_url,
+            timeout=self.cfg.timeout,
+            client_session_args={"timeout": ClientTimeout(total=session_timeout)},
+        )
 
     def make_sync_transport(self) -> Transport:
         return RequestsHTTPTransport(self.query_url, timeout=self.cfg.timeout, retries=10)

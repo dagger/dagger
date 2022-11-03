@@ -33,13 +33,23 @@ class Config:
     config_path:
         Project config file.
     timeout:
-        Timeout in seconds for establishing a connection to the server.
+        The maximum time in seconds for establishing a connection to the server.
+    execute_timeout:
+        The maximum time in seconds for the execution of a request before a TimeoutError is raised.
+        Only used for async transport.
+        Passing None results in waiting forever for a response.
+    reconnecting:
+        If True, create a permanent reconnecting session. Only used for async transport.
     """
 
     host: ParsedURL = field(factory=lambda: os.environ.get("DAGGER_HOST", DEFAULT_HOST), converter=urlparse)
     timeout: int = 10
+    execute_timeout: int | float | None = 60 * 5
+    reconnecting: bool = True
+
     # FIXME: aren't these environment variables usable by the engine directly?
     # If so just skip setting the CLI option if not set by the user explicitly.
+
     workdir: Path = field(factory=lambda: os.environ.get("DAGGER_WORKDIR", "."), converter=Path)
     config_path: Path = field(factory=lambda: os.environ.get("DAGGER_CONFIG", DEFAULT_CONFIG), converter=Path)
 
@@ -55,7 +65,7 @@ class Connector(ABC):
         transport = self.make_transport()
         gql_client = self.make_graphql_client(transport)
         # FIXME: handle errors from establishing session
-        session = await gql_client.connect_async(reconnecting=True)
+        session = await gql_client.connect_async(reconnecting=self.cfg.reconnecting)
         self.client = Client.from_session(session)
         return self.client
 
@@ -84,7 +94,11 @@ class Connector(ABC):
         ...
 
     def make_graphql_client(self, transport: AsyncTransport | Transport) -> GraphQLClient:
-        return GraphQLClient(transport=transport, fetch_schema_from_transport=True)
+        return GraphQLClient(
+            transport=transport,
+            fetch_schema_from_transport=True,
+            execute_timeout=self.cfg.execute_timeout,
+        )
 
 
 _RT = TypeVar("_RT", bound=type)

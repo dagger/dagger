@@ -154,6 +154,22 @@ class Container(Type):
         _ctx = self._select("exitCode", _args)
         return await _ctx.execute(int | None)
 
+    async def export(self, path: str, platform_variants: list[ContainerID] | None = None) -> Result[bool]:
+        """Write the container as an OCI tarball to the destination file path on the host
+
+        Returns
+        -------
+            Awaitable with resulting leaf value (scalar).
+
+            Note: A query is executed in the API server when awaited.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("platformVariants", platform_variants, None),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(bool)
+
     def file(self, path: str) -> "File":
         """Retrieve a file at the given path. Mounts are included."""
         _args = [
@@ -580,6 +596,21 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("contents", _args)
         return await _ctx.execute(str)
+
+    async def export(self, path: str) -> Result[bool]:
+        """Write the file to a file path on the host
+
+        Returns
+        -------
+            Awaitable with resulting leaf value (scalar).
+
+            Note: A query is executed in the API server when awaited.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(bool)
 
     async def id(self) -> Result[FileID]:
         """The content-addressed identifier of the file
