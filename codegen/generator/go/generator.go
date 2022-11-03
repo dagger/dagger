@@ -10,10 +10,11 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator/go/templates"
+	tsgenerator "github.com/dagger/dagger/codegen/generator/ts"
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
-var ErrUnknownSDK = errors.New("unknown sdk")
+var ErrUnknownSDK = errors.New("unknown sdk language")
 
 type SDKLang string
 

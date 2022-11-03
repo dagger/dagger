@@ -2,6 +2,9 @@
 	{{- $maxIndex := len . }}
 	{{- $maxIndex = Subtract $maxIndex 1 }}
 	{{- range $index, $value := . }}
-		{{- template "arg" . }}{{ if ne $index $maxIndex }}, {{ end -}}
-	{{ end }}
+		{{- template "arg" . }}
+		{{- if ne $index $maxIndex -}}
+			{{ "" }}, {{ "" }}
+		{{- end }}
+	{{- end }}
 {{- end }}
