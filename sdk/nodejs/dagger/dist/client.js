@@ -7,29 +7,53 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import axios from "axios";
-import { buildAxiosFetch } from "@lifeomic/axios-fetch";
-import { GraphQLClient } from "graphql-request";
-import { Response } from "node-fetch";
+import axios from 'axios';
+import { buildAxiosFetch } from '@lifeomic/axios-fetch';
+import { GraphQLClient } from 'graphql-request';
+import { Response } from 'node-fetch';
 // @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
 global.Response = Response;
-export const client = new GraphQLClient("http://fake.invalid/query", {
+export const client = new GraphQLClient('http://fake.invalid/query', {
     fetch: buildAxiosFetch(axios.create({
-        socketPath: "/dagger.sock",
+        socketPath: '/dagger.sock',
         timeout: 3600e3,
     })),
 });
 export class Client {
-    constructor() {
-        this.client = axios.create({
-            socketPath: "/dagger.sock",
-            timeout: 3600e3,
-        });
+    /**
+     * creates a new Dagger Typescript SDK GraphQL client.
+     * If the client is created by `dagger.connect()`, it will
+     * hold the serverProcess, so it can be closed using `close()`
+     * method.
+     */
+    constructor(port = 8080, serverProcess) {
+        this.client = new GraphQLClient(`http://localhost:${port}/query`);
+        this.serverProcess = serverProcess;
     }
+    /**
+     * do takes a GraphQL query payload as parameter and send it
+     * to Cloak server to execute every operation's in it.
+     */
     do(payload) {
         return __awaiter(this, void 0, void 0, function* () {
-            const response = yield this.client.post(`http://fake.invalid/query`, payload, { headers: { "Content-Type": "application/graphql" } });
-            return response;
+            return yield this.client.request(payload);
+        });
+    }
+    /**
+     * close will stop the server process if it has been launched by
+     * the Typescript SDK.
+     */
+    close() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.serverProcess) {
+                return;
+            }
+            this.serverProcess.cancel();
+            this.serverProcess.catch((e) => {
+                if (!e.isCanceled) {
+                    console.error('dagger engine error: ', e);
+                }
+            });
         });
     }
 }
