@@ -30,6 +30,7 @@ func (s *gitSchema) Resolvers() router.Resolvers {
 			"branch":   router.ToResolver(s.branch),
 			"tags":     router.ToResolver(s.tags),
 			"tag":      router.ToResolver(s.tag),
+			"commit":   router.ToResolver(s.commit),
 		},
 		"GitRef": router.ObjectResolver{
 			"digest": router.ToResolver(s.digest),
@@ -61,6 +62,17 @@ func (s *gitSchema) git(ctx *router.Context, parent any, args gitArgs) (gitRepos
 
 type branchArgs struct {
 	Name string
+}
+
+type commitArgs struct {
+	ID string
+}
+
+func (s *gitSchema) commit(ctx *router.Context, parent gitRepository, args commitArgs) (gitRef, error) {
+	return gitRef{
+		Repository: parent,
+		Name:       args.ID,
+	}, nil
 }
 
 func (s *gitSchema) branch(ctx *router.Context, parent gitRepository, args branchArgs) (gitRef, error) {
