@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
 )
 
@@ -18,7 +19,7 @@ func (Docs) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	workdir := c.Host().Workdir()
+	workdir := util.Repository(c)
 
 	_, err = c.Container().
 		From("tmknom/markdownlint:0.31.1").

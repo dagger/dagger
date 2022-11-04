@@ -210,10 +210,9 @@ func ExampleHost_Workdir() {
 		panic(err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(readme), "\n")
-	fmt.Println(lines[0])
+	fmt.Printf("%v\n", strings.Contains(readme, "Dagger"))
 
-	// Output: # Dagger Go SDK
+	// Output: true
 }
 
 // func ExampleHost_EnvVariable() {
