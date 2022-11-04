@@ -12,8 +12,7 @@ import (
 	"dagger.io/dagger/internal/engineconn"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/docker/docker/api/types"
-	"github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/session"
+	"github.com/oklog/ulid/v2"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
@@ -38,19 +37,18 @@ type Session struct {
 func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error) {
 	srv := grpc.NewServer()
 
-	for _, sess := range []session.Attachable{
-		// TODO(vito): blocked on https://github.com/mwitkow/grpc-proxy/pull/62
-		// authprovider.NewDockerAuthProvider(os.Stderr),
-		filesync.NewFSSyncProvider(AnyDirSource{}),
-		// TODO(vito): configurable secret store
-		// secretsprovider.NewSecretProvider(secretStore),
-		// TODO(vito): move engine secret store that resolves SecretID by calling
-		// Plaintext()?
-		//
-		// or just redo secrets?
-	} {
-		sess.Register(srv)
-	}
+	filesync.NewFSSyncProvider(AnyDirSource{}).Register(srv)
+
+	// TODO(vito): blocked on https://github.com/mwitkow/grpc-proxy/pull/62
+	// authprovider.NewDockerAuthProvider(os.Stderr).Register(srv)
+
+	// TODO(vito): configurable secret store
+	// secretsprovider.NewSecretProvider(secretStore).Register(srv)
+
+	// TODO(vito): move engine secret store that resolves SecretID by calling
+	// Plaintext()?
+	//
+	// or just redo secrets?
 
 	grpc_health_v1.RegisterHealthServer(srv, health.NewServer())
 
@@ -59,7 +57,7 @@ func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error
 		return nil, err
 	}
 
-	sid := identity.NewID()
+	sid := ulid.Make().String()
 
 	req.Header.Set(headerSessionID, sid)
 	req.Header.Set(headerSessionName, "dagger")
@@ -67,7 +65,7 @@ func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error
 
 	for name, svc := range srv.GetServiceInfo() {
 		for _, method := range svc.Methods {
-			req.Header.Add(headerSessionMethod, session.MethodURL(name, method.Name))
+			req.Header.Add(headerSessionMethod, svcMethodURL(name, method.Name))
 		}
 	}
 
@@ -202,4 +200,9 @@ func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
 			return true
 		},
 	}, true
+}
+
+// svcMethodURL returns a gRPC method URL for service and method name
+func svcMethodURL(s, m string) string {
+	return "/" + s + "/" + m
 }
