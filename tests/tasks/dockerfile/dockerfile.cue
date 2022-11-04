@@ -11,6 +11,8 @@ dagger.#Plan & {
 	actions: {
 		build: core.#Dockerfile & {
 			source: client.filesystem.testdata.read.contents
+			// Defaults are breaking again... 🤦🏻‍♂️
+			dockerfile: path: "Dockerfile"
 		}
 
 		verify: core.#Exec & {

@@ -105,12 +105,12 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s
 		return nil, err
 	}
 
-	stdoutVal, err := t.readPipe(&stdout, pctx, v.Lookup("stdout"))
+	stdoutVal, err := t.readPipe(&stdout, ctx, pctx, s, v.Lookup("stdout"))
 	if err != nil {
 		return nil, err
 	}
 
-	stderrVal, err := t.readPipe(&stderr, pctx, v.Lookup("stderr"))
+	stderrVal, err := t.readPipe(&stderr, ctx, pctx, s, v.Lookup("stderr"))
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (t clientCommandTask) getString(ctx context.Context, pctx *plancontext.Cont
 	return s, nil
 }
 
-func (t clientCommandTask) readPipe(pipe *io.ReadCloser, pctx *plancontext.Context, v *compiler.Value) (*compiler.Value, error) {
+func (t clientCommandTask) readPipe(pipe *io.ReadCloser, ctx context.Context, pctx *plancontext.Context, solver *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	slurp, err := io.ReadAll(*pipe)
 	if err != nil {
 		return nil, err
@@ -160,8 +160,11 @@ func (t clientCommandTask) readPipe(pipe *io.ReadCloser, pctx *plancontext.Conte
 	out := compiler.NewValue()
 
 	if plancontext.IsSecretValue(val) {
-		secret := pctx.Secrets.New(read)
-		return out.Fill(secret.MarshalCUE())
+		secretid, err := solver.NewSecret(read).ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return out.Fill(utils.NewSecretFromId(secretid))
 	}
 
 	return out.Fill(read)

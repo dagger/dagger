@@ -34,7 +34,7 @@ setup() {
   cd "$TEMPDIR2" || exit
   run "$DAGGER" project info
   assert_failure
-  assert_output --partial "dagger project not found. Run \`dagger project init\`"
+  assert_output --partial "dagger project not found. Run \`dagger-cue project init\`"
 }
 
 

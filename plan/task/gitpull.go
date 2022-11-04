@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"fmt"
 
 	"dagger.io/dagger"
 	"go.dagger.io/dagger/compiler"
@@ -32,7 +31,6 @@ func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *sol
 		return nil, err
 	}
 
-	fmt.Println(gitPull)
 	// gitOpts := []llb.GitOption{}
 
 	// lg := log.Ctx(ctx)
@@ -91,7 +89,14 @@ func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *sol
 	core := s.Client
 
 	// TODO: How should I differentiate between branches and tags?
-	fsid, err := core.Git(gitPull.Remote).Branch(gitPull.Ref).Tree().ID(ctx)
+	repo := core.Git(gitPull.Remote).Branch(gitPull.Ref).Tree()
+	// Force download
+	_, err := repo.Entries(ctx, dagger.DirectoryEntriesOpts{})
+	if err != nil {
+		return nil, err
+	}
+
+	fsid, err := repo.ID(ctx)
 
 	if err != nil {
 		return nil, err

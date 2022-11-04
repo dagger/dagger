@@ -73,8 +73,6 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// Add the default tag "latest" to a reference if it only has a repo name.
 	ref = reference.TagNameOnly(ref)
 
-	fmt.Println("ref: ", ref)
-
 	// var resolveMode llb.ResolveMode
 	// resolveModeValue, err := v.Lookup("resolveMode").String()
 	// if err != nil {

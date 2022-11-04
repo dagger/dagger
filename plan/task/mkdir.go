@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	// Register("Mkdir", func() Task { return &mkdirTask{} })
+	Register("Mkdir", func() Task { return &mkdirTask{} })
 }
 
 type mkdirTask struct {

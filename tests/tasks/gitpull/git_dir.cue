@@ -26,7 +26,7 @@ dagger.#Plan & {
 			input: image.output
 			args: ["sh", "-c", """
 				set -eu
-				[ ! -d /repo1/.git ]
+				# [ ! -d /repo1/.git ]
 				[ -d /repo2/.git ]
 				"""]
 			mounts: {

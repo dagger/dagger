@@ -8,28 +8,29 @@ import (
 	"cuelang.org/go/cue"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 	"go.dagger.io/dagger/solver"
 	"gopkg.in/yaml.v3"
 )
 
 func init() {
-	// Register("DecodeSecret", func() Task { return &decodeSecretTask{} })
+	Register("DecodeSecret", func() Task { return &decodeSecretTask{} })
 }
 
 type decodeSecretTask struct {
 }
 
-func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("decoding secret")
 
 	input := v.Lookup("input")
-
-	inputSecret, err := pctx.Secrets.FromValue(input)
+	secretid, err := utils.GetSecretId(input)
 	if err != nil {
 		return nil, err
 	}
+	inputSecret := s.Client.Secret(secretid)
 
 	format, err := v.Lookup("format").String()
 	if err != nil {
@@ -38,7 +39,10 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _
 
 	lg.Debug().Str("format", format).Msg("unmarshaling secret")
 
-	inputSecretPlaintext := inputSecret.PlainText()
+	inputSecretPlaintext, err := inputSecret.Plaintext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var unmarshaled map[string]interface{}
 
@@ -61,12 +65,18 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, _
 	convert = func(p []cue.Selector, i interface{}) {
 		switch entry := i.(type) {
 		case string:
-			secret := pctx.Secrets.New(entry)
+			secretid, err := s.NewSecret(entry).ID(ctx)
+			if err != nil {
+				panic(err)
+			}
+
+			secret := utils.NewSecretFromId(secretid)
+			// secret := pctx.Secrets.New(entry)
 			p = append(p, cue.ParsePath("contents").Selectors()...)
 			logPath := cue.MakePath(p[1 : len(p)-1]...)
 			lg.Debug().Str("path", logPath.String()).Str("type", "string").Msg("found secret")
 			path := cue.MakePath(p...)
-			output.FillPath(path, secret.MarshalCUE())
+			output.FillPath(path, secret)
 		case map[string]interface{}:
 			for k, v := range entry {
 				np := append([]cue.Selector{}, p...)

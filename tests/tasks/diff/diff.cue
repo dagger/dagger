@@ -59,24 +59,25 @@ dagger.#Plan & {
 				contents: "bar"
 			}
 
-			mergediff: core.#Merge & {
-				inputs: [
-					busyboxBase.output,
-					removeme.output,
-					diff.output,
-				]
-			}
-			verify_remove: core.#Exec & {
-				input: mergediff.output
-				args: ["test", "!", "-e", "/removeme"]
-			}
-			verify_no_alpine_base: core.#Exec & {
-				input: mergediff.output
-				// make sure the the Diff actually separated files from the base
-				// by testing the non-existence of a file that only exists in the
-				// alpine base, not busybox
-				args: ["test", "!", "-e", "/etc/alpine-release"]
-			}
+			// Not Implemented
+			// mergediff: core.#Merge & {
+			// 	inputs: [
+			// 		busyboxBase.output,
+			// 		removeme.output,
+			// 		diff.output,
+			// 	]
+			// }
+			// verify_remove: core.#Exec & {
+			// 	input: mergediff.output
+			// 	args: ["test", "!", "-e", "/removeme"]
+			// }
+			// verify_no_alpine_base: core.#Exec & {
+			// 	input: mergediff.output
+			// 	// make sure the the Diff actually separated files from the base
+			// 	// by testing the non-existence of a file that only exists in the
+			// 	// alpine base, not busybox
+			// 	args: ["test", "!", "-e", "/etc/alpine-release"]
+			// }
 		}
 	}
 }

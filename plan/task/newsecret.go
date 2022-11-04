@@ -40,7 +40,7 @@ func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 		return nil, err
 	}
 	if trimSpace {
-		plaintext, err := s.Client.Secret(secretid).Plaintext(ctx)
+		plaintext, err := secret.Plaintext(ctx)
 		if err != nil {
 			return nil, err
 		}

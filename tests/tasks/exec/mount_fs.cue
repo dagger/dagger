@@ -37,38 +37,40 @@ dagger.#Plan & {
 				]
 			}
 
-			verifyRO: core.#Exec & {
-				input: image.output
-				mounts: fs: {
-					dest:     "/target"
-					contents: exec.output
-					ro:       true
-				}
-				args: [
-					"sh", "-c",
-					#"""
-						test "$(cat /target/output.txt)" = "hello world"
+			// Not Implemented
+			// verifyRO: core.#Exec & {
+			// 	input: image.output
+			// 	mounts: fs: {
+			// 		dest:     "/target"
+			// 		contents: exec.output
+			// 		ro:       true
+			// 	}
+			// 	args: [
+			// 		"sh", "-c",
+			// 		#"""
+			// 			test "$(cat /target/output.txt)" = "hello world"
 
-						touch /target/ro && exit 1
-						true
-						"""#,
-				]
-			}
+			// 			touch /target/ro && exit 1
+			// 			true
+			// 			"""#,
+			// 	]
+			// }
 
-			verifySource: core.#Exec & {
-				input: image.output
-				mounts: fs: {
-					dest:     "/target.txt"
-					contents: exec.output
-					source:   "/output.txt"
-				}
-				args: [
-					"sh", "-c",
-					#"""
-						test "$(cat /target.txt)" = "hello world"
-						"""#,
-				]
-			}
+			// Not Implemented
+			// verifySource: core.#Exec & {
+			// 	input: image.output
+			// 	mounts: fs: {
+			// 		dest:     "/target.txt"
+			// 		contents: exec.output
+			// 		source:   "/output.txt"
+			// 	}
+			// 	args: [
+			// 		"sh", "-c",
+			// 		#"""
+			// 			test "$(cat /target.txt)" = "hello world"
+			// 			"""#,
+			// 	]
+			// }
 		}
 	}
 }

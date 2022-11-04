@@ -71,6 +71,12 @@ func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	dgr := s.Client
 	file := dgr.HTTP(httpFetch.Source)
 
+	// TODO: Remove this (meant to force the download)
+	_, err := file.Size(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	dirId, err := dgr.Directory().WithFile(httpFetch.Dest, file).ID(ctx)
 	if err != nil {
 		return nil, err

@@ -61,8 +61,8 @@ func (c *secretContext) New(plaintext string) *Secret {
 }
 
 func (c *secretContext) FromValue(v *compiler.Value) (*Secret, error) {
-	c.l.RLock()
-	defer c.l.RUnlock()
+	// c.l.RLock()
+	// defer c.l.RUnlock()
 
 	if !v.LookupPath(secretIDPath).IsConcrete() {
 		return nil, fmt.Errorf("invalid secret at path %q: secret is not set", v.Path())
@@ -73,10 +73,12 @@ func (c *secretContext) FromValue(v *compiler.Value) (*Secret, error) {
 		return nil, fmt.Errorf("invalid secret at path %q: %w", v.Path(), err)
 	}
 
-	secret, ok := c.store[id]
-	if !ok {
-		return nil, fmt.Errorf("secret %q not found", id)
-	}
+	// secret, ok := c.store[id]
+	// if !ok {
+	// 	return nil, fmt.Errorf("secret %q not found", id)
+	// }
+
+	secret := &Secret{id: id}
 
 	return secret, nil
 }
