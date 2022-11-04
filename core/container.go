@@ -330,6 +330,54 @@ func (container *Container) WithFS(ctx context.Context, dir *Directory) (*Contai
 	return &Container{ID: id}, nil
 }
 
+// test
+// type runOptionFunc func(*llb.ExecInfo)
+
+// func (fn runOptionFunc) SetRunOption(ei *llb.ExecInfo) {
+// 	if fn != nil {
+// 		fn(ei)
+// 	}
+// }
+
+// func withRunOpts(runOpts ...llb.RunOption) llb.RunOption {
+// 	return runOptionFunc(func(ei *llb.ExecInfo) {
+// 		for _, runOpt := range runOpts {
+// 			runOpt.SetRunOption(ei)
+// 		}
+// 	})
+// }
+
+// func withSSHAuthSock(id, path string) llb.RunOption {
+// 	if id == "" {
+// 		return runOptionFunc(nil)
+// 	}
+// 	return withRunOpts(
+// 		llb.AddSSHSocket(
+// 			llb.SSHID(id),
+// 			llb.SSHSocketTarget(path),
+// 		),
+// 		llb.AddEnv("SSH_AUTH_SOCK", path),
+// 	)
+// }
+
+// test
+// func (container *Container) WithMountedSSH(ctx context.Context, sshSockAuthID string) (*Container, error) {
+// 	payload, err := container.ID.decode()
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	var sshAuthSockOption llb.RunOption = nil
+// 	if sshSockAuthID != "" {
+// 		sshAuthSockOption = withSSHAuthSock(sshSockAuthID, "/ssh-agent.sock")
+// 	}
+// if err != nil {
+// 	return nil, err
+// }
+
+// return container.withMounted(target, payload.LLB, payload.Dir)
+// }
+
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
 	payload, err := source.ID.Decode()
 	if err != nil {
@@ -646,7 +694,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts, sshAuthSockID string) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -677,6 +725,19 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
 		llb.Args(append([]string{shim.Path}, args...)),
 		llb.WithCustomName(strings.Join(args, " ")),
+	}
+
+	// Append SSHAuthSock, if non null
+	// To cleanup, using opts.ExperimentalPrivilegedNesting
+	if sshAuthSockID != "" {
+		sshAgentSockPath := "/ssh-agent.sock"
+		runOpts = append(runOpts,
+			llb.AddEnv("SSH_AUTH_SOCK", sshAgentSockPath),
+			llb.AddSSHSocket(
+				llb.SSHID(sshAuthSockID),
+				llb.SSHSocketTarget(sshAgentSockPath),
+			),
+		)
 	}
 
 	// because the shim might run as non-root, we need to make a world-writable

@@ -59,13 +59,14 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
 			"withoutMount":         router.ToResolver(s.withoutMount),
-			"exec":                 router.ToResolver(s.exec),
-			"exitCode":             router.ToResolver(s.exitCode),
-			"stdout":               router.ToResolver(s.stdout),
-			"stderr":               router.ToResolver(s.stderr),
-			"publish":              router.ToResolver(s.publish),
-			"platform":             router.ToResolver(s.platform),
-			"export":               router.ToResolver(s.export),
+			// "withMountedSSH":       router.ToResolver(s.withMountedSSH),
+			"exec":     router.ToResolver(s.exec),
+			"exitCode": router.ToResolver(s.exitCode),
+			"stdout":   router.ToResolver(s.stdout),
+			"stderr":   router.ToResolver(s.stderr),
+			"publish":  router.ToResolver(s.publish),
+			"platform": router.ToResolver(s.platform),
+			"export":   router.ToResolver(s.export),
 		},
 	}
 }
@@ -125,7 +126,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, args.ContainerExecOpts)
+	return parent.Exec(ctx, s.gw, args.ContainerExecOpts, s.sshAuthSockID)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
@@ -373,6 +374,10 @@ type containerWithoutMountArgs struct {
 func (s *containerSchema) withoutMount(ctx *router.Context, parent *core.Container, args containerWithoutMountArgs) (*core.Container, error) {
 	return parent.WithoutMount(ctx, args.Path)
 }
+
+// func (s *containerSchema) withMountedSSH(ctx *router.Context, parent *core.Container, _ any) (*core.Container, error) {
+// 	return parent.WithMountedSSH(ctx, s.sshAuthSockID)
+// }
 
 func (s *containerSchema) mounts(ctx *router.Context, parent *core.Container, _ any) ([]string, error) {
 	return parent.Mounts(ctx)
