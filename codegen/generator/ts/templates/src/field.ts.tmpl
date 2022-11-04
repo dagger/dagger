@@ -3,7 +3,7 @@
 	{{- .Name -}}
 	(
 		{{- with .Args -}}
-	{{- "" }}args: { {{ template "args" . }} }{{ "" -}}
+			{{- template "input_args" . -}}
 		{{- end -}}
 	)
 	{{- if Solve . -}}
