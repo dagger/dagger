@@ -41,6 +41,9 @@ type Config struct {
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
 	RawBuildkitStatus chan *bkclient.SolveStatus
+
+	// TODO:(sipsma) not sure about this being a public field...
+	RemoteAddr string
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -50,7 +53,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts = &Config{}
 	}
 
-	c, err := buildkitd.Client(ctx)
+	c, err := buildkitd.Client(ctx, startOpts.RemoteAddr)
 	if err != nil {
 		return err
 	}
