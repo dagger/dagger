@@ -10,7 +10,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 // WIP(TomChv): This file shall be renamed to something else
 import { Client } from './client.js';
 import { execa, execaCommandSync } from 'execa';
-import path from 'path';
 import axios from 'axios';
 /**
  * Cloak binary name
@@ -18,18 +17,16 @@ import axios from 'axios';
 const CLOAK_BINARY = "cloak";
 /**
  * connect runs cloak GraphQL server and initializes a
- * Dagger client.
+ * GraphQL client to execute query on it through its callback.
  * This implementation is based on the existing Go SDK.
  */
-export function connect(config) {
+export function connect(cb, config = {}) {
     return __awaiter(this, void 0, void 0, function* () {
         // exit with error if we are not using the non-Cloak dagger binary (< 0.3.0)
         yield verifyCloakBinary();
         // Create config with default values that may be overridden
         // by config if values are set.
-        const _config = Object.assign({ Workdir: process.env['DAGGER_WORKDIR'] || process.cwd(), ConfigPath: process.env['DAGGER_CONFIG'] || './dagger.json', Port: 8080, 
-            // Set LocalDirs to {} so it's not null
-            LocalDirs: {} }, config);
+        const _config = Object.assign({ Workdir: process.env['DAGGER_WORKDIR'] || process.cwd(), ConfigPath: process.env['DAGGER_CONFIG'] || './dagger.json', Port: 8080 }, config);
         const args = buildCLIArguments(_config);
         // Start Cloak server.
         const serverProcess = execa(CLOAK_BINARY, args, {
@@ -38,33 +35,17 @@ export function connect(config) {
         });
         // Wait for Cloak server to be ready.
         yield waitCloakServer(_config.Port);
-        // TODO(TomChv): How transform this part here? This function currently
-        // execute the GQL query but instead we may want to returns a client and
-        // close the server when it's finished.
-        // The only way I see to do this is to let the client hold an optional server
-        // process and shut it down in a Close function if it's defined.
-        // WDYT?
-        //
-        // Piece of code to transform
-        // ```
-        //     await cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
-        //       .catch(async (err) => {
-        //         // FIXME:(sipsma) give the engine a sec to flush any progress logs on error
-        //         // Better solution is to send SIGTERM and have a handler in dagger engine that
-        //         // flushes logs before exiting.
-        //         await new Promise((resolve) => setTimeout(resolve, 1000));
-        //         throw err;
-        //       })
-        //       .finally(async () => {
-        //         serverProc.cancel();
-        //         return serverProc.catch((e) => {
-        //           if (!e.isCanceled) {
-        //             console.error("dagger engine error: ", e);
-        //           }
-        //         });
-        //       });
-        // ```
-        return new Client(_config.Port, serverProcess);
+        // Execute users workflow and shutdown the server at the end of the
+        // execution. Either it succeeds or fails.
+        yield cb(new Client(_config.Port))
+            .finally(() => __awaiter(this, void 0, void 0, function* () {
+            serverProcess.cancel();
+            yield serverProcess.catch((e) => {
+                if (!e.isCanceled) {
+                    console.error('dagger engine error: ', e);
+                }
+            });
+        }));
     });
 }
 /**
@@ -90,20 +71,12 @@ function verifyCloakBinary() {
  * the arguments concatenated to "cloak dev" command.
  */
 function buildCLIArguments(opts) {
-    const args = [
+    return [
         'dev',
         '--workdir', `${opts.Workdir}`,
         '-p', `${opts.ConfigPath}`,
         '--port', `${opts.Port}`,
     ];
-    // add local dirs from config in the form of `--local-dir <name>=<path>`
-    for (const [name, localDir] of Object.entries(opts.LocalDirs)) {
-        // If path is not absolute, we resolve it to its absolute path
-        // This function do nothing if the path is already absolute
-        const absoluteLocalDirPath = path.resolve(localDir);
-        args.push('--local-dir', `${name}=${absoluteLocalDirPath}`);
-    }
-    return args;
 }
 /**
  * waitCloakServer use an axios client to try connecting to the cloak server

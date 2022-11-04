@@ -1,7 +1,6 @@
 // WIP(TomChv): This file shall be renamed to something else
 import { Client } from './client.js';
-import { execa, ExecaChildProcess, execaCommandSync } from 'execa';
-import path from 'path';
+import { execa, execaCommandSync } from 'execa';
 import axios from 'axios';
 
 /**
@@ -15,20 +14,23 @@ const CLOAK_BINARY = "cloak";
  * Options are based on `dagger cloak` CLI.
  */
 export interface ConnectOpts {
-	LocalDirs?: Record<string, string>;
 	Port?: number;
 	Workdir?: string;
 	ConfigPath?: string;
 }
 
-export type ServerProcess = ExecaChildProcess;
+/**
+ * ConnectExecCB is the type of the connect callback
+ * This call acts as a context with a ready to use Dagger GraphQL client.
+ */
+export type ConnectExecCB = (client: Client) => Promise<void>;
 
 /**
  * connect runs cloak GraphQL server and initializes a
- * GraphQL client to execute query on it.
+ * GraphQL client to execute query on it through its callback.
  * This implementation is based on the existing Go SDK.
  */
-export async function connect(config: ConnectOpts): Promise<Client> {
+export async function connect(cb: ConnectExecCB, config: ConnectOpts = {}): Promise<void> {
 	// exit with error if we are not using the non-Cloak dagger binary (< 0.3.0)
 	await verifyCloakBinary();
 
@@ -38,15 +40,13 @@ export async function connect(config: ConnectOpts): Promise<Client> {
 		Workdir: process.env['DAGGER_WORKDIR'] || process.cwd(),
 		ConfigPath: process.env['DAGGER_CONFIG'] || './dagger.json',
 		Port: 8080,
-		// Set LocalDirs to {} so it's not null
-		LocalDirs: {},
 		...config
 	};
 
 	const args = buildCLIArguments(_config);
 
 	// Start Cloak server.
-	const serverProcess: ServerProcess = execa(CLOAK_BINARY, args, {
+	const serverProcess = execa(CLOAK_BINARY, args, {
 		stdio: "inherit",
 		cwd: _config.Workdir
 	});
@@ -54,7 +54,17 @@ export async function connect(config: ConnectOpts): Promise<Client> {
 	// Wait for Cloak server to be ready.
 	await waitCloakServer(_config.Port)
 
-	return new Client(_config.Port, serverProcess);
+	// Execute users workflow and shutdown the server at the end of the
+	// execution. Either it succeeds or fails.
+	await cb(new Client(_config.Port))
+		.finally(async () => {
+			serverProcess.cancel();
+			await serverProcess.catch((e) => {
+				if (!e.isCanceled) {
+					console.error('dagger engine error: ', e);
+				}
+			});
+		});
 }
 
 /**
@@ -78,23 +88,12 @@ async function verifyCloakBinary() {
  * the arguments concatenated to "cloak dev" command.
  */
 function buildCLIArguments(opts: Required<ConnectOpts>): string[] {
-	const args = [
+	return [
 		'dev',
 		'--workdir', `${ opts.Workdir }`,
 		'-p', `${ opts.ConfigPath }`,
 		'--port', `${ opts.Port }`,
 	];
-
-	// add local dirs from config in the form of `--local-dir <name>=<path>`
-	for (const [ name, localDir ] of Object.entries(opts.LocalDirs)) {
-		// If path is not absolute, we resolve it to its absolute path
-		// This function do nothing if the path is already absolute
-		const absoluteLocalDirPath = path.resolve(localDir);
-
-		args.push('--local-dir', `${ name }=${ absoluteLocalDirPath }`);
-	}
-
-	return args;
 }
 
 /**
