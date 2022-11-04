@@ -24,6 +24,7 @@ var clientGenCmd = &cobra.Command{
 func init() {
 	clientGenCmd.Flags().StringP("output", "o", "", "output file")
 	clientGenCmd.Flags().String("package", "", "package name")
+	clientGenCmd.Flags().String("lang", "Go", "language to generate in")
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
@@ -38,6 +39,11 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer c.Close()
+
+	lang, err := getLang(cmd)
+	if err != nil {
+		panic(err)
+	}
 
 	pkg, err := getPackage(cmd)
 	if err != nil {
@@ -75,6 +81,19 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func getLang(cmd *cobra.Command) (string, error) {
+	pkg, err := cmd.Flags().GetString("lang")
+	if err != nil {
+		return "", err
+	}
+
+	// If a package name was provided as a flag, use it
+	if pkg != "" {
+		return pkg, nil
+	}
+	return "", nil
 }
 
 func getPackage(cmd *cobra.Command) (string, error) {

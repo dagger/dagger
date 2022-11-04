@@ -10,7 +10,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator/go/templates"
-	tsgenerator "github.com/dagger/dagger/codegen/generator/ts"
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
@@ -50,7 +49,10 @@ func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]
 		}
 
 	default:
-		return []byte{}, ErrUnknownSDK
+		sdks := []string{
+			string(SDKLangGo),
+		}
+		return []byte{}, fmt.Errorf("use SDK: [%s]: %w", strings.Join(sdks, ", "), ErrUnknownSDK)
 	}
 
 	return gen.Generate(ctx)
