@@ -31,7 +31,7 @@ func TestField(t *testing.T) {
 	t.Run("myField(string ref) : Container", func(t *testing.T) {
 		templateType := "field"
 		tmpl := templateHelper(t, templateType, "args", "arg", "return")
-		want := `myField(string ref) : Container`
+		want := `myField(args: { string ref }) : Container`
 		field := introspection.Field{
 			Name: "myField",
 			TypeRef: &introspection.TypeRef{

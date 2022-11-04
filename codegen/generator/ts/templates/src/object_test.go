@@ -59,6 +59,6 @@ class ref extends BaseApi {
     return this._queryTree;
   }
 
-  async Field1(string Arg1) : Promise<Record<string, string>>
+  async Field1(args: { string Arg1 }) : Promise<Record<string, string>>
 }
 `

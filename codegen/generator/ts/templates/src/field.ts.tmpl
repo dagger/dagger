@@ -1,7 +1,11 @@
 {{ define "field" }}
 	{{- if Solve . }}async {{end}}
 	{{- .Name -}}
-	({{- template "args" .Args -}})
+	(
+		{{- with .Args -}}
+	{{- "" }}args: { {{ template "args" . }} }{{ "" -}}
+		{{- end -}}
+	)
 	{{- if Solve . -}}
 		{{ "" }} : Promise<Record<string, string>>{{ "" }}
 	{{- else -}}
