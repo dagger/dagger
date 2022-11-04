@@ -132,10 +132,11 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
-	Args           []string
-	Stdin          string
-	RedirectStdout string
-	RedirectStderr string
+	Args                          []string
+	Stdin                         string
+	RedirectStdout                string
+	RedirectStderr                string
+	ExperimentalPrivilegedNesting bool
 }
 
 // This container after executing the specified command inside it
@@ -166,6 +167,13 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
 			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+			break
+		}
+	}
+	// `experimentalPrivilegedNesting` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
 			break
 		}
 	}

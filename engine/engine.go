@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/buildkitd"
@@ -81,7 +82,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	secretStore := secret.NewStore()
 
 	socketProviders := MergedSocketProviders{
-		project.DaggerSockName: project.NewAPIProxy(router),
+		core.DaggerSockName: project.NewAPIProxy(router),
 	}
 	var sshAuthSockID string
 	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {

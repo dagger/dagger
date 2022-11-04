@@ -128,7 +128,7 @@ func TestConnectOption(t *testing.T) {
 	}
 
 	for _, want := range wants {
-		require.Regexp(t, want, b.String())
+		require.Regexp(t, b.String(), want)
 	}
 }
 
