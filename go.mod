@@ -8,8 +8,8 @@ require (
 	github.com/Microsoft/go-winio v0.6.0
 	github.com/charmbracelet/glamour v0.5.0
 	github.com/containerd/console v1.0.3
-	github.com/containerd/containerd v1.6.8
-	github.com/docker/buildx v0.8.2
+	github.com/containerd/containerd v1.6.9
+	github.com/docker/buildx v0.8.0
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/gofrs/flock v0.8.1
@@ -43,16 +43,16 @@ require (
 	// These PRs have more context:
 	// - TBD
 	// - https://github.com/dagger/dagger/pull/2446#issuecomment-1126377411
-	go.opentelemetry.io/otel v1.11.0
-	go.opentelemetry.io/otel/exporters/jaeger v1.11.0
-	go.opentelemetry.io/otel/sdk v1.11.0
-	go.opentelemetry.io/otel/trace v1.11.0
+	go.opentelemetry.io/otel v1.11.1
+	go.opentelemetry.io/otel/exporters/jaeger v1.11.1
+	go.opentelemetry.io/otel/sdk v1.11.1
+	go.opentelemetry.io/otel/trace v1.11.1
 	//!!!! the version of go.opentelemetry.io/otel MUST be kept in sync with BuildKit's version !!!!
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
-	golang.org/x/oauth2 v0.0.0-20220822191816-0ebed06d0094
-	golang.org/x/sync v0.0.0-20220929204114-8fcdb60fdcc0
-	golang.org/x/term v0.0.0-20220722155259-a9ba230a4035
-	golang.org/x/time v0.0.0-20220922220347-f3bd1da661af
+	golang.org/x/mod v0.6.0
+	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783
+	golang.org/x/sync v0.1.0
+	golang.org/x/term v0.1.0
+	golang.org/x/time v0.1.0
 	google.golang.org/grpc v1.50.1
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -60,10 +60,11 @@ require (
 require github.com/google/go-cmp v0.5.9
 
 require (
-	dagger.io/dagger v0.3.1
+	dagger.io/dagger v0.3.2-0.20221031221607-016528dfc372
 	github.com/dagger/cuelsp v0.3.4
+	github.com/olekukonko/tablewriter v0.0.5
 	github.com/tliron/kutil v0.1.62
-	github.com/tonistiigi/fsutil v0.0.0-20220315205639-9ed612626da3
+	github.com/tonistiigi/fsutil v0.0.0-20220115021204-b19f7f9cb274
 )
 
 require (
@@ -83,7 +84,7 @@ require (
 	github.com/dagger/dagger v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
-	github.com/docker/cli v20.10.19+incompatible // indirect
+	github.com/docker/cli v20.10.21+incompatible // indirect
 	github.com/docker/docker v20.10.17+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
@@ -105,14 +106,14 @@ require (
 	github.com/graphql-go/graphql v0.8.0 // indirect
 	github.com/graphql-go/handler v0.2.3 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.12.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/iancoleman/strcase v0.2.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20201106050909-4977a11b4351 // indirect
-	github.com/klauspost/compress v1.15.11 // indirect
+	github.com/klauspost/compress v1.15.12 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
@@ -125,7 +126,6 @@ require (
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.12.0 // indirect
-	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 	github.com/petermattis/goid v0.0.0-20220712135657-ac599d9cba15 // indirect
@@ -147,20 +147,20 @@ require (
 	github.com/yuin/goldmark v1.4.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.1 // indirect
 	go.lsp.dev/uri v0.3.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.36.3 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.11.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.11.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.11.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.11.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.36.4 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.11.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.11.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.11.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.11.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
-	golang.org/x/crypto v0.0.0-20221012134737-56aed061732a // indirect
-	golang.org/x/net v0.0.0-20221014081412-f15817d10f9b // indirect
-	golang.org/x/sys v0.0.0-20221013171732-95e765b1cc43 // indirect
-	golang.org/x/text v0.3.8 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/crypto v0.1.0 // indirect
+	golang.org/x/net v0.1.0 // indirect
+	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/text v0.4.0 // indirect
+	golang.org/x/tools v0.2.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20221014213838-99cd37c6964a // indirect
+	google.golang.org/genproto v0.0.0-20221027153422-115e99e71e1c // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
