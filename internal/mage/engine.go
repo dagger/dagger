@@ -2,11 +2,11 @@ package mage
 
 import (
 	"context"
-	"errors"
 	"os"
 	"runtime"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 )
 
@@ -20,38 +20,31 @@ func (t Engine) Build(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	src := c.Host().Workdir()
-
-	// Create a directory containing only `go.{mod,sum}` files.
-	goMods := c.Directory()
-	for _, f := range []string{"go.mod", "go.sum", "sdk/go/go.mod", "sdk/go/go.sum"} {
-		goMods = goMods.WithFile(f, src.File(f))
-	}
-
-	build := c.Container().
-		From("golang:1.19-alpine").
-		WithEnvVariable("CGO_ENABLED", "0").
+	build := util.GoBase(c).
 		WithEnvVariable("GOOS", runtime.GOOS).
 		WithEnvVariable("GOARCH", runtime.GOARCH).
-		WithWorkdir("/app").
-		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
-		WithMountedDirectory("/app", goMods).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "mod", "download"},
-		}).
-		// run `go build` with all source
-		WithMountedDirectory("/app", src).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "/app/cmd/cloak"},
 		})
 
-	ok, err := build.Directory("./bin").Export(ctx, "./bin")
+	_, err = build.Directory("./bin").Export(ctx, "./bin")
+	return err
+}
+
+// Lint lints the engine
+func (t Engine) Lint(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
+	defer c.Close()
 
-	if !ok {
-		return errors.New("HostDirectoryWrite not ok")
-	}
-	return nil
+	_, err = c.Container().
+		From("golangci/golangci-lint:v1.48").
+		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
+		WithWorkdir("/app").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"golangci-lint", "run", "-v", "--timeout", "5m"},
+		}).ExitCode(ctx)
+	return err
 }

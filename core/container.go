@@ -25,6 +25,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	DaggerSockName = "dagger-sock"
+	DaggerSockPath = "/dagger.sock"
+)
+
 // Container is a content-addressed container.
 type Container struct {
 	ID ContainerID `json:"id"`
@@ -679,6 +684,17 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 		llb.WithCustomName(strings.Join(args, " ")),
 	}
 
+	// this allows executed containers to communicate back to this API
+	if opts.ExperimentalPrivilegedNesting {
+		runOpts = append(runOpts,
+			llb.AddEnv("DAGGER_HOST", "unix:///dagger.sock"),
+			llb.AddSSHSocket(
+				llb.SSHID(DaggerSockName),
+				llb.SSHSocketTarget(DaggerSockPath),
+			),
+		)
+	}
+
 	// because the shim might run as non-root, we need to make a world-writable
 	// directory first and then make it the base of the /dagger mount point.
 	//
@@ -1086,4 +1102,9 @@ type ContainerExecOpts struct {
 
 	// Redirect the command's standard error to a file in the container
 	RedirectStderr string
+
+	// Provide dagger access to the executed command
+	// Do not use this option unless you trust the command being executed.
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	ExperimentalPrivilegedNesting bool
 }

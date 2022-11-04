@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
@@ -44,7 +45,7 @@ func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error 
 	}
 	id := v[0]
 
-	if id != DaggerSockName {
+	if id != core.DaggerSockName {
 		return status.Errorf(codes.Internal, "no api connection for id %s", id)
 	}
 	serverConn, clientConn := net.Pipe()

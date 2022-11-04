@@ -114,6 +114,12 @@ type Container {
     redirectStdout: String
     "Redirect the command's standard error to a file in the container"
     redirectStderr: String
+    """
+    Provide dagger access to the executed command
+    Do not use this option unless you trust the command being executed
+    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+    """
+    experimentalPrivilegedNesting: Boolean
   ): Container!
 
   """

@@ -22,9 +22,6 @@ const (
 	schemaPath     = "/schema.graphql"
 	entrypointPath = "/entrypoint"
 
-	DaggerSockName = "dagger-sock"
-	daggerSockPath = "/dagger.sock"
-
 	fsMountPath  = "/mnt"
 	tmpMountPath = "/tmp"
 
@@ -323,8 +320,8 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 			llb.Args([]string{entrypointPath}),
 			llb.AddEnv("DAGGER_HOST", "unix:///dagger.sock"),
 			llb.AddSSHSocket(
-				llb.SSHID(DaggerSockName),
-				llb.SSHSocketTarget(daggerSockPath),
+				llb.SSHID(core.DaggerSockName),
+				llb.SSHSocketTarget(core.DaggerSockPath),
 			),
 			llb.AddMount(inputMountPath, input, llb.Readonly),
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
