@@ -64,8 +64,10 @@ var modVersionToImage = map[string]string{
 	"v0.10.1-0.20221027014600-b78713cdd127": "moby/buildkit@sha256:4984ac6da1898a9a06c4c3f7da5eaabe8a09ec56f5054b0a911ab0f9df6a092c",
 }
 
-func Client(ctx context.Context) (*bkclient.Client, error) {
-	host := os.Getenv("BUILDKIT_HOST")
+func Client(ctx context.Context, host string) (*bkclient.Client, error) {
+	if host == "" {
+		host = os.Getenv("BUILDKIT_HOST")
+	}
 	if host == "" {
 		h, err := startBuildkitd(ctx)
 		if err != nil {
@@ -74,6 +76,10 @@ func Client(ctx context.Context) (*bkclient.Client, error) {
 
 		host = h
 	}
+	if err := waitBuildkit(ctx, host); err != nil {
+		return nil, err
+	}
+
 	opts := []bkclient.ClientOpt{
 		bkclient.WithFailFast(),
 		bkclient.WithTracerProvider(otel.GetTracerProvider()),
@@ -271,7 +277,7 @@ func startBuildkit(ctx context.Context) error {
 		return err
 	}
 
-	return waitBuildkit(ctx)
+	return nil
 }
 
 // Pull and run the buildkit daemon with a proper configuration
@@ -305,12 +311,12 @@ func installBuildkit(ctx context.Context, ref string) error {
 			return err
 		}
 	}
-	return waitBuildkit(ctx)
+	return nil
 }
 
 // waitBuildkit waits for the buildkit daemon to be responsive.
-func waitBuildkit(ctx context.Context) error {
-	c, err := bkclient.New(ctx, "docker-container://"+containerName)
+func waitBuildkit(ctx context.Context, host string) error {
+	c, err := bkclient.New(ctx, host)
 	if err != nil {
 		return err
 	}
