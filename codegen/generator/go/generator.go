@@ -32,13 +32,17 @@ type Generator interface {
 	Generate(ctx context.Context) ([]byte, error)
 }
 
-func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]byte, error) {
-	// Set parent objects for fields
+// SetSchemaParents sets all the parents for the fields.
+func SetSchemaParents(schema *introspection.Schema) {
 	for _, t := range schema.Types {
 		for _, f := range t.Fields {
 			f.ParentObject = t
 		}
 	}
+}
+func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]byte, error) {
+
+	SetSchemaParents(schema)
 
 	var gen Generator
 	switch cfg.Lang {
@@ -58,7 +62,8 @@ func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]
 	return gen.Generate(ctx)
 }
 
-func IntrospectAndGenerate(ctx context.Context, c *dagger.Client, cfg Config) ([]byte, error) {
+// Introspect get the Dagger Schema with the client c.
+func Introspect(ctx context.Context, c *dagger.Client) (*introspection.Schema, error) {
 	var response introspection.Response
 	err := c.Do(ctx,
 		&dagger.Request{
@@ -69,8 +74,17 @@ func IntrospectAndGenerate(ctx context.Context, c *dagger.Client, cfg Config) ([
 	if err != nil {
 		return nil, fmt.Errorf("error querying the API: %w", err)
 	}
+	return response.Schema, nil
+}
 
-	return Generate(ctx, response.Schema, cfg)
+// IntrospectAndGenerate generate the Dagger API with the client c.
+func IntrospectAndGenerate(ctx context.Context, c *dagger.Client, cfg Config) ([]byte, error) {
+	schema, err := Introspect(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return Generate(ctx, schema, cfg)
 }
 
 type GoGenerator struct {
