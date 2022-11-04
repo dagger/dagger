@@ -74,7 +74,7 @@ func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, er
 	gwCh := make(chan bkgw.Client, 1)
 	gwErrCh := make(chan error, 1)
 	go func() {
-		_, gwErr := manager.bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, gwErr := manager.bkClient.Build(context.Background(), solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve
 			// SecretIDs using the gateway, we don't have a gateway until we call
 			// Build, which needs SolveOpts, which needs to contain the secret store.
