@@ -51,13 +51,25 @@ func main() {
 
 	contents, err = c.Container().
 		From("alpine:edge").
-		WithMountedDirectory("/src/dagger", c.Host().Directory(bassSrc)).
+		WithMountedDirectory("/src/bass", c.Host().Directory(bassSrc)).
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"ls", "-al", "/src/dagger"},
+			Args: []string{"ls", "-al", "/src/bass"},
 		}).Stdout().Contents(ctx)
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Print(contents)
+
+	exitCode, err := c.Container().
+		From("alpine:edge").
+		WithMountedDirectory("/src/bass", c.Host().Directory(bassSrc)).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"sleep", "30"},
+		}).ExitCode(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(exitCode)
 }

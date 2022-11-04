@@ -15,7 +15,6 @@ import (
 	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
-	"github.com/moby/buildkit/session"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/multierr"
 )
@@ -25,7 +24,7 @@ type Client struct {
 	Query
 
 	conn    engineconn.EngineConn
-	session *session.Session
+	session *Session
 	gql     graphql.Client
 }
 
@@ -110,7 +109,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 			},
 		},
 	}
-	c.gql = errorWrappedClient{graphql.NewClient("http://dagger/query?session="+c.session.ID(), client)}
+	c.gql = errorWrappedClient{graphql.NewClient("http://dagger/query?session="+c.session.ID, client)}
 	c.Query = Query{
 		q: querybuilder.Query(),
 		c: c.gql,

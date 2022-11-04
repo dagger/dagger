@@ -7,16 +7,18 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"os"
 	"time"
 
 	"dagger.io/dagger/internal/engineconn"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/docker/docker/api/types"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth/authprovider"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"go.uber.org/atomic"
+	"golang.org/x/net/http2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
@@ -26,113 +28,70 @@ const (
 	headerSessionMethod    = "X-Docker-Expose-Session-Grpc-Method"
 )
 
-func openSession(ctx context.Context, dialer engineconn.Dialer) (*session.Session, error) {
-	sess, err := session.NewSession(ctx, "dagger", "")
-	if err != nil {
-		return nil, err
-	}
+type Session struct {
+	ID string
 
-	for _, attachable := range []session.Attachable{
+	conn net.Conn
+	done chan struct{}
+}
+
+func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error) {
+	srv := grpc.NewServer()
+
+	for _, sess := range []session.Attachable{
+		// TODO(vito): blocked on https://github.com/mwitkow/grpc-proxy/pull/62
+		// authprovider.NewDockerAuthProvider(os.Stderr),
+		filesync.NewFSSyncProvider(AnyDirSource{}),
 		// TODO(vito): configurable secret store
 		// secretsprovider.NewSecretProvider(secretStore),
-		authprovider.NewDockerAuthProvider(os.Stderr),
-		filesync.NewFSSyncProvider(AnyDirSource{}),
 		// TODO(vito): move engine secret store that resolves SecretID by calling
 		// Plaintext()?
 		//
 		// or just redo secrets?
 	} {
-		sess.Allow(attachable)
+		sess.Register(srv)
 	}
 
-	done := make(chan error, 1)
+	grpc_health_v1.RegisterHealthServer(srv, health.NewServer())
+
+	req, err := http.NewRequest(http.MethodPost, "http://dagger/session", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	sid := identity.NewID()
+
+	req.Header.Set(headerSessionID, sid)
+	req.Header.Set(headerSessionName, "dagger")
+	req.Header.Set(headerSessionSharedKey, "")
+
+	for name, svc := range srv.GetServiceInfo() {
+		for _, method := range svc.Methods {
+			req.Header.Add(headerSessionMethod, session.MethodURL(name, method.Name))
+		}
+	}
+
+	conn, err := hijackConn(ctx, req, "h2c", dialer)
+	if err != nil {
+		return nil, err
+	}
+
+	done := make(chan struct{})
 	go func() {
-		err := sess.Run(context.Background(), func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			req, err := http.NewRequest(http.MethodPost, "http://dagger/session", nil)
-			if err != nil {
-				return nil, err
-			}
-
-			for h, vs := range meta {
-				for _, v := range vs {
-					req.Header.Add(h, v)
-				}
-			}
-
-			conn, err := hijackConn(ctx, req, proto, dialer)
-			if err != nil {
-				return nil, err
-			}
-
-			return conn, nil
-		})
-		done <- err
+		defer close(done)
+		(&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: srv})
 	}()
 
-	return sess, nil
+	return &Session{
+		ID:   sid,
+		conn: conn,
+		done: done,
+	}, nil
 }
 
-//func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error) {
-//	grpc.EnableTracing = true
-//	grpclog.SetLoggerV2(grpclog.NewLoggerV2(os.Stdout, os.Stdout, os.Stdout))
-
-//	srv := grpc.NewServer()
-
-//	for _, sess := range []session.Attachable{
-//		// TODO(vito): configurable secret store
-//		// secretsprovider.NewSecretProvider(secretStore),
-//		authprovider.NewDockerAuthProvider(os.Stderr),
-//		filesync.NewFSSyncProvider(AnyDirSource{}),
-//		// TODO(vito): move engine secret store that resolves SecretID by calling
-//		// Plaintext()?
-//		//
-//		// or just redo secrets?
-//	} {
-//		sess.Register(srv)
-//	}
-
-//	grpc_health_v1.RegisterHealthServer(srv, health.NewServer())
-
-//	req, err := http.NewRequest(http.MethodPost, "http://dagger/session", nil)
-//	if err != nil {
-//		return nil, err
-//	}
-
-//	sid := identity.NewID()
-
-//	req.Header.Set(headerSessionID, sid)
-//	req.Header.Set(headerSessionName, "dagger")
-//	req.Header.Set(headerSessionSharedKey, "")
-
-//	for name, svc := range srv.GetServiceInfo() {
-//		for _, method := range svc.Methods {
-//			req.Header.Add(headerSessionMethod, session.MethodURL(name, method.Name))
-//		}
-//	}
-
-//	req.Header.Write(os.Stderr)
-
-//	conn, err := hijackConn(ctx, req, dialer)
-//	if err != nil {
-//		return nil, err
-//	}
-
-//	done := make(chan error, 1)
-//	go func() {
-//		log.Println("serving?")
-
-//		// (&http2.Server{}).ServeConn(conn, &http2.ServeConnOpts{Handler: srv})
-//		err := srv.Serve(&singleConnListener{ctx: ctx, conn: conn})
-//		done <- err
-//		log.Println("served", err)
-//	}()
-
-//	return &Session{
-//		ID:   sid,
-//		conn: conn,
-//		done: done,
-//	}, nil
-//}
+func (session *Session) Close() error {
+	return session.conn.Close()
+}
 
 func hijackConn(ctx context.Context, req *http.Request, proto string, dialer engineconn.Dialer) (net.Conn, error) {
 	req.Header.Set("Connection", "Upgrade")
@@ -188,18 +147,11 @@ func hijackConn(ctx context.Context, req *http.Request, proto string, dialer eng
 }
 
 type singleConnListener struct {
-	ctx      context.Context
-	conn     net.Conn
-	accepted atomic.Bool
+	conn net.Conn
 }
 
 func (l singleConnListener) Accept() (net.Conn, error) {
-	if l.accepted.CAS(false, true) {
-		return l.conn, nil
-	} else {
-		<-l.ctx.Done()
-		return nil, l.ctx.Err()
-	}
+	return l.conn, nil
 }
 
 func (l singleConnListener) Close() error {

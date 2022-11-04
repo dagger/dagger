@@ -118,10 +118,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		})
 	}
 
-	sm, err := sessions.NewManager(c, startOpts.RawBuildkitStatus, solveOpts)
-	if err != nil {
-		return err
-	}
+	sm := sessions.NewManager(c, startOpts.RawBuildkitStatus, solveOpts)
 
 	router := router.New(sm)
 	socketProviders[core.DaggerSockName] = project.NewAPIProxy(router)
