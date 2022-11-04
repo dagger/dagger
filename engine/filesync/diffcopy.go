@@ -5,9 +5,6 @@ import (
 	"context"
 	io "io"
 	"os"
-	"time"
-
-	"github.com/moby/buildkit/util/bklog"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
@@ -72,10 +69,6 @@ func (wc *streamWriterCloser) Close() error {
 }
 
 func recvDiffCopy(ds grpc.ClientStream, dest string, cu CacheUpdater, progress progressCb, differ fsutil.DiffType, filter func(string, *fstypes.Stat) bool) (err error) {
-	st := time.Now()
-	defer func() {
-		bklog.G(ds.Context()).Debugf("diffcopy took: %v", time.Since(st))
-	}()
 	var cf fsutil.ChangeFunc
 	var ch fsutil.ContentHasher
 	if cu != nil {

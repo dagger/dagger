@@ -1,13 +1,10 @@
 package filesync
 
 import (
-	"context"
-	"fmt"
 	io "io"
 	"os"
 	"strings"
 
-	"github.com/moby/buildkit/session"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -52,7 +49,7 @@ func (dirs StaticDirSource) LookupDir(name string) (SyncedDir, bool) {
 }
 
 // NewFSSyncProvider creates a new provider for sending files from client
-func NewFSSyncProvider(dirs DirSource) session.Attachable {
+func NewFSSyncProvider(dirs DirSource) *fsSyncProvider {
 	return &fsSyncProvider{
 		dirs: dirs,
 	}
@@ -172,71 +169,8 @@ type CacheUpdater interface {
 	ContentHasher() fsutil.ContentHasher
 }
 
-// FSSync initializes a transfer of files
-func FSSync(ctx context.Context, c session.Caller, opt FSSendRequestOpt) error {
-	var pr protocol
-	var found bool
-	for _, p := range supportedProtocols {
-		if c.Supports(session.MethodURL(_FileSync_serviceDesc.ServiceName, p.name)) {
-			pr = p
-			found = true
-			break
-		}
-	}
-	if !found {
-		return errors.New("no local sources enabled")
-	}
-
-	opts := make(map[string][]string)
-	if opt.OverrideExcludes {
-		opts[keyOverrideExcludes] = []string{"true"}
-	}
-
-	if opt.IncludePatterns != nil {
-		opts[keyIncludePatterns] = opt.IncludePatterns
-	}
-
-	if opt.ExcludePatterns != nil {
-		opts[keyExcludePatterns] = opt.ExcludePatterns
-	}
-
-	if opt.FollowPaths != nil {
-		opts[keyFollowPaths] = opt.FollowPaths
-	}
-
-	opts[keyDirName] = []string{opt.Name}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	client := NewFileSyncClient(c.Conn())
-
-	var stream grpc.ClientStream
-
-	ctx = metadata.NewOutgoingContext(ctx, opts)
-
-	switch pr.name {
-	case "tarstream":
-		cc, err := client.TarStream(ctx)
-		if err != nil {
-			return err
-		}
-		stream = cc
-	case "diffcopy":
-		cc, err := client.DiffCopy(ctx)
-		if err != nil {
-			return err
-		}
-		stream = cc
-	default:
-		panic(fmt.Sprintf("invalid protocol: %q", pr.name))
-	}
-
-	return pr.recvFn(stream, opt.DestDir, opt.CacheUpdater, opt.ProgressCb, opt.Differ, opt.Filter)
-}
-
 // NewFSSyncTargetDir allows writing into a directory
-func NewFSSyncTargetDir(outdir string) session.Attachable {
+func NewFSSyncTargetDir(outdir string) *fsSyncTarget {
 	p := &fsSyncTarget{
 		outdir: outdir,
 	}
@@ -244,7 +178,7 @@ func NewFSSyncTargetDir(outdir string) session.Attachable {
 }
 
 // NewFSSyncTarget allows writing into an io.WriteCloser
-func NewFSSyncTarget(f func(map[string]string) (io.WriteCloser, error)) session.Attachable {
+func NewFSSyncTarget(f func(map[string]string) (io.WriteCloser, error)) *fsSyncTarget {
 	p := &fsSyncTarget{
 		f: f,
 	}
@@ -289,45 +223,6 @@ func (sp *fsSyncTarget) DiffCopy(stream FileSend_DiffCopyServer) (err error) {
 		}
 	}()
 	return writeTargetFile(stream, wc)
-}
-
-func CopyToCaller(ctx context.Context, fs fsutil.FS, c session.Caller, progress func(int, bool)) error {
-	method := session.MethodURL(_FileSend_serviceDesc.ServiceName, "diffcopy")
-	if !c.Supports(method) {
-		return errors.Errorf("method %s not supported by the client", method)
-	}
-
-	client := NewFileSendClient(c.Conn())
-
-	cc, err := client.DiffCopy(ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	return sendDiffCopy(cc, fs, progress)
-}
-
-func CopyFileWriter(ctx context.Context, md map[string]string, c session.Caller) (io.WriteCloser, error) {
-	method := session.MethodURL(_FileSend_serviceDesc.ServiceName, "diffcopy")
-	if !c.Supports(method) {
-		return nil, errors.Errorf("method %s not supported by the client", method)
-	}
-
-	client := NewFileSendClient(c.Conn())
-
-	opts := make(map[string][]string, len(md))
-	for k, v := range md {
-		opts[keyExporterMetaPrefix+k] = []string{v}
-	}
-
-	ctx = metadata.NewOutgoingContext(ctx, opts)
-
-	cc, err := client.DiffCopy(ctx)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	return newStreamWriter(cc), nil
 }
 
 type InvalidSessionError struct {
