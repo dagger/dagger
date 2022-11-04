@@ -1,5 +1,19 @@
-import { Engine, GraphQLClient, gql } from "../dist/index.js";
-import { ContainerExecArgs } from "./types.js";
+import { Engine, GraphQLClient, gql } from "../index.js";
+import { 
+  ContainerDirectoryArgs, 
+  ContainerExecArgs, 
+  ContainerFromArgs, 
+  ContainerWithEnvVariableArgs, 
+  ContainerWithFsArgs, 
+  ContainerWithMountedDirectoryArgs, 
+  ContainerWithWorkdirArgs, 
+  DirectoryEntriesArgs, 
+  DirectoryFileArgs, 
+  GitRepositoryBranchArgs, 
+  HostWorkdirArgs, 
+  QueryContainerArgs, 
+  QueryGitArgs, 
+  Scalars } from "./types.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
 export type QueryTree = {
@@ -18,7 +32,7 @@ export class BaseApi {
     return this._queryTree;
   }
 
-  protected async _compute() : Promise<Record<string, string>> {
+  protected async _compute() : Promise<Record<string, any>> {
     // run the query and return the result.
     const query = queryBuilder(this._queryTree)
     
@@ -38,7 +52,10 @@ export class BaseApi {
 
 export default class Api extends BaseApi {
   
-  container(args?: {id: any}): Container {
+  /**
+   * Load a container from ID. Null ID returns an empty container (scratch).
+   */
+  container(args?: QueryContainerArgs): Container {
 
     this._queryTree = [
       ...this._queryTree,
@@ -51,7 +68,10 @@ export default class Api extends BaseApi {
     return new Container(this._queryTree)
   }
 
-  git(args: {url: string}): Git {
+  /**
+   * Query a git repository
+   */
+  git(args: QueryGitArgs): Git {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -63,6 +83,9 @@ export default class Api extends BaseApi {
     return new Git(this._queryTree)
   }
 
+  /**
+   * Query the host environment
+   */
   host(): Host {
     this._queryTree = [
       ...this._queryTree,
@@ -77,7 +100,10 @@ export default class Api extends BaseApi {
 }
 
 class Host extends BaseApi {
-  workdir(args?: {exclude?: Array<string>, include?: Array<string>}): Directory {
+  /**
+   * The current working directory on the host
+   */
+  workdir(args?: HostWorkdirArgs): Directory {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -91,7 +117,10 @@ class Host extends BaseApi {
 }
 
 class Git extends BaseApi {
-  branch(args: {name: string}): Tree {
+  /**
+   * Details on one branch
+   */
+  branch(args: GitRepositoryBranchArgs): Tree {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -105,6 +134,9 @@ class Git extends BaseApi {
 
 }
 class Tree extends BaseApi {
+  /**
+   * The filesystem tree at this ref
+   */
   tree(): File {
     this._queryTree = [
       ...this._queryTree,
@@ -117,7 +149,10 @@ class Tree extends BaseApi {
   }
 }
 class File extends BaseApi {
-  file(args: {path: string}): Contents {
+  /**
+   * Retrieve a file at the given path
+   */
+  file(args: DirectoryFileArgs): Contents {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -132,6 +167,9 @@ class File extends BaseApi {
 
 class Container extends BaseApi {
 
+  /**
+   * This container after executing the specified command inside it
+   */
   exec(args: ContainerExecArgs): Container {
     this._queryTree = [
       ...this._queryTree,
@@ -144,7 +182,10 @@ class Container extends BaseApi {
     return new Container(this._queryTree)
   }
 
-  from(args: { address: String } ): Container {
+  /**
+   * Initialize this container from the base image published at the given address
+   */
+  from(args: ContainerFromArgs ): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -156,6 +197,9 @@ class Container extends BaseApi {
     return new Container(this._queryTree)
   }
 
+  /**
+   * This container's root filesystem. Mounts are not included.
+   */
   fs(): Directory {
     this._queryTree = [
       ...this._queryTree,
@@ -167,7 +211,10 @@ class Container extends BaseApi {
     return new Directory(this._queryTree)
   }
 
-  withFS(args: {id: string}): Container {
+/**
+ * Initialize this container from this DirectoryID
+ */
+  withFS(args: ContainerWithFsArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -179,7 +226,10 @@ class Container extends BaseApi {
     return new Container(this._queryTree)
   }
 
-  withMountedDirectory(args: {path: string, source: string}): Container {
+  /**
+   * This container plus a directory mounted at the given path
+   */
+  withMountedDirectory(args: ContainerWithMountedDirectoryArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -191,7 +241,10 @@ class Container extends BaseApi {
     return new Container(this._queryTree)
   }
 
-  async id(): Promise<Record<string, string>> {
+  /**
+   * A unique identifier for this container
+   */
+  async id(): Promise<Record<string, Scalars['ContainerID']>> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -199,11 +252,14 @@ class Container extends BaseApi {
       }
     ]
 
-    const response: Record<string, string> = await this._compute()
+    const response: Awaited<Record<string, Scalars['ContainerID']>> = await this._compute()
 
     return response
   }
 
+/**
+ * The output stream of the last executed command. Null if no command has been executed.
+ */
   stdout(): Contents {
     this._queryTree = [
       ...this._queryTree,
@@ -215,7 +271,10 @@ class Container extends BaseApi {
     return new Contents(this._queryTree)
   }
 
-  withWorkdir(args: {path: string}): Container {
+/**
+ * This container but with a different working directory
+ */
+  withWorkdir(args: ContainerWithWorkdirArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -227,7 +286,10 @@ class Container extends BaseApi {
     return new Container(this._queryTree)
   }
 
-  withEnvVariable(args: {name: string,value: string}): Container {
+  /**
+   * This container plus the given environment variable
+   */
+  withEnvVariable(args: ContainerWithEnvVariableArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -239,7 +301,10 @@ class Container extends BaseApi {
     return new Container(this._queryTree)
   }
 
-  directory(args: {path: string}): Container {
+  /**
+   * Retrieve a directory at the given path. Mounts are included.
+   */
+  directory(args: ContainerDirectoryArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -250,8 +315,30 @@ class Container extends BaseApi {
 
     return new Container(this._queryTree)
   }
+}
 
-  async entries(args?: {path: string}): Promise<Record<string, string>>  {
+class Directory extends BaseApi {
+  
+  /**
+   * Retrieve a directory at the given path. Mounts are included.
+   */
+  async id(): Promise<Record<string, Scalars['DirectoryID']>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'id'
+      }
+    ]
+
+    const response: Record<string, Scalars['DirectoryID']> = await this._compute()
+
+    return response
+  }
+
+  /**
+   * Return a list of files and directories at the given path
+   */
+  async entries(args?: DirectoryEntriesArgs): Promise<Record<string, Array<Scalars['String']>>>  {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -260,43 +347,19 @@ class Container extends BaseApi {
       }
     ]
 
-    const response: Record<string, string> = await this._compute()
+    const response: Record<string, Array<Scalars['String']>> = await this._compute()
 
     return response
-  }
-}
-
-class Directory extends BaseApi {
-  
-  async id(): Promise<Record<string, string>> {
-    this._queryTree = [
-      ...this._queryTree,
-      {
-      operation: 'id'
-      }
-    ]
-
-    const response: Record<string, string> = await this._compute()
-
-    return response
-  }
-
-  stdout(): Contents {
-    this._queryTree = [
-      ...this._queryTree,
-      {
-      operation: 'stdout',
-      }
-    ]
-
-    return new Contents(this._queryTree)
   }
 }
 
 class Contents extends BaseApi {
+  /**
+   * The contents of the file
+   */
   async contents(): Promise<Record<string, string>> {
     this._queryTree = [
-      ...this._queryTree,
+      ...this._queryTree, 
       {
       operation: 'contents'
       }
