@@ -26,32 +26,29 @@ describe('NodeJS sdk', function () {
   it('Connect to engine and execute a simple query to make sure it does not fail', async function () {
     this.timeout(60000);
 
+    const config = {
+      Port: 8081,
+    }
+
     // Use a different port to avoid collision with other tests.
-    const client = await connect({
-      Port: 8081
-    });
-
-    // Close server no matter if the test fails or not.
-    after(async function () {
-      await client.close();
-    })
-
-    const res = await client.do(gql`
-      {
-        container {
-          from(address: "alpine") {
-            exec(args: ["apk", "add", "curl"]) {
-              exec(args: ["curl", "https://dagger.io/"]) {
-                stdout {
-                  size
+    await connect(async (client) => {
+      const res = await client.do(gql`
+        {
+          container {
+            from(address: "alpine") {
+              exec(args: ["apk", "add", "curl"]) {
+                exec(args: ["curl", "https://dagger.io/"]) {
+                  stdout {
+                    size
+                  }
                 }
               }
             }
           }
         }
-      }
-    `);
+      `)
 
-    assert.ok(res.container.from.exec.exec.stdout.size > 10000)
+      assert.ok(res.container.from.exec.exec.stdout.size > 10000)
+    }, config);
   })
 });

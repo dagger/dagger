@@ -13,6 +13,7 @@ import { GraphQLClient } from 'graphql-request';
 import { Response } from 'node-fetch';
 // @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
 global.Response = Response;
+// TODO(Tomchv): useless so we can remove it later.
 export const client = new GraphQLClient('http://fake.invalid/query', {
     fetch: buildAxiosFetch(axios.create({
         socketPath: '/dagger.sock',
@@ -22,13 +23,9 @@ export const client = new GraphQLClient('http://fake.invalid/query', {
 export class Client {
     /**
      * creates a new Dagger Typescript SDK GraphQL client.
-     * If the client is created by `dagger.connect()`, it will
-     * hold the serverProcess, so it can be closed using `close()`
-     * method.
      */
-    constructor(port = 8080, serverProcess) {
+    constructor(port = 8080) {
         this.client = new GraphQLClient(`http://localhost:${port}/query`);
-        this.serverProcess = serverProcess;
     }
     /**
      * do takes a GraphQL query payload as parameter and send it
@@ -37,23 +34,6 @@ export class Client {
     do(payload) {
         return __awaiter(this, void 0, void 0, function* () {
             return yield this.client.request(payload);
-        });
-    }
-    /**
-     * close will stop the server process if it has been launched by
-     * the Typescript SDK.
-     */
-    close() {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!this.serverProcess) {
-                return;
-            }
-            this.serverProcess.cancel();
-            this.serverProcess.catch((e) => {
-                if (!e.isCanceled) {
-                    console.error('dagger engine error: ', e);
-                }
-            });
         });
     }
 }
