@@ -259,6 +259,12 @@ func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, er
 
 			return nil, nil
 		}, ch)
+
+		// clean up completed gateway
+		manager.gwsL.Lock()
+		delete(manager.gws, id)
+		manager.gwsL.Unlock()
+
 		gwErrCh <- gwErr
 	}()
 
