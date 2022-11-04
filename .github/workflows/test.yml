@@ -37,7 +37,7 @@ jobs:
         uses: magefile/mage-action@v2
         with:
           version: latest
-          args: build
+          args: engine:build
       - run: cp ./bin/cloak /usr/local/bin
       - run: go test -v ./...
   go-race:
