@@ -5,21 +5,33 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
 var (
 	FuncMap = template.FuncMap{
+		"CamelCase":              CamelCase,
 		"CommentToLines":         CommentToLines,
 		"FormatInputType":        FormatInputType,
 		"FormatOutputType":       FormatOutputType,
 		"FormatName":             FormatName,
 		"FieldOptionsStructName": FieldOptionsStructName,
 		"FieldFunction":          FieldFunction,
+		"PascalCase":             PascalCase,
 		"Solve":                  Solve,
 		"Subtract":               Subtract,
 	}
 )
+
+func PascalCase(name string) string {
+	return strcase.ToCamel(name)
+}
+
+func CamelCase(name string) string {
+	return strcase.ToLowerCamel(name)
+}
 
 func Solve(field introspection.Field) bool {
 	return field.TypeRef.IsScalar() || field.TypeRef.IsList()
