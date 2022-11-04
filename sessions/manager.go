@@ -410,9 +410,9 @@ func monitorHealth(ctx context.Context, cc *grpc.ClientConn, cancelConn func()) 
 					failedBefore = false
 					log.Println("reset healthcheck failure")
 				}
-			}
 
-			log.Println("healthcheck ok")
+				log.Println("healthcheck ok")
+			}
 		}
 	}
 }
