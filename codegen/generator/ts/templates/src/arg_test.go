@@ -5,12 +5,13 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/dagger/dagger/codegen/generator/ts/templates"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 
 func TestArg(t *testing.T) {
-	tmpl := template.Must(template.New("arg").ParseFiles("arg.ts.tmpl"))
+	tmpl := template.Must(template.New("arg").Funcs(templates.FuncMap).ParseFiles("arg.ts.tmpl"))
 
 	arg := introspection.Field{
 		Name: "ref",
