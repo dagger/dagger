@@ -155,7 +155,7 @@ Try the Go CI tool by executing the commands below:
 go run main.go
 ```
 
-The Go CI tool builds the application for each OS/architecture/version combination and writes the results to the host. You will see the build process run eight times, once for each combination. Note that the each build is happening concurrently, because each build in the DAG do not depend on eachother.
+The Go CI tool builds the application for each OS/architecture/version combination and writes the results to the host. You will see the build process run eight times, once for each combination. Note that the builds are happening concurrently, because each build in the DAG does not depend on any other build.
 
 Use the `tree` command to see the build artifacts on the host, as shown below:
 
