@@ -9,18 +9,13 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Must pass in a Git repository to build")
-		os.Exit(1)
-	}
-	repo := os.Args[1]
-	if err := build(context.Background(), repo); err != nil {
+	if err := build(context.Background()); err != nil {
 		fmt.Println(err)
 	}
 }
 
-func build(ctx context.Context, repoURL string) error {
-	fmt.Printf("Building %s\n", repoURL)
+func build(ctx context.Context) error {
+	fmt.Println("Building with Dagger")
 
 	// highlight-start
 	// initialize Dagger client
@@ -30,9 +25,8 @@ func build(ctx context.Context, repoURL string) error {
 	}
 	defer client.Close()
 
-	// clone repository with Dagger
-	repo := client.Git(repoURL)
-	src := repo.Branch("main").Tree()
+	// get reference to the local project
+	src := client.Host().Workdir()
 
 	// get `golang` image
 	golang := client.Container().From("golang:latest")
