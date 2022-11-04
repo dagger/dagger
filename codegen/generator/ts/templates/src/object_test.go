@@ -24,9 +24,20 @@ func TestObject(t *testing.T) {
 		Fields: []introspection.Field{
 			{
 				// TODO improve so Field1 becomes field1 : check with introspection
-				Name: "Field1", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "string"}, Args: introspection.InputValues{
+				Name: "Field1",
+				TypeRef: &introspection.TypeRef{
+					Kind: introspection.TypeKindScalar,
+					Name: "String",
+				},
+				Args: introspection.InputValues{
 					// TODO improve so Arg1 becomes field1 : check with introspection
-					{Name: "Arg1", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "string"}},
+					{
+						Name: "Arg1",
+						TypeRef: &introspection.TypeRef{
+							Kind: introspection.TypeKindScalar,
+							Name: "String",
+						},
+					},
 				},
 			},
 		},
