@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	// Register("TransformSecret", func() Task { return &transformSecretTask{} })
+	Register("TransformSecret", func() Task { return &transformSecretTask{} })
 }
 
 type transformSecretTask struct {

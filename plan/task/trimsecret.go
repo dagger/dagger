@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	// Register("TrimSecret", func() Task { return &trimSecretTask{} })
+	Register("TrimSecret", func() Task { return &trimSecretTask{} })
 }
 
 type trimSecretTask struct {

@@ -21,10 +21,7 @@ type mkdirTask struct {
 func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
 	dgr := s.Client
 
-	empty, err := dgr.Directory().ID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	empty := dgr.Directory()
 
 	path, err := v.Lookup("path").String()
 	if err != nil {
@@ -57,7 +54,7 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 		return nil, err
 	}
 
-	newDirID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(inputFsid)}).WithDirectory(empty, path).ID(ctx)
+	newDirID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(inputFsid)}).WithDirectory(path, empty).ID(ctx)
 	// // Retrieve input Filesystem
 	// input, err := pctx.FS.FromValue(v.Lookup("input"))
 	// if err != nil {
@@ -93,6 +90,6 @@ func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 	// }
 	// return output, nil
 	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": utils.NewFS(dagger.DirectoryID(newDirID)),
+		"output": utils.NewFS(newDirID),
 	})
 }

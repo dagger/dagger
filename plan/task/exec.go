@@ -57,7 +57,7 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	dgr := s.Client
 
-	ctr := dgr.Container().WithFS(dagger.DirectoryID(common.FSID))
+	ctr := dgr.Container().WithFS(dgr.Directory(dagger.DirectoryOpts{ID: common.FSID}))
 
 	envs, err := v.Lookup("env").Fields()
 	if err != nil {
@@ -70,7 +70,7 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 			if err != nil {
 				return nil, err
 			}
-			ctr = ctr.WithSecretVariable(env.Label(), dagger.SecretID(id))
+			ctr = ctr.WithSecretVariable(env.Label(), dgr.Secret(id))
 		} else {
 			s, err := env.Value.String()
 			if err != nil {
@@ -95,19 +95,16 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 			// case llb.CacheMountLocked:
 			// 	sharingMode = "locked"
 			// }
-			ctr = ctr.WithMountedCache(dagger.CacheID(m.cacheMount.id), m.dest)
+			ctr = ctr.WithMountedCache(m.dest, dgr.CacheVolume(m.cacheMount.id))
 		case m.tmpMount != nil:
 			ctr = ctr.WithMountedTemp(m.dest)
 		case m.fsMount != nil:
-			ctr = ctr.WithMountedDirectory(m.dest, dagger.DirectoryID(m.fsMount.fsid))
+			ctr = ctr.WithMountedDirectory(m.dest, dgr.Directory(dagger.DirectoryOpts{ID: m.fsMount.fsid}))
 		case m.secretMount != nil:
-			ctr = ctr.WithMountedSecret(m.dest, dagger.SecretID(m.secretMount.id))
+			ctr = ctr.WithMountedSecret(m.dest, dgr.Secret(dagger.SecretID(m.secretMount.id)))
 		case m.fileMount != nil:
-			fileid, err := dgr.Directory().WithNewFile("/file", dagger.DirectoryWithNewFileOpts{Contents: m.fileMount.contents}).File("/file").ID(ctx)
-			if err != nil {
-				return nil, err
-			}
-			ctr = ctr.WithMountedFile(m.dest, fileid)
+			file := dgr.Directory().WithNewFile("/file", dagger.DirectoryWithNewFileOpts{Contents: m.fileMount.contents}).File("/file")
+			ctr = ctr.WithMountedFile(m.dest, file)
 		default:
 		}
 	}

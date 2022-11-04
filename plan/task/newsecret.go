@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	// Register("NewSecret", func() Task { return &newSecretTask{} })
+	Register("NewSecret", func() Task { return &newSecretTask{} })
 }
 
 type newSecretTask struct {

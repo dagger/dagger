@@ -26,6 +26,10 @@ func GetFSId(v *compiler.Value) (dagger.DirectoryID, error) {
 	if !v.LookupPath(fsIDPath).IsConcrete() {
 		return fsid, fmt.Errorf("invalid FS at path %q: FS is not set", v.Path())
 	}
+	err := v.LookupPath(fsIDPath).Cue().Null()
+	if err == nil {
+		return fsid, nil
+	}
 	id, err := v.LookupPath(fsIDPath).String()
 	if err != nil {
 		return fsid, fmt.Errorf("invalid FS at path %q: %w", v.Path(), err)

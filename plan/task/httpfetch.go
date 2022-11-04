@@ -69,12 +69,9 @@ func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	// }
 
 	dgr := s.Client
-	fileid, err := dgr.HTTP(httpFetch.Source).ID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	file := dgr.HTTP(httpFetch.Source)
 
-	dirId, err := dgr.Directory().WithCopiedFile(httpFetch.Dest, fileid).ID(ctx)
+	dirId, err := dgr.Directory().WithFile(httpFetch.Dest, file).ID(ctx)
 	if err != nil {
 		return nil, err
 	}

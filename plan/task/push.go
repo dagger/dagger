@@ -97,7 +97,7 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	// TODO: I need a digest back.
 
-	_, err = dgr.Container().WithFS(dagger.DirectoryID(fsid)).Publish(ctx, rawDest)
+	_, err = dgr.Container().WithFS(dgr.Directory(dagger.DirectoryOpts{ID: fsid})).Publish(ctx, rawDest)
 	if err != nil {
 		return nil, err
 	}

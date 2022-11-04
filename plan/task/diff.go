@@ -33,7 +33,7 @@ func (t *diffTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 
-	diffID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(lowerFSID)}).Diff(dagger.DirectoryID(upperFSID)).ID(ctx)
+	diffID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(lowerFSID)}).Diff(dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(upperFSID)})).ID(ctx)
 	if err != nil {
 		return nil, err
 	}

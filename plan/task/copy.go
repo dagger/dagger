@@ -70,13 +70,10 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	dgr := s.Client
 
-	sourceDirID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(contentsFsid)}).Directory(sourcePath).ID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	sourceDir := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(contentsFsid)}).Directory(sourcePath)
 
 	fsid, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(inputFsid)}).
-		WithDirectory(dagger.DirectoryID(sourceDirID), destPath,
+		WithDirectory(destPath, sourceDir,
 			dagger.DirectoryWithDirectoryOpts{Include: filters.Include, Exclude: filters.Exclude}).
 		ID(ctx)
 	if err != nil {
