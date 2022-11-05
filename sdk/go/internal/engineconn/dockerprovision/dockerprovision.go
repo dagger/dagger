@@ -33,7 +33,8 @@ const (
 var _ engineconn.EngineConn = &DockerProvision{}
 
 type DockerProvision struct {
-	imageRef string
+	imageRef   string
+	childStdin io.Closer
 }
 
 func New(u *url.URL) (engineconn.EngineConn, error) {
@@ -182,7 +183,7 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, err := startHelper(ctx, cfg.LogOutput, helperBinPath, args...)
+	addr, err := c.startHelper(ctx, cfg.LogOutput, helperBinPath, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -198,13 +199,22 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 	}, nil
 }
 
-func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...string) (string, error) {
+func (c *DockerProvision) startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...string) (string, error) {
 	proc := exec.CommandContext(ctx, cmd, args...)
 	proc.Env = os.Environ()
 	proc.Stderr = stderr
 	setPlatformOpts(proc)
 
 	stdout, err := proc.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	defer stdout.Close() // don't need it after we read the port
+
+	// Open a stdin pipe with the child process. The helper shutsdown
+	// when it is closed. This is a platform-agnostic way of ensuring
+	// we don't leak child processes even if this process is SIGKILL'd.
+	c.childStdin, err = proc.StdinPipe()
 	if err != nil {
 		return "", err
 	}
@@ -223,12 +233,14 @@ func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...stri
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		return "", err
-	}
-	// TODO: validation its in the right range
+	} // TODO: validation its in the right range
 
 	return fmt.Sprintf("localhost:%d", port), nil
 }
 
 func (c *DockerProvision) Close() error {
+	if c.childStdin != nil {
+		return c.childStdin.Close()
+	}
 	return nil
 }

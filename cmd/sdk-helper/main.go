@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -53,8 +54,16 @@ func Helper(cmd *cobra.Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
+
+	// shutdown if requested via signal
 	go func() {
 		<-signalCh
+		l.Close()
+	}()
+
+	// shutdown if our parent closes stdin
+	go func() {
+		io.Copy(io.Discard, os.Stdin)
 		l.Close()
 	}()
 
