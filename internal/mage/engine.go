@@ -2,6 +2,7 @@ package mage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 
@@ -47,4 +48,54 @@ func (t Engine) Lint(ctx context.Context) error {
 			Args: []string{"golangci-lint", "run", "-v", "--timeout", "5m"},
 		}).ExitCode(ctx)
 	return err
+}
+
+const (
+	sdkHelper      = "dagger-sdk-helper"
+	buildkitRepo   = "github.com/moby/buildkit"
+	buildkitBranch = "master"
+	// TODO: placeholder until real one exists
+	engineImageRef = "localhost:5000/dagger-engine:latest"
+)
+
+func (t Engine) Release(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	buildkitRepo := c.Git(buildkitRepo).Branch(buildkitBranch).Tree()
+
+	arches := []string{"amd64", "arm64"}
+	oses := []string{"linux", "darwin"}
+	var platformVariants []*dagger.Container
+	for _, arch := range arches {
+		buildkitBase := c.Container(dagger.ContainerOpts{
+			Platform: dagger.Platform("linux/" + arch),
+		}).Build(buildkitRepo)
+		for _, os := range oses {
+			helperBin := util.GoBase(c).
+				WithEnvVariable("GOOS", "linux").
+				WithEnvVariable("GOARCH", arch).
+				Exec(dagger.ContainerExecOpts{
+					Args: []string{"go", "build", "-o", "./bin/" + sdkHelper, "-ldflags", "-s -w", "/app/cmd/sdk-helper"},
+				}).
+				File("./bin/" + sdkHelper)
+			buildkitBase = buildkitBase.WithFS(
+				buildkitBase.FS().WithFile("/usr/bin/"+sdkHelper+"-"+os, helperBin),
+			)
+		}
+		platformVariants = append(platformVariants, buildkitBase)
+	}
+
+	imageRef, err := c.Container().Publish(ctx, engineImageRef, dagger.ContainerPublishOpts{
+		PlatformVariants: platformVariants,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Image published:", imageRef)
+
+	return nil
 }

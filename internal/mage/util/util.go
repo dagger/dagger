@@ -39,6 +39,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 
 			// misc
 			".golangci.yml",
+			"**/Dockerfile", // needed for shim TODO: just build shim directly
 		},
 	})
 }
