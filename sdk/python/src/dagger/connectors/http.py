@@ -25,9 +25,13 @@ class Engine:
 
     async def assert_version(self) -> None:
         try:
-            await anyio.run_process(["cloak", "dev", "--help"], stdout=DEVNULL, stderr=DEVNULL, check=True)
+            await anyio.run_process(
+                ["cloak", "dev", "--help"], stdout=DEVNULL, stderr=DEVNULL, check=True
+            )
         except CalledProcessError:
-            logger.error("⚠️  Please ensure that cloak binary in $PATH is v0.3.0 or newer.")
+            logger.error(
+                "⚠️  Please ensure that cloak binary in $PATH is v0.3.0 or newer."
+            )
             # FIXME: make sure resources are being cleaned up correctly
             sys.exit(127)
 
@@ -95,4 +99,6 @@ class HTTPConnector(Connector):
         )
 
     def make_sync_transport(self) -> Transport:
-        return RequestsHTTPTransport(self.query_url, timeout=self.cfg.timeout, retries=10)
+        return RequestsHTTPTransport(
+            self.query_url, timeout=self.cfg.timeout, retries=10
+        )

@@ -18,17 +18,22 @@ def main():
 
 
 @app.command()
-def generate(output: Optional[Path] = typer.Option(None, help="File to write generated code")):
+def generate(
+    output: Optional[Path] = typer.Option(None, help="File to write generated code")
+):
     """
     Generate a client for the Dagger API
     """
-    # not using `dagger.Connection` because codegen is generating the client that it returns
+    # not using `dagger.Connection` because codegen is
+    # generating the client that it returns
     connector = get_connector(Config())
     transport = connector.make_sync_transport()
 
     with connector.make_graphql_client(transport) as session:
         if session.client.schema is None:
-            raise typer.BadParameter("Schema not initialized. Make sure the dagger engine is running.")
+            raise typer.BadParameter(
+                "Schema not initialized. Make sure the dagger engine is running."
+            )
         code = codegen.generate(session.client.schema)
 
     if output is not None:

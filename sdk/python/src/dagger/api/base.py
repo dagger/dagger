@@ -17,7 +17,8 @@ _T = TypeVar("_T")
 
 
 def is_optional(t):
-    return typing.get_origin(t) is types.UnionType and type(None) in typing.get_args(t)  # noqa
+    is_union = typing.get_origin(t) is types.UnionType  # noqa
+    return is_union and type(None) in typing.get_args(t)
 
 
 @define
@@ -39,7 +40,9 @@ class Context:
     selections: deque[Field] = attr.ib(factory=deque)
     converter: cattrs.Converter = attr.ib(factory=make_converter)
 
-    def select(self, type_name: str, field_name: str, args: dict[str, Any]) -> "Context":
+    def select(
+        self, type_name: str, field_name: str, args: dict[str, Any]
+    ) -> "Context":
         field = Field(type_name, field_name, args)
 
         selections = self.selections.copy()
@@ -72,10 +75,14 @@ class Context:
         if value is not None:
             value = self._structure_response(value, return_type)
         if value is None and not is_optional(return_type):
-            raise InvalidQueryError("Required field got a null response. Check if parent fields are valid.")
+            raise InvalidQueryError(
+                "Required field got a null response. Check if parent fields are valid."
+            )
         return value
 
-    def _structure_response(self, response: dict[str, Any], return_type: type[_T]) -> _T:
+    def _structure_response(
+        self, response: dict[str, Any], return_type: type[_T]
+    ) -> _T:
         for f in self.selections:
             response = response[f.name]
             if response is None:
@@ -121,7 +128,9 @@ class Type:
 class Root(Type):
     @classmethod
     def from_session(cls, session: AsyncClientSession):
-        assert session.client.schema is not None, "GraphQL session has not been initialized"
+        assert (
+            session.client.schema is not None
+        ), "GraphQL session has not been initialized"
         ds = DSLSchema(session.client.schema)
         ctx = Context(session, ds)
         return cls(ctx)
