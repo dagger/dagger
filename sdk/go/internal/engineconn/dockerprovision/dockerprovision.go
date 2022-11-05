@@ -90,6 +90,32 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 		}
 	}
 
+	if output, err := exec.CommandContext(ctx,
+		"docker", "ps",
+		"-a",
+		"--no-trunc",
+		"--filter", "name=^/dagger-engine",
+		"--format", "{{.Names}}",
+	).CombinedOutput(); err != nil {
+		// TODO: should just be debug log, but that concept doesn't exist yet
+		fmt.Fprintf(os.Stderr, "failed to list containers: %s", output)
+	} else {
+		for _, line := range strings.Split(string(output), "\n") {
+			if line == "" {
+				continue
+			}
+			if line == containerName {
+				continue
+			}
+			if output, err := exec.CommandContext(ctx,
+				"docker", "rm", "-fv", line,
+			).CombinedOutput(); err != nil {
+				// TODO: should just be debug log, but that concept doesn't exist yet
+				fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s", line, output)
+			}
+		}
+	}
+
 	if _, err := os.Stat(helperBinPath); os.IsNotExist(err) {
 		tmpbin, err := os.CreateTemp(cacheDir, "dagger-sdk-helper")
 		if err != nil {
@@ -125,10 +151,26 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 		} else {
 			// Otherwise, we can unlink it once the helper has started running, which
 			// results in it being cleared from the filesystem once the helper exits.
+			helperBinPath = tmpbin.Name()
 			defer os.Remove(tmpbin.Name())
 		}
 	} else if err != nil {
 		return nil, err
+	}
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list cache dir: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() == "dagger-sdk-helper-"+id {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), "dagger-sdk-helper-") {
+			if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
+				return nil, fmt.Errorf("failed to remove old helper bin: %w", err)
+			}
+		}
 	}
 
 	buildkitHost := "docker-container://" + containerName
