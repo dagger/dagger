@@ -66,14 +66,27 @@ jobs:
     name: sdk / nodejs
     runs-on: ubuntu-22.04-16c-64g-600gb
     steps:
-      - uses: actions/setup-go@v3
+      - name: Setup Golang
+        uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - uses: actions/setup-node@v3
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v3
         with:
           # ⚠️  Keep this in sync with https://github.com/dagger/dagger/blob/main/package.json#L14
           node-version: 16
-      - uses: actions/checkout@v3
-      - run: go install $(pwd)/cmd/cloak/
-      - run: yarn install
-      - run: yarn run test-sdk
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install cloak in job
+        run: go install $(pwd)/cmd/cloak/
+
+      - name: Install yarn dependencies
+        working-directory: sdk/nodejs
+        run: yarn install
+
+      - name: Run Typescript SDK unit tests
+        working-directory: sdk/nodejs
+        run: yarn run test-sdk
