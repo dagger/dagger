@@ -29,6 +29,10 @@ func New(_ *url.URL) (engineconn.EngineConn, error) {
 	}, nil
 }
 
+func (c *Embedded) Addr() string {
+	return "http://dagger"
+}
+
 func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
 	started := make(chan struct{})
 	var client *http.Client
