@@ -75,16 +75,20 @@ func (t Engine) Release(ctx context.Context) error {
 			Platform: dagger.Platform("linux/" + arch),
 		}).Build(buildkitRepo)
 		for _, os := range oses {
-			helperBin := util.GoBase(c).
-				WithEnvVariable("GOOS", "linux").
-				WithEnvVariable("GOARCH", arch).
-				Exec(dagger.ContainerExecOpts{
-					Args: []string{"go", "build", "-o", "./bin/" + sdkHelper, "-ldflags", "-s -w", "/app/cmd/sdk-helper"},
-				}).
-				File("./bin/" + sdkHelper)
-			buildkitBase = buildkitBase.WithFS(
-				buildkitBase.FS().WithFile("/usr/bin/"+sdkHelper+"-"+os, helperBin),
-			)
+			// include each helper for each arch too in case there is a
+			// client/server mismatch
+			for _, arch := range arches {
+				helperBin := util.GoBase(c).
+					WithEnvVariable("GOOS", "linux").
+					WithEnvVariable("GOARCH", arch).
+					Exec(dagger.ContainerExecOpts{
+						Args: []string{"go", "build", "-o", "./bin/" + sdkHelper, "-ldflags", "-s -w", "/app/cmd/sdk-helper"},
+					}).
+					File("./bin/" + sdkHelper)
+				buildkitBase = buildkitBase.WithFS(
+					buildkitBase.FS().WithFile("/usr/bin/"+sdkHelper+"-"+os+"-"+arch, helperBin),
+				)
+			}
 		}
 		platformVariants = append(platformVariants, buildkitBase)
 	}
