@@ -70,12 +70,10 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 
 	helperBinPath := filepath.Join(cacheDir, "dagger-sdk-helper-"+id)
 	containerName := "dagger-engine-" + id
-	volumeName := "dagger-engine-" + id
 
 	if output, err := exec.CommandContext(ctx,
 		"docker", "run",
 		"--name", containerName,
-		"-v", volumeName+":/var/lib/buildkit",
 		"-d",
 		"--restart", "always",
 		"--privileged",
