@@ -63,11 +63,10 @@ class Context:
     def query(self) -> graphql.DocumentNode:
         return dsl_gql(DSLQuery(self.build()))
 
-    async def execute(self, return_type: type[_T]) -> "Result[_T]":
+    async def execute(self, return_type: type[_T]) -> _T:
         query = self.query()
         result = await self.session.execute(query, get_execution_result=True)
-        value = self._get_value(result.data, return_type)
-        return Result[_T](value, return_type, self, query, result)
+        return self._get_value(result.data, return_type)
 
     def _get_value(self, value: dict[str, Any] | None, return_type: type[_T]) -> _T:
         if value is not None:
@@ -126,6 +125,10 @@ class Root(Type):
         ds = DSLSchema(session.client.schema)
         ctx = Context(session, ds)
         return cls(ctx)
+
+    @property
+    def graphql_name(self) -> str:
+        return "Query"
 
     @property
     def _session(self) -> AsyncClientSession:

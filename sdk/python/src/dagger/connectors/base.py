@@ -11,7 +11,7 @@ from attrs import Factory, define, field
 from gql.client import Client as GraphQLClient
 from gql.transport import AsyncTransport, Transport
 
-from ..api import Client
+from dagger import Client
 
 logger = logging.getLogger(__name__)
 
