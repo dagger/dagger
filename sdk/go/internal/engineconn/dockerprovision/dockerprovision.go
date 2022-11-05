@@ -126,7 +126,7 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 
 		if output, err := exec.CommandContext(ctx,
 			"docker", "cp",
-			containerName+":/usr/bin/dagger-sdk-helper-"+runtime.GOOS,
+			containerName+":/usr/bin/dagger-sdk-helper-"+runtime.GOOS+"-"+runtime.GOARCH,
 			tmpbin.Name(),
 		).CombinedOutput(); err != nil {
 			return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin: %s", output)
