@@ -7,9 +7,10 @@ import (
 	"os"
 
 	"dagger.io/dagger/internal/engineconn"
-	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
-	_ "dagger.io/dagger/internal/engineconn/http"     // http connection
-	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
+	_ "dagger.io/dagger/internal/engineconn/dockerprovision" // provision engine in docker
+	_ "dagger.io/dagger/internal/engineconn/embedded"        // embedded connection
+	_ "dagger.io/dagger/internal/engineconn/http"            // http connection
+	_ "dagger.io/dagger/internal/engineconn/unix"            // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
