@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"dagger.io/dagger/internal/engineconn"
 	"github.com/adrg/xdg"
@@ -203,10 +202,7 @@ func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...stri
 	proc := exec.CommandContext(ctx, cmd, args...)
 	proc.Env = os.Environ()
 	proc.Stderr = stderr
-	proc.SysProcAttr = &syscall.SysProcAttr{
-		// TODO: don't think this compiles on darwin or windows
-		Pdeathsig: syscall.SIGKILL,
-	}
+	setPlatformOpts(proc)
 
 	stdout, err := proc.StdoutPipe()
 	if err != nil {
