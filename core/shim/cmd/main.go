@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	stdinPath     = "/.dagger_meta_mount/stdin"
-	exitCodePath  = "/.dagger_meta_mount/exitCode"
-	httpProxyHost = "localhost:14242"
+	stdinPath    = "/.dagger_meta_mount/stdin"
+	exitCodePath = "/.dagger_meta_mount/exitCode"
 )
 
 var (
@@ -31,10 +30,14 @@ func run() int {
 		return 1
 	}
 
+	// Proxy DAGGER_HOST `unix://` -> `http://`
 	if daggerHost := os.Getenv("DAGGER_HOST"); strings.HasPrefix(daggerHost, "unix://") {
-		srv := apiProxy(daggerHost, httpProxyHost)
-		os.Setenv("DAGGER_HOST", "http://"+httpProxyHost)
-		go srv.ListenAndServe()
+		proxyAddr, err := proxyAPI(daggerHost)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "err: %v\n", err)
+			return 1
+		}
+		os.Setenv("DAGGER_HOST", proxyAddr)
 	}
 
 	name := os.Args[1]
@@ -91,10 +94,10 @@ func run() int {
 	return exitCode
 }
 
-func apiProxy(from, to string) *http.Server {
-	u, err := url.Parse(from)
+func proxyAPI(daggerHost string) (string, error) {
+	u, err := url.Parse(daggerHost)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
 		Scheme: "http",
@@ -106,12 +109,18 @@ func apiProxy(from, to string) *http.Server {
 		},
 	}
 
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return "", err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+
 	srv := &http.Server{
-		Addr:              to,
 		Handler:           proxy,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	return srv
+	go srv.Serve(l)
+	return fmt.Sprintf("http://localhost:%d", port), nil
 }
 
 func internalEnv(name string) (string, bool) {

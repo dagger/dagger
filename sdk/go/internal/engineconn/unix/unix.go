@@ -25,6 +25,10 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 	}, nil
 }
 
+func (c *Unix) Addr() string {
+	return "http://dagger"
+}
+
 func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
 	// FIXME: These are necessary for dagger-in-dagger but do not work.
 	// if cfg.Workdir != "" {
