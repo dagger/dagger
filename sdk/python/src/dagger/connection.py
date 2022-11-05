@@ -21,7 +21,9 @@ class Connection:
         await self.connector.close()
 
     def __enter__(self) -> NoReturn:
-        raise NotImplementedError("Sync is not supported yet. Use `async with` instead.")
+        raise NotImplementedError(
+            "Sync is not supported yet. Use `async with` instead."
+        )
 
     def __exit__(self, *args, **kwargs) -> None:
         ...

@@ -29,7 +29,12 @@ async def test_git_repository():
 
 async def test_container_build():
     async with dagger.Connection() as client:
-        repo_id = await client.git("https://github.com/dagger/dagger").tag("v0.3.0").tree().id()
+        repo_id = (
+            await client.git("https://github.com/dagger/dagger")
+            .tag("v0.3.0")
+            .tree()
+            .id()
+        )
 
         dagger_img = client.container().build(repo_id)
 
@@ -42,7 +47,9 @@ async def test_container_build():
 
 async def test_container_with_env_variable():
     async with dagger.Connection() as client:
-        container = client.container().from_("alpine:3.16.2").with_env_variable("FOO", "bar")
+        container = (
+            client.container().from_("alpine:3.16.2").with_env_variable("FOO", "bar")
+        )
         out = await container.exec(["sh", "-c", "echo -n $FOO"]).stdout().contents()
 
         assert out == "bar"
@@ -57,7 +64,11 @@ async def test_container_with_mounted_directory():
             .id()
         )
 
-        container = client.container().from_("alpine:3.16.2").with_mounted_directory("/mnt", dir_id)
+        container = (
+            client.container()
+            .from_("alpine:3.16.2")
+            .with_mounted_directory("/mnt", dir_id)
+        )
 
         out = await container.exec(["ls", "/mnt"]).stdout().contents()
 
@@ -75,7 +86,11 @@ async def test_container_with_mounted_cache():
 
         cache_id = await client.cache_volume(cache_key).id()
 
-        container = client.container().from_("alpine:3.16.2").with_mounted_cache("/cache", cache_id)
+        container = (
+            client.container()
+            .from_("alpine:3.16.2")
+            .with_mounted_cache("/cache", cache_id)
+        )
 
         for i in range(5):
             out = (

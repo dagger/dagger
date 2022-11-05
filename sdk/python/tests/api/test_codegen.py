@@ -15,7 +15,12 @@ from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
 
 from dagger.codegen import Scalar as ScalarHandler
-from dagger.codegen import _InputField, format_input_type, format_name, format_output_type
+from dagger.codegen import (
+    _InputField,
+    format_input_type,
+    format_name,
+    format_output_type,
+)
 
 
 @pytest.mark.parametrize(
@@ -62,7 +67,9 @@ def test_format_input_type(graphql, expected):
     assert format_input_type(graphql) == expected
 
 
-cache_volume = Object("CacheVolume", fields={"id": Field(NonNull(Scalar("CacheID")), {})})
+cache_volume = Object(
+    "CacheVolume", fields={"id": Field(NonNull(Scalar("CacheID")), {})}
+)
 
 
 @pytest.mark.parametrize(

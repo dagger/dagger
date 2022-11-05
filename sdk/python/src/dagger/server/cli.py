@@ -11,7 +11,9 @@ app = typer.Typer()
 
 
 @app.command()
-def main(schema: bool = typer.Option(False, "-schema", help="Save schema to file and exit")):
+def main(
+    schema: bool = typer.Option(False, "-schema", help="Save schema to file and exit")
+):
     """
     Entrypoint for a dagger extension.
     """

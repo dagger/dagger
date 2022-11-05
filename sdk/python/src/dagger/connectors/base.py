@@ -35,14 +35,17 @@ class Config:
     timeout:
         The maximum time in seconds for establishing a connection to the server.
     execute_timeout:
-        The maximum time in seconds for the execution of a request before a TimeoutError is raised.
-        Only used for async transport.
+        The maximum time in seconds for the execution of a request before a TimeoutError
+        is raised. Only used for async transport.
         Passing None results in waiting forever for a response.
     reconnecting:
         If True, create a permanent reconnecting session. Only used for async transport.
     """
 
-    host: ParsedURL = field(factory=lambda: os.environ.get("DAGGER_HOST", DEFAULT_HOST), converter=urlparse)
+    host: ParsedURL = field(
+        factory=lambda: os.environ.get("DAGGER_HOST", DEFAULT_HOST),
+        converter=urlparse,
+    )
     timeout: int = 10
     execute_timeout: int | float | None = 60 * 5
     reconnecting: bool = True
@@ -50,13 +53,21 @@ class Config:
     # FIXME: aren't these environment variables usable by the engine directly?
     # If so just skip setting the CLI option if not set by the user explicitly.
 
-    workdir: Path = field(factory=lambda: os.environ.get("DAGGER_WORKDIR", "."), converter=Path)
-    config_path: Path = field(factory=lambda: os.environ.get("DAGGER_CONFIG", DEFAULT_CONFIG), converter=Path)
+    workdir: Path = field(
+        factory=lambda: os.environ.get("DAGGER_WORKDIR", "."),
+        converter=Path,
+    )
+    config_path: Path = field(
+        factory=lambda: os.environ.get("DAGGER_CONFIG", DEFAULT_CONFIG),
+        converter=Path,
+    )
 
 
 @define
 class Connector(ABC):
-    """Facilitates instantiating a client and possibly provisioning the engine for it."""
+    """Facilitates instantiating a client and possibly
+    provisioning the engine for it.
+    """
 
     cfg: Config = Factory(Config)
     client: Client | None = None
@@ -93,7 +104,9 @@ class Connector(ABC):
     def make_sync_transport(self) -> Transport:
         ...
 
-    def make_graphql_client(self, transport: AsyncTransport | Transport) -> GraphQLClient:
+    def make_graphql_client(
+        self, transport: AsyncTransport | Transport
+    ) -> GraphQLClient:
         return GraphQLClient(
             transport=transport,
             fetch_schema_from_transport=True,
@@ -114,7 +127,8 @@ class _Registry(UserDict[str, type[Connector]]):
             elif cls is not self.data[scheme]:
                 raise TypeError(f"Can't re-register {scheme} connector: {cls.__name__}")
             else:
-                # FIXME: make sure imports don't create side effect of registering multiple times
+                # FIXME: make sure imports don't create side effect of registering
+                # multiple times
                 logger.debug(f"Attempted to re-register {scheme} connector")
             return cls
 
