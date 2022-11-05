@@ -1,7 +1,11 @@
-# Python SDK for Dagger
+# Dagger Python SDK
 
-1. Install the [hatch](https://hatch.pypa.io/latest/install/) tool (recommended via `pipx`)
-2. Run tests with `hatch run test`
-3. Re-regenerate client with `hatch run generate`
-4. Format (and lint) code with `hatch run lint:fmt`
-5. Check types with `hatch run lint:typing`
+Install [hatch](https://hatch.pypa.io/latest/install/). Recommend [`pipx`](https://github.com/pypa/pipx)), e.g. `pipx install hatch`
+
+Run tests with `hatch run test`. Assumes `go run ./cmd/cloak dev --workdir sdk/python` is running.
+
+Run the linter, reformatting code with `hatch run lint:fmt` or just check with `hatch run lint:style`.
+
+Re-regenerate client with `hatch run generate`. Remember to run `hatch run lint:fmt` afterwards for consistent output!
+
+Check types with `hatch run lint:typing`.
