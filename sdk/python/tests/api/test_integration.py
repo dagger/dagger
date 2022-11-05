@@ -125,6 +125,4 @@ async def test_directory():
 async def test_host_workdir():
     async with dagger.Connection(dagger.Config(workdir=".")) as client:
         readme = await client.host().workdir().file("README.md").contents()
-        lines = readme.strip().split("\n")
-
-        assert lines[0] == "# Dagger Python SDK"
+        assert "Dagger" in readme
