@@ -1,15 +1,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
 )
 
 const (
-	stdinPath    = "/.dagger_meta_mount/stdin"
-	exitCodePath = "/.dagger_meta_mount/exitCode"
+	stdinPath     = "/.dagger_meta_mount/stdin"
+	exitCodePath  = "/.dagger_meta_mount/exitCode"
+	httpProxyHost = "localhost:14242"
 )
 
 var (
@@ -22,6 +30,13 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
 		return 1
 	}
+
+	if daggerHost := os.Getenv("DAGGER_HOST"); strings.HasPrefix(daggerHost, "unix://") {
+		srv := apiProxy(daggerHost, httpProxyHost)
+		os.Setenv("DAGGER_HOST", "http://"+httpProxyHost)
+		go srv.ListenAndServe()
+	}
+
 	name := os.Args[1]
 	args := []string{}
 	if len(os.Args) > 2 {
@@ -74,6 +89,29 @@ func run() int {
 	}
 
 	return exitCode
+}
+
+func apiProxy(from, to string) *http.Server {
+	u, err := url.Parse(from)
+	if err != nil {
+		panic(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
+		Scheme: "http",
+		Host:   "localhost",
+	})
+	proxy.Transport = &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("unix", u.Path)
+		},
+	}
+
+	srv := &http.Server{
+		Addr:              to,
+		Handler:           proxy,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	return srv
 }
 
 func internalEnv(name string) (string, bool) {
