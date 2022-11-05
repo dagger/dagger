@@ -55,7 +55,8 @@ const (
 	buildkitRepo   = "github.com/moby/buildkit"
 	buildkitBranch = "master"
 	// TODO: placeholder until real one exists
-	engineImageRef = "localhost:5000/dagger-engine:latest"
+	// engineImageRef = "localhost:5000/dagger-engine:latest"
+	engineImageRef = "eriksipsma/test-dagger:rebase"
 )
 
 func (t Engine) Release(ctx context.Context) error {
@@ -79,7 +80,7 @@ func (t Engine) Release(ctx context.Context) error {
 			// client/server mismatch
 			for _, arch := range arches {
 				helperBin := util.GoBase(c).
-					WithEnvVariable("GOOS", "linux").
+					WithEnvVariable("GOOS", os).
 					WithEnvVariable("GOARCH", arch).
 					Exec(dagger.ContainerExecOpts{
 						Args: []string{"go", "build", "-o", "./bin/" + sdkHelper, "-ldflags", "-s -w", "/app/cmd/sdk-helper"},
