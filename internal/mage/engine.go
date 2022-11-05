@@ -55,8 +55,7 @@ const (
 	buildkitRepo   = "github.com/moby/buildkit"
 	buildkitBranch = "master"
 	// TODO: placeholder until real one exists
-	// engineImageRef = "localhost:5000/dagger-engine:latest"
-	engineImageRef = "eriksipsma/test-dagger:rebase"
+	engineImageRef = "localhost:5000/dagger-engine:latest"
 )
 
 func (t Engine) Release(ctx context.Context) error {
