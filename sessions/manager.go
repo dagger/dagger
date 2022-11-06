@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"io"
 	"log"
 	"math"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"dagger.io/dagger/filesend"
 	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -215,6 +217,100 @@ func (sm *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[strin
 	return nil
 }
 
+func (manager *Manager) TarSend(ctx context.Context, id string, path string, unpack bool) (io.WriteCloser, error) {
+	caller, err := manager.client(ctx, id, false)
+	if err != nil {
+		return nil, err
+	}
+
+	fs := filesend.NewFileSendClient(caller.cc)
+
+	tarClient, err := fs.TarStream(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = tarClient.Send(&filesend.StreamMessage{
+		Message: &filesend.StreamMessage_Init{
+			Init: &filesend.InitMessage{
+				Dest:   path,
+				Unpack: unpack,
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &fileSendWriter{tarClient}, nil
+}
+
+type fileSendWriter struct {
+	client filesend.FileSend_TarStreamClient
+}
+
+func (w *fileSendWriter) Write(b []byte) (int, error) {
+	err := w.client.Send(&filesend.StreamMessage{
+		Message: &filesend.StreamMessage_Bytes{
+			Bytes: &filesend.BytesMessage{
+				Data: b,
+			},
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return len(b), nil
+}
+
+func (w *fileSendWriter) Close() error {
+	_, err := w.client.CloseAndRecv()
+	return err
+}
+
+func (manager *Manager) solveOpt(ctx context.Context, id string, secretStore *secret.Store) (bkclient.SolveOpt, error) {
+	solveOpts := manager.solveOpts
+
+	caller, err := manager.client(ctx, id, false)
+	if err != nil {
+		return bkclient.SolveOpt{}, err
+	}
+
+	solveOpts.Session = append(solveOpts.Session,
+		secretsprovider.NewSecretProvider(secretStore),
+		clientProxy{caller},
+	)
+
+	return solveOpts, nil
+}
+
+func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) error {
+	// TODO(vito): do we need to care about wg?
+	ch, _ := mirrorCh(manager.solveCh)
+
+	secretStore := secret.NewStore()
+	solveOpt, err := manager.solveOpt(ctx, id, secretStore)
+	if err != nil {
+		return err
+	}
+
+	solveOpt.Exports = []bkclient.ExportEntry{ex}
+
+	_, err = manager.bkClient.Build(context.Background(), solveOpt, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		// Secret store is a circular dependency, since it needs to resolve
+		// SecretIDs using the gateway, we don't have a gateway until we call
+		// Build, which needs SolveOpts, which needs to contain the secret store.
+		//
+		// Thankfully we can just yeet the gateway into the store.
+		secretStore.SetGateway(gw)
+
+		return fn(ctx, gw)
+	}, ch)
+
+	return err
+}
+
 func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, error) {
 	// FIXME(vito): per-ID lock; this is a bit of a bottleneck
 	manager.gwsL.Lock()
@@ -233,18 +329,16 @@ func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, er
 	// TODO(vito): do we need to care about wg?
 	ch, _ := mirrorCh(manager.solveCh)
 
-	solveOpts := manager.solveOpts
-
 	secretStore := secret.NewStore()
-	solveOpts.Session = append(solveOpts.Session,
-		secretsprovider.NewSecretProvider(secretStore),
-		clientProxy{caller},
-	)
+	solveOpt, err := manager.solveOpt(ctx, id, secretStore)
+	if err != nil {
+		return nil, err
+	}
 
 	gwCh := make(chan bkgw.Client, 1)
 	gwErrCh := make(chan error, 1)
 	go func() {
-		_, gwErr := manager.bkClient.Build(context.Background(), solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, gwErr := manager.bkClient.Build(context.Background(), solveOpt, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve
 			// SecretIDs using the gateway, we don't have a gateway until we call
 			// Build, which needs SolveOpts, which needs to contain the secret store.

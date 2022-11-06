@@ -474,7 +474,8 @@ type containerExportArgs struct {
 }
 
 func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh); err != nil {
+	err := parent.Export(ctx, s.sessions, ctx.SessionID, args.Path, args.PlatformVariants)
+	if err != nil {
 		return false, err
 	}
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -938,31 +937,22 @@ func (container *Container) Platform() (specs.Platform, error) {
 
 func (container *Container) Export(
 	ctx context.Context,
-	host *Host,
+	sessions SessionManager,
+	sessionID string,
 	dest string,
 	platformVariants []ContainerID,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
 ) error {
-	dest, err := host.NormalizeDest(dest)
+	wc, err := sessions.TarSend(ctx, sessionID, dest, false)
 	if err != nil {
 		return err
 	}
 
-	out, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-
-	defer out.Close()
-
-	return host.Export(ctx, bkclient.ExportEntry{
+	return sessions.Export(ctx, sessionID, bkclient.ExportEntry{
 		Type: bkclient.ExporterOCI,
 		Output: func(map[string]string) (io.WriteCloser, error) {
-			return out, nil
+			return wc, nil
 		},
-	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
 }

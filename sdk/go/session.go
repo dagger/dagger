@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"time"
 
+	"dagger.io/dagger/filesend"
 	"dagger.io/dagger/internal/engineconn"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/docker/docker/api/types"
@@ -38,6 +39,8 @@ func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error
 	srv := grpc.NewServer()
 
 	filesync.NewFSSyncProvider(AnyDirSource{}).Register(srv)
+
+	filesend.NewReceiver().Register(srv)
 
 	// TODO(vito): blocked on https://github.com/mwitkow/grpc-proxy/pull/62
 	// authprovider.NewDockerAuthProvider(os.Stderr).Register(srv)

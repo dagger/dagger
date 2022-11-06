@@ -32,6 +32,21 @@ func main() {
 	}
 	defer c.Close()
 
+	_, err = c.Host().Directory(daggerSrc).Export(ctx, "/tmp/exported-dir")
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = c.Host().Directory(daggerSrc).File("README.md").Export(ctx, "/tmp/exported-file")
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = c.Container().From("alpine:edge").Export(ctx, "/tmp/exported-image.tar")
+	if err != nil {
+		panic(err)
+	}
+
 	contents, err := c.Container().
 		From("alpine:edge").
 		WithMountedDirectory("/src/dagger", c.Host().Directory(daggerSrc)).

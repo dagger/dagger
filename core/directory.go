@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"reflect"
 	"strings"
@@ -417,28 +418,33 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 	return payload.ToDirectory()
 }
 
+type SessionManager interface {
+	TarSend(ctx context.Context, id string, dest string, unpack bool) (io.WriteCloser, error)
+	Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) error
+}
+
 func (dir *Directory) Export(
 	ctx context.Context,
-	host *Host,
+	sessions SessionManager,
+	sessionID string,
 	dest string,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
 ) error {
-	dest, err := host.NormalizeDest(dest)
-	if err != nil {
-		return err
-	}
-
 	srcPayload, err := dir.ID.Decode()
 	if err != nil {
 		return err
 	}
 
-	return host.Export(ctx, bkclient.ExportEntry{
-		Type:      bkclient.ExporterLocal,
-		OutputDir: dest,
-	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	wc, err := sessions.TarSend(ctx, sessionID, dest, true)
+	if err != nil {
+		return err
+	}
+
+	return sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+		Type: bkclient.ExporterTar,
+		Output: func(map[string]string) (io.WriteCloser, error) {
+			return wc, nil
+		},
+	}, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		src, err := srcPayload.State()
 		if err != nil {
 			return nil, err

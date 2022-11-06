@@ -86,7 +86,6 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 func (host *Host) Export(
 	ctx context.Context,
 	export bkclient.ExportEntry,
-	dest string,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,

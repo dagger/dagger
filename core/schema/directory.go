@@ -164,7 +164,7 @@ type dirExportArgs struct {
 }
 
 func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	err := parent.Export(ctx, s.sessions, ctx.SessionID, args.Path)
 	if err != nil {
 		return false, err
 	}

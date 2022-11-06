@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package dagger.filesend.v1;
+
+option go_package = "filesend";
+
+service FileSend {
+  rpc TarStream(stream StreamMessage) returns (StreamResponse);
+}
+
+message StreamMessage {
+  oneof message {
+    InitMessage init = 1;
+    BytesMessage bytes = 2;
+  }
+};
+
+message StreamResponse {};
+
+message InitMessage {
+  string id = 1;
+  string dest = 2;
+  bool unpack = 3;
+};
+
+message BytesMessage {
+  bytes data = 1;
+};
