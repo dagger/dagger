@@ -1,62 +1,69 @@
-import axios, { AxiosInstance } from "axios";
-import { buildAxiosFetch } from "@lifeomic/axios-fetch";
-import { GraphQLClient } from "graphql-request";
+import axios from 'axios';
+import { buildAxiosFetch } from '@lifeomic/axios-fetch';
+import { GraphQLClient } from 'graphql-request';
 
-import { Response } from "node-fetch";
+import { Response } from 'node-fetch';
+
 // @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
 global.Response = Response;
 
-export const client = new GraphQLClient("http://fake.invalid/query", {
-  fetch: buildAxiosFetch(
-    axios.create({
-      socketPath: "/dagger.sock",
-      timeout: 3600e3,
-    })
-  ),
+// TODO(Tomchv): useless so we can remove it later.
+export const client = new GraphQLClient('http://fake.invalid/query', {
+	fetch: buildAxiosFetch(
+		axios.create({
+			socketPath: '/dagger.sock',
+			timeout: 3600e3,
+		})
+	),
 });
 
 export class Client {
-  private client: AxiosInstance;
+	private client: GraphQLClient;
 
-  constructor() {
-    this.client = axios.create({
-      socketPath: "/dagger.sock",
-      timeout: 3600e3,
-    });
-  }
+	/**
+	 * creates a new Dagger Typescript SDK GraphQL client.
+	 */
+	constructor(port = 8080) {
+		this.client = new GraphQLClient(`http://localhost:${port}/query`);
+	}
 
-  public async do(payload: string): Promise<any> {
-    const response = await this.client.post(
-      `http://fake.invalid/query`,
-      payload,
-      { headers: { "Content-Type": "application/graphql" } }
-    );
-    return response;
-  }
+	/**
+	 * do takes a GraphQL query payload as parameter and send it
+	 * to Cloak server to execute every operation's in it.
+	 */
+	public async do(payload: string): Promise<any> {
+		return await this.client.request(payload);
+	}
 }
 
 export class FSID {
-  serial: string;
-  constructor(serial: string) {
-    this.serial = serial;
-  }
-  toString(): string {
-    return this.serial;
-  }
-  toJSON(): string {
-    return this.serial;
-  }
+	serial: string;
+
+	constructor(serial: string) {
+		this.serial = serial;
+	}
+
+	toString(): string {
+		return this.serial;
+	}
+
+	toJSON(): string {
+		return this.serial;
+	}
 }
 
 export class SecretID {
-  serial: string;
-  constructor(serial: string) {
-    this.serial = serial;
-  }
-  toString(): string {
-    return this.serial;
-  }
-  toJSON(): string {
-    return this.serial;
-  }
+	serial: string;
+
+	constructor(serial: string) {
+		this.serial = serial;
+	}
+
+	toString(): string {
+		return this.serial;
+	}
+
+	toJSON(): string {
+		return this.serial;
+	}
 }

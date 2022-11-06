@@ -1,8 +1,15 @@
-import { GraphQLClient } from "graphql-request";
+import { GraphQLClient } from 'graphql-request';
 export declare const client: GraphQLClient;
 export declare class Client {
     private client;
-    constructor();
+    /**
+     * creates a new Dagger Typescript SDK GraphQL client.
+     */
+    constructor(port?: number);
+    /**
+     * do takes a GraphQL query payload as parameter and send it
+     * to Cloak server to execute every operation's in it.
+     */
     do(payload: string): Promise<any>;
 }
 export declare class FSID {
