@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -82,7 +83,12 @@ func Helper(cmd *cobra.Command, args []string) {
 			}
 		}()
 
-		return srv.Serve(l)
+		err := srv.Serve(l)
+		// if error is "use of closed network connection", it's expected
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
