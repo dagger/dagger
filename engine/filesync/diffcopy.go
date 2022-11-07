@@ -1,7 +1,6 @@
 package filesync
 
 import (
-	"bufio"
 	"context"
 	io "io"
 	"os"
@@ -20,52 +19,6 @@ type Stream interface {
 
 func sendDiffCopy(stream Stream, fs fsutil.FS, progress progressCb) error {
 	return errors.WithStack(fsutil.Send(stream.Context(), stream, fs, progress))
-}
-
-func newStreamWriter(stream grpc.ClientStream) io.WriteCloser {
-	wc := &streamWriterCloser{ClientStream: stream}
-	return &bufferedWriteCloser{Writer: bufio.NewWriter(wc), Closer: wc}
-}
-
-type bufferedWriteCloser struct {
-	*bufio.Writer
-	io.Closer
-}
-
-func (bwc *bufferedWriteCloser) Close() error {
-	if err := bwc.Writer.Flush(); err != nil {
-		return errors.WithStack(err)
-	}
-	return bwc.Closer.Close()
-}
-
-type streamWriterCloser struct {
-	grpc.ClientStream
-}
-
-func (wc *streamWriterCloser) Write(dt []byte) (int, error) {
-	if err := wc.ClientStream.SendMsg(&BytesMessage{Data: dt}); err != nil {
-		// SendMsg return EOF on remote errors
-		if errors.Is(err, io.EOF) {
-			if err := errors.WithStack(wc.ClientStream.RecvMsg(struct{}{})); err != nil {
-				return 0, err
-			}
-		}
-		return 0, errors.WithStack(err)
-	}
-	return len(dt), nil
-}
-
-func (wc *streamWriterCloser) Close() error {
-	if err := wc.ClientStream.CloseSend(); err != nil {
-		return errors.WithStack(err)
-	}
-	// block until receiver is done
-	var bm BytesMessage
-	if err := wc.ClientStream.RecvMsg(&bm); err != io.EOF {
-		return errors.WithStack(err)
-	}
-	return nil
 }
 
 func recvDiffCopy(ds grpc.ClientStream, dest string, cu CacheUpdater, progress progressCb, differ fsutil.DiffType, filter func(string, *fstypes.Stat) bool) (err error) {

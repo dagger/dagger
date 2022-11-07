@@ -84,11 +84,11 @@ func NewManager(
 	return sm
 }
 
-func (sm *Manager) Wait() {
-	sm.mirrors.Wait()
+func (manager *Manager) Wait() {
+	manager.mirrors.Wait()
 }
 
-func (sm *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+func (manager *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		return errors.New("handler does not support hijack")
@@ -98,25 +98,25 @@ func (sm *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWriter,
 
 	proto := r.Header.Get("Upgrade")
 
-	sm.mu.Lock()
-	if _, ok := sm.sessions[id]; ok {
-		sm.mu.Unlock()
+	manager.mu.Lock()
+	if _, ok := manager.sessions[id]; ok {
+		manager.mu.Unlock()
 		return errors.Errorf("session %s already exists", id)
 	}
 
 	if proto == "" {
-		sm.mu.Unlock()
+		manager.mu.Unlock()
 		return errors.New("no upgrade proto in request")
 	}
 
 	if proto != "h2c" {
-		sm.mu.Unlock()
+		manager.mu.Unlock()
 		return errors.Errorf("protocol %s not supported", proto)
 	}
 
 	conn, _, err := hijacker.Hijack()
 	if err != nil {
-		sm.mu.Unlock()
+		manager.mu.Unlock()
 		return errors.Wrap(err, "failed to hijack connection")
 	}
 
@@ -133,10 +133,10 @@ func (sm *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWriter,
 	conn.Write([]byte{})
 	resp.Write(conn)
 
-	return sm.handleConn(ctx, conn, r.Header)
+	return manager.handleConn(ctx, conn, r.Header)
 }
 
-func (sm *Manager) client(ctx context.Context, id string, noWait bool) (*clientSession, error) {
+func (manager *Manager) client(ctx context.Context, id string, noWait bool) (*clientSession, error) {
 	if id == "" {
 		debug.PrintStack()
 		return nil, fmt.Errorf("no session id provided")
@@ -152,28 +152,28 @@ func (sm *Manager) client(ctx context.Context, id string, noWait bool) (*clientS
 
 	go func() {
 		<-ctx.Done()
-		sm.mu.Lock()
-		sm.updateCondition.Broadcast()
-		sm.mu.Unlock()
+		manager.mu.Lock()
+		manager.updateCondition.Broadcast()
+		manager.mu.Unlock()
 	}()
 
 	var c *clientSession
 
-	sm.mu.Lock()
+	manager.mu.Lock()
 	for {
 		select {
 		case <-ctx.Done():
-			sm.mu.Unlock()
+			manager.mu.Unlock()
 			return nil, errors.Wrapf(ctx.Err(), "no active session for %s", id)
 		default:
 		}
 		var ok bool
-		c, ok = sm.sessions[id]
+		c, ok = manager.sessions[id]
 		if (!ok || c.closed()) && !noWait {
-			sm.updateCondition.Wait()
+			manager.updateCondition.Wait()
 			continue
 		}
-		sm.mu.Unlock()
+		manager.mu.Unlock()
 		break
 	}
 
@@ -185,7 +185,7 @@ func (sm *Manager) client(ctx context.Context, id string, noWait bool) (*clientS
 }
 
 // caller needs to take lock, this function will release it
-func (sm *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[string][]string) error {
+func (manager *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[string][]string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -198,7 +198,7 @@ func (sm *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[strin
 
 	ctx, cc, err := grpcClientConn(ctx, conn)
 	if err != nil {
-		sm.mu.Unlock()
+		manager.mu.Unlock()
 		return err
 	}
 
@@ -212,14 +212,14 @@ func (sm *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[strin
 		done:      make(chan struct{}),
 	}
 
-	sm.sessions[id] = c
-	sm.updateCondition.Broadcast()
-	sm.mu.Unlock()
+	manager.sessions[id] = c
+	manager.updateCondition.Broadcast()
+	manager.mu.Unlock()
 
 	defer func() {
-		sm.mu.Lock()
-		delete(sm.sessions, id)
-		sm.mu.Unlock()
+		manager.mu.Lock()
+		delete(manager.sessions, id)
+		manager.mu.Unlock()
 	}()
 
 	<-c.ctx.Done()
