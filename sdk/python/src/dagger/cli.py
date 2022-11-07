@@ -6,6 +6,7 @@ import typer
 
 from dagger import codegen
 from dagger.connectors import Config, get_connector
+from dagger.connectors.docker import Engine
 
 app = typer.Typer()
 
@@ -26,15 +27,13 @@ def generate(
     """
     # not using `dagger.Connection` because codegen is
     # generating the client that it returns
-    connector = get_connector(Config())
-    transport = connector.make_sync_transport()
+    cfg = Config()
 
-    with connector.make_graphql_client(transport) as session:
-        if session.client.schema is None:
-            raise typer.BadParameter(
-                "Schema not initialized. Make sure the dagger engine is running."
-            )
-        code = codegen.generate(session.client.schema)
+    if cfg.host.scheme == "docker-image":
+        with Engine(cfg) as engine:
+            code = generate_code(engine.cfg)
+    else:
+        code = generate_code(engine.cfg)
 
     if output is not None:
         output.write_text(code)
@@ -46,3 +45,15 @@ def generate(
         rich.print(f"[green]Client generated successfully to[/green] {output} :rocket:")
     else:
         rich.print(code)
+
+
+def generate_code(cfg: Config) -> str:
+    connector = get_connector(cfg)
+    transport = connector.make_sync_transport()
+
+    with connector.make_graphql_client(transport) as session:
+        if session.client.schema is None:
+            raise typer.BadParameter(
+                "Schema not initialized. Make sure the dagger engine is running."
+            )
+        return codegen.generate(session.client.schema)

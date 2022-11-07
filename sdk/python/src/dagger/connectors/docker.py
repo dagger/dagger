@@ -176,6 +176,13 @@ class Engine:
             return
         self._proc.__exit__(exc_type, None, None)
 
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, *args, **kwargs):
+        self.stop(exc_type)
+
 
 @register_connector("docker-image")
 @define
