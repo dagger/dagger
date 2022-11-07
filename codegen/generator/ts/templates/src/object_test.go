@@ -25,9 +25,6 @@ func TestObject(t *testing.T) {
 }
 
 var expectedFunc = `
-/**
- * 
- */
 class Container extends BaseApi {
 
   get getQueryTree() {
