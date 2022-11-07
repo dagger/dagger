@@ -1,5 +1,4 @@
 import logging
-from typing import NoReturn
 
 from .connectors import Config, get_connector
 
@@ -20,10 +19,8 @@ class Connection:
     async def __aexit__(self, exc_type, *args, **kwargs) -> None:
         await self.connector.close(exc_type)
 
-    def __enter__(self) -> NoReturn:
-        raise NotImplementedError(
-            "Sync is not supported yet. Use `async with` instead."
-        )
+    def __enter__(self):
+        return self.connector.connect_sync()
 
-    def __exit__(self, *args, **kwargs) -> None:
-        ...
+    def __exit__(self, exc_type, *args, **kwargs) -> None:
+        self.connector.close_sync(exc_type)
