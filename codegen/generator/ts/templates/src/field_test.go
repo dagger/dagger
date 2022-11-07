@@ -10,8 +10,8 @@ import (
 )
 
 func TestField(t *testing.T) {
+	const templateType = "field"
 	t.Run("myField()", func(t *testing.T) {
-		templateType := "field"
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
 		want := `myField()`
 		field := introspection.Field{
@@ -27,7 +27,18 @@ func TestField(t *testing.T) {
 	})
 
 	t.Run("exec(args: ContainerExecArgs) : Container", func(t *testing.T) {
-		templateType := "field"
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
+		want := `exec(args: ContainerExecArgs) : Container`
+		object := objectInit(t, containerExecArgsJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, templateType, object.Fields[0])
+		require.NoError(t, err)
+
+		require.Equal(t, want, b.String())
+	})
+
+	t.Run("exec(args: ContainerExecArgs) : Promise<Return<string, Container>>", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
 		want := `exec(args: ContainerExecArgs) : Container`
 		object := objectInit(t, containerExecArgsJSON)

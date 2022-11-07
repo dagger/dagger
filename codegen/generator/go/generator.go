@@ -40,8 +40,8 @@ func SetSchemaParents(schema *introspection.Schema) {
 		}
 	}
 }
-func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]byte, error) {
 
+func Generate(ctx context.Context, schema *introspection.Schema, cfg Config) ([]byte, error) {
 	SetSchemaParents(schema)
 
 	var gen Generator
