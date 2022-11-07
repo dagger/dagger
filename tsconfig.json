@@ -1,8 +1,9 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
   "include": ["./sdk/nodejs/dagger/**/*"],
+  "exclude": ["./sdk/nodejs/dagger/api/example/**/*"],
   "compilerOptions": {
-    "target": "ES2015",
+    "target": "es2017",
     "strict": true,
     "outDir": "./sdk/nodejs/dagger/dist",
     "rootDir": "./sdk/nodejs/dagger",
