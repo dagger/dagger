@@ -37,13 +37,11 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
+	RemoteAddr    string
 
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
 	RawBuildkitStatus chan *bkclient.SolveStatus
-
-	// TODO:(sipsma) not sure about this being a public field...
-	RemoteAddr string
 }
 
 type StartCallback func(context.Context, *router.Router) error
