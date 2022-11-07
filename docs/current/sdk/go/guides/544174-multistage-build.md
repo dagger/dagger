@@ -30,9 +30,8 @@ The beginning of the file starts by creating a Dagger client and loading the pro
 
 Next, in the highlighted section, the multistage build is achieved by taking the build artifact from the build stage and putting it in an Alpine image.
 
-- Create a reference to the build artifact from the builder container using `builder.File()`
 - Create a new container which will be used as the runtime image. This is using `From("alpine")`
-- Mount the build artifact to the new container using `WithMountedFile()` and copy the artifact to the container's rootfs. The copy is required because mounts are not a persisted part of the container itself
+- Include the build artifact from the builder image in the new container by replacing the container's filesystem with the original filesystem plus the build artifact
 - Set the entrypoint to our application so that the application is executed by default when the container is run
 
 Now that we have a slimmed down production image, it can be pushed to a registry and deployed!

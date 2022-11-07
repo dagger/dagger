@@ -30,16 +30,13 @@ func main() {
 		})
 
 	// highlight-start
-	// Get built binary
-	build := builder.File("/src/myapp")
-
 	// Publish binary on Alpine base
 	prodImage := client.Container().
-		From("alpine").
-		WithMountedFile("/tmp/myapp", build).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"cp", "/tmp/myapp", "/bin/myapp"},
-		}).
+		From("alpine")
+	prodImage = prodImage.WithFS(
+		prodImage.FS().WithFile("/bin/myapp",
+			builder.File("/src/myapp"),
+		)).
 		WithEntrypoint([]string{"/bin/myapp"})
 	// highlight-end
 
