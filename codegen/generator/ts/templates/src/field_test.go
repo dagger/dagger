@@ -38,10 +38,10 @@ func TestField(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 
-	t.Run("exec(args: ContainerExecArgs) : Promise<Return<string, Container>>", func(t *testing.T) {
-		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `exec(args: ContainerExecArgs) : Container`
-		object := objectInit(t, containerExecArgsJSON)
+	t.Run("async id() : Promise<Record<string, DirectoryID>>", func(t *testing.T) {
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve")
+		want := `async id() : Promise<Record<string, DirectoryID>>`
+		object := objectInit(t, directoryTypeJSON)
 
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, templateType, object.Fields[0])
@@ -50,6 +50,30 @@ func TestField(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 }
+
+const directoryTypeJSON = `{
+        "kind": "OBJECT",
+        "name": "Directory",
+        "description": "",
+        "fields": [
+          {
+            "name": "id",
+            "description": "",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "DirectoryID",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+	]
+	}`
 
 func fieldInit(t *testing.T, field *introspection.Field) {
 	t.Helper()

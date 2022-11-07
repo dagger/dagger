@@ -7,7 +7,9 @@
 		{{- end -}}
 	)
 	{{- if Solve . -}}
-		{{ "" }} : Promise<Record<string, string>>{{ "" }}
+		{{- with .TypeRef }}
+			{{- template "return_solve" . -}}
+		{{- end -}}
 	{{- else -}}
 		{{- with .TypeRef }}
 			{{- template "return" . -}}
