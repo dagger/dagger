@@ -288,7 +288,7 @@ func (w *fileSendWriter) Close() error {
 	return w.closeErr
 }
 
-func (manager *Manager) solveOpt(ctx context.Context, id string, secretStore *secret.Store, caller *clientSession) bkclient.SolveOpt {
+func (manager *Manager) solveOpt(secretStore *secret.Store, caller *clientSession) bkclient.SolveOpt {
 	solveOpts := manager.solveOpts
 
 	solveOpts.Session = append(solveOpts.Session,
@@ -308,7 +308,7 @@ func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.Expor
 	ch := manager.mirrorCh("export:" + id)
 
 	secretStore := secret.NewStore()
-	solveOpt := manager.solveOpt(ctx, id, secretStore, caller)
+	solveOpt := manager.solveOpt(secretStore, caller)
 
 	solveOpt.Exports = []bkclient.ExportEntry{ex}
 
@@ -347,7 +347,7 @@ func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, er
 	ch := manager.mirrorCh("gw:" + id)
 
 	secretStore := secret.NewStore()
-	solveOpt := manager.solveOpt(ctx, id, secretStore, caller)
+	solveOpt := manager.solveOpt(secretStore, caller)
 
 	gwCh := make(chan bkgw.Client, 1)
 	gwErrCh := make(chan error, 1)
