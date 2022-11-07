@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"dagger.io/dagger/internal/engineconn"
 	exec "golang.org/x/sys/execabs"
@@ -51,16 +52,34 @@ func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...stri
 	}
 
 	// Read the port to connect to from the helper's stdout.
-	// TODO: timeouts and such
-	portStr, err := bufio.NewReader(stdout).ReadString('\n')
-	if err != nil {
-		return "", nil, err
+	portCh := make(chan string, 1)
+	var portErr error
+	go func() {
+		defer close(portCh)
+		portStr, err := bufio.NewReader(stdout).ReadString('\n')
+		if err != nil {
+			portErr = err
+			return
+		}
+		portCh <- portStr
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Second) // really long time to account for extensions that need to build, though that path should be optimized in future
+	defer cancel()
+	var port int
+	select {
+	case portStr := <-portCh:
+		if portErr != nil {
+			return "", nil, portErr
+		}
+		portStr = strings.TrimSpace(portStr)
+		port, err = strconv.Atoi(portStr)
+		if err != nil {
+			return "", nil, err
+		}
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
 	}
-	portStr = strings.TrimSpace(portStr)
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return "", nil, err
-	} // TODO: validation it's in the right range
 
 	return fmt.Sprintf("localhost:%d", port), childStdin, nil
 }
