@@ -1,9 +1,6 @@
 import { GraphQLClient, gql } from "../index.js";
 import { 
-  ContainerDirectoryArgs, 
   ContainerExecArgs, 
-  ContainerFromArgs, 
-  ContainerWithEnvVariableArgs, 
   ContainerWithFsArgs, 
   ContainerWithMountedDirectoryArgs, 
   ContainerWithWorkdirArgs, 
@@ -39,7 +36,6 @@ export class BaseClient {
 
     const graphqlClient = new GraphQLClient("http://localhost:8080/query")
 
-    //@ts-ignore
     const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve) => {
       const response: Awaited<Promise<Record<string, any>>> = await graphqlClient.request(gql`${query}`)
 

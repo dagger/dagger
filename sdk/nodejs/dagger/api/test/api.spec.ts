@@ -6,7 +6,7 @@ describe('NodeJS SDK api', function () {
   it('Build correctly a query with one argument', async function () {
     this.timeout(60000);
 
-    const tree = new Api().container().from({address: "alpine"}).exec({args: })
+    const tree = new Api().container().from({address: "alpine"})
 
     assert.strictEqual(queryBuilder(tree.queryTree), `{container{from(address:"alpine")}}`);
   })
