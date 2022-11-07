@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/tracing"
 	"github.com/spf13/cobra"
 )
@@ -69,8 +70,12 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use: "dagger",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		setupDebugHandlers(fmt.Sprintf(":%d", debugServerPort))
-		return nil
+		if debugServerPort != 0 {
+			setupDebugHandlers(fmt.Sprintf(":%d", debugServerPort))
+		}
+		var err error
+		workdir, configPath, err = dagger.NormalizePaths(workdir, configPath)
+		return err
 	},
 }
 

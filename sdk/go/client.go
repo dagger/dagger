@@ -121,7 +121,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		q: querybuilder.Query(),
 		c: c.gql,
 	}
-	if cfg.ConfigPath != "" && !cfg.NoExtensions {
+	if _, err := os.Stat(filepath.Join(cfg.Workdir, cfg.ConfigPath)); !cfg.NoExtensions && err == nil {
 		err = c.installExtensions(ctx, cfg.ConfigPath)
 		if err != nil {
 			return nil, err
@@ -241,18 +241,9 @@ func NormalizePaths(workdir, configPath string) (string, string, error) {
 			return "", "", err
 		}
 	}
-	_, err = os.Stat(configPath)
-	switch {
-	case err == nil:
-		configPath, err = filepath.Rel(workdir, configPath)
-		if err != nil {
-			return "", "", err
-		}
-	case os.IsNotExist(err):
-		configPath = ""
-	default:
+	configPath, err = filepath.Rel(workdir, configPath)
+	if err != nil {
 		return "", "", err
 	}
-
 	return workdir, configPath, nil
 }
