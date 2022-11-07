@@ -30,7 +30,7 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use: "", // TODO: message indicating not for human consumption
+	Use: "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
