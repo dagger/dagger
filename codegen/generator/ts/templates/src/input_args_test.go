@@ -2,11 +2,8 @@ package test
 
 import (
 	"bytes"
-	"encoding/json"
 	"testing"
 
-	generator "github.com/dagger/dagger/codegen/generator/go"
-	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,19 +21,10 @@ func TestInputArgs(t *testing.T) {
 
 			jsonData := c.in
 
-			var object introspection.Type
-			err := json.Unmarshal([]byte(jsonData), &object)
-			require.NoError(t, err)
-			schema := introspection.Schema{
-				Types: []*introspection.Type{
-					&object,
-				},
-			}
-
-			generator.SetSchemaParents(&schema)
+			object := objectInit(t, jsonData)
 
 			var b bytes.Buffer
-			err = tmpl.ExecuteTemplate(&b, "input_args", object.Fields[0])
+			err := tmpl.ExecuteTemplate(&b, "input_args", object.Fields[0])
 
 			require.NoError(t, err)
 			require.Equal(t, c.want, b.String())

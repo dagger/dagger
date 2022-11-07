@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	generator "github.com/dagger/dagger/codegen/generator/go"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
@@ -11,7 +12,7 @@ import (
 func TestField(t *testing.T) {
 	t.Run("myField()", func(t *testing.T) {
 		templateType := "field"
-		tmpl := templateHelper(t, templateType, "args", "arg", "return")
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
 		want := `myField()`
 		field := introspection.Field{
 			Name: "myField",
@@ -20,6 +21,7 @@ func TestField(t *testing.T) {
 				Name: "",
 			},
 		}
+		fieldInit(t, &field)
 
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, templateType, field)
@@ -28,59 +30,33 @@ func TestField(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 
-	t.Run("myField(string ref) : Container", func(t *testing.T) {
+	t.Run("exec(args: ContainerExecArgs)", func(t *testing.T) {
 		templateType := "field"
-		tmpl := templateHelper(t, templateType, "args", "arg", "return")
-		want := `myField(args: { string ref }) : Container`
-		field := introspection.Field{
-			Name: "myField",
-			TypeRef: &introspection.TypeRef{
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
+		want := `exec(args: ContainerExecArgs)`
+		object := objectInit(t, containerExecArgsJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, templateType, object.Fields[0])
+		require.NoError(t, err)
+
+		require.Equal(t, want, b.String())
+	})
+}
+
+func fieldInit(t *testing.T, field *introspection.Field) {
+	t.Helper()
+
+	schema := introspection.Schema{
+		Types: []*introspection.Type{
+			{
 				Kind: introspection.TypeKindObject,
-				Name: "Container",
-			},
-			Args: introspection.InputValues{
-				introspection.InputValue{
-					Name: "ref",
-					TypeRef: &introspection.TypeRef{
-						Kind: introspection.TypeKindScalar,
-						Name: "string",
-					},
+				Name: "Whatever",
+				Fields: []*introspection.Field{
+					field,
 				},
 			},
-		}
-
-		var b bytes.Buffer
-		err := tmpl.ExecuteTemplate(&b, templateType, field)
-		require.NoError(t, err)
-
-		require.Equal(t, want, b.String())
-	})
-
-	t.Run("myField(string ref) : Container", func(t *testing.T) {
-		templateType := "field"
-		tmpl := templateHelper(t, templateType, "args", "arg", "return")
-		want := `myField(args: { string ref }) : Container`
-		field := introspection.Field{
-			Name: "myField",
-			TypeRef: &introspection.TypeRef{
-				Kind: introspection.TypeKindObject,
-				Name: "Container",
-			},
-			Args: introspection.InputValues{
-				introspection.InputValue{
-					Name: "ref",
-					TypeRef: &introspection.TypeRef{
-						Kind: introspection.TypeKindScalar,
-						Name: "string",
-					},
-				},
-			},
-		}
-
-		var b bytes.Buffer
-		err := tmpl.ExecuteTemplate(&b, templateType, field)
-		require.NoError(t, err)
-
-		require.Equal(t, want, b.String())
-	})
+		},
+	}
+	generator.SetSchemaParents(&schema)
 }
