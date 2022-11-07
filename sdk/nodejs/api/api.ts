@@ -163,7 +163,7 @@ class Tree extends BaseClient {
   /**
    * The filesystem tree at this ref
    */
-  tree(): File {
+  tree(): Directory {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -171,23 +171,40 @@ class Tree extends BaseClient {
       }
     ]
 
-    return new File(this._queryTree)
+    return new Directory(this._queryTree)
   }
 }
 class File extends BaseClient {
-  /**
-   * Retrieve a file at the given path
+    /**
+   * The contents of the file
    */
-  file(args: DirectoryFileArgs): Contents {
+  async contents(): Promise<Record<string, string>> {
     this._queryTree = [
-      ...this._queryTree,
+      ...this._queryTree, 
       {
-        operation: 'file',
-        args
+      operation: 'contents'
       }
     ]
 
-    return new Contents(this._queryTree) 
+    const response: Record<string, string> = await this._compute()
+
+    return response
+  }
+
+  /**
+   * The size of the file, in bytes
+   */
+  async size(): Promise<Record<string, number>> {
+    this._queryTree = [
+      ...this._queryTree, 
+      {
+      operation: 'size'
+      }
+    ]
+
+    const response: Record<string, number> = await this._compute()
+
+    return response
   }
 }
 
@@ -321,7 +338,7 @@ class Container extends BaseClient {
 /**
  * The output stream of the last executed command. Null if no command has been executed.
  */
-  stdout(): Contents {
+  stdout(): File {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -329,7 +346,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Contents(this._queryTree)
+    return new File(this._queryTree)
   }
 
 /**
@@ -379,6 +396,21 @@ class Container extends BaseClient {
 }
 
 class Directory extends BaseClient {
+
+  /**
+   * Retrieve a file at the given path
+   */
+  file(args: DirectoryFileArgs): File {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: 'file',
+        args
+      }
+    ]
+
+    return new File(this._queryTree) 
+  }
   
   /**
    * Retrieve a directory at the given path. Mounts are included.
@@ -409,24 +441,6 @@ class Directory extends BaseClient {
     ]
 
     const response: Record<string, Array<Scalars['String']>> = await this._compute()
-
-    return response
-  }
-}
-
-class Contents extends BaseClient {
-  /**
-   * The contents of the file
-   */
-  async contents(): Promise<Record<string, string>> {
-    this._queryTree = [
-      ...this._queryTree, 
-      {
-      operation: 'contents'
-      }
-    ]
-
-    const response: Record<string, string> = await this._compute()
 
     return response
   }

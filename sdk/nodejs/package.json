@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
-  "types": "./sdk/nodejs/dagger/dist/index.d.ts",
+  "types": "./dist/index.d.ts",
   "files": [
-    "/sdk/nodejs/dagger/dist/"
+    "./dist/"
   ],
   "exports": {
-    ".": "./sdk/nodejs/dagger/dist/index.js"
+    ".": "./dist/index.js"
   },
   "engines": {
     "node": ">=16"
@@ -24,10 +24,11 @@
   },
   "scripts": {
     "build": "tsc",
-    "test-sdk": "mocha sdk/nodejs/test/index.mjs"
+    "test-sdk": "mocha -t 60000 test/index.spec.ts"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.0",
+    "@types/jest": "^29.2.2",
+    "@types/mocha": "latest",
     "@types/node": "~16",
     "mocha": "^10.1.0",
     "ts-node": "^10.9.1",

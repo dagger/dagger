@@ -4,7 +4,6 @@ import { queryBuilder, queryFlatten } from "../utils.js"
 
 describe('NodeJS SDK api', function () {
   it('Build correctly a query with one argument', async function () {
-    this.timeout(60000);
 
     const tree = new Api().container().from({address: "alpine"})
 
@@ -12,14 +11,12 @@ describe('NodeJS SDK api', function () {
   })
   
   it('Build one query with multiple arguments', async function () {
-    this.timeout(60000);
     const tree = new Api().container().from({address: "alpine"}).exec({args: ["apk", "add", "curl"]}).stdout()
     
     assert.strictEqual(queryBuilder(tree.queryTree), `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`);
   })
 
   it('Build a query by splitting it', async function () {
-    this.timeout(60000);
     const image = new Api().container().from({address: "alpine"})
     const pkg = image.exec({args: ["apk", "add", "curl"]})
     const result = pkg.stdout()
@@ -28,7 +25,6 @@ describe('NodeJS SDK api', function () {
   })
 
   it('Return a flatten Graphql response', async function () {
-    this.timeout(60000);
     const tree = {
                     container: {
                       from: {
