@@ -11,7 +11,7 @@ from attrs import Factory, define, field
 from gql.client import Client as GraphQLClient
 from gql.transport import AsyncTransport, Transport
 
-from dagger import Client
+from dagger import Client, SyncClient
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class Connector(ABC):
     """
 
     cfg: Config = Factory(Config)
-    client: Client | None = None
+    client: Client | SyncClient | None = None
 
     async def connect(self) -> Client:
         transport = self.make_transport()
@@ -81,12 +81,12 @@ class Connector(ABC):
         assert self.client is not None
         await self.client._gql_client.close_async()
 
-    def connect_sync(self) -> Client:
+    def connect_sync(self) -> SyncClient:
         transport = self.make_sync_transport()
         gql_client = self.make_graphql_client(transport)
         # FIXME: handle errors from establishing session
         session = gql_client.connect_sync()
-        self.client = Client.from_session(session)
+        self.client = SyncClient.from_session(session)
         return self.client
 
     def close_sync(self) -> None:

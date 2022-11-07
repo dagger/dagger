@@ -20,20 +20,22 @@ def main():
 
 @app.command()
 def generate(
-    output: Optional[Path] = typer.Option(None, help="File to write generated code")
+    output: Optional[Path] = typer.Option(None, help="File to write generated code"),
+    sync: Optional[bool] = typer.Option(False, help="Generate a client for sync code"),
 ):
     """
     Generate a client for the Dagger API
     """
     # not using `dagger.Connection` because codegen is
     # generating the client that it returns
+
     cfg = Config()
 
     if cfg.host.scheme == "docker-image":
         with Engine(cfg) as engine:
-            code = generate_code(engine.cfg)
+            code = generate_code(engine.cfg, sync)
     else:
-        code = generate_code(cfg)
+        code = generate_code(cfg, sync)
 
     if output is not None:
         output.write_text(code)
@@ -47,7 +49,7 @@ def generate(
         rich.print(code)
 
 
-def generate_code(cfg: Config) -> str:
+def generate_code(cfg: Config, sync: bool) -> str:
     connector = get_connector(cfg)
     transport = connector.make_sync_transport()
 
@@ -56,4 +58,4 @@ def generate_code(cfg: Config) -> str:
             raise typer.BadParameter(
                 "Schema not initialized. Make sure the dagger engine is running."
             )
-        return codegen.generate(session.client.schema)
+        return codegen.generate(session.client.schema, sync)

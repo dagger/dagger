@@ -52,7 +52,10 @@ dependencies = [
 
 [tool.hatch.envs.default.scripts]
 test = "pytest -W default"
-generate = "dagger-py generate --output src/dagger/api/gen.py"
+generate = [
+    "dagger-py generate --output src/dagger/api/gen.py",
+    "dagger-py generate --output src/dagger/api/gen_sync.py --sync",
+]
 
 [tool.hatch.envs.lint]
 skip_install = true

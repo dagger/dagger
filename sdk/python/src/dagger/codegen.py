@@ -73,7 +73,7 @@ def joiner(func):
 
 
 @joiner
-def generate(schema: GraphQLSchema) -> Iterator[str]:
+def generate(schema: GraphQLSchema, sync: bool = False) -> Iterator[str]:
     """Code generation main function."""
 
     yield dedent(
@@ -89,9 +89,9 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
     )
 
     handlers: tuple[Handler, ...] = (
-        Scalar(),
-        Input(),
-        Object(),
+        Scalar(sync),
+        Input(sync),
+        Object(sync),
     )
 
     def sort_key(t: GraphQLNamedType) -> tuple[int, str]:
@@ -255,9 +255,10 @@ class _InputField:
 
 
 class _ObjectField:
-    def __init__(self, name: str, field: GraphQLField) -> None:
+    def __init__(self, name: str, field: GraphQLField, sync: bool) -> None:
         self.graphql_name = name
         self.graphql = field
+        self.sync = sync
 
         self.name = format_name(name)
         self.args = sorted(
@@ -275,8 +276,11 @@ class _ObjectField:
     def func_signature(self) -> str:
         params = ", ".join(chain(("self",), (a.as_param() for a in self.args)))
         sig = f"def {self.name}({params})"
-        if self.is_leaf:
-            return f"async {sig} -> {self.type}"
+        if self.is_leaf and not self.sync:
+            sig = f"{sig} -> {self.type}"
+            if not self.sync:
+                return f"async {sig}"
+            return sig
         return f'{sig} -> "{self.type}"'
 
     @joiner
@@ -294,7 +298,10 @@ class _ObjectField:
         yield f'_ctx = self._select("{self.graphql_name}", _args)'
 
         if self.is_leaf:
-            yield f"return await _ctx.execute({self.type})"
+            if self.sync:
+                yield f"return _ctx.execute_sync({self.type})"
+            else:
+                yield f"return await _ctx.execute({self.type})"
         else:
             yield f"return {self.type}(_ctx)"
 
@@ -325,9 +332,9 @@ class _ObjectField:
                         """\
                         Returns
                         -------
-                            Awaitable with resulting leaf value (scalar).
+                            Resulting leaf value (scalar).
 
-                            Note: A query is executed in the API server when awaited.
+                            Note: A request will be sent to the server.
                         """.rstrip()
                     ),
                 )
@@ -350,6 +357,7 @@ class Predicate(Protocol):
 
 @define
 class Handler(ABC, Generic[_H]):
+    sync: bool = False
     predicate: ClassVar[Predicate] = staticmethod(lambda _: True)
     """Does this handler render the given type?"""
 
@@ -401,7 +409,9 @@ class ObjectHandler(Handler[_O], Generic[_O]):
     def _render_body(self, t: _O) -> str:
         if t.description:
             yield doc(t.description)
-        yield from (str(self.field_class(*args)) for args in t.fields.items())
+        yield from (
+            str(self.field_class(*args, self.sync)) for args in t.fields.items()
+        )
 
 
 class Input(ObjectHandler[GraphQLInputObjectType]):
