@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2371,7 +2370,7 @@ func TestContainerMultiFrom(t *testing.T) {
 }
 
 func TestContainerPublish(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -2380,31 +2379,16 @@ func TestContainerPublish(t *testing.T) {
 	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
 	// or flesh out the idea of local services, it's probably the best we can do for now.
 
-	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
-	randomID := identity.NewID()
-	go func() {
-		_, err := c.Container().
-			From("registry:2").
-			WithEnvVariable("RANDOM", randomID).
-			Exec().
-			ExitCode(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Logf("error running registry: %v", err)
-		}
-	}()
+	startRegistry(ctx, c, t)
+	defer cancel()
 
-	_, err = c.Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("RANDOM", randomID).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
-		}).
-		ExitCode(ctx)
-	require.NoError(t, err)
+	// NB(vito): send a file along to ensure publishing uses the client's session
+	self := c.Host().Workdir().File("container_test.go")
 
+	ctr := c.Container().From("alpine:3.16.2")
 	testRef := "127.0.0.1:5000/testimagepush:latest"
-	pushedRef, err := c.Container().
-		From("alpine:3.16.2").
+	pushedRef, err := ctr.
+		WithFS(ctr.FS().WithFile("/etc/test.go", self)).
 		Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
@@ -2414,6 +2398,11 @@ func TestContainerPublish(t *testing.T) {
 		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.16.2\n")
+
+	contents, err = c.Container().
+		From(pushedRef).FS().File("/etc/test.go").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, contents, "bananarama") // matches itself, lol
 }
 
 func TestContainerMultipleMounts(t *testing.T) {

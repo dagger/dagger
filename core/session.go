@@ -10,5 +10,5 @@ import (
 
 type SessionManager interface {
 	TarSend(ctx context.Context, id string, dest string, unpack bool) (io.WriteCloser, error)
-	Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) error
+	Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) (*bkclient.SolveResponse, error)
 }

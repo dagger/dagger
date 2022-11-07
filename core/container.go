@@ -877,29 +877,20 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 
 func (container *Container) Publish(
 	ctx context.Context,
+	sessions SessionManager,
+	sessionID string,
 	ref string,
 	platformVariants []ContainerID,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
 ) (string, error) {
-	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
-	solveOpts.Exports = []bkclient.ExportEntry{
-		{
-			Type: bkclient.ExporterImage,
-			Attrs: map[string]string{
-				"name": ref,
-				"push": "true",
-			},
+	res, err := sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+		Type: bkclient.ExporterImage,
+		Attrs: map[string]string{
+			"name": ref,
+			"push": "true",
 		},
-	}
-
-	ch, wg := mirrorCh(solveCh)
-	defer wg.Wait()
-
-	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
-	}, ch)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -947,7 +938,7 @@ func (container *Container) Export(
 		return err
 	}
 
-	err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+	_, err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
 		Type: bkclient.ExporterOCI,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return wc, nil

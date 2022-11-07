@@ -359,7 +359,7 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, s.sessions, ctx.SessionID, args.Address, args.PlatformVariants)
 }
 
 type containerWithMountedFileArgs struct {

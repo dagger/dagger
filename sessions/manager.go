@@ -313,10 +313,10 @@ func (manager *Manager) solveOpt(secretStore *secret.Store, caller *clientSessio
 	return solveOpts
 }
 
-func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) error {
+func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) (*bkclient.SolveResponse, error) {
 	caller, err := manager.client(ctx, id, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ch := manager.mirrorCh("export:" + id)
@@ -326,7 +326,7 @@ func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.Expor
 
 	solveOpt.Exports = []bkclient.ExportEntry{ex}
 
-	_, err = manager.bkClient.Build(context.Background(), solveOpt, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	res, err := manager.bkClient.Build(context.Background(), solveOpt, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		// Secret store is a circular dependency, since it needs to resolve
 		// SecretIDs using the gateway, we don't have a gateway until we call
 		// Build, which needs SolveOpts, which needs to contain the secret store.
@@ -338,7 +338,7 @@ func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.Expor
 	}, ch)
 
 	log.Println("BUILD RESULT", err)
-	return err
+	return res, err
 }
 
 func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, error) {

@@ -434,7 +434,7 @@ func (dir *Directory) Export(
 		return err
 	}
 
-	err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+	_, err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
 		Type: bkclient.ExporterTar,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return wc, nil

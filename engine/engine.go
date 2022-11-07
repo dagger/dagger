@@ -111,9 +111,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			Router:        router,
 			SSHAuthSockID: sshAuthSockID,
 			Sessions:      sm,
-			BKClient:      c,
-			SolveOpts:     solveOpts,
-			SolveCh:       startOpts.RawBuildkitStatus,
 			Platform:      *platform,
 			DisableHostRW: startOpts.DisableHostRW,
 		})
