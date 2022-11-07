@@ -1,6 +1,6 @@
 // import { NetlifyAPI } from "netlify";
-import Api from "../../api.js"
-import { connect } from "../../../_engine.js"
+import Client from "../../api.js"
+import { connect } from "../../../connect.js"
 
 
 const netlifyToken = "-dhS2kFfj75MM5Dh3hhzU3fyTN3vHuouV84_nhuys10"
@@ -14,15 +14,15 @@ const netlifyToken = "-dhS2kFfj75MM5Dh3hhzU3fyTN3vHuouV84_nhuys10"
 // }
 
 
-connect(async (api: Api) => {
+connect(async (client: Client) => {
 
-  const source = await api.host().workdir().id()
+  const source = await client.host().workdir().id()
 
-  const cacheVolume = await api.cacheVolume({key: "myCache"}).id()
+  const cacheVolume = await client.cacheVolume({key: "myCache"}).id()
 
-  const image = await api.container().from({address: "alpine"}).exec({args: ["apk", "add", "yarn"]}).id()
+  const image = await client.container().from({address: "alpine"}).exec({args: ["apk", "add", "yarn"]}).id()
 
-  await api
+  await client
     .container({id: image.id})
     .withMountedDirectory({path: "/src", source: source.id})
     .withWorkdir({path: "/src"})
@@ -32,28 +32,4 @@ connect(async (api: Api) => {
     .exec({args: ["yarn", "build"]})
     .directory({path: "/src"}).entries()
 })
-
-// // 1. Load app source code from working directory
-// const source = await new Api().host().workdir().id()
-
-
-//   // 2. Install yarn in a container
-// const image = await new Api()
-// .container()
-// .from({address: "alpine"})
-// .exec({args: ["apk", "add", "yarn"]})
-// .fs()
-// .id()
-
-//   // 3. Run 'yarn install' in a container
-// const sourceAfterInstall = await new Api()
-//   .container({id: image.id})
-//   .exec({args: ["yarn", "install"]})
-//   .withMountedDirectory({path: "/src", source: source.id})
-//   .withWorkdir({path: "/src"})
-//   .directory({path: "/src"})
-
-// console.log("🐞 ------------------------------------------🐞")
-// console.log("🐞 ~ sourceAfterInstall", sourceAfterInstall)
-// console.log("🐞 ------------------------------------------🐞")
 

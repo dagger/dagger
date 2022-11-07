@@ -6,16 +6,25 @@ describe('NodeJS SDK api', function () {
   it('Build correctly a query with one argument', async function () {
     this.timeout(60000);
 
-    const tree = await new Api().container().from({address: "alpine"})
+    const tree = new Api().container().from({address: "alpine"}).exec({args: })
 
     assert.strictEqual(queryBuilder(tree.queryTree), `{container{from(address:"alpine")}}`);
   })
   
-  it('Build correctly a query with multiple arguments', async function () {
+  it('Build one query with multiple arguments', async function () {
     this.timeout(60000);
-    const tree = await new Api().container().from({address: "alpine"}).exec({args: ["apk", "add", "curl"]}).stdout()
+    const tree = new Api().container().from({address: "alpine"}).exec({args: ["apk", "add", "curl"]}).stdout()
     
     assert.strictEqual(queryBuilder(tree.queryTree), `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`);
+  })
+
+  it('Build a query by splitting it', async function () {
+    this.timeout(60000);
+    const image = new Api().container().from({address: "alpine"})
+    const pkg = image.exec({args: ["apk", "add", "curl"]})
+    const result = pkg.stdout()
+    
+    assert.strictEqual(queryBuilder(result.queryTree), `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`);
   })
 
   it('Return a flatten Graphql response', async function () {

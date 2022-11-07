@@ -1,4 +1,4 @@
-import { Engine, GraphQLClient, gql } from "../index.js";
+import { GraphQLClient, gql } from "../index.js";
 import { 
   ContainerDirectoryArgs, 
   ContainerExecArgs, 
@@ -21,10 +21,11 @@ export type QueryTree = {
   args?: Record<string, any>
 }
 
-export class BaseApi {
+export class BaseClient {
   protected _queryTree:  QueryTree[]
   
-  constructor(queryTree: QueryTree[]= []) {
+
+  constructor(queryTree: QueryTree[] = []) {
     this._queryTree = queryTree
   }
 
@@ -35,14 +36,15 @@ export class BaseApi {
   protected async _compute() : Promise<Record<string, any>> {
     // run the query and return the result.
     const query = queryBuilder(this._queryTree)
-    
-    const computeQuery: Promise<Record<string, string>> = new Promise(resolve  => 
-      new Engine({}).run(async (client: GraphQLClient) => {
-        const response: Awaited<Promise<Record<string, any>>> = await client.request(gql`${query}`)
 
-        resolve(queryFlatten(response));
-      })
-    )
+    const graphqlClient = new GraphQLClient("http://localhost:8080/query")
+
+    //@ts-ignore
+    const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve) => {
+      const response: Awaited<Promise<Record<string, any>>> = await graphqlClient.request(gql`${query}`)
+
+      resolve(queryFlatten(response));
+    })
 
     const result = await computeQuery;
 
@@ -50,15 +52,13 @@ export class BaseApi {
   }
 }
 
-export default class Api extends BaseApi {
+export default class Client extends BaseClient {
   
   /**
    * Load a container from ID. Null ID returns an empty container (scratch).
    */
   container(args?: QueryContainerArgs): Container {
-
     this._queryTree = [
-      ...this._queryTree,
       {
       operation: 'container',
       args
@@ -67,13 +67,26 @@ export default class Api extends BaseApi {
 
     return new Container(this._queryTree)
   }
+  
+  /**
+   * Construct a cache volume for a given cache key
+   */
+  cacheVolume(args: {key: Scalars['String']}): CacheVolume {
+    this._queryTree = [
+      {
+      operation: 'cacheVolume',
+      args
+      }
+    ]
+
+    return new CacheVolume(this._queryTree)
+  }
 
   /**
    * Query a git repository
    */
   git(args: QueryGitArgs): Git {
     this._queryTree = [
-      ...this._queryTree,
       {
       operation: 'git',
       args
@@ -88,7 +101,6 @@ export default class Api extends BaseApi {
    */
   host(): Host {
     this._queryTree = [
-      ...this._queryTree,
       {
       operation: 'host',
       }
@@ -99,7 +111,25 @@ export default class Api extends BaseApi {
 
 }
 
-class Host extends BaseApi {
+class CacheVolume extends BaseClient {
+  /**
+   * A unique identifier for this container
+   */
+  async id(): Promise<Record<string, Scalars['CacheID']>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'id',
+      }
+    ]
+
+    const response: Awaited<Record<string, Scalars['CacheID']>> = await this._compute()
+
+    return response
+  }
+}
+
+class Host extends BaseClient {
   /**
    * The current working directory on the host
    */
@@ -116,7 +146,7 @@ class Host extends BaseApi {
   }
 }
 
-class Git extends BaseApi {
+class Git extends BaseClient {
   /**
    * Details on one branch
    */
@@ -133,7 +163,7 @@ class Git extends BaseApi {
   }
 
 }
-class Tree extends BaseApi {
+class Tree extends BaseClient {
   /**
    * The filesystem tree at this ref
    */
@@ -148,7 +178,7 @@ class Tree extends BaseApi {
     return new File(this._queryTree)
   }
 }
-class File extends BaseApi {
+class File extends BaseClient {
   /**
    * Retrieve a file at the given path
    */
@@ -165,7 +195,7 @@ class File extends BaseApi {
   }
 }
 
-class Container extends BaseApi {
+class Container extends BaseClient {
 
   /**
    * This container after executing the specified command inside it
@@ -185,7 +215,7 @@ class Container extends BaseApi {
   /**
    * Initialize this container from the base image published at the given address
    */
-  from(args: ContainerFromArgs ): Container {
+  from(args: {address: Scalars['String']} ): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -211,6 +241,22 @@ class Container extends BaseApi {
     return new Directory(this._queryTree)
   }
 
+  /**
+   * List of paths where a directory is mounted
+   */
+  async mounts(): Promise<Record<string, Array<Scalars['String']>>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'mounts',
+      }
+    ]
+
+    const response: Awaited<Record<string, Array<Scalars['String']>>> = await this._compute()
+
+    return response
+  }
+
 /**
  * Initialize this container from this DirectoryID
  */
@@ -234,6 +280,25 @@ class Container extends BaseApi {
       ...this._queryTree,
       {
       operation: 'withMountedDirectory',
+      args
+      }
+    ]
+    
+    return new Container(this._queryTree)
+  }
+
+  /**
+   * This container plus a cache volume mounted at the given path
+   */
+  withMountedCache(args: {
+    path: Scalars['String'];
+    cache: Scalars['CacheID'];
+    source?: Scalars['DirectoryID'];
+  }): Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'withMountedCache',
       args
       }
     ]
@@ -289,7 +354,7 @@ class Container extends BaseApi {
   /**
    * This container plus the given environment variable
    */
-  withEnvVariable(args: ContainerWithEnvVariableArgs): Container {
+  withEnvVariable(args: { name: Scalars['String'], value: Scalars['String']}): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -304,7 +369,7 @@ class Container extends BaseApi {
   /**
    * Retrieve a directory at the given path. Mounts are included.
    */
-  directory(args: ContainerDirectoryArgs): Container {
+  directory(args: {path: Scalars['String'];}): Directory {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -313,11 +378,11 @@ class Container extends BaseApi {
       }
     ]
 
-    return new Container(this._queryTree)
+    return new Directory(this._queryTree)
   }
 }
 
-class Directory extends BaseApi {
+class Directory extends BaseClient {
   
   /**
    * Retrieve a directory at the given path. Mounts are included.
@@ -353,7 +418,7 @@ class Directory extends BaseApi {
   }
 }
 
-class Contents extends BaseApi {
+class Contents extends BaseClient {
   /**
    * The contents of the file
    */
