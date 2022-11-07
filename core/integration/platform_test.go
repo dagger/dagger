@@ -27,13 +27,13 @@ var platformToFileArch = map[dagger.Platform]string{
 
 func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
 	defer c.Close()
 
 	startRegistry(ctx, c, t)
+	defer cancel()
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -75,7 +75,6 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 
 func TestPlatformCrossCompile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	c, err := dagger.Connect(ctx,
 		dagger.WithWorkdir("../.."),
@@ -85,6 +84,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	defer c.Close()
 
 	startRegistry(ctx, c, t)
+	defer cancel()
 
 	// cross compile the cloak binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
@@ -168,7 +168,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 }
 
 func TestPlatformCacheMounts(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -213,7 +213,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 }
 
 func TestPlatformInvalid(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -229,7 +229,7 @@ func TestPlatformInvalid(t *testing.T) {
 }
 
 func TestPlatformWindows(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

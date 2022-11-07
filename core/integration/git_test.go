@@ -8,7 +8,7 @@ import (
 )
 
 func TestGit(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	res := struct {
 		Git struct {

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"dagger.io/dagger/internal/engineconn"
 	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
@@ -81,6 +82,12 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		o.setClientOpt(cfg)
 	}
 
+	var err error
+	cfg.Workdir, cfg.ConfigPath, err = NormalizePaths(cfg.Workdir, cfg.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// default host
 	host := "embedded://"
 	// if one is found in `DAGGER_HOST` -- use it instead
@@ -98,7 +105,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	if err != nil {
 		return nil, err
 	}
-	c.session, err = openSession(ctx, dialer)
+	c.session, err = openSession(ctx, dialer, cfg.Workdir)
 	if err != nil {
 		return nil, fmt.Errorf("open sessionme: %w", err)
 	}
@@ -114,14 +121,26 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		q: querybuilder.Query(),
 		c: c.gql,
 	}
+	if cfg.ConfigPath != "" && !cfg.NoExtensions {
+		err = c.installExtensions(ctx, cfg.ConfigPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return c, nil
+}
+
+func (client *Client) installExtensions(ctx context.Context, configPath string) error {
+	_, err := client.Host().Workdir().LoadProject(configPath).Install(ctx)
+	return err
 }
 
 // Close the engine connection
 func (c *Client) Close() error {
 	return multierr.Append(
-		c.conn.Close(),
+		// NB(vito): close session first so gateway can be closed and logs can drain
 		c.session.Close(),
+		c.conn.Close(),
 	)
 }
 
@@ -187,4 +206,53 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 		return withErrorHelp(err)
 	}
 	return nil
+}
+
+const (
+	daggerJSONName = "dagger.json"
+)
+
+func NormalizePaths(workdir, configPath string) (string, string, error) {
+	if workdir == "" {
+		workdir = os.Getenv("DAGGER_WORKDIR")
+	}
+	if workdir == "" {
+		var err error
+		workdir, err = os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+	}
+	workdir, err := filepath.Abs(workdir)
+	if err != nil {
+		return "", "", err
+	}
+
+	if configPath == "" {
+		configPath = os.Getenv("DAGGER_CONFIG")
+	}
+	if configPath == "" {
+		configPath = filepath.Join(workdir, daggerJSONName)
+	}
+	if !filepath.IsAbs(configPath) {
+		var err error
+		configPath, err = filepath.Abs(configPath)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	_, err = os.Stat(configPath)
+	switch {
+	case err == nil:
+		configPath, err = filepath.Rel(workdir, configPath)
+		if err != nil {
+			return "", "", err
+		}
+	case os.IsNotExist(err):
+		configPath = ""
+	default:
+		return "", "", err
+	}
+
+	return workdir, configPath, nil
 }

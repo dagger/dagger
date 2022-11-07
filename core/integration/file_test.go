@@ -13,7 +13,7 @@ import (
 )
 
 func TestFile(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -43,7 +43,7 @@ func TestFile(t *testing.T) {
 }
 
 func TestDirectoryFile(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -77,7 +77,7 @@ func TestDirectoryFile(t *testing.T) {
 }
 
 func TestFileSize(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -107,7 +107,7 @@ func TestFileSize(t *testing.T) {
 }
 
 func TestFileExport(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx := context.Background()
 

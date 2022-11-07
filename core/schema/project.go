@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/dagger/dagger/core"
@@ -88,6 +89,7 @@ type loadProjectArgs struct {
 }
 
 func (s *projectSchema) loadProject(ctx *router.Context, parent *core.Directory, args loadProjectArgs) (*Project, error) {
+	log.Println("LOADING PROJECT", ctx.SessionID, args.ConfigPath)
 	gw, err := s.sessions.Gateway(ctx, ctx.SessionID)
 	if err != nil {
 		return nil, err

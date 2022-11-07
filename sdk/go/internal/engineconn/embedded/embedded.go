@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"context"
+	"log"
 	"net"
 	"net/url"
 
@@ -24,7 +25,7 @@ type Embedded struct {
 func New(_ *url.URL) (engineconn.EngineConn, error) {
 	return &Embedded{
 		stopCh: make(chan struct{}),
-		doneCh: make(chan error),
+		doneCh: make(chan error, 1),
 	}, nil
 }
 
@@ -33,13 +34,13 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (enginec
 	var dialer engineconn.Dialer
 
 	engineCfg := &engine.Config{
-		Workdir:      cfg.Workdir,
-		ConfigPath:   cfg.ConfigPath,
-		NoExtensions: cfg.NoExtensions,
-		LogOutput:    cfg.LogOutput,
+		Workdir:    cfg.Workdir,
+		ConfigPath: cfg.ConfigPath,
+		LogOutput:  cfg.LogOutput,
 	}
 	go func() {
 		defer close(c.doneCh)
+		log.Println("!!!!!!!!!!!! ENGINE.START")
 		err := engine.Start(ctx, engineCfg, func(ctx context.Context, r *router.Router) error {
 			dialer = func(_ context.Context) (net.Conn, error) {
 				// TODO: not efficient, but whatever
@@ -49,9 +50,11 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (enginec
 				return clientConn, nil
 			}
 			close(started)
+			log.Println("!!!!!!!!!!!! ENGINE.WAITING")
 			<-c.stopCh
 			return nil
 		})
+		log.Println("!!!!!!!!!!!! ENGINE.DONE")
 		c.doneCh <- err
 	}()
 
@@ -64,6 +67,7 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (enginec
 }
 
 func (c *Embedded) Close() error {
+	log.Println("!!!!!!!!!!!! ENGINE.CLOSING")
 	// Check if it's already closed
 	select {
 	case <-c.stopCh:

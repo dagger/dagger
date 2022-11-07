@@ -113,15 +113,19 @@ func (file *File) Export(
 		return err
 	}
 
+	if filepath.Clean(dest) == "." {
+		return fmt.Errorf("file export destination must be a file path, got '.'")
+	}
+
 	destDir := filepath.Dir(dest)
 	destFilename := filepath.Base(dest)
 
 	wc, err := sessions.TarSend(ctx, sessionID, destDir, true)
 	if err != nil {
-		return err
+		return fmt.Errorf("tar send: %w", err)
 	}
 
-	return sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+	err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
 		Type: bkclient.ExporterTar,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return wc, nil
@@ -144,6 +148,11 @@ func (file *File) Export(
 			Definition: def.ToPB(),
 		})
 	})
+	if err != nil {
+		return err
+	}
+
+	return wc.Close()
 }
 
 func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {

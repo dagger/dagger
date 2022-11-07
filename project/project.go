@@ -57,12 +57,12 @@ func Load(
 ) (*State, error) {
 	file, err := workdir.File(ctx, configPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("workdir.File: %w", err)
 	}
 
 	cfgBytes, err := file.Contents(ctx, gw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("file.Contents: %w", err)
 	}
 
 	s := &State{

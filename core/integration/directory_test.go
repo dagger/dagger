@@ -11,7 +11,7 @@ import (
 )
 
 func TestEmptyDirectory(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -33,7 +33,7 @@ func TestEmptyDirectory(t *testing.T) {
 }
 
 func TestDirectoryWithNewFile(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -59,7 +59,7 @@ func TestDirectoryWithNewFile(t *testing.T) {
 }
 
 func TestDirectoryEntries(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -86,7 +86,7 @@ func TestDirectoryEntries(t *testing.T) {
 }
 
 func TestDirectoryEntriesOfPath(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -113,7 +113,7 @@ func TestDirectoryEntriesOfPath(t *testing.T) {
 }
 
 func TestDirectoryDirectory(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -144,7 +144,7 @@ func TestDirectoryDirectory(t *testing.T) {
 }
 
 func TestDirectoryDirectoryWithNewFile(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	var res struct {
 		Directory struct {
@@ -181,7 +181,7 @@ func TestDirectoryDirectoryWithNewFile(t *testing.T) {
 }
 
 func TestDirectoryWithDirectory(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -215,7 +215,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 }
 
 func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -325,7 +325,7 @@ func TestDirectoryWithFile(t *testing.T) {
 }
 
 func TestDirectoryWithoutDirectory(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	dirID := newDirWithFiles(t,
 		"some-file", "some-content",
@@ -360,7 +360,7 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 }
 
 func TestDirectoryWithoutFile(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	dirID := newDirWithFiles(t,
 		"some-file", "some-content",
@@ -395,7 +395,7 @@ func TestDirectoryWithoutFile(t *testing.T) {
 }
 
 func TestDirectoryDiff(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	aID := newDirWithFile(t, "a-file", "a-content")
 	bID := newDirWithFile(t, "b-file", "b-content")
@@ -455,7 +455,7 @@ func TestDirectoryDiff(t *testing.T) {
 }
 
 func TestDirectoryExport(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx := context.Background()
 

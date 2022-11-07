@@ -947,7 +947,7 @@ func (container *Container) Export(
 		return err
 	}
 
-	return sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+	err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
 		Type: bkclient.ExporterOCI,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return wc, nil
@@ -955,6 +955,11 @@ func (container *Container) Export(
 	}, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
+	if err != nil {
+		return err
+	}
+
+	return wc.Close()
 }
 
 func (container *Container) export(

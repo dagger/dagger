@@ -2,11 +2,13 @@ package sessions
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"math"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,7 +43,9 @@ type Manager struct {
 	updateCondition *sync.Cond
 
 	gws  map[string]bkgw.Client
-	gwsL sync.RWMutex
+	gwsL sync.Mutex
+
+	mirrors sync.WaitGroup
 }
 
 type clientSession struct {
@@ -78,6 +82,10 @@ func NewManager(
 	}
 	sm.updateCondition = sync.NewCond(&sm.mu)
 	return sm
+}
+
+func (sm *Manager) Wait() {
+	sm.mirrors.Wait()
 }
 
 func (sm *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
@@ -129,6 +137,10 @@ func (sm *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWriter,
 }
 
 func (sm *Manager) client(ctx context.Context, id string, noWait bool) (*clientSession, error) {
+	if id == "" {
+		debug.PrintStack()
+		return nil, fmt.Errorf("no session id provided")
+	}
 	// session prefix is used to identify vertexes with different contexts so
 	// they would not collide, but for lookup we don't need the prefix
 	if p := strings.SplitN(id, ":", 2); len(p) == 2 && len(p[1]) > 0 {
@@ -242,11 +254,13 @@ func (manager *Manager) TarSend(ctx context.Context, id string, path string, unp
 		return nil, err
 	}
 
-	return &fileSendWriter{tarClient}, nil
+	return &fileSendWriter{client: tarClient}, nil
 }
 
 type fileSendWriter struct {
-	client filesend.FileSend_TarStreamClient
+	client   filesend.FileSend_TarStreamClient
+	closed   bool
+	closeErr error
 }
 
 func (w *fileSendWriter) Write(b []byte) (int, error) {
@@ -265,35 +279,36 @@ func (w *fileSendWriter) Write(b []byte) (int, error) {
 }
 
 func (w *fileSendWriter) Close() error {
-	_, err := w.client.CloseAndRecv()
-	return err
+	if w.closed {
+		return w.closeErr
+	}
+
+	w.closed = true
+	_, w.closeErr = w.client.CloseAndRecv()
+	return w.closeErr
 }
 
-func (manager *Manager) solveOpt(ctx context.Context, id string, secretStore *secret.Store) (bkclient.SolveOpt, error) {
+func (manager *Manager) solveOpt(ctx context.Context, id string, secretStore *secret.Store, caller *clientSession) bkclient.SolveOpt {
 	solveOpts := manager.solveOpts
-
-	caller, err := manager.client(ctx, id, false)
-	if err != nil {
-		return bkclient.SolveOpt{}, err
-	}
 
 	solveOpts.Session = append(solveOpts.Session,
 		secretsprovider.NewSecretProvider(secretStore),
 		clientProxy{caller},
 	)
 
-	return solveOpts, nil
+	return solveOpts
 }
 
 func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) error {
-	// TODO(vito): do we need to care about wg?
-	ch, _ := mirrorCh(manager.solveCh)
-
-	secretStore := secret.NewStore()
-	solveOpt, err := manager.solveOpt(ctx, id, secretStore)
+	caller, err := manager.client(ctx, id, false)
 	if err != nil {
 		return err
 	}
+
+	ch := manager.mirrorCh("export:" + id)
+
+	secretStore := secret.NewStore()
+	solveOpt := manager.solveOpt(ctx, id, secretStore, caller)
 
 	solveOpt.Exports = []bkclient.ExportEntry{ex}
 
@@ -308,32 +323,31 @@ func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.Expor
 		return fn(ctx, gw)
 	}, ch)
 
+	log.Println("BUILD RESULT", err)
 	return err
 }
 
 func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, error) {
+	caller, err := manager.client(ctx, id, false)
+	if err != nil {
+		return nil, err
+	}
+
 	// FIXME(vito): per-ID lock; this is a bit of a bottleneck
+	log.Println("LOCKING")
 	manager.gwsL.Lock()
 	defer manager.gwsL.Unlock()
+	defer log.Println("UNLOCKING")
 
 	gw, ok := manager.gws[id]
 	if ok {
 		return gw, nil
 	}
 
-	caller, err := manager.client(ctx, id, false)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO(vito): do we need to care about wg?
-	ch, _ := mirrorCh(manager.solveCh)
+	ch := manager.mirrorCh("gw:" + id)
 
 	secretStore := secret.NewStore()
-	solveOpt, err := manager.solveOpt(ctx, id, secretStore)
-	if err != nil {
-		return nil, err
-	}
+	solveOpt := manager.solveOpt(ctx, id, secretStore, caller)
 
 	gwCh := make(chan bkgw.Client, 1)
 	gwErrCh := make(chan error, 1)
@@ -354,12 +368,12 @@ func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, er
 			return nil, nil
 		}, ch)
 
+		gwErrCh <- gwErr
+
 		// clean up completed gateway
 		manager.gwsL.Lock()
 		delete(manager.gws, id)
 		manager.gwsL.Unlock()
-
-		gwErrCh <- gwErr
 	}()
 
 	select {
@@ -376,24 +390,24 @@ func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, er
 //
 // this is used to reflect Build/Solve progress in a longer-lived progress UI,
 // since they close the channel when they're done.
-func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
-	wg := new(sync.WaitGroup)
-
-	if dest == nil {
-		return nil, wg
+func (manager *Manager) mirrorCh(tag string) chan *bkclient.SolveStatus {
+	if manager.solveCh == nil {
+		return nil
 	}
 
-	mirrorCh := make(chan T)
+	mirrorCh := make(chan *bkclient.SolveStatus)
 
-	wg.Add(1)
+	log.Println("!!!!! MIRRORCH ADD", tag)
+	manager.mirrors.Add(1)
 	go func() {
-		defer wg.Done()
+		defer manager.mirrors.Done()
+		defer log.Println("!!!!! MIRRORCH DONE", tag)
 		for event := range mirrorCh {
-			dest <- event
+			manager.solveCh <- event
 		}
 	}()
 
-	return mirrorCh, wg
+	return mirrorCh
 }
 
 type clientProxy struct {

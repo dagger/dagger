@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"sort"
@@ -116,6 +117,7 @@ func (r *Router) Add(schema ExecutableSchema) error {
 	r.gqlHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		sid := req.URL.Query().Get("session")
+		log.Println("SETTING SID", sid)
 		ctx = context.WithValue(ctx, sessionIDKey{}, sid)
 		handler.New(&handler.Config{
 			Schema: s,

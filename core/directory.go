@@ -418,11 +418,6 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 	return payload.ToDirectory()
 }
 
-type SessionManager interface {
-	TarSend(ctx context.Context, id string, dest string, unpack bool) (io.WriteCloser, error)
-	Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) error
-}
-
 func (dir *Directory) Export(
 	ctx context.Context,
 	sessions SessionManager,
@@ -439,7 +434,7 @@ func (dir *Directory) Export(
 		return err
 	}
 
-	return sessions.Export(ctx, sessionID, bkclient.ExportEntry{
+	err = sessions.Export(ctx, sessionID, bkclient.ExportEntry{
 		Type: bkclient.ExporterTar,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return wc, nil
@@ -471,4 +466,9 @@ func (dir *Directory) Export(
 			Definition: defPB,
 		})
 	})
+	if err != nil {
+		return err
+	}
+
+	return wc.Close()
 }

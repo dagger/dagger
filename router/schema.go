@@ -84,6 +84,7 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 	return func(p graphql.ResolveParams) (any, error) {
 		sid, ok := p.Context.Value(sessionIDKey{}).(string)
 		if !ok {
+			return nil, fmt.Errorf("no session id?!?!")
 			sid = ""
 		}
 

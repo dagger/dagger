@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -35,12 +36,12 @@ type Session struct {
 	done chan struct{}
 }
 
-func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error) {
+func openSession(ctx context.Context, dialer engineconn.Dialer, wd string) (*Session, error) {
 	srv := grpc.NewServer()
 
 	filesync.NewFSSyncProvider(AnyDirSource{}).Register(srv)
 
-	filesend.NewReceiver().Register(srv)
+	filesend.NewReceiver(wd).Register(srv)
 
 	// TODO(vito): blocked on https://github.com/mwitkow/grpc-proxy/pull/62
 	// authprovider.NewDockerAuthProvider(os.Stderr).Register(srv)
@@ -61,6 +62,7 @@ func openSession(ctx context.Context, dialer engineconn.Dialer) (*Session, error
 	}
 
 	sid := ulid.Make().String()
+	log.Println("OPENING SESSION", sid)
 
 	req.Header.Set(headerSessionID, sid)
 	req.Header.Set(headerSessionName, "dagger")

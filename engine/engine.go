@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
@@ -23,15 +23,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	daggerJSONName = "dagger.json"
-)
-
 type Config struct {
-	Workdir    string
-	ConfigPath string
-	// If true, do not load project extensions
-	NoExtensions  bool
+	Workdir       string
+	ConfigPath    string
 	LogOutput     io.Writer
 	DisableHostRW bool
 
@@ -57,24 +51,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
-	startOpts.Workdir, startOpts.ConfigPath, err = NormalizePaths(startOpts.Workdir, startOpts.ConfigPath)
-	if err != nil {
-		return err
-	}
-
-	_, err = os.Stat(startOpts.ConfigPath)
-	switch {
-	case err == nil:
-		startOpts.ConfigPath, err = filepath.Rel(startOpts.Workdir, startOpts.ConfigPath)
-		if err != nil {
-			return err
-		}
-	case os.IsNotExist(err):
-		startOpts.ConfigPath = ""
-	default:
-		return err
-	}
-
 	socketProviders := MergedSocketProviders{}
 	var sshAuthSockID string
 	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {
@@ -90,7 +66,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			socketProviders,
-			// authprovider.NewDockerAuthProvider(startOpts.LogOutput),
 		},
 	}
 
@@ -104,7 +79,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		ch := make(chan *bkclient.SolveStatus)
 		startOpts.RawBuildkitStatus = ch
 
-		eg.Go(func() error {
+		go func() {
 			w := startOpts.LogOutput
 			if w == nil {
 				w = io.Discard
@@ -114,8 +89,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			for _, w := range warn {
 				fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
 			}
-			return err
-		})
+
+			if err != nil {
+				log.Println("DISPLAY", err)
+			}
+		}()
 	}
 
 	sm := sessions.NewManager(c, startOpts.RawBuildkitStatus, solveOpts)
@@ -124,6 +102,13 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	socketProviders[core.DaggerSockName] = project.NewAPIProxy(router)
 
 	eg.Go(func() error {
+		if startOpts.RawBuildkitStatus != nil {
+			defer func() {
+				sm.Wait()
+				close(startOpts.RawBuildkitStatus)
+			}()
+		}
+
 		coreAPI, err := schema.New(schema.InitializeArgs{
 			Router:        router,
 			SSHAuthSockID: sshAuthSockID,
@@ -143,17 +128,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			return err
 		}
 
-		if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-			_, err = installExtensions(
-				ctx,
-				router,
-				startOpts.ConfigPath,
-			)
-			if err != nil {
-				return err
-			}
-		}
-
 		if fn == nil {
 			return nil
 		}
@@ -162,38 +136,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	})
 
 	return eg.Wait()
-}
-
-func NormalizePaths(workdir, configPath string) (string, string, error) {
-	if workdir == "" {
-		workdir = os.Getenv("DAGGER_WORKDIR")
-	}
-	if workdir == "" {
-		var err error
-		workdir, err = os.Getwd()
-		if err != nil {
-			return "", "", err
-		}
-	}
-	workdir, err := filepath.Abs(workdir)
-	if err != nil {
-		return "", "", err
-	}
-
-	if configPath == "" {
-		configPath = os.Getenv("DAGGER_CONFIG")
-	}
-	if configPath == "" {
-		configPath = filepath.Join(workdir, daggerJSONName)
-	}
-	if !filepath.IsAbs(configPath) {
-		var err error
-		configPath, err = filepath.Abs(configPath)
-		if err != nil {
-			return "", "", err
-		}
-	}
-	return workdir, configPath, nil
 }
 
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
@@ -208,40 +150,6 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	}
 	defaultPlatform := platforms.DefaultSpec()
 	return &defaultPlatform, nil
-}
-
-func installExtensions(ctx context.Context, r *router.Router, configPath string) (*schema.Project, error) {
-	res := struct {
-		Core struct {
-			Directory struct {
-				LoadProject schema.Project
-			}
-		}
-	}{}
-
-	_, err := r.Do(ctx,
-		// FIXME:(sipsma) toggling install is extremely weird here, need better way
-		`
-			query LoadProject($configPath: String!) {
-				host {
-					workdir {
-						loadProject(configPath: $configPath) {
-							name
-							install
-						}
-					}
-				}
-			}`,
-		map[string]any{
-			"configPath": configPath,
-		},
-		&res,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &res.Core.Directory.LoadProject, nil
 }
 
 type AnyDirSource struct{}

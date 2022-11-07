@@ -116,11 +116,14 @@ func TestExtensionNetlify(t *testing.T) {
 }
 
 func TestExtensionYarn(t *testing.T) {
+	t.Skip("need to implement sessions in JS SDK")
+
 	ctx := context.Background()
 	c, err := dagger.Connect(
 		ctx,
 		dagger.WithWorkdir("../../"),
 		dagger.WithConfigPath("../../examples/yarn/dagger.json"),
+		dagger.WithLogOutput(os.Stderr),
 	)
 	require.NoError(t, err)
 	defer c.Close()

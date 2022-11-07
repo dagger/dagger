@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/tracing"
 	"github.com/spf13/cobra"
 )
@@ -17,13 +16,15 @@ var (
 	queryVarsInput []string
 
 	devServerPort int
-
 	disableHostRW bool
+
+	debugServerPort int
 )
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
+	rootCmd.PersistentFlags().IntVar(&debugServerPort, "debug-port", 0, "debug server port")
 	rootCmd.AddCommand(
 		doCmd,
 		devCmd,
@@ -68,9 +69,8 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use: "dagger",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		var err error
-		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
-		return err
+		setupDebugHandlers(fmt.Sprintf(":%d", debugServerPort))
+		return nil
 	},
 }
 
