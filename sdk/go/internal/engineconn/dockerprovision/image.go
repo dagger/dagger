@@ -108,6 +108,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		defer tmpbin.Close()
 		defer os.Remove(tmpbin.Name())
 
+		// #nosec
 		if output, err := exec.CommandContext(ctx,
 			"docker", "cp",
 			containerName+":"+containerHelperBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
