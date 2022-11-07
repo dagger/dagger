@@ -45,3 +45,15 @@ jobs:
         with:
           version: latest
           args: sdk:go:lint
+  sdk-python:
+    name: sdk / python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: sdk:python:lint

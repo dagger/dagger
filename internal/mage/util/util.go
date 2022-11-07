@@ -69,3 +69,12 @@ func GoBase(c *dagger.Client) *dagger.Container {
 		// run `go build` with all source
 		WithMountedDirectory("/app", repo)
 }
+
+// DaggerBinary returns a compiled dagger binary
+func DaggerBinary(c *dagger.Client) *dagger.File {
+	return GoBase(c).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "./cmd/cloak"},
+		}).
+		File("./bin/cloak")
+}

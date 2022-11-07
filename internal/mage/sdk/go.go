@@ -2,18 +2,16 @@ package sdk
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
-	"github.com/google/go-cmp/cmp"
 	"github.com/magefile/mage/mg"
 )
 
 const (
-	generatedSDKPath = "sdk/go/api.gen.go"
+	goGeneratedAPIPath = "sdk/go/api.gen.go"
 )
 
 var _ SDK = Go{}
@@ -39,31 +37,9 @@ func (t Go) Lint(ctx context.Context) error {
 		return err
 	}
 
-	// Lint generated code
-	// - Read currently generated code
-	// - Generate again
-	// - Compare
-	// - Restore original generated code.
-	original, err := os.ReadFile(generatedSDKPath)
-	if err != nil {
-		return err
-	}
-	defer os.WriteFile(generatedSDKPath, original, 0600)
-
-	if err := t.Generate(ctx); err != nil {
-		return err
-	}
-	new, err := os.ReadFile(generatedSDKPath)
-	if err != nil {
-		return err
-	}
-
-	diff := cmp.Diff(string(original), string(new))
-	if diff != "" {
-		return fmt.Errorf("generated api mismatch. please run `mage sdk:go:generate`:\n%s", diff)
-	}
-
-	return err
+	return lintGeneratedCode(goGeneratedAPIPath, func() error {
+		return t.Generate(ctx)
+	})
 }
 
 // Test tests the Go SDK
@@ -93,18 +69,16 @@ func (t Go) Generate(ctx context.Context) error {
 	defer c.Close()
 
 	generated, err := util.GoBase(c).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "/usr/local/bin", "-ldflags", "-s -w", "./cmd/cloak"},
-		}).
+		WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
 		WithWorkdir("sdk/go").
 		Exec(dagger.ContainerExecOpts{
 			Args:                          []string{"go", "generate", "-v", "./..."},
 			ExperimentalPrivilegedNesting: true,
 		}).
-		File(path.Base(generatedSDKPath)).
+		File(path.Base(goGeneratedAPIPath)).
 		Contents(ctx)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(generatedSDKPath, []byte(generated), 0600)
+	return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0600)
 }
