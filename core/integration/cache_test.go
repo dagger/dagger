@@ -9,7 +9,7 @@ import (
 )
 
 func TestCacheVolume(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	type creatVolumeRes struct {
 		CacheVolume struct {

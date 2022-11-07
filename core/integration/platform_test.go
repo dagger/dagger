@@ -168,7 +168,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 }
 
 func TestPlatformCacheMounts(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -213,7 +213,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 }
 
 func TestPlatformInvalid(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -229,7 +229,7 @@ func TestPlatformInvalid(t *testing.T) {
 }
 
 func TestPlatformWindows(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

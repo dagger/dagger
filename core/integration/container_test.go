@@ -17,7 +17,7 @@ import (
 )
 
 func TestContainerScratch(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -42,7 +42,7 @@ func TestContainerScratch(t *testing.T) {
 }
 
 func TestContainerFrom(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -172,7 +172,7 @@ CMD goenv
 }
 
 func TestContainerWithFS(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
@@ -220,7 +220,7 @@ func TestContainerWithFS(t *testing.T) {
 }
 
 func TestContainerExecExitCode(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -276,7 +276,7 @@ func TestContainerExecExitCode(t *testing.T) {
 }
 
 func TestContainerExecStdoutStderr(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -312,7 +312,7 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 }
 
 func TestContainerExecStdin(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -343,7 +343,7 @@ func TestContainerExecStdin(t *testing.T) {
 }
 
 func TestContainerExecRedirectStdoutStderr(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -407,7 +407,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 }
 
 func TestContainerNullStdoutStderr(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -439,7 +439,7 @@ func TestContainerNullStdoutStderr(t *testing.T) {
 }
 
 func TestContainerExecWithWorkdir(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -474,7 +474,7 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 }
 
 func TestContainerExecWithUser(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -587,7 +587,7 @@ func TestContainerExecWithUser(t *testing.T) {
 }
 
 func TestContainerExecWithEntrypoint(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -636,7 +636,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 }
 
 func TestContainerWithDefaultArgs(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -738,7 +738,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 }
 
 func TestContainerExecWithEnvVariable(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -773,7 +773,7 @@ func TestContainerExecWithEnvVariable(t *testing.T) {
 }
 
 func TestContainerVariables(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -814,7 +814,7 @@ func TestContainerVariables(t *testing.T) {
 }
 
 func TestContainerVariable(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -849,7 +849,7 @@ func TestContainerVariable(t *testing.T) {
 }
 
 func TestContainerWithoutVariable(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -893,7 +893,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 }
 
 func TestContainerEnvVariablesReplace(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -938,7 +938,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 }
 
 func TestContainerWorkdir(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -972,7 +972,7 @@ func TestContainerWorkdir(t *testing.T) {
 }
 
 func TestContainerWithWorkdir(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	res := struct {
 		Container struct {
@@ -1010,7 +1010,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 }
 
 func TestContainerWithMountedDirectory(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1083,7 +1083,7 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 }
 
 func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1151,7 +1151,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 }
 
 func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1259,7 +1259,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 }
 
 func TestContainerWithMountedFile(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1319,7 +1319,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 }
 
 func TestContainerWithMountedCache(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	cacheID := newCache(t)
 
@@ -1373,7 +1373,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 }
 
 func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1453,7 +1453,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 }
 
 func TestContainerWithMountedTemp(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	execRes := struct {
 		Container struct {
@@ -1487,7 +1487,7 @@ func TestContainerWithMountedTemp(t *testing.T) {
 }
 
 func TestContainerMountsWithoutMount(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1575,7 +1575,7 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 }
 
 func TestContainerReplacedMounts(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -1661,7 +1661,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 }
 
 func TestContainerDirectory(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1759,7 +1759,7 @@ func TestContainerDirectory(t *testing.T) {
 }
 
 func TestContainerDirectoryErrors(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1854,7 +1854,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 }
 
 func TestContainerDirectorySourcePath(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -1948,7 +1948,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 }
 
 func TestContainerFile(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	id := newDirWithFile(t, "some-file", "some-content-")
 
@@ -2024,7 +2024,7 @@ func TestContainerFile(t *testing.T) {
 }
 
 func TestContainerFileErrors(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	id := newDirWithFile(t, "some-file", "some-content")
 
@@ -2115,7 +2115,7 @@ func TestContainerFileErrors(t *testing.T) {
 }
 
 func TestContainerFSDirectory(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Container struct {
@@ -2175,7 +2175,7 @@ func TestContainerFSDirectory(t *testing.T) {
 }
 
 func TestContainerRelativePaths(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -2306,7 +2306,7 @@ func TestContainerRelativePaths(t *testing.T) {
 }
 
 func TestContainerMultiFrom(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dirRes := struct {
 		Directory struct {
@@ -2448,7 +2448,7 @@ func TestContainerMultipleMounts(t *testing.T) {
 }
 
 func TestContainerExport(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx := context.Background()
 

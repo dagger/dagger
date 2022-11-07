@@ -10,7 +10,7 @@ import (
 )
 
 func TestSecretEnvFromFile(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	secretID := newSecret(t, "some-content")
 
@@ -45,7 +45,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 }
 
 func TestSecretMountFromFile(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	secretID := newSecret(t, "some-content")
 
@@ -80,7 +80,7 @@ func TestSecretMountFromFile(t *testing.T) {
 }
 
 func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	secretID := newSecret(t, "some-secret")
 	fileID := newFile(t, "some-file", "some-content")

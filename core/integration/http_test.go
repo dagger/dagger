@@ -8,7 +8,7 @@ import (
 )
 
 func TestHTTP(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	var res struct {
 		HTTP struct {

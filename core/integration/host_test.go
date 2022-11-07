@@ -11,7 +11,7 @@ import (
 )
 
 func TestHostWorkdir(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0600)
@@ -49,7 +49,7 @@ func TestHostWorkdir(t *testing.T) {
 }
 
 func TestHostWorkdirExcludeInclude(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0600))
@@ -177,7 +177,7 @@ func TestHostDirectoryAbsolute(t *testing.T) {
 }
 
 func TestHostDirectoryExcludeInclude(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0600))
@@ -227,7 +227,7 @@ func TestHostDirectoryExcludeInclude(t *testing.T) {
 }
 
 func TestHostVariable(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
