@@ -9,8 +9,6 @@ import (
 
 type hostSchema struct {
 	*baseSchema
-
-	host *core.Host
 }
 
 var _ router.ExecutableSchema = &hostSchema{}
@@ -49,7 +47,12 @@ type hostWorkdirArgs struct {
 }
 
 func (s *hostSchema) workdir(ctx *router.Context, parent any, args hostWorkdirArgs) (*core.Directory, error) {
-	return s.host.Directory(ctx, ".", s.platform, args.CopyFilter)
+	host, err := s.sessions.Host(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return host.Directory(ctx, ".", s.platform, args.CopyFilter)
 }
 
 type hostVariableArgs struct {
@@ -77,5 +80,10 @@ type hostDirectoryArgs struct {
 }
 
 func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.Directory, error) {
-	return s.host.Directory(ctx, args.Path, s.platform, args.CopyFilter)
+	host, err := s.sessions.Host(ctx, ctx.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return host.Directory(ctx, args.Path, s.platform, args.CopyFilter)
 }

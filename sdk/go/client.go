@@ -136,23 +136,23 @@ func (client *Client) installExtensions(ctx context.Context, configPath string) 
 }
 
 // Close the engine connection
-func (c *Client) Close() error {
+func (client *Client) Close() error {
 	return multierr.Append(
 		// NB(vito): close session first so gateway can be closed and logs can drain
-		c.session.Close(),
-		c.conn.Close(),
+		client.session.Close(),
+		client.conn.Close(),
 	)
 }
 
 // Do sends a GraphQL request to the engine
-func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
+func (client *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 	r := graphql.Response{}
 	if resp != nil {
 		r.Data = resp.Data
 		r.Errors = resp.Errors
 		r.Extensions = resp.Extensions
 	}
-	return c.gql.MakeRequest(ctx, &graphql.Request{
+	return client.gql.MakeRequest(ctx, &graphql.Request{
 		Query:     req.Query,
 		Variables: req.Variables,
 		OpName:    req.OpName,

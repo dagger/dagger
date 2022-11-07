@@ -2,7 +2,6 @@ package unix
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/url"
 
@@ -26,12 +25,6 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 }
 
 func (c *TCP) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
-	if cfg.ConfigPath != "" {
-		return nil, errors.New("config path not supported on tcp hosts")
-	}
-	if cfg.NoExtensions {
-		return nil, errors.New("no extensions is not supported on tcp hosts")
-	}
 	return func(_ context.Context) (net.Conn, error) {
 		return net.Dial("tcp", c.addr)
 	}, nil

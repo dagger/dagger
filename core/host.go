@@ -6,9 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -81,25 +79,4 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	st := llb.Scratch().File(llb.Copy(llb.Local(absPath, localOpts...), "/", "/"))
 
 	return NewDirectory(ctx, st, "", platform)
-}
-
-func (host *Host) Export(
-	ctx context.Context,
-	export bkclient.ExportEntry,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
-	buildFn bkgw.BuildFunc,
-) error {
-	if host.DisableRW {
-		return ErrHostRWDisabled
-	}
-
-	ch, wg := mirrorCh(solveCh)
-	defer wg.Wait()
-
-	solveOpts.Exports = []bkclient.ExportEntry{export}
-
-	_, err := bkClient.Build(ctx, solveOpts, "", buildFn, ch)
-	return err
 }

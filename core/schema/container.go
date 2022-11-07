@@ -12,8 +12,6 @@ import (
 
 type containerSchema struct {
 	*baseSchema
-
-	host *core.Host
 }
 
 var _ router.ExecutableSchema = &containerSchema{}

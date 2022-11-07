@@ -7,8 +7,6 @@ import (
 
 type fileSchema struct {
 	*baseSchema
-
-	host *core.Host
 }
 
 var _ router.ExecutableSchema = &fileSchema{}

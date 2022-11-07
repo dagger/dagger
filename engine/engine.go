@@ -24,8 +24,6 @@ import (
 )
 
 type Config struct {
-	Workdir       string
-	ConfigPath    string
 	LogOutput     io.Writer
 	DisableHostRW bool
 
@@ -112,7 +110,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		coreAPI, err := schema.New(schema.InitializeArgs{
 			Router:        router,
 			SSHAuthSockID: sshAuthSockID,
-			Workdir:       startOpts.Workdir,
 			Sessions:      sm,
 			BKClient:      c,
 			SolveOpts:     solveOpts,

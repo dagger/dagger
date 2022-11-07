@@ -34,9 +34,7 @@ func (c *Embedded) Connect(ctx context.Context, cfg *engineconn.Config) (enginec
 	var dialer engineconn.Dialer
 
 	engineCfg := &engine.Config{
-		Workdir:    cfg.Workdir,
-		ConfigPath: cfg.ConfigPath,
-		LogOutput:  cfg.LogOutput,
+		LogOutput: cfg.LogOutput,
 	}
 	go func() {
 		defer close(c.doneCh)

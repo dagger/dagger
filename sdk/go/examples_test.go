@@ -3,6 +3,8 @@ package dagger_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -198,21 +200,32 @@ func ExampleDirectory() {
 }
 
 func ExampleHost_Workdir() {
+	wd, err := os.MkdirTemp("", "dagger-example-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(wd)
+
+	err = os.WriteFile(filepath.Join(wd, "hello.txt"), []byte("Hello, world!"), 0644)
+	if err != nil {
+		panic(err)
+	}
+
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithWorkdir("."))
+	client, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		panic(err)
 	}
 	defer client.Close()
 
-	readme, err := client.Host().Workdir().File("README.md").Contents(ctx)
+	contents, err := client.Host().Workdir().File("hello.txt").Contents(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Printf("%v\n", strings.Contains(readme, "Dagger"))
+	fmt.Println(contents)
 
-	// Output: true
+	// Output: Hello, world!
 }
 
 // func ExampleHost_EnvVariable() {

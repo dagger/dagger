@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/sessions"
@@ -12,7 +11,6 @@ import (
 type InitializeArgs struct {
 	Router        *router.Router
 	SSHAuthSockID string
-	Workdir       string
 	Sessions      *sessions.Manager
 	BKClient      *bkclient.Client
 	SolveOpts     bkclient.SolveOpt
@@ -31,15 +29,14 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		platform:      params.Platform,
 		sshAuthSockID: params.SSHAuthSockID,
 	}
-	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
-		&directorySchema{base, host},
-		&fileSchema{base, host},
+		&directorySchema{base},
+		&fileSchema{base},
 		&gitSchema{base},
-		&containerSchema{base, host},
+		&containerSchema{base},
 		&cacheSchema{base},
 		&secretSchema{base},
-		&hostSchema{base, host},
+		&hostSchema{base},
 		&projectSchema{
 			baseSchema:    base,
 			projectStates: make(map[string]*project.State),

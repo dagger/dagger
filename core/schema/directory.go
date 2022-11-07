@@ -7,8 +7,6 @@ import (
 
 type directorySchema struct {
 	*baseSchema
-
-	host *core.Host
 }
 
 var _ router.ExecutableSchema = &directorySchema{}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"dagger.io/dagger/filesend"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -27,10 +28,11 @@ import (
 )
 
 const (
-	headerSessionID        = "X-Docker-Expose-Session-Uuid"
-	headerSessionName      = "X-Docker-Expose-Session-Name"
-	headerSessionSharedKey = "X-Docker-Expose-Session-Sharedkey"
-	headerSessionMethod    = "X-Docker-Expose-Session-Grpc-Method"
+	headerSessionID        = "X-Dagger-Session-Uuid"
+	headerSessionName      = "X-Dagger-Session-Name"
+	headerSessionSharedKey = "X-Dagger-Session-Sharedkey"
+	headerSessionMethod    = "X-Dagger-Session-Grpc-Method"
+	headerSessionWorkdir   = "X-Dagger-Session-Workdir"
 )
 
 type Manager struct {
@@ -55,6 +57,7 @@ type clientSession struct {
 	sharedKey string
 	cc        *grpc.ClientConn
 	methods   []string
+	host      *core.Host
 	done      chan struct{}
 }
 
@@ -195,6 +198,7 @@ func (manager *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[
 	id := h.Get(headerSessionID)
 	name := h.Get(headerSessionName)
 	sharedKey := h.Get(headerSessionSharedKey)
+	wd := h.Get(headerSessionWorkdir)
 
 	ctx, cc, err := grpcClientConn(ctx, conn)
 	if err != nil {
@@ -209,6 +213,7 @@ func (manager *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[
 		sharedKey: sharedKey,
 		cc:        cc,
 		methods:   opts[headerSessionMethod],
+		host:      core.NewHost(wd, false), // TODO: do we still need disabling?
 		done:      make(chan struct{}),
 	}
 
@@ -227,6 +232,15 @@ func (manager *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[
 	close(c.done)
 
 	return nil
+}
+
+func (manager *Manager) Host(ctx context.Context, id string) (*core.Host, error) {
+	caller, err := manager.client(ctx, id, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return caller.host, nil
 }
 
 func (manager *Manager) TarSend(ctx context.Context, id string, path string, unpack bool) (io.WriteCloser, error) {

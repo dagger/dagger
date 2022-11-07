@@ -20,8 +20,6 @@ var devCmd = &cobra.Command{
 
 func Dev(cmd *cobra.Command, args []string) {
 	startOpts := &engine.Config{
-		Workdir:       workdir,
-		ConfigPath:    configPath,
 		LogOutput:     os.Stderr,
 		DisableHostRW: disableHostRW,
 	}

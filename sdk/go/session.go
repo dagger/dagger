@@ -23,10 +23,11 @@ import (
 )
 
 const (
-	headerSessionID        = "X-Docker-Expose-Session-Uuid"
-	headerSessionName      = "X-Docker-Expose-Session-Name"
-	headerSessionSharedKey = "X-Docker-Expose-Session-Sharedkey"
-	headerSessionMethod    = "X-Docker-Expose-Session-Grpc-Method"
+	headerSessionID        = "X-Dagger-Session-Uuid"
+	headerSessionName      = "X-Dagger-Session-Name"
+	headerSessionSharedKey = "X-Dagger-Session-Sharedkey"
+	headerSessionMethod    = "X-Dagger-Session-Grpc-Method"
+	headerSessionWorkdir   = "X-Dagger-Session-Workdir"
 )
 
 type Session struct {
@@ -67,6 +68,7 @@ func openSession(ctx context.Context, dialer engineconn.Dialer, wd string) (*Ses
 	req.Header.Set(headerSessionID, sid)
 	req.Header.Set(headerSessionName, "dagger")
 	req.Header.Set(headerSessionSharedKey, "")
+	req.Header.Set(headerSessionWorkdir, wd)
 
 	for name, svc := range srv.GetServiceInfo() {
 		for _, method := range svc.Methods {
@@ -115,7 +117,7 @@ func hijackConn(ctx context.Context, req *http.Request, proto string, dialer eng
 		tcpConn.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	clientconn := httputil.NewClientConn(conn, nil)
+	clientconn := httputil.NewClientConn(conn, nil) // nolint: staticcheck
 	defer clientconn.Close()
 
 	// Server hijacks the connection, error 'connection closed' expected
@@ -147,23 +149,6 @@ func hijackConn(ctx context.Context, req *http.Request, proto string, dialer eng
 	}
 
 	return c, nil
-}
-
-type singleConnListener struct {
-	conn net.Conn
-}
-
-func (l singleConnListener) Accept() (net.Conn, error) {
-	return l.conn, nil
-}
-
-func (l singleConnListener) Close() error {
-	// probably makes more sense to just close wherever the conn is connected
-	return nil
-}
-
-func (l singleConnListener) Addr() net.Addr {
-	return l.conn.LocalAddr()
 }
 
 // hijackedConn wraps a net.Conn and is returned by setupHijackConn in the case
