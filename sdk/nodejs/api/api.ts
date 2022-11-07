@@ -18,7 +18,7 @@ export type QueryTree = {
   args?: Record<string, any>
 }
 
-export class BaseClient {
+class BaseClient {
   protected _queryTree:  QueryTree[]
   
 
