@@ -922,10 +922,11 @@ class Client(Root):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def git(self, url: str) -> "GitRepository":
+    def git(self, url: str, keep_git_dir: bool | None = None) -> "GitRepository":
         """Query a git repository"""
         _args = [
             Arg("url", url),
+            Arg("keepGitDir", keep_git_dir, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
