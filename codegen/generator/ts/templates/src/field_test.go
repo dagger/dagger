@@ -59,7 +59,18 @@ func TestField(t *testing.T) {
 
 	t.Run("async id() : Promise<Record<string, DirectoryID>>", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve")
-		want := `async id() : Promise<Record<string, DirectoryID>> {`
+		want := `async id() : Promise<Record<string, DirectoryID>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'id'
+      }
+    ]
+
+    const response: new Promise<Record<string, Scalars('DirectoryID')>> = await this._compute()
+
+    return response
+  }`
 		object := objectInit(t, directoryTypeJSON)
 
 		var b bytes.Buffer

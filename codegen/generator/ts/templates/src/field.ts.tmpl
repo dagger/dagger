@@ -11,6 +11,22 @@
 			{{- template "return_solve" . -}}
 		{{- end -}}
 		{{- "" }} {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: '{{ .Name }}'
+		{{- if .Args }},
+      args
+		{{- end }}
+      }
+    ]
+	{{- if .TypeRef }}
+
+    const response: new Promise<Record<string, Scalars('{{ .TypeRef | FormatOutputType }}')>> = await this._compute()
+
+    return response
+  }
+	{{- end }}
 	{{- else -}}
 		{{- with .TypeRef }}
 			{{- template "return" . -}}
