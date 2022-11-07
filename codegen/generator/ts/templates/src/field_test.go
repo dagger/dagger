@@ -13,7 +13,16 @@ func TestField(t *testing.T) {
 	const templateType = "field"
 	t.Run("myField()", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `myField()`
+		want := `myField() {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'myField',
+      args
+      }
+    ]
+  }`
+
 		field := introspection.Field{
 			Name: "myField",
 		}
@@ -28,7 +37,17 @@ func TestField(t *testing.T) {
 
 	t.Run("exec(args: ContainerExecArgs) : Container", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `exec(args: ContainerExecArgs) : Container`
+		want := `exec(args: ContainerExecArgs) : Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'exec',
+      args
+      }
+    ]
+
+    return new Container(this._queryTree)
+  }`
 		object := objectInit(t, containerExecArgsJSON)
 
 		var b bytes.Buffer
@@ -40,7 +59,7 @@ func TestField(t *testing.T) {
 
 	t.Run("async id() : Promise<Record<string, DirectoryID>>", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve")
-		want := `async id() : Promise<Record<string, DirectoryID>>`
+		want := `async id() : Promise<Record<string, DirectoryID>> {`
 		object := objectInit(t, directoryTypeJSON)
 
 		var b bytes.Buffer

@@ -27,11 +27,17 @@ func TestObject(t *testing.T) {
 var expectedFunc = `
 class Container extends BaseApi {
 
-  get getQueryTree() {
-    return this._queryTree;
-  }
+  exec(args: ContainerExecArgs) : Container {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'exec',
+      args
+      }
+    ]
 
-  exec(args: ContainerExecArgs) : Container
+    return new Container(this._queryTree)
+  }
 }
 `
 

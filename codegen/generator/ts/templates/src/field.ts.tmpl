@@ -10,9 +10,23 @@
 		{{- with .TypeRef }}
 			{{- template "return_solve" . -}}
 		{{- end -}}
+		{{- "" }} {
 	{{- else -}}
 		{{- with .TypeRef }}
 			{{- template "return" . -}}
 		{{- end -}}
+		{{- "" }} {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: '{{ .Name }}',
+      args
+      }
+    ]
+	{{- if .TypeRef }}
+
+    return new {{ .TypeRef | FormatOutputType }}(this._queryTree)
+	{{- end }}
+  }
 	{{- end -}}
 {{ end }}

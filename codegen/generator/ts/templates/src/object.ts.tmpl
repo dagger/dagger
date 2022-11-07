@@ -6,10 +6,6 @@
 	{{- template "comment" $commentLines -}}
 {{- end -}}
 class {{ .Name | FormatName }} extends BaseApi {
-
-  get getQueryTree() {
-    return this._queryTree;
-  }
 {{ range $field := .Fields }}
   {{ template "field" . }}
 {{ end -}}
