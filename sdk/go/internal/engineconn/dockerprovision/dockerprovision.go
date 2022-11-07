@@ -26,8 +26,10 @@ func init() {
 }
 
 const (
-	// trim image digests to 16 characters to make output more readable
-	digestLen = 16
+	// trim image digests to 16 characters to makeoutput more readable
+	digestLen           = 16
+	containerNamePrefix = "dagger-engine-"
+	helperBinPrefix     = "dagger-sdk-helper-"
 )
 
 var _ engineconn.EngineConn = &DockerProvision{}
@@ -44,8 +46,6 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 }
 
 func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
-	// TODO: also support using a cloak bin already in $PATH or a user-specified path, and a dev mode version where it's always thrown away, etc.
-
 	// TODO: does xdg work on Windows?
 	cacheDir := filepath.Join(xdg.CacheHome, "dagger")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
@@ -56,20 +56,19 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 	// our other SDKs don't have access to that, so this is simpler to
 	// replicate and keep consistent.
 	var id string
-	var isPinned bool
-	if _, dgst, ok := strings.Cut(c.imageRef, "@sha256:"); ok {
-		if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
-			return nil, errors.Wrap(err, "invalid digest")
-		}
-		id = dgst[:digestLen]
-		isPinned = true
-	} else {
-		// still hash it because chars like / are not allowed in filenames
-		id = digest.FromString(c.imageRef).Encoded()[:digestLen]
+	_, dgst, ok := strings.Cut(c.imageRef, "@sha256:")
+	if !ok {
+		return nil, errors.Errorf("invalid image reference %q", c.imageRef)
 	}
+	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
+		return nil, errors.Wrap(err, "invalid digest")
+	}
+	id = dgst
+	id = id[:digestLen]
 
-	helperBinPath := filepath.Join(cacheDir, "dagger-sdk-helper-"+id)
-	containerName := "dagger-engine-" + id
+	helperBinName := helperBinPrefix + id
+	containerName := containerNamePrefix + id
+	helperBinPath := filepath.Join(cacheDir, helperBinName)
 
 	if output, err := exec.CommandContext(ctx,
 		"docker", "run",
@@ -92,7 +91,7 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 		"docker", "ps",
 		"-a",
 		"--no-trunc",
-		"--filter", "name=^/dagger-engine",
+		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
 	).CombinedOutput(); err != nil {
 		// TODO: should just be debug log, but that concept doesn't exist yet
@@ -115,7 +114,7 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 	}
 
 	if _, err := os.Stat(helperBinPath); os.IsNotExist(err) {
-		tmpbin, err := os.CreateTemp(cacheDir, "dagger-sdk-helper")
+		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+helperBinName)
 		if err != nil {
 			return nil, err
 		}
@@ -139,18 +138,9 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 		}
 
 		// TODO: verify checksum?
-
-		if isPinned {
-			// If we're running against a pinned SHA, we want to keep this in the cache.
-			// Rename succeeds even if the file already exists and is being executed.
-			if err := os.Rename(tmpbin.Name(), helperBinPath); err != nil {
-				return nil, err
-			}
-		} else {
-			// Otherwise, we can unlink it once the helper has started running, which
-			// results in it being cleared from the filesystem once the helper exits.
-			helperBinPath = tmpbin.Name()
-			defer os.Remove(tmpbin.Name())
+		// Cache the bin for future runs.
+		if err := os.Rename(tmpbin.Name(), helperBinPath); err != nil {
+			return nil, err
 		}
 	} else if err != nil {
 		return nil, err
@@ -161,20 +151,20 @@ func (c *DockerProvision) Connect(ctx context.Context, cfg *engineconn.Config) (
 		return nil, fmt.Errorf("failed to list cache dir: %w", err)
 	}
 	for _, entry := range entries {
-		if entry.Name() == "dagger-sdk-helper-"+id {
+		if entry.Name() == helperBinName {
 			continue
 		}
-		if strings.HasPrefix(entry.Name(), "dagger-sdk-helper-") {
+		if strings.HasPrefix(entry.Name(), helperBinPrefix) {
 			if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
 				return nil, fmt.Errorf("failed to remove old helper bin: %w", err)
 			}
 		}
 	}
 
-	buildkitHost := "docker-container://" + containerName
+	remote := "docker-container://" + containerName
 
 	args := []string{
-		"--remote", buildkitHost,
+		"--remote", remote,
 	}
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)

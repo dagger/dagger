@@ -16,6 +16,13 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
+const (
+	// TODO: need to update this to official image once pushed
+	engineImageRef = "docker.io/eriksipsma/dagger-test:bootstrap@sha256:e17af5484d1ec7ede039be9791a517ccd68ec731a24b8a7350597f8a9bfbb5f2"
+
+	defaultHost = "docker-provision://" + engineImageRef
+)
+
 // Client is the Dagger Engine Client
 type Client struct {
 	Query
@@ -77,8 +84,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		o.setClientOpt(cfg)
 	}
 
-	// default host
-	host := "embedded://"
+	host := defaultHost
 	// if one is found in `DAGGER_HOST` -- use it instead
 	if h := os.Getenv("DAGGER_HOST"); h != "" {
 		host = h

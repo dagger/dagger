@@ -53,9 +53,9 @@ func (t Engine) Lint(ctx context.Context) error {
 const (
 	sdkHelper      = "dagger-sdk-helper"
 	buildkitRepo   = "github.com/moby/buildkit"
-	buildkitBranch = "master"
+	buildkitBranch = "master" // TODO: go back to the one matching engine dep
 	// TODO: placeholder until real one exists
-	engineImageRef = "localhost:5000/dagger-engine:latest"
+	engineImageRef = "eriksipsma/dagger-test:bootstrap"
 )
 
 func (t Engine) Release(ctx context.Context) error {
