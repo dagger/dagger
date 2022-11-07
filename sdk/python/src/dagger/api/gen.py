@@ -160,7 +160,9 @@ class Container(Type):
         _ctx = self._select("exitCode", _args)
         return await _ctx.execute(int | None)
 
-    async def export(self, path: str, platform_variants: list[ContainerID] | None = None) -> bool:
+    async def export(
+        self, path: str, platform_variants: list[ContainerID] | None = None
+    ) -> bool:
         """Write the container as an OCI tarball to the destination file path on the host
 
         Returns
@@ -241,7 +243,9 @@ class Container(Type):
         _ctx = self._select("platform", _args)
         return await _ctx.execute(Platform)
 
-    async def publish(self, address: str, platform_variants: list[ContainerID] | None = None) -> str:
+    async def publish(
+        self, address: str, platform_variants: list[ContainerID] | None = None
+    ) -> str:
         """Publish this container as a new image, returning a fully qualified ref
 
         Returns
@@ -319,7 +323,9 @@ class Container(Type):
         _ctx = self._select("withFS", _args)
         return Container(_ctx)
 
-    def with_mounted_cache(self, path: str, cache: CacheID, source: DirectoryID | None = None) -> "Container":
+    def with_mounted_cache(
+        self, path: str, cache: CacheID, source: DirectoryID | None = None
+    ) -> "Container":
         """This container plus a cache volume mounted at the given path"""
         _args = [
             Arg("path", path),
@@ -502,7 +508,11 @@ class Directory(Type):
         return Project(_ctx)
 
     def with_directory(
-        self, path: str, directory: DirectoryID, exclude: list[str] | None = None, include: list[str] | None = None
+        self,
+        path: str,
+        directory: DirectoryID,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
     ) -> "Directory":
         """This directory plus a directory written at the given path"""
         _args = [
@@ -734,7 +744,12 @@ class GitRepository(Type):
 class Host(Type):
     """Information about the host execution environment"""
 
-    def directory(self, path: str, exclude: list[str] | None = None, include: list[str] | None = None) -> "Directory":
+    def directory(
+        self,
+        path: str,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+    ) -> "Directory":
         """Access a directory on the host"""
         _args = [
             Arg("path", path),
@@ -752,7 +767,9 @@ class Host(Type):
         _ctx = self._select("envVariable", _args)
         return HostVariable(_ctx)
 
-    def workdir(self, exclude: list[str] | None = None, include: list[str] | None = None) -> "Directory":
+    def workdir(
+        self, exclude: list[str] | None = None, include: list[str] | None = None
+    ) -> "Directory":
         """The current working directory on the host"""
         _args = [
             Arg("exclude", exclude, None),
@@ -862,7 +879,9 @@ class Client(Root):
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
 
-    def container(self, id: ContainerID | None = None, platform: Platform | None = None) -> "Container":
+    def container(
+        self, id: ContainerID | None = None, platform: Platform | None = None
+    ) -> "Container":
         """Load a container from ID.
         Null ID returns an empty container (scratch).
         Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
