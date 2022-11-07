@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -64,7 +63,7 @@ const (
 func engineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
 	buildkitRepo := c.Git(buildkitRepo).Branch(buildkitBranch).Tree()
 
-	var platformVariants []*dagger.Container
+	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
 		buildkitBase := c.Container(dagger.ContainerOpts{
 			Platform: dagger.Platform("linux/" + arch),
@@ -91,7 +90,7 @@ func engineContainer(c *dagger.Client, arches, oses []string) []*dagger.Containe
 	return platformVariants
 }
 
-func (t Engine) Release(ctx context.Context) error {
+func (t Engine) Publish(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -130,6 +129,7 @@ func localEngine(ctx context.Context, c *dagger.Client) (string, error) {
 	volumeName := "test-dagger-engine"
 	imageName := "localhost/test-dagger-engine:latest"
 
+	// #nosec
 	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tmpfile.Name())
 	output, err := loadCmd.CombinedOutput()
 	if err != nil {
@@ -173,7 +173,7 @@ func localEngine(ctx context.Context, c *dagger.Client) (string, error) {
 	return containerName, nil
 }
 
-func (t Engine) StartLocal(ctx context.Context) error {
+func (t Engine) Dev(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -201,14 +201,7 @@ func (t Engine) Test(ctx context.Context) error {
 		return err
 	}
 
-	// TODO: run tests inside dagger?
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.CommandContext(ctx, "go", "test", "-v", "-count=1", filepath.Join(cwd, "core/integration"))
+	cmd := exec.CommandContext(ctx, "go", "test", "-v", "-count=1", "./...")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "DAGGER_HOST=docker-container://"+containerName)
