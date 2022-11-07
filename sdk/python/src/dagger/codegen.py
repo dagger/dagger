@@ -83,7 +83,7 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
 
         from typing import NewType
 
-        from dagger.api.base import Arg, Result, Type
+        from dagger.api.base import Arg, Root, Type
 
         """
     )
@@ -274,11 +274,10 @@ class _ObjectField:
 
     def func_signature(self) -> str:
         params = ", ".join(chain(("self",), (a.as_param() for a in self.args)))
-        return_type = f"Result[{self.type}]" if self.is_leaf else f'"{self.type}"'
-        sig = f"def {self.name}({params}) -> {return_type}"
+        sig = f"def {self.name}({params})"
         if self.is_leaf:
-            return f"async {sig}"
-        return sig
+            return f"async {sig} -> {self.type}"
+        return f'{sig} -> "{self.type}"'
 
     @joiner
     def func_body(self) -> str:
@@ -391,6 +390,8 @@ class ObjectHandler(Handler[_O], Generic[_O]):
         ...
 
     def render_head(self, t: _O) -> str:
+        if t.name == "Query":
+            return "class Client(Root):"
         return f"class {t.name}(Type):"
 
     def render_body(self, t: _O) -> str:

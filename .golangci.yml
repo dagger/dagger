@@ -7,16 +7,15 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    - deadcode
     - depguard
     - dogsled
     - dupl
+    - exportloopref
     - goconst
     - gocritic
     - gocyclo
     - gofmt
     - goimports
-    - revive
     - goprintffuncname
     - gosec
     - gosimple
@@ -25,14 +24,13 @@ linters:
     - misspell
     - nakedret
     - prealloc
+    - revive
     - rowserrcheck
-    - exportloopref
     - staticcheck
-    - structcheck
     - stylecheck
     - typecheck
     - unconvert
     - unparam
     - unused
-    - varcheck
+    - unused
     - whitespace

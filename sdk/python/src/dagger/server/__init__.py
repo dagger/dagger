@@ -55,7 +55,9 @@ class Server:
         field = self.schema.get_field_for_type(field_name, type_name)
         if field is None:
             # FIXME: use proper error class
-            raise RuntimeError(f"Can't find field `{field_name}` for type `{type_name}`")
+            raise RuntimeError(
+                f"Can't find field `{field_name}` for type `{type_name}`"
+            )
         resolver: Callable = self.schema.schema_converter.from_resolver(field)
         origin = cast(Callable, field.origin)
         parent = origin(**inputs.parent) if inputs.parent else origin()

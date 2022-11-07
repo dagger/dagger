@@ -34,6 +34,8 @@ type directoryIDPayload struct {
 //
 // NB(vito): Ideally this would not be exported, but it's currently needed for
 // the project/ package. I left the return type private as a compromise.
+//
+//nolint:revive
 func (id DirectoryID) Decode() (*directoryIDPayload, error) {
 	if id == "" {
 		return &directoryIDPayload{}, nil

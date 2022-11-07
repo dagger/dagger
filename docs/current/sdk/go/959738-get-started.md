@@ -20,7 +20,7 @@ This tutorial assumes that:
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 :::note
-This tutorial creates a Go CI tool using the Dagger Go SDK. It uses this tool to build an [example Go application from GitHub](https://github.com/kpenfound/greetings-api.git). If you already have a Go application on GitHub, you can use your own application and repository instead.
+This tutorial creates a Go CI tool using the Dagger Go SDK. It uses this tool to build the Go application in the current directory. The binary from this guide can be used to build any Go project.
 :::
 
 ## Step 1: Create a Go module for the tool
@@ -36,7 +36,7 @@ go mod init multibuild
 ## Step 2: Create a Dagger client in Go
 
 :::note
-If you would prefer to use the final `main.go` file right away, it can be found in [Step 6](#step-6-run-builds-in-parallel)
+If you would prefer to use the final `main.go` file right away, it can be found in [Step 5](#step-5-create-a-multi-build-pipeline)
 :::
 
 Create a new file named `main.go` and add the following code to it.
@@ -46,8 +46,7 @@ Create a new file named `main.go` and add the following code to it.
 
 This Go CI tool stub imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument to the tool and `build()`, which defines the pipeline operations.
 
-- The `main()` function accepts a Git repository URL as a command line parameter. This repository should contain a Go application for the tool to build.
-- The `build()` function creates a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect). This client provides an interface for executing commands against the Dagger engine. This function is sparse to begin with; it will be improved in subsequent steps.
+The `build()` function creates a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect). This client provides an interface for executing commands against the Dagger engine. This function is sparse to begin with; it will be improved in subsequent steps.
 
 ## Step 3: Add the Dagger Go SDK to the module
 
@@ -56,19 +55,18 @@ This Go CI tool stub imports the Dagger SDK and defines two functions: `main()`,
 Try the Go CI tool by executing the commands below:
 
 ```shell
-go build
-./multibuild https://github.com/kpenfound/greetings-api.git
+go run main.go
 ```
 
 The tool outputs the string below, although it isn't actually building anything yet.
 
 ```shell
-Building https://github.com/kpenfound/greetings-api.git
+Building with Dagger
 ```
 
 ## Step 4: Create a single-build pipeline
 
-Now that the basic structure of the Go CI tool is defined and functional, the next step is to flesh out its `build()` function to actually build the Go application from the source repository.
+Now that the basic structure of the Go CI tool is defined and functional, the next step is to flesh out its `build()` function to actually build the Go application.
 
 Replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
@@ -78,7 +76,7 @@ Replace the `main.go` file from the previous step with the version below (highli
 The revised `build()` function is the main workhorse here, so let's step through it in detail.
 
 - It begins by creating a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect), as before.
-- It uses the client's [`Git()`](https://pkg.go.dev/dagger.io/dagger#Query.Git) method to obtain a reference to the target repository. This method returns a `GitRepository` struct. The struct's [`Branch()`](https://pkg.go.dev/dagger.io/dagger#GitRepository.Branch) method provides details on a specific branch (here, the `main` branch) and the [`Tree()`](https://pkg.go.dev/dagger.io/dagger#GitRef.Tree) method returns the directory of the branch. This reference is stored in the `src` variable.
+- It uses the client's [`Host().Workdir()`](https://pkg.go.dev/dagger.io/dagger#Host.Workdir) method to obtain a reference to the current directory on the host. This method returns a `Directory` struct. This reference is stored in the `src` variable.
 - It initializes a new container from a base image with the [`Container().From()`](https://pkg.go.dev/dagger.io/dagger#Container.From) method and returns a new `Container` struct. In this case, the base image is the `golang:latest` image.
 - It mounts the filesystem of the repository branch in the container using the [`WithMountedDirectory()`](https://pkg.go.dev/dagger.io/dagger#Container.WithMountedDirectory) method of the `Container`.
   - The first argument is the target path in the container (here, `/src`).
@@ -91,18 +89,17 @@ The revised `build()` function is the main workhorse here, so let's step through
 Try the tool by executing the commands below:
 
 ```shell
-go build
-./multibuild https://github.com/kpenfound/greetings-api.git
+go run main.go
 ```
 
-The Go CI tool clones the Git repository, builds the application and writes the build result to `build/` on the host.
+The Go CI tool builds the current Go project and writes the build result to `build/` on the host.
 
 Use the `tree` command to see the build artifact on the host, as shown below:
 
 ```shell
 tree build
 build
-└── greetings-api
+└── multibuild
 ```
 
 ## Step 5: Create a multi-build pipeline
@@ -123,11 +120,10 @@ This revision of the Go CI tool does much the same as before, except that it now
 Try the Go CI tool by executing the commands below:
 
 ```shell
-go build
-./multibuild https://github.com/kpenfound/greetings-api.git
+go run main.go
 ```
 
-The Go CI tool clones the Git repository, builds the application for each OS/architecture combination and writes the build results to the host. You will see the build process run four times, once for each combination.
+The Go CI tool builds the application for each OS/architecture combination and writes the build results to the host. You will see the build process run four times, once for each combination. Note that the each build is happening concurrently, because each build in the DAG do not depend on eachother.
 
 Use the `tree` command to see the build artifacts on the host, as shown below:
 
@@ -136,14 +132,14 @@ tree build
 build/
 ├── darwin
 │   ├── amd64
-│   │   └── greetings-api
+│   │   └── multibuild
 │   └── arm64
-│       └── greetings-api
+│       └── multibuild
 └── linux
     ├── amd64
-    │   └── greetings-api
+    │   └── multibuild
     └── arm64
-        └── greetings-api
+        └── multibuild
 ```
 
 Another common operation in a CI environment involves creating builds targeting multiple Go versions. To do this, extend the Go CI tool further and replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
@@ -156,11 +152,10 @@ This revision of the Go CI tool adds another layer to the build matrix, this tim
 Try the Go CI tool by executing the commands below:
 
 ```shell
-go build
-./multibuild https://github.com/kpenfound/greetings-api.git
+go run main.go
 ```
 
-The Go CI tool clones the Git repository, builds the application for each OS/architecture/version combination and writes the results to the host. You will see the build process run eight times, once for each combination.
+The Go CI tool builds the application for each OS/architecture/version combination and writes the results to the host. You will see the build process run eight times, once for each combination. Note that the builds are happening concurrently, because each build in the DAG does not depend on any other build.
 
 Use the `tree` command to see the build artifacts on the host, as shown below:
 
@@ -170,47 +165,27 @@ build/
 ├── 1.18
 │   ├── darwin
 │   │   ├── amd64
-│   │   │   └── greetings-api
+│   │   │   └── multibuild
 │   │   └── arm64
-│   │       └── greetings-api
+│   │       └── multibuild
 │   └── linux
 │       ├── amd64
-│       │   └── greetings-api
+│       │   └── multibuild
 │       └── arm64
-│           └── greetings-api
+│           └── multibuild
 └── 1.19
     ├── darwin
     │   ├── amd64
-    │   │   └── greetings-api
+    │   │   └── multibuild
     │   └── arm64
-    │       └── greetings-api
+    │       └── multibuild
     └── linux
         ├── amd64
-        │   └── greetings-api
+        │   └── multibuild
         └── arm64
-            └── greetings-api
+            └── multibuild
 
 ```
-
-## Step 6: Run builds in parallel
-
-The pipeline shown in the previous step is very useful, but not very scalable: every additional OS, architecture or language version adds to the total time the pipeline requires. Since the individual builds do not rely on each other, they can be run in parallel to save time.
-
-To see how this works, replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
-
-```go file=snippets/get-started/step6/main.go
-```
-
-This revision of the Go CI tool performs the same build process as before, except that the steps are executed with an [errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup) to parallelize the process in separate goroutines.
-
-Try the Go CI tool by executing the commands below:
-
-```shell
-go build
-./multibuild https://github.com/kpenfound/greetings-api.git
-```
-
-The output shows all of the builds happening at the same time, and the total time will be reduced. The process will produce the same output artifacts as those seen at the end of [Step 5](#step-5-create-a-multi-build-pipeline).
 
 :::tip
 As the previous steps illustrate, the Dagger Go SDK allows you to author your pipeline entirely in Go. This means that you don't need to spend time learning a new language, and you immediately benefit from all the powerful programming capabilities and packages available in Go. For instance, this tutorial used native Go variables, conditionals and error handling throughout, together with the errgroup package for sub-task parallelization.
