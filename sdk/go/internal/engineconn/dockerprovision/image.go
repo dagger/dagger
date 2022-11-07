@@ -81,8 +81,9 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
 	).CombinedOutput(); err != nil {
-		// TODO: should just be debug log, but that concept doesn't exist yet
-		fmt.Fprintf(os.Stderr, "failed to list containers: %s", output)
+		if cfg.LogOutput != nil {
+			fmt.Fprintf(cfg.LogOutput, "failed to list containers: %s", output)
+		}
 	} else {
 		for _, line := range strings.Split(string(output), "\n") {
 			if line == "" {
@@ -94,8 +95,9 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 			if output, err := exec.CommandContext(ctx,
 				"docker", "rm", "-fv", line,
 			).CombinedOutput(); err != nil {
-				// TODO: should just be debug log, but that concept doesn't exist yet
-				fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s", line, output)
+				if cfg.LogOutput != nil {
+					fmt.Fprintf(cfg.LogOutput, "failed to remove old container %s: %s", line, output)
+				}
 			}
 		}
 	}
@@ -136,15 +138,20 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list cache dir: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.Name() == helperBinName {
-			continue
+		if cfg.LogOutput != nil {
+			fmt.Fprintf(cfg.LogOutput, "failed to list cache dir: %v", err)
 		}
-		if strings.HasPrefix(entry.Name(), helperBinPrefix) {
-			if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
-				return nil, fmt.Errorf("failed to remove old helper bin: %w", err)
+	} else {
+		for _, entry := range entries {
+			if entry.Name() == helperBinName {
+				continue
+			}
+			if strings.HasPrefix(entry.Name(), helperBinPrefix) {
+				if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
+					if cfg.LogOutput != nil {
+						fmt.Fprintf(cfg.LogOutput, "failed to remove old helper bin: %v", err)
+					}
+				}
 			}
 		}
 	}
