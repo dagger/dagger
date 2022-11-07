@@ -34,6 +34,9 @@ func CamelCase(name string) string {
 }
 
 func Solve(field introspection.Field) bool {
+	if field.TypeRef == nil {
+		return false
+	}
 	return field.TypeRef.IsScalar() || field.TypeRef.IsList()
 }
 

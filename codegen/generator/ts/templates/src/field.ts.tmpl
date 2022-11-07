@@ -10,9 +10,7 @@
 		{{ "" }} : Promise<Record<string, string>>{{ "" }}
 	{{- else -}}
 		{{- with .TypeRef }}
-			{{- if .Name }}
-				{{- template "return" . -}}
-			{{ end -}}
+			{{- template "return" . -}}
 		{{- end -}}
 	{{- end -}}
 {{ end }}

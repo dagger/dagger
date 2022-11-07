@@ -11,7 +11,7 @@ import (
 )
 
 func TestObject(t *testing.T) {
-	tmpl := templateHelper(t, "object", "comment", "field", "input_args", "arg")
+	tmpl := templateHelper(t, "object", "comment", "field", "input_args", "arg", "return")
 
 	object := objectInit(t, containerExecArgsJSON)
 
@@ -31,7 +31,7 @@ class Container extends BaseApi {
     return this._queryTree;
   }
 
-  exec(args: ContainerExecArgs)
+  exec(args: ContainerExecArgs) : Container
 }
 `
 

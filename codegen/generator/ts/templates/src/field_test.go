@@ -16,10 +16,6 @@ func TestField(t *testing.T) {
 		want := `myField()`
 		field := introspection.Field{
 			Name: "myField",
-			TypeRef: &introspection.TypeRef{
-				Kind: introspection.TypeKindObject,
-				Name: "",
-			},
 		}
 		fieldInit(t, &field)
 
@@ -30,10 +26,10 @@ func TestField(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 
-	t.Run("exec(args: ContainerExecArgs)", func(t *testing.T) {
+	t.Run("exec(args: ContainerExecArgs) : Container", func(t *testing.T) {
 		templateType := "field"
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `exec(args: ContainerExecArgs)`
+		want := `exec(args: ContainerExecArgs) : Container`
 		object := objectInit(t, containerExecArgsJSON)
 
 		var b bytes.Buffer
