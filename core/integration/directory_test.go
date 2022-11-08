@@ -325,38 +325,64 @@ func TestDirectoryWithFile(t *testing.T) {
 }
 
 func TestDirectoryWithoutDirectory(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
 
-	dirID := newDirWithFiles(t,
-		"some-file", "some-content",
-		"some-dir/sub-file", "sub-content")
-
-	var res2 struct {
-		Directory struct {
-			WithDirectory struct {
-				WithoutDirectory struct {
-					Entries []string
-				}
-			}
+	contents := func(s string) dagger.DirectoryWithNewFileOpts {
+		return dagger.DirectoryWithNewFileOpts{
+			Contents: s,
 		}
 	}
 
-	err := testutil.Query(
-		`query Test($src: DirectoryID!) {
-			directory {
-				withDirectory(path: "with-dir", directory: $src) {
-					withoutDirectory(path: "with-dir/some-dir") {
-						entries(path: "with-dir")
-					}
-				}
-			}
-		}`, &res2, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": dirID,
-			},
-		})
+	dir1 := c.Directory().
+		WithNewFile("some-file", contents("some-content")).
+		WithNewFile("some-dir/sub-file", contents("sub-content"))
+
+	entries, err := dir1.
+		WithoutDirectory("some-dir").
+		Entries(ctx)
+
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-file"}, res2.Directory.WithDirectory.WithoutDirectory.Entries)
+	require.Equal(t, []string{"some-file"}, entries)
+
+	dir := c.Directory().
+		WithNewFile("foo.txt", contents("foo")).
+		WithNewFile("a/bar.txt", contents("bar")).
+		WithNewFile("a/data.json", contents("{\"datum\": 10}")).
+		WithNewFile("b/foo.txt", contents("foo")).
+		WithNewFile("b/bar.txt", contents("bar")).
+		WithNewFile("b/data.json", contents("{\"datum\": 10}")).
+		WithNewFile("c/file-a1.txt", contents("file-a1.txt")).
+		WithNewFile("c/file-a1.json", contents("file-a1.json")).
+		WithNewFile("c/file-b1.txt", contents("file-b1.txt")).
+		WithNewFile("c/file-b1.json", contents("file-b1.json"))
+
+	entries, err = dir.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a", "b", "c", "foo.txt"}, entries)
+
+	entries, err = dir.
+		WithoutDirectory("a").
+		Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b", "c", "foo.txt"}, entries)
+
+	entries, err = dir.
+		WithoutDirectory("b/*.txt").
+		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "b"})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"data.json"}, entries)
+
+	entries, err = dir.
+		WithoutDirectory("c/*a1*").
+		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "c"})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"file-b1.json", "file-b1.txt"}, entries)
 }
 
 func TestDirectoryWithoutFile(t *testing.T) {
