@@ -3,14 +3,17 @@ import {
   ContainerExecArgs, 
   ContainerWithFsArgs, 
   ContainerWithMountedDirectoryArgs, 
+  ContainerWithSecretVariableArgs, 
   ContainerWithWorkdirArgs, 
   DirectoryEntriesArgs, 
   DirectoryFileArgs, 
   GitRepositoryBranchArgs, 
+  HostEnvVariableArgs, 
   HostWorkdirArgs, 
   QueryContainerArgs, 
   QueryGitArgs, 
-  Scalars } from "./types.js";
+  Scalars,
+  SecretId} from "./types.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
 export type QueryTree = {
@@ -23,7 +26,7 @@ interface ClientConfig {
   port?: number
 }
 
-export class BaseClient {
+class BaseClient {
   protected _queryTree:  QueryTree[]
 	private client: GraphQLClient;
   protected port: number
@@ -43,8 +46,8 @@ export class BaseClient {
     // run the query and return the result.
     const query = queryBuilder(this._queryTree)
 
-    const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve) => {
-      const response: Awaited<Promise<Record<string, any>>> = await this.client.request(gql`${query}`)
+    const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve, reject) => {
+      const response: Awaited<Promise<Record<string, any>>> = await this.client.request(gql`${query}`).catch((error) => {reject(console.error(JSON.stringify(error, undefined, 2)))})
 
       resolve(queryFlatten(response));
     })
@@ -55,7 +58,7 @@ export class BaseClient {
   }
 }
 
-export default class Client extends BaseClient {
+export class Client extends BaseClient {
   
   /**
    * Load a container from ID. Null ID returns an empty container (scratch).
@@ -133,6 +136,18 @@ class CacheVolume extends BaseClient {
 }
 
 class Host extends BaseClient {
+
+  envVariable(args?: HostEnvVariableArgs): HostVariable {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'envVariable',
+      args
+      }
+    ]
+
+    return new HostVariable({queryTree: this._queryTree, port: this.port})
+  }
   /**
    * The current working directory on the host
    */
@@ -146,6 +161,34 @@ class Host extends BaseClient {
     ]
 
     return new Directory({queryTree: this._queryTree, port: this.port})
+  }
+}
+
+class HostVariable extends BaseClient {
+  secret(): Secret {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: 'secret'
+      }
+    ]
+
+    return new Secret({queryTree: this._queryTree, port: this.port})
+  }
+}
+
+class Secret extends BaseClient {
+  async id(): Promise<Record<string, SecretId>> {
+    this._queryTree = [
+      ...this._queryTree, 
+      {
+      operation: 'id'
+      }
+    ]
+
+    const response: Record<string, SecretId> = await this._compute()
+
+    return response
   }
 }
 
@@ -364,6 +407,19 @@ class Container extends BaseClient {
       ...this._queryTree,
       {
       operation: 'withWorkdir',
+      args
+      }
+    ]
+
+    return new Container({queryTree: this._queryTree, port: this.port})
+  }
+
+  withSecretVariable(args: ContainerWithSecretVariableArgs): Container {
+  
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'withSecretVariable',
       args
       }
     ]

@@ -1,5 +1,5 @@
 {
-  "name": "@dagger.io/dagger",
+  "name": "dagger-nodejs-sdk",
   "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -27,7 +27,6 @@
     "test-sdk": "mocha -t 60000 test/index.spec.ts"
   },
   "devDependencies": {
-    "@types/jest": "^29.2.2",
     "@types/mocha": "latest",
     "@types/node": "~16",
     "mocha": "^10.1.0",

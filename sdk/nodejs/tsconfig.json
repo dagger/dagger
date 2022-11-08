@@ -3,7 +3,7 @@
   "include": ["./**/*"],
   "exclude": ["./api/test/**/*", "./dist/**/*", "./test/**/*"],
   "compilerOptions": {
-    "target": "es2017",
+    "target": "es2015",
     "strict": true,
     "outDir": "./dist",
     "rootDir": ".",
@@ -16,5 +16,5 @@
     "declarationMap": true
   },
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "dagger-sdk-nodejs"
+  "display": "dagger-nodejs-sdk"
 }
