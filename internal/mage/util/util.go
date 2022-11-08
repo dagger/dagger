@@ -196,7 +196,7 @@ func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 			devEngineErr = fmt.Errorf("docker run: %w: %s", err, output)
 			return
 		}
-
+		devEngineContainerName = containerName
 	})
 	return devEngineContainerName, devEngineErr
 }

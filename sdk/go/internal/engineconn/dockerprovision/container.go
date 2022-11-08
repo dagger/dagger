@@ -15,8 +15,12 @@ import (
 )
 
 func NewDockerContainer(u *url.URL) (engineconn.EngineConn, error) {
+	containerName := u.Host + u.Path
+	if containerName == "" {
+		return nil, errors.New("container name must be specified")
+	}
 	return &DockerContainer{
-		containerName: u.Host + u.Path,
+		containerName: containerName,
 	}, nil
 }
 

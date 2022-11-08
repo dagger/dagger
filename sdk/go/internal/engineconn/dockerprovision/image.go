@@ -110,13 +110,14 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		defer tmpbin.Close()
 		defer os.Remove(tmpbin.Name())
 
-		// #nosec
-		if output, err := exec.CommandContext(ctx,
+		dockerCpArgs := []string{
 			"docker", "cp",
-			containerName+":"+containerHelperBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
+			containerName + ":" + containerHelperBinPrefix + runtime.GOOS + "-" + runtime.GOARCH,
 			tmpbin.Name(),
-		).CombinedOutput(); err != nil {
-			return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin: %s", output)
+		}
+		// #nosec
+		if output, err := exec.CommandContext(ctx, dockerCpArgs[0], dockerCpArgs[1:]...).CombinedOutput(); err != nil {
+			return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin with command %q: %s", strings.Join(dockerCpArgs, " "), output)
 		}
 
 		if err := tmpbin.Chmod(0700); err != nil {
