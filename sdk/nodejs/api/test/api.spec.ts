@@ -1,5 +1,5 @@
 import assert from "assert";
-import Api from "../api.js"
+import Api from "../client.js"
 import { queryBuilder, queryFlatten } from "../utils.js"
 
 describe('NodeJS SDK api', function () {

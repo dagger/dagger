@@ -1,7 +1,7 @@
 // WIP(TomChv): This file shall be renamed to something else
 import { execa, execaCommandSync } from 'execa';
 import axios from 'axios';
-import Client from './api/api.js';
+import Client from './api/client.js';
 
 /**
  * Cloak binary name

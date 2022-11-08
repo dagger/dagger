@@ -1,7 +1,7 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
-  "include": ["./**/*", "./api"],
-  "exclude": ["./api/example/**/*"],
+  "include": ["./**/*"],
+  "exclude": ["./api/test/**/*", "./dist/**/*", "./test/**/*"],
   "compilerOptions": {
     "target": "es2017",
     "strict": true,

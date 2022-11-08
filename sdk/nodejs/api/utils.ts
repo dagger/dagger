@@ -1,4 +1,4 @@
-import { QueryTree } from "./api";
+import { QueryTree } from "./client";
 
   export function queryBuilder(q: QueryTree[]) {
 
