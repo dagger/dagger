@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package dagger.filesend.v1;
 
-option go_package = "filesend";
+option go_package = "./filesend";
 
 service FileSend {
   rpc TarStream(stream StreamMessage) returns (StreamResponse);

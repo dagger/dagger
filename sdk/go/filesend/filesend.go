@@ -23,6 +23,8 @@ func NewReceiver(wd string) *fsSyncTarget {
 
 type fsSyncTarget struct {
 	workdir string
+
+	UnimplementedFileSendServer
 }
 
 func (sp *fsSyncTarget) Register(server *grpc.Server) {

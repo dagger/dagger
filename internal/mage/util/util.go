@@ -37,6 +37,9 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			"**/*.graphqls",
 			"**/*.graphql",
 
+			// protobuf
+			"**/*.proto",
+
 			// misc
 			".golangci.yml",
 		},
@@ -59,12 +62,21 @@ func GoBase(c *dagger.Client) *dagger.Container {
 
 	return c.Container().
 		From("golang:1.19-alpine").
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"apk", "add", "--no-cache", "protoc"},
+		}).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
 		WithMountedDirectory("/app", goMods).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"go", "mod", "download"},
+		}).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.28"},
+		}).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2"},
 		}).
 		// run `go build` with all source
 		WithMountedDirectory("/app", repo)
