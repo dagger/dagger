@@ -20,6 +20,7 @@ var (
 		"FieldOptionsStructName": FieldOptionsStructName,
 		"FieldFunction":          FieldFunction,
 		"PascalCase":             PascalCase,
+		"IsSingleOptional":       IsSingleOptional,
 		"Solve":                  Solve,
 		"Subtract":               Subtract,
 	}
@@ -159,4 +160,11 @@ func FieldFunction(f introspection.Field) string {
 	// signature = fmt.Sprintf("%s %s(%s): %s", async, funcName, argString, retType)
 
 	return signature
+}
+
+func IsSingleOptional(values introspection.InputValues) bool {
+	if len(values) != 1 {
+		return false
+	}
+	return values[0].TypeRef.IsOptional()
 }

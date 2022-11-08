@@ -26,7 +26,7 @@ func TestObject(t *testing.T) {
 
 var expectedFunc = `class Container extends BaseClient {
 
-  exec(args: ContainerExecArgs) : Container {
+  exec(args: ContainerExecArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -59,13 +59,8 @@ func objectInit(t *testing.T, jsonString string) *introspection.Type {
 func objectsInit(t *testing.T, jsonString string) introspection.Types {
 	t.Helper()
 	var objects introspection.Types
-	_ = objects
-	yo := []map[string]interface{}{}
-	_ = yo
 	err := json.Unmarshal([]byte(jsonString), &objects)
 	require.NoError(t, err)
-
-	t.Logf("%+v", yo)
 
 	schema := introspection.Schema{
 		Types: objects,
