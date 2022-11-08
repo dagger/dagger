@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 )
@@ -125,66 +126,79 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 	return platformVariants
 }
 
+var devEngineOnce sync.Once
+var devEngineContainerName string
+var devEngineErr error
+
 func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
-	tmpfile, err := os.CreateTemp("", "dagger-engine-export")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmpfile.Name())
+	devEngineOnce.Do(func() {
+		tmpfile, err := os.CreateTemp("", "dagger-engine-export")
+		if err != nil {
+			devEngineErr = err
+			return
+		}
+		defer os.Remove(tmpfile.Name())
 
-	_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
-		PlatformVariants: DevEngineContainer(c, []string{runtime.GOARCH}, []string{runtime.GOOS}),
+		_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
+			PlatformVariants: DevEngineContainer(c, []string{runtime.GOARCH}, []string{runtime.GOOS}),
+		})
+		if err != nil {
+			devEngineErr = err
+			return
+		}
+
+		containerName := "test-dagger-engine"
+		volumeName := "test-dagger-engine"
+		imageName := "localhost/test-dagger-engine:latest"
+
+		// #nosec
+		loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tmpfile.Name())
+		output, err := loadCmd.CombinedOutput()
+		if err != nil {
+			devEngineErr = fmt.Errorf("docker load failed: %w: %s", err, output)
+			return
+		}
+		_, imageID, ok := strings.Cut(string(output), "sha256:")
+		if !ok {
+			devEngineErr = fmt.Errorf("unexpected output from docker load: %s", output)
+			return
+		}
+		imageID = strings.TrimSpace(imageID)
+
+		if output, err := exec.CommandContext(ctx, "docker",
+			"tag",
+			imageID,
+			imageName,
+		).CombinedOutput(); err != nil {
+			devEngineErr = fmt.Errorf("docker tag: %w: %s", err, output)
+			return
+		}
+
+		if output, err := exec.CommandContext(ctx, "docker",
+			"rm",
+			"-fv",
+			containerName,
+		).CombinedOutput(); err != nil {
+			devEngineErr = fmt.Errorf("docker rm: %w: %s", err, output)
+			return
+		}
+
+		if output, err := exec.CommandContext(ctx, "docker",
+			"run",
+			"-d",
+			"--rm",
+			"-v", volumeName+":/var/lib/buildkit",
+			"--name", containerName,
+			"--privileged",
+			imageName,
+			"--debug",
+		).CombinedOutput(); err != nil {
+			devEngineErr = fmt.Errorf("docker run: %w: %s", err, output)
+			return
+		}
+
 	})
-	if err != nil {
-		return "", err
-	}
-
-	containerName := "test-dagger-engine"
-	volumeName := "test-dagger-engine"
-	imageName := "localhost/test-dagger-engine:latest"
-
-	// #nosec
-	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tmpfile.Name())
-	output, err := loadCmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("docker load failed: %w: %s", err, output)
-	}
-	_, imageID, ok := strings.Cut(string(output), "sha256:")
-	if !ok {
-		return "", fmt.Errorf("unexpected output from docker load: %s", output)
-	}
-	imageID = strings.TrimSpace(imageID)
-
-	if output, err := exec.CommandContext(ctx, "docker",
-		"tag",
-		imageID,
-		imageName,
-	).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("docker tag: %w: %s", err, output)
-	}
-
-	if output, err := exec.CommandContext(ctx, "docker",
-		"rm",
-		"-fv",
-		containerName,
-	).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("docker rm: %w: %s", err, output)
-	}
-
-	if output, err := exec.CommandContext(ctx, "docker",
-		"run",
-		"-d",
-		"--rm",
-		"-v", volumeName+":/var/lib/buildkit",
-		"--name", containerName,
-		"--privileged",
-		imageName,
-		"--debug",
-	).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("docker run: %w: %s", err, output)
-	}
-
-	return containerName, nil
+	return devEngineContainerName, devEngineErr
 }
 
 func WithDevEngine(ctx context.Context, c *dagger.Client, cb func(context.Context, *dagger.Client) error) error {
