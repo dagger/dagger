@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -48,13 +49,16 @@ func (t Python) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	_, err = pythonBase(c).
-		Exec(dagger.ContainerExecOpts{
-			Args:                          []string{"hatch", "run", "test"},
-			ExperimentalPrivilegedNesting: true,
-		}).
-		ExitCode(ctx)
-	return err
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		_, err = pythonBase(c).
+			WithEnvVariable("DAGGER_HOST", "unix:///dagger.sock"). // gets automatically rewritten by shim to be http
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"hatch", "run", "test"},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			ExitCode(ctx)
+		return err
+	})
 }
 
 // Generate re-generates the SDK API
@@ -65,21 +69,28 @@ func (t Python) Generate(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	generated, err := pythonBase(c).
-		Exec(dagger.ContainerExecOpts{
-			Args:                          []string{"hatch", "run", "generate"},
-			ExperimentalPrivilegedNesting: true,
-		}).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"hatch", "run", "lint:fmt"},
-		}).
-		File(strings.TrimPrefix(pythonGeneratedAPIPath, "sdk/python/")).
-		Contents(ctx)
-	if err != nil {
-		return err
-	}
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		generated, err := pythonBase(c).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"hatch", "run", "generate"},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"hatch", "run", "lint:fmt"},
+			}).
+			File(strings.TrimPrefix(pythonGeneratedAPIPath, "sdk/python/")).
+			Contents(ctx)
+		if err != nil {
+			return err
+		}
 
-	return os.WriteFile(pythonGeneratedAPIPath, []byte(generated), 0600)
+		return os.WriteFile(pythonGeneratedAPIPath, []byte(generated), 0600)
+	})
+}
+
+// Publish publishes the Python SDK
+func (t Python) Publish(ctx context.Context, tag string) error {
+	return errors.New("not implemented")
 }
 
 func pythonBase(c *dagger.Client) *dagger.Container {

@@ -17,8 +17,8 @@ class Connection:
     async def __aenter__(self):
         return await self.connector.connect()
 
-    async def __aexit__(self, *args, **kwargs) -> None:
-        await self.connector.close()
+    async def __aexit__(self, exc_type, *args, **kwargs) -> None:
+        await self.connector.close(exc_type)
 
     def __enter__(self) -> NoReturn:
         raise NotImplementedError(

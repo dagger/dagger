@@ -123,6 +123,6 @@ async def test_directory():
 
 
 async def test_host_workdir():
-    async with dagger.Connection(dagger.Config(workdir=".")) as client:
+    async with dagger.Connection() as client:
         readme = await client.host().workdir().file("README.md").contents()
         assert "Dagger" in readme

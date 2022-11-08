@@ -229,12 +229,12 @@ func TestHostDirectoryExcludeInclude(t *testing.T) {
 func TestHostVariable(t *testing.T) {
 	t.Parallel()
 
+	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
+
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
-
-	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
 
 	secret := c.Host().EnvVariable("HELLO_TEST")
 

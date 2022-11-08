@@ -11,13 +11,18 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger/internal/engineconn"
-	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
-	_ "dagger.io/dagger/internal/engineconn/http"     // http connection
-	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
+	_ "dagger.io/dagger/internal/engineconn/dockerprovision" // provision engine in docker
+	_ "dagger.io/dagger/internal/engineconn/http"            // http connection
+	_ "dagger.io/dagger/internal/engineconn/unix"            // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/multierr"
+)
+
+const (
+	engineImageRef = "ghcr.io/dagger/engine:test@sha256:5d9fb9c65f9098d30f7cbefb04e73003b49942c385344e0c7d665d2b52757b8e"
+	defaultHost    = "docker-image://" + engineImageRef
 )
 
 // Client is the Dagger Engine Client
@@ -88,8 +93,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		return nil, err
 	}
 
-	// default host
-	host := "embedded://"
+	host := defaultHost
 	// if one is found in `DAGGER_HOST` -- use it instead
 	if h := os.Getenv("DAGGER_HOST"); h != "" {
 		host = h

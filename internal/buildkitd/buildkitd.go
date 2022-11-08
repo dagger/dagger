@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"github.com/rs/zerolog/log"
+	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
@@ -34,6 +36,13 @@ const (
 	// buildkitd while not blocking for infinity
 	lockTimeout = 10 * time.Minute
 )
+
+func init() {
+	// Disable logrus output, which only comes from the docker
+	// commandconn library that is used by buildkit's connhelper
+	// and prints unneeded warning logs.
+	logrus.StandardLogger().SetOutput(io.Discard)
+}
 
 // NB: normally we take the version of Buildkit from our go.mod, e.g. v0.10.5,
 // and use the same version for the moby/buildkit Docker tag.
@@ -65,8 +74,10 @@ var modVersionToImage = map[string]string{
 	"(devel)":                               "moby/buildkit:v0.10.5",
 }
 
-func Client(ctx context.Context) (*bkclient.Client, error) {
-	host := os.Getenv("BUILDKIT_HOST")
+func Client(ctx context.Context, host string) (*bkclient.Client, error) {
+	if host == "" {
+		host = os.Getenv("BUILDKIT_HOST")
+	}
 	if host == "" {
 		h, err := startBuildkitd(ctx)
 		if err != nil {
@@ -75,6 +86,10 @@ func Client(ctx context.Context) (*bkclient.Client, error) {
 
 		host = h
 	}
+	if err := waitBuildkit(ctx, host); err != nil {
+		return nil, err
+	}
+
 	opts := []bkclient.ClientOpt{
 		bkclient.WithFailFast(),
 		bkclient.WithTracerProvider(otel.GetTracerProvider()),
@@ -272,7 +287,7 @@ func startBuildkit(ctx context.Context) error {
 		return err
 	}
 
-	return waitBuildkit(ctx)
+	return nil
 }
 
 // Pull and run the buildkit daemon with a proper configuration
@@ -306,12 +321,12 @@ func installBuildkit(ctx context.Context, ref string) error {
 			return err
 		}
 	}
-	return waitBuildkit(ctx)
+	return nil
 }
 
 // waitBuildkit waits for the buildkit daemon to be responsive.
-func waitBuildkit(ctx context.Context) error {
-	c, err := bkclient.New(ctx, "docker-container://"+containerName)
+func waitBuildkit(ctx context.Context, host string) error {
+	c, err := bkclient.New(ctx, host)
 	if err != nil {
 		return err
 	}
