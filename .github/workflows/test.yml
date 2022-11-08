@@ -7,6 +7,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "sdk/nodejs/**.js"
+      - "sdk/python/**.py"
       - ".github/workflows/test.yml"
   pull_request:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - "**/go.mod"
       - "**/go.sum"
       - "sdk/nodejs/**.js"
+      - "sdk/python/**.py"
       - ".github/workflows/test.yml"
   # Enable manual trigger for easy ad-hoc debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
