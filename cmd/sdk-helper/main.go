@@ -19,31 +19,20 @@ import (
 )
 
 var (
-	configPath string
-	workdir    string
-	remote     string
+	remote string
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "")
-	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
 	rootCmd.PersistentFlags().StringVar(&remote, "remote", "", "")
 }
 
 var rootCmd = &cobra.Command{
 	Use: "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		var err error
-		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
-		return err
-	},
 	Run: Helper,
 }
 
 func Helper(cmd *cobra.Command, args []string) {
 	startOpts := &engine.Config{
-		Workdir:    workdir,
-		ConfigPath: configPath,
 		LogOutput:  os.Stderr,
 		RemoteAddr: remote,
 	}
