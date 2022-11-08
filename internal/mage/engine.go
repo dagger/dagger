@@ -93,18 +93,35 @@ func (t Engine) Dev(ctx context.Context) error {
 	return nil
 }
 
-func (t Engine) Test(ctx context.Context) error {
+func (t Engine) test(ctx context.Context, race bool) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
+	args := []string{"go", "test", "-v", "-count=1"}
+	if race {
+		args = append(args, "-race", "-timeout=1h")
+	}
+	args = append(args, "./...")
+
+	fmt.Println("Running tests with args:", args)
+
+	// #nosec
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		cmd := exec.CommandContext(ctx, "go", "test", "-v", "-count=1", "./...")
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Env = os.Environ()
 		return cmd.Run()
 	})
+}
+
+func (t Engine) Test(ctx context.Context) error {
+	return t.test(ctx, false)
+}
+
+func (t Engine) TestRace(ctx context.Context) error {
+	return t.test(ctx, true)
 }
