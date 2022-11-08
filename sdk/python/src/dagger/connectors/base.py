@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 # TODO: update this with official repo once it exists
-DEFAULT_IMAGE_REF = "docker.io/eriksipsma/dagger-test:bootstrap@sha256:e17af5484d1ec7ede039be9791a517ccd68ec731a24b8a7350597f8a9bfbb5f2"  # noqa
-
-DEFAULT_HOST = f"docker-image://{DEFAULT_IMAGE_REF}"
+ENGINE_IMAGE_REF = (
+    "ghcr.io/dagger/engine:test@sha256:"
+    "5d9fb9c65f9098d30f7cbefb04e73003b49942c385344e0c7d665d2b52757b8e"
+)
+DEFAULT_HOST = f"docker-image://{ENGINE_IMAGE_REF}"
 
 
 @define

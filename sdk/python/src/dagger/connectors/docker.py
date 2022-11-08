@@ -10,14 +10,11 @@ from attrs import Factory, define, field
 
 from dagger import Client
 
-from .base import Config, register_connector
+from .base import Config, register_connector, ENGINE_IMAGE_REF
 from .http import HTTPConnector
 
 logger = logging.getLogger(__name__)
 
-
-# TODO: this should be a config option obviously
-DEFAULT_IMAGE_REF = "docker.io/eriksipsma/test-dagger:rebase@sha256:b6bcf40346a70a834a0c1461046551993b17c92288c32121b171a825958e7901"  # noqa
 
 HELPER_BINARY_PREFIX = "dagger-sdk-helper-"
 
@@ -37,7 +34,7 @@ def get_platform() -> tuple[str, str]:
 class ImageRef:
     DIGEST_LEN = 16
 
-    def __init__(self, ref: str = DEFAULT_IMAGE_REF) -> None:
+    def __init__(self, ref: str = ENGINE_IMAGE_REF) -> None:
         self.ref = ref
         self.is_pinned = False
 
