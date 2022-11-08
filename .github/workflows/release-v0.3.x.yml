@@ -9,17 +9,17 @@ on:
   # schedule:
   #   - cron: "6 17 * * 2"
   # TODO: ^^^^^^^^^^^^^^^^ we may run this on a schedule at some point - just manual for now - Oct. 13, 2022
-    # https://crontab.guru/#6_17_*_*_2
-    # Every Tuesday at 5:06pm UTC & 9:06am US West Coast.
-    # GitHub Actions defaults to UTC:
-    # There is high load on GitHub Actions at the top of the hour:
-    #
-    #     Note: The schedule event can be delayed during periods of high loads of
-    #     GitHub Actions workflow runs. High load times include the start of every
-    #     hour. To decrease the chance of delay, schedule your workflow to run at a
-    #     different time of the hour.
-    #
-    # So we run these at a special time, 9:06. Ask @gerhard about it.
+  # https://crontab.guru/#6_17_*_*_2
+  # Every Tuesday at 5:06pm UTC & 9:06am US West Coast.
+  # GitHub Actions defaults to UTC:
+  # There is high load on GitHub Actions at the top of the hour:
+  #
+  #     Note: The schedule event can be delayed during periods of high loads of
+  #     GitHub Actions workflow runs. High load times include the start of every
+  #     hour. To decrease the chance of delay, schedule your workflow to run at a
+  #     different time of the hour.
+  #
+  # So we run these at a special time, 9:06. Ask @gerhard about it.
 
   # And it also supports manual triggering:
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -40,9 +40,7 @@ jobs:
   release:
     # ⚠️  If `name` changes, remember to update the `running-workflow-name` property too
     name: "Bump version, tag & release"
-    runs-on: ubuntu-22.04-16c-64g-600gb
-    # 🧰 comment the line above 👆 & uncomment the line below 👇 when debugging on a fork
-    # runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: "Check out"
         # https://github.com/actions/checkout
@@ -133,7 +131,7 @@ jobs:
       # - https://github.com/dagger/dagger/issues/2823#issuecomment-1190792261
       #
       # TODO: Uncomment this step AFTER we are producing final releases
-      # This will not be accepted by Homebrew maintainers otherwise: 
+      # This will not be accepted by Homebrew maintainers otherwise:
       # > Unstable versions (alpha, beta, development versions) are not acceptable for versioned (or unversioned) formulae.
       # > Excerpt from https://docs.brew.sh/Versions
       #

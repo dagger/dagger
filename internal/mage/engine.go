@@ -117,7 +117,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	defer c.Close()
 
-	args := []string{"go", "test", "-v", "-count=1"}
+	args := []string{"go", "test", "-p", "16", "-v", "-count=1"}
 	if race {
 		args = append(args, "-race", "-timeout=1h")
 	}
