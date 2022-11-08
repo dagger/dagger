@@ -142,16 +142,16 @@ import (
 	config: #ImageConfig
 
 	// Name and optionally a tag in the 'name:tag' format
-	tag: string
+	tag: string @cloak(notimplemented)
 
 	// Type of export
-	type: *"docker" | "oci"
+	type: *"docker" | "oci" @cloak(notimplemented)
 
 	// Path to the exported file inside `output`
 	path: string | *"/image.tar"
 
 	// Exported image ID
-	imageID: string @dagger(generated)
+	imageID: string @dagger(generated) @cloak(notimplemented)
 
 	// Root filesystem with exported file
 	output: dagger.#FS @dagger(generated)

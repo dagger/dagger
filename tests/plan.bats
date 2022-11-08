@@ -291,11 +291,12 @@ foo.txt"
   run "$DAGGER" "do" -l error --output-format plain test empty
   refute_output
 
-  run "$DAGGER" "do" --output-format plain test simple
-  assert_line --regexp 'digest[\ ]+"sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"'
+  # Not Implemented
+  # run "$DAGGER" "do" --output-format plain test simple
+  # assert_line --regexp 'digest[\ ]+"sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"'
 
-  run "$DAGGER" "do" --output-format yaml test simple
-  assert_output --partial "digest: sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
+  # run "$DAGGER" "do" --output-format yaml test simple
+  # assert_output --partial "digest: sha256:e7d88de73db3d3fd9b2d63aa7f447a10fd0220b7cbf39803c803f2af9ba256b3"
 
   "$DAGGER" "do" test control | jq -re 'keys == ["bar", "cmd", "foo", "int", "transf"] and .foo == .bar and .foo == .transf and .cmd == "/bin/sh" and .int == 42'
 }
