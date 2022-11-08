@@ -10,7 +10,7 @@ from attrs import Factory, define, field
 
 from dagger import Client
 
-from .base import Config, register_connector, ENGINE_IMAGE_REF
+from .base import Config, register_connector
 from .http import HTTPConnector
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def get_platform() -> tuple[str, str]:
 class ImageRef:
     DIGEST_LEN = 16
 
-    def __init__(self, ref: str = ENGINE_IMAGE_REF) -> None:
+    def __init__(self, ref: str) -> None:
         self.ref = ref
         self.is_pinned = False
 

@@ -33,7 +33,7 @@ def generate(
         with Engine(cfg) as engine:
             code = generate_code(engine.cfg)
     else:
-        code = generate_code(engine.cfg)
+        code = generate_code(cfg)
 
     if output is not None:
         output.write_text(code)
