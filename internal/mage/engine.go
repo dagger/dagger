@@ -57,7 +57,7 @@ const (
 	buildkitRepo   = "github.com/moby/buildkit"
 	buildkitBranch = "v0.10.5"
 	// TODO: placeholder until real one exists
-	engineImageRef = "eriksipsma/dagger-test:bootstrap"
+	engineImageRef = "ghcr.io/dagger/engine:test"
 )
 
 func engineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
