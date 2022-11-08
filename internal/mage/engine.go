@@ -100,14 +100,11 @@ func (t Engine) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	containerName, err := util.DevEngine(ctx, c)
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.CommandContext(ctx, "go", "test", "-v", "-count=1", "./...")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "DAGGER_HOST=docker-container://"+containerName)
-	return cmd.Run()
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		cmd := exec.CommandContext(ctx, "go", "test", "-v", "-count=1", "./...")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Env = os.Environ()
+		return cmd.Run()
+	})
 }
