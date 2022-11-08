@@ -41,9 +41,9 @@ func (t Go) Lint(ctx context.Context) error {
 		return err
 	}
 
-	return lintGeneratedCode(goGeneratedAPIPath, func() error {
+	return lintGeneratedCode(func() error {
 		return t.Generate(ctx)
-	})
+	}, goGeneratedAPIPath)
 }
 
 // Test tests the Go SDK

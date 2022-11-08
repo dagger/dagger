@@ -69,27 +69,39 @@ func (t All) runAll(fn func(SDK) any) error {
 // 2) Generate again
 // 3) Compare
 // 4) Restore original generated code.
-func lintGeneratedCode(sdkPath string, fn func() error) error {
-	original, err := os.ReadFile(sdkPath)
-	if err != nil {
-		return err
+func lintGeneratedCode(fn func() error, files ...string) error {
+	originals := map[string][]byte{}
+	for _, f := range files {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			return err
+		}
+		originals[f] = content
 	}
-	defer os.WriteFile(sdkPath, original, 0600)
+
+	defer func() {
+		for _, f := range files {
+			defer os.WriteFile(f, originals[f], 0600)
+		}
+	}()
 
 	if err := fn(); err != nil {
 		return err
 	}
-	new, err := os.ReadFile(sdkPath)
-	if err != nil {
-		return err
+
+	for _, f := range files {
+		original := string(originals[f])
+		updated, err := os.ReadFile(f)
+		if err != nil {
+			return err
+		}
+
+		if original != string(updated) {
+			edits := myers.ComputeEdits(span.URIFromPath(f), original, string(updated))
+			diff := fmt.Sprint(gotextdiff.ToUnified(f, f, original, edits))
+			return fmt.Errorf("generated api mismatch. please run `mage sdk:all:generate`:\n%s", diff)
+		}
 	}
 
-	// diff := cmp.Diff(string(original), string(new))
-	if string(original) != string(new) {
-		edits := myers.ComputeEdits(span.URIFromPath(sdkPath), string(original), string(new))
-		diff := fmt.Sprint(gotextdiff.ToUnified(sdkPath, sdkPath, string(original), edits))
-		return fmt.Errorf("generated api mismatch. please run `mage sdk:all:generate`:\n%s", diff)
-	}
-
-	return err
+	return nil
 }
