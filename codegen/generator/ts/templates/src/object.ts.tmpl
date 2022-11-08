@@ -1,14 +1,13 @@
 {{ define "object" }}
-{{ $commentLines := CommentToLines .Description }}
+{{- $commentLines := CommentToLines .Description }}
 {{- /* we split the comment string into a string slice of one line per element */ -}}
 
 {{- if .Description -}}
-	{{- template "comment" $commentLines -}}
-{{- end -}}
-class {{ .Name | FormatName }} extends BaseApi {
-{{ range $field := .Fields }}
-  {{ template "field" . }}
+	{{- template "object_comment" $commentLines }}
 {{ end -}}
-
+class {{ .Name | FormatName }} extends BaseClient {
+{{ range $field := .Fields -}}
+  {{ template "field" . }}
+{{- end }}
 }
 {{ end }}

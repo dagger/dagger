@@ -20,9 +20,10 @@ func templateHelper(t *testing.T, templateType string, templateDeps ...string) *
 	tmpl := template.Must(template.New(templateType).Funcs(templates.FuncMap).ParseFiles(files...))
 	return tmpl
 }
+
 func TestComment(t *testing.T) {
+	templateType := "object_comment"
 	t.Run("simple comment", func(t *testing.T) {
-		templateType := "comment"
 		tmpl := templateHelper(t, templateType)
 		want := `/**
  * This is a comment
@@ -36,7 +37,6 @@ func TestComment(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 	t.Run("multi line comment", func(t *testing.T) {
-		templateType := "comment"
 		tmpl := templateHelper(t, templateType)
 		want := `/**
  * This is a comment

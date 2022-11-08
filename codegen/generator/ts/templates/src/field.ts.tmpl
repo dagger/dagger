@@ -1,6 +1,17 @@
 {{ define "field" }}
-	{{- if Solve . }}async {{end}}
-	{{- .Name -}}
+	{{- $commentLines := CommentToLines .Description }}
+	{{- /* we split the comment string into a string slice of one line per element */ -}}
+
+	{{- if .Description -}}
+		{{- template "field_comment" $commentLines }}
+	{{- end }}
+{{ "" }}
+	{{- if Solve . -}}
+		{{- "" }}  async {{ "" -}}
+	{{- else -}}
+		{{- "" }}  {{ "" -}}
+	{{- end }}
+	{{- "" }}{{ .Name -}}
 	(
 		{{- if .Args -}}
 			{{- template "input_args" . -}}
@@ -20,13 +31,13 @@
 		{{- end }}
       }
     ]
-	{{- if .TypeRef }}
+		{{- if .TypeRef }}
 
-    const response: new Promise<Record<string, Scalars('{{ .TypeRef | FormatOutputType }}')>> = await this._compute()
+    const response: Awaited<Record<string, Scalars['{{ .TypeRef | FormatOutputType }}']>> = await this._compute()
 
     return response
   }
-	{{- end }}
+		{{- end }}
 	{{- else -}}
 		{{- with .TypeRef }}
 			{{- template "return" . -}}

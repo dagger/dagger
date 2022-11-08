@@ -35,9 +35,9 @@ func TestField(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 
-	t.Run("exec(args: ContainerExecArgs) : Container", func(t *testing.T) {
+	t.Run("exec(args: ContainerExecArgs): Container", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `exec(args: ContainerExecArgs) : Container {
+		want := `exec(args: ContainerExecArgs): Container {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -57,9 +57,9 @@ func TestField(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 
-	t.Run("async id() : Promise<Record<string, DirectoryID>>", func(t *testing.T) {
+	t.Run("async id(): Promise<Record<string, DirectoryID>>", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve")
-		want := `async id() : Promise<Record<string, DirectoryID>> {
+		want := `async id(): Promise<Record<string, DirectoryID>> {
     this._queryTree = [
       ...this._queryTree,
       {

@@ -1,3 +1,7 @@
 {{ define "input_args" -}}
-	{{- "" }}args: {{ .ParentObject.Name | PascalCase }}{{ .Name | PascalCase }}Args{{ "" -}}
+	{{- "" }}args{{ "" -}}
+	{{- if .Args.HasOptionals }}
+		{{- "?" -}}
+	{{ end }}
+	{{- "" }}: {{ .ParentObject.Name | PascalCase }}{{ .Name | PascalCase }}Args{{ "" -}}
 {{- end }}

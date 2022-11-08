@@ -11,7 +11,7 @@ import (
 )
 
 func TestObject(t *testing.T) {
-	tmpl := templateHelper(t, "object", "comment", "field", "input_args", "arg", "return")
+	tmpl := templateHelper(t, "object", "object_comment", "field", "input_args", "arg", "return")
 
 	object := objectInit(t, containerExecArgsJSON)
 
@@ -24,8 +24,7 @@ func TestObject(t *testing.T) {
 	require.Equal(t, want, b.String())
 }
 
-var expectedFunc = `
-class Container extends BaseApi {
+var expectedFunc = `class Container extends BaseClient {
 
   exec(args: ContainerExecArgs) : Container {
     this._queryTree = [
@@ -55,4 +54,23 @@ func objectInit(t *testing.T, jsonString string) *introspection.Type {
 
 	generator.SetSchemaParents(&schema)
 	return &object
+}
+
+func objectsInit(t *testing.T, jsonString string) introspection.Types {
+	t.Helper()
+	var objects introspection.Types
+	_ = objects
+	yo := []map[string]interface{}{}
+	_ = yo
+	err := json.Unmarshal([]byte(jsonString), &objects)
+	require.NoError(t, err)
+
+	t.Logf("%+v", yo)
+
+	schema := introspection.Schema{
+		Types: objects,
+	}
+
+	generator.SetSchemaParents(&schema)
+	return objects
 }
