@@ -38,7 +38,11 @@ jobs:
           version: latest
           args: engine:build
       - run: cp ./bin/cloak /usr/local/bin
-      - run: go test -v ./...
+      - name: test
+        uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: engine:test
   engine-race:
     needs: [engine] # prioritize fast feedback + don't bother if tests fail
     name: engine with -race

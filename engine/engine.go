@@ -37,6 +37,7 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
+	RemoteAddr    string
 
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
@@ -50,7 +51,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts = &Config{}
 	}
 
-	c, err := buildkitd.Client(ctx)
+	c, err := buildkitd.Client(ctx, startOpts.RemoteAddr)
 	if err != nil {
 		return err
 	}
