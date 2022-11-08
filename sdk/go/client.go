@@ -8,7 +8,6 @@ import (
 
 	"dagger.io/dagger/internal/engineconn"
 	_ "dagger.io/dagger/internal/engineconn/dockerprovision" // provision engine in docker
-	_ "dagger.io/dagger/internal/engineconn/embedded"        // embedded connection
 	_ "dagger.io/dagger/internal/engineconn/http"            // http connection
 	_ "dagger.io/dagger/internal/engineconn/unix"            // unix connection
 	"dagger.io/dagger/internal/querybuilder"
@@ -17,7 +16,8 @@ import (
 )
 
 const (
-	defaultHost = "embedded://"
+	engineImageRef = "ghcr.io/dagger/engine:test@sha256:5d9fb9c65f9098d30f7cbefb04e73003b49942c385344e0c7d665d2b52757b8e"
+	defaultHost    = "docker-image://" + engineImageRef
 )
 
 // Client is the Dagger Engine Client

@@ -50,14 +50,16 @@ func (t Go) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	_, err = util.GoBase(c).
-		WithWorkdir("sdk/go").
-		Exec(dagger.ContainerExecOpts{
-			Args:                          []string{"go", "test", "-v", "./..."},
-			ExperimentalPrivilegedNesting: true,
-		}).
-		ExitCode(ctx)
-	return err
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		_, err = util.GoBase(c).
+			WithWorkdir("sdk/go").
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"go", "test", "-v", "./..."},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			ExitCode(ctx)
+		return err
+	})
 }
 
 // Generate re-generates the SDK API
@@ -68,17 +70,19 @@ func (t Go) Generate(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	generated, err := util.GoBase(c).
-		WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
-		WithWorkdir("sdk/go").
-		Exec(dagger.ContainerExecOpts{
-			Args:                          []string{"go", "generate", "-v", "./..."},
-			ExperimentalPrivilegedNesting: true,
-		}).
-		File(path.Base(goGeneratedAPIPath)).
-		Contents(ctx)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0600)
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		generated, err := util.GoBase(c).
+			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			WithWorkdir("sdk/go").
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"go", "generate", "-v", "./..."},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			File(path.Base(goGeneratedAPIPath)).
+			Contents(ctx)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0600)
+	})
 }
