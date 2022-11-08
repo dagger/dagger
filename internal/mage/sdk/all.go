@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,9 +13,10 @@ import (
 )
 
 type SDK interface {
-	Lint(context.Context) error
-	Test(context.Context) error
-	Generate(context.Context) error
+	Lint(ctx context.Context) error
+	Test(ctx context.Context) error
+	Generate(ctx context.Context) error
+	Publish(ctx context.Context, tag string) error
 }
 
 var availableSDKs = []SDK{
@@ -45,6 +47,11 @@ func (t All) Generate(ctx context.Context) error {
 	return t.runAll(func(s SDK) any {
 		return s.Generate
 	})
+}
+
+// Publish publishes all SDK APIs
+func (t All) Publish(ctx context.Context, version string) error {
+	return errors.New("publish is not supported on `all` target. Please run this command on individual SDKs")
 }
 
 func (t All) runAll(fn func(SDK) any) error {
