@@ -19,7 +19,7 @@ async def main(args: list[str]):
         # note: methods that return a coroutine with a Result need to await query execution
         result = await ctr.exec(args).stdout().contents()
 
-        print(result.value)
+        print(result)
 
 
 if __name__ == "__main__":

@@ -25,8 +25,8 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 }
 
 func (c *TCP) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
-	return func(_ context.Context) (net.Conn, error) {
-		return net.Dial("tcp", c.addr)
+	return func(ctx context.Context) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", c.addr)
 	}, nil
 }
 

@@ -12,7 +12,7 @@ import (
 
 	"dagger.io/dagger/internal/engineconn"
 	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
-	_ "dagger.io/dagger/internal/engineconn/tcp"      // tcp connection
+	_ "dagger.io/dagger/internal/engineconn/http"     // http connection
 	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
@@ -116,7 +116,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 			},
 		},
 	}
-	c.gql = errorWrappedClient{graphql.NewClient("http://dagger/query?session="+c.session.ID, client)}
+	c.gql = errorWrappedClient{graphql.NewClient(c.conn.Addr()+"/query?session="+c.session.ID, client)}
 	c.Query = Query{
 		q: querybuilder.Query(),
 		c: c.gql,

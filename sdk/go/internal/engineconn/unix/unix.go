@@ -24,9 +24,13 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 	}, nil
 }
 
+func (c *Unix) Addr() string {
+	return "http://dagger"
+}
+
 func (c *Unix) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
 	return func(_ context.Context) (net.Conn, error) {
-		return net.Dial("unix", c.path)
+		return (&net.Dialer{}).DialContext(ctx, "unix", c.path)
 	}, nil
 }
 

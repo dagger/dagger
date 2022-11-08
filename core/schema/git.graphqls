@@ -1,6 +1,6 @@
 extend type Query {
     "Query a git repository"
-    git(url: String!): GitRepository!
+    git(url: String!, keepGitDir: Boolean): GitRepository!
 }
 
 "A git repository"
