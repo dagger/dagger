@@ -7,7 +7,6 @@ on:
       - sdk/go/**
     paths:
       - "sdk/go/**"
-      - .github/workflows/publish-go.yml
 jobs:
   publish:
     runs-on: ubuntu-latest
