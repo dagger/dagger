@@ -1,6 +1,15 @@
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 import { GraphQLClient, gql } from "../index.js";
 import { queryBuilder, queryFlatten } from "./utils.js";
-export class BaseClient {
+class BaseClient {
     constructor({ queryTree, port } = {}) {
         this._queryTree = queryTree || [];
         this.port = port || 8080;
@@ -9,18 +18,20 @@ export class BaseClient {
     get queryTree() {
         return this._queryTree;
     }
-    async _compute() {
-        // run the query and return the result.
-        const query = queryBuilder(this._queryTree);
-        const computeQuery = new Promise(async (resolve) => {
-            const response = await this.client.request(gql `${query}`);
-            resolve(queryFlatten(response));
+    _compute() {
+        return __awaiter(this, void 0, void 0, function* () {
+            // run the query and return the result.
+            const query = queryBuilder(this._queryTree);
+            const computeQuery = new Promise((resolve, reject) => __awaiter(this, void 0, void 0, function* () {
+                const response = yield this.client.request(gql `${query}`).catch((error) => { reject(console.error(JSON.stringify(error, undefined, 2))); });
+                resolve(queryFlatten(response));
+            }));
+            const result = yield computeQuery;
+            return result;
         });
-        const result = await computeQuery;
-        return result;
     }
 }
-export default class Client extends BaseClient {
+export class Client extends BaseClient {
     /**
      * Load a container from ID. Null ID returns an empty container (scratch).
      */
@@ -73,18 +84,30 @@ class CacheVolume extends BaseClient {
     /**
      * A unique identifier for this container
      */
-    async id() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'id',
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    id() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'id',
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
 }
 class Host extends BaseClient {
+    envVariable(args) {
+        this._queryTree = [
+            ...this._queryTree,
+            {
+                operation: 'envVariable',
+                args
+            }
+        ];
+        return new HostVariable({ queryTree: this._queryTree, port: this.port });
+    }
     /**
      * The current working directory on the host
      */
@@ -97,6 +120,31 @@ class Host extends BaseClient {
             }
         ];
         return new Directory({ queryTree: this._queryTree, port: this.port });
+    }
+}
+class HostVariable extends BaseClient {
+    secret() {
+        this._queryTree = [
+            ...this._queryTree,
+            {
+                operation: 'secret'
+            }
+        ];
+        return new Secret({ queryTree: this._queryTree, port: this.port });
+    }
+}
+class Secret extends BaseClient {
+    id() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'id'
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
 }
 class Git extends BaseClient {
@@ -132,28 +180,32 @@ class File extends BaseClient {
     /**
    * The contents of the file
    */
-    async contents() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'contents'
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    contents() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'contents'
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
     /**
      * The size of the file, in bytes
      */
-    async size() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'size'
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    size() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'size'
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
 }
 class Container extends BaseClient {
@@ -198,15 +250,17 @@ class Container extends BaseClient {
     /**
      * List of paths where a directory is mounted
      */
-    async mounts() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'mounts',
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    mounts() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'mounts',
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
     /**
      * Initialize this container from this DirectoryID
@@ -250,15 +304,17 @@ class Container extends BaseClient {
     /**
      * A unique identifier for this container
      */
-    async id() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'id',
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    id() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'id',
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
     /**
      * The output stream of the last executed command. Null if no command has been executed.
@@ -280,6 +336,16 @@ class Container extends BaseClient {
             ...this._queryTree,
             {
                 operation: 'withWorkdir',
+                args
+            }
+        ];
+        return new Container({ queryTree: this._queryTree, port: this.port });
+    }
+    withSecretVariable(args) {
+        this._queryTree = [
+            ...this._queryTree,
+            {
+                operation: 'withSecretVariable',
                 args
             }
         ];
@@ -329,28 +395,32 @@ class Directory extends BaseClient {
     /**
      * Retrieve a directory at the given path. Mounts are included.
      */
-    async id() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'id'
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    id() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'id'
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
     /**
      * Return a list of files and directories at the given path
      */
-    async entries(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'entries',
-                args
-            }
-        ];
-        const response = await this._compute();
-        return response;
+    entries(args) {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'entries',
+                    args
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
     }
 }

@@ -1,4 +1,4 @@
-export { client, Client, FSID, SecretID } from "./client.js";
+export { Client } from "./api/client.js";
 export { DaggerServer } from "./server.js";
 export { Engine } from "./engine.js";
 export { connect } from './connect.js';

@@ -1,4 +1,4 @@
-import { ContainerExecArgs, ContainerWithFsArgs, ContainerWithMountedDirectoryArgs, ContainerWithWorkdirArgs, DirectoryEntriesArgs, DirectoryFileArgs, GitRepositoryBranchArgs, HostWorkdirArgs, QueryContainerArgs, QueryGitArgs, Scalars } from "./types.js";
+import { ContainerExecArgs, ContainerWithFsArgs, ContainerWithMountedDirectoryArgs, ContainerWithSecretVariableArgs, ContainerWithWorkdirArgs, DirectoryEntriesArgs, DirectoryFileArgs, GitRepositoryBranchArgs, HostEnvVariableArgs, HostWorkdirArgs, QueryContainerArgs, QueryGitArgs, Scalars, SecretId } from "./types.js";
 export declare type QueryTree = {
     operation: string;
     args?: Record<string, any>;
@@ -7,7 +7,7 @@ interface ClientConfig {
     queryTree?: QueryTree[];
     port?: number;
 }
-export declare class BaseClient {
+declare class BaseClient {
     protected _queryTree: QueryTree[];
     private client;
     protected port: number;
@@ -15,7 +15,7 @@ export declare class BaseClient {
     get queryTree(): QueryTree[];
     protected _compute(): Promise<Record<string, any>>;
 }
-export default class Client extends BaseClient {
+export declare class Client extends BaseClient {
     /**
      * Load a container from ID. Null ID returns an empty container (scratch).
      */
@@ -42,10 +42,17 @@ declare class CacheVolume extends BaseClient {
     id(): Promise<Record<string, Scalars['CacheID']>>;
 }
 declare class Host extends BaseClient {
+    envVariable(args?: HostEnvVariableArgs): HostVariable;
     /**
      * The current working directory on the host
      */
     workdir(args?: HostWorkdirArgs): Directory;
+}
+declare class HostVariable extends BaseClient {
+    secret(): Secret;
+}
+declare class Secret extends BaseClient {
+    id(): Promise<Record<string, SecretId>>;
 }
 declare class Git extends BaseClient {
     /**
@@ -116,6 +123,7 @@ declare class Container extends BaseClient {
      * This container but with a different working directory
      */
     withWorkdir(args: ContainerWithWorkdirArgs): Container;
+    withSecretVariable(args: ContainerWithSecretVariableArgs): Container;
     /**
      * This container plus the given environment variable
      */
