@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"github.com/rs/zerolog/log"
+	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
@@ -34,6 +36,13 @@ const (
 	// buildkitd while not blocking for infinity
 	lockTimeout = 10 * time.Minute
 )
+
+func init() {
+	// Disable logrus output, which only comes from the docker
+	// commandconn library that is used by buildkit's connhelper
+	// and prints unneeded warning logs.
+	logrus.StandardLogger().SetOutput(io.Discard)
+}
 
 // NB: normally we take the version of Buildkit from our go.mod, e.g. v0.10.5,
 // and use the same version for the moby/buildkit Docker tag.
