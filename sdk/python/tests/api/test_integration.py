@@ -4,31 +4,41 @@ from textwrap import dedent
 import pytest
 
 import dagger
+from dagger.connectors.docker import Engine
 
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.slow,
 ]
 
+@pytest.fixture(scope="module")
+def engine_cfg():
+    cfg = dagger.Config()
+    if cfg.host.scheme == "docker-image":
+        with Engine(cfg) as engine:
+            yield engine.cfg
+    else:
+        return cfg
 
-async def test_container():
-    async with dagger.Connection() as client:
+
+async def test_container(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         alpine = client.container().from_("alpine:3.16.2")
         version = await alpine.exec(["cat", "/etc/alpine-release"]).stdout().contents()
 
         assert version == "3.16.2\n"
 
 
-async def test_git_repository():
-    async with dagger.Connection() as client:
+async def test_git_repository(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         repo = client.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
         readme = await repo.file("README.md").contents()
 
         assert readme.split("\n")[0] == "## What is Dagger?"
 
 
-async def test_container_build():
-    async with dagger.Connection() as client:
+async def test_container_build(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         repo_id = (
             await client.git("https://github.com/dagger/dagger")
             .tag("v0.3.0")
@@ -45,8 +55,8 @@ async def test_container_build():
         assert words[0] == "dagger"
 
 
-async def test_container_with_env_variable():
-    async with dagger.Connection() as client:
+async def test_container_with_env_variable(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         container = (
             client.container().from_("alpine:3.16.2").with_env_variable("FOO", "bar")
         )
@@ -55,8 +65,8 @@ async def test_container_with_env_variable():
         assert out == "bar"
 
 
-async def test_container_with_mounted_directory():
-    async with dagger.Connection() as client:
+async def test_container_with_mounted_directory(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         dir_id = await (
             client.directory()
             .with_new_file("hello.txt", "Hello, world!")
@@ -80,8 +90,8 @@ async def test_container_with_mounted_directory():
         )
 
 
-async def test_container_with_mounted_cache():
-    async with dagger.Connection() as client:
+async def test_container_with_mounted_cache(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         cache_key = f"example-{datetime.now().isoformat()}"
 
         cache_id = await client.cache_volume(cache_key).id()
@@ -109,8 +119,8 @@ async def test_container_with_mounted_cache():
         assert out == "0\n1\n2\n3\n4\n"
 
 
-async def test_directory():
-    async with dagger.Connection() as client:
+async def test_directory(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         dir = (
             client.directory()
             .with_new_file("hello.txt", "Hello, world!")
@@ -122,7 +132,7 @@ async def test_directory():
         assert entries == ["goodbye.txt", "hello.txt"]
 
 
-async def test_host_workdir():
-    async with dagger.Connection(dagger.Config(workdir=".")) as client:
+async def test_host_workdir(engine_cfg):
+    async with dagger.Connection(engine_cfg) as client:
         readme = await client.host().workdir().file("README.md").contents()
         assert "Dagger" in readme
