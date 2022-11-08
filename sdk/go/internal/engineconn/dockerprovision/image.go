@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -32,7 +31,7 @@ type DockerImage struct {
 	childStdin io.Closer
 }
 
-func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
+func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
 	// TODO: does xdg work on Windows?
 	cacheDir := filepath.Join(xdg.CacheHome, "dagger")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
@@ -175,12 +174,8 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	}
 	c.childStdin = childStdin
 
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
-			},
-		},
+	return func(_ context.Context) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	}, nil
 }
 

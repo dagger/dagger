@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"runtime"
@@ -29,7 +28,7 @@ type DockerContainer struct {
 	childStdin    io.Closer
 }
 
-func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
+func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
 	tmpbin, err := os.CreateTemp("", "temp-dagger-sdk-helper-"+c.containerName)
 	if err != nil {
 		return nil, err
@@ -74,12 +73,8 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	}
 	c.childStdin = childStdin
 
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
-			},
-		},
+	return func(_ context.Context) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	}, nil
 }
 
