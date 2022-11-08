@@ -1,10 +1,9 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dagger"
-version = "0.1.0"
+name = "dagger-io"
 authors = [
     { name="Dagger Inc.", email="hello@dagger.io" },
 ]
@@ -35,6 +34,7 @@ dependencies = [
     "strawberry-graphql >= 0.133.5",
     "typer[all] >= 0.6.1",
 ]
+dynamic = ["version"]
 
 [project.urls]
 "Homepage" = "https://dagger.io/"
@@ -43,6 +43,13 @@ dependencies = [
 [project.scripts]
 dagger-server-py = "dagger.server.cli:app"
 dagger-py = "dagger.cli:app"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.dev"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/dagger/_version.py"
 
 [tool.hatch.envs.default]
 dependencies = [

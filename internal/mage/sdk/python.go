@@ -97,7 +97,39 @@ func (t Python) Generate(ctx context.Context) error {
 
 // Publish publishes the Python SDK
 func (t Python) Publish(ctx context.Context, tag string) error {
-	return errors.New("not implemented")
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	var (
+		version = strings.TrimPrefix(tag, "sdk/python/v")
+		token   = os.Getenv("PYPI_TOKEN")
+		// "test" for test.pypi.org, empty for public one
+		repo = os.Getenv("PYPI_REPO")
+	)
+
+	if token == "" {
+		return errors.New("PYPI_TOKEN environment variable must be set")
+	}
+
+	build := pythonBase(c).
+		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", version).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"hatch", "build"},
+		})
+
+	_, err = build.
+		WithEnvVariable("HATCH_INDEX_REPO", repo).
+		WithEnvVariable("HATCH_INDEX_USER", "__token__").
+		WithEnvVariable("HATCH_INDEX_AUTH", token).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"hatch", "publish"},
+		}).
+		ExitCode(ctx)
+
+	return err
 }
 
 func pythonBase(c *dagger.Client) *dagger.Container {
