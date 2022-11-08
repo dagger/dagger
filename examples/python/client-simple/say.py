@@ -1,10 +1,12 @@
 import sys
-import anyio
 
+import anyio
 import dagger
 
 
 async def main(args: list[str]):
+    # Tip: If you want to see the output from the engine use
+    # `dagger.Connection(dagger.Config(log_output=sys.stderr))`
     async with dagger.Connection() as client:
         # build container with cowsay entrypoint
         # note: this is reusable, no request is made to the server
@@ -16,7 +18,7 @@ async def main(args: list[str]):
         )
 
         # run cowsay with requested message
-        # note: methods that return a coroutine with a Result need to await query execution
+        # note: methods that return a coroutine need to await query execution
         result = await ctr.exec(args).stdout().contents()
 
         print(result)

@@ -66,6 +66,7 @@ Requirements:
 
 - Python 3.10+
 - [Hatch](https://hatch.pypa.io/latest/install/)
+- [Docker](https://docs.docker.com/engine/install/)
 
 Run tests with `hatch run test`.
 
