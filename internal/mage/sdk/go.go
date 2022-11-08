@@ -95,27 +95,38 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	var (
-		targetTag  = strings.TrimPrefix(tag, "sdk/go/")
-		targetRepo = "https://github.com/aluzzardi/test.git"
-		pat        = os.Getenv("GITHUB_PAT")
-	)
+	var targetTag = strings.TrimPrefix(tag, "sdk/go/")
 
-	if pat == "" {
-		return errors.New("export GITHUB_PAT=xxx before using this")
+	var targetRepo = os.Getenv("TARGET_REPO")
+	if targetRepo == "" {
+		targetRepo = "https://github.com/dagger/dagger-go-sdk.git"
 	}
 
+	var pat = os.Getenv("GITHUB_PAT")
+	if pat == "" {
+		return errors.New("GITHUB_PAT environment variable must be set")
+	}
 	encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + pat))
+
+	var gitUserName = os.Getenv("GIT_USER_NAME")
+	if gitUserName == "" {
+		gitUserName = "dagger-ci"
+	}
+
+	var gitUserEmail = os.Getenv("GIT_USER_EMAIL")
+	if gitUserEmail == "" {
+		gitUserEmail = "hellog@dagger.io"
+	}
 
 	git := util.GoBase(c).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"apk", "add", "-U", "--no-cache", "git"},
 		}).
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"git", "config", "--global", "user.name", "dagger-ci"},
+			Args: []string{"git", "config", "--global", "user.name", gitUserName},
 		}).
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"git", "config", "--global", "user.email", "hello@dagger.io"},
+			Args: []string{"git", "config", "--global", "user.email", gitUserEmail},
 		}).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"git", "config", "--global",
