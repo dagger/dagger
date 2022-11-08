@@ -58,7 +58,7 @@ class BaseClient {
   }
 }
 
-export class Client extends BaseClient {
+export default class Client extends BaseClient {
   
   /**
    * Load a container from ID. Null ID returns an empty container (scratch).

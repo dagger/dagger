@@ -1,4 +1,4 @@
-import { connect, Client } from "../index.js";
+import Client, { connect } from "../index.js";
 import assert from "assert";
 
 describe('NodeJS sdk', function () {
