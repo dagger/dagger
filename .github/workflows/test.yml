@@ -45,6 +45,10 @@ jobs:
         with:
           version: latest
           args: engine:test
+      - name: Print Engine Logs
+        if: always()
+        run: |
+          docker logs test-dagger-engine
   engine-race:
     needs: [engine] # prioritize fast feedback + don't bother if tests fail
     name: engine with -race
@@ -55,7 +59,15 @@ jobs:
           go-version: 1.19
       - uses: actions/checkout@v3
       - run: go install $(pwd)/cmd/cloak/
-      - run: go test -v -race -timeout=1h ./...
+      - name: test
+        uses: magefile/mage-action@v2
+        with:
+          version: latest
+          args: engine:testrace
+      - name: Print Engine Logs
+        if: always()
+        run: |
+          docker logs test-dagger-engine
   sdk-go:
     name: sdk / go
     runs-on: ubuntu-22.04-16c-64g-600gb
