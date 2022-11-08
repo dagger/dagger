@@ -119,11 +119,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// replace github.com/moby/buildkit => ./buildkit
-
 replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220414164044-61404de7df1a+incompatible
-
-// replace google.golang.org/grpc => ./grpc-go
 
 // for https://github.com/mwitkow/grpc-proxy/pull/62
 //

@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -139,9 +138,8 @@ func (manager *Manager) HandleHTTPRequest(ctx context.Context, w http.ResponseWr
 	return manager.handleConn(ctx, conn, r.Header)
 }
 
-func (manager *Manager) client(ctx context.Context, id string, noWait bool) (*clientSession, error) {
+func (manager *Manager) client(ctx context.Context, id string) (*clientSession, error) {
 	if id == "" {
-		debug.PrintStack()
 		return nil, fmt.Errorf("no session id provided")
 	}
 	// session prefix is used to identify vertexes with different contexts so
@@ -172,7 +170,7 @@ func (manager *Manager) client(ctx context.Context, id string, noWait bool) (*cl
 		}
 		var ok bool
 		c, ok = manager.sessions[id]
-		if (!ok || c.closed()) && !noWait {
+		if !ok || c.closed() {
 			manager.updateCondition.Wait()
 			continue
 		}
@@ -235,7 +233,7 @@ func (manager *Manager) handleConn(ctx context.Context, conn net.Conn, opts map[
 }
 
 func (manager *Manager) Host(ctx context.Context, id string) (*core.Host, error) {
-	caller, err := manager.client(ctx, id, false)
+	caller, err := manager.client(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +242,7 @@ func (manager *Manager) Host(ctx context.Context, id string) (*core.Host, error)
 }
 
 func (manager *Manager) TarSend(ctx context.Context, id string, path string, unpack bool) (io.WriteCloser, error) {
-	caller, err := manager.client(ctx, id, false)
+	caller, err := manager.client(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +312,7 @@ func (manager *Manager) solveOpt(secretStore *secret.Store, caller *clientSessio
 }
 
 func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.ExportEntry, fn bkgw.BuildFunc) (*bkclient.SolveResponse, error) {
-	caller, err := manager.client(ctx, id, false)
+	caller, err := manager.client(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +340,7 @@ func (manager *Manager) Export(ctx context.Context, id string, ex bkclient.Expor
 }
 
 func (manager *Manager) Gateway(ctx context.Context, id string) (bkgw.Client, error) {
-	caller, err := manager.client(ctx, id, false)
+	caller, err := manager.client(ctx, id)
 	if err != nil {
 		return nil, err
 	}

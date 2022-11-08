@@ -206,7 +206,7 @@ func ExampleHost_Workdir() {
 	}
 	defer os.RemoveAll(wd)
 
-	err = os.WriteFile(filepath.Join(wd, "hello.txt"), []byte("Hello, world!"), 0644)
+	err = os.WriteFile(filepath.Join(wd, "hello.txt"), []byte("Hello, world!"), 0600)
 	if err != nil {
 		panic(err)
 	}
