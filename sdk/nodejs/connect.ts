@@ -56,7 +56,7 @@ export async function connect(cb: ConnectExecCB, config: ConnectOpts = {}): Prom
 
 	// Execute users workflow and shutdown the server at the end of the
 	// execution. Either it succeeds or fails.
-	await cb(new Client())
+	await cb(new Client({port: _config.Port}))
 		.finally(async () => {
 			serverProcess.cancel();
 			await serverProcess.catch((e) => {

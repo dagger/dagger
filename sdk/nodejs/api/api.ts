@@ -18,12 +18,21 @@ export type QueryTree = {
   args?: Record<string, any>
 }
 
-class BaseClient {
-  protected _queryTree:  QueryTree[]
-  
+interface ClientConfig {
+  queryTree?: QueryTree[],
+  port?: number
+}
 
-  constructor(queryTree: QueryTree[] = []) {
-    this._queryTree = queryTree
+export class BaseClient {
+  protected _queryTree:  QueryTree[]
+	private client: GraphQLClient;
+  protected port: number
+
+
+  constructor({queryTree, port}: ClientConfig = {}) {
+    this._queryTree = queryTree || []
+    this.port = port || 8080
+		this.client = new GraphQLClient(`http://localhost:${port}/query`);
   }
 
   get queryTree() {
@@ -34,10 +43,8 @@ class BaseClient {
     // run the query and return the result.
     const query = queryBuilder(this._queryTree)
 
-    const graphqlClient = new GraphQLClient("http://localhost:8080/query")
-
     const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve) => {
-      const response: Awaited<Promise<Record<string, any>>> = await graphqlClient.request(gql`${query}`)
+      const response: Awaited<Promise<Record<string, any>>> = await this.client.request(gql`${query}`)
 
       resolve(queryFlatten(response));
     })
@@ -61,7 +68,7 @@ export default class Client extends BaseClient {
       }
     ]
 
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
   
   /**
@@ -75,7 +82,7 @@ export default class Client extends BaseClient {
       }
     ]
 
-    return new CacheVolume(this._queryTree)
+    return new CacheVolume({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -89,7 +96,7 @@ export default class Client extends BaseClient {
       }
     ]
 
-    return new Git(this._queryTree)
+    return new Git({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -102,7 +109,7 @@ export default class Client extends BaseClient {
       }
     ]
 
-    return new Host(this._queryTree)
+    return new Host({queryTree: this._queryTree, port: this.port})
   }
 
 }
@@ -138,7 +145,7 @@ class Host extends BaseClient {
       }
     ]
 
-    return new Directory(this._queryTree)
+    return new Directory({queryTree: this._queryTree, port: this.port})
   }
 }
 
@@ -155,7 +162,7 @@ class Git extends BaseClient {
       }
     ]
 
-    return new Tree(this._queryTree)
+    return new Tree({queryTree: this._queryTree, port: this.port})
   }
 
 }
@@ -171,7 +178,7 @@ class Tree extends BaseClient {
       }
     ]
 
-    return new Directory(this._queryTree)
+    return new Directory({queryTree: this._queryTree, port: this.port})
   }
 }
 class File extends BaseClient {
@@ -222,7 +229,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -237,7 +244,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -251,7 +258,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Directory(this._queryTree)
+    return new Directory({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -282,7 +289,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -297,7 +304,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -316,7 +323,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -346,7 +353,7 @@ class Container extends BaseClient {
       }
     ]
     
-    return new File(this._queryTree)
+    return new File({queryTree: this._queryTree, port: this.port})
   }
 
 /**
@@ -361,7 +368,7 @@ class Container extends BaseClient {
       }
     ]
 
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -376,7 +383,7 @@ class Container extends BaseClient {
       }
     ]
 
-    return new Container(this._queryTree)
+    return new Container({queryTree: this._queryTree, port: this.port})
   }
 
   /**
@@ -391,7 +398,7 @@ class Container extends BaseClient {
       }
     ]
 
-    return new Directory(this._queryTree)
+    return new Directory({queryTree: this._queryTree, port: this.port})
   }
 }
 
@@ -409,7 +416,7 @@ class Directory extends BaseClient {
       }
     ]
 
-    return new File(this._queryTree) 
+    return new File({queryTree: this._queryTree, port: this.port}) 
   }
   
   /**

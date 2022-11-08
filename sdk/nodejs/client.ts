@@ -22,9 +22,6 @@ export class Client {
 
 	/**
 	 * creates a new Dagger Typescript SDK GraphQL client.
-	 * If the client is created by `dagger.connect()`, it will
-	 * hold the serverProcess, so it can be closed using `close()`
-	 * method.
 	 */
 	constructor(port = 8080) {
 		this.client = new GraphQLClient(`http://localhost:${port}/query`);
