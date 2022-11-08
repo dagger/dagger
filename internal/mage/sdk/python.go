@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -80,6 +81,11 @@ func (t Python) Generate(ctx context.Context) error {
 	}
 
 	return os.WriteFile(pythonGeneratedAPIPath, []byte(generated), 0600)
+}
+
+// Publish publishes the Python SDK
+func (t Python) Publish(ctx context.Context, tag string) error {
+	return errors.New("not implemented")
 }
 
 func pythonBase(c *dagger.Client) *dagger.Container {
