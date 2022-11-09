@@ -21,10 +21,12 @@ func TestType(t *testing.T) {
 	require.Equal(t, want, b.String())
 }
 
-var expectedFieldArgsType = `export type ContainerBuildArgs = {
+var expectedFieldArgsType = `
+export type ContainerBuildArgs = {
   context: DirectoryID;
   dockerfile?: string;
-};`
+};
+`
 
 var fieldArgsTypeJSON = `
       {
