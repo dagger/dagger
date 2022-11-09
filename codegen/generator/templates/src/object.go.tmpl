@@ -9,6 +9,7 @@ type {{ .Name | FormatName }} struct {
 type {{ $field | FieldOptionsStructName }} struct {
 	{{- range $arg := $field.Args }}
 	{{- if $arg.TypeRef.IsOptional }}
+	{{ $arg.Description | Comment }}
 	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
 	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatOutputType }}
 	{{- else }}
