@@ -21,13 +21,13 @@ func init() {
 
 const (
 	// trim image digests to 16 characters to makeoutput more readable
-	digestLen                = 16
-	containerNamePrefix      = "dagger-engine-"
-	helperBinPrefix          = "dagger-sdk-helper-"
-	containerHelperBinPrefix = "/usr/bin/" + helperBinPrefix
+	digestLen                       = 16
+	containerNamePrefix             = "dagger-engine-"
+	engineSessionBinPrefix          = "dagger-engine-session-"
+	containerEngineSessionBinPrefix = "/usr/bin/" + engineSessionBinPrefix
 )
 
-func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...string) (string, io.Closer, error) {
+func startEngineSession(ctx context.Context, stderr io.Writer, cmd string, args ...string) (string, io.Closer, error) {
 	proc := exec.CommandContext(ctx, cmd, args...)
 	proc.Env = os.Environ()
 	proc.Stderr = stderr
@@ -39,7 +39,7 @@ func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...stri
 	}
 	defer stdout.Close() // don't need it after we read the port
 
-	// Open a stdin pipe with the child process. The helper shutsdown
+	// Open a stdin pipe with the child process. The engine-session shutsdown
 	// when it is closed. This is a platform-agnostic way of ensuring
 	// we don't leak child processes even if this process is SIGKILL'd.
 	childStdin, err := proc.StdinPipe()
@@ -51,7 +51,7 @@ func startHelper(ctx context.Context, stderr io.Writer, cmd string, args ...stri
 		return "", nil, err
 	}
 
-	// Read the port to connect to from the helper's stdout.
+	// Read the port to connect to from the engine-session's stdout.
 	portCh := make(chan string, 1)
 	var portErr error
 	go func() {
