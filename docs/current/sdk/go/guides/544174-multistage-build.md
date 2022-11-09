@@ -1,5 +1,6 @@
 ---
 slug: /544174/multistage-build
+displayed_sidebar: "current"
 ---
 
 # Use Dagger with Multi-stage Container Builds
@@ -13,8 +14,6 @@ Multi-stage builds are a common practice when building containers with Docker.
 
 This guide explains how to perform multi-stage builds with the Go SDK.
 
-## Introduction
-
 ## Requirements
 
 This guide assumes that:
@@ -25,7 +24,7 @@ This guide assumes that:
 
 ## Example
 
-The following code snippet demonstrates a multistage build with the Go SDK. 
+The following code snippet demonstrates a multi-stage build with the Go SDK. 
 
 ```go file=../snippets/multistage-build/main.go
 
