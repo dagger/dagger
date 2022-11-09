@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/filesync"
-	"github.com/dagger/dagger/internal/buildkitd"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
@@ -51,7 +52,16 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts = &Config{}
 	}
 
-	c, err := buildkitd.Client(ctx, startOpts.RemoteAddr)
+	if startOpts.RemoteAddr == "" {
+		// default to the legacy implementation until cloak dev has been
+		// updated or depracted
+		startOpts.RemoteAddr = engine.LegacyBuildkitdProvider + "://"
+	}
+	remote, err := url.Parse(startOpts.RemoteAddr)
+	if err != nil {
+		return err
+	}
+	c, err := engine.Client(ctx, remote)
 	if err != nil {
 		return err
 	}
