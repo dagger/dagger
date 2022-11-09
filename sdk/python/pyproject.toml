@@ -15,7 +15,6 @@ repository = "https://github.com/dagger/dagger"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Framework :: Hatch",
     "Framework :: AnyIO",
     "Framework :: Pytest",
     "Programming Language :: Python",
@@ -32,12 +31,6 @@ packages = [
 
 [tool.poetry.urls]
 "Bug Tracker" = "https://github.com/dagger/dagger/issues"
-
-[tool.poetry-dynamic-versioning]
-enable = false
-vcs = "git"
-style = "semver"
-format = "{base}+{distance}.{commit}"
 
 [tool.poetry.scripts]
 # FIXME: uncomment when extensions become available
