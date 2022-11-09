@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import os
 import subprocess
@@ -60,7 +59,9 @@ class Engine:
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
         image = ImageRef(self.cfg.host.hostname + self.cfg.host.path)
-        engine_session_bin_path = cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
+        engine_session_bin_path = (
+            cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
+        )
 
         if not engine_session_bin_path.exists():
             os_, arch = get_platform()
@@ -90,7 +91,9 @@ class Engine:
                 except subprocess.CalledProcessError as e:
                     tmp_bin.close()
                     os.unlink(tmp_bin.name)
-                    raise ProvisionError(f"Failed to copy engine session binary: {e.stdout}")
+                    raise ProvisionError(
+                        f"Failed to copy engine session binary: {e.stdout}"
+                    )
 
                 tmp_bin_path = Path(tmp_bin.name)
                 tmp_bin_path.chmod(0o700)
@@ -106,7 +109,9 @@ class Engine:
 
         engine_session_args = [engine_session_bin_path, "--remote", remote]
         if self.cfg.workdir:
-            engine_session_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
+            engine_session_args.extend(
+                ["--workdir", str(Path(self.cfg.workdir).absolute())]
+            )
         if self.cfg.config_path:
             engine_session_args.extend(
                 ["--project", str(Path(self.cfg.config_path).absolute())]

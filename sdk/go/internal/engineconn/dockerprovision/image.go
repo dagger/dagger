@@ -15,7 +15,6 @@ import (
 	"dagger.io/dagger/internal/engineconn"
 	"github.com/adrg/xdg"
 	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
 )
 
@@ -45,10 +44,10 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	var id string
 	_, dgst, ok := strings.Cut(c.imageRef, "@sha256:")
 	if !ok {
-		return nil, errors.Errorf("invalid image reference %q", c.imageRef)
+		return nil, fmt.Errorf("invalid image reference %q", c.imageRef)
 	}
 	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
-		return nil, errors.Wrap(err, "invalid digest")
+		return nil, fmt.Errorf("invalid digest: %w", err)
 	}
 	id = dgst
 	id = id[:digestLen]
@@ -78,7 +77,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 			cmd.Stderr = cfg.LogOutput
 		}
 		if err := cmd.Run(); err != nil {
-			return nil, errors.Wrapf(err, "failed to transfer dagger-engine-session bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
+			return nil, fmt.Errorf("failed to transfer dagger-engine-session bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
 		}
 
 		if err := tmpbin.Chmod(0700); err != nil {
