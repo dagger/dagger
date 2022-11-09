@@ -203,6 +203,8 @@ var (
 	devEngineErr           error
 )
 
+const TestContainerName = "test-dagger-engine"
+
 func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 	devEngineOnce.Do(func() {
 		tmpfile, err := os.CreateTemp("", "dagger-engine-export")
@@ -226,7 +228,6 @@ func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 			return
 		}
 
-		containerName := "test-dagger-engine"
 		volumeName := "test-dagger-engine"
 		imageName := "localhost/test-dagger-engine:latest"
 
@@ -256,7 +257,7 @@ func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 		if output, err := exec.CommandContext(ctx, "docker",
 			"rm",
 			"-fv",
-			containerName,
+			TestContainerName,
 		).CombinedOutput(); err != nil {
 			devEngineErr = fmt.Errorf("docker rm: %w: %s", err, output)
 			return
@@ -267,7 +268,7 @@ func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 			"-d",
 			"--rm",
 			"-v", volumeName+":/var/lib/buildkit",
-			"--name", containerName,
+			"--name", TestContainerName,
 			"--privileged",
 			imageName,
 			"--debug",
@@ -275,27 +276,7 @@ func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 			devEngineErr = fmt.Errorf("docker run: %w: %s", err, output)
 			return
 		}
-		devEngineContainerName = containerName
+		devEngineContainerName = TestContainerName
 	})
 	return devEngineContainerName, devEngineErr
-}
-
-func WithDevEngine(ctx context.Context, c *dagger.Client, cb func(context.Context, *dagger.Client) error) error {
-	containerName, err := DevEngine(ctx, c)
-	if err != nil {
-		return err
-	}
-
-	// TODO: not thread safe.... only other option is to put dagger host in dagger.Client
-	os.Setenv("DAGGER_HOST", "docker-container://"+containerName)
-	defer os.Unsetenv("DAGGER_HOST")
-
-	os.Setenv("DAGGER_RUNNER_HOST", "docker-container://"+containerName)
-	defer os.Unsetenv("DAGGER_RUNNER_HOST")
-
-	otherClient, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	return cb(ctx, otherClient)
 }

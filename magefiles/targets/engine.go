@@ -1,4 +1,4 @@
-package mage
+package targets
 
 import (
 	"context"
@@ -37,15 +37,13 @@ func (t Engine) Build(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		build := util.GoBase(c).
-			WithEnvVariable("GOOS", runtime.GOOS).
-			WithEnvVariable("GOARCH", runtime.GOARCH).
-			WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "/app/cmd/dagger"})
+	build := util.GoBase(c).
+		WithEnvVariable("GOOS", runtime.GOOS).
+		WithEnvVariable("GOARCH", runtime.GOARCH).
+		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "/app/cmd/dagger"})
 
-		_, err = build.Directory("./bin").Export(ctx, "./bin")
-		return err
-	})
+	_, err = build.Directory("./bin").Export(ctx, "./bin")
+	return err
 }
 
 // Lint lints the engine
@@ -56,15 +54,13 @@ func (t Engine) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = c.Container().
-			From("golangci/golangci-lint:v1.48").
-			WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
-			WithWorkdir("/app").
-			WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-			ExitCode(ctx)
-		return err
-	})
+	_, err = c.Container().
+		From("golangci/golangci-lint:v1.48").
+		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
+		WithWorkdir("/app").
+		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
+		ExitCode(ctx)
+	return err
 }
 
 func (t Engine) Publish(ctx context.Context, version string) error {
@@ -80,29 +76,27 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		arches := []string{"amd64", "arm64"}
-		oses := []string{"linux", "darwin", "windows"}
+	arches := []string{"amd64", "arm64"}
+	oses := []string{"linux", "darwin", "windows"}
 
-		digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-			PlatformVariants: util.DevEngineContainer(c, arches, oses),
-		})
-		if err != nil {
+	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
+		PlatformVariants: util.DevEngineContainer(c, arches, oses),
+	})
+	if err != nil {
+		return err
+	}
+
+	if semver.IsValid(version) {
+		sdks := sdk.All{}
+		if err := sdks.Bump(ctx, digest); err != nil {
 			return err
 		}
+	}
 
-		if semver.IsValid(version) {
-			sdks := sdk.All{}
-			if err := sdks.Bump(ctx, digest); err != nil {
-				return err
-			}
-		}
+	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
+	fmt.Println("PUBLISHED IMAGE REF:", digest)
 
-		time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
-		fmt.Println("PUBLISHED IMAGE REF:", digest)
-
-		return nil
-	})
+	return nil
 }
 
 func (t Engine) Dev(ctx context.Context) error {
@@ -137,22 +131,20 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	args = append(args, "./...")
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		output, err := util.GoBase(c).
-			WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
-			WithWorkdir("/app").
-			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-			WithExec(args, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			Stdout(ctx)
-		if err != nil {
-			return err
-		}
-		fmt.Println(output)
-		return nil
-	})
+	output, err := util.GoBase(c).
+		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
+		WithWorkdir("/app").
+		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
+		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+		WithExec(args, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Println(output)
+	return nil
 }
 
 func (t Engine) Test(ctx context.Context) error {
