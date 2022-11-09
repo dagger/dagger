@@ -23,6 +23,5 @@ jobs:
           version: v1.14.0
           args: sdk:python:publish ${{ github.ref_name }}
         env:
-          # Use "test" for test.pypi.org, leave empty for public one
           PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
           PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
