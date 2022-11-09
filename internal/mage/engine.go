@@ -6,10 +6,15 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
+)
+
+const (
+	EngineImageRef = "ghcr.io/dagger/engine:v0.3.3"
 )
 
 type Engine mg.Namespace
@@ -51,11 +56,6 @@ func (t Engine) Lint(ctx context.Context) error {
 	return err
 }
 
-const (
-	// TODO: placeholder until real one exists
-	engineImageRef = "ghcr.io/dagger/engine:test"
-)
-
 func (t Engine) Publish(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -66,13 +66,15 @@ func (t Engine) Publish(ctx context.Context) error {
 	arches := []string{"amd64", "arm64"}
 	oses := []string{"linux", "darwin"}
 
-	imageRef, err := c.Container().Publish(ctx, engineImageRef, dagger.ContainerPublishOpts{
+	imageRef, err := c.Container().Publish(ctx, EngineImageRef, dagger.ContainerPublishOpts{
 		PlatformVariants: util.DevEngineContainer(c, arches, oses),
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Println("Image published:", imageRef)
+
+	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion
+	fmt.Println("PUBLISHED IMAGE REF:", imageRef)
 
 	return nil
 }
