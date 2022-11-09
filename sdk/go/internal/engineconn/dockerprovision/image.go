@@ -161,12 +161,6 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (engi
 	args := []string{
 		"--remote", remote,
 	}
-	if cfg.Workdir != "" {
-		args = append(args, "--workdir", cfg.Workdir)
-	}
-	if cfg.ConfigPath != "" {
-		args = append(args, "--project", cfg.ConfigPath)
-	}
 
 	addr, childStdin, err := startHelper(ctx, cfg.LogOutput, helperBinPath, args...)
 	if err != nil {

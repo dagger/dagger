@@ -60,12 +60,6 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	args := []string{
 		"--remote", remote,
 	}
-	if cfg.Workdir != "" {
-		args = append(args, "--workdir", cfg.Workdir)
-	}
-	if cfg.ConfigPath != "" {
-		args = append(args, "--project", cfg.ConfigPath)
-	}
 
 	addr, childStdin, err := startHelper(ctx, cfg.LogOutput, tmpbin.Name(), args...)
 	if err != nil {

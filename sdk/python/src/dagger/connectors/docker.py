@@ -143,12 +143,6 @@ class Engine:
         buildkit_host = f"docker-container://{container_name}"
 
         helper_args = [helper_bin_path, "--remote", buildkit_host]
-        if self.cfg.workdir:
-            helper_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
-        if self.cfg.config_path:
-            helper_args.extend(
-                ["--project", str(Path(self.cfg.config_path).absolute())]
-            )
 
         self._proc = subprocess.Popen(
             helper_args,
