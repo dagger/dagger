@@ -37,10 +37,10 @@ var rootCmd = &cobra.Command{
 		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
 		return err
 	},
-	Run: Helper,
+	Run: EngineSession,
 }
 
-func Helper(cmd *cobra.Command, args []string) {
+func EngineSession(cmd *cobra.Command, args []string) {
 	startOpts := &engine.Config{
 		Workdir:    workdir,
 		ConfigPath: configPath,

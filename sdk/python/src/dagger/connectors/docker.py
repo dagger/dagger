@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import os
 import subprocess
@@ -16,7 +15,7 @@ from .http import HTTPConnector
 logger = logging.getLogger(__name__)
 
 
-HELPER_BINARY_PREFIX = "dagger-sdk-helper-"
+ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session-"
 
 
 def get_platform() -> tuple[str, str]:
@@ -36,20 +35,14 @@ class ImageRef:
 
     def __init__(self, ref: str) -> None:
         self.ref = ref
-        self.is_pinned = False
 
         # Check to see if ref contains @sha256:, if so use the digest as the id.
-        if "@sha256:" in ref:
-            id = ref.split("@sha256:", maxsplit=1)[1]
-            # TODO: add verification that the digest is valid
-            # (not something malicious with / or ..)
-            self.is_pinned = True
-        else:
-            # set id to the sha256 hash of the image_ref
-            # TODO: ensure that this is consistent w/ Go's sha256 hash
-            # (encoding is only likely source of difference)
-            id = hashlib.sha256(ref.encode()).hexdigest()
+        if "@sha256:" not in ref:
+            raise ValueError("Image ref must contain a digest")
 
+        id = ref.split("@sha256:", maxsplit=1)[1]
+        # TODO: add verification that the digest is valid
+        # (not something malicious with / or ..)
         self.id = id[: self.DIGEST_LEN]
 
 
@@ -66,92 +59,66 @@ class Engine:
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
         image = ImageRef(self.cfg.host.hostname + self.cfg.host.path)
-        helper_bin_path = cache_dir / f"{HELPER_BINARY_PREFIX}{image.id}"
-        container_name = f"dagger-engine-{image.id}"
+        engine_session_bin_path = (
+            cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
+        )
 
-        docker_run_args = [
-            "docker",
-            "run",
-            "--name",
-            container_name,
-            "-d",
-            "--restart",
-            "always",
-            "--privileged",
-            image.ref,
-            "--debug",
-        ]
+        if not engine_session_bin_path.exists():
+            os_, arch = get_platform()
+            tempfile_args = {
+                "prefix": f"temp-{ENGINE_SESSION_BINARY_PREFIX}",
+                "dir": cache_dir,
+                "delete": False,
+            }
+            with tempfile.NamedTemporaryFile(**tempfile_args) as tmp_bin:
+                docker_run_args = [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "/bin/cat",
+                    image.ref,
+                    f"/usr/bin/{ENGINE_SESSION_BINARY_PREFIX}{os_}-{arch}",
+                ]
+                try:
+                    subprocess.run(
+                        docker_run_args,
+                        stdout=tmp_bin,
+                        stderr=subprocess.PIPE,
+                        encoding="utf-8",
+                        check=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    tmp_bin.close()
+                    os.unlink(tmp_bin.name)
+                    raise ProvisionError(
+                        f"Failed to copy engine session binary: {e.stdout}"
+                    )
 
-        try:
-            subprocess.run(
-                docker_run_args,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                encoding="utf-8",
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
-            if (
-                f'Conflict. The container name "/{container_name}"'
-                " is already in use by container"
-            ) not in e.stdout:
-                raise ProvisionError(f"Failed to start engine container: {e.stdout}")
+                tmp_bin_path = Path(tmp_bin.name)
+                tmp_bin_path.chmod(0o700)
 
-        # TODO: garbage collection of old containers
+                engine_session_bin_path = tmp_bin_path.rename(engine_session_bin_path)
 
-        os_, arch = get_platform()
+            # garbage collection of old engine_session binaries
+            for bin in cache_dir.glob(f"{ENGINE_SESSION_BINARY_PREFIX}*"):
+                if bin != engine_session_bin_path:
+                    bin.unlink()
 
-        if not helper_bin_path.exists():
-            tmp_bin = tempfile.NamedTemporaryFile(
-                prefix=f"temp-{HELPER_BINARY_PREFIX}",
-                dir=cache_dir,
-                delete=False,
-            )
-            docker_cp_args = [
-                "docker",
-                "cp",
-                f"{container_name}:/usr/bin/{HELPER_BINARY_PREFIX}{os_}-{arch}",
-                tmp_bin.name,
-            ]
-            try:
-                subprocess.run(
-                    docker_cp_args,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    encoding="utf-8",
-                    check=True,
-                )
-            except subprocess.CalledProcessError as e:
-                tmp_bin.close()
-                os.unlink(tmp_bin.name)
-                raise ProvisionError(f"Failed to copy helper binary: {e.stdout}")
+        remote = f"docker-image://{image.ref}"
 
-            tmp_bin_path = Path(tmp_bin.name)
-            tmp_bin_path.chmod(0o700)
-
-            helper_bin_path = (
-                tmp_bin_path.rename(helper_bin_path)
-                if image.is_pinned
-                else tmp_bin_path
-            )
-
-        # garbage collection of old helper binaries
-        for bin in cache_dir.glob(f"{HELPER_BINARY_PREFIX}*"):
-            if bin != helper_bin_path:
-                bin.unlink()
-
-        buildkit_host = f"docker-container://{container_name}"
-
-        helper_args = [helper_bin_path, "--remote", buildkit_host]
+        engine_session_args = [engine_session_bin_path, "--remote", remote]
         if self.cfg.workdir:
-            helper_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
+            engine_session_args.extend(
+                ["--workdir", str(Path(self.cfg.workdir).absolute())]
+            )
         if self.cfg.config_path:
-            helper_args.extend(
+            engine_session_args.extend(
                 ["--project", str(Path(self.cfg.config_path).absolute())]
             )
 
         self._proc = subprocess.Popen(
-            helper_args,
+            engine_session_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self.cfg.log_output or subprocess.DEVNULL,
