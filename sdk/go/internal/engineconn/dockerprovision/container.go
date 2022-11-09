@@ -30,7 +30,7 @@ type DockerContainer struct {
 }
 
 func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
-	tmpbin, err := os.CreateTemp("", "temp-dagger-sdk-helper-"+c.containerName)
+	tmpbin, err := os.CreateTemp("", "temp-dagger-engine-session"+c.containerName)
 	if err != nil {
 		return nil, err
 	}
@@ -40,10 +40,10 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	// #nosec
 	if output, err := exec.CommandContext(ctx,
 		"docker", "cp",
-		c.containerName+":"+containerHelperBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
+		c.containerName+":"+containerEngineSessionBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
 		tmpbin.Name(),
 	).CombinedOutput(); err != nil {
-		return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin: %s", output)
+		return nil, errors.Wrapf(err, "failed to copy dagger-engine-session bin: %s", output)
 	}
 
 	if err := tmpbin.Chmod(0700); err != nil {
@@ -68,7 +68,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, childStdin, err := startHelper(ctx, cfg.LogOutput, tmpbin.Name(), args...)
+	addr, childStdin, err := startEngineSession(ctx, cfg.LogOutput, tmpbin.Name(), args...)
 	if err != nil {
 		return nil, err
 	}

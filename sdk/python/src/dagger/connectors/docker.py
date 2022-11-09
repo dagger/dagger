@@ -16,7 +16,7 @@ from .http import HTTPConnector
 logger = logging.getLogger(__name__)
 
 
-HELPER_BINARY_PREFIX = "dagger-sdk-helper-"
+ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session-"
 
 
 def get_platform() -> tuple[str, str]:
@@ -60,12 +60,12 @@ class Engine:
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
         image = ImageRef(self.cfg.host.hostname + self.cfg.host.path)
-        helper_bin_path = cache_dir / f"{HELPER_BINARY_PREFIX}{image.id}"
+        engine_session_bin_path = cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
 
-        if not helper_bin_path.exists():
+        if not engine_session_bin_path.exists():
             os_, arch = get_platform()
             tempfile_args = {
-                "prefix": f"temp-{HELPER_BINARY_PREFIX}",
+                "prefix": f"temp-{ENGINE_SESSION_BINARY_PREFIX}",
                 "dir": cache_dir,
                 "delete": False,
             }
@@ -77,7 +77,7 @@ class Engine:
                     "--entrypoint",
                     "/bin/cat",
                     image.ref,
-                    f"/usr/bin/{HELPER_BINARY_PREFIX}{os_}-{arch}",
+                    f"/usr/bin/{ENGINE_SESSION_BINARY_PREFIX}{os_}-{arch}",
                 ]
                 try:
                     subprocess.run(
@@ -90,30 +90,30 @@ class Engine:
                 except subprocess.CalledProcessError as e:
                     tmp_bin.close()
                     os.unlink(tmp_bin.name)
-                    raise ProvisionError(f"Failed to copy helper binary: {e.stdout}")
+                    raise ProvisionError(f"Failed to copy engine session binary: {e.stdout}")
 
                 tmp_bin_path = Path(tmp_bin.name)
                 tmp_bin_path.chmod(0o700)
 
-                helper_bin_path = tmp_bin_path.rename(helper_bin_path)
+                engine_session_bin_path = tmp_bin_path.rename(engine_session_bin_path)
 
-            # garbage collection of old helper binaries
-            for bin in cache_dir.glob(f"{HELPER_BINARY_PREFIX}*"):
-                if bin != helper_bin_path:
+            # garbage collection of old engine_session binaries
+            for bin in cache_dir.glob(f"{ENGINE_SESSION_BINARY_PREFIX}*"):
+                if bin != engine_session_bin_path:
                     bin.unlink()
 
         remote = f"docker-image://{image.ref}"
 
-        helper_args = [helper_bin_path, "--remote", remote]
+        engine_session_args = [engine_session_bin_path, "--remote", remote]
         if self.cfg.workdir:
-            helper_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
+            engine_session_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
         if self.cfg.config_path:
-            helper_args.extend(
+            engine_session_args.extend(
                 ["--project", str(Path(self.cfg.config_path).absolute())]
             )
 
         self._proc = subprocess.Popen(
-            helper_args,
+            engine_session_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self.cfg.log_output or subprocess.DEVNULL,
