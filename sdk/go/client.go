@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	engineImageRef = "ghcr.io/dagger/engine:test@sha256:5d9fb9c65f9098d30f7cbefb04e73003b49942c385344e0c7d665d2b52757b8e"
+	engineImageRef = "ghcr.io/dagger/engine:test@sha256:3703d856d7ecbd6f1182bd619d85f4f00026b582688348ff9952acd33d109ba1"
 	defaultHost    = "docker-image://" + engineImageRef
 )
 

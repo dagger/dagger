@@ -55,7 +55,6 @@ func (t Python) Test(ctx context.Context) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = pythonBase(c).
-			WithEnvVariable("DAGGER_HOST", "unix:///dagger.sock"). // gets automatically rewritten by shim to be http
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"poe", "test"},
 				ExperimentalPrivilegedNesting: true,

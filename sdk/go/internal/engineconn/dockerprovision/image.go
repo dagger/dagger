@@ -54,53 +54,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	id = id[:digestLen]
 
 	helperBinName := helperBinPrefix + id
-	containerName := containerNamePrefix + id
 	helperBinPath := filepath.Join(cacheDir, helperBinName)
-
-	if output, err := exec.CommandContext(ctx,
-		"docker", "run",
-		"--name", containerName,
-		"-d",
-		"--restart", "always",
-		"--privileged",
-		c.imageRef,
-		"--debug",
-	).CombinedOutput(); err != nil {
-		if !strings.Contains(
-			string(output),
-			fmt.Sprintf(`Conflict. The container name "/%s" is already in use by container`, containerName),
-		) {
-			return nil, errors.Wrapf(err, "failed to run container: %s", output)
-		}
-	}
-
-	if output, err := exec.CommandContext(ctx,
-		"docker", "ps",
-		"-a",
-		"--no-trunc",
-		"--filter", "name=^/"+containerNamePrefix,
-		"--format", "{{.Names}}",
-	).CombinedOutput(); err != nil {
-		if cfg.LogOutput != nil {
-			fmt.Fprintf(cfg.LogOutput, "failed to list containers: %s", output)
-		}
-	} else {
-		for _, line := range strings.Split(string(output), "\n") {
-			if line == "" {
-				continue
-			}
-			if line == containerName {
-				continue
-			}
-			if output, err := exec.CommandContext(ctx,
-				"docker", "rm", "-fv", line,
-			).CombinedOutput(); err != nil {
-				if cfg.LogOutput != nil {
-					fmt.Fprintf(cfg.LogOutput, "failed to remove old container %s: %s", line, output)
-				}
-			}
-		}
-	}
 
 	if _, err := os.Stat(helperBinPath); os.IsNotExist(err) {
 		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+helperBinName)
@@ -110,14 +64,21 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		defer tmpbin.Close()
 		defer os.Remove(tmpbin.Name())
 
-		dockerCpArgs := []string{
-			"docker", "cp",
-			containerName + ":" + containerHelperBinPrefix + runtime.GOOS + "-" + runtime.GOARCH,
-			tmpbin.Name(),
+		dockerRunArgs := []string{
+			"docker", "run",
+			"--rm",
+			"--entrypoint", "/bin/cat",
+			c.imageRef,
+			containerHelperBinPrefix + runtime.GOOS + "-" + runtime.GOARCH,
 		}
 		// #nosec
-		if output, err := exec.CommandContext(ctx, dockerCpArgs[0], dockerCpArgs[1:]...).CombinedOutput(); err != nil {
-			return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin with command %q: %s", strings.Join(dockerCpArgs, " "), output)
+		cmd := exec.CommandContext(ctx, dockerRunArgs[0], dockerRunArgs[1:]...)
+		cmd.Stdout = tmpbin
+		if cfg.LogOutput != nil {
+			cmd.Stderr = cfg.LogOutput
+		}
+		if err := cmd.Run(); err != nil {
+			return nil, errors.Wrapf(err, "failed to transfer dagger-sdk-helper bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
 		}
 
 		if err := tmpbin.Chmod(0700); err != nil {
@@ -157,7 +118,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		}
 	}
 
-	remote := "docker-container://" + containerName
+	remote := "docker-image://" + c.imageRef
 
 	args := []string{
 		"--remote", remote,
