@@ -1,13 +1,8 @@
 name: publish-sdk-python
 on:
   push:
-    branches:
-      - main
     tags:
-      - sdk/python/**
-    paths:
-      - "sdk/python/**"
-      - .github/workflows/publish-sdk-python.yml
+      - sdk/python/v**
 jobs:
   publish:
     runs-on: ubuntu-latest
