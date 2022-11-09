@@ -31,7 +31,7 @@ class BaseClient {
         });
     }
 }
-export class Client extends BaseClient {
+export default class Client extends BaseClient {
     /**
      * Load a container from ID. Null ID returns an empty container (scratch).
      */
@@ -78,6 +78,15 @@ export class Client extends BaseClient {
             }
         ];
         return new Host({ queryTree: this._queryTree, port: this.port });
+    }
+    secret(args) {
+        this._queryTree = [
+            {
+                operation: 'secret',
+                args
+            }
+        ];
+        return new Secret({ queryTree: this._queryTree, port: this.port });
     }
 }
 class CacheVolume extends BaseClient {
@@ -132,6 +141,18 @@ class HostVariable extends BaseClient {
         ];
         return new Secret({ queryTree: this._queryTree, port: this.port });
     }
+    value() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'value'
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
+    }
 }
 class Secret extends BaseClient {
     id() {
@@ -140,6 +161,18 @@ class Secret extends BaseClient {
                 ...this._queryTree,
                 {
                     operation: 'id'
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
+    }
+    plaintext() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'plaintext'
                 }
             ];
             const response = yield this._compute();
@@ -329,6 +362,18 @@ class Container extends BaseClient {
         return new File({ queryTree: this._queryTree, port: this.port });
     }
     /**
+     * The error stream of the last executed command. Null if no command has been executed.
+     */
+    stderr() {
+        this._queryTree = [
+            ...this._queryTree,
+            {
+                operation: 'stderr',
+            }
+        ];
+        return new File({ queryTree: this._queryTree, port: this.port });
+    }
+    /**
      * This container but with a different working directory
      */
     withWorkdir(args) {
@@ -341,6 +386,11 @@ class Container extends BaseClient {
         ];
         return new Container({ queryTree: this._queryTree, port: this.port });
     }
+    /**
+     * This container plus an env variable containing the given secret
+     * @arg name: string
+     * @arg secret: string
+     */
     withSecretVariable(args) {
         this._queryTree = [
             ...this._queryTree,

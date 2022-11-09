@@ -19,12 +19,19 @@ describe('NodeJS SDK api', function () {
 
   it('Build a query by splitting it', async function () {
     const image = new Client().container().from({address: "alpine"})
-    // const pkg = image.exec({args: ["apk", "add", "curl"]})
-    // const result = pkg.stdout()
+    const pkg = image.exec({args: ["apk", "add", "curl"]})
+    const result = pkg.stdout()
     
-    // assert.strictEqual(queryBuilder(result.queryTree), `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`);
+    assert.strictEqual(queryBuilder(result.queryTree), `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`);
   })
-//@ts-ignore
+  
+  it('Test Field Immutability', async function () {
+    const image = new Client().container().from({address: "alpine"})
+    const a = image.exec({args: ["echo","hello","world"]})
+    assert.strictEqual(queryBuilder(a.queryTree), `{container{from(address:"alpine"){exec(args:["echo","hello","world"])}}}`);
+    const b = image.exec({args: ["echo","foo","bar"]})
+    assert.strictEqual(queryBuilder(b.queryTree), `{container{from(address:"alpine"){exec(args:["echo","foo","bar"])}}}`);
+  })
 
   it('Return a flatten Graphql response', async function () {
     const tree = {

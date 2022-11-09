@@ -1,4 +1,4 @@
-import { ContainerExecArgs, ContainerWithFsArgs, ContainerWithMountedDirectoryArgs, ContainerWithSecretVariableArgs, ContainerWithWorkdirArgs, DirectoryEntriesArgs, DirectoryFileArgs, GitRepositoryBranchArgs, HostEnvVariableArgs, HostWorkdirArgs, QueryContainerArgs, QueryGitArgs, Scalars, SecretId } from "./types.js";
+import { Scalars, SecretId } from "./types.js";
 export declare type QueryTree = {
     operation: string;
     args?: Record<string, any>;
@@ -15,25 +15,32 @@ declare class BaseClient {
     get queryTree(): QueryTree[];
     protected _compute(): Promise<Record<string, any>>;
 }
-export declare class Client extends BaseClient {
+export default class Client extends BaseClient {
     /**
      * Load a container from ID. Null ID returns an empty container (scratch).
      */
-    container(args?: QueryContainerArgs): Container;
+    container(args?: {
+        id?: any;
+    }): Container;
     /**
      * Construct a cache volume for a given cache key
      */
     cacheVolume(args: {
-        key: Scalars['String'];
+        key: string;
     }): CacheVolume;
     /**
      * Query a git repository
      */
-    git(args: QueryGitArgs): Git;
+    git(args: {
+        url: string;
+    }): Git;
     /**
      * Query the host environment
      */
     host(): Host;
+    secret(args: {
+        id: Scalars['SecretID'];
+    }): Secret;
 }
 declare class CacheVolume extends BaseClient {
     /**
@@ -42,23 +49,32 @@ declare class CacheVolume extends BaseClient {
     id(): Promise<Record<string, Scalars['CacheID']>>;
 }
 declare class Host extends BaseClient {
-    envVariable(args?: HostEnvVariableArgs): HostVariable;
+    envVariable(args?: {
+        name: string;
+    }): HostVariable;
     /**
      * The current working directory on the host
      */
-    workdir(args?: HostWorkdirArgs): Directory;
+    workdir(args?: {
+        exclude?: string[] | undefined;
+        include?: string[] | undefined;
+    }): Directory;
 }
 declare class HostVariable extends BaseClient {
     secret(): Secret;
+    value(): Promise<Record<string, string>>;
 }
 declare class Secret extends BaseClient {
     id(): Promise<Record<string, SecretId>>;
+    plaintext(): Promise<Record<string, string>>;
 }
 declare class Git extends BaseClient {
     /**
      * Details on one branch
      */
-    branch(args: GitRepositoryBranchArgs): Tree;
+    branch(args: {
+        name: string;
+    }): Tree;
 }
 declare class Tree extends BaseClient {
     /**
@@ -80,12 +96,17 @@ declare class Container extends BaseClient {
     /**
      * This container after executing the specified command inside it
      */
-    exec(args: ContainerExecArgs): Container;
+    exec(args: {
+        args?: string[] | undefined;
+        stdin?: string | undefined;
+        redirectStdout?: string | undefined;
+        redirectStderr?: string | undefined;
+    }): Container;
     /**
      * Initialize this container from the base image published at the given address
      */
     from(args: {
-        address: Scalars['String'];
+        address: string;
     }): Container;
     /**
      * This container's root filesystem. Mounts are not included.
@@ -94,20 +115,25 @@ declare class Container extends BaseClient {
     /**
      * List of paths where a directory is mounted
      */
-    mounts(): Promise<Record<string, Array<Scalars['String']>>>;
+    mounts(): Promise<Record<string, Array<string>>>;
     /**
      * Initialize this container from this DirectoryID
      */
-    withFS(args: ContainerWithFsArgs): Container;
+    withFS(args: {
+        id: Scalars['DirectoryID'];
+    }): Container;
     /**
      * This container plus a directory mounted at the given path
      */
-    withMountedDirectory(args: ContainerWithMountedDirectoryArgs): Container;
+    withMountedDirectory(args: {
+        path: string;
+        source: Scalars['DirectoryID'];
+    }): Container;
     /**
      * This container plus a cache volume mounted at the given path
      */
     withMountedCache(args: {
-        path: Scalars['String'];
+        path: string;
         cache: Scalars['CacheID'];
         source?: Scalars['DirectoryID'];
     }): Container;
@@ -120,29 +146,45 @@ declare class Container extends BaseClient {
      */
     stdout(): File;
     /**
+     * The error stream of the last executed command. Null if no command has been executed.
+     */
+    stderr(): File;
+    /**
      * This container but with a different working directory
      */
-    withWorkdir(args: ContainerWithWorkdirArgs): Container;
-    withSecretVariable(args: ContainerWithSecretVariableArgs): Container;
+    withWorkdir(args: {
+        path: string;
+    }): Container;
+    /**
+     * This container plus an env variable containing the given secret
+     * @arg name: string
+     * @arg secret: string
+     */
+    withSecretVariable(args: {
+        name: string;
+        secret: any;
+    }): Container;
     /**
      * This container plus the given environment variable
      */
     withEnvVariable(args: {
-        name: Scalars['String'];
-        value: Scalars['String'];
+        name: string;
+        value: string;
     }): Container;
     /**
      * Retrieve a directory at the given path. Mounts are included.
      */
     directory(args: {
-        path: Scalars['String'];
+        path: string;
     }): Directory;
 }
 declare class Directory extends BaseClient {
     /**
      * Retrieve a file at the given path
      */
-    file(args: DirectoryFileArgs): File;
+    file(args: {
+        path: string;
+    }): File;
     /**
      * Retrieve a directory at the given path. Mounts are included.
      */
@@ -150,7 +192,9 @@ declare class Directory extends BaseClient {
     /**
      * Return a list of files and directories at the given path
      */
-    entries(args?: DirectoryEntriesArgs): Promise<Record<string, Array<Scalars['String']>>>;
+    entries(args?: {
+        path?: string | undefined;
+    }): Promise<Record<string, Array<string>>>;
 }
 export {};
 //# sourceMappingURL=client.d.ts.map

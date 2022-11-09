@@ -1,4 +1,4 @@
-import { Client } from './api/client.js';
+import Client from './api/client.js';
 /**
  * ConnectOpts defines option used to run cloak
  * in dev mode.

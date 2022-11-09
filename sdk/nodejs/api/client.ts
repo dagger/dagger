@@ -1,19 +1,5 @@
 import { GraphQLClient, gql } from "../index.js";
-import { 
-  ContainerExecArgs, 
-  ContainerWithFsArgs, 
-  ContainerWithMountedDirectoryArgs, 
-  ContainerWithSecretVariableArgs, 
-  ContainerWithWorkdirArgs, 
-  DirectoryEntriesArgs, 
-  DirectoryFileArgs, 
-  GitRepositoryBranchArgs, 
-  HostEnvVariableArgs, 
-  HostWorkdirArgs, 
-  QueryContainerArgs, 
-  QueryGitArgs, 
-  Scalars,
-  SecretId} from "./types.js";
+import { Scalars, SecretId} from "./types.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
 export type QueryTree = {
@@ -63,56 +49,68 @@ export default class Client extends BaseClient {
   /**
    * Load a container from ID. Null ID returns an empty container (scratch).
    */
-  container(args?: QueryContainerArgs): Container {
-    this._queryTree = [
+  container(args?: {
+    id?: any;
+}): Container {
+
+    return new Container({queryTree: [
       {
       operation: 'container',
       args
       }
-    ]
-
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
   
   /**
    * Construct a cache volume for a given cache key
    */
-  cacheVolume(args: {key: Scalars['String']}): CacheVolume {
-    this._queryTree = [
+  cacheVolume(args: {key: string}): CacheVolume {
+
+    return new CacheVolume({queryTree: [
       {
       operation: 'cacheVolume',
       args
       }
-    ]
-
-    return new CacheVolume({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * Query a git repository
    */
-  git(args: QueryGitArgs): Git {
-    this._queryTree = [
+  git(args: {
+    url: string;
+  }): Git {
+
+    return new Git({queryTree: [
       {
       operation: 'git',
       args
       }
-    ]
-
-    return new Git({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * Query the host environment
    */
   host(): Host {
-    this._queryTree = [
+
+    return new Host({queryTree: [
       {
       operation: 'host',
       }
-    ]
+    ], port: this.port})
+  }
 
-    return new Host({queryTree: this._queryTree, port: this.port})
+  secret(args: {
+    id: Scalars['SecretID'];
+}): Secret {
+
+    return new Secret({queryTree: [
+      {
+      operation: 'secret',
+      args
+      }
+    ], port: this.port})
   }
 
 }
@@ -137,43 +135,58 @@ class CacheVolume extends BaseClient {
 
 class Host extends BaseClient {
 
-  envVariable(args?: HostEnvVariableArgs): HostVariable {
-    this._queryTree = [
+  envVariable(args?: {
+    name: string;
+}): HostVariable {
+
+    return new HostVariable({queryTree: [
       ...this._queryTree,
       {
       operation: 'envVariable',
       args
       }
-    ]
-
-    return new HostVariable({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
   /**
    * The current working directory on the host
    */
-  workdir(args?: HostWorkdirArgs): Directory {
-    this._queryTree = [
+  workdir(args?: {
+    exclude?: string[] | undefined,
+    include?: string[] | undefined
+}): Directory {
+
+    return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'workdir',
       args
       }
-    ]
-
-    return new Directory({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 }
 
 class HostVariable extends BaseClient {
   secret(): Secret {
-    this._queryTree = [
+
+    return new Secret({queryTree: [
       ...this._queryTree,
       {
         operation: 'secret'
       }
+    ], port: this.port})
+  }
+  
+  async value(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: 'value'
+      }
     ]
 
-    return new Secret({queryTree: this._queryTree, port: this.port})
+    const response: Record<string, string> = await this._compute()
+
+    return response
   }
 }
 
@@ -190,22 +203,36 @@ class Secret extends BaseClient {
 
     return response
   }
+
+  async plaintext(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree, 
+      {
+      operation: 'plaintext'
+      }
+    ]
+
+    const response: Record<string, string> = await this._compute()
+
+    return response
+  }
 }
 
 class Git extends BaseClient {
   /**
    * Details on one branch
    */
-  branch(args: GitRepositoryBranchArgs): Tree {
-    this._queryTree = [
+  branch(args: {
+    name: string;
+}): Tree {
+
+    return new Tree({queryTree: [
       ...this._queryTree,
       {
         operation: 'branch',
         args
       }
-    ]
-
-    return new Tree({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
 }
@@ -214,14 +241,13 @@ class Tree extends BaseClient {
    * The filesystem tree at this ref
    */
   tree(): Directory {
-    this._queryTree = [
+
+    return new Directory({queryTree: [
       ...this._queryTree,
       {
         operation: 'tree'
       }
-    ]
-
-    return new Directory({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 }
 class File extends BaseClient {
@@ -263,51 +289,53 @@ class Container extends BaseClient {
   /**
    * This container after executing the specified command inside it
    */
-  exec(args: ContainerExecArgs): Container {
-    this._queryTree = [
+  exec(args: {
+    args?: string[] | undefined,
+    stdin?: string | undefined,
+    redirectStdout?: string | undefined,
+    redirectStderr?: string | undefined,
+  }): Container {
+    
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'exec',
       args
       }
-    ]
-    
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * Initialize this container from the base image published at the given address
    */
-  from(args: {address: Scalars['String']} ): Container {
-    this._queryTree = [
+  from(args: {address: string} ): Container {
+    
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'from',
       args
       }
-    ]
-    
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * This container's root filesystem. Mounts are not included.
    */
   fs(): Directory {
-    this._queryTree = [
+    
+    return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'fs',
       }
-    ]
-    
-    return new Directory({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * List of paths where a directory is mounted
    */
-  async mounts(): Promise<Record<string, Array<Scalars['String']>>> {
+  async mounts(): Promise<Record<string, Array<string>>> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -315,7 +343,7 @@ class Container extends BaseClient {
       }
     ]
 
-    const response: Awaited<Record<string, Array<Scalars['String']>>> = await this._compute()
+    const response: Awaited<Record<string, Array<string>>> = await this._compute()
 
     return response
   }
@@ -323,50 +351,52 @@ class Container extends BaseClient {
 /**
  * Initialize this container from this DirectoryID
  */
-  withFS(args: ContainerWithFsArgs): Container {
-    this._queryTree = [
+  withFS(args: {
+    id: Scalars['DirectoryID'];
+}): Container {
+    
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withFS',
       args
       }
-    ]
-    
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * This container plus a directory mounted at the given path
    */
-  withMountedDirectory(args: ContainerWithMountedDirectoryArgs): Container {
-    this._queryTree = [
+  withMountedDirectory(args: {
+    path: string;
+    source: Scalars['DirectoryID'];
+}): Container {
+    
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedDirectory',
       args
       }
-    ]
-    
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * This container plus a cache volume mounted at the given path
    */
   withMountedCache(args: {
-    path: Scalars['String'];
+    path: string;
     cache: Scalars['CacheID'];
     source?: Scalars['DirectoryID'];
   }): Container {
-    this._queryTree = [
+    
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedCache',
       args
       }
-    ]
-    
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
@@ -389,72 +419,89 @@ class Container extends BaseClient {
  * The output stream of the last executed command. Null if no command has been executed.
  */
   stdout(): File {
-    this._queryTree = [
+    
+    return new File({queryTree: [
       ...this._queryTree,
       {
       operation: 'stdout',
       }
-    ]
+    ], port: this.port})
+  }
+
+/**
+ * The error stream of the last executed command. Null if no command has been executed.
+ */
+  stderr(): File {
     
-    return new File({queryTree: this._queryTree, port: this.port})
+    return new File({queryTree: [
+      ...this._queryTree,
+      {
+      operation: 'stderr',
+      }
+    ], port: this.port})
   }
 
 /**
  * This container but with a different working directory
  */
-  withWorkdir(args: ContainerWithWorkdirArgs): Container {
-    this._queryTree = [
+  withWorkdir(args: {
+    path: string;
+}): Container {
+
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withWorkdir',
       args
       }
-    ]
-
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
-  withSecretVariable(args: ContainerWithSecretVariableArgs): Container {
+  /**
+   * This container plus an env variable containing the given secret
+   * @arg name: string
+   * @arg secret: string
+   */
+  withSecretVariable(args: {
+    name: string;
+    secret: any;
+}): Container {
   
-    this._queryTree = [
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withSecretVariable',
       args
       }
-    ]
-
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * This container plus the given environment variable
    */
-  withEnvVariable(args: { name: Scalars['String'], value: Scalars['String']}): Container {
-    this._queryTree = [
+  withEnvVariable(args: { name: string, value: string}): Container {
+
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withEnvVariable',
       args
       }
-    ]
-
-    return new Container({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 
   /**
    * Retrieve a directory at the given path. Mounts are included.
    */
-  directory(args: {path: Scalars['String'];}): Directory {
-    this._queryTree = [
+  directory(args: {path: string}): Directory {
+
+    return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
       args
       }
-    ]
-
-    return new Directory({queryTree: this._queryTree, port: this.port})
+    ], port: this.port})
   }
 }
 
@@ -463,16 +510,17 @@ class Directory extends BaseClient {
   /**
    * Retrieve a file at the given path
    */
-  file(args: DirectoryFileArgs): File {
-    this._queryTree = [
+  file(args: {
+    path: string;
+}): File {
+
+    return new File({queryTree: [
       ...this._queryTree,
       {
         operation: 'file',
         args
       }
-    ]
-
-    return new File({queryTree: this._queryTree, port: this.port}) 
+    ], port: this.port}) 
   }
   
   /**
@@ -494,7 +542,9 @@ class Directory extends BaseClient {
   /**
    * Return a list of files and directories at the given path
    */
-  async entries(args?: DirectoryEntriesArgs): Promise<Record<string, Array<Scalars['String']>>>  {
+  async entries(args?: {
+    path?: string | undefined;
+}): Promise<Record<string, Array<string>>>  {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -503,7 +553,7 @@ class Directory extends BaseClient {
       }
     ]
 
-    const response: Record<string, Array<Scalars['String']>> = await this._compute()
+    const response: Record<string, Array<string>> = await this._compute()
 
     return response
   }

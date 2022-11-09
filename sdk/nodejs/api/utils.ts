@@ -29,6 +29,11 @@ import { QueryTree } from "./client";
   }
 
   export function queryFlatten(res: Record<string, any>) {
+    if(!res) {
+      console.log("🐞 --------------------------------------------------🐞")
+      console.log("🐞 ~ Graphql Error response")
+      console.log("🐞 --------------------------------------------------🐞")
+    }
     return Object.assign(
       {}, 
       ...function _flatten(o): any { 
