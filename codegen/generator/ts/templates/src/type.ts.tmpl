@@ -1,0 +1,14 @@
+{{ define "type" -}}
+	{{- $name := .Name }}
+	{{- range .Fields -}}
+export type {{ $name }}{{ .Name | PascalCase }}Args = {
+		{{- range .Args }}
+			{{- $opt := "" -}}
+			{{- if .TypeRef.IsOptional }}
+				{{- $opt = "?" -}}
+			{{- end }}
+  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }};
+		{{- end }}
+};
+	{{- end }}
+{{- end }}
