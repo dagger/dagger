@@ -6,11 +6,26 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
+	"golang.org/x/mod/semver"
 )
+
+const (
+	EngineImageRef = "ghcr.io/dagger/engine"
+)
+
+func taggedEngineImageRef(tag string) (string, error) {
+	if tag != "main" {
+		if ok := semver.IsValid(tag); !ok {
+			return "", fmt.Errorf("invalid semver tag: %s", tag)
+		}
+	}
+	return fmt.Sprintf("%s:%s", EngineImageRef, tag), nil
+}
 
 type Engine mg.Namespace
 
@@ -51,12 +66,12 @@ func (t Engine) Lint(ctx context.Context) error {
 	return err
 }
 
-const (
-	// TODO: placeholder until real one exists
-	engineImageRef = "ghcr.io/dagger/engine:test"
-)
+func (t Engine) Publish(ctx context.Context, tag string) error {
+	engineImageRef, err := taggedEngineImageRef(tag)
+	if err != nil {
+		return err
+	}
 
-func (t Engine) Publish(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -72,7 +87,9 @@ func (t Engine) Publish(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Image published:", imageRef)
+
+	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
+	fmt.Println("PUBLISHED IMAGE REF:", imageRef)
 
 	return nil
 }
