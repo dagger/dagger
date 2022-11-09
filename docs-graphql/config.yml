@@ -8,7 +8,7 @@ spectaql:
 
 introspection:
   removeTrailingPeriodFromDescriptions: false
-  url: http://localhost:8080/query
+  schemaFile: ../core/schema/*.graphqls
   fieldExpansionDepth: 1
   metadataFile: ./metadata.json
   metadatas: true
@@ -32,3 +32,4 @@ info:
   x-introItems:
     - title: Important thing 1
       description: Some important stuff we wanted you to know. Supports `markdown`
+  x-url: https://api.dagger.cloud/playgrounds
