@@ -37,6 +37,6 @@ Next, in the highlighted section, the multi-stage build is achieved by transferr
 
 - Create a new container image which will be used as the runtime image, using `From("alpine")`.
 - Include the build artifact from the builder image in the new container by replacing the container's filesystem with the original filesystem plus the build artifact
-- Set the entrypoint to our application so that the application is executed by default when the container is run
+- Set the container entrypoint to the application so that it is executed by default when the container runs.
 
 The final optimized image can now be pushed to a registry and deployed!
