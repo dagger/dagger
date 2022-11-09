@@ -1,4 +1,4 @@
-name: publish-sdk-python
+name: "Publish Python SDK"
 on:
   push:
     tags:
