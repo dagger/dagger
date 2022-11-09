@@ -58,13 +58,16 @@ class Engine:
         )
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
+        os_, arch = get_platform()
+
         image = ImageRef(self.cfg.host.hostname + self.cfg.host.path)
         engine_session_bin_path = (
             cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
         )
+        if os_ == "windows":
+            engine_session_bin_path = engine_session_bin_path.with_suffix(".exe")
 
         if not engine_session_bin_path.exists():
-            os_, arch = get_platform()
             tempfile_args = {
                 "prefix": f"temp-{ENGINE_SESSION_BINARY_PREFIX}",
                 "dir": cache_dir,

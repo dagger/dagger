@@ -53,6 +53,9 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	id = id[:digestLen]
 
 	engineSessionBinName := engineSessionBinPrefix + id
+	if runtime.GOOS == "windows" {
+		engineSessionBinName += ".exe"
+	}
 	engineSessionBinPath := filepath.Join(cacheDir, engineSessionBinName)
 
 	if _, err := os.Stat(engineSessionBinPath); os.IsNotExist(err) {

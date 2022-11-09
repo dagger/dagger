@@ -32,7 +32,11 @@ type DockerContainer struct {
 }
 
 func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
-	tmpbin, err := os.CreateTemp("", "temp-dagger-engine-session"+c.containerName)
+	tmpbinName := "temp-dagger-engine-session" + c.containerName + "*"
+	if runtime.GOOS == "windows" {
+		tmpbinName += ".exe"
+	}
+	tmpbin, err := os.CreateTemp("", tmpbinName)
 	if err != nil {
 		return nil, err
 	}
