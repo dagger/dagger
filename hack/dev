@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+ROOTDIR="$(dirname "${BASH_SOURCE[0]}")/.."
+
+set -e -u -x
+
+$ROOTDIR/hack/bootstrap engine:dev
+
+export DAGGER_HOST=docker-container://test-dagger-engine
+
+"$@"

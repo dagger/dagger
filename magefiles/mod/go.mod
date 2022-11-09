@@ -6,6 +6,7 @@ require (
 	dagger.io/dagger v0.4.1-0.20221109161242-ed1561de4e87
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.14.0
+	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 )
 
 require (
