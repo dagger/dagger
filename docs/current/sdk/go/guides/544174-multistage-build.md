@@ -25,7 +25,7 @@ This guide assumes that:
 
 ## Example
 
-The following code snippet demonstrates a multistage build with the Go SDK. Below the snippet, we'll break down exactly what's happening
+The following code snippet demonstrates a multistage build with the Go SDK. 
 
 ```go file=../snippets/multistage-build/main.go
 
