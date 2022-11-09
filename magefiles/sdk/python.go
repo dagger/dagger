@@ -7,8 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dagger/dagger/magefiles/util"
+
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
 )
 
@@ -53,15 +54,13 @@ func (t Python) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = pythonBase(c).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"poe", "test"},
-				ExperimentalPrivilegedNesting: true,
-			}).
-			ExitCode(ctx)
-		return err
-	})
+	_, err = pythonBase(c).
+		Exec(dagger.ContainerExecOpts{
+			Args:                          []string{"poe", "test"},
+			ExperimentalPrivilegedNesting: true,
+		}).
+		ExitCode(ctx)
+	return err
 }
 
 // Generate re-generates the SDK API
@@ -72,24 +71,22 @@ func (t Python) Generate(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated := pythonBase(c).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"poe", "generate"},
-				ExperimentalPrivilegedNesting: true,
-			})
+	generated := pythonBase(c).
+		Exec(dagger.ContainerExecOpts{
+			Args:                          []string{"poe", "generate"},
+			ExperimentalPrivilegedNesting: true,
+		})
 
-		for _, f := range pythonGeneratedAPIPaths {
-			contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(f, []byte(contents), 0600); err != nil {
-				return err
-			}
+	for _, f := range pythonGeneratedAPIPaths {
+		contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
+		if err != nil {
+			return err
 		}
-		return nil
-	})
+		if err := os.WriteFile(f, []byte(contents), 0600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Publish publishes the Python SDK
