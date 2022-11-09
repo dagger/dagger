@@ -28,7 +28,7 @@ SecretID = NewType("SecretID", str)
 class CacheVolume(Type):
     """A directory whose contents persist across runs"""
 
-    async def id(self) -> CacheID:
+    def id(self) -> "CacheID":
         """Note
         ----
         This is lazyly evaluated, no operation is actually run.
@@ -41,7 +41,7 @@ class CacheVolume(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(CacheID)
+        return _ctx.execute_sync(CacheID)
 
 
 class Container(Type):
@@ -56,7 +56,7 @@ class Container(Type):
         _ctx = self._select("build", _args)
         return Container(_ctx)
 
-    async def default_args(self) -> list[str] | None:
+    def default_args(self) -> "list[str] | None":
         """Default arguments for future commands
 
         Returns
@@ -67,7 +67,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultArgs", _args)
-        return await _ctx.execute(list[str] | None)
+        return _ctx.execute_sync(list[str] | None)
 
     def directory(self, path: str) -> "Directory":
         """Retrieve a directory at the given path. Mounts are included."""
@@ -77,7 +77,7 @@ class Container(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    async def entrypoint(self) -> list[str] | None:
+    def entrypoint(self) -> "list[str] | None":
         """Entrypoint to be prepended to the arguments of all commands
 
         Returns
@@ -88,9 +88,9 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
-        return await _ctx.execute(list[str] | None)
+        return _ctx.execute_sync(list[str] | None)
 
-    async def env_variable(self, name: str) -> str | None:
+    def env_variable(self, name: str) -> "str | None":
         """The value of the specified environment variable
 
         Returns
@@ -103,7 +103,7 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("envVariable", _args)
-        return await _ctx.execute(str | None)
+        return _ctx.execute_sync(str | None)
 
     def env_variables(self) -> "EnvVariable":
         """A list of environment variables passed to commands"""
@@ -146,7 +146,7 @@ class Container(Type):
         _ctx = self._select("exec", _args)
         return Container(_ctx)
 
-    async def exit_code(self) -> int | None:
+    def exit_code(self) -> "int | None":
         """Exit code of the last executed command. Zero means success.
         Null if no command has been executed.
 
@@ -158,11 +158,11 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exitCode", _args)
-        return await _ctx.execute(int | None)
+        return _ctx.execute_sync(int | None)
 
-    async def export(
+    def export(
         self, path: str, platform_variants: list[ContainerID] | None = None
-    ) -> bool:
+    ) -> "bool":
         """Write the container as an OCI tarball to the destination file path on the host
 
         Returns
@@ -176,7 +176,7 @@ class Container(Type):
             Arg("platformVariants", platform_variants, None),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(bool)
+        return _ctx.execute_sync(bool)
 
     def file(self, path: str) -> "File":
         """Retrieve a file at the given path. Mounts are included."""
@@ -200,7 +200,7 @@ class Container(Type):
         _ctx = self._select("fs", _args)
         return Directory(_ctx)
 
-    async def id(self) -> ContainerID:
+    def id(self) -> "ContainerID":
         """A unique identifier for this container
 
         Note
@@ -215,9 +215,9 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ContainerID)
+        return _ctx.execute_sync(ContainerID)
 
-    async def mounts(self) -> list[str]:
+    def mounts(self) -> "list[str]":
         """List of paths where a directory is mounted
 
         Returns
@@ -228,9 +228,9 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("mounts", _args)
-        return await _ctx.execute(list[str])
+        return _ctx.execute_sync(list[str])
 
-    async def platform(self) -> Platform:
+    def platform(self) -> "Platform":
         """The platform this container executes and publishes as
 
         Returns
@@ -241,11 +241,11 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("platform", _args)
-        return await _ctx.execute(Platform)
+        return _ctx.execute_sync(Platform)
 
-    async def publish(
+    def publish(
         self, address: str, platform_variants: list[ContainerID] | None = None
-    ) -> str:
+    ) -> "str":
         """Publish this container as a new image, returning a fully qualified ref
 
         Returns
@@ -259,7 +259,7 @@ class Container(Type):
             Arg("platformVariants", platform_variants, None),
         ]
         _ctx = self._select("publish", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
     def stderr(self) -> "File":
         """The error stream of the last executed command.
@@ -277,7 +277,7 @@ class Container(Type):
         _ctx = self._select("stdout", _args)
         return File(_ctx)
 
-    async def user(self) -> str | None:
+    def user(self) -> "str | None":
         """The user to be set for all commands
 
         Returns
@@ -288,7 +288,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
-        return await _ctx.execute(str | None)
+        return _ctx.execute_sync(str | None)
 
     def with_default_args(self, args: list[str] | None = None) -> "Container":
         """Configures default arguments for future commands"""
@@ -411,7 +411,7 @@ class Container(Type):
         _ctx = self._select("withoutMount", _args)
         return Container(_ctx)
 
-    async def workdir(self) -> str | None:
+    def workdir(self) -> "str | None":
         """The working directory for all commands
 
         Returns
@@ -422,7 +422,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("workdir", _args)
-        return await _ctx.execute(str | None)
+        return _ctx.execute_sync(str | None)
 
 
 class Directory(Type):
@@ -444,7 +444,7 @@ class Directory(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    async def entries(self, path: str | None = None) -> list[str]:
+    def entries(self, path: str | None = None) -> "list[str]":
         """Return a list of files and directories at the given path
 
         Returns
@@ -457,9 +457,9 @@ class Directory(Type):
             Arg("path", path, None),
         ]
         _ctx = self._select("entries", _args)
-        return await _ctx.execute(list[str])
+        return _ctx.execute_sync(list[str])
 
-    async def export(self, path: str) -> bool:
+    def export(self, path: str) -> "bool":
         """Write the contents of the directory to a path on the host
 
         Returns
@@ -472,7 +472,7 @@ class Directory(Type):
             Arg("path", path),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(bool)
+        return _ctx.execute_sync(bool)
 
     def file(self, path: str) -> "File":
         """Retrieve a file at the given path"""
@@ -482,7 +482,7 @@ class Directory(Type):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    async def id(self) -> DirectoryID:
+    def id(self) -> "DirectoryID":
         """The content-addressed identifier of the directory
 
         Note
@@ -497,7 +497,7 @@ class Directory(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(DirectoryID)
+        return _ctx.execute_sync(DirectoryID)
 
     def load_project(self, config_path: str) -> "Project":
         """load a project's metadata"""
@@ -570,7 +570,7 @@ class Directory(Type):
 class EnvVariable(Type):
     """EnvVariable is a simple key value object that represents an environment variable."""
 
-    async def name(self) -> str:
+    def name(self) -> "str":
         """name is the environment variable name.
 
         Returns
@@ -581,9 +581,9 @@ class EnvVariable(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
-    async def value(self) -> str:
+    def value(self) -> "str":
         """value is the environment variable value
 
         Returns
@@ -594,13 +594,13 @@ class EnvVariable(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
 
 class File(Type):
     """A file"""
 
-    async def contents(self) -> str:
+    def contents(self) -> "str":
         """The contents of the file
 
         Returns
@@ -611,9 +611,9 @@ class File(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("contents", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
-    async def export(self, path: str) -> bool:
+    def export(self, path: str) -> "bool":
         """Write the file to a file path on the host
 
         Returns
@@ -626,9 +626,9 @@ class File(Type):
             Arg("path", path),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(bool)
+        return _ctx.execute_sync(bool)
 
-    async def id(self) -> FileID:
+    def id(self) -> "FileID":
         """The content-addressed identifier of the file
 
         Note
@@ -643,14 +643,14 @@ class File(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FileID)
+        return _ctx.execute_sync(FileID)
 
     def secret(self) -> "Secret":
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
-    async def size(self) -> int:
+    def size(self) -> "int":
         """The size of the file, in bytes
 
         Returns
@@ -661,13 +661,13 @@ class File(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("size", _args)
-        return await _ctx.execute(int)
+        return _ctx.execute_sync(int)
 
 
 class GitRef(Type):
     """A git ref (tag or branch)"""
 
-    async def digest(self) -> str:
+    def digest(self) -> "str":
         """The digest of the current value of this ref
 
         Returns
@@ -678,7 +678,7 @@ class GitRef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("digest", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
     def tree(self) -> "Directory":
         """The filesystem tree at this ref"""
@@ -698,7 +698,7 @@ class GitRepository(Type):
         _ctx = self._select("branch", _args)
         return GitRef(_ctx)
 
-    async def branches(self) -> list[str]:
+    def branches(self) -> "list[str]":
         """List of branches on the repository
 
         Returns
@@ -709,7 +709,7 @@ class GitRepository(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("branches", _args)
-        return await _ctx.execute(list[str])
+        return _ctx.execute_sync(list[str])
 
     def commit(self, id: str) -> "GitRef":
         """Details on one commit"""
@@ -727,7 +727,7 @@ class GitRepository(Type):
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)
 
-    async def tags(self) -> list[str]:
+    def tags(self) -> "list[str]":
         """List of tags on the repository
 
         Returns
@@ -738,7 +738,7 @@ class GitRepository(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("tags", _args)
-        return await _ctx.execute(list[str])
+        return _ctx.execute_sync(list[str])
 
 
 class Host(Type):
@@ -788,7 +788,7 @@ class HostVariable(Type):
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
-    async def value(self) -> str:
+    def value(self) -> "str":
         """The value of this variable
 
         Returns
@@ -799,7 +799,7 @@ class HostVariable(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
 
 class Project(Type):
@@ -817,7 +817,7 @@ class Project(Type):
         _ctx = self._select("generatedCode", _args)
         return Directory(_ctx)
 
-    async def install(self) -> bool:
+    def install(self) -> "bool":
         """install the project's schema
 
         Returns
@@ -828,9 +828,9 @@ class Project(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("install", _args)
-        return await _ctx.execute(bool)
+        return _ctx.execute_sync(bool)
 
-    async def name(self) -> str:
+    def name(self) -> "str":
         """name of the project
 
         Returns
@@ -841,9 +841,9 @@ class Project(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)
 
-    async def schema(self) -> str | None:
+    def schema(self) -> "str | None":
         """schema provided by the project
 
         Returns
@@ -854,9 +854,9 @@ class Project(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("schema", _args)
-        return await _ctx.execute(str | None)
+        return _ctx.execute_sync(str | None)
 
-    async def sdk(self) -> str | None:
+    def sdk(self) -> "str | None":
         """sdk used to generate code for and/or execute this project
 
         Returns
@@ -867,7 +867,7 @@ class Project(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
-        return await _ctx.execute(str | None)
+        return _ctx.execute_sync(str | None)
 
 
 class Client(Root):
@@ -893,7 +893,7 @@ class Client(Root):
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
-    async def default_platform(self) -> Platform:
+    def default_platform(self) -> "Platform":
         """The default platform of the builder.
 
         Returns
@@ -904,7 +904,7 @@ class Client(Root):
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultPlatform", _args)
-        return await _ctx.execute(Platform)
+        return _ctx.execute_sync(Platform)
 
     def directory(self, id: DirectoryID | None = None) -> "Directory":
         """Load a directory by ID. No argument produces an empty directory."""
@@ -965,7 +965,7 @@ class Client(Root):
 class Secret(Type):
     """A reference to a secret value, which can be handled more safely than the value itself"""
 
-    async def id(self) -> SecretID:
+    def id(self) -> "SecretID":
         """The identifier for this secret
 
         Note
@@ -980,9 +980,9 @@ class Secret(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SecretID)
+        return _ctx.execute_sync(SecretID)
 
-    async def plaintext(self) -> str:
+    def plaintext(self) -> "str":
         """The value of this secret
 
         Returns
@@ -993,4 +993,4 @@ class Secret(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
-        return await _ctx.execute(str)
+        return _ctx.execute_sync(str)

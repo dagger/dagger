@@ -11,8 +11,11 @@ import (
 	"github.com/magefile/mage/mg"
 )
 
-const (
-	pythonGeneratedAPIPath = "sdk/python/src/dagger/api/gen.py"
+var (
+	pythonGeneratedAPIPaths = []string{
+		"sdk/python/src/dagger/api/gen.py",
+		"sdk/python/src/dagger/api/gen_sync.py",
+	}
 )
 
 var _ SDK = Python{}
@@ -36,9 +39,9 @@ func (t Python) Lint(ctx context.Context) error {
 		return err
 	}
 
-	return lintGeneratedCode(pythonGeneratedAPIPath, func() error {
+	return lintGeneratedCode(func() error {
 		return t.Generate(ctx)
-	})
+	}, pythonGeneratedAPIPaths...)
 }
 
 // Test tests the Python SDK
@@ -70,21 +73,25 @@ func (t Python) Generate(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated, err := pythonBase(c).
+		generated := pythonBase(c).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"hatch", "run", "generate"},
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"hatch", "run", "lint:fmt"},
-			}).
-			File(strings.TrimPrefix(pythonGeneratedAPIPath, "sdk/python/")).
-			Contents(ctx)
-		if err != nil {
-			return err
-		}
+			})
 
-		return os.WriteFile(pythonGeneratedAPIPath, []byte(generated), 0600)
+		for _, f := range pythonGeneratedAPIPaths {
+			contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(f, []byte(contents), 0600); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
