@@ -7,8 +7,8 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
-    main: ./cmd/cloak
-    binary: cloak
+    main: ./cmd/dagger
+    binary: dagger
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -51,6 +51,7 @@ changelog:
       - "^chore"
       - "^build"
       - "^Merge"
+      - "^sdk"
   groups:
     - title: Breaking Changes
       regexp: "^.*!:+.*$"
@@ -71,7 +72,7 @@ brews:
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
-      system "#{bin}/cloak version"
+      system "#{bin}/dagger version"
 
 blobs:
   - provider: s3
