@@ -33,11 +33,11 @@ func TestObjects(t *testing.T) {
 }
 
 var wantObjects = `
+/**
+ * A directory whose contents persist across runs
+ */
 class CacheVolume extends BaseClient {
 
-  /**
-   * A unique identifier for this container
-   */
   async id(): Promise<Record<string, Scalars['CacheID']>> {
     this._queryTree = [
       ...this._queryTree,
@@ -52,13 +52,54 @@ class CacheVolume extends BaseClient {
   }
 }
 
+export type HostDirectoryArgs = {
+  path: string;
+  exclude?: []string;
+  include?: []string;
+};
+
+export type HostEnvVariableArgs = {
+  name: string;
+};
+
 export type HostWorkdirArgs = {
   exclude?: []string;
   include?: []string;
 };
 
+/**
+ * Information about the host execution environment
+ */
 class Host extends BaseClient {
 
+  /**
+   * Access a directory on the host
+   */
+  directory(args: HostDirectoryArgs): Directory {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'directory',
+      args
+      }
+    ]
+
+    return new Directory(this._queryTree)
+  }
+  /**
+   * Lookup the value of an environment variable. Null if the variable is not available.
+   */
+  envVariable(args: HostEnvVariableArgs): HostVariable {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'envVariable',
+      args
+      }
+    ]
+
+    return new HostVariable(this._queryTree)
+  }
   /**
    * The current working directory on the host
    */
@@ -78,96 +119,190 @@ class Host extends BaseClient {
 
 var objectsJSON = `
 [
-      {
-        "kind": "OBJECT",
-        "name": "CacheVolume",
-        "description": "",
-        "fields": [
-          {
-            "name": "id",
-            "description": "A unique identifier for this container",
-            "args": [],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "CacheID",
+        {
+          "description": "A directory whose contents persist across runs",
+          "enumValues": null,
+          "fields": [
+            {
+              "args": [],
+              "deprecationReason": null,
+              "description": "",
+              "isDeprecated": false,
+              "name": "id",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "CacheID",
+                  "ofType": null
+                }
+              }
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "kind": "OBJECT",
+          "name": "CacheVolume",
+          "possibleTypes": null
+        },
+        {
+          "description": "Information about the host execution environment",
+          "enumValues": null,
+          "fields": [
+            {
+              "args": [
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "path",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                },
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "exclude",
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "SCALAR",
+                        "name": "String",
+                        "ofType": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "include",
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "SCALAR",
+                        "name": "String",
+                        "ofType": null
+                      }
+                    }
+                  }
+                }
+              ],
+              "deprecationReason": null,
+              "description": "Access a directory on the host",
+              "isDeprecated": false,
+              "name": "directory",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Directory",
+                  "ofType": null
+                }
+              }
+            },
+            {
+              "args": [
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "name",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              ],
+              "deprecationReason": null,
+              "description": "Lookup the value of an environment variable. Null if the variable is not available.",
+              "isDeprecated": false,
+              "name": "envVariable",
+              "type": {
+                "kind": "OBJECT",
+                "name": "HostVariable",
                 "ofType": null
               }
             },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "OBJECT",
-        "name": "Host",
-        "description": "",
-	"fields": [
-	{
-		"name": "workdir",
-		"description": "The current working directory on the host",
-		"args": [
-		{
-			"name": "exclude",
-			"description": "",
-			"type": {
-				"kind": "LIST",
-				"name": null,
-				"ofType": {
-					"kind": "NON_NULL",
-					"name": null,
-					"ofType": {
-						"kind": "SCALAR",
-						"name": "String",
-						"ofType": null
-					}
-				}
-			},
-			"defaultValue": null
-		},
-		{
-			"name": "include",
-			"description": "",
-			"type": {
-				"kind": "LIST",
-				"name": null,
-				"ofType": {
-					"kind": "NON_NULL",
-					"name": null,
-					"ofType": {
-						"kind": "SCALAR",
-						"name": "String",
-						"ofType": null
-					}
-				}
-			},
-			"defaultValue": null
-		}
-		],
-		"type": {
-			"kind": "NON_NULL",
-			"name": null,
-			"ofType": {
-				"kind": "OBJECT",
-				"name": "Directory",
-				"ofType": null
-			}
-		},
-		"isDeprecated": false,
-		"deprecationReason": null
-	}
-	],
-        "inputFields": null,
-        "interfaces": [],
-        "enumValues": null,
-        "possibleTypes": null
-      }
+            {
+              "args": [
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "exclude",
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "SCALAR",
+                        "name": "String",
+                        "ofType": null
+                      }
+                    }
+                  }
+                },
+                {
+                  "defaultValue": null,
+                  "description": "",
+                  "name": "include",
+                  "type": {
+                    "kind": "LIST",
+                    "name": null,
+                    "ofType": {
+                      "kind": "NON_NULL",
+                      "name": null,
+                      "ofType": {
+                        "kind": "SCALAR",
+                        "name": "String",
+                        "ofType": null
+                      }
+                    }
+                  }
+                }
+              ],
+              "deprecationReason": null,
+              "description": "The current working directory on the host",
+              "isDeprecated": false,
+              "name": "workdir",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Directory",
+                  "ofType": null
+                }
+              }
+            }
+          ],
+          "inputFields": null,
+          "interfaces": [],
+          "kind": "OBJECT",
+          "name": "Host",
+          "possibleTypes": null
+        }
 ]
 `
