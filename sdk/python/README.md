@@ -76,4 +76,6 @@ Reformat code with `poetry run poe fmt` or just check with `poetry run poe lint`
 
 Re-regenerate client with `poetry run poe generate`.
 
+Build reference docs with `poetry run poe docs`.
+
 Tip: You don't need to prefix the previous commands with `poetry run` if you activate the virtualenv with `poetry shell`.

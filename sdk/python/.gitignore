@@ -2,3 +2,4 @@
 .mypy_cache
 .pytest_cache
 dist
+docs/_build

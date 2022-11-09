@@ -1,7 +1,7 @@
 import types
 import typing
 from collections import deque
-from typing import Any, Generic, NamedTuple, Sequence, TypeVar
+from typing import Any, NamedTuple, Sequence, TypeVar
 
 import attr
 import attrs
@@ -95,19 +95,6 @@ class Context:
             if response is None:
                 return None
         return self.converter.structure(response, return_type)
-
-
-@define
-class Result(Generic[_T]):
-    value: _T
-    type_: type[_T]
-    context: Context
-    document: graphql.DocumentNode
-    result: graphql.ExecutionResult
-
-    @property
-    def query(self) -> str:
-        return graphql.print_ast(self.document)
 
 
 class Arg(NamedTuple):

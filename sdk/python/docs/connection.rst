@@ -1,0 +1,5 @@
+Connection
+==========
+
+.. automodule:: dagger
+   :members:

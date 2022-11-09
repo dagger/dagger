@@ -200,6 +200,14 @@ def format_output_type(t: GraphQLOutputType) -> str:
     return t.name
 
 
+def output_type_description(t: GraphQLOutputType) -> str:
+    if is_wrapping_type(t):
+        return output_type_description(t.of_type)
+    if isinstance(t, GraphQLNamedType):
+        return t.description
+    return ""
+
+
 def doc(s: str) -> str:
     """Wrap string in docstring quotes."""
     if "\n" in s:
@@ -328,15 +336,10 @@ class _ObjectField:
 
             if self.is_leaf:
                 yield (
-                    dedent(
-                        """\
-                        Returns
-                        -------
-                            Resulting leaf value (scalar).
-
-                            Note: A request will be sent to the server.
-                        """.rstrip()
-                    ),
+                    "Returns",
+                    "-------",
+                    self.type,
+                    indent(output_type_description(self.graphql.type)),
                 )
 
         return "\n\n".join("\n".join(section) for section in _out())
