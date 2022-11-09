@@ -1,0 +1,34 @@
+# https://github.com/anvilco/spectaql/blob/main/config-example.yml
+# https://www.useanvil.com/blog/engineering/building-a-spectaql-theme-for-your-graphql-documentation/
+
+spectaql:
+  logoFile: ../website/static/img/dagger-logo-dark.png
+  faviconFile: ../website/static/img/favicon.png
+  themeDir: ./custom-theme/
+
+introspection:
+  removeTrailingPeriodFromDescriptions: false
+  url: http://localhost:8080/query
+  fieldExpansionDepth: 1
+  metadataFile: ./metadata.json
+  metadatas: true
+  hideMutationsWithUndocumentedReturnType: false
+  hideUnusedTypes: false
+
+extensions:
+  graphqlScalarExamples: true
+
+info:
+  title: GraphQL API Reference
+  description: Welcome to the party!
+  termsOfService: https://www.example.com/terms
+  contact:
+    name: API Support
+    url: http://www.example.com/support
+    email: support@example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  x-introItems:
+    - title: Important thing 1
+      description: Some important stuff we wanted you to know. Supports `markdown`
