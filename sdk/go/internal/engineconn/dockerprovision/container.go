@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"dagger.io/dagger/internal/engineconn"
+	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
 )
@@ -27,6 +28,7 @@ func NewDockerContainer(u *url.URL) (engineconn.EngineConn, error) {
 type DockerContainer struct {
 	containerName string
 	childStdin    io.Closer
+	tmpbinPath    string
 }
 
 func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
@@ -35,7 +37,9 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		return nil, err
 	}
 	defer tmpbin.Close()
-	defer os.Remove(tmpbin.Name())
+	// Don't do the clever thing and unlink after child proc starts, that doesn't work as expected on macos.
+	// Instead just try to delete this in our Close() method.
+	c.tmpbinPath = tmpbin.Name()
 
 	// #nosec
 	if output, err := exec.CommandContext(ctx,
@@ -88,8 +92,16 @@ func (c *DockerContainer) Addr() string {
 }
 
 func (c *DockerContainer) Close() error {
+	var merr *multierror.Error
 	if c.childStdin != nil {
-		return c.childStdin.Close()
+		if err := c.childStdin.Close(); err != nil {
+			merr = multierror.Append(merr, err)
+		}
 	}
-	return nil
+	if c.tmpbinPath != "" {
+		if err := os.Remove(c.tmpbinPath); err != nil {
+			merr = multierror.Append(merr, err)
+		}
+	}
+	return merr.ErrorOrNil()
 }
