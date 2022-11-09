@@ -35,9 +35,8 @@ class CacheVolume(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        CacheID
+            A global cache volume identifier
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -61,9 +60,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        list[str] | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultArgs", _args)
@@ -82,9 +80,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        list[str] | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
@@ -95,9 +92,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args = [
             Arg("name", name),
@@ -152,9 +148,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        int | None
+            The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.
         """
         _args: list[Arg] = []
         _ctx = self._select("exitCode", _args)
@@ -167,9 +162,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
         """
         _args = [
             Arg("path", path),
@@ -209,9 +203,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        ContainerID
+            A unique container identifier. Null designates an empty container (scratch).
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -222,9 +215,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        list[str]
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("mounts", _args)
@@ -235,9 +227,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
+        Platform
 
-            Note: A request will be sent to the server.
         """
         _args: list[Arg] = []
         _ctx = self._select("platform", _args)
@@ -250,9 +241,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args = [
             Arg("address", address),
@@ -282,9 +272,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
@@ -416,9 +405,8 @@ class Container(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("workdir", _args)
@@ -449,9 +437,8 @@ class Directory(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        list[str]
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args = [
             Arg("path", path, None),
@@ -464,9 +451,8 @@ class Directory(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
         """
         _args = [
             Arg("path", path),
@@ -491,9 +477,8 @@ class Directory(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        DirectoryID
+            A content-addressed directory identifier
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -575,9 +560,8 @@ class EnvVariable(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
@@ -588,9 +572,8 @@ class EnvVariable(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
@@ -605,9 +588,8 @@ class File(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("contents", _args)
@@ -618,9 +600,8 @@ class File(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
         """
         _args = [
             Arg("path", path),
@@ -637,9 +618,8 @@ class File(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
+        FileID
 
-            Note: A request will be sent to the server.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -655,9 +635,8 @@ class File(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        int
+            The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.
         """
         _args: list[Arg] = []
         _ctx = self._select("size", _args)
@@ -672,9 +651,8 @@ class GitRef(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("digest", _args)
@@ -703,9 +681,8 @@ class GitRepository(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        list[str]
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("branches", _args)
@@ -732,9 +709,8 @@ class GitRepository(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        list[str]
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("tags", _args)
@@ -793,9 +769,8 @@ class HostVariable(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
@@ -822,9 +797,8 @@ class Project(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
         """
         _args: list[Arg] = []
         _ctx = self._select("install", _args)
@@ -835,9 +809,8 @@ class Project(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
@@ -848,9 +821,8 @@ class Project(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("schema", _args)
@@ -861,9 +833,8 @@ class Project(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str | None
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
@@ -898,9 +869,8 @@ class Client(Root):
 
         Returns
         -------
-            Resulting leaf value (scalar).
+        Platform
 
-            Note: A request will be sent to the server.
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultPlatform", _args)
@@ -974,9 +944,8 @@ class Secret(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        SecretID
+            A unique identifier for a secret
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -987,9 +956,8 @@ class Secret(Type):
 
         Returns
         -------
-            Resulting leaf value (scalar).
-
-            Note: A request will be sent to the server.
+        str
+            The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
