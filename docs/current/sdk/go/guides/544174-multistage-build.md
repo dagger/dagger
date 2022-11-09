@@ -11,7 +11,7 @@ Multi-stage builds are a common practice when building containers with Docker.
 
 [Learn more about multi-stage builds in the Docker documentation](https://docs.docker.com/build/building/multi-stage/).
 
-This document shows how multistage builds are created using the Go SDK.
+This guide explains how to perform multi-stage builds with the Go SDK.
 
 ## Introduction
 
