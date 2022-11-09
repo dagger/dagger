@@ -79,7 +79,7 @@ func (t Engine) Publish(ctx context.Context, tag string) error {
 	defer c.Close()
 
 	arches := []string{"amd64", "arm64"}
-	oses := []string{"linux", "darwin"}
+	oses := []string{"linux", "darwin", "windows"}
 
 	imageRef, err := c.Container().Publish(ctx, engineImageRef, dagger.ContainerPublishOpts{
 		PlatformVariants: util.DevEngineContainer(c, arches, oses),
