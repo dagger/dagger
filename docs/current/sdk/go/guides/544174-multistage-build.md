@@ -34,4 +34,4 @@ Next, in the highlighted section, the multistage build is achieved by taking the
 - Include the build artifact from the builder image in the new container by replacing the container's filesystem with the original filesystem plus the build artifact
 - Set the entrypoint to our application so that the application is executed by default when the container is run
 
-Now that we have a slimmed down production image, it can be pushed to a registry and deployed!
+The final optimized image can now be pushed to a registry and deployed!
