@@ -5,27 +5,20 @@
 
 ## Engine
 
-### Prep
+### Release
 
-- Ensure you have GHCR credentials for your Dagger Github account configured ([instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry)).
-- Ensure [Mage is installed](https://magefile.org/).
 - Ensure that CI is green for all tests in main
 
 ```console
+export ENGINE_VERSION=v0.3.0
+git checkout main
 git pull
 git status  # make sure everything is clean
-```
-
-### Bump version tags
-
-- Modify `EngineImageRef` in `internal/mage/engine.go` to use a tag set to the engine version (e.g. `v0.3.0`).
-
-```console
-export ENGINE_VERSION=v0.3.0
 git tag $ENGINE_VERSION
 git push origin $ENGINE_VERSION
-mage engine:publish
 ```
+
+This will kick off the workflow in `.github./workflows/publish-engine.yml` that builds+pushes the engine image to our registry with a tag matching `ENGINE_VERSION`.
 
 ## Go SDK
 
