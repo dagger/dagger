@@ -33,33 +33,32 @@ dagger.#Plan & {
 						"""]
 				}
 			}
-			// Not Implemented
-			// rmWildcard: {
-			// 	// Write directory
-			// 	write: core.#Exec & {
-			// 		input: pull.output
-			// 		args: ["/bin/sh", "-e", "-c", """
-			// 			touch /foo.txt
-			// 			touch /bar.txt
-			// 			touch /data.json
-			// 			"""]
-			// 	}
+			rmWildcard: {
+				// Write directory
+				write: core.#Exec & {
+					input: pull.output
+					args: ["/bin/sh", "-e", "-c", """
+						touch /foo.txt
+						touch /bar.txt
+						touch /data.json
+						"""]
+				}
 
-			// 	// Remove all .txt file
-			// 	rm: core.#Rm & {
-			// 		input: write.output
-			// 		path:  "/*.txt"
-			// 	}
+				// Remove all .txt file
+				rm: core.#Rm & {
+					input: write.output
+					path:  "/*.txt"
+				}
 
-			// 	verify: core.#Exec & {
-			// 		input: rm.output
-			// 		args: ["/bin/sh", "-e", "-c", """
-			// 				test ! -e /foo.txt
-			// 				test ! -e /bar.txt
-			// 				test -e /data.json
-			// 			"""]
-			// 	}
-			// }
+				verify: core.#Exec & {
+					input: rm.output
+					args: ["/bin/sh", "-e", "-c", """
+							test ! -e /foo.txt
+							test ! -e /bar.txt
+							test -e /data.json
+						"""]
+				}
+			}
 
 			rmDir: {
 				// Write directory

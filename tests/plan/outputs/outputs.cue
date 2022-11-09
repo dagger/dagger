@@ -22,21 +22,22 @@ dagger.#Plan & {
 
 		// control which outputs you want
 		control: {
-			_pull: #Pull
+			// _pull: #Pull
 
 			// simple reference
-			foo: _pull.digest
+			// foo: _pull.digest
 
 			// extended reference
-			bar: core.#Ref & _pull.digest
+			// bar: core.#Ref & _pull.digest
 
 			// dynamic
-			if _pull.config.cmd != _|_ {
-				cmd: _pull.config.cmd[0]
-			}
+			// if _pull.config.cmd != _|_ {
+			// 	cmd: _pull.config.cmd[0]
+			// }
 
 			// transformation
-			transf: strings.TrimSpace("\(foo)\n")
+			// transf: strings.TrimSpace("\(foo)\n")
+			transf: strings.TrimSpace("\(int)\n")
 
 			// non-string
 			_notString: core.#Nop & {
@@ -45,10 +46,10 @@ dagger.#Plan & {
 			int: _notString.output
 
 			// non-scalars not supported
-			config: _pull.config
+			// config: _pull.config
 
 			// outside dependency references not supported
-			outRef: dep.output
+			// outRef: dep.output
 
 			// should skip inputs
 			input:    string | *"foobar"
