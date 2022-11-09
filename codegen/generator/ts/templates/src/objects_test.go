@@ -38,7 +38,7 @@ var wantObjects = `
  */
 class CacheVolume extends BaseClient {
 
-  async id(): Promise<Record<string, Scalars['CacheID']>> {
+  async id(): Promise<Record<string, CacheID>> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -46,7 +46,7 @@ class CacheVolume extends BaseClient {
       }
     ]
 
-    const response: Awaited<Record<string, Scalars['CacheID']>> = await this._compute()
+    const response: Awaited<Record<string, CacheID>> = await this._compute()
 
     return response
   }

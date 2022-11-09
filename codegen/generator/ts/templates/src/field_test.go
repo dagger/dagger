@@ -62,7 +62,7 @@ func TestField(t *testing.T) {
 	t.Run("async id(): Promise<Record<string, DirectoryID>>", func(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve")
 		want := `
-  async id(): Promise<Record<string, Scalars['DirectoryID']>> {
+  async id(): Promise<Record<string, DirectoryID>> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -70,7 +70,7 @@ func TestField(t *testing.T) {
       }
     ]
 
-    const response: Awaited<Record<string, Scalars['DirectoryID']>> = await this._compute()
+    const response: Awaited<Record<string, DirectoryID>> = await this._compute()
 
     return response
   }`

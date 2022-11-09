@@ -33,7 +33,7 @@
     ]
 		{{- if .TypeRef }}
 
-    const response: Awaited<Record<string, Scalars['{{ .TypeRef | FormatOutputType }}']>> = await this._compute()
+    const response: Awaited<Record<string, {{ .TypeRef | FormatOutputType }}>> = await this._compute()
 
     return response
   }
