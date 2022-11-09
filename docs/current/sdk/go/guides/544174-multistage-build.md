@@ -2,7 +2,7 @@
 slug: /544174/multistage-build
 ---
 
-# Multistage Builds
+# Use Dagger with Multi-stage Container Builds
 
 A common practice when building containers with Dockerfiles is something called a multistage build. This means within the `docker build`, your application is compiled in a context which has tools that are required for building your app, but not necessarily required for running the application. To reduce the number of dependencies in the image you actually run the application on, the compiled application is copied to a different base image which only has the required components to run the application. More information about multistage builds can be found in [this guide](https://docs.docker.com/build/building/multi-stage/) from Docker.
 
