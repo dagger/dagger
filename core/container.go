@@ -272,9 +272,14 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		return nil, err
 	}
 
-	st, err := bkref.ToState()
-	if err != nil {
-		return nil, err
+	var st llb.State
+	if bkref == nil {
+		st = llb.Scratch()
+	} else {
+		st, err = bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
