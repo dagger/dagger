@@ -139,7 +139,7 @@ const (
 )
 
 func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
-	buildkitRepo := c.Git(buildkitRepo).Branch(buildkitBranch).Tree()
+	buildkitRepo := c.Git(buildkitRepo, dagger.GitOpts{KeepGitDir: true}).Branch(buildkitBranch).Tree()
 
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
