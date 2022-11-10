@@ -2,11 +2,14 @@
 Execute a command
 """
 
+import sys
 import anyio
 import dagger
 
 async def test():
-    async with dagger.Connection() as client:
+    config = dagger.Config(log_output=sys.stderr)
+
+    async with dagger.Connection(config) as client:
 
         python = (
             client.container()
