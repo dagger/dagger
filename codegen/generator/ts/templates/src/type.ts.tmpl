@@ -1,17 +1,27 @@
 {{ define "type" -}}
-	{{- $name := .Name }}
-	{{- range .Fields -}}
-		{{- $argsLen := len .Args }}
-		{{- if gt $argsLen 0 }}
-export type {{ $name }}{{ .Name | PascalCase }}Args = {
-			{{- range .Args }}
-				{{- $opt := "" -}}
-				{{- if .TypeRef.IsOptional }}
-					{{- $opt = "?" -}}
-				{{- end }}
+	{{- $typeName := .Name }}
+	{{- if IsCustomScalar . }}
+{{- with .Description }}
+{{- $descLines := CommentToLines . }}
+{{ template "object_comment" $descLines }}
+{{- end }}
+export type {{ $typeName }}: any
+{{ "" }}
+	{{- end }}
+	{{- with .Fields }}
+		{{- range . -}}
+			{{- $argsLen := len .Args }}
+			{{- if gt $argsLen 0 }}
+export type {{ $typeName }}{{ .Name | PascalCase }}Args = {
+				{{- range .Args }}
+					{{- $opt := "" -}}
+					{{- if .TypeRef.IsOptional }}
+						{{- $opt = "?" -}}
+					{{- end }}
   {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }};
-			{{- end }}
+				{{- end }}
 };
-{{ "" }}	{{- end }}
+{{ "" }}		{{- end }}
+		{{- end }}
 	{{- end }}
 {{- end }}

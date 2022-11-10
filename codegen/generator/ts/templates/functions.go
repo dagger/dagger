@@ -21,6 +21,7 @@ var (
 		"FieldFunction":          FieldFunction,
 		"PascalCase":             PascalCase,
 		"IsSingleOptional":       IsSingleOptional,
+		"IsCustomScalar":         IsCustomScalar,
 		"Solve":                  Solve,
 		"Subtract":               Subtract,
 	}
@@ -59,6 +60,15 @@ func FormatInputType(r *introspection.TypeRef) string {
 
 func FormatOutputType(r *introspection.TypeRef) string {
 	return formatType(r)
+}
+
+func IsCustomScalar(t *introspection.Type) bool {
+	switch introspection.Scalar(t.Name) {
+	case introspection.ScalarString, introspection.ScalarInt, introspection.ScalarFloat, introspection.ScalarBoolean:
+		return false
+	default:
+		return true && t.Kind == introspection.TypeKindScalar
+	}
 }
 
 // formatType formats a GraphQL type into TypeScript
