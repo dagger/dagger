@@ -68,7 +68,7 @@ Requirements:
 - [Poetry](https://python-poetry.org/docs/)
 - [Docker](https://docs.docker.com/engine/install/)
 
-Start enviornment with `poetry install`.
+Start environment with `poetry install`.
 
 Run tests with `poetry run poe test`.
 
