@@ -41,6 +41,10 @@ jobs:
         if: always()
         run: |
           docker logs test-dagger-engine
+      - name: Print Kernel Logs
+        if: always()
+        run: |
+          sudo dmesg
   engine-race:
     needs: [engine] # prioritize fast feedback + don't bother if tests fail
     name: engine with -race
@@ -56,6 +60,10 @@ jobs:
         if: always()
         run: |
           docker logs test-dagger-engine
+      - name: Print Kernel Logs
+        if: always()
+        run: |
+          sudo dmesg
   sdk-go:
     name: sdk / go
     runs-on: ubuntu-22.04-16c-64g-600gb
