@@ -5,21 +5,12 @@ displayed_sidebar: 'current'
 
 # Use Dagger with Private Git Repositories
 
-Dagger uses your host's SSH authentication agent to securely authenticate against private remote Git repositories.
-
-To clone private repositories, the only requirement is to run `ssh-add` on the Dagger host to add your SSH key to the authentication agent.
-
-Assume that you have a Dagger CI tool containing the following code, which references a private repository:
+{@include: ../../../partials/_private-git-repository_first.md}
 
 ```go file=../snippets/private-repositories/main.go
 ```
 
-Now, first remove all the SSH keys from the authentication agent on the Dagger host:
-
-```shell
-➜  ssh-add -D
-All identities removed.
-```
+{@include: ../../../partials/_private-git-repository_second.md}
 
 Attempt to run the Go CI tool:
 

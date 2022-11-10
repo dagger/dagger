@@ -1,6 +1,6 @@
-# """
-# Clone a Private Git Repository and print the content of the README.md file
-# """
+"""
+Clone a Private Git Repository and print the content of the README.md file
+"""
 
 import anyio
 import dagger
@@ -9,14 +9,14 @@ async def private_repo():
     async with dagger.Connection() as client:
 
         repo = (
-            client.
+            client
             # Retrieve the repository
-            git("git@private-repository.git").
+            .git("git@private-repository.git")
             # Select the main branch, and the filesystem tree associated
-            branch("main").
-            tree().
+            .branch("main")
+            .tree()
             # Select the README.md file
-            file("README.md")
+            .file("README.md")
         )
 
         # Retrieve the content of the README file
