@@ -9,7 +9,7 @@ A client package for running `Dagger <https://dagger.io/>`_ pipelines.
 
 .. toctree::
    :maxdepth: 4
-   :caption: Documentation
+   :caption: Reference
 
    connection
    api
