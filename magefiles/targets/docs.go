@@ -1,11 +1,12 @@
-package mage
+package targets
 
 import (
 	"context"
 	"os"
 
+	"github.com/dagger/dagger/magefiles/util"
+
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
 )
 

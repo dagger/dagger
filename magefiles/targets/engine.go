@@ -1,4 +1,4 @@
-package mage
+package targets
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/dagger/dagger/magefiles/util"
+
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
 )
@@ -126,13 +127,11 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	fmt.Println("Running tests with args:", args)
 
 	// #nosec
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Env = os.Environ()
-		return cmd.Run()
-	})
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	return cmd.Run()
 }
 
 func (t Engine) Test(ctx context.Context) error {

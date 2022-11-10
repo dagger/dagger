@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-set -e
+set -e -u -x
 
 ROOTDIR="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 
-cd "$ROOTDIR"
-go run magefiles/main.go $@
+$ROOTDIR/hack/dev $ROOTDIR/hack/make engine:test
