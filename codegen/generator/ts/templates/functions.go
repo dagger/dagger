@@ -74,12 +74,14 @@ func IsCustomScalar(t *introspection.Type) bool {
 
 // formatType formats a GraphQL type into TypeScript
 // Example: `String` -> `string`
-func formatType(r *introspection.TypeRef) string {
-	var representation string
+func formatType(r *introspection.TypeRef) (representation string) {
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
 		case introspection.TypeKindList:
-			representation += "[]"
+			// add [] as suffix to the type
+			defer func() {
+				representation += "[]"
+			}()
 		case introspection.TypeKindScalar:
 			switch introspection.Scalar(ref.Name) {
 			case introspection.ScalarString:
