@@ -22,8 +22,6 @@ class {{ .Name | FormatName }} extends BaseClient {
 						{{ template "field" . }}
 					{{- end }}
 }
-			{{- else }}
-				{{ template "type" . }}
 			{{- end }}
 		{{- end }}
 	{{- end }}
