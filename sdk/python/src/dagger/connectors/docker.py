@@ -151,7 +151,7 @@ class Engine:
 @register_connector("docker-image")
 @define
 class DockerConnector(HTTPConnector):
-    """Providion dagger engine from an image with docker"""
+    """Provision dagger engine from an image with docker"""
 
     engine: Engine = Factory(lambda self: Engine(self.cfg), takes_self=True)
 
