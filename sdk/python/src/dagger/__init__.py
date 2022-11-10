@@ -1,5 +1,3 @@
-"""Dagger Python SDK"""
-
 from .api.gen import Client
 from .api.gen_sync import Client as SyncClient
 from .connection import Connection

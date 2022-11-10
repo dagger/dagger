@@ -65,12 +65,20 @@ typing_extensions = ">=4.4.0"
 [tool.poetry.group.dev.dependencies]
 poethepoet = ">=0.16.4"
 
+[tool.poetry.group.docs.dependencies]
+sphinx = ">=5.3.0"
+sphinx-rtd-theme = "^1.1.1"
+
 [tool.poe.env]
 GEN_PATH = "./src/dagger/api"
 
 [tool.poe.tasks]
 test = "pytest"
 typing = "mypy src/dagger tests"
+
+[tool.poe.tasks.docs]
+cmd = "sphinx-build -v . _build"
+cwd = "docs"
 
 [tool.poe.tasks.lint]
 sequence = [
