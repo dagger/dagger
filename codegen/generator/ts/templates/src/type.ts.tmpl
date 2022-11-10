@@ -9,7 +9,7 @@
 			{{- $descLines := CommentToLines . }}
 {{ template "object_comment" $descLines }}
 		{{- end }}
-export type {{ $typeName }}: any
+export type {{ $typeName }} = any
 {{ "" }}
 	{{- end }}
 	{{- with .Fields }}
