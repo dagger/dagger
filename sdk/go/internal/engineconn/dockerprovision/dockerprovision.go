@@ -14,9 +14,14 @@ import (
 	exec "golang.org/x/sys/execabs"
 )
 
+const (
+	DockerImageConnName     = "docker-image"
+	DockerContainerConnName = "docker-container"
+)
+
 func init() {
-	engineconn.Register("docker-image", NewDockerImage)
-	engineconn.Register("docker-container", NewDockerContainer)
+	engineconn.Register(DockerImageConnName, NewDockerImage)
+	engineconn.Register(DockerContainerConnName, NewDockerContainer)
 }
 
 const (
