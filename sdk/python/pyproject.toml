@@ -10,7 +10,7 @@ license = "Apache-2.0"
 authors = ["Dagger <hello@dagger.io>"]
 readme = "README.md"
 homepage = "https://dagger.io"
-documentation = "https://docs.dagger.io"
+documentation = "https://docs.dagger.io/sdk/python"
 repository = "https://github.com/dagger/dagger"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -31,6 +31,7 @@ packages = [
 
 [tool.poetry.urls]
 "Bug Tracker" = "https://github.com/dagger/dagger/issues"
+"API Reference" = "https://dagger-io.readthedocs.org"
 
 [tool.poetry.scripts]
 # FIXME: uncomment when extensions become available

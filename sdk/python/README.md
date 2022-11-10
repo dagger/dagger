@@ -57,7 +57,8 @@ $ python say.py "Simple is better than complex"
 
 ## Learn more
 
-- [Documentation](https://docs.dagger.io)
+- [Documentation](https://docs.dagger.io/sdk/python)
+- [API Reference](https://dagger-io.readthedocs.org)
 - [Source code](https://github.com/dagger/dagger/tree/main/sdk/python)
 
 ## Development
