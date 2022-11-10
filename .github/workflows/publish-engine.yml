@@ -13,14 +13,9 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-        # https://github.com/magefile/mage-action
       - uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - uses: magefile/mage-action@v2
-        with:
-          # ⚠️ This must match our go.mod version
-          version: v1.14.0
-          args: engine:publish ${{ github.ref_name }}
+      - run: ./hack/make engine:publish ${{ github.ref_name }}
