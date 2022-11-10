@@ -23,7 +23,9 @@ export function queryBuilder(q) {
 }
 export function queryFlatten(res) {
     if (!res) {
-        console.error("Error with the Graphql response");
+        console.log("🐞 --------------------------------------------------🐞");
+        console.log("🐞 ~ Graphql Error response");
+        console.log("🐞 --------------------------------------------------🐞");
     }
     return Object.assign({}, ...function _flatten(o) {
         return [].concat(...Object.keys(o)

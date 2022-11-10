@@ -36,57 +36,52 @@ export default class Client extends BaseClient {
      * Load a container from ID. Null ID returns an empty container (scratch).
      */
     container(args) {
-        this._queryTree = [
-            {
-                operation: 'container',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                {
+                    operation: 'container',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * Construct a cache volume for a given cache key
      */
     cacheVolume(args) {
-        this._queryTree = [
-            {
-                operation: 'cacheVolume',
-                args
-            }
-        ];
-        return new CacheVolume({ queryTree: this._queryTree, port: this.port });
+        return new CacheVolume({ queryTree: [
+                {
+                    operation: 'cacheVolume',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * Query a git repository
      */
     git(args) {
-        this._queryTree = [
-            {
-                operation: 'git',
-                args
-            }
-        ];
-        return new Git({ queryTree: this._queryTree, port: this.port });
+        return new Git({ queryTree: [
+                {
+                    operation: 'git',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * Query the host environment
      */
     host() {
-        this._queryTree = [
-            {
-                operation: 'host',
-            }
-        ];
-        return new Host({ queryTree: this._queryTree, port: this.port });
+        return new Host({ queryTree: [
+                {
+                    operation: 'host',
+                }
+            ], port: this.port });
     }
     secret(args) {
-        this._queryTree = [
-            {
-                operation: 'secret',
-                args
-            }
-        ];
-        return new Secret({ queryTree: this._queryTree, port: this.port });
+        return new Secret({ queryTree: [
+                {
+                    operation: 'secret',
+                    args
+                }
+            ], port: this.port });
     }
 }
 class CacheVolume extends BaseClient {
@@ -108,38 +103,35 @@ class CacheVolume extends BaseClient {
 }
 class Host extends BaseClient {
     envVariable(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'envVariable',
-                args
-            }
-        ];
-        return new HostVariable({ queryTree: this._queryTree, port: this.port });
+        return new HostVariable({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'envVariable',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * The current working directory on the host
      */
     workdir(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'workdir',
-                args
-            }
-        ];
-        return new Directory({ queryTree: this._queryTree, port: this.port });
+        return new Directory({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'workdir',
+                    args
+                }
+            ], port: this.port });
     }
 }
 class HostVariable extends BaseClient {
     secret() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'secret'
-            }
-        ];
-        return new Secret({ queryTree: this._queryTree, port: this.port });
+        return new Secret({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'secret'
+                }
+            ], port: this.port });
     }
     value() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -185,14 +177,13 @@ class Git extends BaseClient {
      * Details on one branch
      */
     branch(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'branch',
-                args
-            }
-        ];
-        return new Tree({ queryTree: this._queryTree, port: this.port });
+        return new Tree({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'branch',
+                    args
+                }
+            ], port: this.port });
     }
 }
 class Tree extends BaseClient {
@@ -200,13 +191,12 @@ class Tree extends BaseClient {
      * The filesystem tree at this ref
      */
     tree() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'tree'
-            }
-        ];
-        return new Directory({ queryTree: this._queryTree, port: this.port });
+        return new Directory({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'tree'
+                }
+            ], port: this.port });
     }
 }
 class File extends BaseClient {
@@ -246,39 +236,36 @@ class Container extends BaseClient {
      * This container after executing the specified command inside it
      */
     exec(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'exec',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'exec',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * Initialize this container from the base image published at the given address
      */
     from(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'from',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'from',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * This container's root filesystem. Mounts are not included.
      */
     fs() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'fs',
-            }
-        ];
-        return new Directory({ queryTree: this._queryTree, port: this.port });
+        return new Directory({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'fs',
+                }
+            ], port: this.port });
     }
     /**
      * List of paths where a directory is mounted
@@ -299,40 +286,37 @@ class Container extends BaseClient {
      * Initialize this container from this DirectoryID
      */
     withFS(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'withFS',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'withFS',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * This container plus a directory mounted at the given path
      */
     withMountedDirectory(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'withMountedDirectory',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'withMountedDirectory',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * This container plus a cache volume mounted at the given path
      */
     withMountedCache(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'withMountedCache',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'withMountedCache',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * A unique identifier for this container
@@ -353,38 +337,35 @@ class Container extends BaseClient {
      * The output stream of the last executed command. Null if no command has been executed.
      */
     stdout() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'stdout',
-            }
-        ];
-        return new File({ queryTree: this._queryTree, port: this.port });
+        return new File({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'stdout',
+                }
+            ], port: this.port });
     }
     /**
      * The error stream of the last executed command. Null if no command has been executed.
      */
     stderr() {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'stderr',
-            }
-        ];
-        return new File({ queryTree: this._queryTree, port: this.port });
+        return new File({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'stderr',
+                }
+            ], port: this.port });
     }
     /**
      * This container but with a different working directory
      */
     withWorkdir(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'withWorkdir',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'withWorkdir',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * This container plus an env variable containing the given secret
@@ -392,40 +373,37 @@ class Container extends BaseClient {
      * @arg secret: string
      */
     withSecretVariable(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'withSecretVariable',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'withSecretVariable',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * This container plus the given environment variable
      */
     withEnvVariable(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'withEnvVariable',
-                args
-            }
-        ];
-        return new Container({ queryTree: this._queryTree, port: this.port });
+        return new Container({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'withEnvVariable',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * Retrieve a directory at the given path. Mounts are included.
      */
     directory(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'directory',
-                args
-            }
-        ];
-        return new Directory({ queryTree: this._queryTree, port: this.port });
+        return new Directory({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'directory',
+                    args
+                }
+            ], port: this.port });
     }
 }
 class Directory extends BaseClient {
@@ -433,14 +411,13 @@ class Directory extends BaseClient {
      * Retrieve a file at the given path
      */
     file(args) {
-        this._queryTree = [
-            ...this._queryTree,
-            {
-                operation: 'file',
-                args
-            }
-        ];
-        return new File({ queryTree: this._queryTree, port: this.port });
+        return new File({ queryTree: [
+                ...this._queryTree,
+                {
+                    operation: 'file',
+                    args
+                }
+            ], port: this.port });
     }
     /**
      * Retrieve a directory at the given path. Mounts are included.
