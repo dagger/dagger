@@ -1,5 +1,9 @@
 {{ define "type" -}}
 	{{- $typeName := .Name }}
+	{{- if  eq $typeName "Query" }}
+		{{- $typeName = "Client" -}}
+	{{- end -}}
+
 	{{- if IsCustomScalar . }}
 		{{- with .Description }}
 			{{- $descLines := CommentToLines . }}
