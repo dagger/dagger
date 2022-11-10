@@ -13,7 +13,7 @@ updates:
     labels:
       - "kind/dependencies"
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/sdk/nodejs"
     schedule:
       interval: "daily"
     labels:
