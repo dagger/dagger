@@ -324,7 +324,7 @@ func TestDirectoryWithFile(t *testing.T) {
 	require.Equal(t, "some-content", content)
 }
 
-func TestDirectoryWithoutDirectory(t *testing.T) {
+func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	// t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
@@ -371,53 +371,38 @@ func TestDirectoryWithoutDirectory(t *testing.T) {
 	require.Equal(t, []string{"b", "c", "foo.txt"}, entries)
 
 	entries, err = dir.
-		WithoutDirectory("b/*.txt").
+		WithoutFile("b/*.txt").
 		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "b"})
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"data.json"}, entries)
 
 	entries, err = dir.
-		WithoutDirectory("c/*a1*").
+		WithoutFile("c/*a1*").
 		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "c"})
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"file-b1.json", "file-b1.txt"}, entries)
-}
 
-func TestDirectoryWithoutFile(t *testing.T) {
-	t.Parallel()
+	dirDir := c.Directory().
+		WithNewFile("foo.txt", contents("foo")).
+		WithNewFile("a1/a1-file", contents("a1-file")).
+		WithNewFile("a2/a2-file", contents("a2-file")).
+		WithNewFile("b1/b1-file", contents("b1-file"))
 
-	dirID := newDirWithFiles(t,
-		"some-file", "some-content",
-		"some-dir/sub-file", "sub-content")
-
-	var res2 struct {
-		Directory struct {
-			WithDirectory struct {
-				WithoutFile struct {
-					Entries []string
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`query Test($src: DirectoryID!) {
-			directory {
-				withDirectory(path: "with-dir", directory: $src) {
-					withoutFile(path: "with-dir/some-file") {
-						entries(path: "with-dir")
-					}
-				}
-			}
-		}`, &res2, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": dirID,
-			},
-		})
+	entries, err = dirDir.WithoutDirectory("a*").Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, res2.Directory.WithDirectory.WithoutFile.Entries)
+	require.Equal(t, []string{"b1", "foo.txt"}, entries)
+
+	// Test WithoutFile
+	filesDir := c.Directory().
+		WithNewFile("some-file", contents("some-content")).
+		WithNewFile("some-dir/sub-file", contents("sub-content")).
+		WithoutFile("some-file")
+
+	entries, err = filesDir.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-dir"}, entries)
 }
 
 func TestDirectoryDiff(t *testing.T) {
