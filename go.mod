@@ -60,7 +60,7 @@ require (
 require github.com/google/go-cmp v0.5.9
 
 require (
-	dagger.io/dagger v0.4.1-0.20221103191420-428a405e50b8
+	dagger.io/dagger v0.4.1-0.20221110034636-15a80f12ad5a
 	github.com/dagger/cuelsp v0.3.4
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/tliron/kutil v0.1.62
@@ -153,7 +153,7 @@ require (
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
 	golang.org/x/net v0.1.0 // indirect
-	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
@@ -167,8 +167,6 @@ require (
 
 replace (
 	cuelang.org/go => github.com/dagger/cue v0.4.1-rc.1.0.20220121023213-66df011a52c2
-	dagger.io/dagger => /Users/joel/src/dagger/dagger-cloak/sdk/go
-	github.com/dagger/dagger => /Users/joel/src/dagger/dagger-cloak
 	github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220414164044-61404de7df1a+incompatible
 	golang.org/x/oauth2 => github.com/dagger/oauth2 v0.0.0-20220802193326-c4e3911df5f5
 )
