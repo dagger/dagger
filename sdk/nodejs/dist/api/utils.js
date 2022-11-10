@@ -1,6 +1,6 @@
 export function queryBuilder(q) {
     const args = (item) => {
-        let regex = /\{"[a-zA-Z]+"/ig;
+        const regex = /\{"[a-zA-Z]+"/ig;
         return Object.entries(item.args)
             .map(value => {
             if (typeof value[1] === 'object') {

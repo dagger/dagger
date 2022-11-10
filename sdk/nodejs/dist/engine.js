@@ -37,7 +37,7 @@ export class Engine {
             args.push("-p", `${this.config.ConfigPath}`);
             // add local dirs from config in the form of `--local-dir <name>=<path>`
             if (this.config.LocalDirs) {
-                for (var [name, localDir] of Object.entries(this.config.LocalDirs)) {
+                for (let [name, localDir] of Object.entries(this.config.LocalDirs)) {
                     if (!path.isAbsolute(localDir)) {
                         localDir = path.resolve(localDir);
                     }
@@ -64,7 +64,6 @@ export class Engine {
                     yield new Promise((resolve) => setTimeout(resolve, 500));
                 }
             }
-            ;
             yield cb(new GraphQLClient(`http://localhost:${this.config.Port}/query`))
                 .catch((err) => __awaiter(this, void 0, void 0, function* () {
                 // FIXME:(sipsma) give the engine a sec to flush any progress logs on error

@@ -17,7 +17,7 @@ export class DaggerServer {
   public run() {
     const input = JSON.parse(fs.readFileSync("/inputs/dagger.json", "utf8"));
 
-    var resolverName: string = input.resolver;
+    const resolverName: string = input.resolver;
     if (resolverName === undefined) {
       throw new Error("No resolverName found in input");
     }

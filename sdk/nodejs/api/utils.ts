@@ -3,7 +3,7 @@ import { QueryTree } from "./client";
   export function queryBuilder(q: QueryTree[]) {
 
     const args = (item: any) => { 
-      let regex = /\{"[a-zA-Z]+"/ig;
+      const regex = /\{"[a-zA-Z]+"/ig;
       
       return Object.entries(item.args)
         .map(value => {
