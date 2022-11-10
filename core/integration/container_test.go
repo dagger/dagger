@@ -2370,36 +2370,13 @@ func TestContainerMultiFrom(t *testing.T) {
 }
 
 func TestContainerPublish(t *testing.T) {
-	ctx := context.Background()
-
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
 
-	// FIXME:(sipsma) this test is a bit hacky+brittle, but unless we push to a real registry
-	// or flesh out the idea of local services, it's probably the best we can do for now.
-
-	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
-	randomID := identity.NewID()
-	go func() {
-		_, err := c.Container().
-			From("registry:2").
-			WithEnvVariable("RANDOM", randomID).
-			Exec().
-			ExitCode(ctx)
-		if err != nil {
-			t.Logf("error running registry: %v", err)
-		}
-	}()
-
-	_, err = c.Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("RANDOM", randomID).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
-		}).
-		ExitCode(ctx)
-	require.NoError(t, err)
+	startRegistry(ctx, c, t)
 
 	testRef := "127.0.0.1:5000/testimagepush:latest"
 	pushedRef, err := c.Container().
@@ -2413,6 +2390,26 @@ func TestContainerPublish(t *testing.T) {
 		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.16.2\n")
+}
+
+func TestExecFromScratch(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	startRegistry(ctx, c, t)
+
+	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
+	execBusybox := c.Container().
+		// /bin/busybox is a static binary
+		WithMountedFile("/busybox", c.Container().From("busybox:musl").File("/bin/busybox")).
+		Exec(dagger.ContainerExecOpts{Args: []string{"/busybox"}})
+
+	_, err = execBusybox.Stdout().Contents(ctx)
+	require.NoError(t, err)
+	_, err = execBusybox.Publish(ctx, "127.0.0.1:5000/testexecfromscratch:latest")
+	require.NoError(t, err)
 }
 
 func TestContainerMultipleMounts(t *testing.T) {
