@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-ROOTDIR="$(dirname "${BASH_SOURCE[0]}")/.."
-
 set -e -u -x
+
+ROOTDIR="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 
 $ROOTDIR/hack/bootstrap engine:dev
 

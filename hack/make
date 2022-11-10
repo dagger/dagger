@@ -2,7 +2,7 @@
 
 set -e
 
-ROOTDIR="$(dirname "${BASH_SOURCE[0]}")/.."
+ROOTDIR="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 
 cd "$ROOTDIR"
 go run magefiles/main.go $@
