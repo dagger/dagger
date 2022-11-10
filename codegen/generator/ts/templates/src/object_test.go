@@ -25,17 +25,14 @@ func TestObject(t *testing.T) {
 }
 
 var expectedFunc = `class Container extends BaseClient {
-
   exec(args: ContainerExecArgs): Container {
-    this._queryTree = [
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'exec',
       args
       }
-    ]
-
-    return new Container(this._queryTree)
+    ], port: this.port})
   }
 }
 `

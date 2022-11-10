@@ -15,13 +15,6 @@ func TestField(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
 		want := `
   myField() {
-    this._queryTree = [
-      ...this._queryTree,
-      {
-      operation: 'myField',
-      args
-      }
-    ]
   }`
 
 		field := introspection.Field{
@@ -40,15 +33,13 @@ func TestField(t *testing.T) {
 		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
 		want := `
   exec(args: ContainerExecArgs): Container {
-    this._queryTree = [
+    return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'exec',
       args
       }
-    ]
-
-    return new Container(this._queryTree)
+    ], port: this.port})
   }`
 		object := objectInit(t, containerExecArgsJSON)
 

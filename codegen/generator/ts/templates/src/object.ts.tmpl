@@ -7,15 +7,17 @@
 		{{- template "object_comment" $commentLines }}
 {{ "" }}
 	{{- end -}}
-	{{- $name := .Name | FormatName }}
-	{{- if  eq $name "Query" }}
+	{{ if .Fields }}
+		{{- $name := .Name | FormatName }}
+		{{- if  eq $name "Query" }}
 export default class Client extends BaseClient {
-	{{- else -}}
+		{{- else -}}
 class {{ .Name | FormatName }} extends BaseClient {
-	{{- end }}
-{{ "" }}{{ range $field := .Fields -}}
-	  {{ template "field" . }}
-	{{- end }}
+		{{- end }}
+			{{- "" }}{{ range $field := .Fields -}}
+				{{ template "field" . }}
+			{{- end }}
 }
+		{{- end }}
 	{{- end }}
 {{ end }}

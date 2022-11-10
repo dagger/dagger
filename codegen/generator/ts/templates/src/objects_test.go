@@ -37,7 +37,6 @@ var wantObjects = `
  * A directory whose contents persist across runs
  */
 class CacheVolume extends BaseClient {
-
   async id(): Promise<Record<string, CacheID>> {
     this._queryTree = [
       ...this._queryTree,
@@ -71,48 +70,41 @@ export type HostWorkdirArgs = {
  * Information about the host execution environment
  */
 class Host extends BaseClient {
-
   /**
    * Access a directory on the host
    */
   directory(args: HostDirectoryArgs): Directory {
-    this._queryTree = [
+    return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
       args
       }
-    ]
-
-    return new Directory(this._queryTree)
+    ], port: this.port})
   }
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
   envVariable(args: HostEnvVariableArgs): HostVariable {
-    this._queryTree = [
+    return new HostVariable({queryTree: [
       ...this._queryTree,
       {
       operation: 'envVariable',
       args
       }
-    ]
-
-    return new HostVariable(this._queryTree)
+    ], port: this.port})
   }
   /**
    * The current working directory on the host
    */
   workdir(args: HostWorkdirArgs): Directory {
-    this._queryTree = [
+    return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'workdir',
       args
       }
-    ]
-
-    return new Directory(this._queryTree)
+    ], port: this.port})
   }
 }
 `
