@@ -325,7 +325,7 @@ func TestDirectoryWithFile(t *testing.T) {
 }
 
 func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
