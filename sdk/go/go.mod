@@ -13,7 +13,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/iancoleman/strcase v0.2.0
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.1
 	github.com/vektah/gqlparser/v2 v2.5.1
@@ -23,7 +22,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/hashicorp/errwrap v1.0.0 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
