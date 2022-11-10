@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -e
+
+ROOTDIR="$(dirname "${BASH_SOURCE[0]}")/.."
+
+cd "$ROOTDIR"
+go run internal/mage/main.go $@
