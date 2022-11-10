@@ -1,10 +1,9 @@
-package buildkitd
+package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,21 +14,16 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/mitchellh/go-homedir"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/util/tracing/detect"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel"
-
-	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
-	_ "github.com/moby/buildkit/client/connhelper/kubepod"         // import the kubernetes connection driver
-	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
 )
 
 const (
-	mobyBuildkitImage = "moby/buildkit"
-	containerName     = "dagger-buildkitd"
-	volumeName        = "dagger-buildkitd"
+	LegacyBuildkitdProvider = "legacy-buildkitd"
+
+	mobyBuildkitImage      = "moby/buildkit"
+	buildkitdContainerName = "dagger-buildkitd"
+	buildkitdVolumeName    = "dagger-buildkitd"
 
 	buildkitdLockPath = "~/.config/dagger/.buildkitd.lock"
 	// Long timeout to allow for slow image pulls of
@@ -37,11 +31,27 @@ const (
 	lockTimeout = 10 * time.Minute
 )
 
-func init() {
-	// Disable logrus output, which only comes from the docker
-	// commandconn library that is used by buildkit's connhelper
-	// and prints unneeded warning logs.
-	logrus.StandardLogger().SetOutput(io.Discard)
+// The old implementation of buildkitd that is still needed by cloak dev
+// for now
+func legacyBuildkitdProvider(ctx context.Context, u *url.URL) (string, error) {
+	version, err := getBuildInfoVersion()
+	if err != nil {
+		return version, err
+	}
+	if version == "" {
+		version, err = getGoModVersion()
+		if err != nil {
+			return version, err
+		}
+	}
+	var ref string
+	customImage, found := modVersionToImage[version]
+	if found {
+		ref = customImage
+	} else {
+		ref = mobyBuildkitImage + ":" + version
+	}
+	return startBuildkitdVersion(ctx, ref)
 }
 
 // NB: normally we take the version of Buildkit from our go.mod, e.g. v0.10.5,
@@ -72,64 +82,6 @@ func init() {
 var modVersionToImage = map[string]string{
 	"v0.10.1-0.20221027014600-b78713cdd127": "moby/buildkit@sha256:4984ac6da1898a9a06c4c3f7da5eaabe8a09ec56f5054b0a911ab0f9df6a092c",
 	"(devel)":                               "moby/buildkit:v0.10.5",
-}
-
-func Client(ctx context.Context, host string) (*bkclient.Client, error) {
-	if host == "" {
-		host = os.Getenv("BUILDKIT_HOST")
-	}
-	if host == "" {
-		h, err := startBuildkitd(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		host = h
-	}
-	if err := waitBuildkit(ctx, host); err != nil {
-		return nil, err
-	}
-
-	opts := []bkclient.ClientOpt{
-		bkclient.WithFailFast(),
-		bkclient.WithTracerProvider(otel.GetTracerProvider()),
-	}
-
-	exp, err := detect.Exporter()
-	if err != nil {
-		return nil, err
-	}
-
-	if td, ok := exp.(bkclient.TracerDelegate); ok {
-		opts = append(opts, bkclient.WithTracerDelegate(td))
-	}
-
-	c, err := bkclient.New(ctx, host, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("buildkit client: %w", err)
-	}
-	return c, nil
-}
-
-func startBuildkitd(ctx context.Context) (string, error) {
-	version, err := getBuildInfoVersion()
-	if err != nil {
-		return version, err
-	}
-	if version == "" {
-		version, err = getGoModVersion()
-		if err != nil {
-			return version, err
-		}
-	}
-	var ref string
-	customImage, found := modVersionToImage[version]
-	if found {
-		ref = customImage
-	} else {
-		ref = mobyBuildkitImage + ":" + version
-	}
-	return startBuildkitdVersion(ctx, ref)
 }
 
 func getBuildInfoVersion() (string, error) {
@@ -193,7 +145,7 @@ func startBuildkitdVersion(ctx context.Context, imageRef string) (string, error)
 		return "", err
 	}
 
-	return fmt.Sprintf("docker-container://%s", containerName), nil
+	return fmt.Sprintf("docker-container://%s", buildkitdContainerName), nil
 }
 
 // ensure the buildkit is active and properly set up (e.g. connected to host and last version with moby/buildkit)
@@ -280,7 +232,7 @@ func startBuildkit(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx,
 		"docker",
 		"start",
-		containerName,
+		buildkitdContainerName,
 	)
 	_, err := cmd.CombinedOutput()
 	if err != nil {
@@ -306,8 +258,8 @@ func installBuildkit(ctx context.Context, ref string) error {
 		"run",
 		"-d",
 		"--restart", "always",
-		"-v", volumeName+":/var/lib/buildkit",
-		"--name", containerName,
+		"-v", buildkitdVolumeName+":/var/lib/buildkit",
+		"--name", buildkitdContainerName,
 		"--privileged",
 		ref,
 		"--debug",
@@ -324,38 +276,12 @@ func installBuildkit(ctx context.Context, ref string) error {
 	return nil
 }
 
-// waitBuildkit waits for the buildkit daemon to be responsive.
-func waitBuildkit(ctx context.Context, host string) error {
-	c, err := bkclient.New(ctx, host)
-	if err != nil {
-		return err
-	}
-
-	// FIXME Does output "failed to wait: signal: broken pipe"
-	defer c.Close()
-
-	// Try to connect every 100ms up to 100 times (10 seconds total)
-	const (
-		retryPeriod   = 100 * time.Millisecond
-		retryAttempts = 100
-	)
-
-	for retry := 0; retry < retryAttempts; retry++ {
-		_, err = c.ListWorkers(ctx)
-		if err == nil {
-			return nil
-		}
-		time.Sleep(retryPeriod)
-	}
-	return errors.New("buildkit failed to respond")
-}
-
 func removeBuildkit(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx,
 		"docker",
 		"rm",
 		"-fv",
-		containerName,
+		buildkitdContainerName,
 	)
 	_, err := cmd.CombinedOutput()
 	if err != nil {
@@ -372,7 +298,7 @@ func getBuildkitInformation(ctx context.Context) (*buildkitInformation, error) {
 		"inspect",
 		"--format",
 		formatString,
-		containerName,
+		buildkitdContainerName,
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

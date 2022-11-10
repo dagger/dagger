@@ -41,7 +41,7 @@ dagger-cue is /usr/local/bin/dagger-cue
 If you do not have Homebrew installed, or you want to install a specific version of `dagger-cue`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger-cue/install.sh | DAGGER_VERSION=0.2.232 sh
+curl -L https://dl.dagger.io/dagger-cue/install.sh | VERSION=0.2.232 sh
 
 ./bin/dagger-cue version
 dagger-cue 0.2.232 (GIT_SHA) darwin/arm64
@@ -70,7 +70,7 @@ If you want to install the Dagger Engine to a different location, `cd` where you
 If you want to install a specific version of `dagger-cue`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger-cue/install.sh | DAGGER_VERSION=0.2.232 sh
+curl -L https://dl.dagger.io/dagger-cue/install.sh | VERSION=0.2.232 sh
 
 ./bin/dagger-cue version
 dagger-cue 0.2.232 (GIT_SHA) linux/amd64

@@ -11,15 +11,14 @@ from attrs import Factory, define, field
 from gql.client import Client as GraphQLClient
 from gql.transport import AsyncTransport, Transport
 
-from dagger import Client
+from dagger import Client, SyncClient
 
 logger = logging.getLogger(__name__)
 
 
-# TODO: update this with official repo once it exists
 ENGINE_IMAGE_REF = (
-    "ghcr.io/dagger/engine:test@sha256:"
-    "5d9fb9c65f9098d30f7cbefb04e73003b49942c385344e0c7d665d2b52757b8e"
+    "ghcr.io/dagger/engine:v0.3.4@sha256:"
+    "666b958a2f716c0d6b22d869c585d6fe07954133ec769bb3d1f310e931cb118f"
 )
 DEFAULT_HOST = f"docker-image://{ENGINE_IMAGE_REF}"
 
@@ -67,7 +66,7 @@ class Connector(ABC):
     """
 
     cfg: Config = Factory(Config)
-    client: Client | None = None
+    client: Client | SyncClient | None = None
 
     async def connect(self) -> Client:
         transport = self.make_transport()
@@ -81,12 +80,12 @@ class Connector(ABC):
         assert self.client is not None
         await self.client._gql_client.close_async()
 
-    def connect_sync(self) -> Client:
+    def connect_sync(self) -> SyncClient:
         transport = self.make_sync_transport()
         gql_client = self.make_graphql_client(transport)
         # FIXME: handle errors from establishing session
         session = gql_client.connect_sync()
-        self.client = Client.from_session(session)
+        self.client = SyncClient.from_session(session)
         return self.client
 
     def close_sync(self) -> None:

@@ -13,6 +13,7 @@ require (
 	github.com/c4milo/unpackit v1.0.0
 	github.com/dagger/dagger v0.3.3
 	github.com/docker/docker v20.10.17+incompatible
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/iancoleman/strcase v0.2.0
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/opencontainers/go-digest v1.0.0
@@ -36,8 +37,10 @@ require (
 	github.com/dsnet/compress v0.0.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.15.9 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
+	github.com/kr/pretty v0.2.1 // indirect
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect

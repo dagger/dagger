@@ -28,10 +28,10 @@ func init() {
 
 var rootCmd = &cobra.Command{
 	Use: "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
-	Run: Helper,
+	Run: EngineSession,
 }
 
-func Helper(cmd *cobra.Command, args []string) {
+func EngineSession(cmd *cobra.Command, args []string) {
 	startOpts := &engine.Config{
 		LogOutput:  os.Stderr,
 		RemoteAddr: remote,

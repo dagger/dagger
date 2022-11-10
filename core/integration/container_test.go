@@ -2371,6 +2371,7 @@ func TestContainerMultiFrom(t *testing.T) {
 
 func TestContainerPublish(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -2403,6 +2404,26 @@ func TestContainerPublish(t *testing.T) {
 		From(pushedRef).FS().File("/etc/test.go").Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, contents, "bananarama") // matches itself, lol
+}
+
+func TestExecFromScratch(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	startRegistry(ctx, c, t)
+
+	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
+	execBusybox := c.Container().
+		// /bin/busybox is a static binary
+		WithMountedFile("/busybox", c.Container().From("busybox:musl").File("/bin/busybox")).
+		Exec(dagger.ContainerExecOpts{Args: []string{"/busybox"}})
+
+	_, err = execBusybox.Stdout().Contents(ctx)
+	require.NoError(t, err)
+	_, err = execBusybox.Publish(ctx, "127.0.0.1:5000/testexecfromscratch:latest")
+	require.NoError(t, err)
 }
 
 func TestContainerMultipleMounts(t *testing.T) {

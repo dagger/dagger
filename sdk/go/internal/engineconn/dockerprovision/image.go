@@ -14,7 +14,6 @@ import (
 	"dagger.io/dagger/internal/engineconn"
 	"github.com/adrg/xdg"
 	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
 )
 
@@ -44,79 +43,43 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (engi
 	var id string
 	_, dgst, ok := strings.Cut(c.imageRef, "@sha256:")
 	if !ok {
-		return nil, errors.Errorf("invalid image reference %q", c.imageRef)
+		return nil, fmt.Errorf("invalid image reference %q", c.imageRef)
 	}
 	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
-		return nil, errors.Wrap(err, "invalid digest")
+		return nil, fmt.Errorf("invalid digest: %w", err)
 	}
 	id = dgst
 	id = id[:digestLen]
 
-	helperBinName := helperBinPrefix + id
-	containerName := containerNamePrefix + id
-	helperBinPath := filepath.Join(cacheDir, helperBinName)
-
-	if output, err := exec.CommandContext(ctx,
-		"docker", "run",
-		"--name", containerName,
-		"-d",
-		"--restart", "always",
-		"--privileged",
-		c.imageRef,
-		"--debug",
-	).CombinedOutput(); err != nil {
-		if !strings.Contains(
-			string(output),
-			fmt.Sprintf(`Conflict. The container name "/%s" is already in use by container`, containerName),
-		) {
-			return nil, errors.Wrapf(err, "failed to run container: %s", output)
-		}
+	engineSessionBinName := engineSessionBinPrefix + id
+	if runtime.GOOS == "windows" {
+		engineSessionBinName += ".exe"
 	}
+	engineSessionBinPath := filepath.Join(cacheDir, engineSessionBinName)
 
-	if output, err := exec.CommandContext(ctx,
-		"docker", "ps",
-		"-a",
-		"--no-trunc",
-		"--filter", "name=^/"+containerNamePrefix,
-		"--format", "{{.Names}}",
-	).CombinedOutput(); err != nil {
-		if cfg.LogOutput != nil {
-			fmt.Fprintf(cfg.LogOutput, "failed to list containers: %s", output)
-		}
-	} else {
-		for _, line := range strings.Split(string(output), "\n") {
-			if line == "" {
-				continue
-			}
-			if line == containerName {
-				continue
-			}
-			if output, err := exec.CommandContext(ctx,
-				"docker", "rm", "-fv", line,
-			).CombinedOutput(); err != nil {
-				if cfg.LogOutput != nil {
-					fmt.Fprintf(cfg.LogOutput, "failed to remove old container %s: %s", line, output)
-				}
-			}
-		}
-	}
-
-	if _, err := os.Stat(helperBinPath); os.IsNotExist(err) {
-		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+helperBinName)
+	if _, err := os.Stat(engineSessionBinPath); os.IsNotExist(err) {
+		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+engineSessionBinName)
 		if err != nil {
 			return nil, err
 		}
 		defer tmpbin.Close()
 		defer os.Remove(tmpbin.Name())
 
-		dockerCpArgs := []string{
-			"docker", "cp",
-			containerName + ":" + containerHelperBinPrefix + runtime.GOOS + "-" + runtime.GOARCH,
-			tmpbin.Name(),
+		dockerRunArgs := []string{
+			"docker", "run",
+			"--rm",
+			"--entrypoint", "/bin/cat",
+			c.imageRef,
+			containerEngineSessionBinPrefix + runtime.GOOS + "-" + runtime.GOARCH,
 		}
 		// #nosec
-		if output, err := exec.CommandContext(ctx, dockerCpArgs[0], dockerCpArgs[1:]...).CombinedOutput(); err != nil {
-			return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin with command %q: %s", strings.Join(dockerCpArgs, " "), output)
+		cmd := exec.CommandContext(ctx, dockerRunArgs[0], dockerRunArgs[1:]...)
+		cmd.Stdout = tmpbin
+		if cfg.LogOutput != nil {
+			cmd.Stderr = cfg.LogOutput
+		}
+		if err := cmd.Run(); err != nil {
+			return nil, fmt.Errorf("failed to transfer dagger-engine-session bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
 		}
 
 		if err := tmpbin.Chmod(0700); err != nil {
@@ -129,7 +92,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (engi
 
 		// TODO: verify checksum?
 		// Cache the bin for future runs.
-		if err := os.Rename(tmpbin.Name(), helperBinPath); err != nil {
+		if err := os.Rename(tmpbin.Name(), engineSessionBinPath); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -143,26 +106,26 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (engi
 		}
 	} else {
 		for _, entry := range entries {
-			if entry.Name() == helperBinName {
+			if entry.Name() == engineSessionBinName {
 				continue
 			}
-			if strings.HasPrefix(entry.Name(), helperBinPrefix) {
+			if strings.HasPrefix(entry.Name(), engineSessionBinPrefix) {
 				if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
 					if cfg.LogOutput != nil {
-						fmt.Fprintf(cfg.LogOutput, "failed to remove old helper bin: %v", err)
+						fmt.Fprintf(cfg.LogOutput, "failed to remove old engine session bin: %v", err)
 					}
 				}
 			}
 		}
 	}
 
-	remote := "docker-container://" + containerName
+	remote := "docker-image://" + c.imageRef
 
 	args := []string{
 		"--remote", remote,
 	}
 
-	addr, childStdin, err := startHelper(ctx, cfg.LogOutput, helperBinPath, args...)
+	addr, childStdin, err := startEngineSession(ctx, cfg.LogOutput, engineSessionBinPath, args...)
 	if err != nil {
 		return nil, err
 	}

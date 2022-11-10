@@ -34,17 +34,9 @@ jobs:
         with:
           go-version: 1.19
       - uses: actions/checkout@v3
-      - name: build
-        uses: magefile/mage-action@v2
-        with:
-          version: latest
-          args: engine:build
+      - run: ./hack/make engine:build
       - run: cp ./bin/cloak /usr/local/bin
-      - name: test
-        uses: magefile/mage-action@v2
-        with:
-          version: latest
-          args: engine:test
+      - run: ./hack/make engine:test
       - name: Print Engine Logs
         if: always()
         run: |
@@ -59,11 +51,7 @@ jobs:
           go-version: 1.19
       - uses: actions/checkout@v3
       - run: go install $(pwd)/cmd/cloak/
-      - name: test
-        uses: magefile/mage-action@v2
-        with:
-          version: latest
-          args: engine:testrace
+      - run: ./hack/make engine:testrace
       - name: Print Engine Logs
         if: always()
         run: |
@@ -76,10 +64,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - uses: magefile/mage-action@v2
-        with:
-          version: latest
-          args: sdk:go:test
+      - run: ./hack/make sdk:go:test
   sdk-python:
     name: sdk / python
     runs-on: ubuntu-22.04-16c-64g-600gb
@@ -88,10 +73,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - uses: magefile/mage-action@v2
-        with:
-          version: latest
-          args: sdk:python:test
+      - run: ./hack/make sdk:python:test
   sdk-nodejs:
     name: sdk / nodejs
     runs-on: ubuntu-22.04-16c-64g-600gb

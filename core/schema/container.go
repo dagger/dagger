@@ -138,7 +138,7 @@ func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args
 		return nil, err
 	}
 
-	return parent.Exec(ctx, gw, args.ContainerExecOpts)
+	return parent.Exec(ctx, gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {

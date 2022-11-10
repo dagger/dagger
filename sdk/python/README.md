@@ -57,7 +57,8 @@ $ python say.py "Simple is better than complex"
 
 ## Learn more
 
-- [Documentation](https://docs.dagger.io)
+- [Documentation](https://docs.dagger.io/sdk/python)
+- [API Reference](https://dagger-io.readthedocs.org)
 - [Source code](https://github.com/dagger/dagger/tree/main/sdk/python)
 
 ## Development
@@ -65,11 +66,17 @@ $ python say.py "Simple is better than complex"
 Requirements:
 
 - Python 3.10+
-- [Hatch](https://hatch.pypa.io/latest/install/)
+- [Poetry](https://python-poetry.org/docs/)
 - [Docker](https://docs.docker.com/engine/install/)
 
-Run tests with `hatch run test`.
+Start environment with `poetry install`.
 
-Run the linter, reformatting code with `hatch run lint:fmt` or just check with `hatch run lint:style`.
+Run tests with `poetry run poe test`.
 
-Re-regenerate client with `hatch run generate`. Remember to run `hatch run lint:fmt` afterwards for consistent output!
+Reformat code with `poetry run poe fmt` or just check with `poetry run poe lint`.
+
+Re-regenerate client with `poetry run poe generate`.
+
+Build reference docs with `poetry run poe docs`.
+
+Tip: You don't need to prefix the previous commands with `poetry run` if you activate the virtualenv with `poetry shell`.

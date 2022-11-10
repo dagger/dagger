@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"dagger.io/dagger/internal/engineconn"
+	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
 )
@@ -26,23 +27,30 @@ func NewDockerContainer(u *url.URL) (engineconn.EngineConn, error) {
 type DockerContainer struct {
 	containerName string
 	childStdin    io.Closer
+	tmpbinPath    string
 }
 
 func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (engineconn.Dialer, error) {
-	tmpbin, err := os.CreateTemp("", "temp-dagger-sdk-helper-"+c.containerName)
+	tmpbinName := "temp-dagger-engine-session" + c.containerName + "*"
+	if runtime.GOOS == "windows" {
+		tmpbinName += ".exe"
+	}
+	tmpbin, err := os.CreateTemp("", tmpbinName)
 	if err != nil {
 		return nil, err
 	}
 	defer tmpbin.Close()
-	defer os.Remove(tmpbin.Name())
+	// Don't do the clever thing and unlink after child proc starts, that doesn't work as expected on macos.
+	// Instead just try to delete this in our Close() method.
+	c.tmpbinPath = tmpbin.Name()
 
 	// #nosec
 	if output, err := exec.CommandContext(ctx,
 		"docker", "cp",
-		c.containerName+":"+containerHelperBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
+		c.containerName+":"+containerEngineSessionBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
 		tmpbin.Name(),
 	).CombinedOutput(); err != nil {
-		return nil, errors.Wrapf(err, "failed to copy dagger-sdk-helper bin: %s", output)
+		return nil, errors.Wrapf(err, "failed to copy dagger-engine-session bin: %s", output)
 	}
 
 	if err := tmpbin.Chmod(0700); err != nil {
@@ -61,7 +69,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		"--remote", remote,
 	}
 
-	addr, childStdin, err := startHelper(ctx, cfg.LogOutput, tmpbin.Name(), args...)
+	addr, childStdin, err := startEngineSession(ctx, cfg.LogOutput, tmpbin.Name(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +85,16 @@ func (c *DockerContainer) Addr() string {
 }
 
 func (c *DockerContainer) Close() error {
+	var merr *multierror.Error
 	if c.childStdin != nil {
-		return c.childStdin.Close()
+		if err := c.childStdin.Close(); err != nil {
+			merr = multierror.Append(merr, err)
+		}
 	}
-	return nil
+	if c.tmpbinPath != "" {
+		if err := os.Remove(c.tmpbinPath); err != nil {
+			merr = multierror.Append(merr, err)
+		}
+	}
+	return merr.ErrorOrNil()
 }

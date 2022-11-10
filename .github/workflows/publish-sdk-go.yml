@@ -16,11 +16,6 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-        # https://github.com/magefile/mage-action
-      - uses: magefile/mage-action@v2
-        with:
-          # ⚠️ This must match our go.mod version
-          version: v1.14.0
-          args: sdk:go:publish ${{ github.ref_name }}
+      - run: ./hack/make sdk:go:publish ${{ github.ref_name }}
         env:
           GITHUB_PAT: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}

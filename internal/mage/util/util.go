@@ -103,9 +103,9 @@ func DaggerBinary(c *dagger.Client) *dagger.File {
 }
 
 const (
-	sdkHelper      = "dagger-sdk-helper"
-	buildkitRepo   = "github.com/moby/buildkit"
-	buildkitBranch = "v0.10.5"
+	engineSessionBin = "dagger-engine-session"
+	buildkitRepo     = "github.com/moby/buildkit"
+	buildkitBranch   = "v0.10.5"
 )
 
 func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
@@ -117,18 +117,18 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 			Platform: dagger.Platform("linux/" + arch),
 		}).Build(buildkitRepo)
 		for _, os := range oses {
-			// include each helper for each arch too in case there is a
+			// include each engine-session bin for each arch too in case there is a
 			// client/server mismatch
 			for _, arch := range arches {
-				helperBin := GoBase(c).
+				builtBin := GoBase(c).
 					WithEnvVariable("GOOS", os).
 					WithEnvVariable("GOARCH", arch).
 					Exec(dagger.ContainerExecOpts{
-						Args: []string{"go", "build", "-o", "./bin/" + sdkHelper, "-ldflags", "-s -w", "/app/cmd/sdk-helper"},
+						Args: []string{"go", "build", "-o", "./bin/" + engineSessionBin, "-ldflags", "-s -w", "/app/cmd/engine-session"},
 					}).
-					File("./bin/" + sdkHelper)
+					File("./bin/" + engineSessionBin)
 				buildkitBase = buildkitBase.WithFS(
-					buildkitBase.FS().WithFile("/usr/bin/"+sdkHelper+"-"+os+"-"+arch, helperBin),
+					buildkitBase.FS().WithFile("/usr/bin/"+engineSessionBin+"-"+os+"-"+arch, builtBin),
 				)
 			}
 		}

@@ -1,7 +1,7 @@
 import types
 import typing
 from collections import deque
-from typing import Any, Generic, NamedTuple, Sequence, TypeVar
+from typing import Any, NamedTuple, Sequence, TypeVar
 
 import attr
 import attrs
@@ -10,7 +10,7 @@ import gql
 import graphql
 from attrs import define
 from cattrs.preconf.json import make_converter
-from gql.client import AsyncClientSession
+from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 
 _T = TypeVar("_T")
@@ -35,7 +35,7 @@ class Field:
 
 @define
 class Context:
-    session: AsyncClientSession
+    session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
     selections: deque[Field] = attr.ib(factory=deque)
     converter: cattrs.Converter = attr.ib(factory=make_converter)
@@ -67,8 +67,15 @@ class Context:
         return dsl_gql(DSLQuery(self.build()))
 
     async def execute(self, return_type: type[_T]) -> _T:
+        assert isinstance(self.session, AsyncClientSession)
         query = self.query()
         result = await self.session.execute(query, get_execution_result=True)
+        return self._get_value(result.data, return_type)
+
+    def execute_sync(self, return_type: type[_T]) -> _T:
+        assert isinstance(self.session, SyncClientSession)
+        query = self.query()
+        result = self.session.execute(query, get_execution_result=True)
         return self._get_value(result.data, return_type)
 
     def _get_value(self, value: dict[str, Any] | None, return_type: type[_T]) -> _T:
@@ -88,19 +95,6 @@ class Context:
             if response is None:
                 return None
         return self.converter.structure(response, return_type)
-
-
-@define
-class Result(Generic[_T]):
-    value: _T
-    type_: type[_T]
-    context: Context
-    document: graphql.DocumentNode
-    result: graphql.ExecutionResult
-
-    @property
-    def query(self) -> str:
-        return graphql.print_ast(self.document)
 
 
 class Arg(NamedTuple):

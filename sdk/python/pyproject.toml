@@ -1,22 +1,20 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
-[project]
-name = "dagger"
-version = "0.1.0"
-authors = [
-    { name="Dagger Inc.", email="hello@dagger.io" },
-]
-description = "Dagger library"
-keywords = ["dagger"]
-readme = "README.md"
+[tool.poetry]
+name = "dagger-io"
+version = "0.0.0"
+description = "A client package for running Dagger pipelines in Python."
 license = "Apache-2.0"
-requires-python = ">=3.10"
+authors = ["Dagger <hello@dagger.io>"]
+readme = "README.md"
+homepage = "https://dagger.io"
+documentation = "https://docs.dagger.io/sdk/python"
+repository = "https://github.com/dagger/dagger"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Framework :: Hatch",
     "Framework :: AnyIO",
     "Framework :: Pytest",
     "Programming Language :: Python",
@@ -27,65 +25,87 @@ classifiers = [
     # "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
-dependencies = [
-    "anyio >= 3.6.2",
-    "attrs >= 22.1.0",
-    "cattrs >= 22.2.0",
-    "gql[aiohttp,requests] >= 3.4.0",
-    "strawberry-graphql >= 0.133.5",
-    "typer[all] >= 0.6.1",
+packages = [
+    { include = "dagger", from = "src" },
 ]
 
-[project.urls]
-"Homepage" = "https://dagger.io/"
+[tool.poetry.urls]
 "Bug Tracker" = "https://github.com/dagger/dagger/issues"
+"API Reference" = "https://dagger-io.readthedocs.org"
 
-[project.scripts]
-dagger-server-py = "dagger.server.cli:app"
+[tool.poetry.scripts]
+# FIXME: uncomment when extensions become available
+# dagger-server-py = "dagger.server.cli:app"
 dagger-py = "dagger.cli:app"
 
-[tool.hatch.envs.default]
-dependencies = [
-    "pytest >= 7.2.0",
-    "pytest-mock >= 3.10.0",
-]
+[tool.poetry.dependencies]
+python = "^3.10"
+anyio = ">=3.6.2"
+attrs = ">=22.1.0"
+cattrs = ">=22.2.0"
+gql = {version = ">=3.4.0", extras = ["aiohttp", "requests"]}
+"strawberry-graphql" = ">=0.133.5"
+typer = {version = ">=0.6.1", extras = ["all"]}
 
-[tool.hatch.envs.default.scripts]
-test = "pytest -W default"
-generate = "dagger-py generate --output src/dagger/api/gen.py"
+[tool.poetry.group.test.dependencies]
+pytest = ">=7.2.0"
+"pytest-mock" = ">=3.10.0"
 
-[tool.hatch.envs.lint]
-skip_install = true
-dependencies = [
-    "autoflake>=1.3.1",
-    "black>=22.3.0",
-    "flake8-black>=^0.3",
-    "flake8-bugbear>=22.9.23",
-    "flake8-eradicate>=1.3.0",
-    "flake8-isort>=^5.0.0",
-    "flake8>=4.0.1",
-    "isort>=5.10.1",
-    "mypy>=0.942",
-    "typing_extensions>=4.4.0",
-]
+[tool.poetry.group.lint.dependencies]
+autoflake = ">=1.3.1"
+black = ">=22.3.0"
+"flake8-black" = ">=0.3"
+"flake8-bugbear" = ">=22.9.23"
+"flake8-eradicate" = ">=1.3.0"
+"flake8-isort" = ">=5.0.0"
+flake8 = ">=4.0.1"
+isort = ">=5.10.1"
+mypy = ">=0.942"
+typing_extensions = ">=4.4.0"
 
-[tool.hatch.envs.lint.scripts]
+[tool.poetry.group.dev.dependencies]
+poethepoet = ">=0.16.4"
+
+[tool.poetry.group.docs.dependencies]
+sphinx = ">=5.3.0"
+sphinx-rtd-theme = "^1.1.1"
+
+[tool.poe.env]
+GEN_PATH = "./src/dagger/api"
+
+[tool.poe.tasks]
+test = "pytest"
 typing = "mypy src/dagger tests"
-style = [
+
+[tool.poe.tasks.docs]
+cmd = "sphinx-build -v . _build"
+cwd = "docs"
+
+[tool.poe.tasks.lint]
+sequence = [
     "flake8 .",
     "black --check --diff .",
     "isort --check-only --diff .",
 ]
-fmt = [
+default_item_type = "cmd"
+
+[tool.poe.tasks.fmt]
+sequence = [
     "autoflake --in-place .",
     "isort .",
     "black .",
-    "style",
+    { ref = "lint"},
 ]
-all = [
-    "style",
-    "typing",
+default_item_type = "cmd"
+
+[tool.poe.tasks.generate]
+sequence = [
+    "dagger-py generate --output ${GEN_PATH}/gen.py",
+    "dagger-py generate --output ${GEN_PATH}/gen_sync.py --sync",
+    "isort ${GEN_PATH}/gen*.py",
+    "black ${GEN_PATH}/gen*.py",
 ]
+default_item_type = "cmd"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
