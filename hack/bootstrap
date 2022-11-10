@@ -2,7 +2,7 @@
 
 set -e -u -x
 
-ROOTDIR="$(dirname "${BASH_SOURCE[0]}")/.."
+ROOTDIR="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 HACK="$ROOTDIR/hack"
 MAGEFILES="$ROOTDIR/magefiles"
 
