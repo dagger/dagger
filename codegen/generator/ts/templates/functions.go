@@ -89,7 +89,7 @@ func formatType(r *introspection.TypeRef) string {
 				representation += "number"
 				return representation
 			case introspection.ScalarBoolean:
-				representation += "bool"
+				representation += "boolean"
 				return representation
 			default:
 				// Custom scalar
