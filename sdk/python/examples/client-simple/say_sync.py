@@ -24,4 +24,7 @@ def main(args: list[str]):
 
 
 if __name__ == "__main__":
+    if not sys.argv[1:]:
+        print("What do you want to say?", file=sys.stderr)
+        sys.exit(1)
     main(sys.argv[1:])
