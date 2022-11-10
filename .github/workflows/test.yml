@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v3
       - run: ./hack/dev ./hack/make engine:build
       - run: echo $PWD/bin >> $GITHUB_PATH
-      - run: ./hack/dev ./hack/make engine:test
+      - run: ./hack/test
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs test-dagger-engine
