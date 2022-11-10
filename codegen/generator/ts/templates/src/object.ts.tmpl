@@ -1,20 +1,21 @@
 {{ define "object" }}
 {{- with . }}
-{{- if .Description -}}
-	{{- $commentLines := CommentToLines .Description }}
-	{{- /* we split the comment string into a string slice of one line per element */ -}}
+	{{- if .Description -}}
+		{{- $commentLines := CommentToLines .Description }}
+		{{- /* we split the comment string into a string slice of one line per element */ -}}
 
-	{{- template "object_comment" $commentLines }}
-{{ end -}}
-{{- $name := .Name | FormatName }}
-{{- if  eq $name "Query" }}
+		{{- template "object_comment" $commentLines }}
+{{ "" }}
+	{{- end -}}
+	{{- $name := .Name | FormatName }}
+	{{- if  eq $name "Query" }}
 export default class Client extends BaseClient {
-{{- else -}}
+	{{- else -}}
 class {{ .Name | FormatName }} extends BaseClient {
-{{- end }}
-{{ range $field := .Fields -}}
-  {{ template "field" . }}
-{{- end }}
+	{{- end }}
+{{ "" }}{{ range $field := .Fields -}}
+	  {{ template "field" . }}
+	{{- end }}
 }
-{{- end }}
+	{{- end }}
 {{ end }}
