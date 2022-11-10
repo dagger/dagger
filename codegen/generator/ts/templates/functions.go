@@ -21,7 +21,7 @@ var (
 		"FieldFunction":          FieldFunction,
 		"HasPrefix":              strings.HasPrefix,
 		"PascalCase":             PascalCase,
-		"IsSingleOptional":       IsSingleOptional,
+		"IsArgOptional":          IsArgOptional,
 		"IsCustomScalar":         IsCustomScalar,
 		"Solve":                  Solve,
 		"Subtract":               Subtract,
@@ -175,9 +175,11 @@ func FieldFunction(f introspection.Field) string {
 	return signature
 }
 
-func IsSingleOptional(values introspection.InputValues) bool {
-	if len(values) != 1 {
-		return false
+func IsArgOptional(values introspection.InputValues) bool {
+	for _, v := range values {
+		if v.TypeRef != nil && !v.TypeRef.IsOptional() {
+			return false
+		}
 	}
-	return values[0].TypeRef.IsOptional()
+	return true
 }

@@ -1,6 +1,6 @@
 {{ define "input_args" -}}
 	{{- "" }}args{{ "" -}}
-	{{- if IsSingleOptional .Args }}
+	{{- if IsArgOptional .Args }}
 		{{- "?" -}}
 	{{- end }}
 	{{- $parentName := .ParentObject.Name }}
