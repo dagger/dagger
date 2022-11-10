@@ -1,6 +1,7 @@
 {{ define "objects" }}
+	{{- template "header" -}}
 	{{- range . }}
- 		{{- template "type" . }}
+{{ "" }}	{{- template "type" . }}
 {{ "" }}	{{- template "object" . -}}
 	{{- end }}
 {{- end }}

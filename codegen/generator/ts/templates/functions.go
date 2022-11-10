@@ -19,6 +19,7 @@ var (
 		"FormatName":             FormatName,
 		"FieldOptionsStructName": FieldOptionsStructName,
 		"FieldFunction":          FieldFunction,
+		"HasPrefix":              strings.HasPrefix,
 		"PascalCase":             PascalCase,
 		"IsSingleOptional":       IsSingleOptional,
 		"IsCustomScalar":         IsCustomScalar,

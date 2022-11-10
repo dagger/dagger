@@ -1,10 +1,10 @@
 {{ define "type" -}}
 	{{- $typeName := .Name }}
 	{{- if IsCustomScalar . }}
-{{- with .Description }}
-{{- $descLines := CommentToLines . }}
+		{{- with .Description }}
+			{{- $descLines := CommentToLines . }}
 {{ template "object_comment" $descLines }}
-{{- end }}
+		{{- end }}
 export type {{ $typeName }}: any
 {{ "" }}
 	{{- end }}
