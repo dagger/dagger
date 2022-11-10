@@ -52,7 +52,7 @@ Create a new file named `test.py` and add the following code to it.
 
 This Python stub imports the Dagger SDK and defines an asynchronous function named `test()`. This `test()` function performs the following operations:
 
-- It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine. The additional `dagger.Config(log_output=sys.stderr)` configuration displays the output from the Dagger engine.
+- It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine. The optional `dagger.Config(log_output=sys.stderr)` configuration displays the output from the Dagger engine.
 - It uses the client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the `python:3.10-slim-buster` image. This method returns a `Container` representing an OCI-compatible container image.
 - It uses the `Container.exec()` method to define the command to be executed in the container - in this case, the command `python -V`, which returns the Python version string. The `exec()` method returns a revised `Container` with the results of command execution.
 - It retrieves the output stream of the last executed command with the `Container.stdout()` method and prints its contents.
