@@ -76,6 +76,30 @@ module.exports = {
     },
     {
       type: "category",
+      label: "NodeJS SDK",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/sdk/nodejs/index",
+        },
+        "current/sdk/nodejs/install",
+        {
+          type: "doc",
+          label: "Get Started",
+          id: "current/sdk/nodejs/get-started",
+        },
+        {
+          type: "link",
+          label: "Reference 🔗",
+          href: "https://docs.dagger.io/sdk/nodejs",
+        },
+      ],
+    },
+    {
+      type: "category",
       label: "CUE SDK",
       collapsible: false,
       collapsed: false,
