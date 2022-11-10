@@ -19,4 +19,6 @@ pushd $MAGEFILES
   go run $MAGEFILES/main.go -compile /tmp/dagger-mage-bootstrap
 popd
 
+cleanup
+
 /tmp/dagger-mage-bootstrap "$@"
