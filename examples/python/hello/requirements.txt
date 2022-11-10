@@ -1,1 +1,0 @@
-git+https://github.com/dagger/dagger.git@main#subdirectory=sdk/python/dagger&egg=dagger
