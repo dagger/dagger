@@ -40,7 +40,7 @@ The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/
 Install the Dagger Python SDK in your project's virtual environment using `pip`:
 
 ```shell
-pip install dagger-io
+pip install --pre dagger-io
 ```
 
 ## Step 2: Create a Dagger client in Python
