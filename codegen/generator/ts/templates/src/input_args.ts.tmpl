@@ -2,6 +2,10 @@
 	{{- "" }}args{{ "" -}}
 	{{- if IsSingleOptional .Args }}
 		{{- "?" -}}
-	{{ end }}
-	{{- "" }}: {{ .ParentObject.Name | PascalCase }}{{ .Name | PascalCase }}Args{{ "" -}}
+	{{- end }}
+	{{- $parentName := .ParentObject.Name }}
+	{{- if eq $parentName "Query" }}
+	{{- $parentName = "Client" }}
+	{{- end }}
+	{{- "" }}: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Args{{ "" -}}
 {{- end }}
