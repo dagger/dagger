@@ -9,17 +9,17 @@ import (
 	"github.com/magefile/mage/mg"
 )
 
-var _ SDK = Node{}
+var _ SDK = NodeJS{}
 
-type Node mg.Namespace
+type NodeJS mg.Namespace
 
 // Lint lints the NodeJS SDK
-func (t Node) Lint(ctx context.Context) error {
+func (t NodeJS) Lint(ctx context.Context) error {
 	panic("FIXME")
 }
 
 // Test tests the NodeJS SDK
-func (t Node) Test(ctx context.Context) error {
+func (t NodeJS) Test(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -38,12 +38,12 @@ func (t Node) Test(ctx context.Context) error {
 }
 
 // Generate re-generates the SDK API
-func (t Node) Generate(ctx context.Context) error {
+func (t NodeJS) Generate(ctx context.Context) error {
 	panic("FIXME")
 }
 
 // Publish publishes the NodeJS SDK
-func (t Node) Publish(ctx context.Context, tag string) error {
+func (t NodeJS) Publish(ctx context.Context, tag string) error {
 	panic("FIXME")
 }
 

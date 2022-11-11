@@ -22,7 +22,7 @@ type SDK interface {
 var availableSDKs = []SDK{
 	&Go{},
 	&Python{},
-	&Node{},
+	&NodeJS{},
 }
 
 var _ SDK = All{}
