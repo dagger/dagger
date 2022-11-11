@@ -28,7 +28,7 @@ func TestComment(t *testing.T) {
 		want := `/**
  * This is a comment
  */`
-		comments := []string{"This is a comment"}
+		comments := "This is a comment"
 
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, templateType, comments)
@@ -42,7 +42,7 @@ func TestComment(t *testing.T) {
  * This is a comment
  * that spans on multiple lines
  */`
-		comments := []string{"This is a comment", "that spans on multiple lines"}
+		comments := "This is a comment\nthat spans on multiple lines"
 
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, templateType, comments)

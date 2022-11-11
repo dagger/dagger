@@ -12,9 +12,8 @@ import (
 func TestField(t *testing.T) {
 	const templateType = "field"
 	t.Run("myField()", func(t *testing.T) {
-		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `
-  myField() {
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "field_comment")
+		want := `  myField() {
   }`
 
 		field := introspection.Field{
@@ -30,9 +29,8 @@ func TestField(t *testing.T) {
 	})
 
 	t.Run("exec(args:? ContainerExecArgs): Container", func(t *testing.T) {
-		tmpl := templateHelper(t, templateType, "input_args", "arg", "return")
-		want := `
-  exec(args?: ContainerExecArgs): Container {
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "field_comment")
+		want := `  exec(args?: ContainerExecArgs): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
@@ -51,9 +49,8 @@ func TestField(t *testing.T) {
 	})
 
 	t.Run("async id(): Promise<Record<string, DirectoryID>>", func(t *testing.T) {
-		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve")
-		want := `
-  async id(): Promise<Record<string, DirectoryID>> {
+		tmpl := templateHelper(t, templateType, "input_args", "arg", "return", "return_solve", "field_comment")
+		want := `  async id(): Promise<Record<string, DirectoryID>> {
     this._queryTree = [
       ...this._queryTree,
       {

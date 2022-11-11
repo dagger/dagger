@@ -1,11 +1,14 @@
 {{ define "input_args" -}}
-	{{- "" }}args{{ "" -}}
-	{{- if IsArgOptional .Args }}
-		{{- "?" -}}
-	{{- end }}
-	{{- $parentName := .ParentObject.Name }}
-	{{- if eq $parentName "Query" }}
-	{{- $parentName = "Client" }}
-	{{- end }}
-	{{- "" }}: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Args{{ "" -}}
+	{{- if . -}}
+args
+		{{- if IsArgOptional .Args -}}
+?
+		{{- end }}
+
+		{{- $parentName := .ParentObject.Name }}
+		{{- if eq $parentName "Query" }}
+			{{- $parentName = "Client" }}
+		{{- end -}}
+: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Args{{ "" -}}
+	{{- end -}}
 {{- end }}

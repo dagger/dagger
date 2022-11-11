@@ -1,11 +1,5 @@
 {{ define "field" }}
-	{{- $commentLines := CommentToLines .Description }}
-	{{- /* we split the comment string into a string slice of one line per element */ -}}
-
-	{{- if .Description -}}
-		{{- template "field_comment" $commentLines }}
-	{{- end }}
-{{ "" }}
+{{- template "field_comment" .Description }}
 	{{- if Solve . -}}
 		{{- "" }}  async {{ "" -}}
 	{{- else -}}
@@ -19,7 +13,7 @@
 	)
 	{{- if Solve . -}}
 		{{- with .TypeRef }}
-			{{- template "return_solve" . -}}
+			{{- "" }}: {{ template "return_solve" . -}}
 		{{- end -}}
 		{{- "" }} {
 		{{- if .TypeRef }}

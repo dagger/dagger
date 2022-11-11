@@ -5,10 +5,7 @@
 	{{- end -}}
 
 	{{- if IsCustomScalar . }}
-		{{- with .Description }}
-			{{- $descLines := CommentToLines . }}
-{{ template "object_comment" $descLines }}
-		{{- end }}
+{{ template "object_comment" .Description }}
 export type {{ $typeName }} = any
 {{ "" }}
 	{{- end }}

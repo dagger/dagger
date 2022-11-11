@@ -43,5 +43,8 @@ func TestFull(t *testing.T) {
 	err = tmpl.ExecuteTemplate(&b, "objects", schema.Types)
 	require.NoError(t, err)
 
+	// 	err = os.WriteFile("./testdata/want-test-full.ts", b.Bytes(), 0o644)
+	// 	require.NoError(t, err)
+
 	require.Equal(t, want, b.String())
 }

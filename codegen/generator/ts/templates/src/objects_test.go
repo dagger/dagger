@@ -115,6 +115,8 @@ export type HostWorkdirArgs = {
  * Information about the host execution environment
  */
 class Host extends BaseClient {
+
+
   /**
    * Access a directory on the host
    */
@@ -127,6 +129,7 @@ class Host extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
@@ -139,6 +142,7 @@ class Host extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The current working directory on the host
    */

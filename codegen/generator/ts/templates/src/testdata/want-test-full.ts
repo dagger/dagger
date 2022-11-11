@@ -179,6 +179,8 @@ export type ContainerWithoutMountArgs = {
  * An OCI-compatible container, also known as a docker container
  */
 class Container extends BaseClient {
+
+
   /**
    * Initialize this container from a Dockerfile build
    */
@@ -191,6 +193,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Default arguments for future commands
    */
@@ -206,6 +209,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * Retrieve a directory at the given path. Mounts are included.
    */
@@ -218,6 +222,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Entrypoint to be prepended to the arguments of all commands
    */
@@ -233,6 +238,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * The value of the specified environment variable
    */
@@ -249,6 +255,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * A list of environment variables passed to commands
    */
@@ -264,6 +271,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * This container after executing the specified command inside it
    */
@@ -276,6 +284,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Exit code of the last executed command. Zero means success.
    * Null if no command has been executed.
@@ -292,6 +301,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * Write the container as an OCI tarball to the destination file path on the host
    */
@@ -308,6 +318,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * Retrieve a file at the given path. Mounts are included.
    */
@@ -320,6 +331,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Initialize this container from the base image published at the given address
    */
@@ -332,6 +344,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container's root filesystem. Mounts are not included.
    */
@@ -343,6 +356,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * A unique identifier for this container
    */
@@ -358,6 +372,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * List of paths where a directory is mounted
    */
@@ -373,6 +388,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * The platform this container executes and publishes as
    */
@@ -388,6 +404,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * Publish this container as a new image, returning a fully qualified ref
    */
@@ -404,6 +421,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * The error stream of the last executed command.
    * Null if no command has been executed.
@@ -416,6 +434,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The output stream of the last executed command.
    * Null if no command has been executed.
@@ -428,6 +447,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The user to be set for all commands
    */
@@ -443,6 +463,7 @@ class Container extends BaseClient {
 
     return response
   }
+
   /**
    * Configures default arguments for future commands
    */
@@ -455,6 +476,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container but with a different command entrypoint
    */
@@ -467,6 +489,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus the given environment variable
    */
@@ -479,6 +502,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Initialize this container from this DirectoryID
    */
@@ -491,6 +515,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus a cache volume mounted at the given path
    */
@@ -503,6 +528,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus a directory mounted at the given path
    */
@@ -515,6 +541,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus a file mounted at the given path
    */
@@ -527,6 +554,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus a secret mounted into a file at the given path
    */
@@ -539,6 +567,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus a temporary directory mounted at the given path
    */
@@ -551,6 +580,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container plus an env variable containing the given secret
    */
@@ -563,6 +593,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container but with a different command user
    */
@@ -575,6 +606,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container but with a different working directory
    */
@@ -587,6 +619,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container minus the given environment variable
    */
@@ -599,6 +632,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This container after unmounting everything at the given path.
    */
@@ -611,6 +645,7 @@ class Container extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The working directory for all commands
    */
@@ -702,6 +737,8 @@ export type DirectoryWithoutFileArgs = {
  * A directory
  */
 class Directory extends BaseClient {
+
+
   /**
    * The difference between this directory and an another directory
    */
@@ -714,6 +751,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Retrieve a directory at the given path
    */
@@ -726,6 +764,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Return a list of files and directories at the given path
    */
@@ -742,6 +781,7 @@ class Directory extends BaseClient {
 
     return response
   }
+
   /**
    * Write the contents of the directory to a path on the host
    */
@@ -758,6 +798,7 @@ class Directory extends BaseClient {
 
     return response
   }
+
   /**
    * Retrieve a file at the given path
    */
@@ -770,6 +811,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The content-addressed identifier of the directory
    */
@@ -785,6 +827,7 @@ class Directory extends BaseClient {
 
     return response
   }
+
   /**
    * load a project's metadata
    */
@@ -797,6 +840,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This directory plus a directory written at the given path
    */
@@ -809,6 +853,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This directory plus the contents of the given file copied to the given path
    */
@@ -821,6 +866,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This directory plus a new directory created at the given path
    */
@@ -833,6 +879,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This directory plus a new file written at the given path
    */
@@ -845,6 +892,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This directory with the directory at the given path removed
    */
@@ -857,6 +905,7 @@ class Directory extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * This directory with the file at the given path removed
    */
@@ -884,6 +933,8 @@ export type DirectoryID = any
  * EnvVariable is a simple key value object that represents an environment variable.
  */
 class EnvVariable extends BaseClient {
+
+
   /**
    * name is the environment variable name.
    */
@@ -899,6 +950,7 @@ class EnvVariable extends BaseClient {
 
     return response
   }
+
   /**
    * value is the environment variable value
    */
@@ -925,6 +977,8 @@ export type FileExportArgs = {
  * A file
  */
 class File extends BaseClient {
+
+
   /**
    * The contents of the file
    */
@@ -940,6 +994,7 @@ class File extends BaseClient {
 
     return response
   }
+
   /**
    * Write the file to a file path on the host
    */
@@ -956,6 +1011,7 @@ class File extends BaseClient {
 
     return response
   }
+
   /**
    * The content-addressed identifier of the file
    */
@@ -970,8 +1026,7 @@ class File extends BaseClient {
     const response: Awaited<Record<string, FileID>> = await this._compute()
 
     return response
-  }
-  secret(): Secret {
+  }  secret(): Secret {
     return new Secret({queryTree: [
       ...this._queryTree,
       {
@@ -979,6 +1034,7 @@ class File extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The size of the file, in bytes
    */
@@ -997,6 +1053,7 @@ class File extends BaseClient {
 }
 
 
+
 export type FileID = any
 
 
@@ -1009,6 +1066,8 @@ export type FileID = any
  * A git ref (tag or branch)
  */
 class GitRef extends BaseClient {
+
+
   /**
    * The digest of the current value of this ref
    */
@@ -1024,6 +1083,7 @@ class GitRef extends BaseClient {
 
     return response
   }
+
   /**
    * The filesystem tree at this ref
    */
@@ -1054,6 +1114,8 @@ export type GitRepositoryTagArgs = {
  * A git repository
  */
 class GitRepository extends BaseClient {
+
+
   /**
    * Details on one branch
    */
@@ -1066,6 +1128,7 @@ class GitRepository extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * List of branches on the repository
    */
@@ -1081,6 +1144,7 @@ class GitRepository extends BaseClient {
 
     return response
   }
+
   /**
    * Details on one commit
    */
@@ -1093,6 +1157,7 @@ class GitRepository extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Details on one tag
    */
@@ -1105,6 +1170,7 @@ class GitRepository extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * List of tags on the repository
    */
@@ -1142,6 +1208,8 @@ export type HostWorkdirArgs = {
  * Information about the host execution environment
  */
 class Host extends BaseClient {
+
+
   /**
    * Access a directory on the host
    */
@@ -1154,6 +1222,7 @@ class Host extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
@@ -1166,6 +1235,7 @@ class Host extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The current working directory on the host
    */
@@ -1185,6 +1255,8 @@ class Host extends BaseClient {
  * An environment variable on the host environment
  */
 class HostVariable extends BaseClient {
+
+
   /**
    * A secret referencing the value of this variable
    */
@@ -1196,6 +1268,7 @@ class HostVariable extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The value of this variable
    */
@@ -1225,6 +1298,7 @@ export type ID = any
 
 
 
+
 export type Platform = any
 
 
@@ -1234,6 +1308,8 @@ export type Platform = any
  * A set of scripts and/or extensions
  */
 class Project extends BaseClient {
+
+
   /**
    * extensions in this project
    */
@@ -1249,6 +1325,7 @@ class Project extends BaseClient {
 
     return response
   }
+
   /**
    * Code files generated by the SDKs in the project
    */
@@ -1260,6 +1337,7 @@ class Project extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * install the project's schema
    */
@@ -1275,6 +1353,7 @@ class Project extends BaseClient {
 
     return response
   }
+
   /**
    * name of the project
    */
@@ -1290,6 +1369,7 @@ class Project extends BaseClient {
 
     return response
   }
+
   /**
    * schema provided by the project
    */
@@ -1305,6 +1385,7 @@ class Project extends BaseClient {
 
     return response
   }
+
   /**
    * sdk used to generate code for and/or execute this project
    */
@@ -1358,7 +1439,9 @@ export type ClientSecretArgs = {
 };
 
 
+
 export default class Client extends BaseClient {
+
   /**
    * Construct a cache volume for a given cache key
    */
@@ -1371,6 +1454,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Load a container from ID.
    * Null ID returns an empty container (scratch).
@@ -1385,6 +1469,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * The default platform of the builder.
    */
@@ -1400,6 +1485,7 @@ export default class Client extends BaseClient {
 
     return response
   }
+
   /**
    * Load a directory by ID. No argument produces an empty directory.
    */
@@ -1412,6 +1498,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Load a file by ID
    */
@@ -1424,6 +1511,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Query a git repository
    */
@@ -1436,6 +1524,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Query the host environment
    */
@@ -1447,6 +1536,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * An http remote
    */
@@ -1459,6 +1549,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Look up a project by name
    */
@@ -1471,6 +1562,7 @@ export default class Client extends BaseClient {
       }
     ], port: this.port})
   }
+
   /**
    * Load a secret from its ID
    */
@@ -1490,6 +1582,8 @@ export default class Client extends BaseClient {
  * A reference to a secret value, which can be handled more safely than the value itself
  */
 class Secret extends BaseClient {
+
+
   /**
    * The identifier for this secret
    */
@@ -1505,6 +1599,7 @@ class Secret extends BaseClient {
 
     return response
   }
+
   /**
    * The value of this secret
    */

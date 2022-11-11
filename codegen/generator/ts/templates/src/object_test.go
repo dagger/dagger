@@ -11,7 +11,7 @@ import (
 )
 
 func TestObject(t *testing.T) {
-	tmpl := templateHelper(t, "object", "object_comment", "field", "input_args", "arg", "return")
+	tmpl := templateHelper(t, "object", "object_comment", "field", "field_comment", "input_args", "arg", "return")
 
 	object := objectInit(t, containerExecArgsJSON)
 
@@ -24,7 +24,8 @@ func TestObject(t *testing.T) {
 	require.Equal(t, want, b.String())
 }
 
-var wantTestObject = `class Container extends BaseClient {
+var wantTestObject = `
+class Container extends BaseClient {
   exec(args?: ContainerExecArgs): Container {
     return new Container({queryTree: [
       ...this._queryTree,
