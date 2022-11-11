@@ -25,11 +25,12 @@ func (cl Cli) Publish(ctx context.Context) error {
 			WithWorkdir("/app").
 			WithMountedDirectory("/app", wd).
 			WithSecretVariable("GITHUB_TOKEN", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
-			WithSecretVariable("AWS_ACCESS_KEY_ID", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
-			WithSecretVariable("AWS_SECRET_ACCESS_KEY", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
-			WithSecretVariable("AWS_REGION", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
-			WithSecretVariable("AWS_BUCKET", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
-			WithSecretVariable("ARTEFACTS_FQDN", c.Host().EnvVariable("GITHUB_TOKEN").Secret())
+			WithSecretVariable("AWS_ACCESS_KEY_ID", c.Host().EnvVariable("AWS_ACCESS_KEY_ID").Secret()).
+			WithSecretVariable("AWS_SECRET_ACCESS_KEY", c.Host().EnvVariable("AWS_SECRET_ACCESS_KEY").Secret()).
+			WithSecretVariable("AWS_REGION", c.Host().EnvVariable("AWS_REGION").Secret()).
+			WithSecretVariable("AWS_BUCKET", c.Host().EnvVariable("AWS_BUCKET").Secret()).
+			WithSecretVariable("ARTEFACTS_FQDN", c.Host().EnvVariable("ARTEFACTS_FQDN").Secret()).
+			WithSecretVariable("HOMEBREW_TAP_OWNER", c.Host().EnvVariable("HOMEBREW_TAP_OWNER").Secret())
 
 		_, err := container.
 			Exec(dagger.ContainerExecOpts{Args: []string{"release", "--rm-dist", "--debug"}}).

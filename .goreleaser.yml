@@ -62,7 +62,7 @@ changelog:
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
-      owner: dagger
+      owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
       name: homebrew-tap
     name: dagger@{{ .Major }}.{{ .Minor }}
     commit_author:
@@ -76,7 +76,7 @@ brews:
 
 blobs:
   - provider: s3
-    region: us-east-1
+    region: "${{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     folder: "dagger/releases/{{ .Version }}"
 
