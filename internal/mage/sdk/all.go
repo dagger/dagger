@@ -10,6 +10,7 @@ import (
 	"github.com/hexops/gotextdiff/myers"
 	"github.com/hexops/gotextdiff/span"
 	"github.com/magefile/mage/mg"
+	"golang.org/x/sync/errgroup"
 )
 
 type SDK interface {
@@ -17,6 +18,7 @@ type SDK interface {
 	Test(ctx context.Context) error
 	Generate(ctx context.Context) error
 	Publish(ctx context.Context, tag string) error
+	Bump(ctx context.Context, engineVersion string) error
 }
 
 var availableSDKs = []SDK{
@@ -53,6 +55,18 @@ func (t All) Generate(ctx context.Context) error {
 // Publish publishes all SDK APIs
 func (t All) Publish(ctx context.Context, version string) error {
 	return errors.New("publish is not supported on `all` target. Please run this command on individual SDKs")
+}
+
+// Bump SDKs to a specific Engine version
+func (t All) Bump(ctx context.Context, engineVersion string) error {
+	eg, gctx := errgroup.WithContext(ctx)
+	for _, sdk := range availableSDKs {
+		sdk := sdk
+		eg.Go(func() error {
+			return sdk.Bump(gctx, engineVersion)
+		})
+	}
+	return eg.Wait()
 }
 
 func (t All) runAll(fn func(SDK) any) error {

@@ -47,6 +47,11 @@ func (t NodeJS) Publish(ctx context.Context, tag string) error {
 	panic("FIXME")
 }
 
+// Bump the NodeJS SDK's Engine dependency
+func (t NodeJS) Bump(ctx context.Context, version string) error {
+	panic("Andrea / Erik / Tom: https://github.com/dagger/dagger/pull/3783#issuecomment-1311833703")
+}
+
 func nodeJSBase(c *dagger.Client) *dagger.Container {
 	// FIXME: change to `util.Repository(c).Directory("sdk/python")` once #3459 is merged
 
