@@ -32,7 +32,51 @@ func TestObjects(t *testing.T) {
 	}
 }
 
-var wantObjects = `
+var wantObjects = `import { GraphQLClient, gql } from "../index.js";
+import { queryBuilder, queryFlatten } from "./utils.js"
+
+export type QueryTree = {
+  operation: string
+  args?: Record<string, any>
+}
+
+interface ClientConfig {
+  queryTree?: QueryTree[],
+  port?: number
+}
+
+class BaseClient {
+  protected _queryTree:  QueryTree[]
+	private client: GraphQLClient;
+  protected port: number
+
+
+  constructor({queryTree, port}: ClientConfig = {}) {
+    this._queryTree = queryTree || []
+    this.port = port || 8080
+		this.client = new GraphQLClient(` + "`http://localhost:${port}/query`" + `);
+  }
+
+  get queryTree() {
+    return this._queryTree;
+  }
+
+  protected async _compute() : Promise<Record<string, any>> {
+    // run the query and return the result.
+    const query = queryBuilder(this._queryTree)
+
+    const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve, reject) => {
+      const response: Awaited<Promise<Record<string, any>>> = await this.client.request(gql` + "`${query}`" + `).catch((error) => {reject(console.error(JSON.stringify(error, undefined, 2)))})
+
+      resolve(queryFlatten(response));
+    })
+
+    const result = await computeQuery;
+
+    return result
+  }
+}
+
 /**
  * A directory whose contents persist across runs
  */
@@ -51,10 +95,11 @@ class CacheVolume extends BaseClient {
   }
 }
 
+
 export type HostDirectoryArgs = {
   path: string;
-  exclude?: []string;
-  include?: []string;
+  exclude?: string[];
+  include?: string[];
 };
 
 export type HostEnvVariableArgs = {
@@ -62,8 +107,8 @@ export type HostEnvVariableArgs = {
 };
 
 export type HostWorkdirArgs = {
-  exclude?: []string;
-  include?: []string;
+  exclude?: string[];
+  include?: string[];
 };
 
 /**

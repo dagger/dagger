@@ -1,4 +1,4 @@
-{{ define "header" }}
+{{ define "header" -}}
 import { GraphQLClient, gql } from "../index.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
@@ -43,5 +43,4 @@ class BaseClient {
     return result
   }
 }
-
-{{ end }}
+{{- end }}
