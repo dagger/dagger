@@ -53,7 +53,8 @@ func nodeJSBase(c *dagger.Client) *dagger.Container {
 	src := c.Directory().WithDirectory("/", util.Repository(c))
 
 	base := c.Container().
-		From("node:18.12-alpine").
+		// ⚠️  Keep this in sync with the engine version defined in package.json
+		From("node:16-alpine").
 		WithWorkdir("/app")
 
 	base = base.WithFS(
