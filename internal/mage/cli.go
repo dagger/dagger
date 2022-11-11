@@ -22,6 +22,9 @@ func (cl Cli) Publish(ctx context.Context) error {
 		wd := c.Host().Workdir()
 		container := c.Container().
 			From("ghcr.io/goreleaser/goreleaser:v1.12.3").
+			WithEntrypoint([]string{}).
+			Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "aws-cli"}}).
+			WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 			WithWorkdir("/app").
 			WithMountedDirectory("/app", wd).
 			WithSecretVariable("GITHUB_TOKEN", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
