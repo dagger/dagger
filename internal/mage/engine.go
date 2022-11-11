@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
@@ -85,6 +86,11 @@ func (t Engine) Publish(ctx context.Context, tag string) error {
 		PlatformVariants: util.DevEngineContainer(c, arches, oses),
 	})
 	if err != nil {
+		return err
+	}
+
+	sdks := sdk.All{}
+	if err := sdks.Bump(ctx, imageRef); err != nil {
 		return err
 	}
 
