@@ -1,11 +1,11 @@
 {
-  "name": "@dagger.io/nodejs-sdk",
+  "name": "@dagger.io/dagger",
   "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
   "types": "./dist/index.d.ts",
   "files": [
-    "./dist/"
+    "dist/"
   ],
   "exports": {
     ".": "./dist/index.js"
