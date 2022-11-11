@@ -13,7 +13,7 @@
 	)
 	{{- if Solve . -}}
 		{{- with .TypeRef }}
-			{{- "" }}: {{ template "return_solve" . -}}
+			{{- template "return_solve" . -}}
 		{{- end -}}
 		{{- "" }} {
 		{{- if .TypeRef }}

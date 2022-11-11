@@ -1,4 +1,6 @@
 {{ define "return" -}}
-	{{ "" }}: {{ . | FormatOutputType  }}
+	{{- with . }}
+		{{- "" }}: {{ . | FormatOutputType  }}
+	{{- end }}
 {{- end }}
 
