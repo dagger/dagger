@@ -18,7 +18,7 @@ git tag $ENGINE_VERSION
 git push origin $ENGINE_VERSION
 ```
 
-This will kick off the workflow in `.github./workflows/publish-engine.yml` that builds+pushes the engine image to our registry with a tag matching `ENGINE_VERSION`.
+This will kick off the workflow in [`.github./workflows/publish-engine.yml`](https://github.com/dagger/dagger/actions/workflows/publish-engine.yml) that builds+pushes the engine image to our registry with a tag matching `ENGINE_VERSION`.
 
 ## Go SDK
 
@@ -121,10 +121,60 @@ When the above is looking good, you are ready to release:
 
 ```console
 export SDK_VERSION=v0.1.0
-git tag --sign sdk/python/${SDK_VERSION}
+git tag sdk/python/${SDK_VERSION}
 git push origin sdk/python/${SDK_VERSION}
 ```
 
 This will trigger the [`Publish Python SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-python.yml)
 which publishes [dagger-io to PyPI](https://pypi.org/project/dagger-io).
+
+### Changelog
+
+After the release is out, we need to create a release from the tag. Here is an
+example of what we are aiming for
+[sdk/python/v0.1.1](https://github.com/dagger/dagger/releases/tag/sdk%2Fpython%2Fv0.1.1).
+And here are the steps on how that was created:
+
+#### 1/4. Generate a draft release
+
+```console
+gh release create sdk/python/${SDK_VERSION} --generate-notes --notes-start-tag sdk/python/${PREVIOUS_SDK_VERSION} --draft
+```
+
+#### 2/4. Clean up release notes
+
+- Add link to PyPI, e.g. 🐍 https://pypi.org/project/dagger-io/0.1.1/
+- If there is a blog post (see **4/4.**) add a link to it, e.g.
+  📝 https://dagger.io/blog/python-sdk
+- If there is a video (see **4/4.**) add a link to it, e.g.
+  🎬 https://www.youtube.com/watch?v=c0bLWmi2B-4
+- Click through each pull request and remove all the ones that don't change any
+  Python SDK files. Some pull requests are prefixed with `sdk: python:`, which
+  makes this process quicker.
+
+> 💡 TIP: An approach that works is to open a dozen or so pull requests in new
+> tabs, click on **Preview** and remove all the ones that don't affect this
+> SDK. Repeat until all pull requests under **What's Changed** are relevant to
+> this release.
+
+- Lastly, remove all **New Contributors** which do not have a pull request
+  under the **What's Changed** section.
+
+#### 3/4. Publish release
+
+- ⚠️ De-select **Set as the latest release** (only used for Engine/CLI releases)
+- Click on **Publish release**
+
+#### 4/4. Update blog post
+
+This is an optional step. We sometimes publish a blog post when a new SDK
+release goes out. When that happens, we tend to include a link to the release
+notes. Here is an example for the [Python SDK v0.1.1 release blog
+post](https://dagger.io/blog/python-sdk).
+
+You may also want to link to this blog post from within the release notes, e.g.
+[sdk/python/v0.1.1](https://github.com/dagger/dagger/releases/tag/sdk%2Fpython%2Fv0.1.1).
+
+If there is a video in this blog post, you may want to add it to the release
+notes (see **3/4.**).
