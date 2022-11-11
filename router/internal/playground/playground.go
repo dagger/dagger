@@ -80,16 +80,14 @@ var page = template.Must(template.New("graphiql").Parse(`
 #
 #    Auto Complete:  Ctrl-Space (or just start typing)
 #
-# Here's a simple query to get you started, for more information visit
-# https:\/\/github.com/dagger/dagger/blob/cloak/docs/unxpq-introduction.md
+# Here's a simple query to get you started
 {
-  core {
-    image(ref: "alpine") {
-      exec(input: {args: ["apk", "add", "curl"]}){
-        fs {
-          exec(input: {args: ["curl", "https://dagger.io"]}) {
-            stdout(lines: 1)
-          }
+	container(id: "", platform: "linux"){
+  	from(address: "alpine") {
+      exec(args: ["echo", "hello dagger"]){
+        exitCode
+        stdout{
+          contents
         }
       }
     }
