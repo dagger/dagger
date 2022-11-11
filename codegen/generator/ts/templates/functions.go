@@ -1,7 +1,6 @@
 package templates
 
 import (
-	"fmt"
 	"strings"
 	"text/template"
 
@@ -12,30 +11,25 @@ import (
 
 var (
 	FuncMap = template.FuncMap{
-		"CamelCase":              CamelCase,
-		"CommentToLines":         CommentToLines,
-		"FormatInputType":        FormatInputType,
-		"FormatOutputType":       FormatOutputType,
-		"FormatName":             FormatName,
-		"FieldOptionsStructName": FieldOptionsStructName,
-		"FieldFunction":          FieldFunction,
-		"HasPrefix":              strings.HasPrefix,
-		"PascalCase":             PascalCase,
-		"IsArgOptional":          IsArgOptional,
-		"IsCustomScalar":         IsCustomScalar,
-		"Solve":                  Solve,
-		"Subtract":               Subtract,
+		"CommentToLines":   CommentToLines,
+		"FormatInputType":  FormatInputType,
+		"FormatOutputType": FormatOutputType,
+		"FormatName":       FormatName,
+		"HasPrefix":        strings.HasPrefix,
+		"PascalCase":       PascalCase,
+		"IsArgOptional":    IsArgOptional,
+		"IsCustomScalar":   IsCustomScalar,
+		"Solve":            Solve,
+		"Subtract":         Subtract,
 	}
 )
 
+// PascalCase change a type name into PascalCase
 func PascalCase(name string) string {
 	return strcase.ToCamel(name)
 }
 
-func CamelCase(name string) string {
-	return strcase.ToLowerCamel(name)
-}
-
+// Solve checks if a field is solveable.
 func Solve(field introspection.Field) bool {
 	if field.TypeRef == nil {
 		return false
@@ -48,6 +42,7 @@ func Subtract(a, b int) int {
 	return a - b
 }
 
+// CommentToLines split a string by line breaks to be used in comments
 func CommentToLines(s string) []string {
 	split := strings.Split(s, "\n")
 	return split
@@ -55,14 +50,17 @@ func CommentToLines(s string) []string {
 
 // formatType formats a GraphQL type into Go
 // Example: `String` -> `string`
+// TODO: maybe delete and only use formatType?
 func FormatInputType(r *introspection.TypeRef) string {
 	return formatType(r)
 }
 
+// TODO: maybe delete and only use formatType?
 func FormatOutputType(r *introspection.TypeRef) string {
 	return formatType(r)
 }
 
+// IsCustomScalar checks if the type is actually custom.
 func IsCustomScalar(t *introspection.Type) bool {
 	switch introspection.Scalar(t.Name) {
 	case introspection.ScalarString, introspection.ScalarInt, introspection.ScalarFloat, introspection.ScalarBoolean:
@@ -116,65 +114,8 @@ func FormatName(s string) string {
 	return s
 }
 
-// FieldOptionsStructName returns the options struct name for a given field
-func FieldOptionsStructName(f introspection.Field) string {
-	// TODO: check this works correctly
-
-	// Exception: `Query` option structs are not prefixed by `Query`.
-	// This is just so that they're nicer to work with, e.g.
-	// `ContainerOpts` rather than `QueryContainerOpts`
-	// The structure name will not clash with others since everybody else
-	// is prefixed by object name.
-	if f.ParentObject.Name == "Query" {
-		return FormatName(f.Name) + "Opts"
-	}
-	return FormatName(f.ParentObject.Name) + FormatName(f.Name) + "Opts"
-}
-
-// FieldFunction converts a field into a function signature
-// Example: `contents: String!` -> `contents() string`
-// TODO transform into template as well?
-func FieldFunction(f introspection.Field) string {
-	solve := f.TypeRef.IsScalar() || f.TypeRef.IsList()
-	var async string
-	if solve {
-		async = "async"
-	}
-	// TODO think about the await in the func body
-
-	signature := fmt.Sprintf(`%s %s`,
-		async,
-		FormatName(f.Name),
-	)
-
-	// Generate arguments
-	args := []string{}
-	for _, arg := range f.Args {
-		if !arg.TypeRef.IsOptional() {
-			args = append(args, fmt.Sprintf("%s %s", FormatInputType(arg.TypeRef), arg.Name))
-		}
-	}
-
-	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
-	if f.Args.HasOptionals() {
-		// TODO iterate through optional args?
-		args = append(
-			args,
-			fmt.Sprintf("args: { %s }", FieldOptionsStructName(f)),
-		)
-	}
-	signature += "(" + strings.Join(args, ", ") + ")"
-
-	_ = async
-	retType := FormatOutputType(f.TypeRef)
-	signature += ": " + retType
-
-	// FIXME: just use fmt.Sprintf?
-	// signature = fmt.Sprintf("%s %s(%s): %s", async, funcName, argString, retType)
-
-	return signature
-}
-
+// IsArgOptional checks if some arg are optional.
+// They are, if all of there InputValues are optional.
 func IsArgOptional(values introspection.InputValues) bool {
 	for _, v := range values {
 		if v.TypeRef != nil && !v.TypeRef.IsOptional() {
