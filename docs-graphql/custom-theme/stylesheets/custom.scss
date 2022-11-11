@@ -47,7 +47,7 @@
 // Style variables
 //////////////////
 //
-// $font-family: 'Barlow','Open Sans',serif;
+$font-family: 'Montserrat', sans-serif;
 // $font-family-monospaced: Consolas, Monaco, Andale Mono, Ubuntu Mono, monospace;
 // $text-color: red;
 // $text-color-subtle: #999999;
@@ -89,3 +89,12 @@
 // $container-padding-operation: 60px;
 //
 // $background-arguments: #fafbfc;
+
+.operation-example {
+    a {
+        padding: 10px;
+        border-radius: 10px;
+        box-shadow: 5px 5px 5px 5px grey;
+        background-color: red;
+    }
+}

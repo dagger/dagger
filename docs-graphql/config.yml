@@ -19,7 +19,7 @@ extensions:
   graphqlScalarExamples: true
 
 info:
-  title: GraphQL API Reference
+  title: Dagger GraphQL API Reference
   description: Welcome to the party!
   termsOfService: https://www.example.com/terms
   contact:

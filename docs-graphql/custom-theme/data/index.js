@@ -1,9 +1,21 @@
-// THIS IS AN EXPERIMENTAL API AND IT COULD CHANGE AT ANY TIME IN A BREAKING
-// MANNER BEFORE A MAJOR RELEASE.
-//
-// USE AT YOUR OWN RISK.
+/**
+ * This is the data source entrypoint for handlebars.
+ * 
+ * From the speactaql docs, this API is experimental, so
+ * it may break with future releases.
+ * 
+ * This script takes the output from Microfiber, a tool
+ * that parses introspection schemas or .gql files and 
+ * outputs the results in a friendly manner.
+ * 
+ */
 
 const { Microfiber: IntrospectionManipulator } = require('microfiber')
+const fs = require('fs');
+const path = require('path')
+const chalk = require('chalk')
+
+const examplesPath = path.resolve(`${__dirname}/../../data/examples`);
 
 function sortByName(a, b) {
   if (a.name > b.name) {
@@ -14,6 +26,17 @@ function sortByName(a, b) {
   }
 
   return 0
+}
+
+function getExamplesByName(name) {
+  try {
+    console.log(chalk.blue(`Found example to be rendered for ${name}`))
+    let content = fs.readFileSync(path.resolve(`${examplesPath}/queries/${name}/gql.md`), 'utf8')
+    console.log(chalk.blue(`Rendering successful.`))
+    return [content]
+  } catch(err) {
+    console.log(chalk.red(`Error processing the example for ${name}.`), chalk.red(err))
+  }
 }
 
 module.exports = ({
@@ -41,14 +64,6 @@ module.exports = ({
     includeSubscription: false,
   })
 
-  // This is a contrived example that shows how you can generate your own simple or nested set
-  // of data and items to create the output you want for SpectaQL. This example will only
-  // output the Queries in a sub-heading called "Queries" under an outer heading called "Operations",
-  // and then all the "normal" Types in the schema under a heading called "Types".
-  //
-  // What should be noted is that you can nest things (more than once) for ultimate
-  // control over what data you display, and in what arrangement. Yay!
-  console.log(queryType.fields)
   return [
     // The idea is to return an Array of Objects with the following structure:
     {
@@ -68,6 +83,8 @@ module.exports = ({
           isSubscription: false,
           // Is this item a Type?
           isType: false,
+          // Get all examples for the query and return as array
+          examples: getExamplesByName(query.name)
         }))
         .sort(sortByName),
     },

@@ -5,6 +5,7 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
+    "chalk": "4.1.2",
     "spectaql": "^1.5.6"
   }
 }
