@@ -1,7 +1,11 @@
 {{ define "objects" }}
 	{{- template "header" -}}
 	{{- range . }}
-{{ "" }}	{{- template "type" . }}
-{{ "" }}	{{- template "object" . -}}
+		{{- if HasPrefix .Name "__" }}
+			{{- /* we ignore types prefixed by __ */ -}}
+		{{- else }}
+{{ "" }}		{{- template "type" . }}
+{{ "" }}		{{- template "object" . -}}
+		{{- end }}
 	{{- end }}
 {{- end }}

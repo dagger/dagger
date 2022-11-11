@@ -17,7 +17,7 @@ import (
 var wantTestFull string
 
 func TestFull(t *testing.T) {
-	tmpl := templateHelper(t, "header", "objects", "object", "field", "return_solve", "input_args", "return", "object_comment", "field_comment", "types", "type")
+	tmpl := templateHelper(t, "header", "objects", "object", "method", "method_solve", "field", "return_solve", "input_args", "return", "object_comment", "field_comment", "types", "type")
 
 	want := wantTestFull
 	ctx := context.Background()

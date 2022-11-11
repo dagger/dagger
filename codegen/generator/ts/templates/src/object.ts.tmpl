@@ -1,23 +1,23 @@
 {{ define "object" }}
 	{{- with . }}
-		{{- if HasPrefix .Name "__" }}
-			{{- /* we ignore types prefixed by __ */ -}}
-		{{- else }}
 			{{- if .Fields }}
 {{- template "object_comment" .Description }}
 {{""}}
-				{{- $name := .Name | FormatName }}
-				{{- if  eq $name "Query" }}
+			{{- $name := .Name | FormatName }}
+			{{- if  eq $name "Query" }}
 export default class Client extends BaseClient {
-				{{- else -}}
+			{{- else -}}
 class {{ .Name | FormatName }} extends BaseClient {
 {{""}}
-				{{- end }}
-					{{- "" }}{{ range $field := .Fields -}}
-						{{ template "field" . }}
-					{{- end }}
-}
 			{{- end }}
+				{{- "" }}{{ range $field := .Fields -}}
+					{{- if Solve . }}
+						{{- template "method_solve" $field }}
+					{{- else }}
+						{{- template "method" $field }}
+					{{- end }}
+				{{- end }}
+}
 		{{- end }}
 	{{- end }}
 {{ end }}

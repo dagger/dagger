@@ -1627,35 +1627,3 @@ export type SecretID = any
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-export type __TypeEnumValuesArgs = {
-  includeDeprecated?: boolean;
-};
-
-export type __TypeFieldsArgs = {
-  includeDeprecated?: boolean;
-};
-
-
-
-
-
