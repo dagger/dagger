@@ -58,7 +58,7 @@ func (t Go) Test(ctx context.Context) error {
 		_, err = util.GoBase(c).
 			WithWorkdir("sdk/go").
 			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"go", "test", "-v", "./..."},
+				Args:                          []string{"go", "test", "-p", "16", "-v", "./..."},
 				ExperimentalPrivilegedNesting: true,
 			}).
 			ExitCode(ctx)
