@@ -20,7 +20,7 @@
     "graphql": "^16.5.0",
     "graphql-request": "^5.0.0",
     "graphql-tag": "^2.12.6",
-    "node-fetch": "^3.2.10"
+    "node-fetch": "^3.3.0"
   },
   "scripts": {
     "build": "tsc",
