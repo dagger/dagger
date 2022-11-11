@@ -4,7 +4,18 @@ on:
     branches:
       - main
     tags:
-      - v*
+      - 'v*'
+    paths:
+      - 'cmd/**'
+      - 'codegen/**'
+      - 'core/**'
+      - 'engine/**'
+      - 'internal/engine/**'
+      - 'project/**'
+      - 'router/**'
+      - 'secret/**'
+      - 'tracing/**'
+      - go.mod
 jobs:
   publish:
     runs-on: ubuntu-latest
