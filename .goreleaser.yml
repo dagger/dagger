@@ -76,7 +76,7 @@ brews:
 
 blobs:
   - provider: s3
-    region: "${{ .Env.AWS_REGION }}"
+    region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     folder: "dagger/releases/{{ .Version }}"
 
