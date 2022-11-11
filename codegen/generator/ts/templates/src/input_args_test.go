@@ -12,7 +12,7 @@ func TestInputArgs(t *testing.T) {
 		in   string
 		want string
 	}{
-		"ContainerExecArgs": {containerExecArgsJSON, "args: ContainerExecArgs"},
+		"ContainerExecArgs": {containerExecArgsJSON, "args?: ContainerExecArgs"},
 	}
 
 	for name, c := range cases {

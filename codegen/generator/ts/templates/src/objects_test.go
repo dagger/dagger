@@ -97,7 +97,7 @@ class Host extends BaseClient {
   /**
    * The current working directory on the host
    */
-  workdir(args: HostWorkdirArgs): Directory {
+  workdir(args?: HostWorkdirArgs): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {

@@ -18,14 +18,14 @@ func TestObject(t *testing.T) {
 	var b bytes.Buffer
 	err := tmpl.ExecuteTemplate(&b, "object", object)
 
-	want := expectedFunc
+	want := wantTestObject
 
 	require.NoError(t, err)
 	require.Equal(t, want, b.String())
 }
 
-var expectedFunc = `class Container extends BaseClient {
-  exec(args: ContainerExecArgs): Container {
+var wantTestObject = `class Container extends BaseClient {
+  exec(args?: ContainerExecArgs): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
