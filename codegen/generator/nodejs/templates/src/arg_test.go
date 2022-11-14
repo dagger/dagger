@@ -3,7 +3,6 @@ package test
 import (
 	"bytes"
 	"testing"
-	"text/template"
 
 	"github.com/dagger/dagger/codegen/generator/nodejs/templates"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -11,7 +10,7 @@ import (
 )
 
 func TestArg(t *testing.T) {
-	tmpl := template.Must(template.New("arg").Funcs(templates.FuncMap).ParseFiles("arg.ts.tmpl"))
+	tmpl := templates.New()
 
 	arg := introspection.Field{
 		Name: "ref",

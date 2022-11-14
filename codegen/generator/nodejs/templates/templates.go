@@ -13,7 +13,7 @@ var srcs embed.FS
 func New() *template.Template {
 	topLevelTemplate := "api"
 	templateDeps := []string{
-		topLevelTemplate, "header", "objects", "object", "object_comment", "method", "method_solve", "field", "return_solve", "input_args", "return", "field_comment", "types", "type",
+		topLevelTemplate, "header", "objects", "object", "object_comment", "method", "method_solve", "field", "return_solve", "input_args", "return", "field_comment", "types", "type", "args", "arg",
 	}
 
 	fileNames := make([]string, 0, len(templateDeps))
@@ -21,6 +21,6 @@ func New() *template.Template {
 		fileNames = append(fileNames, fmt.Sprintf("src/%s.ts.tmpl", tmpl))
 	}
 
-	tmpl := template.Must(template.New(topLevelTemplate).Funcs(FuncMap).ParseFS(srcs, fileNames...))
+	tmpl := template.Must(template.New(topLevelTemplate).Funcs(funcMap).ParseFS(srcs, fileNames...))
 	return tmpl
 }

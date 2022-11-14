@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
-	"text/template"
 
 	"github.com/dagger/dagger/codegen/generator/nodejs/templates"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -22,8 +21,7 @@ func TestArgs(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			tmpl := template.New("args").Funcs(templates.FuncMap)
-			tmpl = template.Must(tmpl.ParseFiles("args.ts.tmpl", "arg.ts.tmpl"))
+			tmpl := templates.New()
 
 			jsonData := c.in
 

@@ -10,40 +10,40 @@ import (
 )
 
 var (
-	FuncMap = template.FuncMap{
-		"CommentToLines":   CommentToLines,
-		"FormatInputType":  FormatInputType,
-		"FormatOutputType": FormatOutputType,
-		"FormatName":       FormatName,
+	funcMap = template.FuncMap{
+		"CommentToLines":   commentToLines,
+		"FormatInputType":  formatInputType,
+		"FormatOutputType": formatOutputType,
+		"FormatName":       formatName,
 		"HasPrefix":        strings.HasPrefix,
-		"PascalCase":       PascalCase,
-		"IsArgOptional":    IsArgOptional,
-		"IsCustomScalar":   IsCustomScalar,
-		"Solve":            Solve,
-		"Subtract":         Subtract,
+		"PascalCase":       pascalCase,
+		"IsArgOptional":    isArgOptional,
+		"IsCustomScalar":   isCustomScalar,
+		"Solve":            solve,
+		"Subtract":         subtract,
 	}
 )
 
-// PascalCase change a type name into PascalCase
-func PascalCase(name string) string {
+// pascalCase change a type name into pascalCase
+func pascalCase(name string) string {
 	return strcase.ToCamel(name)
 }
 
-// Solve checks if a field is solveable.
-func Solve(field introspection.Field) bool {
+// solve checks if a field is solveable.
+func solve(field introspection.Field) bool {
 	if field.TypeRef == nil {
 		return false
 	}
 	return field.TypeRef.IsScalar() || field.TypeRef.IsList()
 }
 
-// Subtract subtract integer a with integer b.
-func Subtract(a, b int) int {
+// subtract subtract integer a with integer b.
+func subtract(a, b int) int {
 	return a - b
 }
 
-// CommentToLines split a string by line breaks to be used in comments
-func CommentToLines(s string) []string {
+// commentToLines split a string by line breaks to be used in comments
+func commentToLines(s string) []string {
 	split := strings.Split(s, "\n")
 	return split
 }
@@ -51,17 +51,17 @@ func CommentToLines(s string) []string {
 // formatType formats a GraphQL type into Go
 // Example: `String` -> `string`
 // TODO: maybe delete and only use formatType?
-func FormatInputType(r *introspection.TypeRef) string {
+func formatInputType(r *introspection.TypeRef) string {
 	return formatType(r)
 }
 
 // TODO: maybe delete and only use formatType?
-func FormatOutputType(r *introspection.TypeRef) string {
+func formatOutputType(r *introspection.TypeRef) string {
 	return formatType(r)
 }
 
-// IsCustomScalar checks if the type is actually custom.
-func IsCustomScalar(t *introspection.Type) bool {
+// isCustomScalar checks if the type is actually custom.
+func isCustomScalar(t *introspection.Type) bool {
 	switch introspection.Scalar(t.Name) {
 	case introspection.ScalarString, introspection.ScalarInt, introspection.ScalarFloat, introspection.ScalarBoolean:
 		return false
@@ -97,10 +97,10 @@ func formatType(r *introspection.TypeRef) (representation string) {
 				return representation
 			}
 		case introspection.TypeKindObject:
-			representation += FormatName(ref.Name)
+			representation += formatName(ref.Name)
 			return representation
 		case introspection.TypeKindInputObject:
-			representation += FormatName(ref.Name)
+			representation += formatName(ref.Name)
 			return representation
 		}
 	}
@@ -108,14 +108,14 @@ func formatType(r *introspection.TypeRef) (representation string) {
 	panic(r)
 }
 
-// FormatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
-func FormatName(s string) string {
+// formatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
+func formatName(s string) string {
 	return s
 }
 
-// IsArgOptional checks if some arg are optional.
+// isArgOptional checks if some arg are optional.
 // They are, if all of there InputValues are optional.
-func IsArgOptional(values introspection.InputValues) bool {
+func isArgOptional(values introspection.InputValues) bool {
 	for _, v := range values {
 		if v.TypeRef != nil && !v.TypeRef.IsOptional() {
 			return false
