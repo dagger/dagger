@@ -109,7 +109,6 @@ func formatType(r *introspection.TypeRef) (representation string) {
 }
 
 // FormatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
-// FIXME: delete if not used before release
 func FormatName(s string) string {
 	return s
 }
