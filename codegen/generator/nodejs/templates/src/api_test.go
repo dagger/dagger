@@ -45,7 +45,7 @@ func TestAPI(t *testing.T) {
 
 	goldenPath := filepath.Join("testdata", "want-api-full.golden.ts")
 	if *update {
-		err = os.WriteFile(goldenPath, b.Bytes(), 0o644)
+		err = os.WriteFile(goldenPath, b.Bytes(), 0o600)
 		require.NoError(t, err)
 	}
 
