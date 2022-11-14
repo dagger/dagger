@@ -89,9 +89,11 @@ func (t Engine) Publish(ctx context.Context, tag string) error {
 		return err
 	}
 
-	sdks := sdk.All{}
-	if err := sdks.Bump(ctx, imageRef); err != nil {
-		return err
+	if semver.IsValid(tag) {
+		sdks := sdk.All{}
+		if err := sdks.Bump(ctx, imageRef); err != nil {
+			return err
+		}
 	}
 
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
