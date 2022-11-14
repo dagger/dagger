@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"flag"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -12,14 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//nolint:typecheck
-//go:embed testdata/want-api-full.ts
-var wantTestAPI string
+var update = flag.Bool("update", false, "update golden files")
 
 func TestAPI(t *testing.T) {
 	tmpl := templateHelper(t)
 
-	want := wantTestAPI
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -43,8 +43,14 @@ func TestAPI(t *testing.T) {
 	err = tmpl.ExecuteTemplate(&b, "api", schema.Types)
 	require.NoError(t, err)
 
-	//err = os.WriteFile("./testdata/want-api-full.ts", b.Bytes(), 0o644)
-	//require.NoError(t, err)
+	goldenPath := filepath.Join("testdata", "want-api-full.golden.ts")
+	if *update {
+		err = os.WriteFile(goldenPath, b.Bytes(), 0o644)
+		require.NoError(t, err)
+	}
 
-	require.Equal(t, want, b.String())
+	want, err := os.ReadFile(goldenPath)
+	require.NoError(t, err)
+
+	require.Equal(t, string(want), b.String())
 }
