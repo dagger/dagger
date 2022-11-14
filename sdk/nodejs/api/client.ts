@@ -29,18 +29,19 @@ class BaseClient {
   }
 
   protected async _compute() : Promise<Record<string, any>> {
+
+    try {
     // run the query and return the result.
     const query = queryBuilder(this._queryTree)
-
-    const computeQuery: Promise<Record<string, string>> = new Promise(async (resolve, reject) => {
-      const response: Awaited<Promise<Record<string, any>>> = await this.client.request(gql`${query}`).catch((error) => {reject(console.error(JSON.stringify(error, undefined, 2)))})
-
-      resolve(queryFlatten(response));
-    })
-
+    const response: Awaited<Promise<Record<string, any>>> = await this.client.request(gql`${query}`)
+    const computeQuery = queryFlatten(response)
     const result = await computeQuery;
 
-    return result
+    return result      
+    } catch (error) {
+      console.error(`Failed: \n ${JSON.stringify(error, undefined, 2)}`)    
+      process.exit(1)  
+    }
   }
 }
 
@@ -348,6 +349,19 @@ class Container extends BaseClient {
     return response
   }
 
+  async exitCode(): Promise<Record<string, Scalars['Int']>> {
+  this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'exitCode',
+      }
+    ]
+
+    const response: Awaited<Record<string, Scalars['Int']>> = await this._compute()
+
+    return response
+  }
+
 /**
  * Initialize this container from this DirectoryID
  */
@@ -554,6 +568,22 @@ class Directory extends BaseClient {
     ]
 
     const response: Record<string, Array<string>> = await this._compute()
+
+    return response
+  }
+
+  async export(args?: {
+    path?: string | undefined;
+}): Promise<Record<string, Array<boolean>>>  {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: 'export',
+      args
+      }
+    ]
+
+    const response: Record<string, Array<boolean>> = await this._compute()
 
     return response
   }

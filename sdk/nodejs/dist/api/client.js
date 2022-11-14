@@ -20,14 +20,18 @@ class BaseClient {
     }
     _compute() {
         return __awaiter(this, void 0, void 0, function* () {
-            // run the query and return the result.
-            const query = queryBuilder(this._queryTree);
-            const computeQuery = new Promise((resolve, reject) => __awaiter(this, void 0, void 0, function* () {
-                const response = yield this.client.request(gql `${query}`).catch((error) => { reject(console.error(JSON.stringify(error, undefined, 2))); });
-                resolve(queryFlatten(response));
-            }));
-            const result = yield computeQuery;
-            return result;
+            try {
+                // run the query and return the result.
+                const query = queryBuilder(this._queryTree);
+                const response = yield this.client.request(gql `${query}`);
+                const computeQuery = queryFlatten(response);
+                const result = yield computeQuery;
+                return result;
+            }
+            catch (error) {
+                console.error(`Failed: \n ${JSON.stringify(error, undefined, 2)}`);
+                process.exit(1);
+            }
         });
     }
 }
@@ -282,6 +286,18 @@ class Container extends BaseClient {
             return response;
         });
     }
+    exitCode() {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'exitCode',
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
+    }
     /**
      * Initialize this container from this DirectoryID
      */
@@ -443,6 +459,19 @@ class Directory extends BaseClient {
                 ...this._queryTree,
                 {
                     operation: 'entries',
+                    args
+                }
+            ];
+            const response = yield this._compute();
+            return response;
+        });
+    }
+    export(args) {
+        return __awaiter(this, void 0, void 0, function* () {
+            this._queryTree = [
+                ...this._queryTree,
+                {
+                    operation: 'export',
                     args
                 }
             ];

@@ -22,11 +22,8 @@ export function queryBuilder(q) {
     return query.replace(/\s+/g, '');
 }
 export function queryFlatten(res) {
-    if (!res) {
-        console.log("🐞 --------------------------------------------------🐞");
-        console.log("🐞 ~ Graphql Error response");
-        console.log("🐞 --------------------------------------------------🐞");
-    }
+    if (res.errors)
+        throw res.errors[0];
     return Object.assign({}, ...function _flatten(o) {
         return [].concat(...Object.keys(o)
             .map((k) => {

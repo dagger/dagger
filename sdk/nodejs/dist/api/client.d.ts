@@ -116,6 +116,7 @@ declare class Container extends BaseClient {
      * List of paths where a directory is mounted
      */
     mounts(): Promise<Record<string, Array<string>>>;
+    exitCode(): Promise<Record<string, Scalars['Int']>>;
     /**
      * Initialize this container from this DirectoryID
      */
@@ -195,6 +196,9 @@ declare class Directory extends BaseClient {
     entries(args?: {
         path?: string | undefined;
     }): Promise<Record<string, Array<string>>>;
+    export(args?: {
+        path?: string | undefined;
+    }): Promise<Record<string, Array<boolean>>>;
 }
 export {};
 //# sourceMappingURL=client.d.ts.map
