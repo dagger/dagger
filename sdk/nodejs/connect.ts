@@ -1,7 +1,6 @@
 // WIP(TomChv): This file shall be renamed to something else
 import { Client } from "./client.js";
-import { getProvisioner } from "./provisioning/index.js";
-import { DEFAULT_HOST } from "./provisioning/default.js";
+import { getProvisioner, DEFAULT_HOST } from './provisioning/index.js';
 
 /**
  * ConnectOpts defines option used to run cloak

@@ -9,8 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 // WIP(TomChv): This file shall be renamed to something else
 import { Client } from "./client.js";
-import { getProvisioner } from "./provisioning/index.js";
-import { DEFAULT_HOST } from "./provisioning/default.js";
+import { getProvisioner, DEFAULT_HOST } from './provisioning/index.js';
 /**
  * connect runs cloak GraphQL server and initializes a
  * GraphQL client to execute query on it through its callback.

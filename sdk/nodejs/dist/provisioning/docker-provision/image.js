@@ -14,12 +14,12 @@ var __asyncValues = (this && this.__asyncValues) || function (o) {
     function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
     function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
 };
-import { GraphQLClient } from "graphql-request";
-import * as path from "path";
-import * as fs from "fs";
-import * as os from "os";
-import readline from "readline";
-import { execaCommandSync, execaCommand } from "execa";
+import { GraphQLClient } from 'graphql-request';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import readline from 'readline';
+import { execaCommandSync, execaCommand } from 'execa';
 class ImageRef {
     constructor(ref) {
         /**
@@ -29,7 +29,7 @@ class ImageRef {
         // Throw error if ref is not correctly formatted
         ImageRef.validate(ref);
         this.ref = ref;
-        const id = ref.split("@sha256:", 2)[1];
+        const id = ref.split('@sha256:', 2)[1];
         this.id = id.slice(0, this.DIGEST_LEN);
     }
     get Ref() {
@@ -48,19 +48,19 @@ class ImageRef {
      * @throws no digest found in ref
      */
     static validate(ref) {
-        if (!ref.includes("@sha256")) {
+        if (!ref.includes('@sha256')) {
             throw new Error(`no digest found in ref ${ref}`);
         }
     }
 }
 export class DockerImage {
     constructor(u) {
-        this.cacheDir = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "dagger");
-        this.ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session";
+        this.cacheDir = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'dagger');
+        this.ENGINE_SESSION_BINARY_PREFIX = 'dagger-engine-session';
         this.imageRef = new ImageRef(u.host + u.pathname);
     }
     Addr() {
-        return "http://dagger";
+        return 'http://dagger';
     }
     Connect(opts) {
         var e_1, _a;
@@ -70,20 +70,20 @@ export class DockerImage {
             if (!fs.existsSync(engineSessionBinPath)) {
                 this.pullEngineSessionBin(engineSessionBinPath);
             }
-            const remote = "docker-image://" + this.imageRef.Ref;
-            var engineSessionArgs = [engineSessionBinPath, "--remote", remote];
+            const remote = 'docker-image://' + this.imageRef.Ref;
+            var engineSessionArgs = [engineSessionBinPath, '--remote', remote];
             if (opts.Workdir) {
-                engineSessionArgs.push("--workdir", opts.Workdir);
+                engineSessionArgs.push('--workdir', opts.Workdir);
             }
             if (opts.ConfigPath) {
-                engineSessionArgs.push("--project", opts.ConfigPath);
+                engineSessionArgs.push('--project', opts.ConfigPath);
             }
             const commandOpts = {
                 stderr: process.stderr,
                 // Kill the process if parent exit.
                 cleanup: true,
             };
-            const cmd = execaCommand(engineSessionArgs.join(" "), commandOpts);
+            const cmd = execaCommand(engineSessionArgs.join(' '), commandOpts);
             const stdoutReader = readline.createInterface({
                 input: cmd.stdout,
             });
@@ -104,7 +104,7 @@ export class DockerImage {
                 }
                 finally { if (e_1) throw e_1.error; }
             }
-            throw new Error("failed to connect to engine session");
+            throw new Error('failed to connect to engine session');
         });
     }
     /**
@@ -127,7 +127,7 @@ export class DockerImage {
     buildBinPath() {
         const binPath = `${this.cacheDir}/${this.ENGINE_SESSION_BINARY_PREFIX}-${this.imageRef.ID}`;
         switch (os.platform()) {
-            case "win32":
+            case 'win32':
                 return `${binPath}.exe`;
             default:
                 return binPath;
@@ -137,19 +137,19 @@ export class DockerImage {
         // Create a temporary bin file
         const tmpBinPath = path.join(this.cacheDir, `temp-${this.ENGINE_SESSION_BINARY_PREFIX}`);
         const dockerRunArgs = [
-            "docker",
-            "run",
-            "--rm",
-            "--entrypoint",
-            "/bin/cat",
+            'docker',
+            'run',
+            '--rm',
+            '--entrypoint',
+            '/bin/cat',
             this.imageRef.Ref,
             `/usr/bin/${this.ENGINE_SESSION_BINARY_PREFIX}-${os.platform()}-${os.arch()}`,
         ];
         try {
-            const fd = fs.openSync(tmpBinPath, "w", 0o700);
-            const process = execaCommandSync(dockerRunArgs.join(" "), {
+            const fd = fs.openSync(tmpBinPath, 'w', 0o700);
+            const process = execaCommandSync(dockerRunArgs.join(' '), {
                 stdout: fd,
-                stderr: "pipe",
+                stderr: 'pipe',
                 encoding: null,
                 // Kill the process if parent exit.
                 cleanup: true,

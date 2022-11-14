@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "author": "jf@dagger.io",
   "license": "Apache-2.0",
-  "type": "module",
   "types": "./dist/index.d.ts",
+  "type": "module",
   "files": [
     "dist/"
   ],
@@ -27,6 +27,7 @@
   "scripts": {
     "build": "tsc",
     "test-sdk": "mocha -t 60000 test/index.mjs",
+    "test": "mocha",
     "gen:typedoc": "yarn typedoc"
   },
   "devDependencies": {
