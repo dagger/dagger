@@ -4,15 +4,16 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
-    "start": "docusaurus start",
-    "build": "docusaurus build",
+    "start": "yarn run graphql-docs && docusaurus start",
+    "build": "yarn run graphql-docs && docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
-    "browserslist-update": "browserslist --update-db"
+    "browserslist-update": "browserslist --update-db",
+    "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/graphql"
   },
   "dependencies": {
     "@docusaurus/core": "^2.2.0",
@@ -40,7 +41,9 @@
     "typedoc": "^0.23.21",
     "typedoc-plugin-markdown": "^3.13.6",
     "typescript": "^4.9.3",
-    "url-loader": "^4.1.1"
+    "url-loader": "^4.1.1",
+    "chalk": "4.1.2",
+    "spectaql": "^1.5.6"
   },
   "browserslist": {
     "production": [
