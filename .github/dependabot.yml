@@ -33,3 +33,11 @@ updates:
       interval: "daily"
     labels:
       - "kind/dependencies"
+
+  - package-ecosystem: "pip"
+    directory: "/sdk/python"
+    schedule:
+      interval: "daily"
+    labels:
+      - "kind/dependencies"
+      - "sdk/python"
