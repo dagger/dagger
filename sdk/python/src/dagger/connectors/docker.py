@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import subprocess
 import tempfile
 from pathlib import Path
@@ -23,11 +24,11 @@ def get_platform() -> tuple[str, str]:
         "x86_64": "amd64",
         "aarch64": "arm64",
     }
-    uname = os.uname()
-    os_ = uname.sysname.lower()
+    uname = platform.uname()
+    os_name = uname.system.lower()
     arch = uname.machine.lower()
     arch = normalized_arch.get(arch, arch)
-    return os_, arch
+    return os_name, arch
 
 
 class ImageRef:
