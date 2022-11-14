@@ -27,7 +27,7 @@ var clientGenCmd = &cobra.Command{
 func init() {
 	clientGenCmd.Flags().StringP("output", "o", "", "output file")
 	clientGenCmd.Flags().String("package", "", "package name")
-	clientGenCmd.Flags().String("lang", "Go", "language to generate in")
+	clientGenCmd.Flags().String("lang", "", "language to generate in")
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
