@@ -127,12 +127,21 @@ class Engine:
             engine_session_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=self.cfg.log_output or subprocess.DEVNULL,
+            stderr=self.cfg.log_output or subprocess.PIPE,
             encoding="utf-8",
         )
 
-        # read port number from first line of stdout
-        port = int(self._proc.stdout.readline())
+        try:
+            # read port number from first line of stdout
+            port = int(self._proc.stdout.readline())
+        except ValueError as e:
+            # Check if the subprocess exited with an error.
+            return_value = self._proc.poll()
+            if return_value != 0 or return_value is not None:
+                raise DaggerException(self._proc.stderr.readline()) from e
+            # if the subprocess is OK raise the original error
+            else:
+                raise e
 
         # TODO: verify port number is valid
 
