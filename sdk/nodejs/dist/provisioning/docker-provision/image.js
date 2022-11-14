@@ -83,20 +83,18 @@ export class DockerImage {
                 // Kill the process if parent exit.
                 cleanup: true,
             };
-            console.log(`starting engine session: ${engineSessionArgs.join(" ")}`);
             const cmd = execaCommand(engineSessionArgs.join(" "), commandOpts);
-            console.log(`started engine session: ${cmd.pid}`);
             const stdoutReader = readline.createInterface({
                 input: cmd.stdout,
             });
             var port;
             try {
+                // TODO: timeout here
                 for (var stdoutReader_1 = __asyncValues(stdoutReader), stdoutReader_1_1; stdoutReader_1_1 = yield stdoutReader_1.next(), !stdoutReader_1_1.done;) {
                     const line = stdoutReader_1_1.value;
                     // read line as a port number
                     port = parseInt(line);
-                    console.log(`engine session port: ${port}`);
-                    return new GraphQLClient(`http://localhost:${port}/query`);
+                    return new GraphQLClient(`http://127.0.0.1:${port}/query`);
                 }
             }
             catch (e_1_1) { e_1 = { error: e_1_1 }; }
@@ -166,6 +164,7 @@ export class DockerImage {
             fs.rmSync(tmpBinPath);
             throw new Error(`failed to copy engine session binary: ${e}`);
         }
+        // TODO: garbage collect older binaries
     }
     Close() {
         return __awaiter(this, void 0, void 0, function* () {

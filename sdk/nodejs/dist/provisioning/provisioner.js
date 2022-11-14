@@ -1,4 +1,4 @@
-import { DockerImage } from './docker-provision/image.js';
+import { DockerImage } from "./docker-provision/image.js";
 const provisioners = {
     "docker-image": (u) => new DockerImage(u),
 };

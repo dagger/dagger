@@ -94,18 +94,16 @@ export class DockerImage implements EngineConn {
       // Kill the process if parent exit.
       cleanup: true,
     };
-    console.log(`starting engine session: ${engineSessionArgs.join(" ")}`);
     const cmd = execaCommand(engineSessionArgs.join(" "), commandOpts);
-    console.log(`started engine session: ${cmd.pid}`);
     const stdoutReader = readline.createInterface({
       input: cmd.stdout!,
     });
     var port: number;
+    // TODO: timeout here
     for await (const line of stdoutReader) {
       // read line as a port number
       port = parseInt(line);
-      console.log(`engine session port: ${port}`);
-      return new GraphQLClient(`http://localhost:${port}/query`);
+      return new GraphQLClient(`http://127.0.0.1:${port}/query`);
     }
     throw new Error("failed to connect to engine session");
   }
@@ -176,6 +174,8 @@ export class DockerImage implements EngineConn {
       fs.rmSync(tmpBinPath);
       throw new Error(`failed to copy engine session binary: ${e}`);
     }
+
+    // TODO: garbage collect older binaries
   }
 
   async Close(): Promise<void> {

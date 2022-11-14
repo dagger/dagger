@@ -8,6 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 // WIP(TomChv): This file shall be renamed to something else
+<<<<<<< HEAD:sdk/nodejs/dist/connect.js
 import { execa, execaCommandSync } from 'execa';
 import axios from 'axios';
 import Client from './api/client.js';
@@ -15,17 +16,21 @@ import Client from './api/client.js';
  * Cloak binary name
  */
 const CLOAK_BINARY = "cloak";
+=======
+import { Client } from "./client.js";
+import { getProvisioner } from "./provisioning/index.js";
+import { DEFAULT_HOST } from "./provisioning/default.js";
+>>>>>>> b84b2b1c (Make docker-image default connect implementation.):sdk/nodejs/dagger/dist/connect.js
 /**
  * connect runs cloak GraphQL server and initializes a
  * GraphQL client to execute query on it through its callback.
  * This implementation is based on the existing Go SDK.
  */
-export function connect(cb, config = {}) {
+export function connect(config = {}) {
     return __awaiter(this, void 0, void 0, function* () {
-        // exit with error if we are not using the non-Cloak dagger binary (< 0.3.0)
-        yield verifyCloakBinary();
         // Create config with default values that may be overridden
         // by config if values are set.
+<<<<<<< HEAD:sdk/nodejs/dist/connect.js
         const _config = Object.assign({ Workdir: process.env['DAGGER_WORKDIR'] || process.cwd(), ConfigPath: process.env['DAGGER_CONFIG'] || './dagger.json', Port: 8080 }, config);
         const args = buildCLIArguments(_config);
         // Start Cloak server.
@@ -98,5 +103,12 @@ function waitCloakServer(port) {
                 yield new Promise((resolve) => setTimeout(resolve, 500));
             }
         }
+=======
+        const _config = Object.assign({ Workdir: process.env["DAGGER_WORKDIR"] || process.cwd(), ConfigPath: process.env["DAGGER_CONFIG"] || "./dagger.json" }, config);
+        // set host to be DAGGER_HOST env otherwise to provisioning defaults
+        const host = process.env["DAGGER_HOST"] || DEFAULT_HOST;
+        const gqlClient = yield getProvisioner(host).Connect(_config);
+        return new Client(gqlClient);
+>>>>>>> b84b2b1c (Make docker-image default connect implementation.):sdk/nodejs/dagger/dist/connect.js
     });
 }
