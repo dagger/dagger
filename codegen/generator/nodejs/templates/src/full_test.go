@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"os"
 	"sort"
 	"testing"
 
@@ -13,13 +14,13 @@ import (
 )
 
 //nolint:typecheck
-//go:embed testdata/want-test-full.ts
-var wantTestFull string
+//go:embed testdata/want-api-full.ts
+var wantTestAPI string
 
 func TestFull(t *testing.T) {
 	tmpl := templateHelper(t, "header", "objects", "object", "method", "method_solve", "field", "return_solve", "input_args", "return", "object_comment", "field_comment", "types", "type")
 
-	want := wantTestFull
+	want := wantTestAPI
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -40,11 +41,11 @@ func TestFull(t *testing.T) {
 
 	var b bytes.Buffer
 
-	err = tmpl.ExecuteTemplate(&b, "objects", schema.Types)
+	err = tmpl.ExecuteTemplate(&b, "api", schema.Types)
 	require.NoError(t, err)
 
-	// 	err = os.WriteFile("./testdata/want-test-full.ts", b.Bytes(), 0o644)
-	// 	require.NoError(t, err)
+	//	err = os.WriteFile("./testdata/want-api-full.ts", b.Bytes(), 0o644)
+	//	require.NoError(t, err)
 
 	require.Equal(t, want, b.String())
 }

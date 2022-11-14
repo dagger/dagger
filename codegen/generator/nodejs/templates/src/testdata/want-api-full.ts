@@ -46,6 +46,7 @@ class BaseClient {
 
 
 
+
 /**
  * A global cache volume identifier
  */
@@ -1622,6 +1623,7 @@ class Secret extends BaseClient {
  * A unique identifier for a secret
  */
 export type SecretID = any
+
 
 
 

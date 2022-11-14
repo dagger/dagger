@@ -1,3 +1,5 @@
-{{ template "header" }}
-
-{{ template "objects" }}
+{{ define "api" }}
+	{{- template "header" }}
+{{""}}
+	{{- template "objects" . }}
+{{ end }}
