@@ -114,15 +114,63 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 
 	dgr := s.Client
 
-	fsid, err := dgr.Container().From(rawRef).FS().ID(ctx)
+	ctr := dgr.Container().From(rawRef)
+	fsid, err := ctr.FS().ID(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	entrypoint, err := ctr.Entrypoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	workdir, err := ctr.Workdir(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctrEnvs, err := ctr.EnvVariables(ctx)
+	if err != nil {
+		return nil, err
+	}
+	envs := map[string]string{}
+	// ctr.
+
+	for _, env := range ctrEnvs {
+		name, err := env.Name(ctx)
+		if err != nil {
+			return nil, err
+		}
+		val, err := env.Value(ctx)
+		if err != nil {
+			return nil, err
+		}
+		envs[name] = val
+	}
+
+	cmd, err := ctr.DefaultArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := ctr.User(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	imgConfig := ImageConfig{
+		Entrypoint: entrypoint,
+		WorkingDir: workdir,
+		Env:        envs,
+		Cmd:        cmd,
+		User:       user,
 	}
 
 	// return val, err
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": utils.NewFS(dagger.DirectoryID(fsid)),
 		// "digest": digest,
-		// "config": ConvertImageConfig(image.Config),
+		"config": imgConfig,
 	})
 }

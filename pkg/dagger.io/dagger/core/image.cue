@@ -17,19 +17,25 @@ import (
 // Container image config. See [OCI](https://www.opencontainers.org/).
 #ImageConfig: {
 	user?: string
-	expose?: [string]: {}
+	expose?: {
+		[string]: {} @cloak(notimplemented)
+	}
 	env?: [string]: string
 	entrypoint?: [...string]
 	cmd?: [...string]
-	volume?: [string]: {}
+	volume?: {
+		[string]: {} @cloak(notimplemented)
+	}
 	workdir?: string
-	label?: [string]: string
-	stopsignal?:  string
-	healthcheck?: #HealthCheck
-	argsescaped?: bool
-	onbuild?: [...string]
-	stoptimeout?: int
-	shell?: [...string]
+	label?: {
+		[string]: string @cloak(notimplemented)
+	}
+	stopsignal?:  string       @cloak(notimplemented)
+	healthcheck?: #HealthCheck @cloak(notimplemented)
+	argsescaped?: bool         @cloak(notimplemented)
+	onbuild?: [...string] @cloak(notimplemented)
+	stoptimeout?: int @cloak(notimplemented)
+	shell?: [...string] @cloak(notimplemented)
 }
 
 #HealthCheck: {
