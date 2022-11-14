@@ -11,7 +11,7 @@ import (
 )
 
 func TestObject(t *testing.T) {
-	tmpl := templateHelper(t, "object", "object_comment", "method", "method_solve", "field", "field_comment", "input_args", "arg", "return")
+	tmpl := templateHelper(t)
 
 	object := objectInit(t, containerExecArgsJSON)
 

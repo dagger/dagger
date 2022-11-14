@@ -8,7 +8,7 @@ import (
 )
 
 func TestType(t *testing.T) {
-	tmpl := templateHelper(t, "object", "object_comment", "field", "input_args", "arg", "return", "types", "type")
+	tmpl := templateHelper(t)
 
 	object := objectInit(t, fieldArgsTypeJSON)
 

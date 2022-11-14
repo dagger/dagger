@@ -17,7 +17,7 @@ func TestObjects(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			tmpl := templateHelper(t, "header", "objects", "object", "method", "method_solve", "return_solve", "input_args", "return", "object_comment", "field_comment", "types", "type")
+			tmpl := templateHelper(t)
 
 			jsonData := c.in
 

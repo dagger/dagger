@@ -17,7 +17,7 @@ func TestInputArgs(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			tmpl := templateHelper(t, "input_args")
+			tmpl := templateHelper(t)
 
 			jsonData := c.in
 

@@ -1,5 +1,4 @@
 {{ define "objects" }}
-	{{- template "header" -}}
 	{{- range . }}
 		{{- if HasPrefix .Name "__" }}
 			{{- /* we ignore types prefixed by __ */ -}}
