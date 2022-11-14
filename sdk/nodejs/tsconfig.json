@@ -1,11 +1,12 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
-  "include": ["./sdk/nodejs/dagger/**/*"],
+  "include": ["./**/*"],
+  "exclude": ["./api/test/**/*", "./dist/**/*", "./test/**/*"],
   "compilerOptions": {
-    "target": "ES2015",
+    "target": "es2015",
     "strict": true,
-    "outDir": "./sdk/nodejs/dagger/dist",
-    "rootDir": "./sdk/nodejs/dagger",
+    "outDir": "./dist",
+    "rootDir": ".",
     "esModuleInterop": true,
     "module": "ESNext",
     "skipLibCheck": true,
@@ -15,5 +16,5 @@
     "declarationMap": true
   },
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "dagger-sdk-nodejs"
+  "display": "dagger-nodejs-sdk"
 }

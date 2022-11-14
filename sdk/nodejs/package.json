@@ -1,18 +1,20 @@
 {
   "name": "@dagger.io/dagger",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "author": "jf@dagger.io",
   "license": "Apache-2.0",
   "type": "module",
-  "types": "./sdk/nodejs/dagger/dist/index.d.ts",
+  "types": "./dist/index.d.ts",
   "files": [
-    "/sdk/nodejs/dagger/dist/"
+    "dist/"
   ],
   "exports": {
-    ".": "./sdk/nodejs/dagger/dist/index.js"
+    ".": "./dist/index.js"
   },
   "engines": {
     "node": ">=16"
   },
+  "main": "dist/index.js",
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.1",
     "axios": "^1.1.2",
@@ -24,11 +26,20 @@
   },
   "scripts": {
     "build": "tsc",
-    "test-sdk": "mocha sdk/nodejs/test/index.mjs"
+    "test-sdk": "mocha -t 60000 test/index.spec.ts",
+    "gen:typedoc": "yarn typedoc"
   },
   "devDependencies": {
+    "@types/mocha": "latest",
     "@types/node": "~16",
+    "@typescript-eslint/eslint-plugin": "^5.42.1",
+    "@typescript-eslint/parser": "^5.42.1",
+    "eslint": "^8.27.0",
     "mocha": "^10.1.0",
+    "ts-node": "^10.9.1",
+    "typedoc": "^0.23.21",
+    "typedoc-plugin-markdown": "^3.13.6",
+    "typedoc-plugin-missing-exports": "^1.0.0",
     "typescript": "^4.8.4"
   }
 }

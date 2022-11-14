@@ -101,4 +101,6 @@ jobs:
       - run: ./hack/make engine:build
       - run: echo `pwd`/bin >> $GITHUB_PATH
       - run: yarn install
+        working-directory: sdk/nodejs
       - run: yarn run test-sdk
+        working-directory: sdk/nodejs

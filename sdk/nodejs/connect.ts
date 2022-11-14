@@ -1,7 +1,7 @@
 // WIP(TomChv): This file shall be renamed to something else
-import { Client } from './client.js';
 import { execa, execaCommandSync } from 'execa';
 import axios from 'axios';
+import Client from './api/client.js';
 
 /**
  * Cloak binary name
@@ -56,7 +56,7 @@ export async function connect(cb: ConnectExecCB, config: ConnectOpts = {}): Prom
 
 	// Execute users workflow and shutdown the server at the end of the
 	// execution. Either it succeeds or fails.
-	await cb(new Client(_config.Port))
+	await cb(new Client({port: _config.Port}))
 		.finally(async () => {
 			serverProcess.cancel();
 			await serverProcess.catch((e) => {

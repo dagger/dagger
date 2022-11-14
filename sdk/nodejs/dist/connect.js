@@ -8,9 +8,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 // WIP(TomChv): This file shall be renamed to something else
-import { Client } from './client.js';
 import { execa, execaCommandSync } from 'execa';
 import axios from 'axios';
+import Client from './api/client.js';
 /**
  * Cloak binary name
  */
@@ -37,7 +37,7 @@ export function connect(cb, config = {}) {
         yield waitCloakServer(_config.Port);
         // Execute users workflow and shutdown the server at the end of the
         // execution. Either it succeeds or fails.
-        yield cb(new Client(_config.Port))
+        yield cb(new Client({ port: _config.Port }))
             .finally(() => __awaiter(this, void 0, void 0, function* () {
             serverProcess.cancel();
             yield serverProcess.catch((e) => {
