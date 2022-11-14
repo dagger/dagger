@@ -17,6 +17,7 @@ var (
 		"sdk/python/src/dagger/api/gen.py",
 		"sdk/python/src/dagger/api/gen_sync.py",
 	}
+	pythonDefaultVersion = "3.10"
 )
 
 var _ SDK = Python{}
@@ -31,7 +32,7 @@ func (t Python) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	_, err = pythonBase(c).
+	_, err = pythonBase(c, pythonDefaultVersion).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"poe", "lint"},
 		}).
@@ -54,12 +55,22 @@ func (t Python) Test(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = pythonBase(c).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"poe", "test"},
-				ExperimentalPrivilegedNesting: true,
-			}).
-			ExitCode(ctx)
+		outputs := c.Directory()
+
+		versions := []string{"3.10", "3.11"}
+
+		for _, version := range versions {
+			test := pythonBase(c, version).
+				Exec(dagger.ContainerExecOpts{
+					Args:                          []string{"poe", "test"},
+					ExperimentalPrivilegedNesting: true,
+				})
+
+			outputs = outputs.WithFile(fmt.Sprintf("%s-stdout", version), test.Stdout())
+		}
+
+		_, err := outputs.Entries(ctx)
+
 		return err
 	})
 }
@@ -73,7 +84,7 @@ func (t Python) Generate(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated := pythonBase(c).
+		generated := pythonBase(c, pythonDefaultVersion).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"poe", "generate"},
 				ExperimentalPrivilegedNesting: true,
@@ -110,7 +121,7 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 		return errors.New("PYPI_TOKEN environment variable must be set")
 	}
 
-	build := pythonBase(c).
+	build := pythonBase(c, pythonDefaultVersion).
 		WithEnvVariable("POETRY_DYNAMIC_VERSIONING_BYPASS", version).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"poetry-dynamic-versioning"},
@@ -147,10 +158,10 @@ ENGINE_IMAGE_REF = %q
 	return os.WriteFile("sdk/python/src/dagger/connectors/engine_version.py", []byte(engineReference), 0600)
 }
 
-func pythonBase(c *dagger.Client) *dagger.Container {
+func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/python"))
 
-	base := c.Container().From("python:3.10-alpine").
+	base := c.Container().From(fmt.Sprintf("python:%s-alpine", version)).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"},
 		})
