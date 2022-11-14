@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	nodejsGeneratedAPIPath = "sdk/nodejs/dagger/api/api.ts"
+	nodejsGeneratedAPIPath = "sdk/nodejs/api/client.ts"
 )
 
 var _ SDK = NodeJS{}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"os"
 	"sort"
 	"testing"
 
@@ -44,8 +43,8 @@ func TestAPI(t *testing.T) {
 	err = tmpl.ExecuteTemplate(&b, "api", schema.Types)
 	require.NoError(t, err)
 
-	err = os.WriteFile("./testdata/want-api-full.ts", b.Bytes(), 0o644)
-	require.NoError(t, err)
+	//err = os.WriteFile("./testdata/want-api-full.ts", b.Bytes(), 0o644)
+	//require.NoError(t, err)
 
 	require.Equal(t, want, b.String())
 }

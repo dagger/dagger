@@ -3,7 +3,7 @@
  * Do not make direct changes to the file.
  */
 
-import { GraphQLClient, gql } from "../../dist/index.js";
+import { GraphQLClient, gql } from "../dist/index.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
 export type QueryTree = {
