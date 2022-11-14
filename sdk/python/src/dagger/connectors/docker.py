@@ -8,6 +8,7 @@ import anyio
 from attrs import Factory, define, field
 
 from dagger import Client
+from dagger.exceptions import DaggerException
 
 from .base import Config, register_connector
 from .http import HTTPConnector
@@ -189,5 +190,5 @@ class DockerConnector(HTTPConnector):
         self.engine.stop(exc_type)
 
 
-class ProvisionError(Exception):
+class ProvisionError(DaggerException):
     """Error while provisioning the Dagger engine."""
