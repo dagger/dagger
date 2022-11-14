@@ -1,4 +1,4 @@
-import { Engine, GraphQLClient, gql } from "../dist/index.js";
+import { Engine, GraphQLClient, gql } from "../../dist/index.js";
 import { ContainerExecArgs } from "./types.js";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
