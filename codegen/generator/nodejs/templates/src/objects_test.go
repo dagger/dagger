@@ -33,7 +33,6 @@ func TestObjects(t *testing.T) {
 }
 
 var wantObjects = `
-
 /**
  * A directory whose contents persist across runs
  */
@@ -52,22 +51,6 @@ class CacheVolume extends BaseClient {
   }
 }
 
-
-export type HostDirectoryArgs = {
-  path: string;
-  exclude?: string[];
-  include?: string[];
-};
-
-export type HostEnvVariableArgs = {
-  name: string;
-};
-
-export type HostWorkdirArgs = {
-  exclude?: string[];
-  include?: string[];
-};
-
 /**
  * Information about the host execution environment
  */
@@ -77,12 +60,12 @@ class Host extends BaseClient {
   /**
    * Access a directory on the host
    */
-  directory(args: HostDirectoryArgs): Directory {
+  directory(path: string, exclude?: string[], include?: string[]): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
-      args
+      args: {path, exclude, include}
       }
     ], port: this.port})
   }
@@ -90,12 +73,12 @@ class Host extends BaseClient {
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
-  envVariable(args: HostEnvVariableArgs): HostVariable {
+  envVariable(name: string): HostVariable {
     return new HostVariable({queryTree: [
       ...this._queryTree,
       {
       operation: 'envVariable',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -103,12 +86,12 @@ class Host extends BaseClient {
   /**
    * The current working directory on the host
    */
-  workdir(args?: HostWorkdirArgs): Directory {
+  workdir(exclude?: string[], include?: string[]): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'workdir',
-      args
+      args: {exclude, include}
       }
     ], port: this.port})
   }

@@ -1,13 +1,13 @@
 {{ define "method" }}
 {{- template "field_comment" .Description }}
-{{- "" }}  {{ .Name -}}({{- template "input_args" . -}}){{ template "return" .TypeRef }} {
+{{- "" }}  {{ .Name -}}({{- template "args" .Args -}}){{ template "return" .TypeRef }} {
 		{{- if .TypeRef }}
     return new {{ .TypeRef | FormatOutputType }}({queryTree: [
       ...this._queryTree,
       {
       operation: '{{ .Name}}'
 			{{- if .Args }},
-      args
+      args: { {{- template "call_args" .Args -}} }
 			{{- end }}
       }
     ], port: this.port})

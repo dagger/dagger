@@ -1,14 +1,14 @@
 {{ define "method_solve" }}
 {{- template "field_comment" .Description }}
-{{- "" }}  async {{ .Name -}}({{- template "input_args" . -}}){{ template "return_solve" .TypeRef }} {
+{{- "" }}  async {{ .Name -}}({{- template "args" .Args -}}){{ template "return_solve" .TypeRef }} {
 		{{- if .TypeRef }}
     this._queryTree = [
       ...this._queryTree,
       {
       operation: '{{ .Name }}'
-		{{- if .Args }},
-      args
-		{{- end }}
+			{{- if .Args }},
+      args: { {{- template "call_args" .Args -}} }
+			{{- end }}
       }
     ]
 

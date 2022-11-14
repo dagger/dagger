@@ -22,59 +22,16 @@ func TestType(t *testing.T) {
 }
 
 var expectedFieldArgsType = `
-export type ContainerBuildArgs = {
-  context: DirectoryID;
-  dockerfile?: string;
-};
+/**
+ * Hola
+ */
+export type Container = any;
 `
 
 var fieldArgsTypeJSON = `
       {
-        "kind": "OBJECT",
+        "kind": "SCALAR",
         "name": "Container",
-        "description": "",
-        "fields": [
-          {
-            "name": "build",
-            "description": "",
-            "args": [
-              {
-                "name": "context",
-                "description": "",
-                "type": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "DirectoryID",
-                    "ofType": null
-                  }
-                },
-                "defaultValue": null
-              },
-              {
-                "name": "dockerfile",
-                "description": "",
-                "type": {
-                  "kind": "SCALAR",
-                  "name": "String",
-                  "ofType": null
-                },
-                "defaultValue": null
-              }
-            ],
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "Container",
-                "ofType": null
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": null
-          }
-        ]
+        "description": "Hola"
     }
 `

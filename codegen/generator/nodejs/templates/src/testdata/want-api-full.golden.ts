@@ -48,14 +48,43 @@ class BaseClient {
   }
 }
 
-
-
-
-
 /**
  * A global cache volume identifier
  */
-export type CacheID = any
+export type CacheID = any;
+
+/**
+ * A unique container identifier. Null designates an empty container (scratch).
+ */
+export type ContainerID = any;
+
+/**
+ * The `DateTime` scalar type represents a DateTime. The DateTime is serialized as an RFC 3339 quoted string
+ */
+export type DateTime = any;
+
+/**
+ * A content-addressed directory identifier
+ */
+export type DirectoryID = any;
+
+
+export type FileID = any;
+
+/**
+ * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
+ */
+export type ID = any;
+
+
+export type Platform = any;
+
+/**
+ * A unique identifier for a secret
+ */
+export type SecretID = any;
+
+
 
 
 
@@ -78,109 +107,6 @@ class CacheVolume extends BaseClient {
   }
 }
 
-
-export type ContainerBuildArgs = {
-  context: DirectoryID;
-  dockerfile?: string;
-};
-
-export type ContainerDirectoryArgs = {
-  path: string;
-};
-
-export type ContainerEnvVariableArgs = {
-  name: string;
-};
-
-export type ContainerExecArgs = {
-  args?: string[];
-  stdin?: string;
-  redirectStdout?: string;
-  redirectStderr?: string;
-  experimentalPrivilegedNesting?: boolean;
-};
-
-export type ContainerExportArgs = {
-  path: string;
-  platformVariants?: ContainerID[];
-};
-
-export type ContainerFileArgs = {
-  path: string;
-};
-
-export type ContainerFromArgs = {
-  address: string;
-};
-
-export type ContainerPublishArgs = {
-  address: string;
-  platformVariants?: ContainerID[];
-};
-
-export type ContainerWithDefaultArgsArgs = {
-  args?: string[];
-};
-
-export type ContainerWithEntrypointArgs = {
-  args: string[];
-};
-
-export type ContainerWithEnvVariableArgs = {
-  name: string;
-  value: string;
-};
-
-export type ContainerWithFSArgs = {
-  id: DirectoryID;
-};
-
-export type ContainerWithMountedCacheArgs = {
-  path: string;
-  cache: CacheID;
-  source?: DirectoryID;
-};
-
-export type ContainerWithMountedDirectoryArgs = {
-  path: string;
-  source: DirectoryID;
-};
-
-export type ContainerWithMountedFileArgs = {
-  path: string;
-  source: FileID;
-};
-
-export type ContainerWithMountedSecretArgs = {
-  path: string;
-  source: SecretID;
-};
-
-export type ContainerWithMountedTempArgs = {
-  path: string;
-};
-
-export type ContainerWithSecretVariableArgs = {
-  name: string;
-  secret: SecretID;
-};
-
-export type ContainerWithUserArgs = {
-  name: string;
-};
-
-export type ContainerWithWorkdirArgs = {
-  path: string;
-};
-
-export type ContainerWithoutEnvVariableArgs = {
-  name: string;
-};
-
-export type ContainerWithoutMountArgs = {
-  path: string;
-};
-
 /**
  * An OCI-compatible container, also known as a docker container
  */
@@ -190,12 +116,12 @@ class Container extends BaseClient {
   /**
    * Initialize this container from a Dockerfile build
    */
-  build(args: ContainerBuildArgs): Container {
+  build(context: DirectoryID, dockerfile?: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'build',
-      args
+      args: {context, dockerfile}
       }
     ], port: this.port})
   }
@@ -219,12 +145,12 @@ class Container extends BaseClient {
   /**
    * Retrieve a directory at the given path. Mounts are included.
    */
-  directory(args: ContainerDirectoryArgs): Directory {
+  directory(path: string): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -248,12 +174,12 @@ class Container extends BaseClient {
   /**
    * The value of the specified environment variable
    */
-  async envVariable(args: ContainerEnvVariableArgs): Promise<Record<string, string>> {
+  async envVariable(name: string): Promise<Record<string, string>> {
     this._queryTree = [
       ...this._queryTree,
       {
       operation: 'envVariable',
-      args
+      args: {name}
       }
     ]
 
@@ -281,12 +207,12 @@ class Container extends BaseClient {
   /**
    * This container after executing the specified command inside it
    */
-  exec(args?: ContainerExecArgs): Container {
+  exec(args?: string[], stdin?: string, redirectStdout?: string, redirectStderr?: string, experimentalPrivilegedNesting?: boolean): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'exec',
-      args
+      args: {args, stdin, redirectStdout, redirectStderr, experimentalPrivilegedNesting}
       }
     ], port: this.port})
   }
@@ -311,12 +237,12 @@ class Container extends BaseClient {
   /**
    * Write the container as an OCI tarball to the destination file path on the host
    */
-  async export(args: ContainerExportArgs): Promise<Record<string, boolean>> {
+  async export(path: string, platformVariants?: ContainerID[]): Promise<Record<string, boolean>> {
     this._queryTree = [
       ...this._queryTree,
       {
       operation: 'export',
-      args
+      args: {path, platformVariants}
       }
     ]
 
@@ -328,12 +254,12 @@ class Container extends BaseClient {
   /**
    * Retrieve a file at the given path. Mounts are included.
    */
-  file(args: ContainerFileArgs): File {
+  file(path: string): File {
     return new File({queryTree: [
       ...this._queryTree,
       {
       operation: 'file',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -341,12 +267,12 @@ class Container extends BaseClient {
   /**
    * Initialize this container from the base image published at the given address
    */
-  from(args: ContainerFromArgs): Container {
+  from(address: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'from',
-      args
+      args: {address}
       }
     ], port: this.port})
   }
@@ -414,12 +340,12 @@ class Container extends BaseClient {
   /**
    * Publish this container as a new image, returning a fully qualified ref
    */
-  async publish(args: ContainerPublishArgs): Promise<Record<string, string>> {
+  async publish(address: string, platformVariants?: ContainerID[]): Promise<Record<string, string>> {
     this._queryTree = [
       ...this._queryTree,
       {
       operation: 'publish',
-      args
+      args: {address, platformVariants}
       }
     ]
 
@@ -473,12 +399,12 @@ class Container extends BaseClient {
   /**
    * Configures default arguments for future commands
    */
-  withDefaultArgs(args?: ContainerWithDefaultArgsArgs): Container {
+  withDefaultArgs(args?: string[]): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withDefaultArgs',
-      args
+      args: {args}
       }
     ], port: this.port})
   }
@@ -486,12 +412,12 @@ class Container extends BaseClient {
   /**
    * This container but with a different command entrypoint
    */
-  withEntrypoint(args: ContainerWithEntrypointArgs): Container {
+  withEntrypoint(args: string[]): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withEntrypoint',
-      args
+      args: {args}
       }
     ], port: this.port})
   }
@@ -499,12 +425,12 @@ class Container extends BaseClient {
   /**
    * This container plus the given environment variable
    */
-  withEnvVariable(args: ContainerWithEnvVariableArgs): Container {
+  withEnvVariable(name: string, value: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withEnvVariable',
-      args
+      args: {name, value}
       }
     ], port: this.port})
   }
@@ -512,12 +438,12 @@ class Container extends BaseClient {
   /**
    * Initialize this container from this DirectoryID
    */
-  withFS(args: ContainerWithFSArgs): Container {
+  withFS(id: DirectoryID): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withFS',
-      args
+      args: {id}
       }
     ], port: this.port})
   }
@@ -525,12 +451,12 @@ class Container extends BaseClient {
   /**
    * This container plus a cache volume mounted at the given path
    */
-  withMountedCache(args: ContainerWithMountedCacheArgs): Container {
+  withMountedCache(path: string, cache: CacheID, source?: DirectoryID): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedCache',
-      args
+      args: {path, cache, source}
       }
     ], port: this.port})
   }
@@ -538,12 +464,12 @@ class Container extends BaseClient {
   /**
    * This container plus a directory mounted at the given path
    */
-  withMountedDirectory(args: ContainerWithMountedDirectoryArgs): Container {
+  withMountedDirectory(path: string, source: DirectoryID): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedDirectory',
-      args
+      args: {path, source}
       }
     ], port: this.port})
   }
@@ -551,12 +477,12 @@ class Container extends BaseClient {
   /**
    * This container plus a file mounted at the given path
    */
-  withMountedFile(args: ContainerWithMountedFileArgs): Container {
+  withMountedFile(path: string, source: FileID): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedFile',
-      args
+      args: {path, source}
       }
     ], port: this.port})
   }
@@ -564,12 +490,12 @@ class Container extends BaseClient {
   /**
    * This container plus a secret mounted into a file at the given path
    */
-  withMountedSecret(args: ContainerWithMountedSecretArgs): Container {
+  withMountedSecret(path: string, source: SecretID): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedSecret',
-      args
+      args: {path, source}
       }
     ], port: this.port})
   }
@@ -577,12 +503,12 @@ class Container extends BaseClient {
   /**
    * This container plus a temporary directory mounted at the given path
    */
-  withMountedTemp(args: ContainerWithMountedTempArgs): Container {
+  withMountedTemp(path: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withMountedTemp',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -590,12 +516,12 @@ class Container extends BaseClient {
   /**
    * This container plus an env variable containing the given secret
    */
-  withSecretVariable(args: ContainerWithSecretVariableArgs): Container {
+  withSecretVariable(name: string, secret: SecretID): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withSecretVariable',
-      args
+      args: {name, secret}
       }
     ], port: this.port})
   }
@@ -603,12 +529,12 @@ class Container extends BaseClient {
   /**
    * This container but with a different command user
    */
-  withUser(args: ContainerWithUserArgs): Container {
+  withUser(name: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withUser',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -616,12 +542,12 @@ class Container extends BaseClient {
   /**
    * This container but with a different working directory
    */
-  withWorkdir(args: ContainerWithWorkdirArgs): Container {
+  withWorkdir(path: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withWorkdir',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -629,12 +555,12 @@ class Container extends BaseClient {
   /**
    * This container minus the given environment variable
    */
-  withoutEnvVariable(args: ContainerWithoutEnvVariableArgs): Container {
+  withoutEnvVariable(name: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withoutEnvVariable',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -642,12 +568,12 @@ class Container extends BaseClient {
   /**
    * This container after unmounting everything at the given path.
    */
-  withoutMount(args: ContainerWithoutMountArgs): Container {
+  withoutMount(path: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'withoutMount',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -670,74 +596,8 @@ class Container extends BaseClient {
 }
 
 
-/**
- * A unique container identifier. Null designates an empty container (scratch).
- */
-export type ContainerID = any
 
 
-
-
-/**
- * The `DateTime` scalar type represents a DateTime. The DateTime is serialized as an RFC 3339 quoted string
- */
-export type DateTime = any
-
-
-
-
-export type DirectoryDiffArgs = {
-  other: DirectoryID;
-};
-
-export type DirectoryDirectoryArgs = {
-  path: string;
-};
-
-export type DirectoryEntriesArgs = {
-  path?: string;
-};
-
-export type DirectoryExportArgs = {
-  path: string;
-};
-
-export type DirectoryFileArgs = {
-  path: string;
-};
-
-export type DirectoryLoadProjectArgs = {
-  configPath: string;
-};
-
-export type DirectoryWithDirectoryArgs = {
-  path: string;
-  directory: DirectoryID;
-  exclude?: string[];
-  include?: string[];
-};
-
-export type DirectoryWithFileArgs = {
-  path: string;
-  source: FileID;
-};
-
-export type DirectoryWithNewDirectoryArgs = {
-  path: string;
-};
-
-export type DirectoryWithNewFileArgs = {
-  path: string;
-  contents?: string;
-};
-
-export type DirectoryWithoutDirectoryArgs = {
-  path: string;
-};
-
-export type DirectoryWithoutFileArgs = {
-  path: string;
-};
 
 /**
  * A directory
@@ -748,12 +608,12 @@ class Directory extends BaseClient {
   /**
    * The difference between this directory and an another directory
    */
-  diff(args: DirectoryDiffArgs): Directory {
+  diff(other: DirectoryID): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'diff',
-      args
+      args: {other}
       }
     ], port: this.port})
   }
@@ -761,12 +621,12 @@ class Directory extends BaseClient {
   /**
    * Retrieve a directory at the given path
    */
-  directory(args: DirectoryDirectoryArgs): Directory {
+  directory(path: string): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -774,12 +634,12 @@ class Directory extends BaseClient {
   /**
    * Return a list of files and directories at the given path
    */
-  async entries(args?: DirectoryEntriesArgs): Promise<Record<string, string[]>> {
+  async entries(path?: string): Promise<Record<string, string[]>> {
     this._queryTree = [
       ...this._queryTree,
       {
       operation: 'entries',
-      args
+      args: {path}
       }
     ]
 
@@ -791,12 +651,12 @@ class Directory extends BaseClient {
   /**
    * Write the contents of the directory to a path on the host
    */
-  async export(args: DirectoryExportArgs): Promise<Record<string, boolean>> {
+  async export(path: string): Promise<Record<string, boolean>> {
     this._queryTree = [
       ...this._queryTree,
       {
       operation: 'export',
-      args
+      args: {path}
       }
     ]
 
@@ -808,12 +668,12 @@ class Directory extends BaseClient {
   /**
    * Retrieve a file at the given path
    */
-  file(args: DirectoryFileArgs): File {
+  file(path: string): File {
     return new File({queryTree: [
       ...this._queryTree,
       {
       operation: 'file',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -837,12 +697,12 @@ class Directory extends BaseClient {
   /**
    * load a project's metadata
    */
-  loadProject(args: DirectoryLoadProjectArgs): Project {
+  loadProject(configPath: string): Project {
     return new Project({queryTree: [
       ...this._queryTree,
       {
       operation: 'loadProject',
-      args
+      args: {configPath}
       }
     ], port: this.port})
   }
@@ -850,12 +710,12 @@ class Directory extends BaseClient {
   /**
    * This directory plus a directory written at the given path
    */
-  withDirectory(args: DirectoryWithDirectoryArgs): Directory {
+  withDirectory(path: string, directory: DirectoryID, exclude?: string[], include?: string[]): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'withDirectory',
-      args
+      args: {path, directory, exclude, include}
       }
     ], port: this.port})
   }
@@ -863,12 +723,12 @@ class Directory extends BaseClient {
   /**
    * This directory plus the contents of the given file copied to the given path
    */
-  withFile(args: DirectoryWithFileArgs): Directory {
+  withFile(path: string, source: FileID): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'withFile',
-      args
+      args: {path, source}
       }
     ], port: this.port})
   }
@@ -876,12 +736,12 @@ class Directory extends BaseClient {
   /**
    * This directory plus a new directory created at the given path
    */
-  withNewDirectory(args: DirectoryWithNewDirectoryArgs): Directory {
+  withNewDirectory(path: string): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'withNewDirectory',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -889,12 +749,12 @@ class Directory extends BaseClient {
   /**
    * This directory plus a new file written at the given path
    */
-  withNewFile(args: DirectoryWithNewFileArgs): Directory {
+  withNewFile(path: string, contents?: string): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'withNewFile',
-      args
+      args: {path, contents}
       }
     ], port: this.port})
   }
@@ -902,12 +762,12 @@ class Directory extends BaseClient {
   /**
    * This directory with the directory at the given path removed
    */
-  withoutDirectory(args: DirectoryWithoutDirectoryArgs): Directory {
+  withoutDirectory(path: string): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'withoutDirectory',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
@@ -915,23 +775,16 @@ class Directory extends BaseClient {
   /**
    * This directory with the file at the given path removed
    */
-  withoutFile(args: DirectoryWithoutFileArgs): Directory {
+  withoutFile(path: string): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'withoutFile',
-      args
+      args: {path}
       }
     ], port: this.port})
   }
 }
-
-
-/**
- * A content-addressed directory identifier
- */
-export type DirectoryID = any
-
 
 
 
@@ -974,11 +827,6 @@ class EnvVariable extends BaseClient {
   }
 }
 
-
-export type FileExportArgs = {
-  path: string;
-};
-
 /**
  * A file
  */
@@ -1004,12 +852,12 @@ class File extends BaseClient {
   /**
    * Write the file to a file path on the host
    */
-  async export(args: FileExportArgs): Promise<Record<string, boolean>> {
+  async export(path: string): Promise<Record<string, boolean>> {
     this._queryTree = [
       ...this._queryTree,
       {
       operation: 'export',
-      args
+      args: {path}
       }
     ]
 
@@ -1060,12 +908,6 @@ class File extends BaseClient {
 
 
 
-export type FileID = any
-
-
-
-
-
 
 
 /**
@@ -1103,19 +945,6 @@ class GitRef extends BaseClient {
   }
 }
 
-
-export type GitRepositoryBranchArgs = {
-  name: string;
-};
-
-export type GitRepositoryCommitArgs = {
-  id: string;
-};
-
-export type GitRepositoryTagArgs = {
-  name: string;
-};
-
 /**
  * A git repository
  */
@@ -1125,12 +954,12 @@ class GitRepository extends BaseClient {
   /**
    * Details on one branch
    */
-  branch(args: GitRepositoryBranchArgs): GitRef {
+  branch(name: string): GitRef {
     return new GitRef({queryTree: [
       ...this._queryTree,
       {
       operation: 'branch',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -1154,12 +983,12 @@ class GitRepository extends BaseClient {
   /**
    * Details on one commit
    */
-  commit(args: GitRepositoryCommitArgs): GitRef {
+  commit(id: string): GitRef {
     return new GitRef({queryTree: [
       ...this._queryTree,
       {
       operation: 'commit',
-      args
+      args: {id}
       }
     ], port: this.port})
   }
@@ -1167,12 +996,12 @@ class GitRepository extends BaseClient {
   /**
    * Details on one tag
    */
-  tag(args: GitRepositoryTagArgs): GitRef {
+  tag(name: string): GitRef {
     return new GitRef({queryTree: [
       ...this._queryTree,
       {
       operation: 'tag',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -1194,22 +1023,6 @@ class GitRepository extends BaseClient {
   }
 }
 
-
-export type HostDirectoryArgs = {
-  path: string;
-  exclude?: string[];
-  include?: string[];
-};
-
-export type HostEnvVariableArgs = {
-  name: string;
-};
-
-export type HostWorkdirArgs = {
-  exclude?: string[];
-  include?: string[];
-};
-
 /**
  * Information about the host execution environment
  */
@@ -1219,12 +1032,12 @@ class Host extends BaseClient {
   /**
    * Access a directory on the host
    */
-  directory(args: HostDirectoryArgs): Directory {
+  directory(path: string, exclude?: string[], include?: string[]): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
-      args
+      args: {path, exclude, include}
       }
     ], port: this.port})
   }
@@ -1232,12 +1045,12 @@ class Host extends BaseClient {
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
-  envVariable(args: HostEnvVariableArgs): HostVariable {
+  envVariable(name: string): HostVariable {
     return new HostVariable({queryTree: [
       ...this._queryTree,
       {
       operation: 'envVariable',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -1245,17 +1058,16 @@ class Host extends BaseClient {
   /**
    * The current working directory on the host
    */
-  workdir(args?: HostWorkdirArgs): Directory {
+  workdir(exclude?: string[], include?: string[]): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'workdir',
-      args
+      args: {exclude, include}
       }
     ], port: this.port})
   }
 }
-
 
 /**
  * An environment variable on the host environment
@@ -1293,19 +1105,7 @@ class HostVariable extends BaseClient {
 }
 
 
-/**
- * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
- */
-export type ID = any
 
-
-
-
-
-
-
-
-export type Platform = any
 
 
 
@@ -1410,53 +1210,18 @@ class Project extends BaseClient {
 }
 
 
-export type ClientCacheVolumeArgs = {
-  key: string;
-};
-
-export type ClientContainerArgs = {
-  id?: ContainerID;
-  platform?: Platform;
-};
-
-export type ClientDirectoryArgs = {
-  id?: DirectoryID;
-};
-
-export type ClientFileArgs = {
-  id: FileID;
-};
-
-export type ClientGitArgs = {
-  url: string;
-  keepGitDir?: boolean;
-};
-
-export type ClientHttpArgs = {
-  url: string;
-};
-
-export type ClientProjectArgs = {
-  name: string;
-};
-
-export type ClientSecretArgs = {
-  id: SecretID;
-};
-
-
 
 export default class Client extends BaseClient {
 
   /**
    * Construct a cache volume for a given cache key
    */
-  cacheVolume(args: ClientCacheVolumeArgs): CacheVolume {
+  cacheVolume(key: string): CacheVolume {
     return new CacheVolume({queryTree: [
       ...this._queryTree,
       {
       operation: 'cacheVolume',
-      args
+      args: {key}
       }
     ], port: this.port})
   }
@@ -1466,12 +1231,12 @@ export default class Client extends BaseClient {
    * Null ID returns an empty container (scratch).
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
    */
-  container(args?: ClientContainerArgs): Container {
+  container(id?: ContainerID, platform?: Platform): Container {
     return new Container({queryTree: [
       ...this._queryTree,
       {
       operation: 'container',
-      args
+      args: {id, platform}
       }
     ], port: this.port})
   }
@@ -1495,12 +1260,12 @@ export default class Client extends BaseClient {
   /**
    * Load a directory by ID. No argument produces an empty directory.
    */
-  directory(args?: ClientDirectoryArgs): Directory {
+  directory(id?: DirectoryID): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
-      args
+      args: {id}
       }
     ], port: this.port})
   }
@@ -1508,12 +1273,12 @@ export default class Client extends BaseClient {
   /**
    * Load a file by ID
    */
-  file(args: ClientFileArgs): File {
+  file(id: FileID): File {
     return new File({queryTree: [
       ...this._queryTree,
       {
       operation: 'file',
-      args
+      args: {id}
       }
     ], port: this.port})
   }
@@ -1521,12 +1286,12 @@ export default class Client extends BaseClient {
   /**
    * Query a git repository
    */
-  git(args: ClientGitArgs): GitRepository {
+  git(url: string, keepGitDir?: boolean): GitRepository {
     return new GitRepository({queryTree: [
       ...this._queryTree,
       {
       operation: 'git',
-      args
+      args: {url, keepGitDir}
       }
     ], port: this.port})
   }
@@ -1546,12 +1311,12 @@ export default class Client extends BaseClient {
   /**
    * An http remote
    */
-  http(args: ClientHttpArgs): File {
+  http(url: string): File {
     return new File({queryTree: [
       ...this._queryTree,
       {
       operation: 'http',
-      args
+      args: {url}
       }
     ], port: this.port})
   }
@@ -1559,12 +1324,12 @@ export default class Client extends BaseClient {
   /**
    * Look up a project by name
    */
-  project(args: ClientProjectArgs): Project {
+  project(name: string): Project {
     return new Project({queryTree: [
       ...this._queryTree,
       {
       operation: 'project',
-      args
+      args: {name}
       }
     ], port: this.port})
   }
@@ -1572,17 +1337,16 @@ export default class Client extends BaseClient {
   /**
    * Load a secret from its ID
    */
-  secret(args: ClientSecretArgs): Secret {
+  secret(id: SecretID): Secret {
     return new Secret({queryTree: [
       ...this._queryTree,
       {
       operation: 'secret',
-      args
+      args: {id}
       }
     ], port: this.port})
   }
 }
-
 
 /**
  * A reference to a secret value, which can be handled more safely than the value itself
@@ -1622,13 +1386,6 @@ class Secret extends BaseClient {
     return response
   }
 }
-
-
-/**
- * A unique identifier for a secret
- */
-export type SecretID = any
-
 
 
 

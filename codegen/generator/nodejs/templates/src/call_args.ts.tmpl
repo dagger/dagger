@@ -1,8 +1,8 @@
-{{ define "args" }}
+{{ define "call_args" }}
 	{{- $maxIndex := len . }}
 	{{- $maxIndex = Subtract $maxIndex 1 }}
 	{{- range $index, $value := . }}
-		{{- template "arg" . -}}
+		{{- template "call_arg" . -}}
 
 		{{- /* we add a ", " only if it's not the last item */ -}}
 		{{- if ne $index $maxIndex -}}

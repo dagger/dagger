@@ -15,8 +15,9 @@ func TestArgs(t *testing.T) {
 		in   string
 		want string
 	}{
-		"2 types": {`[ { "name": "ref", "type": { "name": "string", "kind": "SCALAR" } }, { "name": "tag", "type": { "name": "string", "kind": "SCALAR" } } ]`, "string ref, string tag"},
-		"0 types": {`[]`, ""},
+		"2 types":    {`[ { "name": "ref", "type": { "kind": "NON_NULL", "ofType": {"name": "string", "kind": "SCALAR" } } }, { "name": "tag", "type": { "name": "string", "kind": "SCALAR" } } ]`, "ref: string, tag?: string"},
+		"0 types":    {`[]`, ""},
+		"1 non null": {fromArgs, "address: string"},
 	}
 
 	for name, c := range cases {
@@ -29,6 +30,10 @@ func TestArgs(t *testing.T) {
 			err := json.Unmarshal([]byte(jsonData), &elems)
 			require.NoError(t, err)
 
+			for _, elem := range elems {
+				t.Log("optional:", elem.Name, ":", elem.TypeRef.IsOptional())
+			}
+
 			var b bytes.Buffer
 			err = tmpl.ExecuteTemplate(&b, "args", elems)
 
@@ -37,3 +42,19 @@ func TestArgs(t *testing.T) {
 		})
 	}
 }
+
+const fromArgs = `
+          [
+            {
+              "defaultValue": null,
+              "description": "",
+              "name": "address",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ]`

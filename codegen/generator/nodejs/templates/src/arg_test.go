@@ -22,7 +22,7 @@ func TestArg(t *testing.T) {
 	var b bytes.Buffer
 	err := tmpl.ExecuteTemplate(&b, "arg", arg)
 
-	want := "string ref"
+	want := "ref?: string"
 
 	require.NoError(t, err)
 	require.Equal(t, want, b.String())
