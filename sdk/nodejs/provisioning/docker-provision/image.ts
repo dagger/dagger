@@ -3,7 +3,8 @@ import { GraphQLClient } from "graphql-request";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { execaCommandSync } from "execa";
+import readline from "readline";
+import { execaCommandSync, execaCommand } from "execa";
 
 class ImageRef {
   private readonly ref: string;
@@ -76,10 +77,37 @@ export class DockerImage implements EngineConn {
 
     const engineSessionBinPath = this.buildBinPath();
     if (!fs.existsSync(engineSessionBinPath)) {
-      this.pullEngineSessionBin();
+      this.pullEngineSessionBin(engineSessionBinPath);
     }
 
-    return new GraphQLClient(`http://localhost:${opts.Port}/query`);
+    const remote = "docker-image://" + this.imageRef.Ref;
+    var engineSessionArgs = [engineSessionBinPath, "--remote", remote];
+    if (opts.Workdir) {
+      engineSessionArgs.push("--workdir", opts.Workdir);
+    }
+    if (opts.ConfigPath) {
+      engineSessionArgs.push("--project", opts.ConfigPath);
+    }
+
+    const commandOpts = {
+      stderr: process.stderr, // TODO: this is supposed to be configurable
+      // Kill the process if parent exit.
+      cleanup: true,
+    };
+    console.log(`starting engine session: ${engineSessionArgs.join(" ")}`);
+    const cmd = execaCommand(engineSessionArgs.join(" "), commandOpts);
+    console.log(`started engine session: ${cmd.pid}`);
+    const stdoutReader = readline.createInterface({
+      input: cmd.stdout!,
+    });
+    var port: number;
+    for await (const line of stdoutReader) {
+      // read line as a port number
+      port = parseInt(line);
+      console.log(`engine session port: ${port}`);
+      return new GraphQLClient(`http://localhost:${port}/query`);
+    }
+    throw new Error("failed to connect to engine session");
   }
 
   /**
@@ -111,16 +139,13 @@ export class DockerImage implements EngineConn {
     }
   }
 
-  private pullEngineSessionBin(): string {
+  private pullEngineSessionBin(engineSessionBinPath: string): void {
     // Create a temporary bin file
     const tmpBinPath = path.join(
       this.cacheDir,
       `temp-${this.ENGINE_SESSION_BINARY_PREFIX}`
     );
 
-    console.log(
-      `${this.ENGINE_SESSION_BINARY_PREFIX}-${os.platform()}-${os.arch()}`
-    );
     const dockerRunArgs = [
       "docker",
       "run",
@@ -143,16 +168,14 @@ export class DockerImage implements EngineConn {
         cleanup: true,
         // Throw on error
         reject: false,
-        timeout: 10000,
+        timeout: 300000,
       });
+      fs.closeSync(fd);
+      fs.renameSync(tmpBinPath, engineSessionBinPath);
     } catch (e) {
-      console.log(e);
       fs.rmSync(tmpBinPath);
       throw new Error(`failed to copy engine session binary: ${e}`);
     }
-
-    fs.chmodSync(tmpBinPath, 0o700);
-    return tmpBinPath;
   }
 
   async Close(): Promise<void> {

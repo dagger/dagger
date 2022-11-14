@@ -7,11 +7,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __asyncValues = (this && this.__asyncValues) || function (o) {
+    if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
+    var m = o[Symbol.asyncIterator], i;
+    return m ? m.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function () { return this; }, i);
+    function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
+    function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
+};
 import { GraphQLClient } from "graphql-request";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { execaCommandSync } from "execa";
+import readline from "readline";
+import { execaCommandSync, execaCommand } from "execa";
 class ImageRef {
     constructor(ref) {
         /**
@@ -55,13 +63,50 @@ export class DockerImage {
         return "http://dagger";
     }
     Connect(opts) {
+        var e_1, _a;
         return __awaiter(this, void 0, void 0, function* () {
             this.createCacheDir();
             const engineSessionBinPath = this.buildBinPath();
             if (!fs.existsSync(engineSessionBinPath)) {
-                this.pullEngineSessionBin();
+                this.pullEngineSessionBin(engineSessionBinPath);
             }
-            return new GraphQLClient(`http://localhost:${opts.Port}/query`);
+            const remote = "docker-image://" + this.imageRef.Ref;
+            var engineSessionArgs = [engineSessionBinPath, "--remote", remote];
+            if (opts.Workdir) {
+                engineSessionArgs.push("--workdir", opts.Workdir);
+            }
+            if (opts.ConfigPath) {
+                engineSessionArgs.push("--project", opts.ConfigPath);
+            }
+            const commandOpts = {
+                stderr: process.stderr,
+                // Kill the process if parent exit.
+                cleanup: true,
+            };
+            console.log(`starting engine session: ${engineSessionArgs.join(" ")}`);
+            const cmd = execaCommand(engineSessionArgs.join(" "), commandOpts);
+            console.log(`started engine session: ${cmd.pid}`);
+            const stdoutReader = readline.createInterface({
+                input: cmd.stdout,
+            });
+            var port;
+            try {
+                for (var stdoutReader_1 = __asyncValues(stdoutReader), stdoutReader_1_1; stdoutReader_1_1 = yield stdoutReader_1.next(), !stdoutReader_1_1.done;) {
+                    const line = stdoutReader_1_1.value;
+                    // read line as a port number
+                    port = parseInt(line);
+                    console.log(`engine session port: ${port}`);
+                    return new GraphQLClient(`http://localhost:${port}/query`);
+                }
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (stdoutReader_1_1 && !stdoutReader_1_1.done && (_a = stdoutReader_1.return)) yield _a.call(stdoutReader_1);
+                }
+                finally { if (e_1) throw e_1.error; }
+            }
+            throw new Error("failed to connect to engine session");
         });
     }
     /**
@@ -90,10 +135,9 @@ export class DockerImage {
                 return binPath;
         }
     }
-    pullEngineSessionBin() {
+    pullEngineSessionBin(engineSessionBinPath) {
         // Create a temporary bin file
         const tmpBinPath = path.join(this.cacheDir, `temp-${this.ENGINE_SESSION_BINARY_PREFIX}`);
-        console.log(`${this.ENGINE_SESSION_BINARY_PREFIX}-${os.platform()}-${os.arch()}`);
         const dockerRunArgs = [
             "docker",
             "run",
@@ -113,16 +157,15 @@ export class DockerImage {
                 cleanup: true,
                 // Throw on error
                 reject: false,
-                timeout: 10000,
+                timeout: 300000,
             });
+            fs.closeSync(fd);
+            fs.renameSync(tmpBinPath, engineSessionBinPath);
         }
         catch (e) {
-            console.log(e);
             fs.rmSync(tmpBinPath);
             throw new Error(`failed to copy engine session binary: ${e}`);
         }
-        fs.chmodSync(tmpBinPath, 0o700);
-        return tmpBinPath;
     }
     Close() {
         return __awaiter(this, void 0, void 0, function* () {

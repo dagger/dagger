@@ -1,6 +1,5 @@
-import { GraphQLClient } from 'graphql-request';
+import { GraphQLClient } from "graphql-request";
 export interface ConnectOpts {
-    Port?: number;
     Workdir?: string;
     ConfigPath?: string;
 }
