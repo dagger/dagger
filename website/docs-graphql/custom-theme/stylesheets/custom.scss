@@ -1,0 +1,100 @@
+// The default theme will put nothing in here, but it will be imported in
+// "main.scss", allowing users to specify it in their custom theme to adjust the
+// deafult theme without losing updates to the "core" SCSS.
+
+// You can override variables and styles in your custom.scss file. All support
+// variables are shown below.
+
+//////////////////
+// Structural variables:
+//////////////////
+//
+// $max-content-width: 88em;
+// $drawer-size: 250px;
+// $drawer-size-desktop-large: 300px;
+//
+// $content-padding: 20px;
+//
+// $sidebar-top: 0px;
+// $sidebar-padding: $content-padding;
+// $sidebar-background: #fff;
+//
+// $overlay-background: rgba(0, 0, 0, 0.5);
+// $overlay-background-hidden: rgba(0, 0, 0, 0);
+//
+// $code-background: #ccc;
+//
+// $size-tablet: 32em;
+// $size-desktop: 48em;
+// $size-desktop-large: 64em;
+//
+// // Below this size, the sidebar will be a mobile-style drawer
+// $size-sidebar-break: $size-desktop;
+//
+// // Below this size, the content will stack
+// $size-content-break: $size-desktop;
+//
+// // This comes from the value passed in the config
+// $logo-max-height: getLogoMaxHeightPx();
+// $logo-height: getLogoHeightPx();
+//
+// // In case there is a navbar. getScrollOffset if a function defined in the grunt
+// // config file
+// $scroll-offset: getScrollOffset();
+
+
+//////////////////
+// Style variables
+//////////////////
+//
+$font-family: 'Montserrat', sans-serif;
+// $font-family-monospaced: Consolas, Monaco, Andale Mono, Ubuntu Mono, monospace;
+// $text-color: red;
+// $text-color-subtle: #999999;
+// $link-color: #0298bf;
+// $link-color-hover: #0182a2;
+// $background: white;
+// $border-color: #d8d8d8;
+// $border-color-subtle: #e0e0e0;
+// $border-size-thick: 2px;
+// $border-size-thin: 1px;
+//
+// $background-error: #fed7d8;
+// $text-color-error: #c60609;
+//
+// $line-height: 1.6;
+// $line-height-heading: 1.2;
+//
+// $font-size: 16px;
+// $font-size-mobile: 14px;
+//
+// $font-size-large-heading: 2.25em;
+// $font-size-large-heading-mobile: 1.72em;
+// $font-size-small: .875em;
+// $font-size-code: $font-size-small;
+// $font-size-small-heading: .875em;
+// $font-size-example-heading: .75em;
+//
+// $padding-code-block: 15px $content-padding;
+// $font-size-code-block: .82em;
+// $text-color-code-block: white;
+// $background-code-block: #222222;
+// $background-code-block-heading: #000000;
+// $line-height-code-block: 1.4;
+//
+// $container-padding-mobile: $content-padding;
+// $container-padding-tablet: 30px;
+// $container-padding-desktop: 50px;
+//
+// $container-padding-operation: 60px;
+//
+// $background-arguments: #fafbfc;
+
+.operation-example {
+    a {
+        padding: 10px;
+        border-radius: 10px;
+        box-shadow: 5px 5px 5px 5px grey;
+        background-color: red;
+    }
+}
