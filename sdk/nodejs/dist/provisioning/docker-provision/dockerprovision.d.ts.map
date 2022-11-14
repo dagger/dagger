@@ -1,0 +1,1 @@
+{"version":3,"file":"dockerprovision.d.ts","sourceRoot":"","sources":["../../../provisioning/docker-provision/dockerprovision.ts"],"names":[],"mappings":"AACA,QAAA,MAAM,SAAS,KAAK,CAAC;AACrB,QAAA,MAAM,mBAAmB,kBAAkB,CAAC;AAC5C,QAAA,MAAM,sBAAsB,2BAA2B,CAAC;AACxD,QAAA,MAAM,+BAA+B,QAAuC,CAAC"}
