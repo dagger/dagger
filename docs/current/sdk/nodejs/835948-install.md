@@ -14,7 +14,7 @@ The Dagger NodeJS SDK requires [NodeJS 16 or later](https://nodejs.org/en/downlo
 
 Install the Dagger NodeJS SDK in your project's using `npm or yarn`:
 
-<Tabs 
+<Tabs
 defaultValue="npm"
 values={[
 {label: 'Npm', value: 'npm'},
@@ -24,15 +24,17 @@ values={[
 <TabItem value="npm">
 
 ```shell
-npm install @dagger.io/nodejs-sdk
+npm install @dagger.io/dagger
 ```
+
 </TabItem>
 
 <TabItem value="yarn">
 
-```shell 
-yarn add @dagger.io/nodejs-sdk
+```shell
+yarn add @dagger.io/dagger
 ```
+
 </TabItem>
 
 </Tabs>
