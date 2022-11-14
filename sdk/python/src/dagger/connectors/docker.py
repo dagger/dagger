@@ -92,12 +92,14 @@ class Engine:
                         encoding="utf-8",
                         check=True,
                     )
-                except subprocess.CalledProcessError as e:
-                    tmp_bin.close()
-                    os.unlink(tmp_bin.name)
+                except FileNotFoundError as e:
                     raise ProvisionError(
-                        f"Failed to copy engine session binary: {e.stdout}"
-                    )
+                        f"Command '{docker_run_args[0]}' not found."
+                    ) from e
+                except subprocess.CalledProcessError as e:
+                    raise ProvisionError(
+                        f"Failed to copy engine session binary: {e.stderr}"
+                    ) from e
 
                 tmp_bin_path = Path(tmp_bin.name)
                 tmp_bin_path.chmod(0o700)
