@@ -2,8 +2,6 @@
 import { Client } from "./client.js";
 import { getProvisioner } from "./provisioning/index.js";
 import { DEFAULT_HOST } from "./provisioning/default.js";
-import { execa, execaCommandSync } from "execa";
-import axios from "axios";
 
 /**
  * ConnectOpts defines option used to run cloak

@@ -1,8 +1,4 @@
-<<<<<<< HEAD:sdk/nodejs/dist/connect.d.ts
-import Client from './api/client.js';
-=======
 import { Client } from "./client.js";
->>>>>>> b84b2b1c (Make docker-image default connect implementation.):sdk/nodejs/dagger/dist/connect.d.ts
 /**
  * ConnectOpts defines option used to run cloak
  * in dev mode.

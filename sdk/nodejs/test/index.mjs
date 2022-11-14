@@ -1,4 +1,4 @@
-import { gql, Engine, connect, getProvisioner } from "@dagger.io/dagger";
+import { gql, Engine, connect, getProvisioner } from "../index.js";
 
 import assert from "assert";
 
@@ -9,7 +9,7 @@ describe("NodeJS sdk", function () {
     this.timeout(60000);
 
     const client = await connect(engine);
-    await client.do(gql`
+    const res = await client.do(gql`
       {
         container {
           from(address: "alpine") {
